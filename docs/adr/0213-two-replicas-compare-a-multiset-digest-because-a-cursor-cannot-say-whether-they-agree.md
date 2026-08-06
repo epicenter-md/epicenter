@@ -271,11 +271,10 @@ false, because nothing would ever recompute anything.
 Every removal subtracts, not only the obvious one. ADR-0212's R2 deletes a row's
 older cells when a presence cell is written, **and its body row with them**, and
 the open door **replaces** a stale-generation body with an empty document. The
-open door also **re-stamps** a body's generation when a clamp refusal moves its
-row's presence, and the entry below hashes `generation_ms` and `generation_seq`,
+**clamp re-stamp** moves a body's generation when it moves its row's presence, and the entry below hashes `generation_ms` and `generation_seq`,
 so the entry changes while `doc_state` does not. The
 cell delete returns what it removed and subtracts each entry in the same
-transaction; the three body mutations have no write of their own to hang a fold on,
+transaction; the three body mutations move no `doc_state` a fold could hang on,
 so each must subtract the entry it removes explicitly. Miss any of the four and
 the first deletion in the store guarantees a permanent false mismatch.
 

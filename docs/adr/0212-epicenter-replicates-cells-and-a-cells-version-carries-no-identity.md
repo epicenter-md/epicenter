@@ -199,7 +199,11 @@ CREATE TABLE _replica_cell (
 CREATE TABLE _replica_body (
 	namespace TEXT NOT NULL CHECK (length(namespace) > 0),
 	table_name TEXT NOT NULL CHECK (length(table_name) > 0),
-	row_id TEXT NOT NULL,
+	row_id TEXT NOT NULL CHECK (
+		length(row_id) BETWEEN 1 AND 128 AND
+		row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
+		row_id GLOB '[A-Za-z0-9]*'
+	),
 	generation_ms INTEGER NOT NULL CHECK (generation_ms > 0),
 	generation_seq INTEGER NOT NULL CHECK (generation_seq >= 0),
 	doc_state BLOB NOT NULL,
@@ -266,7 +270,11 @@ CREATE UNIQUE INDEX _authority_cell_address
 CREATE TABLE _authority_body (
 	namespace TEXT NOT NULL CHECK (length(namespace) > 0),
 	table_name TEXT NOT NULL CHECK (length(table_name) > 0),
-	row_id TEXT NOT NULL,
+	row_id TEXT NOT NULL CHECK (
+		length(row_id) BETWEEN 1 AND 128 AND
+		row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
+		row_id GLOB '[A-Za-z0-9]*'
+	),
 	generation_ms INTEGER NOT NULL CHECK (generation_ms > 0),
 	generation_seq INTEGER NOT NULL CHECK (generation_seq >= 0),
 	doc_state BLOB NOT NULL,
@@ -367,8 +375,9 @@ It is not a claim about when a person acted, and the authority verifies only tha
 it is not more than five minutes ahead of its **clamp reference**, which is not
 simply its own clock. The reference is
 `max(its own clock, the highest version_ms it HOLDS minus the clamp width)`,
-which the store can derive and "ever accepted" cannot, because R2 and overwrites
-remove rows;
+  which the store derives by a scan an implementation caches, because the held
+maximum only rises while the file is the same file, and which "ever accepted"
+cannot be derived at all, because R2 and overwrites remove rows;
 and "the authority's time" means that quantity everywhere below: in the refusal
 payload, in the re-stamp floor, and in the inertness argument. A raw wall clock
 there is not a simplification, it is the livelock measured under "the clamp
@@ -835,7 +844,12 @@ the whole fix and it uses only state the schema already carries: a mid-pass chun
 off a stale watermark is still refused, so the double-count is closed, and an
 abandoned pass is self-healing rather than a watermark nothing can clear.
 Discarding a partial accumulator costs nothing, because the sum is committed only
-at completion. An earlier draft added "and ignores a second replica's pass while
+at completion. **A refusal carries the authority's current `repair_from`, and a
+refused replica resumes from it rather than restarting.** Without that a refused
+replica has no legal `from` to send, and the sentinel is its only move: measured,
+two replicas repairing at once then restart each other forever, 0 passes complete
+in 300 rounds at two, three and four replicas, with the authority never past the
+first chunk of ten. Adopting the watermark the refusal carries completes in ten. An earlier draft added "and ignores a second replica's pass while
 one is open", which is neither implementable nor needed: `_authority_replicas` is
 deleted and nothing on the authority names a device, and with the guard alone two
 replicas alternating chunks off the current watermark commit exactly the truth. `repair_from = ''` is the sentinel for
@@ -1018,9 +1032,12 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   measured, an hour's step back admits a write 55 minutes above the plain clock
   bound until the clock catches up. That is the deliberate price of the ratchet. A third window is the re-stamp
   itself: the refusal names the row's presence but not the version the authority
-  holds for each refused cell, so 190 of 4282 re-stamped field writes (4.4%) land
-  on or below a held version and are discarded as stale, silently, with both sides
-  agreeing and nothing dirty. A fourth floor term of the same shape as the third
+  holds for each refused cell, so 223 of 4282 re-stamped field writes land on or below a
+  held version and 190 of them (4.4%) are discarded as stale, silently, with both
+  sides agreeing and nothing dirty. The collision has a second face the loss count
+  cannot show: 34 more re-stamps land on the identical version and *win* the hash,
+  silently displacing the value the authority held. They reach the intended result
+  by a coin flip rather than by the floor's arithmetic. A fourth floor term of the same shape as the third
   would close it; it is not taken here, and it is priced in the memo.
   Backwards there is no bound at all: the clamp only refuses a clock that is
   ahead, so a replica with a dead clock writes into the past, loses to a

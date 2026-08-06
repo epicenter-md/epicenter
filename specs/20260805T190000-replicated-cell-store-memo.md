@@ -688,7 +688,10 @@ mutually exclusive states, one with every cell owed and one with none.
 | Reading the floor's `local` term as "the presence this replica holds", full stop | after a clamp-refused create the replica holds the refused version, so the floor is the version just refused | the re-push never terminates: 32 inner rounds, the cell still dirty, the authority holding nothing. The fuzz always excluded a refused presence; the record did not say so |
 | Treating the clamp invariant as unconditional | it holds only while the authority's clock is monotonic | with the clock stepped back an hour, EVERY member of the floor family livelocks, because `local` is never clamped and the held version sits permanently above `A + width`. The clamp reference is now `max(own clock, highest HELD version_ms - width)`, held rather than accepted because R2 and overwrites remove rows |
 | Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a body at `!body` |
-| Carrying the authority's held version for each REFUSED ADDRESS in the refusal, not only the row's presence | the floor's terms are presence versions only, so a re-stamped field can land on or below the version the authority already holds for that same cell | NOT YET TAKEN, and the only priced item here that is an open option rather than a refusal. Measured cost of NOT taking it: of 4282 clamp re-stamps, 66 field cells land on the exact held version with a different value, 157 land below it, and 190 field writes (4.4%) are discarded as stale, silently, with both sides agreeing and nothing dirty. The fix is a fourth term of the same shape as the third; it was not taken in round 13 because the design was frozen, and every previous round's patch to this formula was defective |
+| A refusal that does not carry the authority's current `repair_from` | a refused replica has no legal `from` to send, so the sentinel is its only move | 0 passes complete in 300 rounds with two, three or four replicas repairing at once, the authority never past the first chunk of ten, because the replicas restart each other forever. Adopting the watermark the refusal carries completes in ten rounds |
+| "The authority ignores a second replica's pass while one is open" | `_authority_replicas` is deleted and nothing on the authority names a device | unbuildable, so it was a sentence rather than a decision. The from-guard alone commits exactly the truth with two replicas alternating chunks |
+| Leaving `row_id` unconstrained on the two body tables | the cell tables refuse addresses the body tables accept | a body at an address whose row can never exist: R2's body drop cannot fire on it and the repair pass ships it forever. Both sides now carry the cell tables' `row_id` CHECK, verified symmetric |
+| Carrying the authority's held version for each REFUSED ADDRESS in the refusal, not only the row's presence | the floor's terms are presence versions only, so a re-stamped field can land on or below the version the authority already holds for that same cell | NOT YET TAKEN, and the only priced item here that is an open option rather than a refusal. Measured cost of NOT taking it: of 4282 clamp re-stamps, 223 land on or below the version the authority holds (66 exactly on it, 157 below) and 190 (4.4%) are discarded as stale; a further 34 land exactly on it and WIN the hash, silently displacing the held value, silently, with both sides agreeing and nothing dirty. The fix is a fourth term of the same shape as the third; it was not taken in round 13 because the design was frozen, and every previous round's patch to this formula was defective |
 | Leaving the clamp silent about a body's generation | a body copies its generation from the presence cell, so a clamped create produces an equally skewed one | the prose is lost from the device that typed it, the authority holds it under a generation no row has, and the digest mismatches every round while the pass re-sends bytes the authority refuses |
 
 `Supersedes` and `Amends` carry reciprocal links on both records, as
@@ -753,6 +756,15 @@ a rout), A third, the 280-of-400 resumed-pass figure, was suspected and cleared:
 older than the scripts named for them. The rule this round adds: a claim whose
 producer does not run is withdrawn, not re-quoted, and the sweep that finds them
 runs every round rather than when a reviewer thinks to look.
+
+**The freeze was not held, and round 14 shows the cost.** Round 13 declared the
+design frozen and then changed the repair guard anyway, replacing the
+one-pass-at-a-time rule with a sentinel restart. Round 14 measured that
+replacement livelocking at two replicas. The pattern from rounds 8 to 12 is
+therefore not broken, only narrowed: the one place the design still moved is the
+one place a new defect appeared, and everything genuinely held still verified
+clean. A change to a frozen design needs the same three passes as any other, and
+this one got a commit message instead.
 
 **Why round 13 froze the design, and what the freeze bought.** Rounds 8 through 12
 each found the PREVIOUS round's fix defective, in this one subsystem, because the
