@@ -136,7 +136,7 @@ There is one wire format, and it carries cells. Keeping whole-row JSON as a seco
 format for the initial seed was considered on a size argument and refused: the 473
 bytes it compares against carry no per-field version, and this schema's version
 columns are `NOT NULL`. Against a whole-row encoding that does carry them, a seed
-is 34% smaller rather than 70%, which does not buy a second format the protocol
+is 29% smaller at 12 columns and 16% at 3, rather than 69% and 56%, which does not buy a second format the protocol
 would have to specify, version, and keep converging with the first.
 
 ### The layout
@@ -152,10 +152,6 @@ CREATE TABLE _replica_metadata (
 	last_applied_cursor INTEGER NOT NULL CHECK (last_applied_cursor >= 0),
 
 	repair_from TEXT,
-	repair_epoch INTEGER NOT NULL DEFAULT 0 CHECK (repair_epoch >= 0),
-	repair_covers INTEGER NOT NULL DEFAULT 0 CHECK (repair_covers >= 0),
-	repair_scope TEXT,
-	repair_cursor INTEGER CHECK (repair_cursor IS NULL OR repair_cursor >= 0),
 
 	digest_format INTEGER NOT NULL,
 	digest_sum BLOB NOT NULL CHECK (length(digest_sum) = 8),
@@ -372,7 +368,7 @@ Both components come from the row being written, and cost one row-local aggregat
 read per write. That read is not cheap: measured as an interleaved A and B in one
 database, against a control arm of two identical passes and with WAL checkpointing
 moved outside the timed region, it takes the median local write from about 6.5 to
-about 8.6 microseconds, **+30% to +37%** depending on row width. Two earlier figures for this, "about 10%" and "at least double",
+about 8.6 microseconds, **+24% to +37%**, with no consistent dependence on row width across six paired runs. Two earlier figures for this, "about 10%" and "at least double",
 were both artifacts: the first compared two different processes on two different
 schemas, and the second had no control arm, so a 3.6x drift within one arm was
 read as mechanism. It is the price of a write the user just made never being refused by R1,
@@ -528,8 +524,9 @@ entry, which is the same cost this record refuses a replica-side cursor for: it
 measured on the decided schema at **+81 MB and +126 MB** with local work standing.
 The scan it replaces costs **about 50 ms and 120 ms** when nothing is owed, which is the
 common case, and in the state where the index actually costs those megabytes it
-saves 26 ms and 38 ms, or about 7%, because both sides then have to return every
-cell.
+the saving is not distinguishable from zero: two consecutive runs of the same
+script give +1.4% and −10.8% at one shape and +15.0% and +4.9% at the other, on a
+measurement with no control arm.
 
 Encoding delivery as timestamp equality was tried and fails: write at T, confirm
 at T, write a new value at T again, and a derived `confirmed = written` flag reads
@@ -650,27 +647,21 @@ losing prose the user typed seconds earlier on the device that typed it. Re-stam
 field cell alone would land it below its own row's presence cell, which is exactly
 what R1 refuses, so the debt would never clear.
 
-**A scheduled repair is durable, and it carries five facts, each with a column.**
-`repair_from` is where a running pass has reached. `repair_epoch` records that an
-obligation was raised. `repair_covers` is the epoch a running pass will discharge,
-so a pass can absorb an obligation raised while it runs, and clears
-`WHERE repair_epoch <= repair_covers`; a strict "did anything change since I
-started" guard never clears at all on a device that raises faster than a pass
-completes, which is exactly the permanently skewed device this repair exists for.
-Measured without it: 200 writes, 200 raises, **0 of 200 passes cleared**, and
-digest comparison disabled forever because it is gated on nothing being owed.
+**A scheduled repair is one column, because neither source of obligation needs
+more.** `repair_from` is where a whole-store pass has reached, and non-NULL means
+one is owed. A digest mismatch is a **state** check, recomputed from both stores
+every round, so a pass that clears the flag without finishing the job is simply
+re-raised by the next comparison and nothing is lost. A clamp re-stamp is an
+**event**, and it names one row, so it is discharged inline in the transaction
+that creates it.
 
-`repair_scope` is what the obligation covers, NULL for the whole store and a row
-id to bound the pass. Without it "scoped to the row it names" is a sentence with
-no column: a full-store obligation and a row obligation are the same two values,
-so every clamp refusal re-reads everything. `repair_cursor` is where a rewind
-returns to, because the only rewind a schema without it can express is zero, and a
-device outside the clamp re-stamps presence on every `create`.
-
-One column cannot do any of this. A pass already in flight overwrites it
-continuously and clears it on completion, so an obligation raised mid-pass is
-erased by the pass that was already running, leaving a row present and empty with
-nothing dirty and nothing owed.
+An earlier draft scheduled both through an epoch, a covered-epoch and a scope, so
+that a running pass could absorb an obligation raised while it ran. Measured, that
+machinery was identical to the strict guard it was added to replace: **0 of 200
+passes cleared either way**, because the covered epoch was read at the start of
+the pass and the epoch only increases. A row-scoped raise could also clear a
+whole-store obligation it never discharged. Discharging the event inline removes
+the question rather than answering it.
 
 **A clamp refusal on a presence cell also schedules a repair for that row.**
 Lowering a presence cell is the one operation in the design that moves a version
@@ -1015,8 +1006,8 @@ scheduled for deletion on acceptance; the git ref is `85ca7a8d51`.
   a same-millisecond rewrite.
 - **An index on `dirty`.** In the common case, with nothing owed, it costs no
   extra disk and saves the whole scan. With every cell owed it costs +81 MB and
-  +126 MB, 45% and 37% of the base file, and then saves 7.2% and 6.3% rather than
-  the whole scan.
+  +126 MB, 45% and 37% of the base file, and then saves nothing measurable: the
+  same script gives −11% to +15% across runs.
 - **Readable version columns.** ISO-8601 and hex order identically to the compact
   encoding and cost 36% and 29% more disk. A view is free.
 - **A 16-byte version hash.** Closes the exact-version oscillation for +19 MB and
@@ -1033,5 +1024,5 @@ scheduled for deletion on acceptance; the git ref is `85ca7a8d51`.
   lifetime does not catch a restore, because it lives inside the file being
   restored, and neither does a cursor regression, because the cursor an authority
   is shown is what a replica read rather than what it wrote. The price paid is one
-  8-byte column per side and about +75% on a local write. ADR-0213 carries the
+  8-byte column per side and +50% to +63% on a local write. ADR-0213 carries the
   rest.

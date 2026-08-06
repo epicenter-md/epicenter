@@ -57,9 +57,9 @@ digest_sum    BLOB NOT NULL CHECK (length(digest_sum) = 8)
 **One column, not a table.** An earlier draft kept 4096 buckets a side so a
 mismatch could be localized. Nothing reads a bucket: the descent was refused for
 cost (below), so only the root is ever compared, and the root is a sum over every
-entry regardless of how they are grouped. Measured: a store bucketed 4096 ways and
-the same store bucketed 8192 ways produce the same root. The bucket table was 4096
-rows per side that answered nothing.
+entry regardless of how they are grouped. A sum over every entry does not depend on how the
+entries were grouped, which is associativity rather than a measurement; the
+bucket table was 4096 rows per side that answered nothing.
 
 ### A multiset sum, folded in the application
 
@@ -128,8 +128,8 @@ thing" means "does this render the same document".
 Grouping entries into buckets so a mismatch could name a region was tried and
 refused, and refusing it is what leaves one sum. A bucket keyed on a hash of the
 address is a hash class rather than a range: its members are scattered across the
-whole address space, enumerating one costs a full scan plus a hash per cell (about
-1.3 seconds at ADR-0212's fixture), and it cannot resume from an address the way
+whole address space, enumerating one costs a full scan plus a hash per cell (116 milliseconds
+over 240,000 cells, so of the order of a second at ADR-0212's fixture), and it cannot resume from an address the way
 the existing repair pass does. Storing a `bucket` column on every cell would fix
 the scan, and costs disk ADR-0212 refuses for a cursor column on the same grounds.
 
@@ -175,20 +175,27 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 
 ## Consequences
 
-- **It costs one 8-byte column per side and about three quarters of a local
-  write.** Measured on the settled schema across three runs whose control arms sit
-  within 5%: **+75% at 12 columns and +65% at 3**, on a write that already pays
-  ADR-0212's row-local floor. Hashing the value rather than the version alone is 8
-  to 10 points of that; the BLOB round trip is most of the rest. Against a store
-  with neither the floor nor the digest, a local write costs **+112% to +132%**.
+- **It costs one 8-byte column per side and about half a local write again.**
+  Measured on the settled one-column schema across three runs whose control arms
+  sit within 5%: **+50% to +63% at 12 columns and +41% to +59% at 3**, on a write
+  that already pays ADR-0212's row-local floor. Against a store with neither, a
+  local write costs **+93% to +111%**. An earlier draft said +75% and +65%; that
+  was measured against the 4096-row bucket table this record then deleted, which
+  is the third consecutive round in which the priced artifact was removed after
+  pricing. Hashing the value rather than the version alone is 4 to 15 points,
+  which is two runs' worth of control-arm noise apart and does not support a
+  tighter figure. **Folding the sum in memory and writing it once per transaction
+  halves the premium**, to about +31% and +25%, and still satisfies the
+  same-transaction rule; the higher figures assume one write per transaction.
 - **A row delete costs far more than a write, and it scales with row width.**
   ADR-0212's R2 drops a row's cells when a presence cell is written, and each drop
-  is an entry to subtract. Measured: **12.3x at 12 columns (5.9 to 72.8
-  microseconds) and 7.2x at 3**. "One add and one subtract per write" is true of a
-  field write and badly untrue of a delete.
-- **A body write costs +13%**, rising to **+24% to +30% at a 40KB document**,
-  because the entry re-hashes the whole canonical state. That is the document size
-  ADR-0212 uses to justify the Yjs plane existing.
+  is an entry to subtract. Measured on the one-column schema: **9.0x at 12 columns
+  and 6.0x at 3**, falling to **6.7x and 4.9x** when the sum is folded in memory
+  and written once. "One add and one subtract per write" is true of a field write
+  and badly untrue of a delete.
+- **A body write costs +11% to +18%**, and the cost does not scale with the
+  document, because the entry hashes the rendered text rather than the stored
+  bytes: at 40KB it is +4% to +14%, which is inside the control arm.
 - **That is the price of knowing.** ADR-0212's repair pass is a correct repair
   that, without this, nothing can ever trigger: the record can say "full
   reconciliation always converges" and be unable to say when to run it.
