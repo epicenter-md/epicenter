@@ -218,7 +218,9 @@ CREATE TABLE _replica_doc (
 	inflight_update BLOB,
 	-- Monotonic within an incarnation, and reset by one, because a new
 	-- generation replaces this row. An acknowledgement therefore names
-	-- (generation_ms, generation_seq, send_token).
+	-- (column_name, generation_ms, generation_seq, send_token): the token counts
+	-- per document, and every document of a row shares one incarnation, so an
+	-- incarnation separates rounds and never separates columns.
 	send_token INTEGER NOT NULL DEFAULT 0 CHECK (send_token >= 0),
 	CHECK ((inflight_update IS NULL) OR send_token > 0),
 	PRIMARY KEY (namespace, table_name, row_id, column_name)
@@ -384,9 +386,17 @@ give one value two homes and two merge rules. A collaborative column lives only 
 undeclared column, including a plain markdown body, is an ordinary cell and lives
 only in `_replica_cell`. The invariant is the Lens's to hold, because neither table can see the other's
 rows: a `CHECK` cannot express it and this record does not pretend otherwise. When
-it is violated the **document wins and the cell is inert**: the projection materialises the cell fields first and then assigns each document
-over them, so the document wins, while the cell keeps its version and keeps
-replicating forever. Stating the order matters: measured, four natural spellings of
+it is violated the **document wins and the cell is inert**: the projection materialises the cell fields first and then **overwrites** each one
+whose column names a document, so a column present in both planes takes the
+document's rendered value and a blanked document renders as the empty string rather
+than removing the key. The operation is the rule, not the order: measured, six
+spellings that all obey "cells first, documents second" give three different
+answers, and four once the projection gate blanks a document. `json_insert` leaves
+the cell's value in place; `json_patch` treats the blank as a delete and removes the
+column entirely; and `json_group_object` over a `UNION ALL`, which is the most
+direct extension of the projection this record already specifies, does not
+deduplicate keys and emits the column twice. The cell meanwhile keeps its version
+and keeps replicating forever. Stating the order matters: measured, four natural spellings of
 that final assignment give two different answers from byte-identical stores, and
 the digest cannot see the difference because it hashes both rows on both sides. The violation needs no Lens bug. ADR-0125 makes a
 Lens release-local and requires a release to preserve values it cannot read, so a
@@ -791,9 +801,9 @@ the forward reach of `held`, and both clamps are dead arithmetic:
   the authority's clock is monotonic**. The authority refuses any write above
   `A + the clamp width`, so a presence version it *holds* is at or below that bound
   and the `min` never binds. Measured, it is byte-identical to the unclamped floor on every counter of a
-  1200-trace fuzz. That measurement predates the doc plane being keyed by column,
-  and the port that re-keyed the fuzz dropped both clamped arms, so the claim is
-  inherited rather than re-verified against the settled schema.
+  1200-trace fuzz. Re-verified against the settled column-keyed schema: 40 of 41 counters identical
+  and the `min` binds 0 times in 4361 re-stamps, so the claim is no longer inherited
+  from an earlier key.
 
   The premise is load-bearing and is not free. Step the authority's clock back an
   hour (an NTP correction, a VM migration, a restore onto a host whose clock is
@@ -802,10 +812,13 @@ the forward reach of `held`, and both clamps are dead arithmetic:
   member of the family livelocks: `local` is never clamped, R1 forces a field cell
   above its row's presence, and nothing the replica can write inside the clamp
   beats a held version the merge is monotone against. The 1200-trace fuzz cannot
-  reach this state, because its authority clock only ever advances. So the
-  authority's clamp reference is `max(its own clock, the highest version_ms it
-HOLDS minus the clamp width)`, which cannot ratchet past what the clamp
-  already permitted and restores the premise by construction.
+  reach this state, because its authority clock only ever advances. The backward step is not a price of clamping: measured, the **decided** unclamped
+floor is the worst-affected arm by two orders of magnitude, 897,660 re-stamps
+against 164,528 for either clamped variant. So the authority's clamp reference is
+`max(its own clock, the highest version_ms it HOLDS minus the clamp width)`, which cannot ratchet past what the clamp already permitted and restores the premise
+by construction. It restores the premise and **not convergence**: measured at 300
+traces with a one-hour backward step, 14 traces still diverge and 4 replicas remain
+dirty at quiescence, against 0 and 0 with a monotonic clock.
 
 So the family has exactly two members, not three, and choosing between them is a
 trade rather than a defect to fix. Measured over 1200 traces of 70 steps, four
@@ -813,7 +826,7 @@ replicas skewed -3 to +12 minutes, 4282 clamp re-stamps (`r11b-fuzz.ts`):
 
 | floor | presence re-stamped below the authority's own | then refused stale | destroyed by R2 | lost create/delete intents |
 | --- | --- | --- | --- | --- |
-| `max(A, local)`, and every clamped variant | 445 | 470 | 133 | 479 |
+| `max(A, local)`, and `min(held, A)` | 445 | 470 | 133 | 479 |
 | `max(A, held, local)` (**decided**) | 0 | 25 | 4 | 497 |
 
 Neither dominates. The decided floor removes 445 below-authority re-stamps and
@@ -942,9 +955,13 @@ measured at 80 of 200 addresses derived twice and a permanent false mismatch on
 that replica until it walks a pass cleanly end to end. An earlier draft added "and ignores a second replica's pass while
 one is open", which is neither implementable nor needed: `_authority_replicas` is
 deleted and nothing on the authority names a device, and with the guard alone two
-replicas alternating chunks off the current watermark commit exactly the truth. `repair_from = ''` is the sentinel for
-owed-but-not-started: nothing has been reached yet, and the empty string sorts
-below every legal address. A digest mismatch is a **state** check, and ADR-0213 makes it
+replicas alternating chunks off the current watermark commit exactly the truth. `repair_from` holds the address followed by one byte of plane, `0` for a cell and
+`1` for a document, because ADR-0213 orders the pass by `(address, plane)` and a
+cell and a document may share a column name: measured, an address-only watermark is
+wrong at chunk sizes 3 and 7, skipping a document forever under a strict `>` and
+double-counting under an inclusive `>=`, and correct at 5 by luck.
+`repair_from = ''` remains the sentinel for owed-but-not-started, since the empty
+string sorts below every legal value. A digest mismatch is a **state** check, and ADR-0213 makes it
 one by recomputing the sum from the store when a pass completes, so a pass that
 clears the flag without finishing the job is re-raised by the next comparison and
 nothing is lost. Without that recompute the sum is incremental only, and a sum
@@ -1122,8 +1139,8 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   itself: the refusal names the row's presence but not the version the authority
   holds for each refused cell, so 223 of 5331 re-stamped field cells land on or below a held
   version, 66 of them exactly on it and 157 below, and 190 are discarded as stale,
-  silently, with both sides agreeing and nothing dirty. These counts were taken before the doc plane was keyed by column and have not been
-  re-taken against the settled schema. That 190 is 3.6% of the 5331 field cells, or
+  silently, with both sides agreeing and nothing dirty. Re-taken against the settled column-keyed schema, these counts did not move:
+  4.43% against 4.44%, and the field-cell rate 3.56% against 3.56%. That 190 is 3.6% of the 5331 field cells, or
   4.4% of the 4282 clamp re-stamp
   events, and it is classified at push time, which is why 190 + 34 exceeds 223 by one. The collision has a second face the loss count
   cannot show: 34 **of those 66** win the hash instead of losing it, silently
