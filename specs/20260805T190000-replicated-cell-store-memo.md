@@ -58,14 +58,20 @@ floor, repair scheduling and ownership, the authority store shape, and the lifet
 re-mint. `docs/adr/README.md` asks for one decision per record and says an ADR is
 not a spec.
 
-So the condition is not reachable by cutting words. Two things would move it. Split
-the clamp, re-stamp and refusal subsystem into its own record: it is self-contained
-at 260 lines, it is where rounds 8 to 14 spent almost every defect, and ADR-0213
-already proved the split works by taking detection out. And move Consequences and
-Considered alternatives, 319 lines between them, into this memo, which is where the
-README puts the deep evidence and which already carries the Rejected table. That
-leaves a record of about 850 lines that decides one thing, and it makes the next
-round's surface the design rather than the writing about it.
+So the condition is not reachable by cutting words. Two things move it, and the
+first is **done**: the clamp, re-stamp and refusal subsystem is now
+[ADR-0214](../docs/adr/0214-a-clamped-write-is-re-stamped-because-a-store-must-lower-a-version-it-holds.md),
+260 lines lifted out verbatim with its own Context and Consequences, leaving
+ADR-0212 at 1180. It was self-contained, it is where rounds 8 to 14 spent almost
+every defect, and ADR-0213 had already proved the split works by taking detection
+out. Every extracted line was verified present in the new record before the old one
+was cut.
+
+The knob table, the six priced refusals and the 4.4% partition are the evidence
+behind ADR-0214 and stay here, which is what the README means by an ADR not being a
+spec. The second move is still open: Consequences and Considered alternatives,
+319 lines between them, belong here too, which would leave ADR-0212 near 860 lines
+deciding one thing.
 
 **What is genuinely settled**, and should not be re-derived by whoever picks this
 up: the five core ideas; that the re-stamp is load-bearing and cannot be replaced

@@ -4,7 +4,10 @@
 - **Date:** 2026-08-06
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0212 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
-- **Relates:** [ADR-0212](0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md),
+- **Relates:** [ADR-0214](0214-a-clamped-write-is-re-stamped-because-a-store-must-lower-a-version-it-holds.md),
+  whose clamp refusal no longer schedules a whole-store pass, because this record's
+  digest schedules the identical pass one round later and only on a real mismatch.
+ [ADR-0212](0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md),
   which decides the cell store this verifies and owns the repair pass a mismatch
   schedules. That record converges without this one; this one detects that it
   failed to.
