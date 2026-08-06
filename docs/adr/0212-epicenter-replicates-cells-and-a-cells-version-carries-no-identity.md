@@ -88,7 +88,7 @@
   [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md)
   and [ADR-0168](0168-lenses-are-complete-pure-json-interpretations.md) (why
   storage must be schemaless), [ADR-0208](0208-every-app-folder-is-markdown-beside-one-queryable-database.md)
-  (the projection that makes the replica's own query shape irrelevant),
+  (the projection that makes the replica's own query shape irrelevant).
 
 
 ## Context
@@ -687,7 +687,7 @@ floor = (max(the authority's time,
            : rank)
 ```
 
-**Both terms are load-bearing, and every clamped variant of the second is
+**All three terms are load-bearing, and every clamped variant of `held` is
 provably inert.** Taking the floor from the authority alone loses the write
 outright when the authority holds no presence for the row, because `held` is then
 undefined and the re-stamped cell lands under the replica's own presence. Taking
@@ -715,7 +715,7 @@ replicas skewed -3 to +12 minutes, 4282 clamp re-stamps (`r11b-fuzz.ts`):
 | `max(A, held, local)` (**decided**) | 0 | 25 | 4 | 497 |
 
 Neither dominates. The decided floor removes 445 below-authority re-stamps and
-466 of the 470 destroyed creates and deletes that follow from them, and pays 18
+445 of the 470 destroyed creates and deletes that follow from them, and pays 18
 more lost intents (3.8%) for importing another device's skew into a re-stamp
 applied to a device already known to have a bad clock. That is the honest shape
 of the choice, and no third formula recovers both: the clamp that would buy them
@@ -725,7 +725,7 @@ back is the one the invariant above makes inert.
 authority's held presence at refusal time, and pushing the re-stamped cells on the
 *next* round lets another replica move it in between, after which the re-stamped
 presence is refused as stale and the user's create or delete is gone with nothing
-dirty. Measured over 10,454 re-stamps: the re-push settles at an inner depth of 1,
+dirty. Measured over the 4,282 re-stamps of the decided run above: the re-push settles at an inner depth of 1,
 the 32-round cap is never reached, and a device three days fast settles in one
 inner round.
 
@@ -870,7 +870,8 @@ on rebuild, and **the re-mint is bounded**: a replica presenting a cursor beyond
 the authority's counter plus one page is a corrupt client rather than a rewound
 store, and is answered with a reset scoped to that client. Unbounded, one
 unauthenticated request forces every replica to re-bootstrap, which at this record's own
-fixture and its own 121 bytes per cell is about 945 MB across three devices, and
+fixture and its own 121 bytes per cell is about 1.0 GB across three devices once
+bodies are counted, and
 1.4 GB at the narrow shape.
 
 **A lifetime alone cannot see the case it was added for.** It is a column of the
@@ -1041,20 +1042,20 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   earlier figure in this record, 0.57 s and 16.8x among them, priced a query this
   record does not decide: no `json_valid` guard, no `_replica_body` join, and no
   body render. The render is the term that dominates and no implementation can
-  avoid it, because a body is Yjs bytes that no SQL restores: 4.9 microseconds per
-  row, 977 ms and 5.05 s on its own, which alone exceeds the whole figure the
-  record used to quote. **Every ratio this record quoted before round 11 charged
+  avoid it, because a body is Yjs bytes that no SQL restores: 6.7 and 6.2 microseconds per
+  row, 1330 ms and 6159 ms on its own, which alone exceeds the whole figure the
+  record used to quote. An earlier draft said 4.9 microseconds, 977 ms and 5.05 s;
+  no saved run produces that triple, and the figures here are the same subtraction
+  this record already reports two bullets down. **Every ratio this record quoted before round 11 charged
   that render to the cell layout alone**, because the `_replica_row` opponent
   carried prose inline as text and never paid it: the two arms produced different
   content fingerprints, which is how the mismatch was finally caught. Priced with
   the body plane on both sides, the arms fingerprint identically and the layout's
   own cost is 1.76x and 1.31x. The body plane costs the opponent 1136 ms and
-  5604 ms, and is 54% and 78% of the cell store's own rebuild.  No repeat runs of the decided query exist, so these figures carry one
+  5604 ms, and is 54% and 77% of the cell store's own rebuild.  No repeat runs of the decided query exist, so these figures carry one
   significant figure. The cell arms repeat within about 3%, but the whole-row
   denominator's own control arm moves -15.4% to +11.9% across runs, so the ratio's
-  honest band at 12 columns is roughly 1.6x to 1.9x rather than a bare 1.76x. The render is 960 ms of the total at 12
-  columns and about half the added cost at 3; the rest was a join written the way
-  this record elsewhere refuses. That is a cold start, a
+  honest band at 12 columns is roughly 1.6x to 1.9x rather than a bare 1.76x. That is a cold start, a
   repair, or a re-import, and it is the price of the layout rather than a
   steady-state cost.
 - **Collapsing presence into the cell relation buys almost no time, and that is

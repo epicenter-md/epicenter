@@ -185,15 +185,13 @@ So a repair pass that completes **recomputes `digest_sum` on both sides**: the
 replica from `_replica_cell` and `_replica_body`, scoped by `repair_from`, and the
 authority from `_authority_cell` and `_authority_body`.
 
-**The authority's half cannot be a running total, because the schema holds no
-state for one.** `_authority_metadata` has one 8-byte slot and it is `digest_sum`
-itself: accumulating a partial sum there leaves garbage rather than drift the
-moment a replica goes offline mid-pass, and two interleaved passes leave the
-loser's partial as the durable value. Measured: a pass abandoned after six of ten
-pages leaves the authority summing 60% of its own store, which every replica then
-mismatches every round. So the authority recomputes **terminally, under its own
-write lock**, which it can do and a replica cannot because it is not the side a
-user is typing into.
+**Neither side's half can be a running total held nowhere.** Accumulating a
+partial sum in `digest_sum` itself leaves garbage rather than drift the moment a
+replica goes offline mid-pass, and two interleaved passes leave the loser's
+partial as the durable value. Measured: a pass abandoned after six of ten pages
+leaves the side summing 60% of its own store, which every peer then mismatches
+every round. Both sides therefore carry a separate accumulator, `repair_sum`,
+which is where the next section starts.
 Recomputing one side only leaves the other's drift permanent, and an authority
 whose sum has drifted is a mismatch every replica repairs every round forever,
 which is the failure this section exists to remove. **The recompute derives from content, and the arithmetic has to say so.** A pass
@@ -230,7 +228,7 @@ The cost is not free and an earlier draft said it was: hashing every cell is
 **+295% on top of the scan** the pass already pays, about 1.9 seconds of added hashing on a
 2.5 second scan-plus-hash at 2.6M cells, and the body half is a document load and
 re-encode at 8.9 microseconds per small body and 38.6 at 40 KB, so 196k bodies is
-another 1.8 to 7.6 seconds. The second of those is arithmetic over a per-body cost
+another 1.7 to 7.6 seconds. The second of those is arithmetic over a per-body cost
 measured on 2000 documents, not a measured pass: at 196k bodies of 40 KB the
 working set is about 7.8 GB of `doc_state` and the scale charges no disk, the same
 disclosure ADR-0212 makes for its own 8.2 GB figure. A
@@ -245,7 +243,8 @@ seconds**, against about 1.3 for the bucket enumeration, which hashes an address
 where this hashes an address, a version and a value, and this section now mandates it on every completed pass. The
 refusal stands on the resumability argument alone. A terminal scan on the replica would hold that as
 one window, and so would a terminal scan on the authority: measured on a real
-file, scan-plus-hash-plus-commit is 0.81 microseconds per cell, so 2.6M cells hold
+file, scan-plus-hash-plus-commit is 0.81 microseconds per cell on a 500k-cell file,
+against 0.71 measured standalone at the full fixture, so 2.6M cells hold
 the write lock for about **2.1 seconds** before COMMIT, plus the body half, and a
 concurrent push fails after burning its full `busy_timeout` (measured at 0, 1000
 and 5000 ms). An authority is the side N replicas push into, so that window is an
@@ -323,18 +322,18 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   record rejects. Hashing 40 KB of rendered text and 40 KB of `doc_state` cost
   13.23 and 13.24 microseconds, so the input's shape is not what matters; its
   length is.
-- **Neither the recompute nor the body entry has been fuzzed as decided.** Every
-  trace count attributed to them ran an earlier mechanism: the fuzz implements a
-  terminal scan, which this record rejects for the replica. That is the third time
-  a number here has been attributed to a mechanism that was not the one running,
-  and it is the reason the counts are reported as untested rather than restated.
-- **The body entry has no convergence evidence.** The 1200-trace fuzz reported for
-  it ran the snapshot entry, which this record calls blind to the thing it
-  compares, so "zero missed divergences" holds only because body text never
-  diverged in those traces and the detector could not have seen it if it had. The
-  entry is verified against its four constraints and against nothing else. That is
-  the same error twice: evidence attributed to a mechanism that was never the one
-  running.
+- **The recompute has not been fuzzed as decided.** The fuzz implements a terminal
+  unscoped scan, where this record decides a recompute scoped by the pass's own
+  watermark and accumulator. Every trace count attributed to the recompute
+  therefore ran an earlier mechanism, and the counts are reported as untested
+  rather than restated.
+- **The body entry HAS been fuzzed as decided**, and an earlier draft of this
+  bullet said it had not. The 1200-trace run behind these counts folds the
+  canonical re-encode this record settles on, not the snapshot entry it rejects:
+  79,297 comparisons, 0 body divergences, 0 missed divergences, and a 0.08%
+  in-flight false-alarm rate. The caveat that survives is narrower: body text never
+  diverged in those traces, so the run confirms the entry does not false-alarm and
+  does not confirm it would catch a divergence that never occurred.
 - **That is the price of knowing.** ADR-0212's repair pass is a correct repair
   that, without this, nothing can ever trigger: the record can say "full
   reconciliation always converges" and be unable to say when to run it.
