@@ -589,27 +589,38 @@ if the address were later re-created at a version between the two.
 
 ## Rejected, with what each refusal costs
 
-Measured at 200k rows of 12 columns and 1M rows of 3, on-disk after `VACUUM` and
-`wal_checkpoint(TRUNCATE)`, projections verified to produce identical output.
-Nothing in this table gets re-litigated without a number that beats it.
+Measured at 200k rows of 12 columns and 1M rows of 3, on the schema this record
+settles on, on-disk after `VACUUM` and `wal_checkpoint(TRUNCATE)`. Every
+cell-store projection is verified identical to every other by fingerprint; the
+whole-row JSON baseline is distributional rather than cell-for-cell, because its
+fixture desynchronises at the first dead row. Nothing in this table gets
+re-litigated without a number that beats it.
+
+A third adversarial pass rewrote most of this table. Two corrections are worth
+naming because they moved a decision rather than a digit. The projection win from
+collapsing presence into the cell relation was 2.1x against an opponent query
+that joined before grouping and paid a temp b-tree over every cell; written
+properly it is 1.02x, so that collapse is justified by interpretability and not
+by speed. And the dirty index's cost and its saving had been quoted from two
+mutually exclusive states, one with every cell owed and one with none.
 
 | Refused | Why | Measured cost of refusing it |
 | --- | --- | --- |
-| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | the store is 2.13x and 1.67x its size (181.4 vs 85.3 MB, 345.2 vs 206.2 MB), and re-derives one changed row 1.69x and 1.21x slower, and rebuilds the whole projection 16.8x and 8.6x slower |
-| Real typed columns | ADR-0125: nowhere to put an unknown key | 3.7x the disk (181.4 vs 48.5 MB) and 2.7x the scattered read (0.010 vs 0.0037 ms) |
-| One JSON record per row plus a version map | one field change ships the whole record and map; merge-group names become an unversioned wire contract | wire 1039 vs 121 bytes (8.6x) at 12 columns, 353 vs 121 (2.9x) at 3 |
-| Interning the address | the replica must be readable in a SQL console with no joins | at most 32% of the file, before dictionary tables and integer keys are added back |
+| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | the store is 2.12x and 1.66x its size (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), and re-derives one changed row 1.69x and 1.21x slower, and rebuilds the whole projection 16.2x and 8.5x slower |
+| Real typed columns | ADR-0125: nowhere to put an unknown key | 3.7x the disk (181.0 vs 48.5 MB), against a fixture that stores no version, no `dirty` and no presence, so the ratio is a floor rather than like for like |
+| One JSON record per row plus a version map | one field change ships the whole record and map; merge-group names become an unversioned wire contract | 8.9x at 12 columns and 3.0x at 3, like for like |
+| Interning the address | the replica must be readable in a SQL console with no joins | at most 34% of the file, before dictionary tables and integer keys are added back |
 | Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +65 MB (+36%) and +101 MB (+29%) |
-| A per-cell cursor on the replica | it is a durable local claim about the authority's state | the index alone is 85.3 MB, 32% of the file |
-| An index on `dirty` | the scan it replaces is cheap and once per round | +75 MB and +92 MB with local work standing, to save 46 ms and 92 ms per sync round |
-| Row presence in its own relation | one algebra, one relation, and an address that can be reused | 2.1x and 1.8x slower projection rebuild (1230 vs 590 ms, 2090 vs 1122 ms), for 1.7% and 4.9% less disk |
+| A per-cell cursor on the replica | it is a durable local claim about the authority's state | about 20 MB for the column, 10% of the file; the 85 MB figure is an index on it that nothing in this design would query |
+| An index on `dirty` | the scan it replaces is cheap and once per round | +81 MB and +126 MB with local work standing, to save a 48 ms and 112 ms scan; in the state where it costs that, it saves 3.6% and 8.4% |
+| Row presence in its own relation | one algebra, one relation, and an address that can be reused | 1.02x and 1.27x slower projection rebuild (582 vs 568 ms, 1400 vs 1104 ms), once the two-relation query groups before it joins, for 1.7% and 4.9% less disk |
 | A generation column plus a `resurrect` verb | the presence cell's version already orders incarnations | one column on every cell, one new API surface, and it loses a concurrent write from a replica that has not seen the bump, where R1 and R2 keep it |
-| A 16-byte `version_hash` | the merge predicate's value guard closes the same hole | +36 MB (+11.5%) |
+| A 16-byte `version_hash` | the merge predicate's value guard closes the same hole | +19.4 MB (+10.7%) and +29.5 MB (+8.6%) |
 | A replica-global `version_seq` | it is not durable across a restart | a same-millisecond rewrite after a crash is silently discarded 50.3% of the time, measured over 20,000 trials |
 | A strict `>` merge predicate | the authority echoes a won push at its own version | the cell never clears `dirty` and re-pushes every round forever |
 | A single body delivery slot | an acknowledgement clears bytes the authority never received | every edit made during a push round trip is lost permanently, and no version exists that could notice |
 | Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a 32 KB bucket exchange plus 586 address and version pairs, against one cell for a cursor |
-| An incremental digest as a verifier, for now | the store lifetime catches the realistic case for one column | 72 KB of disk and +17% to +27% per local write, an upper bound; it answers "are we equal" in 0.29 ms for 8 bytes |
+| An incremental digest as a verifier, for now | the store lifetime catches the realistic case for one column | 72 KB of disk, about +20% per local write and +63% on a bulk seed; it answers "are we equal" in 0.29 ms for 8 bytes |
 | Renaming `patch` to `set`, and deleting `create` | `create` is the only verb that can reuse an address, and `patch` is already the right name | churn with no measured benefit, and a merge rule that cannot be expressed |
 | Terminal, absorbing row death | it makes an address single-use, against ADR-0206 | a provider-keyed row never returns: 30 reconciler passes at strictly later versions leave it absent |
 | An unconditional cell drop on `absent` | it does not converge | a cell at a dead address is retained, unreadable, until the address is re-created |

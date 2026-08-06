@@ -112,9 +112,10 @@ That is deleted. It cost a relation, an algebra, and a join, and it made an
 address single-use for the lifetime of the Epicenter, which directly contradicts
 what ADR-0206 exists to allow.
 
-Whole-row JSON remains the **bootstrap transfer** format, where it measures 2.9x
-faster to seed once JavaScript hashing and CHECK constraints are held constant,
-and 53% smaller at 200k rows of 12 columns (40% at 1M rows of 3). It is never a
+Whole-row JSON remains the **bootstrap transfer** format, where it measures 3.0x to
+3.4x faster to seed once JavaScript hashing and CHECK constraints are held
+constant on both sides, about 6x as the two schemas actually ship, and 53% smaller
+at 200k rows of 12 columns (40% at 1M rows of 3). It is never a
 stored shape.
 
 ### The layout
@@ -303,8 +304,8 @@ two replicas holding different values at one exact version replace each other's
 copy on every exchange, oscillating forever while both read as clean. That needs
 a 64-bit hash collision at the same `(ms, seq)`, so it is vanishingly unlikely,
 and it never self-heals, and the guard costs nothing. Widening the hash to 16
-bytes would also close it and was measured at **+36 MB (+11.5%)**, so the guard
-is taken and the wider hash refused.
+bytes would also close it, and on the decided schema measures **+19.4 MB (+10.7%)
+and +29.5 MB (+8.6%)**, so the guard is taken and the wider hash refused.
 
 ### An address is reusable, and the presence cell's version is the generation
 
@@ -400,9 +401,10 @@ everything else here uses.
 A cell carries an explicit `dirty` flag, **with no index**. A partial index on
 `dirty = 1` over a `WITHOUT ROWID` table carries the entire primary key per
 entry, which is the same cost this record refuses a replica-side cursor for: it
-measured **+75 MB at 200k rows of 12 columns and +92 MB at 1M rows of 3**, on a
-replica with local work standing. The scan it replaces costs **46 ms and 92 ms**
-respectively, once per sync round.
+measured on the decided schema at **+81 MB and +126 MB** with local work standing.
+The scan it replaces costs **48 ms and 112 ms** when nothing is owed, which is the
+common case, and in the state where the index actually costs those megabytes it
+saves only 13 ms and 50 ms, because both sides then have to return every cell.
 
 Encoding delivery as timestamp equality was tried and fails: write at T, confirm
 at T, write a new value at T again, and a derived `confirmed = written` flag reads
@@ -448,7 +450,10 @@ vector produces a causally gapped update the authority accepts and buffers while
 its text never advances, and the quiet variant is a 13-byte no-op that "succeeds"
 and confirms state the authority does not hold. A marker that decides *what* to
 push fails silently and self-perpetuates. The unsent bytes claim only what the
-replica can actually know, and measured smaller (253B versus 605B).
+replica can actually know. An earlier exploration measured the accumulated tail
+smaller than the vector diff (253B against 605B); that comparison is not
+reproduced by this record's harness, and the refusal rests on the silent-failure
+argument above rather than on the byte count.
 
 ### The push response is a merge input, including its refusals
 
@@ -493,9 +498,12 @@ and the dependency is real, including for any future non-JavaScript authority.
 an address primary key with a secondary cursor index, is 2.9x slower on the
 authority's only range question at a fixed fixture, and 6.8x slower once cursors
 are assigned in arrival order rather than address order, which is what a cursor
-means. Returning rows rather than counting them, it is 964 ms against 285 ms. It
-is disk-neutral and merge-neutral: the two merge figures differ by less than the
-1.9x first-touch penalty that sits on either of them.
+means. Returning rows rather than counting them, it is 964 ms against 285 ms. It is
+disk-neutral. It is **not** merge-neutral: on a sequential fixture with the
+redundant read removed, the chosen shape merges in 14.1 microseconds against 7.3,
+so it pays about 1.9x there. That is the price of moving a row to take a new
+cursor, it is paid once per changed cell rather than once per served page, and it
+is the trade this record takes deliberately rather than a wash.
 
 A new cursor is assigned only on a **strict** version increase, never on the
 equal case. Otherwise a retried byte-identical push takes fresh cursors for
@@ -503,8 +511,10 @@ everything it re-sent and redelivers the entire dataset to every other replica.
 
 The authority keeps current state only, with no history, so an arbitrarily stale
 cursor still works and bootstrap is just "everything since cursor zero".
-**A replica never stores a per-cell cursor**: that index measured 85.3 MB, 32% of
-the file.
+**A replica never stores a per-cell cursor**, because it would be a durable local
+claim about the authority's state. The column itself is about 20 MB, roughly 10%
+of the file; an index on it, which nothing in this design would even query, is
+85 MB.
 
 **The authority names its own lifetime, and returns it with every response.**
 This is ADR-0170's noun, not a second one: that record already decides that a
@@ -573,12 +583,13 @@ above.
   skewed version it merged, so a correct clock inherits that floor for that cell:
   the scheme is `max(observed)` bounded per cell rather than globally, which is
   better than an HLC's global propagation and is not the absence of propagation.
-- **The store costs 2.13x whole-row JSON on disk** (181.4 MB against 85.3 MB at
-  200k rows of 12 columns; 345.2 MB against 206.2 MB, or 1.67x, at 1M rows of 3),
-  and 3.75x its own payload. At 1M rows of 3 columns the payload ratio falls to
-  2.54x, so the multiplier is a function of row width and a single figure for it
+- **The store costs 2.13x whole-row JSON on disk** (181.0 MB against 85.3 MB at
+  200k rows of 12 columns, so 2.12x; 342.4 MB against 206.2 MB, or 1.66x, at 1M
+  rows of 3),
+  and 3.69x its own payload. At 1M rows of 3 columns the payload ratio falls to
+  2.48x, so the multiplier is a function of row width and a single figure for it
   is not meaningful. Interning the address would
-  recover at most 32%, before adding back dictionary tables and integer keys, and
+  recover at most 34%, before adding back dictionary tables and integer keys, and
   is refused: the replica's first duty is to be readable in a SQL console, and an
   interned file needs three dictionary joins before it says anything.
 - **Legibility is bought with views, not with columns.** Storing the version as
@@ -590,12 +601,26 @@ above.
   costs (6.9 against 4.09 microseconds, 4.79 against 3.95). That is the operation
   that runs in steady state, because a write touches one row, and the margin
   there is small.
-- **Rebuilding the WHOLE projection costs 590 ms at 2.4M cells and 1122 ms at
-  3M**, against 35 ms and 130 ms: 16.8x and 8.6x. That number is a cold start, a
+- **Rebuilding the WHOLE projection costs 568 ms at 2.4M cells and 1104 ms at
+  3M**, against 35 ms and 130 ms for whole-row JSON. That is a cold start, a
   repair, or a re-import, and it is the price of the layout rather than a
-  steady-state cost. Keeping presence in its own relation would have cost 1230 ms
-  and 2090 ms, so the collapse recovered 2.1x and 1.8x of it for 1.7% and 4.9%
-  more disk. Every projection above was verified to produce identical output.
+  steady-state cost.
+- **Collapsing presence into the cell relation buys almost no time, and that is
+  worth stating plainly.** An earlier draft claimed 2.1x and 1.8x. That was an
+  artifact of a badly written opponent: joining `_replica_row` before grouping
+  forces a temp b-tree over every cell. Written the obvious way instead, grouping
+  first and joining liveness once per row, two relations project in 582 ms and
+  1400 ms against one relation's 568 ms and 1104 ms: **1.02x and 1.27x**, for
+  1.5% and 4.1% more disk. The collapse is justified by interpretability and by
+  being one relation with one algebra rather than two, and it is **separable from
+  the correctness fix**: dropping absorbing death is what makes an address
+  reusable, and R1 and R2 work equally well with presence in its own relation.
+- **The projections of every cell-store shape are mutually identical**, verified
+  by fingerprint. The whole-row JSON baseline is **not** comparable cell for cell
+  and was never verified to be: its fixture desynchronises from the others at the
+  first dead row, because `cellValue` draws a variable number of random values per
+  column. The distributions match, so the storage and timing comparisons against
+  it are unbiased, but they are distributional rather than exact.
 - **Counters are refused.** "Add one" is not expressible; two devices each adding
   one yields one. None exist today, and one would need its own CRDT regardless.
 - **Every value must round-trip canonical JSON byte-identically.** This is newly
@@ -660,8 +685,9 @@ including what each refusal costs, is in the memo.
   redundant, and because a generation loses a concurrent write from a replica
   that has not seen the bump, where R1 and R2 keep it.
 - **Real typed columns, one SQL table per Lens table.** Cheapest on disk by a
-  wide margin (48.5 MB, 3.7x smaller than the cell store) and fastest to read
-  (0.0037 ms per row, against 0.010 ms). Refused on correctness, not on
+  wide margin (48.5 MB against 181 MB), though that fixture stores no version, no
+  `dirty`, and no presence, so it is a projection rather than a replica and the
+  ratio is a floor rather than a like-for-like. Refused on correctness, not on
   performance: ADR-0125 requires a release to preserve values it does not
   understand, and a typed column has nowhere to put an unknown key. The escapes
   are an `_extra` JSON column with its own embedded versions, which rebuilds the
@@ -669,7 +695,7 @@ including what each refusal costs, is in the memo.
   disagree.
 - **One JSON record per row with a parallel version map.** Cheaper on disk and
   faster to seed, and refused because one field change ships the whole record and
-  the whole map (1039 bytes against 121, 8.6x at 12 columns and 2.9x at 3) and
+  the whole map (8.9x at 12 columns and 3.0x at 3, like for like) and
   because declaring merge groups makes the group names an unversioned wire
   contract a peer on another release cannot interpret.
 - **A hybrid logical clock with an actor id.** Its counter is adopted; its actor
@@ -682,12 +708,13 @@ including what each refusal costs, is in the memo.
   which forfeits the SQL projection.
 - **A dirty bit derived from timestamp equality.** Elegant, and it silently loses
   a same-millisecond rewrite.
-- **An index on `dirty`.** Costs up to 75 MB and 92 MB, around 30% of the file,
-  to save a 46 ms and 92 ms scan taken once per sync round.
+- **An index on `dirty`.** Costs up to 81 MB and 126 MB, around 30% of the file,
+  to save a 48 ms and 112 ms scan taken once per sync round; and in the state
+  where it costs that, it saves 3.6% and 8.4% rather than the whole scan.
 - **Readable version columns.** ISO-8601 and hex order identically to the compact
   encoding and cost 36% and 29% more disk. A view is free.
-- **A 16-byte version hash.** Closes the exact-version oscillation for +36 MB.
-  The value guard in the merge predicate closes it for nothing.
+- **A 16-byte version hash.** Closes the exact-version oscillation for +19 MB and
+  +30 MB. The value guard in the merge predicate closes it for nothing.
 - **Range-based set reconciliation instead of a cursor.** It would delete the
   cursor and make the authority just another peer. Refused, and not on the
   symmetry argument previously given: symmetry was never the reason to want it.
@@ -700,9 +727,12 @@ including what each refusal costs, is in the memo.
   all, and it was measured rather than argued: a 4096-bucket table of modular
   64-bit sums costs **72 KB** of disk and answers "are the two sides actually
   equal" in **0.29 ms for 8 bytes on the wire**. It is deferred, not refused. Its
-  price is on the write path, at **+17% to +27% per local write**, and that is an
-  upper bound because the measurement charges it a read of the old version that a
-  real merge already performs. It is deferred because the store lifetime catches
+  price is on the write path, at roughly **+20%** per local write, and **+63% on a
+  bulk seed**. An earlier draft called that an upper bound because the measurement
+  charged it a read of the old version a real merge already performs; that is
+  withdrawn. Removing the read moves the premium by about three points, which is
+  inside the 30% run-to-run spread of that metric, so the honest statement is one
+  significant figure. It is deferred because the store lifetime catches
   the realistic divergence (a restored or rewound authority) for one column, and
   the bidirectional repair pass can be triggered on demand or on a schedule
   without it. Adopt it if silent divergence is ever actually observed. The sums
