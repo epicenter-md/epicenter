@@ -686,9 +686,20 @@ hole and it is worse there, because the push takes a cursor, so every replica pu
 the deleted row's prose back and the sums differ permanently on identical
 user-visible content. One naming a **newer** generation replaces `doc_state` rather
 than merging into it: `mergeUpdatesV2` across generations is what would
-splice the deleted incarnation's prose into the live row. **opening a body whose generation is not the row's
-current presence version replaces it** with an empty document at the current
-generation and both slots cleared; and **the projection renders such a body as
+splice the deleted incarnation's prose into the live row. **opening a document whose generation is OLDER than the row's current presence
+version replaces it** with an empty document at the current generation and both
+slots cleared. The predicate is *older*, not *unequal*, and the difference is
+destructive: this record declares the ahead-of-row state reachable four lines
+below, and an unequal test destroys it. Measured, opening an ahead document under
+the unequal test discards another device's prose locally, R2 then collects the
+row it made stale, and the replica ends with no document while the authority and
+every other replica hold the text, with nothing dirty and the cursor spent. Edits
+made in that window stage at the dead generation, are refused as older, and are
+destroyed by the newer-generation reset. Under *older* the user opens the ahead
+document, sees the prose, types, stages at the generation the authority holds, and
+converges. **The projection gate keeps the unequal test**, because it must blank an
+ahead document or the live row renders a future incarnation's prose; and **the
+projection renders such a body as
 empty** until that happens. The write door is not optional, and the projection gate is not redundant beside
 it. The write door handles the body a replica already holds when the re-creation
 arrives, and R2's drop below handles the same case transactionally. The

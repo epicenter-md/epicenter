@@ -70,14 +70,22 @@ a version. The floor is
 ```txt
 held  = the presence version the AUTHORITY holds for this row, returned with the
         refusal, or zero when it holds none
-local = the presence version this replica holds for the row, or zero when it
-        holds none OR when the presence cell is itself among the refused cells
+local = the presence version this replica holds for the row, or zero when it holds
+        none OR when the row's presence cell is DIRTY, whether or not it is in
+        this refusal. Zeroing only on the refused set assumes a row's dirty cells
+        push together, which nothing decides: measured, a field refused in a round
+        its own dirty presence was not sent in floors at the skewed version and
+        the re-stamp lowers nothing, four rounds with no progress, which is the
+        livelock this record exists to break
 floor = (max(the authority's time,
              held.version_ms,
              local.version_ms),
          the millisecond came from a presence version
            ? that version's seq + 1 + rank
-           : rank)
+           : rank,
+         and when the maximum TIES across terms the presence branch is taken,
+         because the alternative lands the re-stamp at seq 0 under a presence
+         already above it and R1 discards it with nothing dirty)
 ```
 
 **All three terms are load-bearing, and every clamped variant of `held` is
@@ -124,14 +132,14 @@ replicas skewed -3 to +12 minutes, 4282 clamp re-stamps (`r11b-fuzz.ts`):
 
 | floor | presence re-stamped below the authority's own | then refused stale | destroyed by R2 | lost create/delete intents |
 | --- | --- | --- | --- | --- |
-| `max(A, local)`, and `min(held, A)` | 445 | 470 | 133 | 479 |
-| `max(A, held, local)` (**decided**) | 0 | 25 | 4 | 497 |
+| `max(A, local)`, and `min(held, A)` | 488 | 506 | 153 | 518 |
+| `max(A, held, local)` (**decided**) | 0 | 18 | 5 | 518 |
 
 Neither dominates. The decided floor removes 445 below-authority re-stamps and
 445 of the 470 destroyed creates and deletes that follow from them, and pays
 about **3% more lost intents** for importing another device's skew into a re-stamp
 applied to a device already known to have a bad clock. That is the honest shape
-of the choice. Only the first column is unambiguous: 0 against 422 to 499 in every seed block.
+of the choice. Only the first column is unambiguous: 0 against 418 to 524, disjoint in 20 of 20 seed blocks.
 The other three are small counters that move by half their value between blocks,
 so 1200 traces separates 488 from 0 and does not resolve 4 from 1. Across four disjoint
 1200-trace blocks the intent difference runs +18, -7, +33, +22, one block with the
