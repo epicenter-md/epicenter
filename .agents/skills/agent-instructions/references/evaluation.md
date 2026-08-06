@@ -79,9 +79,9 @@ Avoid brittle phrase matching. Assertions should check outcomes, not exact wordi
 `scripts/run-trigger-eval.ts` runs a stored corpus of should-trigger and
 near-miss prompts. The corpus lives at `evals/routing.json` and currently covers
 the two boundaries where a wrong pick costs the most: the review/simplification
-cluster, where several skills legitimately overlap, and the
-consultation/delegation/handoff cluster, where the wrong choice burns a whole
-session. Each case carries a prompt, the anchor phrases that prompt contains,
+cluster, where several skills legitimately overlap, and the Claude
+enlistment/handoff cluster, where the wrong choice burns a whole session. Each
+case carries a prompt, the anchor phrases that prompt contains,
 the skill that should own it (`null` for a near miss), and the skills that must
 not answer.
 
@@ -120,12 +120,11 @@ silent skip.
 
 `--live` drives the Claude CLI, so it can only measure Claude-routed cases. A
 case carrying `"router": "codex"` is reported as `NOT MEASURED` and left out of
-the pass count. `consult-claude` and `delegate-claude` are written for a Codex
-session in their own descriptions, so a Claude probe answering them picks a
-neighbour every time; that is a category error in the measurement, not a defect
-in the description. Measuring those needs a Codex-side probe that does not exist
-yet. Do not edit a description on the strength of a probe that could not have
-routed to it.
+the pass count. `enlist-claude` is written for a Codex session in its own
+description, so a Claude probe answering it picks a neighbour every time; that
+is a category error in the measurement, not a defect in the description.
+Measuring it needs a Codex-side probe that does not exist yet. Do not edit a
+description on the strength of a probe that could not have routed to it.
 
 Routing varies between runs, so re-run rather than trusting one pass, as
 [Prompt Set](#prompt-set) says. `--runs <n>` does that per case and reports a

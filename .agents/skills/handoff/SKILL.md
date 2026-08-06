@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: 'Draft a compact, cold-start prompt for the user to copy and paste into a manually operated Claude Code session, with Claude leading the mission and Codex optionally available through /codex:rescue. Use only when the user explicitly asks for a prompt, manual handoff, continuation in another chat or machine, or invokes /handoff, or when automated delegation is unavailable and the user wants the fallback artifact. Do not use when Codex should start a Claude session directly; use delegate-claude. Not for /goal lines or prompts shipped inside product code.'
+description: 'Draft a compact, cold-start prompt for the user to copy and paste into a manually operated Claude Code session, with Claude leading the mission and Codex optionally available through /codex:rescue. Use only when the user explicitly asks for a prompt, manual handoff, continuation in another chat or machine, or invokes /handoff, or when automated enlistment is unavailable and the user wants the fallback artifact. Do not use when Codex should start a Claude session directly; use enlist-claude. Not for /goal lines or prompts shipped inside product code.'
 argument-hint: "What should the next agent accomplish?"
 metadata:
   author: epicenter
