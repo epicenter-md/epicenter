@@ -179,10 +179,13 @@ has drifted from its own content is a mismatch no amount of repair can close: th
 pass converges the content, the comparison reads the sum, and the two never meet.
  The counts an earlier
 draft quoted here have no producing output and are withdrawn; the resumed-pass
-figure below is the sourced form of the same argument. At this record's fixture that is 2.6 M cells and about
+figure below is the sourced form of the same argument. At this record's fixture a full-range pass is 2.6M cells and about
 336 MB every round, forever, with nothing user-visible wrong.
 
-So a repair pass that completes **recomputes `digest_sum` on both sides**: the
+So a repair pass that completes **recomputes `digest_sum` on both sides**, subject
+to the precondition ADR-0212 decides (only a replica whose own scan derived every
+address exactly once, and a pass it finds already open when it opens the store did
+not): the
 replica from `_replica_cell` and `_replica_body`, scoped by `repair_from`, and the
 authority from `_authority_cell` and `_authority_body`.
 
@@ -298,9 +301,13 @@ where `present_tag` is one byte, `0x00` for a cleared cell and `0x01` for a cell
 that holds a value. Without it a cleared cell and a cell holding the empty string
 produce a **byte-identical preimage**, because both contribute zero value bytes and
 the empty string is storable: this record refuses `json_valid`, so nothing rejects
-it. Measured, the two fold the same entry over a fixed version, 1280 collisions in
-5440 legal tuples, and the merge predicate's value guard refuses both directions,
-so both sides read clean forever. That is verbatim the failure this section exists
+it. Measured, the two fold the same entry over a fixed version, 1280 collisions among
+6720 tuples, and the merge predicate's value guard refuses both directions, so both
+sides read clean forever. The family is reachable only where a value has
+desynchronised from its own `version_hash`: with the hash derived from the value,
+as ADR-0212 decides, a cleared cell and the empty string can never share a version.
+That is exactly the corruption this entry exists to catch, which is why the tag
+stays. That is verbatim the failure this section exists
 to prevent, and ADR-0212 had already solved the identical ambiguity one layer down
 by hashing a marker canonical JSON cannot produce; the entry simply never applied
 the same move. Both metadata singletons carry a
@@ -312,7 +319,7 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 ## Consequences
 
 - **It costs one 8-byte column per side and about half a local write again.**
-  Measured on the settled one-column schema across two runs of the live producer:
+  Measured on the settled one-column schema:
   **+49% to +66% at 12
   columns and +54% to +60% at 3**, across six runs of one unmodified probe, on a write that already pays ADR-0212's
   row-local floor. Against a store with neither, a local write costs **+82% to
@@ -411,7 +418,7 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   reached for whatever the CRDT library offered that sounded canonical, rather
   than asking what the question is about. The question is whether two sides hold
   the same document, so the answer is the document, and a check for this entry has
-  to test both directions: identical prose must agree, and different prose must
+  to test both directions: one merged operation set must agree, and different prose must
   differ. Testing only the first is what let the snapshot through.
 
 ## Considered alternatives

@@ -394,8 +394,8 @@ simply its own clock. The reference is
   which the store derives by a scan an implementation must cache (uncached it is a
   full scan of `_authority_cell` per ingest, 14.1 ms at 500,000 cells and about
   73 ms at this record's fixture, with no index over `version_ms`), because the held
-maximum only rises while the file is the same file, and which "ever accepted"
-cannot be derived at all, because R2 and overwrites remove rows;
+maximum only rises while the file is the same file, held rather than ever-accepted, because R2 and overwrites remove rows and no store
+without history can compute what it once held;
 and "the authority's time" means that quantity everywhere below: in the refusal
 payload, in the re-stamp floor, and in the inertness argument. A raw wall clock
 there is not a simplification, it is the livelock measured under "the clamp
@@ -436,7 +436,7 @@ Both components come from the row being written, and cost one row-local aggregat
 read per write. That read is not cheap: measured as an interleaved A and B in one
 database, against a control arm of two identical passes and with WAL checkpointing
 moved outside the timed region, it takes the median local write from about 7.0 to
-about 9.2 microseconds, **+18% to +38%** across four runs, with no consistent
+about 9.2 microseconds, **+18% to +38%** across six runs, with no consistent
 dependence on row width. Two earlier figures for this, "about 10%" and "at least double",
 were both artifacts: the first compared two different processes on two different
 schemas, and the second had no control arm, so a 3.6x drift within one arm was
@@ -836,11 +836,13 @@ what R1 refuses, so the debt would never clear.
 
 **A scheduled repair is one pair of columns, because neither source of obligation
 needs more.** `repair_from` is where a whole-store pass has reached, `repair_sum`
-is that pass's own accumulator, and non-NULL means one is owed. The accumulator is
-durable rather than in memory because a watermark cannot carry a partial total
-across a restart: measured, a pass that dies after three of ten chunks and resumes
-from its watermark alone commits a sum over 280 of 400 addresses, which is a
-permanent false mismatch that schedules a full pass every round forever. The
+is that pass's own accumulator, and non-NULL means one is owed. The accumulator is durable because a write folds a passed delta into it in the
+same transaction as the write, and because the **authority's** pass outlives the
+authority's own restart, where a watermark-only resume commits a sum over 280 of
+400 addresses, a permanent false mismatch that schedules a full pass every round
+forever. On a replica that harm is now unreachable by a different route: the rule
+below disqualifies a restarted pass from committing at all, so its accumulator
+carries the total rather than commits it. The
 authority holds the same pair, which is also what lets it fold ADR-0213's
 recompute into the pages it already serves instead of taking one terminal window
 under its own write lock.
@@ -873,8 +875,13 @@ a pass it finds already open when it opens the store did not.** The pair records
 where the scan reached, not whether it got there contiguously, so an adoption made
 before a restart is invisible afterwards: measured, a restarted pass believes it
 derived every address once, recomputes, and commits a sum that is not its content.
-`repair_from` non-NULL and not the sentinel at open is the bit, it costs no column,
-and the next comparison re-raises the pass.
+`repair_from` non-NULL and not the sentinel when this pass opens the store is the
+bit, and it disqualifies that pass rather than the process, so a later pass started
+cleanly at the sentinel recomputes normally; it costs no
+column, and the next comparison re-raises the pass. The rule is deliberately
+conservative and the cost is disclosed: a replica that restarts mid-pass pays a
+second full pass, and one that never completes a pass inside a single session
+never recomputes at all, so its own drifted sum is never repaired.
 An adopted watermark breaks that in both directions: forward by skipping what the
 other replica walked, and backward by re-deriving what this one already walked.
 "Covered the full range" is not the same criterion and admits the second case,
@@ -1057,7 +1064,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
 - **The silent-loss window is the ingest clamp forwards, and unbounded
   backwards.** A device whose clock is four minutes fast, which the clamp admits,
   wins against an edit made three real minutes later, and nothing tells anyone.
-  After a backward step of the authority's own clock it is the clamp width plus
+  After a backward step of the authority's own clock it is at most the clamp width plus
   that step, because the reference ratchets on what the authority already holds:
   measured, an hour's step back admits a write 55 minutes above the plain clock
   bound until the clock catches up. That is the deliberate price of the ratchet. A third window is the re-stamp
@@ -1165,7 +1172,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   flattering end of its own band: in that run the whole-row control arm sits at
   -15.4%, so the denominator is the slower of two identical arms, and an
   independent run gives 13.6x with a -0.6% control and 748 ms. The honest 12-column
-  layout term is **13.5x to 16x, 708 to 748 ms**. The 3-column side is clean. Round 11 corrected an overstatement
+  layout term is **13.5x to 16.3x, 708 to 748 ms**. The 3-column side is clean. Round 11 corrected an overstatement
   by installing an understatement of the same kind, and both terms are stated here
   because neither answers the other's question. An earlier
   measurement said 2.9 s and 64x, and it joined `_replica_body` before grouping,
@@ -1345,5 +1352,5 @@ commit before deletion, which cannot be written down before it exists.
   lifetime does not catch a restore, because it lives inside the file being
   restored, and neither does a cursor regression, because the cursor an authority
   is shown is what a replica read rather than what it wrote. The price paid is one
-  8-byte column per side and +63% to +66% on a local write. ADR-0213 carries the
+  8-byte column per side and +49% to +66% on a local write. ADR-0213 carries the
   rest.

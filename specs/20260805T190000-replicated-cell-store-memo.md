@@ -692,7 +692,8 @@ mutually exclusive states, one with every cell owed and one with none.
 | Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a body at `!body` |
 | Recomputing on "the scan covered the full range" rather than "derived every address exactly once" | an adopted watermark can sit BEHIND this replica's own scan, so the range is covered and part of it twice | 80 of 200 addresses derived twice and a permanent false mismatch on that replica until it walks a pass cleanly end to end |
 | Leaving the entry's `\0` delimiter to the address GLOBs | GLOB stops at the first NUL, so no CHECK ever saw one | `row_id "a\0b" + column "title"` and `row_id "a" + column "b\0title"` hash identically, a missed divergence in the detector itself. Closed with `instr(..., char(0)) = 0` on all four components, which costs nothing and refuses no legal address |
-| Quoting a band from whichever runs fit the sentence | five saved runs of one unmodified probe exist, and two consecutive claims used two different subsets of them | the 3-column digest premium was stated as +55% to +57% from two runs; a sixth run lands at +60%, outside the stated ceiling. The honest full-corpus bands are +49% to +66% and +54% to +60%, and +33% to +44% and +29% to +35% folded |
+| Quoting a band from whichever runs fit the sentence | six saved runs of one unmodified probe exist, and two consecutive claims used two different subsets of them | the 3-column digest premium was stated as +55% to +57% from two runs; a sixth run lands at +60%, outside the stated ceiling. The honest full-corpus bands are +49% to +66% and +54% to +60%, and +33% to +44% and +29% to +35% folded |
+| Crediting the durable replica accumulator with preventing the 280-of-400 resume | round 16's restart bit forbids a restarted pass from committing at all, so that harm is unreachable on a replica | the column is still earned, by the authority's own restart and by the same-transaction fold of passed deltas. What the bit costs instead is disclosed: a replica that never completes a pass inside one session never recomputes, so its drifted sum is never repaired |
 | An entry that lets a cleared cell contribute no value bytes | a cell holding the empty string contributes zero value bytes too, and the empty string is storable because this record refuses `json_valid` | 1280 collisions in 5440 legal tuples, all one family: the two fold the same entry, the merge's value guard refuses both directions, the projection differs, and both sides read clean forever. Closed with a one-byte `present_tag`, which is the move ADR-0212 had already made one layer down in `version_hash` |
 | Recomputing on a criterion the schema cannot evaluate after a restart | `repair_from` records where a scan reached, not whether it got there contiguously | a restarted pass believes it derived every address once and commits a sum that is not its content. The bit is `repair_from` non-NULL and not the sentinel at open, which costs no column |
 | A refusal that does not carry the authority's current `repair_from` | a refused replica has no legal `from` to send, so the sentinel is its only move | 0 passes complete in 300 rounds with two, three or four replicas repairing at once, the authority never past the first chunk of ten, because the replicas restart each other forever. Adopting the watermark the refusal carries completes in ten rounds |
@@ -701,7 +702,7 @@ mutually exclusive states, one with every cell owed and one with none.
 normalized diff |
 | Carrying the authority's held version for each REFUSED ADDRESS in the refusal, not only the row's presence | the floor's terms are presence versions only, so a re-stamped field can land on or below the version the authority already holds for that same cell | NOT YET TAKEN, and the only priced item here that is an open option rather than a refusal. Measured cost of NOT taking it: of 5331 re-stamped field cells, 223 land on or below the version the authority holds (66 exactly on it, 157 below) and 190 are discarded as stale, silently, with both sides agreeing and nothing dirty. That 190 is 3.6% of the 5331 field cells, or 4.4% of the 4282 clamp re-stamp
 events, and it is classified at push time, which is why 190 + 34 exceeds 223 by
-one. Of the 66 landing exactly on it, 34 WIN the hash instead of losing it, silently displacing the held value. The fix is a fourth term, of the same shape as the second; it was not taken in round 13 because the design was frozen, and every previous round's patch to this formula was defective |
+one. Of the 66 landing exactly on it, 34 WIN the hash instead of losing it, silently displacing the held value. The fix is a fourth term, of the same shape as the second; it was not taken in round 13, and the freeze that was the reason turned out not to have been held; it remains open on its own merits, and every previous round's patch to this formula was defective |
 | Leaving the clamp silent about a body's generation | a body copies its generation from the presence cell, so a clamped create produces an equally skewed one | the prose is lost from the device that typed it, the authority holds it under a generation no row has, and the digest mismatches every round while the pass re-sends bytes the authority refuses |
 
 `Supersedes` and `Amends` carry reciprocal links on both records, as
@@ -788,9 +789,12 @@ repairing once the authority recomputes, so it is a disclosure rather than a bre
 
 Round 16 proved a grep cannot establish provenance: a figure's producer is a
 **probe, an arm and a configuration**, not a digit string. So the figures name
-their own sources here. A claim not in this table, and not derivable by stated
-arithmetic from one that is, has no provenance and is withdrawn rather than
-re-quoted.
+their own sources here. The figures below name their own source. The rest are attributed in **Provenance**
+and **Harness** at the end of this memo, at file granularity rather than arm
+granularity, and the next round extends this table rather than re-quoting them.
+The rule is that a figure with no attribution at either granularity is withdrawn:
+sixteen families is where this starts, not where it ends, and read as a closed set
+it would withdraw eight of eight live figures sampled against it.
 
 | Figure | Probe | Arm | Saved output |
 | --- | --- | --- | --- |
@@ -803,12 +807,12 @@ re-quoted.
 | 954 to 976 ms and 4670 to 4755 ms render, 4.8 and 4.7 us per row | `r13m-render-cost.ts` | `RENDER ALONE` = `WITH` minus `WITHOUT`, control `WITHb` | `r13m-render-cost.out`, `-2.out`, `r14m-render-cost.out` |
 | +49% to +66% and +54% to +60% digest write premium | `r7m-digest-onecolumn.ts` | `FD vs F`, min statistic, six runs | `r7m-digest-onecolumn*.out`, `r13m-`, `r14b-`, `r16m-` |
 | +33% to +44% and +29% to +35% folded | same | `FDM vs F`, same six runs | same |
-| 8.3x to 9.1x and 5.1x to 6.6x row delete | `r7m-body-and-delete-onecolumn.ts` | `DD vs D`, control `D2 vs D` at 0.93x to 1.11x | `r7m-`, `r13m-`, `r14b-body-and-delete-onecolumn.out` |
+| 8.3x to 9.1x and 5.1x to 6.6x row delete | `r7m-body-and-delete-onecolumn.ts` | `DD vs D`, control `D2 vs D` at 0.93x to 1.11x | `r7m-body-and-delete-onecolumn.out`, `r13m-body-and-delete-onecolumn.out`, `r14b-delete.out` |
 | 2174 ms authority write lock, 0.84 us per cell | `r11-authority-lock.ts` | `scan + hash + commit`, `N=2600000` | `r13m-lock-2600k.out` |
 | 4282 re-stamps, 5331 field cells, 223 / 190 / 34 | `r15-b-restamp-partition.ts` | `TRIALS=1200` (the default 300 gives different counts) | `r16m-restamp-partition-1200.out` |
 | 81.3% against 0% digest storage type | `r11b-digest-io.ts` | `INTEGER` against `BLOB`, 400 rounds | `r11b-digest-io.out` |
 | 199,990 ms monotonic-guard drift | `r16-monotonic-drift.ts` | the refused `max(now, prev+1)`; moves with machine speed | `r16-monotonic-drift.out` |
-| 109,600 orderings over 255 subsets, zero divergent | `converge3.ts` | exhaustive, JavaScript model of the algebra, no database | `r15m-converge.out` |
+| 109,600 orderings over 255 subsets, zero divergent | `converge3.ts` | exhaustive, JavaScript model of the algebra, no database | `r15-g-converge3.out` (NOT `r15m-converge.out`, which is `converge.ts`'s) |
 | 1280 collisions in 5440 tuples, cleared against empty | `r16-nul.ts` | section E, before the `present_tag` | `r16-nul.out` |
 
 **Round 16 built a provenance checker, and round 16 proved it cannot work.** The
@@ -816,7 +820,7 @@ premise was that a figure is sourced when it appears in a saved output. It is no
 A null control settles it: of 549 figures nobody ever measured, **506 pass**, and
 per unit that is **99 of 99 fabricated percentages, 90 of 90 ratios, 200 of 200
 millisecond values and 100 of 100 byte counts**. Only four-significant-figure MB
-values discriminate at all. Every count the tool has printed is withdrawn:
+values discriminate at all. Every count the tool has printed ABOUT THESE RECORDS' SOURCING is withdrawn (the null-control counts stand, being a measurement of the tool rather than of the records):
 300/300/0 was wrong three ways (bare substrings, a per-file unit test vacuous for
 `s`, `x` and `B`, and sourcing from provenance reports that merely quote a claim),
 and the tightened 285/14/3 is an artifact of which audit files happened to be in
@@ -842,9 +846,9 @@ script, and it is the honest next step rather than a sixth tightening pass.
 `check-claims.ts` stays in the harness as a **coverage smoke test only**, useful
 for spotting a figure that appears nowhere at all, and its counts are not evidence.
 
-**Round 15 repaired the harness instead of counting it again.** Thirteen probes are retired to `superseded/` with a README. Eleven name
+**Round 15 repaired the harness instead of counting it again.** Thirteen probes are retired to `superseded/` with a README. Nine name
 `_replica_digest` or `repair_epoch`, artifacts the design deleted, so they cannot
-run and must not be repaired; the other two are covered elsewhere. None of the
+run and must not be repaired; the other four are covered elsewhere. None of the
 four round-14 called "broken by drift" was in fact repaired: three were retired,
 and the fourth was never broken at all. Round 14's count of fourteen dead was
 thirteen, because its error extraction read a `SQLiteError` string that
