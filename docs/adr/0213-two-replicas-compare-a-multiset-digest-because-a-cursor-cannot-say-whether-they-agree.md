@@ -332,8 +332,9 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 
 - **It costs one 8-byte column per side and about half a local write again.**
   Measured on the settled one-column schema:
-  a **median of +62% at 12 columns and +56% at 3** across ten runs of one
-  unmodified probe, with the run-to-run spread 49 to 69 and 48 to 63, on a write that already pays ADR-0212's
+  a **median of +62% at 12 columns and +56% at 3** across fifteen runs of one
+  unmodified probe (pooled over every raw sample, +55.6% and +50.7%), with three
+  of those runs carrying an inverted write-floor control and worth excluding, on a write that already pays ADR-0212's
   row-local floor. Against a store with neither, a local write costs **+82% to
   +117%**. The control arm sits within 5% and does not bound this: the ratio moves
   20 points between process invocations, so the envelope is the number and a
@@ -351,7 +352,7 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   is an entry to subtract. Measured across five runs of the live producer, whose control arms
   sit at 0.93x to 1.11x: a **median of 8.3x at 12 columns and 5.4x at 3**, spread
   7.5 to 9.1 and 5.1 to 6.6,
-  falling to **6.0x to 6.5x** and **4.2x to 5.0x** when the sum is folded in memory
+  falling to a median **6.0x** and **4.7x**, spread 5.5 to 6.5 and 4.2 to 5.2, when the sum is folded in memory
   and written once. Earlier drafts quoted a 1.00x to 1.02x control and a 5.2x
   folded figure from two saved outputs that have no producing script, so they
   cannot be reproduced and are withdrawn. "One add and one subtract per write" is true of a field write
