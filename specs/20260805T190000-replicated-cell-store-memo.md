@@ -19,10 +19,31 @@ The stopping condition, three adversarial passes in one round each reporting zer
 unfixed defects, has now failed twenty times, and the reason is measurable rather
 than a matter of effort.
 
-**The design stopped changing at round 2.** The five ideas below have not moved
-since, and they survive 109,600 exhaustive orderings, a 1200-trace lifecycle fuzz
-across 20 independent seed blocks, and a wider 255-subset sweep. No round since
-round 2 has changed a merge rule.
+**That report was wrong, and rounds 22 and 23 falsified it.** It claimed the design
+stopped changing at round 2 and everything since was prose. What actually happened
+is that twenty rounds of passes were reading 1400 lines of prose and finding prose
+defects, so the mechanism went unattacked. Narrowing the brief to "is there
+anything wrong with the DESIGN, and nothing else counts" found **four real
+mechanism defects in two rounds**, two of them silent user-data loss:
+
+- the open door replaced any document whose generation was **unequal** to the row's
+  presence, which destroys an ahead-of-row document. Measured, 23 of 63 delivery
+  subsets order-dependent under the old predicate and **0 of 63** under `older
+  than`, over 28,960 orderings.
+- the floor's `local` term, zeroed on a dirty presence, lands the re-stamped field
+  **under** a presence nothing lowered: 96 to 105 times per 400-trace block. The
+  answer is to drag the dirty presence into the re-stamp set, which beats both
+  earlier rules on both counters.
+- a newer-generation delivery left `pending_update` staged, so the deleted
+  incarnation's prose is **spliced permanently into the live row** on every device,
+  with both sides converged and the digest reading clean.
+- the tie rule named a branch where two terms attain the maximum, and one reading
+  loses the write.
+
+The five ideas below did survive all of it: 109,600 exhaustive orderings, a
+1200-trace fuzz across 20 seed blocks, a 255-subset sweep, and a 9,864,100-run
+ten-delivery sweep. **The core is settled and the machinery around it was not**,
+and the prose churn was camouflage rather than the whole story.
 
 **The record describing it grew 5.9x.** ADR-0212 was 244 lines when this session
 began and is 1429 now. The design it describes is 175 lines. The memo went from
