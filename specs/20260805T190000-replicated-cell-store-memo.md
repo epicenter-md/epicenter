@@ -688,6 +688,8 @@ mutually exclusive states, one with every cell owed and one with none.
 | Reading the floor's `local` term as "the presence this replica holds", full stop | after a clamp-refused create the replica holds the refused version, so the floor is the version just refused | the re-push never terminates: 32 inner rounds, the cell still dirty, the authority holding nothing. The fuzz always excluded a refused presence; the record did not say so |
 | Treating the clamp invariant as unconditional | it holds only while the authority's clock is monotonic | with the clock stepped back an hour, EVERY member of the floor family livelocks, because `local` is never clamped and the held version sits permanently above `A + width`. The clamp reference is now `max(own clock, highest HELD version_ms - width)`, held rather than accepted because R2 and overwrites remove rows |
 | Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a body at `!body` |
+| Recomputing on "the scan covered the full range" rather than "derived every address exactly once" | an adopted watermark can sit BEHIND this replica's own scan, so the range is covered and part of it twice | 80 of 200 addresses derived twice and a permanent false mismatch on that replica until it walks a pass cleanly end to end |
+| Leaving the entry's `\0` delimiter to the address GLOBs | GLOB stops at the first NUL, so no CHECK ever saw one | `row_id "a\0b" + column "title"` and `row_id "a" + column "b\0title"` hash identically, a missed divergence in the detector itself. Closed with `instr(..., char(0)) = 0` on all four components, which costs nothing and refuses no legal address |
 | A refusal that does not carry the authority's current `repair_from` | a refused replica has no legal `from` to send, so the sentinel is its only move | 0 passes complete in 300 rounds with two, three or four replicas repairing at once, the authority never past the first chunk of ten, because the replicas restart each other forever. Adopting the watermark the refusal carries completes in ten rounds |
 | "The authority ignores a second replica's pass while one is open" | `_authority_replicas` is deleted and nothing on the authority names a device | unbuildable, so it was a sentence rather than a decision. The from-guard alone commits exactly the truth with two replicas alternating chunks |
 | Leaving `row_id` unconstrained on the two body tables | the cell tables refuse addresses the body tables accept | a body at an address whose row can never exist: R2's body drop cannot fire on it and the repair pass ships it forever. Both sides now carry the cell tables' `row_id` CHECK, identical on both by
@@ -767,6 +769,13 @@ digest column" and reference no bucket. The real defect in those three was
 different and worse: `r8-digest-rerun.out` and `r8-delete-rerun.out` have no
 producing script at all, so they cannot be reproduced by anyone. They are replaced
 here by runs of the live producer.
+
+**A cost this record does not pay down.** With N replicas repairing at once and a
+first-come authority, a completed pass is covered end to end by a single replica
+on 0.35% of passes at two replicas, 0.05% at three, and 0 of 2000 at four. A
+replica whose own sum has drifted therefore heals only on a solo pass, at about
+336 MB per attempt. It self-limits, because the replicas that are not drifted stop
+repairing once the authority recomputes, so it is a disclosure rather than a break.
 
 **Round 15 repaired the harness instead of counting it again.** Eleven probes are retired to `superseded/` with a README: they name
 `_replica_digest` or `repair_epoch`, artifacts the design deleted, so they cannot

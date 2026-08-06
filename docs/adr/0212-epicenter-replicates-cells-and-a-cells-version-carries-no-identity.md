@@ -169,15 +169,17 @@ CREATE TABLE _replica_metadata (
 ) STRICT;
 
 CREATE TABLE _replica_cell (
-	namespace TEXT NOT NULL CHECK (length(namespace) > 0),
-	table_name TEXT NOT NULL CHECK (length(table_name) > 0),
+	namespace TEXT NOT NULL CHECK (length(namespace) > 0 AND instr(namespace, char(0)) = 0),
+	table_name TEXT NOT NULL CHECK (length(table_name) > 0 AND instr(table_name, char(0)) = 0),
 	row_id TEXT NOT NULL CHECK (
 		length(row_id) BETWEEN 1 AND 128 AND
 		row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
-		row_id GLOB '[A-Za-z0-9]*'
+		row_id GLOB '[A-Za-z0-9]*' AND
+		instr(row_id, char(0)) = 0
 	),
 	column_name TEXT NOT NULL CHECK (
-		column_name = '!presence' OR column_name GLOB '[A-Za-z]*'
+		(column_name = '!presence' OR column_name GLOB '[A-Za-z]*') AND
+		instr(column_name, char(0)) = 0
 	),
 
 	value TEXT,
@@ -197,12 +199,13 @@ CREATE TABLE _replica_cell (
 ) WITHOUT ROWID, STRICT;
 
 CREATE TABLE _replica_body (
-	namespace TEXT NOT NULL CHECK (length(namespace) > 0),
-	table_name TEXT NOT NULL CHECK (length(table_name) > 0),
+	namespace TEXT NOT NULL CHECK (length(namespace) > 0 AND instr(namespace, char(0)) = 0),
+	table_name TEXT NOT NULL CHECK (length(table_name) > 0 AND instr(table_name, char(0)) = 0),
 	row_id TEXT NOT NULL CHECK (
 		length(row_id) BETWEEN 1 AND 128 AND
 		row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
-		row_id GLOB '[A-Za-z0-9]*'
+		row_id GLOB '[A-Za-z0-9]*' AND
+		instr(row_id, char(0)) = 0
 	),
 	generation_ms INTEGER NOT NULL CHECK (generation_ms > 0),
 	generation_seq INTEGER NOT NULL CHECK (generation_seq >= 0),
@@ -244,15 +247,17 @@ CREATE TABLE _authority_metadata (
 
 CREATE TABLE _authority_cell (
 	cursor INTEGER PRIMARY KEY,
-	namespace TEXT NOT NULL CHECK (length(namespace) > 0),
-	table_name TEXT NOT NULL CHECK (length(table_name) > 0),
+	namespace TEXT NOT NULL CHECK (length(namespace) > 0 AND instr(namespace, char(0)) = 0),
+	table_name TEXT NOT NULL CHECK (length(table_name) > 0 AND instr(table_name, char(0)) = 0),
 	row_id TEXT NOT NULL CHECK (
 		length(row_id) BETWEEN 1 AND 128 AND
 		row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
-		row_id GLOB '[A-Za-z0-9]*'
+		row_id GLOB '[A-Za-z0-9]*' AND
+		instr(row_id, char(0)) = 0
 	),
 	column_name TEXT NOT NULL CHECK (
-		column_name = '!presence' OR column_name GLOB '[A-Za-z]*'
+		(column_name = '!presence' OR column_name GLOB '[A-Za-z]*') AND
+		instr(column_name, char(0)) = 0
 	),
 	value TEXT,
 	version_ms INTEGER NOT NULL CHECK (version_ms > 0),
@@ -268,12 +273,13 @@ CREATE UNIQUE INDEX _authority_cell_address
 	ON _authority_cell(namespace, table_name, row_id, column_name);
 
 CREATE TABLE _authority_body (
-	namespace TEXT NOT NULL CHECK (length(namespace) > 0),
-	table_name TEXT NOT NULL CHECK (length(table_name) > 0),
+	namespace TEXT NOT NULL CHECK (length(namespace) > 0 AND instr(namespace, char(0)) = 0),
+	table_name TEXT NOT NULL CHECK (length(table_name) > 0 AND instr(table_name, char(0)) = 0),
 	row_id TEXT NOT NULL CHECK (
 		length(row_id) BETWEEN 1 AND 128 AND
 		row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
-		row_id GLOB '[A-Za-z0-9]*'
+		row_id GLOB '[A-Za-z0-9]*' AND
+		instr(row_id, char(0)) = 0
 	),
 	generation_ms INTEGER NOT NULL CHECK (generation_ms > 0),
 	generation_seq INTEGER NOT NULL CHECK (generation_seq >= 0),
@@ -325,6 +331,12 @@ the one thing the merge trusts.
 cursor.** "Do I know which authority this is" and "have I applied anything" are
 independent facts, and a CHECK tying them makes the reset state, a new lifetime at
 cursor zero, unrepresentable.
+
+No address component may contain a `\0`, which the schema enforces with
+`instr(..., char(0)) = 0` rather than leaving to GLOB: GLOB stops at the first NUL,
+so without it `row_id = "a\0b"` with column `title` and `row_id = "a"` with column
+`b\0title` are both storable and hash to the same digest entry, which is a missed
+divergence in the one mechanism that exists to find them.
 
 `!presence` is the reserved column carrying liveness. A Lens column name must
 start with a letter (`packages/lens/src/definitions.ts:410-411`), so no Lens can
@@ -849,15 +861,18 @@ the whole fix and it uses only state the schema already carries: a mid-pass chun
 off a stale watermark is still refused, so the double-count is closed, and an
 abandoned pass is self-healing rather than a watermark nothing can clear.
 Discarding a partial accumulator costs nothing, because the sum is committed only
-at completion. **A refusal carries the authority's current `repair_from`, and a
-refused replica resumes from it rather than restarting.** Without that the sentinel is otherwise its only move, and measured, two replicas
+at completion. **A refusal carries the authority's current `repair_from`, and a refused replica
+resumes from it rather than restarting, or from the sentinel when the refusal
+carries none because the pass it was refused behind has since completed.** Without that the sentinel is otherwise its only move, and measured, two replicas
 repairing at once then restart each other forever: 0 passes complete in 300 rounds
 at two, three and four replicas, the authority never past the first chunk of ten.
 Adopting the carried watermark completes in ten, as does retrying the same `from`;
-what livelocks is restarting at the sentinel. **A replica that adopts another's
-watermark has not scanned the head of the address space, so it does not treat that
-pass as its own completed pass for ADR-0213's recompute.** Only the replica whose
-scan covered the full range recomputes. An earlier draft added "and ignores a second replica's pass while
+what livelocks is restarting at the sentinel. **Only a replica whose own scan derived every address exactly once recomputes.**
+An adopted watermark breaks that in both directions: forward by skipping what the
+other replica walked, and backward by re-deriving what this one already walked.
+"Covered the full range" is not the same criterion and admits the second case,
+measured at 80 of 200 addresses derived twice and a permanent false mismatch on
+that replica until it walks a pass cleanly end to end. An earlier draft added "and ignores a second replica's pass while
 one is open", which is neither implementable nor needed: `_authority_replicas` is
 deleted and nothing on the authority names a device, and with the guard alone two
 replicas alternating chunks off the current watermark commit exactly the truth. `repair_from = ''` is the sentinel for

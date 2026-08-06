@@ -284,7 +284,11 @@ transaction. Otherwise the digest becomes the thing ADR-0212 refuses elsewhere, 
 durable marker that decides what to send and is wrong in a way that perpetuates
 itself.
 
-### The entry encoding is a cross-release contract
+### The entry encoding is a cross-release contract, and its `\0` delimiter is a
+schema constraint rather than a write-door convention: ADR-0212 excludes `\0` from
+every address component with `instr(..., char(0)) = 0`, because GLOB stops at the
+first NUL and would otherwise let two different addresses join to one preimage.
+The encoding
 
 An entry is the low 8 bytes, big-endian, of
 
