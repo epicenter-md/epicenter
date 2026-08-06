@@ -840,9 +840,12 @@ that creates it.
 
 An earlier draft scheduled both through an epoch, a covered-epoch and a scope, so
 that a running pass could absorb an obligation raised while it ran. Measured, that
-machinery was identical to the strict guard it was added to replace: **0 of 200
-passes cleared either way**, because the covered epoch was read at the start of
-the pass and the epoch only increases. A row-scoped raise could also clear a
+machinery was **worse** than the inline discharge that replaced it: a clamp
+re-stamp on a permanently skewed device discharges **200 of 200 times inline and
+0 of 200 under the epoch scheme**, because the covered epoch was read at the start
+of the pass and the epoch only increases. An earlier draft of this record said
+"0 of 200 either way", which understated the collapse by reporting a tie where the
+live probe reports a rout. A row-scoped raise could also clear a
 whole-store obligation it never discharged. Discharging the event inline removes
 the question rather than answering it.
 
@@ -1050,7 +1053,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   existing, and moving the body out of the cell relation shrinks that relation by
   almost as much as the body plane costs (27.5 against 28.3 MB, and 135.7 against
   141.9 MB), which is why the net is only +0.7% and +2.0% rather than +16% and
-  +41%, while `_replica_body` itself is 28.3 MB and 141.9 MB. That relation carries 32% overhead at 12 columns and 38% at 3, from repeating a three-part text key. An earlier
+  +41%, while `_replica_body` itself is 28.3 MB and 141.9 MB. That relation carries 38% overhead at both shapes, from repeating a three-part text key. An earlier
   draft claimed the cell store was 7.8% *smaller* than the versioned opponent;
   that held only because the opponent it measured stored each version as base64
   inside JSON text, roughly 40 bytes per field for what this schema holds in 18
@@ -1096,7 +1099,11 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   rebuild. That ratio is the honest user-visible one and it is NOT "the layout
   alone": both arms pay the same Yjs render, which dilutes any ratio toward 1.0.
   With the body plane on neither side the same run reports **13.5x and 7.5x**, the
-  layout adding **708 ms and 1241 ms** of SQL. Round 11 corrected an overstatement
+  layout adding **708 ms and 1241 ms** of SQL. The 12-column figure there is the
+  flattering end of its own band: in that run the whole-row control arm sits at
+  -15.4%, so the denominator is the slower of two identical arms, and an
+  independent run gives 13.6x with a -0.6% control and 748 ms. The honest 12-column
+  layout term is **13.5x to 16x, 708 to 748 ms**. The 3-column side is clean. Round 11 corrected an overstatement
   by installing an understatement of the same kind, and both terms are stated here
   because neither answers the other's question. An earlier
   measurement said 2.9 s and 64x, and it joined `_replica_body` before grouping,
@@ -1107,12 +1114,16 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   earlier figure in this record, 0.57 s and 16.8x among them, priced a query this
   record does not decide: no `json_valid` guard, no `_replica_body` join, and no
   body render. The render is the term that dominates and no implementation can
-  avoid it, because a body is Yjs bytes that no SQL restores: 5.1 and 4.7 microseconds per
-  row, **1028 ms and 4739 ms** measured directly with the render switched off in
-  the same loop, which alone exceeds the whole figure the record used to quote. An
-  earlier draft said 4.9 microseconds, 977 ms and 5.05 s from no saved run at all;
-  those figures were close but unsourced, and 1330 ms and 6159 ms are the
-  body-plane delta rather than the render, which also carries the body join. **Every ratio this record quoted before round 11 charged
+  avoid it, because a body is Yjs bytes that no SQL restores: 4.8 and 4.7 microseconds per
+  row, **954 to 979 ms and 4670 to 4769 ms** across three runs with control arms
+  within 1%, measured directly with the render switched off in the same loop, which
+  alone exceeds the whole figure the record used to quote. Round 12 quoted 1028 ms
+  and 5.1 microseconds, which is outside that band, while deleting an earlier
+  977 ms and 4.9 microseconds for being unsourced: the deleted figure was accurate
+  and the replacement was not, so the correction moved the number the wrong way and
+  the lesson was about saving output rather than about the value. 1330 ms and
+  6159 ms are the body-plane delta rather than the render, and also carry the body
+  join. **Every ratio this record quoted before round 11 charged
   that render to the cell layout alone**, because the `_replica_row` opponent
   carried prose inline as text and never paid it: the two arms produced different
   content fingerprints, which is how the mismatch was finally caught. Priced with
@@ -1255,7 +1266,7 @@ scheduled for deletion on acceptance; the git ref is `882cedea46`.
   measurable, at −2.6% to +7.2% across runs, from a measurement structurally
   unable to see the difference.
 - **Readable version columns.** ISO-8601 and hex order identically to the compact
-  encoding and cost 37% and 29% more disk. A view is free.
+  encoding and cost +69.1 MB (+37%) and +99.8 MB (+29%) more disk. A view is free.
 - **A 16-byte version hash.** Closes the exact-version oscillation for +19 MB and
   +30 MB. The value guard in the merge predicate closes it for nothing.
 - **Range-based set reconciliation instead of a cursor.** It would delete the

@@ -680,9 +680,9 @@ mutually exclusive states, one with every cell owed and one with none.
 | Merging inside a `json(inner)` field | one cell is one merge unit, so declared-together values never tear | a whole-blob write, which is the point rather than a limitation |
 | Clamping the re-stamp floor's `held` term to the authority's time | `min(H, A)` is never greater than `A`, and `A` is already a term of the same maximum | zero. The term is inert by algebra and the floor collapses to `max(A, local)`, which is the round-8 defect: measured, 445 presence cells re-stamped below the authority's own and 470 creates or deletes destroyed |
 | Clamping it to the authority's time plus the clamp width instead | the authority refuses anything above that bound, so a presence version it HOLDS is at or below it by construction | zero. The `min` never binds: byte-identical to the unclamped floor on every counter of a 1200-trace fuzz. The family has two members, not three |
-| Buying back the lost intents the unclamped floor costs | the only clamp that would do it is the one the invariant above makes inert | there is no third formula. The trade is 445 below-authority re-stamps and 445 of the 470 destroyed creates against about 3% more lost intents (1994 vs 2060 over 4800 traces; the +18 at 1200 traces is one standard deviation of block noise), and it has to be chosen rather than engineered away |
+| Buying back the lost intents the unclamped floor costs | the only clamp that would do it is the one the invariant above makes inert | there is no third formula. The trade is 445 below-authority re-stamps and 445 of the 470 destroyed creates against about 3% more lost intents (1994 vs 2060 over 4800 traces, paired z = 2.67, bootstrap 95% CI 0.88% to 5.74%; the +18 at 1200 traces is one standard deviation of block noise), and it has to be chosen rather than engineered away |
 | A repair watermark with no durable accumulator | `repair_from` is a watermark, not a running total, and the scanned term lives in memory | a pass that dies after three of ten chunks resumes and commits a sum over 280 of 400 addresses, which is a permanent false mismatch scheduling a full pass every round forever |
-| A terminal recompute under the authority's own write lock | an authority is the side N replicas push into, so its lock is not a local typist's | 0.81 microseconds per cell, so about 2.3 seconds of held write lock at 2.6M cells, measured at the fixture rather than extrapolated from the per-cell rate; a concurrent push fails after burning its full `busy_timeout`, measured at 0, 1000 and 5000 ms |
+| A terminal recompute under the authority's own write lock | an authority is the side N replicas push into, so its lock is not a local typist's | 0.81 microseconds per cell, so 2174 ms of held write lock at 2.6M cells, measured at that fixture; a concurrent push fails after burning its full `busy_timeout`, measured at 0, 1000 and 5000 ms |
 | Refusing a causally gapped `doc_state` at the write door | the premise was that `load` drops structs it cannot integrate, so `{u1, u3}` and `{u1}` entry identically | the premise is false on the pinned Yjs: the stores are 45 and 32 bytes and their entries differ. Enforcing it discards recoverable user prose and ADR-0212's two body-refusal answers both lose it |
 | Letting a replica's repair pass own the authority's accumulator | the pair is one per store and a pass is one per replica, and a multiset sum has no idempotence | two interleaved passes over 200 addresses commit exactly twice the truth; a partial overlap commits a number related to neither. The authority opens one pass at a time and refuses a chunk whose `from` is not its current watermark |
 | Reading the floor's `local` term as "the presence this replica holds", full stop | after a clamp-refused create the replica holds the refused version, so the floor is the version just refused | the re-push never terminates: 32 inner rounds, the cell still dirty, the authority holding nothing. The fuzz always excluded a refused presence; the record did not say so |
@@ -743,6 +743,18 @@ delivery counter in any form. Each patch added a proxy for the missing
 information; none of them added the information. The mechanism that carries it was
 priced in this table and deferred, and the deferral is what the three rounds cost.
 It is adopted above.
+
+**Provenance decays, and this is the third round it has bitten.** Fourteen harness
+scripts no longer execute against the settled schema, because every schema
+tightening breaks the positional inserts in probes nobody re-ran. Three claims in
+these records had a dead producer AND no saved output at the time round 13 checked:
+the authority wedge, the epoch collapse (quoted as "0 of 200 either way" where the live probe reports
+200 of 200 inline against 0 of 200 under the epoch, a tie reported where there was
+a rout), and the 280-of-400 resumed-pass figure, which does have a live producer in
+`r11b-repair-pair.ts`. A further 22 saved outputs are
+older than the scripts named for them. The rule this round adds: a claim whose
+producer does not run is withdrawn, not re-quoted, and the sweep that finds them
+runs every round rather than when a reviewer thinks to look.
 
 **Why round 13 froze the design, and what the freeze bought.** Rounds 8 through 12
 each found the PREVIOUS round's fix defective, in this one subsystem, because the

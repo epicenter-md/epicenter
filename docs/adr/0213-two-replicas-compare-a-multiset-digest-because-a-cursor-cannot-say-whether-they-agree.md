@@ -152,8 +152,8 @@ merged in both orders, and the empty document.
 Grouping entries into buckets so a mismatch could name a region was tried and
 refused, and refusing it is what leaves one sum. A bucket keyed on a hash of the
 address is a hash class rather than a range: its members are scattered across the
-whole address space, enumerating one costs a full scan plus a hash per cell (136 milliseconds
-over 240,000 cells on re-measurement, so about one and a half seconds at
+whole address space, enumerating one costs a full scan plus a hash per cell (118 to 132
+milliseconds over 240,000 cells across four runs, so about 1.3 to 1.4 seconds at
 ADR-0212's fixture), and it cannot resume from an address the way
 the existing repair pass does. Storing a `bucket` column on every cell would fix
 the scan, and costs disk ADR-0212 refuses for a cursor column on the same grounds.
@@ -210,8 +210,11 @@ correct survives inside `sum_at_scan_start` untouched. What the commit has to be
 scan actually derived from content, plus only those deltas whose address the scan
 has already passed**. The first term is what makes it a recompute; the second must
 be scoped by the pass's own watermark, or every
-write landing ahead of the scan is counted twice and 40 of 40 completed passes
-leave the sum wrong in the other direction. **A chunk's content read and its
+write landing ahead of the scan is counted twice and the pass leaves the sum wrong
+in the other direction. An earlier draft quoted "40 of 40 completed passes" from a
+probe that has never run to completion; the repaired probe demonstrates the
+atomicity rule directly instead, committing the truth when the chunk read and the
+watermark advance are one transaction and drifting when they are not. **A chunk's content read and its
 watermark advance are one transaction.** Without that, a write landing on an
 address the scan has already derived but the watermark has not yet passed is
 excluded as not-yet-passed while the scan already counted the old value, and the
@@ -248,14 +251,14 @@ record decides.
 **That number also retires the bucket refusal below.** Enumerating a bucket was
 refused as a full scan plus a hash per cell, quoted at "of the order of a second";
 measured on the settled schema at the settled fixture the recompute is **2.5
-seconds**, against about 1.5 for the bucket enumeration, which hashes an address
+seconds**, against about 1.4 for the bucket enumeration, which hashes an address
 where this hashes an address, a version and a value, and this section now mandates it on every completed pass. The
 refusal stands on the resumability argument alone. A terminal scan on the replica would hold that as
 one window, and so would a terminal scan on the authority: measured on a real
 file, scan-plus-hash-plus-commit is 0.81 microseconds per cell on a 500k-cell file,
-against 0.71 measured standalone at the full fixture, so 2.6M cells hold
-the write lock for about **2.3 seconds** before COMMIT, measured at the real
-fixture rather than extrapolated, plus the body half, and a
+against 0.71 measured standalone at the full fixture, and 0.84 at the full fixture, where 2.6M cells hold
+the write lock for **2174 ms** before COMMIT, about **2.2 seconds**, now measured
+at that fixture rather than extrapolated, plus the body half, and a
 concurrent push fails after burning its full `busy_timeout` (measured at 0, 1000
 and 5000 ms). An authority is the side N replicas push into, so that window is an
 ingest outage, and every completed repair pass on every replica triggers one.
