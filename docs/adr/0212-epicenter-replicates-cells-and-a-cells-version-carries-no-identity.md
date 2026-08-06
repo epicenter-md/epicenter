@@ -728,10 +728,16 @@ replicas skewed -3 to +12 minutes, 4282 clamp re-stamps (`r11b-fuzz.ts`):
 | `max(A, held, local)` (**decided**) | 0 | 25 | 4 | 497 |
 
 Neither dominates. The decided floor removes 445 below-authority re-stamps and
-445 of the 470 destroyed creates and deletes that follow from them, and pays 18
-more lost intents (3.8%) for importing another device's skew into a re-stamp
+445 of the 470 destroyed creates and deletes that follow from them, and pays
+about **3% more lost intents** for importing another device's skew into a re-stamp
 applied to a device already known to have a bad clock. That is the honest shape
-of the choice, and no third formula recovers both: the clamp that would buy them
+of the choice. The first three columns scale linearly with traces and are
+unambiguous; the fourth is not measured to that precision. Across four disjoint
+1200-trace blocks the intent difference runs +18, -7, +33, +22, one block with the
+sign reversed and a block standard deviation near 17, so the +18 above is one
+standard deviation of block noise. At 4800 traces the totals are **1994 against
+2060, +66 or 3.3%**, about two standard errors: the direction is probably real and
+the magnitude at 1200 traces is not. No third formula recovers both: the clamp that would buy them
 back is the one the invariant above makes inert.
 
 **The floor is spent in the round that reads it.** The refusal carries the
@@ -1030,8 +1036,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   existing, and moving the body out of the cell relation shrinks that relation by
   almost as much as the body plane costs (27.5 against 28.3 MB, and 135.7 against
   141.9 MB), which is why the net is only +0.7% and +2.0% rather than +16% and
-  +41%, while `_replica_body` itself is 28.3 MB and 141.9 MB. That relation carries 38%
-  overhead over the state it holds, from repeating a three-part text key. An earlier
+  +41%, while `_replica_body` itself is 28.3 MB and 141.9 MB. That relation carries 32% overhead at 12 columns and 38% at 3, from repeating a three-part text key. An earlier
   draft claimed the cell store was 7.8% *smaller* than the versioned opponent;
   that held only because the opponent it measured stored each version as base64
   inside JSON text, roughly 40 bytes per field for what this schema holds in 18
@@ -1058,7 +1063,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   joins before it says anything.
 - **Legibility is bought with views, not with columns.** Storing the version as
   ISO-8601 text and the hash as hex is genuinely readable and orders identically,
-  and it measured **+65 MB (+36%) and +101 MB (+29%)** at the two shapes. A view
+  and it measured **+69.1 MB (+37%) and +99.8 MB (+29%)** on the settled schema at the two shapes. A view
   rendering `version_ms` as a timestamp and `version_hash` as hex costs nothing
   and reads better than either, so the stored columns stay compact.
 - **Re-deriving one changed row costs 1.32x and 1.07x** what whole-row JSON costs,
@@ -1073,7 +1078,13 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   operation that runs in steady state, because a write touches one row, and the
   margin there is small.
 - **Rebuilding the WHOLE projection costs about 2.0 s at 2.6M cells and 7.3 s at
-  4M**, warm, and against whole-row JSON that is **1.76x and 1.31x**. An earlier
+  4M**, warm, and against whole-row JSON that is **1.76x and 1.31x** for the whole
+  rebuild. That ratio is the honest user-visible one and it is NOT "the layout
+  alone": both arms pay the same Yjs render, which dilutes any ratio toward 1.0.
+  With the body plane on neither side the same run reports **13.5x and 7.5x**, the
+  layout adding **708 ms and 1241 ms** of SQL. Round 11 corrected an overstatement
+  by installing an understatement of the same kind, and both terms are stated here
+  because neither answers the other's question. An earlier
   measurement said 2.9 s and 64x, and it joined `_replica_body` before grouping,
   which probes once per cell instead of once per row: the exact bias this record
   documents two bullets below for the `_replica_row` opponent, repeated in the arm
@@ -1082,19 +1093,22 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   earlier figure in this record, 0.57 s and 16.8x among them, priced a query this
   record does not decide: no `json_valid` guard, no `_replica_body` join, and no
   body render. The render is the term that dominates and no implementation can
-  avoid it, because a body is Yjs bytes that no SQL restores: 6.7 and 6.2 microseconds per
-  row, 1330 ms and 6159 ms on its own, which alone exceeds the whole figure the
-  record used to quote. An earlier draft said 4.9 microseconds, 977 ms and 5.05 s;
-  no saved run produces that triple, and the figures here are the same subtraction
-  this record already reports two bullets down. **Every ratio this record quoted before round 11 charged
+  avoid it, because a body is Yjs bytes that no SQL restores: 5.1 and 4.7 microseconds per
+  row, **1028 ms and 4739 ms** measured directly with the render switched off in
+  the same loop, which alone exceeds the whole figure the record used to quote. An
+  earlier draft said 4.9 microseconds, 977 ms and 5.05 s from no saved run at all;
+  those figures were close but unsourced, and 1330 ms and 6159 ms are the
+  body-plane delta rather than the render, which also carries the body join. **Every ratio this record quoted before round 11 charged
   that render to the cell layout alone**, because the `_replica_row` opponent
   carried prose inline as text and never paid it: the two arms produced different
   content fingerprints, which is how the mismatch was finally caught. Priced with
-  the body plane on both sides, the arms fingerprint identically and the layout's
-  own cost is 1.76x and 1.31x. The body plane costs the opponent 1136 ms and
-  5604 ms, and is 54% and 77% of the cell store's own rebuild.  No repeat runs of the decided query exist, so these figures carry one
-  significant figure. The cell arms repeat within about 3%, but the whole-row
-  denominator's own control arm moves -15.4% to +11.9% across runs, so the ratio's
+  the body plane on both sides, the arms fingerprint identically and the whole
+  rebuild costs 1.76x and 1.31x. The body plane costs the opponent 1136 ms and
+  5604 ms, and is 54% and 74% of the cell store's own rebuild, both terms from one run.  No repeat runs of the decided query exist, so these figures carry one
+  significant figure. Four saved runs of the decided query exist and span about 10%
+  at 12 columns (1990, 1969, 2095, 2168 ms); the cell arms repeat within about 3%
+  inside a run, but the whole-row denominator's own control arm moves -15.4% to
+  +11.9% across runs, so the ratio's
   honest band at 12 columns is roughly 1.6x to 1.9x rather than a bare 1.76x. That is a cold start, a
   repair, or a re-import, and it is the price of the layout rather than a
   steady-state cost.
