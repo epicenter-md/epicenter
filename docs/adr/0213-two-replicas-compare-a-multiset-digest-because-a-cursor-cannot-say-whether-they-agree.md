@@ -213,7 +213,7 @@ The cost is not free and an earlier draft said it was: hashing every cell is
 **+295% on top of the scan** the pass already pays, about 2.5 seconds at 2.6M
 cells, and the body half is a document load and re-encode at 8.9 microseconds per
 small body and 38.6 at 40 KB, so 196k bodies is another 1.8 to 8.9 seconds. A
-completed pass therefore owes **+4.3 seconds at an 80-character body and +11.3 at
+completed pass therefore owes **about +3.6 seconds at an 80-character body and +9.4 at
 40 KB**, about one and a half times the projection rebuild this design
 calls its expensive cold start, now that the rebuild is priced on the query the
 record decides.
@@ -285,7 +285,7 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 - **A body write's premium scales with the document, and is not yet measured for
   the entry this record decides.** A linear entry, which a canonical re-encode is,
   measured **+26% to +40% at an 80-character body and +27% to +61% at 40 KB**:
-  7 to 11 microseconds added at the small size and 53 to 69 at the large one. **Both**
+  7 to 11 microseconds added at the small size and 42 to 69 at the large one, on a 40 KB control arm wider than the effect (+15% to -14% against the small arm's 3%), so the scaling is where the numbers point rather than something they establish. **Both**
   halves cost a fresh load and a re-encode. The write path's own `doc_state` comes
   from the application's live document, which is the one byte string this record
   forbids the entry from using, so the new entry cannot reuse it; and nothing
