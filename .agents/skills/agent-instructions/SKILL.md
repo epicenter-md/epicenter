@@ -147,6 +147,57 @@ description: Helps with workspace stuff.
 
 For subtle routing, test 2 or 3 should-trigger prompts and 1 or 2 near-miss should-not-trigger prompts. Do not stuff exact keywords unless the keyword represents a real trigger category.
 
+End with what the skill is not for. `Do not use for...` is the only place a near
+miss can be excluded, because the body loads after routing has already failed.
+
+## Guide Without Over-Steering
+
+A skill is read by something that can already reason. Its job is to land that
+judgment on this codebase, not to replace it with a script. Over-steering is the
+failure where an instruction is so specific it stops generalizing: the agent
+applies it correctly to the case you wrote down and wrongly to the next one.
+
+State the premise the skill runs on once, at the top, and derive the rest from
+it. An agent holding the premise can answer a case you never wrote down. An
+agent holding twenty disconnected rules cannot.
+
+Attach the reason to the rule, in the same sentence. "Never flatten a JWKS fetch
+failure into a 401" is a rule the agent can only obey. "Never flatten it, or a
+transient fault makes clients discard a good token" is a rule the agent can
+extend. A rule whose reason you cannot state in a clause is usually taste, and
+belongs in a reference or nowhere.
+
+Give a criterion, not a threshold. "Keep at 4+ callers" makes the agent count
+instead of think, and then needs three later sections to walk itself back. "Does
+this function earn its name" needs none. Reach for a number only when the number
+is the actual constraint, like a token limit or a timeout.
+
+Bound the rule on both sides. Every instruction has an overshoot and the agent
+will find it, so say what too little looks like as well as too much. Rules
+stated one-sided get applied until they break.
+
+Diagnose an anti-pattern where it happens, not in a list at the end. Name the
+move, then the consequence that makes it wrong. A closing `Anti-Patterns` or
+`Best Practices` section is a second copy of rules already stated; the two
+copies drift to different calibrations, and the agent obeys whichever it read
+last.
+
+Match form to the work. Judgment must be prose, because a bullet strips the
+reason and leaves the verdict. Commands, paths, schemas, and file trees must be
+blocks, because prose hides them. Bulleted judgment is the tell that a skill has
+stopped explaining and started listing.
+
+Say what done means as a property, and name its false positive. "Both of you can
+reason forward from it" is checkable. "The review is complete" is not.
+
+Guide the decisions that matter; leave the route to the agent. Add procedural
+detail when the work's safety or correctness depends on the order, and not
+otherwise.
+
+[dialectic](../dialectic/SKILL.md) is the worked example: 113 lines, no bullets,
+every rule carrying its reason. Read it when a skill you are writing has turned
+into a list.
+
 ## Use Progressive Disclosure
 
 Put only essential workflow in `SKILL.md`. Aim for under 100 lines when practical, and keep the Vercel guideline of under 500 lines as the outer bound.
@@ -177,8 +228,6 @@ Every reference link needs a concrete load condition in `SKILL.md`, for example:
 Use `scripts/` only for repeated, deterministic, fragile, or error-prone work. Scripts should be documented in `SKILL.md`, non-interactive, retry-friendly, clear about prerequisites, structured on stdout, diagnostics on stderr, and bounded in output.
 
 Use Bun by default in this repository. Translate upstream Agent Skills CLI examples from `npx skills ...` to `bun x --package skills skills ...`. For other npm package commands, preserve the package and use `bun x` or `bunx`, pinning versions when behavior must be reproducible.
-
-Guide the decisions that matter; leave the route to the agent. State the intended outcome, the boundaries that matter, and the evidence of completion. Add procedural detail when the work's safety or correctness depends on it.
 
 ## Evaluate A Skill
 
@@ -261,13 +310,11 @@ Use sharper review questions when the design still feels soft:
 - Which other skill should compose with this instead?
 - What concrete run would prove this skill helped?
 
-## Review Checklist
+## Final Gates
 
-- The description has concrete triggers and near-miss boundaries.
-- `SKILL.md` contains the core workflow, not a copied source essay.
-- References have clear load conditions.
-- `audit-skill-links.ts` reports no dead link or anchor.
-- Scripts are justified, non-interactive, and portable.
+These are the constraints no earlier section states. Everything else worth
+checking is checked where it is explained.
+
 - Required tools are stated as prerequisites; the skill does not imply access to apps, files, connectors, or credentials.
 - Optional frontmatter is intentional: keep cross-agent fields like `license`,
   `argument-hint`, `disable-model-invocation`, and useful `metadata`; avoid
@@ -276,4 +323,3 @@ Use sharper review questions when the design still feels soft:
 - The skill avoids time-sensitive facts unless sourced and necessary.
 - No orphan `CLAUDE.md` files are created; sibling shims only import `@AGENTS.md`.
 - Punctuation follows `writing-voice`: no en dash characters, and em dash characters only when they earn the emphasis.
-- Validation passed with the Vercel `skills` CLI.
