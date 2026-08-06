@@ -631,9 +631,10 @@ with no bound: a laptop resuming with its clock a day fast strands the cell for
 about 24 hours, and one resuming with an RTC reading 2031 strands it for years.
 Rewriting cannot repair it, because the local write rule never lowers
 `version_ms`. So a **clamp** refusal names the address and the authority's own time, and the
-replica re-stamps the refused cells of that row at that time, **at `(authority time, rank)`, where rank is each
-cell's position in the row's own `(version_ms, version_seq)` ascending order, in
-one transaction**, exempt from the write floor above. Rank rather than the
+replica re-stamps the refused cells of that row, and the row's body generation
+with them, **at `(authority time, rank)`, where rank is each cell's position in
+the row's own `(version_ms, version_seq)` ascending order, in one transaction**,
+exempt from the write floor above. Rank rather than the
 original counter: the re-stamp collapses a *range* of `version_ms` onto one time,
 and a `version_seq` was only ever meaningful inside its own millisecond, so
 preserving it lets a cell written at a later millisecond land below one written
