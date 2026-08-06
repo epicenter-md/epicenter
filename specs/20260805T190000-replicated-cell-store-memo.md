@@ -784,6 +784,33 @@ replica whose own sum has drifted therefore heals only on a solo pass, at about
 336 MB per attempt. It self-limits, because the replicas that are not drifted stop
 repairing once the authority recomputes, so it is a disclosure rather than a break.
 
+### Where each figure comes from
+
+Round 16 proved a grep cannot establish provenance: a figure's producer is a
+**probe, an arm and a configuration**, not a digit string. So the figures name
+their own sources here. A claim not in this table, and not derivable by stated
+arithmetic from one that is, has no provenance and is withdrawn rather than
+re-quoted.
+
+| Figure | Probe | Arm | Saved output |
+| --- | --- | --- | --- |
+| 184.7 / 348.8 MB replica, 289.1 / 503.2 MB authority on disk | `bench9.ts` | `replica` / `authority`, `on_disk_mb`, 200k x 12 and 1000k x 3 | `bench9-r15.log` |
+| 121 B wire for a one-field change | `bench9.ts` | `wire`, `one_field_cell_bytes` | `bench9-r15.log` |
+| 8.9x and 3.0x wire, like for like | `r2m-wire-and-intern.ts` | `structured` (NOT `as benched`, which is 9.36x / 3.18x on a mismatched title) | `r16m-wire-and-intern.out` |
+| 1.76x / 1.31x whole rebuild, band 1.7x to 1.8x | `r11m-bodyplane-attribution.ts` | `PGBg / RJY`, body plane on BOTH sides | `R11-attr.log`, `rerun/RERUN-attr.log`, `r14m-attr.out` |
+| 13.5x to 16.3x layout term, 708 to 748 ms | same | `PG / RJ` and `PG / RJb`, body plane on NEITHER | same three |
+| 2.0 s / 7.3 s projection rebuild, eight runs spanning 10% | `r10m-projection-fair.ts`, `r13m-render-cost.ts` | `PGBg` and `WITH` (byte-identical SQL) | `r10m-projection-fair.out`, `R11-proj-repro.log`, `R11-attr.log`, `rerun/RERUN-attr.log`, `r13m-render-cost.out`, `r13m-render-cost-2.out`, `r14m-attr.out`, `r14m-render-cost.out` |
+| 954 to 976 ms and 4670 to 4755 ms render, 4.8 and 4.7 us per row | `r13m-render-cost.ts` | `RENDER ALONE` = `WITH` minus `WITHOUT`, control `WITHb` | `r13m-render-cost.out`, `-2.out`, `r14m-render-cost.out` |
+| +49% to +66% and +54% to +60% digest write premium | `r7m-digest-onecolumn.ts` | `FD vs F`, min statistic, six runs | `r7m-digest-onecolumn*.out`, `r13m-`, `r14b-`, `r16m-` |
+| +33% to +44% and +29% to +35% folded | same | `FDM vs F`, same six runs | same |
+| 8.3x to 9.1x and 5.1x to 6.6x row delete | `r7m-body-and-delete-onecolumn.ts` | `DD vs D`, control `D2 vs D` at 0.93x to 1.11x | `r7m-`, `r13m-`, `r14b-body-and-delete-onecolumn.out` |
+| 2174 ms authority write lock, 0.84 us per cell | `r11-authority-lock.ts` | `scan + hash + commit`, `N=2600000` | `r13m-lock-2600k.out` |
+| 4282 re-stamps, 5331 field cells, 223 / 190 / 34 | `r15-b-restamp-partition.ts` | `TRIALS=1200` (the default 300 gives different counts) | `r16m-restamp-partition-1200.out` |
+| 81.3% against 0% digest storage type | `r11b-digest-io.ts` | `INTEGER` against `BLOB`, 400 rounds | `r11b-digest-io.out` |
+| 199,990 ms monotonic-guard drift | `r16-monotonic-drift.ts` | the refused `max(now, prev+1)`; moves with machine speed | `r16-monotonic-drift.out` |
+| 109,600 orderings over 255 subsets, zero divergent | `converge3.ts` | exhaustive, JavaScript model of the algebra, no database | `r15m-converge.out` |
+| 1280 collisions in 5440 tuples, cleared against empty | `r16-nul.ts` | section E, before the `present_tag` | `r16-nul.out` |
+
 **Round 16 built a provenance checker, and round 16 proved it cannot work.** The
 premise was that a figure is sourced when it appears in a saved output. It is not.
 A null control settles it: of 549 figures nobody ever measured, **506 pass**, and
