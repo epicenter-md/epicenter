@@ -615,7 +615,6 @@ seven effects: R1 refuses an older cell, R2 drops older cells, R2 drops an older
 body, the open door replaces a stale-generation body, the projection renders one
 empty until that happens, a clamp re-stamp moves the body's generation with it,
 and every local write reads it to compute its floor. Nothing else *writes* across
-an address or a plane. Nothing else in the design reaches across
 an address or a plane. Without this the body plane does not converge: a late update from a replica
 that never saw the delete produces `"the old note -- B typed this"` in two
 orderings and an empty body in two others. The alternative, never deleting a body,
