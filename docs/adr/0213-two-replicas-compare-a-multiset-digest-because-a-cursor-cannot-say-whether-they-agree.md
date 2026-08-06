@@ -223,7 +223,7 @@ refused as a full scan plus a hash per cell, quoted at "of the order of a second
 measured on the settled schema at the settled fixture the recompute is **2.5
 seconds**, against about 1.3 for the bucket enumeration, which hashes an address
 where this hashes an address, a version and a value, and this section now mandates it on every completed pass. The
-refusal stands on the resumability argument alone. A terminal scan would hold that as
+refusal stands on the resumability argument alone. A terminal scan on the replica would hold that as
 one window; folded into the pass's own transactions it is spread across them, and it is what makes a sum a check on state
 rather than a durable local claim that decides what to send and perpetuates its
 own error. Without it, ADR-0212's claim that a digest mismatch is a state check would be
