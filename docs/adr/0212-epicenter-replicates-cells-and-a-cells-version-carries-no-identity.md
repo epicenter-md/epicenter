@@ -342,8 +342,11 @@ version_seq = one past whichever of those two the floor came from, else 0
 ```
 
 Both components come from the row being written, and cost one row-local aggregate
-read per write: measured at about 10% (24.7 microseconds against 22.6 for a write
-that takes no floor). They survive a crash. **A replica-global counter does not.** A
+read per write. That read is not cheap: measured as an interleaved A and B in one
+database, it takes the median local write from 10.5 to 16.8 microseconds at 200k
+rows of 12 columns, and from 6.4 to 19.5 at 1M rows of 3. Call it **at least
+double**. It is the price of a write the user just made never being refused by R1,
+and both components survive a crash. **A replica-global counter does not.** A
 process restart inside one millisecond reissues `version_seq = 0`, so a rewrite
 and the value it replaces carry the same `(ms, seq)`, the tie falls to the hash,
 and the hash knows nothing about which write came second: the later write is silently discarded on a
@@ -491,9 +494,10 @@ A cell carries an explicit `dirty` flag, **with no index**. A partial index on
 `dirty = 1` over a `WITHOUT ROWID` table carries the entire primary key per
 entry, which is the same cost this record refuses a replica-side cursor for: it
 measured on the decided schema at **+81 MB and +126 MB** with local work standing.
-The scan it replaces costs **48 ms and 112 ms** when nothing is owed, which is the
+The scan it replaces costs **59 ms and 112 ms** when nothing is owed, which is the
 common case, and in the state where the index actually costs those megabytes it
-saves 26 ms and 38 ms, because both sides then have to return every cell.
+saves 26 ms and 38 ms, or about 7%, because both sides then have to return every
+cell.
 
 Encoding delivery as timestamp equality was tried and fails: write at T, confirm
 at T, write a new value at T again, and a derived `confirmed = written` flag reads
@@ -726,14 +730,29 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   85.3 MB; 342.4 MB against 206.2 MB, or 1.66x), and 3.69x its own payload,
   falling to 2.48x at 1M rows of 3 columns, so the multiplier is a function of row
   width and a single figure for it is not meaningful.
-- **Against the only opponent that can carry this merge rule, the store is
-  smaller.** Whole-row JSON holds no per-field version, which is the thing being
-  refused, so pricing the refusal against it prices it against a shape that cannot
-  do the job. One JSON record per row plus a per-field version map can, and there
-  the cell store is **7.8% and 8.9% smaller** (181.0 against 196.2 MB, 342.4
-  against 375.9). Both belong in the record: the first number is what the file
-  grows by against what ships today, and the second is what per-field versioning
-  costs once you insist on having it, which is nothing.
+- **Per-field versioning is not free, and this shape is not the cheapest way to
+  buy it.** Three points on one fixture, one run, all VACUUMed (196k live rows of
+  12 columns; 980k of 3 in brackets):
+
+  | shape | disk | what it can do |
+  | --- | --- | --- |
+  | whole-row JSON, what ships today | 85.3 MB (206.2) | no per-field version at all |
+  | one record per row plus a packed version map | 130.5 MB (274.1) | per-field merge, versions opaque |
+  | this cell store | 181.0 MB (342.4) | per-field merge, every version legible |
+
+  So per-field versioning costs **+53% and +33%** over what ships, and this shape
+  costs **a further +39% and +25%** over the cheapest way to have it. An earlier
+  draft claimed the cell store was 7.8% *smaller* than the versioned opponent;
+  that held only because the opponent it measured stored each version as base64
+  inside JSON text, roughly 40 bytes per field for what this schema holds in 18
+  binary bytes. Packed fairly, the opponent wins on disk.
+
+  The +39% buys two things and they are the two the record is built on. Every
+  version is a legible column rather than a byte range inside a blob, which is the
+  replica's stated first duty. And the merge is one SQL predicate over columns
+  rather than a decode, compare, and re-encode of a map, which is what lets the
+  same comparison run on both sides. It also keeps a one-field change at 121 bytes
+  on the wire rather than the whole record and its whole map.
 - **Interning the address would recover at most 34%**, before adding back
   dictionary tables and integer keys, and is refused: the replica's first duty is
   to be readable in a SQL console, and an interned file needs three dictionary
@@ -751,7 +770,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   4M**, warm. Against whole-row JSON, measured in one run so the ratio is
   self-consistent, it is 16.8x and 8.6x. Both figures carry two significant
   figures at most: the same query on the same schema has been recorded between
-  555 ms and 590 ms across runs, and every one of them discards the first pass, so
+  555 ms and 598 ms across runs, and every one of them discards the first pass, so
   a genuinely cold rebuild is not what was measured. That is a cold start, a
   repair, or a re-import, and it is the price of the layout rather than a
   steady-state cost.
@@ -817,7 +836,10 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
 
 ## Considered alternatives
 
-Measured costs are at 200k rows of 12 columns unless stated. The full table,
+Measured costs below are at 196k live rows of 12 columns, which is the fixture
+every storage comparison was built on, with 980k of 3 in brackets where it moves a
+conclusion. Timings taken on the settled schema use a 200k all-live fixture and
+are marked. The full table,
 including what each refusal costs, is in
 [the memo](../../specs/20260805T190000-replicated-cell-store-memo.md), which is
 scheduled for deletion on acceptance; the git ref is `f49ad33c44`.
@@ -841,17 +863,19 @@ scheduled for deletion on acceptance; the git ref is `f49ad33c44`.
   redundant, and because a generation loses a concurrent write from a replica
   that has not seen the bump, where R1 and R2 keep it.
 - **Real typed columns, one SQL table per Lens table.** Cheapest on disk by a
-  wide margin (48.5 MB against 181 MB), though that fixture stores no version, no
-  `dirty`, and no presence, so it is a projection rather than a replica and the
-  ratio is a floor rather than a like-for-like. Refused on correctness, not on
+  wide margin, 3.81x and 2.33x smaller fixture-matched (47.5 MB against 181.0,
+  147.1 against 342.4), though that shape stores no version, no `dirty`, and no
+  presence, so it is a projection rather than a replica and the ratio is a floor. Refused on correctness, not on
   performance: ADR-0125 requires a release to preserve values it does not
   understand, and a typed column has nowhere to put an unknown key. The escapes
   are an `_extra` JSON column with its own embedded versions, which rebuilds the
   blob it refused with two merge paths, or losing data whenever two releases
   disagree.
-- **One JSON record per row with a parallel version map.** Cheaper on disk and
-  faster to seed, and refused because one field change ships the whole record and
-  the whole map (8.6x at 12 columns and 2.9x at 3, like for like) and
+- **One JSON record per row with a parallel version map.** **Cheaper on disk than
+  this design**, by 29% and 20% once the map is packed rather than stored as
+  base64 in JSON, and faster to seed. Refused because the map is opaque, so no
+  version is legible and the merge cannot be one SQL predicate; because one field
+  change ships the whole record and the whole map (8.6x at 12 columns and 2.9x at 3, like for like) and
   because declaring merge groups makes the group names an unversioned wire
   contract a peer on another release cannot interpret.
 - **A hybrid logical clock with an actor id.** Its counter is adopted; its actor
@@ -876,16 +900,16 @@ scheduled for deletion on acceptance; the git ref is `f49ad33c44`.
   cursor and make the authority just another peer. Refused, and not on the
   symmetry argument previously given: symmetry was never the reason to want it.
   It is refused because it is a bad *delivery* mechanism: finding one changed
-  cell costs a 32KB bucket exchange plus the address and version of all 586 cells
-  in the differing bucket, where a cursor costs the changed cell. The seam remains
+  cell costs a 32KB bucket exchange plus the address and version of every cell in the
+  differing bucket, 586 and 732 at the two shapes, where a cursor costs the changed cell. The seam remains
   one rule, that a per-cell cursor never appears in a replica.
 - **An incremental multiset digest beside the cursor, as a verifier rather than
   a delivery mechanism.** This is the one thing that can detect divergence at
   all, and it was measured rather than argued: a 4096-bucket table of modular
   64-bit sums costs **72 KB** of disk and answers "are the two sides actually
   equal" in **0.29 ms for 8 bytes on the wire**. It is deferred, not refused. Its
-  price is on the write path, at roughly **+20%** per local write, and **+63% on a
-  bulk seed**. An earlier draft called that an upper bound because the measurement
+  price is on the write path, at roughly **+30% and +20%** per local write, and **+63%
+  and +57%** on a bulk seed. An earlier draft called that an upper bound because the measurement
   charged it a read of the old version a real merge already performs; that is
   withdrawn. Removing the read moves the premium by about three points, which is
   inside the 30% run-to-run spread of that metric, so the honest statement is one

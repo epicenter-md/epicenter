@@ -615,8 +615,11 @@ if the address were later re-created at a version between the two.
 
 ## Rejected, with what each refusal costs
 
-Measured at 200k rows of 12 columns and 1M rows of 3, on the schema this record
-settles on, on-disk after `VACUUM` and `wal_checkpoint(TRUNCATE)`. Every
+Measured at 196k live rows of 12 columns and 980k of 3, which is the fixture every
+storage comparison was built on, on-disk after `VACUUM` and
+`wal_checkpoint(TRUNCATE)`. Four rows are measured on the settled
+`final-schema.sql`; the rest are on the bench that built both shapes of the
+comparison they make, which is named in Provenance below. Every
 cell-store projection is verified identical to every other by fingerprint; the
 whole-row JSON baseline is distributional rather than cell-for-cell, because its
 fixture desynchronises at the first dead row. Nothing in this table gets
@@ -632,14 +635,14 @@ mutually exclusive states, one with every cell owed and one with none.
 
 | Refused | Why | Measured cost of refusing it |
 | --- | --- | --- |
-| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.69x and 1.21x slower and the whole projection 16.8x and 8.6x slower. That opponent carries no per-field version at all; against one that does, the row-plus-version-map below, the cell store is 7.8% and 8.9% SMALLER |
-| Real typed columns | ADR-0125: nowhere to put an unknown key | 3.7x the disk (181.0 vs 48.5 MB), against a fixture that stores no version, no `dirty` and no presence, so the ratio is a floor rather than like for like |
-| One JSON record per row plus a version map | one field change ships the whole record and map; merge-group names become an unversioned wire contract | 8.6x the wire at 12 columns and 2.9x at 3; on disk it is 8.4% and 9.8% LARGER than the cell store (196.2 vs 181.0 MB, 375.9 vs 342.4), so the refusal costs nothing on the top axis |
+| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.69x and 1.21x slower and the whole projection 16.8x and 8.6x slower |
+| Real typed columns | ADR-0125: nowhere to put an unknown key | 3.81x and 2.33x the disk, fixture-matched (181.0 vs 47.5 MB, 342.4 vs 147.1), against a shape that stores no version, no `dirty` and no presence, so the ratio is a floor |
+| One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 130.5 MB and 274.1, so the cell store is 39% and 25% LARGER. The 8.4% figure an earlier pass quoted was against a version map stored as base64 inside JSON, roughly 40 bytes per field. On the wire the cell store still wins, 8.6x at 12 columns and 2.9x at 3 |
 | Interning the address | the replica must be readable in a SQL console with no joins | at most 34% of the file, before dictionary tables and integer keys are added back |
 | Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +65 MB (+36%) and +101 MB (+29%) |
 | A per-cell cursor on the replica | it is a durable local claim about the authority's state | +9.8 MB (5.4%) and +18.9 MB (5.5%) for the column, measured as a clean A/B on the settled schema; 91 MB and 140 MB if it is also indexed, which nothing here would query |
 | An index on `dirty` | the scan it replaces is cheap and once per round | in the common case, nothing owed, it costs 0 MB and saves the whole scan (about 0.05 s and 0.11 s); with every cell owed it costs +81 MB and +126 MB and saves 6% to 7%, which is inside the run-to-run spread |
-| Row presence in its own relation | one algebra, one relation, and an address that can be reused | 1.02x and 1.27x slower projection rebuild (582 vs 568 ms, 1400 vs 1104 ms), once the two-relation query groups before it joins, for 1.5% and 4.1% less disk |
+| Row presence in its own relation | one algebra, one relation, and an address that can be reused | 1.02x and 1.27x slower projection rebuild (582 vs 568 ms, 1400 vs 1104 ms), once the two-relation query groups before it joins, for 1.5% and 4.1% MORE disk |
 | A generation column plus a `resurrect` verb | the presence cell's version already orders incarnations | one column on every cell, one new API surface, and it loses a concurrent write from a replica that has not seen the bump, where R1 and R2 keep it |
 | A 16-byte `version_hash` | the merge predicate's value guard closes the same hole | +19.4 MB (+10.7%) and +29.5 MB (+8.6%) |
 | A replica-global `version_seq` | it is not durable across a restart | a same-millisecond rewrite after a crash is discarded on a coin flip, which is what the mechanism predicts and what 20,000 trials measure |
@@ -678,10 +681,10 @@ alternatives), `r2m-dirty-index*.ts`, `r2m-wire-and-intern.ts`,
 row-plus-version-map opponent), the `r3-*` probes (every protocol claim: the
 authority wedge, the restore race, the re-stamp, the body plane), the
 `converge*.ts` proofs, and `final-verify.ts`, `final-verify2.ts` and
-`final-verify3.ts`. Where a row quotes
-a fixture of 196k live rows rather than 200k, it is because the comparison it
-makes exists only on the bench that built both shapes; bench9's own 200k-live
-fixture measures 184.7 MB and 348.8 MB.
+`final-verify3.ts`. Where a row is not on the settled schema, it
+is because the comparison it makes needs an opponent only an earlier bench built;
+`r4m-headline.ts` is the exception, and builds both shapes in one run.
+bench9's own 200k-all-live fixture measures 184.7 MB and 348.8 MB.
 
 **Harness.** The authoritative run is `bench9.ts`, which executes
 `final-schema.sql` as settled at the time of the run, on both planes and covers the whole required set:
