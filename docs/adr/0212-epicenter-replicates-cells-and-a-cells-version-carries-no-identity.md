@@ -1172,7 +1172,9 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   flattering end of its own band: in that run the whole-row control arm sits at
   -15.4%, so the denominator is the slower of two identical arms, and an
   independent run gives 13.6x with a -0.6% control and 748 ms. The honest 12-column
-  layout term is **13.5x to 16.3x, 708 to 748 ms**. The 3-column side is clean. Round 11 corrected an overstatement
+  layout term is a **median of 13.6x over four runs**, spread 13.1 to 13.7, with the
+  other identical arm reaching 16.3x, and 708 to 789 ms of SQL. The 3-column side
+  is clean. Round 11 corrected an overstatement
   by installing an understatement of the same kind, and both terms are stated here
   because neither answers the other's question. An earlier
   measurement said 2.9 s and 64x, and it joined `_replica_body` before grouping,
@@ -1352,5 +1354,5 @@ commit before deletion, which cannot be written down before it exists.
   lifetime does not catch a restore, because it lives inside the file being
   restored, and neither does a cursor regression, because the cursor an authority
   is shown is what a replica read rather than what it wrote. The price paid is one
-  8-byte column per side and +49% to +66% on a local write. ADR-0213 carries the
+  8-byte column per side and a median +62% on a local write. ADR-0213 carries the
   rest.

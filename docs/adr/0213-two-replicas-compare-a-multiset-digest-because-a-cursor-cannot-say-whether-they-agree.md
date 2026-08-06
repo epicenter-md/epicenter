@@ -301,8 +301,7 @@ where `present_tag` is one byte, `0x00` for a cleared cell and `0x01` for a cell
 that holds a value. Without it a cleared cell and a cell holding the empty string
 produce a **byte-identical preimage**, because both contribute zero value bytes and
 the empty string is storable: this record refuses `json_valid`, so nothing rejects
-it. Measured, the two fold the same entry over a fixed version, 1280 collisions among
-6720 tuples, and the merge predicate's value guard refuses both directions, so both
+it. Measured, the two fold the same entry over a fixed version, 1280 collisions among 6720 tuples, and the merge predicate's value guard refuses both directions, so both
 sides read clean forever. The family is reachable only where a value has
 desynchronised from its own `version_hash`: with the hash derived from the value,
 as ADR-0212 decides, a cleared cell and the empty string can never share a version.
@@ -320,8 +319,8 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 
 - **It costs one 8-byte column per side and about half a local write again.**
   Measured on the settled one-column schema:
-  **+49% to +66% at 12
-  columns and +54% to +60% at 3**, across six runs of one unmodified probe, on a write that already pays ADR-0212's
+  a **median of +62% at 12 columns and +56% at 3** across ten runs of one
+  unmodified probe, with the run-to-run spread 49 to 69 and 48 to 63, on a write that already pays ADR-0212's
   row-local floor. Against a store with neither, a local write costs **+82% to
   +117%**. The control arm sits within 5% and does not bound this: the ratio moves
   20 points between process invocations, so the envelope is the number and a
@@ -330,14 +329,15 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   is the third consecutive round in which the priced artifact was removed after
   pricing. Hashing the value rather than the version alone is 2 to 15 points across four
   runs. **Folding the sum in memory and writing it once per transaction
-  cuts the premium by about a third**, to **+33% to +44%** and **+29% to +35%**
-  across the same six runs,
+  cuts the premium by about a third**, to a median of **+37%** and **+32%**
+  across the same ten runs,
   and still satisfies the same-transaction rule; the higher figures assume one
   write per transaction.
 - **A row delete costs far more than a write, and it scales with row width.**
   ADR-0212's R2 drops a row's cells when a presence cell is written, and each drop
-  is an entry to subtract. Measured across three runs of the live producer, whose control arms
-  sit at 0.93x to 1.11x: **8.3x to 9.1x at 12 columns and 5.1x to 6.6x at 3**,
+  is an entry to subtract. Measured across five runs of the live producer, whose control arms
+  sit at 0.93x to 1.11x: a **median of 8.3x at 12 columns and 5.4x at 3**, spread
+  7.5 to 9.1 and 5.1 to 6.6,
   falling to **6.0x to 6.5x** and **4.2x to 5.0x** when the sum is folded in memory
   and written once. Earlier drafts quoted a 1.00x to 1.02x control and a 5.2x
   folded figure from two saved outputs that have no producing script, so they
