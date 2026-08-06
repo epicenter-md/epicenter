@@ -311,7 +311,7 @@ way out.
 
 Each metadata singleton carries columns it does not look like it needs: a
 lifetime, a `digest_format` that belongs to ADR-0213, and on the replica a
-`repair_epoch`. A replica stores `authority_lifetime` beside
+`repair_from`. A replica stores `authority_lifetime` beside
 `last_applied_cursor`, and an authority mints a `lifetime` and re-mints it on
 restore or rebuild; the reason is under "the authority
 names its own lifetime" below.
