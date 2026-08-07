@@ -177,7 +177,7 @@ export type TableHandle = {
 	 * `document(id).get('editor', 'text')`. Epicenter allocates the container
 	 * with the row, collects it with the row, and never looks inside.
 	 */
-	document(rowId: string): Result<RowDocument, StoreError>;
+	document(rowId: string): RowDocument | undefined;
 };
 
 /**
@@ -230,7 +230,7 @@ export type TypedTableHandle<TFields> = TableIo<TFields> extends {
 				{ rows: TRow[]; nonconforming: NonconformingRowError[] },
 				StoreError
 			>;
-			document(rowId: string): Result<RowDocument, StoreError>;
+			document(rowId: string): RowDocument | undefined;
 		}
 	: never;
 
@@ -278,8 +278,13 @@ export type KvHandle<TValues = JsonObject> = {
 	readonly defaults: Readonly<JsonObject>;
 	/** The one read verb. Every declared key is present, defaulted if unwritten. */
 	get(): Result<TValues, ReadRowError>;
-	/** Write some keys. Every other key is left alone. */
-	set(values: Partial<TValues>): Result<TValues, WriteRowError>;
+	/**
+	 * Merge some keys. Every other key is left alone.
+	 *
+	 * `update` rather than `set` for the same reason a table's is: only the keys
+	 * handed in are touched, and `set` promises replacement.
+	 */
+	update(values: Partial<TValues>): Result<TValues, WriteRowError>;
 };
 
 /** The untyped view, for a lens that arrived as data rather than as a literal. */
@@ -542,7 +547,7 @@ export function createStore({
 				if (unusable !== undefined) return Err(unusable);
 				return readBack();
 			},
-			set(values: JsonObject) {
+			update(values: JsonObject) {
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
 				if (table === undefined) {
@@ -711,14 +716,13 @@ export function createStore({
 				}
 				return Ok({ rows, nonconforming });
 			},
-			document(rowId: string): Result<RowDocument, StoreError> {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
+			document(rowId: string): RowDocument | undefined {
+				// No Result, because there is nothing here that can fail. An absent
+				// row is a fact rather than a failure, which is the same answer
+				// `get` gives it, and Epicenter never interprets what is inside a
+				// document so there is no lens to disagree with.
 				const container = documentContainer(root, rowId);
-				if (container === undefined) {
-					return StoreError.RowAbsent({ table: tableName, rowId });
-				}
-				return Ok(rowDocumentOver(container));
+				return container === undefined ? undefined : rowDocumentOver(container);
 			},
 		}) as TableHandle;
 	}

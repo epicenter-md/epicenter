@@ -75,7 +75,7 @@ describe('a read is a property access on a plain object', () => {
 			db.notes.ids(),
 			db.notes.document(made.id),
 			db.kv.get(),
-			db.kv.set({ theme: 'dark' }),
+			db.kv.update({ theme: 'dark' }),
 			db.query`SELECT 1 AS one`,
 			db.notes.delete(made.id),
 		]) {
@@ -137,7 +137,7 @@ describe('the projection is written in the same transaction as the log', () => {
 	});
 
 	test('a scalar binds natively, so equality works without quoting JSON', () => {
-		db.kv.set({ fontSize: 18 });
+		db.kv.update({ fontSize: 18 });
 		expect(db.query`SELECT fontSize FROM kv WHERE fontSize = ${18}`.data).toEqual(
 			[{ fontSize: 18 }],
 		);
@@ -258,8 +258,8 @@ describe('the document a row inherently owns', () => {
 				const made = diskDb.notes.create({ title: 'x', tags: [], date: null });
 				if (made.error !== null) throw made.error;
 				id = made.data.id;
-				const { data: container, error: docError } = diskDb.notes.document(id);
-				if (docError !== null) throw docError;
+				const container = diskDb.notes.document(id);
+				if (container === undefined) throw new Error('no document');
 				// The application names its root and picks its format. In Yjs 14
 				// `change` hands back a fresh builder and `applyDelta` commits it.
 				const editor = container.get('editor', 'text');
@@ -271,7 +271,7 @@ describe('the document a row inherently owns', () => {
 			if (error !== null) throw error;
 			const { data: db2, error: bindError } = reopened.bind(lens);
 			if (bindError !== null) throw bindError;
-			const { data: container } = db2.notes.document(id);
+			const container = db2.notes.document(id);
 			expect(container?.get('editor', 'text').toString()).toContain('buy milk');
 			expect(container?.get('meta').getAttr('cursor' as never)).toBe(8);
 			await reopened[Symbol.asyncDispose]();
@@ -280,15 +280,17 @@ describe('the document a row inherently owns', () => {
 		}
 	});
 
-	test('a document cannot be reached for an absent row', () => {
-		expect(db.notes.document('nope').error?.name).toBe('RowAbsent');
+	test('an absent row has no document, which is a fact not a failure', () => {
+		// The same answer `get` gives an absent row, rather than an Err for one
+		// and an Ok(undefined) for the other.
+		expect(db.notes.document('nope')).toBeUndefined();
 	});
 
 	test('deleting the row takes its document with it', () => {
 		const made = note();
-		db.notes.document(made.id).data?.get('editor', 'text');
+		db.notes.document(made.id)?.get('editor', 'text');
 		db.notes.delete(made.id);
-		expect(db.notes.document(made.id).error?.name).toBe('RowAbsent');
+		expect(db.notes.document(made.id)).toBeUndefined();
 	});
 
 	test('an editor writing into its own container cannot touch the row', () => {
@@ -296,7 +298,7 @@ describe('the document a row inherently owns', () => {
 		// schema whose doc node declares attributes overwrites the row's fields
 		// and syncs that; measured in ADR-0215.
 		const made = note();
-		const { data: container } = db.notes.document(made.id);
+		const container = db.notes.document(made.id);
 		container?.get('editor', 'text').setAttr('title' as never, 'CLOBBER' as never);
 		expect(db.notes.get(made.id).data?.title).toBe('Groceries');
 	});
@@ -310,17 +312,17 @@ describe('kv is where anything two devices both write belongs', () => {
 	});
 
 	test('a write touches only the keys it names', () => {
-		db.kv.set({ theme: 'dark' });
+		db.kv.update({ theme: 'dark' });
 		expect(db.kv.get().data).toEqual({ theme: 'dark', fontSize: 14 });
 	});
 
 	test('an undeclared key is refused by name', () => {
-		expect(db.kv.set({ nope: 1 } as never).error?.name).toBe('UnknownField');
+		expect(db.kv.update({ nope: 1 } as never).error?.name).toBe('UnknownField');
 	});
 
 	test('an invalid value is refused and touches nothing', () => {
-		db.kv.set({ fontSize: 20 });
-		expect(db.kv.set({ theme: 'purple' as never }).error?.name).toBe(
+		db.kv.update({ fontSize: 20 });
+		expect(db.kv.update({ theme: 'purple' as never }).error?.name).toBe(
 			'Nonconforming',
 		);
 		expect(db.kv.get().data).toEqual({ theme: 'light', fontSize: 20 });
@@ -339,8 +341,8 @@ describe('kv is where anything two devices both write belongs', () => {
 		if (e1 !== null) throw e1;
 		if (e2 !== null) throw e2;
 
-		phoneDb.kv.set({ theme: 'dark' });
-		laptopDb.kv.set({ fontSize: 22 });
+		phoneDb.kv.update({ theme: 'dark' });
+		laptopDb.kv.update({ fontSize: 22 });
 		exchange(phone, laptop);
 
 		const expected = { theme: 'dark', fontSize: 22 } as const;
@@ -349,7 +351,7 @@ describe('kv is where anything two devices both write belongs', () => {
 	});
 
 	test('kv is queryable as a one-row relation', () => {
-		db.kv.set({ theme: 'dark', fontSize: 20 });
+		db.kv.update({ theme: 'dark', fontSize: 20 });
 		expect(db.query`SELECT theme, fontSize FROM kv`.data).toEqual([
 			{ theme: 'dark', fontSize: 20 },
 		]);
