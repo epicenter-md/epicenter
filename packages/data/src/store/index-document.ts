@@ -11,6 +11,17 @@ import * as Y from '@y/y';
  */
 export const PRESENCE_ATTRIBUTE = `${RESERVED_ATTRIBUTE_PREFIX}presence`;
 
+/**
+ * The attribute holding the container a row's document lives in (ADR-0130/0215).
+ *
+ * Allocated when the row is created, never lazily on first access. Lazy
+ * allocation is a write at a well-known address, so two devices opening a note
+ * for the first time would each mint their own container and map LWW would
+ * discard one along with everything written into it. Creating it with the row
+ * moves the only race to row creation, which minted ids make unreachable.
+ */
+export const DOCUMENT_ATTRIBUTE = `${RESERVED_ATTRIBUTE_PREFIX}doc`;
+
 export type Presence = 'present' | 'absent';
 
 /** The index document: one per application, holding every table (ADR-0212). */
@@ -129,9 +140,31 @@ export function writeRow(
 	// content is gone from the CRDT and comes back only from history: an address
 	// is reusable, the content is not (ADR-0212).
 	row.setAttr(PRESENCE_ATTRIBUTE as never, 'present' as never);
+	// Eagerly, and only when absent, so re-creating at a reused address gets a
+	// fresh one and an existing row keeps the container it already has.
+	if (!(row.getAttr(DOCUMENT_ATTRIBUTE as never) instanceof Y.Type)) {
+		row.setAttr(DOCUMENT_ATTRIBUTE as never, new Y.Type() as never);
+	}
 	for (const [name, value] of Object.entries(fields)) {
 		row.setAttr(name as never, value as never);
 	}
+}
+
+/**
+ * The container holding one row's application-owned roots, or undefined when
+ * the row is not live.
+ *
+ * A pure read: the container was allocated with the row. Epicenter never looks
+ * inside, and the application names its own roots and picks their formats.
+ */
+export function documentContainer(
+	root: Y.Type,
+	rowId: string,
+): Y.Type | undefined {
+	if (!isLive(root, rowId)) return undefined;
+	const row = rowType(root, rowId);
+	const container = row?.getAttr(DOCUMENT_ATTRIBUTE as never) as unknown;
+	return container instanceof Y.Type ? container : undefined;
 }
 
 /**

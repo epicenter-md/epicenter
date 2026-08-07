@@ -12,13 +12,15 @@ import * as Y from '@y/y';
  */
 export const COMPACTION_THRESHOLD = 64;
 
-/** The index document's name in the update log. Rows name their own. */
+/**
+ * The one document in the log.
+ *
+ * An application is one document (ADR-0215), so this column now distinguishes
+ * nothing. It is kept because the log's shape survives the browser arriving and
+ * a second durable artifact appearing, and dropping a column to save nine bytes
+ * a row would be the kind of saving that costs a migration later.
+ */
 export const INDEX_DOCUMENT = 'index';
-
-/** `notes/n1` names the document a row inherently owns (ADR-0130/0212). */
-export function rowDocumentName(tableName: string, rowId: string): string {
-	return `${tableName}/${rowId}`;
-}
 
 type StoredUpdate = SqliteRow & {
 	seq: number;

@@ -21,6 +21,7 @@ import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import {
 	createIndexDocument,
 	deleteRow,
+	documentContainer,
 	isLive,
 	listRowIds,
 	readRow,
@@ -36,7 +37,6 @@ import {
 	INDEX_DOCUMENT,
 	readUpdates,
 	rebuildProjectedTable,
-	rowDocumentName,
 	upsertProjectedRow,
 } from './persistence.js';
 
@@ -121,13 +121,22 @@ export type TableHandle = {
 	 *
 	 * @example
 	 * ```ts
-	 * const { data, error } = await db.settings.get('app');
-	 * const cfg = data ?? { ...db.settings.defaults, ...error?.conforming };
+	 * const { data, error } = db.settings.get(id);
+	 * const row = data ?? { ...db.settings.defaults, ...error?.conforming };
 	 * ```
 	 */
 	readonly defaults: Readonly<JsonObject>;
-	create(fields?: JsonObject): Promise<Result<Row, WriteRowError>>;
-	create(rowId: string, fields?: JsonObject): Promise<Result<Row, WriteRowError>>;
+	/**
+	 * Bring one row into being, at a minted id.
+	 *
+	 * There is no door for a chosen id, and that is a correctness decision. A row
+	 * is a nested container addressed by the struct that created it, so two
+	 * devices creating one address produce two containers and map LWW discards
+	 * one along with every field in it. A 24-character minted id makes that
+	 * unreachable rather than merely unlikely. Anything an application wants to
+	 * name goes in `kv`, which lives at a name-addressed root.
+	 */
+	create(fields: JsonObject): Result<Row, WriteRowError>;
 	/**
 	 * The one read verb.
 	 *
@@ -135,66 +144,52 @@ export type TableHandle = {
 	 * than a failure. `Err(Nonconforming)` carries `conforming`, so a caller
 	 * composes whatever forgiveness it wants without a second verb existing.
 	 */
-	get(rowId: string): Promise<Result<Row | undefined, ReadRowError>>;
+	get(rowId: string): Result<Row | undefined, ReadRowError>;
 	/**
 	 * Merge fields into a live row. Refuses an absent address.
 	 *
 	 * `update` rather than `set`, because only the fields handed in are touched
-	 * and every other field is left alone. `set` promises replacement, and this
-	 * is the verb called most often, so the name that misleads is the expensive
-	 * one to keep.
+	 * and every other field is left alone.
 	 */
-	update(rowId: string, fields: JsonObject): Promise<Result<Row, WriteRowError>>;
-	/**
-	 * Get or create, in one transaction.
-	 *
-	 * The verb a singleton needs, and the reason there is no `kv` namespace: a
-	 * singleton is a row whose id you chose. With defaults declared, occupying
-	 * one needs no fields at all.
-	 */
-	ensure(rowId: string, fields?: JsonObject): Promise<Result<Row, WriteRowError>>;
-	delete(rowId: string): Promise<Result<boolean, StoreError>>;
+	update(rowId: string, fields: JsonObject): Result<Row, WriteRowError>;
+	delete(rowId: string): Result<boolean, StoreError>;
 	/** Every live row id, sorted. */
-	ids(): Promise<Result<string[], StoreError>>;
+	ids(): Result<string[], StoreError>;
 	/**
 	 * Every live row, with the ones this lens cannot read reported separately
 	 * rather than dropped or repaired.
 	 */
-	list(): Promise<
-		Result<
-			{ rows: Row[]; nonconforming: NonconformingRowError[] },
-			StoreError
-		>
+	list(): Result<
+		{ rows: Row[]; nonconforming: NonconformingRowError[] },
+		StoreError
 	>;
-	document: {
-		/**
-		 * The document this row inherently owns (ADR-0130/0212).
-		 *
-		 * Asynchronous because opening is a load, and disposable because a
-		 * document is opened and never assigned: that is what makes it impossible
-		 * to replace the type behind an editor that still holds a handle, which
-		 * silently accepts writes that go nowhere.
-		 *
-		 * Epicenter creates it and never looks inside. The application names its
-		 * own roots and chooses its own format.
-		 */
-		open(rowId: string): Promise<Result<RowDocument, StoreError>>;
-	};
+	/**
+	 * The container this row's document lives in (ADR-0130/0215).
+	 *
+	 * Synchronous, because the application is one document that was replayed in
+	 * full before this binding existed, so there is nothing left to load. That
+	 * reverses ADR-0135's asynchronous `open`, whose reason was that a
+	 * per-document lazy load returned a half-hydrated handle; with one document
+	 * no handle can be half-hydrated. Not disposable either, because nothing is
+	 * held open.
+	 *
+	 * The application names its own roots and picks their formats:
+	 * `document(id).get('editor', 'text')`. Epicenter allocates the container
+	 * with the row, collects it with the row, and never looks inside.
+	 */
+	document(rowId: string): Result<RowDocument, StoreError>;
 };
 
+/**
+ * One row's document: the roots an application names inside its own container.
+ *
+ * Mirrors `Y.Doc.get(key, typeName)` deliberately, because a nested `Y.Type`
+ * has no such method of its own; it carries attributes, and a root inside a
+ * container is one of them. Epicenter creates on miss and returns what is
+ * already there, and never reads what is inside.
+ */
 export type RowDocument = {
-	/**
-	 * One of the application's own roots inside its own document.
-	 *
-	 * `typeName` is Yjs 14's own second argument, and it is not optional in
-	 * practice: a root with no name has no type, so `change` builds a delta that
-	 * `applyDelta` then discards and the write silently does nothing. Verified
-	 * against `@y/y@14.0.0-rc.24`. Epicenter passes it through and never reads
-	 * what it names.
-	 */
 	get(root: string, typeName?: string | null): Y.Type;
-	transact<T>(run: () => T): T;
-	[Symbol.asyncDispose](): Promise<void>;
 };
 
 /**
@@ -207,7 +202,7 @@ export type RowDocument = {
 export type QueryMethod = (
 	strings: TemplateStringsArray,
 	...values: SqliteValue[]
-) => Promise<Result<SqliteRow[], StoreError>>;
+) => Result<SqliteRow[], StoreError>;
 
 /**
  * One table, with its own lens's row and create-input types.
@@ -223,29 +218,19 @@ export type TypedTableHandle<TFields> = TableIo<TFields> extends {
 }
 	? {
 			readonly defaults: Readonly<JsonObject>;
-			delete(rowId: string): Promise<Result<boolean, StoreError>>;
-			ids(): Promise<Result<string[], StoreError>>;
-			document: TableHandle['document'];
-			create(fields: TInput): Promise<Result<TRow, WriteRowError>>;
-			create(
-				rowId: string,
-				fields: TInput,
-			): Promise<Result<TRow, WriteRowError>>;
-			get(rowId: string): Promise<Result<TRow | undefined, ReadRowError>>;
+			create(fields: TInput): Result<TRow, WriteRowError>;
+			get(rowId: string): Result<TRow | undefined, ReadRowError>;
 			update(
 				rowId: string,
 				fields: Partial<TInput>,
-			): Promise<Result<TRow, WriteRowError>>;
-			ensure(
-				rowId: string,
-				fields?: Partial<TInput>,
-			): Promise<Result<TRow, WriteRowError>>;
-			list(): Promise<
-				Result<
-					{ rows: TRow[]; nonconforming: NonconformingRowError[] },
-					StoreError
-				>
+			): Result<TRow, WriteRowError>;
+			delete(rowId: string): Result<boolean, StoreError>;
+			ids(): Result<string[], StoreError>;
+			list(): Result<
+				{ rows: TRow[]; nonconforming: NonconformingRowError[] },
+				StoreError
 			>;
+			document(rowId: string): Result<RowDocument, StoreError>;
 		}
 	: never;
 
@@ -292,9 +277,9 @@ export type KvHandle<TValues = JsonObject> = {
 	 */
 	readonly defaults: Readonly<JsonObject>;
 	/** The one read verb. Every declared key is present, defaulted if unwritten. */
-	get(): Promise<Result<TValues, ReadRowError>>;
+	get(): Result<TValues, ReadRowError>;
 	/** Write some keys. Every other key is left alone. */
-	set(values: Partial<TValues>): Promise<Result<TValues, WriteRowError>>;
+	set(values: Partial<TValues>): Result<TValues, WriteRowError>;
 };
 
 /** The untyped view, for a lens that arrived as data rather than as a literal. */
@@ -369,7 +354,26 @@ export function createStore({
 
 	index.on('updateV2', (update: Uint8Array, origin: unknown) => {
 		if (origin === hydrationOrigin) return;
-		pending.push(copyBytes(update));
+		if (origin === localOrigin) {
+			// A store verb is mid-flight; `commit` flushes these with the
+			// projection write they imply, in one SQLite transaction.
+			pending.push(copyBytes(update));
+			return;
+		}
+		// An application writing into a row's document, typically an editor
+		// binding. These bytes must reach durable storage on their own, because
+		// nothing else is going to flush them. No projection work: Epicenter
+		// never looks inside a document, so nothing it holds is ever projected.
+		const { error } = persist(() =>
+			appendUpdate({
+				database,
+				history,
+				document: INDEX_DOCUMENT,
+				update: copyBytes(update),
+				takenAt: now(),
+			}),
+		);
+		if (error !== null) throw error;
 	});
 
 	// Attach the listener before hydrating, then replay under an origin the
@@ -378,10 +382,6 @@ export function createStore({
 		Y.applyUpdateV2(index, copyBytes(stored.bytes), hydrationOrigin);
 	}
 
-	const openDocuments = new Map<
-		string,
-		{ document: Y.Doc; references: number; stop(): void }
-	>();
 	/** Which tables have a live projection, and the columns each one carries. */
 	const projectedTables = new Map<string, string[]>();
 
@@ -475,7 +475,7 @@ export function createStore({
 
 		const kv = createKvHandle(lens);
 
-		const query: QueryMethod = async (strings, ...values) => {
+		const query: QueryMethod = (strings, ...values) => {
 			const unusableNow = requireUsable();
 			if (unusableNow !== undefined) return Err(unusableNow);
 			return trySync({
@@ -537,12 +537,12 @@ export function createStore({
 
 		return Object.freeze({
 			defaults: table?.defaults ?? Object.freeze({}),
-			async get() {
+			get() {
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
 				return readBack();
 			},
-			async set(values: JsonObject) {
+			set(values: JsonObject) {
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
 				if (table === undefined) {
@@ -570,6 +570,28 @@ export function createStore({
 
 	function tableTypeFor(name: string): Y.Type {
 		return tableRoot(index, name);
+	}
+
+	/**
+	 * Reach one named root inside a row's container, creating it on miss.
+	 *
+	 * The create is a write, so it runs in a transaction and reaches storage
+	 * through the same `updateV2` listener every other application write does.
+	 * `typeName` is passed through unread: it is what gives the type its label
+	 * in Yjs 14, and choosing it is the application's business.
+	 */
+	function rowDocumentOver(container: Y.Type): RowDocument {
+		return {
+			get(rootName: string, typeName?: string | null): Y.Type {
+				const existing = container.getAttr(rootName as never) as unknown;
+				if (existing instanceof Y.Type) return existing;
+				const created = new Y.Type((typeName ?? null) as never);
+				index.transact(() => {
+					container.setAttr(rootName as never, created as never);
+				});
+				return created;
+			},
+		};
 	}
 
 	function liveRows(tableName: string): Map<string, JsonObject> {
@@ -631,27 +653,14 @@ export function createStore({
 
 		return Object.freeze({
 			defaults: table.defaults,
-			async create(
-				first?: string | JsonObject,
-				second?: JsonObject,
-			): Promise<Result<Row, WriteRowError>> {
+			create(fields: JsonObject): Result<Row, WriteRowError> {
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
-				const suppliedId = typeof first === 'string' ? first : undefined;
-				const input: JsonObject =
-					(suppliedId === undefined ? (first as JsonObject | undefined) : second) ??
-					{};
-				const { data: fields, error } = table.validateWrite(input);
+				const { data: validated, error } = table.validateWrite(fields);
 				if (error !== null) return Err(error);
-				const rowId = suppliedId ?? mintRowId();
-				// The read and the write are not separated by an await, so nothing
-				// can land between them.
-				if (isLive(root, rowId)) {
-					return StoreError.RowExists({ table: tableName, rowId });
-				}
-				return write(rowId, fields);
+				return write(mintRowId(), validated);
 			},
-			async get(rowId: string): Promise<Result<Row | undefined, ReadRowError>> {
+			get(rowId: string): Result<Row | undefined, ReadRowError> {
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
 				const payload = readRow(root, rowId);
@@ -661,10 +670,7 @@ export function createStore({
 					ReadRowError
 				>;
 			},
-			async update(
-				rowId: string,
-				fields: JsonObject,
-			): Promise<Result<Row, WriteRowError>> {
+			update(rowId: string, fields: JsonObject): Result<Row, WriteRowError> {
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
 				if (!isLive(root, rowId)) {
@@ -674,25 +680,7 @@ export function createStore({
 				if (error !== null) return Err(error);
 				return write(rowId, validated);
 			},
-			async ensure(
-				rowId: string,
-				fields: JsonObject = {},
-			): Promise<Result<Row, WriteRowError>> {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
-				const { data: validated, error } = table.validateWrite(fields);
-				if (error !== null) return Err(error);
-				if (isLive(root, rowId)) {
-					// Already occupied, so supplied fields still land: `ensure` is
-					// get-or-create, and creating with fields that then vanish on the
-					// second call would be a different verb on the second run.
-					return Object.keys(validated).length === 0
-						? readBack(rowId)
-						: write(rowId, validated);
-				}
-				return write(rowId, validated);
-			},
-			async delete(rowId: string): Promise<Result<boolean, StoreError>> {
+			delete(rowId: string): Result<boolean, StoreError> {
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
 				let removed = false;
@@ -706,12 +694,12 @@ export function createStore({
 				if (error !== null) return Err(error);
 				return Ok(removed);
 			},
-			async ids(): Promise<Result<string[], StoreError>> {
+			ids(): Result<string[], StoreError> {
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
 				return Ok(listRowIds(root));
 			},
-			async list() {
+			list() {
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
 				const rows: Row[] = [];
@@ -723,87 +711,18 @@ export function createStore({
 				}
 				return Ok({ rows, nonconforming });
 			},
-			document: {
-				async open(rowId: string): Promise<Result<RowDocument, StoreError>> {
-					const unusable = requireUsable();
-					if (unusable !== undefined) return Err(unusable);
-					if (!isLive(root, rowId)) {
-						return StoreError.RowAbsent({ table: tableName, rowId });
-					}
-					return openRowDocument(rowDocumentName(tableName, rowId));
-				},
+			document(rowId: string): Result<RowDocument, StoreError> {
+				const unusable = requireUsable();
+				if (unusable !== undefined) return Err(unusable);
+				const container = documentContainer(root, rowId);
+				if (container === undefined) {
+					return StoreError.RowAbsent({ table: tableName, rowId });
+				}
+				return Ok(rowDocumentOver(container));
 			},
 		}) as TableHandle;
 	}
 
-	function openRowDocument(name: string): Result<RowDocument, StoreError> {
-		const existing = openDocuments.get(name);
-		if (existing !== undefined) {
-			existing.references += 1;
-			return Ok(handleFor(name, existing.document));
-		}
-		const document = new Y.Doc({ gc: true });
-		const persistDocument = (update: Uint8Array, origin: unknown) => {
-			if (origin === hydrationOrigin) return;
-			const { error } = persist(() =>
-				appendUpdate({
-					database,
-					history,
-					document: name,
-					update: copyBytes(update),
-					takenAt: now(),
-				}),
-			);
-			if (error !== null) throw error;
-		};
-		document.on('updateV2', persistDocument);
-		const { error } = trySync({
-			try: () => {
-				for (const stored of readUpdates(database, name)) {
-					Y.applyUpdateV2(document, copyBytes(stored.bytes), hydrationOrigin);
-				}
-			},
-			catch: (cause) => StoreError.StorageFailed({ cause }),
-		});
-		if (error !== null) {
-			document.off('updateV2', persistDocument);
-			document.destroy();
-			return Err(error);
-		}
-		const entry = {
-			document,
-			references: 1,
-			stop: () => document.off('updateV2', persistDocument),
-		};
-		openDocuments.set(name, entry);
-		return Ok(handleFor(name, document));
-	}
-
-	function handleFor(name: string, document: Y.Doc): RowDocument {
-		let released = false;
-		return {
-			get: (root: string, typeName?: string | null) =>
-				document.get(root, typeName),
-			transact: <T>(run: () => T): T => document.transact(run, localOrigin),
-			async [Symbol.asyncDispose]() {
-				if (released) return;
-				released = true;
-				const entry = openDocuments.get(name);
-				if (entry === undefined) return;
-				entry.references -= 1;
-				if (entry.references > 0) return;
-				openDocuments.delete(name);
-				entry.stop();
-				entry.document.destroy();
-			},
-		};
-	}
-
-	// Asserted rather than annotated. Checking this literal against `Store`
-	// structurally re-instantiates the generic `bind` against `ValidateLens` and
-	// `BoundOf`, which is enough to exceed TypeScript's depth limit (`TS2589`) on
-	// its own. The members are individually typed above, so what the assertion
-	// gives up is only the whole-object cross-check.
 	const store = Object.freeze({
 		// One implementation, two doors onto it. The typed door exists so a lens
 		// authored as a literal carries its row types through; the untyped door is
@@ -867,11 +786,6 @@ export function createStore({
 		async [Symbol.asyncDispose]() {
 			if (disposed) return;
 			disposed = true;
-			for (const entry of openDocuments.values()) {
-				entry.stop();
-				entry.document.destroy();
-			}
-			openDocuments.clear();
 			index.destroy();
 			await dispose();
 		},
