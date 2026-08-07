@@ -158,36 +158,53 @@ A device with an empty local store can still accept typing before its first
 sync. That merges as ordinary concurrent editing, so it is a first-paint product
 gate rather than a correctness bug.
 
-### The ceiling is stated rather than discovered
+### The ceiling is stated in items, because that is what it depends on
 
-Hydrating from stored bytes, `@y/y@14.0.0-rc.24`, Bun, one process per case:
+Hydrating from stored bytes. `bun 1.3.1`, darwin/arm64, JavaScriptCore, one OS
+process per case, corpus read from disk, baseline taken after a forced GC.
+Regenerate with `evidence/bench/memory.ts`.
 
-| shape | live rows | encoded | resident | cold open |
-| --- | --- | --- | --- | --- |
-| notes with bodies | 986 (the real vault) | 2.8 MB | 4 MB | 6 ms |
-| notes with bodies | 10,000 | 28 MB | 48 MB | 38 ms |
-| recordings | 10,000 | 4 MB | 66 MB | 40 ms |
-| recordings | 25,000 | 10 MB | 147 MB | 98 ms |
-| recordings | 50,000 | 20 MB | 357 MB | 208 ms |
+| shape | rows | encoded | items | rss | heap | open |
+| --- | --- | --- | --- | --- | --- | --- |
+| notes with bodies | 986 (the real vault) | 3 MB | 7,888 | 24 MB | 0 MB | 10 ms |
+| notes with bodies | 5,000 | 14 MB | 40,000 | 83 MB | 46 MB | 34 ms |
+| notes with bodies | 10,000 | 28 MB | 80,000 | 142 MB | 91 MB | 58 ms |
+| recordings | 5,000 | 2 MB | 55,000 | 72 MB | 26 MB | 32 ms |
+| recordings | 10,000 | 4 MB | 110,000 | 118 MB | 28 MB | 57 ms |
+| recordings | 25,000 | 10 MB | 275,000 | 263 MB | 155 MB | 124 ms |
 
-**Memory is driven by item count, not bytes.** Every field is a Yjs `Item`
-costing roughly 500 B of resident JavaScript however few bytes it encodes to, so
-10 MB of recordings costs 147 MB resident. A recording carries about ten fields
-and a note about three, which is why the application with no prose at all
-reaches the wall first.
+**Memory tracks struct count, not bytes.** 10 MB of recordings costs 263 MB
+resident, because every field is a Yjs `Item` and an item costs whatever the
+engine charges for a small object regardless of how few bytes it encodes to. At
+scale that settles near **1 KB of rss per item**, so:
 
-**The supported ceiling is 10,000 to 15,000 live rows per application.** Past it
-the fix is not splitting prose back out, which takes 25,000 notes only from
-112 MB to 68 MB and costs a second synchronisation mechanism. The fix is not
-hydrating the whole document, because ADR-0214's projection already holds the
-queryable copy and the `Y.Doc` is needed only for merging. Not built, and no
-application is near it.
+```txt
+resident ~= items x 1 KB          items ~= rows x (1 + fields + containers)
+```
 
-**The resident column is the weakest number in this record.** An independent
-reviewer could not reproduce it and measured 182 MB where this says 48. The
-encoded sizes and cold-open times reproduce well. Until that column is
-re-measured with a named allocator and instrument, treat the ceiling as an order
-of magnitude rather than a threshold.
+A recording is 11 items and a note with a body is 8, which is why the
+application with no prose at all reaches the wall first.
+
+**Quote the ceiling in items: roughly 100,000 items is roughly 100 MB
+resident.** That is about 11,000 recordings or 16,000 notes with bodies. Items
+are a property of the data and reproduce anywhere; bytes-per-item is a property
+of the engine, and a Tauri WebView is JavaScriptCore on macOS and Linux but V8
+on Windows, so the second half of that multiplication has to be re-measured per
+platform rather than assumed from this table.
+
+**These figures replace an earlier set that was too low, not too high.** A prior
+draft reported 48 MB for the 10,000-note case now measured at 142 MB rss and
+91 MB heap; an independent reviewer's 182 MB was nearer the truth. The error was
+method, not arithmetic: several shapes were measured in one process, so the
+allocator's high-water mark was attributed to the first case and roughly nothing
+to the rest. `rss` and `heap` are both reported here because they disagree by
+1.5x to 2x, and hiding that disagreement is what made the earlier number
+impossible to falsify.
+
+Past the ceiling the fix is not splitting prose back out, which removes about 2
+items of 8 per note. The fix is not hydrating the whole document, because
+ADR-0214's projection already holds the queryable copy and the `Y.Doc` is needed
+only for merging. Not built, and the real vault sits at 7,888 items.
 
 ## The authority is not settled
 

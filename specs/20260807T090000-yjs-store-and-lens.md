@@ -180,8 +180,10 @@ default fires only on `undefined`.
   durable, and cold start becomes O(entire history). Each is one of the three
   things an authority does, validate, bound and compact, none of which exists
   because of hydration cost. See ADR-0215's closing section.
-- **The client memory column needs a named instrument.** An independent reviewer
-  measured 182 MB where these records say 48. Encoded sizes and cold-open times
-  reproduce; resident memory does not.
+- **The memory ceiling is quoted in items now**, roughly 100,000 items to
+  roughly 100 MB resident, which is about 11,000 recordings or 16,000 notes with
+  bodies. Items are a property of the data; bytes per item is a property of the
+  engine, and a Tauri WebView is JSC on macOS and Linux but V8 on Windows, so
+  that half needs re-measuring per platform.
 - **The cutover is not started.** The old `packages/data` stack, its consumers,
   Whispering and blobs are all untouched.
