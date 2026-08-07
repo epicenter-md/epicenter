@@ -88,6 +88,35 @@ the wrong type, treating a content field as a string, and a malformed union.
 Autocomplete inside the quotes comes from arktype's own `type.validate`, which is
 exported; nothing about its type-level machinery is reimplemented.
 
+### A field may declare a default, in the string
+
+```ts
+settings: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' }
+```
+
+arktype expresses a default inside the expression, so the lens is still JSON and
+introspection reads it back (`prop theme: default="light"`). It is not a
+migration and not backfill, which ADR-0125 refuses: nothing is written, the value
+is supplied at read time when the key is absent.
+
+**A default fills an absent key. It does not rescue a present but invalid one.**
+Measured: `{}` yields `light`, and `{ theme: 'purple' }` is still an error. So a
+table offers two reads, and the caller picks which answer it wants:
+
+| | absent key | invalid stored value |
+| --- | --- | --- |
+| `get(id)` | default | `Err(Nonconforming)` |
+| `getOrDefault(id)` | default | default |
+
+`get` is the honest read and is what a repair tool or an export wants.
+`getOrDefault` is what render code wants, because a settings screen cannot
+display a `Result`. Both live on every table, because a note's `title` in a list
+view wants the same forgiveness a setting does. This is what a `kv` namespace
+would otherwise have been invented to provide.
+
+With defaults declared, occupying a singleton needs no fields at all:
+`await db.settings.ensure('app')`.
+
 ### Fields are nullable, never optional
 
 `'string|null'`, not `'date?'`. Every field is always present, so the projection
@@ -141,7 +170,8 @@ const { data: db } = store.bind(lens);                  // the typed view. sync,
 const { data: note } = await db.notes.create({ title: 'Groceries', tags: ['food'] });
 note.title                                   // a property on a FROZEN plain object
 await db.notes.set(note.id, { title: 'Shopping' });
-await db.notes.ensure('app', { theme: 'light', fontSize: 14 });   // the singleton verb
+await db.settings.ensure('app');            // singleton, filled from declared defaults
+const { data: cfg } = await db.settings.getOrDefault('app');   // never fails
 await db.notes.delete(note.id);
 
 // prose. The lens never mentioned it; every row has one (ADR-0130).

@@ -116,6 +116,19 @@ held and the edit retained, exactly as roots do.
 Also found in shipped code, unfixed: `patch` on an absent row returns
 `Ok(undefined)` and silently swallows the write.
 
+## Defaults, and why there is still no kv
+
+arktype expresses a default inside the expression, so the lens stays JSON:
+`"'light'|'dark' = 'light'"`. Measured: `{}` yields `light`, `{theme:'dark'}`
+keeps `dark`, and `{theme:'purple'}` is still an error. **A default fills an
+absent key; it does not rescue a present but invalid one.**
+
+So a table offers two reads. `get(id)` is honest and returns
+`Err(Nonconforming)`; `getOrDefault(id)` always returns a value. Render code
+wants the second, a repair tool wants the first, and a note's `title` in a list
+view wants the same forgiveness a setting does. That is the whole thing a `kv`
+namespace would have been invented to provide, and it works on every table.
+
 ## Open
 
 - **Prose does not reach the folder, and that is now chosen.** A row's document
