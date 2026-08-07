@@ -81,7 +81,6 @@ AGENTS.md
 .agents/skills/refactoring/SKILL.md
 .agents/skills/method-shorthand-jsdoc/SKILL.md
 .agents/skills/one-sentence-test/SKILL.md
-.agents/skills/first-read-review/SKILL.md
 .agents/skills/post-implementation-review/SKILL.md
 .agents/skills/collapse-pass/references/never-touch.md
 .agents/skills/collapse-pass/references/smell-catalog.md

@@ -7,7 +7,7 @@
 			"prompt": "I just finished wiring the new blob store across four files. Do a second pass over what you changed before you reply.",
 			"anchors": ["second pass"],
 			"expect": "post-implementation-review",
-			"forbid": ["collapse-pass", "first-read-review"],
+			"forbid": ["collapse-pass"],
 			"why": "The hub owns the after-implementation sweep. A collapse pass is a different job with a different cadence."
 		},
 		{
@@ -52,8 +52,8 @@
 			"prompt": "What does the mount surface actually do? Give it to me in one sentence.",
 			"anchors": ["in one sentence", "actually do"],
 			"expect": "one-sentence-test",
-			"forbid": ["first-read-review"],
-			"why": "The move owns both phrases and should win over the readability lens."
+			"forbid": ["post-implementation-review"],
+			"why": "The move owns both phrases and should win over the broad second-read hub."
 		},
 		{
 			"id": "review-plain-comprehension-near-miss",
