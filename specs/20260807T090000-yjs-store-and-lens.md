@@ -5,8 +5,9 @@
 - **Settled as:** [ADR-0212](../docs/adr/0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md),
   [ADR-0213](../docs/adr/0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md),
   [ADR-0214](../docs/adr/0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md),
-  [ADR-0215](../docs/adr/0215-an-application-is-one-document-and-the-authority-is-a-durable-ordered-byte-log.md).
-  Delete this file once all four are `Accepted` and built.
+  [ADR-0215](../docs/adr/0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md),
+  [ADR-0216](../docs/adr/0216-a-name-addressed-location-is-the-only-safe-place-for-a-write-two-devices-both-make.md).
+  Delete this file once all five are `Accepted` and built.
 
 Replaces `specs/20260805T190000-replicated-cell-store-memo.md`, which explored a
 hand-built per-field cell store. That store is not being built. The exploration
@@ -172,7 +173,15 @@ default fires only on `undefined`.
   (ADR-0215). Past it the lever is not hydrating the whole document, because the
   projection already holds the queryable copy. Not built; no application is near
   it.
-- **A per-dead-row figure needs reconciling.** ADR-0212 says 170 B; the same
-  measurement gives 78 B for a three-field row and 93 B with a body.
-- **The wire is not built.** The lens and the store are; the Durable Object, the
-  socket, and the cutover of the old `packages/data` stack are not.
+- **The authority is not settled, and an earlier draft that claimed it was has
+  been withdrawn.** Adversarial review broke it on four counts, three proven in
+  real `workerd`: an oversized update vanishes silently against DO SQLite's
+  2 MiB value cap, a client-posted baseline is unverifiable, a poison pill is
+  durable, and cold start becomes O(entire history). Each is one of the three
+  things an authority does, validate, bound and compact, none of which exists
+  because of hydration cost. See ADR-0215's closing section.
+- **The client memory column needs a named instrument.** An independent reviewer
+  measured 182 MB where these records say 48. Encoded sizes and cold-open times
+  reproduce; resident memory does not.
+- **The cutover is not started.** The old `packages/data` stack, its consumers,
+  Whispering and blobs are all untouched.

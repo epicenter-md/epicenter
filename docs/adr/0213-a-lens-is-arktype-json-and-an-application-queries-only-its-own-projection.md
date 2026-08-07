@@ -16,6 +16,14 @@
   host capability. The reason the clause can go is ADR-0214's one-file-per-app
   layout: an application's file is the boundary, so the refusal no longer buys
   isolation that the filesystem does not already give.
+- **Amended by:** [ADR-0216](0216-a-name-addressed-location-is-the-only-safe-place-for-a-write-two-devices-both-make.md)
+  at two verbs and one claim. Withdrawn: `ensure(id, fields)`, the chosen-id door
+  `create(rowId, fields)`, and "a singleton is a row whose id you chose". A row
+  is created at a minted id, always, and a lens declares a `kv` section for what
+  it keeps one of. Also
+  [ADR-0215](0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md),
+  which makes the surface synchronous and turns `document.open` into
+  `document(id)`.
 - **Confirms:** [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md) and
   [ADR-0168](0168-lenses-are-complete-pure-json-interpretations.md). Neither is
   amended. An earlier reading held that ADR-0125 forbade validation; it does not,
@@ -128,8 +136,10 @@ A draft of this record added a `getOrDefault` verb. It is withdrawn: it is
 `{ ...defaults, ...(data ?? error.conforming) }` with the composition frozen, and
 freezing it hides which of the two behaviours a call site wanted.
 
-With defaults declared, occupying a singleton needs no fields at all:
-`await db.settings.ensure('app')`.
+With defaults declared, an unwritten key simply reads as its default:
+`db.kv.get()` on a fresh store already returns every declared value. The verb an
+earlier draft invented for this, `ensure(id, fields)`, is withdrawn along with
+the singleton-as-row model it served (ADR-0216).
 
 ### A field is one type through every door
 
@@ -213,25 +223,32 @@ on object identity.
 **You never hold a row. You hold a table.**
 
 ```ts
-const { data: store } = await openBunStore({ path });   // the open file
-const { data: db } = store.bind(lens);                  // the typed view. sync, Result
+const { data: store } = await openBunStore({ directory });   // the open file
+const { data: db } = store.bind(lens);                       // the typed view
 
-const { data: note } = await db.notes.create({ title: 'Groceries', tags: ['food'] });
+const { data: note } = db.notes.create({ title: 'Groceries', tags: ['food'] });
 note.title                                   // a property on a FROZEN plain object
-await db.notes.update(note.id, { title: 'Shopping' });
-await db.settings.ensure('app');            // singleton, filled from declared defaults
-const { data, error } = await db.settings.get('app');
-const cfg = data ?? db.settings.defaults;   // ?? , never a destructuring default
-await db.notes.delete(note.id);
+db.notes.update(note.id, { title: 'Shopping' });
+db.notes.delete(note.id);
 
-// prose. The lens never mentioned it; every row has one (ADR-0130).
-using document = await db.notes.document.open(note.id);
-document.get('editor').insert(0, 'buy milk');
+// what this application keeps one of. Not a row (ADR-0216).
+const { data: settings, error } = db.kv.get();
+const applied = settings ?? { ...db.kv.defaults, ...error?.conforming };
+db.kv.update({ theme: 'dark' });
 
-const rows = await db.query`
+// the document. The lens never mentioned it; every row has one (ADR-0130).
+db.notes.document(note.id)?.get('editor', 'text');
+
+const rows = db.query`
   SELECT id, title FROM notes
   WHERE EXISTS (SELECT 1 FROM json_each(notes.tags) WHERE value = ${'food'})`;
 ```
+
+**Nothing here is awaited except opening the file.** An application is one
+in-memory document (ADR-0215) over a synchronous SQLite boundary, so there is no
+I/O for a verb to wait on. An earlier draft awaited every verb to keep one shape
+across runtimes; the runtime that would have needed it, the browser, is deferred
+(ADR-0214), so that was ceremony paid to something out of scope.
 
 **A read returns a frozen plain object with no methods.** That matters because on
 a live handle `note.title === undefined` means three things at once: the field is
