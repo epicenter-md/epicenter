@@ -1,6 +1,6 @@
 ---
 name: writing-voice
-description: Guide sentence-level expression while drafting or revising substantial prose so it sounds like the writer on their clearest day, preserving vocabulary, humor, certainty, emotional emphasis, and relative allocation of attention. Use for tone work, rewrites, UI copy, documentation, articles, messages, writing that sounds generic, corporate, or AI-shaped, and human-gated wording workshops or ear passes where each consequential change must be proposed before editing.
+description: "Guide sentence-level expression while drafting or revising substantial prose so it sounds like the writer on their clearest day, preserving vocabulary, humor, certainty, emotional emphasis, and relative allocation of attention. Use for tone work, rewrites, UI copy, documentation, articles, messages, a draft that no longer 'sounds like me' or that reads generic, corporate, or AI-shaped, tightening authored prose to one sentence without flattening its voice, and human-gated wording workshops or ear passes where each consequential change must be proposed before editing."
 ---
 
 # Writing Voice

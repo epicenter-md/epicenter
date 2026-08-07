@@ -1,5 +1,5 @@
 {
-	"about": "Trigger corpus for run-trigger-eval.ts. Two boundaries: the review/simplification cluster, where several skills legitimately overlap, and the Claude enlistment/handoff cluster, where picking the wrong one wastes a whole session. Every `anchor` must appear verbatim in its `prompt`; the runner rejects the corpus otherwise. `router` names the agent whose routing a case is about and defaults to `claude`; `--live` drives the Claude CLI, so it reports `codex` cases as not measured rather than failing them.",
+	"about": "Trigger corpus for run-trigger-eval.ts. Two boundaries: the review/simplification cluster, where several skills legitimately overlap, and the Claude enlistment/handoff cluster, where picking the wrong one wastes a whole session. An `anchor` is a phrase the expected owner should carry; a `distractor` is a rival's phrase the prompt keeps on purpose to make the case hard. Both must appear verbatim in the `prompt` and the runner rejects the corpus otherwise, which is what stops a prompt rewrite from quietly draining a case's difficulty. `router` names the agent whose routing a case is about and defaults to `claude`; `--live` drives the Claude CLI, so it reports `codex` cases as not measured rather than failing them.",
 	"cases": [
 		{
 			"id": "review-second-pass",
@@ -23,10 +23,20 @@
 			"id": "review-nested-ifs",
 			"cluster": "review",
 			"prompt": "These nested ifs are unreadable. Can you simplify this handler?",
-			"anchors": ["nested ifs", "simplify this"],
+			"anchors": ["nested ifs"],
+			"distractors": ["simplify this"],
 			"expect": "control-flow",
 			"forbid": [],
-			"why": "Two anchors on purpose. 'nested ifs' is control-flow's real hook; 'simplify this' is a phrase control-flow explicitly routes away, so the lexical layer should report it as disclaimed rather than owned."
+			"why": "'nested ifs' is control-flow's hook. 'simplify this' belongs to collapse-pass and stays in the prompt as the distractor, because the thing worth measuring is that a concrete named smell beats a generic verb sitting beside it."
+		},
+		{
+			"id": "review-simplify-this",
+			"cluster": "review",
+			"prompt": "Take a look at packages/data and simplify this. There is a lot of indirection nobody needs.",
+			"anchors": ["simplify this"],
+			"expect": "collapse-pass",
+			"forbid": ["control-flow"],
+			"why": "The other side of the boundary review-nested-ifs sets up. A bare 'simplify this' aimed at a package is the collapse pass; control-flow disclaims the phrase precisely so this prompt does not land on a single-function skill."
 		},
 		{
 			"id": "review-asymmetric-win",
@@ -44,7 +54,16 @@
 			"anchors": ["delete disproportionate complexity"],
 			"expect": "asymmetric-wins",
 			"forbid": [],
-			"why": "Known genuine ambiguity: asymmetric-wins and greenfield-clean-breaks both carry this phrase. Recorded so a description edit that resolves it is visible."
+			"why": "asymmetric-wins owns the phrase outright. greenfield-clean-breaks used to carry it too and now routes it away, because one named promise to refuse is the move, while greenfield is the whole-design mode around it."
+		},
+		{
+			"id": "review-greenfield-clean-break",
+			"cluster": "review",
+			"prompt": "Nothing ships against this yet and we have no users. Take a clean break: what does the design look like if the old path never existed?",
+			"anchors": ["clean break", "no users"],
+			"expect": "greenfield-clean-breaks",
+			"forbid": ["asymmetric-wins"],
+			"why": "Guards the edit that resolved review-disproportionate-complexity. Narrowing greenfield's description must not cost it the prompts it actually owns."
 		},
 		{
 			"id": "review-one-sentence",
@@ -68,10 +87,11 @@
 			"id": "review-authored-opening-near-miss",
 			"cluster": "review",
 			"prompt": "Rewrite this article opening in one sentence so it sounds like me: Whenever I see a shower handle, I marvel at all the ways it could have been designed.",
-			"anchors": ["in one sentence", "sounds like me"],
+			"anchors": ["sounds like me"],
+			"distractors": ["in one sentence"],
 			"expect": "writing-voice",
 			"forbid": ["one-sentence-test"],
-			"why": "Near miss for one-sentence-test. Authored sentence-level expression belongs to writing-voice even though the request asks for one sentence."
+			"why": "Near miss for one-sentence-test. 'sounds like me' is writing-voice's hook; 'in one sentence' is the distractor and stays unresolved on the offline pass by design, because one-sentence-test must keep claiming it for review-one-sentence. The object decides the owner: authored prose to writing-voice, a technical surface to one-sentence-test, and only --live can weigh that."
 		},
 		{
 			"id": "enlist-implementation",

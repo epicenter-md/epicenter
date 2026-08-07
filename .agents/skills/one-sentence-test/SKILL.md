@@ -1,6 +1,6 @@
 ---
 name: one-sentence-test
-description: "Force one concrete sentence to find orphaned surfaces, duplicate verbs, and inert abstractions. Use when asking what a product, API, utility, or technical design actually does in one sentence, auditing whether a design is coherent, or checking whether an abstraction earns its keep. For authored prose or a plain code-comprehension question, use the destination writing skill or answer directly instead."
+description: "Force one concrete sentence to find orphaned surfaces, duplicate verbs, and inert abstractions. Use when asking what a product, API, utility, or technical design actually does in one sentence, auditing whether a design is coherent, or checking whether an abstraction earns its keep. For authored prose that should sound like its writer, use writing-voice instead, and answer a plain code-comprehension question directly rather than auditing the surface behind it."
 metadata:
   author: epicenter
   version: '2.0'

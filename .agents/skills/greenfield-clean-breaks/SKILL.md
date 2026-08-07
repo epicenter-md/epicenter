@@ -1,6 +1,6 @@
 ---
 name: greenfield-clean-breaks
-description: "Greenfield clean-break review and execution for starting from an uncompromised target vision, working backward to deletion waves and owner changes, reopening settled decisions, refusing compatibility, collapsing old and new paths, moving ownership boundaries, replacing APIs, redesigning from first principles, and surfacing refusal candidates that delete disproportionate complexity. Use when the user says greenfield clean break, greenfield, clean break, no users, no compatibility burden, refuse compatibility, remove slop, collapse this, replace the API, trace upward, pressure-test the architecture, or asks whether old behavior can be deleted."
+description: "Greenfield clean-break review and execution for starting from an uncompromised target vision, working backward to deletion waves and owner changes, reopening settled decisions, refusing compatibility, collapsing old and new paths, moving ownership boundaries, replacing APIs, redesigning from first principles, and surfacing refusal candidates across the whole design. Use when the user says greenfield clean break, greenfield, clean break, no users, no compatibility burden, refuse compatibility, remove slop, collapse this, replace the API, trace upward, pressure-test the architecture, or asks whether old behavior can be deleted. To weigh one named promise whose refusal would delete disproportionate complexity, use asymmetric-wins instead."
 ---
 
 # Greenfield Clean Breaks
