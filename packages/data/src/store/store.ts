@@ -19,7 +19,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 import {
-	createIndexDocument,
+	createAppDocument,
 	deleteRow,
 	documentContainer,
 	isLive,
@@ -27,14 +27,14 @@ import {
 	readRow,
 	tableRoot,
 	writeRow,
-} from './index-document.js';
+} from './document.js';
 import {
 	appendUpdate,
 	applyProjectionSchema,
 	applyStoreSchema,
 	copyBytes,
 	deleteProjectedRow,
-	INDEX_DOCUMENT,
+	APP_DOCUMENT,
 	readUpdates,
 	rebuildProjectedTable,
 	upsertProjectedRow,
@@ -352,7 +352,7 @@ export function createStore({
 }): Store {
 	applyStoreSchema(database);
 
-	const index = createIndexDocument();
+	const index = createAppDocument();
 	let pending: Uint8Array[] = [];
 	let poisoned: StoreError | undefined;
 	let disposed = false;
@@ -373,7 +373,7 @@ export function createStore({
 			appendUpdate({
 				database,
 				history,
-				document: INDEX_DOCUMENT,
+				document: APP_DOCUMENT,
 				update: copyBytes(update),
 				takenAt: now(),
 			}),
@@ -383,7 +383,7 @@ export function createStore({
 
 	// Attach the listener before hydrating, then replay under an origin the
 	// listener ignores, so loading cannot append the same bytes it just read.
-	for (const stored of readUpdates(database, INDEX_DOCUMENT)) {
+	for (const stored of readUpdates(database, APP_DOCUMENT)) {
 		Y.applyUpdateV2(index, copyBytes(stored.bytes), hydrationOrigin);
 	}
 
@@ -559,7 +559,7 @@ export function createStore({
 				const { data: validated, error } = table.validateWrite(values);
 				if (error !== null) return Err(error);
 				const { error: commitError } = commit(
-					INDEX_DOCUMENT,
+					APP_DOCUMENT,
 					() => {
 						for (const [name, value] of Object.entries(validated)) {
 							root.setAttr(name as never, value as never);
@@ -648,7 +648,7 @@ export function createStore({
 			fields: JsonObject,
 		): Result<Row, WriteRowError> {
 			const { error } = commit(
-				INDEX_DOCUMENT,
+				APP_DOCUMENT,
 				() => writeRow(root, rowId, fields),
 				() => projectRow(rowId),
 			);
@@ -690,7 +690,7 @@ export function createStore({
 				if (unusable !== undefined) return Err(unusable);
 				let removed = false;
 				const { error } = commit(
-					INDEX_DOCUMENT,
+					APP_DOCUMENT,
 					() => {
 						removed = deleteRow(root, rowId);
 					},
@@ -775,7 +775,7 @@ export function createStore({
 					appendUpdate({
 						database,
 						history,
-						document: INDEX_DOCUMENT,
+						document: APP_DOCUMENT,
 						update,
 						takenAt: now(),
 					});

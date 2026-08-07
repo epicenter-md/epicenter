@@ -24,8 +24,8 @@ export const DOCUMENT_ATTRIBUTE = `${RESERVED_ATTRIBUTE_PREFIX}doc`;
 
 export type Presence = 'present' | 'absent';
 
-/** The index document: one per application, holding every table (ADR-0212). */
-export function createIndexDocument(): Y.Doc {
+/** The application's document: one per app, holding every table (ADR-0215). */
+export function createAppDocument(): Y.Doc {
 	// `gc: true` is what collapses a field edited 5,000 times to two structs. It
 	// is also why history lives outside the CRDT entirely (ADR-0214).
 	return new Y.Doc({ gc: true });

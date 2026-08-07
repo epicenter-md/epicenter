@@ -15,12 +15,15 @@ export const COMPACTION_THRESHOLD = 64;
 /**
  * The one document in the log.
  *
- * An application is one document (ADR-0215), so this column now distinguishes
- * nothing. It is kept because the log's shape survives the browser arriving and
- * a second durable artifact appearing, and dropping a column to save nine bytes
- * a row would be the kind of saving that costs a migration later.
+ * An application is one document (ADR-0215), so this column distinguishes
+ * nothing today. It is kept because the log's shape survives the browser
+ * arriving and a second durable artifact appearing, and dropping a column to
+ * save nine bytes a row is the kind of saving that costs a migration later.
+ *
+ * Named for what it is rather than `index`, which was the name of one half of a
+ * split that no longer exists.
  */
-export const INDEX_DOCUMENT = 'index';
+export const APP_DOCUMENT = 'app';
 
 type StoredUpdate = SqliteRow & {
 	seq: number;
