@@ -20,11 +20,20 @@ something has to answer "what did this look like last month" now that `gc: true`
 means the CRDT itself keeps no history: a field edited 5,000 times collapses to
 two structs and 0.1 KB.
 
-Loose files were considered and are not merely worse, they are impossible. A
-browser replica already owns an OPFS synchronous-access-handle pool, and a second
-live owner beside it is refused with `NoModificationAllowedError`, measured in
-the throwaway OPFS document-log experiment at git ref `c5f0fed3cf`. A `data.yjs`
-file has nowhere to live in the browser.
+Loose files were considered and are not merely worse, they are impossible on the
+runtime this record does not yet target. A browser replica already owns an OPFS
+synchronous-access-handle pool, and a second live owner beside it is refused with
+`NoModificationAllowedError`, measured in the throwaway OPFS document-log
+experiment at git ref `c5f0fed3cf`. A `data.yjs` file has nowhere to live in a
+browser.
+
+**The browser is deferred.** This record targets Bun and Tauri only: one
+`bun:sqlite` file per application. That defers `sqlite-wasm`, the OPFS pool, the
+worker protocol, and the single-owner lease question. It is a real cut, because
+Whispering is browser-hostable today, and it is taken so the first build has one
+storage backend rather than two. The layout below is chosen to survive the
+browser arriving later, which is the second reason it is one SQLite file: that
+shape ports to `sqlite-wasm` over OPFS, and loose files do not port at all.
 
 ## Decision
 
