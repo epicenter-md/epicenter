@@ -39,7 +39,8 @@
 	"dependencies": {
 		"@epicenter/field": "workspace:*",
 		"typebox": "catalog:",
-		"wellcrafted": "catalog:"
+		"wellcrafted": "catalog:",
+		"arktype": "catalog:"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",

@@ -801,6 +801,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@epicenter/field": "workspace:*",
+        "arktype": "catalog:",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
       },
