@@ -47,24 +47,29 @@
   Also [ADR-0174](0174-row-documents-project-as-nullable-compact-cells-and-persist-as-bounded-live-chains.md)
   at the publication obligation: the revision counter is replaced by the unsent
   bytes themselves. Its nullable compact projection survives.
-  Also [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md)
-  at the hole it named and accepted (`:262-265`). A body is a Yjs document, so it
-  renders to the folder. It is still not pushable back, so the
-  markdown-to-operations diff stays an unowned optimisation rather than becoming
-  a prerequisite.
+  ADR-0207 is **not** amended. A draft of this record claimed a body reaches the
+  folder; it does not. Because a row's document is inherent rather than declared,
+  Epicenter never learns which root inside it is prose, which is exactly why
+  ADR-0207 refused to render it after carrying the idea through three shapes
+  (`:299-311`). That record's hole stands unchanged: a table's prose is either in
+  an ordinary field or unreachable from the folder.
 - **Amends:** [ADR-0135](0135-row-documents-have-application-owned-roots.md)
   (`Accepted`) at root naming only. Withdrawn: that Epicenter "does not declare,
   validate, version, reserve, enumerate, or interpret" roots. Epicenter now
-  declares that a root is a table, names prose documents `<table>/<rowId>/<field>`,
-  and reserves the `!` prefix. What survives, and is the reason the split below
-  matters, is that Epicenter never interprets the inside of a prose document: an
-  application owns that document's shape completely.
+  declares that a root is a table, names a row's document `<table>/<rowId>`, and
+  reserves the `!` prefix. What survives, and is the reason the split below
+  matters, is the clause that does the work: Epicenter never interprets the
+  inside of that document. An application names its own roots there and chooses
+  its own format, exactly as 0135 and 0130 both say.
 - **Confirms and does not amend:**
   [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md)
   (`Accepted`, "every ordinary row inherently owns one lazy collaborative
-  document"). The earlier 0212 draft proposed amending it to declare documents
-  per column; that amendment is withdrawn. One lazy document per content field,
-  keyed by address, is what 0130 already decides.
+  document. The table does not opt in, declare roots, or choose a format").
+  Two earlier drafts proposed amending it, first to declare a document per
+  column and then to declare one per field with a lens sentinel. Both are
+  withdrawn. This record adopts 0130 exactly as written, including its API:
+  `using document = await tables.notes.document.open(row.id)`, with the
+  application naming roots inside.
 
 ## Context
 
@@ -95,8 +100,9 @@ loss is accepted deliberately, and it is the only thing 2,100 lines were buying.
 
 ## Decision
 
-**A row is one Yjs type in a per-application index document. Each of its content
-fields is a separate document, keyed by address and loaded on demand.**
+**A row is one Yjs type in a per-application index document. Every row also
+inherently owns one document, keyed by its address and loaded on demand, whose
+contents Epicenter never declares or reads.**
 
 ### The index document
 
@@ -144,18 +150,20 @@ with a field. It stays a single character because `!` can begin neither an
 arktype expression nor a JavaScript identifier, so the reservation is enforced by
 syntax rather than by a rule someone has to remember.
 
-### Prose is a separate document
+### Prose is a separate document, and it is not declared
 
-A field the lens marks as `content` is **not** stored in the row. It is its own
-`Y.Doc`, keyed by the address:
+Prose is **not** stored in the row, and the lens says nothing about it. Every row
+inherently owns one `Y.Doc`, keyed by its address (ADR-0130):
 
 ```txt
-"notes/n1/body"      one document, opened when the note is opened
+"notes/n1"           one document per ROW, opened when the row is opened
 ```
 
-The column stores nothing. The lens declaring the field is the reference, so
-there is no id to store, nothing to dangle, and deleting the row implies
-deleting its documents.
+Nothing stores a reference. The address *is* the reference, so there is no id to
+dangle and deleting the row implies deleting its document. An application that
+wants several streams of prose puts several roots inside the one document, which
+is what ADR-0130's `document.get('editor')` and `document.get('comments')`
+already describe. Epicenter learns none of their names.
 
 Measured on the real vault:
 
@@ -273,7 +281,10 @@ and two-stage lifecycles are product decisions and do not belong in the store.
   cursor, and the authority-side merge. About 2,100 lines of record become about
   600, and the authority stops needing to understand anything but bytes.
 - **A prose document is unreachable from the folder in the push direction.**
-  ADR-0207's markdown body renders out and is not pushable back, unchanged.
+  ADR-0207's hole is re-accepted rather than closed: prose lives in a document
+  whose shape Epicenter never learns, so it does not reach the folder in either
+  direction. An application that wants its writing on disk puts it in an ordinary
+  field, which renders and round-trips like any other.
 - **A table root grows monotonically, and listing it pays for every row ever
   deleted.** Reading `!presence` on every row is what costs: measured, listing a
   thousand live rows among a hundred thousand takes 24.9 ms nested, and 14.7 ms
@@ -293,8 +304,9 @@ and two-stage lifecycles are product decisions and do not belong in the store.
   is a subsystem rather than a button. At a hundred deletions a year the problem
   it solves is a thousand years away.
 - **A prose document must never have its type replaced.** Measured: replacing the
-  Yjs type behind a content field reclaims the old content correctly, but a
-  handle still held by an editor keeps accepting writes that go nowhere, silently.
-  The API refuses the operation rather than detecting it (ADR-0213).
+  document behind a row reclaims the old content correctly, but a handle still
+  held by an editor keeps accepting writes that go nowhere, silently. A row's
+  document is opened, never assigned, so the operation has no expression in the
+  API (ADR-0213).
 - **Yjs 14 is a new API, not a new encoding.** Verified both directions: a v13
   document reads v14 bytes and a v14 document reads v13 bytes.

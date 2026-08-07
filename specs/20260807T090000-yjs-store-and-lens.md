@@ -105,7 +105,7 @@ Five things in the first draft of these records were wrong and are fixed:
 | one Yjs root per row | one root per **table**, rows nested | `findRootTypeKey` linearly scans `doc.share` (`utils/ID.js:79-87`), so root-per-row encoding is quadratic: **5,417 ms** at 20,000 rows against 13 ms nested |
 | a dead row costs 21 to 23 B | **170 B** | measured the way deletion works, with ADR-0206's 24-character ids. 100,000 deletions is 17 MB, not 2.2 MB |
 | a `kv` section | a table with a chosen row id | ADR-0206 already deleted this at `d5e53cca24`, +1303/-6422 |
-| `content` as a `unique symbol` | `TEXT = '!text'` | `JSON.stringify` drops a symbol-valued key, so a lens with prose did not round-trip |
+| `content`, then `TEXT = '!text'` | **the lens says nothing about prose** | ADR-0130 already decides a row owns a document inherently and the table "does not opt in, declare roots, or choose a format". Deletes the sentinel and the prose/scalar type split. Cost: ADR-0207's hole reopens, so prose does not reach the folder |
 | `note.set()`, `note.body.insert()` | `notes.set(id, ...)`, `await notes.prose(id, field)` | a stale handle can half-resurrect a row, and prose opening is a port round trip on two of three surfaces |
 
 An earlier rejection of the nested layout was also wrong: it tested deletion as
@@ -118,9 +118,9 @@ Also found in shipped code, unfixed: `patch` on an absent row returns
 
 ## Open
 
-- **The prose sentinel is `'!text'`, naming a `Y.Text`.** If Honeycrisp's editor
-  binds `@y/prosemirror` to a tree instead, `'!xml'` is needed on day one and the
-  folder render is refused for it. Nobody has run that binding.
+- **Prose does not reach the folder, and that is now chosen.** A row's document
+  is inherent, so Epicenter never learns which root inside it holds writing. An
+  application that wants its prose on disk puts it in an ordinary field instead.
 - **Prefetch policy for prose.** The index syncs always; a body syncs when
   opened. Going offline with unopened notes needs a prefetch rule. Prefetching
   everything is 2.7 MB.

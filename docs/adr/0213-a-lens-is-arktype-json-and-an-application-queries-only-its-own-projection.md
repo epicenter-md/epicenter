@@ -51,7 +51,7 @@ Both disappear if the lens *is* the JSON rather than being compiled into it.
 export const lens = defineLens({
   namespace: 'so.epicenter.honeycrisp',
   tables: {
-    notes: { title: 'string', tags: 'string[]', date: 'string|null', body: TEXT },
+    notes: { title: 'string', tags: 'string[]', date: 'string|null' },
     // A singleton is a row whose id you chose. Not a second kind of thing.
     settings: { theme: "'light'|'dark'", fontSize: 'number' },
   },
@@ -97,23 +97,19 @@ renderer omits nulls, which is a rendering rule rather than a schema fact.
 This collapses "cleared" and "never set" into one state. That distinction is
 deliberately given up.
 
-### A content field is not a type, and its sentinel is a string
+### The lens says nothing about prose
 
-```ts
-export const TEXT = '!text';
-```
+Every row inherently owns a document (ADR-0212, adopting ADR-0130), so there is
+no field to mark, no sentinel, and no prose-versus-scalar split in the field
+types. Two drafts of this record carried one, first `content` as a `unique
+symbol` and then `TEXT = '!text'`; both are withdrawn.
 
-A **string**, never a `unique symbol`. `JSON.stringify({ body: Symbol() })` is
-`{}`: a symbol-valued key vanishes, so a symbol sentinel would silently break
-this record's central claim that a lens round-trips byte-identically, for every
-lens that declares prose. `!` cannot begin an arktype expression, so the value is
-unambiguous.
+The symbol was also a bug worth recording, because the same mistake is easy to
+repeat: `JSON.stringify({ body: Symbol() })` is `{}`, so a symbol-valued key
+vanishes and a lens declaring prose did not round-trip byte-identically, which is
+this record's central claim.
 
-It marks a field as a separate document under ADR-0212 and is excluded from
-arktype entirely, because the stored value is a Yjs document and there is nothing
-to validate. Naming it for the Yjs type rather than for a policy leaves room for
-one additive value, `'!xml'`, when an application with a live producer needs a
-tree Epicenter cannot render to markdown.
+Every field a lens declares is an arktype expression, with no exceptions.
 
 ### Validation happens three times and never gates storage
 
@@ -139,18 +135,20 @@ on object identity.
 **You never hold a row. You hold a table.**
 
 ```ts
-const { data: store } = await openBunEpicenter({ path });   // one adapter per runtime
-const { data: notes } = store.bind(lens);                   // sync, Result-returning
+const { data: store } = await openBunStore({ path });   // the open file
+const { data: db } = store.bind(lens);                  // the typed view. sync, Result
 
-const { data: note } = await notes.notes.create({ title: 'Groceries', tags: ['food'] });
+const { data: note } = await db.notes.create({ title: 'Groceries', tags: ['food'] });
 note.title                                   // a property on a FROZEN plain object
-await notes.notes.set(note.id, { title: 'Shopping' });
-await notes.notes.ensure('app', { theme: 'light', fontSize: 14 });   // the singleton verb
-const { data: prose } = await notes.notes.prose(note.id, 'body');
-prose.text().insert(0, 'buy milk');
-await notes.notes.delete(note.id);
+await db.notes.set(note.id, { title: 'Shopping' });
+await db.notes.ensure('app', { theme: 'light', fontSize: 14 });   // the singleton verb
+await db.notes.delete(note.id);
 
-const rows = await notes.query`
+// prose. The lens never mentioned it; every row has one (ADR-0130).
+using document = await db.notes.document.open(note.id);
+document.get('editor').insert(0, 'buy milk');
+
+const rows = await db.query`
   SELECT id, title FROM notes
   WHERE EXISTS (SELECT 1 FROM json_each(notes.tags) WHERE value = ${'food'})`;
 ```
@@ -171,22 +169,24 @@ so a write through a stale handle would leave a row with fields and no
 field names come from users. Jazz shipped methods on the row, hit exactly this,
 and moved everything under `$jazz` in 0.18.0.
 
-**`prose()` is asynchronous** because opening a document is a load, and a round
-trip to another process on two of three shipped surfaces. `set` accepts scalars
-only: content fields are absent from the patch type by construction, so a
-document can never be replaced behind an editor's back.
+**`document.open(id)` is asynchronous and disposable**, which is ADR-0130's own
+shape. Opening is a load, and a round trip to another process on two of three
+shipped surfaces. A document is opened, never assigned, so it cannot be replaced
+behind an editor that still holds one.
 
 **`bind` is synchronous and returns a `Result`.** Synchronous because it does no
 I/O. Result-returning because a lens may arrive as data from an installed app
 folder, and `compileTableDefinition` throws for exactly that case today
 (`definitions.ts:331-333`).
 
-**There is no `epicenter.open({ path })`.** Three adapters already exist and
-their I/O has nothing in common: Bun's open is one `mkdir`, the browser's is a
-Web Lock plus a WASM compile plus an OPFS pool, and desktop's is two round trips
-that never open a file. A path is also a second name for a thing ADR-0204 says
-has exactly one, and ADR-0201 forbids handing one across an application
-boundary.
+**Two names, and each says what it is.** A `store` is the open file; a `db` is
+the typed view of it through one lens. An earlier draft called the bound value
+`notes`, which collided with a table also called `notes`. And there is no
+`epicenter.open({ path })`: three adapters already exist whose I/O has nothing in
+common, Bun's being one `mkdir`, the browser's a Web Lock plus a WASM compile
+plus an OPFS pool, and desktop's two round trips that never open a file. Naming
+the opener for Epicenter while calling its result a store was a second name for
+one thing, which ADR-0204 refuses.
 
 `query` lives on the binding, not the store, so an application reaches only its
 own namespace. Results are bounded and Result-returning; bare rows cannot say
@@ -203,7 +203,10 @@ own namespace. Results are bounded and Result-returning; bare rows cannot say
 | `const app = ...` | name it for the lens | `app` already means an installed application with an authority id and a partition |
 | `note.title = 'x'`, then `note.set({...})` | `notes.set(id, {...})` | assignment cannot fail or be awaited; and a handle carrying only an id does not prove the row still exists, so presence and the write must share one transaction |
 | `note.body.insert(0, 'x')` | `await notes.prose(id, 'body')` then `.text().insert(...)` | it is a load, and a round trip on two of three shipped surfaces. A synchronous chain in front of it gives back the whole startup win |
-| `body: content` (a `unique symbol`) | `body: TEXT` (`'!text'`) | `JSON.stringify` drops a symbol-valued key, so a lens declaring prose did not round-trip |
+| `body: content`, then `body: TEXT` | **nothing.** the lens says no word about prose | ADR-0130 (`Accepted`): a row owns a document inherently and "the table does not opt in, declare roots, or choose a format". Deletes the sentinel and the prose/scalar type split |
+| `notes.prose(id, field)` | `notes.document.open(id)` | ADR-0130's own shape. `document` is what it is; `prose` invented a second name |
+| `const { data: notes } = store.bind(lens)` | `const { data: db } = ...` | the bound value collided with a table named `notes` |
+| `openBunEpicenter` returning `store` | `openBunStore` returning `store` | one thing, one name (ADR-0204) |
 | `kv: { ... }` | a table with a chosen row id, plus `ensure()` | ADR-0206 already deleted the concept after measuring one declared value repo-wide |
 | `bind(lens): Bound` | `Result<Bound, LensError>` | a lens loaded from disk is uncompilable today (`definitions.ts:331-333`) |
 
