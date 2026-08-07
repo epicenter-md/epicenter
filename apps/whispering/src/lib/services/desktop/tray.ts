@@ -1,8 +1,8 @@
+import { invoke } from '@tauri-apps/api/core';
 import { Menu, MenuItem } from '@tauri-apps/api/menu';
 import { resolveResource } from '@tauri-apps/api/path';
 import { TrayIcon } from '@tauri-apps/api/tray';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { exit } from '@tauri-apps/plugin-process';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 // import { commandCallbacks } from '$lib/commands';
 import { tryAsync } from 'wellcrafted/result';
@@ -15,7 +15,10 @@ const TRAY_ID = 'whispering-tray';
 const { SetTrayIconServiceErr } = createTaggedError('SetTrayIconServiceError');
 
 export function createTrayIconDesktopService() {
-	const trayPromise = initTray();
+	const trayPromise = initTray().catch((error) => {
+		console.error('Failed to initialize tray icon:', error);
+		throw error;
+	});
 	return {
 		setTrayIcon: (recorderState: WhisperingRecordingState) =>
 			tryAsync({
@@ -38,34 +41,24 @@ async function initTray() {
 
 	const trayMenu = await Menu.new({
 		items: [
-			// Window Controls Section
-			await MenuItem.new({
-				id: 'show',
-				text: 'Show Window',
-				action: () => getCurrentWindow().show(),
-			}),
-
-			await MenuItem.new({
-				id: 'hide',
-				text: 'Hide Window',
-				action: () => getCurrentWindow().hide(),
-			}),
-
-			// Settings Section
 			await MenuItem.new({
 				id: 'settings',
 				text: 'Settings',
-				action: () => {
+				action: async () => {
 					goto('/settings');
-					return getCurrentWindow().show();
+					const win = getCurrentWindow();
+					await win.show();
+					await win.setFocus();
 				},
 			}),
 
-			// Quit Section
 			await MenuItem.new({
 				id: 'quit',
 				text: 'Quit',
-				action: () => void exit(0),
+				// Uses a dedicated Rust command instead of the process plugin's
+				// generic exit() — that gets treated the same as a window close
+				// (hidden, not quit) whenever "menu bar only" is active.
+				action: () => invoke('quit_app'),
 			}),
 		],
 	});
@@ -74,18 +67,11 @@ async function initTray() {
 		id: TRAY_ID,
 		icon: await getIconPath('IDLE'),
 		menu: trayMenu,
-		menuOnLeftClick: false,
-		action: (e) => {
-			if (
-				e.type === 'Click' &&
-				e.button === 'Left' &&
-				e.buttonState === 'Down'
-			) {
-				// commandCallbacks.toggleManualRecording();
-				return true;
-			}
-			return false;
-		},
+		// Show the menu (Settings, Quit) on a normal click, not just
+		// right-click. Previously this was false with no click action wired
+		// up at all (the click handler was commented out), so clicking the
+		// tray icon did nothing.
+		menuOnLeftClick: true,
 	});
 
 	return tray;
