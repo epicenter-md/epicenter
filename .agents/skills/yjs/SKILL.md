@@ -68,12 +68,139 @@ Do not add a separate IndexedDB provider or a second document store.
 - Pull and publication are separate operations. Pulling accepted state never marks it as local work; publishing captures current complete state with the revision it covers and settles only that revision.
 - Treat replay corruption or transaction failure as storage failure. Revoke the live handle rather than allowing memory to diverge from durable SQLite state.
 
-## Shared Types Cannot Move
+## Core Concepts
 
-Once a shared type is added to a document it can never be moved. "Moving" an
-item in an array is delete plus insert, and Yjs does not know the two
-operations are related, so anything holding the old reference keeps a tombstone
-rather than following the item.
+### Shared Types
+
+Yjs provides six shared types. You'll mostly use three:
+
+- `Y.Map` - Key-value pairs (like JavaScript Map)
+- `Y.Array` - Ordered lists (like JavaScript Array)
+- `Y.Text` - Rich text with formatting
+
+The other three (`Y.XmlElement`, `Y.XmlFragment`, `Y.XmlText`) are for rich text editor integrations.
+
+### Client ID
+
+Every Y.Doc gets a random `clientID` on creation. Raw Yjs conflict ordering can
+use this id, so concurrent writes to the same raw map key are not "latest
+timestamp wins" unless the data structure adds its own timestamp policy.
+
+```typescript
+const doc = new Y.Doc();
+console.log(doc.clientID); // Random number like 1090160253
+```
+
+From dmonad (Yjs creator):
+
+> "The 'winner' is decided by `ydoc.clientID` of the document (which is a generated number). The higher clientID wins."
+>
+> Source: [GitHub issue #520](https://github.com/yjs/yjs/issues/520)
+
+The actual comparison in source ([updates.js#L357](https://github.com/yjs/yjs/blob/main/src/utils/updates.js#L357)):
+
+```javascript
+return dec2.curr.id.client - dec1.curr.id.client; // Higher clientID wins
+```
+
+This is deterministic (all clients converge to the same state) but not
+intuitive: a later edit can lose. Design document roots around that fact.
+Epicenter's scalar tables and KV do not use Yjs or `YKeyValueLww`; runtime-native
+SQLite and the scalar row protocol own their convergence semantics.
+
+### Shared Types Cannot Move
+
+Once you add a shared type to a document, **it can never be moved**. "Moving" an item in an array is actually delete + insert. Yjs doesn't know these operations are related.
+
+## Critical Patterns
+
+### 1. Single-Writer Keys (Counters, Votes, Presence)
+
+**Problem**: Multiple writers updating the same key causes lost writes.
+
+```typescript
+// BAD: Both clients read 5, both write 6, one click lost
+function increment(ymap) {
+	const count = ymap.get('count') || 0;
+	ymap.set('count', count + 1);
+}
+```
+
+**Solution**: Partition by clientID. Each writer owns their key.
+
+```typescript
+// GOOD: Each client writes to their own key
+function increment(ymap) {
+	const key = ymap.doc.clientID;
+	const count = ymap.get(key) || 0;
+	ymap.set(key, count + 1);
+}
+
+function getCount(ymap) {
+	let sum = 0;
+	for (const value of ymap.values()) {
+		sum += value;
+	}
+	return sum;
+}
+```
+
+### 2. Fractional Indexing (Reordering)
+
+**Problem**: Drag-and-drop reordering with delete+insert causes duplicates and lost updates.
+
+```typescript
+// BAD: "Move" = delete + insert = broken
+function move(yarray, from, to) {
+	const [item] = yarray.delete(from, 1);
+	yarray.insert(to, [item]);
+}
+```
+
+**Solution**: Add an `index` property. Sort by index. Reordering = updating a property.
+
+```typescript
+// GOOD: Reorder by changing index property
+function move(yarray, from, to) {
+	const sorted = [...yarray].sort((a, b) => a.get('index') - b.get('index'));
+	const item = sorted[from];
+
+	const earlier = from > to;
+	const before = sorted[earlier ? to - 1 : to];
+	const after = sorted[earlier ? to : to + 1];
+
+	const start = before?.get('index') ?? 0;
+	const end = after?.get('index') ?? 1;
+
+	// Add randomness to prevent collisions
+	const index = (end - start) * (Math.random() + Number.MIN_VALUE) + start;
+	item.set('index', index);
+}
+```
+
+### 3. Nested Structures for Conflict Avoidance
+
+**Problem**: Storing entire objects under one key means any property change conflicts with any other.
+
+```typescript
+// BAD: Alice changes nullable, Bob changes default, one loses
+schema.set('title', {
+	type: 'text',
+	nullable: true,
+	default: 'Untitled',
+});
+```
+
+**Solution**: Use nested Y.Maps so each property is a separate key.
+
+```typescript
+// GOOD: Each property is independent
+const titleSchema = schema.get('title'); // Y.Map
+titleSchema.set('type', 'text');
+titleSchema.set('nullable', true);
+titleSchema.set('default', 'Untitled');
+// Alice and Bob edit different keys = no conflict
+```
 
 ## Storage Optimization
 
@@ -112,7 +239,47 @@ Y.applyUpdateV2(freshDoc, snapshot);
 // freshDoc has same content, no history overhead
 ```
 
-## Keep Raw Y.js Types Inside Their Owning Module
+## Common Mistakes
+
+### 1. Assuming Raw "Last Write Wins" Means Timestamps
+
+It doesn't. Raw Yjs conflict ordering can use clientID, not wall-clock time.
+Design document state around this or use single-writer keys. Scalar row and KV
+conflicts belong to the SQLite row plane, not a Yjs LWW wrapper.
+
+### 2. Using Y.Array Position for User-Controlled Order
+
+Array position is for append-only data (logs, chat). User-reorderable lists need fractional indexing.
+
+### 3. Forgetting Document Integration
+
+Y types must be added to a document before use:
+
+```typescript
+// BAD: Orphan Y.Map
+const orphan = new Y.Map();
+orphan.set('key', 'value'); // Works but doesn't sync
+
+// GOOD: Attached to document
+const attached = doc.getMap('myMap');
+attached.set('key', 'value'); // Syncs to peers
+```
+
+### 4. Storing Non-Serializable Values
+
+Y types store JSON-serializable data. No functions, no class instances, no circular references.
+
+### 5. Expecting Moves to Preserve Identity
+
+```typescript
+// This creates a NEW item, not a moved item
+yarray.delete(0);
+yarray.push([sameItem]); // Different Y.Map instance internally
+```
+
+Any concurrent edits to the "moved" item are lost because you deleted the original.
+
+### 6. Working with Raw Y.js Types Outside Their Owning Module
 
 Y.js shared types (`Y.Map`, `Y.Text`, `Y.XmlFragment`, `Y.Array`) are implementation details that should stay behind typed APIs. When consumer code reaches through an abstraction to manipulate raw shared types, it creates coupling that's hard to change later.
 
@@ -179,10 +346,37 @@ When reviewing code, ask: "Could this consumer do its job with only the typed AP
 
 See the article `docs/articles/yjs-abstraction-leaks-cost-more-than-the-abstraction.md` for the full pattern with real examples.
 
+## Debugging Tips
+
+### Inspect Document State
+
+```typescript
+console.log(doc.toJSON()); // Full document as plain JSON
+```
+
+### Check Client IDs
+
+```typescript
+// See who would win a conflict
+console.log('My ID:', doc.clientID);
+```
+
+### Watch for Tombstone Bloat
+
+If documents grow unexpectedly, check for:
+
+- Frequent Y.Map key overwrites
+- "Move" operations on arrays
+- Missing epoch compaction or a runtime doc accidentally created with `gc: false`
+
 ## References
 
+- [Learn Yjs](https://learn.yjs.dev/) - Interactive tutorials
 - [Yjs Documentation](https://docs.yjs.dev/) - API reference
 - [Yjs INTERNALS.md](https://github.com/yjs/yjs/blob/main/INTERNALS.md) - How Yjs works internally
+- [GitHub issue #520](https://github.com/yjs/yjs/issues/520) - Conflict resolution discussion with dmonad
+- [fractional-indexing](https://github.com/rocicorp/fractional-indexing) - Production library
+- [YATA paper](https://www.researchgate.net/publication/310212186_Near_Real-Time_Peer-to-Peer_Shared_Editing_on_Extensible_Data_Types) - Academic foundation
 - `packages/data/src/documents.ts`: the row-document runtime (load, append, compaction, capture, deletion, and publication obligations)
 - `packages/data/src/replica/schema.ts`: the SQLite relations that durably store document updates and publication state
 - `packages/sync/src/document-v3/`: the Yjs 14 row-document wire
