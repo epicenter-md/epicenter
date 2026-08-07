@@ -50,20 +50,35 @@ export type LensJson = {
 };
 
 /**
- * Typecheck one authored lens field-by-field against arktype's own validator.
+ * Typecheck one authored lens against arktype's own validator.
+ *
+ * Homomorphic over `TLens`, which is the whole trick. Mapping over `keyof TLens`
+ * keeps every property an inference site and lets `type.validate` return the
+ * definition unchanged when it is valid, so a correct lens infers exactly the
+ * literal it was written as. Measured against three shapes:
+ *
+ * | shape | infers | a bad expression reports |
+ * | --- | --- | --- |
+ * | `TLens & Fresh<TLens>` | the literal | `not assignable to 'never'` |
+ * | `Fresh<TLens>` alone | `unknown`, and catches nothing | nothing |
+ * | this one | the literal | ``not assignable to `'strng' is unresolvable` `` |
+ *
+ * The first two were both built and rejected on that table. A freshly
+ * constructed object type has no inference site at `tables.notes`, so the
+ * authored literal had to be intersected back in to recover inference, and
+ * intersecting `'strng'` with arktype's error-string type is what produced
+ * `never` and threw away the only sentence that says what is actually wrong.
  *
  * A table's fields are validated as one object rather than one expression at a
  * time, because a declared default (`"'light'|'dark' = 'light'"`) is only legal
  * as a property of an object or tuple. Verified against the installed arktype:
  * `type("'light'|'dark' = 'light'")` throws, `type({ theme: ... })` does not.
  */
-export type ValidateLens<TLens> = TLens extends { tables: infer TTables }
-	? {
-			namespace: string;
-			title?: string;
-			tables: { [K in keyof TTables]: type.validate<TTables[K]> };
-		}
-	: LensJson;
+export type ValidateLens<TLens> = {
+	[K in keyof TLens]: K extends 'tables'
+		? { [TTable in keyof TLens[K]]: type.validate<TLens[K][TTable]> }
+		: TLens[K];
+};
 
 /**
  * What one table's rows look like once read: the structural id plus its fields,
@@ -132,14 +147,10 @@ export type CreateInputsOf<TLens> = TLens extends { tables: infer TTables }
  * `ValidateLens<TLens>` applies arktype's own `type.validate` per table so a
  * malformed expression is a compile error on the field that is wrong.
  *
- * The intersection is load-bearing and its cost is the error text. Measured:
- * dropping it to `lens: ValidateLens<TLens>`, which is how arktype types its
- * own `type()`, both stops catching a bad expression and infers `unknown`. With
- * the intersection, a bad expression reports as *"Type 'string' is not
- * assignable to type 'never'"* on the offending field rather than arktype's own
- * *"'strng' is unresolvable"*, because intersecting the authored literal with
- * arktype's error-string type is what produces `never`. The location is right
- * and the wording is not; {@link parseLens} states the real reason at runtime.
+ * A bad expression reports arktype's own sentence on the offending field:
+ * *"Type '\"strng\"' is not assignable to type \"'strng' is unresolvable\""*.
+ * See {@link ValidateLens} for the two shapes that lost either that message or
+ * inference itself.
  *
  * Nothing is compiled here, which is the point. The earlier builder-based lens
  * carried two live bugs that both came from compiling at authoring time: a
@@ -160,8 +171,8 @@ export type CreateInputsOf<TLens> = TLens extends { tables: infer TTables }
  * });
  * ```
  */
-export function defineLens<const TLens>(
-	lens: TLens & ValidateLens<TLens>,
+export function defineLens<const TLens extends LensJson>(
+	lens: ValidateLens<TLens>,
 ): TLens {
 	return lens as TLens;
 }

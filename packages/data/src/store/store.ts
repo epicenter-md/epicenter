@@ -1,6 +1,7 @@
 import type { JsonObject } from '@epicenter/lens';
 import {
 	type CreateInputOf,
+	type LensJson,
 	type LensParseError,
 	type NonconformingRowError,
 	type ParsedLens,
@@ -8,7 +9,6 @@ import {
 	parseLens,
 	type RowOf,
 	type RowWriteError,
-	type ValidateLens,
 } from '@epicenter/lens/lens';
 import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
@@ -189,35 +189,49 @@ export type QueryMethod = (
  * limit (`TS2589`), because `RowOf` already instantiates an arktype type per
  * field and `Omit` re-maps every remaining member on top of that.
  */
-export type TypedTableHandle<TFields> = {
-	readonly defaults: Readonly<JsonObject>;
-	delete(rowId: string): Promise<Result<boolean, StoreError>>;
-	ids(): Promise<Result<string[], StoreError>>;
-	document: TableHandle['document'];
-	create(
-		fields: CreateInputOf<TFields>,
-	): Promise<Result<RowOf<TFields>, WriteRowError>>;
-	create(
-		rowId: string,
-		fields: CreateInputOf<TFields>,
-	): Promise<Result<RowOf<TFields>, WriteRowError>>;
-	get(
-		rowId: string,
-	): Promise<Result<RowOf<TFields> | undefined, ReadRowError>>;
-	set(
-		rowId: string,
-		fields: Partial<CreateInputOf<TFields>>,
-	): Promise<Result<RowOf<TFields>, WriteRowError>>;
-	ensure(
-		rowId: string,
-		fields?: Partial<CreateInputOf<TFields>>,
-	): Promise<Result<RowOf<TFields>, WriteRowError>>;
-	list(): Promise<
-		Result<
-			{ rows: RowOf<TFields>[]; nonconforming: NonconformingRowError[] },
-			StoreError
-		>
-	>;
+export type TypedTableHandle<TFields> = TableIo<TFields> extends {
+	row: infer TRow;
+	input: infer TInput;
+}
+	? {
+			readonly defaults: Readonly<JsonObject>;
+			delete(rowId: string): Promise<Result<boolean, StoreError>>;
+			ids(): Promise<Result<string[], StoreError>>;
+			document: TableHandle['document'];
+			create(fields: TInput): Promise<Result<TRow, WriteRowError>>;
+			create(
+				rowId: string,
+				fields: TInput,
+			): Promise<Result<TRow, WriteRowError>>;
+			get(rowId: string): Promise<Result<TRow | undefined, ReadRowError>>;
+			set(
+				rowId: string,
+				fields: Partial<TInput>,
+			): Promise<Result<TRow, WriteRowError>>;
+			ensure(
+				rowId: string,
+				fields?: Partial<TInput>,
+			): Promise<Result<TRow, WriteRowError>>;
+			list(): Promise<
+				Result<
+					{ rows: TRow[]; nonconforming: NonconformingRowError[] },
+					StoreError
+				>
+			>;
+		}
+	: never;
+
+/**
+ * One table's read and write shapes, from ONE arktype instantiation.
+ *
+ * `RowOf` and `CreateInputOf` each instantiate the field definitions on their
+ * own, so naming both across every verb of every table was enough to exceed
+ * TypeScript's depth limit. Resolving the pair once and reusing the two halves
+ * keeps the surface identical and the instantiation count at one per table.
+ */
+type TableIo<TFields> = {
+	row: RowOf<TFields>;
+	input: CreateInputOf<TFields>;
 };
 
 /** The typed view of one store through one lens: its tables, plus `query`. */
@@ -237,8 +251,19 @@ export type Store = {
 	 * TypeScript literal, and `parseLens` reports that as a value rather than
 	 * throwing.
 	 */
-	bind<const TLens>(
-		lens: TLens & ValidateLens<TLens>,
+	/**
+	 * Infers, and deliberately does not re-validate.
+	 *
+	 * `defineLens` is where a lens is typechecked against arktype, and doing it
+	 * again here is both redundant and expensive: instantiating `ValidateLens`
+	 * against the `LensJson` constraint rather than against a concrete literal
+	 * exceeds TypeScript's depth limit on its own, measured by bisecting this
+	 * signature. A lens that never went through `defineLens` is still caught, by
+	 * `parseLens`, at runtime, where a lens loaded from disk has to be caught
+	 * anyway.
+	 */
+	bind<const TLens extends LensJson>(
+		lens: TLens,
 	): Result<BoundOf<TLens>, LensParseError | StoreError>;
 	/** Bind a lens whose shape is not known until runtime. */
 	bindUnknown(lens: unknown): Result<Bound, LensParseError | StoreError>;
@@ -613,13 +638,25 @@ export function createStore({
 		};
 	}
 
-	const store: Store = Object.freeze({
+	// Asserted rather than annotated. Checking this literal against `Store`
+	// structurally re-instantiates the generic `bind` against `ValidateLens` and
+	// `BoundOf`, which is enough to exceed TypeScript's depth limit (`TS2589`) on
+	// its own. The members are individually typed above, so what the assertion
+	// gives up is only the whole-object cross-check.
+	const store = Object.freeze({
 		// One implementation, two doors onto it. The typed door exists so a lens
 		// authored as a literal carries its row types through; the untyped door is
 		// what a lens loaded from an application folder gets, where there is no
 		// literal to infer from and `unknown` is the honest answer.
-		bind: <const TLens>(lens: TLens & ValidateLens<TLens>) =>
-			bindUnknown(lens) as Result<BoundOf<TLens>, LensParseError | StoreError>,
+		bind: <const TLens extends LensJson>(lens: TLens) =>
+			// Through `unknown` deliberately: comparing `Result<Bound, ...>` with
+			// `Result<BoundOf<TLens>, ...>` re-enters the per-field arktype
+			// instantiation and exceeds the depth limit. The runtime value is the
+			// same object either way; only the static view of it differs.
+			bindUnknown(lens) as unknown as Result<
+				BoundOf<TLens>,
+				LensParseError | StoreError
+			>,
 		bindUnknown,
 		applyRemote(update: Uint8Array): Result<void, StoreError> {
 			const unusable = requireUsable();
@@ -665,7 +702,7 @@ export function createStore({
 			index.destroy();
 			await dispose();
 		},
-	});
+	}) as Store;
 	return store;
 
 	/**
