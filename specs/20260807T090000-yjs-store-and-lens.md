@@ -97,11 +97,16 @@ setting a tombstone flag only              2908.5 KB   <- LARGER
 clearing content, then flagging              86.4 KB   <- 97% reclaimed
 ```
 
-A dead row then costs a flat **170 bytes**, measured with ADR-0206's
-24-character minted ids and unchanged by compaction. So a hundred thousand
-lifetime deletions cost 17 MB. Two earlier figures in these records, 21 to 23
-bytes and then 68, were both wrong: they measured a root that had never held a
-field. The 86.4 KB above already implied 86 bytes each.
+A dead row then costs about **82 bytes** with ADR-0206's 24-character minted ids
+and three fields, following `35 + len(rowId) + SUM(2 + len(fieldName))`. Flat in
+row count and unchanged by value size, edit history, or compaction, but *not*
+flat in row shape: every cleared field leaves a tombstone carrying its own name,
+undeduplicated. A hundred thousand lifetime deletions cost about 8.2 MB.
+
+Three earlier figures were wrong: 21 to 23 bytes, then 68, then 170. The first
+two measured a root that had never held a field. The 170 reproduces only with
+`gc: false`, which is also where the claim that compaction cannot reduce it came
+from; one wrong flag produced both sentences.
 
 ## Corrected after five adversarial API reviews
 

@@ -236,24 +236,46 @@ rows: setting a flag alone leaves the document **larger** than before
 (2,908 KB against a 2,888 KB baseline), because the content is all still there.
 Clearing takes it to 86 KB.
 
-A dead row then costs **170 bytes**, forever. Measured the way deletion actually
-works, clearing every attribute and then flagging, with ADR-0206's 24-character
-minted ids: 170 B each at a thousand rows and 173 B at five thousand, and
-compaction through a fresh `gc: true` document does not reduce it.
+A dead row then costs about **80 bytes**, forever, and the cost has a shape:
 
-Two earlier figures in drafts of this record, 21 to 23 bytes and then 68, were
-both wrong. They measured a root that had never held a field. The record's own
-table above already implied 86 bytes, and the id grammar ADR-0206 mandates takes
-it to 170. So a hundred thousand lifetime deletions cost **17 MB**, not 2.2 MB.
-At a hundred deletions a year that is still centuries away; at an importer's
-fifty thousand a year it is about a decade.
+```txt
+dead row ~= 35 + len(rowId) + SUM over cleared fields of (2 + len(fieldName))
+```
+
+Measured the way deletion actually works, clearing every attribute and then
+flagging, with ADR-0206's 24-character minted ids: **82 B** for a three-field
+row. Flat in row count, 82.5 B at a hundred rows and 82.0 B at twenty thousand.
+Unchanged by value size, an 8-byte value and a 1 KB value both cost 82 B; by
+edit history, 85 B after twenty edits per field; and by compaction. A 2.8 KB
+nested document adds 13 B.
+
+**It is flat in row count and not flat in row shape.** Each cleared attribute
+leaves a tombstone costing two bytes plus its own field name, and the V2 encoder
+does not deduplicate that name across rows, so a forty-character field name
+costs forty bytes on every dead row forever. Short field names are worth
+something. A hundred thousand lifetime deletions cost about **8.2 MB**.
+
+Three earlier figures in drafts of this record were wrong: 21 to 23 bytes, then
+68, then 170. The first two measured a root that had never held a field. **The
+170 is reproducible only with `gc: false`**, which measures 169.1 B, and that
+one wrong flag produced two wrong sentences: replaying gc-off state into another
+gc-off document indeed does not reduce it, which is where the companion claim
+that "compaction through a fresh `gc: true` document does not reduce it" came
+from, while replaying it into a genuinely `gc: true` document drops it to 82 B.
+
+The stated derivation was also arithmetically impossible. It claimed 86 B became
+170 B because ADR-0206 mandates 24-character ids, but the measured slope is 1.13
+bytes per id character, so going from four characters to twenty-four adds twenty
+bytes, not eighty-four.
 
 ### Tombstones are never collected
 
-One hundred thousand lifetime deletions cost 2.2 MB. Collecting them instead
-would require knowing every device has seen the delete, which means a device
-roster, per-device positions, and a rule for when a silent device is gone. That
-is a distributed-systems subsystem bought to save two megabytes.
+One hundred thousand lifetime deletions cost about 8.2 MB. Collecting them
+instead would require knowing every device has seen the delete, which means a
+device roster, per-device positions, and a rule for when a silent device is
+gone. That is a distributed-systems subsystem bought to save eight megabytes.
+An earlier draft said 2.2 MB here and 17 MB two paragraphs above, which could
+not both be true.
 
 Yjs enforces this by construction, because a root cannot be removed. The
 decision is therefore a statement of what the library already does, not a policy

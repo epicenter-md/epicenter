@@ -237,11 +237,12 @@ The authority is unaffected by any of it, because it holds bytes.
   at all therefore costs 15 B of tombstone forever, and twenty edits per body
   changes none of it because `gc: true` has already collapsed the history.
   Replaying through a fresh document reclaims nothing further.
-- **A per-dead-row figure in ADR-0212 needs reconciling.** That record states
-  170 B with ADR-0206's 24-character ids; the same measurement here gives 78 B
-  for a three-field row and 93 B with a body. The difference is field shape or
-  measurement boundary, and whichever is reproducible should be the one written
-  down.
+- **ADR-0212's per-dead-row figure has been corrected in place.** It said 170 B;
+  the reproducible figure is 82 B for a three-field row, following
+  `35 + len(rowId) + SUM(2 + len(fieldName))`. The 170 reproduces only under
+  `gc: false`, which also produced that record's claim that compaction cannot
+  reduce it. Because a field's name is repeated on every tombstone and not
+  deduplicated, short field names have a small permanent cost advantage.
 - **Prose still does not reach the markdown folder.** ADR-0207's hole is
   re-accepted a second time and for the same reason: Epicenter never learns
   which root inside a row's container holds writing. An application that wants
