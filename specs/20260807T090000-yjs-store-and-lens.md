@@ -123,11 +123,14 @@ arktype expresses a default inside the expression, so the lens stays JSON:
 keeps `dark`, and `{theme:'purple'}` is still an error. **A default fills an
 absent key; it does not rescue a present but invalid one.**
 
-So a table offers two reads. `get(id)` is honest and returns
-`Err(Nonconforming)`; `getOrDefault(id)` always returns a value. Render code
-wants the second, a repair tool wants the first, and a note's `title` in a list
-view wants the same forgiveness a setting does. That is the whole thing a `kv`
-namespace would have been invented to provide, and it works on every table.
+So there is one read verb and recovery is composed at the call site from two
+pieces of data: `db.settings.defaults` (arktype yields them by validating `{}`)
+and `error.conforming` (the fields that did pass). `data ?? defaults` is the
+whole-object fallback; `{ ...defaults, ...(data ?? error.conforming) }` keeps the
+good fields when a release narrows one. A `getOrDefault` verb was drafted and
+withdrawn: it is that second line with the composition frozen. Use `??`, never a
+destructuring default, because `Err` sets `data: null` and a destructuring
+default fires only on `undefined`.
 
 ## Open
 

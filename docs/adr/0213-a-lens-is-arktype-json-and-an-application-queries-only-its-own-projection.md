@@ -100,19 +100,33 @@ migration and not backfill, which ADR-0125 refuses: nothing is written, the valu
 is supplied at read time when the key is absent.
 
 **A default fills an absent key. It does not rescue a present but invalid one.**
-Measured: `{}` yields `light`, and `{ theme: 'purple' }` is still an error. So a
-table offers two reads, and the caller picks which answer it wants:
+Measured: `{}` yields `light`, and `{ theme: 'purple' }` is still an error.
 
-| | absent key | invalid stored value |
-| --- | --- | --- |
-| `get(id)` | default | `Err(Nonconforming)` |
-| `getOrDefault(id)` | default | default |
+There is **one** read verb. Recovery is composed at the call site out of two
+pieces of data, because a second verb would only be a fixed composition of them:
 
-`get` is the honest read and is what a repair tool or an export wants.
-`getOrDefault` is what render code wants, because a settings screen cannot
-display a `Result`. Both live on every table, because a note's `title` in a list
-view wants the same forgiveness a setting does. This is what a `kv` namespace
-would otherwise have been invented to provide.
+```ts
+const { data, error } = await db.settings.get('app');
+
+const cfg = data ?? db.settings.defaults;
+const cfg = { ...db.settings.defaults, ...(data ?? error.conforming) };
+```
+
+`defaults` is the table's declared defaults, which arktype yields directly by
+validating an empty object. `conforming` is the subset of a nonconforming row's
+fields that did pass, carried on the error so a partial failure does not cost the
+fields that were fine. That per-field case is the one that matters in practice:
+it is what happens when a release narrows a field and one stored value no longer
+validates, which is the situation ADR-0125 exists for.
+
+**Use `??`, never a destructuring default.** `Err` sets `data: null`
+(`wellcrafted/dist/result`), and a destructuring default fires only on
+`undefined`, so `const { data: cfg = defaults }` silently yields `null` on
+failure. `??` fires on both.
+
+A draft of this record added a `getOrDefault` verb. It is withdrawn: it is
+`{ ...defaults, ...(data ?? error.conforming) }` with the composition frozen, and
+freezing it hides which of the two behaviours a call site wanted.
 
 With defaults declared, occupying a singleton needs no fields at all:
 `await db.settings.ensure('app')`.
@@ -171,7 +185,8 @@ const { data: note } = await db.notes.create({ title: 'Groceries', tags: ['food'
 note.title                                   // a property on a FROZEN plain object
 await db.notes.set(note.id, { title: 'Shopping' });
 await db.settings.ensure('app');            // singleton, filled from declared defaults
-const { data: cfg } = await db.settings.getOrDefault('app');   // never fails
+const { data, error } = await db.settings.get('app');
+const cfg = data ?? db.settings.defaults;   // ?? , never a destructuring default
 await db.notes.delete(note.id);
 
 // prose. The lens never mentioned it; every row has one (ADR-0130).
