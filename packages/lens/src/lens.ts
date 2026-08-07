@@ -201,6 +201,37 @@ export const LensParseError = defineErrors({
 		field,
 		reason,
 	}),
+	/**
+	 * The field transforms, so what a read would hand back is not what is stored.
+	 *
+	 * Refused because a field has to be one type through all three doors it can
+	 * be reached by: the CRDT attribute, the projection column, and the row. A
+	 * morph breaks that. `'string.date.parse'` would take a string on write and
+	 * hand back a `Date` on read, so `update(id, { when: row.when })` could not
+	 * round-trip and `db.query` would report a string for the same field the row
+	 * reports as a `Date`.
+	 *
+	 * Nothing expressive is lost. arktype ships a validation-only form of every
+	 * rich string type, and those keep the stored value: `string.date.iso`
+	 * instead of `string.date.parse`, and `string.uuid`, `string.email` and
+	 * `string.numeric` all pass this gate unchanged. It is also the rule the
+	 * codebase already chose, back when this vocabulary was `InstantString` and
+	 * `CalendarDateString`: a date is a branded string, never a `Date`.
+	 */
+	TransformingField: ({
+		table,
+		field,
+		expression,
+	}: {
+		table: string;
+		field: string;
+		expression: string;
+	}) => ({
+		message: `Field '${table}.${field}' transforms its value, so what is stored and what is read would differ. Use a validation-only form, such as 'string.date.iso' instead of 'string.date.parse'.`,
+		table,
+		field,
+		expression,
+	}),
 });
 export type LensParseError = InferErrors<typeof LensParseError>;
 
@@ -445,6 +476,34 @@ function compileTable(
 				table: tableName,
 				field: fieldName,
 				reason: cause instanceof Error ? cause.message : String(cause),
+			});
+		}
+		// A field must be one type through the CRDT, the projection, and the row.
+		//
+		// Asked of the property's VALUE, not of the wrapper. A declared default is
+		// itself a transform in arktype's terms, because it turns an absent key
+		// into a present one, so the wrapper reports `includesTransform: true` for
+		// every defaulted field. Measured:
+		//
+		//   "'light'|'dark' = 'light'"      wrapper true    value false
+		//   'string.date.parse'             wrapper true    value true
+		//   "string.date.parse = '2020-01'" wrapper true    value true
+		//
+		// The value node is therefore the only place the question can be asked
+		// without banning the defaults this whole design rests on. The flag is
+		// declared on `@ark/schema`'s node base rather than surfaced through
+		// `type.Any`, so it is read through a narrow local shape instead of by
+		// depending on a transitive package for one boolean.
+		const valueNode = (
+			fieldType as unknown as {
+				props?: readonly { value?: { includesTransform?: boolean } }[];
+			}
+		).props?.[0]?.value;
+		if (valueNode?.includesTransform === true) {
+			return LensParseError.TransformingField({
+				table: tableName,
+				field: fieldName,
+				expression,
 			});
 		}
 		compiled.set(fieldName, fieldType);

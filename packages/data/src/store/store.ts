@@ -115,8 +115,15 @@ export type TableHandle = {
 	 * composes whatever forgiveness it wants without a second verb existing.
 	 */
 	get(rowId: string): Promise<Result<Row | undefined, ReadRowError>>;
-	/** Merge fields into a live row. Refuses an absent address. */
-	set(rowId: string, fields: JsonObject): Promise<Result<Row, WriteRowError>>;
+	/**
+	 * Merge fields into a live row. Refuses an absent address.
+	 *
+	 * `update` rather than `set`, because only the fields handed in are touched
+	 * and every other field is left alone. `set` promises replacement, and this
+	 * is the verb called most often, so the name that misleads is the expensive
+	 * one to keep.
+	 */
+	update(rowId: string, fields: JsonObject): Promise<Result<Row, WriteRowError>>;
 	/**
 	 * Get or create, in one transaction.
 	 *
@@ -204,7 +211,7 @@ export type TypedTableHandle<TFields> = TableIo<TFields> extends {
 				fields: TInput,
 			): Promise<Result<TRow, WriteRowError>>;
 			get(rowId: string): Promise<Result<TRow | undefined, ReadRowError>>;
-			set(
+			update(
 				rowId: string,
 				fields: Partial<TInput>,
 			): Promise<Result<TRow, WriteRowError>>;
@@ -500,7 +507,7 @@ export function createStore({
 					ReadRowError
 				>;
 			},
-			async set(
+			async update(
 				rowId: string,
 				fields: JsonObject,
 			): Promise<Result<Row, WriteRowError>> {

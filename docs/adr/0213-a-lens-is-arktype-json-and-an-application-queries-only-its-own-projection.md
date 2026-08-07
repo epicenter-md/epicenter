@@ -131,6 +131,41 @@ freezing it hides which of the two behaviours a call site wanted.
 With defaults declared, occupying a singleton needs no fields at all:
 `await db.settings.ensure('app')`.
 
+### A field is one type through every door
+
+A field's arktype expression may not transform its value. `'string.date.iso'`
+is admitted and `'string.date.parse'` is refused, with
+`Err(LensParseError.TransformingField)` naming the field and the fix.
+
+A field is reachable through three doors, and they have to agree: the Yjs
+attribute, the projection column, and the row a read hands back. A morph breaks
+that. `'string.date.parse'` takes a string on write and yields a `Date` on read,
+so `update(id, { when: row.when })` cannot round-trip, and `db.query` reports a
+string for the same field the row reports as a `Date`. One field, two types,
+depending on how it was reached.
+
+**Nothing expressive is lost, which is why the refusal is cheap.** arktype ships
+a validation-only form of every rich string type, and each keeps the stored
+value: `string.date.iso`, `string.uuid`, `string.email`, `string.numeric` all
+pass unchanged. The cost is `new Date(row.when)` at the point of display. It is
+also the rule this codebase already chose, back when the vocabulary was
+`InstantString`, `CalendarDateString` and `DateTimeString`: a date is a branded
+string, never a `Date`. The gate enforces that existing decision with one rule
+instead of a bespoke `recognize()` vocabulary.
+
+**The check asks the property's value, not the property.** Filling an absent key
+is itself a transformation in arktype's terms, so the wrapper reports
+`includesTransform: true` for every defaulted field. Measured:
+
+| expression | wrapper | value |
+| --- | --- | --- |
+| `"'light'\|'dark' = 'light'"` | `true` | **`false`** |
+| `'string.date.parse'` | `true` | `true` |
+| `"string.date.parse = '2020-01-01'"` | `true` | `true` |
+
+Asking the wrapper would ban every default, which is the mechanism the section
+above is built on.
+
 ### Fields are nullable, never optional
 
 `'string|null'`, not `'date?'`. Every field is always present, so the projection
@@ -183,7 +218,7 @@ const { data: db } = store.bind(lens);                  // the typed view. sync,
 
 const { data: note } = await db.notes.create({ title: 'Groceries', tags: ['food'] });
 note.title                                   // a property on a FROZEN plain object
-await db.notes.set(note.id, { title: 'Shopping' });
+await db.notes.update(note.id, { title: 'Shopping' });
 await db.settings.ensure('app');            // singleton, filled from declared defaults
 const { data, error } = await db.settings.get('app');
 const cfg = data ?? db.settings.defaults;   // ?? , never a destructuring default
@@ -246,7 +281,8 @@ own namespace. Results are bounded and Result-returning; bare rows cannot say
 | `optional: [...]` | `'string|null'` | a marker in the key does not survive a JSON round trip; a union in the value does |
 | `epicenter.open({ path })` | one adapter per runtime, each returning a `Result` | ADR-0204 says a thing has exactly one name, and the three opens share no I/O profile |
 | `const app = ...` | name it for the lens | `app` already means an installed application with an authority id and a partition |
-| `note.title = 'x'`, then `note.set({...})` | `notes.set(id, {...})` | assignment cannot fail or be awaited; and a handle carrying only an id does not prove the row still exists, so presence and the write must share one transaction |
+| `note.title = 'x'`, then `note.set({...})` | `notes.update(id, {...})` | assignment cannot fail or be awaited; and a handle carrying only an id does not prove the row still exists, so presence and the write must share one transaction |
+| `notes.set(id, {...})` | `notes.update(id, {...})` | only the fields handed in are touched, so `set`, which promises replacement, is wrong about the verb called most often. An earlier draft of this table swapped `patch` for `set` on the assignment-versus-method argument and never examined merge versus replace |
 | `note.body.insert(0, 'x')` | `await notes.prose(id, 'body')` then `.text().insert(...)` | it is a load, and a round trip on two of three shipped surfaces. A synchronous chain in front of it gives back the whole startup win |
 | `body: content`, then `body: TEXT` | **nothing.** the lens says no word about prose | ADR-0130 (`Accepted`): a row owns a document inherently and "the table does not opt in, declare roots, or choose a format". Deletes the sentinel and the prose/scalar type split |
 | `notes.prose(id, field)` | `notes.document.open(id)` | ADR-0130's own shape. `document` is what it is; `prose` invented a second name |

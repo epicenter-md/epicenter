@@ -60,8 +60,8 @@ describe('a read is a property access on a plain object', () => {
 });
 
 describe('a write that reaches nothing is a failure', () => {
-	test('set on an absent row refuses instead of silently swallowing it', async () => {
-		const { data, error } = await db.notes.set('nope', { title: 'x' });
+	test('update on an absent row refuses instead of silently swallowing it', async () => {
+		const { data, error } = await db.notes.update('nope', { title: 'x' });
 		expect(data).toBeNull();
 		// The verb this replaces returned Ok(undefined) and dropped the write.
 		expect(error?.name).toBe('RowAbsent');
@@ -79,7 +79,7 @@ describe('a write that reaches nothing is a failure', () => {
 			tags: ['food'],
 			date: null,
 		});
-		const { error } = await db.notes.set(note?.id ?? '', {
+		const { error } = await db.notes.update(note?.id ?? '', {
 			tags: 'food' as never,
 		});
 		expect(error?.name).toBe('Nonconforming');
@@ -168,7 +168,7 @@ describe('a nonconforming row is reported, never repaired', () => {
 			tables: { settings: { theme: 'string', fontSize: 'number' } },
 		});
 		if (bindError !== null) throw bindError;
-		await rawDb.settings?.set('app', { theme: 'purple' });
+		await rawDb.settings?.update('app', { theme: 'purple' });
 
 		const { data, error } = await db.settings.get('app');
 		expect(data).toBeNull();
@@ -188,7 +188,7 @@ describe('a nonconforming row is reported, never repaired', () => {
 			namespace: 'so.epicenter.honeycrisp',
 			tables: { settings: { theme: 'string', fontSize: 'number' } },
 		});
-		await rawDb?.settings?.set('app', { theme: 'purple' });
+		await rawDb?.settings?.update('app', { theme: 'purple' });
 		const { data } = await db.settings.list();
 		expect(data?.rows.map((row) => row.id)).toEqual(['other']);
 		expect(data?.nonconforming.map((issue) => issue.id)).toEqual(['app']);
@@ -223,8 +223,8 @@ describe('two replicas converge', () => {
 		laptop.applyRemote(store.encodeStateSince(laptop.stateVector()));
 
 		// Both go offline and edit different fields.
-		await db.notes.set('n1', { title: 'phone title' });
-		await laptopDb.notes.set('n1', { date: '2026-08-07' });
+		await db.notes.update('n1', { title: 'phone title' });
+		await laptopDb.notes.update('n1', { date: '2026-08-07' });
 
 		// Then they meet.
 		const phoneState = store.encodeStateSince(laptop.stateVector());
@@ -250,7 +250,7 @@ describe('two replicas converge', () => {
 		laptop.applyRemote(store.encodeStateSince(laptop.stateVector()));
 
 		await db.notes.delete('n1');
-		await laptopDb.notes.set('n1', { title: 'edited offline' });
+		await laptopDb.notes.update('n1', { title: 'edited offline' });
 
 		const phoneState = store.encodeStateSince(laptop.stateVector());
 		const laptopState = laptop.encodeStateSince(store.stateVector());

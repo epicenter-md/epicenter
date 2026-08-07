@@ -219,6 +219,20 @@ describe('the grammar refuses what the records reserve', () => {
 			'a non-string field',
 			{ namespace: 'so.epicenter.app', tables: { notes: { title: 42 } } },
 		],
+		[
+			'a field that transforms its value',
+			{
+				namespace: 'so.epicenter.app',
+				tables: { notes: { when: 'string.date.parse' } },
+			},
+		],
+		[
+			'a field that transforms nested',
+			{
+				namespace: 'so.epicenter.app',
+				tables: { notes: { payload: 'string.json.parse' } },
+			},
+		],
 	];
 
 	for (const [reason, value] of cases) {
@@ -228,6 +242,71 @@ describe('the grammar refuses what the records reserve', () => {
 			expect(error).not.toBeNull();
 		});
 	}
+});
+
+describe('a field is one type through every door', () => {
+	test('a transforming field is refused by name, with the fix in the message', () => {
+		const { data, error } = parseLens({
+			namespace: 'so.epicenter.app',
+			tables: { notes: { when: 'string.date.parse' } },
+		});
+		expect(data).toBeNull();
+		expect(error?.name).toBe('TransformingField');
+		expect(error?.message).toContain('string.date.iso');
+	});
+
+	test('a declared default is not a transform, though arktype counts it as one', () => {
+		// The trap this gate has to avoid. arktype reports `includesTransform` on
+		// the WRAPPER for every defaulted field, because filling an absent key is
+		// a transformation; asking the property's value instead is what keeps
+		// defaults legal while still refusing a morph that carries one.
+		const { data, error } = parseLens({
+			namespace: 'so.epicenter.app',
+			tables: { settings: { theme: "'light'|'dark' = 'light'" } },
+		});
+		expect(error).toBeNull();
+		expect(data?.tables.get('settings')?.defaults).toEqual({ theme: 'light' });
+
+		const { error: stillRefused } = parseLens({
+			namespace: 'so.epicenter.app',
+			tables: { notes: { when: "string.date.parse = '2020-01-01'" } },
+		});
+		expect(stillRefused?.name).toBe('TransformingField');
+	});
+
+	test('every validation-only rich type still passes', () => {
+		// Nothing expressive is lost by refusing morphs: arktype ships a
+		// validating form of each of these, and each keeps the stored value.
+		const { data, error } = parseLens({
+			namespace: 'so.epicenter.app',
+			tables: {
+				notes: {
+					when: 'string.date.iso',
+					id_: 'string.uuid',
+					email: 'string.email',
+					amount: 'string.numeric',
+				},
+			},
+		});
+		expect(error).toBeNull();
+		expect(data?.tables.get('notes')?.fields.size).toBe(4);
+	});
+
+	test('a validated date round-trips as the string it was stored as', () => {
+		const { data } = parseLens({
+			namespace: 'so.epicenter.app',
+			tables: { notes: { when: 'string.date.iso' } },
+		});
+		const table = data?.tables.get('notes');
+		const { data: written } = table?.validateWrite({ when: '2026-08-07' }) ?? {};
+		expect(written).toEqual({ when: '2026-08-07' });
+		const { data: read } = table?.project(
+			{ namespace: 'so.epicenter.app', tableName: 'notes', rowId: 'n1' },
+			{ when: '2026-08-07' },
+		) ?? {};
+		// Same string in, same string out, and the same string in the projection.
+		expect(read).toEqual({ id: 'n1', when: '2026-08-07' });
+	});
 });
 
 describe('types', () => {
