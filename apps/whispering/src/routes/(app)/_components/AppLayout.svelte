@@ -14,6 +14,7 @@
 	import { services } from '$lib/services';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
+	import { syncDockIconWithSettings } from '../_layout-utils/hideDockIcon.svelte';
 	import {
 		checkCompressionRecommendation,
 		checkFfmpegRecordingMethodCompatibility,
@@ -76,6 +77,7 @@
 	if (window.__TAURI_INTERNALS__) {
 		syncWindowAlwaysOnTopWithRecorderState();
 		syncIconWithRecorderState();
+		syncDockIconWithSettings();
 	}
 
 	$effect(() => {

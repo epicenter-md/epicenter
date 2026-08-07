@@ -4,6 +4,7 @@ import { notificationLog } from '$lib/components/NotificationLog.svelte';
 import { defineMutation } from '$lib/query/client';
 import { services } from '$lib/services';
 import type { UnifiedNotificationOptions } from '$lib/services/isomorphic/notifications/types';
+import { settings } from '$lib/stores/settings.svelte';
 
 // Create a mutation for a specific variant
 const createNotifyMutation = (
@@ -40,7 +41,15 @@ const createNotifyMutation = (
 			// Add to notification log
 			notificationLog.addLog(fullOptions);
 
-			// Always show toast
+			// Errors always show. Other variants (success/info/loading/warning)
+			// respect the "show notifications" setting so users who find the
+			// per-step toasts noisy can quiet them down without losing errors.
+			const shouldShow =
+				variant === 'error' || settings.value['system.showNotifications'];
+
+			if (!shouldShow) return Ok(undefined);
+
+			// Show toast
 			const toastId = services.toast.show(fullOptions);
 
 			// Also show OS notification (system notifications or browser/extension notifications)

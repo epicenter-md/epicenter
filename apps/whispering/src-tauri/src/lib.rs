@@ -148,10 +148,30 @@ pub async fn run() {
             }));
     }
 
+    // When "menu bar only" is enabled, clicking the window's close button
+    // should hide the window (like a normal menu-bar app) instead of quitting
+    // the whole process. Real quit still happens via the tray menu's Quit item.
+    builder = builder.setup(|app| {
+        if let Some(window) = app.get_webview_window("main") {
+            let window_clone = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    if HIDE_DOCK_ICON.load(std::sync::atomic::Ordering::Relaxed) {
+                        api.prevent_close();
+                        let _ = window_clone.hide();
+                    }
+                }
+            });
+        }
+        Ok(())
+    });
+
     // Register command handlers (same for all platforms now)
     let builder = builder.invoke_handler(tauri::generate_handler![
         write_text,
         simulate_enter_keystroke,
+        set_dock_icon_visible,
+        quit_app,
         // Audio recorder commands
         get_current_recording_id,
         enumerate_recording_devices,
@@ -177,10 +197,10 @@ pub async fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|handler, event| {
+    app.run(move |handler, event| {
         // Only track events if Aptabase is enabled (key is not empty)
         if !aptabase_key.is_empty() {
-            match event {
+            match &event {
                 tauri::RunEvent::Exit { .. } => {
                     let _ = handler.track_event("app_exited", None);
                     handler.flush_events_blocking();
@@ -189,6 +209,30 @@ pub async fn run() {
                     let _ = handler.track_event("app_started", None);
                 }
                 _ => {}
+            }
+        }
+
+        // Cmd+Q / "Quit Whispering" from the app menu bypasses the window's
+        // CloseRequested event entirely and goes straight to ExitRequested.
+        // In "menu bar only" mode, treat it the same as closing the window —
+        // unless quit_app requested a real, intentional exit (tray Quit item).
+        if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+            let intentional_quit = INTENTIONAL_QUIT.load(std::sync::atomic::Ordering::Relaxed);
+            if !intentional_quit && HIDE_DOCK_ICON.load(std::sync::atomic::Ordering::Relaxed) {
+                api.prevent_exit();
+                if let Some(window) = handler.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
+        }
+
+        // macOS fires Reopen when the user clicks the Dock icon (or the tray
+        // icon's "Show Window" item re-triggers activation) while the window
+        // is hidden. Without this, a hidden window becomes unreachable.
+        if let tauri::RunEvent::Reopen { .. } = &event {
+            if let Some(window) = handler.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
             }
         }
     });
@@ -273,5 +317,56 @@ async fn simulate_enter_keystroke() -> Result<(), String> {
         .key(Key::Return, Direction::Click)
         .map_err(|e| format!("Failed to simulate Enter key: {}", e))?;
 
+    Ok(())
+}
+
+/// Shared with the window-close and app-exit handlers in `run()`: when true,
+/// closing the window or pressing Cmd+Q hides the window instead of quitting,
+/// matching normal menu-bar-app behavior (the app only truly quits via the
+/// tray menu's Quit item).
+static HIDE_DOCK_ICON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Set by `quit_app` right before requesting a real exit, so the
+/// `ExitRequested` handler in `run()` can tell an intentional Quit (from the
+/// tray menu) apart from macOS routing Cmd+Q / window-close through the same
+/// event when "menu bar only" is active — otherwise that handler would just
+/// hide the window forever instead of letting the app actually quit.
+static INTENTIONAL_QUIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Shows or hides the app's Dock icon (and Cmd+Tab/task switcher entry).
+///
+/// On macOS this toggles the activation policy between `Regular` (normal app
+/// with a Dock icon) and `Accessory` (menu-bar-only app, no Dock icon, no
+/// window switcher entry). The app remains fully usable via the system tray
+/// icon in either mode. No-op on platforms without a Dock (Windows/Linux).
+#[tauri::command]
+async fn set_dock_icon_visible(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
+    HIDE_DOCK_ICON.store(!visible, std::sync::atomic::Ordering::Relaxed);
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if visible {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        };
+        app.set_activation_policy(policy)
+            .map_err(|e| format!("Failed to set activation policy: {}", e))?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, visible);
+    }
+
+    Ok(())
+}
+
+/// Quits the app for real, bypassing the "menu bar only" close-to-tray
+/// behavior. This is what the tray menu's Quit item calls instead of the
+/// generic process-plugin exit, which gets intercepted the same as a window
+/// close when "menu bar only" is active.
+#[tauri::command]
+async fn quit_app(app: tauri::AppHandle) -> Result<(), String> {
+    INTENTIONAL_QUIT.store(true, std::sync::atomic::Ordering::Relaxed);
+    app.exit(0);
     Ok(())
 }

@@ -103,6 +103,17 @@ export const Settings = type({
 	'system.alwaysOnTop': type
 		.enumerated(...ALWAYS_ON_TOP_MODES)
 		.default('Never'),
+	/**
+	 * When enabled, hides the Dock icon (and Cmd+Tab/task switcher entry) on
+	 * macOS. The app remains accessible via the system tray icon.
+	 */
+	'system.hideDockIcon': 'boolean = false',
+	/**
+	 * When disabled, suppresses success/info/loading/warning toasts and OS
+	 * notifications for every pipeline step (recording started, transcribing,
+	 * etc). Error notifications always show regardless of this setting.
+	 */
+	'system.showNotifications': 'boolean = true',
 
 	// UI settings
 	/**

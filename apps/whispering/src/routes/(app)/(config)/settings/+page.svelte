@@ -269,6 +269,41 @@
 					</Select.Content>
 				</Select.Root>
 			</Field.Field>
+
+			<Field.Field orientation="horizontal">
+				<Field.Content>
+					<Field.Label for="hide-dock-icon">Menu bar only</Field.Label>
+					<Field.Description>
+						Hide the Dock icon and use only the system tray icon. Show or
+						hide the window from the tray menu.
+					</Field.Description>
+				</Field.Content>
+				<Switch
+					id="hide-dock-icon"
+					bind:checked={
+						() => settings.value['system.hideDockIcon'],
+						(v) => settings.updateKey('system.hideDockIcon', v)
+					}
+				/>
+			</Field.Field>
+
+			<Field.Field orientation="horizontal">
+				<Field.Content>
+					<Field.Label for="show-notifications">Show notifications</Field.Label>
+					<Field.Description>
+						Show a toast for every pipeline step (recording started,
+						transcribing, etc). Turn off to reduce noise — errors always
+						still show.
+					</Field.Description>
+				</Field.Content>
+				<Switch
+					id="show-notifications"
+					bind:checked={
+						() => settings.value['system.showNotifications'],
+						(v) => settings.updateKey('system.showNotifications', v)
+					}
+				/>
+			</Field.Field>
 		{/if}
 
 		<Field.Separator />
