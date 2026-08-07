@@ -80,7 +80,7 @@ inherently owns one lazy collaborative document", which was already `Accepted`.
 | loose files for persistence | impossible anyway: a second OPFS owner is refused |
 | field builder functions | a compile step and an identity-keyed cache, source of two live bugs |
 
-## Deletion costs 21 bytes, and clearing is not optional
+## Clearing is not optional, and a dead row costs 170 bytes
 
 Measured over 1,000 rows:
 
@@ -90,20 +90,46 @@ setting a tombstone flag only              2908.5 KB   <- LARGER
 clearing content, then flagging              86.4 KB   <- 97% reclaimed
 ```
 
-A dead row then costs a flat 21 to 23 bytes, from one thousand to one hundred
-thousand of them.
+A dead row then costs a flat **170 bytes**, measured with ADR-0206's
+24-character minted ids and unchanged by compaction. So a hundred thousand
+lifetime deletions cost 17 MB. Two earlier figures in these records, 21 to 23
+bytes and then 68, were both wrong: they measured a root that had never held a
+field. The 86.4 KB above already implied 86 bytes each.
+
+## Corrected after five adversarial API reviews
+
+Five things in the first draft of these records were wrong and are fixed:
+
+| was | is | why |
+| --- | --- | --- |
+| one Yjs root per row | one root per **table**, rows nested | `findRootTypeKey` linearly scans `doc.share` (`utils/ID.js:79-87`), so root-per-row encoding is quadratic: **5,417 ms** at 20,000 rows against 13 ms nested |
+| a dead row costs 21 to 23 B | **170 B** | measured the way deletion works, with ADR-0206's 24-character ids. 100,000 deletions is 17 MB, not 2.2 MB |
+| a `kv` section | a table with a chosen row id | ADR-0206 already deleted this at `d5e53cca24`, +1303/-6422 |
+| `content` as a `unique symbol` | `TEXT = '!text'` | `JSON.stringify` drops a symbol-valued key, so a lens with prose did not round-trip |
+| `note.set()`, `note.body.insert()` | `notes.set(id, ...)`, `await notes.prose(id, field)` | a stale handle can half-resurrect a row, and prose opening is a port round trip on two of three surfaces |
+
+An earlier rejection of the nested layout was also wrong: it tested deletion as
+`deleteAttr(rowId)` on the table root, which destroys a concurrent edit. Clearing
+fields on the nested type and flagging `!presence` converges with the tombstone
+held and the edit retained, exactly as roots do.
+
+Also found in shipped code, unfixed: `patch` on an absent row returns
+`Ok(undefined)` and silently swallows the write.
 
 ## Open
 
-- **The `content` sentinel** sits beside the arktype object rather than inside
-  it, because a Yjs document is not a value to validate. That is the last
-  unsettled shape in the lens.
+- **The prose sentinel is `'!text'`, naming a `Y.Text`.** If Honeycrisp's editor
+  binds `@y/prosemirror` to a tree instead, `'!xml'` is needed on day one and the
+  folder render is refused for it. Nobody has run that binding.
 - **Prefetch policy for prose.** The index syncs always; a body syncs when
   opened. Going offline with unopened notes needs a prefetch rule. Prefetching
   everything is 2.7 MB.
-- **`doc.share` grows monotonically.** Bounded in practice at 21 bytes a dead
-  row; not bounded if an application ever writes rows at machine rate. The
-  address should be able to carry a generation. No generation mechanism is built.
+- **A table root grows monotonically**, and listing it touches every corpse:
+  24.9 ms to list a thousand live rows among a hundred thousand. If a table ever
+  gets slow, the fix is a second attribute naming only the live rows. The address
+  should be able to carry a generation; no generation mechanism is built, and the
+  rebuild it would enable is refused because a device that missed one has its
+  offline edit destroyed.
 - **`@y/prosemirror` binding was never run.** Source reading shows it calls
   `setAttr` and `deleteAttr` on the type it binds to, which is why the prose
   document is separate. The containment was verified structurally, but the real

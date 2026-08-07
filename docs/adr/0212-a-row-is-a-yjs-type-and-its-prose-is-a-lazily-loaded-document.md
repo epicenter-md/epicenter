@@ -55,11 +55,10 @@
 - **Amends:** [ADR-0135](0135-row-documents-have-application-owned-roots.md)
   (`Accepted`) at root naming only. Withdrawn: that Epicenter "does not declare,
   validate, version, reserve, enumerate, or interpret" roots. Epicenter now
-  declares the root grammar `<table>/<rowId>` in the index document, reserves the
-  `!` prefix, and enumerates roots to build the projection. What survives, and is
-  the reason the split below matters, is that Epicenter never interprets the
-  inside of a prose document: an application owns that document's shape
-  completely.
+  declares that a root is a table, names prose documents `<table>/<rowId>/<field>`,
+  and reserves the `!` prefix. What survives, and is the reason the split below
+  matters, is that Epicenter never interprets the inside of a prose document: an
+  application owns that document's shape completely.
 - **Confirms and does not amend:**
   [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md)
   (`Accepted`, "every ordinary row inherently owns one lazy collaborative
@@ -101,23 +100,49 @@ fields is a separate document, keyed by address and loaded on demand.**
 
 ### The index document
 
-One `Y.Doc` per application, `gc: true`. Its roots are rows:
+One `Y.Doc` per application, `gc: true`. **One root per table, not one per row.**
+A table's root holds its rows as attributes; each row is a nested type whose
+attributes are its scalar fields:
 
 ```txt
-"notes/n1"       a row.    attrs are its scalar fields.
-"notes/n2"       a row.
-"!kv"            singleton values. attrs are the keys.
+"notes"      table root.  attrs are row ids -> a nested type per row.
+                          each nested type's attrs are that row's fields.
+"tags"       table root.
 ```
 
-Every scalar field is one attribute, so two devices editing different fields of
-one row while both offline both survive. Measured: `{"title":"Shopping",
-"tags":"errands"}` from two partitioned devices. Storing the whole row in one
-attribute instead loses one side, and costs a 6.5x larger delta besides.
+**One root per row is refused, and the reason is a hard wall rather than a
+preference.** `Item.write` calls `findRootTypeKey`
+(`node_modules/@y/y/src/structs/Item.js:477`), and `findRootTypeKey` is a linear
+scan of `doc.share` (`utils/ID.js:79-87`, read directly). With one root per row,
+`doc.share` is the row count, so encoding the document is quadratic in rows:
+
+| rows | one root per row | one root per table |
+| --- | --- | --- |
+| 1,000 | 23.2 ms | 1.8 ms |
+| 5,000 | 364.4 ms | 3.0 ms |
+| 20,000 | **5,416.8 ms** | 13.1 ms |
+| 100,000 | unusable | 38.2 ms |
+
+`documents.ts:328-331` runs exactly that encode every 64 appends, so at twenty
+thousand rows the root-per-row grammar is a five-second freeze on one write in
+sixty-four. The wall is row count, not write rate.
+
+The nested grammar costs nothing in merge behaviour. Verified: a device deleting
+a row while another edits it offline converges with the tombstone held and the
+edit retained, and two devices editing different fields of one row while both
+offline both survive, exactly as with roots. An earlier draft rejected nesting
+after testing it with `deleteAttr(rowId)` on the table root, which does destroy a
+concurrent edit; that is not how deletion works here.
+
+Every scalar field is one attribute, so per-field merge is preserved. Storing a
+whole row in one attribute instead loses one side and costs a 6.5x larger delta.
 
 A row carries no sequence content of its own. Rows are maps.
 
-`!` is reserved and no lens name may begin with it, so `!kv` and `!presence`
-cannot collide with a table or a field.
+`!` is reserved and no lens name may begin with it, so `!presence` cannot collide
+with a field. It stays a single character because `!` can begin neither an
+arktype expression nor a JavaScript identifier, so the reservation is enforced by
+syntax rather than by a rule someone has to remember.
 
 ### Prose is a separate document
 
@@ -150,6 +175,15 @@ ADR-0174 makes terminal. Separate documents cost 27 bytes each.
 **The index syncs always; a prose document syncs when it is opened.** A closed
 note's prose being minutes stale costs nothing, because nothing is reading it.
 Prefetching every body is 2.7 MB and is a policy, not a mechanism.
+
+### Opening a prose document is asynchronous
+
+It is a load, and on two of the three shipped surfaces it is a round trip to
+another process (`packages/data/src/browser/worker.ts:762`,
+`packages/data/src/desktop.ts:282`). A synchronous property chain in front of it
+would either force eager loading, giving back the entire startup win above, or
+buffer into a document that has not arrived. The lazy load is the decision; the
+API must show it.
 
 ### An application owns the inside of a prose document
 
@@ -194,8 +228,17 @@ rows: setting a flag alone leaves the document **larger** than before
 (2,908 KB against a 2,888 KB baseline), because the content is all still there.
 Clearing takes it to 86 KB.
 
-A dead row then costs a flat **21 to 23 bytes**, forever, measured from one
-thousand to one hundred thousand dead rows.
+A dead row then costs **170 bytes**, forever. Measured the way deletion actually
+works, clearing every attribute and then flagging, with ADR-0206's 24-character
+minted ids: 170 B each at a thousand rows and 173 B at five thousand, and
+compaction through a fresh `gc: true` document does not reduce it.
+
+Two earlier figures in drafts of this record, 21 to 23 bytes and then 68, were
+both wrong. They measured a root that had never held a field. The record's own
+table above already implied 86 bytes, and the id grammar ADR-0206 mandates takes
+it to 170. So a hundred thousand lifetime deletions cost **17 MB**, not 2.2 MB.
+At a hundred deletions a year that is still centuries away; at an importer's
+fifty thousand a year it is about a decade.
 
 ### Tombstones are never collected
 
@@ -231,12 +274,24 @@ and two-stage lifecycles are product decisions and do not belong in the store.
   600, and the authority stops needing to understand anything but bytes.
 - **A prose document is unreachable from the folder in the push direction.**
   ADR-0207's markdown body renders out and is not pushable back, unchanged.
-- **`doc.share` grows monotonically.** Every row that has ever existed keeps a
-  root. At the measured 21 to 23 bytes this is bounded in practice; if an
-  application ever writes rows at machine rate it is not. The address should be
-  able to carry a generation so a future record can replace a document wholesale,
-  but no generation mechanism is built, and building one now would pay for a
-  problem a decade away.
+- **A table root grows monotonically, and listing it pays for every row ever
+  deleted.** Reading `!presence` on every row is what costs: measured, listing a
+  thousand live rows among a hundred thousand takes 24.9 ms nested, and 14.7 ms
+  under the refused root-per-row grammar. Neither is free, because both touch
+  every corpse. If a table ever gets slow to list, the fix is a second attribute
+  on the table root naming only the live rows, which is read in one call rather
+  than one per row. Not built; no table is near this.
+- **The address carries a generation, and nothing increments it.** A stale device
+  compares generations and full-resyncs rather than merging. That is one integer
+  and one comparison, and it is what makes a future rebuild possible without
+  corrupting anyone.
+  **The rebuild itself is refused.** Measured: rebuilding the index into a fresh
+  document reclaims up to 97% when corpses dominate, but a device that missed it
+  has its unsynced offline edit **destroyed**, and replaying that device's own
+  operations does not rescue it, because the new generation has new struct
+  identities. The only safe version diffs field values across generations, which
+  is a subsystem rather than a button. At a hundred deletions a year the problem
+  it solves is a thousand years away.
 - **A prose document must never have its type replaced.** Measured: replacing the
   Yjs type behind a content field reclaims the old content correctly, but a
   handle still held by an editor keeps accepting writes that go nowhere, silently.
