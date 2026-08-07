@@ -1,7 +1,11 @@
 import { defineLens } from '@epicenter/lens/lens';
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { openMemoryStore } from './bun.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { openBunStore, openMemoryStore } from './bun.js';
 import type { Store } from './store.js';
 
 const lens = defineLens({
@@ -295,5 +299,66 @@ describe('the document a row inherently owns', () => {
 	test('a document cannot be opened for an absent row', async () => {
 		const { error } = await db.notes.document.open('nope');
 		expect(error?.name).toBe('RowAbsent');
+	});
+});
+
+describe('a received update is persisted as the bytes that arrived', () => {
+	test('an update whose dependencies are missing survives a RESTART', async () => {
+		// The failure this guards: Yjs buffers an update it cannot integrate,
+		// `applyUpdateV2` returns normally, and the document emits NO updateV2
+		// event. Persisting emitted bytes writes nothing, so the bytes are lost
+		// at restart while every layer reported success.
+		//
+		// The restart is the whole test. An in-memory store keeps the buffered
+		// update in `pendingStructs` either way, so a test that never reopens
+		// passes with the bug still in.
+		const origin = openMemoryStore();
+		const { data: originDb, error } = origin.bind(lens);
+		if (error !== null) throw error;
+		await originDb.notes.create('n1', { title: 'first', tags: [], date: null });
+		const first = origin.encodeStateSince();
+		const afterFirst = origin.stateVector();
+		await originDb.notes.update('n1', { title: 'second' });
+		const second = origin.encodeStateSince(afterFirst);
+
+		const directory = await mkdtemp(join(tmpdir(), 'epicenter-store-'));
+		try {
+			{
+				const { data: laptop, error: openError } = await openBunStore({
+					directory,
+				});
+				if (openError !== null) throw openError;
+				laptop.bind(lens);
+				// Only the dependent half. Nothing can be applied yet.
+				expect(laptop.applyRemote(second).error).toBeNull();
+				expect(laptop.hasUnresolvedDependencies()).toBe(true);
+				await laptop[Symbol.asyncDispose]();
+			}
+			// Restart. The buffered bytes must have reached durable storage.
+			const { data: reopened, error: reopenError } = await openBunStore({
+				directory,
+			});
+			if (reopenError !== null) throw reopenError;
+			const { data: db2, error: bindError } = reopened.bind(lens);
+			if (bindError !== null) throw bindError;
+			expect(reopened.hasUnresolvedDependencies()).toBe(true);
+
+			// The missing half arrives and the update that survived the restart
+			// resolves against it.
+			expect(reopened.applyRemote(first).error).toBeNull();
+			expect(reopened.hasUnresolvedDependencies()).toBe(false);
+			expect((await db2.notes.get('n1')).data?.title).toBe('second');
+			await reopened[Symbol.asyncDispose]();
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	test('a fully applied replica reports no unresolved dependencies', async () => {
+		await db.notes.create('n1', { title: 'x', tags: [], date: null });
+		const laptop = openMemoryStore();
+		laptop.bind(lens);
+		laptop.applyRemote(store.encodeStateSince(laptop.stateVector()));
+		expect(laptop.hasUnresolvedDependencies()).toBe(false);
 	});
 });

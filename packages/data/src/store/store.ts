@@ -38,6 +38,25 @@ import {
 	upsertProjectedRow,
 } from './persistence.js';
 
+/**
+ * Whether a document is holding updates whose dependencies never arrived.
+ *
+ * `store.pendingStructs` is internal, and deliberately so: Yjs buffers an
+ * update it cannot integrate and returns normally, with no error, no event, and
+ * no public reader. It is still the only observable symptom of silent data
+ * loss, and Yjs's own test helper asserts on this exact field after sync, so it
+ * is read here through one named function rather than reached for in several
+ * places. Pinned by a test, because it is internal and an rc can move it.
+ */
+function hasPendingStructs(document: Y.Doc): boolean {
+	const store = (document as unknown as {
+		store?: { pendingStructs?: unknown; pendingDs?: unknown };
+	}).store;
+	return (
+		(store?.pendingStructs ?? null) !== null || (store?.pendingDs ?? null) !== null
+	);
+}
+
 /** ADR-0206's minted id: 24 characters, so a collision never happens. */
 const mintRowId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 24);
 
@@ -276,6 +295,18 @@ export type Store = {
 	bindUnknown(lens: unknown): Result<Bound, LensParseError | StoreError>;
 	/** Apply bytes from a peer. Durable, and never republished as local work. */
 	applyRemote(update: Uint8Array): Result<void, StoreError>;
+	/**
+	 * Whether this replica is holding updates it cannot apply yet.
+	 *
+	 * True means some received update referenced structs that have not arrived,
+	 * so the document is missing data it will not report. Yjs surfaces no error
+	 * and no event for this, and exposes no public API to detect it, so this
+	 * reads an internal field; Yjs's own test helper asserts on the same one.
+	 *
+	 * A caller must not treat a cursor as settled while this is true, because
+	 * advancing past the gap makes the loss permanent.
+	 */
+	hasUnresolvedDependencies(): boolean;
 	/** This replica's clocks, which is the whole sync manifest (ADR-0212). */
 	stateVector(): Uint8Array;
 	/** Everything this replica has that the given state vector does not. */
@@ -668,14 +699,25 @@ export function createStore({
 		applyRemote(update: Uint8Array): Result<void, StoreError> {
 			const unusable = requireUsable();
 			if (unusable !== undefined) return Err(unusable);
+			// The RECEIVED bytes are what gets persisted, never what the document
+			// emitted in response to them. Measured against `@y/y@14.0.0-rc.24`: an
+			// update whose causal dependencies have not arrived is buffered into
+			// `store.pendingStructs`, `applyUpdateV2` returns normally, and the
+			// document emits NO `updateV2` event at all. Persisting emitted bytes
+			// therefore writes nothing, while the caller advances its cursor and the
+			// data is lost permanently with every layer reporting success.
 			pending = [];
+			const received = copyBytes(update);
 			const { error } = trySync({
-				try: () => Y.applyUpdateV2(index, copyBytes(update), remoteOrigin),
+				try: () => Y.applyUpdateV2(index, received, remoteOrigin),
 				catch: (cause) => StoreError.StorageFailed({ cause }),
 			});
 			if (error !== null) return Err(error);
-			const authored = pending;
+			// Dropped deliberately: whatever the document emitted describes the same
+			// change these bytes already carry, and re-persisting it would duplicate
+			// the chain.
 			pending = [];
+			const authored = [received];
 			// The projection is rebuilt rather than patched, because a remote update
 			// does not say which rows it touched. Measured against
 			// `@y/y@14.0.0-rc.24`: `observeDeep` reports a nested row's field edit as
@@ -695,6 +737,7 @@ export function createStore({
 				rebuildAllProjections();
 			});
 		},
+		hasUnresolvedDependencies: () => hasPendingStructs(index),
 		stateVector: () => new Uint8Array(Y.encodeStateVector(index)),
 		encodeStateSince: (stateVector?: Uint8Array) =>
 			new Uint8Array(Y.encodeStateAsUpdateV2(index, stateVector)),
