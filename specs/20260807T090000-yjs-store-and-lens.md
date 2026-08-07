@@ -4,8 +4,9 @@
 - **Date:** 2026-08-07
 - **Settled as:** [ADR-0212](../docs/adr/0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md),
   [ADR-0213](../docs/adr/0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md),
-  [ADR-0214](../docs/adr/0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md).
-  Delete this file once all three are `Accepted` and built.
+  [ADR-0214](../docs/adr/0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md),
+  [ADR-0215](../docs/adr/0215-an-application-is-one-document-and-the-authority-is-a-durable-ordered-byte-log.md).
+  Delete this file once all four are `Accepted` and built.
 
 Replaces `specs/20260805T190000-replicated-cell-store-memo.md`, which explored a
 hand-built per-field cell store. That store is not being built. The exploration
@@ -50,20 +51,26 @@ the higher `clientID` wins. Verified by giving the low-`clientID` device a
 20-operation head start and making it write last. That single property is what
 roughly 2,100 lines of record were buying, and it was traded deliberately.
 
-## Prose is its own document
+## Prose is a nested type, and the split it justified is gone
 
-| | prose in the row | prose as its own document |
+The table above justified splitting prose into its own document, and every entry
+in it was true. It has been withdrawn anyway, because the bound in its last row
+is what the split existed to satisfy, and ADR-0215 deletes the bound: nothing
+hydrates on the authority, so there is nothing for a bound to protect.
+
+Prose is now a nested container inside the row, holding roots the application
+names and types. Measured, binding `@y/prosemirror@2.0.0-6` to a row that holds
+`title` and `tags`:
+
+| | the row's fields afterwards | reading it back |
 | --- | --- | --- |
-| bytes at startup | 3.04 MB | **0.31 MB** |
-| total stored | 3.04 MB | **2.99 MB** |
-| cold open | 7.2 ms | **2.3 ms** |
-| open five notes | n/a | **0.18 ms** |
-| per-document overhead | n/a | **27 B** |
-| ADR-0146's 1 MB bound | **over** | index and every body under |
+| bound to a nested type | `title: 'Groceries'`, `tags: ['food']` | `'buy milk'` |
+| bound to the row, plain schema | survive | **throws** `Position -1 outside of fragment` |
+| bound to the row, schema with `doc` attrs | **`title: 'PM OWNS THIS'`** | n/a |
 
-Smaller in total, ten times smaller at startup, and the only arrangement that
-satisfies a bound ADR-0174 makes terminal. This is ADR-0130's "every ordinary row
-inherently owns one lazy collaborative document", which was already `Accepted`.
+So the nesting is load-bearing and the reason is sharper than ADR-0212 inferred
+from source: a row's fields and a ProseMirror document node's attributes are one
+namespace, and they corrupt each other in both directions.
 
 ## Refusals, and what each one deleted
 
@@ -106,7 +113,7 @@ Five things in the first draft of these records were wrong and are fixed:
 | a dead row costs 21 to 23 B | **170 B** | measured the way deletion works, with ADR-0206's 24-character ids. 100,000 deletions is 17 MB, not 2.2 MB |
 | a `kv` section | a table with a chosen row id | ADR-0206 already deleted this at `d5e53cca24`, +1303/-6422 |
 | `content`, then `TEXT = '!text'` | **the lens says nothing about prose** | ADR-0130 already decides a row owns a document inherently and the table "does not opt in, declare roots, or choose a format". Deletes the sentinel and the prose/scalar type split. Cost: ADR-0207's hole reopens, so prose does not reach the folder |
-| `note.set()`, `note.body.insert()` | `notes.set(id, ...)`, `await notes.prose(id, field)` | a stale handle can half-resurrect a row, and prose opening is a port round trip on two of three surfaces |
+| `note.set()`, `note.body.insert()` | `notes.update(id, ...)`, `db.notes.document(id)` | a stale handle can half-resurrect a row; and once an application is one document there is nothing left to load, so opening is synchronous again |
 
 An earlier rejection of the nested layout was also wrong: it tested deletion as
 `deleteAttr(rowId)` on the table root, which destroys a concurrent edit. Clearing
@@ -132,23 +139,35 @@ withdrawn: it is that second line with the composition frozen. Use `??`, never a
 destructuring default, because `Err` sets `data: null` and a destructuring
 default fires only on `undefined`.
 
+## Closed since the first draft
+
+- **`@y/prosemirror` has now been run**, against the real installed
+  `2.0.0-6` with its local patch. See the table above. The containment is
+  verified rather than inferred, and binding to the row is refused on evidence.
+- **Prefetch policy for prose** is answered by having none: one document means
+  everything syncs, so prefetching stops being a policy and becomes the
+  mechanism.
+- **Who names the prose type** is answered by the application naming it, which
+  is what `document.get('editor', 'text')` is for. Yjs 14 gives a type its
+  behaviour from its name, verified, so a single typed slot would have forced
+  Epicenter to choose a format it refuses to know about.
+
 ## Open
 
 - **Prose does not reach the folder, and that is now chosen.** A row's document
   is inherent, so Epicenter never learns which root inside it holds writing. An
   application that wants its prose on disk puts it in an ordinary field instead.
-- **Prefetch policy for prose.** The index syncs always; a body syncs when
-  opened. Going offline with unopened notes needs a prefetch rule. Prefetching
-  everything is 2.7 MB.
 - **A table root grows monotonically**, and listing it touches every corpse:
   24.9 ms to list a thousand live rows among a hundred thousand. If a table ever
   gets slow, the fix is a second attribute naming only the live rows. The address
   should be able to carry a generation; no generation mechanism is built, and the
   rebuild it would enable is refused because a device that missed one has its
   offline edit destroyed.
-- **`@y/prosemirror` binding was never run.** Source reading shows it calls
-  `setAttr` and `deleteAttr` on the type it binds to, which is why the prose
-  document is separate. The containment was verified structurally, but the real
-  binding has not been exercised.
-- **Nothing here is built.** Every figure is a measurement against the real
-  vault or the installed `@y/y@14.0.0-rc.24`, not against shipped Epicenter code.
+- **The client memory ceiling is 10,000 to 15,000 live rows per application**
+  (ADR-0215). Past it the lever is not hydrating the whole document, because the
+  projection already holds the queryable copy. Not built; no application is near
+  it.
+- **A per-dead-row figure needs reconciling.** ADR-0212 says 170 B; the same
+  measurement gives 78 B for a three-field row and 93 B with a body.
+- **The wire is not built.** The lens and the store are; the Durable Object, the
+  socket, and the cutover of the old `packages/data` stack are not.
