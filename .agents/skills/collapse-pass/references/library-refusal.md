@@ -40,7 +40,6 @@ Cite against the relevant one when grounding a finding:
 - `honojs/hono` for HTTP routing, middleware composition, error handling
 - `better-auth/better-auth` for session, plugin, and adapter surfaces
 - `drizzle-team/drizzle-orm` for schema, query, and migration shape
-- `tursodatabase/turso` for SQLite client lifecycle
 - `huntabyte/shadcn-svelte` and `ieedan/shadcn-svelte-extras` for UI primitive composition
 - `useautumn/autumn` for billing primitives
 - `jsrepojs/jsrepo` for installable-block packaging
