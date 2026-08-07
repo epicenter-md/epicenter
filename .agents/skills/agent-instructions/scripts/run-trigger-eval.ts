@@ -7,8 +7,9 @@
  *
  * The default mode is deterministic and offline. It reads what each skill's
  * `description` says about each anchor phrase and reports four conditions:
- * the expected owner carries no hook for its own phrase, nobody claims the
- * phrase, several skills claim it, or a skill the case forbids claims it.
+ * the expected owner carries no hook for its own phrase, nobody claims a
+ * phrase some skill should own, several skills claim it, or a skill the case
+ * forbids claims it.
  * These are facts about descriptions. They are *not* routing results. A
  * description can carry a near-miss clause that a substring scan cannot weigh
  * (`one-sentence-test` tells the agent to answer plain comprehension questions
@@ -137,6 +138,18 @@ export type EvalCase = {
 	cluster?: string;
 	prompt: string;
 	anchors: string[];
+	/**
+	 * Phrases the prompt carries on purpose that belong to a *different* skill.
+	 *
+	 * A hard case is hard because a rival's trigger phrase is sitting in the
+	 * prompt: "simplify this" next to nested ifs, "in one sentence" next to an
+	 * authored rewrite. Those phrases are not anchors, because an anchor is a
+	 * hook the expected owner should carry, and scanning them as one reports the
+	 * boundary working as a defect. Listing them keeps the difficulty visible and
+	 * pins it in place: the corpus validator fails if a rewrite drops one from
+	 * the prompt, which would quietly make the `--live` case easier.
+	 */
+	distractors?: string[];
 	/** Skill that should own this prompt, or null when nothing should trigger. */
 	expect: string | null;
 	forbid: string[];
@@ -263,6 +276,18 @@ export function validateCorpus(
 				);
 		}
 
+		for (const distractor of testCase.distractors ?? []) {
+			// A distractor that left the prompt took the case's difficulty with it.
+			if (!prompt?.toLowerCase().includes(distractor.toLowerCase()))
+				problems.push(
+					`${id}: distractor "${distractor}" does not appear in the prompt`,
+				);
+			if ((anchors ?? []).includes(distractor))
+				problems.push(
+					`${id}: "${distractor}" is both an anchor and a distractor`,
+				);
+		}
+
 		if (testCase.router !== undefined && !ROUTERS.includes(testCase.router))
 			problems.push(`${id}: unknown router: ${testCase.router}`);
 
@@ -305,7 +330,18 @@ export function runLexicalPass(
 				});
 			}
 
-			if (claimants.length === 0) {
+			if (claimants.length > 1) {
+				findings.push({
+					...base,
+					kind: 'AMBIGUOUS',
+					detail: `claimed by ${claimants.join(', ')}`,
+				});
+			} else if (claimants.length === 0 && testCase.expect !== null) {
+				// A case expecting no skill *wants* its phrase unowned, so an
+				// unclaimed phrase there is the passing state rather than a gap.
+				// Only a case naming an owner can be missing one. Ambiguity and
+				// forbidden claims are still reported for near misses, because
+				// over-claiming is how a near miss actually fails.
 				findings.push({
 					...base,
 					kind: 'NO_OWNER',
@@ -313,12 +349,6 @@ export function runLexicalPass(
 						disclaimers.length > 0
 							? `no skill claims it; disclaimed by ${disclaimers.join(', ')}`
 							: 'no skill description mentions it',
-				});
-			} else if (claimants.length > 1) {
-				findings.push({
-					...base,
-					kind: 'AMBIGUOUS',
-					detail: `claimed by ${claimants.join(', ')}`,
 				});
 			}
 

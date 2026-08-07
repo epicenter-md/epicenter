@@ -138,11 +138,31 @@ describe('runLexicalPass', () => {
 
 	test('reports an anchor no description claims', () => {
 		const findings = runLexicalPass(
+			[makeCase({ expect: 'owner' })],
+			[skills[2] as { name: string; description: string }],
+		);
+		expect(findings.map((f) => f.kind)).toContain('NO_OWNER');
+		expect(
+			findings.find((f) => f.kind === 'NO_OWNER')?.detail,
+		).toContain('disclaimed by router');
+	});
+
+	test('a near-miss case wants its anchor unowned, so silence is the pass', () => {
+		// expect: null means nothing should trigger. Reporting the unclaimed
+		// phrase as a gap would make the passing state look like a defect.
+		const findings = runLexicalPass(
 			[makeCase({ expect: null })],
 			[skills[2] as { name: string; description: string }],
 		);
-		expect(findings.map((f) => f.kind)).toEqual(['NO_OWNER']);
-		expect(findings[0]?.detail).toContain('disclaimed by router');
+		expect(findings).toEqual([]);
+	});
+
+	test('a near-miss case still reports a skill that claims its anchor', () => {
+		const findings = runLexicalPass(
+			[makeCase({ expect: null, forbid: ['owner'] })],
+			[skills[0] as { name: string; description: string }],
+		);
+		expect(findings.map((f) => f.kind)).toEqual(['FORBIDDEN_CLAIM']);
 	});
 
 	test('reports several claimants as ambiguous', () => {
