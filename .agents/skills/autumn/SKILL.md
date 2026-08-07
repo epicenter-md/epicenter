@@ -1,158 +1,114 @@
 ---
 name: autumn
-description: 'Autumn billing in Epicenter: `autumn.config.ts`, `autumn-js` credit checks, `atmn` CLI, plan gates, and metered AI usage. Use when changing billing, pricing, credits, plan access, refunds, or usage events.'
+description: 'Autumn billing decisions this repository has made: snake_case ecosystem-scoped feature IDs, one metered feature priced proportionally at runtime rather than one feature per model tier, the interval variants that cause most config failures, and the Workers request-scoped client. Use when changing pricing, plan gates, AI credit charging, metered usage, or autumn.config.ts. Do not use for Autumn SDK or atmn CLI surface area; ask DeepWiki against useautumn/autumn, and remember billing is hosted-only and never moves to a shared package.'
 metadata:
   author: epicenter
-  version: '1.2'
+  version: '2.0'
 ---
-
-# Autumn Billing Integration Guide
 
 ## Reference Repositories
 
-- [Autumn](https://github.com/useautumn/autumn): Usage-based billing platform
-- [Autumn TypeScript SDK + CLI](https://github.com/useautumn/typescript): `autumn-js` SDK and `atmn` CLI
-- [Autumn Docs](https://docs.useautumn.com)
+- [Autumn](https://github.com/useautumn/autumn) : usage-based billing over Stripe
+- [Autumn TypeScript SDK and CLI](https://github.com/useautumn/typescript)
 
 ## Upstream Grounding
 
-When Autumn Product, ProductItem, Feature, Entitlement, Customer, CustomerProduct, pricing, credit checks, SDK calls, CLI behavior, or usage-event semantics affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `useautumn/autumn`; if it is unavailable or the repo is not indexed, use upstream source or official docs directly. For `autumn-js` SDK or `atmn` CLI behavior, verify against the installed package, `useautumn/typescript`, or official docs. Treat DeepWiki as orientation, then verify decisive details against local billing code, installed types, source, or official docs before changing code.
-
-Skip DeepWiki for hosted-only Epicenter billing boundaries already documented in `AGENTS.md` and below.
-
----
+Feature types, plan groups, add-ons, `autoEnable`, SDK initialization, the
+`atmn` CLI surface, and Stripe connection are upstream behavior with upstream
+docs. Ask DeepWiki a narrow question against `useautumn/autumn`, then verify
+against local installed types before changing config. This file keeps no copy
+of those tables, because a transcribed option list rots silently while reading
+as authoritative.
 
 ## Domain Model Checks
 
-- Use Autumn's current nouns precisely: Feature, Entitlement, Product, ProductItem, Price, Customer, and CustomerProduct.
-- Validate ProductItem shapes before pushing config. Most failures come from invalid interval combinations, missing linked features, or price/reset variants that do not match the feature type.
-- Decide fail-open versus fail-closed behavior for `check()` errors at each endpoint. AI credit charging should fail closed before expensive provider calls.
-- If Stripe webhooks or CustomerProduct state transitions are touched, make the handler idempotent around retries.
+Validate ProductItem shapes before pushing config. Most failures here come from
+invalid interval combinations, missing linked features, or price and reset
+variants that do not match the feature type.
 
----
+Decide fail-open versus fail-closed per endpoint rather than globally. AI credit
+charging fails closed, before the expensive provider call, because a fail-open
+check hands out the provider spend it was meant to gate.
 
-## Naming Conventions (CRITICAL)
+If Stripe webhooks or CustomerProduct transitions are touched, make the handler
+idempotent, since the provider retries and a second apply would double-charge.
 
-**All IDs use `snake_case`.** This is Autumn's explicit convention.
+## Feature IDs Are snake_case And Ecosystem-Scoped
 
-Feature IDs should be **descriptive** (not abstract tier numbers) and **ecosystem-scoped** (not tied to a single app feature like "chat"). The metered features represent model cost tiers that any AI feature can consume.
+All IDs use `snake_case`; that is Autumn's own convention. Beyond that, a
+feature ID names a model cost tier that any AI feature can consume, not the app
+surface that happens to consume it first. Scoping an ID to `chat` means the next
+feature either misreports its usage under a name that lies or needs a duplicate
+feature for identical cost.
 
 ```typescript
-// CORRECT: descriptive, ecosystem-scoped
+// Correct: descriptive, ecosystem-scoped
 feature({ id: 'ai_fast', ... })
 feature({ id: 'ai_standard', ... })
 feature({ id: 'ai_premium', ... })
-plan({ id: 'pro', ... })
-plan({ id: 'credit_top_up', ... })
 
-// WRONG: tied to a single feature ("chat")
+// Wrong: tied to one surface
 feature({ id: 'ai_chat_fast', ... })
 
-// WRONG: abstract tier numbers (Autumn convention prefers descriptive)
+// Wrong: abstract tier numbers, and wrong casing
 feature({ id: 'ai_tier_1', ... })
-
-// WRONG: kebab-case
 feature({ id: 'ai-fast', ... })
 ```
 
----
+## Price One Metered Feature Proportionally
 
-## Feature Types
+Use a single metered feature with `creditCost: 1` and vary `requiredBalance` at
+runtime, rather than one metered feature per cost tier. `check()` with
+`sendEvent: true` deducts exactly `requiredBalance`, so per-model precision
+costs one feature instead of dozens cluttering the dashboard.
 
-| Type | `consumable` | Use Case | Example |
-|------|-------------|----------|---------|
-| `metered` | `true` | Usage that resets periodically (messages, API calls) | AI model invocations |
-| `metered` | `false` | Persistent allocation (seats, storage) | Team seats |
-| `credit_system` | n/a | Pool that maps to metered features via `creditSchema` | AI credits |
-| `boolean` | n/a | Feature flag on/off | Advanced analytics |
-
-**Credit systems** require linked `metered` features with `consumable: true`. Each linked feature has a `creditCost` defining how many credits one unit consumes.
+The cost table is runtime code, not config: it changes when a provider's
+pricing changes, which is far more often than the plan structure does.
 
 ```typescript
-export const aiUsage = feature({
-  id: 'ai_usage',
-  name: 'AI Usage',
-  type: 'metered',
-  consumable: true,
-});
-
-export const aiCredits = feature({
-  id: 'ai_credits',
-  name: 'AI Credits',
-  type: 'credit_system',
-  creditSchema: [
-    { meteredFeatureId: 'ai_usage', creditCost: 1 },
-  ],
-});
-```
-
-### Proportional Billing
-
-Instead of multiple metered features with fixed `creditCost` per tier, use a **single metered feature** with `creditCost: 1` and vary the `requiredBalance` at runtime.
-
-This gives per-model cost precision without cluttering the Autumn dashboard with dozens of features.
-
-**How it works**: Autumn's `check()` with `sendEvent: true` uses `requiredBalance` as the deduction amount. With `creditCost: 1`, passing `requiredBalance: 5` deducts exactly 5 credits from the pool.
-
-```typescript
-// Runtime cost table (in worker/billing/ai-model-pricing.ts, not autumn.config.ts)
+// worker/billing/ai-model-pricing.ts, not autumn.config.ts
 const MODEL_CREDITS: Record<string, number> = {
-  'gpt-4o-mini': 1,      // cheap model = 1 credit
-  'claude-sonnet-4': 5,  // mid-range = 5 credits
-  'claude-opus-4': 30,   // expensive = 30 credits
+  'gpt-4o-mini': 1,
+  'claude-sonnet-4': 5,
+  'claude-opus-4': 30,
 };
 
-// Dynamic deduction
 const credits = MODEL_CREDITS[model];
 await autumn.check({
   customerId,
-  featureId: 'ai_usage',      // single feature for all models
-  requiredBalance: credits,    // varies per model
+  featureId: 'ai_usage',    // one feature for every model
+  requiredBalance: credits, // varies per model
   sendEvent: true,
 });
 ```
 
-**Refund on error**: Use `track({ featureId: 'ai_usage', value: -credits })` to refund the exact amount.
+`sendEvent: true` deducts atomically, so do not also call `track()` on the happy
+path. Refund an error with `track({ featureId: 'ai_usage', value: -credits })`
+for the exact amount charged.
 
-**Blocking expensive models**: Omit them from `MODEL_CREDITS`. Unknown models → `getModelCredits()` returns `undefined` → 400.
+Blocking an expensive model needs no new config: omit it from `MODEL_CREDITS`,
+and the unknown lookup returns `undefined` and yields a 400.
 
----
+## The Interval Variants
 
-## Plan Structure
+The **intervals** are mutually exclusive, not `reset` and `price` themselves.
+This is the distinction most config failures turn on, because the type names
+suggest the fields conflict when only the intervals do.
 
-### Groups
-
-Plans in the same `group` are **mutually exclusive**. Subscribing to a new plan in the same group replaces the old one. Autumn handles the Stripe subscription swap automatically.
-
-- **Upgrade** (free → pro): Immediate swap with proration.
-- **Downgrade** (pro → free): Scheduled for end of billing cycle.
-
-### Add-ons
-
-Plans with `addOn: true` **stack** on top of any plan. No group conflict.
-
-### `autoEnable`
-
-Plans with `autoEnable: true` are auto-assigned when a customer is created via `customers.getOrCreate()`. Use for free tiers. Only allowed on plans with no `price`.
-
-### Plan items: `reset.interval` vs `price.interval`
-
-The **intervals** are mutually exclusive, not `reset` and `price` themselves. A `PlanItem` is one of three variants:
-
-**`PlanItemWithReset`**: Has `reset.interval`. If `price` is also present, it CANNOT have `price.interval`. Use for free allocations that reset periodically, optionally with one-time overage pricing.
-
-**`PlanItemWithPriceInterval`**: Has `price.interval`. CANNOT have `reset`. The `price.interval` determines BOTH the billing cycle AND when the `included` balance resets for consumable features. Use for paid plans with usage-based overage.
-
-**`PlanItemNoReset`**: No `reset`. Use for continuous-use features like seats, or boolean features.
+- `PlanItemWithReset` has `reset.interval`. It may also carry a `price`, but
+  that price may not have an `interval`. Use it for a free allocation that
+  refreshes, optionally with one-time overage pricing.
+- `PlanItemWithPriceInterval` has `price.interval` and no `reset`. That one
+  interval drives both the billing cycle and the `included` balance reset for
+  consumable features, so a separate `reset` would be redundant, not additive.
+- `PlanItemNoReset` has neither. Use it for continuous features like seats, and
+  for booleans.
 
 ```typescript
-// Free plan: reset only, no price
-// `reset.interval` controls when the 50 included credits refresh
+// Free plan: reset.interval refreshes the 50 included credits
 item({ featureId: aiCredits.id, included: 50, reset: { interval: 'month' } })
 
-// Paid plan: price.interval handles both billing AND reset
-// The 2000 included credits reset monthly via `price.interval: 'month'`
-// Overage beyond 2000 billed at $1/100 credits
+// Paid plan: price.interval bills AND resets the 2000 included credits
 item({
   featureId: aiCredits.id,
   included: 2000,
@@ -160,125 +116,15 @@ item({
 })
 ```
 
-**Key insight**: For paid plans, `included` + `price.interval` implies monthly reset. The `included` field's Zod description: "Balance resets to this each interval for consumable features." You do NOT need a separate `reset` field on paid plan items.
+## The Client Is Request-Scoped
 
----
+Cloudflare Workers do not expose `env` at module scope, so the Autumn client is
+created inside the request handler and cannot be hoisted to a module singleton.
 
-## SDK: `autumn-js`
-
-### Initialization
-
-```typescript
-import { Autumn } from 'autumn-js';
-
-const autumn = new Autumn({ secretKey: env.AUTUMN_SECRET_KEY });
-```
-
-Stateless: safe to create per-request. No connection pooling needed.
-
-### Customer Sync (MUST be blocking)
-
-```typescript
-await autumn.customers.getOrCreate({
-  customerId: userId,
-  name: userName ?? undefined,
-  email: userEmail ?? undefined,
-});
-```
-
-**This call MUST be awaited (blocking).** Autumn's `/check` endpoint does not auto-create customers. The customer must exist before any `check()` call.
-
-### Credit Check
-
-```typescript
-const credits = getModelCredits(data.model);
-const { allowed, balance } = await autumn.check({
-  customerId: userId,
-  featureId: 'ai_usage',
-  requiredBalance: credits,
-  sendEvent: true,
-  properties: { model, provider },
-});
-
-if (!allowed) {
-  // Return 402 with balance info
-}
-```
-
-**featureId** is always 'ai_usage'. The credit cost varies per model via the dynamic requiredBalance.
-
-### Refund on Error
-
-```typescript
-await autumn.track({
-  customerId: userId,
-  featureId: 'ai_usage',
-  value: -credits,  // Negative value = refund
-});
-```
-
-Use when the operation fails after credits were already deducted (e.g., AI stream errors). Typically pushed to an `afterResponse` queue to avoid blocking the error response.
-
----
-
-## CLI: `atmn`
-
-### Setup
-
-```bash
-bun x atmn login       # OAuth login, saves keys to .env
-bun x atmn env         # Verify org and environment
-```
-
-### Config File
-
-`autumn.config.ts` at the project root. Defines features and plans using `atmn` builders:
-
-```typescript
-import { feature, item, plan } from 'atmn';
-```
-
-### Push/Pull
-
-```bash
-bun x atmn preview     # Dry run, shows what would change
-bun x atmn push        # Push to sandbox (interactive confirmation)
-bun x atmn push --prod # Push to production
-bun x atmn push --yes  # Auto-confirm (for CI/CD)
-bun x atmn pull        # Pull remote config, generate SDK types
-```
-
-### Data Inspection
-
-```bash
-bun x atmn customers   # Browse customers
-bun x atmn plans       # Browse plans
-bun x atmn features    # Browse features
-bun x atmn events      # Browse usage events
-```
-
----
-
-## Environment & Secrets
-
-| Key | Environment | Prefix |
-|-----|-------------|--------|
-| `AUTUMN_SECRET_KEY` | Sandbox (test) | `am_sk_test_...` |
-| `AUTUMN_SECRET_KEY` | Production | `am_sk_prod_...` |
-
-Use the **same key name** in both environments. Let your secrets manager (Infisical, etc.) swap the value per environment. Don't create separate key names for sandbox vs prod.
-
-For Cloudflare Workers: `wrangler secret put AUTUMN_SECRET_KEY`
-
-For local dev with Infisical: secrets are auto-injected via `infisical run --env=dev --path=/api -- wrangler dev`
-
----
-
-## Middleware Pattern (Cloudflare Workers + Hono)
-
-### Ensure Customer Exists
-
-Run after `authGuard`, before any billing-gated routes:
+`getOrCreate` runs after `authGuard` and before any billing-gated route, and it
+must be awaited: a fire-and-forget call lets `check()` race it and fail with
+"customer not found." `autoEnable` also fires on customer creation rather than
+on first `check()`, so a missing `getOrCreate` silently skips the default grant.
 
 ```typescript
 app.use('/ai/*', async (c, next) => {
@@ -292,15 +138,11 @@ app.use('/ai/*', async (c, next) => {
 });
 ```
 
-**Why inline?** Cloudflare Workers don't expose `env` at module scope. The Autumn client must be created inside the request handler.
-
-### Credit Gate in Handler
-
 ```typescript
 const credits = getModelCredits(data.model);
 if (!credits) return c.json(error, 400);
 
-const { allowed, balance } = await autumn.check({
+const { allowed } = await autumn.check({
   customerId: c.var.user.id,
   featureId: 'ai_usage',
   requiredBalance: credits,
@@ -310,48 +152,35 @@ const { allowed, balance } = await autumn.check({
 if (!allowed) return c.json(error, 402);
 ```
 
----
+## Secrets
 
-## Stripe Integration
+`AUTUMN_SECRET_KEY` keeps the same key name in every environment; the secrets
+manager swaps the value (`am_sk_test_...` versus `am_sk_prod_...`). Separate key
+names per environment would put the environment fork in code, where it can
+disagree with the deployment.
 
-- **Sandbox**: Built-in Stripe test account. No setup needed.
-- **Production**: Connect via Dashboard → Integrations → Stripe (OAuth recommended).
-- Autumn creates Stripe products/prices automatically when you `atmn push`.
-- Autumn is the source of truth for customer state; Stripe handles payments.
+```bash
+wrangler secret put AUTUMN_SECRET_KEY
+infisical run --env=dev --path=/api -- wrangler dev
+```
 
----
-
-## Common Gotchas
-
-1. **`getOrCreate` must be awaited**: Fire-and-forget will cause `check()` to fail with "customer not found."
-2. **`featureId` in `check()` is always 'ai_usage'**: The credit cost varies per model via dynamic `requiredBalance`, not featureId.
-3. **`reset.interval` and `price.interval` are mutually exclusive**: not `reset` and `price` themselves. A `PlanItemWithReset` CAN have a `price`, but that price cannot have an `interval`. For paid plans, `price.interval` handles both billing and balance reset.
-4. **`sendEvent: true` deducts atomically**: Don't call `track()` separately for the happy path. Only use `track({ value: -1 })` for refunds.
-5. **All IDs are snake_case**: Autumn's pricing agent convention. Don't use kebab-case.
-6. **`autoEnable` triggers on customer creation**: Not on first `check()`. Ensure the middleware calls `getOrCreate` before checking.
-7. **Multiple keys per environment**: Autumn supports multiple active secret keys for rotation. Generate a new key, update secrets, then revoke the old key.
-8. **Use proportional billing**: One metered feature (`ai_usage`) with `creditCost: 1` and dynamic `requiredBalance` per model. Per-model costs live in `worker/billing/ai-model-pricing.ts`, not autumn.config.ts. This avoids cluttering the dashboard with dozens of features.
-
----
+Autumn supports multiple active keys, so rotate by generating a new key,
+updating secrets, then revoking the old one.
 
 ## Project Files
 
 | File | Purpose |
 |------|---------|
 | `apps/api/autumn.config.ts` | Feature, credit system, and plan definitions |
-| `apps/api/worker/billing/autumn.ts` | `createAutumnClient(env)` SDK adapter and provider error mapping |
-| `apps/api/worker/billing/ai-model-pricing.ts` | Model string to proportional credit cost mapping |
-| `apps/api/worker/billing/service.ts` | Billing domain operations, reservations, dashboard DTOs, and storage sync |
-| `apps/api/worker/billing/policies.ts` | AI credit charging and asset storage billing policies |
+| `apps/api/worker/billing/autumn.ts` | `createAutumnClient(env)` adapter and provider error mapping |
+| `apps/api/worker/billing/ai-model-pricing.ts` | Model string to proportional credit cost |
+| `apps/api/worker/billing/service.ts` | Billing operations, reservations, dashboard DTOs, storage sync |
+| `apps/api/worker/billing/policies.ts` | AI credit charging and asset storage policies |
 | `apps/api/worker/billing/routes.ts` | `/api/billing/*` routes and billing auth mount |
 | `apps/api/worker/index.ts` | Cloud Worker composition and billing policy wiring |
-
----
 
 ## Resources
 
 - [Autumn Docs](https://docs.useautumn.com)
 - [Autumn Dashboard](https://app.useautumn.com)
-- [GitHub: Autumn](https://github.com/useautumn/autumn)
-- [GitHub: TypeScript SDK + CLI](https://github.com/useautumn/typescript)
 - [API Keys](https://app.useautumn.com/dev?tab=api_keys)
