@@ -10,6 +10,7 @@ import type { Store } from './store.js';
 
 const lens = defineLens({
 	namespace: 'so.epicenter.honeycrisp',
+	kv: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
 	tables: {
 		notes: { title: 'string', tags: 'string[]', date: 'string|null' },
 		settings: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
@@ -360,5 +361,82 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		laptop.bind(lens);
 		laptop.applyRemote(store.encodeStateSince(laptop.stateVector()));
 		expect(laptop.hasUnresolvedDependencies()).toBe(false);
+	});
+});
+
+describe('kv is where anything two devices both write belongs', () => {
+	test('an unwritten key reads as its declared default', async () => {
+		const { data, error } = await db.kv.get();
+		expect(error).toBeNull();
+		expect(data).toEqual({ theme: 'light', fontSize: 14 });
+	});
+
+	test('a write touches only the keys it names', async () => {
+		await db.kv.set({ theme: 'dark' });
+		expect((await db.kv.get()).data).toEqual({ theme: 'dark', fontSize: 14 });
+	});
+
+	test('an undeclared key is refused by name', async () => {
+		const { error } = await db.kv.set({ nope: 1 } as never);
+		expect(error?.name).toBe('UnknownField');
+	});
+
+	test('an invalid value is refused and touches nothing', async () => {
+		await db.kv.set({ fontSize: 20 });
+		const { error } = await db.kv.set({ theme: 'purple' as never });
+		expect(error?.name).toBe('Nonconforming');
+		expect((await db.kv.get()).data).toEqual({ theme: 'light', fontSize: 20 });
+	});
+
+	test('TWO DEVICES BOOTING OFFLINE BOTH KEEP THEIR SETTINGS', async () => {
+		// The case that motivated moving KV to a reserved root. As a row at a
+		// chosen id this loses one device's write entirely, because each device
+		// mints its own nested container and map LWW keeps one. A root is
+		// addressed by its name, so both survive.
+		const phone = openMemoryStore();
+		const laptop = openMemoryStore();
+		const { data: phoneDb, error: e1 } = phone.bind(lens);
+		const { data: laptopDb, error: e2 } = laptop.bind(lens);
+		if (e1 !== null) throw e1;
+		if (e2 !== null) throw e2;
+
+		await phoneDb.kv.set({ theme: 'dark' });
+		await laptopDb.kv.set({ fontSize: 22 });
+
+		const fromPhone = phone.encodeStateSince(laptop.stateVector());
+		const fromLaptop = laptop.encodeStateSince(phone.stateVector());
+		laptop.applyRemote(fromPhone);
+		phone.applyRemote(fromLaptop);
+
+		// `as const` because `db.kv.get()` returns the precise declared union, so
+		// a widened `string` literal is correctly rejected here.
+		const expected = { theme: 'dark', fontSize: 22 } as const;
+		expect((await phoneDb.kv.get()).data).toEqual(expected);
+		expect((await laptopDb.kv.get()).data).toEqual(expected);
+	});
+
+	test('the same thing through a chosen row id still loses a write', async () => {
+		// Kept as the contrast, so the reason KV exists stays visible. This is
+		// what `ensure()` on a singleton did.
+		const phone = openMemoryStore();
+		const laptop = openMemoryStore();
+		const { data: phoneDb } = phone.bind(lens);
+		const { data: laptopDb } = laptop.bind(lens);
+		await phoneDb?.settings.ensure('app', { theme: 'dark' });
+		await laptopDb?.settings.ensure('app', { fontSize: 22 });
+		laptop.applyRemote(phone.encodeStateSince(laptop.stateVector()));
+		phone.applyRemote(laptop.encodeStateSince(phone.stateVector()));
+
+		const settled = (await phoneDb?.settings.get('app'))?.data;
+		expect(settled).toEqual((await laptopDb?.settings.get('app'))?.data);
+		// One device's write is gone. That is the bug KV routes around.
+		const keptBoth = settled?.theme === 'dark' && settled?.fontSize === 22;
+		expect(keptBoth).toBe(false);
+	});
+
+	test('kv is queryable as a one-row relation', async () => {
+		await db.kv.set({ theme: 'dark', fontSize: 20 });
+		const { data: rows } = await db.query`SELECT theme, fontSize FROM kv`;
+		expect(rows).toEqual([{ theme: 'dark', fontSize: 20 }]);
 	});
 });

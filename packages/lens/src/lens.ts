@@ -25,7 +25,15 @@ export const RESERVED_ATTRIBUTE_PREFIX = '!';
  * The one table name a binding cannot use, because a table becomes a key on the
  * same handle that carries `query` (ADR-0213).
  */
-export const RESERVED_TABLE_NAMES: readonly string[] = ['query'];
+export const RESERVED_TABLE_NAMES: readonly string[] = ['query', 'kv'];
+
+/**
+ * The root holding one application's KV, reserved so no table can reach it.
+ *
+ * Unreachable by construction rather than by rule: a table name must start with
+ * a letter, so `!kv` is not expressible in a lens at all.
+ */
+export const KV_ROOT = `${RESERVED_ATTRIBUTE_PREFIX}kv`;
 
 /**
  * One application's complete interpretation of one durable namespace, as the
@@ -41,6 +49,21 @@ export const RESERVED_TABLE_NAMES: readonly string[] = ['query'];
  */
 export type LensJson = {
 	namespace: string;
+	/**
+	 * The values this application keeps exactly one of.
+	 *
+	 * A separate section rather than "a row whose id you chose", which is what
+	 * ADR-0206 collapsed it to. That collapse was sound for a store of flat
+	 * facts, where a chosen address merges per key. It is not sound for a store
+	 * of nested containers: two devices independently creating a container at
+	 * one address produce two containers, and map LWW discards one along with
+	 * everything inside it. Since every device writes its settings on the boot
+	 * path, that is not an edge case.
+	 *
+	 * KV lives at a reserved ROOT instead, and a root is addressed by its name,
+	 * so independent minting converges. Verified in `evidence/invariants.test.ts`.
+	 */
+	kv?: Record<string, string>;
 	/**
 	 * What a person calls this namespace, when it has a name worth showing.
 	 * Presentation only: no address, no identity, and nothing resolves by it.
@@ -77,7 +100,9 @@ export type LensJson = {
 export type ValidateLens<TLens> = {
 	[K in keyof TLens]: K extends 'tables'
 		? { [TTable in keyof TLens[K]]: type.validate<TLens[K][TTable]> }
-		: TLens[K];
+		: K extends 'kv'
+			? type.validate<TLens[K]>
+			: TLens[K];
 };
 
 /**
@@ -128,6 +153,11 @@ export type CreateInputOf<TFields> = type.instantiate<TFields> extends {
 }
 	? TIn
 	: never;
+
+/** One application's KV as a read hands it back: no id, and never absent. */
+export type KvOf<TLens> = TLens extends { kv: infer TKv }
+	? FieldsOut<TKv>
+	: Record<string, never>;
 
 /** Every table's row type in one authored lens, by its declared name. */
 export type RowsOf<TLens> = TLens extends { tables: infer TTables }
@@ -341,6 +371,14 @@ export type ParsedTable = {
 export type ParsedLens = {
 	namespace: string;
 	title?: string;
+	/**
+	 * The KV section, compiled through the same machinery as a table.
+	 *
+	 * KV is a table with exactly one row and no id, so nothing new validates it:
+	 * `conformance`, `defaults` and `validateWrite` all apply unchanged. Absent
+	 * when the lens declares none.
+	 */
+	kv?: ParsedTable;
 	tables: ReadonlyMap<string, ParsedTable>;
 	/** The canonical JSON this lens parsed from, which is also its cache key. */
 	canonical: string;
@@ -379,7 +417,7 @@ function compileLens(
 	if (!isPlainObject(value)) {
 		return LensParseError.Malformed({ reason: 'it is not a plain object' });
 	}
-	const { namespace, title, tables } = value as Partial<LensJson>;
+	const { namespace, title, kv, tables } = value as Partial<LensJson>;
 	if (typeof namespace !== 'string') {
 		return LensParseError.Malformed({ reason: 'it declares no namespace' });
 	}
@@ -395,6 +433,18 @@ function compileLens(
 	}
 	if (!isPlainObject(tables)) {
 		return LensParseError.Malformed({ reason: 'it declares no tables' });
+	}
+
+	let compiledKv: ParsedTable | undefined;
+	if (kv !== undefined) {
+		if (!isPlainObject(kv)) {
+			return LensParseError.Malformed({
+				reason: 'its kv section is not a plain object of fields',
+			});
+		}
+		const parsedKv = compileTable('kv', kv);
+		if (parsedKv.error !== null) return parsedKv;
+		compiledKv = parsedKv.data;
 	}
 
 	const compiled = new Map<string, ParsedTable>();
@@ -429,6 +479,7 @@ function compileLens(
 		Object.freeze({
 			namespace,
 			...(title === undefined ? {} : { title }),
+			...(compiledKv === undefined ? {} : { kv: compiledKv }),
 			tables: compiled,
 			canonical,
 		}),

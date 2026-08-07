@@ -1,6 +1,8 @@
-import type { JsonObject } from '@epicenter/lens';
+import type { JsonObject, JsonValue } from '@epicenter/lens';
 import {
 	type CreateInputOf,
+	KV_ROOT,
+	type KvOf,
 	type LensJson,
 	type LensParseError,
 	type NonconformingRowError,
@@ -8,7 +10,7 @@ import {
 	type ParsedTable,
 	parseLens,
 	type RowOf,
-	type RowWriteError,
+	RowWriteError,
 } from '@epicenter/lens/lens';
 import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
@@ -263,10 +265,43 @@ type TableIo<TFields> = {
 /** The typed view of one store through one lens: its tables, plus `query`. */
 export type BoundOf<TLens> = (TLens extends { tables: infer TTables }
 	? { [K in keyof TTables]: TypedTableHandle<TTables[K]> }
-	: never) & { query: QueryMethod };
+	: never) & { query: QueryMethod; kv: KvHandle<KvOf<TLens>> };
+
+/**
+ * One application's KV: the values it keeps exactly one of.
+ *
+ * No id and no create, because there is exactly one and it always exists. A
+ * key that was never written reads as its declared default, so `get` cannot
+ * report absence and does not try to.
+ *
+ * It lives at a reserved ROOT rather than in a table, and that is a correctness
+ * decision rather than a convenience. A root is addressed by its name, so two
+ * devices writing settings on their own boot paths converge; a chosen row id is
+ * a nested container, and two devices creating one produce two containers of
+ * which map LWW keeps one, discarding the other's values entirely.
+ */
+export type KvHandle<TValues = JsonObject> = {
+	/**
+	 * The declared defaults, for the same recovery composition a table uses.
+	 *
+	 * @example
+	 * ```ts
+	 * const { data, error } = await db.kv.get();
+	 * const settings = data ?? { ...db.kv.defaults, ...error?.conforming };
+	 * ```
+	 */
+	readonly defaults: Readonly<JsonObject>;
+	/** The one read verb. Every declared key is present, defaulted if unwritten. */
+	get(): Promise<Result<TValues, ReadRowError>>;
+	/** Write some keys. Every other key is left alone. */
+	set(values: Partial<TValues>): Promise<Result<TValues, WriteRowError>>;
+};
 
 /** The untyped view, for a lens that arrived as data rather than as a literal. */
-export type Bound = Record<string, TableHandle> & { query: QueryMethod };
+export type Bound = Record<string, TableHandle> & {
+	query: QueryMethod;
+	kv: KvHandle;
+};
 
 export type Store = {
 	/**
@@ -438,6 +473,8 @@ export function createStore({
 		});
 		if (rebuildError !== null) return Err(rebuildError);
 
+		const kv = createKvHandle(lens);
+
 		const query: QueryMethod = async (strings, ...values) => {
 			const unusableNow = requireUsable();
 			if (unusableNow !== undefined) return Err(unusableNow);
@@ -446,7 +483,93 @@ export function createStore({
 				catch: (cause) => StoreError.StorageFailed({ cause }),
 			});
 		};
-		return Ok(Object.freeze({ ...tables, query }) as unknown as Bound);
+		return Ok(Object.freeze({ ...tables, kv, query }) as unknown as Bound);
+	}
+
+	/**
+	 * The KV handle for one bound lens.
+	 *
+	 * The reserved root is minted here, which is safe for the same reason KV
+	 * lives there at all: `Doc.get` is `setIfUndefined` on `doc.share`, so every
+	 * device that mints `!kv` converges on one logical root.
+	 *
+	 * A lens with no `kv` section still gets a handle. It reads as an empty
+	 * object and refuses every write by name, which is a better answer than a
+	 * missing property that a caller has to feel for.
+	 */
+	function createKvHandle(lens: ParsedLens): KvHandle {
+		const table = lens.kv;
+		const root = tableTypeFor(KV_ROOT);
+		const address = {
+			namespace: lens.namespace,
+			tableName: 'kv',
+			rowId: KV_ROOT,
+		};
+
+		function readStored(): JsonObject {
+			const payload: JsonObject = {};
+			for (const key of root.attrKeys()) {
+				payload[key as string] = root.getAttr(key as never) as JsonValue;
+			}
+			return payload;
+		}
+
+		function project(): void {
+			if (table === undefined) return;
+			const { conforming } = table.conformance(readStored());
+			upsertProjectedRow(
+				database,
+				'kv',
+				[...table.fields.keys()],
+				KV_ROOT,
+				conforming,
+			);
+		}
+
+		function readBack(): Result<JsonObject, ReadRowError> {
+			if (table === undefined) return Ok({});
+			const projected = table.project(address, readStored());
+			if (projected.error !== null) return Err(projected.error);
+			// `project` adds the structural id a row has and KV does not.
+			const { id: _id, ...values } = projected.data;
+			return Ok(values);
+		}
+
+		return Object.freeze({
+			defaults: table?.defaults ?? Object.freeze({}),
+			async get() {
+				const unusable = requireUsable();
+				if (unusable !== undefined) return Err(unusable);
+				return readBack();
+			},
+			async set(values: JsonObject) {
+				const unusable = requireUsable();
+				if (unusable !== undefined) return Err(unusable);
+				if (table === undefined) {
+					const [field] = Object.keys(values);
+					return field === undefined
+						? readBack()
+						: RowWriteError.UnknownField({ table: 'kv', field });
+				}
+				const { data: validated, error } = table.validateWrite(values);
+				if (error !== null) return Err(error);
+				const { error: commitError } = commit(
+					INDEX_DOCUMENT,
+					() => {
+						for (const [name, value] of Object.entries(validated)) {
+							root.setAttr(name as never, value as never);
+						}
+					},
+					project,
+				);
+				if (commitError !== null) return Err(commitError);
+				return readBack();
+			},
+		}) as KvHandle;
+	}
+
+	function tableTypeFor(name: string): Y.Type {
+		return tableRoot(index, name);
 	}
 
 	function liveRows(tableName: string): Map<string, JsonObject> {

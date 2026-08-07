@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue } from '@epicenter/lens';
-import type { ParsedLens } from '@epicenter/lens/lens';
+import type { ParsedLens, ParsedTable } from '@epicenter/lens/lens';
 import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import * as Y from '@y/y';
 
@@ -81,7 +81,13 @@ export function applyProjectionSchema(
 	database: SqliteDatabase,
 	lens: ParsedLens,
 ): void {
-	for (const [tableName, table] of lens.tables) {
+	// KV projects as a one-row relation named `kv`, which the lens reserves as a
+	// table name so nothing can collide with it.
+	const relations: [string, ParsedTable][] = [
+		...(lens.kv === undefined ? [] : ([['kv', lens.kv]] as [string, ParsedTable][])),
+		...lens.tables,
+	];
+	for (const [tableName, table] of relations) {
 		const columns = [...table.fields.keys()].map(
 			(field) => `${quoteIdentifier(field)} ANY`,
 		);
