@@ -107,7 +107,11 @@ describe('one read verb, recovery composed at the call site', () => {
 		});
 		expect(data).toBeNull();
 		expect(error?.name).toBe('Nonconforming');
-		expect(error?.conforming).toEqual({ title: 'Groceries', date: null });
+		expect(error?.conforming).toEqual({
+			id: 'n1',
+			title: 'Groceries',
+			date: null,
+		});
 		expect(error?.issues.map((issue) => issue.field)).toEqual(['tags']);
 		// Never repaired and never hidden: the raw payload survives intact.
 		expect(error?.raw).toEqual({
@@ -127,7 +131,9 @@ describe('one read verb, recovery composed at the call site', () => {
 		// sets `data` to null, and a destructuring default fires only on
 		// `undefined`, so `const { data = fallback }` would hand back null.
 		const cfg = data ?? { ...settings.defaults, ...error?.conforming };
-		expect(cfg).toEqual({ theme: 'light', fontSize: 20 });
+		// A whole row either way, id included, so the two branches of `??` have
+		// the same shape and no call site has to add the id back.
+		expect(cfg).toEqual({ id: 'app', theme: 'light', fontSize: 20 });
 	});
 
 	test('a destructuring default does not fire on an Err, which is why ?? is the rule', () => {

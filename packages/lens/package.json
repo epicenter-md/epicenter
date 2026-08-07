@@ -22,6 +22,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
+		},
+		"./lens": {
+			"types": "./dist/lens.d.ts",
+			"import": "./dist/lens.js"
 		}
 	},
 	"files": [

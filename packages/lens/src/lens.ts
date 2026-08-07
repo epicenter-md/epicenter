@@ -81,11 +81,24 @@ export type ValidateLens<TLens> = TLens extends { tables: infer TTables }
  * A read always supplies the default, so the defaultable marker has no business
  * in a row: it would reach a Svelte template as `Default<...>`.
  */
-export type RowOf<TFields> = { id: string } & (type.instantiate<TFields> extends {
-	infer: infer TOut;
-}
+export type RowOf<TFields> = Flatten<{ id: string } & FieldsOut<TFields>>;
+
+/**
+ * Collapse an intersection into one plain object type.
+ *
+ * Applied *after* the intersection with `{ id: string }`, not before. Measured:
+ * flattening only the field side still left `RowOf` deep enough that mapping
+ * over an array of rows hit `TS2589`, because the intersection itself was what
+ * downstream inference kept re-entering. One object type at the end fixes it,
+ * and it is also what makes a row read as its own shape on hover rather than as
+ * `{ id: string } & { ... }`.
+ */
+type Flatten<T> = { [K in keyof T]: T[K] };
+
+/** One table's fields on arktype's output side. */
+type FieldsOut<TFields> = type.instantiate<TFields> extends { infer: infer TOut }
 	? TOut
-	: never);
+	: never;
 
 /**
  * What `create` takes: arktype's **input** side, where a field that declares a
@@ -500,7 +513,12 @@ function createParsedTable(
 				: RowReadError.Nonconforming({
 						address,
 						raw: payload,
-						conforming,
+						// Carries the structural id, so the two branches of the one
+						// recovery composition produce the same shape:
+						// `data ?? { ...defaults, ...error.conforming }` is a whole row
+						// either way. The id is not a declared field and cannot fail,
+						// so including it costs no honesty.
+						conforming: { id: address.rowId, ...conforming },
 						issues,
 					});
 		},
