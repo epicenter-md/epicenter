@@ -30,3 +30,11 @@ export {
 	type SyncClientStatus,
 	type SyncSocket,
 } from './client.js';
+export {
+	createSyncConnection,
+	type ReconnectReason,
+	type SyncAttempt,
+	type SyncConnection,
+	type SyncConnectionStatus,
+	type SyncDial,
+} from './connection.js';

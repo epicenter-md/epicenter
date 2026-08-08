@@ -80,6 +80,16 @@ export type SyncClientStatus = {
 	cursor: number;
 	/** Whether a submission is out and waiting for its position. */
 	inFlight: boolean;
+	/**
+	 * Which submission is out, or undefined when none is.
+	 *
+	 * `inFlight` alone cannot tell a stalled client from a busy one. Only one
+	 * submission is ever out, and the next starts the moment the previous is
+	 * acknowledged, so under sustained local work `inFlight` is continuously
+	 * true while everything is perfectly healthy. A watchdog needs to know that
+	 * the SAME submission is still out, which is what this number says.
+	 */
+	inFlightSubmission: number | undefined;
 	/** Bytes this replica owes the authority, at the last coalesce. */
 	owed: number;
 	lastError: SyncClientError | undefined;
@@ -420,6 +430,7 @@ export function createSyncClient({
 		status: () => ({
 			cursor,
 			inFlight: inFlight !== undefined,
+			inFlightSubmission: inFlight?.submission,
 			owed,
 			lastError,
 			unresolvedDependencies: store.hasUnresolvedDependencies(),

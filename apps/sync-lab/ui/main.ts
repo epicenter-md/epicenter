@@ -8,7 +8,7 @@
  */
 import { defineLens } from '@epicenter/lens/lens';
 import { createStore } from '@epicenter/data/store';
-import { createSyncClient } from '@epicenter/data/sync';
+import { createSyncConnection } from '@epicenter/data/sync';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
@@ -35,13 +35,56 @@ const bound = store.bind(lens);
 if (bound.error !== null) throw bound.error;
 const db = bound.data;
 
-const client = createSyncClient({ store, idleMs: 1_000 });
+/**
+ * The whole of what this host writes: how to make a socket.
+ *
+ * Reconnecting on close, reconnecting when the client reports `needsResync`,
+ * putting the cursor in the URL and watching for a submission nobody answers
+ * are all the driver's, because every one of them is correctness rather than
+ * transport, and the version of this file that owned them by hand was missing
+ * two of the four.
+ */
+const connection = createSyncConnection({
+	store,
+	dial: ({ cursor, opened, received, closed }) => {
+		const url = new URL('/sync', location.href);
+		url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+		url.searchParams.set('app', 'lab');
+		url.searchParams.set('cursor', String(cursor));
+		const socket = new WebSocket(url);
+		socket.binaryType = 'arraybuffer';
+
+		socket.addEventListener('open', () => {
+			opened({ send: (bytes) => socket.send(bytes) });
+			render();
+		});
+		socket.addEventListener('message', (event) => {
+			if (typeof event.data === 'string') return;
+			received(new Uint8Array(event.data as ArrayBuffer));
+			render();
+		});
+		socket.addEventListener('close', () => {
+			closed();
+			render();
+		});
+		socket.addEventListener('error', () => socket.close());
+		return () => socket.close();
+	},
+	idleMs: 1_000,
+});
 
 const rows = document.querySelector('#rows') as HTMLElement;
 const status = document.querySelector('#status') as HTMLElement;
 const title = document.querySelector('#title') as HTMLInputElement;
 const record = document.querySelector('#record') as HTMLButtonElement;
 const paste = document.querySelector('#paste') as HTMLButtonElement;
+
+/** The one number worth watching: how much of this document is dead weight. */
+function pressureLine(): string {
+	const { data } = store.pressure();
+	if (data === null) return '';
+	return `${data.items} items / ${data.liveRows} rows = ${data.itemsPerLiveRow.toFixed(1)}`;
+}
 
 function render(): void {
 	const listed = db.notes.list();
@@ -55,42 +98,19 @@ function render(): void {
 				return item;
 			}),
 	);
-	const state = client.status();
+	const state = connection.status();
 	status.textContent = [
 		`device ${device}`,
 		`cursor ${state.cursor}`,
+		state.connected ? 'connected' : `dialling (attempt ${state.attempts})`,
 		state.inFlight ? `in flight (${state.owed} B)` : 'idle',
 		state.lastError === undefined ? 'no errors' : `ERROR ${state.lastError.message}`,
 		state.unresolvedDependencies ? 'UNRESOLVED DEPENDENCIES' : '',
+		state.lastReconnect === undefined ? '' : `last reconnect: ${state.lastReconnect}`,
+		pressureLine(),
 	]
 		.filter(Boolean)
 		.join('  ·  ');
-}
-
-/** Reconnect from the replica's own cursor, which is the only catch-up there is. */
-function connect(): void {
-	const url = new URL('/sync', location.href);
-	url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-	url.searchParams.set('app', 'lab');
-	url.searchParams.set('cursor', String(client.cursor()));
-	const socket = new WebSocket(url);
-	socket.binaryType = 'arraybuffer';
-
-	socket.addEventListener('open', () => {
-		client.attach({ send: (bytes) => socket.send(bytes) });
-		render();
-	});
-	socket.addEventListener('message', (event) => {
-		if (typeof event.data === 'string') return;
-		client.receive(new Uint8Array(event.data as ArrayBuffer));
-		render();
-	});
-	socket.addEventListener('close', () => {
-		client.detach();
-		render();
-		setTimeout(connect, 1_000);
-	});
-	socket.addEventListener('error', () => socket.close());
 }
 
 function write(fields: { title: string }): void {
@@ -103,10 +123,9 @@ function write(fields: { title: string }): void {
 		status.textContent = `write failed: ${written.error.message}`;
 		return;
 	}
-	// Nudge rather than flush: the idle timer is what turns a burst of
-	// transactions into one entry, and it is the whole reason the authority's
-	// log is affordable to never compact.
-	client.nudge();
+	// Nothing nudges. The store announces the work it authored and the driver
+	// starts the idle timer, which is what turns a burst of transactions into
+	// one entry and is the whole reason the log is affordable to never compact.
 	render();
 }
 
@@ -122,17 +141,15 @@ title.addEventListener('keydown', (event) => {
 paste.addEventListener('click', () => {
 	// One transaction well past the 2,097,152-byte storage cap, so the chunking
 	// path is exercised by hand on a real device rather than only in a test.
-	const written = db.notes.create({
-		title: 'a 3 MB paste',
-		device,
-		at: new Date().toISOString(),
-	});
+	const written = db.notes.create(
+		{ title: 'a 3 MB paste', device, at: new Date().toISOString() },
+		{ document: ['editor'] },
+	);
 	if (written.error !== null) return;
 	const text = db.notes.document(written.data.id)?.get('editor', 'text');
 	text?.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
-	client.nudge();
 	render();
 });
 
 render();
-connect();
+connection.start();

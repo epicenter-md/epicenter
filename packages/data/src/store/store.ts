@@ -22,6 +22,7 @@ import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
 import * as Y from '@y/y';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 import {
@@ -132,6 +133,17 @@ export const StoreError = defineErrors({
 		cause,
 	}),
 	Disposed: () => ({ message: 'This store is disposed' }),
+	/**
+	 * A subscriber threw while being told about a committed change.
+	 *
+	 * Logged, never returned. It is the subscriber's own bug, the commit that
+	 * produced the notification is already durable, and failing the write that
+	 * caused it would make one broken listener into everybody's data loss.
+	 */
+	SubscriberThrew: ({ cause }: { cause: unknown }) => ({
+		message: 'A store subscriber threw while being told about a commit',
+		cause,
+	}),
 });
 export type StoreError = InferErrors<typeof StoreError>;
 
@@ -493,6 +505,22 @@ export type Store = {
 	encodeStateSince(stateVector?: Uint8Array): Uint8Array;
 	/** What this replica owes the authority, and what it has read from it. */
 	readonly sync: ClientLog;
+	/**
+	 * Hear when this replica has authored work the authority has not taken.
+	 *
+	 * Fires once per commit that added to the outbox, after that commit is
+	 * durable, and never for bytes that arrived from a peer.
+	 *
+	 * It exists so that nothing has to remember to say so. Every durable local
+	 * write leaves an authority obligation (ADR-0171), and the transport's idle
+	 * timer only starts when it is told one was made, so a caller that forgets
+	 * leaves that work sitting in the outbox until some unrelated write happens
+	 * to start the timer. That is a silent wedge of the same family as the
+	 * missing reconnect a fuzz found: the device looks connected, reports no
+	 * error, and never delivers. A write that announces itself cannot be
+	 * forgotten about.
+	 */
+	onLocalWork(listener: () => void): () => void;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -501,11 +529,22 @@ export function createStore({
 	history,
 	now = () => Date.now(),
 	dispose = () => undefined,
+	log = createLogger('data/store'),
 }: {
 	database: SqliteDatabase;
 	history?: SqliteDatabase;
 	now?: () => number;
 	dispose?: () => void | Promise<void>;
+	/**
+	 * Where a subscriber's own failure goes.
+	 *
+	 * The only thing the store logs. A listener that throws is contained rather
+	 * than allowed to abort a batch, because the commit that produced the batch
+	 * is already durable and one broken listener must not cost every other one
+	 * its notification; containing it without reporting it would make a broken
+	 * subscriber look like a store that stopped notifying.
+	 */
+	log?: Logger;
 }): Store {
 	applyStoreSchema(database);
 
@@ -522,7 +561,7 @@ export function createStore({
 	 * specific to a carrier, which is why they were written once there rather
 	 * than here (ADR-0187).
 	 */
-	const invalidations = createInvalidationDispatcher();
+	const invalidations = createInvalidationDispatcher({ log });
 	/**
 	 * Addresses the transaction in progress touched, held until it is durable.
 	 *
@@ -535,19 +574,35 @@ export function createStore({
 	 * `persist` and go out afterwards.
 	 */
 	let touched: RowAddress[] = [];
+	/** Whether the commit in progress put anything into the outbox. */
+	let owedSomething = false;
+	const localWorkListeners = new Set<() => void>();
 
 	/**
-	 * Hand every buffered address to its subscribers, and empty the buffer.
+	 * Hand a committed change to whoever is waiting for it, and reset the buffers.
 	 *
 	 * Called after `persist` on every path a write can take, including the one
-	 * that fails: the addresses have to be drained either way, or a poisoned
+	 * that fails: the buffers have to be drained either way, or a poisoned
 	 * store's stale ids would ride along with the next commit's.
 	 *
-	 * The buffer is swapped before delivery rather than cleared after, because a
+	 * Each buffer is swapped before delivery rather than cleared after, because a
 	 * subscriber is allowed to write, and a nested write's addresses belong to
 	 * its own flush.
 	 */
-	function flushInvalidations(): void {
+	function flushCommitted(): void {
+		if (owedSomething) {
+			owedSomething = false;
+			for (const listener of [...localWorkListeners]) {
+				// Contained for the same reason a table subscriber is: one broken
+				// listener must not cost the transport its nudge, and the commit that
+				// produced this is already durable.
+				const { error } = trySync({
+					try: listener,
+					catch: (cause) => StoreError.SubscriberThrew({ cause }),
+				});
+				if (error !== null) log.error(error);
+			}
+		}
 		if (touched.length === 0) return;
 		const batch = touched;
 		touched = [];
@@ -583,11 +638,12 @@ export function createStore({
 				takenAt: now(),
 			});
 			enqueueOutbox(database, authored);
+			owedSomething = true;
 		});
 		// Before the throw, deliberately. The live document already holds the
 		// change, so the ids are true whatever storage did with them, and leaving
 		// them buffered would attach them to whichever commit ran next.
-		flushInvalidations();
+		flushCommitted();
 		if (error !== null) throw error;
 	});
 
@@ -626,7 +682,7 @@ export function createStore({
 			// Nothing changed, so there is nothing to persist. The projection still
 			// runs: a no-op write must not leave a stale projected row behind.
 			const unchanged = persist(() => project());
-			flushInvalidations();
+			flushCommitted();
 			return unchanged;
 		}
 		const committed = persist(() => {
@@ -642,10 +698,11 @@ export function createStore({
 				// that these bytes still owe the authority a delivery. A crash cannot
 				// leave a write durable locally and unowed.
 				enqueueOutbox(database, update);
+				owedSomething = true;
 			}
 			project();
 		});
-		flushInvalidations();
+		flushCommitted();
 		return committed;
 	}
 
@@ -1079,10 +1136,14 @@ export function createStore({
 			// After the rebuild, which is the whole reason the ids were buffered:
 			// the `'delta'` that named them fired inside `applyUpdateV2` above,
 			// while the projection still described the state before it.
-			flushInvalidations();
+			flushCommitted();
 			return applied;
 		},
 		sync: createClientLog(),
+		onLocalWork(listener: () => void): () => void {
+			localWorkListeners.add(listener);
+			return () => localWorkListeners.delete(listener);
+		},
 		hasUnresolvedDependencies: () => hasPendingStructs(index),
 		pressure(): Result<StorePressure, StoreError> {
 			const unusable = requireUsable();
