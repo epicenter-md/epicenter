@@ -53,12 +53,28 @@ export class SyncLabAuthority extends DurableObject {
 		);
 		this.authority = openSyncAuthority({ database });
 		this.hub = createSyncHub({ authority: this.authority });
-		// A woken object has sockets but no map, so rebuild before any message
-		// can arrive. Their positions come from the attachments they carry.
+		// A woken object has sockets and nothing else: no map, and a hub that has
+		// never heard of them. Both are rebuilt here, before any message can
+		// arrive. Their positions come from the attachments they carry.
 		for (const socket of ctx.getWebSockets()) this.adopt(socket);
 	}
 
-	/** Wrap one socket as a connection, and keep its position durable. */
+	/**
+	 * Wrap one socket as a connection, attach it to the hub, and keep its
+	 * position durable.
+	 *
+	 * Joining is not separable from wrapping, and a wake is what proves it. The
+	 * hub drops a message from a connection it has not joined, silently and by
+	 * design, so an object that rebuilt only `connections` was deaf and mute: it
+	 * took every push, stored none of them, never acknowledged and never refused,
+	 * and relayed nothing to the other sockets. A replica cannot tell that apart
+	 * from a network that has gone quiet, so it holds the work forever believing
+	 * it is in transit.
+	 *
+	 * Joining also runs catch-up, which on a wake is the whole recovery: the
+	 * cursor comes from the attachment, which is BEHIND what was really sent, so
+	 * entries go out again rather than being skipped.
+	 */
 	private adopt(socket: WebSocket): HubConnection {
 		const existing = this.connections.get(socket);
 		if (existing !== undefined) return existing;
@@ -72,6 +88,7 @@ export class SyncLabAuthority extends DurableObject {
 			},
 		};
 		this.connections.set(socket, connection);
+		this.hub.join(connection);
 		return connection;
 	}
 
@@ -85,14 +102,16 @@ export class SyncLabAuthority extends DurableObject {
 		const server = pair[1];
 
 		this.ctx.acceptWebSocket(server);
+		// Written before adopting, because the attachment is where a position
+		// comes from: this is the one place it is set from a request rather than
+		// read back off the socket, and there is no second source of truth.
 		server.serializeAttachment({ cursor: Number.isFinite(cursor) ? cursor : 0 });
-		const connection = this.adopt(server);
-		connection.cursor = Number.isFinite(cursor) ? cursor : 0;
-		// Catch-up runs here, synchronously, before this handler returns. A
-		// Durable Object is single threaded and a socket delivers in order, so
-		// everything queued now precedes any relay a later push produces, and the
-		// replica's contiguity check holds by construction rather than by luck.
-		this.hub.join(connection);
+		// Adopting joins the hub, so catch-up runs here, synchronously, before
+		// this handler returns. A Durable Object is single threaded and a socket
+		// delivers in order, so everything queued now precedes any relay a later
+		// push produces, and the replica's contiguity check holds by construction
+		// rather than by luck.
+		this.adopt(server);
 
 		return new Response(null, { status: 101, webSocket: client });
 	}

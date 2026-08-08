@@ -1,7 +1,12 @@
 {
 	"extends": "../../tsconfig.dom.json",
 	"compilerOptions": {
-		"types": ["bun", "@cloudflare/workers-types", "vite/client"]
+		"types": [
+			"bun",
+			"@cloudflare/workers-types",
+			"@cloudflare/vitest-pool-workers/types",
+			"vite/client"
+		]
 	},
-	"include": ["worker", "ui"]
+	"include": ["worker", "ui", "vitest.config.ts"]
 }
