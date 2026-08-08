@@ -1,0 +1,286 @@
+/**
+ * The client half of the transport: coalesce, send, wait for the ack.
+ *
+ * It owns no socket and no reconnect policy. A caller hands it a socket that
+ * can `send`, feeds it whatever arrives, and tells it when the socket is gone.
+ * That keeps every timing rule in this file testable without a network, which
+ * matters more than usual here: a previous cursor rule on this branch "worked"
+ * in a simulation where nothing was ever delivered.
+ */
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { Ok, type Result } from 'wellcrafted/result';
+
+import type { Store } from '../store/store.js';
+import {
+	CHUNK_BYTES,
+	createChunkCollector,
+	decodeFrame,
+	encodeFrame,
+	intoChunks,
+} from './frames.js';
+
+export const SyncClientError = defineErrors({
+	/**
+	 * The authority refused bytes this replica authored.
+	 *
+	 * Terminal for the submission and deliberately loud. The work is still held,
+	 * so nothing is lost, but a replica whose writes the authority will not take
+	 * is not syncing and must not look like it is.
+	 */
+	Refused: ({ reason }: { reason: string }) => ({
+		message: `The authority refused this replica's update: ${reason}`,
+		reason,
+	}),
+	/**
+	 * An entry arrived that is not the next one.
+	 *
+	 * The log is a total order and a replica reads it in order, so a jump means
+	 * something was dropped. Applying past it would make the loss permanent and
+	 * silent, which is precisely the failure mode that has to stay impossible.
+	 */
+	Gap: ({ expected, received }: { expected: number; received: number }) => ({
+		message: `Expected entry ${expected} and received ${received}`,
+		expected,
+		received,
+	}),
+});
+export type SyncClientError = InferErrors<typeof SyncClientError>;
+
+/** Whatever carries bytes. A `WebSocket` satisfies this. */
+export type SyncSocket = { send(bytes: Uint8Array): void };
+
+export type SyncClientStatus = {
+	/** How far through the authority's log this replica has read. */
+	cursor: number;
+	/** Whether a submission is out and waiting for its position. */
+	inFlight: boolean;
+	/** Bytes this replica owes the authority, at the last coalesce. */
+	owed: number;
+	lastError: SyncClientError | undefined;
+	/**
+	 * Whether the document is holding updates whose dependencies never arrived.
+	 *
+	 * Reads as an alarm rather than as a state. Entries are applied in log order
+	 * and the log is causally complete, so after a contiguous read this is false;
+	 * true means the transport delivered something it should not have been able
+	 * to, and no other layer will say so.
+	 */
+	unresolvedDependencies: boolean;
+};
+
+export type SyncClient = {
+	/** The position to ask the authority to start from. Goes in the URL. */
+	cursor(): number;
+	/** A socket is live. Anything owed goes out now. */
+	attach(socket: SyncSocket): void;
+	/** The socket is gone. Whatever was in flight is owed again. */
+	detach(): void;
+	/** Local work happened. Sends after the idle interval. */
+	nudge(): void;
+	/** Send whatever is owed, now. */
+	flush(): Result<void, SyncClientError>;
+	/** Bytes arrived from the authority. */
+	receive(message: Uint8Array): Result<void, SyncClientError>;
+	status(): SyncClientStatus;
+	dispose(): void;
+};
+
+/** Cancelable delayed work, injected so tests do not wait in real time. */
+export type Schedule = (task: () => void, delayMs: number) => () => void;
+
+const defaultSchedule: Schedule = (task, delayMs) => {
+	const handle = setTimeout(task, delayMs);
+	return () => clearTimeout(handle);
+};
+
+export function createSyncClient({
+	store,
+	/**
+	 * How long local work waits before it is sent.
+	 *
+	 * The whole 30x. One update per transaction grew the authority's log to
+	 * 1,261 MB over a decade in simulation and roughly a second of coalescing
+	 * brought that to 40 MB, which is what made refusing compaction affordable
+	 * (`evidence/bench/never-compact.ts`). It is an idle timer rather than a
+	 * fixed batch because it is the same interval an editor debounces on anyway.
+	 */
+	idleMs = 1_000,
+	schedule = defaultSchedule,
+	/** Guards the authority's in-memory reassembly, and mirrors its limit. */
+	maxBufferedBytes = 64 * 1024 * 1024,
+}: {
+	store: Store;
+	idleMs?: number;
+	schedule?: Schedule;
+	maxBufferedBytes?: number;
+}): SyncClient {
+	const collector = createChunkCollector({ limitBytes: maxBufferedBytes });
+	let socket: SyncSocket | undefined;
+	let inFlight: { submission: number; throughId: number } | undefined;
+	let nextSubmission = 1;
+	let cursor = store.sync.cursor().data ?? 0;
+	let owed = 0;
+	let lastError: SyncClientError | undefined;
+	let cancelIdle: (() => void) | undefined;
+	let disposed = false;
+
+	function clearIdle(): void {
+		cancelIdle?.();
+		cancelIdle = undefined;
+	}
+
+	function send(): Result<void, SyncClientError> {
+		// One submission at a time. Two in flight would make an ack ambiguous
+		// about which outbox entries it retires, and the outbox is the only record
+		// that work is still owed.
+		if (socket === undefined || inFlight !== undefined) return Ok(undefined);
+
+		const { data: entry, error } = store.sync.coalesce();
+		if (error !== null) return Ok(undefined);
+		if (entry === undefined) {
+			owed = 0;
+			return Ok(undefined);
+		}
+		owed = entry.bytes.length;
+
+		const submission = nextSubmission;
+		nextSubmission += 1;
+		inFlight = { submission, throughId: entry.id };
+		const chunks = intoChunks(entry.bytes, CHUNK_BYTES);
+		for (const [index, chunk] of chunks.entries()) {
+			socket.send(
+				encodeFrame({
+					kind: 'push',
+					submission,
+					chunk: index,
+					chunks: chunks.length,
+					bytes: chunk,
+				}),
+			);
+		}
+		return Ok(undefined);
+	}
+
+	function apply(seq: number, bytes: Uint8Array): Result<void, SyncClientError> {
+		if (seq !== cursor + 1) {
+			// Never applied, and the cursor never moves. The caller's repair is to
+			// reconnect from `cursor`, which is a catch-up and the same code path
+			// the authority already runs.
+			const gap = SyncClientError.Gap({ expected: cursor + 1, received: seq });
+			lastError = gap.error;
+			return gap;
+		}
+		const { error } = store.applyRemote(bytes);
+		if (error !== null) {
+			// The bytes are durable-or-not as one unit inside the store, so there is
+			// nothing to unwind here; the cursor simply does not move and the entry
+			// arrives again on the next connect.
+			return Ok(undefined);
+		}
+		// After the bytes have committed, never with them. A crash in between
+		// re-delivers, which is free because an update is idempotent; the other
+		// order skips an entry, and a skipped entry is invisible forever.
+		store.sync.advance(seq);
+		cursor = seq;
+		return Ok(undefined);
+	}
+
+	return Object.freeze({
+		cursor: () => cursor,
+
+		attach(next: SyncSocket) {
+			socket = next;
+			// Whatever was in flight was never acknowledged, so it is owed again.
+			// The authority may well have stored it; a second copy costs log bytes
+			// and changes nothing, because an update is idempotent.
+			inFlight = undefined;
+			send();
+		},
+
+		detach() {
+			socket = undefined;
+			inFlight = undefined;
+			clearIdle();
+		},
+
+		nudge() {
+			if (disposed || cancelIdle !== undefined) return;
+			cancelIdle = schedule(() => {
+				cancelIdle = undefined;
+				send();
+			}, idleMs);
+		},
+
+		flush() {
+			clearIdle();
+			return send();
+		},
+
+		receive(message: Uint8Array): Result<void, SyncClientError> {
+			const { data: frame, error } = decodeFrame(message);
+			if (error !== null) return Ok(undefined);
+
+			switch (frame.kind) {
+				case 'ack': {
+					if (inFlight === undefined || frame.submission !== inFlight.submission) {
+						return Ok(undefined);
+					}
+					// The authority relays to every other socket before it answers this
+					// one, and a socket delivers in order, so everything below this
+					// position has already been applied. Checking rather than assuming
+					// is the point: if it is ever false the ordering assumption is
+					// wrong, and a cursor that advanced anyway would skip real entries.
+					if (frame.seq === cursor + 1) {
+						store.sync.advance(frame.seq);
+						cursor = frame.seq;
+					} else if (frame.seq > cursor + 1) {
+						lastError = SyncClientError.Gap({
+							expected: cursor + 1,
+							received: frame.seq,
+						}).error;
+					}
+					store.sync.acknowledge(inFlight.throughId);
+					inFlight = undefined;
+					owed = 0;
+					// Work authored while that submission was out is still owed.
+					send();
+					return Ok(undefined);
+				}
+				case 'refuse': {
+					const refused = SyncClientError.Refused({ reason: frame.reason });
+					lastError = refused.error;
+					// The outbox is NOT cleared. The authority has taken no
+					// responsibility for these bytes, so this replica keeps holding
+					// them, and a refusal that repeats is visible rather than a write
+					// that quietly disappeared.
+					inFlight = undefined;
+					return refused;
+				}
+				case 'entry': {
+					const { data: whole, error: chunkError } = collector.accept(frame);
+					if (chunkError !== null) return Ok(undefined);
+					if (whole === undefined) return Ok(undefined);
+					return apply(frame.seq, whole);
+				}
+				case 'push':
+					// A client never receives one. Ignored rather than thrown on,
+					// because a throw here would be swallowed by the socket runtime.
+					return Ok(undefined);
+			}
+		},
+
+		status: () => ({
+			cursor,
+			inFlight: inFlight !== undefined,
+			owed,
+			lastError,
+			unresolvedDependencies: store.hasUnresolvedDependencies(),
+		}),
+
+		dispose() {
+			disposed = true;
+			clearIdle();
+			socket = undefined;
+		},
+	});
+}
