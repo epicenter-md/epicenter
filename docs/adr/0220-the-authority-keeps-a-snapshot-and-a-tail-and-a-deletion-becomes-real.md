@@ -42,9 +42,31 @@ compare-and-swap, freezing, migration and reconciliation.
 **The authority keeps one snapshot and the entries after it. Not a log.**
 
 A replica offers its whole state as the snapshot for a position; everything the
-snapshot covers is forgotten. Storage stops growing, first sync becomes state
-plus a short tail, and a deletion becomes real, because a snapshot is current
-state and carries no trace of what was deleted before it.
+snapshot covers is forgotten. First sync becomes state plus a short tail, and a
+deletion becomes real, because a snapshot is current state and carries no trace
+of what was deleted before it.
+
+### Storage does not stop growing, and the first version of this record said it did
+
+That claim was written without a measurement behind it, and it does not survive
+one (`evidence/bench/flat-storage.ts`). Over 6,000 operations against a vault
+holding a constant 300 live rows:
+
+| | after 500 ops | after 6,000 ops |
+| --- | --- | --- |
+| snapshot and tail | 36 KB | **196 KB** |
+| append-only log | 37 KB | 339 KB |
+
+**A snapshot is current state, and current state carries the accumulated delete
+set.** So the authority holds live rows plus roughly one tombstone per row ever
+deleted. Storage tracks lifetime DELETIONS rather than the operation count,
+which is a real improvement over a log and is not the same as flat. The gap
+widens with time, 1.3x early and 1.7x late on this workload, which deletes on
+every third operation and is therefore harsher than a real vault.
+
+The parts that are genuinely bounded stand: a returning replica downloads state
+plus a short tail rather than all history, and deleted CONTENT is gone at the
+next snapshot.
 
 ### The condition is checkable without semantics, and it is two halves
 
@@ -125,10 +147,16 @@ no longer exists, converges and keeps a note nobody had seen.
 - **The previous snapshot is kept.** A poison entry is one row and repairable
   (ADR-0218); a bad snapshot replaces history and is not, so one spare is the
   only way back.
-- **Tombstone memory is unchanged**, and remains a non-problem at realistic
-  churn: about 14 deletions a day for a decade to reach 100 MB, with
-  `store.pressure()` reporting the ratio so it is watched rather than argued
-  about.
+- **Tombstones are now the only thing that grows, on the device AND on the
+  authority.** They remain a non-problem at realistic churn, about 14 deletions
+  a day for a decade to reach 100 MB of device memory, with `store.pressure()`
+  reporting the ratio so it is watched rather than argued about. But the
+  authority no longer escapes them either, and anything that ever reclaims them
+  has to re-mint identities, which is the rebuild ADR-0214 refuses.
+- **A headline claim in this record was wrong for a day.** It said storage
+  becomes constant, on reasoning rather than on measurement, and the bench
+  written to confirm it refuted it instead. Every quantitative claim here now
+  names the script that produces it.
 - **The retention window and the 90-day deletion promise are withdrawn as
   mechanisms.** Deleted data now disappears at the next snapshot, which is a
   function of write volume rather than of a policy.
