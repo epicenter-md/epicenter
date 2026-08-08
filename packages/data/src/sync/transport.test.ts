@@ -71,11 +71,27 @@ function openReplica(label: string, hub: ReturnType<typeof createSyncHub>, wire:
 			return () => undefined;
 		},
 	});
+	// A socket generation, so a close discards whatever was queued for it. The
+	// first version of this harness delivered those frames anyway, which no real
+	// socket does, and it manufactured out-of-order deliveries that cannot happen.
+	let generation = 0;
 	const connection: HubConnection = {
 		cursor: client.cursor(),
-		send: (bytes) => wire.defer(() => client.receive(bytes)),
+		send: (bytes) => {
+			const sentOn = generation;
+			wire.defer(() => {
+				if (sentOn === generation) client.receive(bytes);
+			});
+		},
 	};
-	const socket = { send: (bytes: Uint8Array) => wire.defer(() => hub.receive(connection, bytes)) };
+	const socket = {
+		send: (bytes: Uint8Array) => {
+			const sentOn = generation;
+			wire.defer(() => {
+				if (sentOn === generation) hub.receive(connection, bytes);
+			});
+		},
+	};
 
 	return {
 		label,
@@ -90,6 +106,7 @@ function openReplica(label: string, hub: ReturnType<typeof createSyncHub>, wire:
 			client.attach(socket);
 		},
 		disconnect() {
+			generation += 1;
 			hub.leave(connection);
 			client.detach();
 		},
@@ -780,5 +797,174 @@ describe('the snapshot path under sustained traffic', () => {
 		expect(laptop.titles()).toEqual(phone.titles());
 		expect(phone.client.status().lastError).toBeUndefined();
 		expect(laptop.client.status().lastError).toBeUndefined();
+	});
+});
+
+/**
+ * A deterministic pseudo-random source.
+ *
+ * Seeded so a failure is reproducible: the seed is printed with any failure and
+ * replaying it replays the exact schedule. `Math.random` would make a red run
+ * unreproducible, which is the difference between a fuzz that finds bugs and
+ * one that only reports them.
+ */
+function createRandom(seed: number) {
+	let state = seed >>> 0;
+	return {
+		next(): number {
+			// xorshift32, chosen because it is four lines and needs no library.
+			state ^= state << 13;
+			state ^= state >>> 17;
+			state ^= state << 5;
+			return (state >>> 0) / 0x1_0000_0000;
+		},
+		below(bound: number): number {
+			return Math.floor(this.next() * bound);
+		},
+		chance(probability: number): boolean {
+			return this.next() < probability;
+		},
+	};
+}
+
+/**
+ * Random operations against several replicas, then everyone must agree.
+ *
+ * The point is to generate schedules nobody designed. Every other test here
+ * asserts a scenario someone imagined, so it can only find bugs someone already
+ * imagined; the two real defects this transport shipped were both found by
+ * running it rather than by testing it.
+ *
+ * The invariant is exact rather than statistical, which is what makes a failure
+ * mean something. **A replica only ever updates or deletes rows it created
+ * itself**, so there is no concurrent write to one field and the final state is
+ * computable in a plain `Map`: every row created and not deleted, with the last
+ * title its owner gave it, present on every replica exactly once.
+ */
+function fuzz(seed: number, { replicas, rounds }: { replicas: number; rounds: number }) {
+	const random = createRandom(seed);
+	const wire = createWire();
+	const { authority, hub } = openAuthority(TINY_FLOOR);
+	const devices = Array.from({ length: replicas }, (_, index) =>
+		openReplica(`device-${index}`, hub, wire),
+	);
+	/** What every replica must end up holding, tracked outside the system. */
+	const expected = new Map<string, string>();
+	/** Which rows each device owns, so nothing ever writes to another's row. */
+	const owned = devices.map(() => [] as string[]);
+	const online = devices.map(() => false);
+	const seen = { creates: 0, updates: 0, deletes: 0, drops: 0, prose: 0 };
+
+	const connect = (index: number) => {
+		if (online[index]) return;
+		devices[index]?.connect();
+		online[index] = true;
+	};
+	const disconnect = (index: number) => {
+		if (!online[index]) return;
+		devices[index]?.disconnect();
+		online[index] = false;
+		seen.drops += 1;
+	};
+
+	for (let index = 0; index < replicas; index += 1) connect(index);
+
+	for (let round = 0; round < rounds; round += 1) {
+		const index = random.below(replicas);
+		const device = devices[index];
+		const mine = owned[index];
+		if (device === undefined || mine === undefined) continue;
+
+		const roll = random.next();
+		if (roll < 0.45 || mine.length === 0) {
+			const title = `r${round} from ${index}`;
+			const made = expectOk(device.db.notes.create({ title }));
+			mine.push(made.id);
+			expected.set(made.id, title);
+			seen.creates += 1;
+		} else if (roll < 0.65) {
+			const rowId = mine[random.below(mine.length)] as string;
+			const title = `r${round} edited by ${index}`;
+			expectOk(device.db.notes.update(rowId, { title }));
+			expected.set(rowId, title);
+			seen.updates += 1;
+		} else if (roll < 0.78) {
+			const at = random.below(mine.length);
+			const rowId = mine[at] as string;
+			expectOk(device.db.notes.delete(rowId));
+			mine.splice(at, 1);
+			expected.delete(rowId);
+			seen.deletes += 1;
+		} else {
+			// Prose, which is the one thing that reaches storage without going
+			// through a store verb.
+			const rowId = mine[random.below(mine.length)] as string;
+			const text = device.db.notes.document(rowId)?.get('editor', 'text');
+			text?.applyDelta(text.change.insert('x') as never);
+			seen.prose += 1;
+		}
+
+		if (random.chance(0.6)) device.client.flush();
+		if (random.chance(0.5)) wire.settle();
+		if (random.chance(0.12)) disconnect(random.below(replicas));
+		if (random.chance(0.25)) connect(random.below(replicas));
+	}
+
+	// Everyone comes back and everything drains. A replica reporting `needsResync`
+	// is reconnected, which is the repair a caller owes it.
+	for (let index = 0; index < replicas; index += 1) connect(index);
+	wire.settle();
+	for (let index = 0; index < replicas; index += 1) {
+		if (devices[index]?.client.status().needsResync !== true) continue;
+		disconnect(index);
+		connect(index);
+		wire.settle();
+	}
+	for (const device of devices) device.client.flush();
+	wire.settle();
+	// A second pass, because a flush can only carry what the previous settle
+	// delivered, and a device that reconnected last needs one more exchange.
+	for (const device of devices) device.client.flush();
+	wire.settle();
+
+	return { devices, authority, expected, seen };
+}
+
+describe('random schedules, and everyone still agrees', () => {
+	for (const seed of [1, 7, 12345, 987654321]) {
+		test(`seed ${seed}: every replica holds exactly what was written`, () => {
+			const { devices, expected, seen } = fuzz(seed, { replicas: 3, rounds: 220 });
+
+			const wanted = [...expected.values()].sort();
+			for (const device of devices) {
+				// Compared against a model kept OUTSIDE the system, so this cannot be
+				// satisfied by every replica agreeing on the wrong thing, which is
+				// what a convergence-only assertion would accept.
+				expect(device.titles()).toEqual(wanted);
+				expect(device.client.status().unresolvedDependencies).toBe(false);
+				expect(device.client.status().lastError).toBeUndefined();
+			}
+
+			// CONTROLS: a schedule that never deleted, never disconnected or never
+			// snapshotted would pass the assertions above while testing none of the
+			// paths this fuzz exists for.
+			expect(seen.creates).toBeGreaterThan(10);
+			expect(seen.deletes).toBeGreaterThan(0);
+			expect(seen.drops).toBeGreaterThan(0);
+			expect(seen.prose).toBeGreaterThan(0);
+			expect(wanted.length).toBeGreaterThan(10);
+		});
+	}
+
+	test('CONTROL: the model notices when a replica is missing a row', () => {
+		// Without this, `titles()` compared against a model proves nothing unless
+		// the comparison can actually fail. A row created on a device that never
+		// reconnects must NOT satisfy it.
+		const { devices, expected } = fuzz(42, { replicas: 2, rounds: 60 });
+		const first = devices[0];
+		if (first === undefined) throw new Error('no device');
+		expected.set('never-synchronised', 'a row nobody has');
+
+		expect(first.titles()).not.toEqual([...expected.values()].sort());
 	});
 });

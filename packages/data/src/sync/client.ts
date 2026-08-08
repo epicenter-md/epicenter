@@ -80,6 +80,21 @@ export type SyncClientStatus = {
 	 * to, and no other layer will say so.
 	 */
 	unresolvedDependencies: boolean;
+	/**
+	 * Whether this replica is stuck and needs to be reconnected.
+	 *
+	 * A gap means an entry was dropped, and the cursor deliberately does not move
+	 * past it, so every later entry is also a gap and the replica silently stops
+	 * syncing forever. It set an error and waited for someone to notice, which a
+	 * randomised schedule showed nobody does: a device wedged at position 108
+	 * kept receiving 118, 119, 121 and rejecting all of them.
+	 *
+	 * Recovery is a reconnect, which asks the authority for everything after this
+	 * replica's own cursor and is the same catch-up any returning device runs.
+	 * The caller owns the socket, so the caller has to do it; this is how it
+	 * finds out.
+	 */
+	needsResync: boolean;
 };
 
 export type SyncClient = {
@@ -135,6 +150,7 @@ export function createSyncClient({
 	let cursor = store.sync.cursor().data ?? 0;
 	let owed = 0;
 	let lastError: SyncClientError | undefined;
+	let needsResync = false;
 	let cancelIdle: (() => void) | undefined;
 	let disposed = false;
 
@@ -176,12 +192,21 @@ export function createSyncClient({
 	}
 
 	function apply(seq: number, bytes: Uint8Array): Result<void, SyncClientError> {
+		// Already applied. Re-delivery is not an error, it is a design property
+		// the transport leans on in three places: a crash between committing
+		// bytes and advancing the cursor re-sends, a reconnect re-sends whatever
+		// was in flight, and a hibernating Durable Object wakes holding a
+		// position that is BEHIND what it really sent and deliberately re-sends
+		// from there. Reporting a gap here made the recovery path look like data
+		// loss, and a randomised schedule hit it within a few dozen rounds.
+		if (seq <= cursor) return Ok(undefined);
 		if (seq !== cursor + 1) {
 			// Never applied, and the cursor never moves. The caller's repair is to
 			// reconnect from `cursor`, which is a catch-up and the same code path
 			// the authority already runs.
 			const gap = SyncClientError.Gap({ expected: cursor + 1, received: seq });
 			lastError = gap.error;
+			needsResync = true;
 			return gap;
 		}
 		const { error } = store.applyRemote(bytes);
@@ -260,6 +285,9 @@ export function createSyncClient({
 
 		attach(next: SyncSocket) {
 			socket = next;
+			// A fresh socket asks from this replica's own cursor, which is exactly
+			// the repair a gap needs.
+			needsResync = false;
 			// Whatever was in flight was never acknowledged, so it is owed again.
 			// The authority may well have stored it; a second copy costs log bytes
 			// and changes nothing, because an update is idempotent.
@@ -308,6 +336,7 @@ export function createSyncClient({
 							expected: cursor + 1,
 							received: frame.seq,
 						}).error;
+						needsResync = true;
 					}
 					store.sync.acknowledge(inFlight.throughId);
 					inFlight = undefined;
@@ -362,6 +391,7 @@ export function createSyncClient({
 			owed,
 			lastError,
 			unresolvedDependencies: store.hasUnresolvedDependencies(),
+			needsResync,
 		}),
 
 		dispose() {
