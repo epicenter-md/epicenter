@@ -16,7 +16,8 @@
 	"homepage": "https://epicenter.so",
 	"exports": {
 		".": "./src/index.ts",
-		"./auth-subprotocol": "./src/auth-subprotocol.ts"
+		"./auth-subprotocol": "./src/auth-subprotocol.ts",
+		"./store-route": "./src/store-route.ts"
 	},
 	"license": "MIT",
 	"scripts": {

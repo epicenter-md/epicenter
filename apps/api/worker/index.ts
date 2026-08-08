@@ -21,6 +21,8 @@ import {
 	createDurableObjectAttachRelay,
 	createServerApp,
 	EpicenterAuthority,
+	mountStoreSyncApp,
+	StoreAuthority,
 	mountAttachRelayApp,
 	mountBlobsApp,
 	mountCloudAuth,
@@ -144,6 +146,25 @@ mountCloudflareEpicenterSyncApp(app, {
 // Worker's generated `ATTACH_RELAY` binding is typed (ADR-0066). On Cloud a signed-in bearer is the whole attach
 // authorization: no device-grant store, pairing ceremony, or QR (self-host keeps
 // per-device grants because it has no account substrate).
+// The store transport (ADR-0220/0222): one Durable Object per
+// (principal, application namespace), reached by a WebSocket upgrade carrying
+// the same OAuth bearer every other surface uses. The principal is stamped from
+// the resolved bearer and the DO is addressed by it, so being signed in on two
+// devices is the whole of the sharing model: both dial their own partition and
+// converge. The authority reads nothing it stores (ADR-0218).
+mountStoreSyncApp(app, {
+	resolveBearerPrincipal: resolveRequestOAuthPrincipal,
+	resolveAuthority: (env, name) => {
+		const namespace = (
+			env as Cloudflare.Env & {
+				STORE_SYNC: DurableObjectNamespace<StoreAuthority>;
+			}
+		).STORE_SYNC;
+		return namespace.get(namespace.idFromName(name)) as unknown as {
+			fetch(request: Request): Promise<Response>;
+		};
+	},
+});
 mountAttachRelayApp(app, {
 	resolveBearerPrincipal: resolveRequestOAuthPrincipal,
 	resolveRelay: (env) =>
@@ -200,4 +221,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { AttachRelay, EpicenterAuthority };
+export { AttachRelay, EpicenterAuthority, StoreAuthority };

@@ -56,6 +56,14 @@
 			{
 				"name": "EPICENTER_SYNC",
 				"class_name": "EpicenterAuthority"
+			},
+			// One StoreAuthority per (principalId, application namespace) holds the
+			// opaque log for the new store transport (ADR-0220). It reads nothing
+			// it stores, and it is addressed only by a name built from a resolved
+			// bearer's principal, never from a query.
+			{
+				"name": "STORE_SYNC",
+				"class_name": "StoreAuthority"
 			}
 		]
 	},
@@ -98,6 +106,12 @@
 		{
 			"tag": "v8",
 			"deleted_classes": ["Room"]
+		},
+		{
+			// Purely additive: a new class, nothing deleted or renamed. The store
+			// transport's authority (ADR-0220).
+			"tag": "v9",
+			"new_sqlite_classes": ["StoreAuthority"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

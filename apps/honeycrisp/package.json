@@ -65,6 +65,7 @@
 		"@epicenter/lens": "workspace:*",
 		"@epicenter/sqlite": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
+		"@epicenter/sync": "workspace:*",
 		"@sqlite.org/sqlite-wasm": "catalog:",
 		"@tauri-apps/api": "catalog:",
 		"@tauri-apps/plugin-deep-link": "catalog:",

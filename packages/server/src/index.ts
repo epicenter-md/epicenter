@@ -119,3 +119,11 @@ export type {
 	Env,
 	ResolveBearerPrincipal,
 } from './types.js';
+
+export { StoreAuthority } from './store-sync/authority.js';
+export {
+	mountStoreSyncApp,
+	type ResolveStoreAuthority,
+	type StoreAuthorityStub,
+} from './store-sync/mount.js';
+export { storeAuthorityName } from './store-sync/route.js';

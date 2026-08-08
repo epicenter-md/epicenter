@@ -1,5 +1,6 @@
 import { openBrowserStore } from '@epicenter/data/browser';
 import { createLogger } from 'wellcrafted/logger';
+import { auth } from '#platform/auth';
 import type { HoneycrispDependencies } from './application.js';
 
 const log = createLogger('honeycrisp/application');
@@ -24,6 +25,7 @@ export const honeycrispPlatform: HoneycrispDependencies = {
 		if (error !== null) throw error;
 		return data;
 	},
+	auth,
 	reportBackgroundError: (cause) =>
 		log.warn(new Error('Honeycrisp background work failed', { cause })),
 };

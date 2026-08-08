@@ -19,3 +19,4 @@ export {
 	type OpenWebSocketDenial,
 	parseSubprotocols,
 } from './auth-subprotocol';
+export { LENS_NAMESPACE, STORE_SYNC_ROUTE } from './store-route.js';
