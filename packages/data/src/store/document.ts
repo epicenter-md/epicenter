@@ -134,12 +134,34 @@ export function writeRow(
 	root: Y.Type,
 	rowId: string,
 	fields: JsonObject,
+	/**
+	 * Roots to allocate inside this row's document, if it is being minted.
+	 *
+	 * Named by the caller and created with the row, for the same reason the
+	 * container itself is: `document(id).get(name)` creates on miss, and a
+	 * created nested type is addressed by the operation that made it, so two
+	 * devices first-opening one note each mint a type at that key and map LWW
+	 * discards one along with everything written into it. Allocating here means
+	 * there is exactly one creator and the race cannot be expressed.
+	 *
+	 * Epicenter learns the NAMES and nothing else. It still never reads inside,
+	 * never learns a format, and the type name stays the application's business:
+	 * a type's name is inert in `@y/y@14.0.0-rc.24` and does not choose its
+	 * behaviour (`evidence/invariants.test.ts`).
+	 */
+	documentRoots: readonly string[] = [],
 ): void {
 	let row = rowType(root, rowId);
 	if (row === undefined) {
 		row = new Y.Type();
 		root.setAttr(rowId as never, row as never);
-		row.setAttr(DOCUMENT_ATTRIBUTE as never, new Y.Type() as never);
+		const container = new Y.Type();
+		row.setAttr(DOCUMENT_ATTRIBUTE as never, container as never);
+		// The roots the caller named, allocated in the same transaction as the
+		// row, which is what leaves exactly one creator for each of them.
+		for (const name of documentRoots) {
+			container.setAttr(name as never, new Y.Type() as never);
+		}
 	}
 	for (const [name, value] of Object.entries(fields)) {
 		row.setAttr(name as never, value as never);

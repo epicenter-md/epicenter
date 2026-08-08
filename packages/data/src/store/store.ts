@@ -152,6 +152,17 @@ export type TableHandle = {
 	/**
 	 * Bring one row into being, at a minted id.
 	 *
+	 * `document` names the roots to allocate inside this row's document, and
+	 * naming them here is what makes them safe. `document(id).get(name)` creates
+	 * on miss, and a created nested type is addressed by the operation that made
+	 * it, so two devices first-opening one note each mint a type at that key and
+	 * map LWW discards one along with everything typed into it. It is a narrow
+	 * window, once per root at the very start of its life, and it closes the
+	 * moment any device creates and syncs it; but the loss is a person's writing
+	 * disappearing with no error anywhere, so it is worth making unreachable
+	 * rather than documented. This is ADR-0215's own rule for the container,
+	 * carried one level down.
+	 *
 	 * There is no door for a chosen id, and that is a correctness decision. A row
 	 * is a nested container addressed by the struct that created it, so two
 	 * devices creating one address produce two containers and map LWW discards
@@ -159,7 +170,10 @@ export type TableHandle = {
 	 * unreachable rather than merely unlikely. Anything an application wants to
 	 * name goes in `kv`, which lives at a name-addressed root.
 	 */
-	create(fields: JsonObject): Result<Row, WriteRowError>;
+	create(
+		fields: JsonObject,
+		options?: { readonly document?: readonly string[] },
+	): Result<Row, WriteRowError>;
 	/**
 	 * The one read verb.
 	 *
@@ -768,10 +782,11 @@ export function createStore({
 		function write(
 			rowId: string,
 			fields: JsonObject,
+			documentRoots: readonly string[] = [],
 		): Result<Row, WriteRowError> {
 			const { error } = commit(
 				APP_DOCUMENT,
-				() => writeRow(root, rowId, fields),
+				() => writeRow(root, rowId, fields, documentRoots),
 				() => projectRow(rowId),
 			);
 			if (error !== null) return Err(error);
@@ -780,12 +795,15 @@ export function createStore({
 
 		return Object.freeze({
 			defaults: table.defaults,
-			create(fields: JsonObject): Result<Row, WriteRowError> {
+			create(
+				fields: JsonObject,
+				options?: { readonly document?: readonly string[] },
+			): Result<Row, WriteRowError> {
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
 				const { data: validated, error } = table.validateWrite(fields);
 				if (error !== null) return Err(error);
-				return write(mintRowId(), validated);
+				return write(mintRowId(), validated, options?.document ?? []);
 			},
 			get(rowId: string): Result<Row | undefined, ReadRowError> {
 				const unusable = requireUsable();

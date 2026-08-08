@@ -195,3 +195,68 @@ describe('the cursor is a log position, and never a state vector', () => {
 		expect(expectOk(createStore({ database }).sync.cursor())).toBe(7);
 	});
 });
+
+describe('a row document root is created exactly once', () => {
+	test('two devices first-opening one note both keep their prose', () => {
+		// The window this closes. `document(id).get(name)` creates on miss, and a
+		// created nested type is addressed by the operation that made it, so two
+		// devices opening the same fresh note each minted a type at that key and
+		// map LWW discarded one along with everything typed into it. Naming the
+		// root at `create` leaves exactly one creator.
+		const author = open();
+		const other = open();
+		const note = expectOk(
+			author.db.notes.create({ title: 'Groceries' }, { document: ['editor'] }),
+		);
+		expectOk(other.store.applyRemote(author.store.encodeStateSince()));
+
+		for (const [replica, words] of [
+			[author, 'written on the phone'],
+			[other, 'written on the laptop'],
+		] as const) {
+			const text = replica.db.notes.document(note.id)?.get('editor');
+			if (text === undefined) throw new Error('the row has no editor');
+			text.applyDelta(text.change.insert(words) as never);
+		}
+
+		expectOk(author.store.applyRemote(other.store.encodeStateSince(author.store.stateVector())));
+		expectOk(other.store.applyRemote(author.store.encodeStateSince(other.store.stateVector())));
+
+		const merged = JSON.stringify(
+			author.db.notes.document(note.id)?.get('editor').toJSON(),
+		);
+		expect(merged).toContain('phone');
+		expect(merged).toContain('laptop');
+		expect(merged).toBe(
+			JSON.stringify(other.db.notes.document(note.id)?.get('editor').toJSON()),
+		);
+	});
+
+	test('CONTROL: a root NOT named at create still races, which is why naming it matters', () => {
+		// The same scenario without the declaration. Kept so the fix is measured
+		// against the failure rather than asserted, and so anyone who removes the
+		// `document` option sees what it was buying.
+		const author = open();
+		const other = open();
+		const note = expectOk(author.db.notes.create({ title: 'Groceries' }));
+		expectOk(other.store.applyRemote(author.store.encodeStateSince()));
+
+		for (const [replica, words] of [
+			[author, 'written on the phone'],
+			[other, 'written on the laptop'],
+		] as const) {
+			const text = replica.db.notes.document(note.id)?.get('editor');
+			if (text === undefined) throw new Error('the row has no editor');
+			text.applyDelta(text.change.insert(words) as never);
+		}
+
+		expectOk(author.store.applyRemote(other.store.encodeStateSince(author.store.stateVector())));
+		expectOk(other.store.applyRemote(author.store.encodeStateSince(other.store.stateVector())));
+
+		const merged = JSON.stringify(
+			author.db.notes.document(note.id)?.get('editor').toJSON(),
+		);
+		const survivors = ['phone', 'laptop'].filter((device) => merged.includes(device));
+		expect(survivors).toHaveLength(1);
+	});
+});

@@ -92,6 +92,42 @@ allocation is a write at a well-known address, which is the failure ADR-0216
 describes: two devices first-opening one note would each mint a container and
 one entire subtree would be discarded.
 
+**And so are the roots inside it, which this record originally missed.** The
+argument above stops at the container, but `get(name)` creates on miss too, and
+a created nested type is addressed by the operation that made it. So two devices
+first-opening one note each minted a type at `editor` and map LWW discarded one
+along with everything typed into it. Measured, and pinned with a control in
+`evidence/invariants.test.ts`.
+
+A caller names the roots when it creates the row, and they are allocated in the
+same transaction:
+
+```ts
+db.notes.create({ title: 'Groceries' }, { document: ['editor'] });
+db.notes.document(id).get('editor');   // always there, exactly one creator
+```
+
+**Why this was worth doing although it is rare.** The window is narrow: once per
+root, at the very start of its life, and it closes permanently the moment any
+device creates that root and syncs. Reaching it needs a note that exists on two
+devices which neither has opened, opened on both while partitioned. In an app
+that touches a note's document only when a person opens it, that is uncommon; in
+one whose list view reads the document to render a preview, it is routine, and
+the API should not depend on which kind of app is holding it.
+
+What decided it is not the frequency but the failure mode: a person's writing
+disappears, converged, with no error anywhere and nothing to retry. This corpus
+has repeatedly chosen to make such a failure unreachable rather than documented,
+most directly in ADR-0216, which deleted the chosen-id door so the hazard "stops
+being something callers must avoid and becomes something they cannot express".
+This is the same move, one level further down.
+
+**What Epicenter learns by doing it: the NAMES, and nothing else.** Not the
+format, not the contents, not the meaning. A type's name is inert in
+`@y/y@14.0.0-rc.24` and does not choose behaviour, so the application still
+picks its own format by how it uses the type. The promise that Epicenter never
+reads inside a row's document is untouched.
+
 **`document()` returns `RowDocument | undefined`, not a `Result`.** An absent row
 is a fact rather than a failure, which is the same answer `get` gives it, and
 nothing else about the call can fail because Epicenter never interprets what is
