@@ -91,6 +91,53 @@ describe('identity: a root is addressed by name, a nested type by struct', () =>
 	});
 });
 
+describe('a state vector cannot express deletion', () => {
+	test('two documents that disagree about a key hold IDENTICAL state vectors', () => {
+		// The property that killed two authority designs, and the reason the
+		// transport carries an integer log position instead. A delete marks an
+		// existing struct rather than writing a new one, so no clock moves, so
+		// "have I caught up" is a question a state vector cannot answer.
+		const kept = new Y.Doc({ gc: true });
+		kept.transact(() => {
+			kept.get('notes').setAttr('x' as never, 1 as never);
+			kept.get('notes').setAttr('y' as never, 2 as never);
+		});
+		const removed = new Y.Doc({ gc: true });
+		Y.applyUpdateV2(removed, Y.encodeStateAsUpdateV2(kept));
+		removed.transact(() => removed.get('notes').deleteAttr('y'));
+
+		expect(Y.encodeStateVector(removed)).toEqual(Y.encodeStateVector(kept));
+		expect(attrs(kept)).toEqual({ x: 1, y: 2 });
+		expect(attrs(removed)).toEqual({ x: 1 });
+
+		function attrs(doc: Y.Doc): Record<string, unknown> {
+			return doc.get('notes').getAttrs() as Record<string, unknown>;
+		}
+	});
+
+	test('a diff still carries the delete, so the bytes are not lost with it', () => {
+		// The reassuring half, and it has to be stated too or the rule above reads
+		// as "deletes do not replicate". They do: `encodeStateAsUpdateV2` writes
+		// the whole delete set regardless of the state vector it is diffed
+		// against. What is unavailable is the INFERENCE, not the data.
+		const kept = new Y.Doc({ gc: true });
+		kept.transact(() => {
+			kept.get('notes').setAttr('x' as never, 1 as never);
+			kept.get('notes').setAttr('y' as never, 2 as never);
+		});
+		const removed = new Y.Doc({ gc: true });
+		Y.applyUpdateV2(removed, Y.encodeStateAsUpdateV2(kept));
+		removed.transact(() => removed.get('notes').deleteAttr('y'));
+
+		// The state vectors match, so a size-zero diff would be a defensible
+		// implementation. It is not what happens.
+		const diff = Y.encodeStateAsUpdateV2(removed, Y.encodeStateVector(kept));
+		expect(diff.length).toBeGreaterThan(0);
+		Y.applyUpdateV2(kept, diff);
+		expect(kept.get('notes').getAttrs()).toEqual({ x: 1 });
+	});
+});
+
 describe('delivery: what the transport must guarantee', () => {
 	test('a nested-container update with missing dependencies is buffered SILENTLY', () => {
 		// The most dangerous property in the library for this design, and it fires

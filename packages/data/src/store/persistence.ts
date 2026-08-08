@@ -46,6 +46,120 @@ export function applyStoreSchema(database: SqliteDatabase): void {
 			PRIMARY KEY (document, seq)
 		) WITHOUT ROWID, STRICT
 	`);
+	database.run(`
+		CREATE TABLE IF NOT EXISTS _outbox (
+			id    INTEGER NOT NULL CHECK (id > 0),
+			bytes BLOB    NOT NULL,
+			PRIMARY KEY (id)
+		) WITHOUT ROWID, STRICT
+	`);
+	database.run(`
+		CREATE TABLE IF NOT EXISTS _cursor (
+			document TEXT    NOT NULL,
+			seq      INTEGER NOT NULL CHECK (seq >= 0),
+			PRIMARY KEY (document)
+		) WITHOUT ROWID, STRICT
+	`);
+}
+
+/** One unsent entry, at the local position that orders it. */
+export type OutboxEntry = { id: number; bytes: Uint8Array };
+
+/**
+ * Hold one locally authored update as unsent.
+ *
+ * A separate relation rather than a cursor into `_updates`, and that is a
+ * correctness requirement rather than a preference: `appendUpdate` collapses
+ * `_updates` and renumbers it from 1, so any position recorded against that
+ * relation would silently come to mean a different update.
+ *
+ * Only bytes this device authored are ever enqueued. Bytes received from the
+ * authority are already in the authority's log, so re-offering them would grow
+ * the log with nothing new in it.
+ */
+export function enqueueOutbox(
+	database: SqliteDatabase,
+	update: Uint8Array,
+): void {
+	const nextId =
+		database.all<SqliteRow & { id: number }>(
+			'SELECT COALESCE(MAX(id), 0) + 1 AS id FROM _outbox',
+		)[0]?.id ?? 1;
+	database.run('INSERT INTO _outbox (id, bytes) VALUES (?, ?)', [
+		nextId,
+		new Uint8Array(update),
+	]);
+}
+
+/** Every unsent entry, oldest first. */
+export function readOutbox(database: SqliteDatabase): OutboxEntry[] {
+	return database
+		.all<SqliteRow & { id: number; bytes: Uint8Array | ArrayBuffer }>(
+			'SELECT id, bytes FROM _outbox ORDER BY id',
+		)
+		.map((row) => ({ id: row.id, bytes: copyBytes(row.bytes) }));
+}
+
+/** Replace every entry through `throughId` with one merged entry. */
+export function replaceOutboxThrough(
+	database: SqliteDatabase,
+	throughId: number,
+	merged: Uint8Array,
+): void {
+	database.run('DELETE FROM _outbox WHERE id <= ?', [throughId]);
+	database.run('INSERT INTO _outbox (id, bytes) VALUES (?, ?)', [
+		throughId,
+		new Uint8Array(merged),
+	]);
+}
+
+/** Forget every entry the authority has taken responsibility for. */
+export function dropOutboxThrough(
+	database: SqliteDatabase,
+	throughId: number,
+): void {
+	database.run('DELETE FROM _outbox WHERE id <= ?', [throughId]);
+}
+
+/**
+ * How far through the authority's log this replica has read.
+ *
+ * A log position, deliberately, and not a state vector. A state vector cannot
+ * express deletion, so it can never answer "have I seen everything"; an integer
+ * position can, and it is the only thing either side has to agree on.
+ *
+ * Zero means nothing has been read, which is also what a fresh replica reports.
+ */
+export function readCursor(
+	database: SqliteDatabase,
+	document: string,
+): number {
+	return (
+		database.all<SqliteRow & { seq: number }>(
+			'SELECT seq FROM _cursor WHERE document = ?',
+			[document],
+		)[0]?.seq ?? 0
+	);
+}
+
+/**
+ * Record that everything through `seq` has been applied.
+ *
+ * Written AFTER the bytes it accounts for have committed, never with them. A
+ * crash in between leaves the cursor behind the document, so the entry arrives
+ * a second time and applies again, which costs nothing because an update is
+ * idempotent (`evidence/invariants.test.ts`). The other order would skip an
+ * entry, and a skipped entry is invisible forever.
+ */
+export function writeCursor(
+	database: SqliteDatabase,
+	document: string,
+	seq: number,
+): void {
+	database.run(
+		'INSERT OR REPLACE INTO _cursor (document, seq) VALUES (?, ?)',
+		[document, seq],
+	);
 }
 
 /**

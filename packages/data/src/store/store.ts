@@ -34,10 +34,17 @@ import {
 	applyStoreSchema,
 	copyBytes,
 	deleteProjectedRow,
+	dropOutboxThrough,
+	enqueueOutbox,
 	APP_DOCUMENT,
+	type OutboxEntry,
+	readCursor,
+	readOutbox,
 	readUpdates,
 	rebuildProjectedTable,
+	replaceOutboxThrough,
 	upsertProjectedRow,
+	writeCursor,
 } from './persistence.js';
 
 /**
@@ -293,6 +300,46 @@ export type Bound = Record<string, TableHandle> & {
 	kv: KvHandle;
 };
 
+/**
+ * The client half of sync, which is two facts the store already owns.
+ *
+ * What this replica authored and has not handed over, and how far through the
+ * authority's log it has read. Nothing else: there is no state vector here, and
+ * that absence is the design. A state vector cannot express deletion, so it can
+ * never answer "have I seen everything", and two of the four withdrawn
+ * authority designs died reasoning from one anyway.
+ *
+ * Both verbs that give ground are safe in one direction only, and both are
+ * written to fail in that direction. `acknowledge` runs after the authority has
+ * confirmed, and `advance` runs after the bytes have committed, so a crash
+ * re-offers or re-applies rather than skipping. Re-delivery is free because an
+ * update is idempotent (`evidence/invariants.test.ts`); a skip is invisible
+ * forever.
+ */
+export type ClientLog = {
+	/**
+	 * Merge every unsent update into one, and return it.
+	 *
+	 * The 30x. Sending one update per transaction is what made the authority's
+	 * log look like it had to be compacted; merging on the idle timer an editor
+	 * debounces on anyway makes it a rounding error
+	 * (`evidence/bench/never-compact.ts`).
+	 *
+	 * It needs no proof from anybody, and that is the whole reason the merge
+	 * lives here rather than on the authority. Every withdrawn design was trying
+	 * to let one party rewrite another party's history, which requires proving
+	 * the replacement covers what it replaced. A client merging bytes it
+	 * indisputably authored has nothing to prove.
+	 */
+	coalesce(): Result<OutboxEntry | undefined, StoreError>;
+	/** The authority has taken responsibility through this entry. */
+	acknowledge(throughId: number): Result<void, StoreError>;
+	/** How far through the authority's log this replica has read. */
+	cursor(): Result<number, StoreError>;
+	/** Record that everything through `seq` has been applied. */
+	advance(seq: number): Result<void, StoreError>;
+};
+
 export type Store = {
 	/**
 	 * The typed view of this file through one lens.
@@ -336,6 +383,8 @@ export type Store = {
 	stateVector(): Uint8Array;
 	/** Everything this replica has that the given state vector does not. */
 	encodeStateSince(stateVector?: Uint8Array): Uint8Array;
+	/** What this replica owes the authority, and what it has read from it. */
+	readonly sync: ClientLog;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -359,6 +408,12 @@ export function createStore({
 
 	index.on('updateV2', (update: Uint8Array, origin: unknown) => {
 		if (origin === hydrationOrigin) return;
+		// `applyRemote` persists the bytes it RECEIVED, in its own transaction, so
+		// the bytes the document emits in response describe a change that is
+		// already on its way to storage. Returning here is what makes that comment
+		// true: without it, a remote update landed in the log twice, once emitted
+		// and once received, and the log grew at double the rate it reported.
+		if (origin === remoteOrigin) return;
 		if (origin === localOrigin) {
 			// A store verb is mid-flight; `commit` flushes these with the
 			// projection write they imply, in one SQLite transaction.
@@ -369,15 +424,18 @@ export function createStore({
 		// binding. These bytes must reach durable storage on their own, because
 		// nothing else is going to flush them. No projection work: Epicenter
 		// never looks inside a document, so nothing it holds is ever projected.
-		const { error } = persist(() =>
+		// They are still this device's own work, so they join the outbox.
+		const authored = copyBytes(update);
+		const { error } = persist(() => {
 			appendUpdate({
 				database,
 				history,
 				document: APP_DOCUMENT,
-				update: copyBytes(update),
+				update: authored,
 				takenAt: now(),
-			}),
-		);
+			});
+			enqueueOutbox(database, authored);
+		});
 		if (error !== null) throw error;
 	});
 
@@ -426,6 +484,10 @@ export function createStore({
 					update,
 					takenAt: now(),
 				});
+				// One transaction holds the local log, the projection, and the claim
+				// that these bytes still owe the authority a delivery. A crash cannot
+				// leave a write durable locally and unowed.
+				enqueueOutbox(database, update);
 			}
 			project();
 		});
@@ -783,6 +845,7 @@ export function createStore({
 				rebuildAllProjections();
 			});
 		},
+		sync: createClientLog(),
 		hasUnresolvedDependencies: () => hasPendingStructs(index),
 		stateVector: () => new Uint8Array(Y.encodeStateVector(index)),
 		encodeStateSince: (stateVector?: Uint8Array) =>
@@ -805,6 +868,51 @@ export function createStore({
 	 * rows stay in the CRDT, which is the truth, and appear the moment a lens
 	 * that declares them binds.
 	 */
+	function createClientLog(): ClientLog {
+		/** A read, wrapped the way every other SQLite touch in this file is. */
+		function read<TValue>(run: () => TValue): Result<TValue, StoreError> {
+			const unusable = requireUsable();
+			if (unusable !== undefined) return Err(unusable);
+			return trySync({
+				try: run,
+				catch: (cause) => StoreError.StorageFailed({ cause }),
+			});
+		}
+
+		return Object.freeze({
+			coalesce(): Result<OutboxEntry | undefined, StoreError> {
+				const { data: entries, error } = read(() => readOutbox(database));
+				if (error !== null) return Err(error);
+				const last = entries.at(-1);
+				if (last === undefined) return Ok(undefined);
+				if (entries.length === 1) return Ok(last);
+				const merged = new Uint8Array(
+					Y.mergeUpdatesV2(
+						entries.map((entry) => entry.bytes) as Uint8Array<ArrayBuffer>[],
+					),
+				);
+				const { error: writeError } = persist(() =>
+					replaceOutboxThrough(database, last.id, merged),
+				);
+				if (writeError !== null) return Err(writeError);
+				return Ok({ id: last.id, bytes: merged });
+			},
+			acknowledge(throughId: number): Result<void, StoreError> {
+				const unusable = requireUsable();
+				if (unusable !== undefined) return Err(unusable);
+				return persist(() => dropOutboxThrough(database, throughId));
+			},
+			cursor(): Result<number, StoreError> {
+				return read(() => readCursor(database, APP_DOCUMENT));
+			},
+			advance(seq: number): Result<void, StoreError> {
+				const unusable = requireUsable();
+				if (unusable !== undefined) return Err(unusable);
+				return persist(() => writeCursor(database, APP_DOCUMENT, seq));
+			},
+		});
+	}
+
 	function rebuildAllProjections(): void {
 		for (const [tableName, fieldNames] of projectedTables) {
 			rebuildProjectedTable(
