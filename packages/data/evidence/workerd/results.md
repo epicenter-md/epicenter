@@ -150,7 +150,46 @@ script that was never committed.** The leak counts are pinned as an
 ordering by `evidence/validation.test.ts`, which is kept precisely because it is
 the record of why there is no filter.
 
-**Two transients, neither explained.** A run against production once returned
+## The sustained-run stall, narrowed but not solved
+
+A run against production stalls waiting for an acknowledgement, seen at messages
+85, 105, 461 and 529. Four hypotheses have now been tested. Three were real
+problems and none was this one:
+
+| tested | result |
+| --- | --- |
+| the snapshot trigger thrashing | real, fixed, not this |
+| `serializeAttachment` write amplification | real, improved, not this |
+| a woken authority deaf after hibernation | real, fixed, not this |
+| gradual degradation toward the timeout | **refuted**, see below |
+
+A dedicated diagnostic drove 2,000 sequential acknowledged sends three times: one
+connection, two connections, and two connections after replaying the probe's own
+warm-up (a value-cap bisection and a 5 MB paste, then a reset). **No stall in
+6,000 sends.** Latency was flat throughout rather than climbing, which rules out
+the whole family of gradual-degradation explanations:
+
+| shape | mean per send | worst |
+| --- | --- | --- |
+| one connection | 50 ms | 139 ms |
+| two connections | 60 ms | 139 ms |
+| two connections, after the warm-up | 110 ms | 456 ms |
+
+The timeout is 60,000 ms. Nothing observed came within two orders of magnitude
+of it, so when it stalls it stops dead rather than slowing down.
+
+**One real finding fell out of it:** the warm-up roughly DOUBLES steady-state
+latency and does not recover, so a 5 MB value and a bisection leave a lasting
+cost on the object. That is worth knowing separately from the stall.
+
+**What this means for the product, stated so it is not over-read.** The shape
+that triggers it is thousands of sequential single-row pushes with coalescing
+effectively disabled, which is a stress regime rather than an application one: a
+real client merges on a roughly one-second idle timer, which is the whole reason
+the log is affordable (`evidence/bench/never-compact.ts`). The defect is open and
+unexplained; it has not been observed in any workload shaped like an application.
+
+**One transient, unexplained.** A run against production once returned
 non-JSON from the first probe request on a brand-new partition. And a
 1,500-message run once stalled at message 461 waiting for an acknowledgement
 past the 60-second timeout, before any snapshot had been taken; later runs at
