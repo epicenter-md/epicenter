@@ -206,7 +206,6 @@ Every app starts from the repo root. `bun dev:<app>` runs every process the app 
 | `bun dev:api` | Hosted API worker alone | 8787 |
 | `bun dev:api-dashboard` | API + dashboard UI | 5178 |
 | `bun dev:honeycrisp` | API + Honeycrisp desktop | 5175 |
-| `bun dev:tab-manager` | API + Tab Manager extension | extension build |
 | `bun dev:vocab` | API + Vocab | 8888 |
 | `bun dev:whispering` | API + hosted Whispering browser app | 1420 |
 | `bun dev:epicenter` | Epicenter desktop host, including Whispering | Tauri window |
