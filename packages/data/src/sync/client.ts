@@ -43,6 +43,20 @@ export const SyncClientError = defineErrors({
 		expected,
 		received,
 	}),
+	/**
+	 * An entry arrived that this replica cannot apply.
+	 *
+	 * The poison pill, seen from the only place it is ever visible. The cursor
+	 * does not move, so the replica is stuck here and will be stuck here on every
+	 * reconnect, forever, until someone neutralises that position in the
+	 * authority's log. Naming the position is what makes that a one-row repair
+	 * rather than an unexplained device that stopped syncing.
+	 */
+	Unapplyable: ({ seq, cause }: { seq: number; cause: unknown }) => ({
+		message: `Entry ${seq} could not be applied, and this replica is stuck at ${seq - 1}`,
+		seq,
+		cause,
+	}),
 });
 export type SyncClientError = InferErrors<typeof SyncClientError>;
 
@@ -172,10 +186,14 @@ export function createSyncClient({
 		}
 		const { error } = store.applyRemote(bytes);
 		if (error !== null) {
-			// The bytes are durable-or-not as one unit inside the store, so there is
-			// nothing to unwind here; the cursor simply does not move and the entry
-			// arrives again on the next connect.
-			return Ok(undefined);
+			// The cursor does not move, so nothing is skipped and nothing is lost.
+			// But this replica is now stuck at this position on every reconnect
+			// forever, which is the whole poison-pill failure, and it has to be
+			// LOUD. Swallowing it here was worse than the pill: the device simply
+			// stopped syncing and every layer reported success.
+			const stuck = SyncClientError.Unapplyable({ seq, cause: error });
+			lastError = stuck.error;
+			return stuck;
 		}
 		// After the bytes have committed, never with them. A crash in between
 		// re-delivers, which is free because an update is idempotent; the other

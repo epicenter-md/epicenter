@@ -437,3 +437,76 @@ describe('sustained traffic through one authority', () => {
 	});
 });
 
+
+describe('an entry that will not apply is loud, not silent', () => {
+	test('the replica reports it, names the position, and moves nothing', () => {
+		// The poison pill seen from the only place it is ever visible. This
+		// returned Ok and set no error, so a bricked device looked exactly like an
+		// idle one: it stopped syncing and every layer reported success. Nothing
+		// recovers a failure nobody is told about.
+		const { wire, phone } = setup();
+		phone.connect();
+		wire.settle();
+		const before = phone.client.status().cursor;
+
+		const outcome = phone.client.receive(
+			encodeFrame({
+				kind: 'entry',
+				seq: before + 1,
+				chunk: 0,
+				chunks: 1,
+				bytes: new Uint8Array([1, 2, 3, 4, 5, 6]),
+			}),
+		);
+
+		expect(outcome.error?.name).toBe('Unapplyable');
+		expect((outcome.error as { seq?: number } | null)?.seq).toBe(before + 1);
+		expect(phone.client.status().lastError?.name).toBe('Unapplyable');
+		// Stuck, deliberately: advancing past it would trade a visible stall for
+		// permanent invisible loss.
+		expect(phone.client.status().cursor).toBe(before);
+	});
+
+	test('CONTROL: a good entry at the same position applies and reports nothing', () => {
+		const { wire, phone, laptop } = setup();
+		phone.connect();
+		laptop.connect();
+		expectOk(laptop.db.notes.create({ title: 'Groceries' }));
+		laptop.client.flush();
+		wire.settle();
+
+		expect(phone.client.status().lastError).toBeUndefined();
+		expect(phone.titles()).toEqual(['Groceries']);
+	});
+
+	test('neutralising the position in the log unsticks the replica', () => {
+		// Why no server-side check is needed to RECOVER from a poison pill. The
+		// log is append-only and every entry is individually addressable, so the
+		// repair is to overwrite one row with the 13-byte empty update, which is
+		// a valid no-op. The sequence stays contiguous and every replica walks
+		// straight past it.
+		const { wire, phone, laptop } = setup();
+		phone.connect();
+		laptop.connect();
+		expectOk(laptop.db.notes.create({ title: 'Groceries' }));
+		laptop.client.flush();
+		wire.settle();
+
+		const noop = new Uint8Array(Y.encodeStateAsUpdateV2(new Y.Doc({ gc: true })));
+		expect(noop.length).toBe(13);
+		const stuck = phone.client.receive(
+			encodeFrame({ kind: 'entry', seq: 2, chunk: 0, chunks: 1, bytes: new Uint8Array([9, 9, 9]) }),
+		);
+		expect(stuck.error?.name).toBe('Unapplyable');
+
+		// The operator replaces entry 2's bytes. The replica takes it and moves on.
+		expectOk(
+			phone.client.receive(
+				encodeFrame({ kind: 'entry', seq: 2, chunk: 0, chunks: 1, bytes: noop }),
+			),
+		);
+
+		expect(phone.client.status().cursor).toBe(2);
+		expect(phone.titles()).toEqual(['Groceries']);
+	});
+});
