@@ -2,6 +2,11 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-05
+- **Amended by:** [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md).
+  Withdrawn: that the raw view can see an application's live rows. A host owns
+  no application data, so `openInspection` over the host replica shows nothing
+  of an application on the new store. The raw view itself, and every application
+  still on the superseded stack, are unchanged.
 - **Provisional number.** `main` ends at ADR-0205; ADR-0206 through ADR-0208 land with this branch, so 0209 is the next free integer today. Reconcile at merge time (`docs/adr/README.md`).
 - **Built.** The raw view is `apps/epicenter/src/inspect.ts` behind `/api/home/inspect`, with the Data pane over it (`src/ui/Data.svelte`). `openInspection` had existed since ADR-0162 with nothing reaching it.
 - **Amends:** [ADR-0189](0189-home-launches-applications-into-their-own-windows-and-stays-open-behind-them.md), withdrawing "Home stays open behind them", Home-as-shell, and the refusal of a fourth pane, which was a refusal of a fourth *launcher-shaped* pane and cannot survive a record whose whole point is that Epicenter has a job of its own. Its per-application windows, its one launchable list, its one launch verb, and its refusal of an installation UI all survive. [ADR-0152](0152-epicenter-home-is-a-shell-above-workspaces.md), withdrawing the word its title turns on: Home is not above the workspaces, it is beside them. Everything that record decided about ownership stands.

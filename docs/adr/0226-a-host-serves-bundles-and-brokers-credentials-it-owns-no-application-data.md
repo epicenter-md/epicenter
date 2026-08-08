@@ -4,6 +4,16 @@
 - **Date:** 2026-08-08
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0226 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
+- **Amends:** [ADR-0209](0209-epicenter-is-the-raw-view-beside-its-applications-not-a-shell-above-them.md)
+  and [ADR-0208](0208-every-app-folder-is-markdown-beside-one-queryable-database.md),
+  at one bounded point each. Both read the HOST REPLICA
+  (`apps/epicenter/src/inspect.ts` and `src/folder/project.ts` both open
+  `source.replicaPath`), and an application on the new store does not write
+  there. Withdrawn: that the raw view and the queryable projection can see an
+  application's live rows. What survives unchanged is everything else in both,
+  including every application still on the superseded stack, and the shape of
+  the answer: a reader that wants an application's rows becomes a replica of
+  the authority that application uses.
 - **Relates:** [ADR-0225](0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md)
   (the one authority a surface reaches),
   [ADR-0190](0190-a-build-declares-which-epicenter-owns-its-data-not-which-window-it-runs-in.md)
@@ -48,10 +58,22 @@ Each is complete on its own meanwhile, because each holds the whole document
 data.
 
 **Home's cross-application tools no longer read a live application's rows**, and
-this is the real cost. They read the host replica, and an application's data is
-no longer in it. A tool that wants to read Honeycrisp becomes a replica of the
-same authority Honeycrisp uses, which is the same shape every other reader has,
-rather than a privileged local one.
+this is the real cost. It is bigger than one sentence, which is why it is an
+amendment above rather than a note here. Two shipped surfaces read the host
+replica and would show a migrated application nothing:
+
+- ADR-0209's raw view and the Data pane over it (`apps/epicenter/src/inspect.ts`,
+  `/api/home/inspect`).
+- ADR-0208's queryable projection beside an app's markdown
+  (`apps/epicenter/src/folder/project.ts`, `~/Epicenter/<namespace>/<app>.sqlite3`).
+
+A reader that wants an application's rows becomes a replica of the authority
+that application uses, which is the shape every other reader already has rather
+than a privileged local one. Nothing in this decision says how the host does
+that, and until it does, a migrated application is invisible to both surfaces.
+
+That is the strongest argument for reopening this, and it is stronger than the
+offline case below.
 
 ADR-0190 is narrowed rather than superseded. Its rule was that a build declares
 which Epicenter owns its data rather than detecting a window at runtime; the

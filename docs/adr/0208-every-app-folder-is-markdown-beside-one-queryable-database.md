@@ -2,6 +2,11 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-05
+- **Amended by:** [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md).
+  Withdrawn: that the host can project a queryable database from an
+  application's rows. It reads the host replica, and an application on the new
+  store does not write there. The markdown half, the file layout, and every
+  application still on the superseded stack are unchanged.
 - **Provisional number.** `main` ends at ADR-0205; ADR-0206 and ADR-0207 land with this branch, so 0208 is the next free integer today. Reconcile at merge time (`docs/adr/README.md`).
 - **Partly built.** The row-backed half exists: `apps/epicenter/src/folder/project.ts` writes one database per Lens under `~/Epicenter/<namespace>/<app>.sqlite3`, rebuilds it from empty at every boot, and keeps it current off the same invalidation stream the renderer reads (`main.ts`). Its SQL is `inspection.ts`'s `lensTableExtractionSql`, imported rather than restated, and it attaches the replica with `mode=ro` so the engine refuses a write to it. **Unbuilt:** the mirror-backed half. Nothing yet exposes an app-owned mirror in the same slot, so Local Mail still does not appear in `~/Epicenter`.
 - **Amends:** [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md) at the folder's contents, which showed the replica sitting in `~/Epicenter` and does not.
