@@ -33,7 +33,8 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"test": "bun test",
 		"tauri": "tauri",
-		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.tauri.json && svelte-check --tsconfig ./tsconfig.epicenter.json"
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.tauri.json && svelte-check --tsconfig ./tsconfig.epicenter.json",
+		"evidence:runs": "bun run evidence/runs-on-the-new-store.ts"
 	},
 	"devDependencies": {
 		"@epicenter/ui": "workspace:*",
@@ -46,6 +47,7 @@
 		"@tauri-apps/cli": "catalog:",
 		"@types/bun": "catalog:",
 		"mode-watcher": "catalog:",
+		"playwright": "^1.61.1",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
 		"svelte-sonner": "catalog:",
@@ -60,7 +62,10 @@
 		"@epicenter/data": "workspace:*",
 		"@epicenter/document-sync": "workspace:*",
 		"@epicenter/field": "workspace:*",
+		"@epicenter/lens": "workspace:*",
+		"@epicenter/sqlite": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
+		"@sqlite.org/sqlite-wasm": "catalog:",
 		"@tauri-apps/api": "catalog:",
 		"@tauri-apps/plugin-deep-link": "catalog:",
 		"@tauri-apps/plugin-opener": "catalog:",

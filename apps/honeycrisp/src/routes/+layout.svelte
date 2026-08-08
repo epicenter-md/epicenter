@@ -5,6 +5,7 @@
 	import { Toaster } from '@epicenter/ui/sonner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { ModeWatcher } from 'mode-watcher';
+	import { extractErrorMessage } from 'wellcrafted/error';
 	import { honeycrispPlatform } from '#platform/application';
 	import HoneycrispAppProvider from '$lib/HoneycrispAppProvider.svelte';
 	import { openHoneycrispApplication } from '$lib/application.js';
@@ -32,7 +33,10 @@
 		<div class="max-w-md space-y-2">
 			<h1 class="text-lg font-semibold">Honeycrisp could not start</h1>
 			<p class="text-sm text-muted-foreground">
-				{error instanceof Error ? error.message : String(error)}
+				<!-- `extractErrorMessage`, not `String(error)`: a tagged error is a
+				     plain object with a `message`, so stringifying one renders
+				     "[object Object]" and hides the only useful thing it carries. -->
+				{extractErrorMessage(error)}
 			</p>
 		</div>
 	</div>

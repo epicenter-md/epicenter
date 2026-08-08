@@ -12,6 +12,14 @@
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
 	const honeycrisp = getHoneycrispApp();
+
+	// The one number worth watching. A deleted row leaves a tombstone every
+	// device pays for in memory on every load, forever, and only a rebuild
+	// reclaims one; a healthy vault sits near the item cost of one note, and ten
+	// times that means the document is mostly corpse. Shown rather than logged,
+	// because whether it ever matters is a question about how much a real person
+	// deletes and nobody has that number yet.
+	const pressure = $derived(honeycrisp.pressure().data);
 </script>
 
 <Sidebar.Root>
@@ -21,7 +29,6 @@
 			<div class="flex items-center gap-1">
 				<AccountPopover
 					{auth}
-					dataSync={honeycrisp}
 					syncNoun="notes"
 					instanceConnect={{ appName: 'Honeycrisp', setting: instanceSetting }}
 				/>
@@ -80,7 +87,7 @@
 					title="New Folder"
 					onclick={() =>
 						runHoneycrispMutation(
-							honeycrisp.state.folders.create(),
+							() => honeycrisp.state.folders.create(),
 							'Could not create folder',
 						)}
 				>
@@ -105,6 +112,18 @@
 			</Sidebar.Group>
 		</Collapsible.Root>
 	</Sidebar.Content>
+
+	<Sidebar.Footer>
+		{#if pressure}
+			<div
+				class="text-muted-foreground px-2 pb-1 text-[11px] tabular-nums"
+				title="Structs the engine holds, over rows a lens can see. A healthy vault sits near the item cost of one note; ten times that means the document is mostly corpse."
+			>
+				{pressure.items} items · {pressure.liveRows} notes ·
+				{pressure.itemsPerLiveRow.toFixed(1)} each
+			</div>
+		{/if}
+	</Sidebar.Footer>
 
 	<Sidebar.Rail />
 </Sidebar.Root>

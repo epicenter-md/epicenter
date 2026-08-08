@@ -1,68 +1,74 @@
-import type { ConstrainedUpdate, NonconformingRowError } from '@epicenter/data';
+import type { NonconformingRowError } from '@epicenter/lens/lens';
 import { InstantString } from '@epicenter/field';
-import type {
-	FolderId,
-	HoneycrispData,
-	Note,
-	NoteId,
-	notesTable,
+import {
+	type FolderId,
+	type HoneycrispData,
+	NOTE_BODY,
+	type Note,
+	type NoteId,
 } from '@epicenter/honeycrisp';
 import type { NoteSearchIndex } from '../../lib/search-index.svelte.js';
-import type { createFolders } from './folders.svelte.js';
 import { searchParams } from './search-params.svelte.js';
 
+/**
+ * Honeycrisp's notes, read straight out of the store.
+ *
+ * There is no `refresh`, no generation counter, and no `await` on a read. The
+ * store's `subscribe` says which rows a commit touched and fires for a local
+ * write, for prose typed into a note's document, and for bytes that arrived from
+ * another device alike (ADR-0221), so a re-read after a mutation is something
+ * this module hears about rather than something every call site remembers.
+ *
+ * `$state.raw` holding a re-read snapshot rather than a reactive proxy: the rows
+ * are plain JSON that the store hands back fresh each time, so there is nothing
+ * for fine-grained reactivity to track and a whole-array swap is the honest
+ * shape.
+ */
 export function createNotes({
-	folders,
-	honeycrisp,
+	db,
 	searchIndex,
 }: {
-	folders: ReturnType<typeof createFolders>;
-	honeycrisp: HoneycrispData;
+	db: HoneycrispData;
 	searchIndex: NoteSearchIndex;
 }) {
 	let rows = $state.raw<Note[]>([]);
 	let nonconforming = $state.raw<NonconformingRowError[]>([]);
 	let loadError = $state.raw<unknown>(null);
-	let refreshGeneration = 0;
 
-	const all = $derived(rows.filter((note) => note.deletedAt === undefined));
-	const deleted = $derived(rows.filter((note) => note.deletedAt !== undefined));
+	function read(): void {
+		const { data, error } = db.notes.list();
+		if (error !== null) {
+			loadError = error;
+			return;
+		}
+		rows = data.rows;
+		nonconforming = data.nonconforming;
+		loadError = null;
+	}
+
+	read();
+	// Registration is synchronous, does no I/O and never fires initially, so the
+	// read above has already seen everything (ADR-0187).
+	const stop = db.notes.subscribe(read);
+
+	const all = $derived(rows.filter((note) => note.deletedAt === null));
+	const deleted = $derived(rows.filter((note) => note.deletedAt !== null));
 	const countsByFolder = $derived.by(() => {
 		const counts: Record<string, number> = {};
 		for (const note of all) {
-			if (note.folderId) {
-				counts[note.folderId] = (counts[note.folderId] ?? 0) + 1;
-			}
+			if (note.folderId) counts[note.folderId] = (counts[note.folderId] ?? 0) + 1;
 		}
 		return counts;
 	});
 
-	async function refresh(): Promise<void> {
-		const generation = ++refreshGeneration;
-		try {
-			const { rows: nextRows, nonconforming: nextNonconforming } =
-				await honeycrisp.notes.scan();
-			if (generation !== refreshGeneration) return;
-			rows = nextRows;
-			nonconforming = nextNonconforming;
-			loadError = null;
-		} catch (cause) {
-			if (generation === refreshGeneration) loadError = cause;
-			throw cause;
-		}
-	}
-
-	async function update<const TChanges extends Record<string, unknown>>(
-		noteId: NoteId,
-		changes: TChanges & ConstrainedUpdate<typeof notesTable, TChanges>,
-	): Promise<void> {
-		const result = await honeycrisp.notes.patch(noteId, changes);
-		if (result.error !== null) throw result.error;
-		await refresh();
+	/** Apply a change, or throw so the caller's toast can present it. */
+	function update(noteId: NoteId, changes: Partial<Note>): void {
+		const { error } = db.notes.update(noteId, changes);
+		if (error !== null) throw error;
 	}
 
 	return {
-		refresh,
+		[Symbol.dispose]: stop,
 		get(id: NoteId) {
 			return rows.find((note) => note.id === id);
 		},
@@ -82,79 +88,66 @@ export function createNotes({
 			return loadError;
 		},
 
-		async create(folderId: FolderId | null): Promise<{ id: NoteId }> {
+		create(folderId: FolderId | null): { id: NoteId } {
 			const now = InstantString.now();
-			const note = await honeycrisp.notes.create({
-				...(folderId === null ? {} : { folderId }),
-				title: '',
-				preview: '',
-				pinned: false,
-				createdAt: now,
-				updatedAt: now,
-			});
-			await refresh();
-			return { id: note.id };
+			const { data, error } = db.notes.create(
+				{
+					folderId,
+					title: '',
+					preview: '',
+					pinned: false,
+					createdAt: now,
+					updatedAt: now,
+				},
+				// Named here, once, at the only moment there is exactly one creator.
+				// Reaching for the root lazily would let two devices first-opening
+				// one note each mint their own and lose one (ADR-0215).
+				{ document: [NOTE_BODY] },
+			);
+			if (error !== null) throw error;
+			return { id: data.id };
 		},
 
-		async softDelete(noteId: NoteId): Promise<void> {
-			await update(noteId, { deletedAt: InstantString.now() });
-			if (searchParams.note === noteId) {
-				searchParams.update({ note: null });
-			}
+		softDelete(noteId: NoteId): void {
+			update(noteId, { deletedAt: InstantString.now() });
+			if (searchParams.note === noteId) searchParams.update({ note: null });
 		},
 
-		async restore(noteId: NoteId): Promise<void> {
+		restore(noteId: NoteId): void {
+			update(noteId, { deletedAt: null });
+		},
+
+		permanentlyDelete(noteId: NoteId): void {
+			const { error } = db.notes.delete(noteId);
+			if (error !== null) throw error;
+			searchIndex.forget(noteId);
+			if (searchParams.note === noteId) searchParams.update({ note: null });
+		},
+
+		togglePin(noteId: NoteId): void {
 			const note = rows.find((candidate) => candidate.id === noteId);
 			if (!note) return;
-			const folderExists = note.folderId
-				? folders.all.some((folder) => folder.id === note.folderId)
-				: true;
-			await update(noteId, {
-				deletedAt: undefined,
-				...(folderExists ? {} : { folderId: undefined }),
-			});
+			update(noteId, { pinned: !note.pinned });
 		},
 
-		async permanentlyDelete(noteId: NoteId): Promise<void> {
-			await honeycrisp.notes.delete(noteId);
-			await refresh();
-			if (searchParams.note === noteId) {
-				searchParams.update({ note: null });
-			}
+		moveToFolder(noteId: NoteId, folderId: FolderId | null): void {
+			update(noteId, { folderId });
 		},
 
-		async togglePin(noteId: NoteId): Promise<void> {
-			const note = rows.find((candidate) => candidate.id === noteId);
-			if (!note) return;
-			await update(noteId, { pinned: !note.pinned });
-		},
-
-		async moveToFolder(
-			noteId: NoteId,
-			folderId: FolderId | null,
-		): Promise<void> {
-			await update(noteId, {
-				folderId: folderId === null ? undefined : folderId,
-			});
-		},
-
-		async updateContent(
+		updateContent(
 			noteId: NoteId,
 			content: Pick<Note, 'title' | 'preview'> & {
 				wordCount: number;
 				text: string;
 			},
-		): Promise<void> {
+		): void {
 			// The body's text goes to the device-local index, never to the row:
 			// prose stays in the document plane so it can merge per character
 			// (ADR-0207), and this keeps the open note's index entry current
 			// without a sweep ever reaching it.
 			const { text, ...row } = content;
 			searchIndex.record(noteId, text);
-			await update(noteId, {
-				...row,
-				updatedAt: InstantString.now(),
-			});
+			update(noteId, { ...row, updatedAt: InstantString.now() });
 		},
 	};
 }

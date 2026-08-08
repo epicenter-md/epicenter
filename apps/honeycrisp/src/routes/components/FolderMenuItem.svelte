@@ -22,7 +22,7 @@
 	function commitRename() {
 		if (editingName.trim()) {
 			runHoneycrispMutation(
-				honeycrisp.state.folders.rename(folder.id, editingName.trim()),
+				() => honeycrisp.state.folders.rename(folder.id, editingName.trim()),
 				'Could not rename folder',
 			);
 		}
@@ -114,7 +114,7 @@
 				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 				onclick={() =>
 					runHoneycrispMutation(
-						honeycrisp.state.folders.delete(folder.id),
+						() => honeycrisp.state.folders.delete(folder.id),
 						'Could not delete folder',
 					)}
 			>

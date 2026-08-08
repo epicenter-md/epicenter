@@ -1,9 +1,10 @@
 /**
- * Honeycrisp application lifecycle tests.
+ * What opening Honeycrisp does when the store will not come up.
  *
- * Key behaviors:
- * - Hydration failure releases the opened Epicenter runtime
- * - Aborting hydration rejects the open and releases the runtime
+ * The lifecycle is much smaller than it was. Opening a store is the only
+ * asynchronous thing left, so there is no hydration to race, no abort to
+ * unwind mid-flight, and no set of open documents to release: a note's prose
+ * is a type in a document that was already replayed.
  */
 
 import { expect, mock, test } from 'bun:test';
@@ -24,55 +25,54 @@ mock.module('$app/state', () => ({
 
 const { openHoneycrispApplication } = await import('./application.js');
 
-function createRuntime(scanFolders: () => Promise<never>) {
-	let releases = 0;
-	const table = {
-		scan: scanFolders,
-		subscribe: () => () => {},
-	};
+/** A store that binds however the test says, and counts its own disposal. */
+function createStore(bind: () => unknown) {
+	let disposals = 0;
 	return {
-		get releases() {
-			return releases;
+		get disposals() {
+			return disposals;
 		},
 		value: {
-			bind: () => ({ folders: table, notes: table }),
-			syncStatus: { state: 'local', lastError: undefined },
-			subscribeSyncStatus: () => () => {},
+			bind,
+			pressure: () => ({ data: undefined, error: null }),
 			async [Symbol.asyncDispose]() {
-				releases += 1;
+				disposals += 1;
 			},
 		} as never,
 	};
 }
 
-test('a failed Honeycrisp hydration releases its runtime', async () => {
-	const cause = new Error('storage unavailable');
-	const runtime = createRuntime(() => Promise.reject(cause));
+test('a lens the store refuses releases the store', async () => {
+	const refusal = { name: 'Malformed', message: 'this lens is not a lens' };
+	const store = createStore(() => ({ data: null, error: refusal }));
 
 	await expect(
 		openHoneycrispApplication({
-			openEpicenter: async () => runtime.value,
+			openStore: async () => store.value,
 			reportBackgroundError() {},
 		}),
-	).rejects.toBe(cause);
+	).rejects.toBe(refusal);
 
-	expect(runtime.releases).toBe(1);
+	expect(store.disposals).toBe(1);
 });
 
-test('aborting pending hydration rejects and releases its runtime', async () => {
-	const abort = new AbortController();
-	const runtime = createRuntime(() => new Promise<never>(() => {}));
-	const opening = openHoneycrispApplication(
-		{
-			openEpicenter: async () => runtime.value,
-			reportBackgroundError() {},
-		},
-		{ signal: abort.signal },
-	);
+test('an abort before the store opens never opens one', async () => {
+	const controller = new AbortController();
+	controller.abort();
+	let opened = 0;
 
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	abort.abort();
-	await expect(opening).rejects.toHaveProperty('name', 'AbortError');
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	expect(runtime.releases).toBe(1);
+	await expect(
+		openHoneycrispApplication(
+			{
+				openStore: async () => {
+					opened += 1;
+					return createStore(() => ({ data: {}, error: null })).value;
+				},
+				reportBackgroundError() {},
+			},
+			{ signal: controller.signal },
+		),
+	).rejects.toThrow();
+
+	expect(opened).toBe(0);
 });

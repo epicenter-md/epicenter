@@ -68,7 +68,7 @@
 						onclick={(e) => {
 							e.stopPropagation();
 							runHoneycrispMutation(
-								honeycrisp.state.notes.restore(note.id),
+								() => honeycrisp.state.notes.restore(note.id),
 								'Could not restore note',
 							);
 						}}
@@ -100,7 +100,7 @@
 						onclick={(e) => {
 							e.stopPropagation();
 							runHoneycrispMutation(
-								honeycrisp.state.notes.togglePin(note.id),
+								() => honeycrisp.state.notes.togglePin(note.id),
 								'Could not update note',
 							);
 						}}
@@ -114,7 +114,7 @@
 						onclick={(e) => {
 							e.stopPropagation();
 							runHoneycrispMutation(
-								honeycrisp.state.notes.softDelete(note.id),
+								() => honeycrisp.state.notes.softDelete(note.id),
 								'Could not delete note',
 							);
 						}}
@@ -131,7 +131,7 @@
 			<ContextMenu.Item
 				onclick={() =>
 					runHoneycrispMutation(
-						honeycrisp.state.notes.restore(note.id),
+						() => honeycrisp.state.notes.restore(note.id),
 						'Could not restore note',
 					)}
 			>
@@ -152,7 +152,7 @@
 			<ContextMenu.Item
 				onclick={() =>
 					runHoneycrispMutation(
-						honeycrisp.state.notes.togglePin(note.id),
+						() => honeycrisp.state.notes.togglePin(note.id),
 						'Could not update note',
 					)}
 			>
@@ -169,7 +169,7 @@
 					<ContextMenu.Item
 						onclick={() =>
 							runHoneycrispMutation(
-								honeycrisp.state.notes.moveToFolder(note.id, null),
+								() => honeycrisp.state.notes.moveToFolder(note.id, null),
 								'Could not move note',
 							)}
 					>
@@ -181,7 +181,7 @@
 						<ContextMenu.Item
 							onclick={() =>
 								runHoneycrispMutation(
-									honeycrisp.state.notes.moveToFolder(note.id, folder.id),
+									() => honeycrisp.state.notes.moveToFolder(note.id, folder.id),
 									'Could not move note',
 								)}
 						>
@@ -200,7 +200,7 @@
 				class="text-destructive focus:text-destructive"
 				onclick={() =>
 					runHoneycrispMutation(
-						honeycrisp.state.notes.softDelete(note.id),
+						() => honeycrisp.state.notes.softDelete(note.id),
 						'Could not delete note',
 					)}
 			>
@@ -224,7 +224,7 @@
 			<AlertDialog.Action
 				onclick={() =>
 					runHoneycrispMutation(
-						honeycrisp.state.notes.permanentlyDelete(note.id),
+						() => honeycrisp.state.notes.permanentlyDelete(note.id),
 						'Could not permanently delete note',
 					)}
 				>Delete</AlertDialog.Action

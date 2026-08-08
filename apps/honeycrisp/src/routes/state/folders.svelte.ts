@@ -1,4 +1,4 @@
-import type { NonconformingRowError } from '@epicenter/data';
+import type { NonconformingRowError } from '@epicenter/lens/lens';
 import {
 	deleteHoneycrispFolder,
 	type Folder,
@@ -7,35 +7,33 @@ import {
 } from '@epicenter/honeycrisp';
 import { searchParams } from './search-params.svelte.js';
 
-export function createFolders({
-	honeycrisp,
-	refreshNotes,
-}: {
-	honeycrisp: HoneycrispData;
-	refreshNotes(): Promise<void>;
-}) {
+/**
+ * Honeycrisp's folders, read straight out of the store.
+ *
+ * Same shape as `createNotes` and for the same reason: the store says which
+ * rows moved, so nothing here refreshes and nothing awaits a read.
+ */
+export function createFolders({ db }: { db: HoneycrispData }) {
 	let rows = $state.raw<Folder[]>([]);
 	let nonconforming = $state.raw<NonconformingRowError[]>([]);
 	let loadError = $state.raw<unknown>(null);
-	let refreshGeneration = 0;
 
-	async function refresh(): Promise<void> {
-		const generation = ++refreshGeneration;
-		try {
-			const { rows: nextRows, nonconforming: nextNonconforming } =
-				await honeycrisp.folders.scan();
-			if (generation !== refreshGeneration) return;
-			rows = nextRows;
-			nonconforming = nextNonconforming;
-			loadError = null;
-		} catch (cause) {
-			if (generation === refreshGeneration) loadError = cause;
-			throw cause;
+	function read(): void {
+		const { data, error } = db.folders.list();
+		if (error !== null) {
+			loadError = error;
+			return;
 		}
+		rows = data.rows;
+		nonconforming = data.nonconforming;
+		loadError = null;
 	}
 
+	read();
+	const stop = db.folders.subscribe(read);
+
 	return {
-		refresh,
+		[Symbol.dispose]: stop,
 		get(id: FolderId) {
 			return rows.find((folder) => folder.id === id);
 		},
@@ -49,24 +47,24 @@ export function createFolders({
 			return loadError;
 		},
 
-		async create(): Promise<{ id: FolderId }> {
-			const folder = await honeycrisp.folders.create({
+		create(): { id: FolderId } {
+			const { data, error } = db.folders.create({
 				name: 'New Folder',
 				sortOrder: rows.length,
 			});
-			await refresh();
-			return { id: folder.id };
+			if (error !== null) throw error;
+			return { id: data.id };
 		},
 
-		async rename(folderId: FolderId, name: string): Promise<void> {
-			const result = await honeycrisp.folders.patch(folderId, { name });
-			if (result.error !== null) throw result.error;
-			await refresh();
+		rename(folderId: FolderId, name: string): void {
+			const { error } = db.folders.update(folderId, { name });
+			if (error !== null) throw error;
 		},
 
-		async delete(folderId: FolderId): Promise<void> {
-			await deleteHoneycrispFolder(honeycrisp, folderId);
-			await Promise.all([refresh(), refreshNotes()]);
+		delete(folderId: FolderId): void {
+			// Re-parents this folder's notes and then removes it. Both tables
+			// invalidate on their own, so nothing has to be told to re-read.
+			deleteHoneycrispFolder(db, folderId);
 			if (searchParams.folder === folderId) {
 				searchParams.update({ folder: null, note: null });
 			}

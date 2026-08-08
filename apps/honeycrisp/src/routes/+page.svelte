@@ -10,8 +10,8 @@
 
 	const honeycrisp = getHoneycrispApp();
 
-	async function createAndSelectNote(): Promise<void> {
-		const { id } = await honeycrisp.state.notes.create(
+	function createAndSelectNote(): void {
+		const { id } = honeycrisp.state.notes.create(
 			honeycrisp.state.view.selectedFolderId,
 		);
 		honeycrisp.state.view.selectNote(id);
@@ -26,12 +26,12 @@
 		if (e.key === 'n' && e.shiftKey) {
 			e.preventDefault();
 			runHoneycrispMutation(
-				honeycrisp.state.folders.create(),
+				() => honeycrisp.state.folders.create(),
 				'Could not create folder',
 			);
 		} else if (e.key === 'n') {
 			e.preventDefault();
-			runHoneycrispMutation(createAndSelectNote(), 'Could not create note');
+			runHoneycrispMutation(() => createAndSelectNote(), 'Could not create note');
 		}
 	}}
 />

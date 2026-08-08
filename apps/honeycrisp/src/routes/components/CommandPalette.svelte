@@ -14,8 +14,8 @@
 
 	let isOpen = $state(false);
 
-	async function createAndSelectNote(): Promise<void> {
-		const { id } = await honeycrisp.state.notes.create(
+	function createAndSelectNote(): void {
+		const { id } = honeycrisp.state.notes.create(
 			honeycrisp.state.view.selectedFolderId,
 		);
 		honeycrisp.state.view.selectNote(id);
@@ -51,7 +51,7 @@
 			group: 'Actions',
 			icon: PlusIcon,
 			onSelect: () =>
-				runHoneycrispMutation(createAndSelectNote(), 'Could not create note'),
+				runHoneycrispMutation(() => createAndSelectNote(), 'Could not create note'),
 		},
 		{
 			id: 'action:new-folder',
@@ -60,7 +60,7 @@
 			icon: FolderPlusIcon,
 			onSelect: () =>
 				runHoneycrispMutation(
-					honeycrisp.state.folders.create(),
+					() => honeycrisp.state.folders.create(),
 					'Could not create folder',
 				),
 		},

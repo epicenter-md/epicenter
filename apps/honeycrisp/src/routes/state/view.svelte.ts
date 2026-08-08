@@ -215,7 +215,7 @@ export function createView({
 		setSearchQuery(query: string) {
 			searchParams.update({ q: query });
 			if (query.trim() !== '') {
-				void searchIndex.warm(notes.all.map((note) => note.id));
+				searchIndex.warm(notes.all.map((note) => note.id));
 			}
 		},
 	};

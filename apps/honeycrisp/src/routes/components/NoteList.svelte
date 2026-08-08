@@ -63,8 +63,8 @@
 		groupedNotes.flatMap((g) => g.entries.map((n) => n.id)),
 	);
 
-	async function createAndSelectNote(): Promise<void> {
-		const { id } = await honeycrisp.state.notes.create(
+	function createAndSelectNote(): void {
+		const { id } = honeycrisp.state.notes.create(
 			honeycrisp.state.view.selectedFolderId,
 		);
 		honeycrisp.state.view.selectNote(id);
@@ -135,7 +135,7 @@
 					class="size-7"
 					onclick={() =>
 						runHoneycrispMutation(
-							createAndSelectNote(),
+							() => createAndSelectNote(),
 							'Could not create note',
 						)}
 				>

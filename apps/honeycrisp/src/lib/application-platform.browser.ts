@@ -1,25 +1,22 @@
+import { openBrowserStore } from '@epicenter/data/store-browser';
 import { createLogger } from 'wellcrafted/logger';
-import { auth } from '#platform/auth';
 import type { HoneycrispDependencies } from './application.js';
-import { openHoneycrispBrowserEpicenter } from './workspace/browser.js';
 
 const log = createLogger('honeycrisp/application');
 
 /**
- * Dependencies for every build that owns its own replica: the hosted web SPA
- * and the standalone desktop bundle alike. A WebView is a storage partition and
- * origin pair like any other (ADR-0177), so both open browser storage, carry
- * their own credential, and attach their own sync.
+ * Dependencies for every build that owns its own store: the hosted web SPA and
+ * the standalone desktop bundle alike. A WebView is a storage partition and
+ * origin pair like any other (ADR-0177), so both open browser storage.
  *
- * Inert: storage does not open until the root calls open.
+ * Inert: nothing opens until the root calls it.
  */
 export const honeycrispPlatform: HoneycrispDependencies = {
-	openEpicenter: () =>
-		openHoneycrispBrowserEpicenter({
-			auth,
-			reportBackgroundError: (cause) =>
-				log.warn(new Error('Honeycrisp background sync failed', { cause })),
-		}),
+	async openStore() {
+		const { data, error } = await openBrowserStore({ name: 'honeycrisp' });
+		if (error !== null) throw error;
+		return data;
+	},
 	reportBackgroundError: (cause) =>
-		log.warn(new Error('Honeycrisp background refresh failed', { cause })),
+		log.warn(new Error('Honeycrisp background work failed', { cause })),
 };

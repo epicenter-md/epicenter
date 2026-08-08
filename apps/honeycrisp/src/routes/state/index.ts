@@ -1,4 +1,4 @@
-import type { HoneycrispData } from '@epicenter/honeycrisp';
+import { type HoneycrispData, NOTE_BODY } from '@epicenter/honeycrisp';
 import {
 	createNoteSearchIndex,
 	readDocumentText,
@@ -8,48 +8,34 @@ import { createNotes } from './notes.svelte.js';
 import { createView } from './view.svelte.js';
 
 export function createHoneycrispState({
-	honeycrisp,
+	db,
 	reportBackgroundError,
 }: {
-	honeycrisp: HoneycrispData;
+	db: HoneycrispData;
 	reportBackgroundError(cause: unknown): void;
 }) {
-	let notes!: ReturnType<typeof createNotes>;
-	const folders = createFolders({
-		honeycrisp,
-		refreshNotes: () => notes.refresh(),
-	});
+	const folders = createFolders({ db });
 	// Honeycrisp's own body index (ADR-0207 keeps prose out of the row, so
-	// searching it is the application's job). One document open at a time, each
-	// released as soon as its text is read.
+	// searching it is the application's job). Reading a note's text is now a walk
+	// over a type already in memory, so there is no document to open and release
+	// and no failure to report.
 	const searchIndex = createNoteSearchIndex({
-		openDocumentText: async (noteId) => {
-			await using document = await honeycrisp.notes.openDocument(noteId);
-			return readDocumentText(document);
-		},
+		readText: (noteId) => readDocumentText(db.notes.document(noteId)),
 		onError: reportBackgroundError,
 	});
-	notes = createNotes({ folders, honeycrisp, searchIndex });
+	const notes = createNotes({ db, searchIndex });
 	const view = createView({ folders, notes, searchIndex });
-
-	const refresh = () => Promise.all([folders.refresh(), notes.refresh()]);
-	const stopFolders = honeycrisp.folders.subscribe(() => {
-		void folders.refresh().catch(reportBackgroundError);
-	});
-	const stopNotes = honeycrisp.notes.subscribe(() => {
-		void notes.refresh().catch(reportBackgroundError);
-	});
-	const whenReady = refresh();
 
 	return {
 		folders,
 		notes,
 		view,
-		whenReady,
 		[Symbol.dispose]() {
-			stopFolders();
-			stopNotes();
+			notes[Symbol.dispose]();
+			folders[Symbol.dispose]();
 			view[Symbol.dispose]();
 		},
 	};
 }
+
+export { NOTE_BODY };

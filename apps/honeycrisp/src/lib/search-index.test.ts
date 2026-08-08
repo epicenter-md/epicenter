@@ -68,45 +68,45 @@ describe('readDocumentText', () => {
 });
 
 describe('createNoteSearchIndex', () => {
-	test('a warmed note answers with its whole body', async () => {
+	test('a warmed note answers with its whole body', () => {
 		const index = createNoteSearchIndex({
-			openDocumentText: async (noteId) => `body of ${noteId}`,
+			readText: (noteId) => `body of ${noteId}`,
 			onError: () => undefined,
 		});
 		expect(index.textFor('a')).toBeUndefined();
 
-		await index.warm(['a', 'b']);
+		index.warm(['a', 'b']);
 		expect(index.textFor('a')).toBe('body of a');
 		expect(index.textFor('b')).toBe('body of b');
 	});
 
-	test('a note the editor already has open needs no sweep', async () => {
-		const opened: string[] = [];
+	test('a note the editor already has open needs no sweep', () => {
+		const read: string[] = [];
 		const index = createNoteSearchIndex({
-			openDocumentText: async (noteId) => {
-				opened.push(noteId);
+			readText: (noteId) => {
+				read.push(noteId);
 				return 'swept';
 			},
 			onError: () => undefined,
 		});
 
 		index.record('a', 'typed just now');
-		await index.warm(['a', 'b']);
+		index.warm(['a', 'b']);
 		expect(index.textFor('a')).toBe('typed just now');
-		expect(opened).toEqual(['b']);
+		expect(read).toEqual(['b']);
 	});
 
-	test('one unreadable document does not stop the sweep', async () => {
+	test('one unreadable document does not stop the sweep', () => {
 		const failures: unknown[] = [];
 		const index = createNoteSearchIndex({
-			openDocumentText: async (noteId) => {
-				if (noteId === 'broken') throw new Error('cannot open');
+			readText: (noteId) => {
+				if (noteId === 'broken') throw new Error('cannot read');
 				return `body of ${noteId}`;
 			},
 			onError: (cause) => failures.push(cause),
 		});
 
-		await index.warm(['broken', 'fine']);
+		index.warm(['broken', 'fine']);
 		expect(failures).toHaveLength(1);
 		// The unreadable one stays unindexed and falls back to its preview; the
 		// rest of the sweep still lands.
@@ -114,12 +114,12 @@ describe('createNoteSearchIndex', () => {
 		expect(index.textFor('fine')).toBe('body of fine');
 	});
 
-	test('a forgotten note is reindexed rather than remembered', async () => {
+	test('a forgotten note is reindexed rather than remembered', () => {
 		const index = createNoteSearchIndex({
-			openDocumentText: async () => 'body',
+			readText: () => 'body',
 			onError: () => undefined,
 		});
-		await index.warm(['a']);
+		index.warm(['a']);
 		index.forget('a');
 		expect(index.textFor('a')).toBeUndefined();
 	});

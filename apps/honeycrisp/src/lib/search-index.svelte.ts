@@ -11,11 +11,15 @@
  * Device-local and never synced: it is a derived view of documents that are
  * already durable, so losing it costs one warm-up rather than any data.
  *
- * Warmed on demand rather than at boot. Opening every note's document to index
- * it is real work, and a person who never searches should never pay for it, so
- * the sweep starts the first time a query is typed. Until a note is indexed its
- * `preview` still answers, which is exactly today's behavior, so search degrades
- * to what it used to be instead of to nothing.
+ * Warmed on demand rather than at boot. Walking every note's prose is still real
+ * work on a large vault, and a person who never searches should never pay for
+ * it, so the sweep starts the first time a query is typed. Until a note is
+ * reached its `preview` still answers, so search degrades to what it used to be
+ * instead of to nothing.
+ *
+ * The sweep is synchronous now. It used to open and release one document at a
+ * time, serially, because each open was I/O; a note's prose is a type in the
+ * application's own document, so there is nothing to open and nothing to pace.
  */
 
 import { SvelteMap } from 'svelte/reactivity';
@@ -34,10 +38,10 @@ export type NoteSearchIndex = ReturnType<typeof createNoteSearchIndex>;
  * under `body` contributes its characters, joined by spaces so words in adjacent
  * blocks do not merge, which is the same rule `extractNoteMetadata` follows.
  */
-export function readDocumentText(document: {
-	get(name: string): unknown;
-}): string {
-	const root = document.get('body') as { toJSON?: () => unknown } | undefined;
+export function readDocumentText(
+	document: { get(root: string, typeName?: string | null): unknown } | undefined,
+): string {
+	const root = document?.get('body') as { toJSON?: () => unknown } | undefined;
 	if (typeof root?.toJSON !== 'function') return '';
 
 	// `toJSON` is the type's own public shape: a node is either a string, which
@@ -59,40 +63,26 @@ export function readDocumentText(document: {
 }
 
 export function createNoteSearchIndex({
-	openDocumentText,
+	readText,
 	onError,
 }: {
-	/** Read one note's text, opening and releasing its document. */
-	openDocumentText: (noteId: string) => Promise<string>;
+	/** This note's prose, read out of the document already in memory. */
+	readText: (noteId: string) => string;
 	onError: (cause: unknown) => void;
 }) {
 	const entries = new SvelteMap<string, Indexed>();
-	let sweeping = false;
 
-	/**
-	 * Index every note that has none yet, one document at a time.
-	 *
-	 * Serial on purpose: this is background work behind a list the person is
-	 * already reading, and opening many documents at once competes with the note
-	 * they actually have open. Results appear as each one lands, because the map
-	 * is reactive.
-	 */
-	async function warm(noteIds: readonly string[]): Promise<void> {
-		if (sweeping) return;
-		sweeping = true;
-		try {
-			for (const noteId of noteIds) {
-				if (entries.has(noteId)) continue;
-				try {
-					entries.set(noteId, { text: await openDocumentText(noteId) });
-				} catch (cause) {
-					// A note whose document will not open is not a reason to stop
-					// indexing the rest, and it still answers on its preview.
-					onError(cause);
-				}
+	/** Index every note that has none yet. */
+	function warm(noteIds: readonly string[]): void {
+		for (const noteId of noteIds) {
+			if (entries.has(noteId)) continue;
+			try {
+				entries.set(noteId, { text: readText(noteId) });
+			} catch (cause) {
+				// One unreadable note is not a reason to stop indexing the rest, and
+				// it still answers on its preview.
+				onError(cause);
 			}
-		} finally {
-			sweeping = false;
 		}
 	}
 
