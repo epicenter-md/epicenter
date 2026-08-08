@@ -78,13 +78,23 @@ export class SyncLabAuthority extends DurableObject {
 	private adopt(socket: WebSocket): HubConnection {
 		const existing = this.connections.get(socket);
 		if (existing !== undefined) return existing;
+		let written = positionOf(socket);
 		const connection: HubConnection = {
-			cursor: positionOf(socket),
+			cursor: written,
 			send(bytes) {
 				socket.send(bytes);
+				// `serializeAttachment` is a DURABLE STORAGE WRITE, and this used to
+				// run on every frame. A chunked entry relayed to two sockets was
+				// several writes of a value that had not changed, so the cost scaled
+				// with traffic rather than with progress.
+				//
 				// Written after the send rather than before, so a failure leaves the
-				// position behind rather than ahead.
-				socket.serializeAttachment({ cursor: connection.cursor });
+				// position behind rather than ahead, and only when it actually moved.
+				// Lagging by one entry is the safe direction: a wake re-sends what the
+				// replica already has, which is idempotent.
+				if (connection.cursor === written) return;
+				written = connection.cursor;
+				socket.serializeAttachment({ cursor: written });
 			},
 		};
 		this.connections.set(socket, connection);
