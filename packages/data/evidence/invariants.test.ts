@@ -372,3 +372,101 @@ function permutations<T>(items: readonly T[]): T[][] {
 	}
 	return result;
 }
+
+describe('a row document root is created lazily, and that is a defect', () => {
+	test('two devices first-opening one note lose one of their prose', () => {
+		// `document(id).get('editor', 'text')` CREATES on miss, so merely opening a
+		// note is a write, and `new Y.Type()` is struct-addressed. Two devices that
+		// open the same note before syncing each mint a type at the key `editor`,
+		// map LWW keeps one, and the other's writing goes with it.
+		//
+		// This is precisely the failure ADR-0216 exists to prevent, and ADR-0215
+		// guards the ROW's container against it ("allocated with the row, never on
+		// first access") while saying nothing about the roots INSIDE that
+		// container. It is reached by the most ordinary action a person takes:
+		// opening the same note on a phone and a laptop.
+		const phone = new Y.Doc({ gc: true });
+		const laptop = new Y.Doc({ gc: true });
+		phone.transact(() => {
+			const row = new Y.Type();
+			phone.get('notes').setAttr('n1' as never, row as never);
+			row.setAttr('!doc' as never, new Y.Type() as never);
+		});
+		sync(phone, laptop);
+
+		// Each opens the note, which mints `editor`, then types.
+		for (const [doc, words] of [
+			[phone, 'written on the phone'],
+			[laptop, 'written on the laptop'],
+		] as const) {
+			doc.transact(() => {
+				const container = (
+					doc.get('notes').getAttr('n1' as never) as unknown as Y.Type
+				).getAttr('!doc' as never) as unknown as Y.Type;
+				const text = new Y.Type('text' as never);
+				container.setAttr('editor' as never, text as never);
+				text.applyDelta(text.change.insert(words) as never);
+			});
+		}
+		sync(phone, laptop);
+
+		const read = (doc: Y.Doc) =>
+			JSON.stringify(
+				(
+					(
+						doc.get('notes').getAttr('n1' as never) as unknown as Y.Type
+					).getAttr('!doc' as never) as unknown as Y.Type
+				).getAttr('editor' as never),
+			);
+		// Converged, and one person's writing is simply gone.
+		expect(read(phone)).toBe(read(laptop));
+		const survivors = ['phone', 'laptop'].filter((device) =>
+			JSON.stringify(
+				(
+					(
+						phone.get('notes').getAttr('n1' as never) as unknown as Y.Type
+					).getAttr('!doc' as never) as unknown as Y.Type
+				)
+					.getAttr('editor' as never) as unknown as Y.Type,
+			).includes(device),
+		);
+		expect(survivors.length).toBeLessThan(2);
+	});
+
+	test('CONTROL: created ONCE, concurrent prose merges correctly', () => {
+		// The same two devices, with the root allocated before they diverge. This
+		// is what allocating a document's roots WITH the row would buy, and it is
+		// the fix ADR-0215 already applied one level up.
+		const phone = new Y.Doc({ gc: true });
+		const laptop = new Y.Doc({ gc: true });
+		phone.transact(() => {
+			const row = new Y.Type();
+			phone.get('notes').setAttr('n1' as never, row as never);
+			const container = new Y.Type();
+			row.setAttr('!doc' as never, container as never);
+			container.setAttr('editor' as never, new Y.Type('text' as never) as never);
+		});
+		sync(phone, laptop);
+
+		const editorOf = (doc: Y.Doc) =>
+			(
+				(
+					doc.get('notes').getAttr('n1' as never) as unknown as Y.Type
+				).getAttr('!doc' as never) as unknown as Y.Type
+			).getAttr('editor' as never) as unknown as Y.Type;
+		for (const [doc, words] of [
+			[phone, 'AAA'],
+			[laptop, 'BBB'],
+		] as const) {
+			doc.transact(() => {
+				const text = editorOf(doc);
+				text.applyDelta(text.change.insert(words) as never);
+			});
+		}
+		sync(phone, laptop);
+
+		const merged = JSON.stringify(editorOf(phone).toJSON());
+		expect(merged).toContain('AAA');
+		expect(merged).toContain('BBB');
+	});
+});
