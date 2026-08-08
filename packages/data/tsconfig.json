@@ -1,9 +1,14 @@
 {
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
-		"types": ["bun"],
+		"types": [
+			"bun"
+		],
 		"noUnusedLocals": true,
 		"noUnusedParameters": true
 	},
-	"exclude": ["browser-evidence"]
+	"exclude": [
+		"browser-evidence",
+		"evidence/browser/durable-store"
+	]
 }
