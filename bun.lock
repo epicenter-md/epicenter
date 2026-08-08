@@ -410,6 +410,24 @@
         "vite": "catalog:",
       },
     },
+    "apps/sync-lab": {
+      "name": "@epicenter/sync-lab",
+      "version": "0.0.0",
+      "dependencies": {
+        "@epicenter/data": "workspace:*",
+        "@epicenter/lens": "workspace:*",
+        "@epicenter/sqlite": "workspace:*",
+        "@sqlite.org/sqlite-wasm": "catalog:",
+        "@y/y": "14.0.0-rc.24",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "^4.20260405.1",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "wrangler": "catalog:",
+      },
+    },
     "apps/tab-manager": {
       "name": "@epicenter/tab-manager",
       "version": "0.0.2",
@@ -1371,6 +1389,8 @@
     "@epicenter/svelte": ["@epicenter/svelte@workspace:packages/svelte-utils"],
 
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
+
+    "@epicenter/sync-lab": ["@epicenter/sync-lab@workspace:apps/sync-lab"],
 
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
 

@@ -66,13 +66,19 @@ export type SyncAuthority = {
 };
 
 /**
- * An empty document's state vector, which is the constant the filter diffs
- * against so that "what is this update missing relative to nothing" forces a
- * decode of the whole stream.
+ * An empty document's state vector: one varint, saying zero clients.
+ *
+ * Written out rather than produced by `Y.encodeStateVector(new Y.Doc())`, and
+ * that is a `workerd` requirement rather than a micro-optimisation. Constructing
+ * a `Y.Doc` mints a clientID through `crypto.getRandomValues`, and generating
+ * random values in global scope is a disallowed operation in a Worker, so the
+ * module simply fails to load. Pinned against the library in
+ * `evidence/invariants.test.ts`.
+ *
+ * It also makes the file's central claim literally true: nothing here ever
+ * constructs a document.
  */
-const EMPTY_STATE_VECTOR = new Uint8Array(
-	Y.encodeStateVector(new Y.Doc({ gc: true })),
-);
+const EMPTY_STATE_VECTOR = new Uint8Array([0]);
 
 /**
  * The authority's one Yjs call, kept only as a yes or no.

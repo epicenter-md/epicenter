@@ -18,6 +18,11 @@ export {
 	reassemble,
 } from './frames.js';
 export {
+	createSyncHub,
+	type HubConnection,
+	type SyncHub,
+} from './hub.js';
+export {
 	createSyncClient,
 	type Schedule,
 	type SyncClient,

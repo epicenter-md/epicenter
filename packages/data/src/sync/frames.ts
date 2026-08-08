@@ -11,21 +11,29 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
 /**
- * The largest value Durable Object SQLite will store in one column.
+ * Cloudflare's documented cap on one Durable Object SQLite value.
  *
  * The wall that makes chunking necessary, and it has nothing to do with
  * hydration cost or with Yjs. A WebSocket accepts 32 MiB, so an update between
  * these two numbers is one `workerd` swallows on the way to storage.
+ *
+ * **The documented number is not the enforced one.** Bisected to the byte in a
+ * live Durable Object, the engine stores up to 2,199,994 bytes and refuses
+ * 2,199,995 with `SQLITE_TOOBIG` (`evidence/workerd/`). So this constant sits
+ * about 102 KB under the wall rather than on it. Chunking here is still the
+ * right choice, because the documented limit is the one Cloudflare is entitled
+ * to enforce and the headroom also absorbs the row's other columns, but the
+ * reason is "a policy with margin", not "the exact edge". A margin nobody
+ * measured is how a limit gets quoted for years at the wrong value.
  */
 export const DO_SQLITE_VALUE_CAP = 2_097_152;
 
 /**
  * How many payload bytes one chunk carries.
  *
- * Equal to the storage cap, so a chunk is stored as one value with nothing
- * spare. Verified at the exact boundary rather than at a comfortable margin
- * (`evidence/workerd/`), because a limit tested at 3 MB tells you nothing about
- * where it actually is.
+ * Equal to the documented cap. Verified at the boundary rather than at a
+ * comfortable 3 MB, because a limit tested with a wide margin tells you the
+ * margin and not the limit.
  */
 export const CHUNK_BYTES = DO_SQLITE_VALUE_CAP;
 

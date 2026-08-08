@@ -11,7 +11,9 @@
 		"./desktop": "./src/desktop.ts",
 		"./inspection": "./src/inspection.ts",
 		"./desktop-owner": "./src/desktop-owner.ts",
-		"./protocol": "./src/protocol/index.ts"
+		"./protocol": "./src/protocol/index.ts",
+		"./store": "./src/store/store.ts",
+		"./sync": "./src/sync/index.ts"
 	},
 	"files": [
 		"src",
