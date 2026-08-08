@@ -49,19 +49,31 @@ Notes are read synchronously from the projection. A note's prose is a live
 Each wave leaves the app running. Ordered so the piece with genuine unknowns
 comes first, because it is the only one that can change what the rest means.
 
-### Wave 1: the prose binding
+### Wave 1: the prose binding, which is mostly already done
 
-**The only part with real unknowns, and a notes app cannot ship without it.**
-ADR-0215 established that no Yjs 14 editor binding is published: `@y/codemirror`
-is a `0.0.0-0` placeholder and `y-codemirror.next` targets Yjs 13. ProseMirror is
-worse than absent, because binding it to a row silently overwrites the row's own
-fields with schema defaults and that corruption synchronises.
+**This wave was planned as a hand-rolled CodeMirror binding and grounding
+refuted that.** Recording it, because the wrong version made this look like the
+riskiest wave when it is the cheapest.
 
-So this is hand-rolled, and ADR-0215 already scoped it: positional insert and
-delete, change observation, and remote edits arriving as `{retain, insert}`
-deltas, which is what a CodeMirror `ChangeSet` is built from.
+Honeycrisp does not use CodeMirror. It uses ProseMirror, `@y/prosemirror` is
+already a dependency, and `src/lib/editor/Editor.svelte` already takes its
+target as a prop:
 
-Do this first. If it turns out hard, it changes what an end-to-end demo means.
+```ts
+yxmlfragment: Y.Type            // Editor.svelte:225
+configureYProsemirror({ ytype: yxmlfragment })(...)
+```
+
+The new store's `db.notes.document(id).get('editor')` returns exactly that. And
+ADR-0215 already measured `@y/prosemirror@2.0.0-6` bound to a NESTED CONTAINER
+working correctly: the row's `title` and `tags` survive and the prose reads back.
+What it measured failing was binding to the ROW itself, which nothing here does.
+
+So this is wiring, not invention. The CodeMirror sentence in ADR-0215 describes
+an alternative that was never needed for this app.
+
+**Consequence for the whole plan: the risky unknown is gone, so wave order no
+longer needs to protect against it.** Waves 2 and 3 are now the real work.
 
 ### Wave 2: per-table subscription carrying row ids
 
