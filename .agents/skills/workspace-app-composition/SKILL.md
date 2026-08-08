@@ -226,9 +226,9 @@ where the workspace is built.
 
 | Workspace built | Reachable in | Gate |
 | --- | --- | --- |
-| Ready application opened in a mounted layout: whispering | the (app) layout component | raw `{#await opening}` with `WorkspaceBootFailure` in `{:catch}`; the fulfilled branch mounts the typed context provider |
+| Ready application opened in a mounted layout: whispering, honeycrisp | the (app) layout component | raw `{#await opening}` with a boot-failure branch in `{:catch}`; the fulfilled branch mounts the typed context provider |
 | Eager module singleton with route loads: skills, matter | a route `load` | `load`: `await x.whenReady` (matter: `ensureHydrated()`) |
-| Eager module singleton, gate in the root layout: honeycrisp, vocab | the root layout | `<WorkspaceGate pending={<app>.whenReady} onForgetDevice onSignOut>` |
+| Eager module singleton, gate in the root layout: vocab | the root layout | `<WorkspaceGate pending={<app>.whenReady} onForgetDevice onSignOut>` |
 | Extension entrypoint behind async storage: tab-manager | the component | outer `{#await boot.whenReady}`, then `WorkspaceGate` |
 
 Whispering is the ready-application exemplar for SQLite workspace apps: the
@@ -238,8 +238,16 @@ during layout initialisation and lets the raw `{#await}` own pending, ready,
 and failure. Descendants receive the ready application through a typed
 `createContext` provider; there is no module-scope boot, no half-open handle,
 and no `whenReady` accessor on the application itself. Apps still on the
-module-singleton shape (honeycrisp, skills) bridge with an app-owned deferred
-workspace view over the one open promise until their own migration.
+module-singleton shape (skills) bridge with an app-owned deferred workspace
+view over the one open promise until their own migration.
+
+**Honeycrisp has migrated.** On the new store (ADR-0215) opening is the only
+asynchronous thing an application does at all, so the shape falls out rather
+than being adopted: `openHoneycrispApplication` resolves with a store that was
+replayed in full, and every read after it is a property access. There is no
+readiness promise to alias because there is no state that arrives later, which
+is what `whenReady` existed to wait for. An app on this store that finds itself
+wanting one has a half-open handle it should not have.
 
 - Correctness gates (404 / redirect / param) always go in `load`; only `load`
   can `error()` / `redirect()` (matter `vault/[id]`).

@@ -1,51 +1,58 @@
 /**
  * Open one application's store in a browser page.
  *
- * The store runs HERE, on the main thread, over an in-memory SQLite. That is
- * not a compromise and it is worth stating plainly, because the opposite was
- * briefly concluded from a true measurement: a page cannot take a synchronous
- * handle to DURABLE storage (`evidence/browser/sync-access-handle.ts`), and
- * that constrains where the log lives rather than where the store runs. The
- * store touches SQLite in three places, the schema and the replay at
- * construction and then `transaction` and `all`; every read a person makes
- * comes from the `Y.Doc` already in memory. It needs a synchronous HANDLE, not
- * synchronous DURABILITY.
+ * The store runs HERE, on the main thread, over an in-memory SQLite, and its
+ * durable state is three small relations in IndexedDB.
  *
- * So durability is a worker holding the same database on OPFS, fed the same
- * statements. On open the page takes the file back whole and deserializes it,
- * which leaves it holding exactly what the last session committed with nothing
- * to reconcile.
+ * ## Why an in-memory database is not a compromise
  *
- * This is not the superseded stack's arrangement inverted, it is a different
- * one. There the worker owned the replica and `src/browser.ts` was 700 lines of
- * asynchronous page client, which is why every read in an application on it is
- * awaited. Here the worker owns a file it never interprets, and the page's
- * surface is the same synchronous one Bun gets.
+ * The store needs a synchronous HANDLE, not synchronous DURABILITY. It touches
+ * SQLite in three places, the schema and the replay at construction and then
+ * `transaction` and `all`, and every read a person makes (`get`, `list`, `ids`,
+ * `document`) comes from the `Y.Doc` already in memory. SQLite is a
+ * write-behind log and a query cache, never the read path.
+ *
+ * ## Why there is no worker
+ *
+ * There was one, holding the same database on OPFS and fed every statement, so
+ * that reopening restored the file whole. It was justified by the projection
+ * "coming back for free", and that is false: `bind` rebuilds every projected
+ * table unconditionally, because the CRDT is the truth and a projection is a
+ * cache. So the restored projection was thrown away every time.
+ *
+ * What actually has to survive is `_updates`, `_outbox` and `_cursor`, and all
+ * three are small: `appendUpdate` collapses the log at `COMPACTION_THRESHOLD`
+ * (64) into one baseline, the outbox is coalesced before it is sent, and the
+ * cursor is one row. That is an IndexedDB record, not a file, and IndexedDB is
+ * reachable from the page. `createSyncAccessHandle` being dedicated-worker-only
+ * (`evidence/browser/sync-access-handle.ts`) decided where a FILE could live,
+ * and once nothing needs a file it decides nothing at all.
+ *
+ * Deleted with it: a second sqlite-wasm instance, the OPFS SAH pool and its
+ * exclusive-per-origin retry loop, a message protocol, and the mirroring of
+ * every statement including the projection writes it turned out nobody wanted.
  */
-import type { SqliteDatabase, SqliteValue } from '@epicenter/sqlite';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
-import type {
-	BrowserLogRequest,
-	BrowserLogResponse,
-	LoggedStatement,
-} from './browser-log-protocol.js';
-import { applyStoreSchema } from './persistence.js';
+import {
+	APP_DOCUMENT,
+	applyStoreSchema,
+	copyBytes,
+} from './persistence.js';
 import { createStore, StoreError, type Store } from './store.js';
 
 /**
  * Whether this device's durable copy is keeping up with its live one.
  *
- * The one thing a browser store has that a Bun store does not, and the price of
- * the arrangement above. On Bun the durable write IS the write, so `persist`
- * can poison the store the moment storage refuses. Here the log is behind a
- * port, so a refusal arrives after the write already returned `Ok`, and there
- * is nothing left to fail.
+ * The one thing a browser store has that a Bun store does not. On Bun the
+ * durable write IS the write, so `persist` can poison the store the moment
+ * storage refuses. IndexedDB is asynchronous, so a refusal arrives after the
+ * write already returned `Ok` and there is nothing left to fail.
  *
  * Nothing is lost when this fires. The `Y.Doc` still holds the work and the
- * outbox still owes it to the authority, so it will reach every other device
+ * outbox still owes it to the authority, so it reaches every other device
  * normally. What is lost is the guarantee that a RELOAD of this device sees it.
  * That makes it an alarm an application shows rather than an error a call
  * returns, in the same shape as `hasUnresolvedDependencies`.
@@ -55,177 +62,196 @@ export type StoreDurability =
 	| { readonly healthy: false; readonly name: string; readonly message: string };
 
 export type BrowserStore = Store & {
-	/** Whether the durable log has fallen behind, and why. */
+	/** Whether the durable copy has fallen behind, and why. */
 	durability(): StoreDurability;
-	/** Resolve once every write so far has reached the durable log. */
+	/** Resolve once every write so far has reached durable storage. */
 	whenDurable(): Promise<Result<void, StoreError>>;
 };
 
-/** Whatever carries the log worker's messages. A `Worker` satisfies this. */
-export type LogWorkerPort = {
-	postMessage(message: BrowserLogRequest): void;
-	addEventListener(
-		type: 'message',
-		listener: (event: { data: BrowserLogResponse }) => void,
-	): void;
-	terminate?(): void;
+/** The three relations that have to survive a reload. */
+type DurableState = {
+	updates: { seq: number; bytes: Uint8Array }[];
+	outbox: { id: number; bytes: Uint8Array }[];
+	cursor: number;
 };
 
-/**
- * Mirror every statement to the durable log, batched by transaction.
- *
- * Every statement rather than a curated subset, and that is the simplification
- * the whole file rests on. The alternative was to forward only the three
- * underscore-prefixed relations the store owns and let the worker rebuild the
- * projection, which means the worker knows what a projection is, and means two
- * schemas that can disagree. Forwarding everything makes the worker's file
- * byte-identical to the page's, so opening it is a restore rather than a
- * replay, and the projection comes back for free.
- *
- * Batching is by transaction rather than by statement, so one store commit is
- * one message. A statement outside a transaction, which is only ever the schema
- * DDL at construction, goes on its own.
- */
-function mirroring(
-	local: SqliteDatabase,
-	send: (statements: readonly LoggedStatement[]) => void,
-): SqliteDatabase {
-	let depth = 0;
-	let batch: LoggedStatement[] = [];
+const STORE_NAME = 'state';
+const STATE_KEY = 'durable';
 
-	return {
-		run(sql: string, parameters: readonly SqliteValue[] = []): void {
-			local.run(sql, parameters);
-			batch.push({ sql, parameters });
-			if (depth === 0) {
-				const only = batch;
-				batch = [];
-				send(only);
+function openIndexedDb(name: string): Promise<IDBDatabase> {
+	return new Promise((resolve, reject) => {
+		const request = indexedDB.open(`epicenter-store-${name}`, 1);
+		request.onupgradeneeded = () => {
+			const database = request.result;
+			if (!database.objectStoreNames.contains(STORE_NAME)) {
+				database.createObjectStore(STORE_NAME);
 			}
-		},
-		all: local.all.bind(local),
-		transaction<TResult>(run: () => TResult): TResult {
-			depth += 1;
-			try {
-				const result = local.transaction(run);
-				depth -= 1;
-				if (depth === 0 && batch.length > 0) {
-					const committed = batch;
-					batch = [];
-					send(committed);
-				}
-				return result;
-			} catch (cause) {
-				depth -= 1;
-				// The local transaction rolled back, so these statements never
-				// happened and must not reach the log. Dropping them is what keeps
-				// the two databases the same one.
-				if (depth === 0) batch = [];
-				throw cause;
-			}
-		},
-	};
+		};
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () => reject(request.error ?? new Error('indexedDB.open failed'));
+	});
+}
+
+function readDurable(database: IDBDatabase): Promise<DurableState | undefined> {
+	return new Promise((resolve, reject) => {
+		const request = database
+			.transaction(STORE_NAME, 'readonly')
+			.objectStore(STORE_NAME)
+			.get(STATE_KEY);
+		request.onsuccess = () => resolve(request.result as DurableState | undefined);
+		request.onerror = () => reject(request.error ?? new Error('read failed'));
+	});
+}
+
+function writeDurable(database: IDBDatabase, state: DurableState): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const transaction = database.transaction(STORE_NAME, 'readwrite');
+		transaction.objectStore(STORE_NAME).put(state, STATE_KEY);
+		transaction.oncomplete = () => resolve();
+		transaction.onerror = () =>
+			reject(transaction.error ?? new Error('write failed'));
+		transaction.onabort = () =>
+			reject(transaction.error ?? new Error('write aborted'));
+	});
+}
+
+function describe(cause: unknown): { name: string; message: string } {
+	if (cause instanceof Error) return { name: cause.name, message: cause.message };
+	return { name: 'Error', message: String(cause) };
 }
 
 export async function openBrowserStore({
 	name,
-	createWorker = defaultLogWorker,
 }: {
 	/**
-	 * This application's durable file, inside the origin's private storage.
+	 * This application's durable state, inside the origin's private storage.
 	 *
 	 * Named by the application rather than derived, because an origin can host
 	 * more than one and ADR-0215's "one document per application" is a statement
 	 * about documents rather than about origins.
 	 */
 	name: string;
-	createWorker?(): LogWorkerPort;
 }): Promise<Result<BrowserStore, StoreError>> {
-	const worker = createWorker();
-	let nextRequest = 0;
-	const waiting = new Map<
-		number,
-		(response: BrowserLogResponse) => void
-	>();
-	let durability: StoreDurability = { healthy: true };
-	/** The tail of accepted batches, so `whenDurable` has something to await. */
-	let inFlight: Promise<void> = Promise.resolve();
-
-	worker.addEventListener('message', ({ data }) => {
-		if (data.kind === 'alarm') {
-			// First failure wins. A durable log that has fallen behind stays
-			// behind, so later failures are consequences and the first one is the
-			// one worth showing.
-			if (durability.healthy) {
-				durability = { healthy: false, name: data.name, message: data.message };
-			}
-			return;
-		}
-		waiting.get(data.id)?.(data);
-		waiting.delete(data.id);
-	});
-
-	function request(
-		build: (id: number) => BrowserLogRequest,
-	): Promise<BrowserLogResponse> {
-		const id = (nextRequest += 1);
-		return new Promise<BrowserLogResponse>((resolve) => {
-			waiting.set(id, resolve);
-			worker.postMessage(build(id));
-		});
-	}
-
 	const opened = await tryAsync({
 		try: async () => {
-			const response = await request((id) => ({ kind: 'open', id, name }));
-			if (response.kind === 'failed') {
-				throw new Error(`${response.name}: ${response.message}`);
-			}
-			return response.kind === 'opened' ? response.bytes : undefined;
+			const durable = await openIndexedDb(name);
+			return { durable, saved: await readDurable(durable) };
 		},
 		catch: (cause) => StoreError.StorageFailed({ cause }),
 	});
-	if (opened.error !== null) {
-		worker.terminate?.();
-		return Err(opened.error);
-	}
+	if (opened.error !== null) return Err(opened.error);
+	const { durable, saved } = opened.data;
 
 	const built = await tryAsync({
 		try: async () => {
 			const sqlite3 = await sqlite3InitModule();
-			// The page's database IS the durable file when there is one, restored
-			// whole rather than replayed. `createStore` then hydrates from it
-			// exactly as it does on Bun, having no idea it is in a browser.
-			const raw =
-				opened.data === undefined
-					? new sqlite3.oo1.DB(':memory:')
-					: deserialize(sqlite3, opened.data);
-			return createBrowserSqliteAdapter(raw as never);
+			const database = createBrowserSqliteAdapter(
+				new sqlite3.oo1.DB(':memory:') as never,
+			);
+			applyStoreSchema(database);
+			if (saved !== undefined) {
+				// Seeded BEFORE `createStore`, because the replay that hydrates the
+				// document reads `_updates` out of exactly this handle. From there
+				// the browser is indistinguishable from Bun.
+				database.transaction(() => {
+					for (const update of saved.updates) {
+						database.run(
+							'INSERT INTO _updates (document, seq, bytes) VALUES (?, ?, ?)',
+							[APP_DOCUMENT, update.seq, copyBytes(update.bytes)],
+						);
+					}
+					for (const owed of saved.outbox) {
+						database.run('INSERT INTO _outbox (id, bytes) VALUES (?, ?)', [
+							owed.id,
+							copyBytes(owed.bytes),
+						]);
+					}
+					if (saved.cursor > 0) {
+						database.run('INSERT INTO _cursor (document, seq) VALUES (?, ?)', [
+							APP_DOCUMENT,
+							saved.cursor,
+						]);
+					}
+				});
+			}
+			return database;
 		},
 		catch: (cause) => StoreError.StorageFailed({ cause }),
 	});
 	if (built.error !== null) {
-		worker.terminate?.();
+		durable.close();
 		return Err(built.error);
 	}
+	const database = built.data;
 
-	const database = mirroring(built.data, (statements) => {
-		const settled = request((id) => ({ kind: 'apply', id, statements })).then(
-			() => undefined,
+	function snapshot(): DurableState {
+		const updates = database.all<{ seq: number; bytes: Uint8Array }>(
+			'SELECT seq, bytes FROM _updates WHERE document = ? ORDER BY seq',
+			[APP_DOCUMENT],
 		);
-		inFlight = inFlight.then(() => settled);
-	});
-	// Before `createStore`, so that a first run's DDL is mirrored as its own
-	// batch and the worker's file has the schema even if nothing is ever written.
-	applyStoreSchema(database);
+		const outbox = database.all<{ id: number; bytes: Uint8Array }>(
+			'SELECT id, bytes FROM _outbox ORDER BY id',
+		);
+		const cursor = database.all<{ seq: number }>(
+			'SELECT seq FROM _cursor WHERE document = ?',
+			[APP_DOCUMENT],
+		);
+		return {
+			updates: updates.map((row) => ({ seq: row.seq, bytes: copyBytes(row.bytes) })),
+			outbox: outbox.map((row) => ({ id: row.id, bytes: copyBytes(row.bytes) })),
+			cursor: cursor[0]?.seq ?? 0,
+		};
+	}
+
+	let durability: StoreDurability = { healthy: true };
+	let writing: Promise<void> | undefined;
+	let again = false;
+
+	/**
+	 * Write the current durable state, coalescing bursts into one write.
+	 *
+	 * Latest-wins rather than a queue. Every write carries the WHOLE of the
+	 * three relations, so a write that is superseded before it starts had
+	 * nothing in it the next one does not, and a person typing produces one
+	 * commit per transaction rather than one durable write per transaction.
+	 *
+	 * Whole rather than incremental because the whole is small: `_updates` is
+	 * bounded at `COMPACTION_THRESHOLD`, and compaction renumbers it from 1, so
+	 * an incremental writer would need to notice that its positions had come to
+	 * mean different updates. There is no version of that which is worth 64 rows.
+	 */
+	function persistDurable(): void {
+		if (writing !== undefined) {
+			again = true;
+			return;
+		}
+		const state = snapshot();
+		writing = writeDurable(durable, state)
+			.catch((cause) => {
+				// First failure wins: a durable copy that has fallen behind stays
+				// behind, so later failures are consequences.
+				if (durability.healthy) durability = { healthy: false, ...describe(cause) };
+			})
+			.finally(() => {
+				writing = undefined;
+				if (again) {
+					again = false;
+					persistDurable();
+				}
+			});
+	}
 
 	const store = createStore({
 		database,
-		dispose: async () => {
-			await request((id) => ({ kind: 'close', id }));
-			worker.terminate?.();
+		dispose: () => {
+			durable.close();
 		},
 	});
+
+	// Every committed change, local or arrived, and nothing else. `onLocalWork`
+	// alone would miss a remote update, which is durable state too.
+	const stopLocal = store.onLocalWork(persistDurable);
+	const stopRemote = store.onCommitted(persistDurable);
 
 	return Ok(
 		Object.freeze({
@@ -235,70 +261,19 @@ export async function openBrowserStore({
 			},
 			durability: () => durability,
 			async whenDurable(): Promise<Result<void, StoreError>> {
-				await inFlight;
-				const response = await request((id) => ({ kind: 'settle', id }));
-				if (response.kind === 'failed') {
-					return StoreError.StorageFailed({
-						cause: new Error(`${response.name}: ${response.message}`),
-					});
-				}
+				while (writing !== undefined) await writing;
 				return durability.healthy
 					? Ok(undefined)
 					: StoreError.StorageFailed({
-							cause: new Error(
-								`${durability.name}: ${durability.message}`,
-							),
+							cause: new Error(`${durability.name}: ${durability.message}`),
 						});
 			},
-			[Symbol.asyncDispose]: store[Symbol.asyncDispose].bind(store),
+			async [Symbol.asyncDispose]() {
+				stopLocal();
+				stopRemote();
+				while (writing !== undefined) await writing;
+				await store[Symbol.asyncDispose]();
+			},
 		}) as BrowserStore,
 	);
-}
-
-/** Rebuild a database from the bytes the worker handed back. */
-function deserialize(
-	sqlite3: Awaited<ReturnType<typeof sqlite3InitModule>>,
-	bytes: Uint8Array,
-): unknown {
-	const database = new sqlite3.oo1.DB(':memory:');
-	const capi = sqlite3 as unknown as {
-		capi: {
-			sqlite3_js_posix_create_file?(path: string, data: Uint8Array): void;
-		};
-		oo1: { DB: new (path: string, flags?: string) => unknown };
-	};
-	const create = capi.capi.sqlite3_js_posix_create_file;
-	if (create === undefined) return database;
-	// Through a temporary file rather than `sqlite3_deserialize`, because the
-	// deserialized handle owns memory the JS side has to keep alive for the life
-	// of the database and getting that wrong is a use-after-free rather than an
-	// error. Writing a file and opening it is boring, and boring is correct here.
-	const path = `/epicenter-restore-${Math.trunc(bytes.byteLength)}.sqlite3`;
-	create(path, bytes);
-	(database as unknown as { close(): void }).close();
-	return new capi.oo1.DB(path, 'w');
-}
-
-function defaultLogWorker(): LogWorkerPort {
-	if (typeof Worker === 'undefined') {
-		throw new Error('a dedicated worker is required for durable browser storage');
-	}
-	// Written as a literal `new Worker(new URL('...', import.meta.url), ...)`
-	// because that exact syntax is what bundlers pattern-match to compile this
-	// worker into its own same-origin asset. Reaching the constructor through an
-	// alias still runs, but the build silently degrades to an inlined `data:`
-	// module that the desktop host's Content-Security-Policy refuses (ADR-0183),
-	// so first paint dies with no message worth reading.
-	const worker = new Worker(new URL('./browser-log-worker.ts', import.meta.url), {
-		type: 'module',
-		name: 'epicenter-store-log',
-	});
-	return {
-		postMessage: (message) => worker.postMessage(message),
-		addEventListener: (type, listener) =>
-			worker.addEventListener(type, (event) =>
-				listener({ data: (event as MessageEvent<BrowserLogResponse>).data }),
-			),
-		terminate: () => worker.terminate(),
-	};
 }

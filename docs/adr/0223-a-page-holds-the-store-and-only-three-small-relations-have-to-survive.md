@@ -1,4 +1,4 @@
-# 0223. A page holds the store, and a worker holds its durable log
+# 0223. A page holds the store, and only three small relations have to survive
 
 - **Status:** Accepted
 - **Date:** 2026-08-08
@@ -65,8 +65,8 @@ every read in an application on that stack is awaited.
 
 **A durability failure becomes an alarm, not a returned error.** On Bun the
 durable write IS the write, so `persist` poisons the store the moment storage
-refuses. Behind a port the refusal arrives after the write returned `Ok`, so
-there is nothing left to fail. `durability()` reports it in the same shape as
+refuses. IndexedDB is asynchronous, so the refusal arrives after the write
+returned `Ok` and there is nothing left to fail. `durability()` reports it in the same shape as
 `hasUnresolvedDependencies`, and `whenDurable()` is there for anyone who wants
 to wait.
 
@@ -82,8 +82,13 @@ That is a genuinely weaker promise than Bun's and it is the price of the
 arrangement; an application that ignores the alarm will eventually mislead
 somebody.
 
-The page pays a WASM compile and a file restore at open, which is why opening is
-the one asynchronous thing left in an application on this store.
+The page pays a WASM compile and one IndexedDB read at open, which is why
+opening is the one asynchronous thing left in an application on this store, and
+why the ready-application render gate is the shape a page on it wants.
+
+The store gains `onCommitted` beside `onLocalWork`. They are not
+interchangeable: the transport must not be nudged by bytes that arrived from a
+peer, and durability must not ignore them.
 
 `evidence/browser/durable-store.ts` runs the whole thing across a real reload
 with three controls, and `apps/honeycrisp/evidence/runs-on-the-new-store.ts`

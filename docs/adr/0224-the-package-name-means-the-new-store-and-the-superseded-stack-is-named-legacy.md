@@ -5,7 +5,7 @@
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0224 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Relates:** [ADR-0215](0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md),
-  [ADR-0223](0223-a-page-holds-the-store-and-a-worker-holds-its-durable-log.md).
+  [ADR-0223](0223-a-page-holds-the-store-and-only-three-small-relations-have-to-survive.md).
 
 ## Context
 

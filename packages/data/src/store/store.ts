@@ -521,6 +521,16 @@ export type Store = {
 	 * forgotten about.
 	 */
 	onLocalWork(listener: () => void): () => void;
+	/**
+	 * Hear when anything durable changed, whoever authored it.
+	 *
+	 * Strictly wider than `onLocalWork`, and the two are not interchangeable.
+	 * The transport wants to know that THIS replica owes the authority
+	 * something, so bytes that arrived from a peer must not nudge it. A store
+	 * whose durable log is behind a port wants to know that the log moved at
+	 * all, and an arrived update moves it exactly as much as a local write does.
+	 */
+	onCommitted(listener: () => void): () => void;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -576,7 +586,10 @@ export function createStore({
 	let touched: RowAddress[] = [];
 	/** Whether the commit in progress put anything into the outbox. */
 	let owedSomething = false;
+	/** Whether the commit in progress changed anything durable at all. */
+	let committedSomething = false;
 	const localWorkListeners = new Set<() => void>();
+	const committedListeners = new Set<() => void>();
 
 	/**
 	 * Hand a committed change to whoever is waiting for it, and reset the buffers.
@@ -590,6 +603,16 @@ export function createStore({
 	 * its own flush.
 	 */
 	function flushCommitted(): void {
+		if (committedSomething) {
+			committedSomething = false;
+			for (const listener of [...committedListeners]) {
+				const { error } = trySync({
+					try: listener,
+					catch: (cause) => StoreError.SubscriberThrew({ cause }),
+				});
+				if (error !== null) log.error(error);
+			}
+		}
 		if (owedSomething) {
 			owedSomething = false;
 			for (const listener of [...localWorkListeners]) {
@@ -639,6 +662,7 @@ export function createStore({
 			});
 			enqueueOutbox(database, authored);
 			owedSomething = true;
+			committedSomething = true;
 		});
 		// Before the throw, deliberately. The live document already holds the
 		// change, so the ids are true whatever storage did with them, and leaving
@@ -699,6 +723,7 @@ export function createStore({
 				// leave a write durable locally and unowed.
 				enqueueOutbox(database, update);
 				owedSomething = true;
+				committedSomething = true;
 			}
 			project();
 		});
@@ -1130,6 +1155,7 @@ export function createStore({
 						update,
 						takenAt: now(),
 					});
+					committedSomething = true;
 				}
 				rebuildAllProjections();
 			});
@@ -1143,6 +1169,10 @@ export function createStore({
 		onLocalWork(listener: () => void): () => void {
 			localWorkListeners.add(listener);
 			return () => localWorkListeners.delete(listener);
+		},
+		onCommitted(listener: () => void): () => void {
+			committedListeners.add(listener);
+			return () => committedListeners.delete(listener);
 		},
 		hasUnresolvedDependencies: () => hasPendingStructs(index),
 		pressure(): Result<StorePressure, StoreError> {

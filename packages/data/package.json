@@ -7,7 +7,6 @@
 		".": "./src/store/index.ts",
 		"./bun": "./src/store/bun.ts",
 		"./browser": "./src/store/browser.ts",
-		"./browser-log-worker": "./src/store/browser-log-worker.ts",
 		"./sync": "./src/sync/index.ts",
 		"./legacy": "./src/index.ts",
 		"./legacy/browser": "./src/browser.ts",
@@ -26,7 +25,7 @@
 	"license": "MIT",
 	"scripts": {
 		"evidence:browser": "bun browser-evidence/run.ts --profile smoke",
-		"typecheck": "tsc --noEmit && tsc --noEmit -p browser-evidence/tsconfig.json && tsc --noEmit -p evidence/browser/durable-store/tsconfig.json",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.dom.json && tsc --noEmit -p browser-evidence/tsconfig.json && tsc --noEmit -p evidence/browser/durable-store/tsconfig.json",
 		"test": "bun test"
 	},
 	"dependencies": {

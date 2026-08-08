@@ -4,25 +4,26 @@
  * Run: `bun run evidence/browser/durable-store.ts`
  *
  * `src/store/browser.ts` is a claim about a runtime: that a page can hold the
- * synchronous store over an in-memory SQLite while a dedicated worker holds the
- * same database on OPFS, and that reopening restores the file whole. Typecheck
- * cannot judge any of that. This runs it in a real Chromium, in a real page,
- * with a real worker, across a real reload.
+ * synchronous store over an in-memory SQLite while IndexedDB holds the three
+ * relations that have to survive, and that reopening seeds the one from the
+ * other. Typecheck cannot judge any of that. This runs it in a real Chromium,
+ * in a real page, across a real reload.
  *
  * METHOD, and the controls are the point:
  *
  *   - **The reload is real.** `page.reload()`, so the page's memory, its
  *     `Y.Doc` and its in-memory SQLite are all gone. Anything that comes back
- *     came out of OPFS.
+ *     came out of IndexedDB.
  *   - **CONTROL: a different name must see nothing.** If a second store opened
  *     under another name found the first one's notes, this would be measuring a
- *     page that never reloaded, or a worker handing back the wrong file.
+ *     page that never reloaded, or a read of the wrong record.
  *   - **CONTROL: prose, not just rows.** Prose lives inside the row's document
  *     and never reaches the projection, so a run that restored rows and lost
  *     documents would otherwise read as a pass.
- *   - **CONTROL: `db.query` agrees with `list`.** They read different
- *     relations, the projection and the CRDT, so agreement is what proves the
- *     restored file carried both rather than one being rebuilt from the other.
+ *   - **CONTROL: `db.query` agrees with `list`.** They read different relations,
+ *     the projection and the CRDT. The projection is NOT durable and is rebuilt
+ *     at bind out of the replayed document, so agreement is what proves the
+ *     replay happened rather than rows coming back from a stale cache.
  */
 import { chromium } from 'playwright';
 import { build } from 'vite';
@@ -35,7 +36,6 @@ await build({
 	root,
 	logLevel: 'warn',
 	optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
-	worker: { format: 'es' },
 	build: { target: 'esnext', outDir, emptyOutDir: true },
 });
 
@@ -47,14 +47,10 @@ const server = Bun.serve({
 			`${outDir}${pathname === '/' ? 'index.html' : pathname.slice(1)}`,
 		);
 		if (!(await file.exists())) return new Response('not found', { status: 404 });
-		return new Response(file, {
-			headers: {
-				// The SAH pool needs neither of these, but they cost nothing and
-				// keep the page's capabilities the same as a real deployment's.
-				'cross-origin-opener-policy': 'same-origin',
-				'cross-origin-embedder-policy': 'require-corp',
-			},
-		});
+		// No cross-origin isolation headers. Nothing needs them now that the
+		// durable copy is IndexedDB rather than an OPFS file, and serving them
+		// would make this page more capable than a real deployment's.
+		return new Response(file);
 	},
 });
 const origin = `http://localhost:${server.port}`;
@@ -138,7 +134,7 @@ try {
 
 console.log(
 	failures === 0
-		? '\nA browser page holds the synchronous store, and its durable log survives a reload.\n'
+		? '\nA browser page holds the synchronous store, and its durable state survives a reload.\n'
 		: `\n${failures} check(s) FAILED.\n`,
 );
 process.exit(failures === 0 ? 0 : 1);

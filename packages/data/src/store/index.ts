@@ -32,7 +32,7 @@ export {
 	type TypedTableHandle,
 	type WriteRowError,
 } from './store.js';
-export type { OutboxEntry } from './persistence.js';
+export { COMPACTION_THRESHOLD, type OutboxEntry } from './persistence.js';
 export {
 	defineLens,
 	type LensJson,

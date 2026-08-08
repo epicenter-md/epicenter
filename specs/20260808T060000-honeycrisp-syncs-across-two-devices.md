@@ -6,7 +6,7 @@
   (the transport),
   [ADR-0222](../docs/adr/0222-a-host-owns-how-to-make-a-socket-and-the-library-owns-everything-done-with-one.md)
   (the driver, which is the client half and is done),
-  [ADR-0223](../docs/adr/0223-a-page-holds-the-store-and-a-worker-holds-its-durable-log.md)
+  [ADR-0223](../docs/adr/0223-a-page-holds-the-store-and-only-three-small-relations-have-to-survive.md)
   (where the store runs).
 
 ## What is already true

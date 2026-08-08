@@ -13,6 +13,15 @@
 
 	let { children } = $props();
 
+	// The ready-application shape. One transactional open acquired during layout
+	// initialisation, and a raw `{#await}` owning pending, ready and failure;
+	// descendants receive the READY application through a typed context, so
+	// there is no module-scope boot, no half-open handle, and no `whenReady`
+	// accessor for anything to read too early.
+	//
+	// Gated rather than skeletoned because there is no useful partial UI: a
+	// route on an unopened store reads empty tables and flashes "No notes yet"
+	// at someone whose notes are about to appear.
 	const boot = new AbortController();
 	const opening = openHoneycrispApplication(honeycrispPlatform, {
 		signal: boot.signal,
