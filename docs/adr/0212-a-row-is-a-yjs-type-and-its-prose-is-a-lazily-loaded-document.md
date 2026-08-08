@@ -7,6 +7,9 @@
   replaces an earlier 0212 that specified a hand-built cell store; that draft was
   `Proposed` and is rewritten in place, per the same-number rewrite pattern the
   corpus already uses.
+- **Amended by:** [ADR-0219](0219-a-deleted-row-is-removed-and-the-presence-flag-is-retired.md)
+  at deletion only. Withdrawn: clear-and-flag, the `!presence` attribute and its
+  grammar, and the reuse story in which writing at an absent address revives it.
 - **Relates:** [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md)
   (the lens and the application surface),
   [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md)

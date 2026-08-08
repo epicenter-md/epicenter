@@ -32,6 +32,8 @@
   specified a Durable Object holding an append-only byte log with no Yjs, and
   superseded ADR-0146's bound on that basis. Both are withdrawn as unproven; see
   *The authority is not settled* below.
+- **Amended by:** [ADR-0219](0219-a-deleted-row-is-removed-and-the-presence-flag-is-retired.md)
+  at one clause, its listing of `!presence` as part of the surviving grammar.
 - **Amended by:** [ADR-0217](0217-the-authority-appends-opaque-bytes-and-the-client-owns-every-merge.md)
   at that one section, which is now settled. Read *The authority is not settled*
   below as the history of four withdrawn attempts, not as an open question.

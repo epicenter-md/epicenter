@@ -15,6 +15,9 @@
   at one section, *The authority is not settled*, which is now settled here.
   Everything else in that record stands untouched. Supersedes nothing: the four
   designs that failed there were never accepted.
+- **Amended by:** [ADR-0218](0218-the-authority-reads-nothing-and-a-poison-entry-is-repaired-rather-than-prevented.md),
+  which withdraws the `diffUpdateV2` filter and the claim that the authority
+  "makes exactly one Yjs call". It now makes none. Everything else here stands.
 - Evidence: `packages/data/evidence/validation.test.ts`,
   `packages/data/evidence/workerd/results.md`,
   `packages/data/evidence/bench/never-compact.ts`,
