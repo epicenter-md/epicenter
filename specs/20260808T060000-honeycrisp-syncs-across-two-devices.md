@@ -23,15 +23,30 @@ gate cannot be met however the app is wired.
 
 ## What this needs
 
-A per-principal authority in `apps/api`, which is `openSyncAuthority` plus
-`createSyncHub` in a Durable Object, routed by identity rather than by a query
-parameter. The lab's `worker/index.ts` is thirty lines over exactly those two
-and is the shape; what it does not have is auth, a per-principal DO name, a
-wrangler migration, or any thought about what a partition costs.
+A per-principal authority in `apps/api`. `apps/api` already binds
+`EPICENTER_SYNC` to an `EpicenterAuthority`, and that is the SUPERSEDED stack's:
+it speaks `exchange` / `publishDocument` / `pullDocument` over
+`@epicenter/data/legacy/protocol`. Nothing there speaks the new transport.
+
+The Durable Object itself is ~90 lines and already written twice over: the
+adapter in `apps/sync-lab/worker/index.ts` is `openSyncAuthority` plus
+`createSyncHub` plus the hibernation handling, and its wake path is the part
+worth copying carefully rather than rewriting. It belongs in `packages/server`,
+which is AGPL and may depend on MIT `@epicenter/data`, not the other way round.
+
+The route is the part with real decisions in it. `packages/server/src/attach-relay/mount.ts`
+is the pattern: a route-owned subprotocol bearer (ADR-0095), with the 101
+echoing only the main subprotocol so the credential is never reflected.
 
 Then Honeycrisp's platform leaves grow a `dial` that builds that URL with the
 app's bearer, which is the small half, because ADR-0222 left hosts nothing else
 to write.
+
+**Do this on a fresh pass, not as a tail.** Binding a new Durable Object class
+means a `migrations` entry with `new_sqlite_classes` in a production Worker
+config, and this repository already carries one undeployed destructive migration
+on the `Room` class. A half-verified second one is not a thing to add at the end
+of a long session.
 
 ## The open questions, which are the reason this is a Draft
 
@@ -52,6 +67,19 @@ to write.
   the one long driven run did not stall. An application workload coalesces on an
   idle timer and looks nothing like that regime, so this may never surface for
   Honeycrisp; nobody has checked.
+
+## The other half of the gate, which is a harness problem
+
+Two devices means two signed-in browser contexts. Honeycrisp authenticates by
+OAuth against the hosted API, and this repository has no automated harness for
+that; the account work already carries "manual OAuth matrix" as its gate. So
+even with the endpoint built, the two-device run is either driven by hand or
+needs a test-only credential path decided on purpose rather than improvised.
+
+Worth separating the two claims when this is done: that the ENDPOINT carries a
+row between two replicas is provable today in `workerd`, the way
+`apps/sync-lab/worker/hibernation.test.ts` already does it. That HONEYCRISP does
+it between two signed-in browsers is the harness question above.
 
 ## Gates
 
