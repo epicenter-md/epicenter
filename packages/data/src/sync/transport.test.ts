@@ -8,16 +8,26 @@
  * every test that claims something arrived asserts on the RECEIVING replica's
  * rows, never on a counter kept by the harness.
  */
-import { defineLens } from '@epicenter/lens/lens';
+import { defineLens, type LensJson } from '@epicenter/lens/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
 
-import { createStore } from '../store/store.js';
+import {
+	type Bound,
+	type BoundOf,
+	createStore,
+	type TableHandle,
+} from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
-import { decodeFrame, encodeFrame, intoChunks } from './frames.js';
+import {
+	createChunkCollector,
+	decodeFrame,
+	encodeFrame,
+	intoChunks,
+} from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 import { createSyncClient } from './client.js';
 
@@ -29,6 +39,19 @@ const lens = defineLens({
 function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
 	if (result.error !== null) throw result.error;
 	return result.data as TValue;
+}
+
+/**
+ * One table on an untyped binding.
+ *
+ * A `Bound` is a record, so every table on it reads as possibly absent. Where a
+ * test is about a lens NOT declaring a table it looks for that `undefined`
+ * deliberately; everywhere else the lens declares it, and this says so once.
+ */
+function tableOf(bound: Bound, name: string): TableHandle {
+	const handle = bound[name];
+	if (handle === undefined) throw new Error(`this lens declares no '${name}'`);
+	return handle;
 }
 
 /**
@@ -51,16 +74,46 @@ function createWire() {
 				(queue.shift() as () => void)();
 			}
 		},
+		/**
+		 * Deliver `count` messages and leave the rest queued.
+		 *
+		 * How a socket that dies part way through a chunked transfer is modelled:
+		 * the frames ahead of the break land, and the ones behind it are still in
+		 * the queue when the close discards them. Without this the only reachable
+		 * schedules are "everything arrived" and "nothing did", and a partial
+		 * transfer is neither.
+		 */
+		step(count = 1) {
+			for (let index = 0; index < count && queue.length > 0; index += 1) {
+				(queue.shift() as () => void)();
+			}
+		},
 		inFlight: () => queue.length,
 	};
 }
 
 type Wire = ReturnType<typeof createWire>;
 
-function openReplica(label: string, hub: ReturnType<typeof createSyncHub>, wire: Wire) {
+function openReplica(
+	label: string,
+	hub: ReturnType<typeof createSyncHub>,
+	wire: Wire,
+	/**
+	 * The lens this device is running, which is not always the same one.
+	 *
+	 * A device updates before another device does, so two replicas of one
+	 * partition routinely hold lenses that disagree. Everything here declares
+	 * `notes.title`, which is what keeps `titles()` meaningful across all of them.
+	 */
+	through: LensJson = lens,
+) {
 	const database = createBunSqliteAdapter(new Database(':memory:'));
 	const store = createStore({ database });
-	const db = expectOk(store.bind(lens));
+	// One binding, two views of it. `store.bind` IS `bindUnknown` with a cast, so
+	// the typed view costs nothing and is honest for every replica running the
+	// default lens; a replica running another one reads through `bound`.
+	const bound = expectOk(store.bindUnknown(through));
+	const db = bound as unknown as BoundOf<typeof lens>;
 	const client = createSyncClient({
 		store,
 		idleMs: 0,
@@ -97,6 +150,7 @@ function openReplica(label: string, hub: ReturnType<typeof createSyncHub>, wire:
 		label,
 		store,
 		db,
+		bound,
 		client,
 		connection,
 		socket,
@@ -417,6 +471,456 @@ describe('chunking is framing, and carries what no single frame could', () => {
 			replica.destroy();
 		}
 		doc.destroy();
+	});
+});
+
+describe('a socket that dies part way through a chunked transfer', () => {
+	test('a push that lost its second chunk arrives whole after reconnecting', () => {
+		// The claim the in-memory collector rests on, from the client's side: a
+		// partial nobody ever acked is one the client still owes. The outbox is
+		// cleared by the ack and by nothing else, so this is what stands between a
+		// dropped socket and a paste that no device ever sees again.
+		const { wire, authority, phone, laptop } = setup();
+		phone.connect();
+		laptop.connect();
+		const note = expectOk(phone.db.notes.create({ title: 'a big paste' }));
+		const text = phone.db.notes.document(note.id)?.get('editor', 'text');
+		if (text === undefined) throw new Error('the row has no document');
+		text.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
+		phone.client.flush();
+
+		// It really was chunked: one frame would be one message on the wire.
+		expect(wire.inFlight()).toBeGreaterThan(1);
+		wire.step();
+		// The hub is holding chunk 0 and has stored nothing, which is the whole
+		// point of reassembling before appending: a truncated entry in the log is
+		// the poison pill this design spends real effort to make impossible.
+		expect(expectOk(authority.head())).toBe(0);
+
+		phone.disconnect();
+		wire.settle();
+		expect(expectOk(authority.head())).toBe(0);
+		expect(laptop.titles()).toEqual([]);
+
+		phone.connect();
+		wire.settle();
+
+		expect(laptop.titles()).toEqual(['a big paste']);
+		const arrived = laptop.db.notes.document(note.id)?.get('editor', 'text');
+		expect(arrived?.length).toBe(3_000_000);
+		expect(phone.client.status().owed).toBe(0);
+	});
+
+	test('CONTROL: without the reconnect the work is nowhere, on any side', () => {
+		// Without this the test above passes for a hub that stored the fragment, or
+		// for a laptop that had somehow seen the paste already. Nothing recovers a
+		// half-delivered submission except the client re-offering it.
+		const { wire, authority, phone, laptop } = setup();
+		phone.connect();
+		laptop.connect();
+		const note = expectOk(phone.db.notes.create({ title: 'a big paste' }));
+		const text = phone.db.notes.document(note.id)?.get('editor', 'text');
+		if (text === undefined) throw new Error('the row has no document');
+		text.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
+		phone.client.flush();
+		wire.step();
+		phone.disconnect();
+		wire.settle();
+
+		expect(expectOk(authority.head())).toBe(0);
+		expect(laptop.titles()).toEqual([]);
+		expect(laptop.db.notes.document(note.id)).toBeUndefined();
+		// And the phone still owes it, which is what the reconnect above spends.
+		expect(phone.client.status().owed).toBeGreaterThan(0);
+	});
+
+	test('a partial submission does not survive the connection that opened it', () => {
+		// The other half of "lost to eviction is safe": the authority must not
+		// staple a returning client's chunks onto a stranger's fragment. Each
+		// connection gets its own collector and `leave` drops it, so a submission
+		// number is only ever meaningful within one socket.
+		const { authority, hub } = openAuthority();
+		const answers: Uint8Array[] = [];
+		const first: HubConnection = { cursor: 0, send: (bytes) => answers.push(bytes) };
+		hub.join(first);
+		hub.receive(
+			first,
+			encodeFrame({
+				kind: 'push',
+				submission: 7,
+				chunk: 0,
+				chunks: 2,
+				bytes: new Uint8Array([1, 2, 3]),
+			}),
+		);
+		hub.leave(first);
+
+		// A second socket sends what the first one had left: the tail of submission
+		// 7. It completes nothing, because there is nothing here to complete.
+		const second: HubConnection = { cursor: 0, send: (bytes) => answers.push(bytes) };
+		hub.join(second);
+		answers.length = 0;
+		hub.receive(
+			second,
+			encodeFrame({
+				kind: 'push',
+				submission: 7,
+				chunk: 1,
+				chunks: 2,
+				bytes: new Uint8Array([4, 5, 6]),
+			}),
+		);
+
+		expect(expectOk(authority.head())).toBe(0);
+		expect(answers).toEqual([]);
+	});
+
+	test('CONTROL: the same two chunks on one connection DO complete it', () => {
+		// Without this the test above passes for a hub that ignores every push.
+		const { authority, hub } = openAuthority();
+		const answers: Uint8Array[] = [];
+		const only: HubConnection = { cursor: 0, send: (bytes) => answers.push(bytes) };
+		hub.join(only);
+		for (const [chunk, bytes] of [
+			[0, new Uint8Array([1, 2, 3])],
+			[1, new Uint8Array([4, 5, 6])],
+		] as const) {
+			hub.receive(
+				only,
+				encodeFrame({ kind: 'push', submission: 7, chunk, chunks: 2, bytes }),
+			);
+		}
+
+		expect(expectOk(authority.head())).toBe(1);
+		expect(expectOk(authority.since(0))[0]?.bytes).toEqual(
+			new Uint8Array([1, 2, 3, 4, 5, 6]),
+		);
+	});
+
+	test('a replica that loses a snapshot mid-transfer converges on reconnect', () => {
+		// The authority's side of the same failure. This replica can only be served
+		// by the snapshot, because the entries it covers are deleted, so a snapshot
+		// that dies in flight and is not retried is a device that never syncs again.
+		const { wire, authority, phone, laptop } = setup();
+		phone.connect();
+		const note = expectOk(phone.db.notes.create({ title: 'a big paste' }));
+		const text = phone.db.notes.document(note.id)?.get('editor', 'text');
+		if (text === undefined) throw new Error('the row has no document');
+		text.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
+		phone.client.flush();
+		wire.settle();
+		// The snapshot is not staged by hand here: a 3 MB paste is past the floor on
+		// its own, so the hub asked the phone for one and the tail is already gone.
+		expect(expectOk(authority.snapshotPosition())).toBe(1);
+		expect(expectOk(authority.since(0, 1_000))).toEqual([]);
+
+		laptop.connect();
+		expect(wire.inFlight()).toBeGreaterThan(1);
+		wire.step();
+		laptop.disconnect();
+		wire.settle();
+
+		// One chunk of a snapshot is not state, and the replica knows it holds
+		// nothing rather than believing it is caught up.
+		expect(laptop.titles()).toEqual([]);
+		expect(laptop.client.status().cursor).toBe(0);
+
+		laptop.connect();
+		wire.settle();
+
+		expect(laptop.titles()).toEqual(['a big paste']);
+		const arrived = laptop.db.notes.document(note.id)?.get('editor', 'text');
+		expect(arrived?.length).toBe(3_000_000);
+		expect(laptop.client.status().cursor).toBe(1);
+		expect(laptop.client.status().unresolvedDependencies).toBe(false);
+	});
+});
+
+/**
+ * The collector on its own, fed real update bytes cut small.
+ *
+ * Driven directly rather than through the client, because everything here is
+ * about chunk arithmetic and reaching it through the transport would mean
+ * multi-megabyte payloads per case. The BYTES are real and the reassembled
+ * result is applied to a real replica and read back through its lens, so what is
+ * synthetic is the chunk size and nothing else.
+ */
+describe('reassembly holds partials in memory, and only in memory', () => {
+	/** One replica's whole state, cut into more chunks than any case needs. */
+	function cutUpdate(source: ReturnType<typeof openReplica>, limit = 16) {
+		const bytes = source.store.encodeStateSince();
+		const chunks = intoChunks(bytes, limit);
+		if (chunks.length < 4) throw new Error(`only ${chunks.length} chunks`);
+		return { bytes, chunks };
+	}
+
+	function push(chunks: Uint8Array[], chunk: number) {
+		return {
+			kind: 'push' as const,
+			submission: 7,
+			chunk,
+			chunks: chunks.length,
+			bytes: chunks[chunk] as Uint8Array,
+		};
+	}
+
+	test('chunks that arrive out of order reassemble into the update they were cut from', () => {
+		const { phone, laptop } = setup();
+		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		const { bytes, chunks } = cutUpdate(phone);
+		const collector = createChunkCollector({ limitBytes: 1 << 20 });
+
+		let whole: Uint8Array | undefined;
+		// Backwards, so the last chunk arrives first and chunk 0 arrives last.
+		for (const index of [...chunks.keys()].reverse()) {
+			whole = expectOk(collector.accept(push(chunks, index)));
+			// Complete only once every index has landed, never before.
+			expect(whole === undefined).toBe(index !== 0);
+		}
+
+		expect(whole).toEqual(bytes);
+		expect(collector.bufferedBytes()).toBe(0);
+		// Byte equality alone would not show the update still works, so it is
+		// applied to a replica that has never seen this row and read back through
+		// that replica's own lens.
+		expectOk(laptop.store.applyRemote(whole as Uint8Array));
+		expect(laptop.titles()).toEqual(['Groceries']);
+	});
+
+	test('CONTROL: one chunk short is never whole, and the replica stays empty', () => {
+		// Without this, "out of order still reassembles" would pass for a collector
+		// that hands back whatever it holds on the first frame.
+		const { phone, laptop } = setup();
+		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		const { chunks } = cutUpdate(phone);
+		const collector = createChunkCollector({ limitBytes: 1 << 20 });
+
+		for (const index of [...chunks.keys()].reverse()) {
+			if (index === 1) continue;
+			expect(expectOk(collector.accept(push(chunks, index)))).toBeUndefined();
+		}
+
+		expect(collector.bufferedBytes()).toBeGreaterThan(0);
+		expect(laptop.titles()).toEqual([]);
+	});
+
+	test('a chunk that arrives twice does not count twice', () => {
+		// Re-delivery is ordinary here: a reconnect re-sends a submission from its
+		// first chunk, so a collector that counted frames rather than filled slots
+		// would call a submission whole while a hole was still in it.
+		const { phone, laptop } = setup();
+		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		const { bytes, chunks } = cutUpdate(phone);
+		const collector = createChunkCollector({ limitBytes: 1 << 20 });
+
+		const repeated = [0, 0, 0, ...chunks.keys()];
+		let whole: Uint8Array | undefined;
+		for (const index of repeated) {
+			whole = expectOk(collector.accept(push(chunks, index)));
+			expect(whole === undefined).toBe(index !== chunks.length - 1);
+		}
+
+		expect(whole).toEqual(bytes);
+		expect(collector.bufferedBytes()).toBe(0);
+		expectOk(laptop.store.applyRemote(whole as Uint8Array));
+		expect(laptop.titles()).toEqual(['Groceries']);
+	});
+
+	test('CONTROL: repeats alone never fill the holes they duplicate', () => {
+		const { phone, laptop } = setup();
+		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		const { chunks } = cutUpdate(phone);
+		const collector = createChunkCollector({ limitBytes: 1 << 20 });
+
+		for (const index of [0, 0, 0, 0, 1, 1, 1]) {
+			expect(expectOk(collector.accept(push(chunks, index)))).toBeUndefined();
+		}
+
+		// Two slots filled and the rest empty, however many frames arrived.
+		expect(collector.bufferedBytes()).toBe(
+			(chunks[0]?.length ?? 0) + (chunks[1]?.length ?? 0),
+		);
+		expect(laptop.titles()).toEqual([]);
+	});
+
+	test('a partial nobody finishes is held until something forgets it', () => {
+		// Nothing ages a partial out, and that is deliberate rather than an
+		// oversight: eviction on a timer would drop a submission a slow client is
+		// still sending. The bound is the byte limit, and the release is the
+		// collector itself going away with the connection that owned it.
+		const collector = createChunkCollector({ limitBytes: 1 << 20 });
+		expectOk(
+			collector.accept({
+				kind: 'push',
+				submission: 7,
+				chunk: 0,
+				chunks: 3,
+				bytes: new Uint8Array(600),
+			}),
+		);
+		expect(collector.bufferedBytes()).toBe(600);
+
+		// Other traffic completing does not release it, so a dead submission is not
+		// swept up by a live one.
+		expectOk(
+			collector.accept({
+				kind: 'push',
+				submission: 8,
+				chunk: 0,
+				chunks: 1,
+				bytes: new Uint8Array(9),
+			}),
+		);
+		expect(collector.bufferedBytes()).toBe(600);
+
+		collector.forget(7);
+		expect(collector.bufferedBytes()).toBe(0);
+	});
+
+	test('past the limit the partial is dropped and the sender is told', () => {
+		// The ceiling that makes "held in memory" bounded rather than a promise. A
+		// client that opens submissions and never finishes them is asking the
+		// authority to hold bytes forever, and the answer is a refusal it can act
+		// on, because it still owes the work.
+		const collector = createChunkCollector({ limitBytes: 1_000 });
+		expectOk(
+			collector.accept({
+				kind: 'push',
+				submission: 7,
+				chunk: 0,
+				chunks: 3,
+				bytes: new Uint8Array(600),
+			}),
+		);
+		const over = collector.accept({
+			kind: 'push',
+			submission: 7,
+			chunk: 1,
+			chunks: 3,
+			bytes: new Uint8Array(600),
+		});
+
+		expect(over.error?.name).toBe('Malformed');
+		expect(collector.bufferedBytes()).toBe(0);
+	});
+});
+
+describe('a partial that outlives the socket that opened it', () => {
+	/**
+	 * The client keeps ONE collector for the life of the client, and `detach`
+	 * does not clear it. Positions in it are entry sequence numbers and snapshot
+	 * positions in the same key space, so a partial left behind by a dead socket
+	 * is waiting for whatever the authority sends at that number next.
+	 *
+	 * The hub does not have this problem: a collector belongs to a connection and
+	 * `leave` drops it, which is pinned above by 'a partial submission does not
+	 * survive the connection that opened it'.
+	 */
+	function stallMidEntry() {
+		// A floor nothing reaches, so both snapshots here are staged deliberately
+		// and the sizes are the real ones the transport would produce.
+		const { wire, authority, phone, laptop } = setup(Number.MAX_SAFE_INTEGER);
+		phone.connect();
+		const note = expectOk(phone.db.notes.create({ title: 'a big paste' }));
+		const text = phone.db.notes.document(note.id)?.get('editor', 'text');
+		if (text === undefined) throw new Error('the row has no document');
+		text.applyDelta(text.change.insert('x'.repeat(4_000_000)) as never);
+		phone.client.flush();
+		wire.settle();
+		expectOk(authority.replaceSnapshot(1, phone.store.encodeStateSince()));
+		const first = expectOk(authority.snapshot());
+		const snapshotChunks = intoChunks(first?.bytes as Uint8Array).length;
+
+		// Entry 2 is a second paste: two chunks, where the state through 2 is four.
+		// That difference is the whole scenario, and it is what a delta and a whole
+		// state at the same position ordinarily look like.
+		text.applyDelta(text.change.insert('y'.repeat(3_000_000)) as never);
+		phone.client.flush();
+		wire.settle();
+		expect(intoChunks(expectOk(authority.since(1))[0]?.bytes as Uint8Array)).toHaveLength(2);
+
+		return { wire, authority, phone, laptop, note, snapshotChunks };
+	}
+
+	function readProse(replica: ReturnType<typeof openReplica>, rowId: string) {
+		return replica.db.notes.document(rowId)?.get('editor', 'text').length;
+	}
+
+	test('a snapshot cut differently to the entry it replaces still arrives', () => {
+		const { wire, authority, phone, laptop, note, snapshotChunks } = stallMidEntry();
+
+		// The laptop takes the snapshot at 1, then the first chunk of entry 2, and
+		// its socket dies. It is now holding a partial at position 2, two chunks
+		// wide, that will never be completed by anything.
+		laptop.connect();
+		wire.step(snapshotChunks + 1);
+		laptop.disconnect();
+		wire.settle();
+		expect(laptop.client.status().cursor).toBe(1);
+		expect(readProse(laptop, note.id)).toBe(4_000_000);
+
+		// The authority snapshots at 2 and the tail it covers is gone, so the
+		// snapshot is now the only way this replica can ever converge.
+		expectOk(authority.replaceSnapshot(2, phone.store.encodeStateSince()));
+		expect(expectOk(authority.since(0, 1_000))).toEqual([]);
+		expect(intoChunks(expectOk(authority.snapshot())?.bytes as Uint8Array)).toHaveLength(4);
+
+		laptop.connect();
+		wire.settle();
+
+		// This used to leave the replica at 4,000,000 in silence. A partial from
+		// the dead socket sat at position 2, a four-chunk snapshot arrived at the
+		// same position, the collector reported a framing error, and
+		// `client.receive` mapped it to `Ok(undefined)`: chunk 0 discarded, the
+		// rest stranded in a partial that could never complete, `lastError`
+		// undefined and `needsResync` false. Two changes close it. A collector
+		// belongs to a socket and is rebuilt on attach and detach, so nothing
+		// survives to collide; and a reassembly failure is reported rather than
+		// swallowed, so even a collision that did happen asks to be reconnected.
+		expect(readProse(laptop, note.id)).toBe(7_000_000);
+		expect(laptop.client.status().needsResync).toBe(false);
+		expect(laptop.client.status().lastError).toBeUndefined();
+	});
+
+	test('a reassembly failure asks to be reconnected instead of going quiet', () => {
+		// The second half of the fix, on its own. Even if frames that contradict
+		// their own count reach a replica, it must say so: a partial nothing will
+		// ever complete stops the replica dead while every layer reports success.
+		const { wire, phone } = setup();
+		phone.connect();
+		wire.settle();
+
+		const first = phone.client.receive(
+			encodeFrame({ kind: 'entry', seq: 1, chunk: 0, chunks: 3, bytes: new Uint8Array([1]) }),
+		);
+		expect(first.error).toBeNull();
+		const contradicting = phone.client.receive(
+			encodeFrame({ kind: 'entry', seq: 1, chunk: 1, chunks: 2, bytes: new Uint8Array([2]) }),
+		);
+
+		expect(contradicting.error?.name).toBe('BrokenStream');
+		expect(phone.client.status().needsResync).toBe(true);
+	});
+
+	test('CONTROL: without the stale partial the same snapshot converges first time', () => {
+		// The isolation. Same sizes, same four-chunk snapshot, same reconnect: the
+		// only difference is that this laptop's socket died on a frame boundary
+		// rather than inside a chunked entry.
+		const { wire, authority, phone, laptop, note, snapshotChunks } = stallMidEntry();
+
+		laptop.connect();
+		wire.step(snapshotChunks);
+		laptop.disconnect();
+		wire.settle();
+		expect(laptop.client.status().cursor).toBe(1);
+
+		expectOk(authority.replaceSnapshot(2, phone.store.encodeStateSince()));
+		laptop.connect();
+		wire.settle();
+
+		expect(readProse(laptop, note.id)).toBe(7_000_000);
+		expect(laptop.client.status().cursor).toBe(2);
+		expect(laptop.titles()).toEqual(['a big paste']);
 	});
 });
 
@@ -797,6 +1301,264 @@ describe('the snapshot path under sustained traffic', () => {
 		expect(laptop.titles()).toEqual(phone.titles());
 		expect(phone.client.status().lastError).toBeUndefined();
 		expect(laptop.client.status().lastError).toBeUndefined();
+	});
+});
+
+/**
+ * The same application one release later: `notes` grew a field.
+ *
+ * `pinned` declares no default, so it is a field the older release's rows cannot
+ * satisfy. That asymmetry is the point: an extra field is invisible to a lens
+ * that does not declare it, while a missing one is a row a lens cannot read, and
+ * the two directions have to be told apart.
+ */
+const newerLens = defineLens({
+	namespace: 'so.epicenter.honeycrisp',
+	tables: { notes: { title: 'string', pinned: 'boolean' } },
+});
+
+/** The same application again, one release later still: a whole new table. */
+const twoTableLens = defineLens({
+	namespace: 'so.epicenter.honeycrisp',
+	tables: { notes: { title: 'string' }, tasks: { label: 'string' } },
+});
+
+describe('two devices whose lenses disagree', () => {
+	/** One partition, two devices, each running the release it was given. */
+	function pair(updatedLens: LensJson) {
+		const wire = createWire();
+		const { authority, hub } = openAuthority();
+		const updated = openReplica('updated', hub, wire, updatedLens);
+		const older = openReplica('older', hub, wire);
+		updated.connect();
+		older.connect();
+		return {
+			wire,
+			authority,
+			hub,
+			updated,
+			older,
+			updatedNotes: tableOf(updated.bound, 'notes'),
+			olderNotes: tableOf(older.bound, 'notes'),
+		};
+	}
+
+	test('a field the older release cannot name survives a round trip through it', () => {
+		// The case that decides whether a release can be rolled out to one device at
+		// a time. If the older release rewrote rows as its own lens sees them, every
+		// edit made on the un-updated phone would silently strip the new field from
+		// the updated laptop's rows.
+		const { wire, updated, updatedNotes, older, olderNotes } = pair(newerLens);
+		const made = expectOk(
+			updatedNotes.create({ title: 'Groceries', pinned: true }),
+		);
+		updated.client.flush();
+		wire.settle();
+
+		// The older release sees the row, minus the one field it cannot name, and
+		// reports no trouble: an undeclared key is not a conformance failure.
+		const seen = expectOk(olderNotes.list());
+		expect(seen.nonconforming).toEqual([]);
+		expect(seen.rows).toEqual([{ id: made.id, title: 'Groceries' }]);
+
+		expectOk(olderNotes.update(made.id, { title: 'Groceries and milk' }));
+		older.client.flush();
+		wire.settle();
+
+		// Both halves in one assertion, and each is the other's control. The new
+		// title proves the round trip actually happened; `pinned` proves it did not
+		// cost the updated device a field the older one had never heard of.
+		expect(expectOk(updatedNotes.get(made.id))).toEqual({
+			id: made.id,
+			title: 'Groceries and milk',
+			pinned: true,
+		});
+	});
+
+	test('CONTROL: the older release can still destroy the row entirely', () => {
+		// Without this, "the field survived" would pass for a channel that carries
+		// nothing back from the older device at all. A delete authored there has to
+		// reach the updated device and take the row with it.
+		const { wire, updated, updatedNotes, older, olderNotes } = pair(newerLens);
+		const made = expectOk(
+			updatedNotes.create({ title: 'Groceries', pinned: true }),
+		);
+		updated.client.flush();
+		wire.settle();
+
+		expectOk(olderNotes.delete(made.id));
+		older.client.flush();
+		wire.settle();
+
+		expect(expectOk(updatedNotes.get(made.id))).toBeUndefined();
+		expect(expectOk(updatedNotes.ids())).toEqual([]);
+	});
+
+	test('a row the newer release cannot read is reported, not dropped', () => {
+		// The other direction, which is what the updated device sees for every row
+		// the un-updated one writes. A row it cannot read is still a row and is
+		// still in the CRDT: the failure names the address and carries what did
+		// pass, so the application can repair it or show it.
+		const { wire, updatedNotes, older, olderNotes } = pair(newerLens);
+		const made = expectOk(olderNotes.create({ title: 'Groceries' }));
+		older.client.flush();
+		wire.settle();
+
+		const seen = expectOk(updatedNotes.list());
+		expect(seen.rows).toEqual([]);
+		expect(seen.nonconforming).toHaveLength(1);
+		const failure = seen.nonconforming[0];
+		expect(failure?.address).toEqual({
+			namespace: 'so.epicenter.honeycrisp',
+			tableName: 'notes',
+			rowId: made.id,
+		});
+		expect(failure?.issues.map((issue) => issue.field)).toEqual(['pinned']);
+		// What could be read, which is what recovery is composed from.
+		expect(failure?.conforming).toEqual({ id: made.id, title: 'Groceries' });
+		expect(failure?.raw).toEqual({ title: 'Groceries' });
+		// And it was not dropped on the way in: the row is on this device.
+		expect(expectOk(updatedNotes.ids())).toEqual([made.id]);
+	});
+
+	test('CONTROL: a row the newer release CAN read is in rows and reported nowhere', () => {
+		// Without this, "reported rather than dropped" would pass for a lens that
+		// reports every row it is handed.
+		const { wire, updated, updatedNotes, older } = pair(newerLens);
+		const made = expectOk(
+			updatedNotes.create({ title: 'Groceries', pinned: false }),
+		);
+		updated.client.flush();
+		wire.settle();
+		expect(older.titles()).toEqual(['Groceries']);
+
+		const seen = expectOk(updatedNotes.list());
+		expect(seen.nonconforming).toEqual([]);
+		expect(seen.rows).toEqual([{ id: made.id, title: 'Groceries', pinned: false }]);
+	});
+
+	test('a table the older release does not declare waits in the CRDT for one that does', () => {
+		// The claim `rebuildAllProjections` makes in a comment, checked across the
+		// transport rather than inside one store. The older device relays and stores
+		// rows of a table it has no name for, and they are there the moment it is
+		// updated, without anybody re-sending anything.
+		const { wire, updated, updatedNotes, older } = pair(twoTableLens);
+		expectOk(updatedNotes.create({ title: 'Groceries' }));
+		const task = expectOk(tableOf(updated.bound, 'tasks').create({ label: 'buy milk' }));
+		updated.client.flush();
+		wire.settle();
+
+		expect(older.titles()).toEqual(['Groceries']);
+		// It holds no handle for the table and no relation to query it through.
+		expect(older.bound.tasks).toBeUndefined();
+		expect(
+			expectOk(
+				older.bound.query`SELECT name FROM sqlite_schema WHERE name = 'tasks'`,
+			),
+		).toEqual([]);
+
+		// The device is updated: same store, same file, a lens that now declares it.
+		const rebound = expectOk(older.store.bindUnknown(twoTableLens));
+		expect(expectOk(tableOf(rebound, 'tasks').list()).rows).toEqual([
+			{ id: task.id, label: 'buy milk' },
+		]);
+		// Through the projection too, so this is not just a CRDT read: binding
+		// rebuilt the relation from rows that were already here.
+		expect(expectOk(rebound.query`SELECT id, label FROM tasks`)).toEqual([
+			{ id: task.id, label: 'buy milk' },
+		]);
+	});
+
+	test('updating a device to a lens with a new FIELD reprojects and keeps working', () => {
+		// The mismatch seen from the device that is doing the updating, which is the
+		// likeliest way a lens ever changes. `applyProjectionSchema` is
+		// `CREATE TABLE IF NOT EXISTS`, so binding a lens that added a field to a
+		// table this store already projected leaves the relation as the old lens
+		// built it, and the rebuild that follows inserts into a column that is not
+		// there.
+		const wire = createWire();
+		const { hub } = openAuthority();
+		const updating = openReplica('updating', hub, wire);
+		const other = openReplica('other', hub, wire);
+		const otherNotes = tableOf(other.bound, 'notes');
+		updating.connect();
+		other.connect();
+		expectOk(otherNotes.create({ title: 'Groceries' }));
+		other.client.flush();
+		wire.settle();
+		expect(updating.titles()).toEqual(['Groceries']);
+
+		// This used to kill the store outright. `applyProjectionSchema` was
+		// `CREATE TABLE IF NOT EXISTS`, so the old relation stayed without the new
+		// column and `rebuildProjectedTable` failed with "no column named pinned".
+		// `persist` fails closed, so the damage was not confined to the new
+		// binding: the binding the app already held started returning
+		// `StorageFailed` for every read and write, and through the transport it
+		// was indistinguishable from a poison pill. Adding a field is the most
+		// ordinary lens change there is.
+		const rebound = expectOk(updating.store.bindUnknown(newerLens));
+
+		const reboundNotes = tableOf(rebound, 'notes');
+		// The pre-existing row is REPORTED rather than repaired or dropped, because
+		// `pinned` is declared without a default and that row predates it
+		// (ADR-0213). It is still in the CRDT, and `conforming` carries what could
+		// be read, which is the whole recovery composition.
+		const listed = expectOk(reboundNotes.list());
+		expect(listed.rows).toHaveLength(0);
+		expect(listed.nonconforming).toHaveLength(1);
+		expect(listed.nonconforming[0]?.conforming).toMatchObject({ title: 'Groceries' });
+		expect(expectOk(reboundNotes.ids())).toHaveLength(1);
+
+		// CONTROL: the new column really is there now, which is exactly what the
+		// old relation was missing. A drop that failed to recreate fails here.
+		expect(expectOk(reboundNotes.create({ title: 'Bread', pinned: true })).pinned).toBe(
+			true,
+		);
+
+		// And it keeps syncing rather than stopping dead at the next entry.
+		expectOk(otherNotes.create({ title: 'Milk' }));
+		other.client.flush();
+		wire.settle();
+		expect(updating.client.status().lastError).toBeUndefined();
+		expect(expectOk(reboundNotes.ids())).toHaveLength(3);
+	});
+
+	test('CONTROL: updating a device to a lens with a new TABLE leaves it working', () => {
+		// The isolation, and the reason the defect above is about a column rather
+		// than about rebinding at all. A new table is a new relation, which
+		// `CREATE TABLE IF NOT EXISTS` does create, so the same move on the same
+		// store succeeds and the device keeps syncing.
+		const wire = createWire();
+		const { hub } = openAuthority();
+		const updating = openReplica('updating', hub, wire);
+		const other = openReplica('other', hub, wire);
+		const otherNotes = tableOf(other.bound, 'notes');
+		updating.connect();
+		other.connect();
+		expectOk(otherNotes.create({ title: 'Groceries' }));
+		other.client.flush();
+		wire.settle();
+
+		const rebound = expectOk(updating.store.bindUnknown(twoTableLens));
+
+		expect(expectOk(tableOf(rebound, 'tasks').list()).rows).toEqual([]);
+		expectOk(otherNotes.create({ title: 'Bread' }));
+		other.client.flush();
+		wire.settle();
+		expect(updating.titles()).toEqual(['Bread', 'Groceries']);
+		expect(updating.client.status().lastError).toBeUndefined();
+	});
+
+	test('CONTROL: the new table on a device that never received them holds nothing', () => {
+		// Without this, the rebind above would pass for a bind that invents rows, or
+		// for a `tasks` relation that was somehow already populated.
+		const wire = createWire();
+		const { hub } = openAuthority();
+		const absent = openReplica('absent', hub, wire);
+
+		const rebound = expectOk(absent.store.bindUnknown(twoTableLens));
+
+		expect(expectOk(tableOf(rebound, 'tasks').list()).rows).toEqual([]);
 	});
 });
 

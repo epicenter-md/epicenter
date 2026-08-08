@@ -207,15 +207,52 @@ export function applyProjectionSchema(
 		...lens.tables,
 	];
 	for (const [tableName, table] of relations) {
-		const columns = [...table.fields.keys()].map(
-			(field) => `${quoteIdentifier(field)} ANY`,
-		);
+		const fields = [...table.fields.keys()];
+		// A relation whose columns no longer match the lens is DROPPED rather than
+		// altered, which is only safe because a projection is a cache the CRDT can
+		// always rebuild, and `bindUnknown` rebuilds every table right after this.
+		//
+		// `CREATE TABLE IF NOT EXISTS` alone was a live bug, and the most ordinary
+		// lens change there is triggered it: adding a field left the old relation
+		// in place without the new column, so `rebuildProjectedTable` failed with
+		// "table notes has no column named pinned". Because `persist` fails closed,
+		// that did not stop at the new binding: the binding the app already held
+		// started reporting `StorageFailed` for every read and write, and
+		// `applyRemote` failed too, so through the transport it was indistinguish-
+		// able from a poison pill even though the bytes were fine and every other
+		// replica took them.
+		if (!columnsMatch(database, tableName, fields)) {
+			database.run(`DROP TABLE IF EXISTS ${quoteIdentifier(tableName)}`);
+		}
+		const columns = fields.map((field) => `${quoteIdentifier(field)} ANY`);
 		database.run(
 			`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(tableName)} (
 				id TEXT PRIMARY KEY${columns.length === 0 ? '' : `,\n\t\t\t\t${columns.join(',\n\t\t\t\t')}`}
 			) WITHOUT ROWID, STRICT`,
 		);
 	}
+}
+
+/**
+ * Whether a projected relation already has exactly the columns a lens declares.
+ *
+ * A relation that does not exist yet "matches", so a first bind creates it
+ * rather than dropping nothing and creating it. Order is compared as a set,
+ * because the projection addresses columns by name.
+ */
+function columnsMatch(
+	database: SqliteDatabase,
+	tableName: string,
+	fields: readonly string[],
+): boolean {
+	const existing = database.all<SqliteRow & { name: string }>(
+		`PRAGMA table_info(${quoteIdentifier(tableName)})`,
+	);
+	if (existing.length === 0) return true;
+	const found = new Set(existing.map((column) => column.name));
+	found.delete('id');
+	if (found.size !== fields.length) return false;
+	return fields.every((field) => found.has(field));
 }
 
 /**

@@ -52,6 +52,18 @@ export const SyncClientError = defineErrors({
 	 * authority's log. Naming the position is what makes that a one-row repair
 	 * rather than an unexplained device that stopped syncing.
 	 */
+	/**
+	 * The frames arriving no longer add up to anything this replica can use.
+	 *
+	 * Chunks that contradict their own count, or a partial left behind by a dead
+	 * socket colliding with a later frame at the same position. It is silent by
+	 * nature: the reassembly simply never completes, so the replica stops moving
+	 * while every layer reports success. Recovery is the reconnect a gap needs.
+	 */
+	BrokenStream: ({ reason }: { reason: string }) => ({
+		message: `This replica cannot reassemble what it is being sent: ${reason}`,
+		reason,
+	}),
 	Unapplyable: ({ seq, cause }: { seq: number; cause: unknown }) => ({
 		message: `Entry ${seq} could not be applied, and this replica is stuck at ${seq - 1}`,
 		seq,
@@ -143,7 +155,10 @@ export function createSyncClient({
 	schedule?: Schedule;
 	maxBufferedBytes?: number;
 }): SyncClient {
-	const collector = createChunkCollector({ limitBytes: maxBufferedBytes });
+	// Rebuilt on every attach rather than held for the life of the client. A
+	// collector keyed by position outliving its socket is how a partial left by a
+	// dead connection collides with a later frame at the same number.
+	let collector = createChunkCollector({ limitBytes: maxBufferedBytes });
 	let socket: SyncSocket | undefined;
 	let inFlight: { submission: number; throughId: number } | undefined;
 	let nextSubmission = 1;
@@ -189,6 +204,14 @@ export function createSyncClient({
 			);
 		}
 		return Ok(undefined);
+	}
+
+	/** Report a reassembly failure and ask to be reconnected. */
+	function brokenStream(reason: string): Result<void, SyncClientError> {
+		const broken = SyncClientError.BrokenStream({ reason });
+		lastError = broken.error;
+		needsResync = true;
+		return broken;
 	}
 
 	function apply(seq: number, bytes: Uint8Array): Result<void, SyncClientError> {
@@ -285,6 +308,10 @@ export function createSyncClient({
 
 		attach(next: SyncSocket) {
 			socket = next;
+			// A new socket starts a new reassembly. Whatever the old one left half
+			// delivered is being re-sent from this replica's cursor anyway, and
+			// keeping it could only collide.
+			collector = createChunkCollector({ limitBytes: maxBufferedBytes });
 			// A fresh socket asks from this replica's own cursor, which is exactly
 			// the repair a gap needs.
 			needsResync = false;
@@ -298,6 +325,7 @@ export function createSyncClient({
 		detach() {
 			socket = undefined;
 			inFlight = undefined;
+			collector = createChunkCollector({ limitBytes: maxBufferedBytes });
 			clearIdle();
 		},
 
@@ -365,13 +393,17 @@ export function createSyncClient({
 				}
 				case 'entry': {
 					const { data: whole, error: chunkError } = collector.accept(frame);
-					if (chunkError !== null) return Ok(undefined);
+					// A reassembly failure is NOT nothing. It means this replica's view
+					// of the stream is broken, and returning Ok here left it stalled
+					// with no error, no `needsResync`, and every layer reporting
+					// success. Recovery is the same reconnect a gap needs.
+					if (chunkError !== null) return brokenStream(chunkError.reason);
 					if (whole === undefined) return Ok(undefined);
 					return apply(frame.seq, whole);
 				}
 				case 'snapshot': {
 					const { data: whole, error: chunkError } = collector.accept(frame);
-					if (chunkError !== null) return Ok(undefined);
+					if (chunkError !== null) return brokenStream(chunkError.reason);
 					if (whole === undefined) return Ok(undefined);
 					return adopt(frame.position, whole);
 				}
