@@ -64,9 +64,40 @@ which is a real improvement over a log and is not the same as flat. The gap
 widens with time, 1.3x early and 1.7x late on this workload, which deletes on
 every third operation and is therefore harsher than a real vault.
 
-The parts that are genuinely bounded stand: a returning replica downloads state
-plus a short tail rather than all history, and deleted CONTENT is gone at the
-next snapshot.
+### And "a short tail" is wrong too, measured
+
+The second quantitative claim in this record to fail a bench, and the same
+species of failure as the first: the DIRECTION is right and the magnitude word
+is not (`evidence/bench/first-sync.ts`). Over 240 days of use on the real
+vault's shape, against an append-only control on the identical workload:
+
+| history | snapshot and tail | append-only log |
+| --- | --- | --- |
+| 0 days | 2.7 MB, 14 entries | 2.7 MB, 25 entries |
+| 60 days | 3.0 MB, 278 entries | 3.5 MB, 817 entries |
+| 240 days | 5.4 MB, 2,654 entries | 5.8 MB, 3,193 entries |
+
+The tail is a **sawtooth that decays back toward the log**, not a short
+remainder. Just after a replacement a joiner pays 2.9x fewer entries and 64%
+less time; six months later that is 17% fewer entries and 13% less time. Where a
+new device lands on the tooth is luck.
+
+The mechanism is also not what `authority.ts` says. `shouldSnapshot` compares
+the tail against the SUM of retained snapshots, and two positions are retained
+deliberately, so the number the tail must beat is about twice the live snapshot.
+The trigger bounds the TAIL at roughly twice the state and the transfer at
+roughly three times it.
+
+So the honest claim is: **a joining device pays between one and three times the
+vault, bounded, instead of paying all of history, unbounded.** That is a real
+and worthwhile difference and it is not "a short tail".
+
+Applying costs 2.3 to 2.8 ms per ENTRY, because each entry is one commit on the
+arriving device, so the advantage is mostly in entry count rather than bytes:
+the 60-day row transfers 14% fewer bytes and takes 64% less time.
+
+What is genuinely bounded and unqualified: deleted CONTENT is gone at the next
+snapshot.
 
 ### The condition is checkable without semantics, and it is two halves
 
