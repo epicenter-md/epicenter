@@ -60,22 +60,30 @@ reader, so a reassembly that dropped a chunk would leave the reader looking
 empty and reporting success. The assertion is on the receiving replica's own
 document, never on a counter kept by the harness.
 
-## 3. Sustained traffic through one instance
+## 3. Sustained traffic, and the snapshot replacing the log
 
-2,000 pushes, one per row, coalescing effectively off so the authority is the
-thing under load.
+Pushes one per row, coalescing effectively off so the authority is the thing
+under load. The right-hand column is after the authority stopped keeping a log
+and started keeping a snapshot plus a tail.
 
-| | local `wrangler dev` | real Cloudflare |
+| | full log (withdrawn) | snapshot and tail |
 | --- | --- | --- |
-| messages | 2,000 | 2,000 |
-| entries in the log | 2,000 | 2,000 |
-| wall clock | 22,988 ms (11.5 ms each) | 104,095 ms (52.1 ms each) |
-| bytes stored | 316,178 | 316,178 |
-| bytes per entry | 158 | 158 |
-| rows on the other replica | 2,000 | 2,000 |
+| messages | 2,000 | 1,500 |
+| head position | 2,000 | 1,500 |
+| snapshot taken at | never | **979** |
+| entries still held | 2,000 | **521** |
+| wall clock | 104,095 ms (52.1 ms each) | 106,908 ms (71.3 ms each) |
+| bytes stored | 316,178 | 226,507 |
+| rows on the other replica | 2,000 | 1,500 |
 | control: one incarnation start to end | held | held |
 | control: every position contiguous | held | held |
 | control: the reader holds every row | held | held |
+| control: the tail is shorter than the run | n/a | held (521 of 1,500) |
+
+**The last control is the one that matters**, and it had to be added: the head
+does not move when a snapshot is taken, so a run where nothing was ever
+snapshotted and one where everything was look identical from `head` alone. The
+first version of this experiment could not see the feature it was testing.
 
 The round trip is 4.5x slower against real Cloudflare, which is a network
 number rather than an authority number: the probe waits for each ack before
@@ -142,10 +150,23 @@ script that was never committed.** The leak counts are pinned as an
 ordering by `evidence/validation.test.ts`, which is kept precisely because it is
 the record of why there is no filter.
 
-**One transient.** A run against production once returned non-JSON from the
-first probe request on a brand-new partition and the script died. It did not
-reproduce across later runs and is recorded here rather than smoothed over,
-because a probe that is retried until it passes is not evidence.
+**Two transients, neither explained.** A run against production once returned
+non-JSON from the first probe request on a brand-new partition. And a
+1,500-message run once stalled at message 461 waiting for an acknowledgement
+past the 60-second timeout, before any snapshot had been taken; later runs at
+700 and 1,500 messages passed with snapshots firing at 491 and 979, and
+`wrangler tail` recorded no exception in the Durable Object. Neither reproduced
+and neither has a cause. They are recorded rather than smoothed over, because a
+probe that is retried until it passes is not evidence, and because `workerd`
+swallowing a throw without closing the socket would look exactly like this.
+
+**Two real bugs the probe found that the tests did not.** The snapshot trigger
+is a ratio, which is scale-free and therefore true almost immediately on a small
+document: a live run snapshotted on nearly every message and ground to a halt
+around the two hundredth. It now has a floor. And a refusal aimed at a snapshot
+offer was being read by the client as a refusal of its in-flight push, because
+the acknowledgement path checked the submission number and the refusal path did
+not.
 
 ## What is still unmeasured
 

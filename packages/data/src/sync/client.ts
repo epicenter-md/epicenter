@@ -317,6 +317,14 @@ export function createSyncClient({
 					return Ok(undefined);
 				}
 				case 'refuse': {
+					// Only if it answers the submission actually in flight. The ack
+					// path has always checked this and the refusal path did not, so a
+					// refusal aimed at a snapshot offer, which carries a position
+					// rather than a submission number, was read as a refusal of an
+					// unrelated push and cleared it.
+					if (inFlight === undefined || frame.submission !== inFlight.submission) {
+						return Ok(undefined);
+					}
 					const refused = SyncClientError.Refused({ reason: frame.reason });
 					lastError = refused.error;
 					// The outbox is NOT cleared. The authority has taken no

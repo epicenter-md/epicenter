@@ -100,19 +100,22 @@ function openReplica(label: string, hub: ReturnType<typeof createSyncHub>, wire:
 	};
 }
 
-function openAuthority() {
+function openAuthority(snapshotFloorBytes?: number) {
 	const database = createBunSqliteAdapter(new Database(':memory:'));
-	const authority = openSyncAuthority({ database });
+	const authority = openSyncAuthority({ database, snapshotFloorBytes });
 	return { authority, hub: createSyncHub({ authority, batch: 8 }) };
 }
 
-function setup() {
+function setup(snapshotFloorBytes?: number) {
 	const wire = createWire();
-	const { authority, hub } = openAuthority();
+	const { authority, hub } = openAuthority(snapshotFloorBytes);
 	const phone = openReplica('phone', hub, wire);
 	const laptop = openReplica('laptop', hub, wire);
 	return { wire, authority, hub, phone, laptop };
 }
+
+/** A floor low enough that ordinary test traffic reaches the snapshot path. */
+const TINY_FLOOR = 512;
 
 describe('two replicas converge through a log of opaque bytes', () => {
 	test('a row created on one device arrives on the other', () => {
@@ -589,13 +592,19 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 			phone.client.flush();
 			wire.settle();
 		}
-		const grown = expectOk(authority.storedBytes());
+		const head = expectOk(authority.head());
+		const before = expectOk(authority.since(0, 1_000)).length;
+		expect(before).toBe(30);
 
-		// The hub asks whoever is at the head once the tail outgrows the snapshot,
-		// and that happens on its own during the run above.
-		expect(expectOk(authority.snapshotPosition())).toBeGreaterThan(0);
-		expect(expectOk(authority.since(0, 1_000)).length).toBeLessThan(30);
-		expect(grown).toBeGreaterThan(0);
+		// Driven directly rather than by the floor, which a thirty-note document
+		// never reaches. What is under test is what a snapshot DOES, not when the
+		// authority decides to ask for one.
+		expectOk(
+			authority.replaceSnapshot(head, phone.store.encodeStateSince()),
+		);
+
+		expect(expectOk(authority.snapshotPosition())).toBe(head);
+		expect(expectOk(authority.since(0, 1_000))).toEqual([]);
 		expect(laptop.titles()).toHaveLength(30);
 	});
 
@@ -603,13 +612,21 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 		// The case the whole shape exists for. The tail this replica needed is
 		// gone, so it can only be served by the snapshot, and it is carrying work
 		// nobody has seen.
-		const { wire, phone, laptop } = setup();
+		const { wire, authority, phone, laptop } = setup();
 		phone.connect();
 		for (let index = 0; index < 30; index += 1) {
 			expectOk(phone.db.notes.create({ title: `note ${index}` }));
 			phone.client.flush();
 			wire.settle();
 		}
+
+		// The tail is gone, so this replica can only be served by the snapshot.
+		expectOk(
+			authority.replaceSnapshot(
+				expectOk(authority.head()),
+				phone.store.encodeStateSince(),
+			),
+		);
 
 		expectOk(laptop.db.notes.create({ title: 'WRITTEN OFFLINE' }));
 		laptop.connect();
@@ -638,12 +655,17 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 		expectOk(phone.db.notes.delete(note.id));
 		phone.client.flush();
 		wire.settle();
-		// Churn until the tail outgrows the snapshot and a fresh one is taken.
 		for (let index = 0; index < 40; index += 1) {
 			expectOk(phone.db.notes.create({ title: `filler ${index}` }));
 			phone.client.flush();
 			wire.settle();
 		}
+		expectOk(
+			authority.replaceSnapshot(
+				expectOk(authority.head()),
+				phone.store.encodeStateSince(),
+			),
+		);
 
 		const stored = [
 			...(expectOk(authority.snapshot()) === undefined
@@ -713,7 +735,11 @@ describe('who may replace the snapshot', () => {
 			wire.settle();
 		}
 
-		expect(expectOk(authority.snapshotPosition())).toBeGreaterThan(0);
+		const head = expectOk(authority.head());
+		const accepted = authority.replaceSnapshot(head, phone.store.encodeStateSince());
+
+		expect(accepted.error).toBeNull();
+		expect(expectOk(authority.snapshotPosition())).toBe(head);
 		expect(phone.titles()).toHaveLength(10);
 	});
 
@@ -729,5 +755,30 @@ describe('who may replace the snapshot', () => {
 		const beyond = authority.replaceSnapshot(head + 5, new Uint8Array([0]));
 
 		expect(beyond.error?.name).toBe('SnapshotRefused');
+	});
+});
+
+
+describe('the snapshot path under sustained traffic', () => {
+	test('hundreds of sends with snapshots firing throughout still converge', () => {
+		// The scale that broke a live run against Cloudflare. The floor is dropped
+		// so the snapshot path is reached with ordinary test traffic rather than
+		// with a real vault.
+		const { wire, authority, phone, laptop } = setup(TINY_FLOOR);
+		phone.connect();
+		laptop.connect();
+
+		for (let index = 0; index < 300; index += 1) {
+			expectOk(phone.db.notes.create({ title: `note ${index}` }));
+			phone.client.flush();
+			wire.settle();
+			expect(phone.client.status().inFlight).toBe(false);
+		}
+
+		expect(expectOk(authority.snapshotPosition())).toBeGreaterThan(0);
+		expect(phone.titles()).toHaveLength(300);
+		expect(laptop.titles()).toEqual(phone.titles());
+		expect(phone.client.status().lastError).toBeUndefined();
+		expect(laptop.client.status().lastError).toBeUndefined();
 	});
 });

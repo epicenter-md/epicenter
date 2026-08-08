@@ -44,6 +44,8 @@ const lens = defineLens({
 
 type Stat = {
 	head: number;
+	snapshot: number;
+	entries: number;
 	storedBytes: number;
 	sockets: number;
 	incarnation: string;
@@ -177,7 +179,7 @@ console.log('\n2. an update past the cap, through the real socket');
 
 	const after = await stat();
 	report('reassembled length on the OTHER replica', 5_000_000);
-	report('entries in the log', after.head);
+	report('head position', after.head);
 	report('bytes stored', after.storedBytes.toLocaleString());
 	report('chunks it must have taken', Math.ceil(after.storedBytes / DO_SQLITE_VALUE_CAP));
 	// The control: if the payload had fit in one value, this proves nothing about
@@ -228,7 +230,9 @@ console.log('\n3. sustained traffic through ONE instance');
 	const after = await stat();
 
 	report('messages pushed', messages.toLocaleString());
-	report('entries in the log', after.head);
+	report('head position', after.head);
+	report('snapshot taken at', after.snapshot === 0 ? 'NEVER' : after.snapshot);
+	report('entries still in the tail', after.entries);
 	report('wall clock', `${elapsed} ms  (${(elapsed / messages).toFixed(2)} ms each)`);
 	report('bytes stored', after.storedBytes.toLocaleString());
 	report('bytes per entry', Math.round(after.storedBytes / Math.max(after.head, 1)));
@@ -254,6 +258,14 @@ console.log('\n3. sustained traffic through ONE instance');
 	report(
 		'CONTROL the reader holds every row, not just a cursor',
 		(reader.db.data.notes.ids().data?.length ?? 0) === messages ? 'held' : 'FAILED',
+	);
+	// The whole point of the snapshot: the authority forgets what it covers, so
+	// the tail is a fraction of what was pushed rather than all of it.
+	report(
+		'CONTROL the tail is shorter than the run',
+		after.snapshot > 0 && after.entries < messages
+			? `held (${after.entries} of ${messages} kept)`
+			: `FAILED (snapshot ${after.snapshot}, tail ${after.entries})`,
 	);
 	authorSocket.close();
 	readerSocket.close();

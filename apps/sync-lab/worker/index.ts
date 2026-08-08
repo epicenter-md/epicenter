@@ -119,20 +119,28 @@ export class SyncLabAuthority extends DurableObject {
 	}
 
 	/**
-	 * The one number worth instrumenting.
+	 * What the authority is holding.
 	 *
-	 * Refusing compaction means the log grows for the life of the application,
-	 * so the question "and then what" is answered by watching this and by
-	 * superseding the log with a new generation, never by compacting it.
+	 * `storedBytes` is the number to watch and it should now be FLAT over time
+	 * rather than growing: a snapshot replaces the entries it covers, so the
+	 * authority holds about one state plus a short tail forever.
 	 */
 	stat(): {
 		head: number;
+		snapshot: number;
+		entries: number;
 		storedBytes: number;
 		sockets: number;
 		incarnation: string;
 	} {
 		return {
 			head: this.authority.head().data ?? 0,
+			// Reported separately from the head, because a snapshot does not move
+			// the head and the two are indistinguishable without it: a run where
+			// nothing was ever snapshotted and one where everything was look
+			// identical from `head` alone.
+			snapshot: this.authority.snapshotPosition().data ?? 0,
+			entries: this.authority.since(0, 1_000_000).data?.length ?? 0,
 			storedBytes: this.authority.storedBytes().data ?? 0,
 			sockets: this.ctx.getWebSockets().length,
 			// Minted per constructor. A run that reports the same value at its start
@@ -180,9 +188,16 @@ export class SyncLabAuthority extends DurableObject {
 		});
 	}
 
-	/** Throw the log away between probe runs. Throwaway app only. */
+	/**
+	 * Throw everything away between probe runs. Throwaway app only.
+	 *
+	 * Both relations. Clearing the log alone left the snapshot behind, and since
+	 * a snapshot carries the whole state, one experiment's data leaked into the
+	 * next and a control caught it as an off-by-one row count.
+	 */
 	reset(): void {
 		this.ctx.storage.sql.exec('DELETE FROM _log');
+		this.ctx.storage.sql.exec('DELETE FROM _snapshot');
 	}
 }
 

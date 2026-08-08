@@ -140,13 +140,17 @@ export type SyncAuthority = {
 		bytes: Uint8Array,
 	): Result<void, AuthorityError>;
 	/**
-	 * Whether the tail has outgrown the snapshot.
+	 * Whether the tail has outgrown the snapshot, and is worth replacing at all.
 	 *
-	 * The whole snapshot policy, and it is self-balancing rather than a tuned
-	 * interval. Snapshotting often keeps storage small and makes every returning
-	 * replica re-download the whole state; snapshotting rarely does the reverse.
-	 * Triggering when the tail passes the snapshot bounds BOTH at about twice the
-	 * state, and there is no number to pick.
+	 * Snapshotting often keeps storage small and makes every returning replica
+	 * re-download the whole state; snapshotting rarely does the reverse.
+	 * Triggering when the tail passes the snapshot is the balance point and
+	 * bounds both at about twice the state.
+	 *
+	 * The floor is the honest asterisk on "no number to pick". The ratio is
+	 * scale-free, so on a tiny document it fires on the very next update; a live
+	 * run snapshotted on nearly every message and stalled. Below the floor there
+	 * is nothing worth replacing.
 	 */
 	shouldSnapshot(): Result<boolean, AuthorityError>;
 	/** Total stored bytes, snapshot and tail together. */
@@ -185,10 +189,26 @@ export function applyAuthoritySchema(database: SqliteDatabase): void {
 /** How many snapshots are kept: the live one, and one to fall back to. */
 const SNAPSHOTS_KEPT = 2;
 
+/**
+ * The tail has to be worth replacing before a snapshot is asked for.
+ *
+ * The one tuned number in the policy, and it exists because "the tail outgrew
+ * the snapshot" is scale-free and therefore true almost immediately when
+ * everything is tiny. A document of one note has a snapshot of a few hundred
+ * bytes, so the very next update outgrows it, and a live run against Cloudflare
+ * snapshotted on nearly every message and ground to a halt around the two
+ * hundredth. Below this floor the whole log is trivial and replacing it buys
+ * nothing.
+ */
+const SNAPSHOT_FLOOR_BYTES = 64 * 1024;
+
 export function openSyncAuthority({
 	database,
+	/** Injected so a test can reach the snapshot path without a real vault. */
+	snapshotFloorBytes = SNAPSHOT_FLOOR_BYTES,
 }: {
 	database: SqliteDatabase;
+	snapshotFloorBytes?: number;
 }): SyncAuthority {
 	applyAuthoritySchema(database);
 
@@ -338,12 +358,8 @@ export function openSyncAuthority({
 		shouldSnapshot(): Result<boolean, AuthorityError> {
 			return read(() => {
 				const tail = sumBytes('_log');
-				if (tail === 0) return false;
-				const snapshot = sumBytes('_snapshot');
-				// A log that has never been snapshotted qualifies as soon as it holds
-				// anything, so the first one happens early and cheaply rather than
-				// after the tail has grown to the size of the whole vault.
-				return snapshot === 0 || tail > snapshot;
+				if (tail < snapshotFloorBytes) return false;
+				return tail > sumBytes('_snapshot');
 			});
 		},
 
