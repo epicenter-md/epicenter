@@ -168,6 +168,23 @@ offer was being read by the client as a refusal of its in-flight push, because
 the acknowledgement path checked the submission number and the refusal path did
 not.
 
+## What a randomised schedule found that scenarios did not
+
+`src/sync/transport.test.ts` runs a seeded fuzz: three replicas, random creates,
+updates, deletes and prose, random disconnects and reconnects, snapshots firing
+throughout, checked against a model held outside the system. It failed 63 of 150
+seeds on its first run and found two defects no written scenario reached.
+
+- **Re-delivery was reported as a gap.** Any entry that was not exactly the next
+  one raised an error, including one already applied, so the recovery path the
+  hibernation wake deliberately uses reported data loss.
+- **A gap wedged a replica forever.** The cursor refuses to advance past a gap,
+  correctly, so every later entry is also a gap. A replica sat at position 108
+  receiving 118, 119 and 121 and rejecting all of them, silently.
+
+Both are fixed and the sweep is now 300 seeds with no failures. The fuzz runs in
+one process over an in-order wire, so it says nothing about the two items below.
+
 ## What is still unmeasured
 
 - **Genuine hibernation eviction.** These runs held one incarnation, which is

@@ -14,8 +14,8 @@
   (the authority reads nothing, which this preserves),
   [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md)
   (local persistence and history).
-- Evidence: `packages/data/src/sync/transport.test.ts`,
-  `packages/data/evidence/retention.test.ts`,
+- Evidence: `packages/data/src/sync/transport.test.ts` (including a seeded
+  convergence fuzz), `packages/data/evidence/retention.test.ts`,
   `packages/data/evidence/workerd/results.md`.
 
 ## Context
@@ -81,6 +81,24 @@ immediately; against Cloudflare it snapshotted on nearly every message and
 stalled around the two hundredth. Below the floor the whole log is trivial and
 replacing it buys nothing.
 
+### Re-delivery is ordinary, and a gap is recoverable
+
+Two rules the first implementation got backwards, both found by a seeded fuzz
+over random schedules rather than by any written scenario.
+
+**An entry already applied is not an error.** Re-delivery is a property the
+design leans on: a crash between committing bytes and advancing the cursor, a
+reconnect carrying what was in flight, and a hibernating Durable Object waking
+with a position behind what it truly sent all re-send deliberately. Treating
+that as a gap made the recovery path report data loss.
+
+**A gap must not be permanent.** The cursor refuses to move past one, which is
+right, so every later entry is also a gap. Reporting an error and waiting for
+someone to notice meant nobody did: the fuzz produced a replica wedged at
+position 108, still being sent 118, 119 and 121, rejecting all of them while its
+rows silently stopped updating. `status().needsResync` now says so, and the
+repair is a reconnect, which is the catch-up any returning device already runs.
+
 ### One place a cursor may jump
 
 A snapshot arrives as its own frame carrying its position, and adopting it moves
@@ -114,6 +132,18 @@ no longer exists, converges and keeps a note nobody had seen.
 - **The retention window and the 90-day deletion promise are withdrawn as
   mechanisms.** Deleted data now disappears at the next snapshot, which is a
   function of write volume rather than of a policy.
-- **Two bugs came from the runtime and not from the tests**, and both are
-  recorded in `evidence/workerd/results.md` along with a stall that has no cause
-  yet and is not claimed fixed.
+- **Four bugs came from running this rather than from testing it.** Two from
+  Cloudflare (a trigger that thrashed, a refusal that crossed wires) and two
+  from a randomised schedule (re-delivery read as a gap, a gap that wedged a
+  replica forever). Scenario tests find bugs someone already imagined; these
+  were not among them, and the fuzz is kept for that reason.
+- **What the fuzz covers, and what it cannot.** Three replicas, random creates,
+  updates, deletes and prose, random disconnects and reconnects, snapshots
+  firing throughout, compared against a model held outside the system so that
+  every replica agreeing on the wrong answer still fails. It runs in one process
+  over an in-order wire.
+- **Still uncovered, and worth naming rather than implying.** Genuine
+  hibernation eviction, which is production code in the Durable Object adapter
+  that has never executed; a socket dying part way through a chunked snapshot;
+  more than three replicas; a lens mismatch between devices; and a stall
+  observed once against Cloudflare that has no cause and is not claimed fixed.
