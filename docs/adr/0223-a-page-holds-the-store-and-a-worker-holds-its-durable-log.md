@@ -1,0 +1,90 @@
+# 0223. A page holds the store, and a worker holds its durable log
+
+- **Status:** Accepted
+- **Date:** 2026-08-08
+- **Provisional number.** `main` ends at ADR-0205; 0206 through 0224 land with
+  this branch. Reconcile at merge time (`docs/adr/README.md`).
+- **Relates:** [ADR-0215](0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md)
+  (the synchronous surface this preserves),
+  [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md)
+  (the file a store needs),
+  [ADR-0177](0177-a-browser-replica-is-owned-by-a-storage-partition-and-origin-pair.md)
+  (a WebView is a storage partition and origin pair).
+- Evidence: `packages/data/evidence/browser/sync-access-handle.ts`,
+  `packages/data/evidence/browser/durable-store.ts`,
+  `apps/honeycrisp/evidence/runs-on-the-new-store.ts`.
+
+## Context
+
+The store is synchronous end to end, and its durability comes from a
+`SqliteDatabase` whose `run` and `transaction` return rather than resolve. On
+Bun that is `bun:sqlite` and it holds trivially. In a browser it does not:
+sqlite-wasm's only durable backing is the origin private file system, reached
+through `FileSystemFileHandle.createSyncAccessHandle`, and that is available
+only in dedicated workers. Measured in a real Chromium on a secure origin, with
+the worker arm as a control that must succeed:
+
+```txt
+context           available  detail
+main thread       false      createSyncAccessHandle is not a function
+dedicated worker  true       9 bytes written
+```
+
+**A false conclusion was drawn from that and is recorded here so it is not drawn
+again:** that a page therefore cannot host the store, and that Honeycrisp was
+blocked until some host owned its file. It does not follow, and the throwaway
+lab refuted it by running the whole time. The store needs a synchronous HANDLE,
+not synchronous DURABILITY. It touches SQLite in three places, the schema and
+the replay at construction and then `transaction` and `all`, and every read a
+person makes (`get`, `list`, `ids`, `document`) comes from the `Y.Doc` already
+in memory. SQLite is a write-behind log and a query cache, not the read path.
+
+This is the same error shape the store's own comment once carried: `observeDeep`
+cannot name the row (true) therefore nothing can (false), which ADR-0221 undid.
+
+## Decision
+
+**The store runs in the page, over an in-memory SQLite. A dedicated worker holds
+the same database on OPFS and is fed the same statements.** On open the page
+takes the file back whole and deserializes it, so it holds exactly what the last
+session committed with nothing to reconcile, and `createStore` hydrates from it
+exactly as it does on Bun.
+
+**Every statement is mirrored, not a curated subset.** Forwarding only the three
+underscore-prefixed relations the store owns would mean the worker knows what a
+projection is, and two schemas that can disagree. Forwarding everything makes
+the worker's file byte-identical, so opening is a restore rather than a replay
+and the projection comes back for free. Batched per transaction, so one store
+commit is one message, and a rolled-back transaction sends nothing.
+
+**The worker is not a replica and not a proxy.** It applies statements it does
+not interpret and holds bytes it never reads; nothing in it imports Yjs, a lens
+or the store. That is the whole difference from the superseded stack, where the
+worker owned the replica and the page was its asynchronous client, which is why
+every read in an application on that stack is awaited.
+
+**A durability failure becomes an alarm, not a returned error.** On Bun the
+durable write IS the write, so `persist` poisons the store the moment storage
+refuses. Behind a port the refusal arrives after the write returned `Ok`, so
+there is nothing left to fail. `durability()` reports it in the same shape as
+`hasUnresolvedDependencies`, and `whenDurable()` is there for anyone who wants
+to wait.
+
+## Consequences
+
+Honeycrisp moves without a host owning anything, which is what the alternative
+would have required.
+
+Nothing is lost when the alarm fires: the `Y.Doc` still holds the work and the
+outbox still owes it to the authority, so it reaches every other device
+normally. What is lost is the guarantee that a RELOAD of this device sees it.
+That is a genuinely weaker promise than Bun's and it is the price of the
+arrangement; an application that ignores the alarm will eventually mislead
+somebody.
+
+The page pays a WASM compile and a file restore at open, which is why opening is
+the one asynchronous thing left in an application on this store.
+
+`evidence/browser/durable-store.ts` runs the whole thing across a real reload
+with three controls, and `apps/honeycrisp/evidence/runs-on-the-new-store.ts`
+does the same through the real application.
