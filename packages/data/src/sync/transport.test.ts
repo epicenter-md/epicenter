@@ -17,7 +17,7 @@ import type { Result } from 'wellcrafted/result';
 
 import { createStore } from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
-import { encodeFrame, intoChunks } from './frames.js';
+import { decodeFrame, encodeFrame, intoChunks } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 import { createSyncClient } from './client.js';
 
@@ -249,35 +249,56 @@ describe('the ack is what makes a refusal visible', () => {
 
 	test('a refused update is held, reported, and never silently dropped', () => {
 		// The failure `workerd` hides: a throw in `webSocketMessage` does not close
-		// the socket, so without an ack a refused update simply evaporates and
+		// the socket, so without an answer a refused update simply evaporates and
 		// every layer reports success.
-		const { wire, hub, phone } = setup();
+		//
+		// The refusal exercised here is a framing violation, which is the only kind
+		// left. The authority never reads the bytes, so "this is not a valid
+		// update" is not a sentence anything on the server can say; what the
+		// collector still knows is how many chunks it was promised.
+		const { wire, authority, hub, phone } = setup();
 		phone.connect();
 
-		const outcome = (() => {
-			let refusal: unknown;
-			const socket = { send: (bytes: Uint8Array) => (refusal = bytes) };
-			const connection: HubConnection = { cursor: 0, send: socket.send };
-			hub.join(connection);
-			hub.receive(
-				connection,
-				encodeFrame({
-					kind: 'push',
-					submission: 7,
-					chunk: 0,
-					chunks: 1,
-					bytes: new Uint8Array([1, 2, 3, 4, 5, 6]),
-				}),
-			);
-			return refusal as Uint8Array;
-		})();
+		const answers: Uint8Array[] = [];
+		const connection: HubConnection = {
+			cursor: 0,
+			send: (bytes) => answers.push(bytes),
+		};
+		hub.join(connection);
+		// Chunk 0 opens submission 7 as three chunks long. Chunk 1 arrives claiming
+		// the same submission is two, so the collector no longer knows when it is
+		// whole and drops what it was holding.
+		hub.receive(
+			connection,
+			encodeFrame({
+				kind: 'push',
+				submission: 7,
+				chunk: 0,
+				chunks: 3,
+				bytes: new Uint8Array([1, 2, 3]),
+			}),
+		);
+		hub.receive(
+			connection,
+			encodeFrame({
+				kind: 'push',
+				submission: 7,
+				chunk: 1,
+				chunks: 2,
+				bytes: new Uint8Array([4, 5, 6]),
+			}),
+		);
 
-		// The authority answered rather than going quiet.
-		expect(outcome).toBeInstanceOf(Uint8Array);
-		expect(outcome[0]).toBe(3);
+		// The authority answered rather than going quiet, and it named the
+		// submission, so the client knows exactly which work it still owes.
+		expect(answers).toHaveLength(1);
+		const refusal = expectOk(decodeFrame(answers[0] as Uint8Array));
+		if (refusal.kind !== 'refuse') throw new Error(`answered with ${refusal.kind}`);
+		expect(refusal.submission).toBe(7);
 
-		// And nothing was stored, so no device will ever throw on it.
+		// And nothing was stored, so no device will ever be handed a fragment.
 		wire.settle();
+		expect(expectOk(authority.head())).toBe(0);
 		expect(phone.titles()).toEqual([]);
 	});
 
@@ -465,6 +486,53 @@ describe('an entry that will not apply is loud, not silent', () => {
 		// Stuck, deliberately: advancing past it would trade a visible stall for
 		// permanent invisible loss.
 		expect(phone.client.status().cursor).toBe(before);
+	});
+
+	test('the authority stores bytes it cannot read, and only the reader finds out', () => {
+		// The whole server half of this story, end to end. The authority used to
+		// decode every update and refuse what threw; that check was never a proof
+		// (it let 44 of ~5,900 single-byte corruptions through), cost more than
+		// hydrating an entire document, and reading the bytes at all is what would
+		// make end-to-end encryption impossible. So garbage is accepted, given a
+		// position, and relayed. Nothing on the server has an opinion about it, and
+		// the replica that cannot apply it is the one that says so.
+		const { wire, authority, hub, phone } = setup();
+		phone.connect();
+		wire.settle();
+
+		const answers: Uint8Array[] = [];
+		const writer: HubConnection = {
+			cursor: 0,
+			send: (bytes) => answers.push(bytes),
+		};
+		hub.join(writer);
+		hub.receive(
+			writer,
+			encodeFrame({
+				kind: 'push',
+				submission: 7,
+				chunk: 0,
+				chunks: 1,
+				bytes: new Uint8Array([1, 2, 3, 4, 5, 6]),
+			}),
+		);
+
+		// Accepted: acknowledged at a position, and in the log byte for byte.
+		const answer = expectOk(decodeFrame(answers[0] as Uint8Array));
+		if (answer.kind !== 'ack') throw new Error(`answered with ${answer.kind}`);
+		expect(answer.seq).toBe(1);
+		expect(expectOk(authority.head())).toBe(1);
+		expect(expectOk(authority.since(0))[0]?.bytes).toEqual(
+			new Uint8Array([1, 2, 3, 4, 5, 6]),
+		);
+
+		// And the failure surfaces where the bytes are finally read, naming the
+		// position an operator has to neutralise.
+		wire.settle();
+		const stuck = phone.client.status().lastError;
+		expect(stuck?.name).toBe('Unapplyable');
+		expect((stuck as { seq?: number } | undefined)?.seq).toBe(1);
+		expect(phone.client.status().cursor).toBe(0);
 	});
 
 	test('CONTROL: a good entry at the same position applies and reports nothing', () => {

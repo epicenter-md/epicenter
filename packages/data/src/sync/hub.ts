@@ -117,6 +117,11 @@ export function createSyncHub({
 			if (error !== null) return Ok(undefined);
 			if (frame.kind !== 'push') return Ok(undefined);
 
+			// The only refusal about CONTENT that survives, and it is about framing
+			// rather than about meaning: a submission that changes its chunk count
+			// mid-flight, or one that would push the buffered partials past the
+			// limit. The authority itself never reads the bytes, so "these are not a
+			// valid update" is not a thing anything here can say.
 			const { data: whole, error: chunkError } = collector.accept(frame);
 			if (chunkError !== null) {
 				connection.send(
@@ -132,9 +137,11 @@ export function createSyncHub({
 
 			const { data: seq, error: appendError } = authority.append(whole);
 			if (appendError !== null) {
-				// Said out loud, on the socket, naming the submission. A throw here
-				// would be swallowed by `workerd` without closing the socket, and the
-				// client would hold the work forever believing it was in transit.
+				// Storage failed, and it is said out loud on the socket naming the
+				// submission. A throw here would be swallowed by `workerd` without
+				// closing the socket, and the client would hold the work forever
+				// believing it was in transit. That is the entire reason a refusal is
+				// a frame, and it stays true for a failure the server did not choose.
 				connection.send(
 					encodeFrame({
 						kind: 'refuse',

@@ -27,7 +27,10 @@ import { Database } from 'bun:sqlite';
 import { createStore, type Store } from '../../src/store/store.js';
 import {
 	createSyncClient,
+	decodeFrame,
 	DO_SQLITE_VALUE_CAP,
+	encodeFrame,
+	type Frame,
 	type SyncClient,
 } from '../../src/sync/index.js';
 
@@ -258,37 +261,99 @@ console.log('\n3. sustained traffic through ONE instance');
 
 // ---------------------------------------------------------------------------
 
-console.log('\n4. a refused update is answered, not swallowed');
+console.log('\n4. every submission is answered, and nothing is swallowed');
 {
 	const url = new URL('/sync', origin);
 	url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
 	url.searchParams.set('app', application);
+	// Far past the head, so catch-up sends nothing and every frame that arrives
+	// is an answer to something this experiment pushed.
 	url.searchParams.set('cursor', '999999');
 	const socket = new WebSocket(url.toString());
 	socket.binaryType = 'arraybuffer';
-	let answer: Uint8Array | undefined;
+	const answers: Frame[] = [];
 	socket.addEventListener('message', (event) => {
-		if (typeof event.data !== 'string') answer = new Uint8Array(event.data as ArrayBuffer);
+		if (typeof event.data === 'string') return;
+		const { data: frame } = decodeFrame(new Uint8Array(event.data as ArrayBuffer));
+		if (frame !== null) answers.push(frame);
 	});
 	await new Promise<void>((resolve) => socket.addEventListener('open', () => resolve()));
 
-	// A push frame carrying six bytes of garbage.
-	const frame = new Uint8Array(13 + 6);
-	new DataView(frame.buffer).setUint8(0, 1);
-	new DataView(frame.buffer).setUint32(1, 7);
-	new DataView(frame.buffer).setUint32(5, 0);
-	new DataView(frame.buffer).setUint32(9, 1);
-	frame.set([1, 2, 3, 4, 5, 6], 13);
+	// Six bytes of garbage, whole in one chunk. The authority never decodes what
+	// it stores, so as far as anything on the server can tell this is an ordinary
+	// submission, and it is expected to be ACCEPTED. The device that eventually
+	// reads it is where the failure becomes visible, by name and by position.
 	const headBefore = (await stat()).head;
-	socket.send(frame);
-
-	await until('an answer to the poison push', () => answer !== undefined, 15_000).catch(
+	socket.send(
+		encodeFrame({
+			kind: 'push',
+			submission: 7,
+			chunk: 0,
+			chunks: 1,
+			bytes: new Uint8Array([1, 2, 3, 4, 5, 6]),
+		}),
+	);
+	await until('an answer to the unreadable push', () => answers.length > 0, 15_000).catch(
 		() => undefined,
 	);
 	const headAfter = (await stat()).head;
-	report('the authority answered', answer === undefined ? 'NOTHING (swallowed)' : 'a frame');
-	report('the answer is a refusal', answer?.[0] === 3 ? 'yes' : `no (kind ${answer?.[0]})`);
-	report('nothing was stored', headBefore === headAfter ? 'held' : 'FAILED');
+	const accepted = answers[0];
+	report(
+		'bytes the authority cannot read are',
+		accepted === undefined
+			? 'UNANSWERED (swallowed)'
+			: accepted.kind === 'ack'
+				? `accepted, at seq ${accepted.seq}`
+				: `NOT accepted (${accepted.kind})`,
+	);
+	// The control: an ack naming a position the log does not hold would be a
+	// number the handler invented rather than one storage assigned, and a probe
+	// talking to a dead partition would move neither.
+	report(
+		'CONTROL the log grew by one, at the acked position',
+		headAfter === headBefore + 1 &&
+			accepted?.kind === 'ack' &&
+			accepted.seq === headAfter
+			? 'held'
+			: `FAILED (${headBefore} -> ${headAfter})`,
+	);
+
+	// The refusal that still exists, and the only kind left. Submission 8 opens
+	// as three chunks and its second frame claims two, so the collector can no
+	// longer know when the submission is whole and drops what it was holding.
+	socket.send(
+		encodeFrame({
+			kind: 'push',
+			submission: 8,
+			chunk: 0,
+			chunks: 3,
+			bytes: new Uint8Array([1, 2, 3]),
+		}),
+	);
+	socket.send(
+		encodeFrame({
+			kind: 'push',
+			submission: 8,
+			chunk: 1,
+			chunks: 2,
+			bytes: new Uint8Array([4, 5, 6]),
+		}),
+	);
+	await until(
+		'an answer to the mismatched chunk count',
+		() => answers.length > 1,
+		15_000,
+	).catch(() => undefined);
+	const refusal = answers[1];
+	report(
+		'a submission that contradicts its own framing is',
+		refusal === undefined
+			? 'UNANSWERED (swallowed)'
+			: refusal.kind === 'refuse'
+				? `refused: ${refusal.reason}`
+				: `NOT refused (${refusal.kind})`,
+	);
+	report('and nothing more was stored', (await stat()).head === headAfter ? 'held' : 'FAILED');
 	// The control: the socket has to still be open, because the failure this
 	// mechanism exists for is a throw that `workerd` swallows WITHOUT closing.
 	report(

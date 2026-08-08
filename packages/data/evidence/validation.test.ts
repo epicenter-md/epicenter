@@ -1,9 +1,15 @@
 /**
- * What the authority's one Yjs call can and cannot do.
+ * Why the authority validates nothing: the record of a mechanism that was cut.
  *
- * The design memo says the authority calls `encodeStateVectorFromUpdateV2` on
+ * **Nothing measured here is in the transport.** `src/sync/authority.ts` makes
+ * no Yjs call at all and never reads the bytes it stores. This file is kept
+ * because the argument for that is a measurement, and deleting the measurement
+ * would leave only an assertion, one that "surely the server should check the
+ * update is valid" would overturn in an afternoon.
+ *
+ * The design memo said the authority calls `encodeStateVectorFromUpdateV2` on
  * the reassembled update, keeps only whether it threw, and that "that is what
- * closes the poison pill". Two things here are wrong, and both matter:
+ * closes the poison pill". Two things there are wrong, and both matter:
  *
  * 1. That call is the WEAKEST of the candidates. An update truncated by one
  *    byte passes it and throws on every device that applies it, which is the
@@ -13,14 +19,19 @@
  *    structs the RECEIVER already holds, and the authority holds none by
  *    definition, so the receiver's predicate is not available to it.
  *
- * So the check is a filter, not a proof, and the pill is closed elsewhere: a
+ * So every candidate was a filter and none was a proof. `diffUpdateV2` was the
+ * strongest of them and shipped for a while; it was removed once the rest of its
+ * bill was counted, being the most expensive step in an append, the only
+ * coupling between the server and Yjs's version, and the one thing that made
+ * end-to-end encryption impossible. What actually bounds the damage is that a
  * partition has one writer principal, so the only party who can author bytes
- * that brick it is the party that owns it. The filter is still worth making the
- * best available one, which is what these tests pin.
+ * that brick it is the party that owns it, and what recovers from it is that
+ * every log entry is individually addressable and a replica names the position
+ * it is stuck at (`src/sync/transport.test.ts`).
  *
- * Counts are in `evidence/bench/validate.ts`. Nothing here asserts an exact
- * count, because those move with the corpus; the ORDERING and the DIRECTION are
- * the properties.
+ * These tests measure the candidates against ground truth, a real receiver.
+ * Nothing here asserts an exact count, because counts move with the corpus; the
+ * ORDERING and the DIRECTION are the properties.
  */
 import * as Y from '@y/y';
 import { describe, expect, test } from 'bun:test';
@@ -39,7 +50,7 @@ function acceptsByStateVector(bytes: Uint8Array): boolean {
 	}
 }
 
-/** The transport's choice: decode the whole stream and re-encode it. */
+/** The strongest documentless candidate: decode the whole stream, re-encode it. */
 function acceptsByDiff(bytes: Uint8Array): boolean {
 	try {
 		Y.diffUpdateV2(
@@ -178,7 +189,7 @@ describe('the memo names the weakest available check', () => {
 
 		expect(acceptsByStateVector(truncated)).toBe(true);
 		expect(receiverSurvives(undefined, truncated)).toBe(false);
-		// The reason to switch, in one line.
+		// Why the memo's choice was never the one to ship, in one line.
 		expect(acceptsByDiff(truncated)).toBe(false);
 	});
 
@@ -223,7 +234,7 @@ describe('no authority-side check closes the poison pill', () => {
 	});
 });
 
-describe('the filter to use is the strongest one that holds no document', () => {
+describe('the best filter available was still only a filter', () => {
 	test('diff leaks strictly less than the state vector, on both shapes', () => {
 		const full = measure(sample(20), undefined);
 		const { seed, increment } = incrementOverSeed();
@@ -236,12 +247,12 @@ describe('the filter to use is the strongest one that holds no document', () => 
 	});
 
 	test('holding a document buys nothing over diff on an increment', () => {
-		// The measurement that decides the design. If integrating into a throwaway
+		// The measurement that ends the argument. If integrating into a throwaway
 		// `Y.Doc` were meaningfully stronger, the authority holding one for the
 		// length of one call would be worth arguing about. It is not: on the shape
 		// the transport actually carries, the two are within a hair of each other
-		// and both leak, so the cheaper one wins and the authority stays
-		// documentless.
+		// and both leak. There is no ceiling to climb to, which is what makes
+		// "check harder on the server" a dead end rather than an unfinished one.
 		const { seed, increment } = incrementOverSeed();
 		const leaks = measure(increment, seed);
 

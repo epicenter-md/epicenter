@@ -1,10 +1,49 @@
 /**
- * The authority: an append-only log of opaque bytes, and one Yjs call.
+ * The authority: an append-only log of opaque bytes, and no Yjs call at all.
  *
- * It never merges, never compacts, never holds a document, and never learns
- * what a row is. Catch-up is "everything after your cursor" and a live relay is
- * the same sentence with a cursor one behind the head, so there is one delivery
- * path rather than two that can disagree.
+ * There are no Yjs imports in this file, and that is the design rather than an
+ * accident of the current implementation. It never merges, never compacts,
+ * never holds a document, never decodes, and never learns what a row is.
+ * Catch-up is "everything after your cursor" and a live relay is the same
+ * sentence with a cursor one behind the head, so there is one delivery path
+ * rather than two that can disagree.
+ *
+ * ## Why it does not look at the bytes
+ *
+ * An earlier version made exactly one Yjs call before storing, `diffUpdateV2`
+ * against an empty state vector, and kept only whether it threw. It was removed.
+ * The reasons are written down here because "surely the server should check the
+ * update is valid" is the obvious thing to propose, and every part of the bill
+ * is invisible from the call site:
+ *
+ * - **It could not be a proof, only a filter.** Whether bytes throw depends on
+ *   the structs the RECEIVER already holds, and the authority holds none by
+ *   construction, so the receiver's predicate is not available to it at any
+ *   price. Swept over every single-byte corruption of a real update, the call
+ *   let through 44 poison pills on a full update and 4 on an increment;
+ *   integrating into a throwaway `Y.Doc`, the most an authority could possibly
+ *   do, still leaked 3 (`evidence/validation.test.ts`).
+ * - **It was the most expensive thing here.** 283 MB rss and 45 ms on a 27.7 MB
+ *   update, which is MORE than hydrating an entire `Y.Doc` (108 MB, 35 ms),
+ *   because it decodes the whole stream and re-encodes a full copy before
+ *   discarding it. The cheap-looking call was the ceiling on what one submission
+ *   costs the object, and it is the measurement that removed it
+ *   (`evidence/bench/validate.ts`).
+ * - **It was the only thing coupling this file to Yjs's version.** With it gone,
+ *   a Yjs format change cannot make the server refuse a valid client's writes.
+ * - **It foreclosed end-to-end encryption**, which is possible exactly as long
+ *   as the authority never reads the bytes. That is the reason not to reach for
+ *   it again the next time it looks free.
+ *
+ * Recovery never needed it either. The log is append-only and every entry is
+ * individually addressable, so a poison entry is repaired by overwriting that
+ * one row's bytes with the 13-byte empty update, a valid no-op that keeps the
+ * sequence contiguous and that every replica walks straight past. A replica that
+ * cannot apply an entry says so and names the position
+ * (`SyncClientError.Unapplyable`); both halves are pinned in
+ * `sync/transport.test.ts`. What bounds the damage in the first place is that a
+ * partition has one writer principal, so the only party who can author bytes
+ * that brick it is the party that owns it.
  *
  * ## Why it refuses to compact
  *
@@ -20,25 +59,20 @@
  * Do not reintroduce compaction, baselines, or coverage proofs here.
  */
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
-import * as Y from '@y/y';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
+import { type Result, trySync } from 'wellcrafted/result';
 
 import { copyBytes } from '../store/persistence.js';
 import { CHUNK_BYTES, intoChunks } from './frames.js';
 
 export const AuthorityError = defineErrors({
 	/**
-	 * The bytes did not survive a decode, so they are not stored.
+	 * The only way an append can fail, now that nothing inspects the bytes.
 	 *
-	 * The client hears this as a refusal naming its submission, which is the
-	 * point: `workerd` swallows a throw in `webSocketMessage` without closing
-	 * the socket, so silence and success are indistinguishable to a client.
+	 * The client hears it as a refusal naming its submission, which is the
+	 * point: `workerd` swallows a throw in `webSocketMessage` without closing the
+	 * socket, so silence and success are indistinguishable to a client.
 	 */
-	Unreadable: ({ reason }: { reason: string }) => ({
-		message: `The authority refused these bytes: ${reason}`,
-		reason,
-	}),
 	StorageFailed: ({ cause }: { cause: unknown }) => ({
 		message: 'The authority could not commit to durable storage',
 		cause,
@@ -51,7 +85,7 @@ export type LogEntry = { seq: number; bytes: Uint8Array };
 
 export type SyncAuthority = {
 	/**
-	 * Validate one whole update, give it a position, and store it.
+	 * Give one whole update a position and store it, unread.
 	 *
 	 * The position is assigned here and returned, so nothing anywhere else has
 	 * to guess it or agree about it in advance.
@@ -64,62 +98,6 @@ export type SyncAuthority = {
 	/** Total stored bytes. The one number worth instrumenting (see below). */
 	storedBytes(): Result<number, AuthorityError>;
 };
-
-/**
- * An empty document's state vector: one varint, saying zero clients.
- *
- * Written out rather than produced by `Y.encodeStateVector(new Y.Doc())`, and
- * that is a `workerd` requirement rather than a micro-optimisation. Constructing
- * a `Y.Doc` mints a clientID through `crypto.getRandomValues`, and generating
- * random values in global scope is a disallowed operation in a Worker, so the
- * module simply fails to load. Pinned against the library in
- * `evidence/invariants.test.ts`.
- *
- * It also makes the file's central claim literally true: nothing here ever
- * constructs a document.
- */
-const EMPTY_STATE_VECTOR = new Uint8Array([0]);
-
-/**
- * The authority's one Yjs call, kept only as a yes or no.
- *
- * `diffUpdateV2` rather than `encodeStateVectorFromUpdateV2`, which is what an
- * earlier draft of this design named. The state-vector call reads far enough to
- * recover the clocks and then stops, so an update truncated by ONE byte passes
- * it and throws on every device that applies it, which is the exact failure the
- * check exists to prevent. Measured against every single-byte corruption and
- * every tail truncation of a real update, the state-vector call lets through
- * 108 poison pills where this one lets through 44, and on an incremental send
- * 103 against 4 (`evidence/validation.test.ts`, `evidence/bench/validate.ts`).
- *
- * **This is a filter and not a proof, and the difference is load-bearing.** No
- * check the authority can run closes the poison pill, including integrating
- * into a throwaway `Y.Doc`, which leaks 3 where this leaks 4 on the shape the
- * transport actually carries. Whether bytes throw depends on the structs the
- * RECEIVER already holds, and the authority holds none by construction, so the
- * receiver's predicate is not available to it at any price. What actually
- * bounds the damage is that a partition has one writer principal, so the only
- * party who can author bytes that brick it is the party that owns it.
- *
- * It is still worth making the filter the best available one, because it costs
- * one call and no document, and it turns every accidental truncation into a
- * refusal the client can see and retry.
- */
-function readable(update: Uint8Array): Result<void, AuthorityError> {
-	const { error } = trySync({
-		try: () =>
-			Y.diffUpdateV2(
-				update as Uint8Array<ArrayBuffer>,
-				EMPTY_STATE_VECTOR as Uint8Array<ArrayBuffer>,
-			),
-		catch: (cause) =>
-			AuthorityError.Unreadable({
-				reason: cause instanceof Error ? cause.message : String(cause),
-			}),
-	});
-	if (error !== null) return Err(error);
-	return Ok(undefined);
-}
 
 export function applyAuthoritySchema(database: SqliteDatabase): void {
 	// `(seq, chunk)` and nothing else. There is no `taken_at`, no client id, no
@@ -159,9 +137,6 @@ export function openSyncAuthority({
 
 	return Object.freeze({
 		append(update: Uint8Array): Result<number, AuthorityError> {
-			const { error } = readable(update);
-			if (error !== null) return Err(error);
-
 			return read(() =>
 				database.transaction(() => {
 					const seq = headSeq() + 1;

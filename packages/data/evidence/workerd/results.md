@@ -90,9 +90,14 @@ branch's wrong memory numbers. Both runs held one incarnation throughout.
 At 158 bytes an entry, the 10 GB Durable Object SQLite ceiling is roughly 68
 million entries.
 
-## 4. A refusal is answered rather than swallowed
+## 4. Every submission is answered rather than swallowed
 
-Six bytes of garbage in a push frame.
+**NOT RE-MEASURED.** The table below is the run that produced this document, when
+the authority still decoded every update and six bytes of garbage came back
+refused. The experiment now asserts the opposite for those bytes, that they are
+ACCEPTED and acked at a position, and takes its refusal from a submission that
+contradicts its own chunk count instead. Rerun `probe.ts` to replace this
+section; nothing here has been rewritten to look like a run that did not happen.
 
 | | real Cloudflare |
 | --- | --- |
@@ -101,10 +106,12 @@ Six bytes of garbage in a push frame.
 | nothing was stored | held |
 | control: the socket is still open | held |
 
-The last line is the whole reason the ack exists. `workerd` swallows a throw in
-`webSocketMessage` **without closing the socket**, so a refusal that travelled
-as an exception would be indistinguishable from success to the client, and the
-client would drop the work believing it was delivered.
+The last line is the whole reason the ack exists, and it did not change. `workerd`
+swallows a throw in `webSocketMessage` **without closing the socket**, so an
+answer that travelled as an exception would be indistinguishable from success to
+the client, and the client would drop the work believing it was delivered. What
+changed is only what the answer says: an ack for anything that arrives whole, a
+refusal for framing the collector cannot honour or a storage failure.
 
 ## What did not survive contact with the runtime
 
@@ -112,11 +119,28 @@ client would drop the work believing it was delivered.
 against `Y.encodeStateVector(new Y.Doc())`, evaluated once at module scope.
 Constructing a `Y.Doc` mints a clientID through `crypto.getRandomValues`, and
 generating random values in global scope is a *disallowed operation* in a
-Worker, so the module threw during startup rather than misbehaving later. The
-constant is now written out as `new Uint8Array([0])`, which is pinned against
-the library in `evidence/invariants.test.ts` and has the side benefit of making
-the file's central claim literally true: the authority never constructs a
-document.
+Worker, so the module threw during startup rather than misbehaving later. It was
+fixed by writing the constant out as `new Uint8Array([0])`, and then outlived by
+the entry below.
+
+**And then the validator went entirely.** The `diffUpdateV2` filter measured in
+section 4 has been removed, and `src/sync/authority.ts` now makes no Yjs call at
+all. It was never a proof: it let through 44 poison pills of about 5,900
+single-byte corruptions of a full update and 4 of about 490 on an increment, and
+integrating into a throwaway `Y.Doc`, the most an authority could do, still leaks
+3, because whether bytes throw depends on structs the *receiver* holds. It was
+also the most expensive step in an append at 283 MB rss and 45 ms on a 27.7 MB
+update, more than hydrating an entire `Y.Doc` (108 MB, 35 ms), which is now
+reproducible with `evidence/bench/validate.ts`; the only thing
+coupling the server to Yjs's version, so a format change could make it refuse a
+valid client's writes; and the reason end-to-end encryption was impossible, since
+that works exactly as long as the authority never reads the bytes. The empty
+state vector went with it, so the central claim now holds for a stronger reason:
+there is nothing here that a document could be constructed for. **Those costs are now measured by
+`evidence/bench/validate.ts`, one OS process per cell, rather than quoted from a
+script that was never committed.** The leak counts are pinned as an
+ordering by `evidence/validation.test.ts`, which is kept precisely because it is
+the record of why there is no filter.
 
 **One transient.** A run against production once returned non-JSON from the
 first probe request on a brand-new partition and the script died. It did not

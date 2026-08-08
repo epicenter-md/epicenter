@@ -91,35 +91,6 @@ describe('identity: a root is addressed by name, a nested type by struct', () =>
 	});
 });
 
-describe('what the authority is allowed to hold', () => {
-	test('an empty state vector is one zero byte', () => {
-		// The authority diffs every update against this constant and keeps only
-		// whether the call threw. It is written out as a literal rather than
-		// produced from a document, because constructing a `Y.Doc` mints a
-		// clientID through `crypto.getRandomValues`, and generating random values
-		// in global scope is a DISALLOWED operation in a Worker: the module fails
-		// to load rather than misbehaving. Pinned so an encoding change is caught
-		// here rather than as a validator that silently accepts everything.
-		expect(new Uint8Array(Y.encodeStateVector(new Y.Doc({ gc: true })))).toEqual(
-			new Uint8Array([0]),
-		);
-	});
-
-	test('diffing against it returns the whole update, so the answer is worth discarding', () => {
-		const doc = new Y.Doc({ gc: true });
-		doc.transact(() => doc.get('notes').setAttr('x' as never, 1 as never));
-		const update = new Uint8Array(Y.encodeStateAsUpdateV2(doc));
-
-		const diffed = Y.diffUpdateV2(
-			update as Uint8Array<ArrayBuffer>,
-			new Uint8Array([0]) as Uint8Array<ArrayBuffer>,
-		);
-		const replica = new Y.Doc({ gc: true });
-		Y.applyUpdateV2(replica, new Uint8Array(diffed) as Uint8Array<ArrayBuffer>);
-		expect(replica.get('notes').getAttrs()).toEqual({ x: 1 });
-	});
-});
-
 describe('a state vector cannot express deletion', () => {
 	test('two documents that disagree about a key hold IDENTICAL state vectors', () => {
 		// The property that killed two authority designs, and the reason the
