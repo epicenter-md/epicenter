@@ -22,7 +22,7 @@ import {
 	createAppDocument,
 	deleteRow,
 	documentContainer,
-	isLive,
+	hasRow,
 	listRowIds,
 	readRow,
 	tableRoot,
@@ -78,14 +78,14 @@ export const remoteOrigin = Object.freeze({ kind: 'epicenter-remote' });
 
 export const StoreError = defineErrors({
 	/**
-	 * A write named an address that holds no live row.
+	 * A write named an address that holds no row.
 	 *
 	 * The verb this replaces returned `Ok(undefined)` and silently swallowed the
 	 * write, which is a live bug in the code this store supersedes. A write that
 	 * reaches nothing is a failure and says so.
 	 */
 	RowAbsent: ({ table, rowId }: { table: string; rowId: string }) => ({
-		message: `Table '${table}' holds no live row '${rowId}'`,
+		message: `Table '${table}' holds no row '${rowId}'`,
 		table,
 		rowId,
 	}),
@@ -147,24 +147,24 @@ export type TableHandle = {
 	/**
 	 * The one read verb.
 	 *
-	 * `Ok(undefined)` means the address holds no live row, which is a fact rather
+	 * `Ok(undefined)` means the address holds no row, which is a fact rather
 	 * than a failure. `Err(Nonconforming)` carries `conforming`, so a caller
 	 * composes whatever forgiveness it wants without a second verb existing.
 	 */
 	get(rowId: string): Result<Row | undefined, ReadRowError>;
 	/**
-	 * Merge fields into a live row. Refuses an absent address.
+	 * Merge fields into an existing row. Refuses an absent address.
 	 *
 	 * `update` rather than `set`, because only the fields handed in are touched
 	 * and every other field is left alone.
 	 */
 	update(rowId: string, fields: JsonObject): Result<Row, WriteRowError>;
 	delete(rowId: string): Result<boolean, StoreError>;
-	/** Every live row id, sorted. */
+	/** Every row id, sorted. */
 	ids(): Result<string[], StoreError>;
 	/**
-	 * Every live row, with the ones this lens cannot read reported separately
-	 * rather than dropped or repaired.
+	 * Every row, with the ones this lens cannot read reported separately rather
+	 * than dropped or repaired.
 	 */
 	list(): Result<
 		{ rows: Row[]; nonconforming: NonconformingRowError[] },
@@ -534,7 +534,7 @@ export function createStore({
 					database,
 					tableName,
 					[...table.fields.keys()],
-					liveRows(tableName),
+					rowsOf(tableName),
 				);
 			}
 		});
@@ -661,7 +661,8 @@ export function createStore({
 		};
 	}
 
-	function liveRows(tableName: string): Map<string, JsonObject> {
+	/** Every row of one table, as the projection needs them: by id, unvalidated. */
+	function rowsOf(tableName: string): Map<string, JsonObject> {
 		const root = tableRoot(index, tableName);
 		const rows = new Map<string, JsonObject>();
 		for (const rowId of listRowIds(root)) {
@@ -740,7 +741,7 @@ export function createStore({
 			update(rowId: string, fields: JsonObject): Result<Row, WriteRowError> {
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
-				if (!isLive(root, rowId)) {
+				if (!hasRow(root, rowId)) {
 					return StoreError.RowAbsent({ table: tableName, rowId });
 				}
 				const { data: validated, error } = table.validateWrite(fields);
@@ -771,7 +772,7 @@ export function createStore({
 				if (unusable !== undefined) return Err(unusable);
 				const rows: Row[] = [];
 				const nonconforming: NonconformingRowError[] = [];
-				for (const [rowId, payload] of liveRows(tableName)) {
+				for (const [rowId, payload] of rowsOf(tableName)) {
 					const { data, error } = table.project(addressOf(rowId), payload);
 					if (error !== null) nonconforming.push(error);
 					else rows.push(data as Row);
@@ -919,7 +920,7 @@ export function createStore({
 				database,
 				tableName,
 				fieldNames,
-				liveRows(tableName),
+				rowsOf(tableName),
 			);
 		}
 	}

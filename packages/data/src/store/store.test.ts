@@ -116,6 +116,34 @@ describe('deletion', () => {
 		expect(db.notes.delete(made.id).data).toBe(true);
 		expect(db.notes.delete(made.id).data).toBe(false);
 	});
+
+	test('CHURN DOES NOT ACCUMULATE A CORPSE PER DELETED ROW', () => {
+		// The reason deletion removes the row's attribute instead of clearing it
+		// and flagging it absent, which is what ADR-0212 chose. A tombstone is
+		// paid by every device, in memory, on every load, forever, and a phone
+		// does not get to opt out. At this row's shape the two models measure 37 B
+		// and 86 B per dead row, so a regression to clear-and-flag fails here long
+		// before anyone notices it on a device.
+		const empty = store.encodeStateSince().length;
+		for (let index = 0; index < 200; index += 1) {
+			db.notes.delete(note({ title: 'x'.repeat(100) }).id);
+		}
+		expect(db.notes.ids().data).toEqual([]);
+		const perDeadRow = (store.encodeStateSince().length - empty) / 200;
+		expect(perDeadRow).toBeLessThan(60);
+	});
+
+	test('a deleted address cannot be revived, only refused', () => {
+		// Deletion takes the row's attribute off the table root, so a deleted id
+		// is indistinguishable from one nothing ever held. There is no reuse path
+		// to get wrong: `update` refuses, and `create` mints an id of its own.
+		const made = note();
+		db.notes.delete(made.id);
+		const { data, error } = db.notes.update(made.id, { title: 'back?' });
+		expect(data).toBeNull();
+		expect(error?.name).toBe('RowAbsent');
+		expect(db.notes.get(made.id).data).toBeUndefined();
+	});
 });
 
 describe('the projection is written in the same transaction as the log', () => {
@@ -218,7 +246,12 @@ describe('two replicas converge', () => {
 		}
 	});
 
-	test('a delete on one device and an edit on the other converge', () => {
+	test('a delete on one device beats an edit on the other', () => {
+		// The case ADR-0212 kept a corpse per deleted row to serve. It converges
+		// without one, and to the same answer: the row is gone on both devices,
+		// and the offline edit is gone with it rather than lingering as a field on
+		// a tombstone that a revived address would hand back
+		// (`evidence/deletion-model.test.ts`).
 		const { laptop, laptopDb } = pair();
 		const made = note({ title: 'first' });
 		exchange(store, laptop);
@@ -227,9 +260,10 @@ describe('two replicas converge', () => {
 		laptopDb.notes.update(made.id, { title: 'edited offline' });
 		exchange(store, laptop);
 
-		expect(JSON.stringify(db.notes.get(made.id).data)).toBe(
-			JSON.stringify(laptopDb.notes.get(made.id).data),
-		);
+		expect(db.notes.get(made.id).data).toBeUndefined();
+		expect(laptopDb.notes.get(made.id).data).toBeUndefined();
+		expect(laptopDb.notes.ids().data).toEqual([]);
+		expect(laptopDb.query`SELECT id FROM notes`.data).toEqual([]);
 	});
 
 	test('two devices creating rows concurrently keep both', () => {

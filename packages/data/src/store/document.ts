@@ -3,15 +3,6 @@ import { RESERVED_ATTRIBUTE_PREFIX } from '@epicenter/lens/lens';
 import * as Y from '@y/y';
 
 /**
- * The one reserved attribute, carrying both existence and liveness (ADR-0212).
- *
- * A nested type with no `!presence` never existed. It is spelled with the
- * reserved prefix so it can never collide with a declared field, and the lens
- * refuses any field name that begins with that prefix.
- */
-export const PRESENCE_ATTRIBUTE = `${RESERVED_ATTRIBUTE_PREFIX}presence`;
-
-/**
  * The attribute holding the container a row's document lives in (ADR-0130/0215).
  *
  * Allocated when the row is created, never lazily on first access. Lazy
@@ -19,10 +10,11 @@ export const PRESENCE_ATTRIBUTE = `${RESERVED_ATTRIBUTE_PREFIX}presence`;
  * for the first time would each mint their own container and map LWW would
  * discard one along with everything written into it. Creating it with the row
  * moves the only race to row creation, which minted ids make unreachable.
+ *
+ * It is spelled with the reserved prefix so it can never collide with a declared
+ * field, and the lens refuses any field name that begins with that prefix.
  */
 export const DOCUMENT_ATTRIBUTE = `${RESERVED_ATTRIBUTE_PREFIX}doc`;
-
-export type Presence = 'present' | 'absent';
 
 /** The application's document: one per app, holding every table (ADR-0215). */
 export function createAppDocument(): Y.Doc {
@@ -57,7 +49,12 @@ export function hasTable(document: Y.Doc, tableName: string): boolean {
 }
 
 /**
- * One row's nested type, or undefined when the address has never been used.
+ * One row's nested type, or undefined when the table holds no row there.
+ *
+ * This is the whole of existence. A row IS a nested type on the table root, so
+ * holding one is what it means to exist and removing it is what deletion does.
+ * There is no second fact to consult and therefore nothing that can disagree
+ * with this one.
  *
  * Unlike `Doc.get`, `getAttr` does not mint: verified against
  * `@y/y@14.0.0-rc.24`, reading an unknown row id leaves the table root's
@@ -69,28 +66,23 @@ function rowType(root: Y.Type, rowId: string): Y.Type | undefined {
 	return value instanceof Y.Type ? value : undefined;
 }
 
-function presenceOf(row: Y.Type): Presence | undefined {
-	const value = row.getAttr(PRESENCE_ATTRIBUTE as never) as unknown;
-	return value === 'present' || value === 'absent' ? value : undefined;
-}
-
-/** Whether this address currently holds a live row. */
-export function isLive(root: Y.Type, rowId: string): boolean {
-	const row = rowType(root, rowId);
-	return row !== undefined && presenceOf(row) === 'present';
+/** Whether this table holds a row at this address. */
+export function hasRow(root: Y.Type, rowId: string): boolean {
+	return rowType(root, rowId) !== undefined;
 }
 
 /**
- * One live row's declared fields, or undefined when the address is absent.
+ * One row's declared fields, or undefined when the table holds no row there.
  *
  * Reserved attributes are filtered out, so what comes back is only what a lens
- * could have declared. Nothing is validated here: interpreting the payload is
- * the lens's job, and a row this release cannot read must still be readable as
- * raw JSON (ADR-0125).
+ * could have declared: a row's document container is an attribute like any
+ * other and is not part of the payload. Nothing is validated here: interpreting
+ * the payload is the lens's job, and a row this release cannot read must still
+ * be readable as raw JSON (ADR-0125).
  */
 export function readRow(root: Y.Type, rowId: string): JsonObject | undefined {
 	const row = rowType(root, rowId);
-	if (row === undefined || presenceOf(row) !== 'present') return undefined;
+	if (row === undefined) return undefined;
 	const payload: JsonObject = {};
 	for (const key of row.attrKeys()) {
 		const name = key as string;
@@ -101,30 +93,42 @@ export function readRow(root: Y.Type, rowId: string): JsonObject | undefined {
 }
 
 /**
- * Every live row id in this table.
+ * Every row id in this table, sorted.
  *
- * Pays for every row ever deleted, because a table root grows monotonically and
- * liveness is an attribute on each corpse: measured, listing a thousand live
- * rows among a hundred thousand takes 24.9 ms. If a table ever gets slow, the
- * fix is a second attribute on the root naming only the live rows, read in one
- * call rather than one per row. Not built; no table is near this.
+ * Pays only for the rows that are there. An earlier design kept a deleted row's
+ * container attached to the root and flagged it absent, which made this a scan
+ * over every row the table had ever held: measured, listing a thousand rows
+ * among a hundred thousand corpses took 24.9 ms. Deletion removes the
+ * attribute, so `attrKeys` yields the survivors and the dead are not walked.
+ *
+ * Still one `getAttr` per key rather than the raw key list, so that this agrees
+ * with `readRow` on what a row is. A key holding something other than a nested
+ * type is not a row anywhere else in this module, and an id this returns that
+ * `get` then reports as absent would be worse than the lookup it saves.
  */
 export function listRowIds(root: Y.Type): string[] {
 	const ids: string[] = [];
 	for (const key of root.attrKeys()) {
 		const rowId = key as string;
-		if (isLive(root, rowId)) ids.push(rowId);
+		if (hasRow(root, rowId)) ids.push(rowId);
 	}
 	return ids.sort();
 }
 
 /**
- * Write fields into one row, bringing the address to life if it is not already.
+ * Write fields into one row, minting the row if the table holds none there.
  *
  * Caller-supplied fields only: an absent key is left alone rather than being
  * filled from a declared default, because a default is applied at read time and
- * is never written (ADR-0213). Must run inside a `transact`, so presence and
+ * is never written (ADR-0213). Must run inside a `transact`, so a minted row and
  * the fields it admits commit together.
+ *
+ * There is no revive path and no address to revive. Deletion takes the row's
+ * attribute off the root, so a deleted address is indistinguishable from one
+ * never used; `create` mints an id nothing has ever held, and `update` refuses
+ * an address holding no row. The mint below therefore happens exactly once in a
+ * row's life, which is what lets the document container be allocated with it
+ * rather than felt for on every write.
  */
 export function writeRow(
 	root: Y.Type,
@@ -135,14 +139,6 @@ export function writeRow(
 	if (row === undefined) {
 		row = new Y.Type();
 		root.setAttr(rowId as never, row as never);
-	}
-	// Creating at an absent address sets presence back to present. The previous
-	// content is gone from the CRDT and comes back only from history: an address
-	// is reusable, the content is not (ADR-0212).
-	row.setAttr(PRESENCE_ATTRIBUTE as never, 'present' as never);
-	// Eagerly, and only when absent, so re-creating at a reused address gets a
-	// fresh one and an existing row keeps the container it already has.
-	if (!(row.getAttr(DOCUMENT_ATTRIBUTE as never) instanceof Y.Type)) {
 		row.setAttr(DOCUMENT_ATTRIBUTE as never, new Y.Type() as never);
 	}
 	for (const [name, value] of Object.entries(fields)) {
@@ -152,7 +148,7 @@ export function writeRow(
 
 /**
  * The container holding one row's application-owned roots, or undefined when
- * the row is not live.
+ * the table holds no row at this address.
  *
  * A pure read: the container was allocated with the row. Epicenter never looks
  * inside, and the application names its own roots and picks their formats.
@@ -161,34 +157,36 @@ export function documentContainer(
 	root: Y.Type,
 	rowId: string,
 ): Y.Type | undefined {
-	if (!isLive(root, rowId)) return undefined;
-	const row = rowType(root, rowId);
-	const container = row?.getAttr(DOCUMENT_ATTRIBUTE as never) as unknown;
+	const container = rowType(root, rowId)?.getAttr(
+		DOCUMENT_ATTRIBUTE as never,
+	) as unknown;
 	return container instanceof Y.Type ? container : undefined;
 }
 
 /**
- * Clear one row's content and mark it absent. Returns whether it was live.
+ * Take one row off its table. Returns whether there was a row to take.
  *
- * Clearing is what reclaims space, and it is not optional. Measured over 1,000
- * rows: setting the flag alone leaves the document *larger* than before
- * (2,908 KB against a 2,888 KB baseline), because the content is all still
- * there; clearing first takes it to 86 KB. A dead row then costs a flat 170
- * bytes forever, which compaction does not reduce.
+ * The whole subtree goes with the attribute: every field, and the container the
+ * row's document lives in. Deleting a nested type reclaims what is under it
+ * (`evidence/invariants.test.ts`), so what remains is one deleted map key,
+ * measured at 2.0 items and 44.5 bytes (`evidence/bench/tombstones.ts`).
  *
- * The row's nested type is emptied rather than removed from the table root.
- * Deleting the row's attribute instead destroys a concurrent edit; clearing
- * fields and flagging converges with the tombstone held and the peer's edit
- * retained, which is how deletion has to work here.
+ * ADR-0212 chose the other model: clear every field and set a reserved
+ * `!presence` attribute to `absent`, leaving the container attached to the root
+ * forever. It defended the extra cost by claiming that removing the attribute
+ * destroys a concurrent edit while clearing converges with the peer's edit
+ * retained. `evidence/deletion-model.test.ts` measured that claim and it does
+ * not survive: under both models a concurrent delete and edit read identically,
+ * both devices converge, and the delete wins whichever side goes first. The
+ * retained edit is reachable through no verb here, and it comes back if the
+ * address is ever revived, so retention was the worse half rather than the
+ * benefit. What it cost was about 8 items and 116 bytes per dead row against
+ * 2.0 and 44.5: over twenty recordings a day for a decade, 582,000 items and
+ * 451 MB of resident memory against 156,000 and 101 MB, on every device that
+ * ever opens the application.
  */
 export function deleteRow(root: Y.Type, rowId: string): boolean {
-	const row = rowType(root, rowId);
-	if (row === undefined || presenceOf(row) !== 'present') return false;
-	for (const key of [...row.attrKeys()]) {
-		const name = key as string;
-		if (name === PRESENCE_ATTRIBUTE) continue;
-		row.deleteAttr(name);
-	}
-	row.setAttr(PRESENCE_ATTRIBUTE as never, 'absent' as never);
+	if (rowType(root, rowId) === undefined) return false;
+	root.deleteAttr(rowId);
 	return true;
 }
