@@ -37,7 +37,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AgentEngine, AgentMessage, EngineChunk } from '@epicenter/agent';
-import { openBunEpicenter } from '@epicenter/data/bun';
+import { openBunEpicenter } from '@epicenter/data/legacy/bun';
 import {
 	createAttachRelayBunServer,
 	createDeviceGrantStore,

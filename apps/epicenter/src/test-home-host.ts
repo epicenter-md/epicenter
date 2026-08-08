@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
+import { createDesktopEpicenterOwner } from '@epicenter/data/legacy/desktop-owner';
 import { createDesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createFolderBridge } from './folder/bridge.ts';
 import { openReceiptStore } from './folder/receipts.ts';

@@ -20,7 +20,7 @@ import {
 	type InspectionError,
 	type InspectionResult,
 	openInspection,
-} from '@epicenter/data/inspection';
+} from '@epicenter/data/legacy/inspection';
 import type { Lens, TableDefinition } from '@epicenter/lens';
 import type { Result } from 'wellcrafted/result';
 

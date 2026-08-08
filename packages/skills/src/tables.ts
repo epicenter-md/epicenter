@@ -6,7 +6,7 @@
  * used to match later imports without becoming canonical record identity.
  */
 
-import { defineTable, optional, type RowFor } from '@epicenter/data';
+import { defineTable, optional, type RowFor } from '@epicenter/data/legacy';
 import { field, jsonValue } from '@epicenter/field';
 import { Type } from 'typebox';
 

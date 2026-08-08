@@ -7,7 +7,7 @@ import {
 	generateBlobId,
 	type RemoteBlobNotFound,
 } from '@epicenter/blobs';
-import type { NonconformingRowError, TableLens } from '@epicenter/data';
+import type { NonconformingRowError, TableLens } from '@epicenter/data/legacy';
 import {
 	defineErrors,
 	extractErrorMessage,

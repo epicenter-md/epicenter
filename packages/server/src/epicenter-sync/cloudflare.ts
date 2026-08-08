@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import type { ExchangeResponse, RowAddress } from '@epicenter/data/protocol';
+import type { ExchangeResponse, RowAddress } from '@epicenter/data/legacy/protocol';
 import type { PrincipalId } from '@epicenter/identity';
 import {
 	createDurableObjectSqliteAdapter,

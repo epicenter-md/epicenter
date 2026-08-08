@@ -7,7 +7,7 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 
-import { openReplica } from '@epicenter/data';
+import { openReplica } from '@epicenter/data/legacy';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { expectOk } from 'wellcrafted/testing';
 

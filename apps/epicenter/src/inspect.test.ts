@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { epicenterPath, openBunEpicenter } from '@epicenter/data/bun';
+import { epicenterPath, openBunEpicenter } from '@epicenter/data/legacy/bun';
 import { field } from '@epicenter/field';
 import { defineLens, defineTable, optional } from '@epicenter/lens';
 

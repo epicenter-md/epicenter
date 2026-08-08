@@ -1,4 +1,4 @@
-import type { NonconformingRowError } from '@epicenter/data';
+import type { NonconformingRowError } from '@epicenter/data/legacy';
 import type { Reference, Skill } from './tables.js';
 import type { SkillsData } from './workspace.js';
 

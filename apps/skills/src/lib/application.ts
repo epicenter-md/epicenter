@@ -1,5 +1,5 @@
-import type { Epicenter } from '@epicenter/data';
-import { openBrowserEpicenter } from '@epicenter/data/browser';
+import type { Epicenter } from '@epicenter/data/legacy';
+import { openBrowserEpicenter } from '@epicenter/data/legacy/browser';
 import { type SkillsData, skillsLens } from '@epicenter/skills';
 import { createSkillsState } from './state/skills-state.svelte.js';
 

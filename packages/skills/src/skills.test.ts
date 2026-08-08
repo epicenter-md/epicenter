@@ -21,8 +21,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defineLens, defineTable, type RowDocument } from '@epicenter/data';
-import { openBunEpicenter } from '@epicenter/data/bun';
+import { defineLens, defineTable, type RowDocument } from '@epicenter/data/legacy';
+import { openBunEpicenter } from '@epicenter/data/legacy/bun';
 import { field, InstantString } from '@epicenter/field';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';

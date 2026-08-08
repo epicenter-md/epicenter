@@ -7,7 +7,7 @@
  * has one. Nothing below this boundary branches on auth.
  */
 
-import type { Epicenter, SyncStatus } from '@epicenter/data';
+import type { Epicenter, SyncStatus } from '@epicenter/data/legacy';
 import { type VocabData, vocabLens } from '@epicenter/vocab';
 import { createEntriesState } from './state/entries.svelte.js';
 

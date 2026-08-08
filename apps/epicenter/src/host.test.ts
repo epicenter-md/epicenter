@@ -22,7 +22,7 @@ import type {
 	Approval,
 	EngineChunk,
 } from '@epicenter/agent';
-import { openBunEpicenter } from '@epicenter/data/bun';
+import { openBunEpicenter } from '@epicenter/data/legacy/bun';
 import type { CreateInputFor } from '@epicenter/lens';
 import { type HomeHostInputs, parseHomeCommand } from './host.ts';
 import { createOwnedTestHomeHost } from './test-home-host.ts';

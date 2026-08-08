@@ -10,19 +10,19 @@ import type { AgentToolDefinition } from '@epicenter/agent';
 import { getProfileVia } from '@epicenter/auth';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
-import type { RowAddress } from '@epicenter/data';
+import type { RowAddress } from '@epicenter/data/legacy';
 import {
 	DESKTOP_EPICENTER_OBSERVE_ROUTE,
 	DESKTOP_EPICENTER_ROUTE,
 	type DesktopInvalidationFrame,
 	type DesktopResponse,
 	describeThrownError,
-} from '@epicenter/data/desktop';
+} from '@epicenter/data/legacy/desktop';
 import {
 	type DesktopEpicenterOwner,
 	EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME,
-} from '@epicenter/data/desktop-owner';
-import type { InspectionRow } from '@epicenter/data/inspection';
+} from '@epicenter/data/legacy/desktop-owner';
+import type { InspectionRow } from '@epicenter/data/legacy/inspection';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';

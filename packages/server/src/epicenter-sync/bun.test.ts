@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { Principal } from '@epicenter/auth';
-import { batchDigest } from '@epicenter/data/protocol';
+import { batchDigest } from '@epicenter/data/legacy/protocol';
 import { asPrincipalId } from '@epicenter/identity';
 import * as Y from '@y/y';
 import { Hono } from 'hono';

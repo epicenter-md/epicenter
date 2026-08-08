@@ -41,7 +41,7 @@ mock.module('@epicenter/client', () => ({
 
 import type { AgentMessage } from '@epicenter/agent';
 import type { Conversation, ConversationsTable } from '@epicenter/chat';
-import type { RowDocument } from '@epicenter/data';
+import type { RowDocument } from '@epicenter/data/legacy';
 import { createAgentChatState } from './agent-chat.svelte.js';
 
 /** Let the registry's own async work (row documents, reconciliation) drain. */

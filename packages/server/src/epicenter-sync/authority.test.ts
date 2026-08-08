@@ -12,7 +12,7 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 
-import { batchDigest, type Intent } from '@epicenter/data/protocol';
+import { batchDigest, type Intent } from '@epicenter/data/legacy/protocol';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
 import {

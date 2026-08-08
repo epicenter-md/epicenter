@@ -26,7 +26,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DESKTOP_EPICENTER_ROUTE } from '@epicenter/data/desktop';
+import { DESKTOP_EPICENTER_ROUTE } from '@epicenter/data/legacy/desktop';
 import { COMPILED_APPLICATIONS } from '../src/applications.ts';
 
 const epicenterDir = fileURLToPath(new URL('..', import.meta.url));

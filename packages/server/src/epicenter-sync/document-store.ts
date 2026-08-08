@@ -1,4 +1,4 @@
-import type { RowAddress } from '@epicenter/data/protocol';
+import type { RowAddress } from '@epicenter/data/legacy/protocol';
 import {
 	exceedsDocumentBound,
 	measureDocumentState,

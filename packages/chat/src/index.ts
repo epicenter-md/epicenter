@@ -21,7 +21,7 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
  * consumer compiles these very lines, and a type-only import it cannot resolve
  * is as fatal as a value one.
  */
-import type { RowDocument, TableLens } from '@epicenter/data';
+import type { RowDocument, TableLens } from '@epicenter/data/legacy';
 import { field } from '@epicenter/field';
 import { defineLens, defineTable, type RowFor } from '@epicenter/lens';
 import type { Brand } from 'wellcrafted/brand';

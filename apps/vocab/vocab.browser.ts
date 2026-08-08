@@ -8,9 +8,9 @@
  */
 
 import type { SyncAuthClient } from '@epicenter/auth';
-import type { Exchange, SyncCredentialProvider } from '@epicenter/data';
-import { openBrowserEpicenter } from '@epicenter/data/browser';
-import { parseExchangeResponse } from '@epicenter/data/protocol';
+import type { Exchange, SyncCredentialProvider } from '@epicenter/data/legacy';
+import { openBrowserEpicenter } from '@epicenter/data/legacy/browser';
+import { parseExchangeResponse } from '@epicenter/data/legacy/protocol';
 import { createHttpDocumentTransports } from '@epicenter/document-sync';
 
 type SyncAuth = Pick<

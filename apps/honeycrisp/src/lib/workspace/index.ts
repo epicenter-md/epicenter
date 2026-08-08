@@ -9,7 +9,7 @@
  * `SELECT * FROM notes`, and what the projection's relations are called.
  */
 
-import type { BoundOf } from '@epicenter/data/store';
+import type { BoundOf } from '@epicenter/data';
 import { defineLens, type RowOf } from '@epicenter/lens/lens';
 
 /** Runtime-minted structural note row id. */

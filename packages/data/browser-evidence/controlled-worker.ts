@@ -1,1 +1,1 @@
-import '@epicenter/data/browser-dedicated-worker';
+import '@epicenter/data/legacy/browser-dedicated-worker';

@@ -1,4 +1,4 @@
-import type { BoundData, Epicenter } from '@epicenter/data';
+import type { BoundData, Epicenter } from '@epicenter/data/legacy';
 import type { TranscriptionServiceId } from '../services/transcription/providers';
 import {
 	createWhisperingSettingDefaults,

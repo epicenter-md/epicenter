@@ -17,7 +17,7 @@
 		keymap,
 		placeholder,
 	} from '@codemirror/view';
-	import type { RowDocument } from '@epicenter/data';
+	import type { RowDocument } from '@epicenter/data/legacy';
 
 	let { document }: { document: RowDocument } = $props();
 	let container: HTMLDivElement | undefined = $state();

@@ -5,7 +5,7 @@ import {
 	isRowAddress,
 	parseExchangeRequest,
 	type RowAddress,
-} from '@epicenter/data/protocol';
+} from '@epicenter/data/legacy/protocol';
 import { DOCUMENT_MAX_TRANSFER_BYTES } from '@epicenter/document-sync';
 import type { PrincipalId } from '@epicenter/identity';
 import { Hono, type MiddlewareHandler } from 'hono';

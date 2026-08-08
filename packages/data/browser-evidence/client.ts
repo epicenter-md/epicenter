@@ -1,9 +1,9 @@
-import { defineLens, defineTable } from '@epicenter/data';
+import { defineLens, defineTable } from '@epicenter/data/legacy';
 import {
 	type BrowserEpicenter,
 	openBrowserEpicenter,
-} from '@epicenter/data/browser';
-import type { ExchangeResponse } from '@epicenter/data/protocol';
+} from '@epicenter/data/legacy/browser';
+import type { ExchangeResponse } from '@epicenter/data/legacy/protocol';
 import { field } from '@epicenter/field';
 
 import type {

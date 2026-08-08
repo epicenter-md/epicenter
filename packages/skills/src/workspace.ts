@@ -1,4 +1,4 @@
-import { type BoundData, defineLens } from '@epicenter/data';
+import { type BoundData, defineLens } from '@epicenter/data/legacy';
 import { referencesTable, skillsTable } from './tables.js';
 
 /**

@@ -1,4 +1,4 @@
-import type { NonconformingRowError, TableLens } from '@epicenter/data';
+import type { NonconformingRowError, TableLens } from '@epicenter/data/legacy';
 import { BUILTIN_RECIPES } from '../state/builtin-recipes';
 import type { Recipe, recipesTable } from '../workspace';
 

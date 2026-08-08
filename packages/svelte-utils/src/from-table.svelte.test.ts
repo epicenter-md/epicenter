@@ -41,7 +41,7 @@ import {
 	type RowFor,
 	type TableInvalidation,
 	type TableLens,
-} from '@epicenter/data';
+} from '@epicenter/data/legacy';
 import { field } from '@epicenter/field';
 import { fromTable } from './from-table.svelte.js';
 

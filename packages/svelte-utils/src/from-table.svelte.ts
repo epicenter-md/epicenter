@@ -4,7 +4,7 @@ import type {
 	TableDefinition,
 	TableInvalidation,
 	TableLens,
-} from '@epicenter/data';
+} from '@epicenter/data/legacy';
 import { createSubscriber } from 'svelte/reactivity';
 
 export type ReadonlyTableView<TDefinition extends TableDefinition> = {

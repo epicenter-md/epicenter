@@ -18,8 +18,8 @@ import {
 	defineLens,
 	defineTable,
 	openReplica,
-} from '@epicenter/data';
-import { parseExchangeResponse } from '@epicenter/data/protocol';
+} from '@epicenter/data/legacy';
+import { parseExchangeResponse } from '@epicenter/data/legacy/protocol';
 import { createHttpDocumentTransports } from '@epicenter/document-sync';
 import { field } from '@epicenter/field';
 import { asPrincipalId } from '@epicenter/identity';

@@ -1,4 +1,4 @@
-import { openDesktopEpicenter } from '@epicenter/data/desktop';
+import { openDesktopEpicenter } from '@epicenter/data/legacy/desktop';
 import { BlobsLive } from '#platform/blobs';
 import { log } from '$lib/report';
 import type { WhisperingAppDependencies } from './app';

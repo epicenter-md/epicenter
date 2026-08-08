@@ -3,10 +3,10 @@ import type {
 	PublishDocument,
 	PullDocument,
 	RowAddress,
-} from '@epicenter/data';
+} from '@epicenter/data/legacy';
 import * as Y from '@y/y';
 
-export type { RowAddress } from '@epicenter/data';
+export type { RowAddress } from '@epicenter/data/legacy';
 
 export const DOCUMENT_BOUND = {
 	stateBytes: 1_048_576,

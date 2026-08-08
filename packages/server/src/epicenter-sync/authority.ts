@@ -10,7 +10,7 @@ import {
 	parseExchangeRequest,
 	type Receipt,
 	type RowAddress,
-} from '@epicenter/data/protocol';
+} from '@epicenter/data/legacy/protocol';
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 
 import { initializeAuthoritySchema } from './authority-schema.js';

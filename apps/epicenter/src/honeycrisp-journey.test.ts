@@ -1,10 +1,10 @@
 /**
  * Honeycrisp against the Bun host: listed, served, shared, and durable.
  *
- * Home's list offers Honeycrisp, the host serves its document, the app's own
- * `honeycrispLens` opened through `openDesktopEpicenter` writes folders, notes,
- * and note bodies into the one `epicenter.sqlite3` this process owns, and two
- * things follow that neither side proves alone:
+ * Home's list offers Honeycrisp, the host serves its document, and a surface
+ * opened through `openDesktopEpicenter` writes folders, notes and note bodies
+ * into the one `epicenter.sqlite3` this process owns, so two things follow that
+ * neither side proves alone:
  *
  * - Home's tools read those same rows. Honeycrisp's Lens and Home's mirror are
  *   deliberately separate release-local interpretations of one namespace
@@ -13,6 +13,19 @@
  * - The rows survive the process. Quitting and relaunching Epicenter means a
  *   new owner over the same directory, which is the only thing "my note is
  *   still there" ever meant.
+ *
+ * ## What this no longer covers, and why
+ *
+ * That HONEYCRISP'S OWN BUILD is the thing writing here. It used to be: this
+ * test bound the app's `honeycrispLens` through the host's replica. Honeycrisp
+ * has moved to the new store and opens its own OPFS, so that is simply not true
+ * any more, and a test asserting it would be asserting a fiction. What is
+ * written below now goes through Home's own `honeycrispMirrorLens`, which keeps
+ * every claim this test can still make: the host serves the app, rows in this
+ * namespace reach Home's tools, and they survive a relaunch.
+ *
+ * The regression itself is pinned where it belongs, in Honeycrisp's
+ * `platform-selection.test.ts`, along with what restores it.
  *
  * ## What this does not cover
  *
@@ -33,9 +46,8 @@ import { createBunBlobStore } from '@epicenter/blobs/bun';
 import {
 	type ObservationSocket,
 	openDesktopEpicenter,
-} from '@epicenter/data/desktop';
+} from '@epicenter/data/legacy/desktop';
 import { InstantString } from '@epicenter/field';
-import { honeycrispLens } from '@epicenter/honeycrisp';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import { createHoneycrispCatalog } from './honeycrisp-catalog.ts';
 import {
@@ -115,7 +127,7 @@ async function launchEpicenter(root: string) {
 		homeTools: createHoneycrispCatalog(
 			dataOwner.epicenter.bind(honeycrispMirrorLens),
 		),
-		/** The replica the served Honeycrisp build opens, opened the same way. */
+		/** A surface on the host-owned replica, opened the way the host serves one. */
 		openHoneycrispSurface: () =>
 			openDesktopEpicenter({
 				baseUrl: origin,
@@ -162,7 +174,7 @@ test('Honeycrisp is listed, served, shared with Home, and durable across relaunc
 			// What the served build does once it is running: create a folder, a
 			// note, and a note body against the host-owned replica.
 			const surface = await epicenter.openHoneycrispSurface();
-			const honeycrisp = surface.bind(honeycrispLens);
+			const honeycrisp = surface.bind(honeycrispMirrorLens);
 			const folder = await honeycrisp.folders.create({
 				name: 'Reading',
 				sortOrder: 0,
@@ -199,7 +211,7 @@ test('Honeycrisp is listed, served, shared with Home, and durable across relaunc
 		const relaunched = await launchEpicenter(root);
 		try {
 			const surface = await relaunched.openHoneycrispSurface();
-			const honeycrisp = surface.bind(honeycrispLens);
+			const honeycrisp = surface.bind(honeycrispMirrorLens);
 			const { rows } = await honeycrisp.notes.scan();
 			expect(rows.map(({ title }) => title)).toEqual(['Apples']);
 

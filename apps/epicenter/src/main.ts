@@ -20,10 +20,10 @@ import {
 	epicenterDataRoot,
 	epicenterFolderRoot,
 } from '@epicenter/constants/app-data';
-import type { SyncCredentialProvider } from '@epicenter/data';
-import { epicenterPath } from '@epicenter/data/bun';
-import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
-import { parseExchangeResponse } from '@epicenter/data/protocol';
+import type { SyncCredentialProvider } from '@epicenter/data/legacy';
+import { epicenterPath } from '@epicenter/data/legacy/bun';
+import { createDesktopEpicenterOwner } from '@epicenter/data/legacy/desktop-owner';
+import { parseExchangeResponse } from '@epicenter/data/legacy/protocol';
 import { createHttpDocumentTransports } from '@epicenter/document-sync';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { loadActiveAppCatalog } from './app-catalog.ts';

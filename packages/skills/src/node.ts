@@ -2,7 +2,7 @@
 
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { RowDocument } from '@epicenter/data';
+import type { RowDocument } from '@epicenter/data/legacy';
 import { InstantString } from '@epicenter/field';
 import {
 	defineErrors,

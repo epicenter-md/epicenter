@@ -3,9 +3,9 @@ import type {
 	Epicenter,
 	Exchange,
 	SyncCredentialProvider,
-} from '@epicenter/data';
-import { openBrowserEpicenter } from '@epicenter/data/browser';
-import { parseExchangeResponse } from '@epicenter/data/protocol';
+} from '@epicenter/data/legacy';
+import { openBrowserEpicenter } from '@epicenter/data/legacy/browser';
+import { parseExchangeResponse } from '@epicenter/data/legacy/protocol';
 
 type WhisperingAuth = Pick<
 	SyncAuthClient,

@@ -1,4 +1,4 @@
-import { openBrowserStore } from '@epicenter/data/store-browser';
+import { openBrowserStore } from '@epicenter/data/browser';
 import { createLogger } from 'wellcrafted/logger';
 import type { HoneycrispDependencies } from './application.js';
 

@@ -7,7 +7,7 @@
  * thing no test in this repository can establish.
  */
 import { defineLens } from '@epicenter/lens/lens';
-import { createStore } from '@epicenter/data/store';
+import { createStore } from '@epicenter/data';
 import { createSyncConnection } from '@epicenter/data/sync';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';

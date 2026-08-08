@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Principal } from '@epicenter/auth';
 import { generateBlobId } from '@epicenter/blobs';
-import { openBunEpicenter } from '@epicenter/data/bun';
-import { parseExchangeResponse } from '@epicenter/data/protocol';
+import { openBunEpicenter } from '@epicenter/data/legacy/bun';
+import { parseExchangeResponse } from '@epicenter/data/legacy/protocol';
 import { InstantString } from '@epicenter/field';
 import {
 	createBunEpicenterSyncRuntime,

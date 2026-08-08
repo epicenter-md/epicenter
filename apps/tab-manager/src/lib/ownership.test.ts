@@ -35,8 +35,8 @@ const ENTRYPOINTS = resolve(APP_ROOT, 'src', 'entrypoints');
  * or bind a replica.
  */
 const FORBIDDEN = [
-	'@epicenter/data',
-	'@epicenter/data/browser',
+	'@epicenter/data/legacy',
+	'@epicenter/data/legacy/browser',
 	'@epicenter/document-sync',
 	'$lib/application',
 	'$lib/application-platform',

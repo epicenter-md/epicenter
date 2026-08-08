@@ -1,4 +1,4 @@
-import type { NonconformingRowError } from '@epicenter/data';
+import type { NonconformingRowError } from '@epicenter/data/legacy';
 import { InstantString } from '@epicenter/field';
 import {
 	type Reference,

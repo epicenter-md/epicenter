@@ -11,7 +11,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AgentToolOutcome, ToolCatalog } from '@epicenter/agent';
-import { openBunEpicenter } from '@epicenter/data/bun';
+import { openBunEpicenter } from '@epicenter/data/legacy/bun';
 import { field } from '@epicenter/field';
 import { defineLens, defineTable, optional } from '@epicenter/lens';
 import { createFolderBridge, startFolderRenderer } from './folder/bridge.ts';

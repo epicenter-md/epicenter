@@ -3,7 +3,7 @@ import {
 	defineLens,
 	defineTable,
 	type RowFor,
-} from '@epicenter/data';
+} from '@epicenter/data/legacy';
 import { field } from '@epicenter/field';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';

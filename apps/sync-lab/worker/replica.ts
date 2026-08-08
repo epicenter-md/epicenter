@@ -12,7 +12,7 @@
  * deploys grows a class that exists for a test.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { createStore, type Store } from '@epicenter/data/store';
+import { createStore, type Store } from '@epicenter/data';
 import {
 	createSyncClient,
 	decodeFrame,

@@ -4,7 +4,7 @@ import {
 	defineTable,
 	optional,
 	type RowFor,
-} from '@epicenter/data';
+} from '@epicenter/data/legacy';
 import { field } from '@epicenter/field';
 
 export const conversationsTable = defineTable({

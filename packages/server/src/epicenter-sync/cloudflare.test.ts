@@ -11,7 +11,7 @@
 import { Database } from 'bun:sqlite';
 import { expect, mock, test } from 'bun:test';
 
-import { batchDigest } from '@epicenter/data/protocol';
+import { batchDigest } from '@epicenter/data/legacy/protocol';
 
 mock.module('cloudflare:workers', () => ({
 	DurableObject: class {

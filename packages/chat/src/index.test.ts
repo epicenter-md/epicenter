@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AgentMessage } from '@epicenter/agent';
-import { openBunEpicenter } from '@epicenter/data/bun';
+import { openBunEpicenter } from '@epicenter/data/legacy/bun';
 import { InstantString } from '@epicenter/field';
 import { chatLens, createAgentMessageDocumentStore } from './index.js';
 

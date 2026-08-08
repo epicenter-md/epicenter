@@ -9,12 +9,12 @@ import {
 	defineLens,
 	defineTable,
 	type TableInvalidation,
-} from '@epicenter/data';
+} from '@epicenter/data/legacy';
 import {
 	type ObservationSocket,
 	type OpenDesktopEpicenterOptions,
 	openDesktopEpicenter,
-} from '@epicenter/data/desktop';
+} from '@epicenter/data/legacy/desktop';
 import { field, InstantString } from '@epicenter/field';
 import { optional } from '@epicenter/lens';
 import { whisperingLens } from '@epicenter/whispering/workspace-contract';

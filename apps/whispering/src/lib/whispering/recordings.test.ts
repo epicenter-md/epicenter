@@ -9,8 +9,8 @@ import {
 	BlobStoreError,
 	generateBlobId,
 } from '@epicenter/blobs';
-import { defineLens } from '@epicenter/data';
-import { openBunEpicenter } from '@epicenter/data/bun';
+import { defineLens } from '@epicenter/data/legacy';
+import { openBunEpicenter } from '@epicenter/data/legacy/bun';
 import { InstantString } from '@epicenter/field';
 import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';

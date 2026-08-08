@@ -5,7 +5,7 @@ import type {
 	ExchangeRequest,
 	ExchangeResponse,
 	RowAddress,
-} from '@epicenter/data/protocol';
+} from '@epicenter/data/legacy/protocol';
 import type { PrincipalId } from '@epicenter/identity';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Hono, MiddlewareHandler } from 'hono';

@@ -29,7 +29,7 @@ import type { InstanceSetting, SyncAuthClient } from '@epicenter/auth';
 import { toHostedCatalog } from '@epicenter/constants/ai-providers';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
-import type { Epicenter, SyncStatus } from '@epicenter/data';
+import type { Epicenter, SyncStatus } from '@epicenter/data/legacy';
 import type { StorageItemKey } from '@wxt-dev/storage';
 import { createTabManagerActions, type TabManagerActions } from '$lib/actions';
 import { APP_MODELS, DEFAULT_MODEL } from '$lib/chat/models';

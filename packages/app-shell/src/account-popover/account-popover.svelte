@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { AuthClient, InstanceSetting } from '@epicenter/auth';
-	import type { Epicenter, SyncStatus } from '@epicenter/data';
+	import type { Epicenter, SyncStatus } from '@epicenter/data/legacy';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';

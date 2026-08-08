@@ -1,4 +1,4 @@
-import type { Store } from '@epicenter/data/store';
+import type { Store } from '@epicenter/data';
 import { type HoneycrispData, honeycrispLens } from '@epicenter/honeycrisp';
 import { createHoneycrispState } from '../routes/state/index.js';
 

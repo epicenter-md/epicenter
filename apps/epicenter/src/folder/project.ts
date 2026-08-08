@@ -20,7 +20,7 @@ import { Database } from 'bun:sqlite';
 import { mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { lensTableExtractionSql } from '@epicenter/data/inspection';
+import { lensTableExtractionSql } from '@epicenter/data/legacy/inspection';
 import type { Lens, RowAddress, TableDefinition } from '@epicenter/lens';
 
 /** The alias the replica is attached under. Never `main`, which is the output. */

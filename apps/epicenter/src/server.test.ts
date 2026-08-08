@@ -42,13 +42,13 @@ import {
 } from '@epicenter/blobs';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
-import { epicenterPath, openBunEpicenter } from '@epicenter/data/bun';
+import { epicenterPath, openBunEpicenter } from '@epicenter/data/legacy/bun';
 import {
 	DESKTOP_EPICENTER_OBSERVE_ROUTE,
 	DESKTOP_EPICENTER_ROUTE,
 	type DesktopResponse,
-} from '@epicenter/data/desktop';
-import type { DesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
+} from '@epicenter/data/legacy/desktop';
+import type { DesktopEpicenterOwner } from '@epicenter/data/legacy/desktop-owner';
 import { InstantString } from '@epicenter/field';
 import { defineErrors } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
