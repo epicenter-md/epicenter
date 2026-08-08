@@ -1,24 +1,17 @@
 /**
- * Which build opens which store.
+ * Which build gets which credential.
  *
  * Honeycrisp has three: the hosted web SPA, the standalone desktop bundle, and
- * the build the desktop Epicenter host serves. The first two own their storage
- * and their credential.
+ * the build the desktop Epicenter host serves. What separates them is auth and
+ * the deployment they talk to, and NOT their storage: every build owns its own
+ * store and reaches the same authority per account (ADR-0226), so there is no
+ * `#platform/application` seam any more and nothing here asserts one.
  *
- * **The third borrowed the host's replica and no longer does.** Moving to the
- * new store cost that, and the loss is pinned below rather than left to be
- * discovered: the host-served build now opens its own OPFS, so its notes are
- * not in the `epicenter.sqlite3` other trusted surfaces read. What restores it
- * is the shape ADR-0222 already describes, the window as a REPLICA of the
- * host's store over the same transport the cloud uses, which needs an authority
- * endpoint the host does not serve yet. Standing up a second storage
- * arrangement in the meantime would be a path to delete rather than a step
- * toward that one.
- *
- * The rest of the failure this guards is still silent. Drop the
- * `epicenter-host` leaf from a seam and resolution falls back to `default`,
- * while still building and still starting, and nothing downstream would
- * complain. These assertions complain instead.
+ * The failure this guards is silent. Drop the `epicenter-host` leaf from a seam
+ * and resolution falls back to `default`, so the host-served build would go
+ * looking for a credential only a browser can obtain, while still building and
+ * still starting. Nothing downstream would complain. These assertions complain
+ * instead.
  *
  * This is the cheap structural half: it reads declarations, so it can say
  * exactly which seam lost its host leaf, in milliseconds. What it cannot do is
@@ -72,33 +65,25 @@ describe('platform seams', () => {
 });
 
 describe('storage ownership', () => {
-	test('every build opens its own browser-owned store, for now', async () => {
-		// Both leaves, asserted together, because they currently agree and the
-		// point of writing it this way is that the day one of them stops
-		// agreeing is the day the host grew an authority and this test should be
-		// rewritten rather than quietly satisfied.
-		for (const condition of ['epicenter-host', 'default']) {
-			const source = await leafSource('#platform/application', condition);
-			expect({ condition, opens: source.includes('openBrowserStore') }).toEqual({
-				condition,
-				opens: true,
-			});
-		}
+	test('storage is not a platform seam at all', async () => {
+		// The refusal, asserted so that re-adding the seam is a decision someone
+		// makes rather than a file someone drops in. A host that owned its
+		// windows' data would need a second authority, a second transport
+		// topology, and an answer for what happens when it and Cloud disagree,
+		// to make a convergence that already happens happen sooner.
+		expect(Object.keys(imports)).not.toContain('#platform/application');
 	});
 
 	test('nothing reaches for the superseded stack', async () => {
-		// The regression that would be invisible: a leaf that still opened an
+		// The regression that would be invisible: a surface that still opened an
 		// `Epicenter` would compile, start, and keep notes in a replica the rest
 		// of this application no longer reads.
-		for (const condition of ['epicenter-host', 'default']) {
-			const source = await leafSource('#platform/application', condition);
-			expect({
-				condition,
-				stale:
-					source.includes('openDesktopEpicenter') ||
-					source.includes('openBrowserEpicenter'),
-			}).toEqual({ condition, stale: false });
-		}
+		const source = await Bun.file(
+			join(appRoot, 'src/lib/application-platform.ts'),
+		).text();
+		expect(source).toContain('openBrowserStore');
+		expect(source).not.toContain('openDesktopEpicenter');
+		expect(source).not.toContain('openBrowserEpicenter');
 	});
 
 	test('the host owns the deployment choice its build reads', async () => {

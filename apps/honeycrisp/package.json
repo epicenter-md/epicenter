@@ -8,10 +8,6 @@
 		".": "./src/lib/workspace/index.ts"
 	},
 	"imports": {
-		"#platform/application": {
-			"epicenter-host": "./src/lib/application-platform.epicenter-host.ts",
-			"default": "./src/lib/application-platform.browser.ts"
-		},
 		"#platform/auth": {
 			"epicenter-host": "./src/lib/platform/auth.epicenter-host.ts",
 			"tauri": "./src/lib/platform/auth.tauri.ts",

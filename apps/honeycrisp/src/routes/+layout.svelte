@@ -6,7 +6,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { ModeWatcher } from 'mode-watcher';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { honeycrispPlatform } from '#platform/application';
+	import { honeycrispPlatform } from '$lib/application-platform.js';
 	import HoneycrispAppProvider from '$lib/HoneycrispAppProvider.svelte';
 	import { openHoneycrispApplication } from '$lib/application.js';
 	import '@epicenter/ui/app.css';
