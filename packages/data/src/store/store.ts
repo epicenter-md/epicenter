@@ -66,6 +66,22 @@ function hasPendingStructs(document: Y.Doc): boolean {
 	);
 }
 
+/**
+ * Structs the engine is holding.
+ *
+ * Reads the same internal `store.clients` the memory benches count, and for the
+ * same reason: there is no public reader, and the number is the one memory
+ * actually tracks. Pinned by a test, because an rc can move it.
+ */
+function structCount(document: Y.Doc): number {
+	const clients = (document as unknown as {
+		store?: { clients?: Map<number, { length: number }[]> };
+	}).store?.clients;
+	let total = 0;
+	for (const structs of clients?.values() ?? []) total += structs.length;
+	return total;
+}
+
 /** ADR-0206's minted id: 24 characters, so a collision never happens. */
 const mintRowId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 24);
 
@@ -340,6 +356,29 @@ export type ClientLog = {
 	advance(seq: number): Result<void, StoreError>;
 };
 
+/**
+ * What one document costs, in the unit that actually drives the cost.
+ *
+ * Items rather than bytes, because memory tracks struct count: 10 MB of
+ * recordings costs 263 MB resident, since every field is an item and an item
+ * costs whatever the engine charges for a small object regardless of how few
+ * bytes it encodes to (ADR-0215). Items are a property of the data and
+ * reproduce anywhere; bytes-per-item is a property of the engine.
+ */
+export type StorePressure = {
+	/** Structs the engine is holding, live and dead together. */
+	items: number;
+	/** Rows a lens can actually see, summed across bound tables. */
+	liveRows: number;
+	/**
+	 * `items / liveRows`, or the raw item count when nothing is live.
+	 *
+	 * The ratio rather than either number alone, because a big document and a
+	 * rotten one look identical from the item count.
+	 */
+	itemsPerLiveRow: number;
+};
+
 export type Store = {
 	/**
 	 * The typed view of this file through one lens.
@@ -379,6 +418,26 @@ export type Store = {
 	 * advancing past the gap makes the loss permanent.
 	 */
 	hasUnresolvedDependencies(): boolean;
+	/**
+	 * How much of this document is dead weight.
+	 *
+	 * The one number to watch, and the reason it exists rather than a design.
+	 * Deleting a row leaves a tombstone that every device pays for in memory on
+	 * every load, forever, and only a rebuild reclaims one
+	 * (`evidence/bench/tombstones.ts`). Whether that ever matters is a question
+	 * about how much a real person deletes, and nobody has that number.
+	 *
+	 * The arithmetic it feeds: memory tracks struct count at roughly 1 KB of rss
+	 * per item, and a dead row costs about 2. So 50,000 deletions is around
+	 * 100 MB, which is 14 deletions a day sustained for a decade. A vault of a
+	 * thousand notes does not get there; something with real churn might.
+	 *
+	 * Watch `itemsPerLiveRow`. A healthy application sits near the item cost of
+	 * one row, about 7 for a note with a body. Ten times that means the document
+	 * is mostly corpse, and the decision about what to do becomes worth having
+	 * against a measurement rather than against a guess.
+	 */
+	pressure(): Result<StorePressure, StoreError>;
 	/** This replica's clocks, which is the whole sync manifest (ADR-0212). */
 	stateVector(): Uint8Array;
 	/** Everything this replica has that the given state vector does not. */
@@ -848,6 +907,29 @@ export function createStore({
 		},
 		sync: createClientLog(),
 		hasUnresolvedDependencies: () => hasPendingStructs(index),
+		pressure(): Result<StorePressure, StoreError> {
+			const unusable = requireUsable();
+			if (unusable !== undefined) return Err(unusable);
+			return trySync({
+				try: () => {
+					let liveRows = 0;
+					// Only bound tables, for the same reason the projection rebuild
+					// counts only those: a document may carry a table this process
+					// holds no lens for, and guessing at it would report a number
+					// nobody could act on.
+					for (const tableName of projectedTables.keys()) {
+						liveRows += listRowIds(tableRoot(index, tableName)).length;
+					}
+					const items = structCount(index);
+					return {
+						items,
+						liveRows,
+						itemsPerLiveRow: liveRows === 0 ? items : items / liveRows,
+					};
+				},
+				catch: (cause) => StoreError.StorageFailed({ cause }),
+			});
+		},
 		stateVector: () => new Uint8Array(Y.encodeStateVector(index)),
 		encodeStateSince: (stateVector?: Uint8Array) =>
 			new Uint8Array(Y.encodeStateAsUpdateV2(index, stateVector)),

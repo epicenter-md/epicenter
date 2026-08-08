@@ -446,3 +446,42 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		expect(laptop.hasUnresolvedDependencies()).toBe(false);
 	});
 });
+
+describe('pressure is the number that decides whether any of this matters', () => {
+	test('a healthy document sits near the item cost of one row', () => {
+		for (let index = 0; index < 20; index += 1) note({ title: `note ${index}` });
+		const { data, error } = store.pressure();
+
+		expect(error).toBeNull();
+		expect(data?.liveRows).toBe(20);
+		// A note here is a container, a document container and three fields, so
+		// single digits. The absolute number is not the point; the ratio is.
+		expect(data?.itemsPerLiveRow).toBeLessThan(15);
+	});
+
+	test('churn drives it up, which is the whole signal', () => {
+		// Twenty live rows either way. The only difference is how many died to get
+		// there, and that is exactly what the ratio has to expose, because the two
+		// documents are indistinguishable from every other verb.
+		for (let index = 0; index < 20; index += 1) note({ title: `keeper ${index}` });
+		const healthy = store.pressure().data?.itemsPerLiveRow ?? 0;
+
+		for (let index = 0; index < 200; index += 1) {
+			const doomed = note({ title: `churn ${index}` });
+			const { error } = db.notes.delete(doomed.id);
+			if (error !== null) throw error;
+		}
+		const churned = store.pressure().data;
+
+		expect(churned?.liveRows).toBe(20);
+		expect(churned?.itemsPerLiveRow).toBeGreaterThan(healthy * 3);
+	});
+
+	test('an empty document reports its items rather than dividing by zero', () => {
+		const { data, error } = store.pressure();
+
+		expect(error).toBeNull();
+		expect(data?.liveRows).toBe(0);
+		expect(Number.isFinite(data?.itemsPerLiveRow)).toBe(true);
+	});
+})
