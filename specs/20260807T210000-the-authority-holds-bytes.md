@@ -128,6 +128,62 @@ keeping only whether it threw. Measured: rejects garbage and truncated updates,
 **0 MB heap**, 19 ms on a 28 MB input. That is what closes the poison pill, and
 it is a small enough amount of knowledge to defend.
 
+## When the log does eventually fill: generations, designed and not built
+
+Refusing compaction means the log grows forever, so something has to answer
+"and then what". The answer is not to compact it later under a different name.
+It is to **supersede** it.
+
+A generation is immutable. `<app>/1` accumulates for the life of the
+application. If it ever approaches Durable Object SQLite's 10 GB, nothing is
+rewritten: a client writes its complete state as seq 1 of `<app>/2`, and devices
+move there. Gen 1 is left exactly as it was.
+
+**This dissolves the proof obligation rather than relocating it.** Compaction
+needed proof because it replaced live shared state. Creating a generation
+replaces nothing, so there is no coverage to verify.
+
+Three properties make it work, and the first is the one that distinguishes it
+from an operation this corpus already refused:
+
+- **It is not ADR-0214's rebase.** That refusal stands, and its reason was that
+  rebuilding a document mints new struct identities, so a device that missed it
+  has its offline edit destroyed. Seeding a generation with
+  `encodeStateAsUpdateV2` **preserves identities**, so a device arriving from
+  gen 1 with unsent work merges normally.
+- **It self-heals.** Every device connecting to a fresh generation has a cursor
+  of zero, so everything it holds is unsent relative to it and gets pushed. The
+  seeding client therefore need not be caught up or authoritative, which is the
+  requirement that broke every compaction design.
+- **The address already has the slot.** ADR-0212 says "the address carries a
+  generation, and nothing increments it." This is what would increment it.
+
+### Why it is designed and not built
+
+**At the measured rate the trigger is 2,500 years away**, and 25 years at a
+hundred times that rate. A recovery path that never executes is the one that
+fails when it finally does, so building it now buys false confidence rather than
+safety. This is the same move ADR-0212 makes for tombstones: state the fix,
+measure that nothing is near it, build nothing.
+
+What to instrument instead: **log size per application**. It is one number and
+it gives years of warning.
+
+### What it will cost whoever does build it
+
+Three things that must be decided then, recorded now so they are not
+rediscovered as surprises:
+
+- **The redirect must outlive what it points away from.** A device on gen 1 has
+  to learn gen 2 exists. If that pointer lives inside gen 1, gen 1 can never be
+  deleted, and nothing is reclaimed. It has to resolve before connecting.
+- **Deleting gen 1 is a time policy, not a roster.** Knowing every device has
+  moved needs the device roster and silent-device rule ADR-0212 refused. The
+  honest rule is a window, after which a device offline longer than that loses
+  its unsent work.
+- **A generation costs N snapshots, not one**, because each device pushes its
+  full state on arrival. Bounded and self-correcting, but it lands as a burst.
+
 ## Facts worth keeping whatever design wins
 
 These cost real time to find and will be re-derived wrongly if they live only in
