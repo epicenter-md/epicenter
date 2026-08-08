@@ -11,7 +11,8 @@
  * the same namespace, and therefore the same data.
  */
 
-import { defineLens, defineTable, field, optional } from '@epicenter/lens';
+import { field } from '@epicenter/lens';
+import { defineLens, defineTable, optional } from '@epicenter/lens/legacy';
 
 export const notesContract = defineLens({
 	namespace: 'so.epicenter.fixture.notes',

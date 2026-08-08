@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue } from '@epicenter/lens';
-import type { ParsedLens, ParsedTable } from '@epicenter/lens/lens';
+import type { ParsedLens, ParsedTable } from '@epicenter/lens';
 import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import * as Y from '@y/y';
 

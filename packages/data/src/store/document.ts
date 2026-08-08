@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue } from '@epicenter/lens';
-import { RESERVED_ATTRIBUTE_PREFIX } from '@epicenter/lens/lens';
+import { RESERVED_ATTRIBUTE_PREFIX } from '@epicenter/lens';
 import * as Y from '@y/y';
 
 /**

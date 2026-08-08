@@ -33,14 +33,6 @@ export {
 	type WriteRowError,
 } from './store.js';
 export { COMPACTION_THRESHOLD, type OutboxEntry } from './persistence.js';
-export {
-	defineLens,
-	type LensJson,
-	type LensParseError,
-	type NonconformingRowError,
-	parseLens,
-	type RowOf,
-	RowWriteError,
-} from '@epicenter/lens/lens';
+export { defineLens, type LensJson, type LensParseError, type NonconformingRowError, parseLens, type RowOf, RowWriteError } from '@epicenter/lens';
 export type { JsonObject, JsonValue, RowAddress } from '@epicenter/lens';
 export * from '../sync/index.js';

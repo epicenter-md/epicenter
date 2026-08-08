@@ -21,7 +21,7 @@
 
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { type Lens, lensFromJsonText } from '@epicenter/lens';
+import { type Lens, lensFromJsonText } from '@epicenter/lens/legacy';
 import mime from 'mime';
 
 export type StaticAsset = {

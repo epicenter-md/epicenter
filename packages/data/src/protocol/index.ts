@@ -14,13 +14,7 @@
  * lens symbols this protocol's own signatures name are re-exported here; the
  * rest are imported from lens directly rather than through a second door.
  */
-export {
-	addressesEqual,
-	addressKey,
-	DATA_ADDRESS_CEILINGS,
-	isRowAddress,
-	type RowAddress,
-} from '@epicenter/lens';
+export { addressesEqual, addressKey, DATA_ADDRESS_CEILINGS, isRowAddress, type RowAddress } from '@epicenter/lens';
 export { DATA_ADMISSION_LIMITS, encodedJsonBytes } from './admission.js';
 export { type FoldResult, foldIntent } from './fold.js';
 export {

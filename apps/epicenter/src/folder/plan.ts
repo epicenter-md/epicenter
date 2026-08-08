@@ -15,11 +15,7 @@
  * the only place in the system that does.
  */
 
-import {
-	canonicalJson,
-	type JsonObject,
-	type JsonValue,
-} from '@epicenter/lens';
+import { canonicalJson, type JsonObject, type JsonValue } from '@epicenter/lens';
 
 import type { RowClaim } from './parse.js';
 

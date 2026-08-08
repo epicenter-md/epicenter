@@ -19,11 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { field } from '@epicenter/field';
-import {
-	defineLens,
-	defineTable,
-	optional,
-} from '@epicenter/lens';
+import { defineLens, defineTable, optional } from '@epicenter/lens/legacy';
 import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 

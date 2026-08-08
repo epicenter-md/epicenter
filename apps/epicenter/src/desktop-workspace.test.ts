@@ -16,7 +16,7 @@ import {
 	openDesktopEpicenter,
 } from '@epicenter/data/legacy/desktop';
 import { field, InstantString } from '@epicenter/field';
-import { optional } from '@epicenter/lens';
+import { optional } from '@epicenter/lens/legacy';
 import { whisperingLens } from '@epicenter/whispering/workspace-contract';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import { BOOTSTRAP_ROUTE } from './routes.ts';

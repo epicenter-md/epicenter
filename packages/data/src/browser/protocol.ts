@@ -1,14 +1,10 @@
-import type {
-	SerializedTableDefinition,
-} from '@epicenter/lens';
+import type { SerializedTableDefinition } from '@epicenter/lens/legacy';
 import type {
 	DocumentPublishOutcome,
 	DocumentPullResponse,
 } from '../documents.js';
 
-export type {
-	SerializedTableDefinition,
-} from '@epicenter/lens';
+export type { SerializedTableDefinition } from '@epicenter/lens/legacy';
 
 import type {
 	ExchangeRequest,

@@ -12,7 +12,7 @@
  * repair does NOT converge. A rule on this branch once "worked" in a simulation
  * where nothing was ever delivered.
  */
-import { defineLens } from '@epicenter/lens/lens';
+import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';

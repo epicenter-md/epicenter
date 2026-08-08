@@ -1,19 +1,5 @@
 export type { TableInvalidation } from '@epicenter/lens';
-export {
-	type ConformanceIssue,
-	type ConstrainedUpdate,
-	type CreateInputFor,
-	DataReadError,
-	defineLens,
-	defineTable,
-	type FieldsFor,
-	type Lens,
-	type NonconformingRowError,
-	optional,
-	type RowFor,
-	type TableDefinition,
-	type TableDefinitions,
-} from '@epicenter/lens';
+export { type ConformanceIssue, type ConstrainedUpdate, type CreateInputFor, DataReadError, defineLens, defineTable, type FieldsFor, type Lens, type NonconformingRowError, optional, type RowFor, type TableDefinition, type TableDefinitions } from '@epicenter/lens/legacy';
 export {
 	acceptedDocumentOrigin,
 	applyRowDocumentUpdate,

@@ -20,7 +20,7 @@ import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 
 import { field } from '@epicenter/field';
-import { defineLens, defineTable } from '@epicenter/lens';
+import { defineLens, defineTable } from '@epicenter/lens/legacy';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 

@@ -4,7 +4,7 @@
  * It exposes verbs rather than running a script, so the runner decides when a
  * reload happens, which is the only part of this that matters.
  */
-import { defineLens } from '@epicenter/lens/lens';
+import { defineLens } from '@epicenter/lens';
 
 import { type BrowserStore, openBrowserStore } from '../../../src/store/browser.js';
 import type { BoundOf } from '../../../src/store/store.js';

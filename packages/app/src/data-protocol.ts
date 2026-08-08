@@ -30,7 +30,7 @@
 import type {
 	RowAddress,
 	SerializedTableDefinition,
-} from '@epicenter/lens';
+} from '@epicenter/lens/legacy';
 
 /** Where the host answers data operations, relative to the Epicenter origin. */
 export const DATA_ROUTE = '/api/data';

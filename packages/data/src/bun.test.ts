@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { field } from '@epicenter/field';
-import { defineLens, defineTable } from '@epicenter/lens';
+import { defineLens, defineTable } from '@epicenter/lens/legacy';
 import { expectOk } from 'wellcrafted/testing';
 
 import { EPICENTER_FILE_NAME, openBunEpicenter } from './bun.js';

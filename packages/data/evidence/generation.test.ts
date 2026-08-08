@@ -11,7 +11,7 @@
  * because a design that gets it backwards looks identical until someone has
  * been offline.
  */
-import { defineLens } from '@epicenter/lens/lens';
+import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';

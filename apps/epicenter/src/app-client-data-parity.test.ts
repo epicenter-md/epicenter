@@ -47,13 +47,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { epicenter } from '@epicenter/app';
 import { DESKTOP_EPICENTER_ROUTE } from '@epicenter/data/legacy/desktop';
-import {
-	defineLens,
-	defineTable,
-	field,
-	optional,
-	type TableInvalidation,
-} from '@epicenter/lens';
+import { field, type TableInvalidation } from '@epicenter/lens';
+import { defineLens, defineTable, optional } from '@epicenter/lens/legacy';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';

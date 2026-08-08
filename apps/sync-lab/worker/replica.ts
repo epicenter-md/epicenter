@@ -18,7 +18,7 @@ import {
 	decodeFrame,
 	type SyncClient,
 } from '@epicenter/data/sync';
-import { defineLens } from '@epicenter/lens/lens';
+import { defineLens } from '@epicenter/lens';
 import {
 	createDurableObjectSqliteAdapter,
 	type DurableObjectSqliteStorage,

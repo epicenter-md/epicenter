@@ -1,4 +1,4 @@
-import type { NonconformingRowError } from '@epicenter/lens/lens';
+import type { NonconformingRowError } from '@epicenter/lens';
 import { InstantString } from '@epicenter/field';
 import {
 	type FolderId,

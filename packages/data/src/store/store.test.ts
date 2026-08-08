@@ -1,5 +1,5 @@
 import type { TableInvalidation } from '@epicenter/lens';
-import { defineLens } from '@epicenter/lens/lens';
+import { defineLens } from '@epicenter/lens';
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { mkdtemp, rm } from 'node:fs/promises';

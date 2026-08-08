@@ -1,7 +1,7 @@
 {
 	"name": "@epicenter/lens",
 	"version": "0.1.0",
-	"description": "The Epicenter data-contract vocabulary for installed applications, and the environment-neutral observation runtime that keeps a bound handle honest.",
+	"description": "The Epicenter data-contract vocabulary for installed applications: inert, compiled, and free of storage, sockets and Yjs.",
 	"type": "module",
 	"license": "MIT",
 	"repository": {
@@ -23,9 +23,9 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
-		"./lens": {
-			"types": "./dist/lens.d.ts",
-			"import": "./dist/lens.js"
+		"./legacy": {
+			"types": "./dist/legacy.d.ts",
+			"import": "./dist/legacy.js"
 		}
 	},
 	"files": [

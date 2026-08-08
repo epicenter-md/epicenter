@@ -11,7 +11,8 @@
  * them is re-rendering rather than migrating.
  */
 
-import type { JsonObject, TableDefinition } from '@epicenter/lens';
+import type { JsonObject } from '@epicenter/lens';
+import type { TableDefinition } from '@epicenter/lens/legacy';
 import { serializeEntry } from '@epicenter/matter-core';
 
 /**

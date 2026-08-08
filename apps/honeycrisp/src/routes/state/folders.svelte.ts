@@ -1,4 +1,4 @@
-import type { NonconformingRowError } from '@epicenter/lens/lens';
+import type { NonconformingRowError } from '@epicenter/lens';
 import {
 	deleteHoneycrispFolder,
 	type Folder,

@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import type { AgentToolOutcome, ToolCatalog } from '@epicenter/agent';
 import { openBunEpicenter } from '@epicenter/data/legacy/bun';
 import { field } from '@epicenter/field';
-import { defineLens, defineTable, optional } from '@epicenter/lens';
+import { defineLens, defineTable, optional } from '@epicenter/lens/legacy';
 import { createFolderBridge, startFolderRenderer } from './folder/bridge.ts';
 import { openReceiptStore, type ReceiptStore } from './folder/receipts.ts';
 import { createFolderCatalog } from './folder-catalog.ts';

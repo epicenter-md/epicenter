@@ -1,14 +1,5 @@
-import {
-	type ConstrainedUpdate,
-	type CreateInputFor,
-	createInvalidationDispatcher,
-	type Lens,
-	type RowFor,
-	serializeTableDefinition,
-	type TableDefinition,
-	type TableDefinitions,
-	type TableInvalidation,
-} from '@epicenter/lens';
+import { createInvalidationDispatcher, type TableInvalidation } from '@epicenter/lens';
+import { type ConstrainedUpdate, type CreateInputFor, type Lens, type RowFor, serializeTableDefinition, type TableDefinition, type TableDefinitions } from '@epicenter/lens/legacy';
 import * as Y from '@y/y';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type {

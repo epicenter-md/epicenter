@@ -23,7 +23,7 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
  */
 import type { RowDocument, TableLens } from '@epicenter/data/legacy';
 import { field } from '@epicenter/field';
-import { defineLens, defineTable, type RowFor } from '@epicenter/lens';
+import { defineLens, defineTable, type RowFor } from '@epicenter/lens/legacy';
 import type { Brand } from 'wellcrafted/brand';
 
 export type ConversationId = string & Brand<'ConversationId'>;

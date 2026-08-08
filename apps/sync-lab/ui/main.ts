@@ -6,7 +6,7 @@
  * device appears on another through a deployed Durable Object, which is the one
  * thing no test in this repository can establish.
  */
-import { defineLens } from '@epicenter/lens/lens';
+import { defineLens } from '@epicenter/lens';
 import { createStore } from '@epicenter/data';
 import { createSyncConnection } from '@epicenter/data/sync';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';

@@ -1,8 +1,4 @@
-import {
-	DATA_ADDRESS_CEILINGS,
-	isAdmissibleAddress,
-	isJsonObject,
-} from '@epicenter/lens';
+import { DATA_ADDRESS_CEILINGS, isAdmissibleAddress, isJsonObject } from '@epicenter/lens';
 import type { Fact, Intent } from './schemas.js';
 
 export const DATA_ADMISSION_LIMITS = {

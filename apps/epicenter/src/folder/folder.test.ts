@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
-import { defineTable, optional } from '@epicenter/lens';
+import { defineTable, optional } from '@epicenter/lens/legacy';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { parseRow } from './parse.js';

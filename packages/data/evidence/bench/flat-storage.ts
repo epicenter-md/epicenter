@@ -25,7 +25,7 @@
  * show anything, and a bench that cannot fail is decoration.
  */
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { defineLens } from '@epicenter/lens/lens';
+import { defineLens } from '@epicenter/lens';
 import { Database } from 'bun:sqlite';
 
 import { createStore } from '../../src/store/store.js';

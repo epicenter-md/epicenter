@@ -20,7 +20,7 @@
  * first. Each was caught because a number looked odd, not because an assertion
  * failed.
  */
-import { defineLens } from '@epicenter/lens/lens';
+import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Database } from 'bun:sqlite';
 

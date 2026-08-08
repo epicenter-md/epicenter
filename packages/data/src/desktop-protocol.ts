@@ -1,4 +1,4 @@
-import type { ObservationFrame } from '@epicenter/lens';
+import type { ObservationFrame } from '@epicenter/lens/legacy';
 import type {
 	BrowserOperation,
 	SerializedTableDefinition,

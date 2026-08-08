@@ -21,9 +21,7 @@
  * worthless.
  */
 
-import type {
-	NonconformingRowError,
-} from '@epicenter/lens';
+import type { NonconformingRowError } from '@epicenter/lens/legacy';
 import {
 	defineErrors,
 	extractErrorMessage,

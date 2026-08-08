@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { epicenterPath, openBunEpicenter } from '@epicenter/data/legacy/bun';
 import { field } from '@epicenter/field';
-import { defineLens, defineTable, optional } from '@epicenter/lens';
+import { defineLens, defineTable, optional } from '@epicenter/lens/legacy';
 
 import {
 	openFolderProjections,

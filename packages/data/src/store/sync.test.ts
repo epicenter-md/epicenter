@@ -7,7 +7,7 @@
  * A remote update landing in the log twice is invisible from every verb the
  * store exposes, and it was live for exactly that reason.
  */
-import { defineLens } from '@epicenter/lens/lens';
+import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';

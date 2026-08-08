@@ -21,7 +21,7 @@ import {
 	type InspectionResult,
 	openInspection,
 } from '@epicenter/data/legacy/inspection';
-import type { Lens, TableDefinition } from '@epicenter/lens';
+import type { Lens, TableDefinition } from '@epicenter/lens/legacy';
 import type { Result } from 'wellcrafted/result';
 
 export type HostLens = Lens<Record<string, TableDefinition>>;

@@ -83,7 +83,7 @@
  * tuned-down one, and it is not a measurement of anything.
  */
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { defineLens } from '@epicenter/lens/lens';
+import { defineLens } from '@epicenter/lens';
 import { Database } from 'bun:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

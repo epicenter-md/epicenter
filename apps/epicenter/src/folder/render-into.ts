@@ -14,12 +14,8 @@
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type {
-	JsonObject,
-	JsonValue,
-	RowAddress,
-	TableDefinition,
-} from '@epicenter/lens';
+import type { JsonObject, JsonValue, RowAddress } from '@epicenter/lens';
+import type { TableDefinition } from '@epicenter/lens/legacy';
 import { canonicalJson } from '@epicenter/lens';
 
 import { parseRow } from './parse.js';

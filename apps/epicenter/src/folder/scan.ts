@@ -13,7 +13,8 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { JsonObject, RowAddress, TableDefinition } from '@epicenter/lens';
+import type { JsonObject, RowAddress } from '@epicenter/lens';
+import type { TableDefinition } from '@epicenter/lens/legacy';
 
 import { parseRow, type RefusedClaim } from './parse.js';
 import { type PushPlan, planPush } from './plan.js';

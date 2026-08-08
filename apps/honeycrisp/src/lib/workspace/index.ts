@@ -10,7 +10,7 @@
  */
 
 import type { BoundOf } from '@epicenter/data';
-import { defineLens, type RowOf } from '@epicenter/lens/lens';
+import { defineLens, type RowOf } from '@epicenter/lens';
 
 /** Runtime-minted structural note row id. */
 export type NoteId = string;

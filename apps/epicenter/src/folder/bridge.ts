@@ -7,12 +7,8 @@
  * read a row, write a row, and forward the committed-address stream.
  */
 
-import type {
-	JsonObject,
-	Lens,
-	RowAddress,
-	TableDefinition,
-} from '@epicenter/lens';
+import type { JsonObject, RowAddress } from '@epicenter/lens';
+import type { Lens, TableDefinition } from '@epicenter/lens/legacy';
 
 import type { FolderWriter } from './push.js';
 import type { ReceiptStore } from './receipts.js';

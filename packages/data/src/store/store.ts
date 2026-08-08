@@ -1,23 +1,5 @@
-import {
-	createInvalidationDispatcher,
-	type JsonObject,
-	type JsonValue,
-	type RowAddress,
-	type TableInvalidationListener,
-} from '@epicenter/lens';
-import {
-	type CreateInputOf,
-	KV_ROOT,
-	type KvOf,
-	type LensJson,
-	type LensParseError,
-	type NonconformingRowError,
-	type ParsedLens,
-	type ParsedTable,
-	parseLens,
-	type RowOf,
-	RowWriteError,
-} from '@epicenter/lens/lens';
+import { createInvalidationDispatcher, type JsonObject, type JsonValue, type RowAddress, type TableInvalidationListener } from '@epicenter/lens';
+import { type CreateInputOf, KV_ROOT, type KvOf, type LensJson, type LensParseError, type NonconformingRowError, type ParsedLens, type ParsedTable, parseLens, type RowOf, RowWriteError } from '@epicenter/lens';
 import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
 import * as Y from '@y/y';
@@ -150,10 +132,7 @@ export type StoreError = InferErrors<typeof StoreError>;
 export type ReadRowError = StoreError | NonconformingRowError;
 export type WriteRowError = StoreError | RowWriteError | NonconformingRowError;
 
-export type {
-	TableInvalidation,
-	TableInvalidationListener,
-} from '@epicenter/lens';
+export type { TableInvalidation, TableInvalidationListener } from '@epicenter/lens';
 
 export type Row = { id: string } & JsonObject;
 

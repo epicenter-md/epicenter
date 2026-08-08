@@ -1,18 +1,5 @@
-import {
-	type ConstrainedUpdate,
-	type CreateInputFor,
-	createInvalidationDispatcher,
-	type Lens,
-	type ObservationCarrier,
-	type ObservationSocket,
-	openObservationCarrier,
-	type RowFor,
-	serializeTableDefinition,
-	splitUpdate,
-	type TableDefinition,
-	type TableDefinitions,
-	type TableInvalidation,
-} from '@epicenter/lens';
+import { createInvalidationDispatcher, type TableInvalidation } from '@epicenter/lens';
+import { type ConstrainedUpdate, type CreateInputFor, type Lens, type ObservationCarrier, type ObservationSocket, openObservationCarrier, type RowFor, serializeTableDefinition, splitUpdate, type TableDefinition, type TableDefinitions } from '@epicenter/lens/legacy';
 import * as Y from '@y/y';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
@@ -383,7 +370,7 @@ function defaultObservationSocket(url: string): ObservationSocket {
 	return new WebSocket(url);
 }
 
-export type { ObservationSocket } from '@epicenter/lens';
+export type { ObservationSocket } from '@epicenter/lens/legacy';
 export type {
 	DesktopInvalidationFrame,
 	DesktopRequest,

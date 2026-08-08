@@ -9,7 +9,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { field } from '@epicenter/field';
-import { defineTable, optional } from '@epicenter/lens';
+import { defineTable, optional } from '@epicenter/lens/legacy';
 import { expectOk } from 'wellcrafted/testing';
 
 import { parseRow } from './parse.js';

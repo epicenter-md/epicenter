@@ -1,22 +1,5 @@
-import {
-	type ConstrainedUpdate,
-	type CreateInputFor,
-	compileTableDefinition,
-	createInvalidationDispatcher,
-	DATA_ADDRESS_CEILINGS,
-	type DataReadError,
-	defineLens,
-	defineTable,
-	isRowId,
-	type Lens,
-	type NonconformingRowError,
-	optional,
-	type RowFor,
-	type SerializedTableDefinition,
-	type TableDefinition,
-	type TableDefinitions,
-	type TableInvalidation,
-} from '@epicenter/lens';
+import { createInvalidationDispatcher, DATA_ADDRESS_CEILINGS, isRowId, type TableInvalidation } from '@epicenter/lens';
+import { type ConstrainedUpdate, type CreateInputFor, compileTableDefinition, type DataReadError, defineLens, defineTable, type Lens, type NonconformingRowError, optional, type RowFor, type SerializedTableDefinition, type TableDefinition, type TableDefinitions } from '@epicenter/lens/legacy';
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
 import type { TSchema } from 'typebox';

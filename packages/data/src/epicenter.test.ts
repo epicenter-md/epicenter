@@ -16,13 +16,8 @@ import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 
 import { field } from '@epicenter/field';
-import {
-	defineLens,
-	defineTable,
-	optional,
-	serializeTableDefinition,
-	type TableInvalidation,
-} from '@epicenter/lens';
+import { type TableInvalidation } from '@epicenter/lens';
+import { defineLens, defineTable, optional, serializeTableDefinition } from '@epicenter/lens/legacy';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Type } from 'typebox';
 import { createLogger, type Logger, memorySink } from 'wellcrafted/logger';

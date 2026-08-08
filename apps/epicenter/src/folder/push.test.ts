@@ -9,7 +9,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { field } from '@epicenter/field';
-import { defineTable, optional, type RowAddress } from '@epicenter/lens';
+import { type RowAddress } from '@epicenter/lens';
+import { defineTable, optional } from '@epicenter/lens/legacy';
 import { type FolderWriter, pushFolder } from './push.js';
 import { openReceiptStore, type ReceiptStore } from './receipts.js';
 import { renderIntoFolder } from './render-into.js';

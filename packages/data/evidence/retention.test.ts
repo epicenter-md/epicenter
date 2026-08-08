@@ -15,7 +15,7 @@
  * decides how long a superseded generation may be kept, which is otherwise easy
  * to reason about as though the only cost were disk.
  */
-import { defineLens } from '@epicenter/lens/lens';
+import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';

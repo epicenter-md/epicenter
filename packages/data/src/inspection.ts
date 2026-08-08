@@ -34,7 +34,7 @@
  * document bytes, and the raw relations are not a complete portable artifact.
  */
 import { Database } from 'bun:sqlite';
-import type { Lens } from '@epicenter/lens';
+import type { Lens } from '@epicenter/lens/legacy';
 import type { SqliteValue } from '@epicenter/sqlite';
 import {
 	defineErrors,

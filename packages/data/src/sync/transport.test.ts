@@ -8,7 +8,7 @@
  * every test that claims something arrived asserts on the RECEIVING replica's
  * rows, never on a counter kept by the harness.
  */
-import { defineLens, type LensJson } from '@epicenter/lens/lens';
+import { defineLens, type LensJson } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';

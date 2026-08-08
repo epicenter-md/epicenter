@@ -20,7 +20,8 @@
  */
 
 import { afterEach, expect, test } from 'bun:test';
-import { defineLens, defineTable, field } from '@epicenter/lens';
+import { field } from '@epicenter/lens';
+import { defineLens, defineTable } from '@epicenter/lens/legacy';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { data } from './data.js';

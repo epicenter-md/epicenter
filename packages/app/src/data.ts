@@ -48,8 +48,8 @@
 
 import {
 	type ConstrainedUpdate,
-	type CreateInputFor,
 	createInvalidationDispatcher,
+	type CreateInputFor,
 	type InvalidationDispatcher,
 	type Lens,
 	type NonconformingRowError,
@@ -62,7 +62,7 @@ import {
 	type TableDefinition,
 	type TableDefinitions,
 	type TableInvalidation,
-} from '@epicenter/lens';
+} from '@epicenter/lens/legacy';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 

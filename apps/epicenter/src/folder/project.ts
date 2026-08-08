@@ -21,7 +21,8 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { lensTableExtractionSql } from '@epicenter/data/legacy/inspection';
-import type { Lens, RowAddress, TableDefinition } from '@epicenter/lens';
+import type { RowAddress } from '@epicenter/lens';
+import type { Lens, TableDefinition } from '@epicenter/lens/legacy';
 
 /** The alias the replica is attached under. Never `main`, which is the output. */
 const REPLICA_SCHEMA = 'replica';
