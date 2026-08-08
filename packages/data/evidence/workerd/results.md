@@ -207,6 +207,27 @@ offer was being read by the client as a refusal of its in-flight push, because
 the acknowledgement path checked the submission number and the refusal path did
 not.
 
+**Still live, and now mitigated rather than explained.** Re-run on 2026-08-08
+against the deployment, the stall reproduced at message 623 of a 2,000-message
+run. `src/sync/connection.ts` now treats a submission that stays unacknowledged
+past a window as a dead socket and reconnects (ADR-0222), so a device recovers in
+tens of seconds instead of never. The watchdog compares the submission NUMBER
+across ticks rather than the `inFlight` flag, because under sustained work that
+flag is continuously true on a completely healthy client.
+
+Experiment 5 in `probe.ts` runs the identical regime through the driver so the
+mitigation can be judged against the real failure rather than a simulated one.
+**It has not been judged yet.** The one long run of it, 2,000 messages at 65.6 ms
+each with one entry per message, did not stall, so the watchdog never fired and
+zero reconnects happened. That is a report of what the run showed, not a result:
+the stall is intermittent, two runs are not a trend, and the watchdog's recovery
+against production is still unmeasured. `connection.test.ts` proves it recovers
+from a *withheld acknowledgement*, which is the shape but not the cause.
+
+Experiment 3 also no longer aborts the probe when it stalls; it records the
+position and continues. It used to throw, which meant nothing after it ever ran,
+and is why experiment 5 could not have existed alongside it.
+
 ## What a randomised schedule found that scenarios did not
 
 `src/sync/transport.test.ts` runs a seeded fuzz: three replicas, random creates,

@@ -27,6 +27,7 @@ import { Database } from 'bun:sqlite';
 import { createStore, type Store } from '../../src/store/store.js';
 import {
 	createSyncClient,
+	createSyncConnection,
 	decodeFrame,
 	DO_SQLITE_VALUE_CAP,
 	encodeFrame,
@@ -51,8 +52,16 @@ type Stat = {
 	incarnation: string;
 };
 
-async function stat(): Promise<Stat> {
-	const response = await fetch(`${origin}/stat?app=${application}`);
+/**
+ * One partition's counters.
+ *
+ * Takes the partition rather than closing over the default, because experiment
+ * 5 runs in its own and reading the wrong one reported zero entries and a
+ * changed incarnation for a run that was fine. Its controls caught that, which
+ * is what they are for.
+ */
+async function stat(app: string = application): Promise<Stat> {
+	const response = await fetch(`${origin}/stat?app=${app}`);
 	return (await response.json()) as Stat;
 }
 
@@ -212,6 +221,7 @@ console.log('\n3. sustained traffic through ONE instance');
 
 	const before = await stat();
 	const startedAt = Date.now();
+	let stalledAt: number | undefined;
 	for (let index = 0; index < messages; index += 1) {
 		const written = author.db.data.notes.create({
 			title: `note ${index}`,
@@ -222,18 +232,40 @@ console.log('\n3. sustained traffic through ONE instance');
 		// One send per row, deliberately: this experiment is about the authority
 		// under load, so it is run with coalescing turned off in effect.
 		authorClient.flush();
-		await until(`send ${index} to be acknowledged`, () => !authorClient.status().inFlight);
+		// The stall is RECORDED rather than thrown on. It is a known open finding
+		// and it reproduces; a probe that dies here measures nothing after it,
+		// which is how experiment 5 came to be missing for as long as it was.
+		const acknowledged = await until(
+			`send ${index} to be acknowledged`,
+			() => !authorClient.status().inFlight,
+		).then(
+			() => true,
+			() => false,
+		);
+		if (!acknowledged) {
+			stalledAt = index;
+			break;
+		}
 	}
 	const elapsed = Date.now() - startedAt;
+	const pushed = stalledAt ?? messages;
 
-	await until('the reader to catch up', () => readerClient.cursor() >= messages);
+	await until('the reader to catch up', () => readerClient.cursor() >= pushed).catch(
+		() => undefined,
+	);
 	const after = await stat();
 
-	report('messages pushed', messages.toLocaleString());
+	report(
+		'sustained run',
+		stalledAt === undefined
+			? 'completed'
+			: `STALLED at message ${stalledAt}, waiting for an acknowledgement`,
+	);
+	report('messages pushed', pushed.toLocaleString());
 	report('head position', after.head);
 	report('snapshot taken at', after.snapshot === 0 ? 'NEVER' : after.snapshot);
 	report('entries still in the tail', after.entries);
-	report('wall clock', `${elapsed} ms  (${(elapsed / messages).toFixed(2)} ms each)`);
+	report('wall clock', `${elapsed} ms  (${(elapsed / Math.max(pushed, 1)).toFixed(2)} ms each)`);
 	report('bytes stored', after.storedBytes.toLocaleString());
 	report('bytes per entry', Math.round(after.storedBytes / Math.max(after.head, 1)));
 	report(
@@ -257,14 +289,14 @@ console.log('\n3. sustained traffic through ONE instance');
 	);
 	report(
 		'CONTROL the reader holds every row, not just a cursor',
-		(reader.db.data.notes.ids().data?.length ?? 0) === messages ? 'held' : 'FAILED',
+		(reader.db.data.notes.ids().data?.length ?? 0) === pushed ? 'held' : 'FAILED',
 	);
 	// The whole point of the snapshot: the authority forgets what it covers, so
 	// the tail is a fraction of what was pushed rather than all of it.
 	report(
 		'CONTROL the tail is shorter than the run',
-		after.snapshot > 0 && after.entries < messages
-			? `held (${after.entries} of ${messages} kept)`
+		after.snapshot > 0 && after.entries < pushed
+			? `held (${after.entries} of ${pushed} kept)`
 			: `FAILED (snapshot ${after.snapshot}, tail ${after.entries})`,
 	);
 	authorSocket.close();
@@ -373,6 +405,152 @@ console.log('\n4. every submission is answered, and nothing is swallowed');
 		socket.readyState === WebSocket.OPEN ? 'held' : `FAILED (state ${socket.readyState})`,
 	);
 	socket.close();
+}
+
+// ---------------------------------------------------------------------------
+
+console.log('\n5. the same regime, driven, so the watchdog can be judged');
+{
+	// Experiment 3 reproduces a stall nobody has explained: the client stops
+	// waiting for an acknowledgement that never comes, with no exception logged
+	// anywhere. Four hypotheses were tested and none was it.
+	//
+	// This is the same stress regime with `createSyncConnection` driving instead
+	// of a hand-written loop, so what is being judged is whether a device SURVIVES
+	// the stall rather than whether the stall happens. It is not a fix and it is
+	// not a diagnosis.
+	await fetch(`${origin}/probe/reset?app=${application}-driven`);
+	const messages = Number(process.env.PROBE_DRIVEN_MESSAGES ?? '1500');
+	const partition = `${application}-driven`;
+	const author = openReplica();
+	const reader = openReplica();
+	if (author.db.error !== null || reader.db.error !== null) throw new Error('bind failed');
+
+	/** How many sockets each side has opened, which is how a recovery is counted. */
+	const dials = { author: 0, reader: 0 };
+
+	function drive(side: 'author' | 'reader', store: Store) {
+		return createSyncConnection({
+			store,
+			idleMs: 5,
+			// Far shorter than the 30 s default, so a stall inside a probe run
+			// costs seconds rather than making the run unreadable.
+			unacknowledgedMs: 5_000,
+			backoff: () => 250,
+			dial: ({ cursor, opened, received, closed }) => {
+				dials[side] += 1;
+				const url = new URL('/sync', origin);
+				url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+				url.searchParams.set('app', partition);
+				url.searchParams.set('cursor', String(cursor));
+				const socket = new WebSocket(url.toString());
+				socket.binaryType = 'arraybuffer';
+				socket.addEventListener('open', () =>
+					opened({ send: (bytes) => socket.send(bytes) }),
+				);
+				socket.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') return;
+					received(new Uint8Array(event.data as ArrayBuffer));
+				});
+				socket.addEventListener('close', () => closed());
+				socket.addEventListener('error', () => socket.close());
+				return () => socket.close();
+			},
+		});
+	}
+
+	const authorConnection = drive('author', author.store);
+	const readerConnection = drive('reader', reader.store);
+	authorConnection.start();
+	readerConnection.start();
+	// CONNECTED, not dialled. The first version of this waited on the dial count,
+	// which is incremented before the socket opens, so the whole push loop ran
+	// with nothing attached: every send was a no-op, `inFlight` was never true,
+	// and 1,200 messages "completed" in 118 ms having measured coalescing rather
+	// than the regime. The head control below is what makes that unrepeatable.
+	await until(
+		'both sockets to open',
+		() =>
+			authorConnection.status().connected && readerConnection.status().connected,
+		15_000,
+	);
+
+	const before = await stat(partition);
+	const startedAt = Date.now();
+	let abandonedAt: number | undefined;
+	for (let index = 0; index < messages; index += 1) {
+		const written = author.db.data.notes.create({
+			title: `note ${index}`,
+			device: 'probe',
+			at: new Date().toISOString(),
+		});
+		if (written.error !== null) throw written.error;
+		authorConnection.flush();
+		// Patience well past one watchdog window plus its backoff, so a stall that
+		// the watchdog recovers reads as slow rather than as a failure, and one it
+		// cannot recover still ends the run.
+		const acknowledged = await until(
+			`send ${index} to be acknowledged`,
+			() => !authorConnection.status().inFlight,
+			45_000,
+		).then(
+			() => true,
+			() => false,
+		);
+		if (!acknowledged) {
+			abandonedAt = index;
+			break;
+		}
+	}
+	const elapsed = Date.now() - startedAt;
+	const pushed = abandonedAt ?? messages;
+
+	await until(
+		'the reader to catch up',
+		() => (reader.db.data.notes.ids().data?.length ?? 0) >= pushed,
+		60_000,
+	).catch(() => undefined);
+	const after = await stat(partition);
+
+	report(
+		'driven run',
+		abandonedAt === undefined
+			? 'completed'
+			: `ABANDONED at message ${abandonedAt}, unrecovered`,
+	);
+	report('messages pushed', pushed.toLocaleString());
+	report('wall clock', `${elapsed} ms  (${(elapsed / Math.max(pushed, 1)).toFixed(2)} ms each)`);
+	report(
+		'sockets the author opened',
+		`${dials.author}  (${dials.author - 1} reconnect${dials.author === 2 ? '' : 's'})`,
+	);
+	report('last reconnect reason', authorConnection.status().lastReconnect ?? 'none');
+	// The control that makes this the same regime as experiment 3 rather than a
+	// different one. One send per row means one ENTRY per row; a run whose sends
+	// were merged into a handful of entries measured coalescing, which is a
+	// different experiment and a much easier one.
+	const entriesAdded = after.head - before.head;
+	report(
+		'CONTROL one entry per message, so sends were not merged',
+		entriesAdded >= pushed
+			? `held  (${entriesAdded} entries for ${pushed} messages)`
+			: `FAILED  (${entriesAdded} entries for ${pushed} messages)`,
+	);
+	// The control this whole section rests on: a run that pushed nothing, or a
+	// reader that holds a cursor rather than rows, would report a clean recovery
+	// while having carried no data at all.
+	report(
+		'CONTROL the reader holds every row, not just a cursor',
+		(reader.db.data.notes.ids().data?.length ?? 0) === pushed
+			? `held  (${pushed} rows)`
+			: `FAILED  (${reader.db.data.notes.ids().data?.length ?? 0} of ${pushed})`,
+	);
+	report(
+		'CONTROL one incarnation start to end',
+		before.incarnation === after.incarnation ? 'held' : 'FAILED',
+	);
+	authorConnection[Symbol.dispose]();
+	readerConnection[Symbol.dispose]();
 }
 
 console.log('\ndone\n');
