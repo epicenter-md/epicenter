@@ -24,6 +24,7 @@ import {
 	decodeFrame,
 	encodeFrame,
 	intoChunks,
+	type OfferFrame,
 } from './frames.js';
 
 /**
@@ -68,8 +69,39 @@ export function createSyncHub({
 }): SyncHub {
 	const connections = new Map<HubConnection, ChunkCollector>();
 
+	/**
+	 * Bring a connection up to the snapshot if it is behind one.
+	 *
+	 * The snapshot covers everything at or before its position, so a replica
+	 * behind it can never be served from the tail: those entries are gone. It
+	 * adopts the snapshot instead and its cursor jumps there in one step.
+	 *
+	 * Adopting is a MERGE, not a replacement. The snapshot preserves struct
+	 * identities, so a replica arriving with unsent offline work keeps it and
+	 * pushes it afterwards like any other local write.
+	 */
+	function catchUpToSnapshot(connection: HubConnection): void {
+		const { data: snapshot, error } = authority.snapshot();
+		if (error !== null || snapshot === undefined) return;
+		if (connection.cursor >= snapshot.position) return;
+		const chunks = intoChunks(snapshot.bytes, CHUNK_BYTES);
+		for (const [index, chunk] of chunks.entries()) {
+			connection.send(
+				encodeFrame({
+					kind: 'snapshot',
+					position: snapshot.position,
+					chunk: index,
+					chunks: chunks.length,
+					bytes: chunk,
+				}),
+			);
+		}
+		connection.cursor = snapshot.position;
+	}
+
 	/** Send everything after this connection's cursor, up to `ceiling`. */
 	function deliver(connection: HubConnection, ceiling?: number): void {
+		catchUpToSnapshot(connection);
 		for (;;) {
 			const { data: entries, error } = authority.since(connection.cursor, batch);
 			if (error !== null) return;
@@ -115,6 +147,7 @@ export function createSyncHub({
 
 			const { data: frame, error } = decodeFrame(message);
 			if (error !== null) return Ok(undefined);
+			if (frame.kind === 'offer') return takeOffer(connection, collector, frame);
 			if (frame.kind !== 'push') return Ok(undefined);
 
 			// The only refusal about CONTENT that survives, and it is about framing
@@ -163,7 +196,71 @@ export function createSyncHub({
 			for (const other of connections.keys()) {
 				if (other !== connection) deliver(other);
 			}
+			askForSnapshot(connection);
 			return Ok(undefined);
 		},
 	});
+
+	/**
+	 * Ask a connection for a snapshot, when it is the one that can give one.
+	 *
+	 * Only a connection at the head qualifies, so the request goes to a replica
+	 * that will pass the accept condition rather than to one that will be
+	 * refused. Asking is all the authority does; it cannot produce a snapshot
+	 * itself without understanding the bytes, which is the point.
+	 */
+	function askForSnapshot(connection: HubConnection): void {
+		const { data: wanted, error } = authority.shouldSnapshot();
+		if (error !== null || !wanted) return;
+		const { data: head, error: headError } = authority.head();
+		if (headError !== null || head === 0) return;
+		if (connection.cursor !== head) return;
+		connection.send(encodeFrame({ kind: 'wanted', position: head }));
+	}
+
+	function takeOffer(
+		connection: HubConnection,
+		collector: ChunkCollector,
+		frame: OfferFrame,
+	): Result<void, never> {
+		const { data: whole, error } = collector.accept(frame);
+		if (error !== null || whole === undefined) return Ok(undefined);
+
+		// The half of the accept condition only the hub can check, and the half
+		// that separates this from the client-posted baseline an earlier design
+		// died on. `connection.cursor` is the authority's OWN record of what it
+		// has sent this socket, not a claim the replica makes about itself.
+		//
+		// `>=` rather than `===`, because entries keep arriving: a replica asked
+		// for a snapshot at 815 may have been sent 816 by the time its offer
+		// lands, and its snapshot still accounts for everything through 815,
+		// which is all it is used for. Requiring equality refused good snapshots
+		// under ordinary traffic.
+		if (connection.cursor < frame.position) {
+			connection.send(
+				encodeFrame({
+					kind: 'refuse',
+					submission: frame.position,
+					reason: `a snapshot at ${frame.position} came from a connection sent only through ${connection.cursor}`,
+				}),
+			);
+			return Ok(undefined);
+		}
+
+		// And the half the authority checks: that this is also the head.
+		const { error: replaceError } = authority.replaceSnapshot(
+			frame.position,
+			whole,
+		);
+		if (replaceError !== null) {
+			connection.send(
+				encodeFrame({
+					kind: 'refuse',
+					submission: frame.position,
+					reason: replaceError.message,
+				}),
+			);
+		}
+		return Ok(undefined);
+	}
 }

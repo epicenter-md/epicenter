@@ -77,12 +77,57 @@ export type EntryFrame = {
 	bytes: Uint8Array;
 };
 
-export type Frame = PushFrame | AckFrame | RefuseFrame | EntryFrame;
+/**
+ * A client offering its whole state as the new snapshot, at the position it
+ * has read through.
+ *
+ * The authority accepts it only when that position is both its own head AND
+ * what it has sent this connection, which is a condition it can check with one
+ * integer comparison and no understanding of the bytes.
+ */
+export type OfferFrame = {
+	kind: 'offer';
+	position: number;
+	chunk: number;
+	chunks: number;
+	bytes: Uint8Array;
+};
+
+/**
+ * The snapshot, on its way to a replica that is behind it.
+ *
+ * Carries the position it was taken at, and adopting it moves the replica's
+ * cursor there in one jump. That jump is the ONE place the contiguity check is
+ * allowed to skip, which is why it is a frame of its own rather than an entry
+ * with a flag: a gap that arrives as an ordinary entry still has to be refused.
+ */
+export type SnapshotFrame = {
+	kind: 'snapshot';
+	position: number;
+	chunk: number;
+	chunks: number;
+	bytes: Uint8Array;
+};
+
+/** The authority asking a current replica to supply a new snapshot. */
+export type WantedFrame = { kind: 'wanted'; position: number };
+
+export type Frame =
+	| PushFrame
+	| AckFrame
+	| RefuseFrame
+	| EntryFrame
+	| OfferFrame
+	| SnapshotFrame
+	| WantedFrame;
 
 const PUSH = 1;
 const ACK = 2;
 const REFUSE = 3;
 const ENTRY = 4;
+const OFFER = 5;
+const SNAPSHOT = 6;
+const WANTED = 7;
 
 /** `u8 kind` plus three `u32` fields, ahead of the payload. */
 const DATA_HEADER_BYTES = 13;
@@ -93,6 +138,23 @@ export function encodeFrame(frame: Frame): Uint8Array {
 			return encodeData(PUSH, frame.submission, frame.chunk, frame.chunks, frame.bytes);
 		case 'entry':
 			return encodeData(ENTRY, frame.seq, frame.chunk, frame.chunks, frame.bytes);
+		case 'offer':
+			return encodeData(OFFER, frame.position, frame.chunk, frame.chunks, frame.bytes);
+		case 'snapshot':
+			return encodeData(
+				SNAPSHOT,
+				frame.position,
+				frame.chunk,
+				frame.chunks,
+				frame.bytes,
+			);
+		case 'wanted': {
+			const buffer = new Uint8Array(5);
+			const view = new DataView(buffer.buffer);
+			view.setUint8(0, WANTED);
+			view.setUint32(1, frame.position);
+			return buffer;
+		}
 		case 'ack': {
 			const buffer = new Uint8Array(9);
 			const view = new DataView(buffer.buffer);
@@ -135,6 +197,13 @@ export function decodeFrame(input: Uint8Array): Result<Frame, FrameError> {
 	const view = new DataView(input.buffer, input.byteOffset, input.byteLength);
 	const kind = view.getUint8(0);
 
+	if (kind === WANTED) {
+		if (input.length < 5) {
+			return FrameError.Malformed({ reason: `wanted is ${input.length} bytes` });
+		}
+		return Ok({ kind: 'wanted', position: view.getUint32(1) });
+	}
+
 	if (kind === ACK || kind === REFUSE) {
 		if (input.length < 5) {
 			return FrameError.Malformed({ reason: `control frame is ${input.length} bytes` });
@@ -153,7 +222,7 @@ export function decodeFrame(input: Uint8Array): Result<Frame, FrameError> {
 		return Ok({ kind: 'ack', submission, seq: view.getUint32(5) });
 	}
 
-	if (kind !== PUSH && kind !== ENTRY) {
+	if (kind !== PUSH && kind !== ENTRY && kind !== OFFER && kind !== SNAPSHOT) {
 		return FrameError.Malformed({ reason: `unknown kind ${kind}` });
 	}
 	if (input.length < DATA_HEADER_BYTES) {
@@ -169,11 +238,16 @@ export function decodeFrame(input: Uint8Array): Result<Frame, FrameError> {
 	// alive for as long as any chunk of it is buffered, which on the authority
 	// is until the last chunk arrives.
 	const bytes = input.slice(DATA_HEADER_BYTES);
-	return Ok(
-		kind === PUSH
-			? { kind: 'push', submission: position, chunk, chunks, bytes }
-			: { kind: 'entry', seq: position, chunk, chunks, bytes },
-	);
+	switch (kind) {
+		case PUSH:
+			return Ok({ kind: 'push', submission: position, chunk, chunks, bytes });
+		case ENTRY:
+			return Ok({ kind: 'entry', seq: position, chunk, chunks, bytes });
+		case OFFER:
+			return Ok({ kind: 'offer', position, chunk, chunks, bytes });
+		default:
+			return Ok({ kind: 'snapshot', position, chunk, chunks, bytes });
+	}
 }
 
 /**
@@ -222,7 +296,9 @@ export function reassemble(chunks: readonly Uint8Array[]): Uint8Array {
  */
 export type ChunkCollector = {
 	/** Add one chunk. Returns the whole update once the last one lands. */
-	accept(frame: PushFrame | EntryFrame): Result<Uint8Array | undefined, FrameError>;
+	accept(
+		frame: PushFrame | EntryFrame | OfferFrame | SnapshotFrame,
+	): Result<Uint8Array | undefined, FrameError>;
 	/** How many bytes are held for submissions that are still incomplete. */
 	bufferedBytes(): number;
 	forget(position: number): void;
@@ -242,7 +318,12 @@ export function createChunkCollector({
 
 	return {
 		accept(frame) {
-			const position = frame.kind === 'push' ? frame.submission : frame.seq;
+			const position =
+				frame.kind === 'push'
+					? frame.submission
+					: frame.kind === 'entry'
+						? frame.seq
+						: frame.position;
 			if (frame.chunks === 1) return Ok(frame.bytes);
 
 			const partial = partials.get(position) ?? {

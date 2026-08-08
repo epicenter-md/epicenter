@@ -203,6 +203,58 @@ export function createSyncClient({
 		return Ok(undefined);
 	}
 
+	/**
+	 * Take the authority's snapshot, and move this replica's cursor to it.
+	 *
+	 * The ONE place a cursor may jump. Everywhere else a position that is not
+	 * the next one is refused, because a gap in the log is data nobody will ever
+	 * mention again; here the jump is safe for a reason that has nothing to do
+	 * with trust: the snapshot covers every position at or before it, so there
+	 * is nothing in the skipped range that these bytes do not already carry.
+	 *
+	 * It MERGES rather than replaces. The snapshot preserves struct identities,
+	 * so unsent offline work survives and goes out afterwards like any other
+	 * local write.
+	 */
+	function adopt(position: number, bytes: Uint8Array): Result<void, SyncClientError> {
+		if (position <= cursor) return Ok(undefined);
+		const { error } = store.applyRemote(bytes);
+		if (error !== null) {
+			const stuck = SyncClientError.Unapplyable({ seq: position, cause: error });
+			lastError = stuck.error;
+			return stuck;
+		}
+		store.sync.advance(position);
+		cursor = position;
+		return Ok(undefined);
+	}
+
+	/**
+	 * Answer a request for a snapshot with this replica's whole state.
+	 *
+	 * Refused unless this replica is exactly at the position asked for, and
+	 * unless it is holding no update whose dependencies never arrived. Both
+	 * would produce a snapshot missing data, and a snapshot replaces history
+	 * rather than adding to it, so what it misses is gone for everybody.
+	 */
+	function offerSnapshot(position: number): Result<void, SyncClientError> {
+		if (socket === undefined || position !== cursor) return Ok(undefined);
+		if (store.hasUnresolvedDependencies()) return Ok(undefined);
+		const chunks = intoChunks(store.encodeStateSince(), CHUNK_BYTES);
+		for (const [index, chunk] of chunks.entries()) {
+			socket.send(
+				encodeFrame({
+					kind: 'offer',
+					position,
+					chunk: index,
+					chunks: chunks.length,
+					bytes: chunk,
+				}),
+			);
+		}
+		return Ok(undefined);
+	}
+
 	return Object.freeze({
 		cursor: () => cursor,
 
@@ -280,8 +332,17 @@ export function createSyncClient({
 					if (whole === undefined) return Ok(undefined);
 					return apply(frame.seq, whole);
 				}
+				case 'snapshot': {
+					const { data: whole, error: chunkError } = collector.accept(frame);
+					if (chunkError !== null) return Ok(undefined);
+					if (whole === undefined) return Ok(undefined);
+					return adopt(frame.position, whole);
+				}
+				case 'wanted':
+					return offerSnapshot(frame.position);
 				case 'push':
-					// A client never receives one. Ignored rather than thrown on,
+				case 'offer':
+					// A client never receives either. Ignored rather than thrown on,
 					// because a throw here would be swallowed by the socket runtime.
 					return Ok(undefined);
 			}

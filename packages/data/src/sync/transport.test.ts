@@ -578,3 +578,156 @@ describe('an entry that will not apply is loud, not silent', () => {
 		expect(phone.titles()).toEqual(['Groceries']);
 	});
 });
+
+describe('the authority keeps a snapshot and a tail, not a log', () => {
+	test('a snapshot replaces the entries it covers, and storage stops growing', () => {
+		const { wire, authority, phone, laptop } = setup();
+		phone.connect();
+		laptop.connect();
+		for (let index = 0; index < 30; index += 1) {
+			expectOk(phone.db.notes.create({ title: `note ${index}` }));
+			phone.client.flush();
+			wire.settle();
+		}
+		const grown = expectOk(authority.storedBytes());
+
+		// The hub asks whoever is at the head once the tail outgrows the snapshot,
+		// and that happens on its own during the run above.
+		expect(expectOk(authority.snapshotPosition())).toBeGreaterThan(0);
+		expect(expectOk(authority.since(0, 1_000)).length).toBeLessThan(30);
+		expect(grown).toBeGreaterThan(0);
+		expect(laptop.titles()).toHaveLength(30);
+	});
+
+	test('a replica behind the snapshot converges, keeping its offline work', () => {
+		// The case the whole shape exists for. The tail this replica needed is
+		// gone, so it can only be served by the snapshot, and it is carrying work
+		// nobody has seen.
+		const { wire, phone, laptop } = setup();
+		phone.connect();
+		for (let index = 0; index < 30; index += 1) {
+			expectOk(phone.db.notes.create({ title: `note ${index}` }));
+			phone.client.flush();
+			wire.settle();
+		}
+
+		expectOk(laptop.db.notes.create({ title: 'WRITTEN OFFLINE' }));
+		laptop.connect();
+		wire.settle();
+		laptop.client.flush();
+		wire.settle();
+
+		expect(laptop.titles()).toHaveLength(31);
+		expect(laptop.titles()).toContain('WRITTEN OFFLINE');
+		expect(laptop.client.status().unresolvedDependencies).toBe(false);
+		// And it converges both ways, so the offline note reached the other side.
+		expect(phone.titles()).toEqual(laptop.titles());
+	});
+
+	test('a deleted note is not in the snapshot, so it stops being recoverable', () => {
+		// The privacy consequence, and the reason this shape is worth the change.
+		// A never-compacted log holds the update that CREATED a row forever
+		// (`evidence/retention.test.ts`); a snapshot is current state and carries
+		// no trace of it.
+		const { wire, authority, phone } = setup();
+		phone.connect();
+		const secret = 'SECRET-CANARY-therapist';
+		const note = expectOk(phone.db.notes.create({ title: secret }));
+		phone.client.flush();
+		wire.settle();
+		expectOk(phone.db.notes.delete(note.id));
+		phone.client.flush();
+		wire.settle();
+		// Churn until the tail outgrows the snapshot and a fresh one is taken.
+		for (let index = 0; index < 40; index += 1) {
+			expectOk(phone.db.notes.create({ title: `filler ${index}` }));
+			phone.client.flush();
+			wire.settle();
+		}
+
+		const stored = [
+			...(expectOk(authority.snapshot()) === undefined
+				? []
+				: [expectOk(authority.snapshot())?.bytes as Uint8Array]),
+			...expectOk(authority.since(0, 1_000)).map((entry) => entry.bytes),
+		];
+		const haystack = Buffer.concat(stored.map((bytes) => Buffer.from(bytes))).toString(
+			'latin1',
+		);
+
+		expect(haystack).not.toContain(secret);
+		// CONTROL: a title that IS still live must be found, or the search is
+		// looking in the wrong place and would pass for any string.
+		expect(haystack).toContain('filler 39');
+	});
+});
+
+describe('who may replace the snapshot', () => {
+	test('a connection the authority has NOT sent everything to is refused', () => {
+		// The half of the condition the hub owns, and the half that separates this
+		// from the client-posted baseline an earlier design died on. The check is
+		// against the authority's own record of what it sent, never against what
+		// the replica says about itself.
+		const { wire, authority, hub, phone } = setup();
+		phone.connect();
+		expectOk(phone.db.notes.create({ title: 'real work' }));
+		phone.client.flush();
+		wire.settle();
+		const head = expectOk(authority.head());
+
+		const answers: Uint8Array[] = [];
+		const stale: HubConnection = { cursor: 0, send: (bytes) => answers.push(bytes) };
+		hub.join(stale);
+		answers.length = 0;
+		// Joining catches a connection up, so the state this guard exists for has
+		// to be arranged: a socket the authority has sent nothing to, claiming to
+		// hold everything.
+		stale.cursor = 0;
+		// An empty document, offered as though it were the whole state. This is
+		// the exact shape that destroyed a partition in a withdrawn design.
+		hub.receive(
+			stale,
+			encodeFrame({
+				kind: 'offer',
+				position: head,
+				chunk: 0,
+				chunks: 1,
+				bytes: new Uint8Array(Y.encodeStateAsUpdateV2(new Y.Doc({ gc: true }))),
+			}),
+		);
+
+		const refusal = answers.map((bytes) => expectOk(decodeFrame(bytes))).at(-1);
+		expect(refusal?.kind).toBe('refuse');
+		// And nothing was destroyed: the work is still there.
+		expect(phone.titles()).toEqual(['real work']);
+	});
+
+	test('CONTROL: the same offer from a current connection IS accepted', () => {
+		// Without this the refusal above passes for a hub that refuses every
+		// offer, which would mean snapshots never happen at all.
+		const { wire, authority, phone } = setup();
+		phone.connect();
+		for (let index = 0; index < 10; index += 1) {
+			expectOk(phone.db.notes.create({ title: `note ${index}` }));
+			phone.client.flush();
+			wire.settle();
+		}
+
+		expect(expectOk(authority.snapshotPosition())).toBeGreaterThan(0);
+		expect(phone.titles()).toHaveLength(10);
+	});
+
+	test('an offer running past the end of the log is refused by the authority', () => {
+		const { wire, authority, phone } = setup();
+		phone.connect();
+		expectOk(phone.db.notes.create({ title: 'one' }));
+		phone.client.flush();
+		wire.settle();
+		const head = expectOk(authority.head());
+
+		// Past the end of the log: it would stand for entries nobody has written.
+		const beyond = authority.replaceSnapshot(head + 5, new Uint8Array([0]));
+
+		expect(beyond.error?.name).toBe('SnapshotRefused');
+	});
+});

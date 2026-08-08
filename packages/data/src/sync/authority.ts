@@ -60,7 +60,7 @@
  */
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { type Result, trySync } from 'wellcrafted/result';
+import { Err, type Result, trySync } from 'wellcrafted/result';
 
 import { copyBytes } from '../store/persistence.js';
 import { CHUNK_BYTES, intoChunks } from './frames.js';
@@ -77,11 +77,37 @@ export const AuthorityError = defineErrors({
 		message: 'The authority could not commit to durable storage',
 		cause,
 	}),
+	/**
+	 * A snapshot was offered at a position it cannot stand for.
+	 *
+	 * The condition is COVERAGE, not currency, and the difference is the whole
+	 * subtlety. A snapshot at P is used to forget every entry at or before P, so
+	 * all it must do is account for those. It does NOT have to be at the head:
+	 * requiring that lost a race every time an entry landed between the request
+	 * and the offer, and refused a snapshot that was perfectly good.
+	 *
+	 * So a position is refused for exactly two reasons: it runs past the end of
+	 * the log, which means it stands for entries nobody has written; or it is at
+	 * or behind the snapshot already held, which would move history backwards.
+	 */
+	SnapshotRefused: ({
+		offered,
+		head,
+		current,
+	}: { offered: number; head: number; current: number }) => ({
+		message: `A snapshot at ${offered} is not usable: the log ends at ${head} and the snapshot already covers ${current}`,
+		offered,
+		head,
+		current,
+	}),
 });
 export type AuthorityError = InferErrors<typeof AuthorityError>;
 
 /** One entry of the log, reassembled from however many chunks held it. */
 export type LogEntry = { seq: number; bytes: Uint8Array };
+
+/** The state everything after it is relative to. */
+export type Snapshot = { position: number; bytes: Uint8Array };
 
 export type SyncAuthority = {
 	/**
@@ -95,7 +121,35 @@ export type SyncAuthority = {
 	since(cursor: number, limit?: number): Result<LogEntry[], AuthorityError>;
 	/** The newest position, or zero for a log nothing has been written to. */
 	head(): Result<number, AuthorityError>;
-	/** Total stored bytes. The one number worth instrumenting (see below). */
+	/** The current snapshot, or undefined for a log nothing has replaced yet. */
+	snapshot(): Result<Snapshot | undefined, AuthorityError>;
+	/** The position the current snapshot was taken at. Zero when there is none. */
+	snapshotPosition(): Result<number, AuthorityError>;
+	/**
+	 * Replace the snapshot and forget everything it covers.
+	 *
+	 * Accepted when the position lies inside the log and ahead of the snapshot
+	 * already held. The caller owes the other half of the condition, which it
+	 * alone can check: that this is a connection the authority has actually SENT
+	 * everything through that position. Its own record of what it sent is not a
+	 * claim the replica makes, which is the difference between this and the
+	 * client-posted baseline that an earlier design died on.
+	 */
+	replaceSnapshot(
+		position: number,
+		bytes: Uint8Array,
+	): Result<void, AuthorityError>;
+	/**
+	 * Whether the tail has outgrown the snapshot.
+	 *
+	 * The whole snapshot policy, and it is self-balancing rather than a tuned
+	 * interval. Snapshotting often keeps storage small and makes every returning
+	 * replica re-download the whole state; snapshotting rarely does the reverse.
+	 * Triggering when the tail passes the snapshot bounds BOTH at about twice the
+	 * state, and there is no number to pick.
+	 */
+	shouldSnapshot(): Result<boolean, AuthorityError>;
+	/** Total stored bytes, snapshot and tail together. */
 	storedBytes(): Result<number, AuthorityError>;
 };
 
@@ -111,7 +165,25 @@ export function applyAuthoritySchema(database: SqliteDatabase): void {
 			PRIMARY KEY (seq, chunk)
 		)
 	`);
+	// Chunked for the same reason the log is: a snapshot is the largest single
+	// value the authority ever stores, and it is the one guaranteed to exceed
+	// the cap on any real vault.
+	//
+	// More than one position is kept on purpose. A snapshot replaces history, so
+	// unlike a bad log entry it cannot be repaired by neutralising one row; the
+	// previous one is the only way back from a replica that produced a bad one.
+	database.run(`
+		CREATE TABLE IF NOT EXISTS _snapshot (
+			position INTEGER NOT NULL,
+			chunk    INTEGER NOT NULL,
+			bytes    BLOB    NOT NULL,
+			PRIMARY KEY (position, chunk)
+		)
+	`);
 }
+
+/** How many snapshots are kept: the live one, and one to fall back to. */
+const SNAPSHOTS_KEPT = 2;
 
 export function openSyncAuthority({
 	database,
@@ -127,12 +199,19 @@ export function openSyncAuthority({
 		});
 	}
 
+	/**
+	 * The newest position, whether it is an entry or the snapshot.
+	 *
+	 * Both, because a snapshot DELETES the entries it covers, so the log alone
+	 * would report a head of zero straight after one and the next append would
+	 * reuse positions the replicas have already read.
+	 */
 	function headSeq(): number {
-		return (
+		const newestEntry =
 			database.all<SqliteRow & { seq: number }>(
 				'SELECT COALESCE(MAX(seq), 0) AS seq FROM _log',
-			)[0]?.seq ?? 0
-		);
+			)[0]?.seq ?? 0;
+		return Math.max(newestEntry, snapshotPositionOf());
 	}
 
 	return Object.freeze({
@@ -201,6 +280,73 @@ export function openSyncAuthority({
 
 		head: () => read(headSeq),
 
+		snapshotPosition: () => read(snapshotPositionOf),
+
+		snapshot(): Result<Snapshot | undefined, AuthorityError> {
+			return read(() => {
+				const position = snapshotPositionOf();
+				if (position === 0) return undefined;
+				const rows = database.all<
+					SqliteRow & { bytes: Uint8Array | ArrayBuffer }
+				>(
+					'SELECT bytes FROM _snapshot WHERE position = ? ORDER BY chunk',
+					[position],
+				);
+				return { position, bytes: join(rows.map((row) => copyBytes(row.bytes))) };
+			});
+		},
+
+		replaceSnapshot(position, bytes): Result<void, AuthorityError> {
+			const { data: head, error } = read(headSeq);
+			if (error !== null) return Err(error);
+			const { data: current, error: currentError } = read(snapshotPositionOf);
+			if (currentError !== null) return Err(currentError);
+			// Coverage, not currency. The snapshot is about to stand for every
+			// entry at or before `position`, so it must not run past what exists,
+			// and it must not walk history backwards.
+			if (position > head || position <= current) {
+				return AuthorityError.SnapshotRefused({ offered: position, head, current });
+			}
+			return read(() =>
+				database.transaction(() => {
+					const chunks = intoChunks(bytes, CHUNK_BYTES);
+					for (const [index, chunk] of chunks.entries()) {
+						database.run(
+							'INSERT OR REPLACE INTO _snapshot (position, chunk, bytes) VALUES (?, ?, ?)',
+							[position, index, new Uint8Array(chunk)],
+						);
+					}
+					// Everything the snapshot covers is forgotten. This is the line
+					// that makes storage constant instead of growing, and it is also
+					// what makes a deletion real: a snapshot is current state, so it
+					// carries no trace of what was deleted before it.
+					database.run('DELETE FROM _log WHERE seq <= ?', [position]);
+					const kept = database
+						.all<SqliteRow & { position: number }>(
+							'SELECT DISTINCT position FROM _snapshot ORDER BY position DESC LIMIT ?',
+							[SNAPSHOTS_KEPT],
+						)
+						.map((row) => row.position);
+					const oldest = kept.at(-1);
+					if (oldest !== undefined) {
+						database.run('DELETE FROM _snapshot WHERE position < ?', [oldest]);
+					}
+				}),
+			);
+		},
+
+		shouldSnapshot(): Result<boolean, AuthorityError> {
+			return read(() => {
+				const tail = sumBytes('_log');
+				if (tail === 0) return false;
+				const snapshot = sumBytes('_snapshot');
+				// A log that has never been snapshotted qualifies as soon as it holds
+				// anything, so the first one happens early and cheaply rather than
+				// after the tail has grown to the size of the whole vault.
+				return snapshot === 0 || tail > snapshot;
+			});
+		},
+
 		/**
 		 * The one number to instrument.
 		 *
@@ -210,12 +356,36 @@ export function openSyncAuthority({
 		 * trigger is millennia away, so nothing is built for it; this is how a
 		 * decade of warning arrives if the rate is ever wrong.
 		 */
-		storedBytes: () =>
-			read(
-				() =>
-					database.all<SqliteRow & { bytes: number }>(
-						'SELECT COALESCE(SUM(length(bytes)), 0) AS bytes FROM _log',
-					)[0]?.bytes ?? 0,
-			),
+		storedBytes: () => read(() => sumBytes('_log') + sumBytes('_snapshot')),
 	});
+
+	function sumBytes(relation: '_log' | '_snapshot'): number {
+		return (
+			database.all<SqliteRow & { bytes: number }>(
+				`SELECT COALESCE(SUM(length(bytes)), 0) AS bytes FROM ${relation}`,
+			)[0]?.bytes ?? 0
+		);
+	}
+
+	function snapshotPositionOf(): number {
+		return (
+			database.all<SqliteRow & { position: number }>(
+				'SELECT COALESCE(MAX(position), 0) AS position FROM _snapshot',
+			)[0]?.position ?? 0
+		);
+	}
+}
+
+/** Concatenate chunks back into the value they were cut from. */
+function join(chunks: readonly Uint8Array[]): Uint8Array {
+	if (chunks.length === 1) return chunks[0] as Uint8Array;
+	let total = 0;
+	for (const chunk of chunks) total += chunk.length;
+	const bytes = new Uint8Array(total);
+	let at = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, at);
+		at += chunk.length;
+	}
+	return bytes;
 }
