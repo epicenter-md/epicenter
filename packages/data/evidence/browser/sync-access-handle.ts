@@ -3,19 +3,21 @@
  *
  * Run: `bun run evidence/browser/sync-access-handle.ts`
  *
- * The question this settles decides whether the store can move a browser or
- * WebView application at all. `createStore` is synchronous end to end, and its
- * durability comes from a `SqliteDatabase` whose `run` and `transaction` return
- * rather than resolve. On Bun that is `bun:sqlite`. In a browser the only
- * durable backing sqlite-wasm has is the origin private file system, reached
- * through `FileSystemFileHandle.createSyncAccessHandle`, and if that is not
- * callable where the application's code runs then a synchronous durable store
- * cannot exist there whatever else is arranged.
+ * This settles where a browser store's DURABLE LOG lives, and nothing else. Be
+ * careful with the answer: it was briefly read as meaning a page cannot host the
+ * store at all, which is false. `apps/sync-lab/ui/main.ts` is `createStore` over
+ * sqlite-wasm `:memory:` on a browser main thread, deployed and working. The
+ * store needs a synchronous HANDLE, not synchronous DURABILITY, and every read a
+ * person makes comes from the `Y.Doc` in memory rather than from SQLite.
+ *
+ * What the answer does decide is whether the durable log can sit in the page
+ * beside the in-memory database or has to sit behind a port. sqlite-wasm's only
+ * durable backing in a browser is the origin private file system, reached
+ * through `FileSystemFileHandle.createSyncAccessHandle`.
  *
  * MDN says it is "only available in Dedicated Web Workers", and this repository
- * already behaves as if that is true: `src/browser/worker.ts` installs the
- * OPFS SAH pool inside a worker and `src/browser.ts` is the asynchronous page
- * proxy that arrangement forces. Neither is a measurement. This is.
+ * already behaves as if that is true: `src/browser/worker.ts` installs the OPFS
+ * SAH pool inside a worker. Neither is a measurement. This is.
  *
  * CONTROL: the worker arm must SUCCEED. If both arms report the handle missing,
  * the probe found a browser with no OPFS at all, or an insecure origin, and it
@@ -41,7 +43,7 @@ const PROBE = `async () => {
 	try {
 		const handle = await file.createSyncAccessHandle();
 		// Actually write through it. A handle that exists and refuses every write
-		// would still make a synchronous store impossible.
+		// would answer this question the same way as one that is missing.
 		const wrote = handle.write(new TextEncoder().encode('epicenter'), { at: 0 });
 		handle.flush();
 		handle.close();
@@ -96,8 +98,8 @@ try {
 	const main = onTheMainThread as { available: boolean };
 	console.log(
 		main.available
-			? '\nA synchronous durable browser store IS possible on the main thread.'
-			: '\nA synchronous durable browser store is NOT possible on the main thread.\nDurable browser storage lives in a worker, and a worker boundary is asynchronous.',
+			? '\nA page can hold its own durable log, so no worker is needed for one.'
+			: '\nA durable log lives in a worker, so a page appends to one asynchronously.\nThis says nothing about where the STORE runs: reads come from the Y.Doc in\nmemory, and an in-memory SQLite already satisfies the synchronous handle.',
 	);
 } finally {
 	await browser.close();

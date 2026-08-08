@@ -9,59 +9,77 @@
   [ADR-0221](../docs/adr/0221-a-table-names-the-rows-a-commit-touched-and-says-so-after-the-projection-commits.md)
   (the subscription, landed),
   [ADR-0222](../docs/adr/0222-a-host-owns-how-to-make-a-socket-and-the-library-owns-everything-done-with-one.md)
-  (the connection driver, landed),
-  [ADR-0223](../docs/adr/0223-a-synchronous-store-needs-a-runtime-that-can-write-durably-without-awaiting-and-a-browser-page-is-not-one.md)
-  (why the move is blocked).
+  (the connection driver, landed).
 - **Decided:** clean break. Honeycrisp itself moves; no parallel surface is stood
   up beside it.
 
 ## Where this stands
-
-The developer-facing surface the app was picked to force is built. What is not
-settled is where Honeycrisp's store can run at all, and that turned out to be a
-host question rather than a store question.
 
 **Landed.** The per-table subscription carrying row ids (ADR-0221) and the
 connection driver that owns its own correctness (ADR-0222), including the
 watchdog and `store.onLocalWork`. The lab runs on the driver, which is what makes
 "a host writes only a dial" a demonstration rather than a claim.
 
-**Blocked.** Honeycrisp's own move. The plan assumed a browser store was a matter
-of writing one; measured, a browser page cannot take a synchronous handle to
-durable storage at all (ADR-0223), and a Tauri WebView is a browser. So the
-opener Honeycrisp needs does not exist and cannot be written as an opener.
+**Remaining.** Waves 1, 4 and 5: the prose binding, Honeycrisp's move, and the
+package export. None of them is started.
 
-**Not started.** `@epicenter/data`'s main export still points at the superseded
-stack. Deliberately: narrowing it to the new store while no application in this
-repository can open one would make the front door name something unusable, and it
-is 43 files of churn with nothing to verify against.
+## The browser store, which is the only thing standing between here and Wave 4
 
-## The open fork, which is the whole of what is left to decide
+A page cannot take a synchronous handle to durable storage. Measured in a real
+Chromium on a secure origin, with the dedicated-worker arm as a control that must
+succeed (`packages/data/evidence/browser/sync-access-handle.ts`):
 
-ADR-0223 names the shape: a page that wants the synchronous surface is a REPLICA
-of a durable store rather than an owner of one, holding `createStore` over an
-in-memory SQLite plus a `createSyncConnection` to whoever owns the file. Every
-piece of that exists. What does not exist is the answer to **who owns
-Honeycrisp's durable file on the desktop**, and there are three candidates:
+```txt
+context           available  detail
+main thread       false      createSyncAccessHandle is not a function
+dedicated worker  true       9 bytes written
+```
 
-- **The Epicenter host process.** It is already Bun, `openBunStore` works there
-  unchanged, and `openSyncAuthority` and `createSyncHub` are already built and
-  deployed, so a window becomes a replica of a local authority using the same
-  transport as the cloud. Costs: only the `epicenter-host` build gets it, and
-  Honeycrisp's own Tauri shell (`bun dev:honeycrisp`) gets nothing.
-- **Honeycrisp's own Tauri shell, through Rust.** Reaches the standalone bundle,
-  which is the build people actually install. Costs a Rust SQLite bridge and a
-  second implementation of the authority's socket.
-- **A dedicated worker in the page.** No host at all, works in the web SPA and
-  every WebView alike, and is where the superseded stack already put storage.
-  Costs the most machinery: the worker owns the durable log, the page owns the
-  live `Y.Doc`, and the two are a replica pair rather than a proxy, so the
-  page's writes reach durability asynchronously and `persist`'s
-  poison-on-failure becomes an alarm the app surfaces rather than a returned
-  error.
+**That constrains where the durable log lives and nothing else.** It was briefly
+read here as meaning a page cannot host the store at all, which is false, and the
+throwaway lab refutes it by running: `apps/sync-lab/ui/main.ts` is `createStore`
+over sqlite-wasm `:memory:` on a browser main thread, deployed and working. The
+store needs a synchronous HANDLE, not synchronous DURABILITY. `createStore`
+touches the database in three places, `applyStoreSchema` and `readUpdates` at
+construction and then `transaction`/`all`, and every read a person makes (`get`,
+`list`, `ids`, `document`) comes from the `Y.Doc` in memory. SQLite is a
+write-behind log and a query cache, not the read path.
 
-The third is the only one that reaches every surface, and it is the only one that
-weakens a property ADR-0215 currently has. That trade is the decision.
+So `openBrowserStore` is:
+
+- **In the page:** sqlite-wasm `:memory:`, handed to `createStore` unchanged.
+- **In a dedicated worker:** the OPFS log, holding the durable update log, the
+  outbox and the cursor. Not the projection, which is derived and cheap to
+  rebuild, and mirroring it would flood the port on every remote update.
+- **At boot:** `openBrowserStore()` is already allowed to be async, like
+  `openBunStore`. Read the log out of the worker, write it into the in-memory
+  database, then construct the store, which hydrates from it exactly as it does
+  on Bun.
+- **On every durable write:** forward the same bytes to the worker to append.
+
+### The one thing that genuinely changes, and it needs deciding
+
+`persist` currently POISONS the store when durable storage refuses, because
+memory and storage have diverged and continuing would publish work that was never
+committed. With the log behind a port, that refusal arrives after the write has
+already returned `Ok`.
+
+The proposal is that it becomes an ALARM rather than a returned error, in the
+same shape as `hasUnresolvedDependencies`: a reader on the store that says this
+device's durable copy is behind, which the application surfaces. Nothing is lost
+when it fires, because the `Y.Doc` still holds the work and the outbox still owes
+it to the authority; what is lost is the guarantee that a reload sees it.
+
+That is the decision to make before this is built. It is a seam, not a fork, and
+it does not need a host to own anything.
+
+### What this is NOT
+
+Not a proxy. The superseded stack put the whole replica in a worker and made the
+page an asynchronous client of it, which is why `src/browser.ts` is 700 lines and
+why every read in Honeycrisp is awaited today. Here the worker holds bytes it
+never interprets and the page holds the document, so the surface stays
+synchronous and the worker's protocol is append and read-all.
 
 ## What Honeycrisp does today, for whoever picks this up
 
@@ -88,9 +106,9 @@ working. Do not hand-roll a binding.
 
 One thing the store now makes visible: `document(id).get(name)` CREATES on miss,
 so a row whose roots were not named at `create` invalidates on first open. Notes
-must be created as
-`db.notes.create(fields, { document: ['body'] })`, which is also what keeps two
-devices first-opening one note from each minting a root and losing one.
+must be created as `db.notes.create(fields, { document: ['body'] })`, which is
+also what keeps two devices first-opening one note from each minting a root and
+losing one.
 
 ## Gates, unchanged
 
@@ -101,8 +119,7 @@ devices first-opening one note from each minting a root and losing one.
 
 ## What this does NOT do
 
-- **Whispering, vocab, tab-manager and skills do not move.** They are all browser
-  surfaces, so ADR-0223 governs every one of them, and they stay on the
-  superseded stack until the fork above is decided.
+- **Whispering, vocab, tab-manager and skills do not move.** They stay on the
+  superseded stack until Honeycrisp has proved the surface.
 - **No end-to-end encryption.** The door stays open at zero cost as long as the
   authority never reads bytes; walking through it is not this work.
