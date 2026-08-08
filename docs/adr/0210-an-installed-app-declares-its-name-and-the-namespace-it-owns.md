@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-05
+- **Superseded by:** [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md): the installed-app plane is refused for now, so there is no installed app left to declare a name or a namespace.
 - **Built.** `lensFromJson` in `packages/lens`, the declaration read in `deriveAppCatalog`, the composed Lens list in `main.ts`, and the `.`-to-`_` label map in `src-tauri/src/lib.rs`. Verified by publishing `apps/vocab` from a folder named `anything`: it was admitted as `so.epicenter.vocab` titled `Vocab`, served at `/apps/so.epicenter.vocab/`, and listed by `/api/home/inspect` with its three tables. The `~/Epicenter/<namespace>/` half is wired through the same list but has not been watched render.
 - **Provisional number.** `main` ends at ADR-0205; ADR-0206 through ADR-0209 land with this branch, so 0210 is the next free integer today. Reconcile at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md) at one clause: "installation still does not begin with a runtime manifest" is withdrawn for a declaration of name and shape only. Everything that clause was protecting stays: no permission grant, no installed-app registry, no publisher identity, no trust ceremony, and no per-app capability. Its refusal to install dependencies, run a build system, or read application source is untouched, because neither a title nor a Lens is any of those.
