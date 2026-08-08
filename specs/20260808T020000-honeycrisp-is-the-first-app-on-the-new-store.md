@@ -63,25 +63,59 @@ deltas, which is what a CodeMirror `ChangeSet` is built from.
 
 Do this first. If it turns out hard, it changes what an end-to-end demo means.
 
-### Wave 2: one signal, when the projection changes
+### Wave 2: per-table subscription carrying row ids
 
-Not per-table and not per-row. On a remote update the store already rebuilds
-EVERY bound table's projection, because a remote update does not say which rows
-it touched, so a finer subscription would report something the store does not
-know.
+**This wave was drafted as a single whole-document signal and the research
+overturned it.** Recording why, because the wrong version was reasonable and
+will be proposed again.
 
-The signal is **"the projection changed"**, which is precisely what the store
-does know: store verbs and remote updates touch it, and prose written into a
-row's document does not. Prose needs no signal at all, because the editor is
-bound to a live type.
+The draft argued that a finer signal would be a lie, since `applyRemote` rebuilds
+EVERY bound table's projection. Two things were wrong with that:
+
+- **The premise was too broad.** `get`, `list` and `ids` read the CRDT directly
+  and are correct the instant a transaction closes. Only `db.query` reads the
+  projection. So a coarse projection rebuild does not make row-level knowledge
+  unavailable, it only makes the SQL view lag.
+- **The store's own comment inherited a conclusion.** It says `observeDeep`
+  reports a nested row's edit as an event on the table root with `keysChanged`
+  empty, so the observer cannot name the row. That sentence is TRUE and worth
+  keeping as a warning. The conclusion drawn from it, that nothing can name the
+  row, is false: the same type exposes a `'delta'` event that names it.
+
+Verified independently on `@y/y@14.0.0-rc.24`, with a control that a write to a
+different table fires nothing:
+
+```txt
+local field edit      delta names the row
+prose inside !doc     delta names the row
+remote applyUpdateV2  delta names the row
+```
+
+So the shape is ADR-0187's, unchanged: `TableInvalidation` is
+`{scope:'rows', rowIds}` or `{scope:'table'}`, per table, one call per commit.
+Reuse `packages/lens/src/observation.ts` verbatim; its grouping and dedup are
+exactly what a delta-fed producer needs. ADR-0187 rejected a void subscription
+because "simplicity here is paid for on every commit, forever", and that
+reasoning survives the store transition because the same information is still
+free.
+
+Cost is proportional to the change rather than to the table: on 20,000 rows, one
+edited row costs 0.88 ms against 0.15 ms with no subscriber, and 2,000 edited
+rows cost 12 ms.
+
+**One hazard, measured, and it dictates the implementation.** The delta event
+fires SYNCHRONOUSLY inside `applyUpdateV2`, before `persist()` has rebuilt the
+projection. Reproduced: at notify time the CRDT reports 2 rows while `db.query`
+still reports 1, and they agree only once `applyRemote` returns. So row ids must
+be collected during the transaction and flushed AFTER `persist()` commits, or a
+subscriber will read a stale SQL view.
+
+**No producer for `{scope:'table'}`.** That arm existed for carrier gaps in the
+old multi-process replica, and an in-process store has no carrier and therefore
+no gap. Keep the arm, since consumers already handle it and a future proxy will
+need it, but nothing will emit it.
 
 Deletes `refreshGeneration` and every manual `refresh()` call site.
-
-**Pending:** an agent is excavating `TableInvalidation` and
-`createInvalidationDispatcher` in `packages/lens`, every existing consumer, and
-what was tried and abandoned before. It is also verifying the claim in
-`store.ts` that `observeDeep` cannot name the row that changed. If that claim is
-false, per-row is available and this wave should be reconsidered.
 
 ### Wave 3: sync that owns its own correctness
 
