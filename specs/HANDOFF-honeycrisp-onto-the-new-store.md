@@ -14,7 +14,7 @@ surface is not, and Honeycrisp is the app chosen to force its shape.
 ## Where
 
     worktree  /Users/braden/Code/epicenter/.claude/worktrees/local-mail-storage-followup
-    branch    claude/value-is-a-named-row   (clean, unpushed, 199 commits ahead of main)
+    branch    claude/value-is-a-named-row   (clean, unpushed, 200 commits ahead of main)
 
 `bun test packages/data packages/lens` is 462 green. `bun run --cwd packages/data
 typecheck`, `bun run --cwd apps/sync-lab typecheck`, `bun run
