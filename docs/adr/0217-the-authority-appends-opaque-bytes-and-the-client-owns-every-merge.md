@@ -15,6 +15,15 @@
   at one section, *The authority is not settled*, which is now settled here.
   Everything else in that record stands untouched. Supersedes nothing: the four
   designs that failed there were never accepted.
+- **Amended by:** [ADR-0220](0220-the-authority-keeps-a-snapshot-and-a-tail-and-a-deletion-becomes-real.md)
+  at the central refusal. Withdrawn: that the log is never compacted, that no
+  party ever verifies another party's claim about history, and the *generations*
+  section below. The authority now keeps one snapshot and the entries after it,
+  because refusing compaction turned out to cost more than storage: a
+  never-compacted log holds the update that created a row forever, so a deletion
+  never became real and a new device downloaded everything anyone had deleted.
+  What survives is the opaque authority, the client-owned merge, one delivery
+  path, and no state vector in the transport.
 - **Amended by:** [ADR-0218](0218-the-authority-reads-nothing-and-a-poison-entry-is-repaired-rather-than-prevented.md),
   which withdraws the `diffUpdateV2` filter and the claim that the authority
   "makes exactly one Yjs call". It now makes none. Everything else here stands.
