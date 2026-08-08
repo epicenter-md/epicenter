@@ -1,3 +1,4 @@
+import type { TableInvalidation } from '@epicenter/lens';
 import { defineLens } from '@epicenter/lens/lens';
 import { beforeEach, describe, expect, test } from 'bun:test';
 
@@ -483,5 +484,198 @@ describe('pressure is the number that decides whether any of this matters', () =
 		expect(error).toBeNull();
 		expect(data?.liveRows).toBe(0);
 		expect(Number.isFinite(data?.itemsPerLiveRow)).toBe(true);
+	});
+})
+
+describe('a subscription names the rows a commit touched', () => {
+	/** Every invalidation one table handed a listener, in order. */
+	function record(table: { subscribe(listener: (i: TableInvalidation) => void): () => void }) {
+		const seen: TableInvalidation[] = [];
+		const stop = table.subscribe((invalidation) => seen.push(invalidation));
+		return { seen, stop };
+	}
+
+	test('registration is synchronous and never fires initially', () => {
+		// ADR-0187's law 2. A caller that subscribes and then reads has already
+		// seen everything, so an initial delivery would only ever be a duplicate
+		// that every consumer has to learn to ignore.
+		note();
+		const { seen } = record(db.notes);
+
+		expect(seen).toEqual([]);
+	});
+
+	test('a created row, an edited row and a deleted row each name themselves', () => {
+		const { seen } = record(db.notes);
+
+		const made = note();
+		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.id] }]);
+
+		db.notes.update(made.id, { title: 'Shopping' });
+		expect(seen.at(-1)).toEqual({ scope: 'rows', rowIds: [made.id] });
+
+		db.notes.delete(made.id);
+		expect(seen.at(-1)).toEqual({ scope: 'rows', rowIds: [made.id] });
+		expect(seen).toHaveLength(3);
+	});
+
+	test('a write to another table is not this table\'s business', () => {
+		// The control. Without it every assertion above would still pass on an
+		// implementation that invalidated every subscriber on every commit.
+		const other = openMemoryStore();
+		const bound = other.bind(
+			defineLens({
+				namespace: 'so.epicenter.honeycrisp',
+				tables: {
+					notes: { title: 'string', tags: 'string[]', date: 'string|null' },
+					folders: { name: 'string' },
+				},
+			}),
+		);
+		if (bound.error !== null) throw bound.error;
+		const notes = record(bound.data.notes);
+		const folders = record(bound.data.folders);
+
+		const made = bound.data.folders.create({ name: 'Inbox' });
+		if (made.error !== null) throw made.error;
+
+		expect(folders.seen).toEqual([{ scope: 'rows', rowIds: [made.data.id] }]);
+		expect(notes.seen).toEqual([]);
+	});
+
+	test('one commit touching many rows is ONE call carrying every id', () => {
+		// ADR-0187's law 3. A remote update is the only thing in this surface
+		// that commits more than one row at a time, so it is what proves it.
+		const author = open();
+		const ids = [0, 1, 2].map(
+			(index) => {
+				const made = author.db.notes.create({
+					title: `note ${index}`,
+					tags: [],
+					date: null,
+				});
+				if (made.error !== null) throw made.error;
+				return made.data.id;
+			},
+		);
+		const { seen } = record(db.notes);
+
+		store.applyRemote(author.store.encodeStateSince());
+
+		expect(seen).toHaveLength(1);
+		const only = seen[0];
+		if (only?.scope !== 'rows') throw new Error('expected row scope');
+		expect([...only.rowIds].sort()).toEqual([...ids].sort());
+	});
+
+	test('minting a document root that create did not name is itself a write', () => {
+		// Worth pinning because it is easy to read `document(id).get(name)` as a
+		// pure read. It creates on miss, and creating is a transaction, so a row
+		// whose roots were not named at `create` invalidates on first open. That
+		// is not a bug in the subscription; it is the write ADR-0215 wants
+		// nobody to be making, showing up where it can be seen.
+		const made = note();
+		const { seen } = record(db.notes);
+
+		db.notes.document(made.id)?.get('body', 'text');
+
+		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.id] }]);
+	});
+
+	test('prose written inside a row\'s document names the row', () => {
+		// The case an `observeDeep` observer reports without an id, and the one
+		// an editor binding produces on every keystroke burst. The write never
+		// goes through a store verb: it is the application writing straight into
+		// the type it was handed.
+		const made = db.notes.create(
+			{ title: 'Groceries', tags: [], date: null },
+			{ document: ['body'] },
+		);
+		if (made.error !== null) throw made.error;
+		const { seen } = record(db.notes);
+
+		const body = db.notes.document(made.data.id)?.get('body', 'text');
+		if (body === undefined) throw new Error('the row has no document');
+		body.applyDelta(body.change.insert('milk and eggs') as never);
+
+		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.data.id] }]);
+	});
+
+	test('the listener reads the same rows through the CRDT and through SQL', () => {
+		// The measured hazard this whole buffer exists for. The `'delta'` that
+		// names the row fires synchronously inside `applyUpdateV2`, BEFORE the
+		// projection has been rebuilt, so a subscriber notified there sees the
+		// CRDT reporting a row that `db.query` cannot find. Notifying after the
+		// projection commits is what makes these two agree.
+		const author = open();
+		author.db.notes.create({ title: 'from the phone', tags: [], date: null });
+
+		let atNotify: { crdt: number; sql: number } | undefined;
+		db.notes.subscribe(() => {
+			atNotify = {
+				crdt: db.notes.list().data?.rows.length ?? -1,
+				sql: db.query`SELECT count(*) AS n FROM notes`.data?.[0]?.n as number,
+			};
+		});
+		store.applyRemote(author.store.encodeStateSince());
+
+		expect(atNotify).toEqual({ crdt: 1, sql: 1 });
+	});
+
+	test('unsubscribing stops delivery, and doing it twice is harmless', () => {
+		const { seen, stop } = record(db.notes);
+		note();
+		expect(seen).toHaveLength(1);
+
+		stop();
+		stop();
+		note();
+
+		expect(seen).toHaveLength(1);
+	});
+
+	test('one subscriber leaving does not silence the others', () => {
+		// The reason the teardown is idempotent and counted. A Svelte effect can
+		// run its own teardown more than once, and a second decrement would
+		// detach the delta listener out from under the subscribers still holding
+		// one, which reads as a UI that simply stops updating.
+		const first = record(db.notes);
+		const second = record(db.notes);
+
+		first.stop();
+		first.stop();
+		note();
+
+		expect(first.seen).toHaveLength(0);
+		expect(second.seen).toHaveLength(1);
+	});
+
+	test('a subscriber that throws does not cost the next one its invalidation', () => {
+		db.notes.subscribe(() => {
+			throw new Error('this subscriber is broken');
+		});
+		const { seen } = record(db.notes);
+
+		const made = note();
+
+		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.id] }]);
+	});
+
+	test('a subscriber may write, and its own write is a separate invalidation', () => {
+		const { seen } = record(db.notes);
+		let wrote = false;
+		db.notes.subscribe((invalidation) => {
+			if (wrote || invalidation.scope !== 'rows') return;
+			wrote = true;
+			db.notes.update(invalidation.rowIds[0] as string, { title: 'renamed' });
+		});
+
+		const made = note();
+
+		expect(db.notes.get(made.id).data?.title).toBe('renamed');
+		expect(seen).toEqual([
+			{ scope: 'rows', rowIds: [made.id] },
+			{ scope: 'rows', rowIds: [made.id] },
+		]);
 	});
 })

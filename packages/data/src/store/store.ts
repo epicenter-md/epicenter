@@ -1,4 +1,10 @@
-import type { JsonObject, JsonValue } from '@epicenter/lens';
+import {
+	createInvalidationDispatcher,
+	type JsonObject,
+	type JsonValue,
+	type RowAddress,
+	type TableInvalidationListener,
+} from '@epicenter/lens';
 import {
 	type CreateInputOf,
 	KV_ROOT,
@@ -132,6 +138,11 @@ export type StoreError = InferErrors<typeof StoreError>;
 export type ReadRowError = StoreError | NonconformingRowError;
 export type WriteRowError = StoreError | RowWriteError | NonconformingRowError;
 
+export type {
+	TableInvalidation,
+	TableInvalidationListener,
+} from '@epicenter/lens';
+
 export type Row = { id: string } & JsonObject;
 
 export type TableHandle = {
@@ -215,6 +226,26 @@ export type TableHandle = {
 	 * with the row, collects it with the row, and never looks inside.
 	 */
 	document(rowId: string): RowDocument | undefined;
+	/**
+	 * Hear when rows in this table change, by id.
+	 *
+	 * Registration is synchronous, does no I/O, and never fires initially, so a
+	 * caller that subscribes and then reads has already seen everything
+	 * (ADR-0187). One call per commit per table, carrying every id that commit
+	 * touched, and it fires for local writes, for an application's own writes
+	 * inside a row's document, and for bytes that arrived from a peer alike.
+	 *
+	 * It fires AFTER the projection has committed, so a listener may read
+	 * through `db.query` and see the same rows `get` and `list` report. That is
+	 * not free: the ids come from the type's `'delta'` event, which fires
+	 * synchronously inside `applyUpdateV2` while the projection is still one
+	 * transaction behind, so they are held until the write is durable.
+	 *
+	 * Nothing emits `{scope:'table'}`. The arm exists because ADR-0187's
+	 * consumers already handle it and a future out-of-process proxy will need
+	 * it, but an in-process store has no carrier and therefore no carrier gap.
+	 */
+	subscribe(listener: TableInvalidationListener): () => void;
 };
 
 /**
@@ -255,7 +286,10 @@ export type TypedTableHandle<TFields> = TableIo<TFields> extends {
 }
 	? {
 			readonly defaults: Readonly<JsonObject>;
-			create(fields: TInput): Result<TRow, WriteRowError>;
+			create(
+				fields: TInput,
+				options?: { readonly document?: readonly string[] },
+			): Result<TRow, WriteRowError>;
 			get(rowId: string): Result<TRow | undefined, ReadRowError>;
 			update(
 				rowId: string,
@@ -268,6 +302,7 @@ export type TypedTableHandle<TFields> = TableIo<TFields> extends {
 				StoreError
 			>;
 			document(rowId: string): RowDocument | undefined;
+			subscribe(listener: TableInvalidationListener): () => void;
 		}
 	: never;
 
@@ -479,6 +514,46 @@ export function createStore({
 	let poisoned: StoreError | undefined;
 	let disposed = false;
 
+	/**
+	 * Where a table's `'delta'` event becomes a subscriber's invalidation.
+	 *
+	 * `@epicenter/lens` owns the grouping, the per-table dedup and the delivery
+	 * laws, and a delta-fed producer needs exactly those. Nothing about them is
+	 * specific to a carrier, which is why they were written once there rather
+	 * than here (ADR-0187).
+	 */
+	const invalidations = createInvalidationDispatcher();
+	/**
+	 * Addresses the transaction in progress touched, held until it is durable.
+	 *
+	 * The one reason this buffer exists. A table root's `'delta'` fires
+	 * SYNCHRONOUSLY inside `applyUpdateV2`, before the projection has been
+	 * rebuilt: measured against `@y/y@14.0.0-rc.24`, at notify time the CRDT
+	 * reported 2 rows while `db.query` still reported 1, and the two agreed only
+	 * once `applyRemote` returned. Delivering there would hand a subscriber a
+	 * row id and a SQL view that does not have it yet, so the ids wait for
+	 * `persist` and go out afterwards.
+	 */
+	let touched: RowAddress[] = [];
+
+	/**
+	 * Hand every buffered address to its subscribers, and empty the buffer.
+	 *
+	 * Called after `persist` on every path a write can take, including the one
+	 * that fails: the addresses have to be drained either way, or a poisoned
+	 * store's stale ids would ride along with the next commit's.
+	 *
+	 * The buffer is swapped before delivery rather than cleared after, because a
+	 * subscriber is allowed to write, and a nested write's addresses belong to
+	 * its own flush.
+	 */
+	function flushInvalidations(): void {
+		if (touched.length === 0) return;
+		const batch = touched;
+		touched = [];
+		invalidations.deliver(batch);
+	}
+
 	index.on('updateV2', (update: Uint8Array, origin: unknown) => {
 		if (origin === hydrationOrigin) return;
 		// `applyRemote` persists the bytes it RECEIVED, in its own transaction, so
@@ -509,6 +584,10 @@ export function createStore({
 			});
 			enqueueOutbox(database, authored);
 		});
+		// Before the throw, deliberately. The live document already holds the
+		// change, so the ids are true whatever storage did with them, and leaving
+		// them buffered would attach them to whichever commit ran next.
+		flushInvalidations();
 		if (error !== null) throw error;
 	});
 
@@ -546,9 +625,11 @@ export function createStore({
 		if (authored.length === 0) {
 			// Nothing changed, so there is nothing to persist. The projection still
 			// runs: a no-op write must not leave a stale projected row behind.
-			return persist(() => project());
+			const unchanged = persist(() => project());
+			flushInvalidations();
+			return unchanged;
 		}
-		return persist(() => {
+		const committed = persist(() => {
 			for (const update of authored) {
 				appendUpdate({
 					database,
@@ -564,6 +645,8 @@ export function createStore({
 			}
 			project();
 		});
+		flushInvalidations();
+		return committed;
 	}
 
 	function persist(run: () => void): Result<void, StoreError> {
@@ -767,6 +850,56 @@ export function createStore({
 			upsertProjectedRow(database, tableName, fieldNames, rowId, payload);
 		}
 
+		/**
+		 * The rows one committed change touched, named by the type itself.
+		 *
+		 * `observeDeep` cannot do this and the comment in `applyRemote` says so
+		 * correctly: it reports a nested row's field edit as an event on the TABLE
+		 * ROOT with `keysChanged` empty. The conclusion once drawn from that, that
+		 * nothing can name the row, does not follow. The same type also emits
+		 * `'delta'`, whose `attrs` is keyed by the attribute that changed, and a
+		 * row IS an attribute on the table root, so every arm of the change names
+		 * it: `insert` for a created row, `modify` for a field edit and for prose
+		 * written deep inside the row's own document, `delete` for a removed one.
+		 * Verified against `@y/y@14.0.0-rc.24` for all four, with a control that a
+		 * write to a different table fires nothing here
+		 * (`evidence/delta-names-the-row.test.ts`).
+		 *
+		 * The projection is still rebuilt wholesale on a remote update rather than
+		 * patched from these ids. That is a separate decision and it stands: one
+		 * rebuild is 2 ms on the real vault and it is one code path instead of two
+		 * that can disagree.
+		 */
+		function collectTouched(delta: unknown): void {
+			const { attrs } = delta as { attrs?: Record<string, unknown> };
+			if (attrs === undefined) return;
+			for (const rowId of Object.keys(attrs)) {
+				touched.push(addressOf(rowId));
+			}
+		}
+
+		/**
+		 * How many live subscriptions this handle holds.
+		 *
+		 * The listener is attached on the first and detached on the last, rather
+		 * than for the life of the handle, because attaching one is what makes the
+		 * type build and emit its delta, and that cost lands on every commit.
+		 *
+		 * Measured (`evidence/bench/subscription.ts`), and the size is worth
+		 * knowing because it is much smaller than it was assumed to be. On 20,000
+		 * rows a commit editing one row costs about 0.003 ms more with a
+		 * subscriber, which is at the noise floor; the cost only becomes visible
+		 * at 2,000 rows in one commit, where it is about 0.7 ms on top of 2.0 ms.
+		 * So it scales with the CHANGE and not with the table, which is the shape
+		 * ADR-0187 needed to be true and the reason row ids are affordable at all.
+		 *
+		 * Given numbers that small, this is not really a performance guard. It is
+		 * what keeps `touched` empty for an application that subscribes to
+		 * nothing, so a write in that application allocates no addresses and
+		 * flushes no batch.
+		 */
+		let subscriptions = 0;
+
 		/** Read one row back through the lens, after the write that changed it. */
 		function readBack(rowId: string): Result<Row, ReadRowError> {
 			const payload = readRow(root, rowId);
@@ -864,6 +997,27 @@ export function createStore({
 				const container = documentContainer(root, rowId);
 				return container === undefined ? undefined : rowDocumentOver(container);
 			},
+			subscribe(listener: TableInvalidationListener): () => void {
+				const unsubscribe = invalidations.subscribeTable(
+					lens.namespace,
+					tableName,
+					listener,
+				);
+				subscriptions += 1;
+				if (subscriptions === 1) root.on('delta', collectTouched);
+				let stopped = false;
+				return () => {
+					// Idempotent, because a Svelte effect that reruns can call the
+					// teardown it was handed more than once, and a second call that
+					// decremented the count would detach the listener out from under
+					// the subscribers still holding one.
+					if (stopped) return;
+					stopped = true;
+					unsubscribe();
+					subscriptions -= 1;
+					if (subscriptions === 0) root.off('delta', collectTouched);
+				};
+			},
 		}) as TableHandle;
 	}
 
@@ -910,7 +1064,7 @@ export function createStore({
 			// an event on the TABLE ROOT with `keysChanged` empty, so the observer
 			// cannot name the row. A full rebuild is 2 ms on the real vault, and it
 			// is one code path instead of two that can disagree.
-			return persist(() => {
+			const applied = persist(() => {
 				for (const update of authored) {
 					appendUpdate({
 						database,
@@ -922,6 +1076,11 @@ export function createStore({
 				}
 				rebuildAllProjections();
 			});
+			// After the rebuild, which is the whole reason the ids were buffered:
+			// the `'delta'` that named them fired inside `applyUpdateV2` above,
+			// while the projection still described the state before it.
+			flushInvalidations();
+			return applied;
 		},
 		sync: createClientLog(),
 		hasUnresolvedDependencies: () => hasPendingStructs(index),
