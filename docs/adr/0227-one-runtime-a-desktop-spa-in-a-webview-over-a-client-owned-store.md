@@ -60,6 +60,16 @@ probe, no restore prompt. An importer is a reader for the old format, which is
 the code this decision exists to delete, kept alive under a kinder name.
 Honeycrisp already took this stance and said so in its README.
 
+**vocab and skills survive, and their shapes are deliberately undecided.**
+Neither is in the host's served set today, so neither has a runtime under this
+decision, and the obvious reading is that they follow tab-manager. They do not.
+What is refused is the extension runtime and the third-party app plane, not
+these two applications; what is unsettled is what their data and their Lens
+should look like, which is a design question nobody has answered and which this
+record is the wrong place to answer. They stay broken until someone does, and
+that is a smaller cost than deciding their shape in a hurry to make a deletion
+tidy.
+
 **Applications may be broken in the interim.** The deletion lands before the
 migrations, because the reverse order is impossible: the new store has no
 row-document HTTP path, no multi-process observation carrier and no extension
