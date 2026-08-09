@@ -35,7 +35,6 @@ import { Principal } from '@epicenter/auth';
 import {
 	blobPrincipalPrefix,
 	type CloudEnv,
-	createDurableObjectAccountStores,
 	deleteStorageObservations,
 	resolveDeploymentBlobStore,
 } from '@epicenter/server';
@@ -117,10 +116,6 @@ export function mountAccountDeletionApi(app: Hono<CloudEnv>): void {
 		requireFreshCookieSession,
 		async (c) => {
 			const principalId = c.var.principal.id;
-			const authority = () =>
-				createDurableObjectAccountStores(
-					(c.env as Cloudflare.Env).STORE_SYNC as never,
-				).authority(principalId);
 			const sweepBlobs = async () => {
 				const store = resolveDeploymentBlobStore(c.env);
 				if (!store) {
@@ -133,7 +128,6 @@ export function mountAccountDeletionApi(app: Hono<CloudEnv>): void {
 			};
 			const result = await runAccountDeletion(
 				{
-					authority: () => authority().deleteAccount(),
 					blobs: sweepBlobs,
 					async billing() {
 						const principalEmail = await readHostedPrincipalEmail(
@@ -168,10 +162,7 @@ export function mountAccountDeletionApi(app: Hono<CloudEnv>): void {
 			// Post-fence sweeps: close the recreation window that was open while
 			// the auth user still authenticated pushes and uploads. Best-effort by
 			// design; see the module JSDoc.
-			for (const [name, sweep] of [
-				['authority-sweep', () => authority().deleteAccount()],
-				['blobs-sweep', sweepBlobs],
-			] as const) {
+			for (const [name, sweep] of [['blobs-sweep', sweepBlobs]] as const) {
 				try {
 					await sweep();
 				} catch (cause) {

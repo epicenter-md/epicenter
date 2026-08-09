@@ -121,8 +121,4 @@ export {
 	type ResolveStoreAuthority,
 	type StoreAuthorityStub,
 } from './store-sync/mount.js';
-export {
-	DELETABLE_NAMESPACES,
-	storeAuthorityName,
-} from './store-sync/route.js';
-export { createDurableObjectAccountStores } from './store-sync/account.js';
+export { storeAuthorityName } from './store-sync/route.js';

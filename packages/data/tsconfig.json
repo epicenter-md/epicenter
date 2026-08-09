@@ -8,7 +8,6 @@
 		"noUnusedParameters": true
 	},
 	"exclude": [
-		"browser-evidence",
 		"evidence/browser/durable-store",
 		"src/store/browser.ts"
 	]

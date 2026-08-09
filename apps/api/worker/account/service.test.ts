@@ -24,7 +24,6 @@ function recordingSteps(failing?: AccountDeletionStep) {
 	return {
 		calls,
 		steps: {
-			authority: step('authority'),
 			blobs: step('blobs'),
 			billing: step('billing'),
 			observations: step('observations'),
@@ -40,7 +39,6 @@ test('deletion runs every step in order with the auth user last', async () => {
 		outcome: 'deleted',
 	});
 	expect(calls).toEqual([
-		'authority',
 		'blobs',
 		'billing',
 		'observations',
@@ -56,13 +54,12 @@ test('the first failing step stops the sequence and is named for retry', async (
 	});
 	// The auth user survives every partial failure, so the retry below can
 	// still authenticate; each step re-runs because steps own idempotency.
-	expect(calls).toEqual(['authority', 'blobs', 'billing']);
+	expect(calls).toEqual(['blobs', 'billing']);
 	const retry = recordingSteps();
 	expect(await runAccountDeletion(retry.steps, alice)).toEqual({
 		outcome: 'deleted',
 	});
 	expect(retry.calls).toEqual([
-		'authority',
 		'blobs',
 		'billing',
 		'observations',

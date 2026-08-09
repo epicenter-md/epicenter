@@ -22,10 +22,6 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
-		},
-		"./legacy": {
-			"types": "./dist/legacy.d.ts",
-			"import": "./dist/legacy.js"
 		}
 	},
 	"files": [

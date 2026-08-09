@@ -1,21 +1,13 @@
 {
 	"name": "@epicenter/data",
 	"version": "0.0.1",
-	"description": "Local-first scalar data protocol and SQLite replica.",
+	"description": "The Epicenter store: one document per application, a synchronous surface, and the transport that carries it.",
 	"type": "module",
 	"exports": {
 		".": "./src/store/index.ts",
 		"./bun": "./src/store/bun.ts",
 		"./browser": "./src/store/browser.ts",
-		"./sync": "./src/sync/index.ts",
-		"./legacy": "./src/index.ts",
-		"./legacy/browser": "./src/browser.ts",
-		"./legacy/browser-dedicated-worker": "./src/browser-dedicated-worker.ts",
-		"./legacy/bun": "./src/bun.ts",
-		"./legacy/desktop": "./src/desktop.ts",
-		"./legacy/desktop-owner": "./src/desktop-owner.ts",
-		"./legacy/inspection": "./src/inspection.ts",
-		"./legacy/protocol": "./src/protocol/index.ts"
+		"./sync": "./src/sync/index.ts"
 	},
 	"files": [
 		"src",
@@ -24,8 +16,7 @@
 	],
 	"license": "MIT",
 	"scripts": {
-		"evidence:browser": "bun browser-evidence/run.ts --profile smoke",
-		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.dom.json && tsc --noEmit -p browser-evidence/tsconfig.json && tsc --noEmit -p evidence/browser/durable-store/tsconfig.json",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.dom.json && tsc --noEmit -p evidence/browser/durable-store/tsconfig.json",
 		"test": "bun test"
 	},
 	"dependencies": {

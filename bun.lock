@@ -96,7 +96,6 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/document-sync": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/lens": "workspace:*",
         "@epicenter/matter-core": "workspace:*",
@@ -443,7 +442,6 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/document-sync": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/recorder": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -732,18 +730,6 @@
         "vite": "catalog:",
       },
     },
-    "packages/document-sync": {
-      "name": "@epicenter/document-sync",
-      "version": "0.0.1",
-      "dependencies": {
-        "@epicenter/data": "workspace:*",
-        "@y/y": "14.0.0-rc.24",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/field": {
       "name": "@epicenter/field",
       "version": "0.3.0",
@@ -818,7 +804,6 @@
         "@epicenter/blobs": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/document-sync": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",
@@ -1288,8 +1273,6 @@
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
 
     "@epicenter/data": ["@epicenter/data@workspace:packages/data"],
-
-    "@epicenter/document-sync": ["@epicenter/document-sync@workspace:packages/document-sync"],
 
     "@epicenter/epicenter": ["@epicenter/epicenter@workspace:apps/epicenter"],
 
