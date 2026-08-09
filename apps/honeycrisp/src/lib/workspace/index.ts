@@ -71,6 +71,13 @@ export const NOTE_BODY = 'body';
  * Synchronous, and one pass rather than a stream: `list()` reads the CRDT that
  * is already in memory. A failed note update stops before the folder goes, so
  * the operation can be retried without knowingly leaving a dangling folder id.
+ *
+ * A note this release cannot read is re-parented too, through its `raw`
+ * payload. `list()` returns those separately, and skipping them would leave a
+ * note pointing at a folder that no longer exists while reporting success —
+ * which is the silent damage nonconformance is supposed not to cause. An
+ * `update` validates only the values it is given, so setting `folderId` on an
+ * otherwise unreadable row is a legal write (ADR-0125).
  */
 export function deleteHoneycrispFolder(
 	db: HoneycrispData,
@@ -78,9 +85,16 @@ export function deleteHoneycrispFolder(
 ): void {
 	const listed = db.notes.list();
 	if (listed.error !== null) throw listed.error;
-	for (const note of listed.data.rows) {
-		if (note.folderId !== folderId) continue;
-		const { error } = db.notes.update(note.id, { folderId: null });
+	const inFolder = [
+		...listed.data.rows
+			.filter((note) => note.folderId === folderId)
+			.map((note) => note.id),
+		...listed.data.nonconforming
+			.filter((issue) => issue.raw.folderId === folderId)
+			.map((issue) => issue.address.rowId),
+	];
+	for (const noteId of inFolder) {
+		const { error } = db.notes.update(noteId, { folderId: null });
 		if (error !== null) throw error;
 	}
 	const { error } = db.folders.delete(folderId);

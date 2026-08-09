@@ -228,7 +228,10 @@ export type TableHandle = {
 	 * inside a row's document, and for bytes that arrived from a peer alike.
 	 *
 	 * It fires AFTER the projection has committed, so a listener may read
-	 * through `db.query` and see the same rows `get` and `list` report. That is
+	 * through `db.query` and see the same ROWS `get` and `list` report. Same
+	 * rows, not the same values: the projection stores what was WRITTEN, so a
+	 * field nobody has written reads as its declared default through `list` and
+	 * as `NULL` through `db.query`. That is
 	 * not free: the ids come from the type's `'delta'` event, which fires
 	 * synchronously inside `applyUpdateV2` while the projection is still one
 	 * transaction behind, so they are held until the write is durable.
@@ -359,7 +362,8 @@ export type KvHandle<TValues = JsonObject> = {
 	 * document already in memory.
 	 *
 	 * Fires after the commit is durable, on the same flush as a table's, so a
-	 * listener sees `get()` and `db.query` agree.
+	 * listener sees `get()` and `db.query` agree about WHICH rows exist. They do
+	 * not agree about unwritten fields; see `subscribe` on a table.
 	 */
 	subscribe(listener: () => void): () => void;
 };
@@ -758,6 +762,8 @@ export function createStore({
 		);
 		if (schemaError !== null) return Err(schemaError);
 
+		const { handle: kv, project: projectKv } = createKvHandle(lens);
+
 		const tables: Record<string, TableHandle> = {};
 		for (const [tableName, table] of lens.tables) {
 			tables[tableName] = createTableHandle(lens, tableName, table);
@@ -775,10 +781,14 @@ export function createStore({
 					rowsOf(tableName),
 				);
 			}
+			// KV is rebuilt here for the same reason a table is, and it used to be
+			// missed. Its projection was written only by `kv.update`, so `db.query`
+			// saw NO kv row at all until something wrote one, and saw a row written
+			// by the PREVIOUS lens after a release changed the declaration. Both are
+			// the staleness this rebuild exists to remove.
+			projectKv();
 		});
 		if (rebuildError !== null) return Err(rebuildError);
-
-		const kv = createKvHandle(lens);
 
 		const query: QueryMethod = (strings, ...values) => {
 			const unusableNow = requireUsable();
@@ -802,7 +812,11 @@ export function createStore({
 	 * object and refuses every write by name, which is a better answer than a
 	 * missing property that a caller has to feel for.
 	 */
-	function createKvHandle(lens: ParsedLens): KvHandle {
+	function createKvHandle(lens: ParsedLens): {
+		handle: KvHandle;
+		/** Rebuild the KV row, so `bind` can make a stale one right. */
+		project(): void;
+	} {
 		const table = lens.kv;
 		const root = kvRoot(index);
 		const address = {
@@ -865,7 +879,9 @@ export function createStore({
 			return Ok(values);
 		}
 
-		return Object.freeze({
+		return {
+			project,
+			handle: Object.freeze({
 			defaults: table?.defaults ?? Object.freeze({}),
 			get() {
 				const unusable = requireUsable();
@@ -908,7 +924,8 @@ export function createStore({
 				if (commitError !== null) return Err(commitError);
 				return readBack();
 			},
-		}) as KvHandle;
+			}) as KvHandle,
+		};
 	}
 
 	/**

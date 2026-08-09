@@ -27,9 +27,11 @@ import { searchParams } from './search-params.svelte.js';
 export function createNotes({
 	db,
 	searchIndex,
+	reportBackgroundError,
 }: {
 	db: HoneycrispData;
 	searchIndex: NoteSearchIndex;
+	reportBackgroundError(cause: unknown): void;
 }) {
 	let rows = $state.raw<Note[]>([]);
 	let nonconforming = $state.raw<NonconformingRowError[]>([]);
@@ -38,7 +40,12 @@ export function createNotes({
 	function read(): void {
 		const { data, error } = db.notes.list();
 		if (error !== null) {
+			// Reported, not just remembered. A read that fails after boot leaves
+			// `rows` at its last value, which for a first read is empty, and an
+			// empty list renders as "you have never written one of these". The
+			// boot path has `{:catch}`; this path had nothing.
 			loadError = error;
+			reportBackgroundError(error);
 			return;
 		}
 		rows = data.rows;

@@ -13,7 +13,13 @@ import { searchParams } from './search-params.svelte.js';
  * Same shape as `createNotes` and for the same reason: the store says which
  * rows moved, so nothing here refreshes and nothing awaits a read.
  */
-export function createFolders({ db }: { db: HoneycrispData }) {
+export function createFolders({
+	db,
+	reportBackgroundError,
+}: {
+	db: HoneycrispData;
+	reportBackgroundError(cause: unknown): void;
+}) {
 	let rows = $state.raw<Folder[]>([]);
 	let nonconforming = $state.raw<NonconformingRowError[]>([]);
 	let loadError = $state.raw<unknown>(null);
@@ -21,7 +27,12 @@ export function createFolders({ db }: { db: HoneycrispData }) {
 	function read(): void {
 		const { data, error } = db.folders.list();
 		if (error !== null) {
+			// Reported, not just remembered. A read that fails after boot leaves
+			// `rows` at its last value, which for a first read is empty, and an
+			// empty list renders as "you have never written one of these". The
+			// boot path has `{:catch}`; this path had nothing.
 			loadError = error;
+			reportBackgroundError(error);
 			return;
 		}
 		rows = data.rows;

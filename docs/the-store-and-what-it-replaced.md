@@ -84,10 +84,23 @@ The whole consumer is now:
 
 ```ts
 let rows = $state.raw<Note[]>([]);
-function read() { rows = db.notes.list().data?.rows ?? []; }
+let unreadable = $state.raw<NonconformingRowError[]>([]);
+
+function read() {
+  const { data, error } = db.notes.list();
+  if (error !== null) { reportBackgroundError(error); return; }
+  rows = data.rows;
+  unreadable = data.nonconforming;   // not `?? []`, and not dropped
+}
 read();
 const stop = db.notes.subscribe(read);
 ```
+
+The two lines people are tempted to skip are the ones that matter. `list()`
+returns a `Result`, so `.data?.rows ?? []` turns a storage failure into an empty
+list, and an empty list renders as "you have never written one of these".
+`nonconforming` is the same trap one level down: discard it and rows a person
+wrote are simply missing from the screen with nothing to explain why.
 
 No generations, no `refresh()` discipline, no adapter. `fromTable` was deleted
 rather than ported because the fifteen lines above are the whole of what it did,
@@ -448,8 +461,17 @@ db.notes.update(issue.address.rowId, { n: 7 });
 ```
 
 Nonconforming rows are also still in the projection with their raw values, so
-`db.query` sees them. A repair surface can find and show them with SQL rather
-than scanning through the typed read.
+`db.query` can SHOW them. It cannot FIND them: the projection carries one column
+per declared field and no conformance marker, and SQL cannot re-run arktype. The
+typed read is the only thing that knows which rows failed, so a repair surface
+identifies them with `list().nonconforming` and may then use SQL to display or
+group them.
+
+Two things the projection does NOT promise, worth knowing before building on it.
+It stores what was WRITTEN, so a field nobody has written reads as its declared
+default through `list()` and as `NULL` through `db.query`. And it is a cache: it
+is rebuilt at `bind`, so it is current, but it is derived from the CRDT rather
+than authoritative over it.
 
 **So the answer here is to add nothing.** No schema version, no migration chain,
 no repair API, no alias, no compatibility classifier — ADR-0125 refused all of

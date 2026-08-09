@@ -729,3 +729,30 @@ describe('kv reports its own changes', () => {
 		expect(seen).toHaveLength(1);
 	});
 })
+
+describe('the kv projection is a cache, and is rebuilt like one', () => {
+	test('db.query sees kv before anything has written to it', () => {
+		// It used to see nothing. The kv projection was written only by
+		// `kv.update`, so a store nobody had configured yet had a `kv` relation
+		// with no row in it while `db.kv.get()` happily returned defaults.
+		const rows = db.query`SELECT id, theme FROM kv`.data;
+		expect(rows).toEqual([{ id: 'kv', theme: 'light' }]);
+	});
+
+	test('a lens change does not leave the previous lens s row behind', () => {
+		// Tables are rebuilt at bind for exactly this reason; kv was not, so SQL
+		// kept answering with a row the old declaration wrote.
+		db.kv.update({ theme: 'dark' });
+		const relensed = openMemoryStore();
+		relensed.bindUnknown(lens);
+		const second = relensed.bindUnknown({
+			namespace: 'so.epicenter.honeycrisp',
+			kv: { theme: "'light'|'dark' = 'light'", added: "string = 'new'" },
+			tables: { notes: { title: 'string', tags: 'string[]', date: 'string|null' } },
+		});
+		if (second.error !== null) throw second.error;
+		expect(second.data.query`SELECT id, theme, added FROM kv`.data).toEqual([
+			{ id: 'kv', theme: 'light', added: 'new' },
+		]);
+	});
+})

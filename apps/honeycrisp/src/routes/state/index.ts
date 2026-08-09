@@ -14,7 +14,7 @@ export function createHoneycrispState({
 	db: HoneycrispData;
 	reportBackgroundError(cause: unknown): void;
 }) {
-	const folders = createFolders({ db });
+	const folders = createFolders({ db, reportBackgroundError });
 	// Honeycrisp's own body index (ADR-0207 keeps prose out of the row, so
 	// searching it is the application's job). Reading a note's text is now a walk
 	// over a type already in memory, so there is no document to open and release
@@ -23,7 +23,7 @@ export function createHoneycrispState({
 		readText: (noteId) => readDocumentText(db.notes.document(noteId)),
 		onError: reportBackgroundError,
 	});
-	const notes = createNotes({ db, searchIndex });
+	const notes = createNotes({ db, searchIndex, reportBackgroundError });
 	const view = createView({ folders, notes, searchIndex });
 
 	return {

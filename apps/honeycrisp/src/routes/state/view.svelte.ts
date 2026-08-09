@@ -123,11 +123,28 @@ export function createView({
 		get currentShowControls(): boolean {
 			return !searchParams.isDeletedView;
 		},
-		/** The empty-state message for the current notes list. */
+		/**
+		 * The empty-state message for the current notes list.
+		 *
+		 * "No notes yet" is a claim about the person's history, and it is false
+		 * when the list is empty because this release cannot INTERPRET what they
+		 * wrote. A note written by a newer release, or by a lens this one has
+		 * since changed, reads as `Nonconforming` (ADR-0125); the row is intact
+		 * and unreadable, which is a different thing from absent and deserves a
+		 * different sentence.
+		 */
 		get currentEmptyMessage(): string {
+			if (notes.nonconforming.length > 0) {
+				const count = notes.nonconforming.length;
+				return `${count} ${count === 1 ? 'note is' : 'notes are'} here but this version of Honeycrisp cannot read ${count === 1 ? 'it' : 'them'}. Nothing has been lost.`;
+			}
 			return searchParams.isDeletedView
 				? 'No deleted notes'
 				: 'No notes yet. Click + to create one.';
+		},
+		/** How many rows are stored but unreadable, for anything that wants to say so. */
+		get unreadableCount(): number {
+			return notes.nonconforming.length;
 		},
 
 		/**
