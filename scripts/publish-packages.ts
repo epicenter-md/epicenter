@@ -41,15 +41,15 @@ type Package = { dir: string; name: string; version: string };
 const root = process.cwd();
 const dryRun = process.argv.includes('--dry-run');
 
-async function buildCompiledAppSdk(): Promise<void> {
-	const build = Bun.spawn(['bun', 'run', 'build:app-sdk'], {
+async function buildCompiledDeclarations(): Promise<void> {
+	const build = Bun.spawn(['bun', 'run', 'build:declarations'], {
 		cwd: root,
 		stdout: 'inherit',
 		stderr: 'inherit',
 	});
 	await build.exited;
 	if (build.exitCode !== 0) {
-		console.error('compiled app SDK build failed');
+		console.error('compiled declaration build failed');
 		process.exit(1);
 	}
 }
@@ -163,7 +163,7 @@ async function isAlreadyPublished(pkg: Package): Promise<boolean> {
 	return Boolean(data.versions?.[pkg.version]);
 }
 
-await buildCompiledAppSdk();
+await buildCompiledDeclarations();
 
 const packages = await discoverPackages();
 if (packages.length === 0) {
