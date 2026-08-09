@@ -33,7 +33,16 @@ export const RESERVED_TABLE_NAMES: readonly string[] = ['query', 'kv'];
  * Unreachable by construction rather than by rule: a table name must start with
  * a letter, so `!kv` is not expressible in a lens at all.
  */
-export const KV_ROOT = `${RESERVED_ATTRIBUTE_PREFIX}kv`;
+/**
+ * The id the one KV record is addressed by.
+ *
+ * A plain `kv` rather than the old `!kv`. It names a row in the `kv` projection
+ * and an address coordinate, and both of those want a value the row-id grammar
+ * actually admits; `!kv` was refused by that grammar, which nothing noticed
+ * because no caller validated it. The ROOT it corresponds to is named by
+ * `@epicenter/data`, which is what owns the document's shape.
+ */
+export const KV_ROOT = 'kv';
 
 /**
  * One application's complete interpretation of one durable namespace, as the

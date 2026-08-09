@@ -40,12 +40,43 @@ export function createAppDocument(): Y.Doc {
  * encoding quadratic in rows: 5,417 ms at 20,000 rows against 13 ms nested.
  */
 export function tableRoot(document: Y.Doc, tableName: string): Y.Type {
-	return document.get(tableName);
+	return document.get(tableRootName(tableName));
+}
+
+/**
+ * Every root says what kind of thing it is.
+ *
+ * `tables:<name>` for a table, `kv` for the settings root, and nothing else at
+ * the top level. Dumping `doc.share` therefore reads as a description of the
+ * application rather than as a list of nouns whose kind you have to infer.
+ *
+ * It also removes a collision that was only prevented by a coincidence. The KV
+ * root used to be `!kv`, safe because a table name must begin with a letter, so
+ * the reserved prefix was doing the work. With a prefix per kind, a table
+ * genuinely named `kv` lands at `tables:kv` and cannot reach the KV root at all,
+ * which is a property of the grammar rather than of a character class.
+ */
+export function tableRootName(tableName: string): string {
+	return `tables:${tableName}`;
+}
+
+/** The root every application's settings live at (ADR-0216). */
+export const KV_ROOT_NAME = 'kv';
+
+/**
+ * The KV root, minting it on miss.
+ *
+ * Separate from `tableRoot` because it is not a table and must not be prefixed
+ * as one. Minting is safe for the same reason a table's is: `Doc.get` is
+ * `setIfUndefined`, so every device that mints `kv` converges on one root.
+ */
+export function kvRoot(document: Y.Doc): Y.Type {
+	return document.get(KV_ROOT_NAME);
 }
 
 /** Whether this document has ever held the named table. Never mints. */
 export function hasTable(document: Y.Doc, tableName: string): boolean {
-	return document.share.has(tableName);
+	return document.share.has(tableRootName(tableName));
 }
 
 /**

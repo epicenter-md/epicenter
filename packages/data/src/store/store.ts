@@ -10,6 +10,7 @@ import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import {
 	createAppDocument,
 	deleteRow,
+	kvRoot,
 	documentContainer,
 	hasRow,
 	listRowIds,
@@ -803,7 +804,7 @@ export function createStore({
 	 */
 	function createKvHandle(lens: ParsedLens): KvHandle {
 		const table = lens.kv;
-		const root = tableTypeFor(KV_ROOT);
+		const root = kvRoot(index);
 		const address = {
 			namespace: lens.namespace,
 			tableName: 'kv',
@@ -908,10 +909,6 @@ export function createStore({
 				return readBack();
 			},
 		}) as KvHandle;
-	}
-
-	function tableTypeFor(name: string): Y.Type {
-		return tableRoot(index, name);
 	}
 
 	/**
