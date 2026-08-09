@@ -203,16 +203,33 @@ Three things bite immediately:
    attribute, the projection column and the row alike, and "absent" is not a SQL
    type. What would have been optional is `'T|null = null'`, applied at read
    time and never written.
-2. **A Lens cannot express an array default.** `'string[] = []'` does not parse.
-   Use `'string[]|null = null'` and read null as empty. This will catch you on
-   every array field.
+2. **A Lens cannot express an array default, and arktype is RIGHT to refuse
+   it.** `'string[] = []'` does not parse, and the tuple form
+   `['string[]', '=', []]` is refused too, with "Non-primitive default must be
+   specified as a function". That is not a gap: a literal default would hand
+   every row the SAME array, and a caller that pushed to one would mutate the
+   default for all of them. A function is how you say "a fresh one each time",
+   and a Lens is pure JSON so it cannot carry one.
+
+   So `'string[]|null = null'` is the principled answer rather than a
+   workaround: `null` is a primitive, so it is expressible, and it forces the
+   reader to materialise a fresh array at the point of use.
 3. **No transforming fields.** `'string.date.iso'`, not `'string.date.parse'` —
    a parsing form would hand back a `Date` that cannot round-trip, so
    `update(id, { when: row.when })` would break.
 
-Objects have no string expression either. A `{ status, completedAt, error }`
-union has to be flattened into columns; `'object|null'` parses but validates
-nothing and makes the whole value one LWW blob.
+Objects have no STRING expression, so `'{ status: ... }'` does not parse and
+`'object|null'` validates nothing. Today that means flattening a
+`{ status, completedAt, error }` shape into columns.
+
+**That is a limitation of `parseLens`, not of arktype or of the projection, and
+it is worth knowing before you flatten anything by hand.** Measured against the
+installed arktype: a nested JSON literal (`{ transcription: { status: "'a'|'b'"
+} }`) parses, accepts a good value and refuses a bad one, and it is still pure
+JSON. And `projectValue` already `JSON.stringify`s any non-scalar into its
+column, which is exactly how array fields work today and why they are queryable
+with `json_each`. The only missing piece is `parseLens` recursing into a nested
+field. Flattening is the shape available now, not the shape that is possible.
 
 ---
 
