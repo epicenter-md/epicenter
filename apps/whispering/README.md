@@ -94,12 +94,8 @@ Whispering stores settings and recording metadata locally first. Audio leaves th
 
 See the repository [trust model](../../docs/trust-model.md) for hosted sync and account boundaries.
 
-## Deploy the browser app
+## There is no hosted browser deploy
 
-`wrangler.jsonc` publishes the static SPA and routes unknown paths back to `index.html`.
+`wrangler.jsonc` published the static SPA to `whispering.epicenter.so`. ADR-0227 refused that runtime: a browser tab is not a target, so the config and its deploy step are gone. Whatever Cloudflare last published keeps serving until somebody deletes the Worker, because removing the config stops republishing rather than taking anything down.
 
-```bash
-bun run --cwd apps/whispering deploy
-```
-
-Cloudflare runs the browser build from the same configuration before deployment. It never packages or executes the Epicenter native runtime.
+ADR-0227 says what would reopen this, which is trying-before-installing turning out to matter more than the capability seams cost.

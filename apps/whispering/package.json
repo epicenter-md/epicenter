@@ -98,8 +98,7 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.desktop.json",
 		"typecheck:desktop": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.desktop.json",
-		"typecheck:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"deploy": "wrangler deploy"
+		"typecheck:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
 	},
 	"license": "AGPL-3.0-or-later",
 	"devDependencies": {
@@ -122,8 +121,7 @@
 		"typescript": "catalog:",
 		"vite": "catalog:",
 		"vite-plugin-devtools-json": "^1.0.0",
-		"vite-plugin-static-copy": "^4.1.1",
-		"wrangler": "catalog:"
+		"vite-plugin-static-copy": "^4.1.1"
 	},
 	"type": "module",
 	"dependencies": {
