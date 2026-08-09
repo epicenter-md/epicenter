@@ -50,6 +50,47 @@ storage, so there is nothing for the seam to select. `#platform/auth` stays,
 because the host really does broker a credential its windows cannot obtain, and
 that is the difference between the builds that survives.
 
+## What "data" means here, and what it does not
+
+The title says "application data" and the reasoning above is entirely about
+CONVERGENCE: a second authority, a second plane, and the failure modes of two
+copies that can disagree. Those are the same thing for rows and documents, and
+they are not the same thing for blobs. Stating the difference, because the title
+alone would decide it the other way.
+
+**A blob is not CRDT-backed and cannot diverge.** It is content-addressed and
+write-once (`packages/blobs/src/blob-store.ts`: "The id already names immutable
+local bytes and cannot be overwritten"). There is no merge, no last-writer-wins,
+and no pair of copies that can disagree, so a blob on the host creates none of
+the failure modes this record refuses. The refusal is of a second CONVERGENT
+plane, not of the host holding bytes.
+
+**A blob's durable home is the remote object store, not the host and not the
+page.** The host holds local bytes; some of them are uploaded and some are
+queued, and the row says which (`uploadedAt` is null until an upload succeeds).
+
+**When a blob uploads is the application's policy, and Epicenter supplies only
+the verbs.** Whispering already treats it that way: `recording.autoUpload` is a
+setting, and an upload is an explicit act rather than something the platform
+does on a schedule of its own. Epicenter has no opinion about batching, Wi-Fi,
+retention or ordering, and should not grow one; an application that wants to
+hold everything locally forever is making a choice this layer does not overrule.
+
+**Moving audio into the page would buy nothing it appears to buy.** A page's
+IndexedDB is no more durable than the host's filesystem, no more portable, and
+no more synced, because blobs reach other devices through the object store
+either way (ADR-0089/0091). It would cost the Rust progressive writer, which
+needs a filesystem, and with it ADR-0205's "a recording is a row that fills and
+a crash finishes it"; it would put multi-hour captures in IndexedDB; and it
+would route every upload through WebView IPC instead of streaming. That is a
+capability regression bought to make one word in a title true.
+
+**The asymmetry worth knowing:** a blob that has not uploaded exists on exactly
+one machine. A row survives a dead laptop through the authority; un-uploaded
+audio does not. That is true under either arrangement, and it is the real
+durability question hiding behind the tidiness one. The blob plane does not have
+the row plane's guarantees and should not be assumed to.
+
 ## Consequences
 
 Two surfaces on one machine with no network stay apart until one reconnects.
