@@ -679,3 +679,53 @@ describe('a subscription names the rows a commit touched', () => {
 		]);
 	});
 })
+
+describe('kv reports its own changes', () => {
+	test('a local update notifies, and the listener reads the new value', () => {
+		const seen: unknown[] = [];
+		db.kv.subscribe(() => seen.push(db.kv.get().data?.theme));
+
+		db.kv.update({ theme: 'dark' });
+
+		expect(seen).toEqual(['dark']);
+	});
+
+	test('a change that arrived from a peer notifies too', () => {
+		// The case a settings screen exists for: another device changed a
+		// preference and this one has to stop showing the old value.
+		const author = open();
+		author.db.kv.update({ fontSize: 22 });
+		const seen: number[] = [];
+		db.kv.subscribe(() => seen.push(db.kv.get().data?.fontSize as number));
+
+		store.applyRemote(author.store.encodeStateSince());
+
+		expect(seen).toEqual([22]);
+	});
+
+	test('CONTROL: a table write does not notify kv', () => {
+		// Without this, an implementation that notified every subscriber on
+		// every commit would satisfy both tests above.
+		const seen: unknown[] = [];
+		db.kv.subscribe(() => seen.push('kv'));
+
+		note();
+
+		expect(seen).toEqual([]);
+	});
+
+	test('registration never fires initially, and unsubscribing is idempotent', () => {
+		const seen: unknown[] = [];
+		const stop = db.kv.subscribe(() => seen.push('kv'));
+		expect(seen).toEqual([]);
+
+		db.kv.update({ theme: 'dark' });
+		expect(seen).toHaveLength(1);
+
+		stop();
+		stop();
+		db.kv.update({ theme: 'light' });
+
+		expect(seen).toHaveLength(1);
+	});
+})

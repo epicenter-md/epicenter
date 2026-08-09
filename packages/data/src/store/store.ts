@@ -348,6 +348,19 @@ export type KvHandle<TValues = JsonObject> = {
 	 * handed in are touched, and `set` promises replacement.
 	 */
 	update(values: Partial<TValues>): Result<TValues, WriteRowError>;
+	/**
+	 * Hear when any declared key changes, whoever changed it.
+	 *
+	 * A void listener rather than a `TableInvalidation`, and that is the whole
+	 * difference from a table's. KV is ONE value at a name-addressed root: there
+	 * are no ids to carry, so "something here moved, re-read" is the complete
+	 * message. A caller re-reads with `get()`, which is a property access on a
+	 * document already in memory.
+	 *
+	 * Fires after the commit is durable, on the same flush as a table's, so a
+	 * listener sees `get()` and `db.query` agree.
+	 */
+	subscribe(listener: () => void): () => void;
 };
 
 /** The untyped view, for a lens that arrived as data rather than as a literal. */
@@ -567,6 +580,9 @@ export function createStore({
 	let owedSomething = false;
 	/** Whether the commit in progress changed anything durable at all. */
 	let committedSomething = false;
+	/** Whether the commit in progress touched the KV root. */
+	let kvTouched = false;
+	const kvFlushers = new Set<() => void>();
 	const localWorkListeners = new Set<() => void>();
 	const committedListeners = new Set<() => void>();
 
@@ -604,6 +620,10 @@ export function createStore({
 				});
 				if (error !== null) log.error(error);
 			}
+		}
+		if (kvTouched) {
+			kvTouched = false;
+			for (const flush of [...kvFlushers]) flush();
 		}
 		if (touched.length === 0) return;
 		const batch = touched;
@@ -810,6 +830,31 @@ export function createStore({
 			);
 		}
 
+		/**
+		 * How many live subscriptions this handle holds.
+		 *
+		 * Attached on the first and detached on the last, for the same reason a
+		 * table's is: a `'delta'` listener is what makes the type build and emit
+		 * its delta, and an application that never watches its settings should
+		 * not pay for one.
+		 */
+		let subscriptions = 0;
+		const kvListeners = new Set<() => void>();
+		kvFlushers.add(() => {
+			for (const listener of [...kvListeners]) {
+				const { error } = trySync({
+					try: listener,
+					catch: (cause) => StoreError.SubscriberThrew({ cause }),
+				});
+				if (error !== null) log.error(error);
+			}
+		});
+		const onKvDelta = (): void => {
+			// Buffered onto the same flush the tables use, so a settings listener
+			// and a row listener observe one consistent commit rather than two.
+			kvTouched = true;
+		};
+
 		function readBack(): Result<JsonObject, ReadRowError> {
 			if (table === undefined) return Ok({});
 			const projected = table.project(address, readStored());
@@ -825,6 +870,19 @@ export function createStore({
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
 				return readBack();
+			},
+			subscribe(listener: () => void): () => void {
+				kvListeners.add(listener);
+				subscriptions += 1;
+				if (subscriptions === 1) root.on('delta', onKvDelta);
+				let stopped = false;
+				return () => {
+					if (stopped) return;
+					stopped = true;
+					kvListeners.delete(listener);
+					subscriptions -= 1;
+					if (subscriptions === 0) root.off('delta', onKvDelta);
+				};
 			},
 			update(values: JsonObject) {
 				const unusable = requireUsable();
