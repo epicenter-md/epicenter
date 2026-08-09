@@ -1,11 +1,17 @@
 # 0224. The package name means the new store, and the superseded stack is named legacy
 
-- **Status:** Accepted
+- **Status:** Accepted (first half stands; the `legacy` subpath it named was
+  deleted by [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md))
 - **Date:** 2026-08-08
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0224 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Relates:** [ADR-0215](0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md),
   [ADR-0223](0223-a-page-holds-the-store-and-only-three-small-relations-have-to-survive.md).
+- **Half of this is spent.** `@epicenter/data` means the new store, which
+  stands. `@epicenter/data/legacy` was a name for a stack that still had
+  consumers; ADR-0227 removed the consumers and the subpath together, so a
+  reference to `@epicenter/data/legacy` today is a straggler rather than a
+  supported import.
 
 ## Context
 
