@@ -58,11 +58,6 @@ export {
 	type StorageSourceKind,
 	upsertStorageObservation,
 } from './db/storage-data.js';
-export {
-	createDurableObjectAccountAuthorities,
-	EpicenterAuthority,
-	mountCloudflareEpicenterSyncApp,
-} from './epicenter-sync/cloudflare.js';
 // An opt-in burn-rate cap for the inference `policies` seam: caps requests per
 // principal partition so a shared house key cannot be run up unbounded (ADR-0076).
 export { rateLimit } from './middleware/rate-limit.js';
@@ -126,4 +121,8 @@ export {
 	type ResolveStoreAuthority,
 	type StoreAuthorityStub,
 } from './store-sync/mount.js';
-export { storeAuthorityName } from './store-sync/route.js';
+export {
+	DELETABLE_NAMESPACES,
+	storeAuthorityName,
+} from './store-sync/route.js';
+export { createDurableObjectAccountStores } from './store-sync/account.js';

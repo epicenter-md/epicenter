@@ -48,14 +48,12 @@ import { join, resolve } from 'node:path';
 import { assertStrongToken } from '@epicenter/auth';
 import {
 	createAttachRelayBunServer,
-	createBunEpicenterSyncRuntime,
 	createDeviceGrantStore,
 	createEnvTokenResolver,
 	createServerApp,
 	mountAttachGrantsApp,
 	mountAttachRelayApp,
 	mountBlobsApp,
-	mountBunEpicenterSyncApp,
 	mountHostDirectoryApp,
 	mountInferenceApp,
 	mountSessionApp,
@@ -141,13 +139,6 @@ export function startSelfHostServer(): void {
 	// One data directory for this host's record SQLite files.
 	const dataDir = resolve(env.DATA_DIR ?? './.data');
 	mkdirSync(dataDir, { recursive: true });
-	// The current-state authority owns the same private records directory. Its
-	// first open deliberately drops legacy authority tables: synchronized
-	// authority state resets, while unrelated local-only workspace storage is
-	// untouched.
-	const epicenterSync = createBunEpicenterSyncRuntime({
-		dir: join(dataDir, 'records'),
-	});
 	// The AttachRelay coordinator for this instance (ADR-0115): the
 	// endpoint-addressed byte forwarder. It owns this process's one `Bun.serve`
 	// WebSocket handler.
@@ -178,10 +169,6 @@ export function startSelfHostServer(): void {
 	// operator bearer (`auth` above) is the only gate, so every surface is
 	// bearer-authenticated (ADR-0075).
 	mountSessionApp(app, { auth });
-	mountBunEpicenterSyncApp(app, {
-		auth,
-		runtime: epicenterSync,
-	});
 	// The AttachRelay upgrade (`/attach`), WS-aware and gated by a per-device grant
 	// (ADR-0115), not the operator token: a connect resolves against the
 	// device-grant store, and the instance principal is stamped server-side so a
@@ -247,7 +234,6 @@ export function startSelfHostServer(): void {
 	// Close authority databases and their sockets before the process dies so WAL
 	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.
 	const shutdown = () => {
-		epicenterSync.close();
 		void server.stop(true);
 		process.exit(0);
 	};

@@ -80,11 +80,6 @@ export {
 	listStorageObservations,
 	type StorageObservation,
 } from './db/storage-data.js';
-export {
-	type BunEpicenterSyncRuntime,
-	createBunEpicenterSyncRuntime,
-	mountBunEpicenterSyncApp,
-} from './epicenter-sync/bun.js';
 // An opt-in burn-rate cap for the inference `policies` seam (ADR-0076).
 export { rateLimit } from './middleware/rate-limit.js';
 export {

@@ -32,9 +32,7 @@ import { assertStrongToken } from '@epicenter/auth';
 import {
 	createEnvTokenResolver,
 	createServerApp,
-	EpicenterAuthority,
 	mountBlobsApp,
-	mountCloudflareEpicenterSyncApp,
 	mountInferenceApp,
 	mountSessionApp,
 	mountTranscriptionApp,
@@ -76,15 +74,6 @@ app.get('/', (c) =>
 // operator bearer (`auth` above) is the only gate, so every surface is
 // bearer-authenticated (ADR-0075).
 mountSessionApp(app, { auth });
-mountCloudflareEpicenterSyncApp(app, {
-	auth,
-	resolveNamespace: (env) =>
-		(
-			env as Cloudflare.Env & {
-				EPICENTER_SYNC: DurableObjectNamespace<EpicenterAuthority>;
-			}
-		).EPICENTER_SYNC,
-});
 // Cap the inference burn rate so a leaked or overused bearer cannot run the
 // operator's house key up unbounded. Per-isolate on Cloudflare (approximate);
 // the real ceiling is the hard spend limit on the provider key itself (README).
@@ -106,4 +95,3 @@ mountTranscriptionApp(app, {
 mountBlobsApp(app, { auth });
 
 export default app;
-export { EpicenterAuthority };

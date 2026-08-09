@@ -53,10 +53,13 @@
 				"name": "ATTACH_RELAY",
 				"class_name": "AttachRelay"
 			},
-			{
-				"name": "EPICENTER_SYNC",
-				"class_name": "EpicenterAuthority"
-			},
+			// EPICENTER_SYNC is deliberately still bound to a class this Worker no
+			// longer exports. Removing a Durable Object class needs a
+			// `deleted_classes` migration, which DESTROYS its stored data on
+			// deploy, and this repository already carries one undeployed
+			// destructive migration. The binding is inert (nothing mounts it) and
+			// costs nothing until someone decides to run that migration on
+			// purpose (ADR-0227).
 			// One StoreAuthority per (principalId, application namespace) holds the
 			// opaque log for the new store transport (ADR-0220). It reads nothing
 			// it stores, and it is addressed only by a name built from a resolved

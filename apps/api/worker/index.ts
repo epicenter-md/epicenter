@@ -20,14 +20,12 @@ import {
 	connectHyperdriveDb,
 	createDurableObjectAttachRelay,
 	createServerApp,
-	EpicenterAuthority,
 	mountStoreSyncApp,
 	StoreAuthority,
 	mountAttachRelayApp,
 	mountBlobsApp,
 	mountCloudAuth,
 	mountCloudDb,
-	mountCloudflareEpicenterSyncApp,
 	mountInferenceApp,
 	mountSessionApp,
 	mountTranscriptionApp,
@@ -129,15 +127,6 @@ mountCloudAuth(app, {
 
 // Principal-partitioned reusable surfaces.
 mountSessionApp(app, { auth: cookieOrBearer });
-mountCloudflareEpicenterSyncApp(app, {
-	auth: bearer,
-	resolveNamespace: (env) =>
-		(
-			env as Cloudflare.Env & {
-				EPICENTER_SYNC: DurableObjectNamespace<EpicenterAuthority>;
-			}
-		).EPICENTER_SYNC,
-});
 // Remote Super Chat attach (ADR-0115): the endpoint-addressed relay that forwards
 // live session bytes between a signed-in desktop host and a signed-in client of
 // the same principal. It is WS-aware and resolves the OAuth bearer itself; the
@@ -221,4 +210,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { AttachRelay, EpicenterAuthority, StoreAuthority };
+export { AttachRelay, StoreAuthority };

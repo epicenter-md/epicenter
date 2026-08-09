@@ -54,11 +54,9 @@ import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 import {
 	CloudAuthBindings,
 	type CloudEnv,
-	createBunEpicenterSyncRuntime,
 	createDb,
 	createServerApp,
 	mountBlobsApp,
-	mountBunEpicenterSyncApp,
 	mountCloudAuth,
 	mountCloudDb,
 	mountInferenceApp,
@@ -133,13 +131,6 @@ export function startBunApiServer(
 	// One data directory for this host's record SQLite files.
 	const dataDir = resolve(env.DATA_DIR ?? './.data');
 	mkdirSync(dataDir, { recursive: true });
-	// Keep the operator-selected directory stable, but the replacement authority
-	// deliberately drops the legacy table family on first open. There is no
-	// compatibility reader or receipt migration across this protocol reset.
-	const epicenterSync = createBunEpicenterSyncRuntime({
-		dir: join(dataDir, 'records'),
-	});
-
 	// One pool for the process; drizzle checks a client out per query and returns
 	// it, so the `mountCloudDb` connect leg below hands back the shared handle with
 	// a no-op close.
@@ -188,10 +179,6 @@ export function startBunApiServer(
 		serveAuthUiShell,
 	});
 	mountSessionApp(app, { auth: cookieOrBearer });
-	mountBunEpicenterSyncApp(app, {
-		auth: bearer,
-		runtime: epicenterSync,
-	});
 	mountInferenceApp(app, { auth: bearer });
 	// The STT sibling of the inference gateway, on the same house key. Unmetered
 	// here for the same reason inference is: this host composes no billing, so
@@ -209,10 +196,10 @@ export function startBunApiServer(
 		fetch: (req) => app.fetch(req, env),
 	});
 
-	// Close authority databases and their sockets before the process dies so WAL
-	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.
+	// Nothing durable to close here any more: the store lives in the client
+	// (ADR-0223) and the authority is a Durable Object, so this process owns no
+	// database whose WAL has to be checkpointed.
 	const shutdown = () => {
-		epicenterSync.close();
 		void server.stop(true);
 		process.exit(0);
 	};

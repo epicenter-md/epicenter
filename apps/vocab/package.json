@@ -29,7 +29,6 @@
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@epicenter/data": "workspace:*",
-		"@epicenter/document-sync": "workspace:*",
 		"@epicenter/agent": "workspace:*",
 		"@lucide/svelte": "catalog:",
 		"arktype": "catalog:",

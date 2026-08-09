@@ -35,7 +35,7 @@ import { Principal } from '@epicenter/auth';
 import {
 	blobPrincipalPrefix,
 	type CloudEnv,
-	createDurableObjectAccountAuthorities,
+	createDurableObjectAccountStores,
 	deleteStorageObservations,
 	resolveDeploymentBlobStore,
 } from '@epicenter/server';
@@ -118,8 +118,8 @@ export function mountAccountDeletionApi(app: Hono<CloudEnv>): void {
 		async (c) => {
 			const principalId = c.var.principal.id;
 			const authority = () =>
-				createDurableObjectAccountAuthorities(
-					(c.env as Cloudflare.Env).EPICENTER_SYNC,
+				createDurableObjectAccountStores(
+					(c.env as Cloudflare.Env).STORE_SYNC as never,
 				).authority(principalId);
 			const sweepBlobs = async () => {
 				const store = resolveDeploymentBlobStore(c.env);
