@@ -350,31 +350,59 @@ defaults apply at read time, there is no interleaving of v1 and v2 writes that
 produces a state neither can read. That is the whole reason there is no
 migration chain to run in sequence.
 
-### The two rules that follow
+### Nonconforming is a view, not damage
 
-1. **A new field carries a default.** Not style: without one, every row written
-   before the field existed becomes unreadable, and in a local-first system
-   those rows are on a device you cannot reach — they will arrive over sync
-   later regardless of what you ship today.
-2. **Never change a field's type. Add a different field.** `n: 'string'` to
-   `n: 'number'` breaks every existing row; `n2: 'number' = 0` beside it breaks
-   nothing. There is no alias, no `fallbackFrom`, and no rename (ADR-0125);
-   renaming a key means the release now addresses a different key.
+The instinct on first meeting a `Nonconforming` row is to prevent it: default
+every field, require every field at `create`, make the schema watertight.
 
-### Worth changing, and not yet done
+**That cannot work, and it is worth understanding why before designing around
+it.** A Lens is release-local, and rows arrive from the future. A release that
+has not shipped yet can retype a field and write it, and your release will not
+be able to read the result — no default you declare today prevents that, because
+the change is not yours. Verified: a v1 Lens reading a row a v3 Lens wrote is
+`Nonconforming`, and nothing in v1 could have avoided it.
 
-Rule 1 is discipline, and discipline is the wrong mechanism for something whose
-failure is invisible until a stranger's phone syncs. The shape that makes it
-structural is to split what a default is for:
+So prevention is impossible in principle, and a discipline aimed at it buys a
+tax on every author for a guarantee it cannot deliver. What is possible is
+HEALING, and the primitives for it already exist.
 
-- **Read side: every field has a default.** Then adding a field is always safe
-  and rule 1 stops being a rule.
-- **Write side: `create` requires every field explicitly.** A default then only
-  ever applies to a row that predates its field, which is the only case it was
-  ever meant to serve.
+A failed read is not an absence. It carries everything an app, a person, or an
+agent needs to act:
 
-That also removes today's trap, where a default silently doubles as create-time
-convenience and nobody notices which of the two jobs they are relying on.
+```ts
+const { data } = db.notes.list();
+for (const issue of data.nonconforming) {
+  issue.address     // { namespace, tableName, rowId }
+  issue.issues      // [{ field: 'n', message: 'n must be a number (was a string)' }]
+  issue.conforming  // { id, title }              what survived
+  issue.raw         // { title, n: 'seven' }      the stored truth, unmodified
+}
+```
+
+`issues` names the field and says what is wrong with it in a sentence, which is
+the whole input an agent or a repair screen needs. `raw` is never modified, so
+nothing is lost while the row is unreadable. And repair is an ordinary write,
+because a patch validates only the values it supplies:
+
+```ts
+db.notes.update(issue.address.rowId, { n: 7 });
+```
+
+Nonconforming rows are also still in the projection with their raw values, so
+`db.query` sees them. A repair surface can find and show them with SQL rather
+than scanning through the typed read.
+
+**So the answer here is to add nothing.** No schema version, no migration chain,
+no repair API, no alias, no compatibility classifier — ADR-0125 refused all of
+those, and the reason it could is that these five primitives (`nonconforming`,
+`issues`, `conforming`, `raw`, and a validating patch) already make healing an
+ordinary application concern. Whether an app shows a person the broken row, has
+an agent propose a fix, or ignores it until someone cares is a product decision
+this layer should not make.
+
+The one rule that IS worth keeping is smaller than it looked: **prefer adding a
+field to retyping one.** Not because retyping is forbidden, but because it makes
+work for a healer, and adding does not.
 
 ---
 
