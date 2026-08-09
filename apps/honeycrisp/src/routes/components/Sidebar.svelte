@@ -13,13 +13,40 @@
 
 	const honeycrisp = getHoneycrispApp();
 
+	// Both footer readings are sampled, not derived. `pressure()` and
+	// `syncStatus()` are plain reads off the store and the sync driver, neither
+	// of which is reactive, so no `$derived` over them would ever re-run. These
+	// are `$state.raw` because each poll replaces the whole snapshot and nothing
+	// mutates one in place.
+	//
+	// A second is chosen against what a person can perceive rather than how fast
+	// either moves: sync settles in milliseconds and pressure changes only on a
+	// write, so a faster tick would render the same footer again.
+	function readPressure() {
+		const { data, error } = honeycrisp.pressure();
+		return error === null ? data : undefined;
+	}
+
 	// The one number worth watching. A deleted row leaves a tombstone every
 	// device pays for in memory on every load, forever, and only a rebuild
 	// reclaims one; a healthy vault sits near the item cost of one note, and ten
 	// times that means the document is mostly corpse. Shown rather than logged,
 	// because whether it ever matters is a question about how much a real person
 	// deletes and nobody has that number yet.
-	const pressure = $derived(honeycrisp.pressure().data);
+	let pressure = $state.raw(readPressure());
+
+	// Undefined on a build with no auth, which is not an error state: sync is
+	// attached only when there is a bearer to attach it with, so a signed-out
+	// replica showing nothing here is correct.
+	let sync = $state.raw(honeycrisp.syncStatus());
+
+	$effect(() => {
+		const timer = setInterval(() => {
+			pressure = readPressure();
+			sync = honeycrisp.syncStatus();
+		}, 1_000);
+		return () => clearInterval(timer);
+	});
 </script>
 
 <Sidebar.Root>
@@ -114,6 +141,17 @@
 	</Sidebar.Content>
 
 	<Sidebar.Footer>
+		{#if sync}
+			<div
+				class="text-muted-foreground px-2 pb-1 text-[11px] tabular-nums"
+				title="Whether this device currently holds a socket to its authority, and how far through the authority's log it has read. `attempts` counts failed dials since the last one that stayed up."
+			>
+				{sync.connected ? 'synced' : 'offline'} · read {sync.cursor}
+				{#if !sync.connected && sync.attempts > 0}
+					· {sync.attempts} failed
+				{/if}
+			</div>
+		{/if}
 		{#if pressure}
 			<div
 				class="text-muted-foreground px-2 pb-1 text-[11px] tabular-nums"
