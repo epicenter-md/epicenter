@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { whisperingSettingFields } from './contract';
+import { whisperingLens } from './index';
 
 /**
  * The active local transcription model must never synchronize (ADR-0180).
@@ -10,13 +10,13 @@ import { whisperingSettingFields } from './contract';
  * transcription *route* here and nothing about which local model runs; the host
  * owns that, device-locally, and Epicenter Home administers it.
  *
- * This guards the direction the mistake would come from. `whisperingSettingFields`
- * is the synced surface, so a local-model field landing in it is exactly how the
- * invariant would silently break: the field would look like an ordinary setting
- * and start replicating.
+ * This guards the direction the mistake would come from. The Lens's `kv` section
+ * IS the synced settings surface, so a local-model key landing in it is exactly
+ * how the invariant would silently break: the key would look like an ordinary
+ * setting and start replicating.
  */
 describe('the active local model is device-local', () => {
-	const settingKeys = Object.keys(whisperingSettingFields);
+	const settingKeys = Object.keys(whisperingLens.kv);
 
 	it('is absent from the synced settings contract', () => {
 		const localModelKeys = settingKeys.filter(
@@ -30,6 +30,6 @@ describe('the active local model is device-local', () => {
 		// The route is a preference that means the same thing on every device, so
 		// it stays here. Keeping this alongside the assertion above is the point:
 		// the two decisions are separate, and only one of them travels.
-		expect(settingKeys).toContain('settings_transcription_service');
+		expect(settingKeys).toContain('transcriptionService');
 	});
 });
