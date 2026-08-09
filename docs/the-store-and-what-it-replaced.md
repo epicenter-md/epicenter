@@ -312,6 +312,65 @@ blob plane does not have the row plane's guarantees.
 
 ---
 
+## What granularity an edit actually has
+
+Worth knowing exactly, because it decides how a field should be shaped and it
+is not uniform. Measured, not assumed.
+
+**A row is not replaced. A field is.** A row is an attribute map and `writeRow`
+sets only the attributes handed to it, so two devices editing DIFFERENT fields
+of one row offline both keep their edit:
+
+```txt
+phone:  update(id, { title: 'phone renamed it' })
+laptop: update(id, { body:  'laptop rewrote the body' })
+after sync -> title: 'phone renamed it', body: 'laptop rewrote the body'
+```
+
+That is the same property that makes an old release safe to write with: it
+cannot clobber a field it does not know, because it never touches that
+attribute.
+
+**Inside one field there is no merging at all.** Two devices writing the same
+field converge on one winner (last write wins by client id), and the other
+value is gone. That is correct for a title and it is the whole story for every
+scalar.
+
+**An array or object field is ONE value, so it is replaced wholesale.** This is
+the one that surprises people:
+
+```txt
+phone:  update(id, { tags: ['a', 'from-phone'] })
+laptop: update(id, { tags: ['a', 'from-laptop'] })
+after sync -> tags: ['a', 'from-phone']      // 'from-laptop' is gone
+```
+
+Both devices agree, nothing is corrupt, and one person's addition vanished. A
+JSON value in an attribute is atomic; it is not a CRDT list. **So an array field
+is right for a set one device owns and wrong for a set several devices append
+to.** If concurrent appends must all survive, the collection wants to be rows in
+a table, where each element is its own row and nothing collides.
+
+**Per-character merging exists in exactly one place: a row document.**
+`document(id).get('body')` is a live `Y.Type`, so two people typing in it merge
+at the character. That is the whole reason prose lives there rather than in a
+`string` field, and the reason a machine-produced transcript does not need to.
+
+**The projection has different granularity, and it does not matter.** A local
+commit upserts one row; an arrived update rebuilds every bound table. Both are
+writes to a cache derived from the CRDT, so neither affects what merges with
+what.
+
+| where | granularity |
+| --- | --- |
+| two fields of one row | independent, both survive |
+| one scalar field | last write wins, converged |
+| one array or object field | last write wins on the WHOLE value |
+| a row document | per character |
+| the SQL projection | a cache; row upsert locally, full rebuild on arrival |
+
+---
+
 ## How a row evolves
 
 Two devices on two releases hold two Lenses over one namespace, and rows written
