@@ -349,8 +349,9 @@ field converge on one winner (last write wins by client id), and the other
 value is gone. That is correct for a title and it is the whole story for every
 scalar.
 
-**An array or object field is ONE value, so it is replaced wholesale.** This is
-the one that surprises people:
+**An array or object field is ONE value, so it is replaced wholesale. This is
+kept on purpose.** It surprises people, so it is worth being explicit that it is
+a refusal rather than an omission:
 
 ```txt
 phone:  update(id, { tags: ['a', 'from-phone'] })
@@ -359,10 +360,28 @@ after sync -> tags: ['a', 'from-phone']      // 'from-laptop' is gone
 ```
 
 Both devices agree, nothing is corrupt, and one person's addition vanished. A
-JSON value in an attribute is atomic; it is not a CRDT list. **So an array field
-is right for a set one device owns and wrong for a set several devices append
-to.** If concurrent appends must all survive, the collection wants to be rows in
-a table, where each element is its own row and nothing collides.
+JSON value in an attribute is atomic; it is not a CRDT list.
+
+**What this buys is the whole model in one sentence: a field is one value.**
+The alternative is a per-field CRDT type system — array fields that merge,
+counters that add, maps that deep-merge, and a declaration syntax rich enough to
+say which. Every one of those is a second merge semantics an author has to learn
+and a reader has to hold, and each is a place two releases can disagree about
+what a field even is. Refusing all of it means there is exactly one rule for
+every scalar, array and object a Lens can declare, and the rule fits on a line.
+
+The price is bounded and nameable: **a set that several devices append to
+concurrently will lose an addition.** That is a real cost and it is paid by a
+narrow class of field. The escape hatch needs no new machinery, because the
+store already has a per-element merge primitive — rows in a table. A collection
+whose elements are written independently wants to BE a table, where each element
+is its own row, nothing collides, and deletion is a real operation rather than
+an array splice that races.
+
+So the guidance is a question rather than a warning. **Who writes this
+collection?** One device at a time, or one place in the UI: an array field is
+right. Several devices, concurrently, each adding their own element: it is a
+table.
 
 **Per-character merging exists in exactly one place: a row document.**
 `document(id).get('body')` is a live `Y.Type`, so two people typing in it merge
@@ -378,7 +397,7 @@ what.
 | --- | --- |
 | two fields of one row | independent, both survive |
 | one scalar field | last write wins, converged |
-| one array or object field | last write wins on the WHOLE value |
+| one array or object field | last write wins on the WHOLE value (kept, see above) |
 | a row document | per character |
 | the SQL projection | a cache; row upsert locally, full rebuild on arrival |
 
