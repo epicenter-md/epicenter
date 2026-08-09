@@ -143,7 +143,7 @@ silently retiring different content under the same round.
 
 For protocol details and executable coverage, read
 [`packages/data/src/protocol/v1`](../packages/data/src/protocol/v1) and
-[`packages/data/src/protocol/protocol.test.ts`](../packages/data/src/protocol/protocol.test.ts).
+[`packages/data/src/sync/transport.test.ts`](../packages/data/src/sync/transport.test.ts).
 
 ## Documents are a lazy Yjs 14 plane
 

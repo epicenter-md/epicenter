@@ -57,6 +57,7 @@ the two can never disagree and `query` always sees committed local writes. That
 read-your-writes guarantee is the reason they share a file rather than merely a
 directory.
 
+<!-- doc-path-check: ignore-next-line (names a file the superseded stack carried; ADR-0227 deleted it) -->
 This is not new. `packages/data/src/documents.ts:283-346` already does it: one
 `database.transaction()` that checks liveness, inserts at `MAX(seq)+1`, and at
 `COMPACTION_THRESHOLD = 64` (`documents.ts:14`) replays the chain through a fresh

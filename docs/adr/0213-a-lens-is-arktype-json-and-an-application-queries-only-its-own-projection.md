@@ -40,6 +40,7 @@ The earlier lens implementation carried two bugs that both come from treating th
 schema as something to *build* rather than something to *be*:
 
 - `compiledTables` is a `WeakMap` keyed on object identity
+<!-- doc-path-check: ignore-next-line (names a file the superseded stack carried; ADR-0227 deleted it) -->
   (`packages/lens/src/definitions.ts:187-188`), and compilation throws
   `'Unknown table definition'` for anything it did not itself mint (`:331-333`).
   A lens loaded from disk is therefore uncompilable, which contradicts
@@ -325,6 +326,7 @@ handle that carries the method.
 - **`values` has no slot and no verbs.** ADR-0206 deleted the concept, the
   relations, the wire operations and the dotted grammar. A draft of this record
   claimed the slot survived in the canonical JSON; it does not, and
+<!-- doc-path-check: ignore-next-line (names a file the superseded stack carried; ADR-0227 deleted it) -->
   `packages/lens/src/definitions.ts:85-99` has neither a values nor a kv slot.
 - **Epicenter Home keeps cross-application SQL** and it stays a host capability
   reached through the storage owner, not a connection handed to anyone.

@@ -190,7 +190,9 @@ Prefetching every body is 2.7 MB and is a policy, not a mechanism.
 ### Opening a prose document is asynchronous
 
 It is a load, and on two of the three shipped surfaces it is a round trip to
+<!-- doc-path-check: ignore-next-line (names a file the superseded stack carried; ADR-0227 deleted it) -->
 another process (`packages/data/src/browser/worker.ts:762`,
+<!-- doc-path-check: ignore-next-line (names a file the superseded stack carried; ADR-0227 deleted it) -->
 `packages/data/src/desktop.ts:282`). A synchronous property chain in front of it
 would either force eager loading, giving back the entire startup win above, or
 buffer into a document that has not arrived. The lazy load is the decision; the
