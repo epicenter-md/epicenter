@@ -312,6 +312,72 @@ blob plane does not have the row plane's guarantees.
 
 ---
 
+## How a row evolves
+
+Two devices on two releases hold two Lenses over one namespace, and rows written
+by either arrive at the other in any order. There is no migration step to
+sequence, no schema version, and no compatibility classifier: ADR-0125 decided
+that, and the behaviour below is that decision verified against the store rather
+than restated.
+
+**Fields are independent, and that is the load-bearing invariant.** A row is an
+attribute map, a write sets only the attributes handed to it, and a read
+interprets only the fields the Lens declares. Everything else follows.
+
+| what changed | what the other release sees |
+| --- | --- |
+| a field was ADDED, with a default | old rows read, the default fills in |
+| a field was ADDED, no default | **old rows go `Nonconforming`** |
+| a row has a field this Lens never heard of | ignored on read, **preserved on write** |
+| a field's TYPE changed | `Nonconforming`, with `conforming` carrying what survived |
+| a field was REMOVED | the attribute lingers, unread, costing only `pressure()` |
+
+The third row is the one that makes mixed-version fleets safe, and it is worth
+stating as a property rather than a footnote: **an old release updating a row
+does not clobber the fields it cannot see.** Verified — a v1 release editing a
+`title` left a v2 `tags` array untouched.
+
+The fourth row has an escape hatch that is easy to miss: a nonconforming row is
+not a dead row. A patch validates only the values it supplies, so it can repair
+the offending key even though the whole payload does not currently pass:
+
+```ts
+db.notes.update(id, { n: 7 });   // succeeds; the row conforms afterwards
+```
+
+**Order does not matter, by construction.** Because fields are independent and
+defaults apply at read time, there is no interleaving of v1 and v2 writes that
+produces a state neither can read. That is the whole reason there is no
+migration chain to run in sequence.
+
+### The two rules that follow
+
+1. **A new field carries a default.** Not style: without one, every row written
+   before the field existed becomes unreadable, and in a local-first system
+   those rows are on a device you cannot reach — they will arrive over sync
+   later regardless of what you ship today.
+2. **Never change a field's type. Add a different field.** `n: 'string'` to
+   `n: 'number'` breaks every existing row; `n2: 'number' = 0` beside it breaks
+   nothing. There is no alias, no `fallbackFrom`, and no rename (ADR-0125);
+   renaming a key means the release now addresses a different key.
+
+### Worth changing, and not yet done
+
+Rule 1 is discipline, and discipline is the wrong mechanism for something whose
+failure is invisible until a stranger's phone syncs. The shape that makes it
+structural is to split what a default is for:
+
+- **Read side: every field has a default.** Then adding a field is always safe
+  and rule 1 stops being a rule.
+- **Write side: `create` requires every field explicitly.** A default then only
+  ever applies to a row that predates its field, which is the only case it was
+  ever meant to serve.
+
+That also removes today's trap, where a default silently doubles as create-time
+convenience and nobody notices which of the two jobs they are relying on.
+
+---
+
 ## A migration checklist
 
 1. Rewrite the Lens: arktype strings, nullable-with-default, no optionals, no
