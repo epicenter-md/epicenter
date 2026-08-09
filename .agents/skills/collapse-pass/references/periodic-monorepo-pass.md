@@ -42,12 +42,11 @@ The pass is valuable when the likely wins are:
 Default in-scope targets:
 
 ```txt
-apps/fuji
 apps/honeycrisp
 apps/whispering
-apps/tab-manager
+apps/local-mail
 apps/api
-packages/workspace
+packages/data
 shared TypeScript utilities
 ```
 

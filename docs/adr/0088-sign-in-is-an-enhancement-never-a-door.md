@@ -39,7 +39,8 @@ sign-in is its product.
 
 `SignedOutScreen`, the `(signed-in)` route groups, vocab's `/sign-in`
 redirect route, and the Shape A / Shape B split in
-`workspace-app-composition` are deleted; the skill documents one shape. The
+the app-composition skill are deleted; one shape is documented, in
+`platform-seams` since that skill replaced it. The
 boot branch and `reloadOnPrincipalChange` move from Whispering into
 `@epicenter/svelte/auth`; the flag-free migration kit moves into
 `@epicenter/app-shell`. `AccountPopover.instanceConnect` becomes required,

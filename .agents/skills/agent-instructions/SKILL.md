@@ -22,7 +22,7 @@ Read [references/composition-audit.md](references/composition-audit.md) when str
 Use other skills for their owned domains:
 
 - `writing-voice`: user-facing prose, UI text, errors, docs, and tone.
-- Domain skills such as `workspace-api`, `svelte`, or `auth`: package conventions the new skill must encode.
+- Domain skills such as `yjs`, `svelte`, or `auth`: package conventions the new skill must encode.
 - `git`: staging, commits, branch work, and commit messages.
 - `plugin-creator`: Codex plugins, not agent skills.
 - `skill-installer`: installing third-party skills.

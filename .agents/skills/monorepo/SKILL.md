@@ -68,7 +68,7 @@ they have no root `dev:*` target.
 Inside a single package, the conventions are:
 
 Non-Tauri apps use a single `dev` script that runs the underlying tool
-directly (`vite dev`, `astro dev`, `wrangler dev`, `wxt`). Tauri desktop apps
+directly (`vite dev`, `astro dev`, `wrangler dev`). Tauri desktop apps
 (honeycrisp, whispering, matter) have two dev surfaces and name them
 explicitly: `dev` launches the desktop shell (aliasing `dev:desktop`), and
 `dev:web` runs Vite alone, which each app's `tauri.conf.json` invokes as its

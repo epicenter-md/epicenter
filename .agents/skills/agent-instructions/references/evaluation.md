@@ -261,7 +261,7 @@ reproducible.
 Should trigger `agent-instructions`:
 
 - "Write a skill for reviewing Svelte accessibility in this repo."
-- "Improve the workspace-api skill description so it triggers less often."
+- "Improve the yjs skill description so it triggers less often."
 - "Should this AGENTS.md rule become a skill or stay global?"
 
 Should not trigger `agent-instructions`:
