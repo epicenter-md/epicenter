@@ -1,6 +1,6 @@
 # 0214. One SQLite file holds the update log and the projection, and history lives outside the CRDT
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-07
 - **Provisional number.** Replaces an earlier 0214 that specified a wall-clock
   skew clamp and a version re-stamp. That draft was `Proposed`, and its subject

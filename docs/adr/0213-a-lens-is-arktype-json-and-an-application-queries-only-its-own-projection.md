@@ -1,6 +1,6 @@
 # 0213. A lens is arktype JSON, and an application queries only its own projection
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-07
 - **Provisional number.** Replaces an earlier 0213 that specified a multiset
   digest for a cell store that no longer exists. That draft was `Proposed` and is

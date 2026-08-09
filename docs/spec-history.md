@@ -16,13 +16,24 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1404 specs ever** (521 still in tree, 883 removed).
+**1415 specs ever** (522 still in tree, 893 removed).
 
 
 ## 2026
 
 | Date | Spec | State | Path |
 |------|------|-------|------|
+| 2026-08-08 | honeycrisp-two-device-run | removed | specs/20260808T070000-honeycrisp-two-device-run.md |
+| 2026-08-08 | honeycrisp-syncs-across-two-devices | removed | specs/20260808T060000-honeycrisp-syncs-across-two-devices.md |
+| 2026-08-08 | honeycrisp-is-the-first-app-on-the-new-store | removed | specs/20260808T020000-honeycrisp-is-the-first-app-on-the-new-store.md |
+| 2026-08-07 | HANDOFF-honeycrisp-onto-the-new-store | removed | specs/HANDOFF-honeycrisp-onto-the-new-store.md |
+| 2026-08-07 | the-authority-holds-bytes | removed | specs/20260807T210000-the-authority-holds-bytes.md |
+| 2026-08-07 | yjs-store-and-lens | removed | specs/20260807T090000-yjs-store-and-lens.md |
+| 2026-08-05 | replicated-cell-store-memo | removed | specs/20260805T190000-replicated-cell-store-memo.md |
+| 2026-08-05 | an-installed-app-holds-nothing | in tree | specs/20260805T140000-an-installed-app-holds-nothing.md |
+| 2026-08-05 | an-installed-app-owns-a-namespace | removed | specs/20260805T193000-an-installed-app-owns-a-namespace.md |
+| 2026-08-04 | markdown-projection | in tree | specs/20260804T230000-markdown-projection.md |
+| 2026-08-04 | working-copy-tiers | removed | specs/20260804T203000-working-copy-tiers.md |
 | 2026-08-02 | row-document-doc-status-reconciliation | removed | specs/20260802T101500-row-document-doc-status-reconciliation.md |
 | 2026-08-02 | app-data-root-and-partitions | in tree | specs/20260802T120000-app-data-root-and-partitions.md |
 | 2026-08-01 | local-mail-intent-and-reconciler-clean-break | removed | specs/20260801T210000-local-mail-intent-and-reconciler-clean-break.md |
@@ -799,7 +810,7 @@
 | 2026-02-25 | apple-notes-workspace | removed | specs/20260225T102116-apple-notes-workspace.md |
 | 2026-02-25 | server-package-structure | removed | specs/20260225T130000-server-package-structure.md |
 | 2026-02-25 | typebox-action-simplifications | removed | specs/20260225T180000-typebox-action-simplifications.md |
-| 2026-02-24 | ai-chat-controls-redesign | in tree | apps/tab-manager/specs/20260224T141300 ai-chat-controls-redesign.md |
+| 2026-02-24 | ai-chat-controls-redesign | removed | apps/tab-manager/specs/20260224T141300 ai-chat-controls-redesign.md |
 | 2026-02-24 | simplify-tab-manager-settings | in tree | specs/20260224T112600 simplify-tab-manager-settings.md |
 | 2026-02-24 | conversation-handle-refactor | in tree | specs/20260224T141400-conversation-handle-refactor.md |
 | 2026-02-24 | local-server-plugin-architecture | in tree | specs/20260224T141400-local-server-plugin-architecture.md |

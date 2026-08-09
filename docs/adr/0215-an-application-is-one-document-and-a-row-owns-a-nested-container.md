@@ -1,6 +1,6 @@
 # 0215. An application is one document, and a row owns a nested container
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-07
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0216 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).

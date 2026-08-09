@@ -1,6 +1,6 @@
 # 0212. A row is a Yjs type, and its prose is a lazily loaded document
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-07
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0214 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`). This record
