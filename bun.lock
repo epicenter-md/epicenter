@@ -112,7 +112,6 @@
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
-        "@epicenter/app": "workspace:*",
         "@epicenter/honeycrisp": "workspace:*",
         "@sveltejs/vite-plugin-svelte": "catalog:",
         "@tailwindcss/vite": "catalog:",
@@ -585,19 +584,6 @@
       "name": "@epicenter/agent-protocol",
       "version": "0.1.0",
       "dependencies": {
-        "wellcrafted": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/app": {
-      "name": "@epicenter/app",
-      "version": "0.1.0",
-      "dependencies": {
-        "@epicenter/lens": "workspace:*",
-        "@tauri-apps/api": "catalog:",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -1288,8 +1274,6 @@
     "@epicenter/api": ["@epicenter/api@workspace:apps/api"],
 
     "@epicenter/api-ui": ["@epicenter/api-ui@workspace:apps/api/ui"],
-
-    "@epicenter/app": ["@epicenter/app@workspace:packages/app"],
 
     "@epicenter/app-shell": ["@epicenter/app-shell@workspace:packages/app-shell"],
 
