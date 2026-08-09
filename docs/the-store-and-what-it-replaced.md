@@ -400,9 +400,16 @@ ordinary application concern. Whether an app shows a person the broken row, has
 an agent propose a fix, or ignores it until someone cares is a product decision
 this layer should not make.
 
-The one rule that IS worth keeping is smaller than it looked: **prefer adding a
-field to retyping one.** Not because retyping is forbidden, but because it makes
-work for a healer, and adding does not.
+What survives is a preference rather than a rule: **adding a field is cheaper
+than retyping one**, because adding leaves every existing row readable and
+retyping hands them all to a healer.
+
+It is a preference and not a rule because retyping is a legitimate thing to do.
+Sometimes a field was simply the wrong type, and living with the wrong one
+forever to avoid a heal is the worse trade. Retype it, know that existing rows
+go `Nonconforming` until something fixes them, and decide whether anything
+needs to. Often nothing does: a row nobody looks at can stay unreadable
+indefinitely without hurting anyone, and `raw` still holds it.
 
 ---
 
@@ -418,3 +425,6 @@ work for a healer, and adding does not.
 7. Replace document leases and polling with `document(id).get(root)`, naming
    roots at `create`.
 8. Add a `dial` if the application syncs, and delete every `nudge`.
+9. Decide what the application does with `list().nonconforming`. Showing it,
+   healing it, and ignoring it are all legitimate; dropping it silently is the
+   one option the store went out of its way to prevent.
