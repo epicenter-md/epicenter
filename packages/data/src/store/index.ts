@@ -6,11 +6,11 @@
  * opener imports `bun:sqlite` and a browser opener imports a WASM build, and
  * neither belongs in a barrel the other has to load.
  *
- * The superseded stack is at `@epicenter/data/legacy`. It is what Whispering,
- * vocab, tab-manager and skills still run on, and it stays exactly where it was
- * until they move; what changed is that it no longer answers to the package's
- * own name, so a developer arriving at `@epicenter/data` gets the thing that is
- * being built rather than the thing being replaced.
+ * Four entry points and no more: `.` for the surface, `./bun` and `./browser`
+ * for the openers, and `./sync` for the transport. The superseded stack that
+ * used to answer at `./legacy` was deleted along with its consumers (ADR-0227),
+ * so a developer arriving here finds one store rather than a choice between
+ * two.
  */
 export {
 	type Bound,

@@ -1,313 +1,325 @@
 # @epicenter/data
 
-Portable scalar convergence protocol and SQLite-backed local replica for
-Epicenter data.
+The Epicenter store: one Yjs document per application, a synchronous surface
+over it, and the transport that carries it between a person's devices. MIT.
 
-## One Lens declares one namespace
+Four entry points, and no more:
 
-A Lens is one application's interpretation of one durable namespace. The
-namespace is declared exactly once, and each `tables` property name is the
-durable local name of that table:
+| Import | What it gives you |
+| --- | --- |
+| `@epicenter/data` | the store surface, plus the Lens vocabulary re-exported from `@epicenter/lens` |
+| `@epicenter/data/bun` | `openBunStore({ directory })` |
+| `@epicenter/data/browser` | `openBrowserStore({ name })` |
+| `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
+
+A Bun opener imports `bun:sqlite` and a browser opener imports a WASM build, so
+neither belongs in a barrel the other has to load. That is the whole reason the
+openers live at their own entry points rather than on `@epicenter/data`.
+
+## Opening is the only asynchronous thing
 
 ```ts
-const notesLens = defineLens({
+const opened = await openBrowserStore({ name: 'honeycrisp' });
+if (opened.error !== null) throw opened.error;
+
+const bound = opened.data.bind(honeycrispLens);
+if (bound.error !== null) throw bound.error;
+const db = bound.data;
+
+const listed = db.notes.list();          // no await
+db.notes.update(id, { title: 'Draft' }); // no await
+```
+
+Opening replays a durable log into one `Y.Doc`. After that every read is a
+property access on a document already in memory, so nothing below returns a
+promise. `bind` is synchronous too: it does no I/O, and it returns a `Result`
+because a Lens can arrive as data rather than as a TypeScript literal.
+
+## The surface
+
+Each table the Lens declares is a key on `db`:
+
+```ts
+db.notes.defaults                        // what a read supplies for unwritten keys
+db.notes.create(fields, options?)        // Result<Row>, at a minted 24-character id
+db.notes.get(id)                         // Result<Row | undefined>
+db.notes.update(id, patch)               // merges; refuses an absent address
+db.notes.delete(id)                      // Result<boolean>
+db.notes.ids()                           // Result<string[]>, sorted
+db.notes.list()                          // Result<{ rows, nonconforming }>
+db.notes.document(id)                    // RowDocument | undefined
+db.notes.subscribe(listener)             // returns its own unsubscribe
+```
+
+Settings live on `db.kv`, which has `get()`, `update(patch)`, `subscribe`, and
+`defaults`. There is no id and no `create`, because there is exactly one and it
+always exists.
+
+`db.query` is a read-only SQL template tag over this application's own
+projection. It is on the binding rather than on the store so an application
+reaches only its own namespace, which is why `query` is a reserved table name.
+
+The store itself carries `pressure()` (how much of the document is dead
+weight), `onLocalWork` (this replica authored something the authority has not
+taken), and `onCommitted` (anything durable changed, whoever wrote it).
+
+### Reading
+
+`list()` returns the rows this release could read and the ones it could not,
+side by side. Neither is optional to handle:
+
+```ts
+const { data, error } = db.notes.list();
+if (error !== null) return void report(error);
+rows = data.rows;
+unreadable = data.nonconforming;
+```
+
+`.data?.rows ?? []` turns a storage failure into an empty list, and an empty
+list renders as "you have never written one of these". Discarding
+`nonconforming` is the same trap one level down: rows a person wrote are simply
+missing from the screen with nothing to explain why.
+
+On a failed point read, recover with `??` and never with a destructuring
+default. An `Err` sets `data` to `null`, and `= fallback` fires only on
+`undefined`:
+
+```ts
+const { data, error } = db.notes.get(id);
+const note = data ?? { ...db.notes.defaults, ...error?.conforming };
+```
+
+### Reacting
+
+`subscribe` fires once per commit, carrying the row ids that commit touched
+(ADR-0221). It fires for a local write, for prose typed into a row's document,
+and for bytes that arrived from another device alike, and it fires AFTER the
+projection commits, so a listener sees `list()` and `db.query` agree about which
+rows exist.
+
+Registration is synchronous, does no I/O, and never fires initially, so a
+caller that subscribes and then reads has already seen everything. There is no
+generation counter to keep and no `refresh()` to remember:
+
+```ts
+function read() { /* the read above */ }
+read();
+const stop = db.notes.subscribe(read);
+```
+
+`db.kv.subscribe` takes a listener with no arguments. KV is one value at a
+name-addressed root, so there are no ids to carry.
+
+## The shape of the data
+
+One `Y.Doc` per application. Its top-level roots are `tables:<name>` for each
+declared table and `kv` for settings, and nothing else, so dumping `doc.share`
+reads as a description of the application.
+
+```txt
+Y.Doc
+├── tables:notes
+│   ├── <rowId>        a nested Y.Type: the row
+│   │   ├── title      an attribute: a field
+│   │   ├── folderId
+│   │   └── !doc       the reserved container this row's prose lives in
+│   └── <rowId>
+├── tables:folders
+└── kv
+```
+
+**A row is an attribute on its table root, not a root of its own.** That is a
+measured decision: `Item.write` calls `findRootTypeKey`, a linear scan of
+`doc.share`, so one root per row makes encoding quadratic in rows, at 5,417 ms
+for 20,000 rows against 13 ms nested. Deletion takes the row's attribute off the
+root, and the whole subtree goes with it.
+
+Row ids are always minted, never chosen. A row is a nested container addressed
+by the operation that created it, so two devices creating one chosen id produce
+two containers and map LWW discards one **with every field in it**. Anything an
+application wants to name by hand goes in `kv`, where independent minting
+converges (ADR-0216).
+
+### Prose
+
+A row's document container is allocated when the row is created, never lazily
+on first access, and the application names the roots inside it at that moment:
+
+```ts
+db.notes.create(fields, { document: ['body'] });
+
+const body = db.notes.document(id)?.get('body'); // a live Y.Type
+```
+
+`get(name)` creates on miss, and a created nested type is addressed by the
+operation that made it, so two devices first-opening one note would each mint a
+root at that key and lose one along with everything typed into it. Naming it at
+`create` leaves exactly one creator.
+
+What comes back is a `Y.Type` an editor binds to directly. Nothing to open,
+await, dispose, or poll. Epicenter allocates the container with the row,
+collects it with the row, picks no format, and never looks inside.
+
+## What merges with what
+
+Not uniform, and worth knowing exactly, because it decides how a field should be
+shaped.
+
+| Where | Granularity |
+| --- | --- |
+| two fields of one row | independent, both survive |
+| one scalar field | last write wins, converged |
+| one array or object field | last write wins on the WHOLE value |
+| a row document | per character |
+| the SQL projection | a cache derived from the CRDT |
+
+A row is an attribute map and a write sets only the attributes handed to it, so
+two devices editing different fields of one row offline both keep their edit.
+That is also what makes an old release safe to write with: it cannot clobber a
+field it does not know.
+
+**An array or object field is one value, and replacing it wholesale is kept on
+purpose** (ADR-0228). The alternative is a per-field CRDT type system, and every
+entry in it is a second merge semantics an author has to learn and two releases
+can disagree about. The price is bounded and nameable: a collection several
+devices append to concurrently will lose an addition. The escape hatch needs no
+new machinery, because the store already has a per-element merge primitive.
+**A collection several devices write independently wants to be a table**, where
+each element is its own row, nothing collides, and deletion is a real operation
+rather than an array splice that races.
+
+## The Lens
+
+A Lens is one application's release-local interpretation of one durable
+namespace: pure JSON, arktype expression strings, defaults declared inline
+(ADR-0213). It creates no storage and no lifecycle, and it never migrates user
+data (ADR-0125).
+
+```ts
+export const notesLens = defineLens({
 	namespace: 'com.example.notes',
-	tables: { notes: defineTable({ fields: { title: field.string() } }) },
-});
-
-const data = epicenter.bind(notesLens);
-```
-
-That makes `notes` address `{ namespace: 'com.example.notes', tableName:
-'notes', rowId }` forever. There is no second `key` to keep in step with the
-property name, and no rename: a different property name is a different address,
-and therefore different data.
-
-A table name is one bare SQL identifier, because a trusted host mounts it as a
-relation and `SELECT * FROM notes` must need no quoting.
-
-A row id comes from whoever knows it. Usually nobody does, so `create(fields)`
-mints one; when the application knows it, `create(rowId, fields)` uses that.
-A settings singleton is an ordinary row at a chosen id, which is why a Lens
-declares tables and fields and nothing else (ADR-0206).
-
-## Physical storage is not the merge boundary
-
-Each table row is stored as one JSON payload in SQLite:
-
-```txt
-row_facts row
-└── fields TEXT
-    └── { "title": "Draft", "status": "open" }
-```
-
-That does not make the complete row the logical conflict unit. `patch` lowers
-the supplied top-level fields into a patch:
-
-```txt
-patch(id, { title: "Final" })
-              |
-              v
-{ set: { title: "Final" }, unset: [] }
-```
-
-The authority accepts changes in one sequence and applies each patch to its
-current row. Patches to different top-level fields compose:
-
-```txt
-accepted #41: { title: "Final" }
-accepted #42: { status: "closed" }
-
-result: { title: "Final", status: "closed" }
-```
-
-Two assignments to the same top-level field do not compose. The later accepted
-assignment wins. This is server-ordered, per-field last-accepted-wins, not
-timestamp last-write-wins.
-
-## Choose the replacement boundary
-
-The schema already provides four useful choices. Keep the boundary as small as
-possible while still preserving the intent of one operation.
-
-```txt
-What must merge alone?
-|
-+-- Independent bounded properties should compose
-|   `-- ordinary top-level fields
-|
-+-- One bounded object should replace coherently
-|   `-- one field holding field.json(schema), since a field replaces whole
-|
-+-- One singleton, however many properties
-|   `-- the same table, at a row id the application chooses
-|
-`-- Independent edits inside one value must survive
-    `-- the row-owned Yjs document
-```
-
-Use ordinary top-level fields by default:
-
-```ts
-const tasks = defineTable({
-	fields: {
-		title: field.string(),
-		status: field.string(),
-	},
-});
-```
-
-This lets title and status patches compose. Table traversal is complete and
-classified; applications sort or filter the returned rows locally.
-
-## Read complete tables
-
-Use `scan()` when the classified traversal belongs in memory:
-
-```ts
-const { rows, nonconforming } = await tasks.scan();
-```
-
-Use `entries()` when work can proceed one classified row at a time:
-
-```ts
-for await (const entry of tasks.entries()) {
-	if (entry.error !== null) {
-		report(entry.error);
-		continue;
-	}
-	await exportTask(entry.data);
-}
-```
-
-Both traverse live rows in stable row ID order. `entries()` fetches bounded
-batches internally, so callers can stop early or keep memory bounded without
-constructing cursors. `scan()` consumes that traversal to completion and groups
-the same `Result` values. Traversal observes live state, not a snapshot.
-Per-row Lens projection failures use those `Result` values. Storage or transport
-failures throw from iteration or reject `scan()` instead.
-
-Use one JSON field when the complete bounded object is the honest replacement
-unit:
-
-```ts
-const exampleLens = defineLens({
-	namespace: 'com.example',
+	kv: { theme: "'light'|'dark' = 'light'" },
 	tables: {
-		profiles: defineTable({
-			fields: { value: field.json(ProfileSchema) },
-		}),
+		notes: {
+			title: 'string',
+			folderId: 'string|null = null',
+			createdAt: 'string.date.iso',
+		},
 	},
 });
-
-const profiles = epicenter.bind(exampleLens).profiles;
-
-await profiles.patch(id, { value: nextProfile });
 ```
 
-The row ID remains structural. The `value` assignment replaces the complete
-nested object:
+Each `tables` property name is that table's durable name forever: it is what a
+row address carries, what the projection's relation is called, and what
+`SELECT * FROM notes` names. There is no second key to keep in step, and no
+rename, because a different property name is a different address and therefore
+different data.
 
-```txt
-row
-|-- id                  structural identity
-`-- value               one replacement boundary
-    |-- name
-    |-- status
-    `-- preferences
-```
+Three rules bite immediately:
 
-This pattern is useful for a coherent state machine outcome, a bounded config
-object, or another value whose inner properties should never merge
-independently. It has one important cost:
+1. **There are no optional fields.** A field has to be one type through the CRDT
+   attribute, the projection column, and the row alike, and "absent" is not a
+   SQL type. Write `'string|null = null'`, never `'field?'`. The default is
+   applied at read time and never stored.
+2. **A Lens cannot express an array default.** `'string[] = []'` throws, and
+   arktype is right to refuse it: a literal default would hand every row the
+   SAME array. Write `'string[]|null = null'` and materialise a fresh array at
+   the point of use.
+3. **No transforming fields.** `'string.date.iso'`, not `'string.date.parse'`: a
+   parsing form would hand back a `Date` that cannot round-trip, so
+   `update(id, { when: row.when })` would break.
 
-A small inner edit sends the complete `value` in the local change. Atomic JSON
-is almost free in steady-state storage, but its edit cost is proportional to
-the whole payload.
+### Nonconforming is a view, not damage
 
-For one named singleton, declare an ordinary table and choose the row's id:
+A row this release cannot read is reported, never dropped and never silently
+repaired. Prevention is impossible in principle, because a Lens is release-local
+and rows arrive from the future: a release that has not shipped yet can retype a
+field, and no default you declare today prevents that.
+
+What is possible is healing, and the primitives already exist:
 
 ```ts
-const settings = defineTable({ fields: { shortcut: field.json(ShortcutSchema) } });
+for (const issue of data.nonconforming) {
+	issue.address     // { namespace, tableName, rowId }
+	issue.issues      // [{ field: 'n', message: 'n must be a number (was a string)' }]
+	issue.conforming  // what survived
+	issue.raw         // the stored truth, unmodified
+}
 
-const SETTINGS = 'app'; // the one name this application chooses
-await data.settings.patch(SETTINGS, { shortcut });
+db.notes.update(issue.address.rowId, { n: 7 }); // an ordinary write repairs it
 ```
 
-Both devices compute the same address because the id is declared rather than
-minted, each field still merges independently, and unsetting one is reversible
-because it is a field unset rather than a row deletion.
+A patch validates only the values it supplies, so it can fix the offending key
+even though the whole payload does not currently pass. Nonconforming rows stay
+in the SQL projection with their raw values, so `db.query` can show them; it
+cannot find them, because the projection carries no conformance marker and SQL
+cannot re-run arktype. `list().nonconforming` is the only thing that knows.
 
-Use the row-owned Yjs document only when replacement would erase independent
-interior edits. Collaborative prose is the usual example. A document earns its
-CRDT metadata, hydration, and separate query limitations by preserving edits
-that scalar replacement cannot.
+Whether an application shows a person the broken row, has an agent propose a
+fix, or ignores it until someone cares is a product decision this layer does not
+make. Dropping it silently is the one option the store went out of its way to
+prevent.
 
-Large immutable bytes are a different concern. Keep them in a blob or file
-plane rather than turning a scalar JSON value into an opaque byte container.
+## Where it stores
 
-## Observe staleness
+One SQLite file holds both the update log and the query projection (ADR-0214).
+The `Y.Doc` is the truth; SQLite is a write-behind log plus a query cache, never
+the read path.
 
-A bound handle reports when data reachable through it may be stale. It never
-pushes contents: you re-read through the handle you already have, which keeps
-one copy of the data and leaves you in charge of what you cache.
+On Bun that file is `store.sqlite3` in the directory the caller names, beside
+`history.sqlite3` for what collapse superseded. In the browser it is in-memory
+sqlite-wasm **on the main thread**, plus three small relations in IndexedDB:
+`_updates`, `_outbox`, `_cursor` (ADR-0223).
 
-```ts
-const stop = tasks.subscribe((invalidation) => {
-	if (invalidation.scope === 'table') return void rescan();
-	for (const rowId of invalidation.rowIds) void reread(rowId);
-});
+There is no worker and no OPFS. The reasoning is in the module comment titled
+"Why there is no worker" at the top of `packages/data/src/store/browser.ts`, and
+it is worth reading before proposing one: `bind` rebuilds every projected table
+unconditionally, so a restored file bought nothing, and what actually has to
+survive is three small relations that IndexedDB holds fine.
 
-const stopTheme = settings.subscribe(() => void rereadTheme());
-```
+One property is genuinely weaker in the browser and is surfaced rather than
+hidden. A browser store's `durability()` is an alarm rather than an error a call
+returns, because IndexedDB is asynchronous, so
+a storage refusal arrives after the write already returned `Ok`. Nothing is
+lost when it fires: the `Y.Doc` still holds the work and the outbox still owes
+it to the authority. What is lost is the guarantee that a reload sees it.
 
-A table can name the rows that moved; a value cannot, because a value has no
-smaller identity than itself. `{ scope: 'table' }` means the handle cannot name
-them, so everything reachable through it may have moved. It arrives after an
-observation carrier gap, where a row deleted while the carrier was down left
-nothing behind to name.
+## Sync
 
-The rules that make this usable (ADR-0187):
-
-- **Invalidation is a superset.** It may over-report and never under-reports, so
-  ignoring the payload and re-reading everything is always correct.
-- **Registration is synchronous, does no I/O, and never fires initially.**
-  Subscribe, then read: nothing can land in between, and there is no first
-  delivery to discard.
-- **One call per commit per table.** A commit touching sixty-four rows of one
-  table calls a listener once with sixty-four ids.
-- **Delivery may duplicate.** Converge idempotently.
-- **Table scope supersedes** any row ids still being processed.
-
-`@epicenter/svelte`'s `fromTable` already spends the ids for you: it point-reads
-the named rows and rescans only on table scope or when a read cannot answer.
-
-## Unions are not migrations
-
-A discriminated union inside one JSON field keeps the discriminant and its
-associated properties in the same replacement boundary:
+A host supplies one thing, `dial`, and the library owns everything done with a
+socket (ADR-0222):
 
 ```ts
-const Outcome = Type.Union([
-	Type.Object({ kind: Type.Literal('pending') }),
-	Type.Object({
-		kind: Type.Literal('complete'),
-		text: Type.String(),
-	}),
-]);
+import { createSyncConnection } from '@epicenter/data/sync';
 
-const jobs = defineTable({
-	fields: { outcome: field.json(Outcome) },
+const connection = createSyncConnection({
+	store,
+	dial: ({ cursor, opened, received, closed }) => { /* make a socket */ },
 });
 ```
 
-Use a union when every variant remains a legitimate current product state.
-Every reader must handle every variant, and an older release may write an older
-variant again.
+The cursor, attach and detach, reconnect on close, reconnect when the client is
+stuck behind a gap, and a watchdog for a submission nobody answers all live
+here, because every one of them is correctness rather than transport. A fuzz
+proved that omitting the resync reconnect wedges a device permanently. The store
+announces its own local work through `onLocalWork`, so nothing has to remember
+to nudge the transport.
 
-A historical representation is different. Keep it out of the current row type
-and repair it explicitly:
+The authority is one Cloudflare Durable Object per (principal, namespace), named
+`principals/<principalId>/stores/<namespace>`, keeping a snapshot plus the
+entries after it (ADR-0220, ADR-0225). It reads nothing and holds opaque bytes.
+`packages/server/src/store-sync/` is the mount; `@epicenter/data/sync` is where
+every merge rule actually lives, so what is deployed and what the transport's
+tests drive are the same object.
 
-```txt
-current definition rejects old raw value
-                 |
-                 v
-one application repair recognizes the old schema
-                 |
-                 v
-an ordinary idempotent update writes the current value
-```
+**Being signed in on two devices is the entire sharing model.** Nothing is
+paired, invited, or approved, and there is no identifier a client can supply
+that reaches another partition.
 
-Reads remain pure. Repair belongs in one explicit application-owned pass or
-registry, not in feature reads and not in the Lens. Keep the recognizer
-rerunnable while a supported writer may reintroduce the old shape. Delete it
-only after the application has ended that writer compatibility and separately
-established that the old shape cannot reappear; live traversal alone does not
-prove absence. This keeps repair history bounded without pretending every
-repair needs a permanent `.migrate()` chain.
+## What is not here
 
-## Self-description and UI
-
-`field.json(schema)` retains its inner JSON Schema. A generic viewer can inspect
-the object, render supported properties or discriminated variants, and fall
-back to raw JSON without executing application code.
-
-The editing UX must also tell the truth about the write boundary. A form for a
-JSON field should commit the complete object on save and explain that its inner
-properties replace together. It must not present independently autosaved nested
-cells unless the data is modeled as top-level table fields instead.
-
-## Why there is no second table mode
-
-The one-field pattern changes the meaningful merge boundary without adding a
-second table definition, parser branch, query family, or Home capability.
-
-A first-class atomic collection API would earn its place only if all of these
-become true:
-
-1. At least two concrete tables intentionally store keyed atomic values.
-2. The runtime contract changes to honest `create(value)` and
-   `replace(id, value)` operations rather than saving `{ value }` syntax.
-3. The nested query limitation has an explicit answer.
-4. Home needs a distinct semantic capability that cannot be derived from the
-   one-field JSON schema.
-
-If that evidence appears, prefer a clearly separate atomic collection noun over
-a hidden `writes: 'row'` flag or atomic field groups. Until then, one canonical
-table implementation is the smaller and more legible API.
-
-## Storage format
-
-Scalar payloads remain JSON `TEXT`. Wrapping a row in a `value` field does not
-compress it. Application-compressed blobs would lose native JSON queries,
-constraints, inspection, and schema-aware UI while requiring decompression on
-every read.
-
-[SQLite JSONB](https://www.sqlite.org/json1.html#jsonb) is queryable, slightly
-smaller, and can avoid parsing for some SQL JSON operations, but it is an
-internal binary representation rather than general compression. It does not
-change merge semantics or whole-value write amplification, and adapter support
-is not yet uniform. Revisit it only after profiling shows JSON parsing or
-extraction dominates across the supported engines. If transport bytes become
-the measured bottleneck, compress the transport envelope before making
-application values opaque.
+Blobs. They are content-addressed, write-once bytes logged against the server,
+they were never part of the row plane, and `packages/blobs` has no
+`@epicenter/*` import at all. The row layer only ever stored an opaque id. The
+asymmetry to know is that an un-uploaded blob exists on exactly one machine, so
+the blob plane does not have the row plane's guarantees.

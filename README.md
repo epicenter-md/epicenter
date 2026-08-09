@@ -3,9 +3,9 @@
     <img width="200" src="https://github.com/user-attachments/assets/9e210c52-2740-43b6-af3f-e6eaf4b5c397" alt="Epicenter">
   </a>
   <h1 align="center">Epicenter</h1>
-  <p align="center"><strong>Local-first apps that write to files you own.</strong></p>
-  <p align="center">Your data lives on your machine as plain Markdown and SQLite: grep it, version it, open it in Obsidian. When an app stops mattering, your files don't.</p>
-  <p align="center">Start with <a href="https://whispering.epicenter.so">Whispering in the browser</a>, or run it as a native surface inside <a href="apps/epicenter">Epicenter</a>.</p>
+  <p align="center"><strong>Local-first apps over a store you own.</strong></p>
+  <p align="center">An app's whole data set is one CRDT document on your machine, complete enough to work with the network off. Sign in on a second device and the two converge. No server holds the only copy, and no app owns your storage.</p>
+  <p align="center"><a href="apps/honeycrisp">Honeycrisp</a>, a local-first notes app, is the surface built on it today.</p>
   <p align="center">Run the apps freely under AGPL-3.0; build on the developer toolkit freely under MIT. <a href="#license">What that means</a>.</p>
 </p>
 
@@ -25,9 +25,8 @@
 </p>
 
 <p align="center">
-  <a href="#whispering">Whispering</a> |
+  <a href="#the-store">The Store</a> |
   <a href="#build-with-the-toolkit">Toolkit</a> |
-  <a href="#how-it-works">How It Works</a> |
   <a href="#status">Status</a> |
   <a href="#trust-boundaries">Trust</a> |
   <a href="#repo-map">Repo Map</a> |
@@ -37,92 +36,77 @@
 
 ---
 
-## Whispering
-
-[Whispering](apps/whispering) is a speech-to-text SPA with two hosts. Open the [hosted browser app](https://whispering.epicenter.so), or run the same source as a native surface inside [Epicenter](apps/epicenter).
-
-Press record, speak, optionally transform the transcript, and copy or deliver the result. Both hosts support cloud providers and self-hosted endpoints. Epicenter adds system-global shortcuts, native paste delivery, and local GGUF transcription.
-
-[Open Whispering](https://whispering.epicenter.so) | [Read the app architecture](apps/whispering)
-
-## Build With The Toolkit
-
-The developer toolkit is MIT: build anything on it, including closed-source and commercial products, and you own what you build, with no obligation back to Epicenter. [`@epicenter/lens`](packages/lens), [`@epicenter/field`](packages/field), and [`@epicenter/ui`](packages/ui) are the packages meant to leave this repo. They are pre-1.0 and tuned for our own apps, so treat them as fork-and-own rather than a stability-guaranteed SDK for now.
+## The Store
 
 The hard problem with local-first apps is synchronization. If each device has
-its own SQLite file or Markdown folder, how do you keep them in sync?
+its own SQLite file, how do you keep them in sync?
 
-Epicenter's answer is that a person has one Epicenter, replicated on every
-device, and applications never own storage. A row holds bounded JSON fields in
-runtime-native SQLite, and may also own one lazy Yjs document for collaborative
-rich content and one write-once blob for bytes. An application declares a
-*Lens*: a pure JSON interpretation of one durable namespace, which creates no
-storage and no lifecycle of its own.
+Epicenter's answer: **an application is one Yjs document, replayed in full
+before any handle exists, and the surface over it is synchronous.** A read is a
+property access, not a round trip, so nothing is awaited and nothing needs cache
+invalidation or race protection.
 
 ```typescript
-import { defineLens, defineTable, optional } from '@epicenter/data';
-import { field } from '@epicenter/field';
+import { openBrowserStore } from '@epicenter/data/browser';
+import { defineLens } from '@epicenter/lens';
 
 const notesLens = defineLens({
   namespace: 'com.example.notes',
   tables: {
-    notes: defineTable({
-      fields: {
-        title: field.string(),
-        body: field.string(),
-        pinned: optional(field.boolean()),
-      },
-    }),
+    notes: { title: 'string', pinned: 'boolean', folderId: 'string|null = null' },
   },
 });
 
-const data = epicenter.bind({ notes: notesLens });
+// Every verb returns a Result; the error arm is elided here for length.
+const { data: store } = await openBrowserStore({ name: 'notes' });  // the only await
+const { data: db } = store.bind(notesLens);
 
-await data.notes.create({
-  title: 'Hello',
-  body: 'Follow up on the README framing.',
-});
+db.notes.create({ title: 'Hello', pinned: false }, { document: ['body'] });
+
+const { data } = db.notes.list();          // synchronous: { rows, nonconforming }
+const stop = db.notes.subscribe(read);     // fires with the row ids a commit touched
 ```
 
-Two Lenses may interpret the same namespace differently, and neither becomes
-authoritative. That is what lets one application read another's data without
-depending on its build.
+A *Lens* is one application's interpretation of one durable namespace: pure
+JSON, arktype expression strings, no storage and no lifecycle of its own. It is
+release-local and never migrates your data. A row it cannot read is reported
+beside the rows it can, with the reason and the raw values intact, and an
+ordinary write repairs it.
 
-[Read the data package docs](packages/data/README.md)
+Prose merges per character: a row is allocated a document container when it is
+created, and `db.notes.document(id)?.get('body')` hands an editor a live type to
+bind to. Epicenter never looks inside it.
 
-## How It Works
+Sync is one Cloudflare Durable Object per (account, application). Being signed
+in on two devices is the entire sharing model: nothing is paired, invited, or
+approved.
 
-One person has one Epicenter: a single body of rows and values, replicated
-completely onto every device they sign in on. Applications do not own storage.
-They bind a Lens over the shared data, and Epicenter Home is the shell that
-launches them.
+[Read the data package docs](packages/data/README.md) | [What it replaced, and why](docs/the-store-and-what-it-replaced.md)
 
-```txt
-one Epicenter
-|-- rows        bounded JSON fields in runtime-native SQLite
-|-- values      typed singletons
-|-- documents   zero or one lazy Yjs document per row, for collaborative content
-`-- blobs       zero or one write-once immutable byte stream per row
-```
+## Build With The Toolkit
 
-Each plane converges on its own terms. Scalar rows and values synchronize
-through the account authority. Row documents publish over HTTP automatically
-and pull remote state explicitly when a handle is open. Blobs upload once and
-download on demand. There is no distributed transaction across them, and
-applications receive no SQL: relational inspection belongs to Home.
-
-Matter keeps a disposable `matter.sqlite` mirror of each Markdown folder you
-own, so agents and scripts can query your Markdown as SQL:
-
-```bash
-sqlite3 matter.sqlite 'select "name" from "journal" limit 5;'
-```
+The developer toolkit is MIT: build anything on it, including closed-source and commercial products, and you own what you build, with no obligation back to Epicenter. [`@epicenter/data`](packages/data), [`@epicenter/lens`](packages/lens), and [`@epicenter/ui`](packages/ui) are the packages meant to leave this repo. They are pre-1.0 and tuned for our own apps, so treat them as fork-and-own rather than a stability-guaranteed SDK for now.
 
 ## Status
 
-Whispering is independently deployable as a browser SPA and is also mounted inside the Epicenter desktop host. Epicenter is the only native runtime; Whispering no longer ships a standalone desktop shell.
+There is one runtime: a desktop SPA in a WebView, over a store the client owns.
+A host serves bundles and brokers credentials; it owns no application data. A
+hosted web runtime with a host-owned replica is refused, and so are third-party
+installed apps, for now.
 
-The shared data model for tabs, notes, drafts, and publishing is being built in public around `@epicenter/data`. [Matter](apps/matter) is an early app for user-owned Markdown folders: it edits ordinary Markdown directly and keeps `matter.sqlite` as a query mirror. Other app folders are public research and prototypes.
+[Honeycrisp](apps/honeycrisp) is the surface running on the store, and its
+README is the worked example.
+
+Whispering, vocab, skills, and the Epicenter host do not compile right now. The
+superseded data stack was deleted before they were migrated, deliberately: the
+new store has no row-document HTTP path and no multi-process observation
+carrier, so there was nowhere for them to move until those refusals landed. Data
+they held on the old stack is accepted as lost; there is no importer.
+
+[Matter](apps/matter) edits user-owned Markdown folders directly and keeps a
+disposable `matter.sqlite` query mirror beside them. [Local
+Books](apps/local-books) and [Local Mail](apps/local-mail) are headless mirrors
+that pull a hosted account into local SQLite. Those three do not use the store.
 
 ## Trust Boundaries
 
@@ -130,27 +114,26 @@ Pick the trust model you want.
 
 | Path | What leaves your device |
 | --- | --- |
-| Whispering in Epicenter with local GGUF transcription | Audio stays on your device. Transcripts and settings use Epicenter's local desktop storage. |
-| Whispering with a cloud transcription provider | Audio goes from your device to the provider you choose. Epicenter servers are not in that transcription path. |
-| Whispering transformations | Transcript text goes to the LLM provider you choose when you enable that step. |
-| Hosted Epicenter API or sync | Workspace updates, account/session data, and enabled hosted feature requests go to Epicenter servers. |
-| Self-hosted deployable | You control the server, secrets, deployment, and infrastructure boundary. |
+| Signed out | Nothing. The store is complete on the machine it opened on, and every read comes from a document already in memory. |
+| Signed in | Your application's document, as opaque update bytes, to one authority per account. |
+| Hosted Epicenter | That authority is ours, along with account and session data and any hosted feature you enable. |
+| Self-hosted instance | You control the server, secrets, deployment, and infrastructure boundary. |
+| A provider an app calls | Whatever that app sends it: transcript text to an LLM, audio to a transcription provider. Epicenter servers are not in that path. |
 
-Signed-in sync sends your data to a trusted server that reads it in plaintext. On hosted Epicenter the relay is ours, so that data sits inside our trust boundary; self-hosting puts the relay on infrastructure you control, so Epicenter never holds it. See the [trust model](docs/trust-model.md) for the details, including where this is heading with the anchor.
-
-The detailed privacy notes for Whispering live in [apps/whispering](apps/whispering).
+Signed-in sync sends your data to a trusted server that reads it in plaintext. On hosted Epicenter the authority is ours, so that data sits inside our trust boundary; self-hosting puts it on infrastructure you control, so Epicenter never holds it. See the [trust model](docs/trust-model.md) for the details, including where this is heading with the anchor.
 
 ## Repo Map
 
-### Product And Workspace Surfaces
+### Surfaces
 
 | Surface | Status | Notes |
 | --- | --- | --- |
-| [Whispering](apps/whispering) | Browser and Epicenter surface | One speech-to-text SPA with browser-safe providers and Epicenter-only native capabilities. |
-| [Epicenter](apps/epicenter) | Desktop host | The only Tauri runtime. Serves trusted app surfaces, including Whispering, under one native shell. |
-| [Matter](apps/matter) | WIP product work | Typed grid for user-owned Markdown folders. It edits ordinary `.md` files directly; `matter.sqlite` is a disposable query mirror. |
-| [API](apps/api) | Hosted infrastructure | Personal cloud Worker for hosted Epicenter services. Includes hosted-only billing and dashboard code. |
+| [Honeycrisp](apps/honeycrisp) | Runs on the store | Local-first notes. Folders and notes are rows; a note's prose is a rich-text type inside its row. |
+| [Matter](apps/matter) | Runs, separately | Typed grid over user-owned Markdown folders. It edits ordinary `.md` files directly; `matter.sqlite` is a disposable query mirror. |
+| [Local Books](apps/local-books), [Local Mail](apps/local-mail) | Run, separately | Headless CLI mirrors that pull QuickBooks and Gmail into local SQLite. |
+| [API](apps/api) | Hosted infrastructure | Personal cloud Worker. Owns the store authority binding, hosted-only billing, and the dashboard. |
 | [Self-host](apps/self-host) | Reference deployable | Community-supported single-partition instance without hosted billing. |
+| [Whispering](apps/whispering), [vocab](apps/vocab), [skills](apps/skills), [Epicenter](apps/epicenter) | Do not compile | Awaiting migration onto the store. See [Status](#status). |
 | Other app folders | Research and prototypes | Useful history and experiments, not the current product lineup. |
 
 ### Packages
@@ -159,12 +142,12 @@ These packages carry the main architecture.
 
 | Package | Role | License |
 | --- | --- | --- |
-| [`@epicenter/data`](packages/data) | The row-owned SQLite replica: scalar row protocol, admission, deterministic folding, exact-retry digests, sync supervision, and relational inspection. | MIT |
-| [`@epicenter/lens`](packages/lens) | Lens, table, and value definitions plus structured addresses and canonical JSON. | MIT |
-| [`@epicenter/sqlite`](packages/sqlite) | Neutral embedded-SQLite driver and Browser, Bun, and Durable Object adapters. It owns no product schema. | MIT |
-| [`@epicenter/document-sync`](packages/document-sync) | Row-document HTTP publication and pull, separate from scalar row synchronization. | MIT |
+| [`@epicenter/data`](packages/data) | The store: one Yjs document per application, a synchronous surface over it, and the transport that carries it. | MIT |
+| [`@epicenter/lens`](packages/lens) | The inert vocabulary a Lens is written in: arktype JSON, row addresses, and nonconformance. | MIT |
+| [`@epicenter/sqlite`](packages/sqlite) | Neutral embedded-SQLite driver with Browser, Bun, and Durable Object adapters. It owns no product schema. | MIT |
+| [`@epicenter/sync`](packages/sync) | The WebSocket subprotocol vocabulary both halves of a handshake must agree on. | MIT |
 | [`@epicenter/ui`](packages/ui) | Shared Svelte component library used by multiple app surfaces. | MIT |
-| [`@epicenter/server`](packages/server) | Shared Hono server library composed by the hosted API and self-host reference deployable. | AGPL-3.0-or-later |
+| [`@epicenter/server`](packages/server) | Shared Hono server library composed by the hosted API and the self-host reference deployable. | AGPL-3.0-or-later |
 
 ## Architecture
 
@@ -173,7 +156,8 @@ The server side is split into one shared library and two deployable folders:
 ```txt
 packages/server
   shared Hono library
-  route composition for auth, sessions, rooms, assets, and provider-backed APIs
+  route composition for auth, sessions, store sync, blobs,
+  and provider-backed inference and transcription
 
 apps/api
   hosted personal Cloudflare Worker
@@ -199,23 +183,22 @@ cd epicenter
 bun install
 ```
 
-Every app starts from the repo root. `bun dev:<app>` runs every process the app needs; for apps that talk to the hosted API, that includes the API worker on `localhost:8787`. `bun dev:<app>:ui` runs the app's frontend alone when that split exists, and `bun dev:api` runs just the backend. Bare `bun dev` is the current default workflow (API and Tab Manager), and `bun run` with no arguments lists every target.
+Every app starts from the repo root. `bun dev:<app>` runs every process the app needs; for apps that talk to the hosted API, that includes the API worker on `localhost:8787`. `bun dev:<app>:ui` runs the app's frontend alone when that split exists, and `bun dev:api` runs just the backend. Bare `bun dev` is `bun dev:honeycrisp`, and `bun run` with no arguments lists every target.
 
 | Command | Starts | App port |
 | --- | --- | --- |
+| `bun dev:honeycrisp` | API + Honeycrisp desktop | 5175 |
+| `bun dev:honeycrisp:ui` | Honeycrisp in the browser, no API or Tauri shell | 5175 |
 | `bun dev:api` | Hosted API worker alone | 8787 |
 | `bun dev:api-dashboard` | API + dashboard UI | 5178 |
-| `bun dev:honeycrisp` | API + Honeycrisp desktop | 5175 |
-| `bun dev:vocab` | API + Vocab | 8888 |
-| `bun dev:whispering` | API + hosted Whispering browser app | 1420 |
-| `bun dev:epicenter` | Epicenter desktop host, including Whispering | Tauri window |
 | `bun dev:landing` | Landing site, standalone | 4321 |
 | `bun dev:matter` | Matter desktop, standalone | 5180 |
 | `bun dev:posthog-reverse-proxy` | PostHog reverse proxy Worker | wrangler default |
 | `bun dev:self-host` | Self-host server (needs `INSTANCE_TOKEN`) | 8787 |
-| `bun dev:skills` | Skills editor, standalone | vite default |
 
-The API needs local Postgres and Infisical; see [apps/api/README.md](apps/api/README.md). Rust is needed for Tauri apps such as Epicenter, Matter, and Honeycrisp. Local Books and Local Mail run their own multi-process dev flows; their READMEs document them.
+`bun dev:whispering`, `bun dev:vocab`, `bun dev:skills`, and `bun dev:epicenter` still exist, but those apps do not compile until they are migrated onto the store.
+
+The API needs local Postgres and Infisical; see [apps/api/README.md](apps/api/README.md). Rust is needed for Tauri apps such as Honeycrisp and Matter. Local Books and Local Mail run their own multi-process dev flows; their READMEs document them.
 
 `bun run check` is the gate. It runs lint, typecheck, every workspace test, and the structural checks, and it is the same gate CI runs, so a green local run predicts a green pull request. Formatting is handled separately by the autofix workflow.
 
@@ -235,15 +218,13 @@ bun run check:structure # doc paths, catalog pins, API paths, licenses, UI bound
 
 Two checks sit outside the gate on purpose. `bun run check:doc-hygiene` flags specs and ADRs that time has made stale, so it belongs to review rather than to merge. `bun run smoke:local` boots the API against local services.
 
-Running the Epicenter desktop app while you run `bun run test` fails one `apps/epicenter` packaging test: it needs the fixed production port the running app already holds.
-
 ## Design Notes
 
-Implementation specs and design notes live in [specs/](specs). Start with [docs/README.md](docs/README.md) and [specs/README.md](specs/README.md).
+Durable decisions and their reasoning live in [docs/adr/](docs/adr). Specs in [specs/](specs) are in-flight design scaffolding rather than current truth; when a spec and an ADR disagree, the ADR wins. Start with [docs/README.md](docs/README.md).
 
 ## Contributing
 
-Contributions are welcome. Good entry points are docs, Whispering fixes, local-first infrastructure, Svelte interfaces, and small changes that make the repo easier to understand.
+Contributions are welcome. Good entry points are docs, local-first infrastructure, Svelte interfaces, migrating a broken app onto the store, and small changes that make the repo easier to understand.
 
 [Read the Contributing Guide](CONTRIBUTING.md)
 
@@ -253,7 +234,7 @@ Contributors coordinate in [Discord](https://go.epicenter.so/discord).
 
 Epicenter uses a two-tier split by how you use the code:
 
-- [MIT](licenses/LICENSE-MIT) for code you build with: the toolkit roots (`@epicenter/lens`, `@epicenter/field`, `@epicenter/ui`) and the toolkit-internal contracts they carry (`@epicenter/data`, `@epicenter/sqlite`, `@epicenter/identity`, `@epicenter/agent-protocol`, `@epicenter/chat`).
+- [MIT](licenses/LICENSE-MIT) for code you build with: the toolkit roots (`@epicenter/data`, `@epicenter/lens`, `@epicenter/ui`) and the toolkit-internal contracts they carry (`@epicenter/field`, `@epicenter/sqlite`, `@epicenter/sync`, `@epicenter/identity`, `@epicenter/agent-protocol`, `@epicenter/chat`).
 - [AGPL-3.0](licenses/LICENSE-AGPL-3.0) or later for code we ship or run: every app, the shared server library, and the rest of the internal packages.
 - There is no proprietary tier today. Revenue is intended to come from hosting and services, not from selling closed licenses.
 
@@ -268,5 +249,5 @@ See the root [LICENSE](LICENSE), [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAIN
 </p>
 
 <p align="center">
-  <sub>When an app stops mattering, your files don't. Local-first, open source, built on Yjs.</sub>
+  <sub>Your data outlives the app that wrote it. Local-first, open source, built on Yjs.</sub>
 </p>
