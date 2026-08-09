@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { AuthClient, InstanceSetting } from '@epicenter/auth';
-	import type { Epicenter, SyncStatus } from '@epicenter/data/legacy';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
@@ -45,10 +44,6 @@
 		 * display decision here branches on it, never on the persisted setting.
 		 */
 		auth: AuthClient;
-		/**
-		 * Scalar Data sync surface. Omit it when the app has no replicated data.
-		 */
-		dataSync?: Pick<Epicenter, 'syncStatus' | 'subscribeSyncStatus'>;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;
 		/**
@@ -88,14 +83,12 @@
 
 	let {
 		auth,
-		dataSync,
 		syncNoun,
 		onForgetDevice,
 		disabledReason,
 		instanceConnect,
 	}: AccountPopoverProps = $props();
 
-	let syncStatus = $state.raw<SyncStatus>();
 	let popoverOpen = $state(false);
 	let instanceModalOpen = $state(false);
 	// Set for one close only, when the "configure instance" link hands off to the
@@ -170,72 +163,28 @@
 		() => accountProfileQueryClient,
 	);
 
-	$effect(() => {
-		if (!dataSync) {
-			syncStatus = undefined;
-			return;
-		}
-		syncStatus = dataSync.syncStatus;
-		const unsubscribe = dataSync.subscribeSyncStatus((status) => {
-			syncStatus = status;
-		});
-		return unsubscribe;
-	});
-
 	// The sync phase copy and dot tone are decided once here: the popover's
 	// sync line renders the dot beside its label (the legend), the trigger
 	// reuses the same dot, and the tooltip adds the action hint. Dot tones
 	// are theme tokens (success connected, warning pulse in flight, muted
 	// offline, destructive failed).
-	const syncDisplay = $derived.by(() => {
-		if (!syncStatus) return undefined;
-		switch (syncStatus.state) {
-			case 'idle':
-				return {
-					label: 'Synced',
-					dot: 'bg-success',
-					tooltip: 'Synced',
-				};
-			case 'syncing':
-				return {
-					label: 'Syncing…',
-					dot: 'bg-warning animate-pulse',
-					tooltip: 'Syncing…',
-				};
-			case 'offline':
-				return {
-					label: 'Offline',
-					dot: 'bg-muted-foreground',
-					tooltip: 'Offline. Sync will retry automatically',
-				};
-			case 'authentication-required':
-				return {
-					label: 'Sign in required',
-					dot: 'bg-destructive',
-					tooltip: 'Sign in to resume syncing',
-				};
-			case 'local':
-				return {
-					label: 'Local only',
-					dot: 'bg-muted-foreground',
-					tooltip: 'Stored on this device',
-				};
-		}
-	});
-
 	const tooltip = $derived.by(() => {
 		if (disabledReason) return disabledReason;
-		if (!isSignedIn)
-			return syncDisplay ? 'Sign in to sync across devices' : 'Sign in';
-		return syncDisplay ? `Account · ${syncDisplay.tooltip}` : 'Account';
+		if (!isSignedIn) return 'Sign in';
+		return 'Account';
 	});
-	// The dot is presence for sync: it appears only when a signed-in account
-	// has a sync surface attached. Signed out renders a dimmed glyph instead
-	// of a nudge dot; local-only is a valid resting state, not a notification.
+	// The dot is presence for work in flight, and nothing else now.
+	//
+	// It used to be presence for SYNC, reading a status this popover was handed.
+	// That status was the superseded stack's, and the store's transport reports a
+	// different thing entirely (connected, attempts, why it last reconnected), so
+	// this is not a port waiting to be finished: it is a surface to design once
+	// somebody decides what a person should be told about a transport that
+	// reconnects on its own.
 	const triggerDot = $derived.by(() => {
 		if (!isSignedIn) return undefined;
 		if (signOut.isPending) return 'bg-warning animate-pulse';
-		return syncDisplay?.dot;
+		return undefined;
 	});
 
 	function openInstanceModal() {
@@ -316,16 +265,6 @@
 				</div>
 				{#if disabledReason}
 					<p class="text-xs text-muted-foreground">{disabledReason}</p>
-				{/if}
-				{#if dataSync && syncDisplay}
-					<!-- Same dot as the trigger, beside its meaning: this line is
-					     the legend for the trigger's presence badge. -->
-					<div
-						class="border-t pt-3 flex items-center gap-1.5 text-xs text-muted-foreground"
-					>
-						<span class="size-2 shrink-0 rounded-full {syncDisplay.dot}"></span>
-						<span>Sync: {syncDisplay.label}</span>
-					</div>
 				{/if}
 				<div class="border-t pt-3 flex gap-2">
 					{#if selfHostHost}

@@ -5,10 +5,6 @@ export {
 export { default as FlushEditsOnHide } from './flush-edits-on-hide.svelte';
 export { fromDisposableCache } from './from-disposable-cache.svelte.js';
 export {
-	fromTable,
-	type ReadonlyTableView,
-} from './from-table.svelte.js';
-export {
 	createPersistedMap,
 	defineEntry,
 	type PersistedMap,
