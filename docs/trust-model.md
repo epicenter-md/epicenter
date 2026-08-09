@@ -6,11 +6,18 @@ decision is the trust model, and everything below is a consequence of it.
 
 This page describes what the code does today. The files that carry it:
 
-- `packages/server/src/epicenter-sync/authority.ts`: the scalar authority
-- `packages/server/src/epicenter-sync/document-store.ts`: the server-side Yjs join
-- `packages/server/src/epicenter-sync/cloudflare.ts`: the hosted backend
-- `packages/data/src/replica/replica.ts`: local persistence
-- `packages/server/src/routes/session.ts`: `/api/session`
+- `packages/server/src/store-sync/authority.ts`: the authority, one Durable
+  Object per principal and application (ADR-0225)
+- `packages/server/src/store-sync/mount.ts`: the authenticated upgrade onto it
+- `packages/data/src/store/store.ts`: the client-owned store
+- `packages/data/src/store/browser.ts`: local persistence, in the client
+
+The shape below changed with ADR-0218 and is worth stating precisely, because
+it moves the trust boundary in the direction this page is about: **the
+authority reads nothing it stores.** It holds opaque bytes, hands them back in
+order, and has no Yjs import and no verb that could interpret one. What the
+server can still see is what it is handed and when, plus everything auth needs
+to know about who you are; what it can no longer do is read a row.
 
 ## We used to encrypt at rest. We stopped.
 
