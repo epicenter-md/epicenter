@@ -6,7 +6,7 @@ Browser-hostable Svelte 5 speech-to-text SPA. Epicenter owns its only native Tau
 
 - Three-layer architecture: Service -> Query -> UI
 - Services are pure functions returning `Result<T, E>`
-- Build-time platform seams use `#platform/*` imports. The Epicenter build activates two conditions and a new seam must pick the right one: `epicenter-host` when the Bun host owns the thing (replica, credential, deployment choice, blob bytes, asset base), `tauri` when the leaf calls a native command (ADR-0190). Load `workspace-app-composition` before changing those seams.
+- Build-time platform seams use `#platform/*` imports: `epicenter-host` when the Bun host owns the thing (credential, deployment choice, asset base), `tauri` when the leaf calls a native command (ADR-0190). The replica is NOT one of those things any more: ADR-0226 refused a host-owned data plane, so every build opens its own store and a storage seam is the thing to delete rather than to route. Whispering has no build where `epicenter-host` and `tauri` come apart, so the whole seam collapses to one leaf when it is rebuilt.
 - Tauri-only capabilities live in `$lib/tauri.tauri.ts`; shared consumers go through `#platform/*`.
 - Query layer handles reactivity, caching, and error transformation
 - See `ARCHITECTURE.md` for detailed patterns

@@ -1,250 +1,210 @@
 # Epicenter architecture
 
-Epicenter is a local-first workspace platform. Apps define stable workspace
-families, clients keep complete local data, and a hosted or self-hosted star
-keeps devices synchronized while they sleep.
+Epicenter is a local-first personal data platform. An application holds a
+complete replica of its own data and reads it synchronously; a hosted or
+self-hosted authority keeps a person's devices converged while they sleep.
 
 This page is the five-minute map. Durable decisions live in
 [`docs/adr`](adr/README.md). Shared vocabulary lives in
 [`docs/CONTEXT.md`](CONTEXT.md). Package-owned current behavior belongs in
-package READMEs and code.
+package READMEs and code. For how this replaced the previous stack, verb by
+verb, see
+[`the store and what it replaced`](the-store-and-what-it-replaced.md).
 
-The greenfield replacement destination is documented in
-[`One Epicenter, namespaces, and Lenses`](architecture/one-epicenter-namespaces-and-lenses.md).
-Its ADRs are decision-complete but remain Proposed until the implementation
-lands. This page continues to describe the active Workspace architecture during
-that replacement.
+## One runtime
+
+A desktop SPA in a WebView, over a store the client owns (ADR-0227). The Bun
+host serves bundles and brokers credentials. It owns no application data and
+constructs no database (ADR-0226).
+
+Serving that same bundle over HTTP is not a second runtime, because there is no
+platform seam left to differ: every build opens its own store. What ADR-0227
+refused was a hosted surface that reached a host-owned replica instead.
 
 ## The stack
 
-Apps compose middleware and core packages. Dependencies point downward; product
-policy stays in the app that can name it.
-
 ```text
-+----------------------------------------------------------------------------+
-| APPS                                                                       |
-|                                                                            |
-| whispering   honeycrisp   epicenter   tab-manager   api   self-host        |
-| landing      local-books  local-mail                                       |
-+----------------------------------------------------------------------------+
-                                      |
-                                      v
-+----------------------------------------------------------------------------+
-| MIDDLEWARE                                                                 |
-|                                                                            |
-| @epicenter/svelte      @epicenter/filesystem                               |
-| @epicenter/skills      app-owned runtime composition per environment       |
-+----------------------------------------------------------------------------+
-                                      |
-                                      v
-+----------------------------------------------------------------------------+
-| CORE                                                                       |
-|                                                                            |
-| @epicenter/workspace   @epicenter/data       @epicenter/sync               |
-| @epicenter/lens        @epicenter/field      @epicenter/constants          |
-| @epicenter/ui                                                              |
-+----------------------------------------------------------------------------+
++---------------------------------------------------------------------------+
+| APPS                                                                      |
+|                                                                           |
+| honeycrisp   whispering   vocab   skills   epicenter   sync-lab           |
+| api          self-host    landing  matter  local-books  local-mail        |
++---------------------------------------------------------------------------+
+                                     |
+                                     v
++---------------------------------------------------------------------------+
+| SURFACE                                                                   |
+|                                                                           |
+| @epicenter/ui        @epicenter/app-shell     @epicenter/svelte-utils     |
+| @epicenter/chat      @epicenter/blobs         @epicenter/skills           |
++---------------------------------------------------------------------------+
+                                     |
+                                     v
++---------------------------------------------------------------------------+
+| CORE                                                                      |
+|                                                                           |
+| @epicenter/data      the store, and the transport that carries it         |
+| @epicenter/lens      the vocabulary a Lens is written in                  |
+| @epicenter/field     release-local field declarations                     |
+| @epicenter/sqlite    one engine seam over bun:sqlite and sqlite-wasm      |
+| @epicenter/sync      route contracts a browser can import                 |
+| @epicenter/server    the shared Hono library both deployables consume     |
++---------------------------------------------------------------------------+
 ```
 
-`@epicenter/workspace` owns the app-facing data contract and runtime handles.
-`@epicenter/field` supplies the release-local projection vocabulary.
-`@epicenter/data` owns the portable scalar row protocol: row intent folding,
-exact retry, fact paging, admission, and the local SQLite replica that
-materializes it. `@epicenter/lens` supplies the definitions, structured
-addresses, and canonical JSON that protocol builds on. There is no separate
-scalar protocol package. Row-addressed Yjs 14 connections synchronize lazy row
-documents independently.
+`@epicenter/data` has exactly four entry points: `.` for the store, `./bun` and
+`./browser` for the two openers, and `./sync` for the transport. The openers are
+separate because one imports `bun:sqlite` and the other a WASM build, and
+neither belongs in a barrel the other has to load.
 
-## Workspace definitions are app contracts
+`@epicenter/server` is AGPL and the core packages above it are MIT. Moving code
+across that line is a relicensing act; see
+[`licensing strategy`](licensing/licensing-strategy.md).
 
-A workspace definition is pure. It names release-local table and KV lenses
-without opening storage or a network connection. Every ordinary row owns one
-latent Yjs document; document roots remain application-owned.
+## An application is one document
 
-```text
-defineWorkspace({ id, tables, kv })
-        |
-        | pure app contract
-        v
-runtime.open(definition)             Browser, Bun, desktop, or hosted runtime
-```
-
-Definitions are not storage schemas. A new release may change its lens
-immediately. Nonconforming rows remain stored and visible to repair code.
-
-An Account workspace synchronizes scalar rows automatically. Scalar
-`sync.settle()` waits for the scalar work present at invocation and the
-authority state that confirms it. Each open document persists automatically;
-its `whenDurable()` covers only the local Yjs provider and its connection status
-reports document-network progress. Neither barrier impersonates the other.
-
-Device and Account storage are independent owners. Account `open()` never reads
-Device data. Products implement consent with Device `capture()` and `delete()`,
-Account `add()`, or no call for Keep.
-
-Runtime openers supply the resources that cannot travel with the definition:
-browser storage, desktop storage, row synchronization, materializers, auth, and
-platform APIs. App-facing code should enter through the workspace definition
-instead of rebuilding addresses or storage topology itself.
-
-The client planes meet only at the workspace handle and the server authority:
+One `Y.Doc` per application (ADR-0215). Its top-level roots say what kind of
+thing they are: `tables:<name>` for each declared table, `kv` for settings, and
+nothing else.
 
 ```text
-Browser page: live Yjs 14 docs  ------ socket per open document --------+
-Browser Worker: OPFS SQLite                                             |
-  (scalar rows + document log)  ------ scalar row HTTP protocol --------+-- workspace authority
-
-Native host: live Yjs 14 docs  ------- socket per open document --------+
-Native host: SQLite
-  (scalar rows + document log)  ------ scalar row HTTP protocol --------+
+Y.Doc
+ |- kv                      one value: this application's settings
+ |- tables:notes
+ |   |- <rowId>             a nested Y.Type; holding it IS existing
+ |   |   |- title           a field is an attribute on the row
+ |   |   |- folderId
+ |   |   `- !doc            a container, allocated WITH the row
+ |   |       `- body        an application-named root an editor binds to
+ |   `- <rowId> ...
+ `- tables:folders
 ```
 
-One `store.sqlite3` per workspace holds both scalar rows and the document
-update log (ADR-0156), but co-location is not a cross-plane transaction
-contract: the planes stay independently synchronized.
+A row is an attribute on its table root rather than a root of its own. That is
+not a style choice: `Item.write` scans `doc.share` linearly, so one root per row
+makes encoding quadratic, measured at 5,417 ms against 13 ms at 20,000 rows.
+Deletion removes the row's attribute outright and the whole subtree goes with
+it, which leaves one deleted map key rather than a permanent corpse.
 
-## The scalar row plane is the ordered queryable core
+## Prose is a plane beside the row, not a field in it
 
-Workspace table fields and workspace KV reduce to scalar row intents. Document
-updates never cross this boundary.
+A row's `!doc` container holds roots the application names, and Epicenter never
+looks inside one. An editor binds to a root directly:
 
-```text
-workspace scalar runtime
-  create/update/delete row fields and kv
-        |
-        v
-scalar row protocol
-  RowIntent, sealed rounds, receipts, current-state pages
-        |
-        v
-workspace authority
-  SQLite-backed fold, receipts, paging, compaction, acquisition
+```ts
+const body = db.notes.document(noteId)?.get('body');
 ```
 
-The workspace authority is schema-blind. It orders semantically valid row
-intents and folds them into deterministic outcomes. It does not rename fields,
-apply defaults, heal application data, or synchronize a device SQLite file as
-the wire format.
+Root names are declared when the row is created,
+`db.notes.create({ ... }, { document: ['body'] })`, and that is what makes them
+safe. Reaching for a root lazily is a write at a well-known address, so two
+devices first-opening one note would each mint their own and map LWW would
+discard one along with everything written into it. Allocating at creation leaves
+exactly one creator, and minted row ids make that moment unraceable.
 
-Each synchronized client tracks:
+## What granularity an edit has
 
-```text
-retired receipt  exact outgoing round already installed locally
-checkpoint       authority state this client installed
-open intents     compactable local work not yet sent
-sealed intents   immutable exact-retry payload
-```
+| edit | merge |
+| --- | --- |
+| two devices, different fields of one row | both survive |
+| two devices, one scalar field | last write wins |
+| two devices, one array or object field | last write wins on the WHOLE value |
+| two devices, prose in a row's document | per character |
 
-The authority receipt contains the accepted round, request digest, and the
-sequence through which that round changed current state. The client retires its
-sealed overlay only after pull installs state through that sequence. The digest
-is the safety witness that stops a restored or copied private database from
-silently retiring different content under the same round.
+The third row is a decision, not a gap (ADR-0228). A field is one value, which
+is one sentence of semantics instead of a per-field CRDT type system. The cost
+is that a set several devices append to concurrently loses an addition, and the
+answer is that such a collection wants to be a table, where each element is its
+own row and nothing collides.
 
-For protocol details and executable coverage, read
-[`packages/data/src/protocol/v1`](../packages/data/src/protocol/v1) and
-[`packages/data/src/sync/transport.test.ts`](../packages/data/src/sync/transport.test.ts).
+## Lens evolution never migrates user data
 
-## Documents are a lazy Yjs 14 plane
+A Lens is a release-local view over durable JSON (ADR-0125, ADR-0213). A release
+may add a field, remove one, or change validation. Rows that no longer conform
+stay exactly as written and surface as nonconforming for that release. Nothing
+copies a database, runs an upcaster, or reinterprets an old write.
 
-Documents remain the right representation for merge-sensitive content. Every
-ordinary row owns latent Yjs state under the same identity and lifecycle as its
-fields. The workspace API exposes that state through the row's singular
-document handle.
-
-Opening a document hydrates its durable update log before networking. Every
-runtime persists documents in the workspace's own SQLite store: the records
-Worker owns it in the browser, the Bun host owns it natively, and renderer
-surfaces reach it through a narrow asynchronous load/append seam (ADR-0156).
-Releasing the last handle unloads live state without deleting it. Deleting the
-row revokes its handles and deletes its durable log in the same transaction.
-
-Each currently open row document uses one Yjs 14 WebSocket. Every such
-connection and the scalar HTTP protocol terminate at the same account
-authority actor, which owns exact row liveness and deletion without putting
-document updates in `RowIntent`. Closed documents use no socket, and the
-server retains no live document state: it hydrates disposable committed state
-per admission and per accepted update. Yjs supplies merge semantics inside a
-row, but it is not a second public identity or lifecycle.
-
-Document admission has three facts and one surface. The upgrade credential
-authenticates a principal. The authority address derives deterministically
-from that principal alone (ADR-0092: the principal is the partition, and here
-also the actor), so a workspace id is a name inside the requester's own
-partition and no request can address another principal's state; there is no
-catalog, grant, or per-request authorization lookup. Finally, the authority
-checks whether the route's `(table, rowId)` is live. A not-live row closes
-retryably with no reserved code; the client's own scalar plane knows whether
-its row is still awaiting admission, and scalar synchronization installing a
-deletion is what revokes the open document. There is no terminal document
-verdict on the wire: the authority enforces the compound document bound
-(bytes and struct count of the canonical post-candidate state, ADR-0146)
-exactly inside the append transaction, clients estimate the same bound and
-suppress sending while over it, and close 1009 is only a defensive backstop
-against a stale estimate. The row address is not a
-capability. Every update rechecks liveness in its SQLite transaction. Row
-deletion removes the row, records a bounded deletion marker, and removes the
-server document snapshot and update log in one transaction, then closes the
-row's sockets. A crash before those closes cannot resurrect bytes because
-acceptance rechecks liveness against committed state.
-
-On Cloudflare, each hibernating socket stores its one fixed structured address
-within the platform's 16,384 byte attachment limit. Fanout enumerates the
-actor's sockets and compares complete attachment addresses; open documents are
-few by product premise, so no tag index ships until measured socket counts
-earn one. This uses the platform's per-socket recovery instead of persisting a
-mutable multiplex subscription set. The platform permits at most 32,768
-hibernating sockets per actor. Multiplexing remains refused until measured
-open-document socket pressure earns its additional protocol state.
-
-This document plane uses `@y/y` 14 only. It provides no Yjs 13 dependency,
-persisted-state reader, alias, migration path, dual wire, or fallback.
-
-## Lens evolution never migrates user data implicitly
-
-Definitions are views over durable JSON. A release may add a required field,
-remove a field, or change validation. Rows that no longer conform remain
-preserved as canonical data and surface as nonconforming for that release's
-Lens. The runtime does not copy a database, execute an upcaster, add fallback
-keys, or reinterpret old writes.
-
-When product semantics require conversion, the application owns a normal,
-explicit repair loop. It may recognize an old shape, compute the new value, and
-issue bounded typed patches. Mixed releases may disagree until the repair
-converges; that is honest application behavior rather than a platform migration
-protocol.
+Prevention is not available and asking for it is the wrong axis. A Lens is
+release-local and rows arrive from NEWER releases, so no discipline in this
+release stops a future one retyping a field. What exists instead is the material
+to heal: `list()` returns `{ rows, nonconforming }`, each failure carries its
+`address`, machine-readable `issues`, the `conforming` survivors and the
+unmodified `raw`, nonconforming rows stay in the SQL projection so `db.query`
+still finds them, and repair is an ordinary `update` because a patch validates
+only the values it supplies.
 
 ```text
 durable JSON stays unchanged
         |
-        +-- old release lens -> one interpretation
-        `-- new release lens -> typed rows plus nonconforming diagnostics
+        +-- old release's lens -> one interpretation
+        `-- new release's lens -> typed rows plus nonconforming diagnostics
 ```
 
-## The star owns availability, not application meaning
+## Reads are synchronous
 
-A star is the runnable deployment that holds a person's synchronized data. The
-hosted Cloud app and the self-hosted instance use the same shared server library
-but resolve principals differently.
+Opening a store is the only asynchronous operation in an application. It is real
+I/O: a file or an IndexedDB read, a WASM compile, and the replay of a durable
+log. Everything after it is a property access on a document already in memory.
 
-The workspace authority backend owns scalar ordering, receipts, current rows,
-complete-state acquisition, and the separate row-document connections.
-Application releases own field validation, document roots, and explicit repair
-code. Blob storage holds large binaries by reference.
+```ts
+const store = await openBrowserStore({ name: 'honeycrisp' });
+const bound = store.bind(honeycrispLens);
+if (bound.error !== null) throw bound.error;
+const db = bound.data;
 
-This separation keeps the privacy question concrete. Epicenter can run the
-star, or the user can run it. In either topology, apps keep their schema meaning
-and product policy at the client boundary.
+const listed = db.notes.list();          // { rows, nonconforming }
+db.notes.update(noteId, { title: 'x' }); // a transaction
+db.notes.subscribe((rowIds) => { ... }); // the ids a commit touched
+db.query`select count(*) from notes`;    // this app's own projection only
+```
 
-## Current transition
+`subscribe` fires after the projection commits and names the rows that changed
+(ADR-0221), so a view refreshes what moved rather than everything.
 
-The Proposed clean break is queryable SQLite scalars plus runtime-native Yjs 14
-document providers, terminating at one workspace authority through separate
-protocols. Current code still contains the combined row/document replica,
-per-document Yjs 13 rooms, and root-Y.Doc-era paths. Treat all three as
-transition surfaces, not ownership boundaries.
+## One SQLite file
 
-During the transition, use accepted ADRs, package READMEs, executable tests, and
-code as current implementation truth. Use this architecture page to judge
-conversions, delete legacy branches, and prevent root-Y.Doc topology from
-leaking back into the selected vocabulary.
+The same file is the update log and the query projection. In the browser that is
+an in-memory sqlite-wasm database on the main thread plus three small IndexedDB
+relations: `_updates`, `_outbox`, `_cursor` (ADR-0223). There is no worker and
+no OPFS. The projection is never restored, only rebuilt, which is what removed
+the reason for both.
+
+History lives outside the CRDT (ADR-0214). The document runs with garbage
+collection on, which is what collapses a field edited five thousand times to two
+structs.
+
+## The authority owns availability, not meaning
+
+One Durable Object per principal and application, named
+`principals/<id>/stores/<ns>`, keeping a snapshot and a tail (ADR-0220,
+ADR-0225). It appends opaque bytes and reads nothing about their meaning.
+
+Being signed in is the whole of the sharing model. The route stamps the
+principal from the bearer and addresses one Durable Object by it, so every
+device on one account converges without anything being paired or invited.
+
+The host supplies only `dial`, a function that makes a socket. The library owns
+the cursor, attach and detach, reconnect on close and on `needsResync`, and the
+unacknowledged-submission watchdog (ADR-0222).
+
+Blobs are a separate plane and were never CRDT-backed. They are content
+addressed bytes logged against the server, with local ones queued until they
+are uploaded.
+
+## Two deployables, one library
+
+`packages/server` is the shared Hono library. `apps/api` is the hosted personal
+cloud and `apps/self-host` is the self-hosted single-partition instance
+reference, which is community-supported rather than Epicenter-operated. They
+differ by principal resolver: an instance resolves every valid bearer to the
+literal `instance` principal (ADR-0075, amended by ADR-0092). Billing is
+hosted-only and lives in `apps/api/worker/billing/`.
+
+## What is broken right now
+
+ADR-0227 was executed as a clean break, so the applications that had not moved
+are broken on purpose and their data on the old stack is gone: `apps/whispering`,
+`apps/vocab`, `apps/skills`, `apps/epicenter`, `packages/chat`,
+`packages/skills`, and `packages/app-shell`'s agent chat. Green:
+`packages/data`, `lens`, `sync`, `sqlite`, `svelte-utils`, `apps/api`,
+`apps/self-host`, `apps/honeycrisp`, `apps/sync-lab`.

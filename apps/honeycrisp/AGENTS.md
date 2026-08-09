@@ -1,27 +1,29 @@
 # Honeycrisp App
 
-Local-first notes SPA over `so.epicenter.honeycrisp`: folders and notes as
-scalar rows, each note body a row-owned Yjs document.
+Local-first notes SPA. Folders and notes are rows in one Yjs document, and each
+note's prose is an application-named root inside that note's own container. The
+one application running on the store today, so it is also the reference for how
+an app is built.
 
-Design authority: [ADR-0190](../../docs/adr/0190-a-build-declares-which-epicenter-owns-its-data-not-which-window-it-runs-in.md) (which Epicenter owns a build's data is a build-time declaration), [ADR-0177](../../docs/adr/0177-a-browser-replica-is-owned-by-a-storage-partition-and-origin-pair.md) (a WebView is a storage partition and origin pair like any other), [ADR-0168](../../docs/adr/0168-lenses-are-complete-pure-json-interpretations.md) (Epicenter Home keeps its own release-local interpretation of this namespace).
+Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0215](../../docs/adr/0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md) (an application is one document and a row owns a nested container).
 
-## Three builds, one SPA
+## Three builds, one store shape
 
-| Build | Command | Replica |
-|---|---|---|
-| Web | `bun run build` | this origin's own, plus its own sync |
-| Standalone desktop | `bun run tauri build` | its WebView's own |
-| Epicenter-hosted | `bun run build:epicenter` | the desktop host's shared `epicenter.sqlite3` |
+| Build | Command |
+|---|---|
+| Web | `bun run build` |
+| Standalone desktop | `bun run tauri build` |
+| Epicenter-hosted | `bun run build:epicenter` |
 
-Only the third differs, and it says so with the `epicenter-host` resolve
-condition rather than `tauri`: the standalone bundle is a Tauri WebView that
-owns its own storage, so those two are separate facts here. Load
-`workspace-app-composition` before touching a `#platform/*` seam.
+**They differ in nothing that concerns data.** Every build calls
+`openBrowserStore` and owns its replica; the desktop host serves the bundle and
+brokers the credential and owns none of it (ADR-0226). There used to be a
+platform seam where the hosted build reached the host's shared
+`epicenter.sqlite3`, and ADR-0226 refused it.
 
-Dropping a host leaf from a seam fails no build. Resolution falls back to the
-browser leaf and the hosted build silently keeps notes where nothing else can
-read them. Two tests catch that: `src/lib/platform-selection.test.ts` reads the
-declarations and names the broken seam, and
+What remains behind `#platform/*` is auth and instance only: how a build gets a
+bearer, not where its data lives. `src/lib/platform-selection.test.ts` reads the
+declarations and names a broken seam, and
 `../epicenter/scripts/build-applications.test.ts` runs the real build and reads
 the emitted bytes. `typecheck` runs all three conditions; only the default one
 is checked by an editor.
@@ -30,8 +32,11 @@ is checked by an editor.
 
 - Do not detect the host at runtime. The build already answered.
 - Do not migrate, import, or delete data belonging to another build. The
-  standalone bundle and the hosted build are two databases on one machine, and
-  nothing moves between them.
-- Do not import Honeycrisp's Lens into the Epicenter host's own code. Home keeps
-  a deliberately separate release-local interpretation (ADR-0168); only the
-  cross-Lens journey test compares them.
+  standalone bundle and the hosted build are two stores on one machine, and
+  nothing moves between them. Two devices converge by signing into the same
+  account, not by copying a file.
+- Do not add a `#platform/*` seam for storage. Every build opens its own store;
+  a seam there is the thing ADR-0226 refused.
+- Do not reach a root inside a note's document lazily. Root names are declared
+  at `create` time, because two devices first-opening one note would otherwise
+  each mint their own and lose one.

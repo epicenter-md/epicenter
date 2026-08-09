@@ -11,11 +11,20 @@ import { createStore, StoreError, type Store } from './store.js';
  * Open one application's store on Bun.
  *
  * One opener per runtime, each returning a `Result`, rather than one
- * `epicenter.open({ path })` in front of all of them: the three opens share no
- * I/O profile at all. This one is a `mkdir`; the browser's is a Web Lock plus a
- * WASM compile plus an OPFS pool; the desktop's is two round trips that never
- * open a file. Naming the opener for Epicenter while calling its result a store
- * would be a second name for one thing.
+ * `epicenter.open({ path })` in front of both: the two opens share no I/O
+ * profile. This one is a `mkdir` and two SQLite files; the browser's is a WASM
+ * compile and an IndexedDB read (`./browser.ts`). Naming the opener for
+ * Epicenter while calling its result a store would be a second name for one
+ * thing.
+ *
+ * **No application in this repository calls this today.** Honeycrisp opens the
+ * browser store in every build including the Tauri one, by the refusal in
+ * `apps/honeycrisp/src/lib/application-platform.ts`: a host serves bundles and
+ * owns no application data (ADR-0226). This stays exported because it is a
+ * published entry point of an MIT package and because it is the only opener
+ * that proves the log survives a real reopen from a real file, which
+ * `store.test.ts` uses. An in-repo caller returning is a decision, not a
+ * default.
  *
  * @param directory The application's own folder. `store.sqlite3` holds the
  * update log and the projection; `history.sqlite3` holds what collapse

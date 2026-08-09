@@ -804,9 +804,9 @@ export function createStore({
 	/**
 	 * The KV handle for one bound lens.
 	 *
-	 * The reserved root is minted here, which is safe for the same reason KV
-	 * lives there at all: `Doc.get` is `setIfUndefined` on `doc.share`, so every
-	 * device that mints `!kv` converges on one logical root.
+	 * The root is minted here, which is safe for the same reason KV lives there
+	 * at all: `Doc.get` is `setIfUndefined` on `doc.share`, so every device that
+	 * mints `kv` converges on one logical root.
 	 *
 	 * A lens with no `kv` section still gets a handle. It reads as an empty
 	 * object and refuses every write by name, which is a better answer than a
