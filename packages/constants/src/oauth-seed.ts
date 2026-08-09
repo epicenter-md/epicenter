@@ -6,7 +6,6 @@ import {
 	EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 	EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
 	EPICENTER_OAUTH_SCOPES,
-	EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
 	EPICENTER_VOCAB_OAUTH_CLIENT_ID,
 	EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
 } from './oauth-clients.js';
@@ -95,12 +94,6 @@ export function buildTrustedOAuthClients() {
 				...appCallbacks(APPS.HONEYCRISP),
 				EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
 			],
-		},
-		{
-			clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
-			name: 'Tab Manager extension',
-			type: 'user-agent-based',
-			redirectUris: ['chrome-extension://mkbnicfhpacdofmoocppnjjmdfmkkgda/'],
 		},
 		{
 			clientId: EPICENTER_VOCAB_OAUTH_CLIENT_ID,

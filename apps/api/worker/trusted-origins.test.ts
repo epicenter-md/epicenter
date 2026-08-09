@@ -12,11 +12,14 @@ describe('buildEpicenterTrustedOrigins', () => {
 		expect(PROD.some((o) => o.includes('*'))).toBe(false);
 	});
 
-	test('contains exactly one chrome-extension origin (the pinned tab-manager)', () => {
-		const exts = PROD.filter((o) => o.startsWith('chrome-extension://'));
-		expect(exts).toEqual([
-			'chrome-extension://mkbnicfhpacdofmoocppnjjmdfmkkgda',
-		]);
+	test('trusts no browser extension at all', () => {
+		// Stronger than the assertion this replaces, which pinned Tab Manager's
+		// one extension origin. There is no extension now, so ANY
+		// chrome-extension origin in the production set is a regression, and
+		// this fails on the entry rather than on its id.
+		expect(PROD.filter((o) => o.startsWith('chrome-extension://'))).toEqual(
+			[],
+		);
 	});
 
 	test('a production deployment does not trust localhost dev origins', () => {
