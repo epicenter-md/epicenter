@@ -1,8 +1,8 @@
 # Epicenter Self-Hosted Instance (Reference)
 
-A self-hosted Epicenter is one instance: a single workspace partition behind one bearer token you generate and hand out. There are no accounts, no OAuth app to register, no sign-in flow, and no mode to pick. You run the box, you generate a token, and everyone you give that token to reaches the same data. Not operated by Epicenter: you run the infrastructure, so Epicenter never holds or sees what is stored here.
+A self-hosted Epicenter is one instance: a single partition behind one bearer token you generate and hand out. There are no accounts, no OAuth app to register, no sign-in flow, and no mode to pick. You run the box, you generate a token, and everyone you give that token to reaches the same partition. Not operated by Epicenter: you run the infrastructure, so Epicenter never holds or sees what is stored here.
 
-"Solo" and "shared" are not settings. They are just how many people you hand the one token to. A homelab box for yourself and a small wiki for your family or lab are the same deployment; the only difference is the size of the group that holds the credential.
+"Solo" and "shared" are not settings. They are just how many people you hand the one token to. A homelab box for yourself and a shared box for your family or lab are the same deployment; the only difference is the size of the group that holds the credential.
 
 ## Quick start (Bun, the blessed path)
 
@@ -24,10 +24,10 @@ Then paste the same token into the client's instance setting (`{ baseURL, token 
 Boot fails closed if `INSTANCE_TOKEN` is missing or too weak, and the error names `gen-token`. The box never mints or stores a token: you own the secret, which is exactly what lets the same instance run on Cloudflare too. To rotate, generate a new token, restart with it, and redistribute it; there is no per-person revocation (see [Offboarding](#offboarding-and-rotation)).
 
 `INSTANCE_TOKEN` is the only required variable. The instance needs no external
-database and no auth secret: it currently stores Yjs rooms and record
-authorities as `bun:sqlite` files on local disk under `DATA_DIR`. The
-destination shape is even simpler: one instance principal, one authority
-database file containing every named workspace. Persist the whole directory.
+database, no auth secret, and no local application data: a client owns its own
+store, and neither entry point constructs a database (ADR-0226, ADR-0227).
+`DATA_DIR` is still read at boot and its directory created, but nothing writes
+there today.
 
 If a browser app is hosted on a different origin from the instance, set
 `TRUSTED_BROWSER_ORIGINS` to a comma-separated list of exact origins, for
@@ -40,8 +40,9 @@ A static bearer over plaintext HTTP is total compromise: anyone who sees one req
 
 ### Redact WebSocket protocol headers
 
-Sync room WebSockets carry the instance bearer in `Sec-WebSocket-Protocol`
-during the upgrade. The server strips that token from the protocol it echoes
+The attach WebSocket (`/attach`) carries its credential in
+`Sec-WebSocket-Protocol` during the upgrade, because a browser upgrade cannot
+set `Authorization`. The server strips that token from the protocol it echoes
 back, but any reverse proxy in front of the instance can still log the incoming
 header. Caddy access logs, for example, redact `Authorization` and `Cookie` but
 not `Sec-WebSocket-Protocol` by default.
@@ -63,19 +64,29 @@ bun run --cwd apps/self-host typecheck
 bun run --cwd apps/self-host deploy
 ```
 
-`INSTANCE_TOKEN` is the only secret to set: the instance composes no Better Auth and no Postgres, so there is no `BETTER_AUTH_SECRET` and no Hyperdrive binding (ADR-0075). Set `API_PUBLIC_ORIGIN` in `wrangler.jsonc` to your domain. Proposed ADR-0145 collapses the current records and per-document room Durable Object bindings into one workspace authority binding. Each open row document uses one route-bound Yjs 14 socket to that authority. A Worker has no boot phase, so the entropy gate (`assertStrongToken`) runs per request at the edge: a weak or unset `INSTANCE_TOKEN` fails every request closed. Use `gen-token` for the secret.
+`INSTANCE_TOKEN` is the only secret to set: the instance composes no Better Auth and no Postgres, so there is no `BETTER_AUTH_SECRET` and no Hyperdrive binding (ADR-0075). Set `API_PUBLIC_ORIGIN` in `wrangler.jsonc` to your domain. A Worker has no boot phase, so the entropy gate (`assertStrongToken`) runs per request at the edge: a weak or unset `INSTANCE_TOKEN` fails every request closed. Use `gen-token` for the secret.
 
 `worker-configuration.d.ts` is hand-written: it inherits the library's binding
-contract (`ServerBindings`) and declares the deployment-owned Durable Object
-bindings, `API_PUBLIC_ORIGIN`, and `INSTANCE_TOKEN`. If you add bindings of your
-own, declare them there (or regenerate with `bun run typegen` and re-add the
+contract (`ServerBindings`) and declares the deployment-owned config,
+`API_PUBLIC_ORIGIN` and `INSTANCE_TOKEN`. If you add bindings of your own,
+declare them there (or regenerate with `bun run typegen` and re-add the
 `extends` clause).
 
 ## What this isn't
 
-This is not Epicenter Cloud. There are no Autumn billing routes, no dashboard SPA, and no SLA, support contract, or paid hosting from Epicenter. There is also no per-user partitioning: every valid token reaches the one `principals/instance` partition. Multi-tenancy, where everyone signs in and gets their own private namespace, is Epicenter Cloud's only. An enterprise that wants on-prem runs one instance (shared), or one instance per person or team.
+This is not Epicenter Cloud. There are no billing routes (billing is hosted-only and lives in `apps/api/worker/billing/`), no dashboard SPA, and no SLA, support contract, or paid hosting from Epicenter. There is also no per-user partitioning: every valid token reaches the one `principals/instance` partition. Multi-tenancy, where everyone signs in and gets their own private namespace, is Epicenter Cloud's only. An enterprise that wants on-prem runs one instance (shared), or one instance per person or team.
 
-Community-supported. Issues filed against this folder are accepted as community contributions.
+Community-supported, not Epicenter-operated. Issues filed against this folder are accepted as community contributions.
+
+### Store sync is not mounted here yet
+
+The store transport is `mountStoreSyncApp` in
+`packages/server/src/store-sync/`, and only the hosted Worker mounts it today.
+It resolves one authority per (principal, application namespace) as a Cloudflare
+Durable Object, and no other runtime implements that backend yet. So an instance
+currently serves session, inference, transcription, blobs, and attach, and an
+application pointed at it keeps its data locally without converging with a
+second device. The `resolveAuthority` seam is what a Bun instance would fill in.
 
 ## Inference and your house key
 
@@ -89,28 +100,38 @@ Two things keep that from becoming a runaway bill:
 ## Composition
 
 The whole instance is the same handful of lines on either runtime: build the app
-with `createServerApp`, then mount session + rooms + inference. No billing, no
-SPA, no `mountCloudAuth`. Bun reads the token once at boot and runs the entropy
-gate there:
+with `createServerApp`, then mount each surface. No billing, no SPA, no
+`mountCloudAuth`, no `mountCloudDb`. Bun (`server.ts`) reads the token once at
+boot and runs the entropy gate there:
 
 ```ts
-const token = assertStrongToken(env.INSTANCE_TOKEN);            // fail closed if weak
+const token = requireStrongInstanceToken(env.INSTANCE_TOKEN);   // fail closed if weak
 const resolveBearerPrincipal = createEnvTokenResolver(token);   // one bearer
 const auth = requireBearerPrincipal(resolveBearerPrincipal);    // every surface
 const app = createServerApp({
-  runtime: bun({ rooms }),                                      // no db leg, no Postgres
-  identity: { resolveOrigin, resolveTrustedOrigins },
+  resolveOrigin: () => origin,
+  resolveTrustedOrigins: () => trustedOrigins,
 });
 mountSessionApp(app, { auth });
-mountRoomsApp(app, { resolveBearerPrincipal });                 // WS-aware, takes the resolver
 mountInferenceApp(app, {
   auth,
-  policies: [rateLimit({ requests: 120, windowSeconds: 60 })], // burn-rate floor
+  policies: [rateLimit({ requests: 120, windowSeconds: 60 })],  // burn-rate floor
 });
+mountTranscriptionApp(app, {
+  auth,
+  policies: [rateLimit({ requests: 120, windowSeconds: 60 })],
+});
+mountBlobsApp(app, { auth });
 ```
 
-Cloudflare reads the per-request secret at the edge instead, running the same
-entropy gate per request (a Worker has no boot phase):
+Bun mounts three more that a Worker isolate cannot host, because their transport
+is `Bun.serve`'s WebSocket handler and their per-device grants are an in-process
+store: `mountAttachRelayApp`, `mountAttachGrantsApp`, and
+`mountHostDirectoryApp` (ADR-0115). They ship only in the `@epicenter/server/bun`
+barrel.
+
+Cloudflare (`worker/index.ts`) reads the per-request secret at the edge instead,
+running the same entropy gate per request (a Worker has no boot phase):
 
 ```ts
 const resolveBearerPrincipal: ResolveBearerPrincipal = (c, bearer) =>
@@ -118,8 +139,12 @@ const resolveBearerPrincipal: ResolveBearerPrincipal = (c, bearer) =>
     assertStrongToken((c.env as Cloudflare.Env).INSTANCE_TOKEN),
   )(c, bearer);
 const auth = requireBearerPrincipal(resolveBearerPrincipal);
-// ...createServerApp({ runtime, identity }), same session + rooms + inference mounts
+// ...createServerApp({ resolveOrigin, resolveTrustedOrigins }), then the same
+// session + inference + transcription + blobs mounts, minus attach.
 ```
+
+`runtime-profile.test.ts` declares that one divergence and holds every other
+surface to parity across both entries.
 
 Deliberately absent: `mountBillingApi`, any OAuth provider, a launch-time mode selector, an admission allowlist, and first-boot token minting. The shape is the contract.
 
@@ -133,6 +158,7 @@ The escape, when that pain is real, is named per-person tokens: a hashed token r
 
 - [ADR-0075](../../docs/adr/0075-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) for why an instance is one partition behind one bearer
 - [ADR-0076](../../docs/adr/0076-the-relational-auth-substrate-is-a-cloud-only-layer-the-instance-composes-neither.md) for why the instance composes no Better Auth and no Postgres
-- [ADR-0095](../../docs/adr/0095-websocket-room-auth-uses-route-owned-subprotocol-bearers.md) for why sync WebSockets carry the bearer as a route-owned subprotocol
+- [ADR-0095](../../docs/adr/0095-websocket-room-auth-uses-route-owned-subprotocol-bearers.md) for why a WebSocket upgrade carries the bearer as a route-owned subprotocol
+- [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) and [ADR-0227](../../docs/adr/0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md) for why a server owns no application data
 - `apps/api` for the hosted personal cloud variant (OAuth, principal partitions, billing)
 - `packages/server` for the shared library both deployables compose

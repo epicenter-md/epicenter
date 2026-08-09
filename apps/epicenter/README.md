@@ -18,10 +18,15 @@ apps/epicenter/ui     -----------> dist/home
 
 A compiled application is a `dist/<id>` build this release declares, served
 below `/apps/<id>/`. Whispering and Honeycrisp are the two. Each keeps its
-independently deployable browser build; the variant Epicenter serves is
-selected at build time by a resolve condition, and that condition is what
-decides the application opens the host-owned replica rather than one of its own
-(ADR-0190).
+independently deployable browser build, and the variant Epicenter serves is
+selected at build time by the `epicenter-host` resolve condition.
+
+That condition does not decide where the data lives. Every build opens its own
+store, with no platform seam, and reaches one authority per signed-in account
+(ADR-0226, ADR-0227). The host serves bundles and brokers credentials; it owns
+no application data and constructs no database. What the condition still selects
+is the credential path (`#platform/auth`, `#platform/instance`), because the
+host really does broker a credential its windows cannot obtain.
 
 ## Run locally
 
