@@ -42,6 +42,12 @@
 	// --- Durable Objects ---
 	"durable_objects": {
 		"bindings": [
+			// EPICENTER_SYNC is deliberately still bound to a class this Worker no
+			// longer exports, the same way `apps/api` is. Removing a Durable
+			// Object class needs a `deleted_classes` migration, which DESTROYS
+			// its stored data on deploy. The binding is inert (nothing mounts it)
+			// and costs nothing until someone decides to run that migration on
+			// purpose (ADR-0227).
 			{
 				"name": "EPICENTER_SYNC",
 				"class_name": "EpicenterAuthority"
@@ -72,7 +78,7 @@
 	]
 
 	// No Hyperdrive binding: the instance composes no Postgres (no Better Auth or
-	// telemetry). ROOM and EPICENTER_SYNC are its complete durable substrate
-	// (ADR-0075). No workspace catalog exists: the authority derives from the
-	// principal alone (ADR-0092, ADR-0145).
+	// telemetry). It also mounts NO store sync today: `mountStoreSyncApp` is
+	// Cloud-only, so an instance serves session, inference, transcription and
+	// blobs, and two devices do not converge through it (ADR-0075, ADR-0225).
 }

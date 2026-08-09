@@ -70,27 +70,6 @@ const PROFILE: Surface[] = [
 		bun: 'served',
 	},
 	{
-		surface: 'sync scalar exchange',
-		method: 'POST',
-		url: `${ORIGIN}/api/sync/v1`,
-		worker: 'served',
-		bun: 'served',
-	},
-	{
-		surface: 'sync row document publish',
-		method: 'POST',
-		url: `${ORIGIN}/api/sync/v1/documents/so.epicenter.probe/rows/probe`,
-		worker: 'served',
-		bun: 'served',
-	},
-	{
-		surface: 'sync row document pull',
-		method: 'GET',
-		url: `${ORIGIN}/api/sync/v1/documents/so.epicenter.probe/rows/probe`,
-		worker: 'served',
-		bun: 'served',
-	},
-	{
 		surface: 'mountInferenceApp',
 		method: 'POST',
 		url: API_ROUTES.ai.completions.url(ORIGIN),
