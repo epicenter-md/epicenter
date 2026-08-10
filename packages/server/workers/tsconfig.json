@@ -9,8 +9,6 @@
 		"noUnusedLocals": true,
 		"noUnusedParameters": true
 	},
-	"include": [
-		"*.ts"
-	],
+	"include": ["*.ts"],
 	"exclude": []
 }

@@ -10,18 +10,23 @@
  * is everything the store transport added.
  */
 import { Hono } from 'hono';
-
-import type { Env, ResolveBearerPrincipal } from '../src/types.js';
 import { mountStoreSyncApp } from '../src/store-sync/mount.js';
+import type { Env, ResolveBearerPrincipal } from '../src/types.js';
 
 export { StoreAuthority } from '../src/store-sync/authority.js';
 export { StoreTestReplica } from './replica.js';
 
 /** `device:<principalId>` and nothing else. Anything unrecognised is refused. */
-const resolveTestPrincipal: ResolveBearerPrincipal<Env> = async (_c, bearer) => {
+const resolveTestPrincipal: ResolveBearerPrincipal<Env> = async (
+	_c,
+	bearer,
+) => {
 	const principalId = bearer.startsWith('device:') ? bearer.slice(7) : '';
 	if (principalId === '') {
-		return { data: null, error: { name: 'InvalidToken', message: 'no principal' } } as never;
+		return {
+			data: null,
+			error: { name: 'InvalidToken', message: 'no principal' },
+		} as never;
 	}
 	return { data: { id: principalId }, error: null } as never;
 };
@@ -30,12 +35,11 @@ const app = new Hono<Env>();
 mountStoreSyncApp(app, {
 	resolveBearerPrincipal: resolveTestPrincipal,
 	resolveAuthority: (env, name) => {
-		const namespace = (
-			env as unknown as { STORE_SYNC: DurableObjectNamespace }
-		).STORE_SYNC;
-		return namespace.get(
-			namespace.idFromName(name),
-		) as unknown as { fetch(request: Request): Promise<Response> };
+		const namespace = (env as unknown as { STORE_SYNC: DurableObjectNamespace })
+			.STORE_SYNC;
+		return namespace.get(namespace.idFromName(name)) as unknown as {
+			fetch(request: Request): Promise<Response>;
+		};
 	},
 });
 
