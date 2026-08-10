@@ -1,37 +1,18 @@
 import { nanoid } from 'nanoid/non-secure';
-import { createSubscriber } from 'svelte/reactivity';
-import type { WhisperingApp } from '$lib/whispering/app';
 import type { Recipe } from '$lib/workspace';
 
-export type Recipes = ReturnType<typeof createRecipes>;
-
-/** Bridges committed recipes-table invalidations into Svelte tracking. */
-export function createRecipes({ recipes }: Pick<WhisperingApp, 'recipes'>) {
-	const invalidate = createSubscriber((update) => recipes.subscribe(update));
-	return {
-		get pickable() {
-			invalidate();
-			return recipes.pickable;
-		},
-		get count() {
-			invalidate();
-			return recipes.count;
-		},
-		get nonconforming() {
-			invalidate();
-			return recipes.nonconforming;
-		},
-		get loadError() {
-			invalidate();
-			return recipes.loadError;
-		},
-		set: recipes.set,
-		delete: recipes.delete,
-		refresh: recipes.refresh,
-		subscribe: recipes.subscribe,
-	};
-}
-
+/**
+ * `createRecipes` is gone, and nothing replaced it.
+ *
+ * It wrapped every getter on the recipes domain in a `createSubscriber`
+ * invalidation so Svelte would track a domain that published changes through a
+ * hand-rolled listener set. The domain holds `$state.raw` now
+ * (`whispering/recipes.svelte.ts`), so tracking is native and a bridge that
+ * only forwarded getters had nothing left to forward.
+ *
+ * Its two siblings, `recordings.svelte.ts` and `settings.svelte.ts`, are the
+ * same shape and go the same way once their domains are ported.
+ */
 export function generateDefaultRecipe(): Recipe {
 	return { id: nanoid(), name: '', instructions: '', icon: null };
 }

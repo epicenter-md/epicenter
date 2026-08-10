@@ -9,7 +9,7 @@ import {
 	settingFieldName,
 	WHISPERING_SETTINGS_ROW_ID,
 } from '../workspace/contract';
-import { createWhisperingRecipes, type WhisperingRecipes } from './recipes';
+import { createWhisperingRecipes, type WhisperingRecipes } from './recipes.svelte';
 import type { WhisperingBlobs } from './recording-audio';
 import {
 	createWhisperingRecordings,
