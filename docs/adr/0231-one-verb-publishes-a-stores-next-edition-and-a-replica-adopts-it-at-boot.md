@@ -4,7 +4,7 @@
 - **Date:** 2026-08-10
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0232 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
-- **Corrected before merge, four times.** First: a dated-volume namespace
+- **Corrected before merge, five times.** First: a dated-volume namespace
   grammar with a manifest and a backup "system" were withdrawn the same day
   they were drafted; the worry they served is one sentence (dead weight must
   not accumulate forever) and one verb serves it. Second: an ordered
@@ -18,8 +18,14 @@
   number line (positions never restart, so a replica's cursor already names
   its edition and the authority keeps one boundary position; zero new client
   state), and the remote spare was denied (undo is a restore from the
-  owner's shelf; the server holds exactly one history, ever). What survives
-  of each correction is a paragraph under *Considered alternatives*.
+  owner's shelf; the server holds exactly one history, ever). Fifth: the
+  stale replica's export-or-wipe ceremony was withdrawn, after the server
+  half landed and the client half was designed against it: adoption became
+  automatic (authority wins; a stale replica discards and resyncs), and the
+  consent for what that discards moved to the verb, where the person with
+  the context is. The product surface collapsed with it, to one action over
+  the one verb. What survives of each correction is a paragraph under
+  *Considered alternatives*.
 - **Amends:** [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md)
   at two clauses. The rebuild refusal: withdrawn as stated, kept as reasons; an
   uncoordinated rebuild does destroy a laggard's offline edit, and the missing
@@ -138,7 +144,7 @@ server-side comparison at the door and one refusal that names the boundary:
 
 - `cursor ≥ boundary`: today's protocol, byte for byte.
 - `0 < cursor < boundary`: refused before any socket exists; this replica
-  belongs to a retired edition (the funeral, below).
+  belongs to a retired edition (adoption, below).
 - `cursor == 0`: ordinary join; a replica that never exchanged a byte holds
   no commitment, its document grew alone, and merging an independent
   document is the one cross-edition merge that is safe. The fresh install
@@ -223,15 +229,17 @@ into one attribute, ADR-0228's reasoning run in reverse) is a legitimate
 multiplier to bench before anyone reaches for the verb. The verb is the
 escape hatch, not the lifestyle. An edition ends only when a person ends it.
 
-**Open question, per lens: the freshness contract.** An application may
-declare that a device silent for longer than some window rejoins fresh
-instead of merging. Under that contract reclaim can become automatic
-maintenance (any at-head replica compacts when pressure is high), the human
-verb disappears from the product, and the drawer device's funeral becomes a
-stated term rather than a surprise, still loud and export-first. This
-weakens the CRDT's crown jewel (merge from any past) to a window, which is
+**The freshness contract, half decided.** The fifth correction decides the
+supersession half: a deliberate compaction IS the freshness contract, and a
+device that had not synced before it rejoins fresh instead of merging. The
+consent lives at the verb (the warning below), not at the stale device.
+What stays open, per lens, is the *automatic* half: whether reclaim may
+become maintenance (any at-head replica compacts when pressure is high,
+with no human verb in the product). That weakens the CRDT's crown jewel
+(merge from any past) to a window on a schedule nobody chose, which is
 plainly right for a capture-shaped app and plainly wrong for a vault-shaped
-one, so it is a per-lens product decision and this record does not make it.
+one, so it remains a per-lens product decision and this record does not
+make it.
 
 ### The verb is force-push with a lease
 
@@ -255,6 +263,16 @@ coverage claim, so it needs no provenance; what it needs is a lease:
 - **No unresolved dependencies.** A replica holding buffered updates it
   could not integrate must not offer its state as anyone's new edition.
 
+**The product surface is one action, not three intents.** The fifth
+correction collapsed `reclaim() / reset() / restore(bytes)` as first-class
+verbs into one user-facing action, **Compact store**, backed by the one wire
+verb. Reclaim, reset, and restore are *sources of replacement bytes*, not
+product surface: compact's source is the reclaim walk over this device's own
+state; reset's is the encoded empty document (account deletion's flow will
+use it); restore's is a shelf entry (the shelf exists on the owner's disk,
+and the bridge is built the day a product needs it). Nothing beyond compact
+is built until a caller proves itself.
+
 At the authority the swap is one transaction and reads no bytes: write the
 replacement as the snapshot at `head + 1`, delete every log entry at or
 below `head`, drop older snapshots, set `boundary = head + 1`, and close
@@ -264,57 +282,98 @@ path, the same way catch-up and live relay have exactly one path.
 
 **There is no server-side undo, on purpose.** The authority holds exactly
 one history, ever; keeping the previous edition even briefly was denied in
-the fourth correction. Recovery from a mistaken replace already lives in
-three places that need no new machinery: the initiating device still holds
-the old state locally through the whole ceremony (authority-before-local,
-below), the owner's `history.sqlite3` shelf holds encoded states, and every
-stale replica is a complete copy until its funeral. Undoing is therefore one
-more use of the verb: `replace(saved bytes)`. What is given up: recovery
-when the initiating device dies moments after a replace and no shelf entry
-and no stale replica exists, a scenario thin enough to price at zero
-machinery. What is gained: "a deletion becomes real" holds with no asterisk,
-because the server never holds a retired edition at all.
+the fourth correction, and the fifth thinned recovery further and says so
+plainly. What remains: a compact's replacement IS the current state, so
+there is usually nothing to undo; the owner's `history.sqlite3` shelf holds
+encoded states where it exists; and a stale replica is a complete copy only
+until its first dial, so catching one means catching it offline. Undoing,
+where a saved state exists, is one more use of the verb:
+`replace(saved bytes)`. What is given up: recovery when no shelf entry and
+no still-offline replica exists, a scenario priced at zero machinery both
+times it was examined. What is gained: "a deletion becomes real" holds with
+no asterisk, because the server never holds a retired edition at all.
 
-### Adoption happens at boot
+### Adoption is automatic: authority wins, a stale replica discards and resyncs
 
 A running store is immortal within its edition. It never swaps documents,
 never tears down mid-session, and never invalidates a handle it has given
-out; `document(id)` types stay live for the page's life. When a dial is
-refused with the boundary, the replica records it in a durable note,
-surfaces one alarm (the same shape as `durability()` and `needsResync`: a
-status an application shows, not an error a call returns), and keeps working
-locally. Sync is simply over for this page.
+out; `document(id)` types stay live for the page's life. Adoption is
+therefore a reload, never an in-session swap.
 
-`open()` owns the transition, and adoption is not a code path: it is boot.
-At open, on a recorded or freshly discovered mismatch, the replica runs the
-funeral: it surfaces unsynced work for export first, then deletes its local
-file whole, opens fresh, and lets the ordinary join deliver snapshot and
-tail into an empty document. **Deleting a file whole is the only deletion in
-this design, at every layer**; there is no surgical removal from a live CRDT
-anywhere.
+**The rule (fifth correction): when a person compacts a store, they declare
+the published state authoritative.** A replica whose cursor names a retired
+edition does not preserve, merge, or offer its local state for export; at
+its next dial it discards its local file whole and rejoins at zero, and the
+ordinary join delivers the new edition's snapshot into an empty document.
+Every path ends in this one move: the initiating device after a successful
+replace, the stale replica at its next dial, the loser of a concurrent
+replace, and every crash in the middle. One adoption path instead of a
+state machine.
+
+Discovery has one subtlety and one hard safety rule. A browser `WebSocket`
+cannot read a refused upgrade's status or body, so the same door is also
+readable: an authenticated plain GET on the sync route (no upgrade) answers
+the boundary. The safety rule, because automatic discard's failure mode is
+wiping local data on a network blip: **a replica discards only when a dial
+failed AND an authenticated probe of its own partition returned a
+well-formed boundary with `0 < cursor < boundary`.** A refused fetch, a
+non-200, an unparseable body, or a dead network all fall through to
+ordinary backoff and never discard. The rule lives in the connection
+driver, not in each host (ADR-0222's lesson).
+
+The sequence at discovery: stop persistence, delete the local file whole,
+reload (ADR-0232's instrument, the same one an auth change uses). Boot
+needs no new code: a wiped store opens empty, dials at zero, and the
+existing join arm is the whole of adoption. There is no durable note and no
+recovery state; a crash anywhere in the middle leaves the old file or
+nothing, and either way the next dial converges by repetition. **Deleting a
+file whole is the only deletion in this design, at every layer**; there is
+no surgical removal from a live CRDT anywhere.
 
 Two ordering rules replace all crash choreography, and they are rules, not
 state:
 
 - **Authority before local.** The replacement is durable at the authority
   before any local file changes. The initiating device builds the
-  replacement in memory, posts it, and only on success wipes and rewrites
-  its own file, then reloads; it never swaps under its own feet.
+  replacement in memory, posts it, and only on a confirmed success discards
+  its own file and reloads; it never swaps under its own feet, and it
+  adopts through the same join as everyone else rather than through a
+  private rewrite path.
 - **Wipe whole before reuse.** A local file is deleted entire and recreated,
   never edited across editions. The file keeps its one name per namespace;
-  at any crash point it holds the old edition, nothing, or the new edition,
-  and "nothing" just means boot catches up from the authority, which holds
-  the replacement by construction. The old edition's bytes do not linger on
-  a device that has moved on.
+  at any crash point it holds the old edition or nothing, and "nothing"
+  just means boot catches up from the authority, which holds the
+  replacement by construction. The old edition's bytes do not linger on a
+  device that has moved on, which is also why no set-aside copy is kept: a
+  reset whose predecessor lingers on every stale device is the same lie the
+  remote spare was refused for.
 
-A replica with `cursor > 0` returning across a replace is the drawer device,
-and it is surfaced, never merged and never silently destroyed: it shows what
-it holds and offers an export before the wipe. Merging it is impossible to
-do honestly (see *Considered alternatives*), and destroying it quietly is
-the failure this corpus refuses everywhere else. The physics limit, stated
-so nobody oversells this: a powered-off device keeps its copy until it
-reconnects. What this design guarantees is that a stale copy can never be
-published anywhere, and that it is offered its funeral at the first dial.
+**What the person is consenting to, said at the verb.** The one warnable
+loss is offline work on a device that never synced it. The confirmation
+carries it plainly:
+
+> **Compact this store?**
+> Compacting rewrites sync history down to what the store holds right now.
+> Every signed-in device will re-download the store the next time it opens.
+> A device holding offline changes it never synced will lose them. If
+> another device has been offline with edits you care about, let it sync
+> first.
+
+**The trust delta, named honestly.** Under the withdrawn ceremony, no
+authority could destroy a replica's local state without a human step on
+that device; under this rule, a compaction (or an authority that lies about
+its boundary) causes replicas to discard on their own. This is accepted
+because the partition is the owner's own, discard follows only an
+authenticated probe of it, and the authority could already withhold or
+rewrite everything a replica would ever sync again; the marginal power is
+over local copies of data the owner already declared replaced.
+
+The physics limit, stated so nobody oversells this: a powered-off device
+keeps its copy until it reconnects. What this design guarantees is that a
+stale copy can never be published anywhere, and that it adopts the current
+edition at its first dial. "Never silently merged" survives absolutely;
+"never silently discarded" was withdrawn deliberately, with the consent
+moved to the verb.
 
 This is ADR-0232's decision applied to data: a page lifetime is one edition,
 and rebuilding from the boot snapshot is simpler than proving every piece of
@@ -361,8 +420,10 @@ principal no longer resolves, so the dial never reaches a Durable Object.
   shedding, one replace reclaims it, and `pressure()` is the gauge that says
   when.
 - **Client durable state is unchanged from today.** No new fields, no new
-  dial parameters, no new frames. The entire client-side delta is handling
-  one refusal and running the funeral at boot.
+  dial parameters, no new frames, and (after the fifth correction) no
+  durable note either. The entire client-side delta is one classification
+  rule at the dial and one discard-and-reload; adoption itself is the join
+  arm that already exists.
 - **ADR-0215's partial-hydration fix stops being load-bearing.** The store
   stays fully hydrated and synchronous; a document that outgrows its live
   set is replaced, not partially loaded.
@@ -374,19 +435,21 @@ principal no longer resolves, so the dial never reaches a Durable Object.
   structure preserved and meaning untouched. This is the one part that is
   real engineering rather than plumbing, and it needs evidence-grade tests
   before the sentence above is trusted.
-- **A superseded device is stale until a person reloads it.** Stated plainly
-  so nobody assumes otherwise: it keeps working locally, it cannot publish
-  anywhere, and "the reset appears everywhere instantly" is not a property
-  of this design. Visible and healable over prevented, applied to time.
+- **A superseded device adopts at its next dial, and not before.** Stated
+  plainly so nobody assumes otherwise: offline it keeps working locally, it
+  can never publish anywhere, and "the compaction appears everywhere
+  instantly" is not a property of this design. When it next dials, it
+  discards and resyncs on its own, with no ceremony and no human step on
+  that device; the human step already happened, once, at the verb.
 - **The store and the in-edition transport never learn editions exist.**
   `store.ts` and `frames.ts` are untouched; the boundary lives in the mount
-  and Durable Object (one integer and the verb), the funeral in the openers,
-  and the intents in the application
-  (`app.store.reclaim() / reset() / restore(bytes)`, three intents over one
-  wire verb, because their preconditions differ). The application also owns
-  full-reset orchestration and ordering (export, then authority, then blobs,
-  then the local file), because the store knows nothing of blobs and the
-  host owns no application data (ADR-0226).
+  and Durable Object (one integer, the verb, and the probe), the discard
+  verb in the openers (delete the local file whole), the supersession rule
+  in the connection driver, and the one product action (Compact store, with
+  its warning) in the application. The application also owns account
+  deletion's orchestration and ordering (authority, then blobs, then the
+  local file), because the store knows nothing of blobs and the host owns
+  no application data (ADR-0226).
 - **The reborn bytes are branded.** `encodeStateSince()` preserves struct
   identities and reclaims nothing; the reclaim walk re-mints and reclaims
   everything. Both are byte arrays, and handing the wrong one to replace
@@ -399,12 +462,12 @@ principal no longer resolves, so the dial never reaches a Durable Object.
   refusal before any socket exists, and the authenticated POST on the store
   mount (`STORE_REPLACE_ROUTE`) are implemented and test-gated
   (`sync/transport.test.ts`, `packages/server/workers/e2e.test.ts`).
-  **Not built: the client half.** The funeral at `open()`, the durable
-  refusal note and its alarm, the reclaim walk with its branded return type,
-  the three application intents, and `deleteStore()`'s caller remain. A
-  browser `WebSocket` cannot read a refused upgrade's status or body, so the
-  funeral wave also owes a discovery path for the boundary a stale replica
-  was refused with.
+  **Being built under the fifth correction: the client half.** The boundary
+  probe, the driver's supersession rule, `discard()` on the openers, the
+  reclaim walk with its branded return type, and the compact action.
+  **Not built:** `deleteStore()`'s caller (account deletion's flow), the
+  restore bridge from the shelf, and any automatic-maintenance freshness
+  contract.
 
 ## Considered alternatives
 
@@ -491,3 +554,19 @@ one of three places: resurrection, a roster, or a server that reads bytes.
 - **A backup subsystem.** There is nothing to build: the artifact is one
   encoded state, the shelf is `history.sqlite3`, and restore is the verb
   this record already defines.
+- **Export-or-wipe at the stale replica (the fifth correction's
+  withdrawal).** The first design of the client half: a refused dial wrote a
+  durable note, sync blocked, an alarm surfaced, and boot demanded a human
+  choice between exporting the stale state and wiping it, so nothing was
+  ever discarded silently. Withdrawn: the ceremony asked the wrong person,
+  later, with less context (the person compacting is the only one who knows
+  whether a drawer device matters), and it bought that misplaced question
+  with a real state machine: a durable refusal note, a blocked-sync state,
+  an export surface, and a boot ceremony, all defending one narrow, warnable
+  promise. Moving the consent to the verb deletes the machinery and makes
+  every failure tail (crash, retry, concurrent compaction, drawer device)
+  collapse into the one adoption path. What was given up, priced and
+  printed on the confirmation: offline edits a device never synced do not
+  survive someone else's compaction. A future vault-shaped lens that truly
+  needs export-first supersession would build it then, as its own product
+  surface over the same wire facts; nothing is kept warm for it.
