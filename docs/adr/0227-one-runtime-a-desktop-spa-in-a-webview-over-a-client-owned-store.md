@@ -85,6 +85,17 @@ goes, and are rebuilt against the store afterwards. That interval is the price
 of the ordering above, and it is visible in the branch rather than hidden
 behind a compatibility layer.
 
+**A fresh install now transcribes on device.** Whispering's default
+transcription service was `OpenAI`, injected by the runtime, and it was that
+because a browser build cannot run a local model. With the browser build refused
+the constraint is gone, so the Lens declares `transcriptionService = 'local'` and
+a fresh install works with no API key, which the old default never did.
+
+The failure mode is already handled rather than newly introduced: the local
+route needs an active model (ADR-0180), and when there is none
+`getLocalRouteBlocker()` returns the host's own sentence and the UI shows it
+verbatim. It degrades to a stated reason, not to silence.
+
 **What this gives up is real.** Whispering's recordings, vocab's data and
 tab-manager's saved tabs become unreachable. The hosted web surface, which is
 how somebody tries the product without installing anything, stops existing. And
