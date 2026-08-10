@@ -23,8 +23,6 @@
 import type { BlobId } from '@epicenter/blobs';
 import type { PrincipalId } from '@epicenter/identity';
 
-/** Durable Object name template, single form. */
-
 /**
  * Durable Object name template for one AttachRelay pair (ADR-0115). One DO per
  * `(principalId, hostId)`: the host and every client of that pair route to the
@@ -45,6 +43,22 @@ export type BlobR2Key = `principals/${string}/blobs/${string}`;
 /** Common prefix for one partition's blobs, used by the S3 client's list enumeration. */
 export type BlobPrincipalPrefix = `principals/${string}/blobs/`;
 
+/**
+ * Durable Object name template for one partition's store of one application.
+ *
+ * One Durable Object per `(principalId, namespace)` rather than per principal,
+ * because ADR-0215 makes an application ONE document and the authority's log is
+ * that document's: two applications sharing a log would interleave positions
+ * neither could read past. The `principalId` segment is the partition, so a
+ * client that names another application's namespace still lands inside its OWN
+ * partition.
+ *
+ * The application is named by its Lens namespace, which is the same identifier
+ * the replica derives its local storage from, so the two halves of one
+ * application cannot come to disagree about which application they are.
+ */
+export type StoreAuthorityDoName = `principals/${string}/stores/${string}`;
+
 /** Durable name of one AttachRelay pair's Cloudflare Durable Object. */
 export function attachHostDoName(
 	principalId: PrincipalId,
@@ -63,4 +77,12 @@ export function blobPrincipalPrefix(
 	principalId: PrincipalId,
 ): BlobPrincipalPrefix {
 	return `principals/${principalId}/blobs/`;
+}
+
+/** Durable name of one partition's store authority for one application. */
+export function storeAuthorityName(
+	principalId: PrincipalId,
+	namespace: string,
+): StoreAuthorityDoName {
+	return `principals/${principalId}/stores/${namespace}`;
 }

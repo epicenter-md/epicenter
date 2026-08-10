@@ -44,17 +44,20 @@ export function tableRoot(document: Y.Doc, tableName: string): Y.Type {
 }
 
 /**
- * Every root says what kind of thing it is.
+ * A table's root is tagged with its kind; the one non-table root is not.
  *
- * `tables:<name>` for a table, `kv` for the settings root, and nothing else at
- * the top level. Dumping `doc.share` therefore reads as a description of the
- * application rather than as a list of nouns whose kind you have to infer.
+ * `tables:<name>` for a table and a bare `kv` for the settings root, so a
+ * `doc.share` dump reads as a description of the application rather than as a
+ * list of nouns whose kind you have to infer. The tag is a KIND, not a path,
+ * which is why it is a colon: rows are attributes on the root rather than
+ * further segments, so `tables/notes` would invite an address that does not
+ * exist.
  *
- * It also removes a collision that was only prevented by a coincidence. The KV
- * root used to be `!kv`, safe because a table name must begin with a letter, so
- * the reserved prefix was doing the work. With a prefix per kind, a table
- * genuinely named `kv` lands at `tables:kv` and cannot reach the KV root at all,
- * which is a property of the grammar rather than of a character class.
+ * The tag is legibility rather than safety, and it is worth being clear about
+ * that. `parseLens` already refuses `kv` as a table name outright, because it
+ * would collide with the `db.kv` handle key, so a table can no more reach the
+ * settings root than it can be declared. `tables:kv` is a second guard on a
+ * collision the first one already made unreachable.
  */
 export function tableRootName(tableName: string): string {
 	return `tables:${tableName}`;

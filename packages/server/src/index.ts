@@ -91,7 +91,7 @@ export { mountCloudDb } from './mount-cloud-db.js';
 // only the deployment-controlled knobs (auth choice, optional policies). The
 // cloud's Better Auth surface (sessions, OAuth, `c.var.auth`) is bundled into
 // `mountCloudAuth`; an instance composes none of it (ADR-0075).
-export { blobPrincipalPrefix } from './principal.js';
+export { blobPrincipalPrefix, storeAuthorityName } from './principal.js';
 export { mountBlobsApp, resolveDeploymentBlobStore } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountSessionApp } from './routes/session.js';
@@ -121,4 +121,3 @@ export {
 	type ResolveStoreAuthority,
 	type StoreAuthorityStub,
 } from './store-sync/mount.js';
-export { storeAuthorityName } from './store-sync/route.js';

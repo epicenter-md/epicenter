@@ -27,9 +27,9 @@ import { OAuthError } from '../auth/oauth-errors.js';
 import { createOAuthUnauthorizedResourceResponse } from '../auth/oauth-resource.js';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
 import { setPrincipalOrReject } from '../middleware/require-auth.js';
+import { storeAuthorityName } from '../principal.js';
 import type { ServerBindings } from '../server-bindings.js';
 import type { Env, ResolveBearerPrincipal } from '../types.js';
-import { storeAuthorityName } from './route.js';
 
 /** What a runtime hands back for one addressed authority. */
 export type StoreAuthorityStub = {
