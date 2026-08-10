@@ -13,7 +13,10 @@
  * another partition (ADR-0092).
  */
 
-import { BEARER_SUBPROTOCOL_PREFIX, MAIN_SUBPROTOCOL } from './auth-subprotocol.js';
+import {
+	BEARER_SUBPROTOCOL_PREFIX,
+	MAIN_SUBPROTOCOL,
+} from './auth-subprotocol.js';
 
 const stripTrailing = (value: string): string => value.replace(/\/+$/, '');
 
@@ -38,6 +41,39 @@ export const STORE_SYNC_ROUTE = {
 		url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
 		url.searchParams.set('namespace', params.namespace);
 		url.searchParams.set('cursor', String(params.cursor));
+		return url.toString();
+	},
+} as const;
+
+/**
+ * The one out-of-band verb on the store mount: publish a namespace's next
+ * edition (ADR-0231).
+ *
+ * A person-initiated, authenticated POST, deliberately outside the sync
+ * socket: routine sync makes claims and needs provenance, while a replace
+ * makes no coverage claim and needs a lease instead. The body is the encoded
+ * replacement state, opaque to the server; the lease travels in the query.
+ *
+ * `fromBoundary` is compare-and-swap, always (`0` for a namespace never
+ * replaced): the authority applies the replace only if its boundary still
+ * holds that value, and answers a miss with the current one. `atHead` is
+ * supplied by reclaim, which promises "same data" and must be refused if the
+ * tail moved; reset and restore omit it.
+ */
+export const STORE_REPLACE_ROUTE = {
+	pattern: '/api/store/v1/replace',
+	url(
+		baseURL: string,
+		params: { namespace: string; fromBoundary: number; atHead?: number },
+	): string {
+		const url = new URL(
+			`${stripTrailing(baseURL)}${STORE_REPLACE_ROUTE.pattern}`,
+		);
+		url.searchParams.set('namespace', params.namespace);
+		url.searchParams.set('fromBoundary', String(params.fromBoundary));
+		if (params.atHead !== undefined) {
+			url.searchParams.set('atHead', String(params.atHead));
+		}
 		return url.toString();
 	},
 } as const;
