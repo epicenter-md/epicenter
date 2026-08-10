@@ -8,6 +8,11 @@
  * The authority reads nothing (ADR-0218). It holds opaque bytes, hands them
  * back in order, and keeps one snapshot plus the entries after it (ADR-0220).
  * Nothing here imports Yjs or a lens, and there is no verb that could.
+ *
+ * It also holds the edition boundary and answers the replace POST (ADR-0231):
+ * the sync door refuses a cursor from a retired edition before any socket
+ * exists, and the person-owned verb that retires one is a fetch, out of band
+ * from sync.
  */
 import { DurableObject } from 'cloudflare:workers';
 import {
@@ -92,19 +97,35 @@ export class StoreAuthority extends DurableObject {
 	}
 
 	/**
-	 * Take one authenticated upgrade.
+	 * Take one authenticated request: a sync upgrade, or the replace POST.
 	 *
 	 * Called by the route AFTER the bearer has resolved to a principal and the
 	 * stub has been addressed by it, so there is nothing left to authorize here.
 	 */
 	override async fetch(request: Request): Promise<Response> {
+		if (request.method === 'POST') return this.replaceEdition(request);
 		if (request.headers.get('Upgrade') !== 'websocket') {
 			return new Response('The store transport is WebSocket-only', {
 				status: 426,
 			});
 		}
-		const asked = Number(new URL(request.url).searchParams.get('cursor') ?? '0');
+		const asked = Number(
+			new URL(request.url).searchParams.get('cursor') ?? '0',
+		);
 		const cursor = Number.isFinite(asked) && asked >= 0 ? asked : 0;
+		// The edition door, and the whole of edition discovery (ADR-0231). A
+		// cursor below the boundary was minted in a retired edition, and it is
+		// refused HERE, before any socket exists, so retired bytes have no
+		// carrier to arrive on. Zero is not below anything: a replica that never
+		// exchanged a byte holds no commitment, and its independent document is
+		// the one cross-edition merge that is safe.
+		const { data: boundary, error: boundaryError } = this.authority.boundary();
+		if (boundaryError !== null) {
+			return new Response(boundaryError.message, { status: 500 });
+		}
+		if (cursor > 0 && cursor < boundary) {
+			return Response.json({ boundary }, { status: 409 });
+		}
 		const pair = new WebSocketPair();
 
 		this.ctx.acceptWebSocket(pair[1]);
@@ -127,6 +148,12 @@ export class StoreAuthority extends DurableObject {
 		message: ArrayBuffer | string,
 	): void {
 		if (typeof message === 'string') return;
+		// A frame can be delivered after this object already closed the socket: a
+		// push in flight while a replace ran its funeral. `adopt` would resurrect
+		// the connection and append RETIRED-edition bytes into the new edition's
+		// log, which is the contamination the boundary exists to make impossible
+		// (ADR-0231), so a socket this object is done with is deaf here too.
+		if (socket.readyState !== WebSocket.OPEN) return;
 		// Nothing thrown. `workerd` swallows a throw here WITHOUT closing the
 		// socket, so a replica would wait forever on a submission that had already
 		// failed; a refusal has to travel as a frame, and the hub sends one.
@@ -145,6 +172,76 @@ export class StoreAuthority extends DurableObject {
 		const connection = this.connections.get(socket);
 		if (connection !== undefined) this.hub.leave(connection);
 		this.connections.delete(socket);
+	}
+
+	/**
+	 * Publish this namespace's next edition (ADR-0231).
+	 *
+	 * Authority before sockets, in that order and on purpose: the replacement
+	 * is durable before anything else learns of it, and the closed sockets
+	 * reconnect through the dial, meet the boundary, and that is the whole of
+	 * notification. The verb itself lives in `@epicenter/data/sync`; what this
+	 * adapter owns is the HTTP shape of the lease and the funeral of the
+	 * sockets.
+	 */
+	private async replaceEdition(request: Request): Promise<Response> {
+		const query = new URL(request.url).searchParams;
+		const fromBoundary = Number(query.get('fromBoundary'));
+		if (!Number.isInteger(fromBoundary) || fromBoundary < 0) {
+			return new Response('fromBoundary must be a non-negative integer', {
+				status: 400,
+			});
+		}
+		const atHeadRaw = query.get('atHead');
+		const atHead = atHeadRaw === null ? undefined : Number(atHeadRaw);
+		if (atHead !== undefined && (!Number.isInteger(atHead) || atHead < 0)) {
+			return new Response('atHead must be a non-negative integer', {
+				status: 400,
+			});
+		}
+
+		const bytes = new Uint8Array(await request.arrayBuffer());
+		// Framing, not reading: a reset posts an encoded EMPTY DOCUMENT, which is
+		// still bytes. A body of none is a caller that forgot its body, and the
+		// edition it would publish is one no replica could ever adopt.
+		if (bytes.length === 0) {
+			return new Response('the replacement state must not be empty', {
+				status: 400,
+			});
+		}
+		const { data: published, error } = this.authority.replace({
+			fromBoundary,
+			bytes,
+			...(atHead === undefined ? {} : { atHead }),
+		});
+		if (error !== null) {
+			// A lease miss is a refusal that names what moved, so the caller can
+			// retry or reconsider; anything else is the storage failing.
+			if (error.name === 'BoundaryMoved') {
+				return Response.json(
+					{ refused: 'boundary', boundary: error.boundary },
+					{ status: 409 },
+				);
+			}
+			if (error.name === 'HeadMoved') {
+				return Response.json(
+					{ refused: 'head', head: error.head },
+					{ status: 409 },
+				);
+			}
+			return new Response(error.message, { status: 500 });
+		}
+
+		// The old edition's sockets are closed only after the swap is durable.
+		// Their replicas reconnect through the dial and are refused by the
+		// boundary, which is how they learn; nothing is pushed to them. Forgotten
+		// as well as closed, so the hub drops them now rather than when the close
+		// event lands.
+		for (const socket of this.ctx.getWebSockets()) {
+			this.forget(socket);
+			socket.close(1000, 'this edition was replaced');
+		}
+		return Response.json({ boundary: published });
 	}
 
 	/**

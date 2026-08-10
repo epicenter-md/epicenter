@@ -81,9 +81,12 @@ export class StoreTestReplica extends DurableObject<Env> {
 				let socket: WebSocket | undefined;
 				let abandoned = false;
 				void this.env.SELF.fetch(request).then((response) => {
-					const accepted = (response as unknown as { webSocket?: WebSocket })
-						.webSocket;
-					if (accepted === undefined || abandoned) {
+					// `null`, not `undefined`, on a refused upgrade in workerd: the
+					// property exists on every Response and holds nothing.
+					const accepted = (
+						response as unknown as { webSocket?: WebSocket | null }
+					).webSocket;
+					if (accepted === undefined || accepted === null || abandoned) {
 						closed();
 						return;
 					}
@@ -116,6 +119,12 @@ export class StoreTestReplica extends DurableObject<Env> {
 			?.get('body', 'text');
 		if (body === undefined) throw new Error('the row has no document');
 		body.applyDelta(body.change.insert(prose) as never);
+	}
+
+	/** This replica's whole state, re-encoded: the argument a replace posts. */
+	encodeState(): Uint8Array {
+		if (this.store === undefined) throw new Error('open first');
+		return this.store.encodeStateSince();
 	}
 
 	/** What this replica actually holds, read back out of its own SQLite. */

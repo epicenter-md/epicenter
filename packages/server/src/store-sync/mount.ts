@@ -11,11 +11,16 @@
  * however the query is written. That is the whole of the authorization: on
  * Cloud a signed-in bearer owns its own data, and there is no second question
  * to ask. Being signed in on two devices IS the sharing model.
+ *
+ * Two doors, one partition rule. The sync upgrade is routine; the replace
+ * POST (ADR-0231) is the person-initiated verb that publishes a namespace's
+ * next edition, deliberately out of band from the socket.
  */
 import {
 	LENS_NAMESPACE,
 	MAIN_SUBPROTOCOL,
 	parseSubprotocols,
+	STORE_REPLACE_ROUTE,
 	STORE_SYNC_ROUTE,
 } from '@epicenter/sync';
 import { Hono, type MiddlewareHandler } from 'hono';
@@ -56,56 +61,87 @@ function requireStoreBearer<E extends Env>(
 	});
 }
 
+/** One namespace check for both routes: a name no Lens could carry is refused. */
+function parseNamespace(value: string | undefined): string | undefined {
+	if (value === undefined) return undefined;
+	if (!LENS_NAMESPACE.test(value) || value.length > 128) return undefined;
+	return value;
+}
+
 function createStoreSyncApp(resolve: ResolveStoreAuthority): Hono<Env> {
-	return new Hono<Env>().get(
-		STORE_SYNC_ROUTE.pattern,
-		describeRoute({
-			description: "Upgrade onto this partition's store authority",
-			tags: ['store-sync'],
-		}),
-		async (c) => {
-			if (!isWebSocketUpgrade(c)) {
-				return new Response('The store transport is WebSocket-only', {
-					status: 426,
-				});
-			}
-			// An upgrade offering subprotocols must offer the main one: the 101
-			// echoes only `epicenter`, and a compliant browser fails a handshake
-			// whose 101 selects a protocol it did not offer. A client offering none
-			// (a non-browser caller using `Authorization`) is fine.
-			const offered = parseSubprotocols(
-				c.req.header('sec-websocket-protocol') ?? null,
-			);
-			if (offered.length > 0 && !offered.includes(MAIN_SUBPROTOCOL)) {
-				return new Response(
-					`WebSocket upgrade must offer the ${MAIN_SUBPROTOCOL} subprotocol`,
-					{ status: 400 },
+	return new Hono<Env>()
+		.get(
+			STORE_SYNC_ROUTE.pattern,
+			describeRoute({
+				description: "Upgrade onto this partition's store authority",
+				tags: ['store-sync'],
+			}),
+			async (c) => {
+				if (!isWebSocketUpgrade(c)) {
+					return new Response('The store transport is WebSocket-only', {
+						status: 426,
+					});
+				}
+				// An upgrade offering subprotocols must offer the main one: the 101
+				// echoes only `epicenter`, and a compliant browser fails a handshake
+				// whose 101 selects a protocol it did not offer. A client offering none
+				// (a non-browser caller using `Authorization`) is fine.
+				const offered = parseSubprotocols(
+					c.req.header('sec-websocket-protocol') ?? null,
 				);
-			}
+				if (offered.length > 0 && !offered.includes(MAIN_SUBPROTOCOL)) {
+					return new Response(
+						`WebSocket upgrade must offer the ${MAIN_SUBPROTOCOL} subprotocol`,
+						{ status: 400 },
+					);
+				}
 
-			const namespace = c.req.query('namespace') ?? '';
-			if (!LENS_NAMESPACE.test(namespace) || namespace.length > 128) {
-				return new Response('namespace must be a Lens namespace', {
-					status: 400,
+				const namespace = parseNamespace(c.req.query('namespace'));
+				if (namespace === undefined) {
+					return new Response('namespace must be a Lens namespace', {
+						status: 400,
+					});
+				}
+
+				// Server-side principal: never the query's.
+				const name = storeAuthorityName(c.var.principal.id, namespace);
+				const response = await resolve(c.env, name).fetch(c.req.raw);
+				if (response.status !== 101) return response;
+				// Echo only the main subprotocol, so a `bearer.<token>` the client
+				// offered is never reflected back to it.
+				return new Response(response.body, {
+					status: 101,
+					webSocket: (response as unknown as { webSocket: WebSocket })
+						.webSocket,
+					headers:
+						offered.length > 0
+							? { 'sec-websocket-protocol': MAIN_SUBPROTOCOL }
+							: undefined,
 				});
-			}
-
-			// Server-side principal: never the query's.
-			const name = storeAuthorityName(c.var.principal.id, namespace);
-			const response = await resolve(c.env, name).fetch(c.req.raw);
-			if (response.status !== 101) return response;
-			// Echo only the main subprotocol, so a `bearer.<token>` the client
-			// offered is never reflected back to it.
-			return new Response(response.body, {
-				status: 101,
-				webSocket: (response as unknown as { webSocket: WebSocket }).webSocket,
-				headers:
-					offered.length > 0
-						? { 'sec-websocket-protocol': MAIN_SUBPROTOCOL }
-						: undefined,
-			});
-		},
-	);
+			},
+		)
+		.post(
+			STORE_REPLACE_ROUTE.pattern,
+			describeRoute({
+				description:
+					"Publish this namespace's next edition: replace its log with the posted state (ADR-0231)",
+				tags: ['store-sync'],
+			}),
+			async (c) => {
+				const namespace = parseNamespace(c.req.query('namespace'));
+				if (namespace === undefined) {
+					return new Response('namespace must be a Lens namespace', {
+						status: 400,
+					});
+				}
+				// The same partition rule as the upgrade: the principal comes from the
+				// resolved bearer, so this verb cannot be pointed at anyone else's
+				// authority however the query is written. The lease itself
+				// (`fromBoundary`, `atHead`) is the authority's to judge.
+				const name = storeAuthorityName(c.var.principal.id, namespace);
+				return resolve(c.env, name).fetch(c.req.raw);
+			},
+		);
 }
 
 /**
@@ -127,5 +163,15 @@ export function mountStoreSyncApp<E extends Env = Env>(
 		STORE_SYNC_ROUTE.pattern,
 		requireStoreBearer(opts.resolveBearerPrincipal),
 	);
-	app.route('/', createStoreSyncApp(opts.resolveAuthority) as unknown as Hono<E>);
+	// The replace POST is an ordinary fetch, so `extractUpgradeBearer` finds its
+	// credential in the `Authorization` header it prefers anyway; one guard
+	// serves both doors.
+	app.use(
+		STORE_REPLACE_ROUTE.pattern,
+		requireStoreBearer(opts.resolveBearerPrincipal),
+	);
+	app.route(
+		'/',
+		createStoreSyncApp(opts.resolveAuthority) as unknown as Hono<E>,
+	);
 }
