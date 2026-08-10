@@ -370,15 +370,25 @@ export type LensView<TLens> = {
 };
 
 /**
- * One opened application: the file's own verbs, and the lens's view of it.
+ * One opened application: what the lens declared, and the file under `store`.
  *
- * `bind` stays reachable rather than being hidden, and that is deliberate. A
- * namespace may carry more than one interpretation (ADR-0160), so taking a
- * second view of the file this application already holds is the supported way
- * to do it: one document, two views, no second open to refuse.
+ * The split is by who calls it. `tables`, `kv` and `query` are what an
+ * application does; `store` holds sync, pressure, and the CRDT verbs a
+ * transport needs and a feature never touches. Merging the two put thirteen
+ * names on one object where four are used, and cost a forwarded getter and a
+ * cast to build it.
+ *
+ * `store.bind` stays reachable, and that is deliberate. A namespace may carry
+ * more than one interpretation (ADR-0160), so taking a second view of the file
+ * this application already holds is the supported way to do it: one document,
+ * two views, no second open to refuse.
  */
-export type ApplicationOf<TLens, TStore extends Store = Store> = TStore &
-	LensView<TLens>;
+export type ApplicationOf<TLens, TStore extends Store = Store> = LensView<TLens> & {
+	/** This application's file: sync, pressure, and the CRDT verbs. */
+	readonly store: TStore;
+	/** Dispose what you opened, so `await using` works on the application. */
+	[Symbol.asyncDispose](): Promise<void>;
+};
 
 /**
  * Compose one file's verbs with one lens's view of it.
@@ -391,17 +401,15 @@ export type ApplicationOf<TLens, TStore extends Store = Store> = TStore &
  * drains. A browser store already guarded this on its own wrapper; doing it
  * here means neither opener has to remember.
  */
-export function asApplication<TStore extends Store>(
+export function asApplication<TLens, TStore extends Store>(
 	store: TStore,
-	view: object,
-): TStore {
+	view: LensView<TLens>,
+): ApplicationOf<TLens, TStore> {
 	return Object.freeze({
-		...store,
-		get sync() {
-			return store.sync;
-		},
 		...view,
-	}) as TStore;
+		store,
+		[Symbol.asyncDispose]: () => store[Symbol.asyncDispose](),
+	});
 }
 
 /**

@@ -63,7 +63,7 @@ Object.assign(globalThis, {
 		const body = db.tables.notes.document(made.data.id)?.get('body', 'text');
 		if (body === undefined) return { error: 'the row has no document' };
 		body.applyDelta(body.change.insert(prose) as never);
-		const durable = await db.whenDurable();
+		const durable = await db.store.whenDurable();
 		return { id: made.data.id, durable: durable.error === null };
 	},
 
@@ -85,8 +85,8 @@ Object.assign(globalThis, {
 		return {
 			notes: notes.sort((left, right) => left.title.localeCompare(right.title)),
 			projected: counted.data?.[0]?.n ?? -1,
-			durability: db.durability(),
-			pressure: db.pressure().data,
+			durability: db.store.durability(),
+			pressure: db.store.pressure().data,
 		};
 	},
 });

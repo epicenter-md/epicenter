@@ -116,20 +116,42 @@ than a platform forming: one file and one document with two claimants is
 genuinely contended, and contention earns a lifecycle. It is process-local, it
 holds namespaces rather than handles, and disposing a store releases its entry.
 
-### The application mirrors the lens, so nothing is reserved
+### The application is the lens's view, and the file sits under `store`
 
 ```ts
-mail.tables.messages.create({ … });   // the data
+mail.tables.messages.create({ … });   // what an application does
 mail.kv.get();
 mail.query`SELECT …`;
-mail.pressure();                      // the file
-mail.sync;
 await mail[Symbol.asyncDispose]();
+
+mail.store.pressure();                // what the runtime does
+mail.store.sync;
+mail.store.applyRemote(bytes);
 ```
+
+The split is by who calls it, and it is measured rather than asserted. Merging
+the two put **13 own keys on the application where 4 are used**; grouping makes
+it 5, and the nine CRDT and transport verbs stay reachable one hop away.
+
+It also deleted machinery. The merge was
+`Object.freeze({ ...store, get sync() {…}, ...view })`: a forwarded getter,
+because spread copies a getter's value, plus **three `as unknown as` casts**,
+because matching `LensView<TLens>` structurally through a spread intersection
+exceeded TypeScript's depth limit. Grouping is `{ ...view, store }`, the getter
+is unnecessary, and the casts are gone; two call sites pass explicit type
+arguments instead.
+
+**What it did NOT buy, stated because it was the hypothesis going in.**
+TypeScript cost is unchanged: 63,770 instantiations before and 63,951 after,
+check time 1.15 s and 1.08 s, which is noise. Composing the object fell from
+350 ns to 50 ns and from 265 B to below the measurement floor, and that is 0.2%
+of a 136 us open, so nothing about this is a performance decision.
+
+### The application mirrors the lens, so nothing is reserved
 
 A lens declares `namespace`, `title`, `tables` and `kv`. The application is the
 same shape seen from the other side, so `tables` is a container rather than a
-spread and every file-level verb is an ordinary sibling.
+spread.
 
 **Corrected before merge.** A first version of this record spread the tables at
 the top level and put the file's verbs under a reserved `$store` key, citing
@@ -191,6 +213,10 @@ re-export of `./sync`, which no consumer ever reached the transport through.
   path.** A lens arriving as unknown data was the installed-app case; ADR-0227
   refused it. `parseLens` stays exported for the inspector, which reads lenses it
   did not author.
+- **The application is 5 own keys instead of 13**, and the nine CRDT and
+  transport verbs are one hop away under `store` rather than mixed in with the
+  four an application uses. It also removed a forwarded `sync` getter and three
+  `as unknown as` casts.
 - **`query` stops being a reserved table name**, which is what the 242 call
   sites that gained `.tables.` bought. `kv` stays reserved, and for a different
   reason that this record does not remove: KV projects as a one-row SQL relation

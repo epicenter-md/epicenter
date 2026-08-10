@@ -58,12 +58,12 @@ export async function openHoneycrispApplication(
 		const sync =
 			auth === undefined
 				? undefined
-				: attachHoneycrispSync({ store: db, auth, reportBackgroundError });
+				: attachHoneycrispSync({ store: db.store, auth, reportBackgroundError });
 		let disposed = false;
 		return Object.freeze({
 			db,
 			state,
-			pressure: () => db.pressure(),
+			pressure: () => db.store.pressure(),
 			syncStatus: () => sync?.status(),
 			async [Symbol.asyncDispose]() {
 				if (disposed) return;

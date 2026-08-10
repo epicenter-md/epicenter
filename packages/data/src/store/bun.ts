@@ -62,12 +62,7 @@ export async function open<const TLens extends LensJson>(
 		await store[Symbol.asyncDispose]().catch(() => undefined);
 		return Err(view.error);
 	}
-	return Ok(
-		// Cast for the reason `bind` casts: matching `LensView<TLens>` structurally
-		// re-enters the per-field arktype instantiation and exceeds TypeScript's
-		// depth limit. The runtime value is the same object either way.
-		asApplication(store, view.data) as unknown as ApplicationOf<TLens>,
-	);
+	return Ok(asApplication<TLens, Store>(store, view.data));
 }
 
 /**
@@ -135,8 +130,7 @@ export function openMemory<const TLens extends LensJson>(
 	const store = openMemoryStore();
 	const view = store.bind(lens);
 	if (view.error !== null) throw view.error;
-	// The same cast `open` makes, for the same depth-limit reason.
-	return asApplication(store, view.data) as unknown as ApplicationOf<TLens>;
+	return asApplication(store, view.data);
 }
 
 function openMemoryStore(): Store {

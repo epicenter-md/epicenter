@@ -120,12 +120,12 @@ describe('deletion', () => {
 		// does not get to opt out. At this row's shape the two models measure 37 B
 		// and 86 B per dead row, so a regression to clear-and-flag fails here long
 		// before anyone notices it on a device.
-		const empty = db.encodeStateSince().length;
+		const empty = db.store.encodeStateSince().length;
 		for (let index = 0; index < 200; index += 1) {
 			db.tables.notes.delete(note({ title: 'x'.repeat(100) }).id);
 		}
 		expect(db.tables.notes.ids().data).toEqual([]);
-		const perDeadRow = (db.encodeStateSince().length - empty) / 200;
+		const perDeadRow = (db.store.encodeStateSince().length - empty) / 200;
 		expect(perDeadRow).toBeLessThan(60);
 	});
 
@@ -177,7 +177,7 @@ describe('a nonconforming row is reported, never repaired', () => {
 	test('the call site composes recovery from defaults and what survived', () => {
 		const made = note();
 		// Corrupt a stored value the way a peer on a newer release could.
-		const { data: raw, error: bindError } = db.bind(wrongLens);
+		const { data: raw, error: bindError } = db.store.bind(wrongLens);
 		if (bindError !== null) throw bindError;
 		raw.tables.notes?.update(made.id, { tags: 'food' });
 
@@ -195,7 +195,7 @@ describe('a nonconforming row is reported, never repaired', () => {
 	test('list separates what it can read from what it cannot', () => {
 		const broken = note({ title: 'broken' });
 		const fine = note({ title: 'fine' });
-		const { data: raw } = db.bind(wrongLens);
+		const { data: raw } = db.store.bind(wrongLens);
 		raw?.tables.notes?.update(broken.id, { tags: 'food' });
 		const { data } = db.tables.notes.list();
 		expect(data?.rows.map((row) => row.id)).toEqual([fine.id]);
@@ -211,7 +211,7 @@ describe('two replicas converge', () => {
 	test('a row made on one device appears on the other', () => {
 		const { laptop } = pair();
 		const made = note({ title: 'Recorded on the phone', tags: ['voice'] });
-		exchange(db, laptop);
+		exchange(db.store, laptop.store);
 
 		expect(laptop.tables.notes.get(made.id).data?.title).toBe(
 			'Recorded on the phone',
@@ -225,11 +225,11 @@ describe('two replicas converge', () => {
 	test('offline edits to different fields of one row both survive', () => {
 		const { laptop } = pair();
 		const made = note({ title: 'first' });
-		exchange(db, laptop);
+		exchange(db.store, laptop.store);
 
 		db.tables.notes.update(made.id, { title: 'phone title' });
 		laptop.tables.notes.update(made.id, { date: '2026-08-07' });
-		exchange(db, laptop);
+		exchange(db.store, laptop.store);
 
 		for (const [name, handle] of [
 			['phone', db.tables.notes],
@@ -249,11 +249,11 @@ describe('two replicas converge', () => {
 		// (`evidence/deletion-model.test.ts`).
 		const { laptop } = pair();
 		const made = note({ title: 'first' });
-		exchange(db, laptop);
+		exchange(db.store, laptop.store);
 
 		db.tables.notes.delete(made.id);
 		laptop.tables.notes.update(made.id, { title: 'edited offline' });
-		exchange(db, laptop);
+		exchange(db.store, laptop.store);
 
 		expect(db.tables.notes.get(made.id).data).toBeUndefined();
 		expect(laptop.tables.notes.get(made.id).data).toBeUndefined();
@@ -271,7 +271,7 @@ describe('two replicas converge', () => {
 			tags: [],
 			date: null,
 		});
-		exchange(db, laptop);
+		exchange(db.store, laptop.store);
 
 		expect(db.tables.notes.list().data?.rows).toHaveLength(2);
 		expect(laptop.tables.notes.list().data?.rows).toHaveLength(2);
@@ -422,7 +422,7 @@ describe('kv is where anything two devices both write belongs', () => {
 
 		phone.kv.update({ theme: 'dark' });
 		laptop.kv.update({ fontSize: 22 });
-		exchange(phone, laptop);
+		exchange(phone.store, laptop.store);
 
 		const expected = { theme: 'dark', fontSize: 22 } as const;
 		expect(phone.kv.get().data).toEqual(expected);
@@ -451,10 +451,10 @@ describe('a received update is persisted as the bytes that arrived', () => {
 			date: null,
 		});
 		if (made.error !== null) throw made.error;
-		const first = origin.encodeStateSince();
-		const afterFirst = origin.stateVector();
+		const first = origin.store.encodeStateSince();
+		const afterFirst = origin.store.stateVector();
 		origin.tables.notes.update(made.data.id, { title: 'second' });
-		const second = origin.encodeStateSince(afterFirst);
+		const second = origin.store.encodeStateSince(afterFirst);
 
 		const directory = await mkdtemp(join(tmpdir(), 'epicenter-store-'));
 		try {
@@ -463,15 +463,15 @@ describe('a received update is persisted as the bytes that arrived', () => {
 					root: directory,
 				});
 				if (openError !== null) throw openError;
-				expect(laptop.applyRemote(second).error).toBeNull();
-				expect(laptop.hasUnresolvedDependencies()).toBe(true);
+				expect(laptop.store.applyRemote(second).error).toBeNull();
+				expect(laptop.store.hasUnresolvedDependencies()).toBe(true);
 				await laptop[Symbol.asyncDispose]();
 			}
 			const { data: db2, error: reopenError } = await open(lens, {
 				root: directory,
 			});
 			if (reopenError !== null) throw reopenError;
-			const reopened = db2;
+			const reopened = db2.store;
 			expect(reopened.hasUnresolvedDependencies()).toBe(true);
 
 			expect(reopened.applyRemote(first).error).toBeNull();
@@ -486,9 +486,9 @@ describe('a received update is persisted as the bytes that arrived', () => {
 	test('a fully applied replica reports no unresolved dependencies', () => {
 		note();
 		const laptop = openMemory(lens);
-		laptop.bind(lens);
-		laptop.applyRemote(db.encodeStateSince(laptop.stateVector()));
-		expect(laptop.hasUnresolvedDependencies()).toBe(false);
+		laptop.store.bind(lens);
+		laptop.store.applyRemote(db.store.encodeStateSince(laptop.store.stateVector()));
+		expect(laptop.store.hasUnresolvedDependencies()).toBe(false);
 	});
 });
 
@@ -496,7 +496,7 @@ describe('pressure is the number that decides whether any of this matters', () =
 	test('a healthy document sits near the item cost of one row', () => {
 		for (let index = 0; index < 20; index += 1)
 			note({ title: `note ${index}` });
-		const { data, error } = db.pressure();
+		const { data, error } = db.store.pressure();
 
 		expect(error).toBeNull();
 		expect(data?.liveRows).toBe(20);
@@ -511,21 +511,21 @@ describe('pressure is the number that decides whether any of this matters', () =
 		// documents are indistinguishable from every other verb.
 		for (let index = 0; index < 20; index += 1)
 			note({ title: `keeper ${index}` });
-		const healthy = db.pressure().data?.itemsPerLiveRow ?? 0;
+		const healthy = db.store.pressure().data?.itemsPerLiveRow ?? 0;
 
 		for (let index = 0; index < 200; index += 1) {
 			const doomed = note({ title: `churn ${index}` });
 			const { error } = db.tables.notes.delete(doomed.id);
 			if (error !== null) throw error;
 		}
-		const churned = db.pressure().data;
+		const churned = db.store.pressure().data;
 
 		expect(churned?.liveRows).toBe(20);
 		expect(churned?.itemsPerLiveRow).toBeGreaterThan(healthy * 3);
 	});
 
 	test('an empty document reports its items rather than dividing by zero', () => {
-		const { data, error } = db.pressure();
+		const { data, error } = db.store.pressure();
 
 		expect(error).toBeNull();
 		expect(data?.liveRows).toBe(0);
@@ -571,7 +571,7 @@ describe('a subscription names the rows a commit touched', () => {
 		// The control. Without it every assertion above would still pass on an
 		// implementation that invalidated every subscriber on every commit.
 		const other = openMemory(lens);
-		const bound = other.bind(
+		const bound = other.store.bind(
 			defineLens({
 				namespace: 'so.epicenter.honeycrisp',
 				tables: {
@@ -606,7 +606,7 @@ describe('a subscription names the rows a commit touched', () => {
 		});
 		const { seen } = record(db.tables.notes);
 
-		db.applyRemote(author.encodeStateSince());
+		db.store.applyRemote(author.store.encodeStateSince());
 
 		expect(seen).toHaveLength(1);
 		const only = seen[0];
@@ -667,7 +667,7 @@ describe('a subscription names the rows a commit touched', () => {
 				sql: db.query`SELECT count(*) AS n FROM notes`.data?.[0]?.n as number,
 			};
 		});
-		db.applyRemote(author.encodeStateSince());
+		db.store.applyRemote(author.store.encodeStateSince());
 
 		expect(atNotify).toEqual({ crdt: 1, sql: 1 });
 	});
@@ -750,7 +750,7 @@ describe('kv reports its own changes', () => {
 		const seen: number[] = [];
 		db.kv.subscribe(() => seen.push(db.kv.get().data?.fontSize as number));
 
-		db.applyRemote(author.encodeStateSince());
+		db.store.applyRemote(author.store.encodeStateSince());
 
 		expect(seen).toEqual([22]);
 	});
@@ -796,8 +796,8 @@ describe('the kv projection is a cache, and is rebuilt like one', () => {
 		// kept answering with a row the old declaration wrote.
 		db.kv.update({ theme: 'dark' });
 		const relensed = openMemory(lens);
-		relensed.bind(lens);
-		const second = relensed.bind(
+		relensed.store.bind(lens);
+		const second = relensed.store.bind(
 			defineLens({
 				namespace: 'so.epicenter.honeycrisp',
 				kv: { theme: "'light'|'dark' = 'light'", added: "string = 'new'" },

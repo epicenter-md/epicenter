@@ -184,15 +184,7 @@ export async function open<const TLens extends LensJson>(
 		await store[Symbol.asyncDispose]().catch(() => undefined);
 		return Err(view.error);
 	}
-	return Ok(
-		// Cast for the reason `bind` casts: matching `LensView<TLens>` structurally
-		// re-enters the per-field arktype instantiation and exceeds TypeScript's
-		// depth limit. The runtime value is the same object either way.
-		asApplication(store, view.data) as unknown as ApplicationOf<
-			TLens,
-			BrowserStore
-		>,
-	);
+	return Ok(asApplication<TLens, BrowserStore>(store, view.data));
 }
 
 async function openBrowserStore({

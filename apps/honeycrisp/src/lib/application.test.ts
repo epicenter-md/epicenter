@@ -40,7 +40,7 @@ function createApplication() {
 			return disposals;
 		},
 		value: {
-			pressure: () => ({ data: undefined, error: null }),
+			store: { pressure: () => ({ data: undefined, error: null }) },
 			async [Symbol.asyncDispose]() {
 				disposals += 1;
 			},
