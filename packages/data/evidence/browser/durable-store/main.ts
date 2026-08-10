@@ -6,18 +6,32 @@
  */
 import { defineLens } from '@epicenter/lens';
 
-import { type BrowserStore, openBrowserStore } from '../../../src/store/browser.js';
-import type { BoundOf } from '../../../src/store/store.js';
+import { type BrowserStore, open as openBrowser } from '../../../src/store/browser.js';
+import type { Application } from '../../../src/store/open.js';
 
-const lens = defineLens({
-	namespace: 'so.epicenter.durableprobe',
-	tables: { notes: { title: 'string' } },
-});
+/**
+ * Two namespaces, because a namespace is what makes two stores two stores.
+ *
+ * The control below used to open one namespace under a second NAME and call
+ * that a different file. A lens names the store it opens (ADR-0229), so there
+ * is no second name left to vary, and the honest control is a second namespace.
+ */
+const lenses = {
+	vault: defineLens({
+		namespace: 'so.epicenter.durableprobe',
+		tables: { notes: { title: 'string' } },
+	}),
+	'somewhere-else': defineLens({
+		namespace: 'so.epicenter.durableprobe.elsewhere',
+		tables: { notes: { title: 'string' } },
+	}),
+} as const;
 
-let store: BrowserStore | undefined;
-let db: BoundOf<typeof lens> | undefined;
+type ProbeApplication = Application<(typeof lenses)['vault'], BrowserStore>;
 
-function bound(): BoundOf<typeof lens> {
+let db: ProbeApplication | undefined;
+
+function bound(): ProbeApplication {
 	if (db === undefined) throw new Error('open a store first');
 	return db;
 }
@@ -28,14 +42,13 @@ function show(value: unknown): void {
 }
 
 Object.assign(globalThis, {
-	async open(name: string) {
-		const opened = await openBrowserStore({ name });
+	async open(name: keyof typeof lenses) {
+		const lens = lenses[name];
+		if (lens === undefined) return { error: `no lens named ${name}` };
+		const opened = await openBrowser(lens);
 		if (opened.error !== null) return { error: opened.error.message };
-		store = opened.data;
-		const binding = store.bind(lens);
-		if (binding.error !== null) return { error: binding.error.message };
-		db = binding.data;
-		show({ opened: name });
+		db = opened.data as ProbeApplication;
+		show({ opened: name, namespace: lens.namespace });
 		return { ok: true };
 	},
 
@@ -47,8 +60,8 @@ Object.assign(globalThis, {
 		const body = db.notes.document(made.data.id)?.get('body', 'text');
 		if (body === undefined) return { error: 'the row has no document' };
 		body.applyDelta(body.change.insert(prose) as never);
-		const durable = await store?.whenDurable();
-		return { id: made.data.id, durable: durable?.error === null };
+		const durable = await db.$store.whenDurable();
+		return { id: made.data.id, durable: durable.error === null };
 	},
 
 	/** Everything this store can see right now, read synchronously. */
@@ -69,8 +82,8 @@ Object.assign(globalThis, {
 		return {
 			notes: notes.sort((left, right) => left.title.localeCompare(right.title)),
 			projected: counted.data?.[0]?.n ?? -1,
-			durability: store?.durability(),
-			pressure: store?.pressure().data,
+			durability: db.$store.durability(),
+			pressure: db.$store.pressure().data,
 		};
 	},
 });

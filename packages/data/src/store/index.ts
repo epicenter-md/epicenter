@@ -11,7 +11,12 @@
  * used to answer at `./legacy` was deleted along with its consumers (ADR-0227),
  * so a developer arriving here finds one store rather than a choice between
  * two.
+ *
+ * Each opener is called `open` and takes the lens, because a lens names the
+ * store it opens (ADR-0229). The subpath already says which adapter, so the
+ * identifier does not repeat it.
  */
+export type { Application } from './open.js';
 export {
 	type Bound,
 	type BoundOf,

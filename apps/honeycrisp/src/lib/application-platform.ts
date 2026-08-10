@@ -1,4 +1,5 @@
-import { openBrowserStore } from '@epicenter/data/browser';
+import { open as openBrowser } from '@epicenter/data/browser';
+import { honeycrispLens } from '@epicenter/honeycrisp';
 import { createLogger } from 'wellcrafted/logger';
 import { auth } from '#platform/auth';
 import type { HoneycrispDependencies } from './application.js';
@@ -30,11 +31,16 @@ const log = createLogger('honeycrisp/application');
  * Auth still differs per build and keeps its seam (`#platform/auth`), because
  * the host really does broker a credential its windows cannot obtain.
  *
+ * Where the data lives is not named here either. The lens names the store it
+ * opens (ADR-0229), so `so.epicenter.honeycrisp` is the namespace, the durable
+ * record, and the authority address, and there is no second string for this
+ * file to get wrong.
+ *
  * Inert: nothing opens until the root calls it.
  */
 export const honeycrispPlatform: HoneycrispDependencies = {
-	async openStore() {
-		const { data, error } = await openBrowserStore({ name: 'honeycrisp' });
+	async open() {
+		const { data, error } = await openBrowser(honeycrispLens);
 		if (error !== null) throw error;
 		return data;
 	},

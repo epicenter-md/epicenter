@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { openBunStore, openMemoryStore } from './bun.js';
+import { open, openMemoryStore } from './bun.js';
 import type { Store } from './store.js';
 
 const lens = defineLens({
@@ -17,7 +17,7 @@ const lens = defineLens({
 	},
 });
 
-function open() {
+function openMemory() {
 	const store = openMemoryStore();
 	const { data: db, error } = store.bind(lens);
 	if (error !== null) throw error;
@@ -25,10 +25,10 @@ function open() {
 }
 
 let store: Store;
-let db: ReturnType<typeof open>['db'];
+let db: ReturnType<typeof openMemory>['db'];
 
 beforeEach(() => {
-	({ store, db } = open());
+	({ store, db } = openMemory());
 });
 
 /** A note, and its minted id, for tests that need one to exist. */
@@ -280,16 +280,59 @@ describe('two replicas converge', () => {
 	});
 });
 
+describe('a lens names the store it opens', () => {
+	test('one namespace opens once per process, and disposing releases it', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'epicenter-claim-'));
+		try {
+			const first = await open(lens, { root });
+			if (first.error !== null) throw first.error;
+
+			const second = await open(lens, { root });
+			expect(second.error?.name).toBe('AlreadyOpen');
+			// The refusal is the whole point: a second open would be a second
+			// `Y.Doc` over one document, and the two converge through storage
+			// under last-writer-wins rather than seeing each other.
+			expect(second.data).toBeNull();
+
+			await first.data.$store[Symbol.asyncDispose]();
+
+			const third = await open(lens, { root });
+			expect(third.error).toBeNull();
+			await third.data?.$store[Symbol.asyncDispose]();
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test('a lens that will not bind releases the namespace it claimed', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'epicenter-refused-'));
+		try {
+			// A table named `query` collides with the reserved method, so this lens
+			// parses and then refuses to bind. The store it half-opened must be
+			// disposed and its namespace released, or the namespace is claimed for
+			// the life of the process and the application can never start.
+			const refused = { namespace: lens.namespace, tables: { query: { a: 'string' } } };
+			const attempt = await open(refused as never, { root });
+			expect(attempt.error).not.toBeNull();
+
+			const after = await open(lens, { root });
+			expect(after.error).toBeNull();
+			await after.data?.$store[Symbol.asyncDispose]();
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+});
+
 describe('the document a row inherently owns', () => {
 	test('holds application-named roots and survives a reopen', async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'epicenter-doc-'));
 		try {
 			let id!: string;
 			{
-				const { data: disk, error } = await openBunStore({ directory });
+				const { data: diskDb, error } = await open(lens, { root: directory });
 				if (error !== null) throw error;
-				const { data: diskDb, error: bindError } = disk.bind(lens);
-				if (bindError !== null) throw bindError;
+				const disk = diskDb.$store;
 				const made = diskDb.notes.create({ title: 'x', tags: [], date: null });
 				if (made.error !== null) throw made.error;
 				id = made.data.id;
@@ -302,14 +345,12 @@ describe('the document a row inherently owns', () => {
 				container.get('meta').setAttr('cursor' as never, 8 as never);
 				await disk[Symbol.asyncDispose]();
 			}
-			const { data: reopened, error } = await openBunStore({ directory });
+			const { data: db2, error } = await open(lens, { root: directory });
 			if (error !== null) throw error;
-			const { data: db2, error: bindError } = reopened.bind(lens);
-			if (bindError !== null) throw bindError;
 			const container = db2.notes.document(id);
 			expect(container?.get('editor', 'text').toString()).toContain('buy milk');
 			expect(container?.get('meta').getAttr('cursor' as never)).toBe(8);
-			await reopened[Symbol.asyncDispose]();
+			await db2.$store[Symbol.asyncDispose]();
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
@@ -413,21 +454,20 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		const directory = await mkdtemp(join(tmpdir(), 'epicenter-store-'));
 		try {
 			{
-				const { data: laptop, error: openError } = await openBunStore({
-					directory,
+				const { data: laptopDb, error: openError } = await open(lens, {
+					root: directory,
 				});
 				if (openError !== null) throw openError;
-				laptop.bind(lens);
+				const laptop = laptopDb.$store;
 				expect(laptop.applyRemote(second).error).toBeNull();
 				expect(laptop.hasUnresolvedDependencies()).toBe(true);
 				await laptop[Symbol.asyncDispose]();
 			}
-			const { data: reopened, error: reopenError } = await openBunStore({
-				directory,
+			const { data: db2, error: reopenError } = await open(lens, {
+				root: directory,
 			});
 			if (reopenError !== null) throw reopenError;
-			const { data: db2, error: bindError } = reopened.bind(lens);
-			if (bindError !== null) throw bindError;
+			const reopened = db2.$store;
 			expect(reopened.hasUnresolvedDependencies()).toBe(true);
 
 			expect(reopened.applyRemote(first).error).toBeNull();
@@ -546,7 +586,7 @@ describe('a subscription names the rows a commit touched', () => {
 	test('one commit touching many rows is ONE call carrying every id', () => {
 		// ADR-0187's law 3. A remote update is the only thing in this surface
 		// that commits more than one row at a time, so it is what proves it.
-		const author = open();
+		const author = openMemory();
 		const ids = [0, 1, 2].map(
 			(index) => {
 				const made = author.db.notes.create({
@@ -607,7 +647,7 @@ describe('a subscription names the rows a commit touched', () => {
 		// projection has been rebuilt, so a subscriber notified there sees the
 		// CRDT reporting a row that `db.query` cannot find. Notifying after the
 		// projection commits is what makes these two agree.
-		const author = open();
+		const author = openMemory();
 		author.db.notes.create({ title: 'from the phone', tags: [], date: null });
 
 		let atNotify: { crdt: number; sql: number } | undefined;
@@ -693,7 +733,7 @@ describe('kv reports its own changes', () => {
 	test('a change that arrived from a peer notifies too', () => {
 		// The case a settings screen exists for: another device changed a
 		// preference and this one has to stop showing the old value.
-		const author = open();
+		const author = openMemory();
 		author.db.kv.update({ fontSize: 22 });
 		const seen: number[] = [];
 		db.kv.subscribe(() => seen.push(db.kv.get().data?.fontSize as number));

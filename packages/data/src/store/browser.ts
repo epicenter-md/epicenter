@@ -32,10 +32,17 @@
  * exclusive-per-origin retry loop, a message protocol, and the mirroring of
  * every statement including the projection writes it turned out nobody wanted.
  */
+import type { LensJson, LensParseError } from '@epicenter/lens';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
+import {
+	type Application,
+	bindOpened,
+	claimNamespace,
+	releaseNamespace,
+} from './open.js';
 import {
 	APP_DOCUMENT,
 	applyStoreSchema,
@@ -89,6 +96,20 @@ function openIndexedDb(name: string): Promise<IDBDatabase> {
 		};
 		request.onsuccess = () => resolve(request.result);
 		request.onerror = () => reject(request.error ?? new Error('indexedDB.open failed'));
+		// `blocked` fires when another tab holds an older version of this database
+		// open, and when it does NEITHER `success` NOR `error` follows. Without
+		// this the promise never settles, so `openBrowserStore` hangs with no
+		// error and the application simply never boots in that one tab.
+		//
+		// Unreachable at version 1, and that is exactly why it is here: it becomes
+		// reachable the first time anyone bumps the version, and the symptom then
+		// is a hang rather than anything that would point at the change.
+		request.onblocked = () =>
+			reject(
+				new Error(
+					'Another tab is holding an older version of this store open. Close it and reload.',
+				),
+			);
 	});
 }
 
@@ -120,16 +141,48 @@ function describe(cause: unknown): { name: string; message: string } {
 	return { name: 'Error', message: String(cause) };
 }
 
-export async function openBrowserStore({
+/**
+ * Open the application this lens names, in a browser page.
+ *
+ * The lens names the store (ADR-0229): its namespace is the identity, so the
+ * IndexedDB database is derived rather than passed. An origin can host more
+ * than one application, and each one is its own namespace, its own document,
+ * and its own durable record.
+ *
+ * @example
+ * ```ts
+ * const { data: mail } = await open(inbox);
+ * mail.messages.create({ subject: 'hi', unread: true });
+ * mail.$store.pressure();
+ * ```
+ */
+export async function open<const TLens extends LensJson>(
+	lens: TLens,
+): Promise<
+	Result<Application<TLens, BrowserStore>, StoreError | LensParseError>
+> {
+	const { error: claimError } = claimNamespace(lens.namespace);
+	if (claimError !== null) return Err(claimError);
+
+	const { data: store, error: storeError } = await openBrowserStore({
+		name: lens.namespace,
+	});
+	if (storeError !== null) {
+		releaseNamespace(lens.namespace);
+		return Err(storeError);
+	}
+
+	const bound = bindOpened(lens, store);
+	if (bound.error !== null) {
+		await store[Symbol.asyncDispose]().catch(() => undefined);
+		return Err(bound.error);
+	}
+	return Ok(bound.data);
+}
+
+async function openBrowserStore({
 	name,
 }: {
-	/**
-	 * This application's durable state, inside the origin's private storage.
-	 *
-	 * Named by the application rather than derived, because an origin can host
-	 * more than one and ADR-0215's "one document per application" is a statement
-	 * about documents rather than about origins.
-	 */
 	name: string;
 }): Promise<Result<BrowserStore, StoreError>> {
 	const opened = await tryAsync({
@@ -245,6 +298,7 @@ export async function openBrowserStore({
 		database,
 		dispose: () => {
 			durable.close();
+			releaseNamespace(name);
 		},
 	});
 

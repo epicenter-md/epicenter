@@ -81,7 +81,7 @@ describe('storage ownership', () => {
 		const source = await Bun.file(
 			join(appRoot, 'src/lib/application-platform.ts'),
 		).text();
-		expect(source).toContain('openBrowserStore');
+		expect(source).toContain("from '@epicenter/data/browser'");
 		expect(source).not.toContain('openDesktopEpicenter');
 		expect(source).not.toContain('openBrowserEpicenter');
 	});

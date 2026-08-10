@@ -1,20 +1,20 @@
-import type { Store } from '@epicenter/data';
+import type { Application, Store } from '@epicenter/data';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
-import { type HoneycrispData, honeycrispLens } from '@epicenter/honeycrisp';
+import { type HoneycrispData, type honeycrispLens } from '@epicenter/honeycrisp';
 import { createHoneycrispState } from '../routes/state/index.js';
 import type { PlatformAuth } from './platform/types.js';
 import { attachHoneycrispSync } from './sync.js';
 
 export type HoneycrispDependencies = {
 	/**
-	 * Open the store this build talks to.
+	 * Open Honeycrisp, hydrated and bound.
 	 *
-	 * The whole of what separates Honeycrisp's builds. A browser origin owns its
-	 * own file inside its private storage; a build the desktop host serves opens
-	 * the one the host owns. Which it is, is decided by which module compiled
-	 * (ADR-0190), never by asking the DOM at runtime.
+	 * The lens names the store it opens (ADR-0229), so a build chooses an
+	 * adapter and nothing else: no path, no database name, and no second call to
+	 * bind. Which adapter is decided by which module compiled, never by asking
+	 * the DOM at runtime.
 	 */
-	openStore(): Promise<Store>;
+	open(): Promise<Application<typeof honeycrispLens>>;
 	/**
 	 * This build's auth, when it has one.
 	 *
@@ -47,16 +47,14 @@ export type HoneycrispApplication = {
  * which is why nothing below this line returns a promise.
  */
 export async function openHoneycrispApplication(
-	{ openStore, auth, reportBackgroundError }: HoneycrispDependencies,
+	{ open, auth, reportBackgroundError }: HoneycrispDependencies,
 	{ signal }: { signal?: AbortSignal } = {},
 ): Promise<HoneycrispApplication> {
 	signal?.throwIfAborted();
-	const store = await openStore();
+	const db = await open();
+	const store = db.$store;
 	try {
 		signal?.throwIfAborted();
-		const bound = store.bind(honeycrispLens);
-		if (bound.error !== null) throw bound.error;
-		const db = bound.data;
 		const state = createHoneycrispState({ db, reportBackgroundError });
 		const sync =
 			auth === undefined

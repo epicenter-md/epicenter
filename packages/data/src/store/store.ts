@@ -95,15 +95,6 @@ export const StoreError = defineErrors({
 		table,
 		rowId,
 	}),
-	RowExists: ({ table, rowId }: { table: string; rowId: string }) => ({
-		message: `Table '${table}' already holds row '${rowId}'`,
-		table,
-		rowId,
-	}),
-	UnknownTable: ({ table }: { table: string }) => ({
-		message: `This lens declares no table '${table}'`,
-		table,
-	}),
 	/**
 	 * Durable storage refused a write the live document already made.
 	 *
@@ -116,6 +107,18 @@ export const StoreError = defineErrors({
 		cause,
 	}),
 	Disposed: () => ({ message: 'This store is disposed' }),
+	/**
+	 * This process already holds this namespace open.
+	 *
+	 * A second open would be a second `Y.Doc` over one document, and the two
+	 * cannot see each other's writes: they converge through storage under
+	 * last-writer-wins, so one side's work vanishes with no error and nothing to
+	 * retry (ADR-0229). Dispose the first application, or share the one you have.
+	 */
+	AlreadyOpen: ({ namespace }: { namespace: string }) => ({
+		message: `This process already has ${namespace} open`,
+		namespace,
+	}),
 	/**
 	 * A subscriber threw while being told about a committed change.
 	 *
@@ -256,11 +259,17 @@ export type RowDocument = {
 };
 
 /**
- * Read-only SQL over one application's own projection.
+ * Read-only SQL over this store's projection.
  *
- * On the binding rather than on the store, so an application reaches only its
- * own namespace. `query` is a reserved table name for exactly this reason: a
- * table becomes a key on the same handle that carries the method.
+ * It reaches one application's tables because a store holds one application,
+ * not because anything here scopes by namespace: the statement runs against the
+ * whole file, including `_updates`, `_outbox` and `_cursor`. That is a bound on
+ * WHAT A STORE IS, and it is the only bound there is.
+ *
+ * It lives on the binding rather than on the store so that a caller reaches it
+ * beside the tables it queries. `query` is a reserved table name for exactly
+ * that reason: a table becomes a key on the same handle that carries the
+ * method.
  */
 export type QueryMethod = (
 	strings: TemplateStringsArray,

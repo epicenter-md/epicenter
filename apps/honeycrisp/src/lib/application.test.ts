@@ -25,38 +25,32 @@ mock.module('$app/state', () => ({
 
 const { openHoneycrispApplication } = await import('./application.js');
 
-/** A store that binds however the test says, and counts its own disposal. */
-function createStore(bind: () => unknown) {
+/**
+ * An opened application, counting its own disposal.
+ *
+ * A lens the store refuses no longer reaches here. `open` binds the lens that
+ * named it (ADR-0229), so a refusal never produces an application at all, and
+ * the store it half-opened is disposed by the opener. That case is proved where
+ * it now lives, in `packages/data/src/store/store.test.ts`.
+ */
+function createApplication() {
 	let disposals = 0;
 	return {
 		get disposals() {
 			return disposals;
 		},
 		value: {
-			bind,
-			pressure: () => ({ data: undefined, error: null }),
-			async [Symbol.asyncDispose]() {
-				disposals += 1;
+			$store: {
+				pressure: () => ({ data: undefined, error: null }),
+				async [Symbol.asyncDispose]() {
+					disposals += 1;
+				},
 			},
 		} as never,
 	};
 }
 
-test('a lens the store refuses releases the store', async () => {
-	const refusal = { name: 'Malformed', message: 'this lens is not a lens' };
-	const store = createStore(() => ({ data: null, error: refusal }));
-
-	await expect(
-		openHoneycrispApplication({
-			openStore: async () => store.value,
-			reportBackgroundError() {},
-		}),
-	).rejects.toBe(refusal);
-
-	expect(store.disposals).toBe(1);
-});
-
-test('an abort before the store opens never opens one', async () => {
+test('an abort before the application opens never opens one', async () => {
 	const controller = new AbortController();
 	controller.abort();
 	let opened = 0;
@@ -64,9 +58,9 @@ test('an abort before the store opens never opens one', async () => {
 	await expect(
 		openHoneycrispApplication(
 			{
-				openStore: async () => {
+				open: async () => {
 					opened += 1;
-					return createStore(() => ({ data: {}, error: null })).value;
+					return createApplication().value;
 				},
 				reportBackgroundError() {},
 			},
