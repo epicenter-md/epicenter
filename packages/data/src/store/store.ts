@@ -423,7 +423,7 @@ export type KvHandle<TValues = JsonObject> = {
 	 *
 	 * @example
 	 * ```ts
-	 * const { data, error } = await db.kv.get();
+	 * const { data, error } = db.kv.get();
 	 * const settings = data ?? { ...db.kv.defaults, ...error?.conforming };
 	 * ```
 	 */

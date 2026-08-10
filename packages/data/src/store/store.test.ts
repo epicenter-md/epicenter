@@ -205,38 +205,35 @@ describe('a nonconforming row is reported, never repaired', () => {
 
 describe('two replicas converge', () => {
 	function pair() {
-		const laptop = openMemory(lens);
-		const { data: laptopDb, error } = laptop.bind(lens);
-		if (error !== null) throw error;
-		return { laptop, laptopDb };
+		return { laptop: openMemory(lens) };
 	}
 
 	test('a row made on one device appears on the other', () => {
-		const { laptop, laptopDb } = pair();
+		const { laptop } = pair();
 		const made = note({ title: 'Recorded on the phone', tags: ['voice'] });
 		exchange(db, laptop);
 
-		expect(laptopDb.tables.notes.get(made.id).data?.title).toBe(
+		expect(laptop.tables.notes.get(made.id).data?.title).toBe(
 			'Recorded on the phone',
 		);
 		// And the laptop's projection was rebuilt, so SQL sees it too.
-		expect(laptopDb.query`SELECT id, title FROM notes`.data).toEqual([
+		expect(laptop.query`SELECT id, title FROM notes`.data).toEqual([
 			{ id: made.id, title: 'Recorded on the phone' },
 		]);
 	});
 
 	test('offline edits to different fields of one row both survive', () => {
-		const { laptop, laptopDb } = pair();
+		const { laptop } = pair();
 		const made = note({ title: 'first' });
 		exchange(db, laptop);
 
 		db.tables.notes.update(made.id, { title: 'phone title' });
-		laptopDb.tables.notes.update(made.id, { date: '2026-08-07' });
+		laptop.tables.notes.update(made.id, { date: '2026-08-07' });
 		exchange(db, laptop);
 
 		for (const [name, handle] of [
 			['phone', db.tables.notes],
-			['laptop', laptopDb.tables.notes],
+			['laptop', laptop.tables.notes],
 		] as const) {
 			const settled = handle.get(made.id).data;
 			expect(`${name}:${settled?.title}`).toBe(`${name}:phone title`);
@@ -250,26 +247,26 @@ describe('two replicas converge', () => {
 		// and the offline edit is gone with it rather than lingering as a field on
 		// a tombstone that a revived address would hand back
 		// (`evidence/deletion-model.test.ts`).
-		const { laptop, laptopDb } = pair();
+		const { laptop } = pair();
 		const made = note({ title: 'first' });
 		exchange(db, laptop);
 
 		db.tables.notes.delete(made.id);
-		laptopDb.tables.notes.update(made.id, { title: 'edited offline' });
+		laptop.tables.notes.update(made.id, { title: 'edited offline' });
 		exchange(db, laptop);
 
 		expect(db.tables.notes.get(made.id).data).toBeUndefined();
-		expect(laptopDb.tables.notes.get(made.id).data).toBeUndefined();
-		expect(laptopDb.tables.notes.ids().data).toEqual([]);
-		expect(laptopDb.query`SELECT id FROM notes`.data).toEqual([]);
+		expect(laptop.tables.notes.get(made.id).data).toBeUndefined();
+		expect(laptop.tables.notes.ids().data).toEqual([]);
+		expect(laptop.query`SELECT id FROM notes`.data).toEqual([]);
 	});
 
 	test('two devices creating rows concurrently keep both', () => {
 		// Safe by construction rather than by care: a minted 24-character id
 		// cannot collide, so two devices never mint a container at one address.
-		const { laptop, laptopDb } = pair();
+		const { laptop } = pair();
 		note({ title: 'from the phone' });
-		laptopDb.tables.notes.create({
+		laptop.tables.notes.create({
 			title: 'from the laptop',
 			tags: [],
 			date: null,
@@ -277,7 +274,7 @@ describe('two replicas converge', () => {
 		exchange(db, laptop);
 
 		expect(db.tables.notes.list().data?.rows).toHaveLength(2);
-		expect(laptopDb.tables.notes.list().data?.rows).toHaveLength(2);
+		expect(laptop.tables.notes.list().data?.rows).toHaveLength(2);
 	});
 });
 
@@ -422,18 +419,14 @@ describe('kv is where anything two devices both write belongs', () => {
 		// contrast, now that the chosen-id door is gone from the API.
 		const phone = openMemory(lens);
 		const laptop = openMemory(lens);
-		const { data: phoneDb, error: e1 } = phone.bind(lens);
-		const { data: laptopDb, error: e2 } = laptop.bind(lens);
-		if (e1 !== null) throw e1;
-		if (e2 !== null) throw e2;
 
-		phoneDb.kv.update({ theme: 'dark' });
-		laptopDb.kv.update({ fontSize: 22 });
+		phone.kv.update({ theme: 'dark' });
+		laptop.kv.update({ fontSize: 22 });
 		exchange(phone, laptop);
 
 		const expected = { theme: 'dark', fontSize: 22 } as const;
-		expect(phoneDb.kv.get().data).toEqual(expected);
-		expect(laptopDb.kv.get().data).toEqual(expected);
+		expect(phone.kv.get().data).toEqual(expected);
+		expect(laptop.kv.get().data).toEqual(expected);
 	});
 
 	test('kv is queryable as a one-row relation', () => {
@@ -452,9 +445,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		// layer reported success. The restart is the whole test: an in-memory
 		// store keeps the buffered update either way.
 		const origin = openMemory(lens);
-		const { data: originDb, error } = origin.bind(lens);
-		if (error !== null) throw error;
-		const made = originDb.tables.notes.create({
+		const made = origin.tables.notes.create({
 			title: 'first',
 			tags: [],
 			date: null,
@@ -462,17 +453,16 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		if (made.error !== null) throw made.error;
 		const first = origin.encodeStateSince();
 		const afterFirst = origin.stateVector();
-		originDb.tables.notes.update(made.data.id, { title: 'second' });
+		origin.tables.notes.update(made.data.id, { title: 'second' });
 		const second = origin.encodeStateSince(afterFirst);
 
 		const directory = await mkdtemp(join(tmpdir(), 'epicenter-store-'));
 		try {
 			{
-				const { data: laptopDb, error: openError } = await open(lens, {
+				const { data: laptop, error: openError } = await open(lens, {
 					root: directory,
 				});
 				if (openError !== null) throw openError;
-				const laptop = laptopDb;
 				expect(laptop.applyRemote(second).error).toBeNull();
 				expect(laptop.hasUnresolvedDependencies()).toBe(true);
 				await laptop[Symbol.asyncDispose]();
