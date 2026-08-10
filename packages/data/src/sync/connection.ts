@@ -40,6 +40,11 @@
  *   retrying it on a timer is a hot loop against a wall; the repair is a new
  *   app generation, which the host owns (reload on auth change), not a state
  *   in this driver.
+ * - Classifying a dial that failed before ever opening, when the host supplies
+ *   `probeBoundary` (ADR-0231): a probe-confirmed retired edition stops the
+ *   driver for good and fires `onSuperseded`, and anything short of that
+ *   confirmation reconnects on the ordinary backoff, because automatic
+ *   discard must never fire on doubt.
  */
 import { Ok, type Result } from 'wellcrafted/result';
 
@@ -117,6 +122,14 @@ export type SyncConnectionStatus = SyncClientStatus & {
 	 */
 	denied: boolean;
 	/**
+	 * Whether this replica's edition was confirmed retired (ADR-0231).
+	 *
+	 * Once true it stays true, and `onSuperseded` has fired: the host is
+	 * discarding the local file and reloading, so this status exists only for
+	 * the moments in between. Never set on doubt; see `probeBoundary`.
+	 */
+	superseded: boolean;
+	/**
 	 * Failed attempts since the last one that stayed up long enough to count.
 	 *
 	 * What the backoff is computed from, and the one number that says "this
@@ -179,6 +192,8 @@ export function createSyncConnection({
 	 * free: an update is idempotent (`evidence/invariants.test.ts`).
 	 */
 	unacknowledgedMs = 30_000,
+	probeBoundary,
+	onSuperseded,
 }: {
 	store: Store;
 	dial: SyncDial;
@@ -188,6 +203,28 @@ export function createSyncConnection({
 	backoff?: (attempts: number) => number;
 	healthyMs?: number;
 	unacknowledgedMs?: number;
+	/**
+	 * Read the authority's edition boundary, authenticated (ADR-0231).
+	 *
+	 * The host supplies it because it owns the credentialed fetch; the RULE
+	 * stays here because it is correctness, not transport (ADR-0222): after a
+	 * dial that failed before ever opening, and only when this replica's
+	 * cursor is above zero, the driver probes, and it treats this replica as
+	 * superseded only when the probe answers a well-formed boundary strictly
+	 * above the cursor. A rejection, a thrown fetch, or `undefined` all mean
+	 * "unknown" and fall through to ordinary backoff. Automatic discard's
+	 * failure mode is wiping local data on a network blip, so doubt never
+	 * discards.
+	 */
+	probeBoundary?: () => Promise<number | undefined>;
+	/**
+	 * This replica's edition was confirmed retired; sync is over for good.
+	 *
+	 * Fires at most once, after the driver has already shut down. The host
+	 * discards the local file whole and reloads (ADR-0232's instrument);
+	 * adoption is the ordinary join the fresh boot runs.
+	 */
+	onSuperseded?: () => void;
 }): SyncConnection {
 	const client: SyncClient = createSyncClient({
 		store,
@@ -199,6 +236,7 @@ export function createSyncConnection({
 	let running = false;
 	let disposed = false;
 	let denied = false;
+	let superseded = false;
 	let connected = false;
 	let attempts = 0;
 	let lastReconnect: ReconnectReason | undefined;
@@ -284,15 +322,54 @@ export function createSyncConnection({
 		client.dispose();
 	}
 
+	/**
+	 * Decide whether a dial that failed before opening means this replica's
+	 * edition was retired (ADR-0231), and never decide it on doubt.
+	 *
+	 * A stale replica's dial is refused before any socket exists, which a
+	 * browser cannot tell apart from a dead network. The probe is what tells
+	 * them apart, and only its affirmative, well-formed answer supersedes:
+	 * everything else is "unknown" and reconnects on the ordinary backoff,
+	 * because the alternative is wiping local data on a network blip.
+	 */
+	async function classify(
+		attempt: number,
+		probe: () => Promise<number | undefined>,
+	): Promise<void> {
+		const cursor = client.cursor();
+		let boundary: number | undefined;
+		try {
+			boundary = await probe();
+		} catch {
+			boundary = undefined;
+		}
+		if (!running || generation !== attempt) return;
+		if (
+			typeof boundary === 'number' &&
+			Number.isFinite(boundary) &&
+			cursor > 0 &&
+			cursor < boundary
+		) {
+			superseded = true;
+			shutdown();
+			onSuperseded?.();
+			return;
+		}
+		reconnect('closed');
+	}
+
 	function open(): void {
 		if (!running || teardown !== undefined) return;
 		const attempt = ++generation;
 		const live = () => running && generation === attempt;
+		let everOpened = false;
+		let classifying = false;
 
 		teardown = dial({
 			cursor: client.cursor(),
 			opened(socket: SyncSocket) {
 				if (!live()) return;
+				everOpened = true;
 				connected = true;
 				client.attach(socket);
 				// A socket that lasts is what proves the far end works. Anything
@@ -311,7 +388,15 @@ export function createSyncConnection({
 				settle();
 			},
 			closed() {
-				if (!live()) return;
+				if (!live() || classifying) return;
+				// Only a dial that failed before ever opening can mean a retired
+				// edition: the door refuses those before a socket exists. A socket
+				// that opened and later died is ordinary weather.
+				if (!everOpened && probeBoundary !== undefined && client.cursor() > 0) {
+					classifying = true;
+					void classify(attempt, probeBoundary);
+					return;
+				}
 				reconnect('closed');
 			},
 			denied() {
@@ -359,24 +444,31 @@ export function createSyncConnection({
 
 	return Object.freeze({
 		start() {
-			if (disposed || denied || running) return;
+			if (disposed || denied || superseded || running) return;
 			running = true;
 			open();
 		},
 
 		flush() {
-			if (disposed || denied) return Ok(undefined);
+			if (disposed || denied || superseded) return Ok(undefined);
 			return client.flush();
 		},
 
 		status(): SyncConnectionStatus {
-			return { ...client.status(), connected, denied, attempts, lastReconnect };
+			return {
+				...client.status(),
+				connected,
+				denied,
+				superseded,
+				attempts,
+				lastReconnect,
+			};
 		},
 
 		[Symbol.dispose]() {
 			if (disposed) return;
 			disposed = true;
-			if (!denied) shutdown();
+			if (!denied && !superseded) shutdown();
 		},
 	});
 }
