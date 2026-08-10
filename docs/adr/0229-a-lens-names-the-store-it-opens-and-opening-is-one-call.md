@@ -31,7 +31,7 @@ Opening a store takes two calls and carries two names for one thing. The single
 production call site in the repository, and there is exactly one, is:
 
 ```ts
-// apps/honeycrisp/src/lib/application-platform.ts
+// apps/honeycrisp/src/lib/dependencies.ts
 const { data, error } = await openBrowserStore({ name: 'honeycrisp' });
 // apps/honeycrisp/src/lib/application.ts
 const bound = store.bind(honeycrispLens);   // namespace: 'so.epicenter.honeycrisp'
@@ -139,7 +139,9 @@ the bound value `notes` beside a table called `notes`, `query` reserved as a
 table name (ADR-0213), and `$store` invented to hold nine more. Table names come
 from users, so under a flat shape every verb the store ever grows is a breaking
 change to their namespace. Nesting the tables ends that permanently, and it
-retires ADR-0213's reservation of `query` rather than working around it.
+retires ADR-0213's reservation of `query` rather than working around it. The
+`kv` reservation survives on its own footing: KV projects as a SQL relation of
+that name, which no amount of nesting on the handle changes.
 
 ### `bind` stays reachable on an application
 
@@ -189,10 +191,11 @@ re-export of `./sync`, which no consumer ever reached the transport through.
   path.** A lens arriving as unknown data was the installed-app case; ADR-0227
   refused it. `parseLens` stays exported for the inspector, which reads lenses it
   did not author.
-- **No table name is reserved any more.** ADR-0213 reserved `query` because a
-  table became a key on the handle that carried the method. Nesting the tables
-  retires that, and paying for it is what the 242 call sites that gained
-  `.tables.` bought.
+- **`query` stops being a reserved table name**, which is what the 242 call
+  sites that gained `.tables.` bought. `kv` stays reserved, and for a different
+  reason that this record does not remove: KV projects as a one-row SQL relation
+  literally named `kv`, so the collision is in the projection rather than on the
+  handle. Proved by creating, listing and querying a table called `query`.
 - **What this forecloses:** a second name for a store's location, an opener that
   takes a path, a lens bound to a store it does not name, two OPENS of one
   namespace in one process, `lens.open()` as a method, and any future store verb

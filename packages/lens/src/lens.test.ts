@@ -186,8 +186,8 @@ describe('the grammar refuses what the records reserve', () => {
 		['no namespace', { tables: {} }],
 		['a one-label namespace', { namespace: 'honeycrisp', tables: {} }],
 		[
-			'a reserved table name',
-			{ namespace: 'so.epicenter.app', tables: { query: { a: 'string' } } },
+			'the reserved table name, which collides with the KV relation',
+			{ namespace: 'so.epicenter.app', tables: { kv: { a: 'string' } } },
 		],
 		[
 			'table names differing only by case',

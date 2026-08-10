@@ -22,10 +22,17 @@ import { isJsonValue, type JsonObject, type JsonValue } from './json.js';
 export const RESERVED_ATTRIBUTE_PREFIX = '!';
 
 /**
- * The one table name a binding cannot use, because a table becomes a key on the
- * same handle that carries `query` (ADR-0213).
+ * The one table name a lens cannot use, and the reason is SQL rather than JS.
+ *
+ * KV projects as a one-row relation literally named `kv`, so a table called `kv`
+ * would collide with it in the projection (`projection.ts`).
+ *
+ * `query` used to be here too, because a table became a key on the same handle
+ * that carried the `query` method. Tables now live under `tables` (ADR-0229),
+ * so nothing on that handle can collide with a table name and the reservation
+ * had nothing left to protect.
  */
-export const RESERVED_TABLE_NAMES: readonly string[] = ['query', 'kv'];
+export const RESERVED_TABLE_NAMES: readonly string[] = ['kv'];
 
 /**
  * The root holding one application's KV, reserved so no table can reach it.

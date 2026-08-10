@@ -305,13 +305,13 @@ describe('a lens names the store it opens', () => {
 	test('a lens that will not bind releases the namespace it claimed', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'epicenter-refused-'));
 		try {
-			// A table named `query` collides with the reserved method, so this lens
-			// parses and then refuses to bind. The store it half-opened must be
-			// disposed and its namespace released, or the namespace is claimed for
+			// A table named `kv` collides with the relation KV projects into, which
+			// is the one name a lens still reserves. The store this half-opened must
+			// be disposed and its namespace released, or the namespace is claimed for
 			// the life of the process and the application can never start.
 			const refused = {
 				namespace: lens.namespace,
-				tables: { query: { a: 'string' } },
+				tables: { kv: { a: 'string' } },
 			};
 			const attempt = await open(refused as never, { root });
 			expect(attempt.error).not.toBeNull();
