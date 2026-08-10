@@ -11,7 +11,7 @@ const log = createLogger('honeycrisp/application');
  *
  * Every build, with no seam and no condition. That is a refusal rather than an
  * omission, and it is worth stating because the alternative was already half
- * designed: the desktop host owns a Bun process, `openBunStore` runs there, and
+ * designed: the desktop host owns a Bun process, the Bun opener runs there, and
  * a window could have been a replica of a store the host owned.
  *
  * It is not, because the sharing that arrangement buys is sharing this

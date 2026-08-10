@@ -98,7 +98,7 @@ function openIndexedDb(name: string): Promise<IDBDatabase> {
 		request.onerror = () => reject(request.error ?? new Error('indexedDB.open failed'));
 		// `blocked` fires when another tab holds an older version of this database
 		// open, and when it does NEITHER `success` NOR `error` follows. Without
-		// this the promise never settles, so `openBrowserStore` hangs with no
+		// this the promise never settles, so `open` hangs with no
 		// error and the application simply never boots in that one tab.
 		//
 		// Unreachable at version 1, and that is exactly why it is here: it becomes
