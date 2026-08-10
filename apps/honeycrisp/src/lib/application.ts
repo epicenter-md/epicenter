@@ -1,30 +1,29 @@
-import type { ApplicationOf, Store } from '@epicenter/data';
+import type { Store } from '@epicenter/data';
+import { open as openBrowser } from '@epicenter/data/browser';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
-import type { HoneycrispData, honeycrispLens } from '@epicenter/honeycrisp';
+import { type HoneycrispData, honeycrispLens } from '@epicenter/honeycrisp';
 import { createHoneycrispState } from '../routes/state/index.js';
 import type { PlatformAuth } from './platform/types.js';
 import { attachHoneycrispSync } from './sync.js';
 
-export type HoneycrispDependencies = {
-	/**
-	 * Open Honeycrisp, hydrated and bound.
-	 *
-	 * The lens names the store it opens (ADR-0229), so a build chooses an
-	 * adapter and nothing else: no path, no database name, and no second call to
-	 * bind. Which adapter is decided by which module compiled, never by asking
-	 * the DOM at runtime.
-	 */
-	open(): Promise<ApplicationOf<typeof honeycrispLens>>;
+export type OpenHoneycrispOptions = {
 	/**
 	 * This build's auth, when it has one.
 	 *
-	 * Sync is attached only when it does, and being signed in is the whole of
-	 * the sharing model: the route stamps the principal from the bearer and
-	 * addresses one Durable Object by it, so every device on one account
+	 * Passed in rather than imported, and it is the one thing that still is.
+	 * `#platform/auth`'s Tauri leaf consumes a one-shot global the host preloads
+	 * (`window.__EPICENTER_HONEYCRISP_AUTH_BOOTSTRAP__`) at module scope and
+	 * throws when it is absent, so importing it here would run that under test
+	 * and during prerender. The caller is a mounted client route, where it is
+	 * safe.
+	 *
+	 * Sync is attached only when auth is present, and being signed in is the
+	 * whole of the sharing model: the route stamps the principal from the bearer
+	 * and addresses one Durable Object by it, so every device on one account
 	 * converges without anything being paired or invited.
 	 */
 	auth?: PlatformAuth;
-	reportBackgroundError(cause: unknown): void;
+	signal?: AbortSignal;
 };
 
 export type HoneycrispApplication = {
@@ -46,19 +45,23 @@ export type HoneycrispApplication = {
  * log. Everything after it is a property access on a document already in memory,
  * which is why nothing below this line returns a promise.
  */
-export async function openHoneycrispApplication(
-	{ open, auth, reportBackgroundError }: HoneycrispDependencies,
-	{ signal }: { signal?: AbortSignal } = {},
-): Promise<HoneycrispApplication> {
+export async function openHoneycrispApplication({
+	auth,
+	signal,
+}: OpenHoneycrispOptions = {}): Promise<HoneycrispApplication> {
 	signal?.throwIfAborted();
-	const db = await open();
+	// The lens names the store it opens (ADR-0229), so there is nothing to
+	// inject: no path, no database name, and no second call to bind. This used
+	// to be an `open()` dependency whose one implementation was these two lines.
+	const { data: db, error } = await openBrowser(honeycrispLens);
+	if (error !== null) throw error;
 	try {
 		signal?.throwIfAborted();
-		const state = createHoneycrispState({ db, reportBackgroundError });
+		const state = createHoneycrispState({ db });
 		const sync =
 			auth === undefined
 				? undefined
-				: attachHoneycrispSync({ store: db.store, auth, reportBackgroundError });
+				: attachHoneycrispSync({ store: db.store, auth });
 		let disposed = false;
 		return Object.freeze({
 			db,

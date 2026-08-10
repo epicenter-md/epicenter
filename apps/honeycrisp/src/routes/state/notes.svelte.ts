@@ -1,3 +1,4 @@
+import { reportBackgroundError } from '../../lib/report.js';
 import type { NonconformingRowError } from '@epicenter/lens';
 import { InstantString } from '@epicenter/field';
 import {
@@ -27,11 +28,9 @@ import { searchParams } from './search-params.svelte.js';
 export function createNotes({
 	db,
 	searchIndex,
-	reportBackgroundError,
 }: {
 	db: HoneycrispData;
 	searchIndex: NoteSearchIndex;
-	reportBackgroundError(cause: unknown): void;
 }) {
 	let rows = $state.raw<Note[]>([]);
 	let nonconforming = $state.raw<NonconformingRowError[]>([]);

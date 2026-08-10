@@ -1,3 +1,4 @@
+import { reportBackgroundError } from '../../lib/report.js';
 import type { NonconformingRowError } from '@epicenter/lens';
 import {
 	deleteHoneycrispFolder,
@@ -15,10 +16,8 @@ import { searchParams } from './search-params.svelte.js';
  */
 export function createFolders({
 	db,
-	reportBackgroundError,
 }: {
 	db: HoneycrispData;
-	reportBackgroundError(cause: unknown): void;
 }) {
 	let rows = $state.raw<Folder[]>([]);
 	let nonconforming = $state.raw<NonconformingRowError[]>([]);

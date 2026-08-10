@@ -11,6 +11,7 @@
  * dial their own partition and converge; there is nothing to pair, invite or
  * approve, and no identifier this file could get wrong.
  */
+import { reportBackgroundError } from './report.js';
 import type { Store } from '@epicenter/data';
 import { createSyncConnection, type SyncConnection } from '@epicenter/data/sync';
 import { honeycrispLens } from '@epicenter/honeycrisp';
@@ -27,11 +28,9 @@ import type { PlatformAuth } from './platform/types.js';
 export function attachHoneycrispSync({
 	store,
 	auth,
-	reportBackgroundError,
 }: {
 	store: Store;
 	auth: PlatformAuth;
-	reportBackgroundError(cause: unknown): void;
 }): SyncConnection {
 	const connection = createSyncConnection({
 		store,

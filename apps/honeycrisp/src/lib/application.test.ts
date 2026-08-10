@@ -25,46 +25,18 @@ mock.module('$app/state', () => ({
 
 const { openHoneycrispApplication } = await import('./application.js');
 
-/**
- * An opened application, counting its own disposal.
- *
- * A lens the store refuses no longer reaches here. `open` binds the lens that
- * named it (ADR-0229), so a refusal never produces an application at all, and
- * the store it half-opened is disposed by the opener. That case is proved where
- * it now lives, in `packages/data/src/store/store.test.ts`.
- */
-function createApplication() {
-	let disposals = 0;
-	return {
-		get disposals() {
-			return disposals;
-		},
-		value: {
-			store: { pressure: () => ({ data: undefined, error: null }) },
-			async [Symbol.asyncDispose]() {
-				disposals += 1;
-			},
-		} as never,
-	};
-}
-
-test('an abort before the application opens never opens one', async () => {
+test('an abort before the store opens rejects with the abort, not a storage failure', async () => {
+	// What this protects is the ORDER: `signal?.throwIfAborted()` runs before
+	// the store is opened, so an aborted boot never leaves one behind.
+	//
+	// It asserts the abort specifically rather than counting calls, because
+	// there is no injected opener to count any more. Move the check below the
+	// open and this fails on the error's identity: the real opener would run,
+	// find no IndexedDB under bun, and reject with a storage failure instead.
 	const controller = new AbortController();
 	controller.abort();
-	let opened = 0;
 
 	await expect(
-		openHoneycrispApplication(
-			{
-				open: async () => {
-					opened += 1;
-					return createApplication().value;
-				},
-				reportBackgroundError() {},
-			},
-			{ signal: controller.signal },
-		),
-	).rejects.toThrow();
-
-	expect(opened).toBe(0);
+		openHoneycrispApplication({ signal: controller.signal }),
+	).rejects.toThrow(/abort/i);
 });
