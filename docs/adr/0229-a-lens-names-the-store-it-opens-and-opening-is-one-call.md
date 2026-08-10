@@ -11,8 +11,11 @@
   arrive from an installed application folder. Both supports were removed by
   ADR-0227 rather than reasoned away here. What survives unchanged is everything
   the record decided about the lens itself: arktype JSON, nullable-never-optional,
-  one type through every door, validation that never gates storage, frozen plain
-  rows, and every verb on the table taking the id.
+  one type through every door, validation that never gates storage, plain rows
+  (a draft of this record said frozen; rows were never frozen, each read
+  constructs a fresh plain object so mutation cannot reach the store, and
+  per-row freezing is refused because it would be the store's only row-rate
+  freeze), and every verb on the table taking the id.
 - **Amends:** [ADR-0204](0204-an-app-is-one-reverse-domain-identifier-that-names-every-place-it-exists.md)
   by completing it. Its rule was that one identifier names every place an app
   exists; the store's location was the last place still carrying a second name.
