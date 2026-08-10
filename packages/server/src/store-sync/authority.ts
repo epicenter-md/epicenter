@@ -9,10 +9,13 @@
  * back in order, and keeps one snapshot plus the entries after it (ADR-0220).
  * Nothing here imports Yjs or a lens, and there is no verb that could.
  *
- * It also holds the edition boundary and answers the replace POST (ADR-0231):
- * the sync door refuses a cursor from a retired edition before any socket
- * exists, and the person-owned verb that retires one is a fetch, out of band
- * from sync.
+ * It also holds the edition boundary and answers the replace POST (ADR-0231).
+ * Connecting is not admission: every authenticated upgrade is accepted, and
+ * `hub.join` decides everything. A cursor from a retired edition is answered
+ * with one boundary frame and never admitted to the relay membership, so it
+ * is sent no history and its pushes land nowhere; this class only relays the
+ * verdict to the socket. The person-owned verb that retires an edition is a
+ * fetch, out of band from sync.
  */
 import { DurableObject } from 'cloudflare:workers';
 import {
@@ -73,13 +76,20 @@ export class StoreAuthority extends DurableObject {
 	 *
 	 * Joining also runs catch-up, which on a wake is the whole recovery.
 	 */
-	private adopt(socket: WebSocket): HubConnection {
+	private adopt(socket: WebSocket): HubConnection | undefined {
 		const existing = this.connections.get(socket);
 		if (existing !== undefined) return existing;
 		let written = positionOf(socket);
 		const connection: HubConnection = {
 			cursor: written,
 			send(bytes) {
+				// A closing or closed socket takes nothing more: the hub's send is
+				// fire-and-forget, and workerd throws on a dead socket. Reachable
+				// when a frame in flight during the funeral re-runs admission and
+				// the retired verdict answers a socket the funeral already closed;
+				// the replica hears the fact on its next dial instead, which is
+				// free.
+				if (socket.readyState !== WebSocket.OPEN) return;
 				socket.send(bytes);
 				// `serializeAttachment` is a DURABLE STORAGE WRITE. Written after the
 				// send rather than before, so a failure leaves the position behind
@@ -91,8 +101,21 @@ export class StoreAuthority extends DurableObject {
 				socket.serializeAttachment({ cursor: written });
 			},
 		};
+		const admission = this.hub.join(connection);
+		if (admission !== 'admitted') {
+			// A retired cursor was answered with the boundary frame (already on
+			// the wire, through the send above); an unreadable boundary answers
+			// nothing, failing closed. Either way there is no membership and no
+			// cache entry, so a frame arriving after this close re-runs admission
+			// and meets the same verdict, which is what retired the readyState
+			// guard this class briefly carried (ADR-0231).
+			socket.close(
+				1000,
+				admission === 'retired' ? 'retired edition' : 'authority unavailable',
+			);
+			return undefined;
+		}
 		this.connections.set(socket, connection);
-		this.hub.join(connection);
 		return connection;
 	}
 
@@ -105,33 +128,14 @@ export class StoreAuthority extends DurableObject {
 	override async fetch(request: Request): Promise<Response> {
 		if (request.method === 'POST') return this.replaceEdition(request);
 		if (request.headers.get('Upgrade') !== 'websocket') {
-			// The boundary probe (ADR-0231): the same door, readable. A browser
-			// WebSocket cannot read a refused upgrade's status or body, and the
-			// supersession rule must never discard on doubt, so the one fact the
-			// door compares against is answered to an authenticated plain GET.
-			const { data: boundary, error } = this.authority.boundary();
-			if (error !== null) {
-				return new Response(error.message, { status: 500 });
-			}
-			return Response.json({ boundary });
+			return new Response('The store transport is WebSocket-only', {
+				status: 426,
+			});
 		}
 		const asked = Number(
 			new URL(request.url).searchParams.get('cursor') ?? '0',
 		);
 		const cursor = Number.isFinite(asked) && asked >= 0 ? asked : 0;
-		// The edition door, and the whole of edition discovery (ADR-0231). A
-		// cursor below the boundary was minted in a retired edition, and it is
-		// refused HERE, before any socket exists, so retired bytes have no
-		// carrier to arrive on. Zero is not below anything: a replica that never
-		// exchanged a byte holds no commitment, and its independent document is
-		// the one cross-edition merge that is safe.
-		const { data: boundary, error: boundaryError } = this.authority.boundary();
-		if (boundaryError !== null) {
-			return new Response(boundaryError.message, { status: 500 });
-		}
-		if (cursor > 0 && cursor < boundary) {
-			return Response.json({ boundary }, { status: 409 });
-		}
 		const pair = new WebSocketPair();
 
 		this.ctx.acceptWebSocket(pair[1]);
@@ -139,11 +143,13 @@ export class StoreAuthority extends DurableObject {
 		// comes from: this is the one place it is set from a request rather than
 		// read back off the socket, and there is no second source of truth.
 		pair[1].serializeAttachment({ cursor });
-		// Adopting joins the hub, so catch-up runs here, synchronously, before
-		// this handler returns. A Durable Object is single threaded and a socket
-		// delivers in order, so everything queued now precedes any relay a later
-		// push produces, and the replica's contiguity check holds by construction
-		// rather than by luck.
+		// Adoption decides everything (ADR-0231): a servable cursor joins the
+		// hub and catch-up runs here, synchronously, before this handler
+		// returns, so the replica's contiguity check holds by construction; a
+		// retired cursor is answered with one boundary frame and closed without
+		// ever becoming a member. Either way the upgrade itself succeeds,
+		// because a browser can read a frame and cannot read a refused
+		// handshake.
 		this.adopt(pair[1]);
 
 		return new Response(null, { status: 101, webSocket: pair[0] });
@@ -154,16 +160,17 @@ export class StoreAuthority extends DurableObject {
 		message: ArrayBuffer | string,
 	): void {
 		if (typeof message === 'string') return;
-		// A frame can be delivered after this object already closed the socket: a
-		// push in flight while a replace ran its funeral. `adopt` would resurrect
-		// the connection and append RETIRED-edition bytes into the new edition's
-		// log, which is the contamination the boundary exists to make impossible
-		// (ADR-0231), so a socket this object is done with is deaf here too.
-		if (socket.readyState !== WebSocket.OPEN) return;
 		// Nothing thrown. `workerd` swallows a throw here WITHOUT closing the
 		// socket, so a replica would wait forever on a submission that had already
 		// failed; a refusal has to travel as a frame, and the hub sends one.
-		this.hub.receive(this.adopt(socket), new Uint8Array(message));
+		//
+		// `adopt` re-runs admission for a socket this object no longer holds, so
+		// a push in flight while a replace ran its funeral meets the boundary at
+		// `hub.join` and lands nowhere: the one comparison covers dial-time
+		// supersession and this race alike (ADR-0231).
+		const connection = this.adopt(socket);
+		if (connection === undefined) return;
+		this.hub.receive(connection, new Uint8Array(message));
 	}
 
 	override webSocketClose(socket: WebSocket): void {

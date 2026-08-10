@@ -66,7 +66,11 @@ export type PushFrame = {
 export type AckFrame = { kind: 'ack'; submission: number; seq: number };
 
 /** The authority refused, and said so rather than dropping it in silence. */
-export type RefuseFrame = { kind: 'refuse'; submission: number; reason: string };
+export type RefuseFrame = {
+	kind: 'refuse';
+	submission: number;
+	reason: string;
+};
 
 /** One entry of the authority's log, on its way to a replica. */
 export type EntryFrame = {
@@ -112,6 +116,18 @@ export type SnapshotFrame = {
 /** The authority asking a current replica to supply a new snapshot. */
 export type WantedFrame = { kind: 'wanted'; position: number };
 
+/**
+ * The authority stating where the current edition began (ADR-0231).
+ *
+ * The one answer of the catch-up verb that carries a fact instead of
+ * history: a connection whose cursor names a retired edition is sent this
+ * frame, and nothing else, ever. Named for what the authority knows, the
+ * way every frame is named for what it carries; "superseded" is the
+ * CLIENT's conclusion, drawn only when a well-formed position arrives
+ * strictly ahead of its own nonzero cursor.
+ */
+export type BoundaryFrame = { kind: 'boundary'; position: number };
+
 export type Frame =
 	| PushFrame
 	| AckFrame
@@ -119,7 +135,8 @@ export type Frame =
 	| EntryFrame
 	| OfferFrame
 	| SnapshotFrame
-	| WantedFrame;
+	| WantedFrame
+	| BoundaryFrame;
 
 const PUSH = 1;
 const ACK = 2;
@@ -128,6 +145,7 @@ const ENTRY = 4;
 const OFFER = 5;
 const SNAPSHOT = 6;
 const WANTED = 7;
+const BOUNDARY = 8;
 
 /** `u8 kind` plus three `u32` fields, ahead of the payload. */
 const DATA_HEADER_BYTES = 13;
@@ -135,11 +153,29 @@ const DATA_HEADER_BYTES = 13;
 export function encodeFrame(frame: Frame): Uint8Array {
 	switch (frame.kind) {
 		case 'push':
-			return encodeData(PUSH, frame.submission, frame.chunk, frame.chunks, frame.bytes);
+			return encodeData(
+				PUSH,
+				frame.submission,
+				frame.chunk,
+				frame.chunks,
+				frame.bytes,
+			);
 		case 'entry':
-			return encodeData(ENTRY, frame.seq, frame.chunk, frame.chunks, frame.bytes);
+			return encodeData(
+				ENTRY,
+				frame.seq,
+				frame.chunk,
+				frame.chunks,
+				frame.bytes,
+			);
 		case 'offer':
-			return encodeData(OFFER, frame.position, frame.chunk, frame.chunks, frame.bytes);
+			return encodeData(
+				OFFER,
+				frame.position,
+				frame.chunk,
+				frame.chunks,
+				frame.bytes,
+			);
 		case 'snapshot':
 			return encodeData(
 				SNAPSHOT,
@@ -152,6 +188,13 @@ export function encodeFrame(frame: Frame): Uint8Array {
 			const buffer = new Uint8Array(5);
 			const view = new DataView(buffer.buffer);
 			view.setUint8(0, WANTED);
+			view.setUint32(1, frame.position);
+			return buffer;
+		}
+		case 'boundary': {
+			const buffer = new Uint8Array(5);
+			const view = new DataView(buffer.buffer);
+			view.setUint8(0, BOUNDARY);
 			view.setUint32(1, frame.position);
 			return buffer;
 		}
@@ -199,14 +242,27 @@ export function decodeFrame(input: Uint8Array): Result<Frame, FrameError> {
 
 	if (kind === WANTED) {
 		if (input.length < 5) {
-			return FrameError.Malformed({ reason: `wanted is ${input.length} bytes` });
+			return FrameError.Malformed({
+				reason: `wanted is ${input.length} bytes`,
+			});
 		}
 		return Ok({ kind: 'wanted', position: view.getUint32(1) });
 	}
 
+	if (kind === BOUNDARY) {
+		if (input.length < 5) {
+			return FrameError.Malformed({
+				reason: `boundary is ${input.length} bytes`,
+			});
+		}
+		return Ok({ kind: 'boundary', position: view.getUint32(1) });
+	}
+
 	if (kind === ACK || kind === REFUSE) {
 		if (input.length < 5) {
-			return FrameError.Malformed({ reason: `control frame is ${input.length} bytes` });
+			return FrameError.Malformed({
+				reason: `control frame is ${input.length} bytes`,
+			});
 		}
 		const submission = view.getUint32(1);
 		if (kind === REFUSE) {
@@ -226,7 +282,9 @@ export function decodeFrame(input: Uint8Array): Result<Frame, FrameError> {
 		return FrameError.Malformed({ reason: `unknown kind ${kind}` });
 	}
 	if (input.length < DATA_HEADER_BYTES) {
-		return FrameError.Malformed({ reason: `data frame is ${input.length} bytes` });
+		return FrameError.Malformed({
+			reason: `data frame is ${input.length} bytes`,
+		});
 	}
 	const position = view.getUint32(1);
 	const chunk = view.getUint32(5);
@@ -261,7 +319,10 @@ export function decodeFrame(input: Uint8Array): Result<Frame, FrameError> {
  * An empty update yields one empty chunk rather than none, so that "how many
  * chunks did you send" and "how many did I receive" always agree.
  */
-export function intoChunks(bytes: Uint8Array, limit = CHUNK_BYTES): Uint8Array[] {
+export function intoChunks(
+	bytes: Uint8Array,
+	limit = CHUNK_BYTES,
+): Uint8Array[] {
 	if (bytes.length <= limit) return [bytes];
 	const chunks: Uint8Array[] = [];
 	for (let at = 0; at < bytes.length; at += limit) {

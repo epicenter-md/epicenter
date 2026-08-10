@@ -20,7 +20,6 @@ import { createStore, defineLens, type Store } from '@epicenter/data';
 import {
 	compactStore,
 	createSyncConnection,
-	readBoundary,
 	type StoreTransport,
 	type SyncConnection,
 } from '@epicenter/data/sync';
@@ -99,13 +98,9 @@ export class StoreTestReplica extends DurableObject<Env> {
 		this.connection = createSyncConnection({
 			store: this.store,
 			idleMs: 20,
-			// Fast enough that a refused dial reaches the probe within a test's
-			// patience; the deployed default is seconds, not a correctness knob.
+			// Fast enough that a stale dial meets the boundary frame within a
+			// test's patience; the deployed default is seconds, not correctness.
 			backoff: () => 100,
-			probeBoundary: async () => {
-				const read = await readBoundary(this.transport());
-				return read.data ?? undefined;
-			},
 			onSuperseded: () => {
 				void this.adoptFresh();
 			},
@@ -160,7 +155,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 		this.connection = undefined;
 	}
 
-	/** The authenticated door, for the probe and the compact POST alike. */
+	/** The authenticated door, for the compact POST. */
 	private transport(): StoreTransport {
 		const bearer = this.bearer;
 		return {

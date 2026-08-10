@@ -26,11 +26,7 @@
  * loud `RebirthFailed` rather than degraded prose, which is the honest
  * failure until upstream fixes `clone()`.
  */
-import {
-	LENS_NAMESPACE,
-	STORE_REPLACE_ROUTE,
-	STORE_SYNC_ROUTE,
-} from '@epicenter/sync';
+import { LENS_NAMESPACE, STORE_REPLACE_ROUTE } from '@epicenter/sync';
 import * as Y from '@y/y';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
@@ -63,16 +59,6 @@ export const CompactError = defineErrors({
 	/** The walk itself failed; nothing was published and nothing changed. */
 	RebirthFailed: ({ cause }: { cause: unknown }) => ({
 		message: 'The state could not be re-encoded into a fresh document',
-		cause,
-	}),
-	/**
-	 * The boundary could not be read, so nothing was posted.
-	 *
-	 * The same never-on-doubt posture the supersession rule has: an unreadable
-	 * authority is unknown, not stale, and unknown does nothing.
-	 */
-	BoundaryUnreadable: ({ cause }: { cause: unknown }) => ({
-		message: "The authority's boundary could not be read; nothing was replaced",
 		cause,
 	}),
 	/**
@@ -187,46 +173,6 @@ export function rebirth(
 	});
 }
 
-/**
- * Read the authority's boundary through the door's own probe (ADR-0231).
- *
- * Also what a host hands the connection driver as `probeBoundary`: one
- * reader, two callers, and every non-answer is an error rather than a zero,
- * because the supersession rule must never act on doubt.
- */
-export async function readBoundary(
-	transport: StoreTransport,
-): Promise<Result<number, CompactError>> {
-	const fetched = await tryAsync({
-		try: () =>
-			transport.fetch(
-				STORE_SYNC_ROUTE.probeUrl(transport.baseURL, {
-					namespace: transport.namespace,
-				}),
-			),
-		catch: (cause) => CompactError.BoundaryUnreadable({ cause }),
-	});
-	if (fetched.error !== null) return Err(fetched.error);
-	const response = fetched.data;
-	if (!response.ok) {
-		return CompactError.BoundaryUnreadable({
-			cause: new Error(`HTTP ${response.status}`),
-		});
-	}
-	const parsed = await tryAsync({
-		try: () => response.json() as Promise<{ boundary?: unknown }>,
-		catch: (cause) => CompactError.BoundaryUnreadable({ cause }),
-	});
-	if (parsed.error !== null) return Err(parsed.error);
-	const boundary = parsed.data.boundary;
-	if (typeof boundary !== 'number' || !Number.isFinite(boundary)) {
-		return CompactError.BoundaryUnreadable({
-			cause: new Error('the probe answered without a boundary'),
-		});
-	}
-	return Ok(boundary);
-}
-
 /** What one POST of the verb came back as, refusals included. */
 type ReplaceAnswer =
 	| { kind: 'published'; boundary: number }
@@ -295,10 +241,10 @@ async function postReplace(
  *
  * The lease is this replica's own facts: `atHead` is its cursor (what its
  * state provably covers; the authority refuses if the tail moved), and
- * `fromBoundary` starts from the probe with a bounded compare-and-swap retry.
- * Every refusal is typed for the one question the person asks next: sync and
- * try again (`StoreChanged`), or adopt the edition that beat you
- * (`Contested`).
+ * `fromBoundary` bootstraps from zero through the CAS itself: a miss answers
+ * the current boundary, and a bounded retry presents it. Every refusal is
+ * typed for the one question the person asks next: sync and try again
+ * (`StoreChanged`), or adopt the edition that beat you (`Contested`).
  *
  * On success the caller runs the same adoption every superseded replica
  * runs: `discard()` on the opener, then reload. This function never touches
@@ -325,10 +271,11 @@ export async function compactStore({
 	const bytes = rebirth(store);
 	if (bytes.error !== null) return Err(bytes.error);
 
-	const probed = await readBoundary(transport);
-	if (probed.error !== null) return Err(probed.error);
-
-	let fromBoundary = probed.data;
+	// The verb is its own bootstrap: the client durably knows no boundary, so
+	// the first post claims zero, and a CAS miss ANSWERS the current value,
+	// which the retry then presents. One extra round-trip on a rare,
+	// person-initiated action, and no read endpoint has to exist for it.
+	let fromBoundary = 0;
 	for (let attempt = 0; attempt <= retries; attempt += 1) {
 		const answer = await postReplace(
 			transport,

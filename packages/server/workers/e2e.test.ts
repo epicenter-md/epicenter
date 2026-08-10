@@ -18,6 +18,7 @@
  * feature.
  */
 import { env, runInDurableObject, SELF } from 'cloudflare:test';
+import { decodeFrame, type Frame } from '@epicenter/data/sync';
 import { STORE_REPLACE_ROUTE } from '@epicenter/sync';
 import * as Y from '@y/y';
 import { describe, expect, it } from 'vitest';
@@ -228,7 +229,7 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		);
 	}
 
-	it('a stale cursor is refused before any socket exists, and a zero cursor still joins', async () => {
+	it('a stale cursor connects, receives exactly the boundary fact, and is never served history', async () => {
 		const vault = openAccount('edition');
 		const phone = vault.device('phone');
 		await phone.open();
@@ -248,24 +249,48 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		const { boundary } = (await published.json()) as { boundary: number };
 		expect(boundary).toBeGreaterThan(staleCursor);
 
-		// The funeral notice: refused at the door, with no socket ever made.
-		// `webSocket` is `null` on a non-101 in workerd, never a socket.
-		const refused = await dial(vault.account, staleCursor);
-		expect(refused.status).toBe(409);
-		expect(
-			(refused as unknown as { webSocket: WebSocket | null }).webSocket,
-		).toBeNull();
-		expect(await refused.json()).toEqual({ boundary });
+		// Connecting is not admission: the upgrade succeeds, because a browser
+		// can read a frame and cannot read a refused handshake. What arrives is
+		// the fact, and nothing else, ever: no snapshot, no entries.
+		const stale = await dial(vault.account, staleCursor);
+		expect(stale.status).toBe(101);
+		const socket = (stale as unknown as { webSocket: WebSocket | null })
+			.webSocket;
+		if (socket === null) throw new Error('the upgrade produced no socket');
+		const received: Frame[] = [];
+		const done = new Promise<void>((resolve) => {
+			socket.addEventListener('close', () => resolve());
+		});
+		socket.accept();
+		socket.addEventListener('message', (event) => {
+			if (typeof event.data === 'string') return;
+			const frame = decodeFrame(new Uint8Array(event.data as ArrayBuffer));
+			if (frame.error === null) received.push(frame.data);
+		});
+		await done;
+		expect(received).toEqual([{ kind: 'boundary', position: boundary }]);
 
-		// Zero holds no commitment: the unsynced offline install is greeted.
+		// Zero holds no commitment: the unsynced offline install is greeted,
+		// and the first thing it is served is history (the snapshot), not a
+		// verdict.
 		const greeted = await dial(vault.account, 0);
 		expect(greeted.status).toBe(101);
-		const socket = (greeted as unknown as { webSocket?: WebSocket }).webSocket;
-		expect(socket).toBeDefined();
-		socket?.accept();
-		socket?.close();
+		const fresh = (greeted as unknown as { webSocket?: WebSocket }).webSocket;
+		if (fresh === undefined || fresh === null) {
+			throw new Error('the fresh join produced no socket');
+		}
+		const greeting = new Promise<Frame>((resolve) => {
+			fresh.addEventListener('message', (event) => {
+				if (typeof event.data === 'string') return;
+				const frame = decodeFrame(new Uint8Array(event.data as ArrayBuffer));
+				if (frame.error === null) resolve(frame.data);
+			});
+		});
+		fresh.accept();
+		expect((await greeting).kind).toBe('snapshot');
+		fresh.close();
 
-		// And so is a cursor already inside the new edition.
+		// And a cursor already inside the new edition is ordinary.
 		const current = await dial(vault.account, boundary);
 		expect(current.status).toBe(101);
 		const currentSocket = (current as unknown as { webSocket?: WebSocket })
@@ -431,35 +456,6 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		expect((await phone.report()).titles).not.toContain(
 			'unsynced offline note',
 		);
-	});
-
-	it('the probe answers the boundary to a bearer, and refuses without one', async () => {
-		const vault = openAccount('probe');
-		const fresh = await SELF.fetch(
-			new Request(`${ORIGIN}/api/store/v1/sync?namespace=${NAMESPACE}`, {
-				headers: { authorization: `Bearer device:${vault.account}` },
-			}),
-		);
-		expect(fresh.status).toBe(200);
-		expect(await fresh.json()).toEqual({ boundary: 0 });
-
-		const anonymous = await SELF.fetch(
-			new Request(`${ORIGIN}/api/store/v1/sync?namespace=${NAMESPACE}`),
-		);
-		expect(anonymous.status).toBe(401);
-
-		const replaced = await postReplace(
-			vault.account,
-			{ fromBoundary: 0 },
-			emptyState(),
-		);
-		const { boundary } = (await replaced.json()) as { boundary: number };
-		const after = await SELF.fetch(
-			new Request(`${ORIGIN}/api/store/v1/sync?namespace=${NAMESPACE}`, {
-				headers: { authorization: `Bearer device:${vault.account}` },
-			}),
-		);
-		expect(await after.json()).toEqual({ boundary });
 	});
 
 	it('the lease over HTTP: fromBoundary is CAS, atHead refuses a moved tail, and a reclaim republishes the same data', async () => {

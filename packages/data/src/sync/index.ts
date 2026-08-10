@@ -17,7 +17,6 @@ export {
 	CompactError,
 	compactStore,
 	type RebornState,
-	readBoundary,
 	rebirth,
 	type StoreTransport,
 } from './compact.js';

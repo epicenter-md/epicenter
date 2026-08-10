@@ -13,6 +13,11 @@
  * someone typed a moment ago run the same loop with different starting numbers.
  * A second path for the live case is where a transport grows a rule that is
  * true only when it is warm.
+ *
+ * The verb has one more truthful answer since ADR-0231: a cursor from a
+ * retired edition cannot be served at all (its entries are gone and the
+ * snapshot must not be merged across editions), so `join` answers it with
+ * the boundary fact and never admits it. Membership is the whole guard.
  */
 import { Ok, type Result } from 'wellcrafted/result';
 
@@ -40,9 +45,33 @@ export type HubConnection = {
 	cursor: number;
 };
 
+/**
+ * What admission decided, which is everything (ADR-0231).
+ *
+ * `admitted` is membership: catch-up ran and the connection now receives
+ * relays and may push. `retired` means the cursor names a retired edition:
+ * ONE boundary frame was sent and the connection was never registered, so
+ * the hub relays nothing to it and `receive` drops anything from it; the
+ * caller should close the socket. `unavailable` means the boundary could
+ * not be read: fail closed, no frame, no membership, and the caller closes,
+ * because admitting unchecked could seat a stale replica and a boundary
+ * frame the authority did not actually state must never be sent.
+ */
+export type Admission = 'admitted' | 'retired' | 'unavailable';
+
 export type SyncHub = {
-	/** A replica attached at its cursor. Everything after it goes out now. */
-	join(connection: HubConnection): void;
+	/**
+	 * A replica attached at its cursor: the one door.
+	 *
+	 * Admission has two real states, servable and retired, because that is
+	 * what a log that forgets can be to a returning reader. A servable cursor
+	 * (`0`, or at/after the boundary) is registered and caught up now; a
+	 * retired one is answered with the boundary fact and never registered.
+	 * Membership is what makes both contamination directions impossible
+	 * without guards: an unregistered connection is sent no history and its
+	 * pushes land nowhere.
+	 */
+	join(connection: HubConnection): Admission;
 	/** Bytes arrived from a replica. */
 	receive(connection: HubConnection, message: Uint8Array): Result<void, never>;
 	leave(connection: HubConnection): void;
@@ -103,7 +132,10 @@ export function createSyncHub({
 	function deliver(connection: HubConnection, ceiling?: number): void {
 		catchUpToSnapshot(connection);
 		for (;;) {
-			const { data: entries, error } = authority.since(connection.cursor, batch);
+			const { data: entries, error } = authority.since(
+				connection.cursor,
+				batch,
+			);
 			if (error !== null) return;
 			if (entries.length === 0) return;
 			for (const entry of entries) {
@@ -127,12 +159,23 @@ export function createSyncHub({
 	}
 
 	return Object.freeze({
-		join(connection) {
+		join(connection): Admission {
+			const { data: boundary, error } = authority.boundary();
+			if (error !== null) return 'unavailable';
+			// A cursor below the boundary was minted in a retired edition. Zero is
+			// not below anything: a replica that never exchanged a byte holds no
+			// commitment, and merging its independent document is the one
+			// cross-edition merge that is safe (ADR-0231).
+			if (connection.cursor > 0 && connection.cursor < boundary) {
+				connection.send(encodeFrame({ kind: 'boundary', position: boundary }));
+				return 'retired';
+			}
 			connections.set(
 				connection,
 				createChunkCollector({ limitBytes: maxBufferedBytes }),
 			);
 			deliver(connection);
+			return 'admitted';
 		},
 
 		leave(connection) {
@@ -147,7 +190,8 @@ export function createSyncHub({
 
 			const { data: frame, error } = decodeFrame(message);
 			if (error !== null) return Ok(undefined);
-			if (frame.kind === 'offer') return takeOffer(connection, collector, frame);
+			if (frame.kind === 'offer')
+				return takeOffer(connection, collector, frame);
 			if (frame.kind !== 'push') return Ok(undefined);
 
 			// The only refusal about CONTENT that survives, and it is about framing
@@ -191,7 +235,9 @@ export function createSyncHub({
 			// worth arranging rather than asserting and hoping.
 			deliver(connection, seq - 1);
 			connection.cursor = seq;
-			connection.send(encodeFrame({ kind: 'ack', submission: frame.submission, seq }));
+			connection.send(
+				encodeFrame({ kind: 'ack', submission: frame.submission, seq }),
+			);
 
 			for (const other of connections.keys()) {
 				if (other !== connection) deliver(other);

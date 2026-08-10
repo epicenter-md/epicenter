@@ -4,12 +4,12 @@
  * ADR-0222 left a host exactly one thing to write: how to make a socket.
  * Reconnecting on close, reconnecting when the client reports `needsResync`,
  * putting the cursor in the URL, watching for a submission nobody answers,
- * and classifying a refused dial against the edition boundary (ADR-0231) are
- * all the library's, because every one of them is correctness rather than
- * transport. What this file adds is transport only: translating an
- * `openWebSocket` rejection into the driver's vocabulary (a permanent denial
- * is `denied`, anything else is `closed`), and supplying the authenticated
- * probe the supersession rule reads.
+ * and concluding `superseded` from the boundary frame (ADR-0231) are all the
+ * library's, because every one of them is correctness rather than transport.
+ * What this file adds is transport only: translating an `openWebSocket`
+ * rejection into the driver's vocabulary (a permanent denial is `denied`,
+ * anything else is `closed`), and the discard-and-reload the application
+ * runs when the driver reports supersession.
  *
  * Sharing is being signed in. The route stamps the principal from the resolved
  * bearer and addresses the Durable Object by it, so two devices on one account
@@ -21,7 +21,6 @@ import type { AuthClient } from '@epicenter/auth';
 import type { Store } from '@epicenter/data';
 import {
 	createSyncConnection,
-	readBoundary,
 	type StoreTransport,
 	type SyncConnection,
 } from '@epicenter/data/sync';
@@ -32,7 +31,7 @@ import { reportBackgroundError } from './report.js';
 
 /**
  * How Honeycrisp reaches its store's authenticated door out of band from the
- * socket: the boundary probe, and the compact POST (ADR-0231).
+ * socket: the compact POST (ADR-0231).
  */
 export function honeycrispStoreTransport(auth: AuthClient): StoreTransport {
 	return {
@@ -68,14 +67,8 @@ export function attachHoneycrispSync({
 	 */
 	onSuperseded: () => void;
 }): SyncConnection {
-	const transport = honeycrispStoreTransport(auth);
 	const connection = createSyncConnection({
 		store,
-		// The supersession rule runs in the driver; this host only supplies the
-		// authenticated reader. Every non-answer is `undefined`, which the rule
-		// treats as doubt, and doubt never discards.
-		probeBoundary: async () =>
-			(await readBoundary(transport)).data ?? undefined,
 		onSuperseded,
 		dial: ({ cursor, opened, received, closed, denied }) => {
 			let socket: WebSocket | undefined;

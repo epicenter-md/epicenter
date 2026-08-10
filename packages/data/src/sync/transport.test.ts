@@ -21,7 +21,11 @@ import {
 	type LensView,
 	type TableHandle,
 } from '../store/store.js';
-import { openSyncAuthority } from './authority.js';
+import {
+	AuthorityError,
+	openSyncAuthority,
+	type SyncAuthority,
+} from './authority.js';
 import { createSyncClient } from './client.js';
 import {
 	createChunkCollector,
@@ -2027,5 +2031,106 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		expect(laptop.titles()).toEqual(adopted);
 		expect(laptop.client.status().lastError).toBeUndefined();
 		expect(laptop.client.status().needsResync).toBe(false);
+	});
+});
+
+describe('admission is the door: a retired cursor gets the boundary fact and nothing else (ADR-0231)', () => {
+	test('never admitted: one frame, no history, and its pushes land nowhere', () => {
+		const { wire, authority, hub, phone } = setup();
+		phone.connect();
+		for (let index = 0; index < 3; index += 1) {
+			expectOk(phone.db.tables.notes.create({ title: `note ${index}` }));
+			phone.client.flush();
+			wire.settle();
+		}
+		expectOk(
+			authority.replace({
+				fromBoundary: 0,
+				bytes: phone.store.encodeStateSince(),
+			}),
+		);
+		const boundary = expectOk(authority.boundary());
+		const membersBefore = hub.attached();
+
+		// A connection from the old edition, joined directly so the verdict and
+		// every byte it is ever sent are observable.
+		const sent: Uint8Array[] = [];
+		const stale: HubConnection = {
+			cursor: 2,
+			send: (bytes) => sent.push(bytes),
+		};
+		expect(hub.join(stale)).toBe('retired');
+
+		// Membership is the whole guard: not a member, so it was handed no
+		// snapshot and no entries, only the fact.
+		expect(hub.attached()).toBe(membersBefore);
+		const frames = sent.map((bytes) => expectOk(decodeFrame(bytes)));
+		expect(frames).toEqual([{ kind: 'boundary', position: boundary }]);
+
+		// And the append direction dies at the same absence: its push reaches no
+		// log and earns no answer, not even a refusal.
+		const headBefore = expectOk(authority.head());
+		hub.receive(
+			stale,
+			encodeFrame({
+				kind: 'push',
+				submission: 1,
+				chunk: 0,
+				chunks: 1,
+				bytes: new Uint8Array([1, 2, 3]),
+			}),
+		);
+		expect(expectOk(authority.head())).toBe(headBefore);
+		expect(sent).toHaveLength(1);
+	});
+
+	test('a driven stale replica concludes superseded, and its rows are never soup', () => {
+		const { wire, authority, phone, laptop } = setup();
+		phone.connect();
+		laptop.connect();
+		expectOk(phone.db.tables.notes.create({ title: 'old edition' }));
+		phone.client.flush();
+		wire.settle();
+		const before = laptop.titles();
+		expect(before).toEqual(['old edition']);
+		phone.disconnect();
+		laptop.disconnect();
+
+		expectOk(
+			authority.replace({
+				fromBoundary: 0,
+				bytes: phone.store.encodeStateSince(),
+			}),
+		);
+
+		// The laptop returns from the old edition: it draws the conclusion, and
+		// nothing about its document changed, because nothing was delivered to
+		// merge. Adoption is its host's discard-and-reload, not a code path here.
+		laptop.connect();
+		wire.settle();
+		expect(laptop.client.status().superseded).toBe(true);
+		expect(laptop.titles()).toEqual(before);
+		expect(laptop.client.status().cursor).toBe(1);
+	});
+
+	test('an unreadable boundary fails closed: no admission and no frame', () => {
+		const { authority } = openAuthority();
+		const broken: SyncAuthority = {
+			...authority,
+			boundary: () => AuthorityError.StorageFailed({ cause: new Error('io') }),
+		};
+		const hub = createSyncHub({ authority: broken });
+		const sent: Uint8Array[] = [];
+		const connection: HubConnection = {
+			cursor: 5,
+			send: (bytes) => sent.push(bytes),
+		};
+
+		// Admitting unchecked could seat a stale replica; stating a boundary the
+		// authority never answered could discard a healthy one. Both directions
+		// fail closed: plain refusal, ordinary client backoff.
+		expect(hub.join(connection)).toBe('unavailable');
+		expect(hub.attached()).toBe(0);
+		expect(sent).toHaveLength(0);
 	});
 });

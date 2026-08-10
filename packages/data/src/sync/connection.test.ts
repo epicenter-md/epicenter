@@ -22,6 +22,7 @@ import type { Result } from 'wellcrafted/result';
 import { createStore, type LensView } from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
 import { createSyncConnection, type SyncDial } from './connection.js';
+import { encodeFrame } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 
 const lens = defineLens({
@@ -551,24 +552,27 @@ describe('the driver lets go of what it has abandoned', () => {
 	});
 });
 
-describe('a retired edition supersedes the replica, and doubt never does (ADR-0231)', () => {
+describe('the boundary frame supersedes the replica, and nothing else does (ADR-0231)', () => {
 	/**
-	 * A replica whose door refuses it the way the deployed dial does: the
-	 * attempt closes before ever opening, and the only way to learn why is the
-	 * injected probe. `probe` scripts what the authority's door would answer.
+	 * A replica whose door is scripted: the dial opens, the door answers with
+	 * whatever `answers` says, and the socket closes. This is the accepted-
+	 * then-answered shape the deployed hub produces; the frame is the only
+	 * signal, exactly as on the wire.
 	 */
-	function openRefusedAtDoor({
+	function openAtDoor({
 		clock,
 		cursor,
-		probe,
+		answers,
 	}: {
 		clock: Clock;
 		/** What this replica has durably applied, seeded before the driver runs. */
 		cursor: number;
-		probe: (() => Promise<number | undefined>) | undefined;
+		/** Frames the door sends this dial before closing, if any. */
+		answers: (dial: number) => Uint8Array[];
 	}) {
-		const database = createBunSqliteAdapter(new Database(':memory:'));
-		const store = createStore({ database });
+		const store = createStore({
+			database: createBunSqliteAdapter(new Database(':memory:')),
+		});
 		const db = expectOk(store.bind(lens)) as LensView<typeof lens>;
 		if (cursor > 0) expectOk(store.sync.advance(cursor));
 		let dials = 0;
@@ -576,12 +580,13 @@ describe('a retired edition supersedes the replica, and doubt never does (ADR-02
 		const connection = createSyncConnection({
 			store,
 			schedule: clock.schedule,
-			...(probe === undefined ? {} : { probeBoundary: probe }),
 			onSuperseded: () => {
 				discarded += 1;
 			},
-			dial: ({ closed }) => {
+			dial: ({ opened, received, closed }) => {
 				dials += 1;
+				opened({ send: () => undefined });
+				for (const bytes of answers(dials)) received(bytes);
 				closed();
 				return () => undefined;
 			},
@@ -589,30 +594,15 @@ describe('a retired edition supersedes the replica, and doubt never does (ADR-02
 		return { db, connection, dials: () => dials, discarded: () => discarded };
 	}
 
-	/**
-	 * Let probes and timers interleave, the way they do on a real device.
-	 *
-	 * In slices, for the same reason `run` is: the probe resolves on the
-	 * microtask queue and only THEN schedules the redial, so advancing the
-	 * whole interval in one jump would run at most one dial per call.
-	 */
-	async function drain(clock: Clock, ms: number, slices = 20) {
-		for (let index = 0; index < slices; index += 1) {
-			await new Promise((resolve) => setTimeout(resolve, 0));
-			clock.advance(ms / slices);
-		}
-		await new Promise((resolve) => setTimeout(resolve, 0));
-	}
-
-	test('a probe-confirmed retired edition stops the driver and fires onSuperseded once', async () => {
+	test('a boundary strictly ahead of a nonzero cursor stops the driver and fires onSuperseded once', () => {
 		const clock = createClock();
-		const replica = openRefusedAtDoor({
+		const replica = openAtDoor({
 			clock,
 			cursor: 7,
-			probe: () => Promise.resolve(12),
+			answers: () => [encodeFrame({ kind: 'boundary', position: 12 })],
 		});
 		replica.connection.start();
-		await drain(clock, 120_000);
+		clock.advance(120_000);
 
 		expect(replica.dials()).toBe(1);
 		expect(replica.discarded()).toBe(1);
@@ -621,7 +611,7 @@ describe('a retired edition supersedes the replica, and doubt never does (ADR-02
 
 		// Local work must not wake a driver that is over for good.
 		expectOk(replica.db.tables.notes.create({ title: 'local only' }));
-		await drain(clock, 120_000);
+		clock.advance(120_000);
 		expect(replica.dials()).toBe(1);
 		expect(clock.pending()).toBe(0);
 
@@ -630,119 +620,67 @@ describe('a retired edition supersedes the replica, and doubt never does (ADR-02
 		expect(replica.connection.status().superseded).toBe(true);
 	});
 
-	test('CONTROL: a probe that cannot answer keeps the ordinary backoff and never discards', async () => {
-		// The most important rule in the design: automatic discard's failure
-		// mode is wiping local data on a network blip, so a thrown fetch, an
-		// undefined answer, or garbage all mean "unknown", and unknown retries.
+	test('CONTROL: a close with no boundary frame retries forever and never discards', () => {
+		// The structural half of "doubt never discards": a network blip, a dead
+		// authority, and an auth wobble all look like this, and none of them can
+		// fabricate the frame, so there is no path from here to a discard.
 		const clock = createClock();
-		for (const probe of [
-			() => Promise.reject(new Error('network down')),
-			() => Promise.resolve(undefined),
-			() => Promise.resolve(Number.NaN),
-		]) {
-			const replica = openRefusedAtDoor({ clock, cursor: 7, probe });
-			replica.connection.start();
-			await drain(clock, 120_000);
+		const replica = openAtDoor({ clock, cursor: 7, answers: () => [] });
+		replica.connection.start();
+		clock.advance(120_000);
 
-			expect(replica.discarded()).toBe(0);
-			expect(replica.connection.status().superseded).toBe(false);
-			expect(replica.dials()).toBeGreaterThan(3);
-			replica.connection[Symbol.dispose]();
-		}
+		expect(replica.discarded()).toBe(0);
+		expect(replica.connection.status().superseded).toBe(false);
+		expect(replica.dials()).toBeGreaterThan(3);
+		replica.connection[Symbol.dispose]();
 	});
 
-	test('a boundary at or below the cursor is not supersession', async () => {
-		// The door admits cursor >= boundary, so a refusal with such a probe
-		// answer was something else (a deploy hiccup, an auth wobble): retry.
+	test('garbage on the wire is ignored, not concluded from', () => {
 		const clock = createClock();
-		const replica = openRefusedAtDoor({
+		const replica = openAtDoor({
 			clock,
 			cursor: 7,
-			probe: () => Promise.resolve(7),
+			answers: () => [new Uint8Array([255, 1, 2, 3]), new Uint8Array(0)],
 		});
 		replica.connection.start();
-		await drain(clock, 120_000);
+		clock.advance(120_000);
 
 		expect(replica.discarded()).toBe(0);
 		expect(replica.dials()).toBeGreaterThan(3);
+		replica.connection[Symbol.dispose]();
 	});
 
-	test('a fresh replica at cursor zero never probes: it holds no commitment', async () => {
-		let probes = 0;
+	test('a boundary at or below the cursor is not supersession', () => {
+		// The hub never sends this shape, so receiving it means something is
+		// confused; the conclusion is drawn only from a position strictly ahead.
 		const clock = createClock();
-		const replica = openRefusedAtDoor({
+		const replica = openAtDoor({
+			clock,
+			cursor: 7,
+			answers: () => [encodeFrame({ kind: 'boundary', position: 7 })],
+		});
+		replica.connection.start();
+		clock.advance(120_000);
+
+		expect(replica.discarded()).toBe(0);
+		expect(replica.connection.status().superseded).toBe(false);
+		expect(replica.dials()).toBeGreaterThan(3);
+		replica.connection[Symbol.dispose]();
+	});
+
+	test('a fresh replica at cursor zero draws no conclusion: it holds no commitment', () => {
+		const clock = createClock();
+		const replica = openAtDoor({
 			clock,
 			cursor: 0,
-			probe: () => {
-				probes += 1;
-				return Promise.resolve(1_000);
-			},
+			answers: () => [encodeFrame({ kind: 'boundary', position: 1_000 })],
 		});
 		replica.connection.start();
-		await drain(clock, 120_000);
+		clock.advance(120_000);
 
-		expect(probes).toBe(0);
 		expect(replica.discarded()).toBe(0);
+		expect(replica.connection.status().superseded).toBe(false);
 		expect(replica.dials()).toBeGreaterThan(3);
-	});
-
-	test('a socket that opened and later died is weather, not supersession', async () => {
-		// The restriction to never-opened failures: the door refuses a retired
-		// cursor BEFORE a socket exists, so anything that opened was admitted.
-		let probes = 0;
-		const wire = createWire();
-		const clock = createClock();
-		const { hub } = openAuthority();
-		const store = createStore({
-			database: createBunSqliteAdapter(new Database(':memory:')),
-		});
-		expectOk(store.bind(lens));
-		let generation = 0;
-		let breakSocket: (() => void) | undefined;
-		const connection = createSyncConnection({
-			store,
-			schedule: clock.schedule,
-			probeBoundary: () => {
-				probes += 1;
-				return Promise.resolve(1_000);
-			},
-			dial: ({ cursor, opened, received, closed }) => {
-				const mine = (generation += 1);
-				const hubConnection: HubConnection = {
-					cursor,
-					send: (bytes) =>
-						wire.defer(() => {
-							if (mine === generation) received(bytes);
-						}),
-				};
-				opened({
-					send: (bytes) =>
-						wire.defer(() => {
-							if (mine === generation) hub.receive(hubConnection, bytes);
-						}),
-				});
-				hub.join(hubConnection);
-				breakSocket = () => {
-					if (mine !== generation) return;
-					generation += 1;
-					hub.leave(hubConnection);
-					closed();
-				};
-				return () => {
-					if (mine !== generation) return;
-					generation += 1;
-					hub.leave(hubConnection);
-				};
-			},
-		});
-		connection.start();
-		run(wire, clock, 0);
-		breakSocket?.();
-		await drain(clock, 10_000);
-
-		expect(probes).toBe(0);
-		expect(connection.status().superseded).toBe(false);
-		expect(connection.status().lastReconnect).toBe('closed');
-		connection[Symbol.dispose]();
+		replica.connection[Symbol.dispose]();
 	});
 });

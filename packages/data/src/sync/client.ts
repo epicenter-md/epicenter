@@ -117,6 +117,18 @@ export type SyncClientStatus = {
 	 * finds out.
 	 */
 	needsResync: boolean;
+	/**
+	 * The CLIENT's conclusion from the boundary fact (ADR-0231): this
+	 * replica's cursor names a retired edition, and sync is over for good.
+	 *
+	 * Drawn only when a `boundary` frame arrived on the attached socket with
+	 * a position strictly ahead of this replica's own nonzero cursor; any
+	 * other frame, close, or failure leaves it false, which is what makes
+	 * "doubt never discards" structural. Sticky once true, in the same
+	 * set-and-wait shape as `needsResync`: the driver notices, stops for
+	 * good, and the host discards the local file whole and reloads.
+	 */
+	superseded: boolean;
 };
 
 export type SyncClient = {
@@ -176,6 +188,7 @@ export function createSyncClient({
 	let owed = 0;
 	let lastError: SyncClientError | undefined;
 	let needsResync = false;
+	let superseded = false;
 	let cancelIdle: (() => void) | undefined;
 	let disposed = false;
 
@@ -224,7 +237,10 @@ export function createSyncClient({
 		return broken;
 	}
 
-	function apply(seq: number, bytes: Uint8Array): Result<void, SyncClientError> {
+	function apply(
+		seq: number,
+		bytes: Uint8Array,
+	): Result<void, SyncClientError> {
 		// Already applied. Re-delivery is not an error, it is a design property
 		// the transport leans on in three places: a crash between committing
 		// bytes and advancing the cursor re-sends, a reconnect re-sends whatever
@@ -274,11 +290,17 @@ export function createSyncClient({
 	 * so unsent offline work survives and goes out afterwards like any other
 	 * local write.
 	 */
-	function adopt(position: number, bytes: Uint8Array): Result<void, SyncClientError> {
+	function adopt(
+		position: number,
+		bytes: Uint8Array,
+	): Result<void, SyncClientError> {
 		if (position <= cursor) return Ok(undefined);
 		const { error } = store.applyRemote(bytes);
 		if (error !== null) {
-			const stuck = SyncClientError.Unapplyable({ seq: position, cause: error });
+			const stuck = SyncClientError.Unapplyable({
+				seq: position,
+				cause: error,
+			});
 			lastError = stuck.error;
 			return stuck;
 		}
@@ -358,7 +380,10 @@ export function createSyncClient({
 
 			switch (frame.kind) {
 				case 'ack': {
-					if (inFlight === undefined || frame.submission !== inFlight.submission) {
+					if (
+						inFlight === undefined ||
+						frame.submission !== inFlight.submission
+					) {
 						return Ok(undefined);
 					}
 					// The authority relays to every other socket before it answers this
@@ -389,7 +414,10 @@ export function createSyncClient({
 					// refusal aimed at a snapshot offer, which carries a position
 					// rather than a submission number, was read as a refusal of an
 					// unrelated push and cleared it.
-					if (inFlight === undefined || frame.submission !== inFlight.submission) {
+					if (
+						inFlight === undefined ||
+						frame.submission !== inFlight.submission
+					) {
 						return Ok(undefined);
 					}
 					const refused = SyncClientError.Refused({ reason: frame.reason });
@@ -419,6 +447,14 @@ export function createSyncClient({
 				}
 				case 'wanted':
 					return offerSnapshot(frame.position);
+				case 'boundary':
+					// The authority's fact; the conclusion is this replica's to draw,
+					// and only from a well-formed position strictly ahead of its own
+					// nonzero cursor. Anything else is ignored, which is the whole of
+					// "doubt never discards": no failure can fabricate this frame, and
+					// no malformed one is honored.
+					if (cursor > 0 && frame.position > cursor) superseded = true;
+					return Ok(undefined);
 				case 'push':
 				case 'offer':
 					// A client never receives either. Ignored rather than thrown on,
@@ -435,6 +471,7 @@ export function createSyncClient({
 			lastError,
 			unresolvedDependencies: store.hasUnresolvedDependencies(),
 			needsResync,
+			superseded,
 		}),
 
 		dispose() {

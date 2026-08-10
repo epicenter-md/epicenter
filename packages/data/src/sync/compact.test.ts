@@ -18,7 +18,6 @@ import type { ApplicationOf } from '../store/store.js';
 import {
 	compactStore,
 	type RebornState,
-	readBoundary,
 	rebirth,
 	type StoreTransport,
 } from './compact.js';
@@ -145,29 +144,20 @@ describe('rebirth re-encodes the live state into new identities (ADR-0231)', () 
 	});
 });
 
-/** A scripted authority door: what the probe and the verb answer, per call. */
-function scriptedTransport(script: {
-	probe?: () => Response | Promise<Response>;
-	replace?: (url: URL) => Response;
-}) {
-	const probes: number[] = [];
+/** A scripted authority door: what the one verb answers, per POST. */
+function scriptedTransport(script: { replace: (url: URL) => Response }) {
 	const replaces: URL[] = [];
 	const transport: StoreTransport = {
 		baseURL: 'https://api.example.com',
 		namespace: lens.namespace,
 		fetch: async (input, init) => {
+			if (init?.method !== 'POST') throw new Error('unexpected non-POST');
 			const url = new URL(input);
-			if (init?.method === 'POST') {
-				replaces.push(url);
-				if (script.replace === undefined) throw new Error('unexpected POST');
-				return script.replace(url);
-			}
-			probes.push(1);
-			if (script.probe === undefined) throw new Error('unexpected probe');
-			return script.probe();
+			replaces.push(url);
+			return script.replace(url);
 		},
 	};
-	return { transport, probes, replaces };
+	return { transport, replaces };
 }
 
 /** A store with a cursor, which is what the lease is built from. */
@@ -179,10 +169,9 @@ function syncedApplication(cursor: number) {
 }
 
 describe('compactStore holds the lease honestly', () => {
-	test('publishes with atHead = its own cursor and fromBoundary from the probe', async () => {
+	test('a never-replaced store publishes in one post, atHead = its own cursor', async () => {
 		const app = syncedApplication(7);
 		const { transport, replaces } = scriptedTransport({
-			probe: () => Response.json({ boundary: 3 }),
 			replace: () => Response.json({ boundary: 8 }),
 		});
 
@@ -191,16 +180,17 @@ describe('compactStore holds the lease honestly', () => {
 		expect(expectOk(published)).toEqual({ boundary: 8 });
 		expect(replaces).toHaveLength(1);
 		const url = replaces[0] as URL;
-		expect(url.searchParams.get('fromBoundary')).toBe('3');
+		expect(url.searchParams.get('fromBoundary')).toBe('0');
 		expect(url.searchParams.get('atHead')).toBe('7');
 		expect(url.searchParams.get('namespace')).toBe(lens.namespace);
 	});
 
-	test('a CAS miss retries from the answered boundary, bounded', async () => {
+	test('the verb is its own bootstrap: the CAS miss answers the boundary and the retry presents it', async () => {
+		// The client durably knows no boundary, deliberately (zero new client
+		// state), so the first post claims zero and learns from the refusal.
 		const app = syncedApplication(7);
 		let posts = 0;
 		const { transport, replaces } = scriptedTransport({
-			probe: () => Response.json({ boundary: 0 }),
 			replace: () => {
 				posts += 1;
 				return posts === 1
@@ -212,13 +202,13 @@ describe('compactStore holds the lease honestly', () => {
 		const published = await compactStore({ store: app.store, transport });
 
 		expect(expectOk(published)).toEqual({ boundary: 8 });
+		expect((replaces[0] as URL).searchParams.get('fromBoundary')).toBe('0');
 		expect((replaces[1] as URL).searchParams.get('fromBoundary')).toBe('4');
 	});
 
 	test('a moved log refuses the compact: sync, then try again', async () => {
 		const app = syncedApplication(7);
 		const { transport } = scriptedTransport({
-			probe: () => Response.json({ boundary: 0 }),
 			replace: () =>
 				Response.json({ refused: 'head', head: 9 }, { status: 409 }),
 		});
@@ -231,45 +221,34 @@ describe('compactStore holds the lease honestly', () => {
 		).toBe(9);
 	});
 
-	test('an unreadable boundary posts nothing at all', async () => {
-		// The same never-on-doubt posture as the supersession rule: unknown
-		// does nothing, and especially does not publish.
-		const app = syncedApplication(7);
-		const { transport, replaces } = scriptedTransport({
-			probe: () => Response.json('not a boundary shape'),
-		});
-
-		const refused = await compactStore({ store: app.store, transport });
-
-		expect(refused.error?.name).toBe('BoundaryUnreadable');
-		expect(replaces).toHaveLength(0);
-	});
-
 	test('a crash-replay of a compact that landed can never publish twice', async () => {
 		// The first attempt published boundary 8 and the device died before
-		// discarding. On replay its cursor is still 7, the probe answers the
-		// new boundary, and the lease refuses: head is 8, atHead is 7. The
-		// replica falls into ordinary adoption; nothing is republished.
+		// discarding. On replay its cursor is still 7: the bootstrap post learns
+		// the boundary moved to 8, and the retry's lease is refused, because
+		// head is 8 and atHead is 7. The replica falls into ordinary adoption;
+		// nothing is republished.
 		const app = syncedApplication(7);
+		let posts = 0;
 		const { transport, replaces } = scriptedTransport({
-			probe: () => Response.json({ boundary: 8 }),
 			replace: (url) => {
+				posts += 1;
 				expect(url.searchParams.get('atHead')).toBe('7');
-				return Response.json({ refused: 'head', head: 8 }, { status: 409 });
+				return posts === 1
+					? Response.json({ refused: 'boundary', boundary: 8 }, { status: 409 })
+					: Response.json({ refused: 'head', head: 8 }, { status: 409 });
 			},
 		});
 
 		const replayed = await compactStore({ store: app.store, transport });
 
 		expect(replayed.error?.name).toBe('StoreChanged');
-		expect(replaces).toHaveLength(1);
+		expect(replaces).toHaveLength(2);
 	});
 
 	test('a boundary contested through every retry resolves into adoption', async () => {
 		const app = syncedApplication(7);
 		let boundary = 10;
 		const { transport, replaces } = scriptedTransport({
-			probe: () => Response.json({ boundary: 0 }),
 			replace: () =>
 				Response.json(
 					{ refused: 'boundary', boundary: (boundary += 1) },
@@ -281,22 +260,5 @@ describe('compactStore holds the lease honestly', () => {
 
 		expect(contested.error?.name).toBe('Contested');
 		expect(replaces).toHaveLength(3);
-	});
-});
-
-describe('readBoundary answers only with a well-formed boundary', () => {
-	test('a boundary is a number, and anything else is unreadable', async () => {
-		const answers: [() => Response, 'ok' | 'BoundaryUnreadable'][] = [
-			[() => Response.json({ boundary: 4 }), 'ok'],
-			[() => Response.json({}), 'BoundaryUnreadable'],
-			[() => Response.json({ boundary: 'four' }), 'BoundaryUnreadable'],
-			[() => new Response('nope', { status: 500 }), 'BoundaryUnreadable'],
-		];
-		for (const [probe, expected] of answers) {
-			const { transport } = scriptedTransport({ probe });
-			const read = await readBoundary(transport);
-			if (expected === 'ok') expect(expectOk(read)).toBe(4);
-			else expect(read.error?.name).toBe(expected);
-		}
 	});
 });

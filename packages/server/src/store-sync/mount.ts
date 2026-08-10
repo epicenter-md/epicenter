@@ -77,6 +77,11 @@ function createStoreSyncApp(resolve: ResolveStoreAuthority): Hono<Env> {
 				tags: ['store-sync'],
 			}),
 			async (c) => {
+				if (!isWebSocketUpgrade(c)) {
+					return new Response('The store transport is WebSocket-only', {
+						status: 426,
+					});
+				}
 				const namespace = parseNamespace(c.req.query('namespace'));
 				if (namespace === undefined) {
 					return new Response('namespace must be a Lens namespace', {
@@ -85,13 +90,6 @@ function createStoreSyncApp(resolve: ResolveStoreAuthority): Hono<Env> {
 				}
 				// Server-side principal: never the query's.
 				const name = storeAuthorityName(c.var.principal.id, namespace);
-
-				// A plain GET here is the boundary probe (ADR-0231): the same door,
-				// readable, because a browser WebSocket cannot read a refused
-				// upgrade's status or body. The authority answers `{ boundary }`.
-				if (!isWebSocketUpgrade(c)) {
-					return resolve(c.env, name).fetch(c.req.raw);
-				}
 
 				// An upgrade offering subprotocols must offer the main one: the 101
 				// echoes only `epicenter`, and a compliant browser fails a handshake
