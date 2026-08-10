@@ -4,7 +4,7 @@
 - **Date:** 2026-08-10
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0232 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
-- **Corrected before merge, five times.** First: a dated-volume namespace
+- **Corrected before merge, six times.** First: a dated-volume namespace
   grammar with a manifest and a backup "system" were withdrawn the same day
   they were drafted; the worry they served is one sentence (dead weight must
   not accumulate forever) and one verb serves it. Second: an ordered
@@ -24,8 +24,15 @@
   automatic (authority wins; a stale replica discards and resyncs), and the
   consent for what that discards moved to the verb, where the person with
   the context is. The product surface collapsed with it, to one action over
-  the one verb. What survives of each correction is a paragraph under
-  *Considered alternatives*.
+  the one verb. Sixth: the discovery mechanism the fifth correction built
+  (refuse the upgrade, then read the boundary through an authenticated HTTP
+  probe) was withdrawn the same day it landed. The refusal moved off the
+  HTTP handshake and into the sync protocol itself: every replica always
+  connects, the one catch-up verb answers with one of three facts (entries,
+  snapshot, or the boundary), and a retired replica is simply never
+  admitted to the relay membership, which is what makes contamination
+  structurally impossible rather than guarded. What survives of each
+  correction is a paragraph under *Considered alternatives*.
 - **Amends:** [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md)
   at two clauses. The rebuild refusal: withdrawn as stated, kept as reasons; an
   uncoordinated rebuild does destroy a laggard's offline edit, and the missing
@@ -138,22 +145,29 @@ positions:  1 ........... 4000 | 4001 ...........
 One durable fact is added to the whole system: the boundary, one integer in
 the authority's `_meta`, `0` for a namespace never replaced. The replica's
 durable state is **unchanged from today**: `{updates, outbox, cursor}`. The
-dial is unchanged (the cursor already travels in the URL). The frame
-vocabulary (`frames.ts`) is unchanged. The entire protocol delta is one
-server-side comparison at the door and one refusal that names the boundary:
+dial is unchanged (the cursor already travels in the URL), and every dial
+is accepted: connecting a socket is transport, not admission. The frame
+vocabulary gains exactly one frame, and the entire protocol delta is that
+the one catch-up verb ("serve me after C") now has three truthful answers
+instead of two:
 
-- `cursor ≥ boundary`: today's protocol, byte for byte.
-- `0 < cursor < boundary`: refused before any socket exists; this replica
-  belongs to a retired edition (adoption, below).
-- `cursor == 0`: ordinary join; a replica that never exchanged a byte holds
-  no commitment, its document grew alone, and merging an independent
-  document is the one cross-edition merge that is safe. The fresh install
-  that worked offline before first sign-in is greeted, not asked to export.
+- `cursor ≥ boundary`: **entries** (or snapshot-then-entries, unchanged);
+  today's protocol, byte for byte.
+- `cursor == 0`: ordinary join, same as above; a replica that never
+  exchanged a byte holds no commitment, its document grew alone, and
+  merging an independent document is the one cross-edition merge that is
+  safe. The fresh install that worked offline before first sign-in is
+  greeted, not asked to export.
+- `0 < cursor < boundary`: the **boundary fact**, one frame carrying the
+  position where the current edition began, and nothing else, ever: this
+  connection is never admitted to the relay membership, so it is sent no
+  snapshot and no entries and its pushes land nowhere (adoption, below).
 
 Deployed replicas and old builds migrate with zero request changes: their
-dials already carry a cursor, the comparison is new server behavior only,
-and after a first replace an un-upgraded client is refused visibly rather
-than corrupting anything.
+dials already carry a cursor, the third answer is new server behavior only,
+and after a first replace an un-upgraded client (which parses the boundary
+frame as unknown and ignores it) reconnects on backoff forever, visibly
+idle, rather than corrupting anything.
 
 On ordering, because the second draft refused an ordered integer and this
 looks like one: the refused thing was a *new, client-visible counter axis*,
@@ -310,25 +324,74 @@ replace, the stale replica at its next dial, the loser of a concurrent
 replace, and every crash in the middle. One adoption path instead of a
 state machine.
 
-Discovery has one subtlety and one hard safety rule. A browser `WebSocket`
-cannot read a refused upgrade's status or body, so the same door is also
-readable: an authenticated plain GET on the sync route (no upgrade) answers
-the boundary. The safety rule, because automatic discard's failure mode is
-wiping local data on a network blip: **a replica discards only when a dial
-failed AND an authenticated probe of its own partition returned a
-well-formed boundary with `0 < cursor < boundary`.** A refused fetch, a
-non-200, an unparseable body, or a dead network all fall through to
-ordinary backoff and never discard. The rule lives in the connection
-driver, not in each host (ADR-0222's lesson).
+**How a replica learns, stated for a reader who has none of the context.**
+A replica's cursor is its bookmark in the authority's log: "I have applied
+everything through N," `0` for a replica that never exchanged a byte. The
+boundary is the authority's one edition fact: the position where the
+current edition began. Positions never restart, so the number line itself
+partitions the histories:
 
-The sequence at discovery: stop persistence, delete the local file whole,
-reload (ADR-0232's instrument, the same one an auth change uses). Boot
-needs no new code: a wiped store opens empty, dials at zero, and the
-existing join arm is the whole of adoption. There is no durable note and no
-recovery state; a crash anywhere in the middle leaves the old file or
-nothing, and either way the next dial converges by repetition. **Deleting a
-file whole is the only deletion in this design, at every layer**; there is
-no surgical removal from a live CRDT anywhere.
+```txt
+positions:  1 ........... 4000 | 4001 ...........
+            old edition        | current edition
+                        boundary = 4001
+```
+
+A cursor does not just say *where* a replica is; it says *which history* it
+belongs to. Every cursor minted in the old edition is below the boundary.
+
+**Connecting is not admission.** Every replica always connects: same URL,
+same bearer, same socket, one request. What decides everything is the hub's
+admission of that connection to its relay membership, and admission has
+exactly two states, **servable** and **retired**, because that is what a
+log that forgets can truthfully be to a returning reader. A servable
+cursor (`0`, or `≥ boundary`) is admitted and the protocol proceeds byte
+for byte as today. A retired cursor (`0 < cursor < boundary`) is answered
+with one `boundary { position }` frame and never admitted: no membership
+means the hub relays nothing to it and drops anything from it, so a stale
+replica can neither publish old-edition bytes nor receive new-edition
+history, **structurally**, by absence from one map rather than by guards
+scattered through handlers.
+
+Why the protocol has three answers but admission has two states: the one
+catch-up verb, "serve me after C," has three truthful things it can say.
+*Entries*, when the replica's base is current and the tail suffices.
+*Snapshot*, when the replica is behind the in-edition recap: that snapshot
+MERGES, because it preserves struct identities, so unsent offline work
+survives beside it; this is safe precisely because both documents descend
+from one history. *The boundary fact*, when the histories parted: a
+cross-edition snapshot must never be sent, because the reclaim re-minted
+every struct identity, and Yjs would resolve every field arbitrarily
+between old and re-minted rivals, silently, per field. The first two
+answers are the servable state; the third is the retired state. The
+trichotomy is not this design's invention; entries-versus-snapshot was
+already a branch, and the boundary fact is the third value of the same
+comparison.
+
+**The naming is a decision, recorded.** The wire frame is `boundary`,
+named for the fact the authority states, the way every frame is named for
+what it carries (`entry`, `snapshot`, `ack`); the server issues no verdict
+about the receiver. `superseded` is the CLIENT's conclusion, drawn in its
+own state and callbacks, when a well-formed boundary arrives strictly
+ahead of its own nonzero cursor. Fact on the wire, verdict in the client.
+
+**Doubt never discards, and now that is structure rather than a rule.** The
+only trigger for the destructive discard is a typed frame on the replica's
+own authenticated, principal-addressed socket, re-checked client-side as
+`boundary > cursor > 0`. A network failure, an auth failure, a malformed
+frame, a close without a boundary, and every ambiguous response have no
+path to discard, because none of them can fabricate that frame; they all
+fall through to ordinary reconnect and backoff, forever if need be.
+
+The sequence at discovery: the driver stops for good, the application
+deletes the local file whole and reloads (ADR-0232's instrument, the same
+one an auth change uses). Boot needs no new code: a wiped store opens
+empty, dials at zero, and the existing join arm is the whole of adoption.
+There is no durable note and no recovery state; a crash anywhere in the
+middle leaves the old file or nothing, and either way the next dial
+converges by repetition. **Deleting a file whole is the only deletion in
+this design, at every layer**; there is no surgical removal from a live
+CRDT anywhere.
 
 Two ordering rules replace all crash choreography, and they are rules, not
 state:
@@ -363,10 +426,11 @@ carries it plainly:
 authority could destroy a replica's local state without a human step on
 that device; under this rule, a compaction (or an authority that lies about
 its boundary) causes replicas to discard on their own. This is accepted
-because the partition is the owner's own, discard follows only an
-authenticated probe of it, and the authority could already withhold or
-rewrite everything a replica would ever sync again; the marginal power is
-over local copies of data the owner already declared replaced.
+because the partition is the owner's own, discard follows only a typed
+frame on the replica's own authenticated socket to it, and the authority
+could already withhold or rewrite everything a replica would ever sync
+again; the marginal power is over local copies of data the owner already
+declared replaced.
 
 The physics limit, stated so nobody oversells this: a powered-off device
 keeps its copy until it reconnects. What this design guarantees is that a
@@ -388,13 +452,16 @@ Yjs provides no net against it: the engine applies any update to any
 document, a full state from one edition integrates cleanly into another,
 tombstones and all, and the restore verb proves identity freshness was never
 the guard (a restored edition reuses the saved state's struct identities
-wholesale and is safe anyway). The guard is two comparisons and an ordering
-rule, all this record's: remotely, the only way to write is over an accepted
-socket, and the door compares the cursor to the boundary; the verb compares
+wholesale and is safe anyway). The guard is one comparison, one membership,
+and an ordering rule, all this record's: remotely, the only way to write or
+be served history is through the hub's relay membership, and admission
+compares the cursor to the boundary once, at join; the verb compares
 `fromBoundary`; locally, wipe-whole-before-reuse means a device that has
-moved on holds no old bytes at all. Identity questions are answered by
-addresses and doors, never by inspecting content, which is the same property
-that keeps end-to-end encryption possible (ADR-0218).
+moved on holds no old bytes at all. Both contamination directions die at
+the same absence: an unadmitted connection's pushes reach no log and its
+socket is handed no snapshot and no entries. Identity questions are
+answered by addresses and admissions, never by inspecting content, which is
+the same property that keeps end-to-end encryption possible (ADR-0218).
 
 ### The shelf is local
 
@@ -420,10 +487,10 @@ principal no longer resolves, so the dial never reaches a Durable Object.
   shedding, one replace reclaims it, and `pressure()` is the gauge that says
   when.
 - **Client durable state is unchanged from today.** No new fields, no new
-  dial parameters, no new frames, and (after the fifth correction) no
-  durable note either. The entire client-side delta is one classification
-  rule at the dial and one discard-and-reload; adoption itself is the join
-  arm that already exists.
+  dial parameters, and (after the fifth correction) no durable note either.
+  The entire client-side delta is one frame handler that draws one
+  conclusion (`superseded`) and one discard-and-reload; adoption itself is
+  the join arm that already exists.
 - **ADR-0215's partial-hydration fix stops being load-bearing.** The store
   stays fully hydrated and synchronous; a document that outgrows its live
   set is replaced, not partially loaded.
@@ -441,15 +508,17 @@ principal no longer resolves, so the dial never reaches a Durable Object.
   instantly" is not a property of this design. When it next dials, it
   discards and resyncs on its own, with no ceremony and no human step on
   that device; the human step already happened, once, at the verb.
-- **The store and the in-edition transport never learn editions exist.**
-  `store.ts` and `frames.ts` are untouched; the boundary lives in the mount
-  and Durable Object (one integer, the verb, and the probe), the discard
-  verb in the openers (delete the local file whole), the supersession rule
-  in the connection driver, and the one product action (Compact store, with
-  its warning) in the application. The application also owns account
-  deletion's orchestration and ordering (authority, then blobs, then the
-  local file), because the store knows nothing of blobs and the host owns
-  no application data (ADR-0226).
+- **The store never learns editions exist, and the transport carries one
+  edition fact.** `store.ts` is untouched. The transport's delta is named
+  and small: `frames.ts` gains the `boundary` frame, the hub's `join` gains
+  the admission comparison, and `client.ts` gains the handler that draws
+  the `superseded` conclusion. The boundary integer and the verb live in
+  the authority, the discard verb in the openers (delete the local file
+  whole), the terminal supersession state in the connection driver, and the
+  one product action (Compact store, with its warning) in the application.
+  The application also owns account deletion's orchestration and ordering
+  (authority, then blobs, then the local file), because the store knows
+  nothing of blobs and the host owns no application data (ADR-0226).
 - **The reborn bytes are branded.** `encodeStateSince()` preserves struct
   identities and reclaims nothing; the reclaim walk re-mints and reclaims
   everything. Both are byte arrays, and handing the wrong one to replace
@@ -459,18 +528,20 @@ principal no longer resolves, so the dial never reaches a Durable Object.
   by the account's actual manifest of namespaces.
 - **Built, both halves, test-gated.** The authority half: the boundary
   (`_meta`), the `replace` verb (CAS on `fromBoundary`, `atHead` lease, one
-  transaction), the dial's refusal before any socket exists, and the
-  authenticated POST on the store mount (`sync/transport.test.ts`,
-  `packages/server/workers/e2e.test.ts`). The client half under the fifth
-  correction: the boundary probe (the same GET answering `{ boundary }`),
-  the driver's supersession rule (`createSyncConnection`, never-on-doubt
-  pinned), `discard()` on both openers, the reclaim walk with its branded
-  `RebornState` (hand recursion; upstream `clone()` is broken in rc.24,
-  `evidence/rebuild-copy.test.ts`), `compactStore`, and Honeycrisp's
-  `compact()` with discard-and-reload adoption. The stated-loss contract is
-  itself a test. **Not built:** the Compact Store confirmation surface (the
-  warning copy above, owed by the settings UI), `deleteStore()`'s caller
-  (account deletion's flow), the restore bridge from the shelf, and any
+  transaction), and the authenticated POST on the store mount
+  (`sync/transport.test.ts`, `packages/server/workers/e2e.test.ts`). The
+  client half under the fifth and sixth corrections: the `boundary` frame
+  (`frames.ts`), admission at `hub.join` (servable or retired; a retired
+  connection gets the one frame and no membership), the client's
+  `superseded` conclusion and the driver's terminal state, `discard()` on
+  both openers, the reclaim walk with its branded `RebornState` (hand
+  recursion; upstream `clone()` is broken in rc.24,
+  `evidence/rebuild-copy.test.ts`), `compactStore` (bootstrapping
+  `fromBoundary` from the CAS miss), and Honeycrisp's `compact()` with
+  discard-and-reload adoption. The stated-loss contract is itself a test.
+  **Not built:** the Compact Store confirmation surface (the warning copy
+  above, owed by the settings UI), `deleteStore()`'s caller (account
+  deletion's flow), the restore bridge from the shelf, and any
   automatic-maintenance freshness contract.
 
 ## Considered alternatives
@@ -574,3 +645,27 @@ one of three places: resurrection, a roster, or a server that reads bytes.
   survive someone else's compaction. A future vault-shaped lens that truly
   needs export-first supersession would build it then, as its own product
   surface over the same wire facts; nothing is kept warm for it.
+- **Refuse the upgrade, then read the boundary through an HTTP probe (the
+  sixth correction's withdrawal).** The fifth correction's own discovery
+  design, built and green before it was recognized as the checked version
+  of something that can be structural. The premise was that the refusal
+  had to happen before any socket exists; since a browser `WebSocket`
+  cannot read a refused upgrade's status or body, that placement forced a
+  second readable door (an authenticated GET answering the boundary), and
+  the second door forced an inference in the client (dial failed AND probe
+  affirmed), and the inference forced a defended doubt taxonomy (thrown
+  fetch, non-200, garbage, boundary at or below cursor, each a guarded
+  path with its own test), plus a `readyState` guard against in-flight
+  frames after the funeral. Withdrawn because the refusal's true home is
+  admission, not the handshake: with the comparison at `hub.join` and the
+  answer travelling as a frame, the socket carries the fact browsers can
+  read, the inference disappears (no failure mode can fabricate a typed
+  frame on an authenticated socket), the funeral race is subsumed by the
+  same join comparison, and the whole decision moves from runtime-only
+  Durable Object code into the library the transport tests drive. Close
+  codes were rejected as a worse carrier (a 123-byte stringly side channel
+  through proxies and wrappers, against a frame vocabulary already proven
+  end to end); a mandatory HTTP preflight taxed every connect for the rare
+  event; an explicit HELLO/WELCOME handshake endangered the
+  catch-up-before-return contiguity proof for elegance the frame gets
+  without touching the delivery model.
