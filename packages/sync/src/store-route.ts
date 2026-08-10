@@ -43,6 +43,20 @@ export const STORE_SYNC_ROUTE = {
 		url.searchParams.set('cursor', String(params.cursor));
 		return url.toString();
 	},
+	/**
+	 * The same door, readable: an authenticated plain GET here (no upgrade)
+	 * answers `{ boundary }`, where the current edition began (ADR-0231).
+	 *
+	 * It exists because a browser `WebSocket` cannot read a refused upgrade's
+	 * status or body, and the supersession rule must never discard on doubt: a
+	 * replica discards only when a dial failed AND this probe returned a
+	 * well-formed boundary above its cursor.
+	 */
+	probeUrl(baseURL: string, params: { namespace: string }): string {
+		const url = new URL(`${stripTrailing(baseURL)}${STORE_SYNC_ROUTE.pattern}`);
+		url.searchParams.set('namespace', params.namespace);
+		return url.toString();
+	},
 } as const;
 
 /**
