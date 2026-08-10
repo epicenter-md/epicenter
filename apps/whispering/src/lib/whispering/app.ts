@@ -151,138 +151,84 @@ export async function openWhisperingApp(
 	}
 }
 
+/** The resolved settings values, as the Lens declares them. */
+type WhisperingSettingValues = NonNullable<
+	ReturnType<WhisperingData['kv']['get']>['data']
+>;
 type SettingKey = keyof WhisperingSettingValues;
 
-function createWhisperingSettings({
-	data,
-	defaults,
-	isReleased,
-	reportBackgroundError,
-}: {
-	data: WhisperingData;
-	defaults: WhisperingSettingValues;
-	isReleased(): boolean;
-	reportBackgroundError(cause: unknown): void;
-}) {
-	const keys = Object.keys(defaults) as SettingKey[];
-	const values = new Map<SettingKey, unknown>();
-	const listeners = new Set<() => void>();
+/**
+ * Settings over the Lens's KV, which is one name-addressed root.
+ *
+ * What this replaces was substantial and every piece of it answered a problem
+ * that no longer exists. Settings were one ROW at a chosen id, so there was a
+ * row id constant, a `settingFieldName` mapping from setting to column, and a
+ * read that had to create the row when it was missing. Reads were asynchronous,
+ * so there were per-key read generations, a `bumpGeneration` on every read and
+ * write, an `isReleased` guard, and a background write queue that reconciled
+ * `loadError` after the fact. Values came back live, so every read and write
+ * ran `structuredClone`.
+ *
+ * KV is a reserved root, reads are synchronous, and a read hands back a plain
+ * object (ADR-0213, ADR-0215, ADR-0216). So a read is a read, a write names its
+ * keys, and an unwritten key returns its declared default without anything
+ * creating a row to hold it.
+ */
+function createWhisperingSettings({ kv }: { kv: WhisperingData['kv'] }) {
+	let values = kv.defaults as WhisperingSettingValues;
 	let loadError: unknown = null;
-	/**
-	 * Per-key read generations.
-	 *
-	 * Every read of a key and every local write to it bumps that key's
-	 * generation, and a read installs its answer only if the generation it
-	 * started with is still current. That is what lets one key's slow read run
-	 * beside another key's write without either clobbering the other, and it is
-	 * per key because the reads are per key.
-	 */
-	const readGenerations = new Map<SettingKey, number>();
-	const bumpGeneration = (key: SettingKey): number => {
-		const next = (readGenerations.get(key) ?? 0) + 1;
-		readGenerations.set(key, next);
-		return next;
-	};
+	const listeners = new Set<() => void>();
 	const notify = () => {
 		for (const listener of listeners) listener();
 	};
-	const settingsTable = data.settings;
-	const fieldName = settingFieldName;
 
-	type SettingsRow = Record<string, unknown>;
-
-	const project = <TKey extends SettingKey>(row: SettingsRow, key: TKey) =>
-		clone(row[fieldName(key)] ?? defaults[key]);
-
-	/**
-	 * Read the row once and install every setting from it.
-	 *
-	 * One row holds every setting now (ADR-0206), so one read answers all of
-	 * them and there is nothing a per-key read could learn that this does not.
-	 * Reading per key would issue one whole-row read per declared setting, on
-	 * boot and again on every invalidation, and on the worker and desktop paths
-	 * each of those is a round trip.
-	 *
-	 * Per-key generations still decide what lands: a key whose generation moved
-	 * while this read was in flight has a newer local write and keeps it.
-	 */
-	async function refreshAll(): Promise<void> {
-		const started = new Map(keys.map((key) => [key, bumpGeneration(key)]));
-		const existing = await settingsTable.get(WHISPERING_SETTINGS_ROW_ID);
-		if (existing.error !== null) throw existing.error;
-		const row: SettingsRow =
-			existing.data ??
-			(await settingsTable.create(
-				WHISPERING_SETTINGS_ROW_ID,
-				Object.fromEntries(
-					keys.map((key) => [fieldName(key), defaults[key]]),
-				) as never,
-			));
-		if (isReleased()) return;
-		for (const key of keys) {
-			if (readGenerations.get(key) !== started.get(key)) continue;
-			values.set(key, project(row, key));
+	function read(): void {
+		const { data, error } = kv.get();
+		if (error !== null) {
+			// A stored value the current release cannot read costs that key, not
+			// the whole object: `conforming` carries the ones that did pass.
+			loadError = error;
+			values = {
+				...kv.defaults,
+				...(error as { conforming?: Partial<WhisperingSettingValues> })
+					.conforming,
+			} as WhisperingSettingValues;
+			notify();
+			return;
 		}
+		values = data;
 		loadError = null;
 		notify();
 	}
 
-	const inBackground = (work: Promise<unknown>): void => {
-		void work.then(
-			() => {
-				if (isReleased() || loadError === null) return;
-				loadError = null;
-				notify();
-			},
-			(cause) => {
-				if (isReleased()) return;
-				loadError = cause;
-				notify();
-				reportBackgroundError(cause);
-			},
-		);
+	read();
+	const stop = kv.subscribe(read);
+
+	const write = (patch: Partial<WhisperingSettingValues>): void => {
+		const { error } = kv.update(patch);
+		if (error !== null) {
+			loadError = error;
+			notify();
+			return;
+		}
+		read();
 	};
 
-	// One row moved, so one read answers it. The invalidation names the row and
-	// not which field changed, which is exactly why fanning out per key would
-	// re-read the same row once per setting.
-	const stopValues = settingsTable.subscribe(() =>
-		inBackground(refreshAll()),
-	);
-	const ready = refreshAll();
 	const settings: WhisperingSettings = {
 		get<TKey extends SettingKey>(key: TKey) {
-			return clone(values.get(key) as WhisperingSettingValues[TKey]);
+			return values[key];
 		},
 		set<TKey extends SettingKey>(
 			key: TKey,
 			value: WhisperingSettingValues[TKey],
 		) {
-			bumpGeneration(key);
-			values.set(key, clone(value));
-			notify();
-			inBackground(
-				settingsTable.patch(
-					WHISPERING_SETTINGS_ROW_ID,
-					{ [fieldName(key)]: clone(value) } as never,
-				),
-			);
+			write({ [key]: value } as Partial<WhisperingSettingValues>);
 		},
 		getDefault<TKey extends SettingKey>(key: TKey) {
-			return clone(defaults[key]);
+			return (kv.defaults as WhisperingSettingValues)[key];
 		},
 		reset() {
-			for (const key of keys) {
-				bumpGeneration(key);
-				values.set(key, clone(defaults[key]));
-				inBackground(
-					settingsTable.patch(
-						WHISPERING_SETTINGS_ROW_ID,
-						{ [fieldName(key)]: clone(defaults[key]) } as never,
-					),
-				);
-			}
-			notify();
+			write(kv.defaults as WhisperingSettingValues);
 		},
 		get loadError() {
 			return loadError;
@@ -295,10 +241,8 @@ function createWhisperingSettings({
 
 	return {
 		settings,
-		ready,
-		dispose() {
-			for (const key of keys) bumpGeneration(key);
-			stopValues();
+		[Symbol.dispose]() {
+			stop();
 			listeners.clear();
 		},
 	};
