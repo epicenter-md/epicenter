@@ -1,81 +1,77 @@
-import type { NonconformingRowError, TableLens } from '@epicenter/data/legacy';
+/**
+ * Recipes, read straight out of the document.
+ *
+ * A user recipe's identity IS its minted row id, and the built-in ones ship in
+ * code under a `builtin:` prefix and are not rows at all (`workspace/index.ts`,
+ * ADR-0099, ADR-0206). So the `sourceId` column and the two-way id map that
+ * used to live here are both gone: there is one id space for rows and a
+ * reserved prefix for the shipped ones.
+ *
+ * There used to be a generation counter, an `isDisposed` flag, a retry loop and
+ * a `rethrow` option here as well. All four existed because reading was
+ * asynchronous and two reads could land out of order. A store is one in-memory
+ * document over a synchronous SQLite boundary (ADR-0215), so a read cannot race
+ * another read and the machinery that arbitrated between them is gone.
+ */
+import type { NonconformingRowError } from '@epicenter/lens';
 import { BUILTIN_RECIPES } from '../state/builtin-recipes';
-import type { Recipe, recipesTable } from '../workspace';
+import type { Recipe, WhisperingData } from '../workspace';
+
+/** The shipped recipes are read-only, so editing one writes a copy. */
+const BUILTIN_PREFIX = 'builtin:';
 
 export type WhisperingRecipes = {
 	readonly pickable: Recipe[];
 	readonly count: number;
 	readonly nonconforming: NonconformingRowError[];
 	readonly loadError: unknown;
-	set(recipe: Recipe): Promise<void>;
-	delete(id: string): Promise<void>;
-	refresh(): Promise<void>;
+	/** Save a recipe. A built-in one is copied rather than overwritten. */
+	set(recipe: Recipe): void;
+	delete(id: string): void;
+	refresh(): void;
 	subscribe(listener: () => void): () => void;
+	[Symbol.dispose](): void;
 };
 
 export function createWhisperingRecipes({
 	table,
-	reportBackgroundError,
 }: {
-	table: TableLens<typeof recipesTable>;
-	reportBackgroundError(cause: unknown): void;
-}) {
+	table: WhisperingData['tables']['recipes'];
+}): WhisperingRecipes {
 	let rows: Recipe[] = [];
 	let pickable: Recipe[] = BUILTIN_RECIPES;
 	let nonconforming: NonconformingRowError[] = [];
 	let loadError: unknown = null;
-	let canonicalIdBySourceId = new Map<string, string>();
-	let refreshGeneration = 0;
-	let isDisposed = false;
 	const listeners = new Set<() => void>();
+
 	const notify = () => {
 		for (const listener of listeners) listener();
 	};
 
-	async function refresh({ rethrow = false }: { rethrow?: boolean } = {}) {
-		refreshGeneration += 1;
-		while (!isDisposed) {
-			const generation = refreshGeneration;
-			try {
-				const { rows: scannedRows, nonconforming: scannedNonconforming } =
-					await table.scan();
-				if (isDisposed) return;
-				if (generation !== refreshGeneration) continue;
-				const nextRows: Recipe[] = [];
-				const nextCanonicalIds = new Map<string, string>();
-				for (const { id: canonicalId, sourceId, ...recipe } of scannedRows) {
-					if (nextCanonicalIds.has(sourceId)) {
-						throw new Error(`Duplicate recipe source id '${sourceId}'`);
-					}
-					nextCanonicalIds.set(sourceId, canonicalId);
-					nextRows.push({ id: sourceId, ...recipe });
-				}
-				rows = nextRows;
-				pickable = [
-					...BUILTIN_RECIPES,
-					...rows.toSorted((left, right) =>
-						left.name.localeCompare(right.name),
-					),
-				];
-				nonconforming = scannedNonconforming;
-				canonicalIdBySourceId = nextCanonicalIds;
-				loadError = null;
-				notify();
-			} catch (cause) {
-				if (isDisposed) return;
-				if (generation !== refreshGeneration) continue;
-				loadError = cause;
-				notify();
-				if (rethrow) throw cause;
-				reportBackgroundError(cause);
-			}
+	function read(): void {
+		const { data, error } = table.list();
+		if (error !== null) {
+			// Reported rather than swallowed: a failed read leaves `rows` at its
+			// last value, and for a first read that is empty, which renders as
+			// "you have never written one of these".
+			loadError = error;
+			notify();
 			return;
 		}
+		rows = data.rows;
+		pickable = [
+			...BUILTIN_RECIPES,
+			...rows.toSorted((left, right) => left.name.localeCompare(right.name)),
+		];
+		nonconforming = data.nonconforming;
+		loadError = null;
+		notify();
 	}
 
-	const unsubscribeRecords = table.subscribe(() => void refresh());
-	const ready = refresh({ rethrow: true });
-	const recipes: WhisperingRecipes = {
+	read();
+	const stop = table.subscribe(read);
+
+	return {
 		get pickable() {
 			return pickable;
 		},
@@ -88,38 +84,26 @@ export function createWhisperingRecipes({
 		get loadError() {
 			return loadError;
 		},
-		async set(recipe) {
-			const { id: sourceId, ...value } = recipe;
-			const canonicalId = canonicalIdBySourceId.get(sourceId);
-			if (canonicalId) {
-				const result = await table.patch(canonicalId, value);
-				if (result.error !== null) throw result.error;
-			} else {
-				await table.create({ sourceId, ...value });
-			}
-			await refresh();
+		set({ id, ...fields }: Recipe): void {
+			// A built-in is not a row, so saving one mints a copy the person owns.
+			// So does an id this store has never seen, which is what a recipe
+			// carried over from another device looks like before it syncs.
+			const isRow = !id.startsWith(BUILTIN_PREFIX) && rows.some((r) => r.id === id);
+			const { error } = isRow ? table.update(id, fields) : table.create(fields);
+			if (error !== null) throw error;
+			read();
 		},
-		async delete(id) {
-			const canonicalId = canonicalIdBySourceId.get(id);
-			if (!canonicalId) return;
-			await table.delete(canonicalId);
-			await refresh();
+		delete(id: string): void {
+			if (id.startsWith(BUILTIN_PREFIX)) return;
+			const { error } = table.delete(id);
+			if (error !== null) throw error;
+			read();
 		},
-		refresh,
-		subscribe(listener) {
+		refresh: read,
+		subscribe(listener: () => void): () => void {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
 		},
-	};
-
-	return {
-		recipes,
-		ready,
-		dispose() {
-			isDisposed = true;
-			refreshGeneration += 1;
-			unsubscribeRecords();
-			listeners.clear();
-		},
+		[Symbol.dispose]: stop,
 	};
 }
