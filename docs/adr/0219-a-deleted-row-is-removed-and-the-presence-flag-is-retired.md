@@ -12,6 +12,9 @@
   a row's document as an inherent container Epicenter never reads.
 - **Amends:** [ADR-0215](0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md)
   at one clause, its listing of `!presence` as part of the surviving grammar.
+- **Amended by:** [ADR-0231](0231-one-verb-publishes-a-stores-next-edition-and-a-replica-adopts-it-at-boot.md)
+  at one sentence: "there is no third option" between snapshot and rebuild.
+  The edition replace is the third option, priced there.
 - Evidence: `packages/data/evidence/bench/tombstones.ts`,
   `packages/data/evidence/deletion-model.test.ts`.
 

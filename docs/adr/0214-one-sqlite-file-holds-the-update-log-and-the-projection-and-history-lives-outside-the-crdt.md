@@ -6,6 +6,10 @@
   skew clamp and a version re-stamp. That draft was `Proposed`, and its subject
   no longer exists: ADR-0212 removed the wall clock from the merge entirely, so
   there is nothing to clamp and no version to lower. Rewritten in place.
+- **Amended by:** [ADR-0231](0231-one-verb-publishes-a-stores-next-edition-and-a-replica-adopts-it-at-boot.md)
+  at two clauses: the rebuild refusal (withdrawn as stated, kept as reasons)
+  and the in-place restore rule (its silent failure ends when the edition ref
+  refuses the re-senders, so restore-in-place becomes a deliberate verb).
 - **Relates:** [ADR-0212](0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md),
   [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md).
 - **Revives:** [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md)

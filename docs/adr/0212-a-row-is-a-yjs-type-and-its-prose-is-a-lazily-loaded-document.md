@@ -10,6 +10,10 @@
 - **Amended by:** [ADR-0219](0219-a-deleted-row-is-removed-and-the-presence-flag-is-retired.md)
   at deletion only. Withdrawn: clear-and-flag, the `!presence` attribute and its
   grammar, and the reuse story in which writing at an absent address revives it.
+- **Amended by:** [ADR-0231](0231-one-verb-publishes-a-stores-next-edition-and-a-replica-adopts-it-at-boot.md)
+  at the promised-but-never-built generation: built there as an edition, an
+  opaque name beside the cursor compared only for equality, not a number
+  compared for order.
 - **Relates:** [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md)
   (the lens and the application surface),
   [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md)
