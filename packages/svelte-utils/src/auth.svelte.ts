@@ -11,11 +11,10 @@ import {
 import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { createSubscriber } from 'svelte/reactivity';
 
-export { reloadOnPrincipalChange } from './reload-on-principal-change.js';
-// The one composition shape (ADR-0088/ADR-0094): boot-time doc selection plus
-// reload-on-principal-change. Apps boot with one call:
-// `model.connect(toConnection(auth, nodeId), compose?)`.
-export { toConnection } from './to-connection.js';
+// The one composition shape (ADR-0088): the app reads `auth.state` once at
+// boot, and a change of auth generation reloads the page so the next boot
+// composes from scratch.
+export { reloadOnAuthChange } from './reload-on-auth-change.js';
 
 /**
  * Make an auth client's `state` Svelte-reactive: spread the closure-bound
@@ -61,8 +60,8 @@ function reactiveAuthClient(auth: AuthClient): AuthClient {
  * Svelte 5 wrapper around `createAppAuthClient`: the one client-side choke point
  * that turns a persisted `Instance` into a hosted-OAuth or self-host-token
  * client (the branch is internal). Both branches carry a bearer, so the
- * returned reactive client can open the sync socket a workspace boot projects
- * with `toConnection(auth, nodeId)`.
+ * returned reactive client can open the sync socket a signed-in app
+ * generation dials with.
  */
 export function createAppAuthClient(
 	instance: Instance,

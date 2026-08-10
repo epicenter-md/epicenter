@@ -67,7 +67,7 @@ describe('createInstanceTokenAuth', () => {
 	test('a real instance (instance principal) sees no principal change across boot', async () => {
 		// The self-host box resolves every valid bearer to INSTANCE_PRINCIPAL_ID
 		// (ADR-0075), so the optimistic boot identity and the verified identity
-		// match: no `null -> instance` flip, so `reloadOnPrincipalChange` never
+		// match: no `null -> instance` flip, so `reloadOnAuthChange` never
 		// reloads the page mid-session. This is the IndexedDB-race fix.
 		const seen: string[] = [];
 		const fetch: AuthFetch = async () => json(sessionBody('instance'));
