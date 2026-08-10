@@ -449,6 +449,75 @@ describe('a submission nobody answers is not waited on forever', () => {
 	});
 });
 
+describe('a dial that can never succeed stops the driver for good', () => {
+	/**
+	 * A replica whose host refuses every dial the way an auth-owned
+	 * `openWebSocket` does: `denyEvery` reports the permanent refusal,
+	 * otherwise the attempt just closes, which is what a transient failure
+	 * (network loss, unreachable verification) is reported as.
+	 */
+	function openRefused({
+		clock,
+		denyEvery,
+	}: {
+		clock: Clock;
+		denyEvery: boolean;
+	}) {
+		const store = createStore({
+			database: createBunSqliteAdapter(new Database(':memory:')),
+		});
+		const db = expectOk(store.bind(lens)) as LensView<typeof lens>;
+		let dials = 0;
+		const connection = createSyncConnection({
+			store,
+			schedule: clock.schedule,
+			dial: ({ closed, denied }) => {
+				dials += 1;
+				// Rejected before any socket opened, like a thrown `openWebSocket`.
+				if (denyEvery) denied();
+				else closed();
+				return () => undefined;
+			},
+		});
+		return { db, connection, dials: () => dials };
+	}
+
+	test('denied stops dialling, and later local work does not restart it', () => {
+		const clock = createClock();
+		const replica = openRefused({ clock, denyEvery: true });
+		replica.connection.start();
+		clock.advance(120_000);
+
+		expect(replica.dials()).toBe(1);
+		expect(replica.connection.status().denied).toBe(true);
+		expect(replica.connection.status().connected).toBe(false);
+
+		// A write on the replica still works (the store is local-first), but it
+		// must not wake the driver: the store subscription was released.
+		expectOk(replica.db.tables.notes.create({ title: 'local only' }));
+		clock.advance(120_000);
+		expect(replica.dials()).toBe(1);
+		expect(clock.pending()).toBe(0);
+
+		// Disposal after denial is a quiet no-op, not a double teardown.
+		replica.connection[Symbol.dispose]();
+		expect(replica.connection.status().denied).toBe(true);
+	});
+
+	test('CONTROL: the same refusal reported as closed retries forever', () => {
+		// The isolation: it is `denied`, not the failed dial itself, that stops
+		// the driver. A close keeps the backoff going, which is right for a
+		// transient failure and a hot loop against a permanent one.
+		const clock = createClock();
+		const replica = openRefused({ clock, denyEvery: false });
+		replica.connection.start();
+		clock.advance(120_000);
+
+		expect(replica.dials()).toBeGreaterThan(3);
+		expect(replica.connection.status().denied).toBe(false);
+	});
+});
+
 describe('the driver lets go of what it has abandoned', () => {
 	test('a dead socket cannot detach the one that replaced it', () => {
 		const { wire, clock, phone, laptop } = setup();

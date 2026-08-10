@@ -41,14 +41,17 @@ export function parseSubprotocols(header: string | null): string[] {
  * socket because no usable bearer can be attached right now.
  *
  * `permanence` carries the same semantics as the server's auth close codes,
- * so the sync supervisor makes one park-or-backoff decision for both failure
+ * so a sync host makes one stop-or-backoff decision for both failure
  * carriers:
  *
  * - `'permanent'` (like close 4401): only an auth state change can produce a
- *   credential (signed out, reauth required). Park; `auth.onStateChange` is
- *   the wake signal.
+ *   credential (signed out, reauth required, a window that holds no
+ *   credential at all). Report `denied` to the sync driver, which stops for
+ *   good; an auth change reloads the app, and the next generation dials
+ *   fresh. There is no in-place resume.
  * - `'transient'` (like close 4503): credential verification was unreachable;
- *   the grant may be perfectly good. Back off and retry.
+ *   the grant may be perfectly good. Report `closed`; the driver backs off
+ *   and retries.
  *
  * `code` names the specific refusal (`'signed-out'`, `'reauth-required'`,
  * `'auth-unavailable'`) for status surfaces and logs; consumers branch on

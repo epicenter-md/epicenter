@@ -35,6 +35,11 @@
  *   which is worth more than the diagnosis.
  * - Nudging on local work, by subscribing to the store rather than by asking
  *   every caller to remember.
+ * - Stopping for good when the host reports a dial can never succeed
+ *   (`denied`). A permanent credential refusal is not a transport failure, and
+ *   retrying it on a timer is a hot loop against a wall; the repair is a new
+ *   app generation, which the host owns (reload on auth change), not a state
+ *   in this driver.
  */
 import { Ok, type Result } from 'wellcrafted/result';
 
@@ -69,6 +74,18 @@ export type SyncAttempt = {
 	received(bytes: Uint8Array): void;
 	/** The socket is gone, for any reason. Safe to call more than once. */
 	closed(): void;
+	/**
+	 * No socket this host can make will ever succeed. Stops the driver for good.
+	 *
+	 * The one report that is not a transport failure: a credential model that
+	 * permanently refuses to open a socket (signed out, reauth required, a
+	 * window that holds no credential at all) cannot be repaired by time-based
+	 * retry, so `closed()` would spin the backoff forever against a refusal.
+	 * The driver releases everything it holds and never dials again; sync for
+	 * this replica resumes only in a new app generation, which the host starts
+	 * by reloading on an auth change.
+	 */
+	denied(): void;
 };
 
 /**
@@ -91,6 +108,14 @@ export type ReconnectReason =
 export type SyncConnectionStatus = SyncClientStatus & {
 	/** Whether a socket is currently attached. */
 	connected: boolean;
+	/**
+	 * Whether the host reported that no dial can ever succeed.
+	 *
+	 * Once true it stays true: the driver has let go of everything and this
+	 * connection is permanently idle. A surface that renders sync should treat
+	 * a denied connection the same as no connection at all.
+	 */
+	denied: boolean;
 	/**
 	 * Failed attempts since the last one that stayed up long enough to count.
 	 *
@@ -173,6 +198,7 @@ export function createSyncConnection({
 
 	let running = false;
 	let disposed = false;
+	let denied = false;
 	let connected = false;
 	let attempts = 0;
 	let lastReconnect: ReconnectReason | undefined;
@@ -244,6 +270,20 @@ export function createSyncConnection({
 		if (client.status().needsResync) reconnect('resync');
 	}
 
+	/**
+	 * Let go of everything, permanently. Shared by disposal and denial: the
+	 * only difference between "the app is done with sync" and "sync can never
+	 * work in this app generation" is which flag the status reports.
+	 */
+	function shutdown(): void {
+		running = false;
+		stopLocalWork();
+		cancelRedial?.();
+		cancelRedial = undefined;
+		abandon();
+		client.dispose();
+	}
+
 	function open(): void {
 		if (!running || teardown !== undefined) return;
 		const attempt = ++generation;
@@ -274,7 +314,21 @@ export function createSyncConnection({
 				if (!live()) return;
 				reconnect('closed');
 			},
+			denied() {
+				if (!live()) return;
+				denied = true;
+				shutdown();
+			},
 		});
+		// The attempt may have ended during dial() itself: a host that fails
+		// synchronously reports `closed` or `denied` before the teardown above is
+		// assigned, so the abandonment already ran and this assignment would
+		// otherwise resurrect a dead attempt and block every future redial.
+		if (generation !== attempt) {
+			const stop = teardown;
+			teardown = undefined;
+			stop?.();
+		}
 	}
 
 	/**
@@ -305,29 +359,24 @@ export function createSyncConnection({
 
 	return Object.freeze({
 		start() {
-			if (disposed || running) return;
+			if (disposed || denied || running) return;
 			running = true;
 			open();
 		},
 
 		flush() {
-			if (disposed) return Ok(undefined);
+			if (disposed || denied) return Ok(undefined);
 			return client.flush();
 		},
 
 		status(): SyncConnectionStatus {
-			return { ...client.status(), connected, attempts, lastReconnect };
+			return { ...client.status(), connected, denied, attempts, lastReconnect };
 		},
 
 		[Symbol.dispose]() {
 			if (disposed) return;
 			disposed = true;
-			running = false;
-			stopLocalWork();
-			cancelRedial?.();
-			cancelRedial = undefined;
-			abandon();
-			client.dispose();
+			if (!denied) shutdown();
 		},
 	});
 }
