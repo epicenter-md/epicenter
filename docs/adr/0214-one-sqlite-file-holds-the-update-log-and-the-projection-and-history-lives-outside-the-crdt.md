@@ -8,8 +8,9 @@
   there is nothing to clamp and no version to lower. Rewritten in place.
 - **Amended by:** [ADR-0231](0231-one-verb-publishes-a-stores-next-edition-and-a-replica-adopts-it-at-boot.md)
   at two clauses: the rebuild refusal (withdrawn as stated, kept as reasons)
-  and the in-place restore rule (its silent failure ends when the edition ref
-  refuses the re-senders, so restore-in-place becomes a deliberate verb).
+  and the in-place restore rule (its silent failure ends when the edition
+  boundary refuses the re-senders, so restore-in-place becomes a deliberate
+  verb).
 - **Relates:** [ADR-0212](0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md),
   [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md).
 - **Revives:** [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md)
