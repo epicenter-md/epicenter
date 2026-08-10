@@ -8,8 +8,8 @@ Four entry points, and no more:
 | Import | What it gives you |
 | --- | --- |
 | `@epicenter/data` | the store surface, plus the Lens vocabulary re-exported from `@epicenter/lens` |
-| `@epicenter/data/bun` | `openBunStore({ directory })` |
-| `@epicenter/data/browser` | `openBrowserStore({ name })` |
+| `@epicenter/data/bun` | `open(lens, { root })`, and `openMemory(lens)` for tests |
+| `@epicenter/data/browser` | `open(lens)` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 
 A Bun opener imports `bun:sqlite` and a browser opener imports a WASM build, so
@@ -19,49 +19,60 @@ openers live at their own entry points rather than on `@epicenter/data`.
 ## Opening is the only asynchronous thing
 
 ```ts
-const opened = await openBrowserStore({ name: 'honeycrisp' });
-if (opened.error !== null) throw opened.error;
+import { open } from '@epicenter/data/browser';
 
-const bound = opened.data.bind(honeycrispLens);
-if (bound.error !== null) throw bound.error;
-const db = bound.data;
+const { data: app, error } = await open(honeycrispLens);
+if (error !== null) return handle(error);
 
-const listed = db.notes.list();          // no await
-db.notes.update(id, { title: 'Draft' }); // no await
+const listed = app.tables.notes.list();          // no await
+app.tables.notes.update(id, { title: 'Draft' }); // no await
 ```
+
+A Lens names the store it opens (ADR-0229), so there is one call and one name:
+the namespace is the document, the file, the folder and the authority address.
+Nothing takes a path or a database name, so a Lens cannot be bound to a store
+it does not name.
 
 Opening replays a durable log into one `Y.Doc`. After that every read is a
 property access on a document already in memory, so nothing below returns a
-promise. `bind` is synchronous too: it does no I/O, and it returns a `Result`
-because a Lens can arrive as data rather than as a TypeScript literal.
+promise.
+
+Opening one namespace twice in a process is refused with
+`StoreError.AlreadyOpen`. Two opens would be two `Y.Doc`s of one document that
+cannot see each other's writes, so they would converge through storage under
+last-writer-wins and quietly lose one side's work.
 
 ## The surface
 
-Each table the Lens declares is a key on `db`:
+Each table the Lens declares is a key on `app.tables`. The file itself sits
+under `app.store`, so a table can be named anything a person names it:
 
 ```ts
-db.notes.defaults                        // what a read supplies for unwritten keys
-db.notes.create(fields, options?)        // Result<Row>, at a minted 24-character id
-db.notes.get(id)                         // Result<Row | undefined>
-db.notes.update(id, patch)               // merges; refuses an absent address
-db.notes.delete(id)                      // Result<boolean>
-db.notes.ids()                           // Result<string[]>, sorted
-db.notes.list()                          // Result<{ rows, nonconforming }>
-db.notes.document(id)                    // RowDocument | undefined
-db.notes.subscribe(listener)             // returns its own unsubscribe
+app.tables.notes.defaults                        // what a read supplies for unwritten keys
+app.tables.notes.create(fields, options?)        // Result<Row>, at a minted 24-character id
+app.tables.notes.get(id)                         // Result<Row | undefined>
+app.tables.notes.update(id, patch)               // merges; refuses an absent address
+app.tables.notes.delete(id)                      // Result<boolean>
+app.tables.notes.ids()                           // Result<string[]>, sorted
+app.tables.notes.list()                          // Result<{ rows, nonconforming }>
+app.tables.notes.document(id)                    // RowDocument | undefined
+app.tables.notes.subscribe(listener)             // returns its own unsubscribe
 ```
 
-Settings live on `db.kv`, which has `get()`, `update(patch)`, `subscribe`, and
+Settings live on `app.kv`, which has `get()`, `update(patch)`, `subscribe`, and
 `defaults`. There is no id and no `create`, because there is exactly one and it
 always exists.
 
-`db.query` is a read-only SQL template tag over this application's own
-projection. It is on the binding rather than on the store so an application
-reaches only its own namespace, which is why `query` is a reserved table name.
+`app.query` is a read-only SQL template tag over this application's own
+projection. It reaches one application's tables because a store holds one
+application, not because it scopes by namespace.
 
-The store itself carries `pressure()` (how much of the document is dead
+`app.store` carries the file: `pressure()` (how much of the document is dead
 weight), `onLocalWork` (this replica authored something the authority has not
-taken), and `onCommitted` (anything durable changed, whoever wrote it).
+taken), `onCommitted` (anything durable changed, whoever wrote it), and the
+CRDT verbs a transport needs. They live under one key rather than beside the
+tables so that no table name is reserved: `kv` is the only one a Lens refuses,
+and that is because KV projects as a SQL relation of that name.
 
 ### Reading
 
@@ -69,7 +80,7 @@ taken), and `onCommitted` (anything durable changed, whoever wrote it).
 side by side. Neither is optional to handle:
 
 ```ts
-const { data, error } = db.notes.list();
+const { data, error } = app.tables.notes.list();
 if (error !== null) return void report(error);
 rows = data.rows;
 unreadable = data.nonconforming;
@@ -85,8 +96,8 @@ default. An `Err` sets `data` to `null`, and `= fallback` fires only on
 `undefined`:
 
 ```ts
-const { data, error } = db.notes.get(id);
-const note = data ?? { ...db.notes.defaults, ...error?.conforming };
+const { data, error } = app.tables.notes.get(id);
+const note = data ?? { ...app.tables.notes.defaults, ...error?.conforming };
 ```
 
 ### Reacting
@@ -94,7 +105,7 @@ const note = data ?? { ...db.notes.defaults, ...error?.conforming };
 `subscribe` fires once per commit, carrying the row ids that commit touched
 (ADR-0221). It fires for a local write, for prose typed into a row's document,
 and for bytes that arrived from another device alike, and it fires AFTER the
-projection commits, so a listener sees `list()` and `db.query` agree about which
+projection commits, so a listener sees `list()` and `app.query` agree about which
 rows exist.
 
 Registration is synchronous, does no I/O, and never fires initially, so a
@@ -104,10 +115,10 @@ generation counter to keep and no `refresh()` to remember:
 ```ts
 function read() { /* the read above */ }
 read();
-const stop = db.notes.subscribe(read);
+const stop = app.tables.notes.subscribe(read);
 ```
 
-`db.kv.subscribe` takes a listener with no arguments. KV is one value at a
+`app.kv.subscribe` takes a listener with no arguments. KV is one value at a
 name-addressed root, so there are no ids to carry.
 
 ## The shape of the data
@@ -146,9 +157,9 @@ A row's document container is allocated when the row is created, never lazily
 on first access, and the application names the roots inside it at that moment:
 
 ```ts
-db.notes.create(fields, { document: ['body'] });
+app.tables.notes.create(fields, { document: ['body'] });
 
-const body = db.notes.document(id)?.get('body'); // a live Y.Type
+const body = app.tables.notes.document(id)?.get('body'); // a live Y.Type
 ```
 
 `get(name)` creates on miss, and a created nested type is addressed by the
@@ -246,12 +257,12 @@ for (const issue of data.nonconforming) {
 	issue.raw         // the stored truth, unmodified
 }
 
-db.notes.update(issue.address.rowId, { n: 7 }); // an ordinary write repairs it
+app.tables.notes.update(issue.address.rowId, { n: 7 }); // an ordinary write repairs it
 ```
 
 A patch validates only the values it supplies, so it can fix the offending key
 even though the whole payload does not currently pass. Nonconforming rows stay
-in the SQL projection with their raw values, so `db.query` can show them; it
+in the SQL projection with their raw values, so `app.query` can show them; it
 cannot find them, because the projection carries no conformance marker and SQL
 cannot re-run arktype. `list().nonconforming` is the only thing that knows.
 
