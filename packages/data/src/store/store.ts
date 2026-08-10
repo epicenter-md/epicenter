@@ -103,7 +103,7 @@ const localOrigin = Object.freeze({ kind: 'epicenter-local' });
 /** Bytes replayed from SQLite, which must not be appended back to SQLite. */
 const hydrationOrigin = Object.freeze({ kind: 'epicenter-hydration' });
 /** Bytes that arrived from a peer: durable, but not local work. */
-export const remoteOrigin = Object.freeze({ kind: 'epicenter-remote' });
+const remoteOrigin = Object.freeze({ kind: 'epicenter-remote' });
 
 export const StoreError = defineErrors({
 	/**
@@ -734,7 +734,14 @@ export function createStore({
 		invalidations.deliver(batch);
 	}
 
-	index.on('updateV2', (update: Uint8Array, origin: unknown) => {
+	index.on(
+		'updateV2',
+		(
+			update: Uint8Array,
+			origin: unknown,
+			_document: Y.Doc,
+			transaction: Y.Transaction,
+		) => {
 		if (origin === hydrationOrigin) return;
 		// `applyRemote` persists the bytes it RECEIVED, in its own transaction, so
 		// the bytes the document emits in response describe a change that is
@@ -747,6 +754,22 @@ export function createStore({
 			// projection write they imply, in one SQLite transaction.
 			pending.push(copyBytes(update));
 			return;
+		}
+		// What remains below must be a LOCAL transaction. `applyUpdateV2` forces
+		// `transaction.local` to false and a local `transact` defaults it to
+		// true, so this check makes the branch below provably an application
+		// writing through this document's own types rather than by convention.
+		// Decoded foreign bytes reaching it would be persisted as the EMITTED
+		// update rather than the received one (nothing at all when causal
+		// dependencies are missing; see `applyRemote`), would join the outbox as
+		// this device's authored work and be republished to the authority, and
+		// would deliver invalidations against a projection nothing rebuilt. The
+		// throw surfaces synchronously at the rogue `Y.applyUpdateV2` call site,
+		// before anything is persisted, so the store is not poisoned.
+		if (!transaction.local) {
+			throw new Error(
+				'Foreign bytes must enter through applyRemote. A direct Y.applyUpdateV2 on this document would be republished as this device\'s own work, and is lost entirely when its causal dependencies have not arrived.',
+			);
 		}
 		// An application writing into a row's document, typically an editor
 		// binding. These bytes must reach durable storage on their own, because
@@ -771,7 +794,8 @@ export function createStore({
 		// them buffered would attach them to whichever commit ran next.
 		flushCommitted();
 		if (error !== null) throw error;
-	});
+		},
+	);
 
 	// Attach the listener before hydrating, then replay under an origin the
 	// listener ignores, so loading cannot append the same bytes it just read.

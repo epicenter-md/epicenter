@@ -43,7 +43,6 @@ export {
 	type ReadRowError,
 	type Row,
 	type RowDocument,
-	remoteOrigin,
 	type Store,
 	StoreError,
 	type StorePressure,

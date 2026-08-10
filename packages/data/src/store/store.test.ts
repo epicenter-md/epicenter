@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TableInvalidation } from '@epicenter/lens';
 import { defineLens } from '@epicenter/lens';
+import * as Y from '@y/y';
 
 import { open, openMemory } from './bun.js';
 import type { ApplicationOf, Store } from './store.js';
@@ -810,5 +811,44 @@ describe('the kv projection is a cache, and is rebuilt like one', () => {
 		expect(second.data.query`SELECT id, theme, added FROM kv`.data).toEqual([
 			{ id: 'kv', theme: 'light', added: 'new' },
 		]);
+	});
+});
+
+describe('foreign bytes have exactly one door', () => {
+	// The fourth branch of the updateV2 listener treats any unrecognized origin
+	// as an application writing into a row's document, which is only correct
+	// for a LOCAL transaction. An application can reach the live document (a
+	// row document root exposes `.doc`), so the branch is guarded by
+	// `transaction.local` rather than by convention: `applyUpdateV2` forces it
+	// to false and a local `transact` defaults it to true. This test also pins
+	// `transaction.local` itself: if an rc removed the field, every application
+	// row-document write would take the throw and the suite fails loudly.
+	test('a direct Y.applyUpdateV2 on the live document throws instead of forging authored work', () => {
+		const made = db.tables.notes.create(
+			{ title: 'mine', tags: [], date: null },
+			{ document: ['editor'] },
+		);
+		if (made.error !== null) throw made.error;
+		const container = db.tables.notes.document(made.data.id);
+		if (container === undefined) throw new Error('no document');
+		const live = container.get('editor', 'text').doc;
+		if (live === null) throw new Error('root not attached to a document');
+
+		const stranger = openMemory(lens);
+		stranger.tables.notes.create({ title: 'theirs', tags: [], date: null });
+		const foreign = stranger.store.encodeStateSince();
+
+		expect(() =>
+			Y.applyUpdateV2(live, foreign as Uint8Array<ArrayBuffer>),
+		).toThrow('applyRemote');
+
+		// The throw fired before anything persisted, so the store is not
+		// poisoned: local work still commits.
+		const after = db.tables.notes.create({
+			title: 'still works',
+			tags: [],
+			date: null,
+		});
+		expect(after.error).toBeNull();
 	});
 });
