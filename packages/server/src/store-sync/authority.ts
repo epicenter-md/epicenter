@@ -105,9 +105,15 @@ export class StoreAuthority extends DurableObject {
 	override async fetch(request: Request): Promise<Response> {
 		if (request.method === 'POST') return this.replaceEdition(request);
 		if (request.headers.get('Upgrade') !== 'websocket') {
-			return new Response('The store transport is WebSocket-only', {
-				status: 426,
-			});
+			// The boundary probe (ADR-0231): the same door, readable. A browser
+			// WebSocket cannot read a refused upgrade's status or body, and the
+			// supersession rule must never discard on doubt, so the one fact the
+			// door compares against is answered to an authenticated plain GET.
+			const { data: boundary, error } = this.authority.boundary();
+			if (error !== null) {
+				return new Response(error.message, { status: 500 });
+			}
+			return Response.json({ boundary });
 		}
 		const asked = Number(
 			new URL(request.url).searchParams.get('cursor') ?? '0',

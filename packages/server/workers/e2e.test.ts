@@ -54,10 +54,16 @@ function openAccount(label: string) {
 					run(replica as unknown as StoreTestReplica),
 				);
 			return {
-				open: () =>
-					inside((replica) => replica.open(`device:${principal}`, ORIGIN)),
+				open: (options?: { connect?: boolean }) =>
+					inside((replica) =>
+						replica.open(`device:${principal}`, ORIGIN, options),
+					),
+				startSync: () => inside((replica) => replica.startSync()),
+				stopSync: () => inside((replica) => replica.stopSync()),
+				compact: () => inside((replica) => replica.compact()),
 				write: (title: string, prose: string) =>
 					inside((replica) => replica.write(title, prose)),
+				remove: (title: string) => inside((replica) => replica.remove(title)),
 				report: (): Promise<ReplicaReport> =>
 					inside((replica) => replica.report()),
 				encodeState: (): Promise<Uint8Array> =>
@@ -268,8 +274,8 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		currentSocket?.close();
 	});
 
-	it('a superseded device cannot reintroduce retired history, and a fresh join sees only the replacement', async () => {
-		const vault = openAccount('funeral');
+	it('authority wins: a superseded device discards on its own and resyncs to the replacement', async () => {
+		const vault = openAccount('adoption');
 		const phone = vault.device('phone');
 		await phone.open();
 		await phone.write('Old', 'not to be republished');
@@ -285,26 +291,175 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		);
 		expect(published.status).toBe(200);
 
-		// A device that was never part of the old edition joins at zero and gets
-		// the replacement: an empty application.
+		// The phone's socket was closed by the replace. Its next dial is refused
+		// before any socket exists, the probe confirms the boundary, and it runs
+		// the one adoption path: discard whole, boot fresh, join at zero.
+		await until('the phone to discard and adopt', async () => {
+			const report = await phone.report();
+			return report.adoptions >= 1 && report.cursor > 0;
+		});
+		expect((await phone.report()).titles).toEqual([]);
+
+		// And nothing was republished: a fresh device sees only the replacement,
+		// well after the phone's old copy would have crossed.
 		const tablet = vault.device('tablet');
 		await tablet.open();
 		await until(
 			'the tablet to adopt the new edition',
 			async () => (await tablet.report()).cursor > 0,
 		);
+		await new Promise((resolve) => setTimeout(resolve, 500));
 		expect((await tablet.report()).titles).toEqual([]);
+	});
 
-		// The phone's socket was closed by the replace; its driver redials on
-		// backoff and is refused every time. Long enough that a republication
-		// would have arrived: its own note once crossed in far less.
-		await new Promise((resolve) => setTimeout(resolve, 1_500));
-		expect((await tablet.report()).titles).toEqual([]);
-		// Never silently destroyed: the phone keeps working locally, holding what
-		// it holds, until a person runs its funeral at boot.
-		const stranded = await phone.report();
-		expect(stranded.titles).toEqual(['Old']);
-		expect(stranded.connected).toBe(false);
+	it('compact: one device compacts, every synced device adopts, tombstones are reclaimed, marks survive', async () => {
+		const vault = openAccount('compact');
+		const phone = vault.device('phone');
+		const laptop = vault.device('laptop');
+		await phone.open();
+		await laptop.open();
+
+		await phone.write('SECRET-CANARY-deleted', 'gone before the compact');
+		await phone.write('kept', 'prose that survives');
+		await until('both devices to hold both notes', async () => {
+			const [a, b] = await Promise.all([phone.report(), laptop.report()]);
+			return a.titles.length === 2 && b.titles.length === 2;
+		});
+		// Retire the canary, then let the deletion cross: the aged document now
+		// carries tombstones that only a rebirth reclaims.
+		await phone.remove('SECRET-CANARY-deleted');
+		await until(
+			'the deletion to cross',
+			async () => (await laptop.report()).titles.length === 1,
+		);
+
+		const staleItems = (await laptop.report()).items;
+		const published = await phone.compact();
+		expect(published.boundary).toBeGreaterThan(0);
+
+		// The initiator adopted through the same move as everyone else.
+		await until('the phone to rejoin the edition it published', async () => {
+			const report = await phone.report();
+			return report.adoptions >= 1 && report.cursor === published.boundary;
+		});
+		// The laptop's socket was closed by the replace; it adopts on its own.
+		await until('the laptop to discard and adopt', async () => {
+			const report = await laptop.report();
+			return report.adoptions >= 1 && report.cursor === published.boundary;
+		});
+
+		const [phoneAfter, laptopAfter] = await Promise.all([
+			phone.report(),
+			laptop.report(),
+		]);
+		expect(laptopAfter.titles).toEqual(phoneAfter.titles);
+		expect(laptopAfter.prose).toEqual(phoneAfter.prose);
+		expect(laptopAfter.prose.join(' ')).toContain('prose that survives');
+		expect(laptopAfter.lastError).toBeUndefined();
+		// Reborn means smaller: the adopted document dropped dead weight.
+		expect(laptopAfter.items).toBeLessThanOrEqual(staleItems);
+	});
+
+	it('STATED LOSS: a device of the old edition loses its unpushed work, and a never-synced device merges instead', async () => {
+		// ADR-0231's fifth correction, asserted deliberately so the line stays a
+		// decision with a warning at the verb rather than a rediscovered bug.
+		// The line is the cursor: a device that had JOINED the old edition
+		// (cursor > 0) discards, unpushed work and all; a device that never
+		// exchanged a byte (cursor 0) holds no commitment and merges.
+		const vault = openAccount('statedloss');
+		const phone = vault.device('phone');
+		await phone.open();
+		await phone.write('kept', 'synced before the compact');
+		await until(
+			'the phone to sync its note',
+			async () => (await phone.report()).cursor > 0,
+		);
+
+		// The drawer device: synced once, went offline, kept writing.
+		const drawer = vault.device('drawer');
+		await drawer.open();
+		await until(
+			'the drawer to join the old edition',
+			async () => (await drawer.report()).cursor > 0,
+		);
+		await drawer.stopSync();
+		await drawer.write('unsynced offline note', 'nobody ever saw this');
+		expect((await drawer.report()).titles).toContain('unsynced offline note');
+
+		// The fresh install: offline work, but no cursor and no commitment.
+		const fresh = vault.device('fresh');
+		await fresh.open({ connect: false });
+		await fresh.write('fresh install note', 'written before first sync');
+
+		const published = await phone.compact();
+
+		// The drawer returns into a retired edition: probe, discard, adopt. Its
+		// unpushed note is gone, per the warning the person compacting saw.
+		await drawer.startSync();
+		await until('the drawer to discard and adopt', async () => {
+			const report = await drawer.report();
+			return report.adoptions >= 1 && report.cursor >= published.boundary;
+		});
+		const adopted = await drawer.report();
+		expect(adopted.titles).toEqual(['kept']);
+		expect(adopted.adoptions).toBe(1);
+
+		// The fresh install is greeted, not asked to discard: its independent
+		// document is the one cross-edition merge that is safe, so its offline
+		// work survives and publishes.
+		await fresh.startSync();
+		await until('the fresh install to merge and publish', async () => {
+			const report = await fresh.report();
+			return report.titles.length === 2 && report.cursor > published.boundary;
+		});
+		expect((await fresh.report()).adoptions).toBe(0);
+		expect((await fresh.report()).titles).toEqual([
+			'fresh install note',
+			'kept',
+		]);
+
+		// The one title nobody ever synced exists nowhere: the authority never
+		// heard of it, and every replica converges without it.
+		await until(
+			'the phone to hold the merged pair',
+			async () => (await phone.report()).titles.length === 2,
+		);
+		expect((await phone.report()).titles).toEqual([
+			'fresh install note',
+			'kept',
+		]);
+		expect((await phone.report()).titles).not.toContain(
+			'unsynced offline note',
+		);
+	});
+
+	it('the probe answers the boundary to a bearer, and refuses without one', async () => {
+		const vault = openAccount('probe');
+		const fresh = await SELF.fetch(
+			new Request(`${ORIGIN}/api/store/v1/sync?namespace=${NAMESPACE}`, {
+				headers: { authorization: `Bearer device:${vault.account}` },
+			}),
+		);
+		expect(fresh.status).toBe(200);
+		expect(await fresh.json()).toEqual({ boundary: 0 });
+
+		const anonymous = await SELF.fetch(
+			new Request(`${ORIGIN}/api/store/v1/sync?namespace=${NAMESPACE}`),
+		);
+		expect(anonymous.status).toBe(401);
+
+		const replaced = await postReplace(
+			vault.account,
+			{ fromBoundary: 0 },
+			emptyState(),
+		);
+		const { boundary } = (await replaced.json()) as { boundary: number };
+		const after = await SELF.fetch(
+			new Request(`${ORIGIN}/api/store/v1/sync?namespace=${NAMESPACE}`, {
+				headers: { authorization: `Bearer device:${vault.account}` },
+			}),
+		);
+		expect(await after.json()).toEqual({ boundary });
 	});
 
 	it('the lease over HTTP: fromBoundary is CAS, atHead refuses a moved tail, and a reclaim republishes the same data', async () => {
