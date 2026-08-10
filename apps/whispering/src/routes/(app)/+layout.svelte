@@ -17,7 +17,7 @@
 	import { MediaQuery } from 'svelte/reactivity';
 	import { auth } from '#platform/auth';
 	import DictationIndicator from '#platform/dictation-indicator';
-	import { whisperingPlatform } from '#platform/whispering';
+	import { whisperingDependencies } from '$lib/whispering/dependencies';
 	import { log } from '$lib/report';
 	import WhisperingUiSessionProvider from '$lib/whispering/WhisperingUiSessionProvider.svelte';
 	import { createWhisperingUiSessionOpening } from '$lib/whispering/ui-session-opening';
@@ -40,7 +40,7 @@
 	// reload. Unmount/HMR aborts an in-flight acquisition; after fulfillment,
 	// this route owner drains shell, query, and app resources together.
 	const owner = createWhisperingUiSessionOpening((signal) =>
-		openWhisperingUiSession(whisperingPlatform, signal),
+		openWhisperingUiSession(whisperingDependencies, signal),
 	);
 	const opening = owner.opening;
 	const dispose = () =>

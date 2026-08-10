@@ -10,7 +10,7 @@ import { openWhisperingBrowserEpicenter } from './whispering.browser-runtime';
  * `openWhisperingApp` inside the mounted Svelte root, where the raw
  * `{#await}` owns the acquisition from its first microtask.
  */
-export const whisperingPlatform: WhisperingAppDependencies = {
+export const whisperingDependencies: WhisperingAppDependencies = {
 	openEpicenter: () =>
 		openWhisperingBrowserEpicenter({
 			auth,
