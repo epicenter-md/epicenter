@@ -457,17 +457,21 @@ principal no longer resolves, so the dial never reaches a Durable Object.
   distinct and the reclaim plumbing accepts only it.
 - **`deleteStore()` gets its caller**, and `DELETABLE_NAMESPACES` is replaced
   by the account's actual manifest of namespaces.
-- **Built: the authority half.** The boundary (`_meta`), the `replace` verb
-  (CAS on `fromBoundary`, `atHead` lease, one transaction), the dial's
-  refusal before any socket exists, and the authenticated POST on the store
-  mount (`STORE_REPLACE_ROUTE`) are implemented and test-gated
-  (`sync/transport.test.ts`, `packages/server/workers/e2e.test.ts`).
-  **Being built under the fifth correction: the client half.** The boundary
-  probe, the driver's supersession rule, `discard()` on the openers, the
-  reclaim walk with its branded return type, and the compact action.
-  **Not built:** `deleteStore()`'s caller (account deletion's flow), the
-  restore bridge from the shelf, and any automatic-maintenance freshness
-  contract.
+- **Built, both halves, test-gated.** The authority half: the boundary
+  (`_meta`), the `replace` verb (CAS on `fromBoundary`, `atHead` lease, one
+  transaction), the dial's refusal before any socket exists, and the
+  authenticated POST on the store mount (`sync/transport.test.ts`,
+  `packages/server/workers/e2e.test.ts`). The client half under the fifth
+  correction: the boundary probe (the same GET answering `{ boundary }`),
+  the driver's supersession rule (`createSyncConnection`, never-on-doubt
+  pinned), `discard()` on both openers, the reclaim walk with its branded
+  `RebornState` (hand recursion; upstream `clone()` is broken in rc.24,
+  `evidence/rebuild-copy.test.ts`), `compactStore`, and Honeycrisp's
+  `compact()` with discard-and-reload adoption. The stated-loss contract is
+  itself a test. **Not built:** the Compact Store confirmation surface (the
+  warning copy above, owed by the settings UI), `deleteStore()`'s caller
+  (account deletion's flow), the restore bridge from the shelf, and any
+  automatic-maintenance freshness contract.
 
 ## Considered alternatives
 
