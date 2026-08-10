@@ -292,10 +292,10 @@ export type RowDocument = {
  * whole file, including `_updates`, `_outbox` and `_cursor`. That is a bound on
  * WHAT A STORE IS, and it is the only bound there is.
  *
- * It lives on the binding rather than on the store so that a caller reaches it
- * beside the tables it queries. `query` is a reserved table name for exactly
- * that reason: a table becomes a key on the same handle that carries the
- * method.
+ * It sits beside `tables` rather than inside it, because a statement spans
+ * tables and belongs above them. It used to sit beside the table handles
+ * themselves, which is why `query` was once a reserved table name; nesting the
+ * tables removed both the adjacency and the reservation (ADR-0229).
  */
 export type QueryMethod = (
 	strings: TemplateStringsArray,
