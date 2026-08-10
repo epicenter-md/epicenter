@@ -127,7 +127,7 @@ function isVadRecordingActive() {
 export async function startManualRecording(
 	app: WhisperingApp,
 ): Promise<BlobId | null> {
-	app.settings.set('settings.recording.trigger', 'manual');
+	app.settings.set('recordingTrigger', 'manual');
 	// A new dictation is starting: clear any lingering failed/delivered state so
 	// the pill follows this attempt, not the last one.
 	dictationLifecycle.reset();
@@ -305,7 +305,7 @@ function cancelPendingVadResume() {
 }
 
 export async function startVadRecording(app: WhisperingApp) {
-	app.settings.set('settings.recording.trigger', 'vad');
+	app.settings.set('recordingTrigger', 'vad');
 	// A new dictation session is starting: clear any lingering terminal state.
 	dictationLifecycle.reset();
 	// A capture just started, so leave the import overlay if it was open (see
@@ -423,8 +423,8 @@ export async function selectCaptureSurface(
 		captureSurface.showImport();
 	} else {
 		captureSurface.dismissImport();
-		if (app.settings.get('settings.recording.trigger') !== surface) {
-			app.settings.set('settings.recording.trigger', surface);
+		if (app.settings.get('recordingTrigger') !== surface) {
+			app.settings.set('recordingTrigger', surface);
 		}
 	}
 

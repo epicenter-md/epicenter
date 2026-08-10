@@ -62,7 +62,7 @@
 			/>
 		{/if}
 
-		{#if app.settings.get('settings.recording.trigger') === 'manual'}
+		{#if app.settings.get('recordingTrigger') === 'manual'}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
 					const selected = manualRecorderConfig.deviceId;
@@ -70,7 +70,7 @@
 					},
 					(selected) => (manualRecorderConfig.deviceId = selected)}
 			/>
-		{:else if app.settings.get('settings.recording.trigger') === 'vad'}
+		{:else if app.settings.get('recordingTrigger') === 'vad'}
 			{#if os.isLinux}
 				<Alert.Root variant="destructive">
 					<InfoIcon class="size-4" />
@@ -125,7 +125,7 @@
 			/>
 		{/if}
 
-		{#if app.settings.get('settings.recording.trigger') === 'manual' && !tauri}
+		{#if app.settings.get('recordingTrigger') === 'manual' && !tauri}
 			<SettingSelect
 				store={deviceConfig}
 				key="recording.navigator.bitrateKbps"

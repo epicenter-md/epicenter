@@ -60,7 +60,7 @@ export async function processRecordingPipeline(
 		transcription: null,
 	});
 
-	if (app.settings.get('settings.recording.autoUpload')) {
+	if (app.settings.get('recordingAutoUpload')) {
 		// One new row earns one best-effort attempt. Manual upload calls the same
 		// workflow; there is no history scan, queue, persisted failure, or retry.
 		void app.recordings

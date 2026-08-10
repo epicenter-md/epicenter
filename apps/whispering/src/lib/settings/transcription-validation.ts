@@ -25,7 +25,7 @@ export function getLocalRouteBlocker(): string | null {
 export function getSelectedTranscriptionProvider(
 	app: WhisperingApp,
 ): TranscriptionProviderEntry | undefined {
-	const selectedServiceId = app.settings.get('settings.transcription.service');
+	const selectedServiceId = app.settings.get('transcriptionService');
 	return TRANSCRIPTION_PROVIDERS.find((s) => s.id === selectedServiceId);
 }
 

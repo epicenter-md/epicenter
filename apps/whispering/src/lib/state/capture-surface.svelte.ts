@@ -28,7 +28,7 @@ export const captureSurface = {
 	current(app: WhisperingApp): CaptureSurface {
 		return isImportSurfaceShowing
 			? 'import'
-			: app.settings.get('settings.recording.trigger');
+			: app.settings.get('recordingTrigger');
 	},
 
 	/** Open the file-import overlay over the current trigger. */

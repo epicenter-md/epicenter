@@ -21,7 +21,7 @@ import type { WhisperingApp } from '$lib/whispering/app';
 let chain: Promise<string[]> = Promise.resolve([]);
 
 function shouldPausePlayback(app: WhisperingApp): boolean {
-	return Boolean(tauri && app.settings.get('settings.recording.pausePlayback'));
+	return Boolean(tauri && app.settings.get('recordingPausePlayback'));
 }
 
 async function pausePlayingSessions(): Promise<string[]> {

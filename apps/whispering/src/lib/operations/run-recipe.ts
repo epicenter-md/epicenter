@@ -55,7 +55,7 @@ export async function runRecipe(
 	const result = await completeWithGlobalDefault(app, {
 		systemPrompt: buildSystemPrompt(
 			recipe.instructions,
-			app.settings.get('settings.dictionary'),
+			app.settings.get('dictionary'),
 		),
 		userPrompt: input,
 	});

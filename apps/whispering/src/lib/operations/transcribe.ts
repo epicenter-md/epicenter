@@ -221,7 +221,7 @@ async function loadForUpload(
 		});
 		void logAnalyticsEvent(app, {
 			type: 'compression_failed',
-			provider: app.settings.get('settings.transcription.service'),
+			provider: app.settings.get('transcriptionService'),
 			error_message: error,
 		});
 	}
@@ -245,7 +245,7 @@ export async function transcribeAudio(
 	app: WhisperingApp,
 	audioBlobId: BlobId,
 ): Promise<Result<string, TranscriptionError>> {
-	const selectedService = app.settings.get('settings.transcription.service');
+	const selectedService = app.settings.get('transcriptionService');
 
 	const startTime = Date.now();
 	void logAnalyticsEvent(app, {
@@ -314,7 +314,7 @@ export async function transcribeAndPersist(
 export function prewarmOnDeviceModel(app: WhisperingApp): void {
 	if (!tauri) return;
 
-	const selectedService = app.settings.get('settings.transcription.service');
+	const selectedService = app.settings.get('transcriptionService');
 	if (!isOnDeviceProviderId(selectedService)) return;
 
 	tauri.transcription.prewarmModel();
@@ -359,10 +359,10 @@ async function transcribeOnDevice(
 	// there is no ambient config to go stale. `auto` language and an empty prompt
 	// map to the wire's "unset" (an omitted optional field). The Dictionary terms
 	// fold into the prompt so local recognition spells them the user's way.
-	const language = app.settings.get('settings.transcription.language');
+	const language = app.settings.get('transcriptionLanguage');
 	const prompt = withDictionaryTerms(
-		app.settings.get('settings.transcription.prompt'),
-		app.settings.get('settings.dictionary'),
+		app.settings.get('transcriptionPrompt'),
+		app.settings.get('dictionary'),
 	);
 	const { data: outcome, error } =
 		await tauri.transcription.transcribeRecording(audioBlobId, {
@@ -404,10 +404,10 @@ async function transcribeViaUpload(
 	// and the server answers 401, surfaced as a RequestFailed carrying that detail.
 	// The Dictionary terms fold into the prompt so cloud recognition spells them
 	// the user's way.
-	const spokenLanguage = app.settings.get('settings.transcription.language');
+	const spokenLanguage = app.settings.get('transcriptionLanguage');
 	const prompt = withDictionaryTerms(
-		app.settings.get('settings.transcription.prompt'),
-		app.settings.get('settings.dictionary'),
+		app.settings.get('transcriptionPrompt'),
+		app.settings.get('dictionary'),
 	);
 	const entry = uploadDispatch(app)[selectedService];
 	switch (entry.kind) {

@@ -46,7 +46,7 @@ export type RunPolishError = InferErrors<typeof RunPolishError>;
 export type PolishStatus = 'off' | 'on' | 'needs-key';
 
 export function polishStatus(app: WhisperingApp): PolishStatus {
-	if (!app.settings.get('settings.polish.enabled')) return 'off';
+	if (!app.settings.get('polishEnabled')) return 'off';
 	return resolveCompletionState(app).canRun ? 'on' : 'needs-key';
 }
 
@@ -60,11 +60,11 @@ export function polishStatus(app: WhisperingApp): PolishStatus {
 export function polishDestination(app: WhisperingApp): string {
 	return describePolishDestination(
 		resolveTranscriptionLocalityFromConfig({
-			service: app.settings.get('settings.transcription.service'),
+			service: app.settings.get('transcriptionService'),
 			getDeviceConfig: deviceConfig.get,
 			sessionBaseUrl: auth.deployment.baseURL,
 		}),
-		app.settings.get('settings.completion.provider'),
+		app.settings.get('completionProvider'),
 		resolveCompletionState(app),
 	);
 }
@@ -110,8 +110,8 @@ export async function runPolish(
 
 	const result = await completeWithGlobalDefault(app, {
 		systemPrompt: buildPolishSystemPrompt(
-			app.settings.get('settings.polish.instructions'),
-			app.settings.get('settings.dictionary'),
+			app.settings.get('polishInstructions'),
+			app.settings.get('dictionary'),
 		),
 		userPrompt: input,
 		signal,

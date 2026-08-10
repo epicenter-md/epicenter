@@ -25,7 +25,7 @@
 	// readiness are read from the same resolved state the call path uses, so what
 	// the user sees here is exactly what the pipeline will do.
 
-	const provider = $derived(app.settings.get('settings.completion.provider'));
+	const provider = $derived(app.settings.get('completionProvider'));
 	const readiness = $derived(
 		describeCompletionReadiness(provider, resolveCompletionState(app)),
 	);
@@ -42,7 +42,7 @@
 	);
 
 	function selectProvider(next: InferenceProviderId) {
-		app.settings.set('settings.completion.provider', next);
+		app.settings.set('completionProvider', next);
 		// A model id from the previous provider would 404 the next completion.
 		// Default fixed-list providers to their first model; free-form providers
 		// (OpenRouter, Custom) have `models: null` and keep whatever the user
@@ -51,9 +51,9 @@
 		const models = INFERENCE[next].models;
 		if (
 			models &&
-			!(models as readonly string[]).includes(app.settings.get('settings.completion.model'))
+			!(models as readonly string[]).includes(app.settings.get('completionModel'))
 		) {
-			app.settings.set('settings.completion.model', models[0]);
+			app.settings.set('completionModel', models[0]);
 		}
 	}
 </script>
@@ -96,11 +96,11 @@
 				<Field.Label for="completion-model">Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={() => app.settings.get('settings.completion.model'),
-						(value) => app.settings.set('settings.completion.model', value)}
+					bind:value={() => app.settings.get('completionModel'),
+						(value) => app.settings.set('completionModel', value)}
 				>
 					<Select.Trigger id="completion-model" class="w-full">
-						{app.settings.get('settings.completion.model') || 'Select a model'}
+						{app.settings.get('completionModel') || 'Select a model'}
 					</Select.Trigger>
 					<Select.Content>
 						{#each modelItems as item (item.value)}
@@ -122,11 +122,11 @@
 				id="completion-model"
 				placeholder="e.g. llama3.1"
 				autocomplete="off"
-				value={app.settings.get('settings.completion.model')}
+				value={app.settings.get('completionModel')}
 				onblur={(e) => {
 					const next = e.currentTarget.value;
-					if (next !== app.settings.get('settings.completion.model'))
-						app.settings.set('settings.completion.model', next);
+					if (next !== app.settings.get('completionModel'))
+						app.settings.set('completionModel', next);
 				}}
 			/>
 			<Field.Description>
