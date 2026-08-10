@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -488,7 +489,9 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		note();
 		const laptop = openMemory(lens);
 		laptop.store.bind(lens);
-		laptop.store.applyRemote(db.store.encodeStateSince(laptop.store.stateVector()));
+		laptop.store.applyRemote(
+			db.store.encodeStateSince(laptop.store.stateVector()),
+		);
 		expect(laptop.store.hasUnresolvedDependencies()).toBe(false);
 	});
 });
@@ -850,5 +853,51 @@ describe('foreign bytes have exactly one door', () => {
 			date: null,
 		});
 		expect(after.error).toBeNull();
+	});
+});
+
+describe('discard deletes the live file whole, and the shelf survives (ADR-0231)', () => {
+	test('a discarded store reopens empty at cursor zero, with history intact', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'epicenter-discard-'));
+		try {
+			const opened = await open(lens, { root });
+			if (opened.error !== null) throw opened.error;
+			const app = opened.data;
+			const made = app.tables.notes.create({
+				title: 'retired edition work',
+				tags: [],
+				date: null,
+			});
+			if (made.error !== null) throw made.error;
+			const advanced = app.store.sync.advance(9);
+			if (advanced.error !== null) throw advanced.error;
+
+			const discarded = await app.store.discard();
+			expect(discarded.error).toBeNull();
+			expect(existsSync(join(root, lens.namespace, 'store.sqlite3'))).toBe(
+				false,
+			);
+			// The shelf is the owner's, not the edition's.
+			expect(existsSync(join(root, lens.namespace, 'history.sqlite3'))).toBe(
+				true,
+			);
+
+			// Boot is the whole of adoption: a wiped store opens empty and asks
+			// the authority for everything, from zero.
+			const reopened = await open(lens, { root });
+			if (reopened.error !== null) throw reopened.error;
+			try {
+				const listed = reopened.data.tables.notes.list();
+				if (listed.error !== null) throw listed.error;
+				expect(listed.data.rows).toEqual([]);
+				const cursor = reopened.data.store.sync.cursor();
+				if (cursor.error !== null) throw cursor.error;
+				expect(cursor.data).toBe(0);
+			} finally {
+				await reopened.data[Symbol.asyncDispose]();
+			}
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
 	});
 });

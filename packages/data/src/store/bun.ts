@@ -1,12 +1,11 @@
 import { Database } from 'bun:sqlite';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { LensJson, LensParseError } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-
-import { claimNamespace, releaseNamespace } from './namespaces.js';
 import { applyHistorySchema } from './log.js';
+import { claimNamespace, releaseNamespace } from './namespaces.js';
 import {
 	type ApplicationOf,
 	asApplication,
@@ -14,6 +13,19 @@ import {
 	type Store,
 	StoreError,
 } from './store.js';
+
+export type BunStore = Store & {
+	/**
+	 * Delete this store's live file whole, disposing the store first.
+	 *
+	 * ADR-0231's one client-side deletion: a replica whose edition was retired
+	 * discards and rejoins at zero. `history.sqlite3` survives on purpose; it
+	 * is the owner's shelf, and the shelf is what makes an undone replace a
+	 * restore rather than a loss. Terminal for this store; the caller reopens
+	 * fresh and the ordinary join is the whole of adoption.
+	 */
+	discard(): Promise<Result<void, StoreError>>;
+};
 
 /**
  * Open the application this lens names, on Bun.
@@ -43,7 +55,9 @@ export async function open<const TLens extends LensJson>(
 		/** Whether collapse preserves what it supersedes (ADR-0214). */
 		keepHistory?: boolean;
 	},
-): Promise<Result<ApplicationOf<TLens>, StoreError | LensParseError>> {
+): Promise<
+	Result<ApplicationOf<TLens, BunStore>, StoreError | LensParseError>
+> {
 	const { error: claimError } = claimNamespace(lens.namespace);
 	if (claimError !== null) return Err(claimError);
 
@@ -62,7 +76,7 @@ export async function open<const TLens extends LensJson>(
 		await store[Symbol.asyncDispose]().catch(() => undefined);
 		return Err(view.error);
 	}
-	return Ok(asApplication<TLens, Store>(store, view.data));
+	return Ok(asApplication<TLens, BunStore>(store, view.data));
 }
 
 /**
@@ -85,7 +99,7 @@ async function openBunStore({
 	 * without anyone deciding to.
 	 */
 	keepHistory?: boolean;
-}): Promise<Result<Store, StoreError>> {
+}): Promise<Result<BunStore, StoreError>> {
 	const { error: directoryError } = await tryAsync({
 		try: () => mkdir(directory, { recursive: true }),
 		catch: (cause) => StoreError.StorageFailed({ cause }),
@@ -102,16 +116,41 @@ async function openBunStore({
 			: createBunSqliteAdapter(historyDatabase);
 	if (history !== undefined) applyHistorySchema(history);
 
+	const store = createStore({
+		database: createBunSqliteAdapter(live),
+		history,
+		dispose: () => {
+			live.close();
+			historyDatabase?.close();
+			releaseNamespace(namespace);
+		},
+	});
+
 	return Ok(
-		createStore({
-			database: createBunSqliteAdapter(live),
-			history,
-			dispose: () => {
-				live.close();
-				historyDatabase?.close();
-				releaseNamespace(namespace);
+		Object.freeze({
+			...store,
+			// Re-declared as a getter for the same reason `asApplication` does it:
+			// spread copies a getter's VALUE at the moment it runs.
+			get sync() {
+				return store.sync;
 			},
-		}),
+			async discard(): Promise<Result<void, StoreError>> {
+				// Dispose first so the file handles are closed before the unlink,
+				// then delete the live file and its journals whole. The history
+				// file is deliberately not touched: it is the owner's shelf.
+				await store[Symbol.asyncDispose]();
+				return tryAsync({
+					try: async () => {
+						for (const suffix of ['', '-wal', '-shm']) {
+							await rm(join(directory, `store.sqlite3${suffix}`), {
+								force: true,
+							});
+						}
+					},
+					catch: (cause) => StoreError.StorageFailed({ cause }),
+				});
+			},
+		}) as BunStore,
 	);
 }
 

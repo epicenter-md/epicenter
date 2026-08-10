@@ -36,9 +36,8 @@ import type { LensJson, LensParseError } from '@epicenter/lens';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-
-import { claimNamespace, releaseNamespace } from './namespaces.js';
 import { APP_DOCUMENT, applyStoreSchema, copyBytes } from './log.js';
+import { claimNamespace, releaseNamespace } from './namespaces.js';
 import {
 	type ApplicationOf,
 	asApplication,
@@ -74,6 +73,17 @@ export type BrowserStore = Store & {
 	durability(): StoreDurability;
 	/** Resolve once every write so far has reached durable storage. */
 	whenDurable(): Promise<Result<void, StoreError>>;
+	/**
+	 * Delete this store's durable record whole, disposing the store first.
+	 *
+	 * ADR-0231's one client-side deletion: a replica whose edition was retired
+	 * discards and rejoins at zero, and the initiating device adopts through
+	 * the same move after a confirmed replace. Terminal for this store; the
+	 * caller reloads (ADR-0232's instrument) and boot opens fresh. Crash-safe
+	 * by repetition: a discard that never ran leaves the old file, whose next
+	 * dial is refused again.
+	 */
+	discard(): Promise<Result<void, StoreError>>;
 };
 
 /** The three relations that have to survive a reload. */
@@ -146,6 +156,24 @@ function describe(cause: unknown): { name: string; message: string } {
 	if (cause instanceof Error)
 		return { name: cause.name, message: cause.message };
 	return { name: 'Error', message: String(cause) };
+}
+
+/** Delete one store's IndexedDB database whole. Our own connection is closed first. */
+function deleteIndexedDb(name: string): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const request = indexedDB.deleteDatabase(`epicenter-store-${name}`);
+		request.onsuccess = () => resolve();
+		request.onerror = () =>
+			reject(request.error ?? new Error('indexedDB.deleteDatabase failed'));
+		// Another tab still holds this store open. The delete would complete
+		// only when that tab closes, and resolving now would claim a wipe that
+		// has not happened; the caller's reload rediscovers the refusal and
+		// tries again, so failing loudly here is the honest answer.
+		request.onblocked = () =>
+			reject(
+				new Error('Another tab is holding this store open. Close it first.'),
+			);
+	});
 }
 
 /**
@@ -335,6 +363,19 @@ async function openBrowserStore({
 					: StoreError.StorageFailed({
 							cause: new Error(`${durability.name}: ${durability.message}`),
 						});
+			},
+			async discard(): Promise<Result<void, StoreError>> {
+				// Dispose first, in the wrapper's own order: stop the write-behind
+				// before deleting, or a commit racing this call would re-create the
+				// database it is trying to remove. Disposing also closes our own
+				// IndexedDB connection, so the delete is not blocked by ourselves.
+				stopCommitted();
+				while (writing !== undefined) await writing;
+				await store[Symbol.asyncDispose]();
+				return tryAsync({
+					try: () => deleteIndexedDb(name),
+					catch: (cause) => StoreError.StorageFailed({ cause }),
+				});
 			},
 			async [Symbol.asyncDispose]() {
 				stopCommitted();
