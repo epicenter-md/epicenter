@@ -20,7 +20,7 @@ export function createHoneycrispState({
 	// over a type already in memory, so there is no document to open and release
 	// and no failure to report.
 	const searchIndex = createNoteSearchIndex({
-		readText: (noteId) => readDocumentText(db.notes.document(noteId)),
+		readText: (noteId) => readDocumentText(db.tables.notes.document(noteId)),
 		onError: reportBackgroundError,
 	});
 	const notes = createNotes({ db, searchIndex, reportBackgroundError });

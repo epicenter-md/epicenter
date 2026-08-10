@@ -1,13 +1,12 @@
-import type { TableInvalidation } from '@epicenter/lens';
-import { defineLens } from '@epicenter/lens';
 import { beforeEach, describe, expect, test } from 'bun:test';
-
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { TableInvalidation } from '@epicenter/lens';
+import { defineLens } from '@epicenter/lens';
 
-import { open, openMemoryStore } from './bun.js';
-import type { Store } from './store.js';
+import { open, openMemory } from './bun.js';
+import type { ApplicationOf, Store } from './store.js';
 
 const lens = defineLens({
 	namespace: 'so.epicenter.honeycrisp',
@@ -17,23 +16,17 @@ const lens = defineLens({
 	},
 });
 
-function openMemory() {
-	const store = openMemoryStore();
-	const { data: db, error } = store.bind(lens);
-	if (error !== null) throw error;
-	return { store, db };
-}
-
-let store: Store;
-let db: ReturnType<typeof openMemory>['db'];
+let db: ApplicationOf<typeof lens>;
 
 beforeEach(() => {
-	({ store, db } = openMemory());
+	db = openMemory(lens);
 });
 
 /** A note, and its minted id, for tests that need one to exist. */
-function note(fields: Partial<Parameters<typeof db.notes.create>[0]> = {}) {
-	const { data, error } = db.notes.create({
+function note(
+	fields: Partial<Parameters<typeof db.tables.notes.create>[0]> = {},
+) {
+	const { data, error } = db.tables.notes.create({
 		title: 'Groceries',
 		tags: ['food'],
 		date: null,
@@ -60,7 +53,7 @@ describe('a read is a property access on a plain object', () => {
 	});
 
 	test('an absent row reads as Ok(undefined), which is a fact not a failure', () => {
-		const { data, error } = db.notes.get('nope');
+		const { data, error } = db.tables.notes.get('nope');
 		expect(error).toBeNull();
 		expect(data).toBeUndefined();
 	});
@@ -70,15 +63,15 @@ describe('a read is a property access on a plain object', () => {
 		// no I/O to await and no ceremony to pay for one.
 		const made = note();
 		for (const value of [
-			db.notes.get(made.id),
-			db.notes.update(made.id, { title: 'x' }),
-			db.notes.list(),
-			db.notes.ids(),
-			db.notes.document(made.id),
+			db.tables.notes.get(made.id),
+			db.tables.notes.update(made.id, { title: 'x' }),
+			db.tables.notes.list(),
+			db.tables.notes.ids(),
+			db.tables.notes.document(made.id),
 			db.kv.get(),
 			db.kv.update({ theme: 'dark' }),
 			db.query`SELECT 1 AS one`,
-			db.notes.delete(made.id),
+			db.tables.notes.delete(made.id),
 		]) {
 			expect(value).not.toBeInstanceOf(Promise);
 		}
@@ -87,7 +80,7 @@ describe('a read is a property access on a plain object', () => {
 
 describe('a write that reaches nothing is a failure', () => {
 	test('update on an absent row refuses instead of swallowing it', () => {
-		const { data, error } = db.notes.update('nope', { title: 'x' });
+		const { data, error } = db.tables.notes.update('nope', { title: 'x' });
 		expect(data).toBeNull();
 		// The verb this replaces returned Ok(undefined) and dropped the write.
 		expect(error?.name).toBe('RowAbsent');
@@ -95,9 +88,11 @@ describe('a write that reaches nothing is a failure', () => {
 
 	test('an invalid supplied value refuses the call and touches nothing', () => {
 		const made = note();
-		const { error } = db.notes.update(made.id, { tags: 'food' as never });
+		const { error } = db.tables.notes.update(made.id, {
+			tags: 'food' as never,
+		});
 		expect(error?.name).toBe('Nonconforming');
-		const after = db.notes.get(made.id).data;
+		const after = db.tables.notes.get(made.id).data;
 		expect(after?.title).toBe('Groceries');
 		expect(after?.tags).toEqual(['food']);
 	});
@@ -106,16 +101,16 @@ describe('a write that reaches nothing is a failure', () => {
 describe('deletion', () => {
 	test('a deleted row reads as absent and leaves the projection', () => {
 		const made = note();
-		expect(db.notes.delete(made.id).data).toBe(true);
-		expect(db.notes.get(made.id).data).toBeUndefined();
-		expect(db.notes.ids().data).toEqual([]);
+		expect(db.tables.notes.delete(made.id).data).toBe(true);
+		expect(db.tables.notes.get(made.id).data).toBeUndefined();
+		expect(db.tables.notes.ids().data).toEqual([]);
 		expect(db.query`SELECT id FROM notes`.data).toEqual([]);
 	});
 
 	test('deleting twice reports the second as a no-op', () => {
 		const made = note();
-		expect(db.notes.delete(made.id).data).toBe(true);
-		expect(db.notes.delete(made.id).data).toBe(false);
+		expect(db.tables.notes.delete(made.id).data).toBe(true);
+		expect(db.tables.notes.delete(made.id).data).toBe(false);
 	});
 
 	test('CHURN DOES NOT ACCUMULATE A CORPSE PER DELETED ROW', () => {
@@ -125,12 +120,12 @@ describe('deletion', () => {
 		// does not get to opt out. At this row's shape the two models measure 37 B
 		// and 86 B per dead row, so a regression to clear-and-flag fails here long
 		// before anyone notices it on a device.
-		const empty = store.encodeStateSince().length;
+		const empty = db.encodeStateSince().length;
 		for (let index = 0; index < 200; index += 1) {
-			db.notes.delete(note({ title: 'x'.repeat(100) }).id);
+			db.tables.notes.delete(note({ title: 'x'.repeat(100) }).id);
 		}
-		expect(db.notes.ids().data).toEqual([]);
-		const perDeadRow = (store.encodeStateSince().length - empty) / 200;
+		expect(db.tables.notes.ids().data).toEqual([]);
+		const perDeadRow = (db.encodeStateSince().length - empty) / 200;
 		expect(perDeadRow).toBeLessThan(60);
 	});
 
@@ -139,11 +134,11 @@ describe('deletion', () => {
 		// is indistinguishable from one nothing ever held. There is no reuse path
 		// to get wrong: `update` refuses, and `create` mints an id of its own.
 		const made = note();
-		db.notes.delete(made.id);
-		const { data, error } = db.notes.update(made.id, { title: 'back?' });
+		db.tables.notes.delete(made.id);
+		const { data, error } = db.tables.notes.update(made.id, { title: 'back?' });
 		expect(data).toBeNull();
 		expect(error?.name).toBe('RowAbsent');
-		expect(db.notes.get(made.id).data).toBeUndefined();
+		expect(db.tables.notes.get(made.id).data).toBeUndefined();
 	});
 });
 
@@ -167,31 +162,31 @@ describe('the projection is written in the same transaction as the log', () => {
 
 	test('a scalar binds natively, so equality works without quoting JSON', () => {
 		db.kv.update({ fontSize: 18 });
-		expect(db.query`SELECT fontSize FROM kv WHERE fontSize = ${18}`.data).toEqual(
-			[{ fontSize: 18 }],
-		);
+		expect(
+			db.query`SELECT fontSize FROM kv WHERE fontSize = ${18}`.data,
+		).toEqual([{ fontSize: 18 }]);
 	});
 });
 
 describe('a nonconforming row is reported, never repaired', () => {
-	const wrongLens = {
+	const wrongLens = defineLens({
 		namespace: 'so.epicenter.honeycrisp',
 		tables: { notes: { title: 'string', tags: 'string', date: 'string|null' } },
-	};
+	});
 
 	test('the call site composes recovery from defaults and what survived', () => {
 		const made = note();
 		// Corrupt a stored value the way a peer on a newer release could.
-		const { data: raw, error: bindError } = store.bindUnknown(wrongLens);
+		const { data: raw, error: bindError } = db.bind(wrongLens);
 		if (bindError !== null) throw bindError;
-		raw.notes?.update(made.id, { tags: 'food' });
+		raw.tables.notes?.update(made.id, { tags: 'food' });
 
-		const { data, error } = db.notes.get(made.id);
+		const { data, error } = db.tables.notes.get(made.id);
 		expect(data).toBeNull();
 		expect(error?.name).toBe('Nonconforming');
 
 		const recovered = data ?? {
-			...db.notes.defaults,
+			...db.tables.notes.defaults,
 			...(error as { conforming?: object }).conforming,
 		};
 		expect(recovered).toEqual({ id: made.id, title: 'Groceries', date: null });
@@ -200,9 +195,9 @@ describe('a nonconforming row is reported, never repaired', () => {
 	test('list separates what it can read from what it cannot', () => {
 		const broken = note({ title: 'broken' });
 		const fine = note({ title: 'fine' });
-		const { data: raw } = store.bindUnknown(wrongLens);
-		raw?.notes?.update(broken.id, { tags: 'food' });
-		const { data } = db.notes.list();
+		const { data: raw } = db.bind(wrongLens);
+		raw?.tables.notes?.update(broken.id, { tags: 'food' });
+		const { data } = db.tables.notes.list();
 		expect(data?.rows.map((row) => row.id)).toEqual([fine.id]);
 		expect(data?.nonconforming.map((issue) => issue.id)).toEqual([broken.id]);
 	});
@@ -210,7 +205,7 @@ describe('a nonconforming row is reported, never repaired', () => {
 
 describe('two replicas converge', () => {
 	function pair() {
-		const laptop = openMemoryStore();
+		const laptop = openMemory(lens);
 		const { data: laptopDb, error } = laptop.bind(lens);
 		if (error !== null) throw error;
 		return { laptop, laptopDb };
@@ -219,9 +214,11 @@ describe('two replicas converge', () => {
 	test('a row made on one device appears on the other', () => {
 		const { laptop, laptopDb } = pair();
 		const made = note({ title: 'Recorded on the phone', tags: ['voice'] });
-		exchange(store, laptop);
+		exchange(db, laptop);
 
-		expect(laptopDb.notes.get(made.id).data?.title).toBe('Recorded on the phone');
+		expect(laptopDb.tables.notes.get(made.id).data?.title).toBe(
+			'Recorded on the phone',
+		);
 		// And the laptop's projection was rebuilt, so SQL sees it too.
 		expect(laptopDb.query`SELECT id, title FROM notes`.data).toEqual([
 			{ id: made.id, title: 'Recorded on the phone' },
@@ -231,15 +228,15 @@ describe('two replicas converge', () => {
 	test('offline edits to different fields of one row both survive', () => {
 		const { laptop, laptopDb } = pair();
 		const made = note({ title: 'first' });
-		exchange(store, laptop);
+		exchange(db, laptop);
 
-		db.notes.update(made.id, { title: 'phone title' });
-		laptopDb.notes.update(made.id, { date: '2026-08-07' });
-		exchange(store, laptop);
+		db.tables.notes.update(made.id, { title: 'phone title' });
+		laptopDb.tables.notes.update(made.id, { date: '2026-08-07' });
+		exchange(db, laptop);
 
 		for (const [name, handle] of [
-			['phone', db.notes],
-			['laptop', laptopDb.notes],
+			['phone', db.tables.notes],
+			['laptop', laptopDb.tables.notes],
 		] as const) {
 			const settled = handle.get(made.id).data;
 			expect(`${name}:${settled?.title}`).toBe(`${name}:phone title`);
@@ -255,15 +252,15 @@ describe('two replicas converge', () => {
 		// (`evidence/deletion-model.test.ts`).
 		const { laptop, laptopDb } = pair();
 		const made = note({ title: 'first' });
-		exchange(store, laptop);
+		exchange(db, laptop);
 
-		db.notes.delete(made.id);
-		laptopDb.notes.update(made.id, { title: 'edited offline' });
-		exchange(store, laptop);
+		db.tables.notes.delete(made.id);
+		laptopDb.tables.notes.update(made.id, { title: 'edited offline' });
+		exchange(db, laptop);
 
-		expect(db.notes.get(made.id).data).toBeUndefined();
-		expect(laptopDb.notes.get(made.id).data).toBeUndefined();
-		expect(laptopDb.notes.ids().data).toEqual([]);
+		expect(db.tables.notes.get(made.id).data).toBeUndefined();
+		expect(laptopDb.tables.notes.get(made.id).data).toBeUndefined();
+		expect(laptopDb.tables.notes.ids().data).toEqual([]);
 		expect(laptopDb.query`SELECT id FROM notes`.data).toEqual([]);
 	});
 
@@ -272,11 +269,15 @@ describe('two replicas converge', () => {
 		// cannot collide, so two devices never mint a container at one address.
 		const { laptop, laptopDb } = pair();
 		note({ title: 'from the phone' });
-		laptopDb.notes.create({ title: 'from the laptop', tags: [], date: null });
-		exchange(store, laptop);
+		laptopDb.tables.notes.create({
+			title: 'from the laptop',
+			tags: [],
+			date: null,
+		});
+		exchange(db, laptop);
 
-		expect(db.notes.list().data?.rows).toHaveLength(2);
-		expect(laptopDb.notes.list().data?.rows).toHaveLength(2);
+		expect(db.tables.notes.list().data?.rows).toHaveLength(2);
+		expect(laptopDb.tables.notes.list().data?.rows).toHaveLength(2);
 	});
 });
 
@@ -294,11 +295,11 @@ describe('a lens names the store it opens', () => {
 			// under last-writer-wins rather than seeing each other.
 			expect(second.data).toBeNull();
 
-			await first.data.$store[Symbol.asyncDispose]();
+			await first.data[Symbol.asyncDispose]();
 
 			const third = await open(lens, { root });
 			expect(third.error).toBeNull();
-			await third.data?.$store[Symbol.asyncDispose]();
+			await third.data?.[Symbol.asyncDispose]();
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}
@@ -311,13 +312,16 @@ describe('a lens names the store it opens', () => {
 			// parses and then refuses to bind. The store it half-opened must be
 			// disposed and its namespace released, or the namespace is claimed for
 			// the life of the process and the application can never start.
-			const refused = { namespace: lens.namespace, tables: { query: { a: 'string' } } };
+			const refused = {
+				namespace: lens.namespace,
+				tables: { query: { a: 'string' } },
+			};
 			const attempt = await open(refused as never, { root });
 			expect(attempt.error).not.toBeNull();
 
 			const after = await open(lens, { root });
 			expect(after.error).toBeNull();
-			await after.data?.$store[Symbol.asyncDispose]();
+			await after.data?.[Symbol.asyncDispose]();
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}
@@ -332,11 +336,15 @@ describe('the document a row inherently owns', () => {
 			{
 				const { data: diskDb, error } = await open(lens, { root: directory });
 				if (error !== null) throw error;
-				const disk = diskDb.$store;
-				const made = diskDb.notes.create({ title: 'x', tags: [], date: null });
+				const disk = diskDb;
+				const made = diskDb.tables.notes.create({
+					title: 'x',
+					tags: [],
+					date: null,
+				});
 				if (made.error !== null) throw made.error;
 				id = made.data.id;
-				const container = diskDb.notes.document(id);
+				const container = diskDb.tables.notes.document(id);
 				if (container === undefined) throw new Error('no document');
 				// The application names its root and picks its format. In Yjs 14
 				// `change` hands back a fresh builder and `applyDelta` commits it.
@@ -347,10 +355,10 @@ describe('the document a row inherently owns', () => {
 			}
 			const { data: db2, error } = await open(lens, { root: directory });
 			if (error !== null) throw error;
-			const container = db2.notes.document(id);
+			const container = db2.tables.notes.document(id);
 			expect(container?.get('editor', 'text').toString()).toContain('buy milk');
 			expect(container?.get('meta').getAttr('cursor' as never)).toBe(8);
-			await db2.$store[Symbol.asyncDispose]();
+			await db2[Symbol.asyncDispose]();
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
@@ -359,14 +367,14 @@ describe('the document a row inherently owns', () => {
 	test('an absent row has no document, which is a fact not a failure', () => {
 		// The same answer `get` gives an absent row, rather than an Err for one
 		// and an Ok(undefined) for the other.
-		expect(db.notes.document('nope')).toBeUndefined();
+		expect(db.tables.notes.document('nope')).toBeUndefined();
 	});
 
 	test('deleting the row takes its document with it', () => {
 		const made = note();
-		db.notes.document(made.id)?.get('editor', 'text');
-		db.notes.delete(made.id);
-		expect(db.notes.document(made.id)).toBeUndefined();
+		db.tables.notes.document(made.id)?.get('editor', 'text');
+		db.tables.notes.delete(made.id);
+		expect(db.tables.notes.document(made.id)).toBeUndefined();
 	});
 
 	test('an editor writing into its own container cannot touch the row', () => {
@@ -374,9 +382,11 @@ describe('the document a row inherently owns', () => {
 		// schema whose doc node declares attributes overwrites the row's fields
 		// and syncs that; measured in ADR-0215.
 		const made = note();
-		const container = db.notes.document(made.id);
-		container?.get('editor', 'text').setAttr('title' as never, 'CLOBBER' as never);
-		expect(db.notes.get(made.id).data?.title).toBe('Groceries');
+		const container = db.tables.notes.document(made.id);
+		container
+			?.get('editor', 'text')
+			.setAttr('title' as never, 'CLOBBER' as never);
+		expect(db.tables.notes.get(made.id).data?.title).toBe('Groceries');
 	});
 });
 
@@ -410,8 +420,8 @@ describe('kv is where anything two devices both write belongs', () => {
 		// own nested container and map LWW keeps one. A root is addressed by its
 		// name, so both survive. `evidence/bench/row-model.ts` keeps the losing
 		// contrast, now that the chosen-id door is gone from the API.
-		const phone = openMemoryStore();
-		const laptop = openMemoryStore();
+		const phone = openMemory(lens);
+		const laptop = openMemory(lens);
 		const { data: phoneDb, error: e1 } = phone.bind(lens);
 		const { data: laptopDb, error: e2 } = laptop.bind(lens);
 		if (e1 !== null) throw e1;
@@ -441,14 +451,18 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		// bytes writes nothing, so the bytes are lost at restart while every
 		// layer reported success. The restart is the whole test: an in-memory
 		// store keeps the buffered update either way.
-		const origin = openMemoryStore();
+		const origin = openMemory(lens);
 		const { data: originDb, error } = origin.bind(lens);
 		if (error !== null) throw error;
-		const made = originDb.notes.create({ title: 'first', tags: [], date: null });
+		const made = originDb.tables.notes.create({
+			title: 'first',
+			tags: [],
+			date: null,
+		});
 		if (made.error !== null) throw made.error;
 		const first = origin.encodeStateSince();
 		const afterFirst = origin.stateVector();
-		originDb.notes.update(made.data.id, { title: 'second' });
+		originDb.tables.notes.update(made.data.id, { title: 'second' });
 		const second = origin.encodeStateSince(afterFirst);
 
 		const directory = await mkdtemp(join(tmpdir(), 'epicenter-store-'));
@@ -458,7 +472,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 					root: directory,
 				});
 				if (openError !== null) throw openError;
-				const laptop = laptopDb.$store;
+				const laptop = laptopDb;
 				expect(laptop.applyRemote(second).error).toBeNull();
 				expect(laptop.hasUnresolvedDependencies()).toBe(true);
 				await laptop[Symbol.asyncDispose]();
@@ -467,12 +481,12 @@ describe('a received update is persisted as the bytes that arrived', () => {
 				root: directory,
 			});
 			if (reopenError !== null) throw reopenError;
-			const reopened = db2.$store;
+			const reopened = db2;
 			expect(reopened.hasUnresolvedDependencies()).toBe(true);
 
 			expect(reopened.applyRemote(first).error).toBeNull();
 			expect(reopened.hasUnresolvedDependencies()).toBe(false);
-			expect(db2.notes.get(made.data.id).data?.title).toBe('second');
+			expect(db2.tables.notes.get(made.data.id).data?.title).toBe('second');
 			await reopened[Symbol.asyncDispose]();
 		} finally {
 			await rm(directory, { recursive: true, force: true });
@@ -481,17 +495,18 @@ describe('a received update is persisted as the bytes that arrived', () => {
 
 	test('a fully applied replica reports no unresolved dependencies', () => {
 		note();
-		const laptop = openMemoryStore();
+		const laptop = openMemory(lens);
 		laptop.bind(lens);
-		laptop.applyRemote(store.encodeStateSince(laptop.stateVector()));
+		laptop.applyRemote(db.encodeStateSince(laptop.stateVector()));
 		expect(laptop.hasUnresolvedDependencies()).toBe(false);
 	});
 });
 
 describe('pressure is the number that decides whether any of this matters', () => {
 	test('a healthy document sits near the item cost of one row', () => {
-		for (let index = 0; index < 20; index += 1) note({ title: `note ${index}` });
-		const { data, error } = store.pressure();
+		for (let index = 0; index < 20; index += 1)
+			note({ title: `note ${index}` });
+		const { data, error } = db.pressure();
 
 		expect(error).toBeNull();
 		expect(data?.liveRows).toBe(20);
@@ -504,32 +519,35 @@ describe('pressure is the number that decides whether any of this matters', () =
 		// Twenty live rows either way. The only difference is how many died to get
 		// there, and that is exactly what the ratio has to expose, because the two
 		// documents are indistinguishable from every other verb.
-		for (let index = 0; index < 20; index += 1) note({ title: `keeper ${index}` });
-		const healthy = store.pressure().data?.itemsPerLiveRow ?? 0;
+		for (let index = 0; index < 20; index += 1)
+			note({ title: `keeper ${index}` });
+		const healthy = db.pressure().data?.itemsPerLiveRow ?? 0;
 
 		for (let index = 0; index < 200; index += 1) {
 			const doomed = note({ title: `churn ${index}` });
-			const { error } = db.notes.delete(doomed.id);
+			const { error } = db.tables.notes.delete(doomed.id);
 			if (error !== null) throw error;
 		}
-		const churned = store.pressure().data;
+		const churned = db.pressure().data;
 
 		expect(churned?.liveRows).toBe(20);
 		expect(churned?.itemsPerLiveRow).toBeGreaterThan(healthy * 3);
 	});
 
 	test('an empty document reports its items rather than dividing by zero', () => {
-		const { data, error } = store.pressure();
+		const { data, error } = db.pressure();
 
 		expect(error).toBeNull();
 		expect(data?.liveRows).toBe(0);
 		expect(Number.isFinite(data?.itemsPerLiveRow)).toBe(true);
 	});
-})
+});
 
 describe('a subscription names the rows a commit touched', () => {
 	/** Every invalidation one table handed a listener, in order. */
-	function record(table: { subscribe(listener: (i: TableInvalidation) => void): () => void }) {
+	function record(table: {
+		subscribe(listener: (i: TableInvalidation) => void): () => void;
+	}) {
 		const seen: TableInvalidation[] = [];
 		const stop = table.subscribe((invalidation) => seen.push(invalidation));
 		return { seen, stop };
@@ -540,29 +558,29 @@ describe('a subscription names the rows a commit touched', () => {
 		// seen everything, so an initial delivery would only ever be a duplicate
 		// that every consumer has to learn to ignore.
 		note();
-		const { seen } = record(db.notes);
+		const { seen } = record(db.tables.notes);
 
 		expect(seen).toEqual([]);
 	});
 
 	test('a created row, an edited row and a deleted row each name themselves', () => {
-		const { seen } = record(db.notes);
+		const { seen } = record(db.tables.notes);
 
 		const made = note();
 		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.id] }]);
 
-		db.notes.update(made.id, { title: 'Shopping' });
+		db.tables.notes.update(made.id, { title: 'Shopping' });
 		expect(seen.at(-1)).toEqual({ scope: 'rows', rowIds: [made.id] });
 
-		db.notes.delete(made.id);
+		db.tables.notes.delete(made.id);
 		expect(seen.at(-1)).toEqual({ scope: 'rows', rowIds: [made.id] });
 		expect(seen).toHaveLength(3);
 	});
 
-	test('a write to another table is not this table\'s business', () => {
+	test("a write to another table is not this table's business", () => {
 		// The control. Without it every assertion above would still pass on an
 		// implementation that invalidated every subscriber on every commit.
-		const other = openMemoryStore();
+		const other = openMemory(lens);
 		const bound = other.bind(
 			defineLens({
 				namespace: 'so.epicenter.honeycrisp',
@@ -573,10 +591,10 @@ describe('a subscription names the rows a commit touched', () => {
 			}),
 		);
 		if (bound.error !== null) throw bound.error;
-		const notes = record(bound.data.notes);
-		const folders = record(bound.data.folders);
+		const notes = record(bound.data.tables.notes);
+		const folders = record(bound.data.tables.folders);
 
-		const made = bound.data.folders.create({ name: 'Inbox' });
+		const made = bound.data.tables.folders.create({ name: 'Inbox' });
 		if (made.error !== null) throw made.error;
 
 		expect(folders.seen).toEqual([{ scope: 'rows', rowIds: [made.data.id] }]);
@@ -586,21 +604,19 @@ describe('a subscription names the rows a commit touched', () => {
 	test('one commit touching many rows is ONE call carrying every id', () => {
 		// ADR-0187's law 3. A remote update is the only thing in this surface
 		// that commits more than one row at a time, so it is what proves it.
-		const author = openMemory();
-		const ids = [0, 1, 2].map(
-			(index) => {
-				const made = author.db.notes.create({
-					title: `note ${index}`,
-					tags: [],
-					date: null,
-				});
-				if (made.error !== null) throw made.error;
-				return made.data.id;
-			},
-		);
-		const { seen } = record(db.notes);
+		const author = openMemory(lens);
+		const ids = [0, 1, 2].map((index) => {
+			const made = author.tables.notes.create({
+				title: `note ${index}`,
+				tags: [],
+				date: null,
+			});
+			if (made.error !== null) throw made.error;
+			return made.data.id;
+		});
+		const { seen } = record(db.tables.notes);
 
-		store.applyRemote(author.store.encodeStateSince());
+		db.applyRemote(author.encodeStateSince());
 
 		expect(seen).toHaveLength(1);
 		const only = seen[0];
@@ -615,26 +631,26 @@ describe('a subscription names the rows a commit touched', () => {
 		// is not a bug in the subscription; it is the write ADR-0215 wants
 		// nobody to be making, showing up where it can be seen.
 		const made = note();
-		const { seen } = record(db.notes);
+		const { seen } = record(db.tables.notes);
 
-		db.notes.document(made.id)?.get('body', 'text');
+		db.tables.notes.document(made.id)?.get('body', 'text');
 
 		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.id] }]);
 	});
 
-	test('prose written inside a row\'s document names the row', () => {
+	test("prose written inside a row's document names the row", () => {
 		// The case an `observeDeep` observer reports without an id, and the one
 		// an editor binding produces on every keystroke burst. The write never
 		// goes through a store verb: it is the application writing straight into
 		// the type it was handed.
-		const made = db.notes.create(
+		const made = db.tables.notes.create(
 			{ title: 'Groceries', tags: [], date: null },
 			{ document: ['body'] },
 		);
 		if (made.error !== null) throw made.error;
-		const { seen } = record(db.notes);
+		const { seen } = record(db.tables.notes);
 
-		const body = db.notes.document(made.data.id)?.get('body', 'text');
+		const body = db.tables.notes.document(made.data.id)?.get('body', 'text');
 		if (body === undefined) throw new Error('the row has no document');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
 
@@ -647,23 +663,27 @@ describe('a subscription names the rows a commit touched', () => {
 		// projection has been rebuilt, so a subscriber notified there sees the
 		// CRDT reporting a row that `db.query` cannot find. Notifying after the
 		// projection commits is what makes these two agree.
-		const author = openMemory();
-		author.db.notes.create({ title: 'from the phone', tags: [], date: null });
+		const author = openMemory(lens);
+		author.tables.notes.create({
+			title: 'from the phone',
+			tags: [],
+			date: null,
+		});
 
 		let atNotify: { crdt: number; sql: number } | undefined;
-		db.notes.subscribe(() => {
+		db.tables.notes.subscribe(() => {
 			atNotify = {
-				crdt: db.notes.list().data?.rows.length ?? -1,
+				crdt: db.tables.notes.list().data?.rows.length ?? -1,
 				sql: db.query`SELECT count(*) AS n FROM notes`.data?.[0]?.n as number,
 			};
 		});
-		store.applyRemote(author.store.encodeStateSince());
+		db.applyRemote(author.encodeStateSince());
 
 		expect(atNotify).toEqual({ crdt: 1, sql: 1 });
 	});
 
 	test('unsubscribing stops delivery, and doing it twice is harmless', () => {
-		const { seen, stop } = record(db.notes);
+		const { seen, stop } = record(db.tables.notes);
 		note();
 		expect(seen).toHaveLength(1);
 
@@ -679,8 +699,8 @@ describe('a subscription names the rows a commit touched', () => {
 		// run its own teardown more than once, and a second decrement would
 		// detach the delta listener out from under the subscribers still holding
 		// one, which reads as a UI that simply stops updating.
-		const first = record(db.notes);
-		const second = record(db.notes);
+		const first = record(db.tables.notes);
+		const second = record(db.tables.notes);
 
 		first.stop();
 		first.stop();
@@ -691,10 +711,10 @@ describe('a subscription names the rows a commit touched', () => {
 	});
 
 	test('a subscriber that throws does not cost the next one its invalidation', () => {
-		db.notes.subscribe(() => {
+		db.tables.notes.subscribe(() => {
 			throw new Error('this subscriber is broken');
 		});
-		const { seen } = record(db.notes);
+		const { seen } = record(db.tables.notes);
 
 		const made = note();
 
@@ -702,23 +722,25 @@ describe('a subscription names the rows a commit touched', () => {
 	});
 
 	test('a subscriber may write, and its own write is a separate invalidation', () => {
-		const { seen } = record(db.notes);
+		const { seen } = record(db.tables.notes);
 		let wrote = false;
-		db.notes.subscribe((invalidation) => {
+		db.tables.notes.subscribe((invalidation) => {
 			if (wrote || invalidation.scope !== 'rows') return;
 			wrote = true;
-			db.notes.update(invalidation.rowIds[0] as string, { title: 'renamed' });
+			db.tables.notes.update(invalidation.rowIds[0] as string, {
+				title: 'renamed',
+			});
 		});
 
 		const made = note();
 
-		expect(db.notes.get(made.id).data?.title).toBe('renamed');
+		expect(db.tables.notes.get(made.id).data?.title).toBe('renamed');
 		expect(seen).toEqual([
 			{ scope: 'rows', rowIds: [made.id] },
 			{ scope: 'rows', rowIds: [made.id] },
 		]);
 	});
-})
+});
 
 describe('kv reports its own changes', () => {
 	test('a local update notifies, and the listener reads the new value', () => {
@@ -733,12 +755,12 @@ describe('kv reports its own changes', () => {
 	test('a change that arrived from a peer notifies too', () => {
 		// The case a settings screen exists for: another device changed a
 		// preference and this one has to stop showing the old value.
-		const author = openMemory();
-		author.db.kv.update({ fontSize: 22 });
+		const author = openMemory(lens);
+		author.kv.update({ fontSize: 22 });
 		const seen: number[] = [];
 		db.kv.subscribe(() => seen.push(db.kv.get().data?.fontSize as number));
 
-		store.applyRemote(author.store.encodeStateSince());
+		db.applyRemote(author.encodeStateSince());
 
 		expect(seen).toEqual([22]);
 	});
@@ -768,7 +790,7 @@ describe('kv reports its own changes', () => {
 
 		expect(seen).toHaveLength(1);
 	});
-})
+});
 
 describe('the kv projection is a cache, and is rebuilt like one', () => {
 	test('db.query sees kv before anything has written to it', () => {
@@ -783,16 +805,20 @@ describe('the kv projection is a cache, and is rebuilt like one', () => {
 		// Tables are rebuilt at bind for exactly this reason; kv was not, so SQL
 		// kept answering with a row the old declaration wrote.
 		db.kv.update({ theme: 'dark' });
-		const relensed = openMemoryStore();
-		relensed.bindUnknown(lens);
-		const second = relensed.bindUnknown({
-			namespace: 'so.epicenter.honeycrisp',
-			kv: { theme: "'light'|'dark' = 'light'", added: "string = 'new'" },
-			tables: { notes: { title: 'string', tags: 'string[]', date: 'string|null' } },
-		});
+		const relensed = openMemory(lens);
+		relensed.bind(lens);
+		const second = relensed.bind(
+			defineLens({
+				namespace: 'so.epicenter.honeycrisp',
+				kv: { theme: "'light'|'dark' = 'light'", added: "string = 'new'" },
+				tables: {
+					notes: { title: 'string', tags: 'string[]', date: 'string|null' },
+				},
+			}),
+		);
 		if (second.error !== null) throw second.error;
 		expect(second.data.query`SELECT id, theme, added FROM kv`.data).toEqual([
 			{ id: 'kv', theme: 'light', added: 'new' },
 		]);
 	});
-})
+});

@@ -7,9 +7,9 @@
  * (ADR-0207), so the index reads the document rather than the row.
  */
 
+import { describe, expect, test } from 'bun:test';
 import { pmToFragment } from '@y/prosemirror';
 import * as Y from '@y/y';
-import { describe, expect, test } from 'bun:test';
 import { Schema } from 'prosemirror-model';
 import { createNoteSearchIndex, readDocumentText } from './search-index.svelte';
 

@@ -140,7 +140,7 @@ export class SyncLabReplica extends DurableObject<Env> {
 
 	/** Write one row and send it now. */
 	write(title: string): void {
-		const written = this.db.notes.create({ title });
+		const written = this.db.tables.notes.create({ title });
 		if (written.error !== null) throw written.error;
 		this.client.flush();
 	}
@@ -152,9 +152,11 @@ export class SyncLabReplica extends DurableObject<Env> {
 	 * a test: hundreds of small rows would take hundreds of round trips.
 	 */
 	writeLarge(title: string, bytes: number): void {
-		const written = this.db.notes.create({ title });
+		const written = this.db.tables.notes.create({ title });
 		if (written.error !== null) throw written.error;
-		const text = this.db.notes.document(written.data.id)?.get('editor', 'text');
+		const text = this.db.tables.notes
+			.document(written.data.id)
+			?.get('editor', 'text');
 		if (text === undefined) throw new Error('the row has no document');
 		text.applyDelta(text.change.insert('x'.repeat(bytes)) as never);
 		this.client.flush();
@@ -162,7 +164,7 @@ export class SyncLabReplica extends DurableObject<Env> {
 
 	report(): ReplicaReport {
 		const status = this.client.status();
-		const listed = this.db.notes.list();
+		const listed = this.db.tables.notes.list();
 		if (listed.error !== null) throw listed.error;
 		return {
 			cursor: status.cursor,

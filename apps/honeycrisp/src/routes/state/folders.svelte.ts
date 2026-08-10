@@ -25,7 +25,7 @@ export function createFolders({
 	let loadError = $state.raw<unknown>(null);
 
 	function read(): void {
-		const { data, error } = db.folders.list();
+		const { data, error } = db.tables.folders.list();
 		if (error !== null) {
 			// Reported, not just remembered. A read that fails after boot leaves
 			// `rows` at its last value, which for a first read is empty, and an
@@ -41,7 +41,7 @@ export function createFolders({
 	}
 
 	read();
-	const stop = db.folders.subscribe(read);
+	const stop = db.tables.folders.subscribe(read);
 
 	return {
 		[Symbol.dispose]: stop,
@@ -59,7 +59,7 @@ export function createFolders({
 		},
 
 		create(): { id: FolderId } {
-			const { data, error } = db.folders.create({
+			const { data, error } = db.tables.folders.create({
 				name: 'New Folder',
 				sortOrder: rows.length,
 			});
@@ -68,7 +68,7 @@ export function createFolders({
 		},
 
 		rename(folderId: FolderId, name: string): void {
-			const { error } = db.folders.update(folderId, { name });
+			const { error } = db.tables.folders.update(folderId, { name });
 			if (error !== null) throw error;
 		},
 

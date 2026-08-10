@@ -26,7 +26,7 @@
  * which a read applies and a write never stores.
  */
 
-import type { BoundOf } from '@epicenter/data';
+import type { LensView } from '@epicenter/data';
 import { defineLens, type RowOf } from '@epicenter/lens';
 
 /** Runtime-minted structural row ids. */
@@ -167,7 +167,7 @@ export const whisperingLens = defineLens({
 });
 
 /** The typed view of one store through Whispering's Lens. */
-export type WhisperingData = BoundOf<typeof whisperingLens>;
+export type WhisperingData = LensView<typeof whisperingLens>;
 
 export type Recording = RowOf<typeof recordingsTable>;
 export type Recipe = RowOf<typeof recipesTable>;

@@ -243,11 +243,11 @@ function build(days: number, mode: Mode): {
 		// arriving replica must hold is known exactly rather than reconstructed.
 		const canary = index === NOTES - 1;
 		transaction(() => {
-			const made = db.notes.create({
+			const made = db.tables.notes.create({
 				title: canary ? 'the canary note' : `note ${index}`,
 			});
 			if (made.error !== null) throw made.error;
-			const text = db.notes.document(made.data.id)?.get('editor', 'text');
+			const text = db.tables.notes.document(made.data.id)?.get('editor', 'text');
 			if (text === undefined) throw new Error('the row has no document');
 			text.applyDelta(
 				text.change.insert(
@@ -264,14 +264,14 @@ function build(days: number, mode: Mode): {
 		for (let edit = 0; edit < DAY.fieldEdits; edit += 1) {
 			const id = alive[(day * 7 + edit) % alive.length] as string;
 			transaction(() => {
-				const edited = db.notes.update(id, { title: `edited on day ${day}` });
+				const edited = db.tables.notes.update(id, { title: `edited on day ${day}` });
 				if (edited.error !== null) throw edited.error;
 			});
 		}
 		for (let keystroke = 0; keystroke < DAY.charsTyped; keystroke += 1) {
 			const id = alive[(day * 3 + keystroke) % alive.length] as string;
 			transaction(() => {
-				const text = db.notes.document(id)?.get('editor', 'text');
+				const text = db.tables.notes.document(id)?.get('editor', 'text');
 				if (text === undefined) throw new Error('the row has no document');
 				text.applyDelta(text.change.retain(10).insert('a') as never);
 			});
@@ -279,7 +279,7 @@ function build(days: number, mode: Mode): {
 		for (let gone = 0; gone < DAY.notesDeleted; gone += 1) {
 			const victim = alive.shift() as string;
 			transaction(() => {
-				const removed = db.notes.delete(victim);
+				const removed = db.tables.notes.delete(victim);
 				if (removed.error !== null) throw removed.error;
 			});
 		}
@@ -287,9 +287,9 @@ function build(days: number, mode: Mode): {
 			const index = created;
 			created += 1;
 			transaction(() => {
-				const made = db.notes.create({ title: `note ${index}` });
+				const made = db.tables.notes.create({ title: `note ${index}` });
 				if (made.error !== null) throw made.error;
-				const text = db.notes.document(made.data.id)?.get('editor', 'text');
+				const text = db.tables.notes.document(made.data.id)?.get('editor', 'text');
 				if (text === undefined) throw new Error('the row has no document');
 				text.applyDelta(text.change.insert(bodyText(index)) as never);
 				alive.push(made.data.id);
@@ -319,11 +319,11 @@ function build(days: number, mode: Mode): {
 	let tailBytes = 0;
 	for (const entry of tail.data) tailBytes += entry.bytes.length;
 
-	const ids = db.notes.ids();
+	const ids = db.tables.notes.ids();
 	if (ids.error !== null) throw ids.error;
-	const canary = db.notes.get(canaryId);
+	const canary = db.tables.notes.get(canaryId);
 	if (canary.error !== null) throw canary.error;
-	const canaryProse = db.notes
+	const canaryProse = db.tables.notes
 		.document(canaryId)
 		?.get('editor', 'text')
 		.toString();
@@ -403,13 +403,13 @@ function apply(packed: Uint8Array, expectation: Expectation): ApplyReport {
 	const applyMs = performance.now() - started;
 
 	// The control. Bytes moving is not the claim; the vault arriving is.
-	const rows = db.notes.list();
+	const rows = db.tables.notes.list();
 	if (rows.error !== null) throw rows.error;
 	const canary = rows.data.rows.find((row) => row.title === expectation.canaryTitle);
 	const prose =
 		canary === undefined
 			? undefined
-			: db.notes.document(canary.id)?.get('editor', 'text').toString();
+			: db.tables.notes.document(canary.id)?.get('editor', 'text').toString();
 	// Guarding the guard: an expectation of an empty string would be satisfied by
 	// a replica that received nothing, which is the exact run this control exists
 	// to catch.

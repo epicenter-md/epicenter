@@ -1,18 +1,19 @@
-import type { LensJson, LensParseError } from '@epicenter/lens';
-import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Database } from 'bun:sqlite';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { LensJson, LensParseError } from '@epicenter/lens';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
-import {
-	type Application,
-	bindOpened,
-	claimNamespace,
-	releaseNamespace,
-} from './open.js';
+import { claimNamespace, releaseNamespace } from './namespaces.js';
 import { applyHistorySchema } from './persistence.js';
-import { createStore, StoreError, type Store } from './store.js';
+import {
+	type ApplicationOf,
+	asApplication,
+	createStore,
+	type Store,
+	StoreError,
+} from './store.js';
 
 /**
  * Open the application this lens names, on Bun.
@@ -42,7 +43,7 @@ export async function open<const TLens extends LensJson>(
 		/** Whether collapse preserves what it supersedes (ADR-0214). */
 		keepHistory?: boolean;
 	},
-): Promise<Result<Application<TLens>, StoreError | LensParseError>> {
+): Promise<Result<ApplicationOf<TLens>, StoreError | LensParseError>> {
 	const { error: claimError } = claimNamespace(lens.namespace);
 	if (claimError !== null) return Err(claimError);
 
@@ -56,12 +57,17 @@ export async function open<const TLens extends LensJson>(
 		return Err(storeError);
 	}
 
-	const bound = bindOpened(lens, store);
-	if (bound.error !== null) {
+	const view = store.bind(lens);
+	if (view.error !== null) {
 		await store[Symbol.asyncDispose]().catch(() => undefined);
-		return Err(bound.error);
+		return Err(view.error);
 	}
-	return Ok(bound.data);
+	return Ok(
+		// Cast for the reason `bind` casts: matching `LensView<TLens>` structurally
+		// re-enters the per-field arktype instantiation and exceeds TypeScript's
+		// depth limit. The runtime value is the same object either way.
+		asApplication(store, view.data) as unknown as ApplicationOf<TLens>,
+	);
 }
 
 /**
@@ -114,8 +120,26 @@ async function openBunStore({
 	);
 }
 
-/** Open a store that lives only as long as the process. Test support. */
-export function openMemoryStore(): Store {
+/**
+ * Open an application that lives only as long as the process. Test support.
+ *
+ * It takes the lens for the same reason `open` does, so one entry point has one
+ * shape. It claims no namespace, and that is not an oversight: two memory
+ * stores of one namespace are two independent documents by construction, which
+ * is the two-devices case rather than the two-handles-on-one-file case the
+ * claim exists to refuse.
+ */
+export function openMemory<const TLens extends LensJson>(
+	lens: TLens,
+): ApplicationOf<TLens> {
+	const store = openMemoryStore();
+	const view = store.bind(lens);
+	if (view.error !== null) throw view.error;
+	// The same cast `open` makes, for the same depth-limit reason.
+	return asApplication(store, view.data) as unknown as ApplicationOf<TLens>;
+}
+
+function openMemoryStore(): Store {
 	const live = new Database(':memory:');
 	const history = createBunSqliteAdapter(new Database(':memory:'));
 	applyHistorySchema(history);

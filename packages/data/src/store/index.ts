@@ -15,19 +15,35 @@
  * Each opener is called `open` and takes the lens, because a lens names the
  * store it opens (ADR-0229). The subpath already says which adapter, so the
  * identifier does not repeat it.
+ *
+ * The transport answers at `./sync` and nowhere else. This barrel used to
+ * re-export all of it as well, which no consumer ever used: every one of them
+ * imports `@epicenter/data/sync` by name.
  */
-export type { Application } from './open.js';
+
+export type { JsonObject, JsonValue, RowAddress } from '@epicenter/lens';
 export {
-	type Bound,
-	type BoundOf,
+	defineLens,
+	type LensJson,
+	type LensParseError,
+	type NonconformingRowError,
+	parseLens,
+	type RowOf,
+	RowWriteError,
+} from '@epicenter/lens';
+export { COMPACTION_THRESHOLD, type OutboxEntry } from './persistence.js';
+export {
+	type ApplicationOf,
+	asApplication,
 	type ClientLog,
 	createStore,
 	type KvHandle,
+	type LensView,
 	type QueryMethod,
 	type ReadRowError,
-	remoteOrigin,
 	type Row,
 	type RowDocument,
+	remoteOrigin,
 	type Store,
 	StoreError,
 	type StorePressure,
@@ -37,7 +53,3 @@ export {
 	type TypedTableHandle,
 	type WriteRowError,
 } from './store.js';
-export { COMPACTION_THRESHOLD, type OutboxEntry } from './persistence.js';
-export { defineLens, type LensJson, type LensParseError, type NonconformingRowError, parseLens, type RowOf, RowWriteError } from '@epicenter/lens';
-export type { JsonObject, JsonValue, RowAddress } from '@epicenter/lens';
-export * from '../sync/index.js';

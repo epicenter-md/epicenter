@@ -13,7 +13,10 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import { createStore, defineLens, type Store } from '@epicenter/data';
-import { createSyncConnection, type SyncConnection } from '@epicenter/data/sync';
+import {
+	createSyncConnection,
+	type SyncConnection,
+} from '@epicenter/data/sync';
 import {
 	createDurableObjectSqliteAdapter,
 	type DurableObjectSqliteStorage,
@@ -106,9 +109,11 @@ export class StoreTestReplica extends DurableObject<Env> {
 	/** Create a note with prose, the way an application does. */
 	write(title: string, prose: string): void {
 		if (this.db === undefined) throw new Error('open first');
-		const made = this.db.notes.create({ title }, { document: ['body'] });
+		const made = this.db.tables.notes.create({ title }, { document: ['body'] });
 		if (made.error !== null) throw made.error;
-		const body = this.db.notes.document(made.data.id)?.get('body', 'text');
+		const body = this.db.tables.notes
+			.document(made.data.id)
+			?.get('body', 'text');
 		if (body === undefined) throw new Error('the row has no document');
 		body.applyDelta(body.change.insert(prose) as never);
 	}
@@ -118,7 +123,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 		if (this.db === undefined || this.connection === undefined) {
 			throw new Error('open first');
 		}
-		const listed = this.db.notes.list();
+		const listed = this.db.tables.notes.list();
 		if (listed.error !== null) throw listed.error;
 		const status = this.connection.status();
 		return {
@@ -128,7 +133,10 @@ export class StoreTestReplica extends DurableObject<Env> {
 			prose: listed.data.rows
 				.map((row) =>
 					JSON.stringify(
-						this.db?.notes.document(row.id)?.get('body', 'text')?.toJSON() ?? null,
+						this.db?.tables.notes
+							.document(row.id)
+							?.get('body', 'text')
+							?.toJSON() ?? null,
 					),
 				)
 				.sort(),

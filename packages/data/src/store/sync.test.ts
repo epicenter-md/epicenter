@@ -52,7 +52,7 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
 }
 
 function titles(replica: ReturnType<typeof open>): string[] {
-	return expectOk(replica.db.notes.list())
+	return expectOk(replica.db.tables.notes.list())
 		.rows.map((row) => row.title)
 		.sort();
 }
@@ -66,7 +66,7 @@ describe('the local log holds each update once', () => {
 		// Neither copy was wrong on its own, so no verb could see it.
 		const author = open();
 		const reader = open();
-		expectOk(author.db.notes.create({ title: 'Groceries' }));
+		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
 		const update = author.store.encodeStateSince();
 
 		expectOk(reader.store.applyRemote(update));
@@ -82,7 +82,7 @@ describe('the local log holds each update once', () => {
 		// back and forth between them forever.
 		const author = open();
 		const reader = open();
-		expectOk(author.db.notes.create({ title: 'Groceries' }));
+		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
 		expectOk(reader.store.applyRemote(author.store.encodeStateSince()));
 
 		expect(reader.outbox()).toHaveLength(0);
@@ -93,9 +93,9 @@ describe('the local log holds each update once', () => {
 		// Prose reaches storage through the update listener rather than through a
 		// store verb, so it is the one local write that could plausibly be missed.
 		const author = open();
-		const note = expectOk(author.db.notes.create({ title: 'Groceries' }));
+		const note = expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
 		const before = author.outbox().length;
-		const text = author.db.notes.document(note.id)?.get('editor', 'text');
+		const text = author.db.tables.notes.document(note.id)?.get('editor', 'text');
 		if (text === undefined) throw new Error('the row has no document');
 		text.applyDelta(text.change.insert('buy milk') as never);
 
@@ -108,7 +108,7 @@ describe('coalesce merges only what this replica authored', () => {
 		const author = open();
 		const reader = open();
 		for (let index = 0; index < 20; index += 1) {
-			expectOk(author.db.notes.create({ title: `note ${index}` }));
+			expectOk(author.db.tables.notes.create({ title: `note ${index}` }));
 		}
 		expect(author.outbox()).toHaveLength(20);
 
@@ -129,7 +129,7 @@ describe('coalesce merges only what this replica authored', () => {
 		const author = open();
 		const lastOnly = open();
 		for (let index = 0; index < 20; index += 1) {
-			expectOk(author.db.notes.create({ title: `note ${index}` }));
+			expectOk(author.db.tables.notes.create({ title: `note ${index}` }));
 		}
 		const last = author.outbox().at(-1);
 		if (last === undefined) throw new Error('empty outbox');
@@ -144,8 +144,8 @@ describe('coalesce merges only what this replica authored', () => {
 
 	test('coalescing twice is a no-op rather than a re-merge', () => {
 		const author = open();
-		expectOk(author.db.notes.create({ title: 'a' }));
-		expectOk(author.db.notes.create({ title: 'b' }));
+		expectOk(author.db.tables.notes.create({ title: 'a' }));
+		expectOk(author.db.tables.notes.create({ title: 'b' }));
 		const first = expectOk(author.store.sync.coalesce());
 		const second = expectOk(author.store.sync.coalesce());
 
@@ -157,10 +157,10 @@ describe('coalesce merges only what this replica authored', () => {
 		// The ack names a position rather than "everything", because work authored
 		// while a submission was in flight has been acknowledged by nobody.
 		const author = open();
-		expectOk(author.db.notes.create({ title: 'sent' }));
+		expectOk(author.db.tables.notes.create({ title: 'sent' }));
 		const inFlight = expectOk(author.store.sync.coalesce());
 		if (inFlight === undefined) throw new Error('nothing to send');
-		expectOk(author.db.notes.create({ title: 'authored while in flight' }));
+		expectOk(author.db.tables.notes.create({ title: 'authored while in flight' }));
 
 		expectOk(author.store.sync.acknowledge(inFlight.id));
 
@@ -173,7 +173,7 @@ describe('coalesce merges only what this replica authored', () => {
 		// The ack drops the OBLIGATION, never the data. A store that confused the
 		// two would empty itself every time sync succeeded.
 		const author = open();
-		expectOk(author.db.notes.create({ title: 'Groceries' }));
+		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
 		const sent = expectOk(author.store.sync.coalesce());
 		if (sent === undefined) throw new Error('nothing to send');
 		expectOk(author.store.sync.acknowledge(sent.id));
@@ -206,7 +206,7 @@ describe('a row document root is created exactly once', () => {
 		const author = open();
 		const other = open();
 		const note = expectOk(
-			author.db.notes.create({ title: 'Groceries' }, { document: ['editor'] }),
+			author.db.tables.notes.create({ title: 'Groceries' }, { document: ['editor'] }),
 		);
 		expectOk(other.store.applyRemote(author.store.encodeStateSince()));
 
@@ -214,7 +214,7 @@ describe('a row document root is created exactly once', () => {
 			[author, 'written on the phone'],
 			[other, 'written on the laptop'],
 		] as const) {
-			const text = replica.db.notes.document(note.id)?.get('editor');
+			const text = replica.db.tables.notes.document(note.id)?.get('editor');
 			if (text === undefined) throw new Error('the row has no editor');
 			text.applyDelta(text.change.insert(words) as never);
 		}
@@ -223,12 +223,12 @@ describe('a row document root is created exactly once', () => {
 		expectOk(other.store.applyRemote(author.store.encodeStateSince(other.store.stateVector())));
 
 		const merged = JSON.stringify(
-			author.db.notes.document(note.id)?.get('editor').toJSON(),
+			author.db.tables.notes.document(note.id)?.get('editor').toJSON(),
 		);
 		expect(merged).toContain('phone');
 		expect(merged).toContain('laptop');
 		expect(merged).toBe(
-			JSON.stringify(other.db.notes.document(note.id)?.get('editor').toJSON()),
+			JSON.stringify(other.db.tables.notes.document(note.id)?.get('editor').toJSON()),
 		);
 	});
 
@@ -238,14 +238,14 @@ describe('a row document root is created exactly once', () => {
 		// `document` option sees what it was buying.
 		const author = open();
 		const other = open();
-		const note = expectOk(author.db.notes.create({ title: 'Groceries' }));
+		const note = expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
 		expectOk(other.store.applyRemote(author.store.encodeStateSince()));
 
 		for (const [replica, words] of [
 			[author, 'written on the phone'],
 			[other, 'written on the laptop'],
 		] as const) {
-			const text = replica.db.notes.document(note.id)?.get('editor');
+			const text = replica.db.tables.notes.document(note.id)?.get('editor');
 			if (text === undefined) throw new Error('the row has no editor');
 			text.applyDelta(text.change.insert(words) as never);
 		}
@@ -254,7 +254,7 @@ describe('a row document root is created exactly once', () => {
 		expectOk(other.store.applyRemote(author.store.encodeStateSince(other.store.stateVector())));
 
 		const merged = JSON.stringify(
-			author.db.notes.document(note.id)?.get('editor').toJSON(),
+			author.db.tables.notes.document(note.id)?.get('editor').toJSON(),
 		);
 		const survivors = ['phone', 'laptop'].filter((device) => merged.includes(device));
 		expect(survivors).toHaveLength(1);

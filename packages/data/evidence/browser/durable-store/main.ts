@@ -6,8 +6,11 @@
  */
 import { defineLens } from '@epicenter/lens';
 
-import { type BrowserStore, open as openBrowser } from '../../../src/store/browser.js';
-import type { Application } from '../../../src/store/open.js';
+import {
+	type BrowserStore,
+	open as openBrowser,
+} from '../../../src/store/browser.js';
+import type { ApplicationOf } from '../../../src/store/store.js';
 
 /**
  * Two namespaces, because a namespace is what makes two stores two stores.
@@ -27,7 +30,7 @@ const lenses = {
 	}),
 } as const;
 
-type ProbeApplication = Application<(typeof lenses)['vault'], BrowserStore>;
+type ProbeApplication = ApplicationOf<(typeof lenses)['vault'], BrowserStore>;
 
 let db: ProbeApplication | undefined;
 
@@ -55,25 +58,25 @@ Object.assign(globalThis, {
 	/** Create a note AND write prose into its document, then wait for durability. */
 	async write(title: string, prose: string) {
 		const db = bound();
-		const made = db.notes.create({ title }, { document: ['body'] });
+		const made = db.tables.notes.create({ title }, { document: ['body'] });
 		if (made.error !== null) return { error: made.error.message };
-		const body = db.notes.document(made.data.id)?.get('body', 'text');
+		const body = db.tables.notes.document(made.data.id)?.get('body', 'text');
 		if (body === undefined) return { error: 'the row has no document' };
 		body.applyDelta(body.change.insert(prose) as never);
-		const durable = await db.$store.whenDurable();
+		const durable = await db.whenDurable();
 		return { id: made.data.id, durable: durable.error === null };
 	},
 
 	/** Everything this store can see right now, read synchronously. */
 	read() {
 		const db = bound();
-		const listed = db.notes.list();
+		const listed = db.tables.notes.list();
 		if (listed.error !== null) return { error: listed.error.message };
 		const notes = listed.data.rows.map((row) => ({
 			title: row.title,
 			// Through the CRDT, not through a cache the harness keeps.
 			prose: JSON.stringify(
-				db.notes.document(row.id)?.get('body', 'text')?.toJSON() ?? null,
+				db.tables.notes.document(row.id)?.get('body', 'text')?.toJSON() ?? null,
 			),
 		}));
 		// `db.query` reads the projection, which is a different relation entirely,
@@ -82,8 +85,8 @@ Object.assign(globalThis, {
 		return {
 			notes: notes.sort((left, right) => left.title.localeCompare(right.title)),
 			projected: counted.data?.[0]?.n ?? -1,
-			durability: db.$store.durability(),
-			pressure: db.$store.pressure().data,
+			durability: db.durability(),
+			pressure: db.pressure().data,
 		};
 	},
 });

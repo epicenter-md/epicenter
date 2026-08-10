@@ -69,18 +69,18 @@ function run({ snapshots }: { snapshots: boolean }) {
 
 	for (let operation = 1; operation <= OPERATIONS; operation += 1) {
 		if (alive.length < LIVE_ROWS) {
-			const made = db.notes.create({ title: `note ${operation}` });
+			const made = db.tables.notes.create({ title: `note ${operation}` });
 			if (made.error !== null) throw made.error;
 			alive.push(made.data.id);
 		} else if (operation % 3 === 0) {
 			// Retire the oldest and make a new one, so the live set stays flat
 			// while the operation count does not.
 			const victim = alive.shift() as string;
-			const removed = db.notes.delete(victim);
+			const removed = db.tables.notes.delete(victim);
 			if (removed.error !== null) throw removed.error;
 		} else {
 			const target = alive[operation % alive.length] as string;
-			const edited = db.notes.update(target, { title: `note ${operation}` });
+			const edited = db.tables.notes.update(target, { title: `note ${operation}` });
 			if (edited.error !== null) throw edited.error;
 		}
 
@@ -118,7 +118,7 @@ function run({ snapshots }: { snapshots: boolean }) {
 		}
 	}
 
-	const rows = db.notes.ids();
+	const rows = db.tables.notes.ids();
 	if (rows.error !== null) throw rows.error;
 	return { samples, liveRows: rows.data.length };
 }

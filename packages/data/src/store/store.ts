@@ -1,8 +1,24 @@
-import { createInvalidationDispatcher, type JsonObject, type JsonValue, type RowAddress, type TableInvalidationListener } from '@epicenter/lens';
-import { type CreateInputOf, KV_ROOT, type KvOf, type LensJson, type LensParseError, type NonconformingRowError, type ParsedLens, type ParsedTable, parseLens, type RowOf, RowWriteError } from '@epicenter/lens';
+import {
+	type CreateInputOf,
+	createInvalidationDispatcher,
+	type JsonObject,
+	type JsonValue,
+	KV_ROOT,
+	type KvOf,
+	type LensJson,
+	type LensParseError,
+	type NonconformingRowError,
+	type ParsedLens,
+	type ParsedTable,
+	parseLens,
+	type RowAddress,
+	type RowOf,
+	RowWriteError,
+	type TableInvalidationListener,
+} from '@epicenter/lens';
 import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
-import { customAlphabet } from 'nanoid';
 import * as Y from '@y/y';
+import { customAlphabet } from 'nanoid';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
@@ -10,15 +26,16 @@ import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import {
 	createAppDocument,
 	deleteRow,
-	kvRoot,
 	documentContainer,
 	hasRow,
+	kvRoot,
 	listRowIds,
 	readRow,
 	tableRoot,
 	writeRow,
 } from './document.js';
 import {
+	APP_DOCUMENT,
 	appendUpdate,
 	applyProjectionSchema,
 	applyStoreSchema,
@@ -26,7 +43,6 @@ import {
 	deleteProjectedRow,
 	dropOutboxThrough,
 	enqueueOutbox,
-	APP_DOCUMENT,
 	type OutboxEntry,
 	readCursor,
 	readOutbox,
@@ -48,11 +64,14 @@ import {
  * places. Pinned by a test, because it is internal and an rc can move it.
  */
 function hasPendingStructs(document: Y.Doc): boolean {
-	const store = (document as unknown as {
-		store?: { pendingStructs?: unknown; pendingDs?: unknown };
-	}).store;
+	const store = (
+		document as unknown as {
+			store?: { pendingStructs?: unknown; pendingDs?: unknown };
+		}
+	).store;
 	return (
-		(store?.pendingStructs ?? null) !== null || (store?.pendingDs ?? null) !== null
+		(store?.pendingStructs ?? null) !== null ||
+		(store?.pendingDs ?? null) !== null
 	);
 }
 
@@ -64,9 +83,11 @@ function hasPendingStructs(document: Y.Doc): boolean {
  * actually tracks. Pinned by a test, because an rc can move it.
  */
 function structCount(document: Y.Doc): number {
-	const clients = (document as unknown as {
-		store?: { clients?: Map<number, { length: number }[]> };
-	}).store?.clients;
+	const clients = (
+		document as unknown as {
+			store?: { clients?: Map<number, { length: number }[]> };
+		}
+	).store?.clients;
 	let total = 0;
 	for (const structs of clients?.values() ?? []) total += structs.length;
 	return total;
@@ -136,7 +157,10 @@ export type StoreError = InferErrors<typeof StoreError>;
 export type ReadRowError = StoreError | NonconformingRowError;
 export type WriteRowError = StoreError | RowWriteError | NonconformingRowError;
 
-export type { TableInvalidation, TableInvalidationListener } from '@epicenter/lens';
+export type {
+	TableInvalidation,
+	TableInvalidationListener,
+} from '@epicenter/lens';
 
 export type Row = { id: string } & JsonObject;
 
@@ -284,31 +308,32 @@ export type QueryMethod = (
  * limit (`TS2589`), because `RowOf` already instantiates an arktype type per
  * field and `Omit` re-maps every remaining member on top of that.
  */
-export type TypedTableHandle<TFields> = TableIo<TFields> extends {
-	row: infer TRow;
-	input: infer TInput;
-}
-	? {
-			readonly defaults: Readonly<JsonObject>;
-			create(
-				fields: TInput,
-				options?: { readonly document?: readonly string[] },
-			): Result<TRow, WriteRowError>;
-			get(rowId: string): Result<TRow | undefined, ReadRowError>;
-			update(
-				rowId: string,
-				fields: Partial<TInput>,
-			): Result<TRow, WriteRowError>;
-			delete(rowId: string): Result<boolean, StoreError>;
-			ids(): Result<string[], StoreError>;
-			list(): Result<
-				{ rows: TRow[]; nonconforming: NonconformingRowError[] },
-				StoreError
-			>;
-			document(rowId: string): RowDocument | undefined;
-			subscribe(listener: TableInvalidationListener): () => void;
-		}
-	: never;
+export type TypedTableHandle<TFields> =
+	TableIo<TFields> extends {
+		row: infer TRow;
+		input: infer TInput;
+	}
+		? {
+				readonly defaults: Readonly<JsonObject>;
+				create(
+					fields: TInput,
+					options?: { readonly document?: readonly string[] },
+				): Result<TRow, WriteRowError>;
+				get(rowId: string): Result<TRow | undefined, ReadRowError>;
+				update(
+					rowId: string,
+					fields: Partial<TInput>,
+				): Result<TRow, WriteRowError>;
+				delete(rowId: string): Result<boolean, StoreError>;
+				ids(): Result<string[], StoreError>;
+				list(): Result<
+					{ rows: TRow[]; nonconforming: NonconformingRowError[] },
+					StoreError
+				>;
+				document(rowId: string): RowDocument | undefined;
+				subscribe(listener: TableInvalidationListener): () => void;
+			}
+		: never;
 
 /**
  * One table's read and write shapes, from ONE arktype instantiation.
@@ -323,10 +348,59 @@ type TableIo<TFields> = {
 	input: CreateInputOf<TFields>;
 };
 
-/** The typed view of one store through one lens: its tables, plus `query`. */
-export type BoundOf<TLens> = (TLens extends { tables: infer TTables }
-	? { [K in keyof TTables]: TypedTableHandle<TTables[K]> }
-	: never) & { query: QueryMethod; kv: KvHandle<KvOf<TLens>> };
+/**
+ * The typed view of one store through one lens.
+ *
+ * `tables` is a container rather than a spread, and that is the whole reason
+ * the application has no reserved table names. A lens declares `tables` and
+ * `kv`, so the view mirrors the declaration instead of flattening it, and every
+ * verb the store grows is free to be a sibling forever. Flattening cost this
+ * API three collisions in its first month: a draft that named the bound value
+ * `notes` beside a table called `notes`, `query` reserved as a table name
+ * (ADR-0213), and a `$store` sigil invented to hold nine more (ADR-0229).
+ */
+export type LensView<TLens> = {
+	readonly tables: TLens extends { tables: infer TTables }
+		? { readonly [K in keyof TTables]: TypedTableHandle<TTables[K]> }
+		: never;
+	readonly kv: KvHandle<KvOf<TLens>>;
+	readonly query: QueryMethod;
+};
+
+/**
+ * One opened application: the file's own verbs, and the lens's view of it.
+ *
+ * `bind` stays reachable rather than being hidden, and that is deliberate. A
+ * namespace may carry more than one interpretation (ADR-0160), so taking a
+ * second view of the file this application already holds is the supported way
+ * to do it: one document, two views, no second open to refuse.
+ */
+export type ApplicationOf<TLens, TStore extends Store = Store> = TStore &
+	LensView<TLens>;
+
+/**
+ * Compose one file's verbs with one lens's view of it.
+ *
+ * Both openers end here, so the shape an application sees is decided once
+ * rather than per runtime.
+ *
+ * `sync` is re-declared as a getter because spread copies a getter's VALUE at
+ * the moment it runs, and a store hands back a fresh `ClientLog` as its outbox
+ * drains. A browser store already guarded this on its own wrapper; doing it
+ * here means neither opener has to remember.
+ */
+export function asApplication<TStore extends Store>(
+	store: TStore,
+	view: object,
+): TStore {
+	return Object.freeze({
+		...store,
+		get sync() {
+			return store.sync;
+		},
+		...view,
+	}) as TStore;
+}
 
 /**
  * One application's KV: the values it keeps exactly one of.
@@ -377,10 +451,17 @@ export type KvHandle<TValues = JsonObject> = {
 	subscribe(listener: () => void): () => void;
 };
 
-/** The untyped view, for a lens that arrived as data rather than as a literal. */
-export type Bound = Record<string, TableHandle> & {
-	query: QueryMethod;
-	kv: KvHandle;
+/**
+ * The same view with the lens's shape erased, which is what `bind` builds.
+ *
+ * Internal. It exists because `bind` constructs one object and then casts it to
+ * the caller's `LensView<TLens>`; comparing the two structurally re-enters the
+ * per-field arktype instantiation and exceeds TypeScript's depth limit.
+ */
+type UntypedLensView = {
+	readonly tables: Readonly<Record<string, TableHandle>>;
+	readonly kv: KvHandle;
+	readonly query: QueryMethod;
 };
 
 /**
@@ -468,9 +549,7 @@ export type Store = {
 	 */
 	bind<const TLens extends LensJson>(
 		lens: TLens,
-	): Result<BoundOf<TLens>, LensParseError | StoreError>;
-	/** Bind a lens whose shape is not known until runtime. */
-	bindUnknown(lens: unknown): Result<Bound, LensParseError | StoreError>;
+	): Result<LensView<TLens>, LensParseError | StoreError>;
 	/** Apply bytes from a peer. Durable, and never republished as local work. */
 	applyRemote(update: Uint8Array): Result<void, StoreError>;
 	/**
@@ -758,9 +837,9 @@ export function createStore({
 		return Ok(undefined);
 	}
 
-	function bindUnknown(
+	function bindLens(
 		lensInput: unknown,
-	): Result<Bound, LensParseError | StoreError> {
+	): Result<UntypedLensView, LensParseError | StoreError> {
 		const unusable = requireUsable();
 		if (unusable !== undefined) return Err(unusable);
 		const { data: lens, error } = parseLens(lensInput);
@@ -807,7 +886,13 @@ export function createStore({
 				catch: (cause) => StoreError.StorageFailed({ cause }),
 			});
 		};
-		return Ok(Object.freeze({ ...tables, kv, query }) as unknown as Bound);
+		return Ok(
+			Object.freeze({
+				tables: Object.freeze(tables),
+				kv,
+				query,
+			}) as UntypedLensView,
+		);
 	}
 
 	/**
@@ -891,48 +976,48 @@ export function createStore({
 		return {
 			project,
 			handle: Object.freeze({
-			defaults: table?.defaults ?? Object.freeze({}),
-			get() {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
-				return readBack();
-			},
-			subscribe(listener: () => void): () => void {
-				kvListeners.add(listener);
-				subscriptions += 1;
-				if (subscriptions === 1) root.on('delta', onKvDelta);
-				let stopped = false;
-				return () => {
-					if (stopped) return;
-					stopped = true;
-					kvListeners.delete(listener);
-					subscriptions -= 1;
-					if (subscriptions === 0) root.off('delta', onKvDelta);
-				};
-			},
-			update(values: JsonObject) {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
-				if (table === undefined) {
-					const [field] = Object.keys(values);
-					return field === undefined
-						? readBack()
-						: RowWriteError.UnknownField({ table: 'kv', field });
-				}
-				const { data: validated, error } = table.validateWrite(values);
-				if (error !== null) return Err(error);
-				const { error: commitError } = commit(
-					APP_DOCUMENT,
-					() => {
-						for (const [name, value] of Object.entries(validated)) {
-							root.setAttr(name as never, value as never);
-						}
-					},
-					project,
-				);
-				if (commitError !== null) return Err(commitError);
-				return readBack();
-			},
+				defaults: table?.defaults ?? Object.freeze({}),
+				get() {
+					const unusable = requireUsable();
+					if (unusable !== undefined) return Err(unusable);
+					return readBack();
+				},
+				subscribe(listener: () => void): () => void {
+					kvListeners.add(listener);
+					subscriptions += 1;
+					if (subscriptions === 1) root.on('delta', onKvDelta);
+					let stopped = false;
+					return () => {
+						if (stopped) return;
+						stopped = true;
+						kvListeners.delete(listener);
+						subscriptions -= 1;
+						if (subscriptions === 0) root.off('delta', onKvDelta);
+					};
+				},
+				update(values: JsonObject) {
+					const unusable = requireUsable();
+					if (unusable !== undefined) return Err(unusable);
+					if (table === undefined) {
+						const [field] = Object.keys(values);
+						return field === undefined
+							? readBack()
+							: RowWriteError.UnknownField({ table: 'kv', field });
+					}
+					const { data: validated, error } = table.validateWrite(values);
+					if (error !== null) return Err(error);
+					const { error: commitError } = commit(
+						APP_DOCUMENT,
+						() => {
+							for (const [name, value] of Object.entries(validated)) {
+								root.setAttr(name as never, value as never);
+							}
+						},
+						project,
+					);
+					if (commitError !== null) return Err(commitError);
+					return readBack();
+				},
 			}) as KvHandle,
 		};
 	}
@@ -1169,15 +1254,14 @@ export function createStore({
 		// what a lens loaded from an application folder gets, where there is no
 		// literal to infer from and `unknown` is the honest answer.
 		bind: <const TLens extends LensJson>(lens: TLens) =>
-			// Through `unknown` deliberately: comparing `Result<Bound, ...>` with
-			// `Result<BoundOf<TLens>, ...>` re-enters the per-field arktype
+			// Through `unknown` deliberately: comparing the untyped view with
+			// `Result<LensView<TLens>, ...>` re-enters the per-field arktype
 			// instantiation and exceeds the depth limit. The runtime value is the
 			// same object either way; only the static view of it differs.
-			bindUnknown(lens) as unknown as Result<
-				BoundOf<TLens>,
+			bindLens(lens) as unknown as Result<
+				LensView<TLens>,
 				LensParseError | StoreError
 			>,
-		bindUnknown,
 		applyRemote(update: Uint8Array): Result<void, StoreError> {
 			const unusable = requireUsable();
 			if (unusable !== undefined) return Err(unusable);
@@ -1326,12 +1410,7 @@ export function createStore({
 
 	function rebuildAllProjections(): void {
 		for (const [tableName, fieldNames] of projectedTables) {
-			rebuildProjectedTable(
-				database,
-				tableName,
-				fieldNames,
-				rowsOf(tableName),
-			);
+			rebuildProjectedTable(database, tableName, fieldNames, rowsOf(tableName));
 		}
 	}
 }

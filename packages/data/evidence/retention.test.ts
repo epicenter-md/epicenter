@@ -53,13 +53,13 @@ function afterWritingAndDeleting() {
 	const authorityDatabase = createBunSqliteAdapter(new Database(':memory:'));
 	const authority = openSyncAuthority({ database: authorityDatabase });
 
-	const note = expectOk(db.notes.create({ title: CANARY }));
+	const note = expectOk(db.tables.notes.create({ title: CANARY }));
 	const created = expectOk(store.sync.coalesce());
 	if (created === undefined) throw new Error('nothing to send');
 	expectOk(authority.append(created.bytes));
 	expectOk(store.sync.acknowledge(created.id));
 
-	expectOk(db.notes.delete(note.id));
+	expectOk(db.tables.notes.delete(note.id));
 	const deleted = expectOk(store.sync.coalesce());
 	if (deleted !== undefined) expectOk(authority.append(deleted.bytes));
 
@@ -83,9 +83,9 @@ describe('a deleted row is gone from the application', () => {
 	test('no verb can reach it', () => {
 		const world = afterWritingAndDeleting();
 
-		expect(expectOk(world.db.notes.get(world.note.id))).toBeUndefined();
-		expect(expectOk(world.db.notes.ids())).toEqual([]);
-		expect(expectOk(world.db.notes.list()).rows).toEqual([]);
+		expect(expectOk(world.db.tables.notes.get(world.note.id))).toBeUndefined();
+		expect(expectOk(world.db.tables.notes.ids())).toEqual([]);
+		expect(expectOk(world.db.tables.notes.list()).rows).toEqual([]);
 	});
 
 	test('and gone from the current state, which is what gc reclaims', () => {
@@ -135,7 +135,7 @@ describe('and still in every log, for as long as the log exists', () => {
 		});
 		const arrivingDb = expectOk(arriving.bind(lens));
 		for (const entry of backlog) expectOk(arriving.applyRemote(entry.bytes));
-		expect(expectOk(arrivingDb.notes.list()).rows).toEqual([]);
+		expect(expectOk(arrivingDb.tables.notes.list()).rows).toEqual([]);
 	});
 });
 

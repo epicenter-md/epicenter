@@ -8,20 +8,21 @@
  * every test that claims something arrived asserts on the RECEIVING replica's
  * rows, never on a counter kept by the harness.
  */
-import { defineLens, type LensJson } from '@epicenter/lens';
-import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { defineLens, type LensJson } from '@epicenter/lens';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
 
 import {
-	type Bound,
-	type BoundOf,
 	createStore,
+	type LensView,
 	type TableHandle,
 } from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
+import { createSyncClient } from './client.js';
 import {
 	createChunkCollector,
 	decodeFrame,
@@ -29,7 +30,6 @@ import {
 	intoChunks,
 } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
-import { createSyncClient } from './client.js';
 
 const lens = defineLens({
 	namespace: 'so.epicenter.honeycrisp',
@@ -44,12 +44,16 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
 /**
  * One table on an untyped binding.
  *
- * A `Bound` is a record, so every table on it reads as possibly absent. Where a
+ * An untyped view holds a record of tables, so every one reads as possibly
+ * absent. Where a
  * test is about a lens NOT declaring a table it looks for that `undefined`
  * deliberately; everywhere else the lens declares it, and this says so once.
  */
-function tableOf(bound: Bound, name: string): TableHandle {
-	const handle = bound[name];
+function tableOf(
+	view: { tables: Readonly<Record<string, TableHandle>> },
+	name: string,
+): TableHandle {
+	const handle = view.tables[name];
 	if (handle === undefined) throw new Error(`this lens declares no '${name}'`);
 	return handle;
 }
@@ -109,11 +113,11 @@ function openReplica(
 ) {
 	const database = createBunSqliteAdapter(new Database(':memory:'));
 	const store = createStore({ database });
-	// One binding, two views of it. `store.bind` IS `bindUnknown` with a cast, so
-	// the typed view costs nothing and is honest for every replica running the
-	// default lens; a replica running another one reads through `bound`.
-	const bound = expectOk(store.bindUnknown(through));
-	const db = bound as unknown as BoundOf<typeof lens>;
+	// One binding, two views of it: the typed view costs nothing and is honest
+	// for every replica running the default lens; a replica running another one
+	// reads through `bound`.
+	const bound = expectOk(store.bind(through));
+	const db = bound as unknown as LensView<typeof lens>;
 	const client = createSyncClient({
 		store,
 		idleMs: 0,
@@ -165,7 +169,7 @@ function openReplica(
 			client.detach();
 		},
 		titles: () =>
-			expectOk(db.notes.list())
+			expectOk(db.tables.notes.list())
 				.rows.map((row) => row.title)
 				.sort(),
 	};
@@ -194,7 +198,7 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		phone.connect();
 		laptop.connect();
 
-		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		phone.client.flush();
 		wire.settle();
 
@@ -211,7 +215,7 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		phone.connect();
 		laptop.connect();
 
-		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		phone.client.flush();
 		// wire.settle() deliberately omitted.
 
@@ -223,8 +227,8 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		phone.connect();
 		laptop.connect();
 
-		expectOk(phone.db.notes.create({ title: 'from the phone' }));
-		expectOk(laptop.db.notes.create({ title: 'from the laptop' }));
+		expectOk(phone.db.tables.notes.create({ title: 'from the phone' }));
+		expectOk(laptop.db.tables.notes.create({ title: 'from the laptop' }));
 		phone.client.flush();
 		laptop.client.flush();
 		wire.settle();
@@ -238,7 +242,7 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		phone.connect();
 
 		for (let index = 0; index < 30; index += 1) {
-			expectOk(phone.db.notes.create({ title: `note ${index}` }));
+			expectOk(phone.db.tables.notes.create({ title: `note ${index}` }));
 			phone.client.flush();
 			wire.settle();
 		}
@@ -258,8 +262,8 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		laptop.connect();
 
 		// The phone never connects while it writes.
-		expectOk(phone.db.notes.create({ title: 'written on a plane' }));
-		expectOk(phone.db.notes.create({ title: 'also on a plane' }));
+		expectOk(phone.db.tables.notes.create({ title: 'written on a plane' }));
+		expectOk(phone.db.tables.notes.create({ title: 'also on a plane' }));
 		phone.client.flush();
 		wire.settle();
 		expect(laptop.titles()).toEqual([]);
@@ -274,12 +278,12 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		const { wire, phone, laptop } = setup();
 		phone.connect();
 		laptop.connect();
-		const note = expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		const note = expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		phone.client.flush();
 		wire.settle();
 		expect(laptop.titles()).toEqual(['Groceries']);
 
-		expectOk(phone.db.notes.delete(note.id));
+		expectOk(phone.db.tables.notes.delete(note.id));
 		phone.client.flush();
 		wire.settle();
 
@@ -290,14 +294,16 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		const { wire, phone, laptop } = setup();
 		phone.connect();
 		laptop.connect();
-		const note = expectOk(phone.db.notes.create({ title: 'Groceries' }));
-		const text = phone.db.notes.document(note.id)?.get('editor', 'text');
+		const note = expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
+		const text = phone.db.tables.notes.document(note.id)?.get('editor', 'text');
 		if (text === undefined) throw new Error('the row has no document');
 		text.applyDelta(text.change.insert('buy milk') as never);
 		phone.client.flush();
 		wire.settle();
 
-		const arrived = laptop.db.notes.document(note.id)?.get('editor', 'text');
+		const arrived = laptop.db.tables.notes
+			.document(note.id)
+			?.get('editor', 'text');
 		expect(arrived?.length).toBe('buy milk'.length);
 	});
 });
@@ -307,7 +313,7 @@ describe('the ack is what makes a refusal visible', () => {
 		const { wire, phone, laptop } = setup();
 		phone.connect();
 		laptop.connect();
-		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		phone.client.flush();
 
 		// The push is on the wire and no ack has come back.
@@ -367,7 +373,8 @@ describe('the ack is what makes a refusal visible', () => {
 		// submission, so the client knows exactly which work it still owes.
 		expect(answers).toHaveLength(1);
 		const refusal = expectOk(decodeFrame(answers[0] as Uint8Array));
-		if (refusal.kind !== 'refuse') throw new Error(`answered with ${refusal.kind}`);
+		if (refusal.kind !== 'refuse')
+			throw new Error(`answered with ${refusal.kind}`);
 		expect(refusal.submission).toBe(7);
 
 		// And nothing was stored, so no device will ever be handed a fragment.
@@ -380,7 +387,7 @@ describe('the ack is what makes a refusal visible', () => {
 		const { wire, phone, laptop } = setup();
 		laptop.connect();
 		phone.connect();
-		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		phone.client.flush();
 		expect(phone.client.status().inFlight).toBe(true);
 
@@ -403,7 +410,7 @@ describe('the log grows with sends rather than with transactions', () => {
 		laptop.connect();
 
 		for (let index = 0; index < 20; index += 1) {
-			expectOk(phone.db.notes.create({ title: `note ${index}` }));
+			expectOk(phone.db.tables.notes.create({ title: `note ${index}` }));
 			// Every transaction nudges, as a real caller would. The idle timer is
 			// what collapses them, not the caller being careful.
 			phone.client.nudge();
@@ -422,7 +429,7 @@ describe('the log grows with sends rather than with transactions', () => {
 		laptop.connect();
 
 		for (let index = 0; index < 20; index += 1) {
-			expectOk(phone.db.notes.create({ title: `note ${index}` }));
+			expectOk(phone.db.tables.notes.create({ title: `note ${index}` }));
 			phone.client.flush();
 			wire.settle();
 		}
@@ -437,8 +444,10 @@ describe('chunking is framing, and carries what no single frame could', () => {
 		const { wire, phone, laptop } = setup();
 		phone.connect();
 		laptop.connect();
-		const note = expectOk(phone.db.notes.create({ title: 'a big paste' }));
-		const text = phone.db.notes.document(note.id)?.get('editor', 'text');
+		const note = expectOk(
+			phone.db.tables.notes.create({ title: 'a big paste' }),
+		);
+		const text = phone.db.tables.notes.document(note.id)?.get('editor', 'text');
 		if (text === undefined) throw new Error('the row has no document');
 		// One transaction, well past 2,097,152 bytes. There is no seam here for a
 		// coalescing bound to cut at, which is why the fix is framing at storage.
@@ -446,7 +455,9 @@ describe('chunking is framing, and carries what no single frame could', () => {
 		phone.client.flush();
 		wire.settle();
 
-		const arrived = laptop.db.notes.document(note.id)?.get('editor', 'text');
+		const arrived = laptop.db.tables.notes
+			.document(note.id)
+			?.get('editor', 'text');
 		expect(arrived?.length).toBe(3_000_000);
 		expect(laptop.titles()).toEqual(['a big paste']);
 		expect(laptop.client.status().unresolvedDependencies).toBe(false);
@@ -458,7 +469,9 @@ describe('chunking is framing, and carries what no single frame could', () => {
 		// is independently worthless, so concatenation is doing real work.
 		const doc = new Y.Doc({ gc: true });
 		const text = doc.get('editor', 'text');
-		doc.transact(() => text.applyDelta(text.change.insert('x'.repeat(5_000_000)) as never));
+		doc.transact(() =>
+			text.applyDelta(text.change.insert('x'.repeat(5_000_000)) as never),
+		);
 		const bytes = new Uint8Array(Y.encodeStateAsUpdateV2(doc));
 		const chunks = intoChunks(bytes);
 
@@ -466,7 +479,10 @@ describe('chunking is framing, and carries what no single frame could', () => {
 		for (const chunk of chunks) {
 			const replica = new Y.Doc({ gc: true });
 			expect(() =>
-				Y.applyUpdateV2(replica, new Uint8Array(chunk) as Uint8Array<ArrayBuffer>),
+				Y.applyUpdateV2(
+					replica,
+					new Uint8Array(chunk) as Uint8Array<ArrayBuffer>,
+				),
 			).toThrow();
 			replica.destroy();
 		}
@@ -483,8 +499,10 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		const { wire, authority, phone, laptop } = setup();
 		phone.connect();
 		laptop.connect();
-		const note = expectOk(phone.db.notes.create({ title: 'a big paste' }));
-		const text = phone.db.notes.document(note.id)?.get('editor', 'text');
+		const note = expectOk(
+			phone.db.tables.notes.create({ title: 'a big paste' }),
+		);
+		const text = phone.db.tables.notes.document(note.id)?.get('editor', 'text');
 		if (text === undefined) throw new Error('the row has no document');
 		text.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
 		phone.client.flush();
@@ -506,7 +524,9 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		wire.settle();
 
 		expect(laptop.titles()).toEqual(['a big paste']);
-		const arrived = laptop.db.notes.document(note.id)?.get('editor', 'text');
+		const arrived = laptop.db.tables.notes
+			.document(note.id)
+			?.get('editor', 'text');
 		expect(arrived?.length).toBe(3_000_000);
 		expect(phone.client.status().owed).toBe(0);
 	});
@@ -518,8 +538,10 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		const { wire, authority, phone, laptop } = setup();
 		phone.connect();
 		laptop.connect();
-		const note = expectOk(phone.db.notes.create({ title: 'a big paste' }));
-		const text = phone.db.notes.document(note.id)?.get('editor', 'text');
+		const note = expectOk(
+			phone.db.tables.notes.create({ title: 'a big paste' }),
+		);
+		const text = phone.db.tables.notes.document(note.id)?.get('editor', 'text');
 		if (text === undefined) throw new Error('the row has no document');
 		text.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
 		phone.client.flush();
@@ -529,7 +551,7 @@ describe('a socket that dies part way through a chunked transfer', () => {
 
 		expect(expectOk(authority.head())).toBe(0);
 		expect(laptop.titles()).toEqual([]);
-		expect(laptop.db.notes.document(note.id)).toBeUndefined();
+		expect(laptop.db.tables.notes.document(note.id)).toBeUndefined();
 		// And the phone still owes it, which is what the reconnect above spends.
 		expect(phone.client.status().owed).toBeGreaterThan(0);
 	});
@@ -541,7 +563,10 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		// number is only ever meaningful within one socket.
 		const { authority, hub } = openAuthority();
 		const answers: Uint8Array[] = [];
-		const first: HubConnection = { cursor: 0, send: (bytes) => answers.push(bytes) };
+		const first: HubConnection = {
+			cursor: 0,
+			send: (bytes) => answers.push(bytes),
+		};
 		hub.join(first);
 		hub.receive(
 			first,
@@ -557,7 +582,10 @@ describe('a socket that dies part way through a chunked transfer', () => {
 
 		// A second socket sends what the first one had left: the tail of submission
 		// 7. It completes nothing, because there is nothing here to complete.
-		const second: HubConnection = { cursor: 0, send: (bytes) => answers.push(bytes) };
+		const second: HubConnection = {
+			cursor: 0,
+			send: (bytes) => answers.push(bytes),
+		};
 		hub.join(second);
 		answers.length = 0;
 		hub.receive(
@@ -579,7 +607,10 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		// Without this the test above passes for a hub that ignores every push.
 		const { authority, hub } = openAuthority();
 		const answers: Uint8Array[] = [];
-		const only: HubConnection = { cursor: 0, send: (bytes) => answers.push(bytes) };
+		const only: HubConnection = {
+			cursor: 0,
+			send: (bytes) => answers.push(bytes),
+		};
 		hub.join(only);
 		for (const [chunk, bytes] of [
 			[0, new Uint8Array([1, 2, 3])],
@@ -603,8 +634,10 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		// that dies in flight and is not retried is a device that never syncs again.
 		const { wire, authority, phone, laptop } = setup();
 		phone.connect();
-		const note = expectOk(phone.db.notes.create({ title: 'a big paste' }));
-		const text = phone.db.notes.document(note.id)?.get('editor', 'text');
+		const note = expectOk(
+			phone.db.tables.notes.create({ title: 'a big paste' }),
+		);
+		const text = phone.db.tables.notes.document(note.id)?.get('editor', 'text');
 		if (text === undefined) throw new Error('the row has no document');
 		text.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
 		phone.client.flush();
@@ -629,7 +662,9 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		wire.settle();
 
 		expect(laptop.titles()).toEqual(['a big paste']);
-		const arrived = laptop.db.notes.document(note.id)?.get('editor', 'text');
+		const arrived = laptop.db.tables.notes
+			.document(note.id)
+			?.get('editor', 'text');
 		expect(arrived?.length).toBe(3_000_000);
 		expect(laptop.client.status().cursor).toBe(1);
 		expect(laptop.client.status().unresolvedDependencies).toBe(false);
@@ -666,7 +701,7 @@ describe('reassembly holds partials in memory, and only in memory', () => {
 
 	test('chunks that arrive out of order reassemble into the update they were cut from', () => {
 		const { phone, laptop } = setup();
-		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		const { bytes, chunks } = cutUpdate(phone);
 		const collector = createChunkCollector({ limitBytes: 1 << 20 });
 
@@ -691,7 +726,7 @@ describe('reassembly holds partials in memory, and only in memory', () => {
 		// Without this, "out of order still reassembles" would pass for a collector
 		// that hands back whatever it holds on the first frame.
 		const { phone, laptop } = setup();
-		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		const { chunks } = cutUpdate(phone);
 		const collector = createChunkCollector({ limitBytes: 1 << 20 });
 
@@ -709,7 +744,7 @@ describe('reassembly holds partials in memory, and only in memory', () => {
 		// first chunk, so a collector that counted frames rather than filled slots
 		// would call a submission whole while a hole was still in it.
 		const { phone, laptop } = setup();
-		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		const { bytes, chunks } = cutUpdate(phone);
 		const collector = createChunkCollector({ limitBytes: 1 << 20 });
 
@@ -728,7 +763,7 @@ describe('reassembly holds partials in memory, and only in memory', () => {
 
 	test('CONTROL: repeats alone never fill the holes they duplicate', () => {
 		const { phone, laptop } = setup();
-		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		const { chunks } = cutUpdate(phone);
 		const collector = createChunkCollector({ limitBytes: 1 << 20 });
 
@@ -821,8 +856,10 @@ describe('a partial that outlives the socket that opened it', () => {
 		// and the sizes are the real ones the transport would produce.
 		const { wire, authority, phone, laptop } = setup(Number.MAX_SAFE_INTEGER);
 		phone.connect();
-		const note = expectOk(phone.db.notes.create({ title: 'a big paste' }));
-		const text = phone.db.notes.document(note.id)?.get('editor', 'text');
+		const note = expectOk(
+			phone.db.tables.notes.create({ title: 'a big paste' }),
+		);
+		const text = phone.db.tables.notes.document(note.id)?.get('editor', 'text');
 		if (text === undefined) throw new Error('the row has no document');
 		text.applyDelta(text.change.insert('x'.repeat(4_000_000)) as never);
 		phone.client.flush();
@@ -837,17 +874,21 @@ describe('a partial that outlives the socket that opened it', () => {
 		text.applyDelta(text.change.insert('y'.repeat(3_000_000)) as never);
 		phone.client.flush();
 		wire.settle();
-		expect(intoChunks(expectOk(authority.since(1))[0]?.bytes as Uint8Array)).toHaveLength(2);
+		expect(
+			intoChunks(expectOk(authority.since(1))[0]?.bytes as Uint8Array),
+		).toHaveLength(2);
 
 		return { wire, authority, phone, laptop, note, snapshotChunks };
 	}
 
 	function readProse(replica: ReturnType<typeof openReplica>, rowId: string) {
-		return replica.db.notes.document(rowId)?.get('editor', 'text').length;
+		return replica.db.tables.notes.document(rowId)?.get('editor', 'text')
+			.length;
 	}
 
 	test('a snapshot cut differently to the entry it replaces still arrives', () => {
-		const { wire, authority, phone, laptop, note, snapshotChunks } = stallMidEntry();
+		const { wire, authority, phone, laptop, note, snapshotChunks } =
+			stallMidEntry();
 
 		// The laptop takes the snapshot at 1, then the first chunk of entry 2, and
 		// its socket dies. It is now holding a partial at position 2, two chunks
@@ -863,7 +904,9 @@ describe('a partial that outlives the socket that opened it', () => {
 		// snapshot is now the only way this replica can ever converge.
 		expectOk(authority.replaceSnapshot(2, phone.store.encodeStateSince()));
 		expect(expectOk(authority.since(0, 1_000))).toEqual([]);
-		expect(intoChunks(expectOk(authority.snapshot())?.bytes as Uint8Array)).toHaveLength(4);
+		expect(
+			intoChunks(expectOk(authority.snapshot())?.bytes as Uint8Array),
+		).toHaveLength(4);
 
 		laptop.connect();
 		wire.settle();
@@ -891,11 +934,23 @@ describe('a partial that outlives the socket that opened it', () => {
 		wire.settle();
 
 		const first = phone.client.receive(
-			encodeFrame({ kind: 'entry', seq: 1, chunk: 0, chunks: 3, bytes: new Uint8Array([1]) }),
+			encodeFrame({
+				kind: 'entry',
+				seq: 1,
+				chunk: 0,
+				chunks: 3,
+				bytes: new Uint8Array([1]),
+			}),
 		);
 		expect(first.error).toBeNull();
 		const contradicting = phone.client.receive(
-			encodeFrame({ kind: 'entry', seq: 1, chunk: 1, chunks: 2, bytes: new Uint8Array([2]) }),
+			encodeFrame({
+				kind: 'entry',
+				seq: 1,
+				chunk: 1,
+				chunks: 2,
+				bytes: new Uint8Array([2]),
+			}),
 		);
 
 		expect(contradicting.error?.name).toBe('BrokenStream');
@@ -906,7 +961,8 @@ describe('a partial that outlives the socket that opened it', () => {
 		// The isolation. Same sizes, same four-chunk snapshot, same reconnect: the
 		// only difference is that this laptop's socket died on a frame boundary
 		// rather than inside a chunked entry.
-		const { wire, authority, phone, laptop, note, snapshotChunks } = stallMidEntry();
+		const { wire, authority, phone, laptop, note, snapshotChunks } =
+			stallMidEntry();
 
 		laptop.connect();
 		wire.step(snapshotChunks);
@@ -949,7 +1005,7 @@ describe('the cursor is contiguous, and a jump is refused rather than absorbed',
 		const { wire, phone, laptop } = setup();
 		phone.connect();
 		laptop.connect();
-		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		phone.client.flush();
 		wire.settle();
 
@@ -965,9 +1021,9 @@ describe('sustained traffic through one authority', () => {
 		laptop.connect();
 
 		for (let index = 0; index < 500; index += 1) {
-			expectOk(phone.db.notes.create({ title: `phone ${index}` }));
+			expectOk(phone.db.tables.notes.create({ title: `phone ${index}` }));
 			phone.client.flush();
-			expectOk(laptop.db.notes.create({ title: `laptop ${index}` }));
+			expectOk(laptop.db.tables.notes.create({ title: `laptop ${index}` }));
 			laptop.client.flush();
 			wire.settle();
 		}
@@ -981,7 +1037,6 @@ describe('sustained traffic through one authority', () => {
 		expect(laptop.client.status().lastError).toBeUndefined();
 	});
 });
-
 
 describe('an entry that will not apply is loud, not silent', () => {
 	test('the replica reports it, names the position, and moves nothing', () => {
@@ -1063,7 +1118,7 @@ describe('an entry that will not apply is loud, not silent', () => {
 		const { wire, phone, laptop } = setup();
 		phone.connect();
 		laptop.connect();
-		expectOk(laptop.db.notes.create({ title: 'Groceries' }));
+		expectOk(laptop.db.tables.notes.create({ title: 'Groceries' }));
 		laptop.client.flush();
 		wire.settle();
 
@@ -1080,21 +1135,35 @@ describe('an entry that will not apply is loud, not silent', () => {
 		const { wire, phone, laptop } = setup();
 		phone.connect();
 		laptop.connect();
-		expectOk(laptop.db.notes.create({ title: 'Groceries' }));
+		expectOk(laptop.db.tables.notes.create({ title: 'Groceries' }));
 		laptop.client.flush();
 		wire.settle();
 
-		const noop = new Uint8Array(Y.encodeStateAsUpdateV2(new Y.Doc({ gc: true })));
+		const noop = new Uint8Array(
+			Y.encodeStateAsUpdateV2(new Y.Doc({ gc: true })),
+		);
 		expect(noop.length).toBe(13);
 		const stuck = phone.client.receive(
-			encodeFrame({ kind: 'entry', seq: 2, chunk: 0, chunks: 1, bytes: new Uint8Array([9, 9, 9]) }),
+			encodeFrame({
+				kind: 'entry',
+				seq: 2,
+				chunk: 0,
+				chunks: 1,
+				bytes: new Uint8Array([9, 9, 9]),
+			}),
 		);
 		expect(stuck.error?.name).toBe('Unapplyable');
 
 		// The operator replaces entry 2's bytes. The replica takes it and moves on.
 		expectOk(
 			phone.client.receive(
-				encodeFrame({ kind: 'entry', seq: 2, chunk: 0, chunks: 1, bytes: noop }),
+				encodeFrame({
+					kind: 'entry',
+					seq: 2,
+					chunk: 0,
+					chunks: 1,
+					bytes: noop,
+				}),
 			),
 		);
 
@@ -1109,7 +1178,7 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 		phone.connect();
 		laptop.connect();
 		for (let index = 0; index < 30; index += 1) {
-			expectOk(phone.db.notes.create({ title: `note ${index}` }));
+			expectOk(phone.db.tables.notes.create({ title: `note ${index}` }));
 			phone.client.flush();
 			wire.settle();
 		}
@@ -1120,9 +1189,7 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 		// Driven directly rather than by the floor, which a thirty-note document
 		// never reaches. What is under test is what a snapshot DOES, not when the
 		// authority decides to ask for one.
-		expectOk(
-			authority.replaceSnapshot(head, phone.store.encodeStateSince()),
-		);
+		expectOk(authority.replaceSnapshot(head, phone.store.encodeStateSince()));
 
 		expect(expectOk(authority.snapshotPosition())).toBe(head);
 		expect(expectOk(authority.since(0, 1_000))).toEqual([]);
@@ -1136,7 +1203,7 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 		const { wire, authority, phone, laptop } = setup();
 		phone.connect();
 		for (let index = 0; index < 30; index += 1) {
-			expectOk(phone.db.notes.create({ title: `note ${index}` }));
+			expectOk(phone.db.tables.notes.create({ title: `note ${index}` }));
 			phone.client.flush();
 			wire.settle();
 		}
@@ -1149,7 +1216,7 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 			),
 		);
 
-		expectOk(laptop.db.notes.create({ title: 'WRITTEN OFFLINE' }));
+		expectOk(laptop.db.tables.notes.create({ title: 'WRITTEN OFFLINE' }));
 		laptop.connect();
 		wire.settle();
 		laptop.client.flush();
@@ -1170,14 +1237,14 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 		const { wire, authority, phone } = setup();
 		phone.connect();
 		const secret = 'SECRET-CANARY-therapist';
-		const note = expectOk(phone.db.notes.create({ title: secret }));
+		const note = expectOk(phone.db.tables.notes.create({ title: secret }));
 		phone.client.flush();
 		wire.settle();
-		expectOk(phone.db.notes.delete(note.id));
+		expectOk(phone.db.tables.notes.delete(note.id));
 		phone.client.flush();
 		wire.settle();
 		for (let index = 0; index < 40; index += 1) {
-			expectOk(phone.db.notes.create({ title: `filler ${index}` }));
+			expectOk(phone.db.tables.notes.create({ title: `filler ${index}` }));
 			phone.client.flush();
 			wire.settle();
 		}
@@ -1194,9 +1261,9 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 				: [expectOk(authority.snapshot())?.bytes as Uint8Array]),
 			...expectOk(authority.since(0, 1_000)).map((entry) => entry.bytes),
 		];
-		const haystack = Buffer.concat(stored.map((bytes) => Buffer.from(bytes))).toString(
-			'latin1',
-		);
+		const haystack = Buffer.concat(
+			stored.map((bytes) => Buffer.from(bytes)),
+		).toString('latin1');
 
 		expect(haystack).not.toContain(secret);
 		// CONTROL: a title that IS still live must be found, or the search is
@@ -1213,13 +1280,16 @@ describe('who may replace the snapshot', () => {
 		// the replica says about itself.
 		const { wire, authority, hub, phone } = setup();
 		phone.connect();
-		expectOk(phone.db.notes.create({ title: 'real work' }));
+		expectOk(phone.db.tables.notes.create({ title: 'real work' }));
 		phone.client.flush();
 		wire.settle();
 		const head = expectOk(authority.head());
 
 		const answers: Uint8Array[] = [];
-		const stale: HubConnection = { cursor: 0, send: (bytes) => answers.push(bytes) };
+		const stale: HubConnection = {
+			cursor: 0,
+			send: (bytes) => answers.push(bytes),
+		};
 		hub.join(stale);
 		answers.length = 0;
 		// Joining catches a connection up, so the state this guard exists for has
@@ -1251,13 +1321,16 @@ describe('who may replace the snapshot', () => {
 		const { wire, authority, phone } = setup();
 		phone.connect();
 		for (let index = 0; index < 10; index += 1) {
-			expectOk(phone.db.notes.create({ title: `note ${index}` }));
+			expectOk(phone.db.tables.notes.create({ title: `note ${index}` }));
 			phone.client.flush();
 			wire.settle();
 		}
 
 		const head = expectOk(authority.head());
-		const accepted = authority.replaceSnapshot(head, phone.store.encodeStateSince());
+		const accepted = authority.replaceSnapshot(
+			head,
+			phone.store.encodeStateSince(),
+		);
 
 		expect(accepted.error).toBeNull();
 		expect(expectOk(authority.snapshotPosition())).toBe(head);
@@ -1267,7 +1340,7 @@ describe('who may replace the snapshot', () => {
 	test('an offer running past the end of the log is refused by the authority', () => {
 		const { wire, authority, phone } = setup();
 		phone.connect();
-		expectOk(phone.db.notes.create({ title: 'one' }));
+		expectOk(phone.db.tables.notes.create({ title: 'one' }));
 		phone.client.flush();
 		wire.settle();
 		const head = expectOk(authority.head());
@@ -1279,7 +1352,6 @@ describe('who may replace the snapshot', () => {
 	});
 });
 
-
 describe('the snapshot path under sustained traffic', () => {
 	test('hundreds of sends with snapshots firing throughout still converge', () => {
 		// The scale that broke a live run against Cloudflare. The floor is dropped
@@ -1290,7 +1362,7 @@ describe('the snapshot path under sustained traffic', () => {
 		laptop.connect();
 
 		for (let index = 0; index < 300; index += 1) {
-			expectOk(phone.db.notes.create({ title: `note ${index}` }));
+			expectOk(phone.db.tables.notes.create({ title: `note ${index}` }));
 			phone.client.flush();
 			wire.settle();
 			expect(phone.client.status().inFlight).toBe(false);
@@ -1434,7 +1506,9 @@ describe('two devices whose lenses disagree', () => {
 
 		const seen = expectOk(updatedNotes.list());
 		expect(seen.nonconforming).toEqual([]);
-		expect(seen.rows).toEqual([{ id: made.id, title: 'Groceries', pinned: false }]);
+		expect(seen.rows).toEqual([
+			{ id: made.id, title: 'Groceries', pinned: false },
+		]);
 	});
 
 	test('a table the older release does not declare waits in the CRDT for one that does', () => {
@@ -1444,13 +1518,15 @@ describe('two devices whose lenses disagree', () => {
 		// updated, without anybody re-sending anything.
 		const { wire, updated, updatedNotes, older } = pair(twoTableLens);
 		expectOk(updatedNotes.create({ title: 'Groceries' }));
-		const task = expectOk(tableOf(updated.bound, 'tasks').create({ label: 'buy milk' }));
+		const task = expectOk(
+			tableOf(updated.bound, 'tasks').create({ label: 'buy milk' }),
+		);
 		updated.client.flush();
 		wire.settle();
 
 		expect(older.titles()).toEqual(['Groceries']);
 		// It holds no handle for the table and no relation to query it through.
-		expect(older.bound.tasks).toBeUndefined();
+		expect(older.bound.tables.tasks).toBeUndefined();
 		expect(
 			expectOk(
 				older.bound.query`SELECT name FROM sqlite_schema WHERE name = 'tasks'`,
@@ -1458,7 +1534,7 @@ describe('two devices whose lenses disagree', () => {
 		).toEqual([]);
 
 		// The device is updated: same store, same file, a lens that now declares it.
-		const rebound = expectOk(older.store.bindUnknown(twoTableLens));
+		const rebound = expectOk(older.store.bind(twoTableLens));
 		expect(expectOk(tableOf(rebound, 'tasks').list()).rows).toEqual([
 			{ id: task.id, label: 'buy milk' },
 		]);
@@ -1496,7 +1572,7 @@ describe('two devices whose lenses disagree', () => {
 		// `StorageFailed` for every read and write, and through the transport it
 		// was indistinguishable from a poison pill. Adding a field is the most
 		// ordinary lens change there is.
-		const rebound = expectOk(updating.store.bindUnknown(newerLens));
+		const rebound = expectOk(updating.store.bind(newerLens));
 
 		const reboundNotes = tableOf(rebound, 'notes');
 		// The pre-existing row is REPORTED rather than repaired or dropped, because
@@ -1506,14 +1582,16 @@ describe('two devices whose lenses disagree', () => {
 		const listed = expectOk(reboundNotes.list());
 		expect(listed.rows).toHaveLength(0);
 		expect(listed.nonconforming).toHaveLength(1);
-		expect(listed.nonconforming[0]?.conforming).toMatchObject({ title: 'Groceries' });
+		expect(listed.nonconforming[0]?.conforming).toMatchObject({
+			title: 'Groceries',
+		});
 		expect(expectOk(reboundNotes.ids())).toHaveLength(1);
 
 		// CONTROL: the new column really is there now, which is exactly what the
 		// old relation was missing. A drop that failed to recreate fails here.
-		expect(expectOk(reboundNotes.create({ title: 'Bread', pinned: true })).pinned).toBe(
-			true,
-		);
+		expect(
+			expectOk(reboundNotes.create({ title: 'Bread', pinned: true })).pinned,
+		).toBe(true);
 
 		// And it keeps syncing rather than stopping dead at the next entry.
 		expectOk(otherNotes.create({ title: 'Milk' }));
@@ -1539,7 +1617,7 @@ describe('two devices whose lenses disagree', () => {
 		other.client.flush();
 		wire.settle();
 
-		const rebound = expectOk(updating.store.bindUnknown(twoTableLens));
+		const rebound = expectOk(updating.store.bind(twoTableLens));
 
 		expect(expectOk(tableOf(rebound, 'tasks').list()).rows).toEqual([]);
 		expectOk(otherNotes.create({ title: 'Bread' }));
@@ -1556,7 +1634,7 @@ describe('two devices whose lenses disagree', () => {
 		const { hub } = openAuthority();
 		const absent = openReplica('absent', hub, wire);
 
-		const rebound = expectOk(absent.store.bindUnknown(twoTableLens));
+		const rebound = expectOk(absent.store.bind(twoTableLens));
 
 		expect(expectOk(tableOf(rebound, 'tasks').list()).rows).toEqual([]);
 	});
@@ -1603,7 +1681,10 @@ function createRandom(seed: number) {
  * computable in a plain `Map`: every row created and not deleted, with the last
  * title its owner gave it, present on every replica exactly once.
  */
-function fuzz(seed: number, { replicas, rounds }: { replicas: number; rounds: number }) {
+function fuzz(
+	seed: number,
+	{ replicas, rounds }: { replicas: number; rounds: number },
+) {
 	const random = createRandom(seed);
 	const wire = createWire();
 	const { authority, hub } = openAuthority(TINY_FLOOR);
@@ -1640,20 +1721,20 @@ function fuzz(seed: number, { replicas, rounds }: { replicas: number; rounds: nu
 		const roll = random.next();
 		if (roll < 0.45 || mine.length === 0) {
 			const title = `r${round} from ${index}`;
-			const made = expectOk(device.db.notes.create({ title }));
+			const made = expectOk(device.db.tables.notes.create({ title }));
 			mine.push(made.id);
 			expected.set(made.id, title);
 			seen.creates += 1;
 		} else if (roll < 0.65) {
 			const rowId = mine[random.below(mine.length)] as string;
 			const title = `r${round} edited by ${index}`;
-			expectOk(device.db.notes.update(rowId, { title }));
+			expectOk(device.db.tables.notes.update(rowId, { title }));
 			expected.set(rowId, title);
 			seen.updates += 1;
 		} else if (roll < 0.78) {
 			const at = random.below(mine.length);
 			const rowId = mine[at] as string;
-			expectOk(device.db.notes.delete(rowId));
+			expectOk(device.db.tables.notes.delete(rowId));
 			mine.splice(at, 1);
 			expected.delete(rowId);
 			seen.deletes += 1;
@@ -1661,7 +1742,9 @@ function fuzz(seed: number, { replicas, rounds }: { replicas: number; rounds: nu
 			// Prose, which is the one thing that reaches storage without going
 			// through a store verb.
 			const rowId = mine[random.below(mine.length)] as string;
-			const text = device.db.notes.document(rowId)?.get('editor', 'text');
+			const text = device.db.tables.notes
+				.document(rowId)
+				?.get('editor', 'text');
 			text?.applyDelta(text.change.insert('x') as never);
 			seen.prose += 1;
 		}
@@ -1695,7 +1778,10 @@ function fuzz(seed: number, { replicas, rounds }: { replicas: number; rounds: nu
 describe('random schedules, and everyone still agrees', () => {
 	for (const seed of [1, 7, 12345, 987654321]) {
 		test(`seed ${seed}: every replica holds exactly what was written`, () => {
-			const { devices, expected, seen } = fuzz(seed, { replicas: 3, rounds: 220 });
+			const { devices, expected, seen } = fuzz(seed, {
+				replicas: 3,
+				rounds: 220,
+			});
 
 			const wanted = [...expected.values()].sort();
 			for (const device of devices) {

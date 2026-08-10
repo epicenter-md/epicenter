@@ -12,16 +12,17 @@
  * repair does NOT converge. A rule on this branch once "worked" in a simulation
  * where nothing was ever delivered.
  */
-import { defineLens } from '@epicenter/lens';
-import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { defineLens } from '@epicenter/lens';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
-import { type BoundOf, createStore } from '../store/store.js';
+import { createStore, type LensView } from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
-import { createSyncHub, type HubConnection } from './hub.js';
 import { createSyncConnection, type SyncDial } from './connection.js';
+import { createSyncHub, type HubConnection } from './hub.js';
 
 const lens = defineLens({
 	namespace: 'so.epicenter.honeycrisp',
@@ -124,7 +125,7 @@ function openDriven({
 	const store = createStore({
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	const db = expectOk(store.bind(lens)) as BoundOf<typeof lens>;
+	const db = expectOk(store.bind(lens)) as LensView<typeof lens>;
 
 	/** Cursor each dial asked the authority to start after, oldest first. */
 	const dialledFrom: number[] = [];
@@ -170,7 +171,12 @@ function openDriven({
 		};
 	};
 
-	const connection = createSyncConnection({ store, dial, schedule: clock.schedule, ...options });
+	const connection = createSyncConnection({
+		store,
+		dial,
+		schedule: clock.schedule,
+		...options,
+	});
 
 	return {
 		store,
@@ -183,7 +189,7 @@ function openDriven({
 		},
 		breakSocket: () => breakSocket?.(),
 		titles: () =>
-			expectOk(db.notes.list())
+			expectOk(db.tables.notes.list())
 				.rows.map((row) => row.title)
 				.sort(),
 	};
@@ -235,7 +241,7 @@ describe('a write syncs without anyone remembering to say so', () => {
 		laptop.connection.start();
 		run(wire, clock, 0);
 
-		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		run(wire, clock, 1_000);
 
 		expect(laptop.titles()).toEqual(['Groceries']);
@@ -249,7 +255,7 @@ describe('a write syncs without anyone remembering to say so', () => {
 		laptop.connection.start();
 		run(wire, clock, 0);
 
-		expectOk(phone.db.notes.create({ title: 'Groceries' }));
+		expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		run(wire, clock, 0);
 
 		expect(laptop.titles()).toEqual([]);
@@ -262,14 +268,19 @@ describe('a write syncs without anyone remembering to say so', () => {
 		run(wire, clock, 0);
 
 		const note = expectOk(
-			phone.db.notes.create({ title: 'Groceries' }, { document: ['body'] }),
+			phone.db.tables.notes.create(
+				{ title: 'Groceries' },
+				{ document: ['body'] },
+			),
 		);
-		const body = phone.db.notes.document(note.id)?.get('body', 'text');
+		const body = phone.db.tables.notes.document(note.id)?.get('body', 'text');
 		if (body === undefined) throw new Error('the row has no document');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
 		run(wire, clock, 1_000);
 
-		const arrived = laptop.db.notes.document(note.id)?.get('body', 'text');
+		const arrived = laptop.db.tables.notes
+			.document(note.id)
+			?.get('body', 'text');
 		expect(JSON.stringify(arrived?.toJSON())).toContain('milk and eggs');
 	});
 });
@@ -288,9 +299,9 @@ describe('a gap is repaired without anybody noticing it', () => {
 		// The laptop loses the frame carrying the first entry, so the second is
 		// a gap and every later one is too.
 		laptop.loseNextFrames(1);
-		expectOk(phone.db.notes.create({ title: 'first' }));
+		expectOk(phone.db.tables.notes.create({ title: 'first' }));
 		run(wire, clock, 1_000);
-		expectOk(phone.db.notes.create({ title: 'second' }));
+		expectOk(phone.db.tables.notes.create({ title: 'second' }));
 		run(wire, clock, 1_000);
 		expect(laptop.connection.status().needsResync).toBe(true);
 
@@ -323,9 +334,9 @@ describe('a gap is repaired without anybody noticing it', () => {
 		run(wire, clock, 0);
 
 		laptop.loseNextFrames(1);
-		expectOk(phone.db.notes.create({ title: 'first' }));
+		expectOk(phone.db.tables.notes.create({ title: 'first' }));
 		run(wire, clock, 1_000);
-		expectOk(phone.db.notes.create({ title: 'second' }));
+		expectOk(phone.db.tables.notes.create({ title: 'second' }));
 		run(wire, clock, 60_000);
 
 		expect(laptop.titles()).toEqual([]);
@@ -339,12 +350,12 @@ describe('a socket that dies is dialled again from the replica own cursor', () =
 		phone.connection.start();
 		laptop.connection.start();
 		run(wire, clock, 0);
-		expectOk(phone.db.notes.create({ title: 'before' }));
+		expectOk(phone.db.tables.notes.create({ title: 'before' }));
 		run(wire, clock, 1_000);
 		expect(laptop.titles()).toEqual(['before']);
 
 		phone.breakSocket();
-		expectOk(phone.db.notes.create({ title: 'while offline' }));
+		expectOk(phone.db.tables.notes.create({ title: 'while offline' }));
 		run(wire, clock, 5_000);
 
 		expect(laptop.titles()).toEqual(['before', 'while offline']);
@@ -356,7 +367,7 @@ describe('a socket that dies is dialled again from the replica own cursor', () =
 		phone.connection.start();
 		laptop.connection.start();
 		run(wire, clock, 0);
-		expectOk(phone.db.notes.create({ title: 'first' }));
+		expectOk(phone.db.tables.notes.create({ title: 'first' }));
 		run(wire, clock, 1_000);
 
 		laptop.breakSocket();
@@ -400,13 +411,13 @@ describe('a submission nobody answers is not waited on forever', () => {
 
 		// The push leaves and its acknowledgement never comes back.
 		phone.loseNextFrames(1);
-		expectOk(phone.db.notes.create({ title: 'first' }));
+		expectOk(phone.db.tables.notes.create({ title: 'first' }));
 		run(wire, clock, 1_000);
 		expect(phone.connection.status().inFlight).toBe(true);
 
 		// The damage. One submission is out at a time, so nothing this device
 		// writes from here on can leave, and every layer still reports success.
-		expectOk(phone.db.notes.create({ title: 'second' }));
+		expectOk(phone.db.tables.notes.create({ title: 'second' }));
 		run(wire, clock, 5_000);
 		expect(laptop.titles()).toEqual(['first']);
 
@@ -429,7 +440,7 @@ describe('a submission nobody answers is not waited on forever', () => {
 		run(wire, clock, 0);
 
 		for (let index = 0; index < 20; index += 1) {
-			expectOk(phone.db.notes.create({ title: `note ${index}` }));
+			expectOk(phone.db.tables.notes.create({ title: `note ${index}` }));
 			run(wire, clock, 1_100);
 		}
 
@@ -449,7 +460,7 @@ describe('the driver lets go of what it has abandoned', () => {
 
 		// The socket that died two connections ago, reporting its close late.
 		stale();
-		expectOk(phone.db.notes.create({ title: 'still connected' }));
+		expectOk(phone.db.tables.notes.create({ title: 'still connected' }));
 		run(wire, clock, 1_000);
 
 		expect(laptop.titles()).toEqual(['still connected']);
@@ -463,7 +474,7 @@ describe('the driver lets go of what it has abandoned', () => {
 
 		phone.connection[Symbol.dispose]();
 		phone.breakSocket();
-		expectOk(phone.db.notes.create({ title: 'after disposal' }));
+		expectOk(phone.db.tables.notes.create({ title: 'after disposal' }));
 		run(wire, clock, 60_000);
 
 		expect(phone.dialledFrom).toHaveLength(dials);

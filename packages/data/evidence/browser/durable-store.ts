@@ -46,7 +46,8 @@ const server = Bun.serve({
 		const file = Bun.file(
 			`${outDir}${pathname === '/' ? 'index.html' : pathname.slice(1)}`,
 		);
-		if (!(await file.exists())) return new Response('not found', { status: 404 });
+		if (!(await file.exists()))
+			return new Response('not found', { status: 404 });
 		// No cross-origin isolation headers. Nothing needs them now that the
 		// durable copy is IndexedDB rather than an OPFS file, and serving them
 		// would make this page more capable than a real deployment's.
@@ -71,13 +72,19 @@ function check(label: string, held: boolean, detail: unknown = ''): void {
 
 try {
 	const page = await browser.newPage();
-	page.on('pageerror', (error) => console.log(`  page error: ${error.message}`));
+	page.on('pageerror', (error) =>
+		console.log(`  page error: ${error.message}`),
+	);
 	await page.goto(origin);
 	await page.waitForFunction('typeof globalThis.open === "function"');
 
 	console.log('1. write two notes with prose, then reload the page');
 	const opened = await page.evaluate('globalThis.open("vault")');
-	check('the store opened', (opened as { ok?: boolean }).ok === true, JSON.stringify(opened));
+	check(
+		'the store opened',
+		(opened as { ok?: boolean }).ok === true,
+		JSON.stringify(opened),
+	);
 
 	await page.evaluate('globalThis.write("Groceries", "milk and eggs")');
 	await page.evaluate('globalThis.write("Ideas", "a note about notes")');
@@ -96,7 +103,11 @@ try {
 	);
 	check(
 		'their prose survived too',
-		after.notes.every((note) => note.prose.includes('milk and eggs') || note.prose.includes('a note about notes')),
+		after.notes.every(
+			(note) =>
+				note.prose.includes('milk and eggs') ||
+				note.prose.includes('a note about notes'),
+		),
 	);
 	check(
 		'CONTROL db.query agrees with list, so the projection came back',

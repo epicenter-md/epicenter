@@ -20,16 +20,17 @@
  * first. Each was caught because a number looked odd, not because an assertion
  * failed.
  */
+
+import { Database } from 'bun:sqlite';
 import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { Database } from 'bun:sqlite';
 
 import { createStore, type Store } from '../../src/store/store.js';
 import {
 	createSyncClient,
 	createSyncConnection,
-	decodeFrame,
 	DO_SQLITE_VALUE_CAP,
+	decodeFrame,
 	encodeFrame,
 	type Frame,
 	type SyncClient,
@@ -65,11 +66,13 @@ async function stat(app: string = application): Promise<Stat> {
 	return (await response.json()) as Stat;
 }
 
-function openReplica(): { store: Store; db: ReturnType<Store['bind']> } {
+function openReplica() {
 	const store = createStore({
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	return { store, db: store.bind(lens) };
+	const bound = store.bind(lens);
+	if (bound.error !== null) throw bound.error;
+	return { store, db: bound.data };
 }
 
 /** A live socket to the authority, feeding a real client. */
@@ -100,7 +103,8 @@ async function until(
 ): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (!check()) {
-		if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+		if (Date.now() > deadline)
+			throw new Error(`timed out waiting for ${label}`);
 		await Bun.sleep(10);
 	}
 }
@@ -115,7 +119,9 @@ console.log(`\nworkerd probe against ${origin}, partition ${application}\n`);
 
 console.log('1. where the value cap actually is, bisected to the byte');
 {
-	async function stores(size: number): Promise<{ stored: boolean; failure?: string }> {
+	async function stores(
+		size: number,
+	): Promise<{ stored: boolean; failure?: string }> {
 		const response = await fetch(
 			`${origin}/probe/value-cap?app=${application}&sizes=${size}`,
 		);
@@ -136,7 +142,8 @@ console.log('1. where the value cap actually is, bisected to the byte');
 		'CONTROL 1 KB stores and 8 MB does not',
 		floor.stored && !ceiling.stored ? 'held' : 'FAILED',
 	);
-	if (!floor.stored || ceiling.stored) throw new Error('the value-cap probe is not live');
+	if (!floor.stored || ceiling.stored)
+		throw new Error('the value-cap probe is not live');
 
 	let low = 1_024;
 	let high = 8 * 1024 * 1024;
@@ -146,7 +153,10 @@ console.log('1. where the value cap actually is, bisected to the byte');
 		else high = middle;
 	}
 	report('largest value that stores', low.toLocaleString());
-	report('smallest value refused', `${high.toLocaleString()}  (${ceiling.failure ?? ''})`);
+	report(
+		'smallest value refused',
+		`${high.toLocaleString()}  (${ceiling.failure ?? ''})`,
+	);
 	report(
 		`the documented cap (${DO_SQLITE_VALUE_CAP.toLocaleString()})`,
 		low >= DO_SQLITE_VALUE_CAP
@@ -162,19 +172,20 @@ console.log('\n2. an update past the cap, through the real socket');
 	await fetch(`${origin}/probe/reset?app=${application}`);
 	const author = openReplica();
 	const reader = openReplica();
-	if (author.db.error !== null || reader.db.error !== null) throw new Error('bind failed');
 	const authorClient = createSyncClient({ store: author.store, idleMs: 20 });
 	const readerClient = createSyncClient({ store: reader.store, idleMs: 20 });
 	const authorSocket = await connect(authorClient);
 	const readerSocket = await connect(readerClient);
 
-	const note = author.db.data.notes.create({
+	const note = author.db.tables.notes.create({
 		title: 'a big paste',
 		device: 'probe',
 		at: new Date().toISOString(),
 	});
 	if (note.error !== null) throw note.error;
-	const text = author.db.data.notes.document(note.data.id)?.get('editor', 'text');
+	const text = author.db.tables.notes
+		.document(note.data.id)
+		?.get('editor', 'text');
 	if (text === undefined) throw new Error('the row has no document');
 	// One transaction, well past the cap. There is no seam here for a coalescing
 	// bound to cut at, which is why the fix has to be framing at storage.
@@ -182,7 +193,9 @@ console.log('\n2. an update past the cap, through the real socket');
 	authorClient.flush();
 
 	await until('the reader to receive the paste', () => {
-		const arrived = reader.db.data.notes.document(note.data.id)?.get('editor', 'text');
+		const arrived = reader.db.tables.notes
+			.document(note.data.id)
+			?.get('editor', 'text');
 		return (arrived?.length ?? 0) === 5_000_000;
 	});
 
@@ -190,7 +203,10 @@ console.log('\n2. an update past the cap, through the real socket');
 	report('reassembled length on the OTHER replica', 5_000_000);
 	report('head position', after.head);
 	report('bytes stored', after.storedBytes.toLocaleString());
-	report('chunks it must have taken', Math.ceil(after.storedBytes / DO_SQLITE_VALUE_CAP));
+	report(
+		'chunks it must have taken',
+		Math.ceil(after.storedBytes / DO_SQLITE_VALUE_CAP),
+	);
 	// The control: if the payload had fit in one value, this proves nothing about
 	// chunking at all.
 	report(
@@ -213,7 +229,6 @@ console.log('\n3. sustained traffic through ONE instance');
 	const messages = Number(process.env.PROBE_MESSAGES ?? '2000');
 	const author = openReplica();
 	const reader = openReplica();
-	if (author.db.error !== null || reader.db.error !== null) throw new Error('bind failed');
 	const authorClient = createSyncClient({ store: author.store, idleMs: 5 });
 	const readerClient = createSyncClient({ store: reader.store, idleMs: 5 });
 	const authorSocket = await connect(authorClient);
@@ -223,7 +238,7 @@ console.log('\n3. sustained traffic through ONE instance');
 	const startedAt = Date.now();
 	let stalledAt: number | undefined;
 	for (let index = 0; index < messages; index += 1) {
-		const written = author.db.data.notes.create({
+		const written = author.db.tables.notes.create({
 			title: `note ${index}`,
 			device: 'probe',
 			at: new Date().toISOString(),
@@ -250,9 +265,10 @@ console.log('\n3. sustained traffic through ONE instance');
 	const elapsed = Date.now() - startedAt;
 	const pushed = stalledAt ?? messages;
 
-	await until('the reader to catch up', () => readerClient.cursor() >= pushed).catch(
-		() => undefined,
-	);
+	await until(
+		'the reader to catch up',
+		() => readerClient.cursor() >= pushed,
+	).catch(() => undefined);
 	const after = await stat();
 
 	report(
@@ -265,12 +281,18 @@ console.log('\n3. sustained traffic through ONE instance');
 	report('head position', after.head);
 	report('snapshot taken at', after.snapshot === 0 ? 'NEVER' : after.snapshot);
 	report('entries still in the tail', after.entries);
-	report('wall clock', `${elapsed} ms  (${(elapsed / Math.max(pushed, 1)).toFixed(2)} ms each)`);
+	report(
+		'wall clock',
+		`${elapsed} ms  (${(elapsed / Math.max(pushed, 1)).toFixed(2)} ms each)`,
+	);
 	report('bytes stored', after.storedBytes.toLocaleString());
-	report('bytes per entry', Math.round(after.storedBytes / Math.max(after.head, 1)));
+	report(
+		'bytes per entry',
+		Math.round(after.storedBytes / Math.max(after.head, 1)),
+	);
 	report(
 		'rows on the OTHER replica',
-		reader.db.data.notes.ids().data?.length ?? 'READ FAILED',
+		reader.db.tables.notes.ids().data?.length ?? 'READ FAILED',
 	);
 	// The control that makes "one instance" mean anything. A run that crossed an
 	// eviction measured two cold objects and should not be quoted as sustained.
@@ -289,7 +311,9 @@ console.log('\n3. sustained traffic through ONE instance');
 	);
 	report(
 		'CONTROL the reader holds every row, not just a cursor',
-		(reader.db.data.notes.ids().data?.length ?? 0) === pushed ? 'held' : 'FAILED',
+		(reader.db.tables.notes.ids().data?.length ?? 0) === pushed
+			? 'held'
+			: 'FAILED',
 	);
 	// The whole point of the snapshot: the authority forgets what it covers, so
 	// the tail is a fraction of what was pushed rather than all of it.
@@ -318,10 +342,14 @@ console.log('\n4. every submission is answered, and nothing is swallowed');
 	const answers: Frame[] = [];
 	socket.addEventListener('message', (event) => {
 		if (typeof event.data === 'string') return;
-		const { data: frame } = decodeFrame(new Uint8Array(event.data as ArrayBuffer));
+		const { data: frame } = decodeFrame(
+			new Uint8Array(event.data as ArrayBuffer),
+		);
 		if (frame !== null) answers.push(frame);
 	});
-	await new Promise<void>((resolve) => socket.addEventListener('open', () => resolve()));
+	await new Promise<void>((resolve) =>
+		socket.addEventListener('open', () => resolve()),
+	);
 
 	// Six bytes of garbage, whole in one chunk. The authority never decodes what
 	// it stores, so as far as anything on the server can tell this is an ordinary
@@ -337,9 +365,11 @@ console.log('\n4. every submission is answered, and nothing is swallowed');
 			bytes: new Uint8Array([1, 2, 3, 4, 5, 6]),
 		}),
 	);
-	await until('an answer to the unreadable push', () => answers.length > 0, 15_000).catch(
-		() => undefined,
-	);
+	await until(
+		'an answer to the unreadable push',
+		() => answers.length > 0,
+		15_000,
+	).catch(() => undefined);
 	const headAfter = (await stat()).head;
 	const accepted = answers[0];
 	report(
@@ -397,12 +427,17 @@ console.log('\n4. every submission is answered, and nothing is swallowed');
 				? `refused: ${refusal.reason}`
 				: `NOT refused (${refusal.kind})`,
 	);
-	report('and nothing more was stored', (await stat()).head === headAfter ? 'held' : 'FAILED');
+	report(
+		'and nothing more was stored',
+		(await stat()).head === headAfter ? 'held' : 'FAILED',
+	);
 	// The control: the socket has to still be open, because the failure this
 	// mechanism exists for is a throw that `workerd` swallows WITHOUT closing.
 	report(
 		'CONTROL the socket is still open',
-		socket.readyState === WebSocket.OPEN ? 'held' : `FAILED (state ${socket.readyState})`,
+		socket.readyState === WebSocket.OPEN
+			? 'held'
+			: `FAILED (state ${socket.readyState})`,
 	);
 	socket.close();
 }
@@ -424,7 +459,6 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 	const partition = `${application}-driven`;
 	const author = openReplica();
 	const reader = openReplica();
-	if (author.db.error !== null || reader.db.error !== null) throw new Error('bind failed');
 
 	/** How many sockets each side has opened, which is how a recovery is counted. */
 	const dials = { author: 0, reader: 0 };
@@ -471,7 +505,8 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 	await until(
 		'both sockets to open',
 		() =>
-			authorConnection.status().connected && readerConnection.status().connected,
+			authorConnection.status().connected &&
+			readerConnection.status().connected,
 		15_000,
 	);
 
@@ -479,7 +514,7 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 	const startedAt = Date.now();
 	let abandonedAt: number | undefined;
 	for (let index = 0; index < messages; index += 1) {
-		const written = author.db.data.notes.create({
+		const written = author.db.tables.notes.create({
 			title: `note ${index}`,
 			device: 'probe',
 			at: new Date().toISOString(),
@@ -507,7 +542,7 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 
 	await until(
 		'the reader to catch up',
-		() => (reader.db.data.notes.ids().data?.length ?? 0) >= pushed,
+		() => (reader.db.tables.notes.ids().data?.length ?? 0) >= pushed,
 		60_000,
 	).catch(() => undefined);
 	const after = await stat(partition);
@@ -519,12 +554,18 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 			: `ABANDONED at message ${abandonedAt}, unrecovered`,
 	);
 	report('messages pushed', pushed.toLocaleString());
-	report('wall clock', `${elapsed} ms  (${(elapsed / Math.max(pushed, 1)).toFixed(2)} ms each)`);
+	report(
+		'wall clock',
+		`${elapsed} ms  (${(elapsed / Math.max(pushed, 1)).toFixed(2)} ms each)`,
+	);
 	report(
 		'sockets the author opened',
 		`${dials.author}  (${dials.author - 1} reconnect${dials.author === 2 ? '' : 's'})`,
 	);
-	report('last reconnect reason', authorConnection.status().lastReconnect ?? 'none');
+	report(
+		'last reconnect reason',
+		authorConnection.status().lastReconnect ?? 'none',
+	);
 	// The control that makes this the same regime as experiment 3 rather than a
 	// different one. One send per row means one ENTRY per row; a run whose sends
 	// were merged into a handful of entries measured coalescing, which is a
@@ -541,9 +582,9 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 	// while having carried no data at all.
 	report(
 		'CONTROL the reader holds every row, not just a cursor',
-		(reader.db.data.notes.ids().data?.length ?? 0) === pushed
+		(reader.db.tables.notes.ids().data?.length ?? 0) === pushed
 			? `held  (${pushed} rows)`
-			: `FAILED  (${reader.db.data.notes.ids().data?.length ?? 0} of ${pushed})`,
+			: `FAILED  (${reader.db.tables.notes.ids().data?.length ?? 0} of ${pushed})`,
 	);
 	report(
 		'CONTROL one incarnation start to end',

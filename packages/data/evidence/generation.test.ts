@@ -37,7 +37,7 @@ function open() {
 }
 
 function titles(replica: ReturnType<typeof open>): string[] {
-	return expectOk(replica.db.notes.list())
+	return expectOk(replica.db.tables.notes.list())
 		.rows.map((row) => row.title)
 		.sort();
 }
@@ -46,8 +46,8 @@ function titles(replica: ReturnType<typeof open>): string[] {
 function synchronisedPair() {
 	const laptop = open();
 	const phone = open();
-	const note = expectOk(laptop.db.notes.create({ title: 'Groceries' }));
-	expectOk(laptop.db.notes.create({ title: 'Reading list' }));
+	const note = expectOk(laptop.db.tables.notes.create({ title: 'Groceries' }));
+	expectOk(laptop.db.tables.notes.create({ title: 'Reading list' }));
 	expectOk(phone.store.applyRemote(laptop.store.encodeStateSince()));
 	return { laptop, phone, noteId: note.id };
 }
@@ -57,7 +57,7 @@ describe('a new generation seeded by SNAPSHOT keeps every identity', () => {
 		const { laptop, phone, noteId } = synchronisedPair();
 
 		// The phone goes offline and edits a row it already holds.
-		expectOk(phone.db.notes.update(noteId, { title: 'edited on a plane' }));
+		expectOk(phone.db.tables.notes.update(noteId, { title: 'edited on a plane' }));
 
 		// The laptop starts generation 2 by snapshotting itself. This is the whole
 		// rollover: no rewrite, no transformation, no interpretation of what a row
@@ -77,7 +77,7 @@ describe('a new generation seeded by SNAPSHOT keeps every identity', () => {
 		// The offline edit is not merely present, it landed on the SAME row rather
 		// than creating a second one. That is what identity preservation buys.
 		expect(titles(arriving)).toEqual(['Reading list', 'edited on a plane']);
-		expect(expectOk(arriving.db.notes.get(noteId))?.title).toBe('edited on a plane');
+		expect(expectOk(arriving.db.tables.notes.get(noteId))?.title).toBe('edited on a plane');
 		expect(arriving.store.hasUnresolvedDependencies()).toBe(false);
 	});
 
@@ -90,11 +90,11 @@ describe('a new generation seeded by SNAPSHOT keeps every identity', () => {
 		// If this test ever passes as a merge, snapshotting stopped being
 		// necessary and the test above proves nothing.
 		const { laptop, phone, noteId } = synchronisedPair();
-		expectOk(phone.db.notes.update(noteId, { title: 'edited on a plane' }));
+		expectOk(phone.db.tables.notes.update(noteId, { title: 'edited on a plane' }));
 
 		const rebuilt = open();
-		for (const row of expectOk(laptop.db.notes.list()).rows) {
-			expectOk(rebuilt.db.notes.create({ title: row.title }));
+		for (const row of expectOk(laptop.db.tables.notes.list()).rows) {
+			expectOk(rebuilt.db.tables.notes.create({ title: row.title }));
 		}
 		const seed = rebuilt.store.encodeStateSince();
 
@@ -113,7 +113,7 @@ describe('a new generation seeded by SNAPSHOT keeps every identity', () => {
 		]);
 		// And the rebuilt generation has no row at the id every device already
 		// uses, so every link, cursor and reference to it is dangling.
-		expect(expectOk(rebuilt.db.notes.get(noteId))).toBeUndefined();
+		expect(expectOk(rebuilt.db.tables.notes.get(noteId))).toBeUndefined();
 	});
 });
 
@@ -124,8 +124,8 @@ describe('the rollover needs no proof, which is why it is affordable', () => {
 		// snapshots of overlapping state merge into exactly the union. That is the
 		// requirement every withdrawn compaction design failed to satisfy.
 		const { laptop, phone, noteId } = synchronisedPair();
-		expectOk(phone.db.notes.update(noteId, { title: 'edited on a plane' }));
-		expectOk(laptop.db.notes.create({ title: 'written on the laptop' }));
+		expectOk(phone.db.tables.notes.update(noteId, { title: 'edited on a plane' }));
+		expectOk(laptop.db.tables.notes.create({ title: 'written on the laptop' }));
 
 		const both = open();
 		// Deliberately in the wrong order, and with the laggard first.
@@ -166,8 +166,8 @@ describe('choosing the next generation is not a thing a CRDT can do', () => {
 		const proposals = open();
 		const laptop = open();
 		const phone = open();
-		expectOk(laptop.db.notes.create({ title: 'the laptop says generation 2 is here' }));
-		expectOk(phone.db.notes.create({ title: 'the phone says generation 2 is here' }));
+		expectOk(laptop.db.tables.notes.create({ title: 'the laptop says generation 2 is here' }));
+		expectOk(phone.db.tables.notes.create({ title: 'the phone says generation 2 is here' }));
 
 		expectOk(proposals.store.applyRemote(laptop.store.encodeStateSince()));
 		expectOk(proposals.store.applyRemote(phone.store.encodeStateSince()));

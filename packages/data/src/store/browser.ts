@@ -37,18 +37,15 @@ import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
+import { claimNamespace, releaseNamespace } from './namespaces.js';
+import { APP_DOCUMENT, applyStoreSchema, copyBytes } from './persistence.js';
 import {
-	type Application,
-	bindOpened,
-	claimNamespace,
-	releaseNamespace,
-} from './open.js';
-import {
-	APP_DOCUMENT,
-	applyStoreSchema,
-	copyBytes,
-} from './persistence.js';
-import { createStore, StoreError, type Store } from './store.js';
+	type ApplicationOf,
+	asApplication,
+	createStore,
+	type Store,
+	StoreError,
+} from './store.js';
 
 /**
  * Whether this device's durable copy is keeping up with its live one.
@@ -66,7 +63,11 @@ import { createStore, StoreError, type Store } from './store.js';
  */
 export type StoreDurability =
 	| { readonly healthy: true }
-	| { readonly healthy: false; readonly name: string; readonly message: string };
+	| {
+			readonly healthy: false;
+			readonly name: string;
+			readonly message: string;
+	  };
 
 export type BrowserStore = Store & {
 	/** Whether the durable copy has fallen behind, and why. */
@@ -95,7 +96,8 @@ function openIndexedDb(name: string): Promise<IDBDatabase> {
 			}
 		};
 		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error ?? new Error('indexedDB.open failed'));
+		request.onerror = () =>
+			reject(request.error ?? new Error('indexedDB.open failed'));
 		// `blocked` fires when another tab holds an older version of this database
 		// open, and when it does NEITHER `success` NOR `error` follows. Without
 		// this the promise never settles, so `open` hangs with no
@@ -119,12 +121,16 @@ function readDurable(database: IDBDatabase): Promise<DurableState | undefined> {
 			.transaction(STORE_NAME, 'readonly')
 			.objectStore(STORE_NAME)
 			.get(STATE_KEY);
-		request.onsuccess = () => resolve(request.result as DurableState | undefined);
+		request.onsuccess = () =>
+			resolve(request.result as DurableState | undefined);
 		request.onerror = () => reject(request.error ?? new Error('read failed'));
 	});
 }
 
-function writeDurable(database: IDBDatabase, state: DurableState): Promise<void> {
+function writeDurable(
+	database: IDBDatabase,
+	state: DurableState,
+): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const transaction = database.transaction(STORE_NAME, 'readwrite');
 		transaction.objectStore(STORE_NAME).put(state, STATE_KEY);
@@ -137,7 +143,8 @@ function writeDurable(database: IDBDatabase, state: DurableState): Promise<void>
 }
 
 function describe(cause: unknown): { name: string; message: string } {
-	if (cause instanceof Error) return { name: cause.name, message: cause.message };
+	if (cause instanceof Error)
+		return { name: cause.name, message: cause.message };
 	return { name: 'Error', message: String(cause) };
 }
 
@@ -152,14 +159,14 @@ function describe(cause: unknown): { name: string; message: string } {
  * @example
  * ```ts
  * const { data: mail } = await open(inbox);
- * mail.messages.create({ subject: 'hi', unread: true });
- * mail.$store.pressure();
+ * mail.tables.messages.create({ subject: 'hi', unread: true });
+ * mail.pressure();
  * ```
  */
 export async function open<const TLens extends LensJson>(
 	lens: TLens,
 ): Promise<
-	Result<Application<TLens, BrowserStore>, StoreError | LensParseError>
+	Result<ApplicationOf<TLens, BrowserStore>, StoreError | LensParseError>
 > {
 	const { error: claimError } = claimNamespace(lens.namespace);
 	if (claimError !== null) return Err(claimError);
@@ -172,12 +179,20 @@ export async function open<const TLens extends LensJson>(
 		return Err(storeError);
 	}
 
-	const bound = bindOpened(lens, store);
-	if (bound.error !== null) {
+	const view = store.bind(lens);
+	if (view.error !== null) {
 		await store[Symbol.asyncDispose]().catch(() => undefined);
-		return Err(bound.error);
+		return Err(view.error);
 	}
-	return Ok(bound.data);
+	return Ok(
+		// Cast for the reason `bind` casts: matching `LensView<TLens>` structurally
+		// re-enters the per-field arktype instantiation and exceeds TypeScript's
+		// depth limit. The runtime value is the same object either way.
+		asApplication(store, view.data) as unknown as ApplicationOf<
+			TLens,
+			BrowserStore
+		>,
+	);
 }
 
 async function openBrowserStore({
@@ -250,8 +265,14 @@ async function openBrowserStore({
 			[APP_DOCUMENT],
 		);
 		return {
-			updates: updates.map((row) => ({ seq: row.seq, bytes: copyBytes(row.bytes) })),
-			outbox: outbox.map((row) => ({ id: row.id, bytes: copyBytes(row.bytes) })),
+			updates: updates.map((row) => ({
+				seq: row.seq,
+				bytes: copyBytes(row.bytes),
+			})),
+			outbox: outbox.map((row) => ({
+				id: row.id,
+				bytes: copyBytes(row.bytes),
+			})),
 			cursor: cursor[0]?.seq ?? 0,
 		};
 	}
@@ -283,7 +304,8 @@ async function openBrowserStore({
 			.catch((cause) => {
 				// First failure wins: a durable copy that has fallen behind stays
 				// behind, so later failures are consequences.
-				if (durability.healthy) durability = { healthy: false, ...describe(cause) };
+				if (durability.healthy)
+					durability = { healthy: false, ...describe(cause) };
 			})
 			.finally(() => {
 				writing = undefined;

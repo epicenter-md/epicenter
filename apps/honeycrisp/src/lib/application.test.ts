@@ -40,11 +40,9 @@ function createApplication() {
 			return disposals;
 		},
 		value: {
-			$store: {
-				pressure: () => ({ data: undefined, error: null }),
-				async [Symbol.asyncDispose]() {
-					disposals += 1;
-				},
+			pressure: () => ({ data: undefined, error: null }),
+			async [Symbol.asyncDispose]() {
+				disposals += 1;
 			},
 		} as never,
 	};

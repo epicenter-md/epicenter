@@ -38,7 +38,7 @@ export function createNotes({
 	let loadError = $state.raw<unknown>(null);
 
 	function read(): void {
-		const { data, error } = db.notes.list();
+		const { data, error } = db.tables.notes.list();
 		if (error !== null) {
 			// Reported, not just remembered. A read that fails after boot leaves
 			// `rows` at its last value, which for a first read is empty, and an
@@ -56,7 +56,7 @@ export function createNotes({
 	read();
 	// Registration is synchronous, does no I/O and never fires initially, so the
 	// read above has already seen everything (ADR-0187).
-	const stop = db.notes.subscribe(read);
+	const stop = db.tables.notes.subscribe(read);
 
 	const all = $derived(rows.filter((note) => note.deletedAt === null));
 	const deleted = $derived(rows.filter((note) => note.deletedAt !== null));
@@ -70,7 +70,7 @@ export function createNotes({
 
 	/** Apply a change, or throw so the caller's toast can present it. */
 	function update(noteId: NoteId, changes: Partial<Note>): void {
-		const { error } = db.notes.update(noteId, changes);
+		const { error } = db.tables.notes.update(noteId, changes);
 		if (error !== null) throw error;
 	}
 
@@ -97,7 +97,7 @@ export function createNotes({
 
 		create(folderId: FolderId | null): { id: NoteId } {
 			const now = InstantString.now();
-			const { data, error } = db.notes.create(
+			const { data, error } = db.tables.notes.create(
 				{
 					folderId,
 					title: '',
@@ -125,7 +125,7 @@ export function createNotes({
 		},
 
 		permanentlyDelete(noteId: NoteId): void {
-			const { error } = db.notes.delete(noteId);
+			const { error } = db.tables.notes.delete(noteId);
 			if (error !== null) throw error;
 			searchIndex.forget(noteId);
 			if (searchParams.note === noteId) searchParams.update({ note: null });

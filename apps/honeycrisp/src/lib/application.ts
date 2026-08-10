@@ -1,6 +1,6 @@
-import type { Application, Store } from '@epicenter/data';
+import type { ApplicationOf, Store } from '@epicenter/data';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
-import { type HoneycrispData, type honeycrispLens } from '@epicenter/honeycrisp';
+import type { HoneycrispData, honeycrispLens } from '@epicenter/honeycrisp';
 import { createHoneycrispState } from '../routes/state/index.js';
 import type { PlatformAuth } from './platform/types.js';
 import { attachHoneycrispSync } from './sync.js';
@@ -14,7 +14,7 @@ export type HoneycrispDependencies = {
 	 * bind. Which adapter is decided by which module compiled, never by asking
 	 * the DOM at runtime.
 	 */
-	open(): Promise<Application<typeof honeycrispLens>>;
+	open(): Promise<ApplicationOf<typeof honeycrispLens>>;
 	/**
 	 * This build's auth, when it has one.
 	 *
@@ -52,30 +52,29 @@ export async function openHoneycrispApplication(
 ): Promise<HoneycrispApplication> {
 	signal?.throwIfAborted();
 	const db = await open();
-	const store = db.$store;
 	try {
 		signal?.throwIfAborted();
 		const state = createHoneycrispState({ db, reportBackgroundError });
 		const sync =
 			auth === undefined
 				? undefined
-				: attachHoneycrispSync({ store, auth, reportBackgroundError });
+				: attachHoneycrispSync({ store: db, auth, reportBackgroundError });
 		let disposed = false;
 		return Object.freeze({
 			db,
 			state,
-			pressure: () => store.pressure(),
+			pressure: () => db.pressure(),
 			syncStatus: () => sync?.status(),
 			async [Symbol.asyncDispose]() {
 				if (disposed) return;
 				disposed = true;
 				sync?.[Symbol.dispose]();
 				state[Symbol.dispose]();
-				await store[Symbol.asyncDispose]();
+				await db[Symbol.asyncDispose]();
 			},
 		}) as HoneycrispApplication;
 	} catch (cause) {
-		await store[Symbol.asyncDispose]().catch(() => undefined);
+		await db[Symbol.asyncDispose]().catch(() => undefined);
 		throw cause;
 	}
 }

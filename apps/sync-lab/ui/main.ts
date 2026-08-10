@@ -6,9 +6,10 @@
  * device appears on another through a deployed Durable Object, which is the one
  * thing no test in this repository can establish.
  */
-import { defineLens } from '@epicenter/lens';
+
 import { createStore } from '@epicenter/data';
 import { createSyncConnection } from '@epicenter/data/sync';
+import { defineLens } from '@epicenter/lens';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
@@ -27,9 +28,7 @@ const device =
 
 const sqlite3 = await sqlite3InitModule();
 const store = createStore({
-	database: createBrowserSqliteAdapter(
-		new sqlite3.oo1.DB(':memory:') as never,
-	),
+	database: createBrowserSqliteAdapter(new sqlite3.oo1.DB(':memory:') as never),
 });
 const bound = store.bind(lens);
 if (bound.error !== null) throw bound.error;
@@ -87,7 +86,7 @@ function pressureLine(): string {
 }
 
 function render(): void {
-	const listed = db.notes.list();
+	const listed = db.tables.notes.list();
 	rows.replaceChildren(
 		...(listed.data?.rows ?? [])
 			.sort((left, right) => left.at.localeCompare(right.at))
@@ -104,9 +103,13 @@ function render(): void {
 		`cursor ${state.cursor}`,
 		state.connected ? 'connected' : `dialling (attempt ${state.attempts})`,
 		state.inFlight ? `in flight (${state.owed} B)` : 'idle',
-		state.lastError === undefined ? 'no errors' : `ERROR ${state.lastError.message}`,
+		state.lastError === undefined
+			? 'no errors'
+			: `ERROR ${state.lastError.message}`,
 		state.unresolvedDependencies ? 'UNRESOLVED DEPENDENCIES' : '',
-		state.lastReconnect === undefined ? '' : `last reconnect: ${state.lastReconnect}`,
+		state.lastReconnect === undefined
+			? ''
+			: `last reconnect: ${state.lastReconnect}`,
 		pressureLine(),
 	]
 		.filter(Boolean)
@@ -114,7 +117,7 @@ function render(): void {
 }
 
 function write(fields: { title: string }): void {
-	const written = db.notes.create({
+	const written = db.tables.notes.create({
 		title: fields.title,
 		device,
 		at: new Date().toISOString(),
@@ -141,12 +144,12 @@ title.addEventListener('keydown', (event) => {
 paste.addEventListener('click', () => {
 	// One transaction well past the 2,097,152-byte storage cap, so the chunking
 	// path is exercised by hand on a real device rather than only in a test.
-	const written = db.notes.create(
+	const written = db.tables.notes.create(
 		{ title: 'a 3 MB paste', device, at: new Date().toISOString() },
 		{ document: ['editor'] },
 	);
 	if (written.error !== null) return;
-	const text = db.notes.document(written.data.id)?.get('editor', 'text');
+	const text = db.tables.notes.document(written.data.id)?.get('editor', 'text');
 	text?.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
 	render();
 });

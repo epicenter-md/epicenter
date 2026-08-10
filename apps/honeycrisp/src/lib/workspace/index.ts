@@ -9,7 +9,7 @@
  * `SELECT * FROM notes`, and what the projection's relations are called.
  */
 
-import type { BoundOf } from '@epicenter/data';
+import type { LensView } from '@epicenter/data';
 import { defineLens, type RowOf } from '@epicenter/lens';
 
 /** Runtime-minted structural note row id. */
@@ -49,7 +49,7 @@ export const honeycrispLens = defineLens({
 });
 
 /** The typed view of one store through Honeycrisp's Lens. */
-export type HoneycrispData = BoundOf<typeof honeycrispLens>;
+export type HoneycrispData = LensView<typeof honeycrispLens>;
 
 export type Folder = RowOf<typeof foldersTable>;
 export type Note = RowOf<typeof notesTable>;
@@ -83,7 +83,7 @@ export function deleteHoneycrispFolder(
 	db: HoneycrispData,
 	folderId: FolderId,
 ): void {
-	const listed = db.notes.list();
+	const listed = db.tables.notes.list();
 	if (listed.error !== null) throw listed.error;
 	const inFolder = [
 		...listed.data.rows
@@ -94,9 +94,9 @@ export function deleteHoneycrispFolder(
 			.map((issue) => issue.address.rowId),
 	];
 	for (const noteId of inFolder) {
-		const { error } = db.notes.update(noteId, { folderId: null });
+		const { error } = db.tables.notes.update(noteId, { folderId: null });
 		if (error !== null) throw error;
 	}
-	const { error } = db.folders.delete(folderId);
+	const { error } = db.tables.folders.delete(folderId);
 	if (error !== null) throw error;
 }
