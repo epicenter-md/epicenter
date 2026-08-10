@@ -1,5 +1,5 @@
 import type { Logger } from 'wellcrafted/logger';
-import type { AuthFetch, SyncAuthClient } from './auth-contract.js';
+import type { AuthClient, AuthFetch } from './auth-contract.js';
 import { createOAuthAppAuth } from './create-oauth-app-auth.js';
 import type { Instance } from './instance.js';
 import { createInstanceTokenAuth } from './instance-token-auth.js';
@@ -48,7 +48,8 @@ export type CreateAppAuthClientOptions = {
  *   {@link InstanceSetting} guarantees a no-token instance carries the hosted
  *   base URL, so OAuth never targets a self-hosted origin.
  *
- * Both branches return a {@link SyncAuthClient}, so the result is a drop-in for
+ * Both branches carry a bearer, so both can actually open the sync socket
+ * {@link AuthClient.openWebSocket} promises, and the result is a drop-in for
  * principal-scoped cloud sync regardless of which credential model was chosen.
  * There is no persisted mode tag: the credential model is recomputed from the
  * instance at construction, not stored as a discriminator. The chosen branch is
@@ -66,7 +67,7 @@ export function createAppAuthClient(
 		now,
 		log,
 	}: CreateAppAuthClientOptions,
-): SyncAuthClient {
+): AuthClient {
 	if (instance.token) {
 		return createInstanceTokenAuth({
 			baseURL: instance.baseURL,

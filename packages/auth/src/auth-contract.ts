@@ -121,36 +121,31 @@ export type AuthClient = {
 	 * off `state`.
 	 */
 	getProfile(): Promise<Result<Principal, AuthError>>;
-	[Symbol.dispose](): void;
-};
-
-/**
- * An {@link AuthClient} that can also open authenticated WebSockets for cloud
- * sync. Only credential models that carry a bearer can do this: the OAuth/PKCE
- * client ({@link createOAuthAppAuth}) implements it, while the same-origin
- * cookie client ({@link createSameOriginCookieAuth}) is a plain `AuthClient`
- * with no `openWebSocket`, because a same-origin cookie cannot carry the bearer
- * subprotocol the rooms route requires.
- *
- * Workspace sync (`toConnection`, `openCollaboration`) requires a
- * `SyncAuthClient`, so passing a cookie client where sync is needed is a
- * compile error rather than a runtime throw.
- */
-export type SyncAuthClient = AuthClient & {
 	/**
-	 * Open a WebSocket using the same bearer boundary as `fetch`.
+	 * Open a WebSocket using the same credential boundary as `fetch`.
 	 *
-	 * Browsers cannot set `Authorization` on WebSocket upgrades, so the token is
+	 * Browsers cannot set `Authorization` on WebSocket upgrades, so a bearer is
 	 * carried as an Epicenter bearer subprotocol; the rooms route extracts it at
 	 * the upgrade and the server echoes only the main subprotocol back.
 	 *
-	 * Resolves only with a credentialed socket. When no usable bearer can be
-	 * attached it rejects with an `OpenWebSocketDenial` (`@epicenter/sync`)
-	 * instead of opening a socket doomed to a server 4401: `'permanent'`
-	 * (signed out, reauth required) means only an auth state change can help;
-	 * `'transient'` means verification was unreachable and a retry may
-	 * succeed. Waits for in-flight machine work (token refresh, `/api/session`
+	 * Every client has this method, and not every client can honor it. It
+	 * resolves only with a credentialed socket; otherwise it rejects with an
+	 * `OpenWebSocketDenial` (`@epicenter/sync`) rather than opening a socket
+	 * doomed to a server 4401. `'transient'` means verification was unreachable
+	 * and a retry may succeed. `'permanent'` means only an auth state change can
+	 * help, and it covers both the client that is merely signed out and the
+	 * credential model that can never open one: a same-origin cookie cannot
+	 * carry the subprotocol the rooms route requires, and a desktop window holds
+	 * no credential at all.
+	 *
+	 * That denial is the single answer to "can this client sync". There is no
+	 * sync-capable subtype to demand, because a caller that opens a socket has
+	 * to handle the denial either way: the models that can never sync are the
+	 * permanent arm of a channel every caller already needs.
+	 *
+	 * Waits for in-flight machine work (token refresh, `/api/session`
 	 * verification), never for a human.
 	 */
 	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
+	[Symbol.dispose](): void;
 };

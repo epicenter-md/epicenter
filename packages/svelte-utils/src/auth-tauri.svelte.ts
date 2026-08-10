@@ -1,7 +1,7 @@
 import type {
+	AuthClient,
 	InstanceSetting,
 	PersistedAuthStorage,
-	SyncAuthClient,
 } from '@epicenter/auth';
 import { createTauriDeepLinkOAuthLauncher } from '@epicenter/auth/oauth-launchers/tauri';
 import { createAppAuthClient } from './auth.svelte.js';
@@ -32,8 +32,8 @@ export type CreateHostedDeepLinkAuthOptions = {
  * persisted `Instance` fed to {@link createAppAuthClient}. Each app passes
  * only what varies: its persisted instance setting, OAuth client id,
  * registered redirect URI, hosted API origin, and credential-backed grant
- * store. The result is a reactive `SyncAuthClient`, ready for signed-in
- * workspace sync.
+ * store. The result is a reactive `AuthClient` carrying a bearer, ready for
+ * signed-in workspace sync.
  *
  * The launcher's PKCE transaction always lives in `localStorage`, never
  * `sessionStorage`: a deep-link callback can cold-start the app, which would
@@ -63,7 +63,7 @@ export function createHostedDeepLinkAuth({
 	redirectUri,
 	api,
 	persistedAuthStorage,
-}: CreateHostedDeepLinkAuthOptions): SyncAuthClient {
+}: CreateHostedDeepLinkAuthOptions): AuthClient {
 	return createAppAuthClient(instanceSetting.read(), {
 		clientId,
 		persistedAuthStorage,

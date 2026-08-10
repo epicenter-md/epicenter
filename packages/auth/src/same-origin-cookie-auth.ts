@@ -5,7 +5,7 @@ import { defineErrors } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { AuthClient, AuthFetch, AuthState } from './auth-contract.js';
-import { AuthError } from './auth-errors.js';
+import { AuthError, OpenWebSocketDenied } from './auth-errors.js';
 import { ApiSessionResponse } from './auth-types.js';
 
 /**
@@ -75,11 +75,11 @@ const SameOriginAuthError = defineErrors({
  * native clients (web app, extension, Tauri, CLI) keep using `createOAuthAppAuth`
  * and PKCE.
  *
- * It returns a plain {@link AuthClient}, NOT a `SyncAuthClient`: a same-origin
- * cookie cannot carry the bearer subprotocol the rooms route requires, so this
- * client has no `openWebSocket`, and passing it where workspace sync is needed
- * is a compile error rather than a runtime throw. The only consumer (the
- * dashboard) is a billing surface with no sync.
+ * It cannot sync. A same-origin cookie cannot carry the bearer subprotocol the
+ * rooms route requires, so `openWebSocket` denies permanently rather than being
+ * absent from the type: a caller opening a socket has to handle that denial for
+ * a signed-out client anyway, and this is the same answer for a different
+ * reason. The only consumer (the dashboard) is a billing surface with no sync.
  */
 export function createSameOriginCookieAuth({
 	baseURL,
@@ -218,6 +218,17 @@ export function createSameOriginCookieAuth({
 					status: read.status,
 				},
 			});
+		},
+		// Denied permanently, and not because this client happens to be signed
+		// out: a same-origin cookie cannot carry the bearer subprotocol the rooms
+		// route requires, so no auth state reaches a socket from here. The
+		// dashboard is a billing surface with nothing to sync, and a caller that
+		// tried would get the denial it already handles for a signed-out client.
+		async openWebSocket() {
+			throw OpenWebSocketDenied({
+				permanence: 'permanent',
+				code: 'auth-unavailable',
+			}).error;
 		},
 		[Symbol.dispose]() {
 			listeners.clear();

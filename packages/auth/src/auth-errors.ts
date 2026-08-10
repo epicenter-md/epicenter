@@ -32,8 +32,10 @@ export const AuthError = defineErrors({
 export type AuthError = InferErrors<typeof AuthError>;
 
 /**
- * Thrown (not returned) by `SyncAuthClient.openWebSocket` when no usable
- * bearer can be attached: a protected socket is never opened credential-less.
+ * Thrown (not returned) by `AuthClient.openWebSocket` when no usable bearer can
+ * be attached: a protected socket is never opened credential-less. A credential
+ * model that can never attach one (same-origin cookie, desktop window) throws
+ * this permanently rather than omitting the method.
  * The error object conforms to the `OpenWebSocketDenial` contract in
  * `@epicenter/sync`, which the sync supervisor classifies: `'permanent'`
  * parks sync until the auth state changes, `'transient'` backs off and

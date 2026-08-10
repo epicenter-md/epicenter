@@ -1,9 +1,9 @@
+import type { AuthClient } from '@epicenter/auth';
 import type { Store } from '@epicenter/data';
 import { open as openBrowser } from '@epicenter/data/browser';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
 import { type HoneycrispData, honeycrispLens } from '@epicenter/honeycrisp';
 import { createHoneycrispState } from '../routes/state/index.js';
-import type { PlatformAuth } from './platform/types.js';
 import { attachHoneycrispSync } from './sync.js';
 
 export type OpenHoneycrispOptions = {
@@ -22,7 +22,7 @@ export type OpenHoneycrispOptions = {
 	 * and addresses one Durable Object by it, so every device on one account
 	 * converges without anything being paired or invited.
 	 */
-	auth?: PlatformAuth;
+	auth?: AuthClient;
 	signal?: AbortSignal;
 };
 

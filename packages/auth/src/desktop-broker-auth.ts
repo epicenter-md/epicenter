@@ -1,5 +1,5 @@
 import { Ok } from 'wellcrafted/result';
-import type { AuthFetch, AuthState, SyncAuthClient } from './auth-contract.js';
+import type { AuthClient, AuthFetch, AuthState } from './auth-contract.js';
 import { AuthError, OpenWebSocketDenied } from './auth-errors.js';
 import type { Principal } from './auth-types.js';
 import type { InstanceSetting } from './instance-setting.js';
@@ -108,7 +108,7 @@ export function createDesktopBrokerAuth({
 	bootstrap: DesktopAuthBootstrap;
 	brokerBaseURL: string;
 	fetch?: AuthFetch;
-}): SyncAuthClient {
+}): AuthClient {
 	const baseURL = bootstrap.deployment.baseURL;
 	const broker = createDesktopBroker({ brokerBaseURL, fetch: fetchImpl });
 

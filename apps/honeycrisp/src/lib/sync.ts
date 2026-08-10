@@ -11,12 +11,16 @@
  * dial their own partition and converge; there is nothing to pair, invite or
  * approve, and no identifier this file could get wrong.
  */
-import { reportBackgroundError } from './report.js';
+
+import type { AuthClient } from '@epicenter/auth';
 import type { Store } from '@epicenter/data';
-import { createSyncConnection, type SyncConnection } from '@epicenter/data/sync';
+import {
+	createSyncConnection,
+	type SyncConnection,
+} from '@epicenter/data/sync';
 import { honeycrispLens } from '@epicenter/honeycrisp';
 import { STORE_SYNC_ROUTE } from '@epicenter/sync/store-route';
-import type { PlatformAuth } from './platform/types.js';
+import { reportBackgroundError } from './report.js';
 
 /**
  * Attach sync to an open store, for as long as this auth is signed in.
@@ -30,7 +34,7 @@ export function attachHoneycrispSync({
 	auth,
 }: {
 	store: Store;
-	auth: PlatformAuth;
+	auth: AuthClient;
 }): SyncConnection {
 	const connection = createSyncConnection({
 		store,

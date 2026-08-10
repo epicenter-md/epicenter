@@ -12,7 +12,7 @@
  * many-file migration with leaked-observer risk), not soft plumbing.
  */
 
-import type { AuthState, SyncAuthClient } from '@epicenter/auth';
+import type { AuthClient, AuthState } from '@epicenter/auth';
 
 /**
  * The principal boundary: `null` when signed out, otherwise the principal id.
@@ -44,7 +44,7 @@ function principalKey(state: AuthState) {
  * real success, so that one location gets `replace('/')` instead.
  */
 export function reloadOnPrincipalChange(
-	auth: SyncAuthClient,
+	auth: AuthClient,
 	{ callbackPath = '/auth/callback' }: { callbackPath?: string } = {},
 ) {
 	const bootKey = principalKey(auth.state);

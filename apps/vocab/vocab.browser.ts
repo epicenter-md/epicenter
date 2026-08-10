@@ -7,14 +7,14 @@
  * identity change swaps the underlying storage.
  */
 
-import type { SyncAuthClient } from '@epicenter/auth';
+import type { AuthClient } from '@epicenter/auth';
 import type { Exchange, SyncCredentialProvider } from '@epicenter/data/legacy';
 import { openBrowserEpicenter } from '@epicenter/data/legacy/browser';
 import { parseExchangeResponse } from '@epicenter/data/legacy/protocol';
 import { createHttpDocumentTransports } from '@epicenter/document-sync';
 
 type SyncAuth = Pick<
-	SyncAuthClient,
+	AuthClient,
 	'state' | 'deployment' | 'fetch' | 'onStateChange'
 >;
 

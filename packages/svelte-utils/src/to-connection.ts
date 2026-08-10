@@ -1,11 +1,11 @@
-import type { SyncAuthClient } from '@epicenter/auth';
+import type { AuthClient } from '@epicenter/auth';
 
 type ConnectionConfig = {
 	baseURL: string;
 	principalId: string;
 	nodeId: string;
-	openWebSocket: SyncAuthClient['openWebSocket'];
-	onReconnectSignal: SyncAuthClient['onStateChange'];
+	openWebSocket: AuthClient['openWebSocket'];
+	onReconnectSignal: AuthClient['onStateChange'];
 };
 
 /**
@@ -24,7 +24,7 @@ type ConnectionConfig = {
  * boot re-projects.
  */
 export function toConnection(
-	auth: SyncAuthClient,
+	auth: AuthClient,
 	nodeId: string,
 ): ConnectionConfig | null {
 	const state = auth.state;

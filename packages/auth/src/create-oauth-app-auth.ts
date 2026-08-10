@@ -4,7 +4,7 @@ import {
 	type OpenWebSocketDenial,
 } from '@epicenter/sync/auth-subprotocol';
 import type { Logger } from 'wellcrafted/logger';
-import type { AuthFetch, SyncAuthClient } from './auth-contract.js';
+import type { AuthClient, AuthFetch } from './auth-contract.js';
 import { OpenWebSocketDenied } from './auth-errors.js';
 import {
 	type AuthFetchInput,
@@ -65,7 +65,7 @@ export function createOAuthAppAuth({
 	WebSocket: WebSocketImpl = globalThis.WebSocket,
 	now = Date.now,
 	log,
-}: CreateOAuthAppAuthConfig): SyncAuthClient {
+}: CreateOAuthAppAuthConfig): AuthClient {
 	const epicenterOrigin = new URL(baseURL).origin;
 	const authority = createOAuthCredentialAuthority(
 		{ persistedAuthStorage, launcher, fetch: fetchImpl, log },

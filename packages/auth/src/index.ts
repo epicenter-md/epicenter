@@ -9,7 +9,6 @@ export type {
 	Deployment,
 	InstanceConnection,
 	InstanceConnectionStatus,
-	SyncAuthClient,
 } from './auth-contract.js';
 export * from './auth-errors.js';
 export {
