@@ -15,9 +15,9 @@
  * `@epicenter/lens` to `@epicenter/field`, compiled, MIT, and deliberately not
  * reaching `@epicenter/data`, Yjs, blobs, auth, or the app shell).
  *
- * The superseded vocabulary is at `@epicenter/lens/legacy`, including the
- * observation carrier that opens WebSockets and redials them, which is the part
- * that made the inert claim untrue while it lived here.
+ * The superseded vocabulary, including the observation carrier that opened
+ * WebSockets and redialled them, is deleted rather than moved (ADR-0227). That
+ * carrier was the part that made the inert claim untrue while it lived here.
  */
 export {
 	CalendarDateString,
