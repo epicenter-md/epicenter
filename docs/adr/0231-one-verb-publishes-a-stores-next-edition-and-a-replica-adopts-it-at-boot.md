@@ -394,9 +394,17 @@ principal no longer resolves, so the dial never reaches a Durable Object.
   distinct and the reclaim plumbing accepts only it.
 - **`deleteStore()` gets its caller**, and `DELETABLE_NAMESPACES` is replaced
   by the account's actual manifest of namespaces.
-- **Not built.** Nothing here exists in code. The nearest pieces are
-  `deleteStore()` (unrouted), ADR-0220's snapshot adoption (the join arm is
-  deployed; the funeral is new), and ADR-0232's reload lifecycle.
+- **Built: the authority half.** The boundary (`_meta`), the `replace` verb
+  (CAS on `fromBoundary`, `atHead` lease, one transaction), the dial's
+  refusal before any socket exists, and the authenticated POST on the store
+  mount (`STORE_REPLACE_ROUTE`) are implemented and test-gated
+  (`sync/transport.test.ts`, `packages/server/workers/e2e.test.ts`).
+  **Not built: the client half.** The funeral at `open()`, the durable
+  refusal note and its alarm, the reclaim walk with its branded return type,
+  the three application intents, and `deleteStore()`'s caller remain. A
+  browser `WebSocket` cannot read a refused upgrade's status or body, so the
+  funeral wave also owes a discovery path for the boundary a stale replica
+  was refused with.
 
 ## Considered alternatives
 
