@@ -1816,3 +1816,216 @@ describe('random schedules, and everyone still agrees', () => {
 		expect(first.titles()).not.toEqual([...expected.values()].sort());
 	});
 });
+
+describe('one verb publishes the next edition (ADR-0231)', () => {
+	/** Sync `count` notes through `replica`, so the log has a real tail. */
+	function author(
+		wire: Wire,
+		replica: ReturnType<typeof openReplica>,
+		count: number,
+		prefix = 'note',
+	): void {
+		for (let index = 0; index < count; index += 1) {
+			expectOk(replica.db.tables.notes.create({ title: `${prefix} ${index}` }));
+			replica.client.flush();
+			wire.settle();
+		}
+	}
+
+	test('a replace files the state at head + 1 and moves the boundary there', () => {
+		const { wire, authority, phone } = setup();
+		phone.connect();
+		author(wire, phone, 5);
+		const head = expectOk(authority.head());
+		expect(expectOk(authority.boundary())).toBe(0);
+
+		const published = expectOk(
+			authority.replace({
+				fromBoundary: 0,
+				bytes: phone.store.encodeStateSince(),
+			}),
+		);
+
+		// Positions never restart: the number line continues past everything the
+		// old edition minted, which is the entire partition between histories.
+		expect(published).toBe(head + 1);
+		expect(expectOk(authority.boundary())).toBe(head + 1);
+		expect(expectOk(authority.head())).toBe(head + 1);
+		expect(expectOk(authority.snapshotPosition())).toBe(head + 1);
+		// The old edition is gone whole: no log entries, no older snapshot.
+		expect(expectOk(authority.since(0, 1_000))).toEqual([]);
+	});
+
+	test('fromBoundary is compare-and-swap: a miss changes nothing and answers with the current boundary', () => {
+		const { wire, authority, phone } = setup();
+		phone.connect();
+		author(wire, phone, 3);
+		const first = expectOk(
+			authority.replace({
+				fromBoundary: 0,
+				bytes: phone.store.encodeStateSince(),
+			}),
+		);
+		const snapshotBefore = expectOk(authority.snapshot());
+
+		// The loser of a concurrent pair, or a retry whose first attempt landed:
+		// both arrive with a boundary that has moved on.
+		const missed = authority.replace({
+			fromBoundary: 0,
+			bytes: new Uint8Array([1, 2, 3]),
+		});
+
+		expect(missed.error?.name).toBe('BoundaryMoved');
+		expect(
+			missed.error?.name === 'BoundaryMoved' ? missed.error.boundary : -1,
+		).toBe(first);
+		// Atomicity's observable half: a refused replace left every table alone.
+		expect(expectOk(authority.boundary())).toBe(first);
+		expect(expectOk(authority.head())).toBe(first);
+		expect(expectOk(authority.snapshot())?.bytes).toEqual(
+			snapshotBefore?.bytes as Uint8Array,
+		);
+	});
+
+	test('atHead is a lease: an entry landing mid-swap refuses a reclaim, and omitting it lets a reset through', () => {
+		const { wire, authority, phone } = setup();
+		phone.connect();
+		author(wire, phone, 3);
+		const built = expectOk(authority.head());
+
+		// Another device's entry lands between building the replacement and
+		// posting it. Reclaim promised "same data", so it must be refused.
+		author(wire, phone, 1, 'landed mid-swap');
+		const refused = authority.replace({
+			fromBoundary: 0,
+			atHead: built,
+			bytes: phone.store.encodeStateSince(),
+		});
+		expect(refused.error?.name).toBe('HeadMoved');
+		expect(refused.error?.name === 'HeadMoved' ? refused.error.head : -1).toBe(
+			built + 1,
+		);
+		expect(expectOk(authority.boundary())).toBe(0);
+
+		// Reset and restore discard entries on purpose, so they omit the lease
+		// and the same moved head does not stop them.
+		const reset = expectOk(
+			authority.replace({
+				fromBoundary: 0,
+				bytes: new Uint8Array(Y.encodeStateAsUpdateV2(new Y.Doc({ gc: true }))),
+			}),
+		);
+		expect(reset).toBe(built + 2);
+	});
+
+	test('a fresh replica joining at cursor 0 receives the new edition and nothing retired', () => {
+		const { wire, authority, phone, laptop } = setup();
+		phone.connect();
+		const secret = 'RETIRED-CANARY-secret';
+		const note = expectOk(phone.db.tables.notes.create({ title: secret }));
+		phone.client.flush();
+		wire.settle();
+		expectOk(phone.db.tables.notes.delete(note.id));
+		author(wire, phone, 4, 'kept');
+
+		// Reclaim: same live data, re-minted, zero tombstones. The generic
+		// re-encoding walk is future work; a fresh document holding the same rows
+		// is the same shape from the authority's blind point of view.
+		const reborn = openReplica('reborn', createSyncHub({ authority }), wire);
+		for (const title of phone.titles()) {
+			expectOk(reborn.db.tables.notes.create({ title }));
+		}
+		const published = expectOk(
+			authority.replace({
+				fromBoundary: 0,
+				bytes: reborn.store.encodeStateSince(),
+			}),
+		);
+
+		laptop.connect();
+		wire.settle();
+		expect(laptop.titles()).toEqual(phone.titles());
+		expect(laptop.client.status().cursor).toBe(published);
+		expect(laptop.client.status().unresolvedDependencies).toBe(false);
+		// And the retired history is not merely unsent: the authority no longer
+		// holds it at all.
+		const stored = [
+			...(expectOk(authority.snapshot()) === undefined
+				? []
+				: [expectOk(authority.snapshot())?.bytes as Uint8Array]),
+			...expectOk(authority.since(0, 1_000)).map((entry) => entry.bytes),
+		];
+		const haystack = Buffer.concat(
+			stored.map((bytes) => Buffer.from(bytes)),
+		).toString('latin1');
+		expect(haystack).not.toContain(secret);
+		expect(haystack).toContain('kept 3');
+	});
+
+	test('ordinary sync continues inside the new edition, on the same number line', () => {
+		const { wire, authority, phone } = setup();
+		phone.connect();
+		author(wire, phone, 2);
+		const published = expectOk(
+			authority.replace({
+				fromBoundary: 0,
+				bytes: phone.store.encodeStateSince(),
+			}),
+		);
+
+		const writer = openReplica('writer', createSyncHub({ authority }), wire);
+		// Boot after the funeral: a wiped file joins at zero and catches up.
+		writer.connect();
+		wire.settle();
+		expectOk(writer.db.tables.notes.create({ title: 'after the break' }));
+		writer.client.flush();
+		wire.settle();
+
+		expect(expectOk(authority.head())).toBe(published + 1);
+		expect(writer.titles()).toContain('after the break');
+	});
+
+	test("replaceSnapshot keeps its own guard: an edition replace does not weaken the in-edition recap's refusal", () => {
+		const { wire, authority, phone } = setup();
+		phone.connect();
+		author(wire, phone, 2);
+		const published = expectOk(
+			authority.replace({
+				fromBoundary: 0,
+				bytes: phone.store.encodeStateSince(),
+			}),
+		);
+
+		// The recap's invariant is COVERAGE: never past the head, never backwards.
+		// The new verb files past the head on purpose; the old verb still must not.
+		const past = authority.replaceSnapshot(published + 1, new Uint8Array([0]));
+		expect(past.error?.name).toBe('SnapshotRefused');
+		const backwards = authority.replaceSnapshot(published, new Uint8Array([0]));
+		expect(backwards.error?.name).toBe('SnapshotRefused');
+	});
+
+	test('a redelivered adoption is free: a replica that already adopted reconnects and nothing repeats', () => {
+		const { wire, authority, phone, laptop } = setup();
+		phone.connect();
+		author(wire, phone, 3);
+		expectOk(
+			authority.replace({
+				fromBoundary: 0,
+				bytes: phone.store.encodeStateSince(),
+			}),
+		);
+		laptop.connect();
+		wire.settle();
+		const adopted = laptop.titles();
+
+		// The crash-shaped path: the socket died right after adoption, and boot
+		// dials again from the durable cursor. The catch-up finds nothing to send.
+		laptop.disconnect();
+		laptop.connect();
+		wire.settle();
+
+		expect(laptop.titles()).toEqual(adopted);
+		expect(laptop.client.status().lastError).toBeUndefined();
+		expect(laptop.client.status().needsResync).toBe(false);
+	});
+});

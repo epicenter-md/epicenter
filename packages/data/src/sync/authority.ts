@@ -57,10 +57,17 @@
  * indisputably owns its own unsent bytes.
  *
  * Do not reintroduce compaction, baselines, or coverage proofs here.
+ *
+ * The one thing that ever deletes history is not compaction: `replace`
+ * (ADR-0231) publishes a caller-supplied state as the namespace's next
+ * edition, whole log gone, boundary moved. It needs no coverage proof because
+ * it makes no coverage claim; a person took responsibility, the lease
+ * (`fromBoundary`, `atHead`) is the whole precondition, and the bytes stay as
+ * unread as every other byte here.
  */
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Err, type Result, trySync } from 'wellcrafted/result';
+import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 import { copyBytes } from '../store/log.js';
 import { CHUNK_BYTES, intoChunks } from './frames.js';
@@ -94,11 +101,47 @@ export const AuthorityError = defineErrors({
 		offered,
 		head,
 		current,
-	}: { offered: number; head: number; current: number }) => ({
+	}: {
+		offered: number;
+		head: number;
+		current: number;
+	}) => ({
 		message: `A snapshot at ${offered} is not usable: the log ends at ${head} and the snapshot already covers ${current}`,
 		offered,
 		head,
 		current,
+	}),
+	/**
+	 * A replace's compare-and-swap missed: the boundary is not what the caller
+	 * built from.
+	 *
+	 * The answer carries the current boundary, which is the whole of what a
+	 * refused caller needs: a retried replace whose first attempt actually
+	 * landed sees its own result here, and a genuine loser sees what it must
+	 * reconsider against (ADR-0231).
+	 */
+	BoundaryMoved: ({
+		fromBoundary,
+		boundary,
+	}: {
+		fromBoundary: number;
+		boundary: number;
+	}) => ({
+		message: `A replace from boundary ${fromBoundary} was refused: the boundary is now ${boundary}`,
+		fromBoundary,
+		boundary,
+	}),
+	/**
+	 * A reclaim's lease expired: the log grew past the head it was built from.
+	 *
+	 * Only a caller that promised "same data" supplies `atHead`, and for that
+	 * caller an entry landing mid-swap would be silently lost, which is exactly
+	 * the loss the lease exists to make loud (ADR-0231).
+	 */
+	HeadMoved: ({ atHead, head }: { atHead: number; head: number }) => ({
+		message: `A replace leased at head ${atHead} was refused: the log now ends at ${head}`,
+		atHead,
+		head,
 	}),
 });
 export type AuthorityError = InferErrors<typeof AuthorityError>;
@@ -139,6 +182,39 @@ export type SyncAuthority = {
 		position: number,
 		bytes: Uint8Array,
 	): Result<void, AuthorityError>;
+	/**
+	 * Where the current edition began: the one fact the boundary row holds.
+	 *
+	 * Zero for a namespace never replaced. Every cursor minted in a retired
+	 * edition is strictly below it, and the dial refuses `0 < cursor < boundary`
+	 * before any socket exists (ADR-0231).
+	 */
+	boundary(): Result<number, AuthorityError>;
+	/**
+	 * Publish the supplied state as this namespace's next edition.
+	 *
+	 * A NEW verb, not a reuse of `replaceSnapshot`, whose "not past head" guard
+	 * is correct for an in-edition recap and stays: a recap must never stand for
+	 * entries nobody wrote. A replace files the fresh state at `head + 1`,
+	 * deliberately past everything, deletes the whole log and every older
+	 * snapshot, and moves the boundary there. Same tables, different verb,
+	 * different invariant (ADR-0231).
+	 *
+	 * `fromBoundary` is compare-and-swap, always: the replace applies only if
+	 * the boundary still holds that value, and a miss answers with the current
+	 * one. `atHead` is a lease by intent: reclaim supplies the head it built
+	 * from and is refused if the tail moved; reset and restore omit it, because
+	 * discarding entries is the operation. The whole swap is one transaction,
+	 * so a crash leaves either the old edition intact or the new one published,
+	 * never a mixture.
+	 *
+	 * Returns the new boundary, which is also the new head.
+	 */
+	replace(args: {
+		fromBoundary: number;
+		bytes: Uint8Array;
+		atHead?: number;
+	}): Result<number, AuthorityError>;
 	/**
 	 * Whether the tail has outgrown the snapshot, and is worth replacing at all.
 	 *
@@ -182,6 +258,17 @@ export function applyAuthoritySchema(database: SqliteDatabase): void {
 			chunk    INTEGER NOT NULL,
 			bytes    BLOB    NOT NULL,
 			PRIMARY KEY (position, chunk)
+		)
+	`);
+	// One durable fact beyond the log and the snapshot: the boundary, the
+	// position where the current edition began (ADR-0231). A key-value shape
+	// rather than a one-column table so a second fact, if one ever earns its
+	// way in, is a row and not a migration.
+	database.run(`
+		CREATE TABLE IF NOT EXISTS _meta (
+			key   TEXT    NOT NULL,
+			value INTEGER NOT NULL,
+			PRIMARY KEY (key)
 		)
 	`);
 }
@@ -267,7 +354,11 @@ export function openSyncAuthority({
 				if (newest === undefined) return [];
 
 				const rows = database.all<
-					SqliteRow & { seq: number; chunk: number; bytes: Uint8Array | ArrayBuffer }
+					SqliteRow & {
+						seq: number;
+						chunk: number;
+						bytes: Uint8Array | ArrayBuffer;
+					}
 				>(
 					'SELECT seq, chunk, bytes FROM _log WHERE seq > ? AND seq <= ? ORDER BY seq, chunk',
 					[cursor, newest],
@@ -308,11 +399,13 @@ export function openSyncAuthority({
 				if (position === 0) return undefined;
 				const rows = database.all<
 					SqliteRow & { bytes: Uint8Array | ArrayBuffer }
-				>(
-					'SELECT bytes FROM _snapshot WHERE position = ? ORDER BY chunk',
-					[position],
-				);
-				return { position, bytes: join(rows.map((row) => copyBytes(row.bytes))) };
+				>('SELECT bytes FROM _snapshot WHERE position = ? ORDER BY chunk', [
+					position,
+				]);
+				return {
+					position,
+					bytes: join(rows.map((row) => copyBytes(row.bytes))),
+				};
 			});
 		},
 
@@ -325,7 +418,11 @@ export function openSyncAuthority({
 			// entry at or before `position`, so it must not run past what exists,
 			// and it must not walk history backwards.
 			if (position > head || position <= current) {
-				return AuthorityError.SnapshotRefused({ offered: position, head, current });
+				return AuthorityError.SnapshotRefused({
+					offered: position,
+					head,
+					current,
+				});
 			}
 			return read(() =>
 				database.transaction(() => {
@@ -353,6 +450,49 @@ export function openSyncAuthority({
 					}
 				}),
 			);
+		},
+
+		boundary: () => read(boundaryOf),
+
+		replace({ fromBoundary, bytes, atHead }): Result<number, AuthorityError> {
+			// Both preconditions are read INSIDE the transaction that acts on them,
+			// so the compare and the swap are one step whatever runtime holds this
+			// database. A refusal returns before anything is written, so the commit
+			// of an empty transaction is the no-op it looks like.
+			const { data: outcome, error } = read(() =>
+				database.transaction((): Result<number, AuthorityError> => {
+					const boundary = boundaryOf();
+					if (boundary !== fromBoundary) {
+						return AuthorityError.BoundaryMoved({ fromBoundary, boundary });
+					}
+					const head = headSeq();
+					if (atHead !== undefined && atHead !== head) {
+						return AuthorityError.HeadMoved({ atHead, head });
+					}
+					const next = head + 1;
+					const chunks = intoChunks(bytes, CHUNK_BYTES);
+					for (const [index, chunk] of chunks.entries()) {
+						database.run(
+							'INSERT OR REPLACE INTO _snapshot (position, chunk, bytes) VALUES (?, ?, ?)',
+							[next, index, new Uint8Array(chunk)],
+						);
+					}
+					// Every entry is at or below the head, so the whole log goes. The
+					// older snapshots go too, INCLUDING the in-edition fallback that
+					// `replaceSnapshot` keeps: the authority holds exactly one history,
+					// ever, and a retired edition retrievable even briefly is the
+					// privacy leak ADR-0220's title retired (ADR-0231).
+					database.run('DELETE FROM _log');
+					database.run('DELETE FROM _snapshot WHERE position < ?', [next]);
+					database.run(
+						"INSERT OR REPLACE INTO _meta (key, value) VALUES ('boundary', ?)",
+						[next],
+					);
+					return Ok(next);
+				}),
+			);
+			if (error !== null) return Err(error);
+			return outcome;
 		},
 
 		shouldSnapshot(): Result<boolean, AuthorityError> {
@@ -388,6 +528,14 @@ export function openSyncAuthority({
 			database.all<SqliteRow & { position: number }>(
 				'SELECT COALESCE(MAX(position), 0) AS position FROM _snapshot',
 			)[0]?.position ?? 0
+		);
+	}
+
+	function boundaryOf(): number {
+		return (
+			database.all<SqliteRow & { value: number }>(
+				"SELECT value FROM _meta WHERE key = 'boundary'",
+			)[0]?.value ?? 0
 		);
 	}
 }
