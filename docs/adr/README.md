@@ -305,5 +305,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) | A host serves bundles and brokers credentials; it owns no application data | Accepted (provisional number; amends 0209 and 0208 at what a host owns, and scopes blobs out of the CRDT) |
 | [0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md) | One runtime: a desktop SPA in a WebView, over a client-owned store | Accepted (provisional number; supersedes 0179, 0186, 0210 and 0211; refuses hosted web, the installed-app plane and the browser extension; accepts data loss with no migration) |
 | [0228](0228-a-field-is-one-value-and-a-collection-several-devices-append-to-is-a-table.md) | A field is one value, and a collection several devices append to is a table | Accepted (provisional number; relates to 0215, 0213 and 0125; refuses a per-field CRDT type system) |
+| [0230](0230-an-auth-client-always-offers-openwebsocket-and-a-model-that-cannot-sync-denies-permanently.md) | An auth client always offers `openWebSocket`, and a credential model that cannot sync denies permanently | Accepted (provisional number; amends 0079 and 0155 at the mechanism; deletes `SyncAuthClient`) |
 
 When you add an ADR, add its row here.

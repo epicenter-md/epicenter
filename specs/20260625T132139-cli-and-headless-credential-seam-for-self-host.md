@@ -94,7 +94,7 @@ epicenter daemon up
 
 ## The seam
 
-The fork already exists in the browser: pick `createInstanceTokenAuth` when `Instance.token` is present, else the OAuth client. This spec applies the same one-rule fork to the CLI, sourcing the token from the machine's environment and disk instead of localStorage. Nothing downstream changes: both clients are a `SyncAuthClient`, and the daemon already consumes the structural `WorkspaceAuthClient` view, so `createInstanceTokenAuth`'s client is a drop-in.
+The fork already exists in the browser: pick `createInstanceTokenAuth` when `Instance.token` is present, else the OAuth client. This spec applies the same one-rule fork to the CLI, sourcing the token from the machine's environment and disk instead of localStorage. Nothing downstream changes: both clients are an `AuthClient` carrying a bearer, and the daemon already consumes the structural `WorkspaceAuthClient` view, so `createInstanceTokenAuth`'s client is a drop-in.
 
 ```
                  epicenter daemon up / blobs / (future) run
@@ -110,7 +110,7 @@ The fork already exists in the browser: pick `createInstanceTokenAuth` when `Ins
         └───────────────────────────────────────────────────────┘
         the cell holds ONLY the managed OAuth grant. A static token is never
         written there (D5 refused: config is its owner).
-                                  │  SyncAuthClient | null
+                                  │  AuthClient | null
                                   ▼
                        openEpicenterRoot({ auth })   (unchanged; WorkspaceAuthClient)
 ```
@@ -147,7 +147,7 @@ export async function resolveMachineAuthClient({
   log = createLogger('machine-auth'),
   now = Date.now,
 }: ResolveMachineAuthConfig = {}): Promise<
-  Result<SyncAuthClient, MachineAuthStorageError>
+  Result<AuthClient, MachineAuthStorageError>
 > {
   // 1. A configured static token -> instance-token client (ephemeral). The
   //    bearer attaches only to baseURL's origin (ADR-0053). No disk read/write.
