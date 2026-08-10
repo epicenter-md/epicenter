@@ -32,7 +32,12 @@ export type HoneycrispApplication = {
 	readonly state: ReturnType<typeof createHoneycrispState>;
 	/** How much of this document is dead weight, for whatever wants to show it. */
 	pressure(): Store['pressure'] extends () => infer TResult ? TResult : never;
-	/** What sync is doing, or undefined when this build has no auth to attach. */
+	/**
+	 * What sync is doing, or undefined when sync is not part of this app
+	 * generation: a build with no auth to attach, or one whose dials were
+	 * permanently denied (signed out, or a desktop window that holds no
+	 * credential). Both render the same way, which is not at all.
+	 */
 	syncStatus(): SyncConnectionStatus | undefined;
 	[Symbol.asyncDispose](): Promise<void>;
 };
@@ -67,7 +72,10 @@ export async function openHoneycrispApplication({
 			db,
 			state,
 			pressure: () => db.store.pressure(),
-			syncStatus: () => sync?.status(),
+			syncStatus: () => {
+				const status = sync?.status();
+				return status === undefined || status.denied ? undefined : status;
+			},
 			async [Symbol.asyncDispose]() {
 				if (disposed) return;
 				disposed = true;

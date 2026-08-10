@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { FlushEditsOnHide } from '@epicenter/svelte';
+	import { reloadOnAuthChange } from '@epicenter/svelte/auth';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
@@ -25,6 +26,13 @@
 	const boot = new AbortController();
 	const opening = openHoneycrispApplication({ auth, signal: boot.signal });
 	$effect(() => () => boot.abort());
+
+	// A page lifetime is one auth generation. Everything above composed itself
+	// from the boot-time auth snapshot, so an identity change or a repaired
+	// credential reloads rather than swapping anything in place; the next boot
+	// rebuilds the right store and sync from scratch. On the desktop host this
+	// never fires (identity is immutable per process generation, ADR-0155).
+	$effect(() => reloadOnAuthChange(auth));
 </script>
 
 <svelte:head><title>Honeycrisp</title></svelte:head>

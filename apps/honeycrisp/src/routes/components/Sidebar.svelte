@@ -35,9 +35,9 @@
 	// deletes and nobody has that number yet.
 	let pressure = $state.raw(readPressure());
 
-	// Undefined on a build with no auth, which is not an error state: sync is
-	// attached only when there is a bearer to attach it with, so a signed-out
-	// replica showing nothing here is correct.
+	// Undefined when sync is not part of this app generation, which is not an
+	// error state: a build with no auth, a signed-out replica, and a desktop
+	// window that holds no credential all show nothing here, correctly.
 	let sync = $state.raw(honeycrisp.syncStatus());
 
 	$effect(() => {
