@@ -239,15 +239,17 @@ const autostart = {
 	isEnabled: {
 		options: resultQueryOptions({
 			queryKey: autostartKeys.isEnabled,
-			queryFn: () =>
-				tryAsync({
-					try: async () => {
-						const { data, error } = await commands.isAutostartEnabled();
-						if (error !== null) throw new Error(error);
-						return data;
-					},
-					catch: (error) => AutostartError.CheckFailed({ cause: error }),
-				}),
+			// The command already returns a Result, so its error is mapped
+			// straight across. This used to throw so an enclosing `tryAsync`
+			// could catch it and build this same error, which is a round trip
+			// through an exception to get back to where it started.
+			queryFn: async () => {
+				const { data, error } = await commands.isAutostartEnabled();
+				if (error !== null) {
+					return AutostartError.CheckFailed({ cause: new Error(error) });
+				}
+				return Ok(data);
+			},
 			// The OS login-item state can change outside the app (System Settings,
 			// another tool, the platform dropping the entry), so re-read on focus
 			// instead of trusting a stale cached value.
@@ -257,27 +259,25 @@ const autostart = {
 	enable: {
 		options: resultMutationOptions({
 			mutationKey: autostartKeys.enable,
-			mutationFn: () =>
-				tryAsync({
-					try: async () => {
-						const { error } = await commands.setAutostartEnabled(true);
-						if (error !== null) throw new Error(error);
-					},
-					catch: (error) => AutostartError.EnableFailed({ cause: error }),
-				}),
+			mutationFn: async () => {
+				const { error } = await commands.setAutostartEnabled(true);
+				if (error !== null) {
+					return AutostartError.EnableFailed({ cause: new Error(error) });
+				}
+				return Ok(undefined);
+			},
 		}),
 	},
 	disable: {
 		options: resultMutationOptions({
 			mutationKey: autostartKeys.disable,
-			mutationFn: () =>
-				tryAsync({
-					try: async () => {
-						const { error } = await commands.setAutostartEnabled(false);
-						if (error !== null) throw new Error(error);
-					},
-					catch: (error) => AutostartError.DisableFailed({ cause: error }),
-				}),
+			mutationFn: async () => {
+				const { error } = await commands.setAutostartEnabled(false);
+				if (error !== null) {
+					return AutostartError.DisableFailed({ cause: new Error(error) });
+				}
+				return Ok(undefined);
+			},
 		}),
 	},
 };

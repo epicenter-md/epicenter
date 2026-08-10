@@ -5,10 +5,8 @@
 	"description": "Browser-deployable speech-to-text SPA hosted natively by Epicenter",
 	"exports": {
 		"./app": "./src/lib/whispering/app.ts",
-		"./app/bun": "./src/lib/whispering/app.bun.ts",
 		"./commands": "./src/lib/commands.ts",
-		"./workspace": "./src/lib/workspace/index.ts",
-		"./workspace-contract": "./src/lib/workspace/contract.ts"
+		"./workspace": "./src/lib/workspace/index.ts"
 	},
 	"imports": {
 		"#platform/commands": "./src/lib/commands.tauri.ts",

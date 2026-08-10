@@ -12,7 +12,7 @@ import {
 	createBunEpicenterSyncRuntime,
 	mountBunEpicenterSyncApp,
 } from '@epicenter/server/bun';
-import { whisperingLens } from '@epicenter/whispering/workspace-contract';
+import { whisperingLens } from '@epicenter/whispering/workspace';
 import { type Context, Hono, type Next } from 'hono';
 
 const PRINCIPAL_ID = 'whispering-test-person';

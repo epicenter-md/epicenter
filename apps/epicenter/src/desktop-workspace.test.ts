@@ -17,7 +17,7 @@ import {
 } from '@epicenter/data/legacy/desktop';
 import { field, InstantString } from '@epicenter/field';
 import { optional } from '@epicenter/lens/legacy';
-import { whisperingLens } from '@epicenter/whispering/workspace-contract';
+import { whisperingLens } from '@epicenter/whispering/workspace';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
