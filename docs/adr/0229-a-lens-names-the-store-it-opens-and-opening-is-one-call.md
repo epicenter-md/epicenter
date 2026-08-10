@@ -84,7 +84,7 @@ export const inbox = defineLens({
 import { open } from '@epicenter/data/browser';
 const { data: mail } = await open(inbox);
 
-mail.messages.create({ subject: 'hi', unread: true });
+mail.tables.messages.create({ subject: 'hi', unread: true });
 mail.query`SELECT * FROM messages WHERE unread`;
 ```
 
@@ -116,22 +116,41 @@ than a platform forming: one file and one document with two claimants is
 genuinely contended, and contention earns a lifecycle. It is process-local, it
 holds namespaces rather than handles, and disposing a store releases its entry.
 
-### File-level verbs live under one reserved key
+### The application mirrors the lens, so nothing is reserved
 
 ```ts
-mail.messages.create({ … });      // the data
-mail.$store.pressure();           // the file
-mail.$store.sync;
-await mail.$store[Symbol.asyncDispose]();
+mail.tables.messages.create({ … });   // the data
+mail.kv.get();
+mail.query`SELECT …`;
+mail.pressure();                      // the file
+mail.sync;
+await mail[Symbol.asyncDispose]();
 ```
 
-`pressure`, `sync`, `stateVector`, `encodeStateSince`, `applyRemote`,
-`hasUnresolvedDependencies`, `onLocalWork`, `onCommitted` and disposal are about
-the file rather than the data. Merging them flat beside the tables would reserve
-nine table names, and table names come from users. ADR-0213 already reserves
-`query` for that reason and cites Jazz moving everything under `$jazz` in 0.18.0
-after hitting it; this is the same answer one level up. One reserved key costs
-one name instead of nine.
+A lens declares `namespace`, `title`, `tables` and `kv`. The application is the
+same shape seen from the other side, so `tables` is a container rather than a
+spread and every file-level verb is an ordinary sibling.
+
+**Corrected before merge.** A first version of this record spread the tables at
+the top level and put the file's verbs under a reserved `$store` key, citing
+Jazz's move to `$jazz` in 0.18.0. That was treating the symptom. Flattening had
+already cost this API three collisions in its first month: a draft that named
+the bound value `notes` beside a table called `notes`, `query` reserved as a
+table name (ADR-0213), and `$store` invented to hold nine more. Table names come
+from users, so under a flat shape every verb the store ever grows is a breaking
+change to their namespace. Nesting the tables ends that permanently, and it
+retires ADR-0213's reservation of `query` rather than working around it.
+
+### `bind` stays reachable on an application
+
+Opening binds the lens that named the store, so nothing has to call `bind`. It
+is not hidden, because a namespace may carry more than one interpretation and
+none of them is canonical (ADR-0160): taking a second view of a file this
+process already holds is how that is done, and it needs one document rather than
+a second open the namespace claim would refuse.
+
+What is deleted is `bindUnknown`, which existed so a lens could arrive as data
+from an installed application folder. ADR-0227 refused that plane.
 
 ### `lens` keeps its name
 
@@ -144,8 +163,9 @@ another application also writes, and ADR-0168 already refuses `schema`.
 ### What is deleted
 
 `openBunStore`, `openBrowserStore`, the `name` and `directory` parameters,
-`Store.bind`, `Store.bindUnknown`, and `Store` from the public surface.
-`createStore` stays internal to the package.
+`Store.bindUnknown`, the untyped `Bound` it returned, and the root barrel's
+re-export of `./sync`, which no consumer ever reached the transport through.
+`openMemoryStore` becomes `openMemory(lens)`, so one entry point has one shape.
 
 ## Consequences
 
@@ -169,12 +189,14 @@ another application also writes, and ADR-0168 already refuses `schema`.
   path.** A lens arriving as unknown data was the installed-app case; ADR-0227
   refused it. `parseLens` stays exported for the inspector, which reads lenses it
   did not author.
-- **`$store` is a reserved key on every bound application**, beside `kv` and
-  `query`. Three reserved names, all documented, none of them plausible as a
-  table a person would name.
+- **No table name is reserved any more.** ADR-0213 reserved `query` because a
+  table became a key on the handle that carried the method. Nesting the tables
+  retires that, and paying for it is what the 242 call sites that gained
+  `.tables.` bought.
 - **What this forecloses:** a second name for a store's location, an opener that
-  takes a path, a lens bound to a store it does not name, two lenses over one
-  namespace in one process, and `lens.open()` as a method.
+  takes a path, a lens bound to a store it does not name, two OPENS of one
+  namespace in one process, `lens.open()` as a method, and any future store verb
+  that would reserve a table name.
 
 ## Considered alternatives
 
@@ -183,8 +205,9 @@ another application also writes, and ADR-0168 already refuses `schema`.
   by its own contract, so two lenses on one store share a flat table-root space
   and collide silently if both declare `notes`. Every production call site binds
   exactly once. The case `bind` protected is served by one wider lens.
-- **Merge the file verbs flat beside the tables.** Rejected above: nine reserved
-  table names against one, in a namespace whose names come from users.
+- **Spread the tables and reserve a key for the file verbs.** Shipped for an hour
+  and corrected above. It reserves names in a namespace that belongs to users,
+  and it makes every future verb a breaking change.
 - **`lens.open()` as a method.** Rejected outright. A lens must survive
   `JSON.stringify` and `JSON.parse` and be authorable as a hand-written
   `lens.json` (ADR-0168), and a method on it breaks that in the one way the
