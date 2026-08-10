@@ -4,7 +4,7 @@
 	"description": "The Epicenter store: one document per application, a synchronous surface, and the transport that carries it.",
 	"type": "module",
 	"exports": {
-		".": "./src/store/index.ts",
+		".": "./src/index.ts",
 		"./bun": "./src/store/bun.ts",
 		"./browser": "./src/store/browser.ts",
 		"./sync": "./src/sync/index.ts"

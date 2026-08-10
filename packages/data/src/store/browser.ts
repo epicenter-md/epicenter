@@ -38,7 +38,7 @@ import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import { claimNamespace, releaseNamespace } from './namespaces.js';
-import { APP_DOCUMENT, applyStoreSchema, copyBytes } from './persistence.js';
+import { APP_DOCUMENT, applyStoreSchema, copyBytes } from './log.js';
 import {
 	type ApplicationOf,
 	asApplication,

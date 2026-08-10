@@ -6,7 +6,7 @@ import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import { claimNamespace, releaseNamespace } from './namespaces.js';
-import { applyHistorySchema } from './persistence.js';
+import { applyHistorySchema } from './log.js';
 import {
 	type ApplicationOf,
 	asApplication,

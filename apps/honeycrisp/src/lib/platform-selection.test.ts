@@ -79,7 +79,7 @@ describe('storage ownership', () => {
 		// `Epicenter` would compile, start, and keep notes in a replica the rest
 		// of this application no longer reads.
 		const source = await Bun.file(
-			join(appRoot, 'src/lib/application-platform.ts'),
+			join(appRoot, 'src/lib/dependencies.ts'),
 		).text();
 		expect(source).toContain("from '@epicenter/data/browser'");
 		expect(source).not.toContain('openDesktopEpicenter');

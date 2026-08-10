@@ -38,7 +38,7 @@ const log = createLogger('honeycrisp/application');
  *
  * Inert: nothing opens until the root calls it.
  */
-export const honeycrispPlatform: HoneycrispDependencies = {
+export const honeycrispDependencies: HoneycrispDependencies = {
 	async open() {
 		const { data, error } = await openBrowser(honeycrispLens);
 		if (error !== null) throw error;

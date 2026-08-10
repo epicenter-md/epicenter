@@ -37,21 +37,23 @@ import {
 import {
 	APP_DOCUMENT,
 	appendUpdate,
-	applyProjectionSchema,
 	applyStoreSchema,
 	copyBytes,
-	deleteProjectedRow,
 	dropOutboxThrough,
 	enqueueOutbox,
 	type OutboxEntry,
 	readCursor,
 	readOutbox,
 	readUpdates,
-	rebuildProjectedTable,
 	replaceOutboxThrough,
-	upsertProjectedRow,
 	writeCursor,
-} from './persistence.js';
+} from './log.js';
+import {
+	applyProjectionSchema,
+	deleteProjectedRow,
+	rebuildProjectedTable,
+	upsertProjectedRow,
+} from './projection.js';
 
 /**
  * Whether a document is holding updates whose dependencies never arrived.

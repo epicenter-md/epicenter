@@ -62,7 +62,7 @@ import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, type Result, trySync } from 'wellcrafted/result';
 
-import { copyBytes } from '../store/persistence.js';
+import { copyBytes } from '../store/log.js';
 import { CHUNK_BYTES, intoChunks } from './frames.js';
 
 export const AuthorityError = defineErrors({

@@ -6,7 +6,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { ModeWatcher } from 'mode-watcher';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { honeycrispPlatform } from '$lib/application-platform.js';
+	import { honeycrispDependencies } from '$lib/dependencies.js';
 	import HoneycrispAppProvider from '$lib/HoneycrispAppProvider.svelte';
 	import { openHoneycrispApplication } from '$lib/application.js';
 	import '@epicenter/ui/app.css';
@@ -23,7 +23,7 @@
 	// route on an unopened store reads empty tables and flashes "No notes yet"
 	// at someone whose notes are about to appear.
 	const boot = new AbortController();
-	const opening = openHoneycrispApplication(honeycrispPlatform, {
+	const opening = openHoneycrispApplication(honeycrispDependencies, {
 		signal: boot.signal,
 	});
 	$effect(() => () => boot.abort());

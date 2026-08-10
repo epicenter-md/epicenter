@@ -13,7 +13,7 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import type { Result } from 'wellcrafted/result';
 
-import { copyBytes } from './persistence.js';
+import { copyBytes } from './log.js';
 import { createStore } from './store.js';
 
 const lens = defineLens({

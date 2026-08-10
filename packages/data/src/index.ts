@@ -31,7 +31,7 @@ export {
 	type RowOf,
 	RowWriteError,
 } from '@epicenter/lens';
-export { COMPACTION_THRESHOLD, type OutboxEntry } from './persistence.js';
+export { COMPACTION_THRESHOLD, type OutboxEntry } from './store/log.js';
 export {
 	type ApplicationOf,
 	asApplication,
@@ -52,4 +52,4 @@ export {
 	type TableInvalidationListener,
 	type TypedTableHandle,
 	type WriteRowError,
-} from './store.js';
+} from './store/store.js';
