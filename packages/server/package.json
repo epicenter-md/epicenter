@@ -37,9 +37,7 @@
 		"lib0": "catalog:",
 		"nanoid": "catalog:",
 		"pg": "^8.20.0",
-		"wellcrafted": "catalog:",
-		"y-protocols": "catalog:",
-		"yjs": "catalog:"
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.20.3",
