@@ -172,6 +172,45 @@ A backup is not a system. It is one encoded state written to a file: a saved
 argument for a future replace. The device-local `history.sqlite3` (ADR-0214)
 is already a shelf of such arguments.
 
+### Concretely: where each number lives, and its ceiling
+
+The replica's cursor already has the right home and keeps it: one atomic
+durable record beside the updates and outbox it indexes (browser: the single
+IndexedDB record `{updates, outbox, cursor}` in `epicenter-store-<namespace>`;
+Bun: the `_cursor` relation in the store's SQLite file). The atomicity is
+load-bearing: bookmark and bytes commit as a unit, and above that the store
+orders every apply as bytes-first-cursor-after, so a crash means idempotent
+re-delivery and never a skipped entry.
+
+The boundary is one row in a `_meta` table in the authority's Durable Object
+SQLite, beside `_log` and `_snapshot`. DO SQLite is transactional across
+tables and the object is single-threaded, so the replace (CAS the boundary,
+seed the replacement as the snapshot at `head + 1`, delete the log, move the
+boundary) is one atomic step with no concurrency to reason about, and the
+dial's check is one row read before the upgrade is accepted.
+
+**Replace is a new storage verb, not a reuse of `replaceSnapshot`.** The
+in-edition recap's guard deliberately refuses any position past the head
+(a recap must never stand for entries nobody wrote); replace files the fresh
+state at `head + 1`, deliberately past it. Same tables, different verb,
+different invariant; collapsing them would weaken the recap's guard.
+
+The number ceiling, stated once so nobody rediscovers it: positions travel
+as unsigned 32-bit integers in the frame headers and never restart, so the
+lifetime budget is 4,294,967,295 entries per namespace. Coalescing caps
+production at roughly one entry per second of continuous editing per device
+(the 1-second idle timer ADR-0220 measured at a 30x reduction), so a device
+editing twenty-four hours a day exhausts the budget in about 136 years of
+never stopping; realistic capture workloads take millennia. Server storage
+is bounded at roughly twice the document's size by the snapshot cycle, with
+measured growth around 4 MB a year against a 10 GB Durable Object limit,
+and every hot query is primary-key shaped. The one real pressure point is
+the replica's own durable record: after local compaction it holds one
+baseline row containing the whole encoded document, rewritten per commit,
+about 10 MB at the old ceiling's scale. Editions are the fix for that
+number too: a reclaimed document's baseline is small again, which is the
+second, quieter argument for the verb.
+
 ### Growing is the policy, not the disease
 
 The one-document-that-grows design stays the everyday reality for every
