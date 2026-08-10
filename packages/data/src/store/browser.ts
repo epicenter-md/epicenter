@@ -316,10 +316,10 @@ async function openBrowserStore({
 		},
 	});
 
-	// Every committed change, local or arrived, and nothing else. `onLocalWork`
-	// alone would miss a remote update, which is durable state too.
-	const stopLocal = store.onLocalWork(persistDurable);
-	const stopRemote = store.onCommitted(persistDurable);
+	// `onCommitted` fires for local writes, application row-document writes, and
+	// arrived remote bytes alike. The store contract says it is strictly wider
+	// than `onLocalWork`, so it alone is correct and sufficient.
+	const stopCommitted = store.onCommitted(persistDurable);
 
 	return Ok(
 		Object.freeze({
@@ -337,8 +337,7 @@ async function openBrowserStore({
 						});
 			},
 			async [Symbol.asyncDispose]() {
-				stopLocal();
-				stopRemote();
+				stopCommitted();
 				while (writing !== undefined) await writing;
 				await store[Symbol.asyncDispose]();
 			},
