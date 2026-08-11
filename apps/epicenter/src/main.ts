@@ -16,15 +16,7 @@ import {
 	createEpicenterClient,
 	createOpenAiAgentEngine,
 } from '@epicenter/client';
-import {
-	epicenterDataRoot,
-	epicenterFolderRoot,
-} from '@epicenter/constants/app-data';
-import type { SyncCredentialProvider } from '@epicenter/data/legacy';
-import { epicenterPath } from '@epicenter/data/legacy/bun';
-import { createDesktopEpicenterOwner } from '@epicenter/data/legacy/desktop-owner';
-import { parseExchangeResponse } from '@epicenter/data/legacy/protocol';
-import { createHttpDocumentTransports } from '@epicenter/document-sync';
+import { epicenterDataRoot } from '@epicenter/constants/app-data';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { loadActiveAppCatalog } from './app-catalog.ts';
 import { COMPILED_APPLICATIONS } from './applications.ts';
@@ -33,9 +25,6 @@ import {
 	type DesktopAuthAuthority,
 } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
-import { createFolderBridge, startFolderRenderer } from './folder/bridge.ts';
-import { startFolderProjector } from './folder/project.ts';
-import { openReceiptStore } from './folder/receipts.ts';
 import { createHomeHost, type HomeHost } from './host.ts';
 import { createHomeServer } from './server.ts';
 import {
@@ -47,17 +36,10 @@ import {
 	watchParentPipe,
 } from './sidecar-runtime.ts';
 import { loadStaticAssets } from './static-assets.ts';
-import { homeLens, honeycrispMirrorLens } from './workspace.ts';
 
 async function main(): Promise<void> {
 	const parentPipe = watchParentPipe(Bun.stdin.stream());
 	let host: HomeHost | undefined;
-	let folderReceipts: ReturnType<typeof openReceiptStore> | undefined;
-	let stopFolderRenderer: (() => void) | undefined;
-	let stopFolderProjector: (() => void) | undefined;
-	let dataOwner:
-		| Awaited<ReturnType<typeof createDesktopEpicenterOwner>>
-		| undefined;
 	let desktopAuth: DesktopAuthAuthority | undefined;
 	let server: ReturnType<typeof Bun.serve> | undefined;
 	let lifecycleOwnsResources = false;
@@ -77,109 +59,23 @@ async function main(): Promise<void> {
 		// The one Epicenter root, resolved here rather than received. A desktop
 		// host and a CLI that each computed this path would have to agree on it
 		// exactly, so one TypeScript function owns it and everything else calls
-		// that (ADR-0201). `data`, `blobs`, and `app-catalog` below it are the
-		// host's own names, and everything under `apps/` is somebody else's.
+		// that (ADR-0201). `blobs` and `app-catalog` below it are the host's own
+		// names, and everything under `apps/` is somebody else's.
+		//
+		// There is no `data/` any more. The host used to open a store there, sync
+		// it, render it to markdown, project it to SQLite and serve it raw; every
+		// one of those read application data the host had no business holding
+		// (ADR-0226), and the applications on the store each own their own now
+		// (ADR-0227).
 		const dataRoot = epicenterDataRoot();
-		const replicaDirectory = join(dataRoot, 'data');
-		const authorityFetch = createDesktopAuthorityFetch(auth);
-		const documentCredentials = createDesktopSyncCredentials();
-		if (auth.bootSnapshot.state.status === 'signed-in') {
-			await documentCredentials.refresh(auth);
-		}
-		dataOwner = await createDesktopEpicenterOwner({
-			directory: replicaDirectory,
-		});
-		if (auth.bootSnapshot.state.status === 'signed-in') {
-			const syncUrl = new URL('/api/sync/v1', auth.baseURL);
-			const attached = await dataOwner.epicenter.attachSync({
-				deploymentId: new URL(auth.baseURL).href,
-				principalId: auth.bootSnapshot.state.principalId,
-				credentials: documentCredentials,
-				exchange: async (request) => {
-					await documentCredentials.refresh(auth);
-					const response = await authorityFetch(syncUrl, {
-						method: 'POST',
-						headers: { 'content-type': 'application/json' },
-						body: JSON.stringify(request),
-					});
-					if (!response.ok) {
-						throw new Error(`Epicenter sync failed (${response.status})`);
-					}
-					const parsed = parseExchangeResponse(await response.json());
-					if (parsed.error !== null) throw parsed.error;
-					return parsed.data;
-				},
-				...createHttpDocumentTransports({
-					baseUrl: auth.baseURL,
-					fetch: async (url, init) => {
-						await documentCredentials.refresh(auth);
-						return authorityFetch(url, init);
-					},
-				}),
-			});
-			if (attached.error !== null) throw attached.error;
-		}
-		// The folder a person and an agent read (ADR-0207). Receipts are machinery
-		// and stay under the data root; the markdown is the only thing that leaves
-		// it. Failing to render must never take the host down with it, so the
-		// renderer reports and the app keeps running: a stale folder is a bad day,
-		// an unbootable Epicenter is a worse one.
-		// The selected generation, read before anything that interprets a
-		// namespace. Its members declare Lenses (ADR-0210), and the folder, the
-		// projection, and the raw view must all read one list or they disagree
-		// about which namespaces exist. The generation chosen here is what this
-		// process serves for its whole lifetime; promotions apply at the next
-		// restart (ADR-0179).
+
+		// The selected generation. It is what this process serves for its whole
+		// lifetime; promotions apply at the next restart (ADR-0179).
 		const appCatalog = await loadActiveAppCatalog(
 			join(dataRoot, 'app-catalog'),
 		);
-		const hostLenses = [
-			honeycrispMirrorLens,
-			homeLens,
-			...appCatalog.apps.map((app) => app.lens),
-		];
 
-		const folderRoot = epicenterFolderRoot();
-		folderReceipts = openReceiptStore(
-			join(dataRoot, 'folder-receipts.sqlite3'),
-		);
-		const folderBridge = createFolderBridge({
-			source: dataOwner,
-			lenses: hostLenses,
-		});
-		stopFolderRenderer = startFolderRenderer({
-			root: folderRoot,
-			receipts: folderReceipts,
-			bridge: folderBridge,
-			onError: (cause) => console.error('folder render failed', cause),
-		});
-		// The queryable half of the same folder (ADR-0208). It reads the replica
-		// file directly with `mode=ro` rather than going through the runtime,
-		// because what it writes is one real table per Lens table rather than a
-		// row at a time, and the extraction is `inspection.ts`'s already.
-		stopFolderProjector = startFolderProjector({
-			root: folderRoot,
-			replicaPath: epicenterPath({ directory: replicaDirectory }),
-			lenses: hostLenses,
-			subscribe: (listener) => folderBridge.subscribe(listener),
-			onError: (cause: unknown) =>
-				console.error('folder projection failed', cause),
-		});
-
-		host = await createHomeHost({
-			engine,
-			model,
-			honeycrisp: dataOwner.epicenter.bind(honeycrispMirrorLens),
-			conversations: dataOwner.epicenter.bind(homeLens),
-			// The same bridge the renderer writes through, so `push` sends against
-			// exactly the tables the folder was rendered from.
-			folder: {
-				root: folderRoot,
-				receipts: folderReceipts,
-				lookup: folderBridge.lookup,
-				writer: folderBridge.writer,
-			},
-		});
+		host = await createHomeHost({ engine, model });
 		const blobs = createBunBlobStore({
 			directory: join(dataRoot, 'blobs'),
 		});
@@ -215,17 +111,9 @@ async function main(): Promise<void> {
 			launchToken: boot.token,
 			staticAssets,
 			appCatalog,
-			dataOwner,
 			blobs,
 			desktopAuth: auth,
 			blobRemote,
-			// The raw view reads the same replica through its own read-only
-			// handle, and interprets it through the same Lenses the folder
-			// renders (ADR-0209).
-			inspect: {
-				replicaPath: epicenterPath({ directory: replicaDirectory }),
-				lenses: hostLenses,
-			},
 		});
 
 		server = Bun.serve({
@@ -238,23 +126,13 @@ async function main(): Promise<void> {
 		process.stdout.write(`${JSON.stringify(createReadyFrame(boot.port))}\n`);
 		lifecycleOwnsResources = true;
 		const ownedHost = host;
-		const ownedData = dataOwner;
 		const ownedDesktopAuth = auth;
-		const ownedFolderStop = stopFolderRenderer;
-		const ownedProjectorStop = stopFolderProjector;
-		const ownedFolderReceipts = folderReceipts;
 		await superviseSidecar({
 			server,
 			host: {
 				async [Symbol.asyncDispose]() {
-					// Before the runtime, so no render or projection is in flight
-					// against a disposed owner or a closed receipt store.
-					ownedFolderStop?.();
-					ownedProjectorStop?.();
-					ownedFolderReceipts?.close();
 					ownedDesktopAuth[Symbol.dispose]();
 					await ownedHost[Symbol.asyncDispose]();
-					await ownedData[Symbol.asyncDispose]();
 				},
 			},
 			parentPipe,
@@ -263,39 +141,11 @@ async function main(): Promise<void> {
 	} finally {
 		if (!lifecycleOwnsResources) {
 			if (server) await server.stop(true);
-			stopFolderRenderer?.();
-			stopFolderProjector?.();
-			folderReceipts?.close();
 			desktopAuth?.[Symbol.dispose]();
 			if (host) await host[Symbol.asyncDispose]();
-			if (dataOwner) await dataOwner[Symbol.asyncDispose]();
 			await parentPipe.cancel();
 		}
 	}
-}
-
-function createDesktopSyncCredentials(): SyncCredentialProvider & {
-	refresh(authority: DesktopAuthAuthority): Promise<void>;
-} {
-	let bearer: string | undefined;
-	const listeners = new Set<() => void>();
-	return {
-		get: () => bearer,
-		subscribe(listener) {
-			listeners.add(listener);
-			return () => listeners.delete(listener);
-		},
-		async refresh(authority) {
-			const authorization = await authority.authorize();
-			const next =
-				authorization.status === 'authorized'
-					? authorization.accessToken
-					: undefined;
-			if (next === bearer) return;
-			bearer = next;
-			for (const listener of listeners) listener();
-		},
-	};
 }
 
 export function homeEngineFromEnvironment(

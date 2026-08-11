@@ -1,36 +1,36 @@
 /**
  * Home Host Tests
  *
- * Verifies that the host composes built-in app actions, optional Local Books
- * MCP tools, and one durable local replica set into a single conversation
- * surface.
+ * Verifies that the host composes boxed stdio MCP tools into one conversation
+ * surface and gates every mutation through the one session approval policy.
+ *
+ * There is nothing durable to test here any more. The host owns no application
+ * data (ADR-0226), so the in-process app catalogs, the markdown folder verbs,
+ * and the conversation rows that used to survive a restart are all gone, and
+ * with them the tests that pinned them. What is left is what the host still
+ * decides: which tools exist, who may run them, and how a direct invocation
+ * settles.
  *
  * Key behaviors:
- * - Built-in app actions are namespaced and callable through the catalog.
- * - Local Books MCP failures stay on the external-tool path.
- * - Host-local app replicas survive process restart through Bun persistence.
- * - Direct invocations ride the same approval gate as chat turns and settle
- *   as session records without ever entering the transcript.
+ * - MCP tools join the composed surface, and a subprocess that never speaks
+ *   MCP fails host creation fast
+ * - A mutation raises a host-owned approval prompt, from chat and from a
+ *   direct invocation alike, and never bypasses it
+ * - A pending approval dies with the process
+ * - Direct invocations settle as session records without entering the
+ *   transcript
  */
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type {
 	AgentEngine,
 	AgentMessagePart,
-	Approval,
 	EngineChunk,
 } from '@epicenter/agent';
-import { openBunEpicenter } from '@epicenter/data/legacy/bun';
-import type { CreateInputFor } from '@epicenter/lens/legacy';
-import { type HomeHostInputs, parseHomeCommand } from './host.ts';
-import { createOwnedTestHomeHost } from './test-home-host.ts';
 import {
-	type ConversationsData,
-	type conversationsTable,
-	homeLens,
-} from './workspace.ts';
+	createHomeHost,
+	type HomeHostInputs,
+	parseHomeCommand,
+} from './host.ts';
 
 const FIXTURE = new URL('../test-fixtures/mini-mcp-server.ts', import.meta.url)
 	.pathname;
@@ -48,27 +48,21 @@ function scriptedEngine(scripts: EngineChunk[][]): AgentEngine {
 	};
 }
 
-/** Auto-approve everything: the smoke tests exercise gated mutations headless. */
-const APPROVE_ALL: Approval = {
-	decide: () => 'auto',
-	request: async () => true,
-};
-
-function testDataDir(): string {
-	return mkdtempSync(join(tmpdir(), 'query-host-test-'));
-}
-
 const TEST_MODEL = 'test-model';
 
+/**
+ * A host over the MCP fixture, which is the only catalog left: the in-process
+ * app catalogs went with the data plane they read.
+ */
 function createTestHost(
 	options: Pick<
 		HomeHostInputs,
 		'approval' | 'engine' | 'localBooks' | 'localSource'
 	>,
 ) {
-	return createOwnedTestHomeHost({
-		dataDir: testDataDir(),
+	return createHomeHost({
 		model: TEST_MODEL,
+		localBooks: { command: 'bun', args: [FIXTURE] },
 		...options,
 	});
 }
@@ -96,90 +90,14 @@ function toolResults(parts: AgentMessagePart[]) {
 	return parts.filter((part) => part.type === 'tool-result');
 }
 
-/** Read the conversation rows a disposed host left behind in its data dir. */
-async function readConversationRows(dataDir: string) {
-	await using epicenter = await openBunEpicenter({
-		directory: join(dataDir, 'data'),
-	});
-	const conversations = epicenter.bind(homeLens).conversations;
-	return (await conversations.scan()).rows;
-}
-
 describe('createHomeHost', () => {
-	test('composes the in-process apps under namespaced verbs', async () => {
-		await using host = await createTestHost({
-			engine: scriptedEngine([[]]),
-		});
-		const names = host.toolDefinitions().map((d) => d.name);
-		expect(names).toContain('honeycrisp__folders_create');
-		expect(names).toContain('honeycrisp__folders_list');
-		expect(names).toContain('honeycrisp__folders_delete');
-	});
-
-	test('the markdown folder contributes its two verbs, and push asks first', async () => {
-		await using host = await createTestHost({
-			engine: scriptedEngine([[]]),
-		});
-		const definitions = host.toolDefinitions();
-		const status = definitions.find((d) => d.name === 'folder__status');
-		const push = definitions.find((d) => d.name === 'folder__push');
-
-		// A read is a read; a write door is a mutation, so the session's default
-		// approval prompts before anything leaves the folder (ADR-0207).
-		expect(status?.kind).toBe('query');
-		expect(push?.kind).toBe('mutation');
-		// Neither takes an argument: any narrowing flag is the one ADR-0207
-		// forbids, because it could skip the deletion section of a push.
-		expect(push?.inputSchema).toEqual({
-			type: 'object',
-			properties: {},
-			additionalProperties: false,
-		});
-	});
-
-	test('one chat turn drives an in-process verb end to end', async () => {
-		const engine = scriptedEngine([
-			[
-				{
-					type: 'tool-call',
-					toolCallId: 'call-1',
-					toolName: 'honeycrisp__folders_create',
-					input: { name: 'Buy milk' },
-				},
-			],
-			[{ type: 'text-delta', delta: 'Created your folder.' }],
-		]);
-		await using host = await createTestHost({
-			engine,
-			approval: APPROVE_ALL,
-		});
-
-		await host.handleCommand({
-			type: 'send',
-			content: 'create a Honeycrisp folder',
-		});
-		await settle(host);
-
-		const { messages, error } = host.snapshot().conversation;
-		expect(error).toBeNull();
-		const results = messages.flatMap((m) => toolResults(m.parts));
-		expect(results).toHaveLength(1);
-		expect(results[0]!.isError).toBe(false);
-		// folders_create returns the created folder row: proof the verb ran in-process.
-		expect(typeof results[0]!.content).toBe('string');
-		expect(messages.at(-1)!.parts).toContainEqual({
-			type: 'text',
-			text: 'Created your folder.',
-		});
-	});
-
 	test('host-owned approval prompt gates a mutation and approval resumes the turn', async () => {
 		const engine = scriptedEngine([
 			[
 				{
 					type: 'tool-call',
 					toolCallId: 'call-1',
-					toolName: 'honeycrisp__folders_create',
+					toolName: 'localbooks__write_off',
 					input: { name: 'Needs approval' },
 				},
 			],
@@ -199,7 +117,7 @@ describe('createHomeHost', () => {
 		expect(approval).toEqual(
 			expect.objectContaining({
 				toolCallId: 'call-1',
-				toolName: 'honeycrisp__folders_create',
+				toolName: 'localbooks__write_off',
 				input: { name: 'Needs approval' },
 			}),
 		);
@@ -231,7 +149,7 @@ describe('createHomeHost', () => {
 				{
 					type: 'tool-call',
 					toolCallId: 'call-1',
-					toolName: 'honeycrisp__folders_create',
+					toolName: 'localbooks__write_off',
 					input: { name: 'First' },
 				},
 			],
@@ -240,7 +158,7 @@ describe('createHomeHost', () => {
 				{
 					type: 'tool-call',
 					toolCallId: 'call-2',
-					toolName: 'honeycrisp__folders_create',
+					toolName: 'localbooks__write_off',
 					input: { name: 'Second' },
 				},
 			],
@@ -322,232 +240,34 @@ describe('createHomeHost', () => {
 		expect(results[0]!.content).toContain('Acme | 4200.00');
 	});
 
-	test('a second host over the same data dir resumes the persisted transcript', async () => {
-		const dataDir = testDataDir();
+	test('a pending approval dies with the host that raised it', async () => {
 		{
-			await using host = await createOwnedTestHomeHost({
-				dataDir,
-				model: TEST_MODEL,
-				engine: scriptedEngine([
-					[{ type: 'text-delta', delta: 'Hello from host A.' }],
-				]),
-			});
-			await host.handleCommand({
-				type: 'send',
-				content: 'remember this session',
-			});
-			await settle(host);
-		}
-
-		await using host = await createOwnedTestHomeHost({
-			dataDir,
-			model: TEST_MODEL,
-			engine: scriptedEngine([[]]),
-		});
-		const { messages } = host.snapshot().conversation;
-		expect(messages).toHaveLength(2);
-		expect(messages[0]!.parts).toContainEqual({
-			type: 'text',
-			text: 'remember this session',
-		});
-		expect(messages[1]!.parts).toContainEqual({
-			type: 'text',
-			text: 'Hello from host A.',
-		});
-	});
-
-	test('boot creates one blank conversation; the first send names it', async () => {
-		const dataDir = testDataDir();
-		// Boot and dispose without ever sending.
-		await (
-			await createOwnedTestHomeHost({
-				dataDir,
-				model: TEST_MODEL,
-				engine: scriptedEngine([[]]),
-			})
-		)[Symbol.asyncDispose]();
-		const blankRows = await readConversationRows(dataDir);
-		expect(blankRows).toHaveLength(1);
-		expect(blankRows[0]!.title).toBe('New Chat');
-
-		const content =
-			'summarize the quarterly numbers and flag anything that looks off';
-		{
-			await using host = await createOwnedTestHomeHost({
-				dataDir,
-				model: TEST_MODEL,
-				engine: scriptedEngine([[{ type: 'text-delta', delta: 'Done.' }]]),
-			});
-			await host.handleCommand({ type: 'send', content });
-			await settle(host);
-		}
-
-		const rows = await readConversationRows(dataDir);
-		expect(rows).toHaveLength(1);
-		expect(rows[0]!.title).toBe(content.slice(0, 50));
-		expect(rows[0]!.model).toBe(TEST_MODEL);
-		expect(rows[0]!.updatedAt >= rows[0]!.createdAt).toBe(true);
-	});
-
-	test('a later send keeps the first-message title and bumps updatedAt', async () => {
-		const dataDir = testDataDir();
-		{
-			await using host = await createOwnedTestHomeHost({
-				dataDir,
-				model: TEST_MODEL,
-				engine: scriptedEngine([[{ type: 'text-delta', delta: 'Sure.' }]]),
-			});
-			await host.handleCommand({
-				type: 'send',
-				content: 'first message names it',
-			});
-			await settle(host);
-			// Instants have millisecond resolution; a beat apart so the bump shows.
-			await new Promise((resolve) => setTimeout(resolve, 5));
-			await host.handleCommand({ type: 'send', content: 'second message' });
-			await settle(host);
-		}
-
-		const rows = await readConversationRows(dataDir);
-		expect(rows).toHaveLength(1);
-		expect(rows[0]!.title).toBe('first message names it');
-		expect(rows[0]!.updatedAt > rows[0]!.createdAt).toBe(true);
-	});
-
-	test('clear starts a fresh conversation and boot resumes the most recent one', async () => {
-		const dataDir = testDataDir();
-		{
-			await using host = await createOwnedTestHomeHost({
-				dataDir,
-				model: TEST_MODEL,
-				engine: scriptedEngine([[{ type: 'text-delta', delta: 'Okay.' }]]),
-			});
-			await host.handleCommand({ type: 'send', content: 'the first session' });
-			await settle(host);
-			expect(await host.handleCommand({ type: 'clear' })).toBe(true);
-			expect(host.snapshot().conversation.messages).toHaveLength(0);
-			await new Promise((resolve) => setTimeout(resolve, 5));
-			await host.handleCommand({ type: 'send', content: 'the second session' });
-			await settle(host);
-		}
-		expect(await readConversationRows(dataDir)).toHaveLength(2);
-
-		await using host = await createOwnedTestHomeHost({
-			dataDir,
-			model: TEST_MODEL,
-			engine: scriptedEngine([[]]),
-		});
-		const { messages } = host.snapshot().conversation;
-		const texts = messages.flatMap((m) =>
-			m.parts.filter((part) => part.type === 'text').map((part) => part.text),
-		);
-		expect(texts).toContain('the second session');
-		expect(texts).not.toContain('the first session');
-	});
-
-	test('a send queued behind clear lands in the new durable row', async () => {
-		const dataDir = testDataDir();
-		{
-			await using host = await createOwnedTestHomeHost({
-				dataDir,
-				model: TEST_MODEL,
-				engine: scriptedEngine([[{ type: 'text-delta', delta: 'New row.' }]]),
-			});
-			const clearing = host.handleCommand({ type: 'clear' });
-			const sending = host.handleCommand({
-				type: 'send',
-				content: 'queued after clear',
-			});
-			expect(await clearing).toBe(true);
-			expect(await sending).toBe(true);
-			await settle(host);
-			expect(host.snapshot().conversation.messages[0]?.parts).toContainEqual({
-				type: 'text',
-				text: 'queued after clear',
-			});
-		}
-		expect(await readConversationRows(dataDir)).toHaveLength(1);
-	});
-
-	test('a failed clear keeps the previous durable conversation usable', async () => {
-		const dataDir = testDataDir();
-		await using host = await createOwnedTestHomeHost({
-			dataDir,
-			model: TEST_MODEL,
-			engine: scriptedEngine([
-				[{ type: 'text-delta', delta: 'First.' }],
-				[{ type: 'text-delta', delta: 'Second.' }],
-			]),
-			wrapConversations(workspace) {
-				let creates = 0;
-				return {
-					...workspace,
-					conversations: {
-						...workspace.conversations,
-						async create(input: CreateInputFor<typeof conversationsTable>) {
-							if (creates++ > 0) {
-								throw new Error('injected create failure');
-							}
-							return workspace.conversations.create(input);
-						},
-					},
-				} as ConversationsData;
-			},
-		});
-		await host.handleCommand({ type: 'send', content: 'first message' });
-		await settle(host);
-		await expect(host.handleCommand({ type: 'clear' })).rejects.toThrow(
-			'injected create failure',
-		);
-		expect(
-			await host.handleCommand({ type: 'send', content: 'second message' }),
-		).toBe(true);
-		await settle(host);
-		const texts = host
-			.snapshot()
-			.conversation.messages.flatMap((message) =>
-				message.parts
-					.filter((part) => part.type === 'text')
-					.map((part) => part.text),
-			);
-		expect(texts).toContain('first message');
-		expect(texts).toContain('second message');
-	});
-
-	test('a pending approval dies with the process instead of persisting', async () => {
-		const dataDir = testDataDir();
-		{
-			await using host = await createOwnedTestHomeHost({
-				dataDir,
-				model: TEST_MODEL,
+			await using host = await createTestHost({
 				engine: scriptedEngine([
 					[
 						{
 							type: 'tool-call',
 							toolCallId: 'call-1',
-							toolName: 'honeycrisp__folders_create',
+							toolName: 'localbooks__write_off',
 							input: { name: 'Never approved' },
 						},
 					],
 				]),
 			});
-			await host.handleCommand({ type: 'send', content: 'create a folder' });
+			await host.handleCommand({ type: 'send', content: 'write one off' });
 			await waitFor(
 				() => host.snapshot().pendingApprovals.length === 1,
 				'a pending approval',
 			);
 		}
 
-		await using host = await createOwnedTestHomeHost({
-			dataDir,
-			model: TEST_MODEL,
+		// A second host is a second session: an unanswered prompt is host-local
+		// and non-durable by design, and now so is the transcript beside it.
+		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
 		expect(host.snapshot().pendingApprovals).toEqual([]);
-		// Only the user turn persisted; the aborted turn's partial output did not.
-		const { messages } = host.snapshot().conversation;
-		expect(messages).toHaveLength(1);
-		expect(messages.flatMap((m) => toolResults(m.parts))).toHaveLength(0);
+		expect(host.snapshot().conversation.messages).toHaveLength(0);
 	});
 
 	test('invoking a query settles succeeded without an approval or a transcript entry', async () => {
@@ -557,7 +277,7 @@ describe('createHomeHost', () => {
 		expect(
 			await host.handleCommand({
 				type: 'invoke',
-				toolName: 'honeycrisp__folders_list',
+				toolName: 'localbooks__customers',
 				input: {},
 			}),
 		).toBe(true);
@@ -569,7 +289,7 @@ describe('createHomeHost', () => {
 		const [invocation] = host.snapshot().invocations;
 		expect(invocation).toEqual(
 			expect.objectContaining({
-				toolName: 'honeycrisp__folders_list',
+				toolName: 'localbooks__customers',
 				status: 'succeeded',
 			}),
 		);
@@ -604,7 +324,7 @@ describe('createHomeHost', () => {
 		});
 		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'honeycrisp__folders_create',
+			toolName: 'localbooks__write_off',
 			input: { name: 'Direct with consent' },
 		});
 		await waitFor(
@@ -619,7 +339,7 @@ describe('createHomeHost', () => {
 		expect(host.snapshot().pendingApprovals[0]).toEqual(
 			expect.objectContaining({
 				toolCallId: invocation!.id,
-				toolName: 'honeycrisp__folders_create',
+				toolName: 'localbooks__write_off',
 				input: { name: 'Direct with consent' },
 			}),
 		);
@@ -631,7 +351,7 @@ describe('createHomeHost', () => {
 		});
 		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'honeycrisp__folders_create',
+			toolName: 'localbooks__write_off',
 			input: { name: 'Denied' },
 		});
 		await waitFor(
@@ -657,7 +377,7 @@ describe('createHomeHost', () => {
 		});
 		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'honeycrisp__folders_create',
+			toolName: 'localbooks__write_off',
 			input: { name: 'Approved directly' },
 		});
 		await waitFor(
@@ -674,20 +394,10 @@ describe('createHomeHost', () => {
 			'the approved invocation to settle',
 		);
 
-		expect(typeof host.snapshot().invocations[0]!.content).toBe('string');
-		// The created folder reads back through the product invocation path: the
-		// approved mutation really ran, not just settled.
-		await host.handleCommand({
-			type: 'invoke',
-			toolName: 'honeycrisp__folders_list',
-			input: {},
-		});
-		await waitFor(
-			() => host.snapshot().invocations[1]?.status === 'succeeded',
-			'the verification list invocation to settle',
-		);
-		expect(host.snapshot().invocations[1]!.content).toContain(
-			'Approved directly',
+		// The tool's own answer names the input it was given, so the approved
+		// mutation really ran rather than merely settling.
+		expect(host.snapshot().invocations[0]!.content).toContain(
+			'Wrote off Approved directly',
 		);
 		// Direct invocation results stay session records; the transcript is untouched.
 		expect(host.snapshot().conversation.messages).toEqual([]);
@@ -699,7 +409,7 @@ describe('createHomeHost', () => {
 		});
 		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'honeycrisp__folders_create',
+			toolName: 'localbooks__write_off',
 			input: { name: 'Never answered' },
 		});
 		await waitFor(
@@ -724,7 +434,7 @@ describe('createHomeHost', () => {
 		// One gated mutation stays running (its approval is never answered)...
 		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'honeycrisp__folders_create',
+			toolName: 'localbooks__write_off',
 			input: { name: 'Still pending' },
 		});
 		await waitFor(
@@ -739,7 +449,7 @@ describe('createHomeHost', () => {
 		for (let i = 0; i < 25; i++) {
 			await host.handleCommand({
 				type: 'invoke',
-				toolName: 'honeycrisp__folders_list',
+				toolName: 'localbooks__customers',
 				input: {},
 			});
 		}
@@ -753,7 +463,7 @@ describe('createHomeHost', () => {
 		);
 		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'honeycrisp__folders_list',
+			toolName: 'localbooks__customers',
 			input: {},
 		});
 		await waitFor(
@@ -766,45 +476,6 @@ describe('createHomeHost', () => {
 			expect.objectContaining({ status: 'running' }),
 		);
 	});
-
-	test('a second host over the same data dir reads the first host folders through the catalog', async () => {
-		const dataDir = testDataDir();
-		{
-			await using host = await createOwnedTestHomeHost({
-				dataDir,
-				engine: scriptedEngine([[]]),
-				model: TEST_MODEL,
-				approval: APPROVE_ALL,
-			});
-			await host.handleCommand({
-				type: 'invoke',
-				toolName: 'honeycrisp__folders_create',
-				input: { name: 'Survives restart' },
-			});
-			await waitFor(
-				() => host.snapshot().invocations[0]?.status === 'succeeded',
-				'the create invocation to settle',
-			);
-		}
-
-		await using host = await createOwnedTestHomeHost({
-			dataDir,
-			engine: scriptedEngine([[]]),
-			model: TEST_MODEL,
-		});
-		await host.handleCommand({
-			type: 'invoke',
-			toolName: 'honeycrisp__folders_list',
-			input: {},
-		});
-		await waitFor(
-			() => host.snapshot().invocations[0]?.status === 'succeeded',
-			'the list invocation to settle',
-		);
-		expect(host.snapshot().invocations[0]!.content).toContain(
-			'Survives restart',
-		);
-	});
 });
 
 describe('parseHomeCommand', () => {
@@ -812,12 +483,12 @@ describe('parseHomeCommand', () => {
 		expect(
 			parseHomeCommand({
 				type: 'invoke',
-				toolName: 'honeycrisp__folders_create',
+				toolName: 'localbooks__write_off',
 				input: { name: 'Buy milk' },
 			}),
 		).toEqual({
 			type: 'invoke',
-			toolName: 'honeycrisp__folders_create',
+			toolName: 'localbooks__write_off',
 			input: { name: 'Buy milk' },
 		});
 	});
@@ -833,7 +504,7 @@ describe('parseHomeCommand', () => {
 	});
 
 	test('rejects invoke frames whose input is not a plain object', () => {
-		const toolName = 'honeycrisp__folders_list';
+		const toolName = 'localbooks__customers';
 		expect(parseHomeCommand({ type: 'invoke', toolName })).toBeUndefined();
 		expect(
 			parseHomeCommand({ type: 'invoke', toolName, input: null }),

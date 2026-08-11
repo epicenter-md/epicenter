@@ -21,7 +21,7 @@
 
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { type Lens, lensFromJsonText } from '@epicenter/lens/legacy';
+import { parseLens } from '@epicenter/lens';
 import mime from 'mime';
 
 export type StaticAsset = {
@@ -53,8 +53,15 @@ type ServedSpa = {
  * `id` is the namespace it declared and owns (ADR-0210).
  */
 export type CatalogApp = ServedSpa & {
-	/** The interpretation it declared, which the host reads its rows through. */
-	lens: Lens;
+	/**
+	 * The compiled `lens.json` is no longer carried past admission.
+	 *
+	 * It used to be, so the host could interpret the member's rows: render them
+	 * to markdown, project them to SQLite, and serve them raw. The host owns no
+	 * application data now (ADR-0226), so what a member declares matters at
+	 * admission (it must be a well-formed Lens, and its namespace is its id) and
+	 * nowhere after. A field with no reader is a field that goes stale.
+	 */
 	/**
 	 * The directory it arrived in, which names nothing and is carried only so
 	 * promotion can report which candidate entry was refused.
@@ -132,9 +139,15 @@ export async function deriveAppCatalog(
 			resolve(appRoot, 'lens.json'),
 		);
 		if (declaration.kind !== 'file') continue;
-		const { data: lens } = lensFromJsonText(
-			await Bun.file(declaration.path).text(),
-		);
+		// Admission still requires a well-formed Lens, because the namespace it
+		// declares is the id everything else addresses this member by (ADR-0210).
+		let declared: unknown;
+		try {
+			declared = JSON.parse(await Bun.file(declaration.path).text());
+		} catch {
+			continue;
+		}
+		const { data: lens } = parseLens(declared);
 		if (lens === null) continue;
 
 		// The namespace is the id (ADR-0210), so the directory this arrived in
@@ -149,7 +162,6 @@ export async function deriveAppCatalog(
 			id: lens.namespace,
 			title: lens.title ?? lens.namespace,
 			page: await Bun.file(index.path).text(),
-			lens,
 			directory: name,
 			resolve: createContainedResolver({
 				prefix: `/apps/${lens.namespace}/`,

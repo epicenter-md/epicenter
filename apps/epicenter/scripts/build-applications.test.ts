@@ -31,7 +31,6 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DESKTOP_EPICENTER_ROUTE } from '@epicenter/data/legacy/desktop';
 import { COMPILED_APPLICATIONS } from '../src/applications.ts';
 
 const epicenterDir = fileURLToPath(new URL('..', import.meta.url));
@@ -50,18 +49,15 @@ const repoRoot = join(epicenterDir, '..', '..');
 const BROWSER_STORAGE_ASSET = /sqlite3/i;
 
 /**
- * Applications whose served build still reaches the host-owned replica.
+ * The route a served build used to reach the host-owned replica through.
  *
- * ADR-0226 decided that a host serves bundles and brokers credentials and owns
- * no application data, and Honeycrisp moved. These have not: they are still on
- * the superseded stack, where `openDesktopEpicenter` is how a served build
- * reaches its data.
- *
- * The list is expected to shrink to empty and never to grow. An application
- * added here took a dependency ADR-0226 refuses, which should be a decision
- * somebody had to write down rather than a build that quietly still works.
+ * A literal rather than an import, because the module that exported it is
+ * deleted along with the route, the owner behind it, and the last application
+ * that dialled it. The string stays because the assertion is about EMITTED
+ * BYTES: a bundle that starts talking to `/api/data` again has reintroduced a
+ * host-owned data plane, and this is the test that says so.
  */
-const STILL_ON_THE_HOST_REPLICA = new Set(['whispering']);
+const HOST_REPLICA_ROUTE = '/api/data';
 
 const BUILD_TIMEOUT_MS = 180_000;
 
@@ -118,23 +114,20 @@ describe('compiled application builds', () => {
 
 				// This used to assert, for every application, that the emitted bytes
 				// reached the host-owned replica and carried no browser storage.
-				// ADR-0226 refused that, so for an application that has moved the
-				// same reach is now the regression rather than the requirement.
-				const onTheHost = STILL_ON_THE_HOST_REPLICA.has(application.id);
+				// ADR-0226 refused that, and the exemption list this test carried
+				// (`whispering`, the last build still on the host) is now empty:
+				// every application owns its own store.
 				expect({
 					id: application.id,
-					reachesHost: await anyFileContains(emitted, DESKTOP_EPICENTER_ROUTE),
-				}).toEqual({ id: application.id, reachesHost: onTheHost });
+					reachesHost: await anyFileContains(emitted, HOST_REPLICA_ROUTE),
+				}).toEqual({ id: application.id, reachesHost: false });
 
-				// The positive half, for an application that owns its own store:
-				// "does not reach the host" and "has a store at all" are different
-				// claims, and asserting only the first would pass on a build with no
-				// data layer whatsoever.
-				if (!onTheHost) {
-					expect(emitted.some((path) => BROWSER_STORAGE_ASSET.test(path))).toBe(
-						true,
-					);
-				}
+				// The positive half: "does not reach the host" and "has a store at
+				// all" are different claims, and asserting only the first would pass
+				// on a build with no data layer whatsoever.
+				expect(emitted.some((path) => BROWSER_STORAGE_ASSET.test(path))).toBe(
+					true,
+				);
 
 				// Served below `/apps/<id>/`, so its own document says so.
 				const page = await Bun.file(join(distRoot, 'index.html')).text();
@@ -161,9 +154,7 @@ describe('compiled application builds', () => {
 			await run('build', honeycrispDir);
 			const emitted = filesUnder(join(honeycrispDir, 'build'));
 
-			expect(await anyFileContains(emitted, DESKTOP_EPICENTER_ROUTE)).toBe(
-				false,
-			);
+			expect(await anyFileContains(emitted, HOST_REPLICA_ROUTE)).toBe(false);
 			expect(emitted.some((path) => BROWSER_STORAGE_ASSET.test(path))).toBe(
 				true,
 			);

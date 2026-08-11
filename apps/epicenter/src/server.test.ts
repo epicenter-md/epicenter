@@ -42,19 +42,9 @@ import {
 } from '@epicenter/blobs';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
-import { epicenterPath, openBunEpicenter } from '@epicenter/data/legacy/bun';
-import {
-	DESKTOP_EPICENTER_OBSERVE_ROUTE,
-	DESKTOP_EPICENTER_ROUTE,
-	type DesktopResponse,
-} from '@epicenter/data/legacy/desktop';
-import type { DesktopEpicenterOwner } from '@epicenter/data/legacy/desktop-owner';
-import { InstantString } from '@epicenter/field';
-import { defineErrors } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
 import { COMPILED_APPLICATIONS } from './applications.ts';
-import type { HomeHost, HomeHostInputs } from './host.ts';
-import type { InspectSource } from './inspect.ts';
+import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
 	ACCOUNT_PROFILE_ROUTE,
@@ -63,8 +53,6 @@ import {
 	BOOTSTRAP_ROUTE,
 	HOME_ROUTE,
 	HONEYCRISP_ROUTE,
-	INSPECT_QUERY_ROUTE,
-	INSPECT_ROUTE,
 	MAIL_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
@@ -75,9 +63,6 @@ import {
 	createHomeServer,
 	type HomeServerEvent,
 	type HomeSessionResponse,
-	type InspectQueryResponse,
-	type InspectResponse,
-	sendObservationFrame,
 } from './server.ts';
 import type { ReadyFrame } from './sidecar-runtime.ts';
 import {
@@ -85,13 +70,18 @@ import {
 	loadStaticAssets,
 } from './static-assets.ts';
 import { writeAppsDist } from './test-apps-dist.ts';
-import {
-	createOwnedTestHomeHost,
-	createTestDesktopAuth,
-} from './test-home-host.ts';
-import { homeLens } from './workspace.ts';
+import { createTestDesktopAuth } from './test-home-host.ts';
 
 const TOKEN = 'per-launch-secret';
+
+/**
+ * The stdio MCP fixture, which is the whole tool surface a test host has: the
+ * in-process app catalogs went with the data plane they read (ADR-0226).
+ */
+const MCP_FIXTURE = new URL(
+	'../test-fixtures/mini-mcp-server.ts',
+	import.meta.url,
+).pathname;
 
 /** A stand-in for the built SPA document; `/` must return it byte-for-byte. */
 const PAGE = '<!doctype html><html><body>Home test page</body></html>';
@@ -127,50 +117,6 @@ const serverAuthentication = new WeakMap<
 	{ cookie: string; origin: string }
 >();
 
-describe('sendObservationFrame', () => {
-	const frame = {
-		type: 'invalidation' as const,
-		changes: [
-			{
-				namespace: 'so.epicenter.test',
-				tableName: 'settings',
-				rowId: 'app',
-			},
-		],
-	};
-
-	test.each([
-		[0, 'dropped'],
-		[-1, 'backpressured'],
-	])('rejects native send status %i as %s', (status, message) => {
-		expect(() =>
-			sendObservationFrame(
-				{
-					raw: { send: () => status },
-				},
-				frame,
-			),
-		).toThrow(message);
-	});
-
-	test('accepts a positive native send status', () => {
-		expect(() =>
-			sendObservationFrame(
-				{
-					raw: { send: () => 42 },
-				},
-				frame,
-			),
-		).not.toThrow();
-	});
-
-	test('fails closed without Bun delivery status', () => {
-		expect(() => sendObservationFrame({}, frame)).toThrow(
-			'no Bun delivery status',
-		);
-	});
-});
-
 function scriptedEngine(scripts: EngineChunk[][]): AgentEngine {
 	let step = 0;
 	return async function* () {
@@ -199,9 +145,9 @@ function createTestHost(
 		'approval' | 'engine' | 'localBooks' | 'localSource'
 	>,
 ) {
-	return createOwnedTestHomeHost({
-		dataDir: testDataDir(),
+	return createHomeHost({
 		model: 'test-model',
+		localBooks: { command: 'bun', args: [MCP_FIXTURE] },
 		...options,
 	});
 }
@@ -210,8 +156,6 @@ async function serveHost(
 	host: HomeHost,
 	page: string = PAGE,
 	blobRemote: BlobRemote | null = null,
-	dataOwner: DesktopEpicenterOwner | undefined = undefined,
-	inspect: InspectSource | undefined = undefined,
 ) {
 	const portProbe = Bun.serve({
 		hostname: '127.0.0.1',
@@ -229,8 +173,6 @@ async function serveHost(
 		blobs: createTestBlobs(),
 		desktopAuth: createTestDesktopAuth(),
 		blobRemote,
-		dataOwner,
-		inspect,
 	});
 	const server = Bun.serve({
 		hostname: '127.0.0.1',
@@ -482,87 +424,6 @@ describe('createHomeServer', () => {
 		}
 	});
 
-	test('the raw view lists namespaces and runs one statement inside one', async () => {
-		// ADR-0209: Epicenter's own surface. The sidebar comes from the Lenses
-		// this host can interpret, and picking one is what makes `notes` mean
-		// something.
-		const dataDir = testDataDir();
-		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
-		await using epicenter = await openBunEpicenter({
-			directory: join(dataDir, 'data'),
-		});
-		await epicenter.bind(homeLens).conversations.create({
-			title: 'Tuesday',
-			model: 'test-model',
-			createdAt: InstantString.now(),
-			updatedAt: InstantString.now(),
-		});
-
-		const server = await serveHost(host, PAGE, null, undefined, {
-			replicaPath: epicenterPath({ directory: join(dataDir, 'data') }),
-			lenses: [homeLens as never],
-		});
-		const { origin } = authenticationFor(server);
-		try {
-			const listed = (await (
-				await fetch(INSPECT_ROUTE.url(origin), {
-					headers: authenticatedHeaders(server),
-				})
-			).json()) as InspectResponse;
-			expect(listed.namespaces.map((entry) => entry.namespace)).toEqual([
-				'so.epicenter.home',
-			]);
-
-			const answered = (await (
-				await fetch(INSPECT_QUERY_ROUTE.url(origin), {
-					method: 'POST',
-					headers: {
-						...authenticatedHeaders(server),
-						'content-type': 'application/json',
-						origin,
-					},
-					body: JSON.stringify({
-						namespace: 'so.epicenter.home',
-						sql: 'SELECT title FROM conversations',
-					}),
-				})
-			).json()) as InspectQueryResponse;
-			expect(answered).toEqual({
-				rows: [{ title: 'Tuesday' }],
-				truncated: false,
-			});
-
-			// A refused statement is an answer you type another query against,
-			// not a server failure.
-			const refused = await fetch(INSPECT_QUERY_ROUTE.url(origin), {
-				method: 'POST',
-				headers: {
-					...authenticatedHeaders(server),
-					'content-type': 'application/json',
-					origin,
-				},
-				body: JSON.stringify({ sql: 'SELECT * FROM conversations' }),
-			});
-			expect(refused.status).toBe(200);
-			expect(((await refused.json()) as InspectQueryResponse).error).toContain(
-				'conversations',
-			);
-		} finally {
-			await server.stop(true);
-		}
-	});
-
-	test('the raw view is behind the browser session like every other Home route', async () => {
-		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
-		const server = await serveHost(host);
-		const { origin } = authenticationFor(server);
-		try {
-			expect((await fetch(INSPECT_ROUTE.url(origin))).status).toBe(401);
-		} finally {
-			await server.stop(true);
-		}
-	});
-
 	test('the launch token mints a browser session only at bootstrap', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
@@ -626,7 +487,7 @@ describe('createHomeServer', () => {
 			expect(session.status).toBe(200);
 			const body = (await session.json()) as HomeSessionResponse;
 			const createTodos = body.tools.find(
-				(t) => t.name === 'honeycrisp__folders_create',
+				(t) => t.name === 'localbooks__write_off',
 			);
 			expect(createTodos).toBeDefined();
 			expect(createTodos?.inputSchema).toBeDefined();
@@ -790,32 +651,6 @@ describe('createHomeServer', () => {
 			);
 			expect(browserFragment.status).toBe(200);
 			expect(await browserFragment.text()).toContain('<h1>Mail</h1>');
-		} finally {
-			await server.stop(true);
-		}
-	});
-
-	test('guards the data observation carrier by session and exact origin', async () => {
-		await using host = await createTestHost({
-			engine: scriptedEngine([[]]),
-		});
-		const server = await serveHost(host);
-		try {
-			const url = `${server.url.origin}${DESKTOP_EPICENTER_OBSERVE_ROUTE}`;
-			const { cookie, origin } = authenticationFor(server);
-
-			const noSession = await fetch(url, { headers: { origin } });
-			expect(noSession.status).toBe(401);
-
-			// A browser always sends Origin on a WebSocket handshake, so unlike a
-			// same-origin GET there is no reason to accept its absence.
-			const noOrigin = await fetch(url, { headers: { cookie } });
-			expect(noOrigin.status).toBe(403);
-
-			const foreignOrigin = await fetch(url, {
-				headers: { cookie, origin: 'https://example.com' },
-			});
-			expect(foreignOrigin.status).toBe(403);
 		} finally {
 			await server.stop(true);
 		}
@@ -987,7 +822,7 @@ describe('createHomeServer', () => {
 					{
 						type: 'tool-call',
 						toolCallId: 'call-approve',
-						toolName: 'honeycrisp__folders_create',
+						toolName: 'localbooks__write_off',
 						input: { name: 'Approve over WebSocket' },
 					},
 				],
@@ -1014,7 +849,7 @@ describe('createHomeServer', () => {
 			expect(approval).toEqual(
 				expect.objectContaining({
 					toolCallId: 'call-approve',
-					toolName: 'honeycrisp__folders_create',
+					toolName: 'localbooks__write_off',
 					input: { name: 'Approve over WebSocket' },
 				}),
 			);
@@ -1122,7 +957,7 @@ describe('createHomeServer', () => {
 				ws.send(
 					JSON.stringify({
 						type: 'invoke',
-						toolName: 'honeycrisp__folders_list',
+						toolName: 'localbooks__customers',
 						input: {},
 					}),
 				);
@@ -1131,7 +966,7 @@ describe('createHomeServer', () => {
 			const final = await settled;
 			expect(final.snapshot.invocations[0]).toEqual(
 				expect.objectContaining({
-					toolName: 'honeycrisp__folders_list',
+					toolName: 'localbooks__customers',
 					status: 'succeeded',
 				}),
 			);
@@ -1582,36 +1417,6 @@ function openAiSse(chunks: object[]): Response {
 	});
 }
 
-/** First model call: a fragmented streamed tool call to `honeycrisp__folders_list`. */
-const TOOL_CALL_TURN = [
-	{
-		choices: [
-			{
-				delta: {
-					tool_calls: [
-						{
-							index: 0,
-							id: 'call_1',
-							type: 'function',
-							function: { name: 'honeycrisp__folders_list', arguments: '' },
-						},
-					],
-				},
-				finish_reason: null,
-			},
-		],
-	},
-	{
-		choices: [
-			{
-				delta: { tool_calls: [{ index: 0, function: { arguments: '{}' } }] },
-				finish_reason: null,
-			},
-		],
-	},
-	{ choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
-];
-
 const FINAL_TEXT = 'Your folder list is empty.';
 
 /** Second model call: the final assistant sentence as text deltas. */
@@ -1691,12 +1496,13 @@ async function exitWithin(
 }
 
 describe('sidecar end-to-end smoke', () => {
-	test('the spawned entrypoint serves the built SPA and drives a tool-calling turn', async () => {
+	test('the spawned entrypoint serves the built SPA and drives a turn', async () => {
 		const page = await buildSpaOnce();
 		const appsDist = writeAppsDistFixture(page);
 
-		// The fake OpenAI-compatible backend: first request streams a
-		// `honeycrisp__folders_list` tool call, second streams the final sentence.
+		// The fake OpenAI-compatible backend. One request and one text answer:
+		// the spawned host has no tool catalog to call into, so what this proves
+		// end to end is the sidecar, the SPA, the session, and the socket.
 		let inferenceRequests = 0;
 		const inference = Bun.serve({
 			hostname: '127.0.0.1',
@@ -1707,9 +1513,7 @@ describe('sidecar end-to-end smoke', () => {
 					return new Response('Not found', { status: 404 });
 				}
 				inferenceRequests += 1;
-				return openAiSse(
-					inferenceRequests === 1 ? TOOL_CALL_TURN : FINAL_TEXT_TURN,
-				);
+				return openAiSse(FINAL_TEXT_TURN);
 			},
 		});
 
@@ -1773,9 +1577,9 @@ describe('sidecar end-to-end smoke', () => {
 			});
 			expect(session.status).toBe(200);
 			const catalog = (await session.json()) as HomeSessionResponse;
-			expect(catalog.tools.map((t) => t.name)).toContain(
-				'honeycrisp__folders_list',
-			);
+			// No tools: the host owns no application data and composes no
+			// in-process catalog over it (ADR-0226).
+			expect(catalog.tools).toEqual([]);
 			expect(catalog.snapshot.conversation.messages).toEqual([]);
 
 			// One WebSocket turn: send, then await the settled snapshot.
@@ -1790,7 +1594,7 @@ describe('sidecar end-to-end smoke', () => {
 				20_000,
 			);
 			ws.addEventListener('open', () => {
-				ws.send(JSON.stringify({ type: 'send', content: 'list my folders' }));
+				ws.send(JSON.stringify({ type: 'send', content: 'say something' }));
 			});
 			let final: HomeServerEvent;
 			try {
@@ -1802,19 +1606,9 @@ describe('sidecar end-to-end smoke', () => {
 			expect(conversationOf(final).error).toBeNull();
 			const parts = conversationOf(final).messages.flatMap((m) => m.parts);
 			expect(parts).toContainEqual(
-				expect.objectContaining({
-					type: 'tool-call',
-					toolName: 'honeycrisp__folders_list',
-				}),
+				expect.objectContaining({ type: 'text', text: FINAL_TEXT }),
 			);
-			expect(parts).toContainEqual(
-				expect.objectContaining({
-					type: 'tool-result',
-					toolName: 'honeycrisp__folders_list',
-					isError: false,
-				}),
-			);
-			expect(inferenceRequests).toBe(2);
+			expect(inferenceRequests).toBe(1);
 		} finally {
 			sidecar.kill('SIGTERM');
 			expect(await sidecar.exited).toBe(0);
@@ -1907,75 +1701,4 @@ describe('sidecar end-to-end smoke', () => {
 			sidecar.kill();
 		}
 	}, 60_000);
-});
-
-describe('the desktop Epicenter route', () => {
-	/**
-	 * The refusal a bound Lens actually throws.
-	 *
-	 * `@epicenter/data` reports storage and projection failures by throwing what
-	 * a `defineErrors` factory produced, and wellcrafted returns those as frozen
-	 * plain objects rather than `Error` instances. This route is the last place
-	 * that shape exists before it becomes two strings on the wire, so describing
-	 * it with an `instanceof Error` test erased both of them.
-	 */
-	const StubReplicaError = defineErrors({
-		InvalidInput: ({ boundary }: { boundary: string }) => ({
-			message: `Replica refused invalid input at ${boundary}`,
-			boundary,
-		}),
-	});
-
-	function ownerThrowing(thrown: unknown): DesktopEpicenterOwner {
-		return {
-			execute: () => Promise.reject(thrown),
-		} as unknown as DesktopEpicenterOwner;
-	}
-
-	async function operate(server: TestServer) {
-		const { origin, cookie } = authenticationFor(server);
-		const response = await fetch(new URL(DESKTOP_EPICENTER_ROUTE, origin), {
-			method: 'POST',
-			headers: { cookie, origin, 'content-type': 'application/json' },
-			body: JSON.stringify({
-				surfaceId: 'test-surface',
-				operation: { kind: 'table-get' },
-			}),
-		});
-		return {
-			status: response.status,
-			envelope: (await response.json()) as DesktopResponse,
-		};
-	}
-
-	test('a thrown Lens refusal crosses named, not as [object Object]', async () => {
-		const { error } = StubReplicaError.InvalidInput({ boundary: 'intent' });
-		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
-		const server = await serveHost(host, PAGE, null, ownerThrowing(error));
-		try {
-			expect((await operate(server)).envelope.error).toEqual({
-				name: 'InvalidInput',
-				message: 'Replica refused invalid input at intent',
-			});
-		} finally {
-			await server.stop(true);
-		}
-	});
-
-	test('a thrown Error keeps its own name and picks the status', async () => {
-		const sentinel = new Error('Desktop Epicenter holds no open surface');
-		sentinel.name = 'EpicenterSurfaceNotOpenError';
-		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
-		const server = await serveHost(host, PAGE, null, ownerThrowing(sentinel));
-		try {
-			const { status, envelope } = await operate(server);
-			expect(status).toBe(409);
-			expect(envelope.error).toEqual({
-				name: 'EpicenterSurfaceNotOpenError',
-				message: 'Desktop Epicenter holds no open surface',
-			});
-		} finally {
-			await server.stop(true);
-		}
-	});
 });

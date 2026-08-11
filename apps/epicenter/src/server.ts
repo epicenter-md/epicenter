@@ -10,19 +10,6 @@ import type { AgentToolDefinition } from '@epicenter/agent';
 import { getProfileVia } from '@epicenter/auth';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
-import type { RowAddress } from '@epicenter/data/legacy';
-import {
-	DESKTOP_EPICENTER_OBSERVE_ROUTE,
-	DESKTOP_EPICENTER_ROUTE,
-	type DesktopInvalidationFrame,
-	type DesktopResponse,
-	describeThrownError,
-} from '@epicenter/data/legacy/desktop';
-import {
-	type DesktopEpicenterOwner,
-	EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME,
-} from '@epicenter/data/legacy/desktop-owner';
-import type { InspectionRow } from '@epicenter/data/legacy/inspection';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
@@ -35,20 +22,12 @@ import {
 	parseHomeCommand,
 } from './host.ts';
 import {
-	type InspectNamespace,
-	type InspectSource,
-	listInspectNamespaces,
-	runInspectQuery,
-} from './inspect.ts';
-import {
 	ACCOUNT_INSTANCE_ROUTE,
 	ACCOUNT_PROFILE_ROUTE,
 	ACCOUNT_SIGN_IN_ROUTE,
 	ACCOUNT_SIGN_OUT_ROUTE,
 	APPLICATIONS_ROUTE,
 	BOOTSTRAP_ROUTE,
-	INSPECT_QUERY_ROUTE,
-	INSPECT_ROUTE,
 	LOCAL_BLOB_REMOTE_ROUTES,
 	LOCAL_BLOB_ROUTE,
 	SESSION_ROUTE,
@@ -72,22 +51,6 @@ export type ApplicationsResponse = {
 	apps: Application[];
 };
 
-/** The raw view's sidebar (ADR-0209). */
-export type InspectResponse = {
-	namespaces: InspectNamespace[];
-};
-
-/**
- * One statement's answer, or the sentence explaining why it did not run.
- *
- * A syntax error, an unknown table, and an attempted write are all "your query
- * did not run", and SQLite says which far better than a taxonomy would, so this
- * carries the engine's own message.
- */
-export type InspectQueryResponse =
-	| { rows: InspectionRow[]; truncated: boolean; error?: undefined }
-	| { rows?: undefined; truncated?: undefined; error: string };
-
 export type HomeServerOptions = {
 	host: HomeHost;
 	/** Exact active origin, including the Rust-selected explicit port. */
@@ -98,13 +61,6 @@ export type HomeServerOptions = {
 	staticAssets: EpicenterStaticAssets;
 	/** Derived trusted app catalog (ADR-0153); absent means no members. */
 	appCatalog?: AppCatalog;
-	dataOwner?: DesktopEpicenterOwner;
-	/**
-	 * The replica and the Lenses the raw view reads (ADR-0209). Absent means
-	 * this host has no data browser, which is a composition a test makes and the
-	 * desktop host never does.
-	 */
-	inspect?: InspectSource;
 	/** Canonical device-local bytes shared by every trusted app surface. */
 	blobs: BunBlobStore;
 	/** One credential owner for every compiled desktop surface. */
@@ -122,44 +78,12 @@ const SESSION_COOKIE = 'epicenter_session';
 const MAX_BROWSER_SESSIONS = 32;
 const SESSION_SHELL = `<!doctype html><html><head><meta charset="utf-8"><title>Epicenter</title><script>window.__EPICENTER_SESSION_READY__.then(() => window.location.reload())</script></head><body></body></html>`;
 
-type ObservationWebSocket = {
-	raw?: unknown;
-};
-
-/**
- * Send one observation frame without erasing Bun's delivery status.
- *
- * Hono's portable `WSContext` intentionally exposes a void `send`, but this
- * Bun-owned route needs to distinguish delivered, dropped, and backpressured
- * frames. A non-positive native result is therefore a carrier failure: the
- * caller closes it and reconnect recovery emits the strongest honest
- * invalidation for every subscribed handle.
- */
-export function sendObservationFrame(
-	ws: ObservationWebSocket,
-	frame: DesktopInvalidationFrame,
-): void {
-	const payload = JSON.stringify(frame);
-	if (ws.raw === undefined) {
-		throw new Error('Observation carrier has no Bun delivery status');
-	}
-	const status = (ws.raw as { send(data: string): number }).send(payload);
-	if (status > 0) return;
-	throw new Error(
-		status === 0
-			? 'Observation frame was dropped'
-			: 'Observation carrier is backpressured',
-	);
-}
-
 export function createHomeServer({
 	host,
 	origin,
 	launchToken,
 	staticAssets,
 	appCatalog = { apps: [] },
-	dataOwner,
-	inspect,
 	blobs,
 	desktopAuth,
 	blobRemote,
@@ -345,16 +269,6 @@ export function createHomeServer({
 
 	app.use(APPLICATIONS_ROUTE.pattern, requireBrowserSession);
 	app.use('/api/home/*', requireBrowserSession);
-	app.use(DESKTOP_EPICENTER_ROUTE, requireBrowserSession);
-	// The observation carrier is guarded exactly like the operations route it
-	// sits beside, plus the explicit Origin equality every WebSocket upgrade
-	// here carries: a browser always sends Origin on a handshake, so unlike a
-	// same-origin GET there is no reason to accept its absence.
-	app.use(DESKTOP_EPICENTER_OBSERVE_ROUTE, async (c, next) => {
-		if (!hasBrowserSession(c)) return c.text('Unauthorized', 401);
-		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
-		await next();
-	});
 	app.use('/api/local-blobs/*', requireBrowserSession);
 	app.use(SESSION_STREAM_ROUTE.pattern, async (c, next) => {
 		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
@@ -376,52 +290,6 @@ export function createHomeServer({
 			apps: listApplications(appCatalog),
 		} satisfies ApplicationsResponse),
 	);
-
-	// The raw view (ADR-0209). Epicenter's own job: what namespaces exist, and
-	// one read-only statement inside one of them or in none.
-	app.get(INSPECT_ROUTE.pattern, (c) =>
-		c.json({
-			namespaces: inspect ? listInspectNamespaces(inspect.lenses) : [],
-		} satisfies InspectResponse),
-	);
-
-	app.post(INSPECT_QUERY_ROUTE.pattern, async (c) => {
-		if (!inspect) {
-			return c.json(
-				{
-					error: 'This host has no data browser.',
-				} satisfies InspectQueryResponse,
-				404,
-			);
-		}
-		const body = (await c.req.json()) as {
-			namespace?: unknown;
-			sql?: unknown;
-		};
-		if (typeof body.sql !== 'string' || body.sql.trim() === '') {
-			return c.json(
-				{ error: 'A "sql" string is required.' } satisfies InspectQueryResponse,
-				400,
-			);
-		}
-		const { data, error } = runInspectQuery({
-			source: inspect,
-			// Absent namespace is "Everything raw", which is a selection rather
-			// than a missing field, so it is not defaulted to anything.
-			namespace:
-				typeof body.namespace === 'string' ? body.namespace : undefined,
-			sql: body.sql,
-		});
-		// A refused statement is an answer, not a server failure: 200 with the
-		// engine's sentence is what a person types another query against.
-		if (error !== null) {
-			return c.json({ error: error.message } satisfies InspectQueryResponse);
-		}
-		return c.json({
-			rows: data.rows,
-			truncated: data.truncated,
-		} satisfies InspectQueryResponse);
-	});
 
 	app.put(LOCAL_BLOB_ROUTE.pattern, async (c) => {
 		const id = parseBlobId(c.req.param('blobId'));
@@ -569,84 +437,6 @@ export function createHomeServer({
 	app.post(
 		LOCAL_BLOB_REMOTE_ROUTES.purge.pattern,
 		requireBlobRemote((remote, id) => remote.purge(id)),
-	);
-
-	app.post(DESKTOP_EPICENTER_ROUTE, async (c) => {
-		if (!dataOwner) {
-			return c.json(
-				{
-					data: null,
-					error: {
-						name: 'DesktopEpicenterUnavailable',
-						message: 'The desktop Epicenter owner is unavailable.',
-					},
-				} satisfies DesktopResponse,
-				404,
-			);
-		}
-		try {
-			return c.json({
-				data: (await dataOwner.execute(await c.req.json())) ?? null,
-				error: null,
-			} satisfies DesktopResponse);
-		} catch (cause) {
-			// A bound Lens reports its refusals by throwing what a `defineErrors`
-			// factory produced, and those are plain objects rather than `Error`
-			// instances. Describing them is what keeps the variant name, which is
-			// the only thing either client classifies on.
-			const error = describeThrownError(cause);
-			return c.json(
-				{ data: null, error } satisfies DesktopResponse,
-				error.name === EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME ? 409 : 400,
-			);
-		}
-	});
-
-	// One socket per trusted surface, carrying committed addresses and nothing
-	// else. This is Epicenter observing its own replica on behalf of the
-	// surfaces it serves, which is why it does not reopen ADR-0185: that record
-	// refuses observing an installed app's *ordinary* HTTP, and nothing here
-	// reports where an app went or what it sent.
-	app.get(
-		DESKTOP_EPICENTER_OBSERVE_ROUTE,
-		upgradeWebSocket(() => {
-			let unsubscribe: (() => void) | undefined;
-			return {
-				onOpen(_event, ws) {
-					if (!dataOwner) {
-						// Nothing to observe and nothing that will start: closing is
-						// honest, and the client's redial is bounded and cheap.
-						ws.close(1011, 'Desktop Epicenter is unavailable');
-						return;
-					}
-					unsubscribe = dataOwner.subscribeInvalidations(
-						(changes: readonly RowAddress[]) => {
-							const frame: DesktopInvalidationFrame = {
-								type: 'invalidation',
-								changes,
-							};
-							try {
-								sendObservationFrame(ws, frame);
-							} catch (cause) {
-								// A send that fails has already lost a frame, and there is
-								// no way to know how much else this socket would drop. Fail
-								// into the client's reconnect path, which recovers by
-								// invalidating every handle it holds, rather than
-								// continuing on a carrier that silently skips commits.
-								unsubscribe?.();
-								unsubscribe = undefined;
-								ws.close(1011, 'Observation carrier failed');
-								void cause;
-							}
-						},
-					);
-				},
-				onClose() {
-					unsubscribe?.();
-					unsubscribe = undefined;
-				},
-			};
-		}),
 	);
 
 	app.get(

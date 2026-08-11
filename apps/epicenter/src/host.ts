@@ -11,6 +11,7 @@
 
 import {
 	type AgentEngine,
+	type AgentMessage,
 	type AgentToolCall,
 	type AgentToolDefinition,
 	type Approval,
@@ -23,16 +24,6 @@ import {
 	resolveApprovedToolCall,
 	type ToolCatalog,
 } from '@epicenter/agent';
-import { InstantString } from '@epicenter/field';
-import {
-	type AgentMessageDocumentStore,
-	createAgentMessageDocumentStore,
-} from './agent-message-store.ts';
-import {
-	createFolderCatalog,
-	type FolderCatalogOptions,
-} from './folder-catalog.ts';
-import { createHoneycrispCatalog } from './honeycrisp-catalog.js';
 import {
 	createLocalSourceCatalog,
 	type LocalSourceCatalogOptions,
@@ -41,12 +32,6 @@ import {
 	createStdioMcpCatalog,
 	type StdioMcpCatalogOptions,
 } from './stdio-mcp-catalog.ts';
-import type {
-	Conversation,
-	ConversationsData,
-	HoneycrispData,
-} from './workspace.ts';
-
 export type HomeHostInputs = {
 	/** The inference backend driving the loop (BYOK, local, or scripted). */
 	engine: AgentEngine;
@@ -74,18 +59,16 @@ export type HomeHostInputs = {
 	localSource?: LocalSourceCatalogOptions;
 };
 
-export type HomeHostOptions = HomeHostInputs & {
-	/** Canonical Honeycrisp handle opened by the one desktop workspace owner. */
-	honeycrisp: HoneycrispData;
-	/** Home conversation workspace opened by the same desktop owner. */
-	conversations: ConversationsData;
-	/**
-	 * The markdown folder's root, receipts, and write seam (ADR-0207). Required
-	 * rather than optional: every table materializes and there is no flag, so a
-	 * host without the folder's two verbs is not a shape this product has.
-	 */
-	folder: FolderCatalogOptions;
-};
+/**
+ * Everything the host needs, which no longer includes anybody's data.
+ *
+ * The host serves bundles and brokers credentials, and owns no application
+ * data (ADR-0226). What used to arrive here was a Honeycrisp handle the host
+ * had opened through a mirror Lens, a conversations table of its own, and a
+ * markdown folder rendered from both; all of it was the host-owned data plane
+ * ADR-0227 broke from, and none of it is a shape this product has any more.
+ */
+export type HomeHostOptions = HomeHostInputs;
 
 export type PendingApproval = {
 	id: string;
@@ -223,18 +206,11 @@ const INVOCATION_LIMIT = 20;
 export async function createHomeHost(
 	options: HomeHostOptions,
 ): Promise<HomeHost> {
-	// Arm A: in-process apps. Each namespace keeps same-named verbs distinct in
-	// the composed surface; the prefix must not contain `__`.
-	const honeycrisp = options.honeycrisp;
-	const conversations = options.conversations.conversations;
-	await honeycrisp.folders.scan();
-	const catalogs: ToolCatalog[] = [
-		namespaceToolCatalog('honeycrisp', createHoneycrispCatalog(honeycrisp)),
-		// The folder's own two verbs (ADR-0207). Not an app: this is the host's
-		// markdown surface over every app's rows, so it composes beside them rather
-		// than inside one of their catalogs.
-		namespaceToolCatalog('folder', createFolderCatalog(options.folder)),
-	];
+	// Each namespace keeps same-named verbs distinct in the composed surface;
+	// the prefix must not contain `__`. The in-process app catalogs that used to
+	// open this list are gone with the data plane behind them: reaching another
+	// application's rows meant the host holding that application's store.
+	const catalogs: ToolCatalog[] = [];
 
 	// A read-only local source, if one is wired: one `query` verb the host reads
 	// on this machine (ADR-0115 wave 6). Stateless, so it needs no disposal and
@@ -266,23 +242,6 @@ export async function createHomeHost(
 	// invocations must share it so mutation policy cannot drift by caller.
 	const approval = options.approval ?? sessionApproval.approval;
 
-	// Resume the most recent session; a host with no history creates one durable
-	// blank conversation before opening its row document.
-	let latest: Conversation | undefined;
-	for (const row of (await conversations.scan()).rows) {
-		if (latest === undefined || row.updatedAt > latest.updatedAt) latest = row;
-	}
-	const createConversationRow = () => {
-		const now = InstantString.now();
-		return conversations.create({
-			title: 'New Chat',
-			model: options.model,
-			createdAt: now,
-			updatedAt: now,
-		});
-	};
-	let activeConversation = latest ?? (await createConversationRow());
-
 	const buildConversation = (store: ConversationOptions['store']) =>
 		createConversation({
 			store,
@@ -292,35 +251,15 @@ export async function createHomeHost(
 			generateId: () => crypto.randomUUID(),
 		});
 
-	// The row's document is the loop's message store (ADR-0152):
-	// finished messages land there and survive restarts. Loaded before the
-	// loop starts so a first send never races the replayed history.
-	let activeStore = createAgentMessageDocumentStore(
-		await conversations.openDocument(activeConversation.id),
-	);
-	let conversation = buildConversation(activeStore);
+	// The transcript lives for the session and no longer (ADR-0226). It used to
+	// be a row document in a store the host owned, which is exactly the
+	// application data a host must not hold; a host that wants a durable
+	// transcript needs a document of its own, and that is a product decision
+	// nobody has made.
+	let conversation = buildConversation(createSessionMessageStore());
 	// One relay subscription that survives `clear` swapping the conversation;
 	// host listeners subscribe to the host, never to a conversation instance.
 	let unbindConversation = conversation.subscribe(notify);
-
-	/**
-	 * Keep the active row honest after a started turn: name it from the first
-	 * user message (app-shell convention:
-	 * 'New Chat' until the first user message's first 50 chars), bump recency.
-	 */
-	const touchConversationRow = async (content: string) => {
-		const now = InstantString.now();
-		const result = await conversations.patch(activeConversation.id, {
-			title:
-				activeConversation.title === 'New Chat'
-					? content.slice(0, 50)
-					: activeConversation.title,
-			model: options.model,
-			updatedAt: now,
-		});
-		if (result.error !== null) throw result.error;
-		if (result.data) activeConversation = result.data;
-	};
 
 	// Direct invocations outlive no one: this controller aborts any still-running
 	// invoke when the host disposes, before the catalogs go away. Settlement
@@ -372,11 +311,8 @@ export async function createHomeHost(
 
 	async function applyCommand(command: HomeClientCommand): Promise<boolean> {
 		switch (command.type) {
-			case 'send': {
-				const started = conversation.send(command.content);
-				if (started) await touchConversationRow(command.content);
-				return started;
-			}
+			case 'send':
+				return conversation.send(command.content);
 			case 'stop':
 				conversation.stop();
 				sessionApproval.cancelAll();
@@ -392,22 +328,9 @@ export async function createHomeHost(
 					notify();
 					return true;
 				}
-				await activeStore.whenDurable();
-				const nextConversationRow = await createConversationRow();
-				let nextStore: AgentMessageDocumentStore;
-				try {
-					nextStore = createAgentMessageDocumentStore(
-						await conversations.openDocument(nextConversationRow.id),
-					);
-				} catch (cause) {
-					await conversations.delete(nextConversationRow.id);
-					throw cause;
-				}
-				const nextConversation = buildConversation(nextStore);
+				const nextConversation = buildConversation(createSessionMessageStore());
 				unbindConversation();
 				conversation[Symbol.dispose]();
-				activeConversation = nextConversationRow;
-				activeStore = nextStore;
 				conversation = nextConversation;
 				unbindConversation = conversation.subscribe(notify);
 				notify();
@@ -455,16 +378,46 @@ export async function createHomeHost(
 			return result;
 		},
 		async [Symbol.asyncDispose]() {
-			// The conversation first (aborts any in-flight turn and disposes the
-			// store), then the subprocess, then the in-process docs.
+			// The conversation first (aborts any in-flight turn), then the
+			// subprocess. Nothing here has to reach durable storage, because
+			// nothing here is durable.
 			disposing = true;
 			await commandQueue;
 			conversation.stop();
 			invokeAbort.abort();
 			sessionApproval.cancelAll();
 			await localBooks?.[Symbol.asyncDispose]();
-			await activeStore.whenDurable();
 			conversation[Symbol.dispose]();
+		},
+	};
+}
+
+/**
+ * The loop's message store, held in memory for one session.
+ *
+ * The agent loop wants somewhere to put a finished message and something to
+ * hear when one lands. It used to be a row document in a store the host owned;
+ * the host owns no application data now (ADR-0226), so the transcript lives as
+ * long as the session that produced it and no longer.
+ */
+function createSessionMessageStore(): ConversationOptions['store'] {
+	const messages = new Map<string, AgentMessage>();
+	const listeners = new Set<() => void>();
+	return {
+		set(key, value) {
+			messages.set(key, value);
+			for (const listener of listeners) listener();
+		},
+		*entries() {
+			for (const [key, val] of messages) yield { key, val };
+		},
+		observe(handler) {
+			listeners.add(handler);
+			return () => listeners.delete(handler);
+		},
+		[Symbol.dispose]() {
+			listeners.clear();
+			messages.clear();
 		},
 	};
 }

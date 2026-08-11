@@ -31,6 +31,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { COMPILED_APPLICATIONS } from './applications.ts';
+import { createHomeHost } from './host.ts';
 import { APPLICATIONS_ROUTE, BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import {
@@ -39,10 +40,7 @@ import {
 	loadStaticAssets,
 } from './static-assets.ts';
 import { writeAppsDist } from './test-apps-dist.ts';
-import {
-	createOwnedTestHomeHost,
-	createTestDesktopAuth,
-} from './test-home-host.ts';
+import { createTestDesktopAuth } from './test-home-host.ts';
 
 const COMMITTED_FIXTURE_ROOT = fileURLToPath(
 	new URL('../test-fixtures/app-catalog', import.meta.url),
@@ -257,8 +255,7 @@ describe('home server catalog routes', () => {
 				`<!doctype html><html><body>${title} test application</body></html>`,
 		});
 
-		const host = await createOwnedTestHomeHost({
-			dataDir: tempDir('epicenter-host-'),
+		const host = await createHomeHost({
 			model: 'test-model',
 			engine: async function* () {},
 		});

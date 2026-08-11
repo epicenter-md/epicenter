@@ -3,7 +3,6 @@
 	import Applications from './Applications.svelte';
 	import { commands, events } from './bindings.gen';
 	import Chat from './Chat.svelte';
-	import Data from './Data.svelte';
 	import { isDesktopHost } from './runtime.ts';
 	import { createSession } from './session.svelte.ts';
 	import Settings from './Settings.svelte';
@@ -12,12 +11,17 @@
 	 * Epicenter: an application beside the others, not a shell above them
 	 * (ADR-0209).
 	 *
-	 * Four panes and nothing else. Data is Epicenter's own job, the raw view of
-	 * every namespace; Apps launches the crafted views, which the OS then
-	 * switches between. The session is owned here, above the visual contents, and
-	 * `Tabs.Content` hides an inactive pane rather than unmounting it, so
-	 * switching panes never disturbs the live socket, the transcript, an unsent
-	 * draft, or a query you are still editing.
+	 * Three panes and nothing else. Apps launches the crafted views, which the
+	 * OS then switches between. The session is owned here, above the visual
+	 * contents, and `Tabs.Content` hides an inactive pane rather than unmounting
+	 * it, so switching panes never disturbs the live socket, the transcript, or
+	 * an unsent draft.
+	 *
+	 * There is no Data pane. It was the raw view over a replica the host owned,
+	 * and ADR-0226 withdrew what it read: an application on the store writes to
+	 * its own client-owned store, so a reader that wants an application's rows
+	 * has to become a replica of that application's authority. That is a real
+	 * surface somebody may build; it is not this one reimported.
 	 */
 
 	const { sessionReady }: { sessionReady: Promise<void> } = $props();
@@ -57,7 +61,6 @@
 	<header class="flex flex-none items-center gap-3 border-b px-3 py-2">
 		<Tabs.List variant="line">
 			<Tabs.Trigger value="apps">Apps</Tabs.Trigger>
-			<Tabs.Trigger value="data">Data</Tabs.Trigger>
 			<Tabs.Trigger value="chat">Chat</Tabs.Trigger>
 			<Tabs.Trigger value="settings">Settings</Tabs.Trigger>
 		</Tabs.List>
@@ -76,10 +79,6 @@
 	     can center against the whole pane instead of a padded box. -->
 	<Tabs.Content value="apps" class="min-h-0 overflow-y-auto">
 		<Applications ready={sessionReady} />
-	</Tabs.Content>
-
-	<Tabs.Content value="data" class="min-h-0">
-		<Data ready={sessionReady} />
 	</Tabs.Content>
 
 	<Tabs.Content value="chat" class="min-h-0">
