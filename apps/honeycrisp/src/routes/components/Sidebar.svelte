@@ -1,10 +1,15 @@
 <script lang="ts">
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
+	import { Button } from '@epicenter/ui/button';
 	import * as Collapsible from '@epicenter/ui/collapsible';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Sidebar from '@epicenter/ui/sidebar';
+	import { toast } from '@epicenter/ui/sonner';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '#platform/auth';
 	import { instanceSetting } from '#platform/instance';
 	import { getHoneycrispApp } from '$lib/context.js';
@@ -12,6 +17,14 @@
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
 	const honeycrisp = getHoneycrispApp();
+
+	// Bound once, not `$derived`: the application is frozen for this page
+	// lifetime, so whether this generation has a workspace to rebuild is settled
+	// before this component exists. Defined means an account replica already
+	// stamped into the current document, because that is the only way a workspace
+	// generation gets past its boot gate (ADR-0231, ADR-0233); a device document
+	// has no workspace and never offers this.
+	const rebuild = honeycrisp.rebuild;
 
 	// Both footer readings are sampled, not derived. `pressure()` and
 	// `syncStatus()` are plain reads off the store and the sync driver, neither
@@ -47,6 +60,37 @@
 		}, 1_000);
 		return () => clearInterval(timer);
 	});
+
+	/**
+	 * Ask, then rebuild (ADR-0231).
+	 *
+	 * The application owns the lifecycle and refuses to guess at consent, so the
+	 * surface that can show the sentence is the one that asks. Cancelling needs no
+	 * handler: nothing has happened yet.
+	 *
+	 * `onConfirm` returns the promise, which is how the dialog earns the rest:
+	 * it spins, disables its own confirm, and holds the modal open, so a second
+	 * press cannot post a second replace. A success never comes back through this
+	 * function in practice, because adoption reloads the page; a refusal does, and
+	 * it is honest news rather than a broken app, so it is a toast over an
+	 * untouched replica.
+	 */
+	function confirmRebuild(rebuildWorkspace: NonNullable<typeof rebuild>): void {
+		confirmationDialog.open({
+			title: 'Rebuild workspace?',
+			description:
+				'This publishes what this device holds now as a fresh workspace document and deletes the old one, which is how the weight of deleted notes is reclaimed. Every device, this one included, discards its local copy and downloads the new document. Any workspace edit that has not synced yet, on another device or made here while this runs, is not in the new document and cannot be recovered.',
+			confirm: { text: 'Rebuild workspace', variant: 'destructive' },
+			onConfirm: async () => {
+				const { error } = await rebuildWorkspace();
+				if (error === null) return;
+				toast.error('Could not rebuild workspace', {
+					description: extractErrorMessage(error),
+					id: 'rebuild-workspace',
+				});
+			},
+		});
+	}
 </script>
 
 <Sidebar.Root>
@@ -160,6 +204,21 @@
 				{pressure.items} items · {pressure.liveRows} notes ·
 				{pressure.itemsPerLiveRow.toFixed(1)} each
 			</div>
+		{/if}
+		<!-- Directly under the pressure reading, because that number is the only
+		     reason a person rebuilds: it is where they learn the document is mostly
+		     corpse, and the verb that reclaims it belongs in the same breath.
+		     Absent in a device generation, which has no workspace. -->
+		{#if rebuild}
+			<Button
+				variant="ghost-destructive"
+				size="xs"
+				class="w-full justify-start"
+				onclick={() => confirmRebuild(rebuild)}
+			>
+				<RefreshCwIcon class="size-3.5" />
+				Rebuild workspace
+			</Button>
 		{/if}
 	</Sidebar.Footer>
 

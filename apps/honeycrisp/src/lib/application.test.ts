@@ -18,6 +18,7 @@
  * - An unbound workspace whose dial is permanently denied is unavailable,
  *   never the device document
  * - Supersession and rebuild discard one account's replica and nothing else
+ * - A refused rebuild discards nothing and leaves the generation running
  *
  * `fake-indexeddb` supplies the browser store's storage; the socket is a fake
  * whose frames come from the real sync protocol (`encodeFrame`).
@@ -472,9 +473,7 @@ test('a rebuild discards one account replica and cannot touch the others', async
 	).toBeNull();
 
 	reloads.mockClear();
-	const published = await application.rebuild?.({
-		acknowledgedWorkspaceChangesMayBeLost: true,
-	});
+	const published = await application.rebuild?.();
 	expect(published?.error).toBeNull();
 	await until(() => reloads.mock.calls.length > 0, 'the adoption reload');
 
@@ -482,5 +481,39 @@ test('a rebuild discards one account replica and cannot touch the others', async
 	expect(names).not.toContain(accountOf('alice'));
 	expect(names).toContain(accountOf('bob'));
 	expect(names).toContain(DEVICE);
+	await application[Symbol.asyncDispose]();
+});
+
+test('a refused rebuild keeps the replica and this generation running', async () => {
+	await resetStorage();
+
+	// The authority refuses the lease: another replace already published, so
+	// these bytes were built over a retired document (ADR-0231). The surface
+	// turns this into a message; what it needs from here is that nothing
+	// happened, so the person can sync and try again in the same page.
+	const { auth } = announcingAuth({
+		principalId: 'alice',
+		documentId: 'document-alice',
+		fetch: async () =>
+			new Response(
+				JSON.stringify({ refused: 'document', document: 'document-alice-two' }),
+				{ status: 409, headers: { 'content-type': 'application/json' } },
+			),
+	});
+	const application = await openHoneycrispApplication({ auth });
+	expect(
+		application.db.tables.notes.create(noteFields('still here')).error,
+	).toBeNull();
+
+	reloads.mockClear();
+	const refused = await application.rebuild?.();
+	expect((refused?.error as { name?: string }).name).toBe('Contested');
+
+	// No adoption, no discard, and sync was never let go of: a refusal is news,
+	// not the end of a generation.
+	expect(reloads.mock.calls.length).toBe(0);
+	expect(titles(application)).toEqual(['still here']);
+	expect(await databaseNames()).toContain(accountOf('alice'));
+	expect(application.syncStatus()).toBeDefined();
 	await application[Symbol.asyncDispose]();
 });

@@ -53,21 +53,23 @@ export type HoneycrispApplication = {
 	 * Rebuild this workspace (ADR-0231), or undefined in a device-document
 	 * generation, where there is no workspace to rebuild.
 	 *
-	 * The one product action over the one wire verb. On success this device
-	 * discards its local workspace store whole and reloads; the fresh boot
-	 * re-downloads the document it just published, through the same join every
-	 * device runs. The confirmation a surface shows before calling this
-	 * carries the one warnable loss: a device holding offline changes it never
-	 * synced will lose them.
+	 * The one product action over the one wire verb. Being defined is also the
+	 * whole availability rule a surface needs: a workspace generation only
+	 * resolves past the bound gate below, so a callable `rebuild` is already a
+	 * replica stamped into the current document.
 	 *
-	 * The argument says the caller has shown that warning and received a
-	 * deliberate answer. This application layer cannot render the
-	 * confirmation, but requiring the named acknowledgement keeps a future
-	 * call site from treating rebuild as ordinary maintenance.
+	 * On success this device discards its local workspace store whole and
+	 * reloads; the fresh boot re-downloads the document it just published,
+	 * through the same join every device runs. A refusal returns `Err` and
+	 * touches nothing: the replica, its document and this generation carry on.
+	 *
+	 * Calling it is deliberate, never confirmed here. ADR-0231 requires a
+	 * person to confirm the one warnable loss (unsynced work on another device,
+	 * or written here while this runs), and the surface that can show that
+	 * sentence is the one that owns asking. This layer owns the lifecycle:
+	 * publish, then adopt.
 	 */
-	rebuild?(confirmation: {
-		acknowledgedWorkspaceChangesMayBeLost: true;
-	}): Promise<Result<{ document: string }, RebuildError | StoreError>>;
+	rebuild?(): Promise<Result<{ document: string }, RebuildError | StoreError>>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -221,12 +223,7 @@ export async function openHoneycrispApplication({
 			rebuild:
 				workspace === undefined
 					? undefined
-					: async ({ acknowledgedWorkspaceChangesMayBeLost }) => {
-							if (!acknowledgedWorkspaceChangesMayBeLost) {
-								throw new Error(
-									'workspace rebuild requires explicit confirmation',
-								);
-							}
+					: async () => {
 							const published = await rebuildWorkspace({
 								store: db.store,
 								transport: {
