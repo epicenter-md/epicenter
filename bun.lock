@@ -713,6 +713,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/field": "workspace:*",
+        "@epicenter/identity": "workspace:*",
         "@epicenter/lens": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",

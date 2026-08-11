@@ -9,10 +9,15 @@ These appear in on-disk paths, sync wire format, or schemas other apps validate 
 ### IndexedDB database name
 
 ```
-"epicenter-store-{name}"
+"epicenter/{namespace}/private"
+"epicenter/{namespace}/workspace/{principalId}"
 ```
 
-Used by the browser store (`packages/data/src/store/browser.ts`), holding the three relations that have to survive a reload: `updates`, `outbox`, and `cursor`. Changing the name detaches every existing store from its consumer, and what is lost is not the work (the authority still owes it to the device) but the guarantee that a reload sees it.
+The durable address of one browser document (`packages/data/src/store/browser.ts`), holding the three relations that have to survive a reload: `updates`, `outbox`, and `cursor`. It reads as ownership (ADR-0233): the application, then the private document or the account whose replica this is. Changing the shape detaches every existing store from its consumer, and what is lost is not the work (the authority still owes it to the device) but the guarantee that a reload sees it.
+
+Three identities meet here and none may stand in for another: the namespace (which application), the principal id (whose replica), and the authority document id (which current Yjs document, kept inside the store because rebuild changes it).
+
+`epicenter-store-{namespace}` and `epicenter-store-{namespace}#{private,workspace}` are the superseded shapes. They are deletion targets at every open, never read.
 
 ### Durable Object name format and URL shape
 

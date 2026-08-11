@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import type { LensJson, LensParseError } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { claimDocument, releaseDocument } from './claims.js';
 import { applyHistorySchema } from './log.js';
-import { claimNamespace, releaseNamespace } from './namespaces.js';
 import {
 	type ApplicationOf,
 	asApplication,
@@ -58,7 +58,7 @@ export async function open<const TLens extends LensJson>(
 ): Promise<
 	Result<ApplicationOf<TLens, BunStore>, StoreError | LensParseError>
 > {
-	const { error: claimError } = claimNamespace(lens.namespace);
+	const { error: claimError } = claimDocument(lens.namespace);
 	if (claimError !== null) return Err(claimError);
 
 	const { data: store, error: storeError } = await openBunStore({
@@ -67,7 +67,7 @@ export async function open<const TLens extends LensJson>(
 		keepHistory,
 	});
 	if (storeError !== null) {
-		releaseNamespace(lens.namespace);
+		releaseDocument(lens.namespace);
 		return Err(storeError);
 	}
 
@@ -122,7 +122,7 @@ async function openBunStore({
 		dispose: () => {
 			live.close();
 			historyDatabase?.close();
-			releaseNamespace(namespace);
+			releaseDocument(namespace);
 		},
 	});
 
@@ -158,10 +158,10 @@ async function openBunStore({
  * Open an application that lives only as long as the process. Test support.
  *
  * It takes the lens for the same reason `open` does, so one entry point has one
- * shape. It claims no namespace, and that is not an oversight: two memory
- * stores of one namespace are two independent documents by construction, which
- * is the two-devices case rather than the two-handles-on-one-file case the
- * claim exists to refuse.
+ * shape. It claims no address, and that is not an oversight: two memory stores
+ * of one namespace are two independent documents by construction, which is the
+ * two-devices case rather than the two-handles-on-one-file case the claim
+ * exists to refuse.
  */
 export function openMemory<const TLens extends LensJson>(
 	lens: TLens,

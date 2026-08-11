@@ -1,20 +1,23 @@
 /**
  * Honeycrisp Application Lifecycle Tests
  *
- * Authentication chooses which of the two durable documents a generation
- * edits (ADR-0233): signed out is the device-local private document, a known
- * principal is the workspace document. These tests pin the boundary between
- * them: sync, supersession, and rebuild exist only on the workspace side, and
- * no workspace event can reach the private document's storage.
+ * Authentication chooses which durable document a generation edits, and whose
+ * it is (ADR-0233): signed out is the device-owned private document, and a
+ * principal is that account's own retained workspace replica. These tests pin
+ * the boundaries between them: sync, supersession, and rebuild exist only on
+ * the workspace side, they can reach only the one account's replica that
+ * opened, and no workspace event can reach the private document.
  *
  * Key behaviors:
  * - An aborted boot rejects with the abort, not a storage failure
  * - A signed-out boot opens the private document and never dials
- * - A signed-in boot bootstraps an empty workspace without reading anonymous work
- * - Signing out returns to the private document unchanged
+ * - Private work survives signing in, signing out, and a second account
+ * - Returning to an account reopens its retained replica, offline work included
+ * - A second account gets its own empty replica and never reads the first's
+ * - A signed-in state with no account id opens no workspace store
  * - An unbound workspace whose dial is permanently denied is unavailable,
  *   never the private document
- * - A supersession discards the workspace database and leaves the private one
+ * - Supersession and rebuild discard one account's replica and nothing else
  *
  * `fake-indexeddb` supplies the browser store's storage; the socket is a fake
  * whose frames come from the real sync protocol (`encodeFrame`).
@@ -46,6 +49,11 @@ const reloads = mock();
 
 const { openHoneycrispApplication } = await import('./application.js');
 
+/** The durable addresses this application can hold (ADR-0233). */
+const PRIVATE = `epicenter/${honeycrispLens.namespace}/private`;
+const workspaceOf = (principalId: string) =>
+	`epicenter/${honeycrispLens.namespace}/workspace/${principalId}`;
+
 async function until(condition: () => boolean, label: string): Promise<void> {
 	for (let attempt = 0; attempt < 400; attempt += 1) {
 		if (condition()) return;
@@ -54,27 +62,26 @@ async function until(condition: () => boolean, label: string): Promise<void> {
 	throw new Error(`timed out waiting for ${label}`);
 }
 
+async function databaseNames(): Promise<string[]> {
+	const databases = await indexedDB.databases();
+	return databases
+		.map((database) => database.name)
+		.filter((name): name is string => name !== undefined);
+}
+
 /**
  * Start each lifecycle test from empty storage. IndexedDB outlives a test in
  * this process the way it outlives a page in a browser, and these tests each
  * tell a whole multi-generation story from a fresh install.
  */
-function resetStorage(): Promise<void> {
-	const names = [
-		`epicenter-store-${honeycrispLens.namespace}`,
-		`epicenter-store-${honeycrispLens.namespace}#private`,
-		`epicenter-store-${honeycrispLens.namespace}#workspace`,
-	];
-	return Promise.all(
-		names.map(
-			(name) =>
-				new Promise<void>((resolve, reject) => {
-					const request = indexedDB.deleteDatabase(name);
-					request.onsuccess = () => resolve();
-					request.onerror = () => reject(request.error);
-				}),
-		),
-	).then(() => undefined);
+async function resetStorage(): Promise<void> {
+	for (const name of await databaseNames()) {
+		await new Promise<void>((resolve, reject) => {
+			const request = indexedDB.deleteDatabase(name);
+			request.onsuccess = () => resolve();
+			request.onerror = () => reject(request.error);
+		});
+	}
 }
 
 /** The whole create input; only the title matters to these tests. */
@@ -125,37 +132,48 @@ function createFakeSocket() {
  */
 function createFakeAuth({
 	status,
+	principalId = 'principal-under-test',
 	openWebSocket = () => {
 		throw new Error('this generation must not dial');
 	},
+	fetch,
 }: {
 	status: 'signed-out' | 'signed-in' | 'reauth-required';
+	principalId?: string;
 	openWebSocket?: () => Promise<WebSocket>;
+	fetch?: (input: unknown, init?: unknown) => Promise<Response>;
 }): AuthClient {
 	const unused = () => {
 		throw new Error('not part of the application boot');
 	};
 	return {
-		state:
-			status === 'signed-out'
-				? { status }
-				: { status, principalId: 'principal-under-test' as never },
+		state: status === 'signed-out' ? { status } : { status, principalId },
 		deployment: { kind: 'hosted', baseURL: 'https://api.test' },
 		onStateChange: () => () => undefined,
 		startSignIn: unused,
 		signOut: unused,
-		fetch: unused,
+		fetch: fetch ?? unused,
 		getProfile: unused,
 		openWebSocket,
 		[Symbol.dispose]: () => undefined,
 	} as unknown as AuthClient;
 }
 
-/** An auth whose every dial completes by announcing `documentId`. */
-function announcingAuth(documentId: string) {
+/** An auth for one account whose every dial completes by announcing `documentId`. */
+function announcingAuth({
+	principalId,
+	documentId,
+	fetch,
+}: {
+	principalId: string;
+	documentId: string;
+	fetch?: (input: unknown, init?: unknown) => Promise<Response>;
+}) {
 	const dials: ReturnType<typeof createFakeSocket>[] = [];
 	const auth = createFakeAuth({
 		status: 'signed-in',
+		principalId,
+		fetch,
 		openWebSocket: async () => {
 			const fake = createFakeSocket();
 			dials.push(fake);
@@ -177,13 +195,6 @@ function titles(app: {
 		.sort();
 }
 
-async function databaseNames(): Promise<string[]> {
-	const databases = await indexedDB.databases();
-	return databases
-		.map((database) => database.name)
-		.filter((name): name is string => name !== undefined);
-}
-
 test('an abort before the store opens rejects with the abort, not a storage failure', async () => {
 	// What this protects is the ORDER: `signal?.throwIfAborted()` runs before
 	// the store is opened, so an aborted boot never leaves one behind.
@@ -195,34 +206,35 @@ test('an abort before the store opens rejects with the abort, not a storage fail
 	).rejects.toThrow(/abort/i);
 });
 
-test('anonymous work survives a signed-in generation, and the workspace never reads it', async () => {
+test('private work survives signing in, signing out, and a second account', async () => {
 	await resetStorage();
+	const signedOut = createFakeAuth({ status: 'signed-out' });
 
 	// Generation 1, signed out: the private document, no sync, no rebuild,
 	// and not a single dial.
-	const signedOut = createFakeAuth({ status: 'signed-out' });
 	{
 		const application = await openHoneycrispApplication({ auth: signedOut });
 		expect(application.syncStatus()).toBeUndefined();
 		expect(application.rebuild).toBeUndefined();
-		const created = application.db.tables.notes.create(
-			noteFields('anonymous draft'),
-		);
-		expect(created.error).toBeNull();
+		expect(
+			application.db.tables.notes.create(noteFields('anonymous draft')).error,
+		).toBeNull();
 		await application[Symbol.asyncDispose]();
 	}
 
-	// Generation 2, signed in: the workspace document bootstraps empty. The
+	// Generation 2, signed in as alice: her workspace bootstraps empty. The
 	// anonymous draft is in a different database this generation never opened.
-	const { auth } = announcingAuth('document-one');
 	{
+		const { auth } = announcingAuth({
+			principalId: 'alice',
+			documentId: 'document-alice',
+		});
 		const application = await openHoneycrispApplication({ auth });
 		expect(titles(application)).toEqual([]);
 		expect(application.rebuild).toBeDefined();
-		const created = application.db.tables.notes.create(
-			noteFields('workspace note'),
-		);
-		expect(created.error).toBeNull();
+		expect(
+			application.db.tables.notes.create(noteFields("alice's note")).error,
+		).toBeNull();
 		await application[Symbol.asyncDispose]();
 	}
 
@@ -233,6 +245,105 @@ test('anonymous work survives a signed-in generation, and the workspace never re
 		expect(application.syncStatus()).toBeUndefined();
 		await application[Symbol.asyncDispose]();
 	}
+
+	// Generation 4, signed in as bob: his own empty replica. Alice's rows are
+	// not his, and the private document is nobody's but this device's.
+	{
+		const { auth } = announcingAuth({
+			principalId: 'bob',
+			documentId: 'document-bob',
+		});
+		const application = await openHoneycrispApplication({ auth });
+		expect(titles(application)).toEqual([]);
+		expect(
+			application.db.tables.notes.create(noteFields("bob's note")).error,
+		).toBeNull();
+		await application[Symbol.asyncDispose]();
+	}
+
+	// Generation 5, signed out one more time: still untouched by any of it.
+	{
+		const application = await openHoneycrispApplication({ auth: signedOut });
+		expect(titles(application)).toEqual(['anonymous draft']);
+		await application[Symbol.asyncDispose]();
+	}
+
+	const names = await databaseNames();
+	expect(names).toContain(PRIVATE);
+	expect(names).toContain(workspaceOf('alice'));
+	expect(names).toContain(workspaceOf('bob'));
+});
+
+test('returning to an account reopens its retained replica, including offline work', async () => {
+	await resetStorage();
+
+	// Alice, online: bound to her document, and holding one synced row.
+	{
+		const { auth } = announcingAuth({
+			principalId: 'alice',
+			documentId: 'document-alice',
+		});
+		const application = await openHoneycrispApplication({ auth });
+		expect(
+			application.db.tables.notes.create(noteFields('written online')).error,
+		).toBeNull();
+		await application[Symbol.asyncDispose]();
+	}
+
+	// Alice again, offline: a bound replica opens without a dial ever
+	// succeeding, keeps what it had, and takes ordinary offline edits.
+	{
+		const application = await openHoneycrispApplication({
+			auth: createFakeAuth({
+				status: 'signed-in',
+				principalId: 'alice',
+				openWebSocket: () =>
+					Promise.reject(new Error('the network is not here')),
+			}),
+		});
+		expect(titles(application)).toEqual(['written online']);
+		expect(
+			application.db.tables.notes.create(noteFields('written offline')).error,
+		).toBeNull();
+		await application[Symbol.asyncDispose]();
+	}
+
+	// Bob in between: his replica is empty and cannot see hers.
+	{
+		const { auth } = announcingAuth({
+			principalId: 'bob',
+			documentId: 'document-bob',
+		});
+		const application = await openHoneycrispApplication({ auth });
+		expect(titles(application)).toEqual([]);
+		await application[Symbol.asyncDispose]();
+	}
+
+	// Alice back: both rows, the offline one included, at the same address.
+	{
+		const { auth } = announcingAuth({
+			principalId: 'alice',
+			documentId: 'document-alice',
+		});
+		const application = await openHoneycrispApplication({ auth });
+		expect(titles(application)).toEqual(['written offline', 'written online']);
+		await application[Symbol.asyncDispose]();
+	}
+});
+
+test('a signed-in state with no account id opens no workspace store', async () => {
+	await resetStorage();
+
+	// A boot snapshot a host stamped without an id, or any auth arriving at
+	// `signed-in` without a stable principal: there is no workspace address to
+	// derive, so the boot fails rather than guessing one or falling back to the
+	// private document.
+	const auth = createFakeAuth({ status: 'signed-in', principalId: '' });
+	const failure = await openHoneycrispApplication({ auth }).catch(
+		(cause) => cause,
+	);
+	expect((failure as { name?: string }).name).toBe('Unaddressable');
+	expect(await databaseNames()).toEqual([]);
 });
 
 test('an unbound workspace whose dial is permanently denied is unavailable, not the private document', async () => {
@@ -242,6 +353,7 @@ test('an unbound workspace whose dial is permanently denied is unavailable, not 
 	// workspace generation even though no dial can succeed (ADR-0233).
 	const auth = createFakeAuth({
 		status: 'reauth-required',
+		principalId: 'alice',
 		openWebSocket: () =>
 			Promise.reject({
 				name: 'OpenWebSocketDenied',
@@ -255,48 +367,120 @@ test('an unbound workspace whose dial is permanently denied is unavailable, not 
 	);
 });
 
-test('a supersession discards the workspace database and cannot touch the private one', async () => {
+test('a supersession discards one account replica and cannot touch the others', async () => {
 	await resetStorage();
 
-	// Anonymous work first, so there is something a wrongly aimed discard
-	// would destroy.
+	// Private work and a second account's replica first, so there is something
+	// a wrongly aimed discard would destroy.
 	{
 		const application = await openHoneycrispApplication({
 			auth: createFakeAuth({ status: 'signed-out' }),
 		});
-		const created = application.db.tables.notes.create(
-			noteFields('kept anonymous'),
-		);
-		expect(created.error).toBeNull();
+		expect(
+			application.db.tables.notes.create(noteFields('kept private')).error,
+		).toBeNull();
+		await application[Symbol.asyncDispose]();
+	}
+	{
+		const { auth } = announcingAuth({
+			principalId: 'bob',
+			documentId: 'document-bob',
+		});
+		const application = await openHoneycrispApplication({ auth });
+		expect(
+			application.db.tables.notes.create(noteFields("kept bob's")).error,
+		).toBeNull();
 		await application[Symbol.asyncDispose]();
 	}
 
-	const { auth, dials } = announcingAuth('document-two');
+	const { auth, dials } = announcingAuth({
+		principalId: 'alice',
+		documentId: 'document-alice',
+	});
 	const application = await openHoneycrispApplication({ auth });
-	const created = application.db.tables.notes.create(
-		noteFields('doomed replica note'),
-	);
-	expect(created.error).toBeNull();
+	expect(
+		application.db.tables.notes.create(noteFields('doomed replica note')).error,
+	).toBeNull();
 
 	// The authority names a different document on this replica's own
 	// connection: the one fact that concludes supersession (ADR-0231).
 	reloads.mockClear();
 	const socket = dials.at(-1);
 	if (socket === undefined) throw new Error('the workspace never dialled');
-	socket.deliver({ kind: 'document', id: 'document-three' });
+	socket.deliver({ kind: 'document', id: 'document-alice-two' });
 	await until(() => reloads.mock.calls.length > 0, 'the adoption reload');
 
 	const names = await databaseNames();
-	expect(names).not.toContain(
-		`epicenter-store-${honeycrispLens.namespace}#workspace`,
-	);
-	expect(names).toContain(`epicenter-store-${honeycrispLens.namespace}#private`);
+	expect(names).not.toContain(workspaceOf('alice'));
+	expect(names).toContain(workspaceOf('bob'));
+	expect(names).toContain(PRIVATE);
 	await application[Symbol.asyncDispose]();
 
-	// The private document still holds every anonymous byte it held.
+	// Every other document still holds every byte it held.
 	const signedOut = await openHoneycrispApplication({
 		auth: createFakeAuth({ status: 'signed-out' }),
 	});
-	expect(titles(signedOut)).toEqual(['kept anonymous']);
+	expect(titles(signedOut)).toEqual(['kept private']);
 	await signedOut[Symbol.asyncDispose]();
+	const { auth: bob } = announcingAuth({
+		principalId: 'bob',
+		documentId: 'document-bob',
+	});
+	const bobs = await openHoneycrispApplication({ auth: bob });
+	expect(titles(bobs)).toEqual(["kept bob's"]);
+	await bobs[Symbol.asyncDispose]();
+});
+
+test('a rebuild discards one account replica and cannot touch the others', async () => {
+	await resetStorage();
+
+	{
+		const application = await openHoneycrispApplication({
+			auth: createFakeAuth({ status: 'signed-out' }),
+		});
+		expect(
+			application.db.tables.notes.create(noteFields('kept private')).error,
+		).toBeNull();
+		await application[Symbol.asyncDispose]();
+	}
+	{
+		const { auth } = announcingAuth({
+			principalId: 'bob',
+			documentId: 'document-bob',
+		});
+		const application = await openHoneycrispApplication({ auth });
+		expect(
+			application.db.tables.notes.create(noteFields("kept bob's")).error,
+		).toBeNull();
+		await application[Symbol.asyncDispose]();
+	}
+
+	// Alice rebuilds: the authority publishes her next document, and this
+	// device adopts through the same discard-and-reload a supersession runs.
+	const { auth } = announcingAuth({
+		principalId: 'alice',
+		documentId: 'document-alice',
+		fetch: async () =>
+			new Response(JSON.stringify({ document: 'document-alice-two' }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' },
+			}),
+	});
+	const application = await openHoneycrispApplication({ auth });
+	expect(
+		application.db.tables.notes.create(noteFields('rebuilt away')).error,
+	).toBeNull();
+
+	reloads.mockClear();
+	const published = await application.rebuild?.({
+		acknowledgedWorkspaceChangesMayBeLost: true,
+	});
+	expect(published?.error).toBeNull();
+	await until(() => reloads.mock.calls.length > 0, 'the adoption reload');
+
+	const names = await databaseNames();
+	expect(names).not.toContain(workspaceOf('alice'));
+	expect(names).toContain(workspaceOf('bob'));
+	expect(names).toContain(PRIVATE);
+	await application[Symbol.asyncDispose]();
 });

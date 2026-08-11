@@ -7,11 +7,14 @@
  * second open makes that unreachable rather than something a caller must avoid,
  * which is the move ADR-0216 made against the chosen-id door.
  *
- * The key is the durable document's identity, which is what makes the guard
+ * The key is the durable document's own address, which is what makes the guard
  * exact. On Bun that is the namespace, because an application folder holds one
- * document; in a browser it is `<namespace>#<document role>` (ADR-0233), so an
- * application's private and workspace documents may be open at once while a
- * second open of either is still refused.
+ * document; in a browser it is the ownership path
+ * `epicenter/<namespace>/private` or
+ * `epicenter/<namespace>/workspace/<principal id>` (ADR-0233), so an
+ * application's private document and one account's workspace replica may be
+ * open at once, two accounts' replicas may be open at once, and a second open
+ * of any one of them is still refused.
  *
  * A lifecycle here is legitimate under ADR-0203 rather than a platform forming:
  * one file and one document with two claimants is genuinely contended. It holds
@@ -25,18 +28,18 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 import { StoreError } from './store.js';
 
-const openNamespaces = new Set<string>();
+const openAddresses = new Set<string>();
 
 /** Claim a durable document for this process, or report that it is already held. */
-export function claimNamespace(namespace: string): Result<void, StoreError> {
-	if (openNamespaces.has(namespace)) {
-		return StoreError.AlreadyOpen({ namespace });
+export function claimDocument(address: string): Result<void, StoreError> {
+	if (openAddresses.has(address)) {
+		return StoreError.AlreadyOpen({ address });
 	}
-	openNamespaces.add(namespace);
+	openAddresses.add(address);
 	return Ok(undefined);
 }
 
-/** Release a namespace. Idempotent, because disposal is. */
-export function releaseNamespace(namespace: string): void {
-	openNamespaces.delete(namespace);
+/** Release an address. Idempotent, because disposal is. */
+export function releaseDocument(address: string): void {
+	openAddresses.delete(address);
 }

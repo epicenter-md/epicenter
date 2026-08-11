@@ -24,11 +24,12 @@ export type OpenHoneycrispOptions = {
 	 * and during prerender. The caller is a mounted client route, where it is
 	 * safe.
 	 *
-	 * Its state chooses which of the two durable documents this generation
-	 * edits (ADR-0233), and being signed in is the whole of the sharing model:
+	 * Its state chooses which durable document this generation edits and whose
+	 * it is (ADR-0233), and being signed in is the whole of the sharing model:
 	 * the route stamps the principal from the bearer and addresses one Durable
 	 * Object by it, so every device on one account converges without anything
-	 * being paired or invited.
+	 * being paired or invited. The same principal id names this device's local
+	 * replica of that account, which is why signing out can keep it.
 	 */
 	auth?: AuthClient;
 	signal?: AbortSignal;
@@ -79,10 +80,13 @@ export type HoneycrispApplication = {
  * which is why nothing below this line returns a promise.
  *
  * Which document opens is auth's answer at boot (ADR-0233): signed out is the
- * device-local private document, and a known principal is that account's
- * workspace document. A page lifetime is one auth generation (ADR-0232), so
- * the choice never changes while this application lives; signing in or out
- * reloads into the other document, and neither ever reads the other's storage.
+ * device-owned private document, and a known principal is that account's own
+ * workspace replica, at an address no other account shares. A page lifetime is
+ * one auth generation (ADR-0232), so the choice never changes while this
+ * application lives; signing in, out, or into a second account reloads into a
+ * different document, and none of them ever reads another's storage. Signing
+ * out closes a workspace replica and keeps it, so signing back in finds the
+ * same account's work, offline edits included.
  *
  * A private generation resolves at once and never dials: a private document
  * has no sync to wait for. A workspace generation resolves only with a
@@ -101,19 +105,27 @@ export async function openHoneycrispApplication({
 	signal,
 }: OpenHoneycrispOptions = {}): Promise<HoneycrispApplication> {
 	signal?.throwIfAborted();
-	// The one decision point between the two documents. `workspace` carries the
-	// auth alongside the choice so everything sync-shaped below can only exist
-	// where the workspace document is the one that opened.
+	// The one decision point between the documents. A signed-out generation, or
+	// a build with no auth at all, edits the private document; a generation with
+	// a principal edits that principal's workspace replica. `workspace` carries
+	// the auth alongside the account so everything sync-shaped below can only
+	// exist where a workspace document is the one that opened.
 	const workspace =
 		auth !== undefined && auth.state.status !== 'signed-out'
-			? { auth }
+			? { auth, principalId: auth.state.principalId }
 			: undefined;
-	// The lens names the application and this names the document (ADR-0233), so
-	// there is nothing else to inject: no path, no database name, and no second
-	// call to bind.
-	const { data: db, error } = await openBrowser(honeycrispLens, {
-		document: workspace === undefined ? 'private' : 'workspace',
-	});
+	// The lens names the application and this names the document and its owner
+	// (ADR-0233), so there is nothing else to inject: no path, no database name,
+	// and no second call to bind. An auth state carrying no usable principal id
+	// is refused here as `Unaddressable` rather than guessing an address: a
+	// signed-in generation with no account is unavailable, and never quietly the
+	// private document.
+	const { data: db, error } = await openBrowser(
+		honeycrispLens,
+		workspace === undefined
+			? { document: 'private' }
+			: { document: 'workspace', principalId: workspace.principalId },
+	);
 	if (error !== null) throw error;
 	let sync: SyncConnection | undefined;
 	let state: ReturnType<typeof createHoneycrispState> | undefined;
@@ -124,9 +136,10 @@ export async function openHoneycrispApplication({
 		 * The one adoption path (ADR-0231): discard the workspace store whole and
 		 * reload. Runs after a confirmed supersession, and after this device's
 		 * own successful rebuild; the fresh boot's ordinary join delivers the
-		 * current document into an empty replica. Only the workspace store is
-		 * ever discarded: the private document is a different database this
-		 * generation never opened.
+		 * current document into an empty replica. What it can reach is one
+		 * address: this generation's own account replica. The private document
+		 * and every other account's replica are databases this generation never
+		 * opened and cannot name.
 		 */
 		const adoptCurrentDocument = async (): Promise<void> => {
 			const discarded = await db.store.discard();

@@ -21,6 +21,7 @@
 	},
 	"dependencies": {
 		"@epicenter/field": "workspace:*",
+		"@epicenter/identity": "workspace:*",
 		"@epicenter/lens": "workspace:*",
 		"@epicenter/sqlite": "workspace:*",
 		"@epicenter/sync": "workspace:*",

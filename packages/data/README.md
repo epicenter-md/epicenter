@@ -9,7 +9,7 @@ Four entry points, and no more:
 | --- | --- |
 | `@epicenter/data` | the store surface, plus the Lens vocabulary re-exported from `@epicenter/lens` |
 | `@epicenter/data/bun` | `open(lens, { root })`, and `openMemory(lens)` for tests |
-| `@epicenter/data/browser` | `open(lens, { document })` |
+| `@epicenter/data/browser` | `open(lens, { document: 'private' })`, and `open(lens, { document: 'workspace', principalId })` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 
 A Bun opener imports `bun:sqlite` and a browser opener imports a WASM build, so
@@ -23,6 +23,7 @@ import { open } from '@epicenter/data/browser';
 
 const { data: app, error } = await open(honeycrispLens, {
 	document: 'workspace',
+	principalId,
 });
 if (error !== null) return handle(error);
 
@@ -32,24 +33,35 @@ app.tables.notes.update(id, { title: 'Draft' }); // no await
 
 A Lens names the store it opens (ADR-0229), so there is one call and one name:
 the namespace is the document, the file, the folder and the authority address.
-Nothing takes a path or a database name, so a Lens cannot be bound to a store
-it does not name.
+Nothing takes a path or a database name. In a browser the durable address is
+derived from that namespace and the document named below rather than supplied
+(ADR-0233), so a Lens still cannot be bound to a store it does not name.
 
-In a browser the caller also names which of the application's two durable
-documents it means (ADR-0233): `private` is the device-local document that
-never joins workspace sync, and `workspace` is this device's replica of the
-authority's current document. They are separate IndexedDB databases, so a
-workspace discard, supersession, or rebuild cannot touch the private one.
+In a browser the caller also names which durable document it means and whose it
+is (ADR-0233). An application keeps one device-owned private document that
+never joins workspace sync, and one retained replica per account:
+
+```text
+epicenter/<namespace>/private
+epicenter/<namespace>/workspace/<principal id>
+```
+
+That address is the IndexedDB database name, so a workspace discard,
+supersession, or rebuild can reach exactly one account's replica and never the
+private document or another account's. A workspace replica cannot be opened
+without an account: the argument is a union with nowhere to omit one, and an
+empty id is refused with `StoreError.Unaddressable` rather than addressed.
 
 Opening replays a durable log into one `Y.Doc`. After that every read is a
 property access on a document already in memory, so nothing below returns a
 promise.
 
-Opening one document twice in a process is refused with
+Opening one address twice in a process is refused with
 `StoreError.AlreadyOpen`. Two opens would be two `Y.Doc`s of one document that
 cannot see each other's writes, so they would converge through storage under
-last-writer-wins and quietly lose one side's work. An application's private
-and workspace documents are different documents, so both may be open at once.
+last-writer-wins and quietly lose one side's work. The private document and
+each account's replica are different documents, so any number of them may be
+open at once.
 
 ## The surface
 

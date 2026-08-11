@@ -32,10 +32,12 @@
  * exclusive-per-origin retry loop, a message protocol, and the mirroring of
  * every statement including the projection writes it turned out nobody wanted.
  */
+import type { PrincipalId } from '@epicenter/identity';
 import type { LensJson, LensParseError } from '@epicenter/lens';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { claimDocument, releaseDocument } from './claims.js';
 import {
 	APP_DOCUMENT,
 	applyStoreSchema,
@@ -44,7 +46,6 @@ import {
 	readFormat,
 	writeDocumentIdentity,
 } from './log.js';
-import { claimNamespace, releaseNamespace } from './namespaces.js';
 import {
 	type ApplicationOf,
 	asApplication,
@@ -89,6 +90,10 @@ export type BrowserStore = Store & {
 	 * caller reloads (ADR-0232's instrument) and boot opens fresh. Crash-safe
 	 * by repetition: a discard that never ran leaves the old file, whose next
 	 * dial is refused again.
+	 *
+	 * Its blast radius is this store's own address and nothing else (ADR-0233),
+	 * so a workspace discard names one account's replica and can reach neither
+	 * the private document nor any other account's.
 	 */
 	discard(): Promise<Result<void, StoreError>>;
 };
@@ -113,9 +118,9 @@ type DurableState = {
 const STORE_NAME = 'state';
 const STATE_KEY = 'durable';
 
-function openIndexedDb(name: string): Promise<IDBDatabase> {
+function openIndexedDb(address: string): Promise<IDBDatabase> {
 	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(`epicenter-store-${name}`, 1);
+		const request = indexedDB.open(address, 1);
 		request.onupgradeneeded = () => {
 			const database = request.result;
 			if (!database.objectStoreNames.contains(STORE_NAME)) {
@@ -176,9 +181,9 @@ function describe(cause: unknown): { name: string; message: string } {
 }
 
 /** Delete one store's IndexedDB database whole. Our own connection is closed first. */
-function deleteIndexedDb(name: string): Promise<void> {
+function deleteIndexedDb(address: string): Promise<void> {
 	return new Promise((resolve, reject) => {
-		const request = indexedDB.deleteDatabase(`epicenter-store-${name}`);
+		const request = indexedDB.deleteDatabase(address);
 		request.onsuccess = () => resolve();
 		request.onerror = () =>
 			reject(request.error ?? new Error('indexedDB.deleteDatabase failed'));
@@ -194,69 +199,128 @@ function deleteIndexedDb(name: string): Promise<void> {
 }
 
 /**
- * Which of an application's two durable local documents to open (ADR-0233).
+ * Which durable local document of an application to open, and whose (ADR-0233).
  *
- * A browser application keeps exactly two: `private` is the device-local
- * document that never joins workspace sync, and `workspace` is this device's
- * replica of the authority's current document (ADR-0231). They are separate
- * IndexedDB databases and separate open claims, so a workspace discard,
- * supersession, or rebuild cannot name the private document, and the two may
- * be open at once without being two `Y.Doc`s of one document.
+ * A browser application keeps one device-owned private document and one
+ * retained workspace replica per account. `private` never joins workspace sync
+ * and survives every sign-in and sign-out; `workspace` is this device's replica
+ * of one principal's current authority document (ADR-0231), and it is retained
+ * across sign-out too, which is why it is addressed by the account that owns it
+ * rather than by the application alone.
+ *
+ * The principal rides on the workspace arm alone, so an account-less workspace
+ * replica is not a value this API can express.
  */
-export type DocumentRole = 'private' | 'workspace';
+export type BrowserDocument =
+	| { document: 'private' }
+	| { document: 'workspace'; principalId: PrincipalId };
 
 /**
- * Delete the pre-split single database, `epicenter-store-<namespace>`.
+ * Where one of an application's durable documents lives, as ownership
+ * (ADR-0233):
  *
- * The clean break for storage written before ADR-0233: that one database held
- * anonymous work or a workspace replica, indistinguishably, so it is deleted
- * rather than reinterpreted as either document. Never rejects, because a dead
- * artifact must not block a boot: a delete blocked by another tab completes
- * when that tab closes, and running again at every open makes the deletion
- * certain without anyone waiting on it.
+ * ```text
+ * epicenter/<namespace>/private
+ * epicenter/<namespace>/workspace/<principal id>
+ * ```
+ *
+ * Three identities, none of them collapsed into another: the namespace says
+ * which application, the principal says whose replica this is, and the
+ * authority document id says which current Yjs document that replica belongs
+ * to. Only the first two are in the name. The third lives inside the store
+ * because it changes on rebuild, and a rebuilt workspace has to stay at the
+ * same address while its contents are discarded.
+ *
+ * A namespace is dot-separated lowercase labels, so it holds no `/`: the
+ * segment after `epicenter/` is always exactly the application, and no address
+ * can be read as another one.
  */
-function deleteLegacySingleStore(namespace: string): Promise<void> {
-	return new Promise((resolve) => {
-		const request = indexedDB.deleteDatabase(`epicenter-store-${namespace}`);
-		request.onsuccess = () => resolve();
-		request.onerror = () => resolve();
-		request.onblocked = () => resolve();
-	});
+function addressOf(namespace: string, target: BrowserDocument): string {
+	return target.document === 'private'
+		? `epicenter/${namespace}/private`
+		: `epicenter/${namespace}/workspace/${target.principalId}`;
 }
 
 /**
- * Open one of the two documents of the application this lens names, in a
- * browser page.
+ * Delete the browser storage that came before the account-scoped address.
  *
- * The lens names the application and the caller names the document
- * (ADR-0229 as amended by ADR-0233): the IndexedDB database is derived from
- * `lens.namespace` and `document` together, so a private and a workspace
- * document can never share storage, and neither can be opened without saying
- * which one is meant. `#` joins the two because a namespace cannot contain
- * it, so no namespace collides with another namespace's suffixed name.
+ * Two superseded shapes, neither of them read: `epicenter-store-<namespace>`,
+ * the single database from before an application had two documents, which held
+ * anonymous work or a workspace replica indistinguishably; and
+ * `epicenter-store-<namespace>#private` / `#workspace`, the per-application
+ * split that separated the two documents but left a workspace replica with no
+ * owner, so a second account would have opened the first account's bytes.
+ * Neither is the final address, so both are deleted rather than renamed,
+ * merged, or reinterpreted: the browser-storage twin of the format wipe in
+ * ADR-0231's cutover.
+ *
+ * Never rejects, because a dead artifact must not block a boot: a delete
+ * blocked by another tab completes when that tab closes, and running again at
+ * every open makes the deletion certain without anyone waiting on it.
+ */
+function deleteSupersededStorage(namespace: string): Promise<void> {
+	const superseded = [
+		`epicenter-store-${namespace}`,
+		`epicenter-store-${namespace}#private`,
+		`epicenter-store-${namespace}#workspace`,
+	];
+	return Promise.all(
+		superseded.map(
+			(name) =>
+				new Promise<void>((resolve) => {
+					const request = indexedDB.deleteDatabase(name);
+					request.onsuccess = () => resolve();
+					request.onerror = () => resolve();
+					request.onblocked = () => resolve();
+				}),
+		),
+	).then(() => undefined);
+}
+
+/**
+ * Open one durable document of the application this lens names, in a browser
+ * page.
+ *
+ * The lens names the application and the caller names the document and its
+ * owner (ADR-0229 as amended by ADR-0233): the IndexedDB database is the
+ * address derived from all of them, so the private document and any account's
+ * workspace replica can never share storage, and no document can be opened
+ * without saying which one is meant. A workspace replica cannot be opened
+ * without an account at all: the argument has nowhere to omit one, and an empty
+ * id is refused rather than addressed, because a boot with no stable principal
+ * has no workspace rather than a nameless one.
  *
  * @example
  * ```ts
- * const { data: mail } = await open(inbox, { document: 'workspace' });
+ * const { data: mail } = await open(inbox, {
+ * 	document: 'workspace',
+ * 	principalId,
+ * });
  * mail.tables.messages.create({ subject: 'hi', unread: true });
  * mail.store.pressure();
  * ```
  */
 export async function open<const TLens extends LensJson>(
 	lens: TLens,
-	{ document }: { document: DocumentRole },
+	target: BrowserDocument,
 ): Promise<
 	Result<ApplicationOf<TLens, BrowserStore>, StoreError | LensParseError>
 > {
-	const name = `${lens.namespace}#${document}`;
-	const { error: claimError } = claimNamespace(name);
+	if (target.document === 'workspace' && target.principalId.trim() === '') {
+		return StoreError.Unaddressable();
+	}
+
+	const address = addressOf(lens.namespace, target);
+	const { error: claimError } = claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
-	await deleteLegacySingleStore(lens.namespace);
+	await deleteSupersededStorage(lens.namespace);
 
-	const { data: store, error: storeError } = await openBrowserStore({ name });
+	const { data: store, error: storeError } = await openBrowserStore({
+		address,
+	});
 	if (storeError !== null) {
-		releaseNamespace(name);
+		releaseDocument(address);
 		return Err(storeError);
 	}
 
@@ -269,13 +333,13 @@ export async function open<const TLens extends LensJson>(
 }
 
 async function openBrowserStore({
-	name,
+	address,
 }: {
-	name: string;
+	address: string;
 }): Promise<Result<BrowserStore, StoreError>> {
 	const opened = await tryAsync({
 		try: async () => {
-			const durable = await openIndexedDb(name);
+			const durable = await openIndexedDb(address);
 			return { durable, saved: await readDurable(durable) };
 		},
 		catch: (cause) => StoreError.StorageFailed({ cause }),
@@ -414,7 +478,7 @@ async function openBrowserStore({
 		database,
 		dispose: () => {
 			durable.close();
-			releaseNamespace(name);
+			releaseDocument(address);
 		},
 	});
 
@@ -447,7 +511,7 @@ async function openBrowserStore({
 				while (writing !== undefined) await writing;
 				await store[Symbol.asyncDispose]();
 				return tryAsync({
-					try: () => deleteIndexedDb(name),
+					try: () => deleteIndexedDb(address),
 					catch: (cause) => StoreError.StorageFailed({ cause }),
 				});
 			},

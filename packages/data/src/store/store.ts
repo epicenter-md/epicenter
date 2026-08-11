@@ -134,16 +134,30 @@ export const StoreError = defineErrors({
 	}),
 	Disposed: () => ({ message: 'This store is disposed' }),
 	/**
-	 * This process already holds this namespace open.
+	 * This process already holds this document's address open.
 	 *
 	 * A second open would be a second `Y.Doc` over one document, and the two
 	 * cannot see each other's writes: they converge through storage under
 	 * last-writer-wins, so one side's work vanishes with no error and nothing to
 	 * retry (ADR-0229). Dispose the first application, or share the one you have.
 	 */
-	AlreadyOpen: ({ namespace }: { namespace: string }) => ({
-		message: `This process already has ${namespace} open`,
-		namespace,
+	AlreadyOpen: ({ address }: { address: string }) => ({
+		message: `This process already has ${address} open`,
+		address,
+	}),
+	/**
+	 * A workspace replica was asked for without the account that owns it.
+	 *
+	 * A workspace replica is retained across sign-out, so its address carries
+	 * the principal it belongs to (ADR-0233). An auth state that cannot supply a
+	 * stable principal id therefore names no workspace, and guessing one would
+	 * either open another account's bytes or take edits into storage no account
+	 * can claim afterwards. Unavailable is the honest answer, and only an auth
+	 * change repairs it.
+	 */
+	Unaddressable: () => ({
+		message:
+			'A workspace replica belongs to one account, and no account id was supplied, so it has no address',
 	}),
 	/**
 	 * A subscriber threw while being told about a committed change.
