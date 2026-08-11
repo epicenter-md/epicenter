@@ -2,7 +2,6 @@ import type { BoundData, Epicenter } from '@epicenter/data/legacy';
 import type { TranscriptionServiceId } from '../services/transcription/providers';
 import {
 	createWhisperingSettingDefaults,
-	type WhisperingSettingValues,
 	whisperingLens,
 } from '../workspace';
 import {

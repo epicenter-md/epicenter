@@ -45,7 +45,8 @@ function createWire() {
 		settle() {
 			let guard = 0;
 			while (queue.length > 0) {
-				if ((guard += 1) > 10_000) throw new Error('the wire never settled');
+				guard += 1;
+				if (guard > 10_000) throw new Error('the wire never settled');
 				(queue.shift() as () => void)();
 			}
 		},
@@ -67,14 +68,17 @@ function createClock() {
 	const timers = new Map<number, { at: number; task: () => void }>();
 	return {
 		schedule(task: () => void, delayMs: number) {
-			const id = (nextId += 1);
+			nextId += 1;
+			const id = nextId;
 			timers.set(id, { at: now + delayMs, task });
 			return () => timers.delete(id);
 		},
 		/** Run everything due within `ms`, in time order, including what it schedules. */
 		advance(ms: number) {
 			const target = now + ms;
-			for (let guard = 0; ; guard += 1) {
+			let guard = 0;
+			for (;;) {
+				guard += 1;
 				if (guard > 10_000) throw new Error('the clock never settled');
 				let dueId: number | undefined;
 				let dueAt = Number.POSITIVE_INFINITY;
@@ -137,7 +141,8 @@ function openDriven({
 
 	const dial: SyncDial = ({ cursor, document, opened, received, closed }) => {
 		dialledFrom.push(cursor);
-		const mine = (generation += 1);
+		generation += 1;
+		const mine = generation;
 		const connection: HubConnection = {
 			cursor,
 			document,

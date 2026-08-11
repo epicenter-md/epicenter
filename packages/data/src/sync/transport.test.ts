@@ -78,7 +78,8 @@ function createWire() {
 		settle() {
 			let guard = 0;
 			while (queue.length > 0) {
-				if ((guard += 1) > 10_000) throw new Error('the wire never settled');
+				guard += 1;
+				if (guard > 10_000) throw new Error('the wire never settled');
 				(queue.shift() as () => void)();
 			}
 		},
