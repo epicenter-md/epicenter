@@ -1,6 +1,6 @@
 {
 	"name": "@epicenter/chat",
-	"description": "Canonical chat-conversation storage: the conversations table, its messages child doc, and the ConversationId/MessageId vocabulary every chat surface shares.",
+	"description": "The canonical conversation shape every chat surface shares: the conversations table an application splices into its own lens, its messages root, and the ConversationId vocabulary.",
 	"version": "0.1.0",
 	"type": "module",
 	"exports": {
@@ -18,11 +18,11 @@
 	"dependencies": {
 		"@epicenter/agent": "workspace:*",
 		"@epicenter/data": "workspace:*",
-		"@epicenter/field": "workspace:*",
 		"@epicenter/lens": "workspace:*",
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
+		"@epicenter/field": "workspace:*",
 		"@types/bun": "catalog:",
 		"typescript": "catalog:"
 	}

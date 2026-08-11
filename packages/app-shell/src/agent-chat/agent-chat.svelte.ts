@@ -1,16 +1,24 @@
 /**
- * Reactive AI chat state shared by every chat app (tab-manager, vocab): the
- * conversation registry plus one client agent loop (ADR-0047) per
- * conversation, with each app's differences injected rather than forked.
+ * Reactive AI chat state shared by every chat app: the conversation registry
+ * plus one client agent loop (ADR-0047) per conversation, with each app's
+ * differences injected rather than forked.
  *
- * The conversation list is the synced `conversations` table (@epicenter/chat);
- * each row's turns live in its `messages` child doc. A handle registry mirrors
- * the table: {@link createAgentChatState} opens a handle for every row and
- * disposes one whose row is gone. Each handle binds that row's `messages` store
- * to the loop through `bindAgentConversation`; the loop streams the live turn
- * into component state and writes each finished message into the doc the moment
- * the turn ends. The live turn never enters the CRDT, and the loop dies with the
- * tab.
+ * The conversation list is a `conversations` table the app spliced into its own
+ * lens (@epicenter/chat), in whichever document the app's root chose for this
+ * generation (ADR-0233); each row's turns live at the `messages` root inside
+ * that row's own document. A handle registry mirrors the table:
+ * {@link createAgentChatState} opens a handle for every row and disposes one
+ * whose row is gone. Each handle binds that row's messages to the loop through
+ * `bindAgentConversation`; the loop streams the live turn into component state
+ * and writes each finished message into the document the moment the turn ends.
+ * The live turn never enters the CRDT, and the loop dies with the tab.
+ *
+ * Everything here is synchronous, which is what the store being synchronous
+ * buys: a read is a property access on a document already in memory, a row's
+ * document is already allocated beside the row (ADR-0215), and `subscribe`
+ * reports a commit after the projection has caught up (ADR-0187). So there is
+ * no `whenReady`, no in-flight-handle set, and no awaiting a document lease;
+ * a handle exists for a row the instant the registry hears about it.
  *
  * Inference rides the OpenAI-compatible gateway (ADR-0049/0050). The engine is
  * built here, once: per turn it resolves the conversation's model (ADR-0055)
@@ -47,15 +55,16 @@ import {
 } from '@epicenter/agent';
 import {
 	asConversationId,
+	CONVERSATION_MESSAGES,
 	type Conversation,
 	type ConversationId,
 	type ConversationsTable,
-	createAgentMessageDocumentStore,
+	createAgentMessageStore,
 } from '@epicenter/chat';
 import { createOpenAiAgentEngine } from '@epicenter/client';
-import type { RowDocument } from '@epicenter/data/legacy';
+import type { RowDocument } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
-import { bindAgentConversation, fromTable } from '@epicenter/svelte';
+import { bindAgentConversation } from '@epicenter/svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { InferenceConnections } from '../inference-picker/connections.svelte.js';
 
@@ -119,7 +128,6 @@ export type AgentKit = {
 
 export function createAgentChatState({
 	table,
-	openConversationDocument,
 	reportBackgroundError,
 	connections,
 	activeConversation,
@@ -130,10 +138,17 @@ export function createAgentChatState({
 		decideApproval = defaultApprovalDecision,
 	},
 }: {
-	/** The bound conversations table. */
+	/**
+	 * The conversations table of the document this surface chose (ADR-0233).
+	 *
+	 * One table, and the registry never asks which document it came from: an app
+	 * with an account replica passes the account's, a signed-out one passes the
+	 * device's, and a surface writes one or the other and never both. It is also
+	 * where a conversation's messages come from, through `table.document(id)`,
+	 * which is why there is no separate document opener to inject: the row and
+	 * the prose beside it are one thing in one document.
+	 */
 	table: ConversationsTable;
-	/** Open a locally durable, host-connected document for one conversation. */
-	openConversationDocument: (id: ConversationId) => Promise<RowDocument>;
 	/** Report failures from subscription-driven refreshes and metadata writes. */
 	reportBackgroundError(cause: unknown): void;
 	/** The device connection registry (ADR-0059); resolves a model to a transport. */
@@ -143,7 +158,29 @@ export function createAgentChatState({
 	/** What the agent can do: the app's persona and capabilities. */
 	agent: AgentKit;
 }) {
-	const conversationsView = fromTable(table);
+	/**
+	 * The conversation rows, re-read whole on every commit that touches them.
+	 *
+	 * `$state.raw` holding a snapshot rather than a reactive proxy: the rows are
+	 * plain JSON the store hands back fresh each time, so there is nothing for
+	 * fine-grained reactivity to track and a whole-array swap is the honest
+	 * shape. A nonconforming row is skipped rather than surfaced; a conversation
+	 * this release cannot read has no loop to drive, and the chat surface has
+	 * nowhere to say so.
+	 */
+	let rows = $state.raw<Conversation[]>([]);
+
+	function readRows(): void {
+		const { data, error } = table.list();
+		if (error !== null) {
+			reportBackgroundError(error);
+			return;
+		}
+		rows = data.rows;
+	}
+
+	const rowById = (id: ConversationId): Conversation | undefined =>
+		rows.find((row) => row.id === id);
 
 	// The selected conversation: an injected source (a URL, say), or an internal
 	// `$state` default minted only when no source is given.
@@ -166,23 +203,19 @@ export function createAgentChatState({
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
-		void table
-			.patch(conversationId, {
-				...patch,
-				updatedAt: InstantString.now(),
-			})
-			.then((result) => {
-				if (result.error !== null) reportBackgroundError(result.error);
-			}, reportBackgroundError);
+		const { error } = table.update(conversationId, {
+			...patch,
+			updatedAt: InstantString.now(),
+		});
+		if (error !== null) reportBackgroundError(error);
 	}
 
 	// ── Handle Registry (one handle per conversation row) ──────────────
 
 	const handles = new SvelteMap<
 		ConversationId,
-		Awaited<ReturnType<typeof createConversationHandle>>
+		ReturnType<typeof createConversationHandle>
 	>();
-	const openingHandles = new Set<ConversationId>();
 	let disposed = false;
 
 	/** The conversation list for a picker: handles sorted most-recent first. */
@@ -192,11 +225,14 @@ export function createAgentChatState({
 		),
 	);
 
-	async function createConversationHandle(conversationId: ConversationId) {
+	function createConversationHandle(
+		conversationId: ConversationId,
+		document: RowDocument,
+	) {
 		let inputValue = $state('');
 		let dismissedError = $state<string | null>(null);
 
-		const metadata = $derived(conversationsView.byId(conversationId));
+		const metadata = $derived(rowById(conversationId));
 		/** The conversation's model (ADR-0055), read once for both the engine turn
 		 * and the picker's `model` getter. `model` is a required column, so this only
 		 * falls back when the row was deleted out from under a still-live handle (a
@@ -218,14 +254,12 @@ export function createAgentChatState({
 			decision.resolve(approved);
 		}
 
-		// Bind the conversation's child doc to the loop. The engine reads this
+		// Bind the conversation's messages to the loop. The engine reads this
 		// conversation's model and the live system prompts per turn, so a
 		// mid-conversation model switch takes effect on the next answer.
 		const convo = bindAgentConversation(
 			createAgentConversation({
-				store: createAgentMessageDocumentStore(
-					await openConversationDocument(conversationId),
-				),
+				store: createAgentMessageStore(document),
 				engine: createOpenAiAgentEngine({
 					// The conversation's model (ADR-0055) is resolved per turn against this
 					// device's connection set (ADR-0059), so a switch lands on the next
@@ -451,33 +485,26 @@ export function createAgentChatState({
 	 * Mirror the table into the handle registry: open a handle for every row,
 	 * dispose one whose row is gone, and keep a live conversation selected.
 	 */
-	async function ensureHandle(conversationId: ConversationId): Promise<void> {
-		if (handles.has(conversationId) || openingHandles.has(conversationId))
-			return;
-		openingHandles.add(conversationId);
-		try {
-			const handle = await createConversationHandle(conversationId);
-			if (disposed || conversationsView.byId(conversationId) === undefined) {
-				handle[Symbol.dispose]();
-				return;
-			}
-			handles.set(conversationId, handle);
-		} finally {
-			openingHandles.delete(conversationId);
-		}
+	function ensureHandle(conversationId: ConversationId): void {
+		if (disposed || handles.has(conversationId)) return;
+		// The container was allocated with the row (ADR-0215), so absent here
+		// means the row went away between the read and this line rather than that
+		// a conversation lacks somewhere to keep its messages.
+		const document = table.document(conversationId);
+		if (document === undefined) return;
+		handles.set(
+			conversationId,
+			createConversationHandle(conversationId, document),
+		);
 	}
 
-	async function reconcileHandles() {
-		await conversationsView.refresh();
-		const liveIds = new Set(
-			conversationsView.all.map(({ id }) => asConversationId(id)),
-		);
+	function reconcileHandles(): void {
+		readRows();
+		const liveIds = new Set(rows.map(({ id }) => asConversationId(id)));
 		for (const id of handles.keys()) {
 			if (!liveIds.has(id)) destroyConversation(id);
 		}
-		for (const conversationId of liveIds) {
-			await ensureHandle(conversationId);
-		}
+		for (const conversationId of liveIds) ensureHandle(conversationId);
 
 		// Keep the selection pointed at a live handle.
 		if (selection.current !== null && handles.has(selection.current)) return;
@@ -485,46 +512,53 @@ export function createAgentChatState({
 		if (mostRecent) selection.select(mostRecent.id);
 	}
 
-	const stopTable = table.subscribe(() => {
-		void reconcileHandles().catch(reportBackgroundError);
-	});
+	// Registration is synchronous, does no I/O and never fires initially
+	// (ADR-0187), so the reconcile below has already seen everything.
+	const stopTable = table.subscribe(reconcileHandles);
 
-	// Once the table has loaded, mirror it in and guarantee a conversation to land
-	// in (a fresh install has none).
-	void conversationsView.whenReady
-		.then(async () => {
-			await reconcileHandles();
-			if (conversationList.length === 0) await createConversation();
-		})
-		.catch(reportBackgroundError);
+	// Mirror the table in and guarantee a conversation to land in (a fresh
+	// install has none).
+	reconcileHandles();
+	if (conversationList.length === 0) createConversation();
 
 	// ── Conversation CRUD ────────────────────────────────────────────
 
 	/**
 	 * Open a new conversation, carrying the active conversation's model choice
-	 * forward, and select it after its row document is ready.
+	 * forward, and select it.
 	 *
 	 * With a {@link ConversationOpener}, the conversation is born titled and its
 	 * first turn is sent through its own handle, so a deliberately opened session
-	 * never writes into whatever conversation happened to be active. The handle
-	 * does not exist until the row document is ready, which is why every caller
-	 * that cares where its turn landed must await this.
+	 * never writes into whatever conversation happened to be active. It returns
+	 * the id rather than a promise of one: the row, its document and its handle
+	 * all exist by the time this returns, so a caller that cares where its turn
+	 * landed has nothing left to wait for.
+	 *
+	 * Throws on a refused write, so a caller's toast can present it. Reaching
+	 * here at all means the app's own lens declared these fields, so a refusal is
+	 * a bug rather than a condition a chat surface recovers from.
 	 */
-	async function createConversation(
-		opener: ConversationOpener = {},
-	): Promise<ConversationId> {
+	function createConversation(opener: ConversationOpener = {}): ConversationId {
 		const nowIso = InstantString.now();
 		const current =
 			selection.current === null ? undefined : handles.get(selection.current);
 
-		const row = await table.create({
-			title: opener.title ?? UNTITLED,
-			model: current?.model ?? defaultModel,
-			createdAt: nowIso,
-			updatedAt: nowIso,
-		});
+		const { data: row, error } = table.create(
+			{
+				title: opener.title ?? UNTITLED,
+				model: current?.model ?? defaultModel,
+				createdAt: nowIso,
+				updatedAt: nowIso,
+			},
+			// Named here, at the only moment there is exactly one creator. Reaching
+			// for the root lazily would let two devices first-opening one
+			// conversation each mint their own and lose one (ADR-0215).
+			{ document: [CONVERSATION_MESSAGES] },
+		);
+		if (error !== null) throw error;
+
 		const id = asConversationId(row.id);
-		await reconcileHandles();
+		reconcileHandles();
 		selection.select(id);
 
 		if (opener.opening !== undefined) {
@@ -542,15 +576,16 @@ export function createAgentChatState({
 		return id;
 	}
 
-	async function deleteConversation(conversationId: ConversationId) {
-		await table.delete(conversationId);
-		await conversationsView.refresh();
+	function deleteConversation(conversationId: ConversationId): void {
+		const { error } = table.delete(conversationId);
+		if (error !== null) throw error;
+		readRows();
 		destroyConversation(conversationId);
 
 		if (selection.current === conversationId) {
 			const next = conversationList[0];
 			if (next) selection.select(next.id);
-			else await createConversation();
+			else createConversation();
 		}
 	}
 

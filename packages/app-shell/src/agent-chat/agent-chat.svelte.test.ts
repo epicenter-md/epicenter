@@ -11,6 +11,10 @@
  * their non-reactive meaning (the pattern `packages/svelte-utils` tests use) and
  * every assertion reads imperatively. That is enough here: the question is where
  * a write went, not whether a view recomputed.
+ *
+ * The fake table is synchronous, because the real one is: rows come back from a
+ * document already in memory and a row's message root is allocated beside the
+ * row. The only thing still awaited is the agent loop's own turn.
  */
 
 import { expect, mock, test } from 'bun:test';
@@ -24,12 +28,7 @@ import { expect, mock, test } from 'bun:test';
 	{ by: <TValue>(compute: () => TValue) => compute() },
 );
 
-mock.module('svelte/reactivity', () => ({
-	SvelteMap: Map,
-	// `fromTable` installs its subscription only from inside a Svelte effect;
-	// these tests drive the registry directly through its own table subscription.
-	createSubscriber: () => () => {},
-}));
+mock.module('svelte/reactivity', () => ({ SvelteMap: Map }));
 
 // The engine is the one collaborator that would reach the network. An empty
 // stream ends the turn immediately and, because an assistant message with no
@@ -41,10 +40,11 @@ mock.module('@epicenter/client', () => ({
 
 import type { AgentMessage } from '@epicenter/agent';
 import type { Conversation, ConversationsTable } from '@epicenter/chat';
-import type { RowDocument } from '@epicenter/data/legacy';
+import type { RowDocument } from '@epicenter/data';
+import { Ok } from 'wellcrafted/result';
 import { createAgentChatState } from './agent-chat.svelte.js';
 
-/** Let the registry's own async work (row documents, reconciliation) drain. */
+/** Let the agent loop's turn finish. */
 const settle = () => Bun.sleep(1);
 
 const DEFAULT_MODEL = 'test-model';
@@ -55,47 +55,22 @@ type MessageLog = {
 	texts(): string[];
 };
 
-function createFakeChat() {
-	const rows = new Map<string, Conversation>();
-	const listeners = new Set<() => void>();
-	const documents = new Map<string, MessageLog>();
-	const creates: Conversation[] = [];
-	const updates: { id: string; patch: Partial<Conversation> }[] = [];
-	let nextId = 0;
-
-	const table = {
-		async create(fields: Omit<Conversation, 'id'>) {
-			const row = { id: `c${++nextId}`, ...fields };
-			rows.set(row.id, row);
-			creates.push(row);
-			for (const listener of listeners) listener();
-			return row;
+/** A row document that records writes instead of storing a CRDT. */
+function createFakeDocument(): { document: RowDocument; log: MessageLog } {
+	const messages: AgentMessage[] = [];
+	const handlers = new Set<() => void>();
+	const root = {
+		setAttr(_key: string, value: AgentMessage) {
+			messages.push(value);
+			for (const handler of handlers) handler();
 		},
-		async patch(id: string, patch: Partial<Conversation>) {
-			updates.push({ id, patch });
-			const existing = rows.get(id);
-			if (existing) rows.set(id, { ...existing, ...patch });
-			return { data: rows.get(id), error: null };
-		},
-		async delete(id: string) {
-			return rows.delete(id);
-		},
-		async get(id: string) {
-			return { data: rows.get(id), error: null };
-		},
-		async scan() {
-			return { rows: [...rows.values()], nonconforming: [] };
-		},
-		subscribe(listener: () => void) {
-			listeners.add(listener);
-			return () => listeners.delete(listener);
-		},
-	} as unknown as ConversationsTable;
-
-	/** A row document that records writes instead of storing a CRDT. */
-	function openConversationDocument(id: string): Promise<RowDocument> {
-		const messages: AgentMessage[] = [];
-		documents.set(id, {
+		attrEntries: () => messages.map((message) => [message.id, message]),
+		observe: (handler: () => void) => handlers.add(handler),
+		unobserve: (handler: () => void) => handlers.delete(handler),
+	};
+	return {
+		document: { get: () => root } as unknown as RowDocument,
+		log: {
 			messages,
 			texts: () =>
 				messages.flatMap((message) =>
@@ -103,28 +78,61 @@ function createFakeChat() {
 						part.type === 'text' ? [part.text] : [],
 					),
 				),
-		});
-		const handlers = new Set<() => void>();
-		const map = {
-			setAttr(_key: string, value: AgentMessage) {
-				messages.push(value);
-				for (const handler of handlers) handler();
-			},
-			attrEntries: () => messages.map((message) => [message.id, message]),
-			observe: (handler: () => void) => handlers.add(handler),
-			unobserve: (handler: () => void) => handlers.delete(handler),
-		};
-		return Promise.resolve({
-			get: () => map,
-			transact: <TValue>(run: () => TValue) => run(),
-			whenDurable: async () => {},
-			async [Symbol.asyncDispose]() {},
-		} as unknown as RowDocument);
-	}
+		},
+	};
+}
+
+function createFakeChat() {
+	const rows = new Map<string, Conversation>();
+	const listeners = new Set<() => void>();
+	const documents = new Map<
+		string,
+		{ document: RowDocument; log: MessageLog }
+	>();
+	const creates: Conversation[] = [];
+	const updates: { id: string; patch: Partial<Conversation> }[] = [];
+	let nextId = 0;
+
+	const announce = () => {
+		for (const listener of listeners) listener();
+	};
+
+	const table = {
+		create(fields: Omit<Conversation, 'id'>) {
+			const row = { id: `c${++nextId}`, ...fields };
+			rows.set(row.id, row);
+			documents.set(row.id, createFakeDocument());
+			creates.push(row);
+			announce();
+			return Ok(row);
+		},
+		update(id: string, patch: Partial<Conversation>) {
+			updates.push({ id, patch });
+			const existing = rows.get(id);
+			if (existing) rows.set(id, { ...existing, ...patch });
+			return Ok(rows.get(id));
+		},
+		delete(id: string) {
+			const existed = rows.delete(id);
+			documents.delete(id);
+			announce();
+			return Ok(existed);
+		},
+		get(id: string) {
+			return Ok(rows.get(id));
+		},
+		list() {
+			return Ok({ rows: [...rows.values()], nonconforming: [] });
+		},
+		document: (id: string) => documents.get(id)?.document,
+		subscribe(listener: () => void) {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
+		},
+	} as unknown as ConversationsTable;
 
 	const chat = createAgentChatState({
 		table,
-		openConversationDocument,
 		reportBackgroundError: (cause) => {
 			throw cause;
 		},
@@ -143,11 +151,11 @@ function createFakeChat() {
 		creates,
 		updates,
 		rows,
-		/** The message log for one conversation, which must already be open. */
+		/** The message log for one conversation, which must already exist. */
 		document(id: string): MessageLog {
-			const log = documents.get(id);
-			if (!log) throw new Error(`No document was opened for ${id}`);
-			return log;
+			const opened = documents.get(id);
+			if (!opened) throw new Error(`No document was opened for ${id}`);
+			return opened.log;
 		},
 	};
 }
@@ -159,7 +167,6 @@ function createFakeChat() {
  */
 async function bootWithActiveTopic() {
 	const fake = createFakeChat();
-	await settle();
 
 	const topicId = fake.chat.activeConversationId;
 	if (topicId === null) throw new Error('Boot left no active conversation');
@@ -174,7 +181,7 @@ test('a blank conversation is unchanged: placeholder title, no opening turn', as
 	const { chat, creates, document } = await bootWithActiveTopic();
 	const createdBefore = creates.length;
 
-	const id = await chat.createConversation();
+	const id = chat.createConversation();
 
 	expect(creates.slice(createdBefore)).toEqual([
 		{
@@ -192,7 +199,7 @@ test('a blank conversation is unchanged: placeholder title, no opening turn', as
 test('a supplied title is written at creation, not derived from the first turn', async () => {
 	const { chat, creates } = await bootWithActiveTopic();
 
-	const id = await chat.createConversation({ title: 'Practice: 你好, 再见' });
+	const id = chat.createConversation({ title: 'Practice: 你好, 再见' });
 
 	expect(creates.at(-1)?.title).toBe('Practice: 你好, 再见');
 	expect(creates.at(-1)?.id).toBe(id);
@@ -202,7 +209,7 @@ test('a supplied title survives the opening turn', async () => {
 	const { chat, updates, rows } = await bootWithActiveTopic();
 	const opening = 'Using the entries below, write a short passage.';
 
-	const id = await chat.createConversation({
+	const id = chat.createConversation({
 		title: 'Practice: 你好, 再见',
 		opening,
 	});
@@ -223,7 +230,7 @@ test('the opening turn lands in the new conversation, not the active one', async
 	const { chat, document, topicId } = await bootWithActiveTopic();
 	const opening = 'Using the entries below, write a short passage.';
 
-	const practiceId = await chat.createConversation({
+	const practiceId = chat.createConversation({
 		title: 'Practice: 你好',
 		opening,
 	});
@@ -238,26 +245,10 @@ test('the opening turn lands in the new conversation, not the active one', async
 	expect(chat.activeConversationId).toBe(practiceId);
 });
 
-test('the new conversation is only active once the create is awaited', async () => {
-	const { chat, topicId } = await bootWithActiveTopic();
-
-	const pending = chat.createConversation({
-		title: 'Practice: 你好',
-		opening: 'Using the entries below, write a short passage.',
-	});
-
-	// Reading `active` without awaiting still sees the previous conversation.
-	// Sending the opening from the call site instead of from inside the create is
-	// what used to put a practice turn in the wrong thread, or drop it entirely.
-	expect(chat.activeConversationId).toBe(topicId);
-	const practiceId = await pending;
-	expect(chat.activeConversationId).toBe(practiceId);
-});
-
 test('a title with no opening opens a named conversation and sends nothing', async () => {
 	const { chat, document } = await bootWithActiveTopic();
 
-	const id = await chat.createConversation({ title: 'Practice: 你好' });
+	const id = chat.createConversation({ title: 'Practice: 你好' });
 	await settle();
 
 	expect(document(id).messages).toEqual([]);
@@ -266,7 +257,7 @@ test('a title with no opening opens a named conversation and sends nothing', asy
 test('a composed conversation carries the model forward like a blank one', async () => {
 	const { chat, creates } = await bootWithActiveTopic();
 
-	await chat.createConversation({ title: 'Practice: 你好' });
+	chat.createConversation({ title: 'Practice: 你好' });
 
 	expect(creates.at(-1)?.model).toBe(DEFAULT_MODEL);
 });
