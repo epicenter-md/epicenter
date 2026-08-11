@@ -20,7 +20,7 @@ Design authority: [ADR-0190](../../docs/adr/0190-a-build-declares-which-epicente
 - `src/workspace-owner.ts` owns the one Device runtime and the closed built-in definition catalog. Home services receive typed handles from that owner; trusted SPAs use the same-origin workspace API. Neither receives a SQLite path.
 - `src/host.ts` composes canonical in-process app catalogs, optional boxed stdio MCP tools, and optional read-only local sources into one namespaced `ToolCatalog`. The host does not open root-Yjs persistence or own a second data directory.
 - `src/workspace.ts` defines the Device-owned `epicenter-conversations` workspace. Boot resumes the latest durable row or creates one `New Chat` row before opening its document. `clear` creates another row. Home releases and flushes row documents before the workspace owner disposes.
-- Local sources remain host-owned and are never relay routes or capabilities. A remote client sends Home commands; finished history belongs to the durable workspace plane, not the live AttachRelay.
+- Local sources remain host-owned and are never remote routes or capabilities. Finished history belongs to the durable workspace plane.
 - Command semantics belong to the host session, not the WebSocket adapter. Chat sends, direct invocations, approval answers, and later palette or voice commands must route through one host-owned session command surface.
 
 ## Refusals (do not reopen without a new ADR)

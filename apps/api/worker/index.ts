@@ -15,24 +15,21 @@
 
 import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
-	AttachRelay,
 	type CloudEnv,
 	connectHyperdriveDb,
-	createDurableObjectAttachRelay,
 	createServerApp,
-	mountAttachRelayApp,
+	mountStoreSyncApp,
+	StoreAuthority,
 	mountBlobsApp,
 	mountCloudAuth,
 	mountCloudDb,
 	mountInferenceApp,
 	mountSessionApp,
-	mountStoreSyncApp,
 	mountTranscriptionApp,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
 	resolveRequestOAuthPrincipal,
 	type ServerBindings,
-	StoreAuthority,
 } from '@epicenter/server';
 import type { Context } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -78,7 +75,7 @@ const bearer = requireBearerPrincipal(resolveRequestOAuthPrincipal);
 // owns. This helper is the Worker's implementation of "serve the shell":
 // fetch it from the ASSETS binding, forwarding the original request so
 // conditional-request headers still work. The `Cloudflare.Env` cast lives
-// here at the app edge, like ATTACH_RELAY and HYPERDRIVE (ADR-0066). A 503 with the
+// here at the app edge, like HYPERDRIVE (ADR-0066). A 503 with the
 // build command beats a blank page when the UI has not been built (local
 // `wrangler dev`).
 const serveUiShell = async (c: Context<CloudEnv>) => {
@@ -127,14 +124,6 @@ mountCloudAuth(app, {
 
 // Principal-partitioned reusable surfaces.
 mountSessionApp(app, { auth: cookieOrBearer });
-// Remote Super Chat attach (ADR-0115): the endpoint-addressed relay that forwards
-// live session bytes between a signed-in desktop host and a signed-in client of
-// the same principal. It is WS-aware and resolves the OAuth bearer itself; the
-// principal is stamped server-side, never the query. The transport is a Durable
-// Object per `(principalId, hostId)` pair, bound here at the app edge where this
-// Worker's generated `ATTACH_RELAY` binding is typed (ADR-0066). On Cloud a signed-in bearer is the whole attach
-// authorization: no device-grant store, pairing ceremony, or QR (self-host keeps
-// per-device grants because it has no account substrate).
 // The store transport (ADR-0220/0222): one Durable Object per
 // (principal, application namespace), reached by a WebSocket upgrade carrying
 // the same OAuth bearer every other surface uses. The principal is stamped from
@@ -146,18 +135,13 @@ mountStoreSyncApp(app, {
 	resolveAuthority: (env, name) => {
 		const namespace = (
 			env as Cloudflare.Env & {
-				STORE_SYNC: DurableObjectNamespace<StoreAuthority>;
+				STORE_AUTHORITY: DurableObjectNamespace<StoreAuthority>;
 			}
-		).STORE_SYNC;
+		).STORE_AUTHORITY;
 		return namespace.get(namespace.idFromName(name)) as unknown as {
 			fetch(request: Request): Promise<Response>;
 		};
 	},
-});
-mountAttachRelayApp(app, {
-	resolveBearerPrincipal: resolveRequestOAuthPrincipal,
-	resolveRelay: (env) =>
-		createDurableObjectAttachRelay((env as Cloudflare.Env).ATTACH_RELAY),
 });
 // Content-addressed blob store (supersedes the retired assets surface). v1 is
 // unmetered (no Autumn policy): Autumn's check() denies by default with no plan
@@ -210,4 +194,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { AttachRelay, StoreAuthority };
+export { StoreAuthority };

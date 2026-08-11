@@ -10,7 +10,6 @@
 	"scripts": {
 		"dev": "bun run dev:desktop",
 		"dev:desktop": "tauri dev --config src-tauri/tauri.dev.conf.json",
-		"remote:dev": "bun run scripts/remote-dev-smoke.ts",
 		"build": "bun run clean:dist && bun run build:home && bun run build:whispering && bun run build:honeycrisp",
 		"build:home": "vite build",
 		"build:honeycrisp": "bun run --cwd ../honeycrisp build:epicenter",

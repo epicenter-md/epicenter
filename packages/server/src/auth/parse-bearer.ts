@@ -3,9 +3,8 @@
  * Case-insensitive on the scheme; trims surrounding whitespace; returns null
  * for missing, empty, or non-bearer inputs.
  *
- * Shared between the attach relay (WebSocket upgrade extraction) and
- * `require-auth` (HTTP wrappers) so both surfaces agree on what counts as a
- * bearer.
+ * Used by the HTTP auth wrappers so every protected route agrees on what counts
+ * as a bearer.
  */
 export function parseBearer(value: string | null): string | null {
 	if (!value) return null;

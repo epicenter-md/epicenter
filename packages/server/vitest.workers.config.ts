@@ -18,7 +18,10 @@ export default defineConfig({
 				compatibilityDate: '2026-03-06',
 				compatibilityFlags: ['nodejs_compat'],
 				durableObjects: {
-					STORE_SYNC: { className: 'StoreAuthority', useSQLite: true },
+					STORE_AUTHORITY: {
+						className: 'StoreAuthority',
+						useSQLite: true,
+					},
 					REPLICA: { className: 'StoreTestReplica', useSQLite: true },
 				},
 				// The replicas dial the route through the worker itself, which is

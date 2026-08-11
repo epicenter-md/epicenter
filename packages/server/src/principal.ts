@@ -24,16 +24,6 @@ import type { BlobId } from '@epicenter/blobs';
 import type { PrincipalId } from '@epicenter/identity';
 
 /**
- * Durable Object name template for one AttachRelay pair (ADR-0115). One DO per
- * `(principalId, hostId)`: the host and every client of that pair route to the
- * same actor, which is the invariant the in-DO {@link createAttachRelay}
- * coordinator needs to see both sockets. The `principalId` segment is the
- * partition, so a client that guesses another principal's `hostId` still lands
- * in its OWN partition's DO (an empty one) and pairs with no host.
- */
-export type AttachHostDoName = `principals/${string}/attach-hosts/${string}`;
-
-/**
  * R2 object key template for an opaque-id blob, single form. The BlobId is
  * used verbatim: R2 is the index, with no separate database row. See
  * ADR-0089 (presigned S3 kernel) as amended by ADR-0148 (opaque BlobId).
@@ -58,14 +48,6 @@ export type BlobPrincipalPrefix = `principals/${string}/blobs/`;
  * application cannot come to disagree about which application they are.
  */
 export type StoreAuthorityDoName = `principals/${string}/stores/${string}`;
-
-/** Durable name of one AttachRelay pair's Cloudflare Durable Object. */
-export function attachHostDoName(
-	principalId: PrincipalId,
-	hostId: string,
-): AttachHostDoName {
-	return `principals/${principalId}/attach-hosts/${hostId}`;
-}
 
 /** Durable key of an opaque-id blob's R2 object. */
 export function blobKey(principalId: PrincipalId, blobId: BlobId): BlobR2Key {

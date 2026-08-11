@@ -44,7 +44,6 @@ choice and any deployment policy.
 | `mountBlobsApp` | `src/routes/blobs.ts` | Content-addressed bytes, S3-compatible behind `resolveDeploymentBlobStore`. |
 | `mountInferenceApp` | `src/routes/inference.ts` | Provider-backed inference, with `rateLimit` available as a policy. |
 | `mountTranscriptionApp` | `src/routes/transcription.ts` | Provider-backed speech to text. |
-| `mountAttachRelayApp` | `src/attach-relay/mount.ts` | Forwards opaque bytes between two authenticated endpoints of one principal (ADR-0115). |
 | `mountCloudAuth`, `mountCloudDb` | `src/mount-cloud-auth.ts`, `src/mount-cloud-db.ts` | Cloud only. An instance composes no Better Auth and no Postgres. |
 
 Billing is not here and never comes here: the catalog, the routes, and Autumn

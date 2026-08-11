@@ -8,7 +8,7 @@ import type { StoreTestReplica } from './replica.js';
 declare global {
 	namespace Cloudflare {
 		interface Env {
-			STORE_SYNC: DurableObjectNamespace<StoreAuthority>;
+			STORE_AUTHORITY: DurableObjectNamespace<StoreAuthority>;
 			REPLICA: DurableObjectNamespace<StoreTestReplica>;
 		}
 	}

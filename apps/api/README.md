@@ -106,14 +106,10 @@ Cloudflare Workers
 │   ├── /v1/*                  OpenAI-compatible chat and STT gateways
 │   ├── /api/blobs             content-addressed blob store (presigned S3)
 │   ├── /api/billing/*         Autumn (hosted-only, worker/billing/)
-│   ├── /attach                Super Chat live relay upgrade
 │   └── /api/store/v1/sync     store sync upgrade (mountStoreSyncApp)
 │
 ├── StoreAuthority (Durable Object, SQLite-backed)
 │   └── One opaque log per (principal, application namespace)
-│
-└── AttachRelay (Durable Object)
-    └── One live rendezvous per (principalId, hostId); stores nothing
 ```
 
 API keys for AI providers are environment secrets (`wrangler secret put`). They never leave the hub. The client sends a session token, the hub validates it and swaps in the real key before forwarding to the provider.

@@ -125,14 +125,6 @@ const PROFILE: Surface[] = [
 		bun: 'served',
 	},
 	{
-		surface: 'mountAttachRelayApp',
-		method: 'GET',
-		url: `${ORIGIN}/attach`,
-		worker: 'served',
-		bun: 'absent',
-		why: 'Hosted attach rides a Durable Object per (principalId, hostId) (ADR-0115). The Bun host binds no namespace, and a dev process is not a rendezvous any phone dials.',
-	},
-	{
 		surface: 'billing',
 		method: 'GET',
 		url: `${ORIGIN}/api/billing/plans`,

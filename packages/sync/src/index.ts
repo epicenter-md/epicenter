@@ -7,9 +7,8 @@
  * main subprotocol. These constants and helpers are the one vocabulary the
  * client and server halves of that handshake must agree on.
  *
- * The Yjs sync wire protocol this package was named for is gone (ADR-0166).
- * The attach relay (ADR-0115) is the only remaining WebSocket surface, and it
- * forwards opaque bytes rather than framing document updates.
+ * The package exports the vocabulary shared by browser and server store-sync
+ * upgrades.
  */
 
 export {

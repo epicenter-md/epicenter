@@ -7,7 +7,7 @@
  * dashboard, hosted UIs) and external OAuth clients (CLI, Tauri,
  * extension).
  *
- * For routes that are external-clients only (`/api/ai/*`, the attach relay),
+ * For routes that are external-clients only (such as `/api/ai/*`),
  * prefer {@link requireBearerPrincipal}, which skips the cookie attempt.
  *
  * Cookie-vs-bearer is resolved deterministically here, cookie-first: a
@@ -156,7 +156,7 @@ export function requireCookieOrBearerPrincipal(
  * but skips the cookie path, so the route always reports 401 with a
  * standard OAuth `WWW-Authenticate` header instead of the cookie failure
  * path. Use on protected resource routes that should never see a browser
- * cookie (the attach relay, AI chat).
+ * cookie (such as AI chat).
  *
  * A factory that closes over the deployment's {@link ResolveBearerPrincipal}:
  * the cloud passes {@link resolveRequestOAuthPrincipal}, an instance its

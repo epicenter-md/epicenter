@@ -14,27 +14,6 @@
  * applicable). See `apps/api/worker/index.ts` for the cloud composition.
  */
 
-export {
-	AttachRelay,
-	createDurableObjectAttachRelay,
-} from './attach-relay/cloudflare-do.js';
-// The AttachRelay (ADR-0115): the endpoint-addressed relay that forwards live
-// Super Chat bytes between two authenticated endpoints of one principal. The
-// wire contract (the connect route and the frame delivered to a host) is the
-// shared addressing vocabulary any transport or client speaks; the coordinator
-// itself stays package-internal. On Cloud the
-// transport is a Durable Object: `createDurableObjectAttachRelay` is the backend
-// a deployment wires into `mountAttachRelayApp`'s `resolveRelay`, and the
-// `AttachRelay` class is re-exported so a deployment's wrangler.jsonc can resolve
-// `class_name: "AttachRelay"` against this entrypoint (the Bun transport lives in
-// the `/bun` barrel instead). The relay forwards opaque bytes for one consumer,
-// Super Chat attach (clause 4); it is never a routing product.
-export {
-	RELAY_CLOSE,
-	type RelayToHostFrame,
-} from './attach-relay/contracts.js';
-export { mountAttachRelayApp } from './attach-relay/mount.js';
-export { ATTACH_RELAY_ROUTE } from './attach-relay/route.js';
 // The single-partition instance's bearer resolver (self-host; ADR-0075). The
 // deployment injects `createEnvTokenResolver(secret)` as its `ResolveBearerPrincipal`.
 // The pure generator + boot entropy gate (`generateInstanceToken`

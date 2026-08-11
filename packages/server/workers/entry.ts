@@ -35,8 +35,9 @@ const app = new Hono<Env>();
 mountStoreSyncApp(app, {
 	resolveBearerPrincipal: resolveTestPrincipal,
 	resolveAuthority: (env, name) => {
-		const namespace = (env as unknown as { STORE_SYNC: DurableObjectNamespace })
-			.STORE_SYNC;
+		const namespace = (
+			env as unknown as { STORE_AUTHORITY: DurableObjectNamespace }
+		).STORE_AUTHORITY;
 		return namespace.get(namespace.idFromName(name)) as unknown as {
 			fetch(request: Request): Promise<Response>;
 		};

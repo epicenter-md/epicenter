@@ -124,12 +124,6 @@ mountTranscriptionApp(app, {
 mountBlobsApp(app, { auth });
 ```
 
-Bun mounts three more that a Worker isolate cannot host, because their transport
-is `Bun.serve`'s WebSocket handler and their per-device grants are an in-process
-store: `mountAttachRelayApp`, `mountAttachGrantsApp`, and
-`mountHostDirectoryApp` (ADR-0115). They ship only in the `@epicenter/server/bun`
-barrel.
-
 Cloudflare (`worker/index.ts`) reads the per-request secret at the edge instead,
 running the same entropy gate per request (a Worker has no boot phase):
 
