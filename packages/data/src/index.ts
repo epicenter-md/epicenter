@@ -31,7 +31,7 @@ export {
 	type RowOf,
 	RowWriteError,
 } from '@epicenter/lens';
-export { SNAPSHOT_FOLD_THRESHOLD, type OutboxEntry } from './store/log.js';
+export { type OutboxEntry, SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
 export {
 	type ApplicationOf,
 	asApplication,

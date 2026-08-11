@@ -37,8 +37,8 @@ export type BunStore = Store & {
  *
  * **No application in this repository calls this today.** Honeycrisp opens the
  * browser store in every build including the Tauri one, by the refusal in
- * `apps/honeycrisp/src/lib/application-platform.ts`: a host serves bundles and
- * owns no application data (ADR-0226). This stays exported because it is a
+ * `apps/honeycrisp/src/lib/application.ts`: a host serves bundles and owns no
+ * application data (ADR-0226). This stays exported because it is a
  * published entry point of an MIT package and because it is the only opener
  * that proves the log survives a real reopen from a real file, which
  * `store.test.ts` uses. An in-repo caller returning is a decision, not a

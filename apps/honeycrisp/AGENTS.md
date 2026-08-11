@@ -5,7 +5,27 @@ note's prose is an application-named root inside that note's own container. The
 one application running on the store today, so it is also the reference for how
 an app is built.
 
-Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0215](../../docs/adr/0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md) (an application is one document and a row owns a nested container).
+Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0215](../../docs/adr/0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md) (an application is one document and a row owns a nested container), [ADR-0233](../../docs/adr/0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) (a private document and one workspace replica per account, chosen by auth at boot), [ADR-0231](../../docs/adr/0231-rebuilding-replaces-a-workspaces-current-yjs-document.md) (rebuild replaces the workspace's current Yjs document).
+
+## Two durable documents, and auth picks one at boot
+
+`src/lib/application.ts` is the only place that opens a store, and it opens
+exactly one (ADR-0233):
+
+```text
+epicenter/so.epicenter.honeycrisp/private              signed out, never syncs
+epicenter/so.epicenter.honeycrisp/workspace/<principal id>   one per account
+```
+
+Signed out (or a build with no auth) opens the private document and attaches no
+sync. A known principal, `signed-in` or `reauth-required`, opens that account's
+own replica and attaches sync. A page lifetime is one auth generation
+(ADR-0232), so the choice never changes while the app lives; `reloadOnAuthChange`
+starts the next one.
+
+A signed-in workspace is unavailable until its first bootstrap binds it to an
+authority document, so the layout's boot gate holds while it waits. Signing out
+closes a replica and keeps it, so signing back in finds the same account's work.
 
 ## Three builds, one store shape
 
@@ -16,10 +36,10 @@ Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-broke
 | Epicenter-hosted | `bun run build:epicenter` |
 
 **They differ in nothing that concerns data.** Every build calls
-`openBrowserStore` and owns its replica; the desktop host serves the bundle and
-brokers the credential and owns none of it (ADR-0226). There used to be a
-platform seam where the hosted build reached the host's shared
-`epicenter.sqlite3`, and ADR-0226 refused it.
+`open` from `@epicenter/data/browser` and owns its replica; the desktop host
+serves the bundle and brokers the credential and owns none of it (ADR-0226).
+There used to be a platform seam where the hosted build reached the host's
+shared `epicenter.sqlite3`, and ADR-0226 refused it.
 
 What remains behind `#platform/*` is auth and instance only: how a build gets a
 bearer, not where its data lives. `src/lib/platform-selection.test.ts` reads the
@@ -35,6 +55,12 @@ is checked by an editor.
   standalone bundle and the hosted build are two stores on one machine, and
   nothing moves between them. Two devices converge by signing into the same
   account, not by copying a file.
+- Do not copy, merge, or promote the private document into a workspace, in
+  either direction. Nothing in sync may name the private document; a copy
+  action, if the product ever wants one, is an explicit application feature.
+- Do not fall back to the private document when a workspace cannot open.
+  A signed-in generation with no usable principal, or one whose dial is
+  permanently denied before its first bootstrap, is unavailable and says so.
 - Do not add a `#platform/*` seam for storage. Every build opens its own store;
   a seam there is the thing ADR-0226 refused.
 - Do not reach a root inside a note's document lazily. Root names are declared
