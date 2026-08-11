@@ -80,23 +80,23 @@ export type HoneycrispApplication = {
  * which is why nothing below this line returns a promise.
  *
  * Which document opens is auth's answer at boot (ADR-0233): signed out is the
- * device-owned private document, and a known principal is that account's own
- * workspace replica, at an address no other account shares. A page lifetime is
+ * device document, and a known principal is that account's own replica, at an
+ * address no other account shares. A page lifetime is
  * one auth generation (ADR-0232), so the choice never changes while this
  * application lives; signing in, out, or into a second account reloads into a
  * different document, and none of them ever reads another's storage. Signing
- * out closes a workspace replica and keeps it, so signing back in finds the
+ * out closes an account replica and keeps it, so signing back in finds the
  * same account's work, offline edits included.
  *
- * A private generation resolves at once and never dials: a private document
- * has no sync to wait for. A workspace generation resolves only with a
+ * A device generation resolves at once and never dials: a device document
+ * has no sync to wait for. An account generation resolves only with a
  * workspace that is safe to edit (ADR-0231). A store already bound to an
  * authority document resolves at once and syncs or works offline as ever. An
  * unbound store is UNAVAILABLE: this promise stays pending, behind the
  * layout's boot gate, until the first bootstrap binds it. If the dial is
  * permanently denied first, it REJECTS with the honest answer instead: a
  * signed-in workspace whose credential is refused is unavailable, never
- * quietly the private document. There is no moment where a signed-in,
+ * quietly the device document. There is no moment where a signed-in,
  * never-downloaded workspace takes edits that a later bootstrap would have
  * to discard.
  */
@@ -106,8 +106,8 @@ export async function openHoneycrispApplication({
 }: OpenHoneycrispOptions = {}): Promise<HoneycrispApplication> {
 	signal?.throwIfAborted();
 	// The one decision point between the documents. A signed-out generation, or
-	// a build with no auth at all, edits the private document; a generation with
-	// a principal edits that principal's workspace replica. `workspace` carries
+	// a build with no auth at all, edits the device document; a generation with
+	// a principal edits that principal's account replica. `workspace` carries
 	// the auth alongside the account so everything sync-shaped below can only
 	// exist where a workspace document is the one that opened.
 	const workspace =
@@ -119,12 +119,12 @@ export async function openHoneycrispApplication({
 	// and no second call to bind. An auth state carrying no usable principal id
 	// is refused here as `Unaddressable` rather than guessing an address: a
 	// signed-in generation with no account is unavailable, and never quietly the
-	// private document.
+	// device document.
 	const { data: db, error } = await openBrowser(
 		honeycrispLens,
 		workspace === undefined
-			? { document: 'private' }
-			: { document: 'workspace', principalId: workspace.principalId },
+			? { owner: 'device' }
+			: { owner: 'account', principalId: workspace.principalId },
 	);
 	if (error !== null) throw error;
 	let sync: SyncConnection | undefined;
@@ -137,7 +137,7 @@ export async function openHoneycrispApplication({
 		 * reload. Runs after a confirmed supersession, and after this device's
 		 * own successful rebuild; the fresh boot's ordinary join delivers the
 		 * current document into an empty replica. What it can reach is one
-		 * address: this generation's own account replica. The private document
+		 * address: this generation's own account replica. The device document
 		 * and every other account's replica are databases this generation never
 		 * opened and cannot name.
 		 */

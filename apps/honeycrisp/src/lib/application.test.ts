@@ -2,21 +2,21 @@
  * Honeycrisp Application Lifecycle Tests
  *
  * Authentication chooses which durable document a generation edits, and whose
- * it is (ADR-0233): signed out is the device-owned private document, and a
- * principal is that account's own retained workspace replica. These tests pin
+ * it is (ADR-0233): signed out is the device document, and a principal is that
+ * account's retained replica. These tests pin
  * the boundaries between them: sync, supersession, and rebuild exist only on
  * the workspace side, they can reach only the one account's replica that
- * opened, and no workspace event can reach the private document.
+ * opened, and no workspace event can reach the device document.
  *
  * Key behaviors:
  * - An aborted boot rejects with the abort, not a storage failure
- * - A signed-out boot opens the private document and never dials
- * - Private work survives signing in, signing out, and a second account
+ * - A signed-out boot opens the device document and never dials
+ * - Device work survives signing in, signing out, and a second account
  * - Returning to an account reopens its retained replica, offline work included
  * - A second account gets its own empty replica and never reads the first's
- * - A signed-in state with no account id opens no workspace store
+ * - A signed-in state with no account id opens no account store
  * - An unbound workspace whose dial is permanently denied is unavailable,
- *   never the private document
+ *   never the device document
  * - Supersession and rebuild discard one account's replica and nothing else
  *
  * `fake-indexeddb` supplies the browser store's storage; the socket is a fake
@@ -50,9 +50,9 @@ const reloads = mock();
 const { openHoneycrispApplication } = await import('./application.js');
 
 /** The durable addresses this application can hold (ADR-0233). */
-const PRIVATE = `epicenter/${honeycrispLens.namespace}/private`;
-const workspaceOf = (principalId: string) =>
-	`epicenter/${honeycrispLens.namespace}/workspace/${principalId}`;
+const DEVICE = `epicenter/${honeycrispLens.namespace}/device`;
+const accountOf = (principalId: string) =>
+	`epicenter/${honeycrispLens.namespace}/account/${principalId}`;
 
 async function until(condition: () => boolean, label: string): Promise<void> {
 	for (let attempt = 0; attempt < 400; attempt += 1) {
@@ -206,11 +206,11 @@ test('an abort before the store opens rejects with the abort, not a storage fail
 	).rejects.toThrow(/abort/i);
 });
 
-test('private work survives signing in, signing out, and a second account', async () => {
+test('device work survives signing in, signing out, and a second account', async () => {
 	await resetStorage();
 	const signedOut = createFakeAuth({ status: 'signed-out' });
 
-	// Generation 1, signed out: the private document, no sync, no rebuild,
+	// Generation 1, signed out: the device document, no sync, no rebuild,
 	// and not a single dial.
 	{
 		const application = await openHoneycrispApplication({ auth: signedOut });
@@ -238,7 +238,7 @@ test('private work survives signing in, signing out, and a second account', asyn
 		await application[Symbol.asyncDispose]();
 	}
 
-	// Generation 3, signed out again: the private document, exactly as it was.
+	// Generation 3, signed out again: the device document, exactly as it was.
 	{
 		const application = await openHoneycrispApplication({ auth: signedOut });
 		expect(titles(application)).toEqual(['anonymous draft']);
@@ -247,7 +247,7 @@ test('private work survives signing in, signing out, and a second account', asyn
 	}
 
 	// Generation 4, signed in as bob: his own empty replica. Alice's rows are
-	// not his, and the private document is nobody's but this device's.
+	// not his, and the device document is nobody's but this device's.
 	{
 		const { auth } = announcingAuth({
 			principalId: 'bob',
@@ -269,9 +269,9 @@ test('private work survives signing in, signing out, and a second account', asyn
 	}
 
 	const names = await databaseNames();
-	expect(names).toContain(PRIVATE);
-	expect(names).toContain(workspaceOf('alice'));
-	expect(names).toContain(workspaceOf('bob'));
+	expect(names).toContain(DEVICE);
+	expect(names).toContain(accountOf('alice'));
+	expect(names).toContain(accountOf('bob'));
 });
 
 test('returning to an account reopens its retained replica, including offline work', async () => {
@@ -331,13 +331,13 @@ test('returning to an account reopens its retained replica, including offline wo
 	}
 });
 
-test('a signed-in state with no account id opens no workspace store', async () => {
+test('a signed-in state with no account id opens no account store', async () => {
 	await resetStorage();
 
 	// A boot snapshot a host stamped without an id, or any auth arriving at
-	// `signed-in` without a stable principal: there is no workspace address to
+	// `signed-in` without a stable principal: there is no account address to
 	// derive, so the boot fails rather than guessing one or falling back to the
-	// private document.
+	// device document.
 	const auth = createFakeAuth({ status: 'signed-in', principalId: '' });
 	const failure = await openHoneycrispApplication({ auth }).catch(
 		(cause) => cause,
@@ -346,7 +346,7 @@ test('a signed-in state with no account id opens no workspace store', async () =
 	expect(await databaseNames()).toEqual([]);
 });
 
-test('an unbound workspace whose dial is permanently denied is unavailable, not the private document', async () => {
+test('an unbound workspace whose dial is permanently denied is unavailable, not the device document', async () => {
 	await resetStorage();
 
 	// `reauth-required` deliberately: the principal is known, so this is a
@@ -411,9 +411,9 @@ test('a supersession discards one account replica and cannot touch the others', 
 	await until(() => reloads.mock.calls.length > 0, 'the adoption reload');
 
 	const names = await databaseNames();
-	expect(names).not.toContain(workspaceOf('alice'));
-	expect(names).toContain(workspaceOf('bob'));
-	expect(names).toContain(PRIVATE);
+	expect(names).not.toContain(accountOf('alice'));
+	expect(names).toContain(accountOf('bob'));
+	expect(names).toContain(DEVICE);
 	await application[Symbol.asyncDispose]();
 
 	// Every other document still holds every byte it held.
@@ -479,8 +479,8 @@ test('a rebuild discards one account replica and cannot touch the others', async
 	await until(() => reloads.mock.calls.length > 0, 'the adoption reload');
 
 	const names = await databaseNames();
-	expect(names).not.toContain(workspaceOf('alice'));
-	expect(names).toContain(workspaceOf('bob'));
-	expect(names).toContain(PRIVATE);
+	expect(names).not.toContain(accountOf('alice'));
+	expect(names).toContain(accountOf('bob'));
+	expect(names).toContain(DEVICE);
 	await application[Symbol.asyncDispose]();
 });

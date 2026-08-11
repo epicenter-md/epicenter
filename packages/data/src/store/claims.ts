@@ -10,9 +10,9 @@
  * The key is the durable document's own address, which is what makes the guard
  * exact. On Bun that is the namespace, because an application folder holds one
  * document; in a browser it is the ownership path
- * `epicenter/<namespace>/private` or
- * `epicenter/<namespace>/workspace/<principal id>` (ADR-0233), so an
- * application's private document and one account's workspace replica may be
+ * `epicenter/<namespace>/device` or
+ * `epicenter/<namespace>/account/<principal id>` (ADR-0233), so an
+ * application's device document and one account's replica may be
  * open at once, two accounts' replicas may be open at once, and a second open
  * of any one of them is still refused.
  *

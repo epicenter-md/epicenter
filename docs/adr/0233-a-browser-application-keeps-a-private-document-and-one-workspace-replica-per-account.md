@@ -1,4 +1,4 @@
-# 0233. A browser application keeps a private document and one workspace replica per account, and auth chooses which opens
+# 0233. A browser application keeps a device document and one account replica per account, and auth chooses which opens
 
 - **Status:** Accepted
 - **Date:** 2026-08-10
@@ -24,8 +24,8 @@ Which document that store held was decided by the first dial: a permanent
 denial resolved an unbound store "as a private local document with no sync in
 this generation."
 
-That sentence is the defect. The same durable bytes were a workspace replica
-when a dial succeeded and a private document when it did not, so the
+That sentence is the defect. The same durable bytes were an account replica
+when a dial succeeded and a device document when it did not, so the
 distinction ADR-0231 drew between the two documents was a runtime mood rather
 than a storage fact. Two concrete corruptions follow from it:
 
@@ -38,12 +38,12 @@ than a storage fact. Two concrete corruptions follow from it:
   signed-in person edit what is supposed to be the logged-out surface.
 
 Splitting the two documents fixes both, and this record's first form stopped
-there: one private database and one workspace database per application. A
-settled product decision reopens it. **Honeycrisp retains a workspace replica
+there: one device database and one account database per application. A
+settled product decision reopens it. **Honeycrisp retains an account replica
 across sign-out**, so signing back in is instant and offline work made before
 signing out is still there afterwards.
 
-Retention is what makes a per-application workspace database wrong. If account
+Retention is what makes a per-application account database wrong. If account
 A's replica is still on the device when account B signs in, a single workspace
 database leaves three options, and all of them are worse than an address: B
 briefly opens A's bytes; B force-deletes A's retained state, which is the
@@ -53,23 +53,23 @@ hidden one level down where no delete, discard, or rebuild can see it.
 
 ## Decision
 
-**A browser application keeps one device-owned private document and one
-retained workspace replica per account, and authentication chooses which one a
+**A browser application keeps one device document and one retained account
+replica per account, and authentication chooses which one a
 generation opens.**
 
 ```text
 epicenter
 └── honeycrisp
-    ├── private              device-owned, never syncs, survives everything
-    └── workspace
+    ├── device               device-owned, never syncs, survives everything
+    └── account
         ├── <principal A>    A's retained replica of A's current document
         └── <principal B>    B's retained replica of B's current document
 ```
 
-- The **private** document is device-owned. It never joins workspace sync,
+- The **device** document is device-owned. It never joins workspace sync,
   survives sign-in and sign-out, and is never automatically copied into,
   merged with, or deleted because of a workspace action.
-- A **workspace** replica belongs to one principal. It is this device's copy
+- An **account** replica belongs to one principal. It is this device's copy
   of that principal's current authority document (ADR-0231), it is unavailable
   until its first bootstrap binds it, and every sync verb (bootstrap,
   supersession discard, rebuild) operates on that one replica alone.
@@ -88,39 +88,39 @@ The first two are the address. The third lives inside the store, because
 rebuild changes it: a rebuilt workspace stays at the same address while its
 contents are discarded and re-downloaded.
 
-### The opener names the document and its owner
+### The opener names the owner
 
 ```ts
-await open(lens, { document: 'private' });
-await open(lens, { document: 'workspace', principalId });
+await open(lens, { owner: 'device' });
+await open(lens, { owner: 'account', principalId });
 ```
 
-The argument is a union, so an account-less workspace replica is not a value
+The argument is a union, so an account-less account replica is not a value
 the API can express, and the IndexedDB database is the address derived from
 all of it:
 
 ```text
-epicenter/<namespace>/private
-epicenter/<namespace>/workspace/<principal id>
+epicenter/<namespace>/device
+epicenter/<namespace>/account/<principal id>
 ```
 
 A namespace is dot-separated lowercase labels and holds no `/`, so the segment
 after `epicenter/` is always exactly the application and no address can be read
 as another one. The process-local open claim is the same address, so the
-private document and any number of accounts' replicas may be open at once (an
+device document and any number of accounts' replicas may be open at once (an
 explicit copy feature would need exactly that), while a second open of any one
 of them is refused.
 
 An empty principal id is refused as `Unaddressable` rather than addressed. A
-boot with no stable account has no workspace, not a nameless one.
+boot with no stable account has no account replica, not a nameless one.
 
 ### Auth chooses at boot, and only at boot
 
 A generation whose auth is signed out, or that has no auth at all, opens the
-private document and attaches nothing: a private document has no sync, so
+device document and attaches nothing: a device document has no sync, so
 there is no dial whose refusal anyone would be reading. A generation with a
 known principal (`signed-in` or `reauth-required`) opens that principal's
-workspace replica and attaches sync. A page lifetime is one auth generation
+account replica and attaches sync. A page lifetime is one auth generation
 (ADR-0232), so the choice never changes while an application lives; signing
 in, signing out, or switching accounts reloads into a different document.
 
@@ -129,11 +129,11 @@ out. A bound workspace stays open and works offline. An unbound one rejects
 its boot as unavailable, because only an auth change can repair it, and that
 change starts the next generation. An authenticated generation with no usable
 principal id rejects its boot the same way. Neither ever falls back to the
-private document, and neither ever guesses an address.
+device document, and neither ever guesses an address.
 
 ### Signing out closes a replica, and keeps it
 
-Signing out of A closes A's replica and opens the private document. It deletes
+Signing out of A closes A's replica and opens the device document. It deletes
 nothing. Signing back in as A reopens A's replica with everything in it,
 including offline work made before the sign-out, and its stamped document id
 decides at the next dial whether that work is still current or the replica is
@@ -148,7 +148,14 @@ Two superseded shapes, and neither is read:
   application had two documents, which held anonymous work or a workspace
   replica indistinguishably.
 - `epicenter-store-<namespace>#private` and `#workspace`, the split that
-  separated the two documents but left a workspace replica with no owner.
+  separated the two documents but left an account replica with no owner.
+
+This ownership rename is a clean break too. Opening the device document also
+deletes the former `epicenter/<namespace>/private` database; opening one
+account replica also deletes that account's former
+`epicenter/<namespace>/workspace/<principal id>` database. An unopened former
+account database is unreachable by the new model and is deleted if that account
+opens again. No old address is read, renamed, or merged.
 
 Opening any document requests both deletions: never read, never renamed,
 never merged, the browser-storage twin of the format wipe in ADR-0231's
@@ -176,8 +183,8 @@ defensive assertion at the bootstrap boundary, not product language.
   cannot read or destroy anonymous work or another account's work while it
   waits.
 - Workspace rebuild and supersession can only ever delete
-  `epicenter/<namespace>/workspace/<the signed-in principal>`.
-- There is no private-to-workspace promotion, merge, or copy anywhere in
+  `epicenter/<namespace>/account/<the signed-in principal>`.
+- There is no device-to-account promotion, merge, or copy anywhere in
   sync. A future copy action is an explicit application-level feature.
 - Retained replicas accumulate per account signed into on a device. Reclaiming
   them is a deliberate product action (a "remove this account's local data"
@@ -192,20 +199,20 @@ defensive assertion at the bootstrap boundary, not product language.
 
 Tests must demonstrate that:
 
-- private work is unchanged after signing in, signing out, and signing into a
+- device work is unchanged after signing in, signing out, and signing into a
   second account;
-- two accounts cannot open or claim one workspace database, and neither sees
+- two accounts cannot open or claim one account database, and neither sees
   the other's rows;
 - returning to an account reopens its retained replica, offline work included;
 - a signed-in workspace starts empty and unavailable until bootstrap, without
   reading or mutating any other document;
 - an unbound workspace whose dial is permanently denied is unavailable, and is
-  never shown as the private document;
-- an authenticated generation with no stable principal id opens no workspace
+  never shown as the device document;
+- an authenticated generation with no stable principal id opens no account
   store;
-- supersession and rebuild delete one account's workspace database and leave
-  the private document and every other account's replica intact;
-- the private document and two accounts' replicas open concurrently without
+- supersession and rebuild delete one account database and leave the device
+  document and every other account's replica intact;
+- the device document and two accounts' replicas open concurrently without
   colliding in persistence or claims, and a second open of any of them is
   refused; and
 - both superseded storage shapes are deleted at open and read by nothing.

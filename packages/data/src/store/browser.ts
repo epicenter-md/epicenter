@@ -93,7 +93,7 @@ export type BrowserStore = Store & {
 	 *
 	 * Its blast radius is this store's own address and nothing else (ADR-0233),
 	 * so a workspace discard names one account's replica and can reach neither
-	 * the private document nor any other account's.
+	 * the device document nor any other account's.
 	 */
 	discard(): Promise<Result<void, StoreError>>;
 };
@@ -201,27 +201,27 @@ function deleteIndexedDb(address: string): Promise<void> {
 /**
  * Which durable local document of an application to open, and whose (ADR-0233).
  *
- * A browser application keeps one device-owned private document and one
- * retained workspace replica per account. `private` never joins workspace sync
- * and survives every sign-in and sign-out; `workspace` is this device's replica
- * of one principal's current authority document (ADR-0231), and it is retained
- * across sign-out too, which is why it is addressed by the account that owns it
- * rather than by the application alone.
+ * A browser application keeps one device document and one retained account
+ * replica per account. The device document never joins workspace sync and
+ * survives every sign-in and sign-out; an account replica is this device's
+ * replica of one principal's current authority document (ADR-0231), and it is
+ * retained across sign-out too, which is why it is addressed by the account
+ * that owns it rather than by the application alone.
  *
- * The principal rides on the workspace arm alone, so an account-less workspace
- * replica is not a value this API can express.
+ * The principal rides on the account arm alone, so an account-less replica is
+ * not a value this API can express.
  */
-export type BrowserDocument =
-	| { document: 'private' }
-	| { document: 'workspace'; principalId: PrincipalId };
+export type BrowserStoreTarget =
+	| { owner: 'device' }
+	| { owner: 'account'; principalId: PrincipalId };
 
 /**
  * Where one of an application's durable documents lives, as ownership
  * (ADR-0233):
  *
  * ```text
- * epicenter/<namespace>/private
- * epicenter/<namespace>/workspace/<principal id>
+ * epicenter/<namespace>/device
+ * epicenter/<namespace>/account/<principal id>
  * ```
  *
  * Three identities, none of them collapsed into another: the namespace says
@@ -235,10 +235,10 @@ export type BrowserDocument =
  * segment after `epicenter/` is always exactly the application, and no address
  * can be read as another one.
  */
-function addressOf(namespace: string, target: BrowserDocument): string {
-	return target.document === 'private'
-		? `epicenter/${namespace}/private`
-		: `epicenter/${namespace}/workspace/${target.principalId}`;
+function addressOf(namespace: string, target: BrowserStoreTarget): string {
+	return target.owner === 'device'
+		? `epicenter/${namespace}/device`
+		: `epicenter/${namespace}/account/${target.principalId}`;
 }
 
 /**
@@ -246,9 +246,9 @@ function addressOf(namespace: string, target: BrowserDocument): string {
  *
  * Two superseded shapes, neither of them read: `epicenter-store-<namespace>`,
  * the single database from before an application had two documents, which held
- * anonymous work or a workspace replica indistinguishably; and
+ * anonymous work or an account replica indistinguishably; and
  * `epicenter-store-<namespace>#private` / `#workspace`, the per-application
- * split that separated the two documents but left a workspace replica with no
+ * split that separated the two documents but left an account replica with no
  * owner, so a second account would have opened the first account's bytes.
  * Neither is the final address, so both are deleted rather than renamed,
  * merged, or reinterpreted: the browser-storage twin of the format wipe in
@@ -258,11 +258,17 @@ function addressOf(namespace: string, target: BrowserDocument): string {
  * blocked by another tab completes when that tab closes, and running again at
  * every open makes the deletion certain without anyone waiting on it.
  */
-function deleteSupersededStorage(namespace: string): Promise<void> {
+function deleteSupersededStorage(
+	namespace: string,
+	target: BrowserStoreTarget,
+): Promise<void> {
 	const superseded = [
 		`epicenter-store-${namespace}`,
 		`epicenter-store-${namespace}#private`,
 		`epicenter-store-${namespace}#workspace`,
+		target.owner === 'device'
+			? `epicenter/${namespace}/private`
+			: `epicenter/${namespace}/workspace/${target.principalId}`,
 	];
 	return Promise.all(
 		superseded.map(
@@ -283,17 +289,17 @@ function deleteSupersededStorage(namespace: string): Promise<void> {
  *
  * The lens names the application and the caller names the document and its
  * owner (ADR-0229 as amended by ADR-0233): the IndexedDB database is the
- * address derived from all of them, so the private document and any account's
- * workspace replica can never share storage, and no document can be opened
- * without saying which one is meant. A workspace replica cannot be opened
+ * address derived from all of them, so the device document and any account's
+ * replica can never share storage, and no document can be opened without
+ * saying which one is meant. An account replica cannot be opened
  * without an account at all: the argument has nowhere to omit one, and an empty
  * id is refused rather than addressed, because a boot with no stable principal
- * has no workspace rather than a nameless one.
+ * has no account replica rather than a nameless one.
  *
  * @example
  * ```ts
  * const { data: mail } = await open(inbox, {
- * 	document: 'workspace',
+ * 	owner: 'account',
  * 	principalId,
  * });
  * mail.tables.messages.create({ subject: 'hi', unread: true });
@@ -302,11 +308,11 @@ function deleteSupersededStorage(namespace: string): Promise<void> {
  */
 export async function open<const TLens extends LensJson>(
 	lens: TLens,
-	target: BrowserDocument,
+	target: BrowserStoreTarget,
 ): Promise<
 	Result<ApplicationOf<TLens, BrowserStore>, StoreError | LensParseError>
 > {
-	if (target.document === 'workspace' && target.principalId.trim() === '') {
+	if (target.owner === 'account' && target.principalId.trim() === '') {
 		return StoreError.Unaddressable();
 	}
 
@@ -314,7 +320,7 @@ export async function open<const TLens extends LensJson>(
 	const { error: claimError } = claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
-	await deleteSupersededStorage(lens.namespace);
+	await deleteSupersededStorage(lens.namespace, target);
 
 	const { data: store, error: storeError } = await openBrowserStore({
 		address,

@@ -9,7 +9,7 @@ Four entry points, and no more:
 | --- | --- |
 | `@epicenter/data` | the store surface, plus the Lens vocabulary re-exported from `@epicenter/lens` |
 | `@epicenter/data/bun` | `open(lens, { root })`, and `openMemory(lens)` for tests |
-| `@epicenter/data/browser` | `open(lens, { document: 'private' })`, and `open(lens, { document: 'workspace', principalId })` |
+| `@epicenter/data/browser` | `open(lens, { owner: 'device' })`, and `open(lens, { owner: 'account', principalId })` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 
 A Bun opener imports `bun:sqlite` and a browser opener imports a WASM build, so
@@ -22,7 +22,7 @@ openers live at their own entry points rather than on `@epicenter/data`.
 import { open } from '@epicenter/data/browser';
 
 const { data: app, error } = await open(honeycrispLens, {
-	document: 'workspace',
+	owner: 'account',
 	principalId,
 });
 if (error !== null) return handle(error);
@@ -38,17 +38,17 @@ derived from that namespace and the document named below rather than supplied
 (ADR-0233), so a Lens still cannot be bound to a store it does not name.
 
 In a browser the caller also names which durable document it means and whose it
-is (ADR-0233). An application keeps one device-owned private document that
-never joins workspace sync, and one retained replica per account:
+is (ADR-0233). An application keeps one device document that never joins
+workspace sync, and one retained replica per account:
 
 ```text
-epicenter/<namespace>/private
-epicenter/<namespace>/workspace/<principal id>
+epicenter/<namespace>/device
+epicenter/<namespace>/account/<principal id>
 ```
 
 That address is the IndexedDB database name, so a workspace discard,
 supersession, or rebuild can reach exactly one account's replica and never the
-private document or another account's. A workspace replica cannot be opened
+device document or another account's. An account replica cannot be opened
 without an account: the argument is a union with nowhere to omit one, and an
 empty id is refused with `StoreError.Unaddressable` rather than addressed.
 
@@ -59,7 +59,7 @@ promise.
 Opening one address twice in a process is refused with
 `StoreError.AlreadyOpen`. Two opens would be two `Y.Doc`s of one document that
 cannot see each other's writes, so they would converge through storage under
-last-writer-wins and quietly lose one side's work. The private document and
+last-writer-wins and quietly lose one side's work. The device document and
 each account's replica are different documents, so any number of them may be
 open at once.
 
