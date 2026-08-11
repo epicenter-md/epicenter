@@ -2,8 +2,9 @@ import type { AuthClient } from '@epicenter/auth';
 import type { Store, StoreError } from '@epicenter/data';
 import { open as openBrowser } from '@epicenter/data/browser';
 import {
-	type CompactError,
-	compactStore,
+	type RebuildError,
+	rebuildWorkspace,
+	type SyncConnection,
 	type SyncConnectionStatus,
 } from '@epicenter/data/sync';
 import { type HoneycrispData, honeycrispLens } from '@epicenter/honeycrisp';
@@ -46,16 +47,24 @@ export type HoneycrispApplication = {
 	 */
 	syncStatus(): SyncConnectionStatus | undefined;
 	/**
-	 * Compact this store (ADR-0231), or undefined when this build has no auth.
+	 * Rebuild this workspace (ADR-0231), or undefined when this build has no auth.
 	 *
 	 * The one product action over the one wire verb. On success this device
 	 * discards its local store whole and reloads; the fresh boot re-downloads
-	 * the edition it just published, through the same join every device runs.
+	 * the document it just published, through the same join every device runs.
 	 * The confirmation a surface shows before calling this carries the one
 	 * warnable loss: a device holding offline changes it never synced will
 	 * lose them.
 	 */
-	compact?(): Promise<Result<{ boundary: number }, CompactError | StoreError>>;
+	/**
+	 * The caller has shown the rebuild warning and received a deliberate answer.
+	 * This application layer cannot render that confirmation, but requiring the
+	 * named acknowledgement keeps a future call site from treating rebuild as
+	 * ordinary maintenance.
+	 */
+	rebuild?(confirmation: {
+		acknowledgedWorkspaceChangesMayBeLost: true;
+	}): Promise<Result<{ document: string }, RebuildError | StoreError>>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -66,6 +75,15 @@ export type HoneycrispApplication = {
  * I/O: a directory or an OPFS pool, a WASM compile, and the replay of a durable
  * log. Everything after it is a property access on a document already in memory,
  * which is why nothing below this line returns a promise.
+ *
+ * It resolves only with a workspace that is safe to edit (ADR-0231). A store
+ * already bound to an authority document resolves at once and syncs or works
+ * offline as ever. An unbound store with auth is UNAVAILABLE: this promise
+ * stays pending, behind the layout's boot gate, until the first bootstrap
+ * binds it, or until the dial is permanently denied, which resolves it as
+ * what it then is: a private local document with no sync in this generation.
+ * There is no moment where a signed-in, never-downloaded workspace takes
+ * edits that a later bootstrap would have to discard.
  */
 export async function openHoneycrispApplication({
 	auth,
@@ -77,42 +95,93 @@ export async function openHoneycrispApplication({
 	// to be an `open()` dependency whose one implementation was these two lines.
 	const { data: db, error } = await openBrowser(honeycrispLens);
 	if (error !== null) throw error;
+	let sync: SyncConnection | undefined;
+	let state: ReturnType<typeof createHoneycrispState> | undefined;
 	try {
 		signal?.throwIfAborted();
-		const state = createHoneycrispState({ db });
+		state = createHoneycrispState({ db });
 		/**
 		 * The one adoption path (ADR-0231): discard the local store whole and
-		 * reload. Runs after a probe-confirmed supersession, and after this
-		 * device's own successful compact; the fresh boot's ordinary join
-		 * delivers the current edition into an empty document.
+		 * reload. Runs after a confirmed supersession, and after this device's
+		 * own successful rebuild; the fresh boot's ordinary join delivers the
+		 * current document into an empty replica.
 		 */
-		const adoptCurrentEdition = async (): Promise<void> => {
+		const adoptCurrentDocument = async (): Promise<void> => {
 			const discarded = await db.store.discard();
 			if (discarded.error !== null) reportBackgroundError(discarded.error);
 			location.reload();
 		};
-		const sync =
+		let denied = false;
+		let noticeDenied: (() => void) | undefined;
+		sync =
 			auth === undefined
 				? undefined
 				: attachHoneycrispSync({
 						store: db.store,
 						auth,
-						onSuperseded: () => void adoptCurrentEdition(),
+						onSuperseded: () => void adoptCurrentDocument(),
+						onDenied: () => {
+							denied = true;
+							noticeDenied?.();
+						},
 					});
+		/**
+		 * The bound gate (ADR-0231). A signed-in workspace becomes editable in
+		 * exactly two ways: it is already bound to an authority document, or
+		 * every dial is permanently denied and it is a private local document.
+		 * Until one of those is true this promise stays pending and the layout
+		 * shows its boot gate, so an unbound editable workspace cannot render.
+		 * A supersession during the wait discards and reloads, so this promise
+		 * simply never resolves in that generation.
+		 */
+		const bound = (): boolean =>
+			db.store.sync.documentIdentity().data !== undefined;
+		if (sync !== undefined && !bound()) {
+			await new Promise<void>((resolve, reject) => {
+				function cleanup(): void {
+					stopCommitted();
+					noticeDenied = undefined;
+					signal?.removeEventListener('abort', onAbort);
+				}
+				function finish(): void {
+					cleanup();
+					resolve();
+				}
+				function onAbort(): void {
+					cleanup();
+					reject(signal?.reason);
+				}
+				// The stamp is a commit, so `onCommitted` is the notification that
+				// the workspace became bound; denial arrives through the callback
+				// wired above, which may already have fired.
+				const stopCommitted = db.store.onCommitted(() => {
+					if (bound()) finish();
+				});
+				noticeDenied = finish;
+				signal?.addEventListener('abort', onAbort, { once: true });
+				if (denied || bound()) finish();
+			});
+		}
 		let disposed = false;
+		const ready = state;
 		return Object.freeze({
 			db,
-			state,
+			state: ready,
 			pressure: () => db.store.pressure(),
 			syncStatus: () => {
 				const status = sync?.status();
 				return status === undefined || status.denied ? undefined : status;
 			},
-			compact:
+			rebuild:
 				auth === undefined
 					? undefined
-					: async () => {
-							const published = await compactStore({
+					: async ({ acknowledgedWorkspaceChangesMayBeLost }) => {
+							if (!acknowledgedWorkspaceChangesMayBeLost) {
+								throw new Error(
+									'workspace rebuild requires explicit confirmation',
+								);
+							}
+							const published = await rebuildWorkspace({
 								store: db.store,
 								transport: honeycrispStoreTransport(auth),
 							});
@@ -120,18 +189,22 @@ export async function openHoneycrispApplication({
 							// Authority first, then local, then reload: the same order and
 							// the same adoption every superseded replica runs.
 							sync?.[Symbol.dispose]();
-							await adoptCurrentEdition();
+							await adoptCurrentDocument();
 							return published;
 						},
 			async [Symbol.asyncDispose]() {
 				if (disposed) return;
 				disposed = true;
 				sync?.[Symbol.dispose]();
-				state[Symbol.dispose]();
+				ready[Symbol.dispose]();
 				await db[Symbol.asyncDispose]();
 			},
 		}) as HoneycrispApplication;
 	} catch (cause) {
+		// The gate can throw (an aborted boot) after sync and state exist, so
+		// the failure path lets go of everything the try acquired.
+		sync?.[Symbol.dispose]();
+		state?.[Symbol.dispose]();
 		await db[Symbol.asyncDispose]().catch(() => undefined);
 		throw cause;
 	}

@@ -4,7 +4,7 @@
  * ADR-0222 left a host exactly one thing to write: how to make a socket.
  * Reconnecting on close, reconnecting when the client reports `needsResync`,
  * putting the cursor in the URL, watching for a submission nobody answers,
- * and concluding `superseded` from the boundary frame (ADR-0231) are all the
+ * and concluding `superseded` from the document announcement (ADR-0231) are all the
  * library's, because every one of them is correctness rather than transport.
  * What this file adds is transport only: translating an `openWebSocket`
  * rejection into the driver's vocabulary (a permanent denial is `denied`,
@@ -31,7 +31,7 @@ import { reportBackgroundError } from './report.js';
 
 /**
  * How Honeycrisp reaches its store's authenticated door out of band from the
- * socket: the compact POST (ADR-0231).
+ * socket: the rebuild's replace POST (ADR-0231).
  */
 export function honeycrispStoreTransport(auth: AuthClient): StoreTransport {
 	return {
@@ -57,20 +57,28 @@ export function attachHoneycrispSync({
 	store,
 	auth,
 	onSuperseded,
+	onDenied,
 }: {
 	store: Store;
 	auth: AuthClient;
 	/**
-	 * This replica's edition was confirmed retired (ADR-0231). The driver has
+	 * This replica's document was replaced (ADR-0231). The driver has
 	 * already stopped; the application discards the local store whole and
 	 * reloads, and the fresh boot's ordinary join is the whole of adoption.
 	 */
 	onSuperseded: () => void;
+	/**
+	 * No dial in this app generation can ever succeed (signed out, reauth
+	 * required). Fired from the same classification that stops the driver, so
+	 * the boot gate can resolve an unbound store as a private local document
+	 * rather than waiting on a bootstrap that will never come.
+	 */
+	onDenied?: () => void;
 }): SyncConnection {
 	const connection = createSyncConnection({
 		store,
 		onSuperseded,
-		dial: ({ cursor, opened, received, closed, denied }) => {
+		dial: ({ cursor, document, opened, received, closed, denied }) => {
 			let socket: WebSocket | undefined;
 			let abandoned = false;
 			// `openWebSocket` carries the bearer as a subprotocol, because a browser
@@ -83,6 +91,7 @@ export function attachHoneycrispSync({
 					STORE_SYNC_ROUTE.url(auth.deployment.baseURL, {
 						namespace: honeycrispLens.namespace,
 						cursor,
+						...(document === undefined ? {} : { document }),
 					}),
 				)
 				.then(
@@ -114,6 +123,7 @@ export function attachHoneycrispSync({
 							cause.permanence === 'permanent'
 						) {
 							denied();
+							onDenied?.();
 							return;
 						}
 						// Everything else is transient (verification unreachable, plain
