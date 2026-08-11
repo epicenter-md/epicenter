@@ -5,9 +5,9 @@
 	import type { Entry } from '@epicenter/vocab';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash';
-	import { getVocabApp } from '$lib/context';
+	import { getVocabSurface } from '$lib/surface';
 
-	const { entryState: entries } = getVocabApp();
+	const { entries } = getVocabSurface();
 
 	let {
 		onPractice,

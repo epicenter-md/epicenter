@@ -1,15 +1,13 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { VocabApplication } from './application.js';
-	import { setVocabApp } from './context.js';
+	import { setVocabRuntime } from './context.js';
+	import type { VocabRuntime } from './runtime.js';
 
-	let {
-		application,
-		children,
-	}: { application: VocabApplication; children: Snippet } = $props();
+	let { runtime, children }: { runtime: VocabRuntime; children: Snippet } =
+		$props();
 
 	/* svelte-ignore state_referenced_locally */
-	setVocabApp(application);
+	setVocabRuntime(runtime);
 </script>
 
 {@render children()}

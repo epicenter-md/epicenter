@@ -1,38 +1,36 @@
 <script lang="ts">
 	import { createAgentChatState } from '@epicenter/app-shell/agent-chat';
-	import { fromTable } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { toast } from '@epicenter/ui/sonner';
-	import {
-		SHOW_READINGS_DEFAULT,
-		VocabSettingsRowId,
-		VOCAB_MODEL,
-		VOCAB_SYSTEM_PROMPT,
-	} from '@epicenter/vocab';
+	import { VOCAB_MODEL, VOCAB_SYSTEM_PROMPT } from '@epicenter/vocab';
 	import { onDestroy } from 'svelte';
-	import { getVocabApp } from '$lib/context';
+	import { getVocabRuntime } from '$lib/context';
+	import { runVocabMutation } from '$lib/mutation';
 	import { buildPracticeOpening } from '$lib/practice';
+	import { reportBackgroundError } from '$lib/report';
+	import { createEntriesState } from '$lib/state/entries.svelte';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
+	import { createSettingsState } from '$lib/state/settings.svelte';
+	import { setVocabSurface } from '$lib/surface';
 	import ConversationView from './components/ConversationView.svelte';
 	import VocabSidebar from './components/VocabSidebar.svelte';
 
-	const vocab = getVocabApp();
-	const settingsView = fromTable(vocab.settings);
+	const runtime = getVocabRuntime();
 
-	function reportBackgroundError(cause: unknown) {
-		toast.error('Vocab chat failed', {
-			description: cause instanceof Error ? cause.message : String(cause),
-		});
-	}
+	// The one place the document choice is made (ADR-0233): portable work goes
+	// to the account replica when this generation has one, and to the device
+	// document otherwise. Everything below reads `data` and never asks again.
+	const data = runtime.account?.data ?? runtime.deviceData;
+
+	const entries = createEntriesState({ data });
+	setVocabSurface({ entries });
 
 	// The shared chat registry (ADR-0047/0059) with Vocab's variation injected:
 	// capability-free (no tools, no approval), one general multilingual system
 	// prompt, and the hosted VOCAB_MODEL as the default a new conversation starts
 	// on. The active conversation lives in internal state (Vocab has no URL seam).
 	const chat = createAgentChatState({
-		table: vocab.conversations,
-		openConversationDocument: (id) => vocab.conversations.openDocument(id),
+		table: data.tables.conversations,
 		reportBackgroundError,
 		connections: inferenceConnections,
 		agent: {
@@ -41,30 +39,29 @@
 		},
 	});
 
-	const settings = $derived(
-		settingsView.all.find((row) => row.id === VocabSettingsRowId),
-	);
-	const readings = $derived(
-		settings?.showReadings ?? SHOW_READINGS_DEFAULT,
-	);
+	// How this screen renders is a fact about this screen, so it comes off the
+	// DEVICE document whether or not an account is open.
+	const settings = createSettingsState({ deviceData: runtime.deviceData });
 
-	onDestroy(() => chat[Symbol.dispose]());
+	onDestroy(() => {
+		chat[Symbol.dispose]();
+		entries[Symbol.dispose]();
+		settings[Symbol.dispose]();
+	});
 
-	/** Practice opens its own conversation, titled after the chosen entries, and
+	/**
+	 * Practice opens its own conversation, titled after the chosen entries, and
 	 * the compiled turn is that conversation's first message. Whatever thread was
 	 * open is left exactly as it was and stays there to return to. The passage
-	 * comes back under the tutor system prompt; nothing is written to the entries.
-	 *
-	 * Opening one is asynchronous (the row document has to be ready before a turn
-	 * can land in it), so a failure to acquire the conversation surfaces the same
-	 * way every other background chat failure does. */
-	async function practice(entryTexts: string[]) {
+	 * comes back under the tutor system prompt; nothing is written to the
+	 * entries.
+	 */
+	function practice(entryTexts: string[]) {
 		if (entryTexts.length === 0) return;
-		try {
-			await chat.createConversation(buildPracticeOpening(entryTexts));
-		} catch (cause) {
-			reportBackgroundError(cause);
-		}
+		runVocabMutation(
+			() => chat.createConversation(buildPracticeOpening(entryTexts)),
+			'Could not start a practice session',
+		);
 	}
 </script>
 
@@ -72,7 +69,11 @@
 	<VocabSidebar
 		conversations={chat.conversations}
 		activeConversationId={chat.activeConversationId}
-		onCreate={() => chat.createConversation()}
+		onCreate={() =>
+			runVocabMutation(
+				() => chat.createConversation(),
+				'Could not start a conversation',
+			)}
 		onSwitch={(conversationId) => chat.switchTo(conversationId)}
 		onPractice={practice}
 	/>
@@ -86,20 +87,24 @@
 
 			<div class="flex items-center gap-2">
 				<Button
-					variant={readings ? 'default' : 'outline'}
+					variant={settings.showReadings ? 'default' : 'outline'}
 					size="sm"
 					onclick={() =>
-						void vocab.settings.patch(VocabSettingsRowId, {
-							showReadings: !readings,
-						})}
-					aria-pressed={readings}
+						runVocabMutation(
+							() => settings.toggleReadings(),
+							'Could not save your reading preference',
+						)}
+					aria-pressed={settings.showReadings}
 					aria-label="Toggle pronunciation readings"
 				>
-					{readings ? 'Hide readings' : 'Show readings'}
+					{settings.showReadings ? 'Hide readings' : 'Show readings'}
 				</Button>
 			</div>
 		</header>
 
-		<ConversationView active={chat.active} showReadings={readings} />
+		<ConversationView
+			active={chat.active}
+			showReadings={settings.showReadings}
+		/>
 	</main>
 </Sidebar.Provider>

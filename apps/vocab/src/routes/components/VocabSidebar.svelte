@@ -9,10 +9,7 @@
 	import { instanceSetting } from '$lib/instance';
 	import { auth } from '$lib/platform/auth';
 	import { dictation } from '$lib/state/dictation.svelte';
-	import { getVocabApp } from '$lib/context';
 	import EntriesPanel from './EntriesPanel.svelte';
-
-	const vocab = getVocabApp();
 
 	let {
 		conversations,
@@ -37,7 +34,6 @@
 			<span class="text-sm font-semibold">Vocab</span>
 			<AccountPopover
 				{auth}
-				dataSync={vocab}
 				syncNoun="conversations"
 				disabledReason={dictation.status !== 'idle'
 					? 'Finish dictating to change your account'

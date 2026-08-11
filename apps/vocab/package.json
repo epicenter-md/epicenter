@@ -5,8 +5,7 @@
 	"version": "0.0.2",
 	"type": "module",
 	"exports": {
-		".": "./vocab.ts",
-		"./browser": "./vocab.browser.ts"
+		".": "./vocab.ts"
 	},
 	"scripts": {
 		"dev": "vite dev",
@@ -19,17 +18,18 @@
 		"deploy": "wrangler deploy"
 	},
 	"dependencies": {
+		"@epicenter/agent": "workspace:*",
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/chat": "workspace:*",
 		"@epicenter/client": "workspace:*",
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
+		"@epicenter/lens": "workspace:*",
 		"@epicenter/recorder": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/ui": "workspace:*",
-		"@epicenter/data": "workspace:*",
-		"@epicenter/agent": "workspace:*",
 		"@lucide/svelte": "catalog:",
 		"arktype": "catalog:",
 		"mode-watcher": "^1.1.0",

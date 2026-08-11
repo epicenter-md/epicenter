@@ -13,11 +13,11 @@
 	} from '$lib/entry-candidates';
 	import { auth } from '$lib/platform/auth';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
-	import { getVocabApp } from '$lib/context';
+	import { getVocabSurface } from '$lib/surface';
 	import DictationButton from './DictationButton.svelte';
 	import ReadingMarkdown from './ReadingMarkdown.svelte';
 
-	const { entryState: entries } = getVocabApp();
+	const { entries } = getVocabSurface();
 
 	let {
 		active,
