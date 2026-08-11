@@ -235,7 +235,8 @@ export function readFormat(database: SqliteDatabase): string | undefined {
  * foreign apply, or durably before the first push leaves), never rewritten,
  * and dies with the file, which is exactly when the membership does.
  * `undefined` means this document has never exchanged a byte with any
- * authority, and merging it is the one cross-document merge that is safe.
+ * authority. The sync client stamps an empty replica before it applies
+ * authority bytes.
  */
 export function readDocumentIdentity(
 	database: SqliteDatabase,

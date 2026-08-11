@@ -4,7 +4,7 @@
 - **Date:** 2026-08-09
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0229 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
-- **Amended by:** [ADR-0233](0233-a-browser-application-keeps-a-device-document-and-one-account-replica-per-account.md):
+- **Amended by:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md):
   in a browser the lens still names the application, and the caller also names
   which durable document to open and whose it is, so the derived location
   becomes `epicenter/<namespace>/device` or

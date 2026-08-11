@@ -21,7 +21,6 @@ import type { AuthClient } from '@epicenter/auth';
 import type { Store } from '@epicenter/data';
 import {
 	createSyncConnection,
-	type StoreTransport,
 	type SyncConnection,
 } from '@epicenter/data/sync';
 import { honeycrispLens } from '@epicenter/honeycrisp';
@@ -30,20 +29,8 @@ import { STORE_SYNC_ROUTE } from '@epicenter/sync/store-route';
 import { reportBackgroundError } from './report.js';
 
 /**
- * How Honeycrisp reaches its store's authenticated door out of band from the
- * socket: the rebuild's replace POST (ADR-0231).
- */
-export function honeycrispStoreTransport(auth: AuthClient): StoreTransport {
-	return {
-		fetch: (input, init) => auth.fetch(input, init),
-		baseURL: auth.deployment.baseURL,
-		namespace: honeycrispLens.namespace,
-	};
-}
-
-/**
- * Attach sync to an open workspace store, for the lifetime of this app
- * generation. Only a workspace generation calls this (ADR-0233): a private
+ * Attach sync to an open account replica, for the lifetime of this app
+ * generation. Only an account generation calls this (ADR-0233): a device
  * document never syncs, so a signed-out boot has nothing to attach.
  *
  * Whether sync can work is still decided by the first dial, not by inspecting
@@ -52,7 +39,7 @@ export function honeycrispStoreTransport(auth: AuthClient): StoreTransport {
  * and the driver stops for good. For a bound workspace that is not a failure
  * and is not reported as one; the store works offline without this. For an
  * unbound one the application rejects its boot, because a signed-in workspace
- * that cannot bootstrap is unavailable, never the private document. A
+ * that cannot bootstrap is unavailable, never the device document. A
  * credential arriving later never resumes this connection: acquiring one
  * changes auth state, and `reloadOnAuthChange` in the root layout starts the
  * next generation, which dials fresh.

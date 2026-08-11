@@ -427,11 +427,6 @@ export type ApplicationOf<
  *
  * Both openers end here, so the shape an application sees is decided once
  * rather than per runtime.
- *
- * `sync` is re-declared as a getter because spread copies a getter's VALUE at
- * the moment it runs, and a store hands back a fresh `ClientLog` as its outbox
- * drains. A browser store already guarded this on its own wrapper; doing it
- * here means neither opener has to remember.
  */
 export function asApplication<TLens, TStore extends Store>(
 	store: TStore,

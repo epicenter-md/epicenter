@@ -25,8 +25,8 @@ db.tables.notes.list()                              synchronous from here on
 ```
 
 The lens names the application and the caller names which durable document it
-means and whose it is (ADR-0229 as amended by ADR-0233): one device-owned
-device document that never syncs, and one retained replica per account. Auth
+means and whose it is (ADR-0229 as amended by ADR-0233): one device document
+that never syncs, and one retained replica per account. Auth
 picks one at boot, in `src/lib/application.ts`, and nothing else opens a store.
 
 Every build opens its own store, with no platform seam, and reaches one

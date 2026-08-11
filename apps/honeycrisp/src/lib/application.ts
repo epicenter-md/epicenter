@@ -11,7 +11,7 @@ import { type HoneycrispData, honeycrispLens } from '@epicenter/honeycrisp';
 import type { Result } from 'wellcrafted/result';
 import { createHoneycrispState } from '../routes/state/index.js';
 import { reportBackgroundError } from './report.js';
-import { attachHoneycrispSync, honeycrispStoreTransport } from './sync.js';
+import { attachHoneycrispSync } from './sync.js';
 
 export type OpenHoneycrispOptions = {
 	/**
@@ -43,14 +43,14 @@ export type HoneycrispApplication = {
 	pressure(): Store['pressure'] extends () => infer TResult ? TResult : never;
 	/**
 	 * What sync is doing, or undefined when sync is not part of this app
-	 * generation: a private-document generation (signed out, or a build with
-	 * no auth at all), or a bound workspace whose dials were permanently
+	 * generation: a device-document generation (signed out, or a build with
+	 * no auth at all), or a bound account replica whose dials were permanently
 	 * denied and now works offline. Both render the same way, which is not
 	 * at all.
 	 */
 	syncStatus(): SyncConnectionStatus | undefined;
 	/**
-	 * Rebuild this workspace (ADR-0231), or undefined in a private-document
+	 * Rebuild this workspace (ADR-0231), or undefined in a device-document
 	 * generation, where there is no workspace to rebuild.
 	 *
 	 * The one product action over the one wire verb. On success this device
@@ -229,7 +229,11 @@ export async function openHoneycrispApplication({
 							}
 							const published = await rebuildWorkspace({
 								store: db.store,
-								transport: honeycrispStoreTransport(workspace.auth),
+								transport: {
+									fetch: (input, init) => workspace.auth.fetch(input, init),
+									baseURL: workspace.auth.deployment.baseURL,
+									namespace: honeycrispLens.namespace,
+								},
 							});
 							if (published.error !== null) return published;
 							// Authority first, then local, then reload: the same order and
