@@ -48,8 +48,6 @@
  * reset and does not resume legacy receipts.
  */
 
-import { mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
 import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 import {
 	CloudAuthBindings,
@@ -75,7 +73,7 @@ import { buildEpicenterTrustedOrigins } from './worker/trusted-origins.js';
 /**
  * The apps/api Bun env contract: the portable {@link ServerBindings}, the
  * Cloud-only {@link CloudAuthBindings} (Better Auth + OAuth secrets, ADR-0076),
- * and this host's process config (`DATABASE_URL`, port, origin, data dir).
+ * and this host's process config (`DATABASE_URL`, port, origin).
  *
  * `CloudAuthBindings` already requires `BETTER_AUTH_SECRET` and leaves each OAuth
  * provider optional (register-when-present, ADR-0071). This hosted hub is
@@ -91,7 +89,6 @@ const ApiBunBindings = ServerBindings.merge(CloudAuthBindings).merge({
 	DATABASE_URL: 'string',
 	'PORT?': 'string',
 	'API_PUBLIC_ORIGIN?': 'string',
-	'DATA_DIR?': 'string',
 	GOOGLE_CLIENT_ID: 'string',
 	GOOGLE_CLIENT_SECRET: 'string',
 	GITHUB_CLIENT_ID: 'string',
@@ -128,9 +125,6 @@ export function startBunApiServer(
 	// on the chosen port; an operator overrides it with their domain.
 	const origin = env.API_PUBLIC_ORIGIN ?? `http://localhost:${port}`;
 
-	// One data directory for this host's record SQLite files.
-	const dataDir = resolve(env.DATA_DIR ?? './.data');
-	mkdirSync(dataDir, { recursive: true });
 	// One pool for the process; drizzle checks a client out per query and returns
 	// it, so the `mountCloudDb` connect leg below hands back the shared handle with
 	// a no-op close.
@@ -206,7 +200,7 @@ export function startBunApiServer(
 	process.once('SIGINT', shutdown);
 	process.once('SIGTERM', shutdown);
 
-	console.log(`apps/api (Bun) listening on ${origin} (data in ${dataDir})`);
+	console.log(`apps/api (Bun) listening on ${origin}`);
 }
 
 // Run production only when this file is the entrypoint. `server.dev.ts` imports

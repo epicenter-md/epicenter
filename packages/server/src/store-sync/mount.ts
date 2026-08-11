@@ -68,82 +68,6 @@ function parseNamespace(value: string | undefined): string | undefined {
 	return value;
 }
 
-function createStoreSyncApp(resolve: ResolveStoreAuthority): Hono<Env> {
-	return new Hono<Env>()
-		.get(
-			STORE_SYNC_ROUTE.pattern,
-			describeRoute({
-				description: "Upgrade onto this partition's store authority",
-				tags: ['store-sync'],
-			}),
-			async (c) => {
-				if (!isWebSocketUpgrade(c)) {
-					return new Response('The store transport is WebSocket-only', {
-						status: 426,
-					});
-				}
-				const namespace = parseNamespace(c.req.query('namespace'));
-				if (namespace === undefined) {
-					return new Response('namespace must be a Lens namespace', {
-						status: 400,
-					});
-				}
-				// Server-side principal: never the query's.
-				const name = storeAuthorityName(c.var.principal.id, namespace);
-
-				// An upgrade offering subprotocols must offer the main one: the 101
-				// echoes only `epicenter`, and a compliant browser fails a handshake
-				// whose 101 selects a protocol it did not offer. A client offering none
-				// (a non-browser caller using `Authorization`) is fine.
-				const offered = parseSubprotocols(
-					c.req.header('sec-websocket-protocol') ?? null,
-				);
-				if (offered.length > 0 && !offered.includes(MAIN_SUBPROTOCOL)) {
-					return new Response(
-						`WebSocket upgrade must offer the ${MAIN_SUBPROTOCOL} subprotocol`,
-						{ status: 400 },
-					);
-				}
-
-				const response = await resolve(c.env, name).fetch(c.req.raw);
-				if (response.status !== 101) return response;
-				// Echo only the main subprotocol, so a `bearer.<token>` the client
-				// offered is never reflected back to it.
-				return new Response(response.body, {
-					status: 101,
-					webSocket: (response as unknown as { webSocket: WebSocket })
-						.webSocket,
-					headers:
-						offered.length > 0
-							? { 'sec-websocket-protocol': MAIN_SUBPROTOCOL }
-							: undefined,
-				});
-			},
-		)
-		.post(
-			STORE_REPLACE_ROUTE.pattern,
-			describeRoute({
-				description:
-					"Publish this namespace's next document: replace its log with the posted state (ADR-0231)",
-				tags: ['store-sync'],
-			}),
-			async (c) => {
-				const namespace = parseNamespace(c.req.query('namespace'));
-				if (namespace === undefined) {
-					return new Response('namespace must be a Lens namespace', {
-						status: 400,
-					});
-				}
-				// The same partition rule as the upgrade: the principal comes from the
-				// resolved bearer, so this verb cannot be pointed at anyone else's
-				// authority however the query is written. The lease itself
-				// (`fromDocument`, `atHead`) is the authority's to judge.
-				const name = storeAuthorityName(c.var.principal.id, namespace);
-				return resolve(c.env, name).fetch(c.req.raw);
-			},
-		);
-}
-
 /**
  * Mount the store transport on a deployment's server app.
  *
@@ -170,8 +94,58 @@ export function mountStoreSyncApp<E extends Env = Env>(
 		STORE_REPLACE_ROUTE.pattern,
 		requireStoreBearer(opts.resolveBearerPrincipal),
 	);
-	app.route(
-		'/',
-		createStoreSyncApp(opts.resolveAuthority) as unknown as Hono<E>,
+	// Route handlers use the portable `Env`; this deployment-facing generic only
+	// adds bindings and variables. Keep the one cast at that boundary rather than
+	// hide the routes in a one-use sub-app.
+	const storeApp = app as unknown as Hono<Env>;
+	storeApp.get(
+		STORE_SYNC_ROUTE.pattern,
+		describeRoute({
+			description: "Upgrade onto this partition's store authority",
+			tags: ['store-sync'],
+		}),
+		async (c) => {
+			if (!isWebSocketUpgrade(c)) {
+				return new Response('The store transport is WebSocket-only', { status: 426 });
+			}
+			const namespace = parseNamespace(c.req.query('namespace'));
+			if (namespace === undefined) {
+				return new Response('namespace must be a Lens namespace', { status: 400 });
+			}
+			const name = storeAuthorityName(c.var.principal.id, namespace);
+			const offered = parseSubprotocols(c.req.header('sec-websocket-protocol') ?? null);
+			if (offered.length > 0 && !offered.includes(MAIN_SUBPROTOCOL)) {
+				return new Response(
+					`WebSocket upgrade must offer the ${MAIN_SUBPROTOCOL} subprotocol`,
+					{ status: 400 },
+				);
+			}
+			const response = await opts.resolveAuthority(c.env, name).fetch(c.req.raw);
+			if (response.status !== 101) return response;
+			return new Response(response.body, {
+				status: 101,
+				webSocket: (response as unknown as { webSocket: WebSocket }).webSocket,
+				headers:
+					offered.length > 0
+						? { 'sec-websocket-protocol': MAIN_SUBPROTOCOL }
+						: undefined,
+			});
+		},
+	);
+	storeApp.post(
+		STORE_REPLACE_ROUTE.pattern,
+		describeRoute({
+			description:
+				"Publish this namespace's next document: replace its log with the posted state (ADR-0231)",
+			tags: ['store-sync'],
+		}),
+		async (c) => {
+			const namespace = parseNamespace(c.req.query('namespace'));
+			if (namespace === undefined) {
+				return new Response('namespace must be a Lens namespace', { status: 400 });
+			}
+			const name = storeAuthorityName(c.var.principal.id, namespace);
+			return opts.resolveAuthority(c.env, name).fetch(c.req.raw);
+		},
 	);
 }

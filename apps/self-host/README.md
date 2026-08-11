@@ -15,7 +15,6 @@ bun run --cwd apps/self-host gen-token
 
 # 2. Boot the instance with that token.
 INSTANCE_TOKEN=Hq9...kQ \
-DATA_DIR=/var/lib/epicenter \
 bun apps/self-host/server.ts
 ```
 
@@ -26,8 +25,6 @@ Boot fails closed if `INSTANCE_TOKEN` is missing or too weak, and the error name
 `INSTANCE_TOKEN` is the only required variable. The instance needs no external
 database, no auth secret, and no local application data: a client owns its own
 store, and neither entry point constructs a database (ADR-0226, ADR-0227).
-`DATA_DIR` is still read at boot and its directory created, but nothing writes
-there today.
 
 If a browser app is hosted on a different origin from the instance, set
 `TRUSTED_BROWSER_ORIGINS` to a comma-separated list of exact origins, for
@@ -37,20 +34,6 @@ client need no additional entry. Paths and wildcard origins are rejected.
 ### Use TLS
 
 A static bearer over plaintext HTTP is total compromise: anyone who sees one request can capture the token and replay it forever. Terminate TLS in front of the box (Caddy, nginx, a Cloudflare Tunnel) and serve the instance over HTTPS. A homelab on a trusted LAN behind its own boundary is your call, but the moment the box is reachable over the open internet, plain `http://` hands out the keys.
-
-### Redact WebSocket protocol headers
-
-The attach WebSocket (`/attach`) carries its credential in
-`Sec-WebSocket-Protocol` during the upgrade, because a browser upgrade cannot
-set `Authorization`. The server strips that token from the protocol it echoes
-back, but any reverse proxy in front of the instance can still log the incoming
-header. Caddy access logs, for example, redact `Authorization` and `Cookie` but
-not `Sec-WebSocket-Protocol` by default.
-
-If you enable access logs, either omit request headers from the log or redact
-`Sec-WebSocket-Protocol` explicitly. Treat a captured value the same way you
-would treat a leaked `Authorization` bearer: rotate `INSTANCE_TOKEN`, restart
-the instance, and redistribute the new token.
 
 ## Running on Cloudflare
 
@@ -84,9 +67,8 @@ The store transport is `mountStoreSyncApp` in
 `packages/server/src/store-sync/`, and only the hosted Worker mounts it today.
 It resolves one authority per (principal, application namespace) as a Cloudflare
 Durable Object, and no other runtime implements that backend yet. So an instance
-currently serves session, inference, transcription, blobs, and attach, and an
-application pointed at it keeps its data locally without converging with a
-second device. The `resolveAuthority` seam is what a Bun instance would fill in.
+currently serves session, inference, transcription, and blobs. An application
+pointed at it keeps its data locally without converging with a second device.
 
 ## Inference and your house key
 

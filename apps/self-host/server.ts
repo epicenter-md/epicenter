@@ -11,10 +11,9 @@
  *
  * This is the "one binary, no Cloudflare account, no database" instance artifact:
  * `bun server.ts` (or a `bun build --compile` binary) is a complete box on a
- * single node. Authority state is `bun:sqlite` files on local disk, so this is a
- * single-node deployment by design: it does not shard or hibernate the way the
- * Durable Object edge does, which is exactly right for one homelab, one family, or
- * one small team and the price of owning your own data on your own machine.
+ * single node. It owns no application data: the client does. The current
+ * reference instance does not mount store sync, so two devices do not converge
+ * through it yet.
  *
  * There is ONE shape, not a mode (ADR-0075). Every request resolves to the pinned
  * `principals/instance` partition. Authentication is one operator-supplied static bearer
@@ -30,7 +29,7 @@
  * keeping the instance Bun-or-Cloudflare (the operator supplies the secret either
  * way).
  *
- * Surface: session + sync + inference + blobs behind the operator bearer, zero
+ * Surface: session + inference + transcription + blobs behind the operator bearer, zero
  * billing, no dashboard SPA, no auth surface. The blob store is a portable
  * content-addressed media store over any S3 (your own MinIO/Garage/R2); it is
  * mounted by default and answers 503 until `BLOBS_S3_*` is set, exactly as the
@@ -40,8 +39,6 @@
  * storage.
  */
 
-import { mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
 import { assertStrongToken } from '@epicenter/auth';
 import {
 	createEnvTokenResolver,
@@ -69,7 +66,6 @@ const InstanceBindings = ServerBindings.merge({
 	'PORT?': 'string',
 	'API_PUBLIC_ORIGIN?': 'string',
 	'TRUSTED_BROWSER_ORIGINS?': 'string',
-	'DATA_DIR?': 'string',
 	'INSTANCE_TOKEN?': 'string',
 });
 
@@ -128,9 +124,6 @@ export function startSelfHostServer(): void {
 		env.TRUSTED_BROWSER_ORIGINS,
 	);
 
-	// One data directory for this host's record SQLite files.
-	const dataDir = resolve(env.DATA_DIR ?? './.data');
-	mkdirSync(dataDir, { recursive: true });
 	const app = createServerApp({
 		// The instance composes no Postgres (no Better Auth), so it never calls
 		// `mountCloudDb` and `createServerApp` stays on the portable `Env`: `c.var.db`
@@ -179,8 +172,6 @@ export function startSelfHostServer(): void {
 		fetch: (req) => app.fetch(req, env),
 	});
 
-	// Close authority databases and their sockets before the process dies so WAL
-	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.
 	const shutdown = () => {
 		void server.stop(true);
 		process.exit(0);
@@ -190,7 +181,7 @@ export function startSelfHostServer(): void {
 
 	console.log(
 		`apps/self-host instance (Bun) listening on ${origin} ` +
-			`(data in ${dataDir}, partition principals/instance). Hand INSTANCE_TOKEN to ` +
+			`(partition principals/instance). Hand INSTANCE_TOKEN to ` +
 			'whoever should have access.',
 	);
 }

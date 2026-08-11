@@ -2,14 +2,8 @@
  * Runtime profile for the single-partition instance: which surfaces each of this
  * deployment's two entries actually serves.
  *
- * `@epicenter/server` already makes each individual surface runtime-proof: one
- * `mount*` declares the routes and only the backend is bound per runtime (the
- * sync pair is the clearest case, where `mountBunEpicenterSyncApp` and
- * `mountCloudflareEpicenterSyncApp` both delegate to the same
- * `mountEpicenterSyncRoute`). What no type or barrel can check is the part each
- * entry writes by hand: WHICH surfaces it chose to mount. That is the only place
- * the two runtimes can silently drift, and it is what {@link PROFILE} below pins
- * down.
+ * Each `mount*` declares one reusable surface. This test pins down the part
+ * each entry writes by hand: which surfaces it chose to mount.
  *
  * The table is the deployment's capability profile. Every row that is not
  * `served` on both runtimes must carry a `why`, so a divergence costs a sentence
@@ -25,10 +19,7 @@
  * tests in `packages/server`.
  */
 
-import { afterAll, expect, mock, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { expect, mock, test } from 'bun:test';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 
 // The Worker entry re-exports the Durable Object authority, whose module imports
@@ -126,9 +117,6 @@ const PROFILE: Surface[] = [
 /** A token that clears `assertStrongToken`'s entropy floor. */
 const INSTANCE_TOKEN = `probe-${'k7Qm2xZ9'.repeat(5)}`;
 
-const dataDir = mkdtempSync(join(tmpdir(), 'self-host-profile-'));
-afterAll(() => rmSync(dataDir, { recursive: true, force: true }));
-
 type Fetcher = (request: Request) => Response | Promise<Response>;
 
 async function readProfile(
@@ -171,15 +159,14 @@ const workerFetcher = once(async () => {
 /**
  * The Bun entry, driven through the handler it hands to `Bun.serve`.
  *
- * `startSelfHostServer` owns env validation, its data directory, the relay, and
- * the listener, and none of that is worth splitting apart for a test. Swapping
+ * `startSelfHostServer` owns env validation and the listener, and none of that
+ * is worth splitting apart for a test. Swapping
  * `Bun.serve` for a recorder lets the entry boot exactly as it does in
  * production and hands back the composed app's `fetch`, with no port bound.
  */
 const bunFetcher = once(async () => {
 	Object.assign(process.env, {
 		INSTANCE_TOKEN,
-		DATA_DIR: dataDir,
 		PORT: '8787',
 		API_PUBLIC_ORIGIN: ORIGIN,
 	});

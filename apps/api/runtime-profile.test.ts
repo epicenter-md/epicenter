@@ -2,14 +2,8 @@
  * Runtime profile for the hosted cloud: which surfaces each of this deployment's
  * two entries actually serves.
  *
- * `@epicenter/server` already makes each individual surface runtime-proof: one
- * `mount*` declares the routes and only the backend is bound per runtime (the
- * sync pair is the clearest case, where `mountBunEpicenterSyncApp` and
- * `mountCloudflareEpicenterSyncApp` both delegate to the same
- * `mountEpicenterSyncRoute`). What no type or barrel can check is the part each
- * entry writes by hand: WHICH surfaces it chose to mount. That is the only place
- * the two runtimes can silently drift, and it is what {@link PROFILE} below pins
- * down.
+ * Each `mount*` declares one reusable surface. This test pins down the part
+ * each entry writes by hand: which surfaces it chose to mount.
  *
  * The Worker is the deployed hosted artifact; the Bun entry is local dev and the
  * runtime-parity smoke (ADR-0066). Four surfaces are Worker-only for reasons that
@@ -26,10 +20,7 @@
  * tests in `packages/server`.
  */
 
-import { afterAll, expect, mock, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { expect, mock, test } from 'bun:test';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 
 /**
@@ -150,9 +141,6 @@ const PROFILE: Surface[] = [
 	},
 ];
 
-const dataDir = mkdtempSync(join(tmpdir(), 'api-profile-'));
-afterAll(() => rmSync(dataDir, { recursive: true, force: true }));
-
 type Fetcher = (request: Request) => Response | Promise<Response>;
 
 async function readProfile(
@@ -201,8 +189,8 @@ const workerFetcher = once(async () => {
 /**
  * The Bun entry, driven through the handler it hands to `Bun.serve`.
  *
- * `startBunApiServer` owns env validation, the pool, its data directory, and the
- * listener, and none of that is worth splitting apart for a test. Swapping
+ * `startBunApiServer` owns env validation, the pool, and the listener, and none
+ * of that is worth splitting apart for a test. Swapping
  * `Bun.serve` for a recorder lets the entry boot exactly as it does in
  * production and hands back the composed app's `fetch`, with no port bound.
  */
@@ -217,7 +205,6 @@ const bunFetcher = once(async () => {
 		MICROSOFT_CLIENT_ID: 'probe',
 		MICROSOFT_CLIENT_SECRET: 'probe',
 		API_PUBLIC_ORIGIN: ORIGIN,
-		DATA_DIR: dataDir,
 	});
 	const entry = await import('./server.js');
 	const realServe = Bun.serve;
