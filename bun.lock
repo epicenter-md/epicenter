@@ -403,6 +403,7 @@
         "@sveltejs/vite-plugin-svelte": "catalog:",
         "@tailwindcss/vite": "catalog:",
         "@types/bun": "catalog:",
+        "fake-indexeddb": "^6.2.5",
         "shiki": "^3.7.0",
         "svelte": "catalog:",
         "svelte-check": "catalog:",
