@@ -24,7 +24,7 @@ export type RunRecipeError = InferErrors<typeof RunRecipeError>;
  * text and this never re-does correction.
  *
  * The system prompt is `recipe.instructions` plus the Dictionary block (via
- * `buildSystemPrompt`, with `settings.dictionary` read at use per ADR 0012). Provider and
+ * `buildSystemPrompt`, with `dictionary` read at use per ADR 0012). Provider and
  * model come from the single global `completion.*` default (via
  * `completeWithGlobalDefault`), not from the Recipe.
  *

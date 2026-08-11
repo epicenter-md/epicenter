@@ -41,7 +41,7 @@
 	<Card.Root>
 		<Card.Content class="py-2">
 			<SettingSwitch
-				key="settings.analytics.enabled"
+				key="analyticsEnabled"
 				label="Share anonymized events"
 				description='We log simple events like "recording started" or "transcription completed". No personal data is attached to any of these events.'
 				onCheckedChange={(checked) => {

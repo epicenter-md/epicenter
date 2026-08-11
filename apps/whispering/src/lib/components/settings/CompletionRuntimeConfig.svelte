@@ -20,7 +20,7 @@
 
 	// The Text stage of the capture pipeline: the AI destination Polish and every
 	// Recipe send transcript text to. This surface owns the routing decision
-	// (`settings.completion.provider`/`settings.completion.model`), with the selected provider's
+	// (`completionProvider`/`completionModel`), with the selected provider's
 	// credentials nested underneath as an implementation detail. Locality and
 	// readiness are read from the same resolved state the call path uses, so what
 	// the user sees here is exactly what the pipeline will do.

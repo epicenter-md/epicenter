@@ -27,7 +27,7 @@
  */
 
 import type { LensView } from '@epicenter/data';
-import { defineLens, type RowOf } from '@epicenter/lens';
+import { defineLens, type KvOf, type RowOf } from '@epicenter/lens';
 
 /** Runtime-minted structural row ids. */
 export type RecordingId = string;
@@ -171,7 +171,14 @@ export type WhisperingData = LensView<typeof whisperingLens>;
 
 export type Recording = RowOf<typeof recordingsTable>;
 export type Recipe = RowOf<typeof recipesTable>;
-export type WhisperingSettings = typeof settingsKv;
+/**
+ * The settings values a read hands back: every declared key present, each one
+ * defaulted if it was never written.
+ *
+ * Through `KvOf` rather than `typeof settingsKv`, which was the DECLARATION
+ * (a record of arktype expressions in strings) wearing the name of the values.
+ */
+export type WhisperingSettingValues = KvOf<typeof whisperingLens>;
 
 /**
  * Default shortcuts, applied by the app rather than declared in the Lens.

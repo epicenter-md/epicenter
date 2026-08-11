@@ -45,7 +45,7 @@
 	// Unlike the recorder switcher, this surface only *sets things up* (sign in,
 	// add a key and pick a model, download a GGUF, enter a custom server); you pick
 	// which route is active in the recorder popover. So no section writes
-	// `settings.transcription.service`; each just persists its own provider config. The
+	// `transcriptionService`; each just persists its own provider config. The
 	// active route is reflected read-only as an "Active" badge for orientation.
 	// Like {@link CompletionRuntimeConfig}, it owns its routing surface and takes no
 	// props, so the page renders it as `<TranscriptionRuntimeConfig />`.

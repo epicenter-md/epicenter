@@ -14,8 +14,10 @@
 
 	const app = getWhisperingApp();
 
-	const dictionary = $derived(app.settings.get('dictionary'));
-	// Intent (`settings.polish.enabled`) and capability (a usable provider) are separate
+	// Null when the person has added no terms: a Lens cannot default an array,
+	// so "never touched" and "emptied" are the same empty list here.
+	const dictionary = $derived(app.settings.get('dictionary') ?? []);
+	// Intent (`polishEnabled`) and capability (a usable provider) are separate
 	// facts; the toggle below sets intent, this surfaces when intent is on but
 	// the provider is missing so the control never silently reads "on" while the
 	// pipeline ships raw.
@@ -58,7 +60,7 @@
 			</Field.Description>
 			<Field.Group>
 				<SettingSwitch
-					key="settings.polish.enabled"
+					key="polishEnabled"
 					label="Polish transcripts with AI"
 					description="Turn off for speed mode: the raw transcript ships instantly, with no AI call."
 				/>

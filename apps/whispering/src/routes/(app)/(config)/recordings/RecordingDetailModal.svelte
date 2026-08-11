@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { extractErrorMessage } from 'wellcrafted/error';
 	import { InstantString } from '@epicenter/field';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
@@ -107,7 +108,7 @@
 		});
 	}
 
-	async function save() {
+	function save() {
 		const snapshot = $state.snapshot(workingCopy);
 		if (!InstantString.is(snapshot.recordedAt)) {
 			report.info({
@@ -117,19 +118,22 @@
 			return;
 		}
 
-		const { error } = await app.recordings.patch(recording.id, {
-			title: snapshot.title,
-			recordedAt: snapshot.recordedAt,
-			recordedAtZone: snapshot.recordedAtZone,
-			transcript: snapshot.transcript,
-			polishedTranscript:
-				snapshot.transcript === recording.transcript
-					? recording.polishedTranscript
-					: null,
-		});
-
-		if (error) {
-			report.error({ title: 'Could not patch recording', cause: error });
+		try {
+			app.recordings.patch(recording.id, {
+				title: snapshot.title,
+				recordedAt: snapshot.recordedAt,
+				recordedAtZone: snapshot.recordedAtZone,
+				transcript: snapshot.transcript,
+				polishedTranscript:
+					snapshot.transcript === recording.transcript
+						? recording.polishedTranscript
+						: null,
+			});
+		} catch (cause) {
+			report.info({
+				title: 'Could not update recording',
+				description: extractErrorMessage(cause),
+			});
 			return;
 		}
 

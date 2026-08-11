@@ -233,7 +233,7 @@ export async function cancelRecording(app: WhisperingApp) {
 	// means across the manual and VAD recorders.
 	//
 	// Cancel aborts whichever capture is live, without touching
-	// `settings.recording.trigger`: the chosen trigger (manual vs VAD) is a deliberate
+	// `recordingTrigger`: the chosen trigger (manual vs VAD) is a deliberate
 	// preference, not
 	// something a cancel keystroke should flip, so cancelling in VAD mode leaves
 	// you in VAD mode, idle and ready to listen again. This is also the global
@@ -408,7 +408,7 @@ export function toggleVadRecording(app: WhisperingApp) {
 /**
  * Select a capture surface from the homepage tabs or the header dropdown.
  * `import` opens the transient import overlay without touching
- * `settings.recording.trigger`; `manual`/`vad` close the overlay and switch the durable
+ * `recordingTrigger`; `manual`/`vad` close the overlay and switch the durable
  * trigger. Either way, a live capture on a different surface is stopped first so
  * two captures never overlap (`import` keeps neither recorder, so both stop).
  */

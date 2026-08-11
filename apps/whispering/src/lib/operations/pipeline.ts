@@ -49,7 +49,7 @@ export async function processRecordingPipeline(
 
 	// Row creation owns row/blob consistency: on failure it removes the
 	// already-committed audio and rethrows, so a lost row never strands bytes.
-	const recording = await app.recordings.create({
+	const recording = app.recordings.create({
 		audioBlobId,
 		title: '',
 		recordedAt: now,
@@ -57,7 +57,9 @@ export async function processRecordingPipeline(
 		transcript: '',
 		polishedTranscript: null,
 		duration: durationMs,
-		transcription: null,
+		// The three transcription columns are omitted: each declares a default a
+		// read applies and a write never stores, so a fresh recording is
+		// `pending` with no completion and no error (`workspace/index.ts`).
 	});
 
 	if (app.settings.get('recordingAutoUpload')) {

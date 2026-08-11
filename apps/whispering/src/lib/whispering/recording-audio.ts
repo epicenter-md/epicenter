@@ -13,7 +13,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { Recording } from '../workspace';
+import type { Recording } from './recording.js';
 
 /**
  * The composed blob capability an environment supplies to the app.

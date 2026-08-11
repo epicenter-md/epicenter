@@ -33,7 +33,7 @@ export type RunPolishError = InferErrors<typeof RunPolishError>;
 
 /**
  * The Polish control's effective state, derived from two independent facts:
- * intent (`settings.polish.enabled`, the toggle) and capability (the selected provider can
+ * intent (`polishEnabled`, the toggle) and capability (the selected provider can
  * serve a completion). Speed mode is `off`; `on` means a pass will run; and
  * `needs-key` is the "wanted but blocked" state, intent without capability,
  * which a bare boolean used to hide by collapsing it into the same `false` as
@@ -83,7 +83,7 @@ export function polishWillRun(app: WhisperingApp, input: string): boolean {
 /**
  * Polish: the always-on, meaning-preserving AI base, run once after every
  * transcription. One optional completion whose system prompt is
- * `settings.polish.instructions` plus a Dictionary block (via `buildPolishSystemPrompt`)
+ * `polishInstructions` plus a Dictionary block (via `buildPolishSystemPrompt`)
  * and whose content is the raw transcript. Skips the call (returns the raw
  * input) whenever {@link polishWillRun} is false.
  *

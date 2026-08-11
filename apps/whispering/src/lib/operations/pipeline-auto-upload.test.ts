@@ -74,7 +74,9 @@ type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
 const app = {
 	settings: { get: () => autoUpload },
 	recordings: {
-		async create(fields: Record<string, unknown>) {
+		// Synchronous, like the domain it stands in for: the store commits before
+		// `create` returns, so there is no promise for the pipeline to await.
+		create(fields: Record<string, unknown>) {
 			return { ...fields, id: 'recording-1' as RecordingId };
 		},
 		uploadAudio,

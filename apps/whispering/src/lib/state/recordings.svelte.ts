@@ -1,8 +1,8 @@
 import { createSubscriber } from 'svelte/reactivity';
 import type { WhisperingApp } from '$lib/whispering/app';
-import type { Recording } from '$lib/workspace';
+import type { Recording } from '$lib/whispering/recording';
 
-export type { Recording } from '$lib/workspace';
+export type { Recording } from '$lib/whispering/recording';
 
 export type Recordings = ReturnType<typeof createRecordings>;
 
@@ -45,7 +45,6 @@ export function createRecordings({
 		uploadAudio: recordings.uploadAudio,
 		downloadAudio: recordings.downloadAudio,
 		removeLocalAudio: recordings.removeLocalAudio,
-		refresh: recordings.refresh,
 		subscribe: recordings.subscribe,
 	};
 }

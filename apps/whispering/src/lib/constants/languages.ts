@@ -66,6 +66,18 @@ export const SUPPORTED_LANGUAGES = [
 
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
+/**
+ * Narrow a stored language code to one this release supports.
+ *
+ * The Lens stores `transcriptionLanguage` as a plain string on purpose: a
+ * hand-written union of 58 languages there would drift from this const, and
+ * drift means the Lens refusing a write the UI offered. So the check lives
+ * here, at the one boundary where a stored code becomes a provider argument.
+ */
+export function isSupportedLanguage(value: string): value is SupportedLanguage {
+	return (SUPPORTED_LANGUAGES as readonly string[]).includes(value);
+}
+
 const SUPPORTED_LANGUAGES_TO_LABEL = {
 	auto: 'Auto',
 	af: 'Afrikaans',

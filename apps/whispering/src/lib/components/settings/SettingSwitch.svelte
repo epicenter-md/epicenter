@@ -1,4 +1,4 @@
-<script lang="ts" generics="K extends BooleanSettingKey">
+<script lang="ts">
 	import * as Field from '@epicenter/ui/field';
 	import { Switch } from '@epicenter/ui/switch';
 	import type { BooleanSettingKey } from '$lib/state/settings.svelte';
@@ -12,7 +12,7 @@
 		description,
 		onCheckedChange,
 	}: {
-		key: K;
+		key: BooleanSettingKey;
 		label: string;
 		description?: string;
 		/** Runs after the setting is written, e.g. to log the change. */

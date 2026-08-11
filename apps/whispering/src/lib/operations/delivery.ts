@@ -27,6 +27,24 @@ const OUTPUT_SCOPES = ['transcription', 'recipe'] as const;
 type OutputScope = (typeof OUTPUT_SCOPES)[number];
 
 /**
+ * Where each scope's three delivery toggles live, as the Lens keys that hold
+ * them. Written out rather than composed from the scope name: a durable key is
+ * not something to compute from an identifier a rename could change.
+ */
+const OUTPUT_KEYS = {
+	transcription: {
+		cursor: 'outputTranscriptionCursor',
+		clipboard: 'outputTranscriptionClipboard',
+		enter: 'outputTranscriptionEnter',
+	},
+	recipe: {
+		cursor: 'outputRecipeCursor',
+		clipboard: 'outputRecipeClipboard',
+		enter: 'outputRecipeEnter',
+	},
+} as const;
+
+/**
  * True when any output scope is set to write at the cursor. Cursor delivery is a
  * synthetic Cmd/Ctrl+V, so this is exactly when delivery needs the macOS
  * Accessibility grant, which is the one fact the tap supervisor holds the tap to
@@ -34,7 +52,7 @@ type OutputScope = (typeof OUTPUT_SCOPES)[number];
  */
 export function outputWritesToCursor(app: WhisperingApp): boolean {
 	return OUTPUT_SCOPES.some((scope) =>
-		app.settings.get(`settings.output.${scope}.cursor`),
+		app.settings.get(OUTPUT_KEYS[scope].cursor),
 	);
 }
 
@@ -111,17 +129,14 @@ function resolveSettingsSink(
 	app: WhisperingApp,
 	settingsScope: OutputScope,
 ): Sink {
-	const cursorRequested = app.settings.get(
-		`settings.output.${settingsScope}.cursor`,
-	);
-	const clipboardRequested = app.settings.get(
-		`settings.output.${settingsScope}.clipboard`,
-	);
+	const keys = OUTPUT_KEYS[settingsScope];
+	const cursorRequested = app.settings.get(keys.cursor);
+	const clipboardRequested = app.settings.get(keys.clipboard);
 
 	return cursorRequested
 		? createCursorSink({
 				keepOnClipboard: clipboardRequested,
-				pressEnter: app.settings.get(`settings.output.${settingsScope}.enter`),
+				pressEnter: app.settings.get(keys.enter),
 			})
 		: clipboardRequested
 			? clipboardSink

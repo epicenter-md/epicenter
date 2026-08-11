@@ -40,7 +40,7 @@
 	<Field.Group>
 		<SettingSelect
 			store={app.settings}
-			key="settings.recording.trigger"
+			key="recordingTrigger"
 			label="Recording Trigger"
 			items={RECORDING_TRIGGER_OPTIONS}
 			description="Choose how recording starts: {RECORDING_TRIGGER_OPTIONS.map(
@@ -49,14 +49,14 @@
 		/>
 
 		<SettingSwitch
-			key="settings.recording.pausePlayback"
+			key="recordingPausePlayback"
 			label="Pause playback while recording"
 			description="Whispering pauses media playing on your computer (music, video, browser tabs) while your voice is being captured, then tries to resume it after. In voice activated mode it pauses only while you actually speak, so music keeps playing between phrases. Works with most apps in your system media controls. A few can't be paused, and on macOS the resume can occasionally wake a different app that was already paused."
 		/>
 
 		{#if app.recordings.remoteAvailable}
 			<SettingSwitch
-				key="settings.recording.autoUpload"
+				key="recordingAutoUpload"
 				label="Upload new recordings"
 				description="After saving a new recording on this device, try once to copy its audio to your online storage. Failed uploads stay local and are not retried automatically."
 			/>
