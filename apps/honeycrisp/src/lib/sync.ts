@@ -42,16 +42,20 @@ export function honeycrispStoreTransport(auth: AuthClient): StoreTransport {
 }
 
 /**
- * Attach sync to an open store, for the lifetime of this app generation.
+ * Attach sync to an open workspace store, for the lifetime of this app
+ * generation. Only a workspace generation calls this (ADR-0233): a private
+ * document never syncs, so a signed-out boot has nothing to attach.
  *
- * Whether sync can work is decided by the first dial, not by inspecting auth
- * up front: `openWebSocket` rejecting with a permanent denial (signed out,
- * reauth required, a desktop window that holds no credential) reports
- * `denied`, and the driver stops for good. That is not a failure and is not
- * reported as one; the store is local-first and works completely without
- * this. A credential arriving later never resumes this connection: acquiring
- * one changes auth state, and `reloadOnAuthChange` in the root layout starts
- * the next generation, which dials fresh.
+ * Whether sync can work is still decided by the first dial, not by inspecting
+ * auth again here: `openWebSocket` rejecting with a permanent denial (reauth
+ * required, a revoked credential, a window that holds none) reports `denied`,
+ * and the driver stops for good. For a bound workspace that is not a failure
+ * and is not reported as one; the store works offline without this. For an
+ * unbound one the application rejects its boot, because a signed-in workspace
+ * that cannot bootstrap is unavailable, never the private document. A
+ * credential arriving later never resumes this connection: acquiring one
+ * changes auth state, and `reloadOnAuthChange` in the root layout starts the
+ * next generation, which dials fresh.
  */
 export function attachHoneycrispSync({
 	store,
@@ -68,9 +72,9 @@ export function attachHoneycrispSync({
 	 */
 	onSuperseded: () => void;
 	/**
-	 * No dial in this app generation can ever succeed (signed out, reauth
-	 * required). Fired from the same classification that stops the driver, so
-	 * the boot gate can resolve an unbound store as a private local document
+	 * No dial in this app generation can ever succeed (reauth required, a
+	 * refused credential). Fired from the same classification that stops the
+	 * driver, so the boot gate can reject an unbound workspace as unavailable
 	 * rather than waiting on a bootstrap that will never come.
 	 */
 	onDenied?: () => void;
@@ -116,8 +120,8 @@ export function attachHoneycrispSync({
 						if (abandoned) return;
 						// A permanent denial means no dial in this generation can ever
 						// succeed, so the driver stops instead of retrying a refusal on
-						// backoff. Expected whenever this replica is signed out, so it
-						// is a lifecycle fact, not a background error.
+						// backoff. Expected whenever this generation's credential needs
+						// reauth, so it is a lifecycle fact, not a background error.
 						if (
 							isOpenWebSocketDenial(cause) &&
 							cause.permanence === 'permanent'

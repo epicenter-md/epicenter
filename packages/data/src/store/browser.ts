@@ -194,33 +194,69 @@ function deleteIndexedDb(name: string): Promise<void> {
 }
 
 /**
- * Open the application this lens names, in a browser page.
+ * Which of an application's two durable local documents to open (ADR-0233).
  *
- * The lens names the store (ADR-0229): its namespace is the identity, so the
- * IndexedDB database is derived rather than passed. An origin can host more
- * than one application, and each one is its own namespace, its own document,
- * and its own durable record.
+ * A browser application keeps exactly two: `private` is the device-local
+ * document that never joins workspace sync, and `workspace` is this device's
+ * replica of the authority's current document (ADR-0231). They are separate
+ * IndexedDB databases and separate open claims, so a workspace discard,
+ * supersession, or rebuild cannot name the private document, and the two may
+ * be open at once without being two `Y.Doc`s of one document.
+ */
+export type DocumentRole = 'private' | 'workspace';
+
+/**
+ * Delete the pre-split single database, `epicenter-store-<namespace>`.
+ *
+ * The clean break for storage written before ADR-0233: that one database held
+ * anonymous work or a workspace replica, indistinguishably, so it is deleted
+ * rather than reinterpreted as either document. Never rejects, because a dead
+ * artifact must not block a boot: a delete blocked by another tab completes
+ * when that tab closes, and running again at every open makes the deletion
+ * certain without anyone waiting on it.
+ */
+function deleteLegacySingleStore(namespace: string): Promise<void> {
+	return new Promise((resolve) => {
+		const request = indexedDB.deleteDatabase(`epicenter-store-${namespace}`);
+		request.onsuccess = () => resolve();
+		request.onerror = () => resolve();
+		request.onblocked = () => resolve();
+	});
+}
+
+/**
+ * Open one of the two documents of the application this lens names, in a
+ * browser page.
+ *
+ * The lens names the application and the caller names the document
+ * (ADR-0229 as amended by ADR-0233): the IndexedDB database is derived from
+ * `lens.namespace` and `document` together, so a private and a workspace
+ * document can never share storage, and neither can be opened without saying
+ * which one is meant. `#` joins the two because a namespace cannot contain
+ * it, so no namespace collides with another namespace's suffixed name.
  *
  * @example
  * ```ts
- * const { data: mail } = await open(inbox);
+ * const { data: mail } = await open(inbox, { document: 'workspace' });
  * mail.tables.messages.create({ subject: 'hi', unread: true });
- * mail.pressure();
+ * mail.store.pressure();
  * ```
  */
 export async function open<const TLens extends LensJson>(
 	lens: TLens,
+	{ document }: { document: DocumentRole },
 ): Promise<
 	Result<ApplicationOf<TLens, BrowserStore>, StoreError | LensParseError>
 > {
-	const { error: claimError } = claimNamespace(lens.namespace);
+	const name = `${lens.namespace}#${document}`;
+	const { error: claimError } = claimNamespace(name);
 	if (claimError !== null) return Err(claimError);
 
-	const { data: store, error: storeError } = await openBrowserStore({
-		name: lens.namespace,
-	});
+	await deleteLegacySingleStore(lens.namespace);
+
+	const { data: store, error: storeError } = await openBrowserStore({ name });
 	if (storeError !== null) {
-		releaseNamespace(lens.namespace);
+		releaseNamespace(name);
 		return Err(storeError);
 	}
 

@@ -9,6 +9,7 @@
 	},
 	"exclude": [
 		"evidence/browser/durable-store",
-		"src/store/browser.ts"
+		"src/store/browser.ts",
+		"src/store/browser.test.ts"
 	]
 }

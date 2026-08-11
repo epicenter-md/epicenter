@@ -48,7 +48,9 @@ Object.assign(globalThis, {
 	async open(name: keyof typeof lenses) {
 		const lens = lenses[name];
 		if (lens === undefined) return { error: `no lens named ${name}` };
-		const opened = await openBrowser(lens);
+		// The private document: this probe proves durability, and a private
+		// document is the one that never has a sync story to confound it.
+		const opened = await openBrowser(lens, { document: 'private' });
 		if (opened.error !== null) return { error: opened.error.message };
 		db = opened.data as ProbeApplication;
 		show({ opened: name, namespace: lens.namespace });

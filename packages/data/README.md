@@ -9,7 +9,7 @@ Four entry points, and no more:
 | --- | --- |
 | `@epicenter/data` | the store surface, plus the Lens vocabulary re-exported from `@epicenter/lens` |
 | `@epicenter/data/bun` | `open(lens, { root })`, and `openMemory(lens)` for tests |
-| `@epicenter/data/browser` | `open(lens)` |
+| `@epicenter/data/browser` | `open(lens, { document })` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 
 A Bun opener imports `bun:sqlite` and a browser opener imports a WASM build, so
@@ -21,7 +21,9 @@ openers live at their own entry points rather than on `@epicenter/data`.
 ```ts
 import { open } from '@epicenter/data/browser';
 
-const { data: app, error } = await open(honeycrispLens);
+const { data: app, error } = await open(honeycrispLens, {
+	document: 'workspace',
+});
 if (error !== null) return handle(error);
 
 const listed = app.tables.notes.list();          // no await
@@ -33,14 +35,21 @@ the namespace is the document, the file, the folder and the authority address.
 Nothing takes a path or a database name, so a Lens cannot be bound to a store
 it does not name.
 
+In a browser the caller also names which of the application's two durable
+documents it means (ADR-0233): `private` is the device-local document that
+never joins workspace sync, and `workspace` is this device's replica of the
+authority's current document. They are separate IndexedDB databases, so a
+workspace discard, supersession, or rebuild cannot touch the private one.
+
 Opening replays a durable log into one `Y.Doc`. After that every read is a
 property access on a document already in memory, so nothing below returns a
 promise.
 
-Opening one namespace twice in a process is refused with
+Opening one document twice in a process is refused with
 `StoreError.AlreadyOpen`. Two opens would be two `Y.Doc`s of one document that
 cannot see each other's writes, so they would converge through storage under
-last-writer-wins and quietly lose one side's work.
+last-writer-wins and quietly lose one side's work. An application's private
+and workspace documents are different documents, so both may be open at once.
 
 ## The surface
 
