@@ -6,10 +6,9 @@
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0209](0209-epicenter-is-the-raw-view-beside-its-applications-not-a-shell-above-them.md)
   and [ADR-0208](0208-every-app-folder-is-markdown-beside-one-queryable-database.md),
-  at one bounded point each. Both read the HOST REPLICA
-  (`apps/epicenter/src/inspect.ts` and `src/folder/project.ts` both open
-  `source.replicaPath`), and an application on the new store does not write
-  there. Withdrawn: that the raw view and the queryable projection can see an
+  at one bounded point each. Both read the HOST REPLICA (the raw view and the
+  folder projector each opened `source.replicaPath`), and an application on the
+  new store does not write there. Both are now deleted along with that replica. Withdrawn: that the raw view and the queryable projection can see an
   application's live rows. What survives unchanged is everything else in both,
   including every application still on the superseded stack, and the shape of
   the answer: a reader that wants an application's rows becomes a replica of
@@ -103,10 +102,9 @@ this is the real cost. It is bigger than one sentence, which is why it is an
 amendment above rather than a note here. Two shipped surfaces read the host
 replica and would show a migrated application nothing:
 
-- ADR-0209's raw view and the Data pane over it (`apps/epicenter/src/inspect.ts`,
-  `/api/home/inspect`).
+- ADR-0209's raw view and the Data pane over it (`/api/home/inspect`), deleted.
 - ADR-0208's queryable projection beside an app's markdown
-  (`apps/epicenter/src/folder/project.ts`, `~/Epicenter/<namespace>/<app>.sqlite3`).
+  (`~/Epicenter/<namespace>/<app>.sqlite3`), deleted with the renderer beside it.
 
 A reader that wants an application's rows becomes a replica of the authority
 that application uses, which is the shape every other reader already has rather

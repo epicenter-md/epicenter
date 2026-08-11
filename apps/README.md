@@ -56,9 +56,9 @@ apps/<app>/
 └── package.json                 "exports": { ".": "./src/lib/workspace/index.ts" }
 ```
 
-`honeycrisp` and `whispering` use that nesting; `vocab` keeps the same two files
-at the package root instead (`apps/vocab/vocab.ts`,
-`apps/vocab/vocab.browser.ts`). Follow the existing package shape. Forking the
+`honeycrisp` and `whispering` use that nesting; `vocab` keeps its Lens at the
+package root instead (`apps/vocab/vocab.ts`) and composes in
+`apps/vocab/src/lib/runtime.ts`. Follow the existing package shape. Forking the
 Lens file forks sync compatibility with every peer running the canonical one.
 
 Where a build genuinely differs, put the difference behind a `#platform/*`
