@@ -1,5 +1,5 @@
-import { createContext } from 'svelte';
 import { type HoneycrispData, NOTE_BODY } from '@epicenter/honeycrisp';
+import { createContext } from 'svelte';
 import { reportBackgroundError } from '../../lib/report.js';
 import type { HoneycrispRuntime } from '../../lib/runtime.js';
 import {

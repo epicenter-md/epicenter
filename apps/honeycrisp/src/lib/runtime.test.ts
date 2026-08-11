@@ -426,9 +426,8 @@ test('a supersession discards one account replica and cannot touch the others', 
 		});
 		const runtime = await openHoneycrispRuntime({ auth });
 		expect(
-			requireAccount(runtime).data.tables.notes.create(
-				noteFields("kept bob's"),
-			).error,
+			requireAccount(runtime).data.tables.notes.create(noteFields("kept bob's"))
+				.error,
 		).toBeNull();
 		await runtime[Symbol.asyncDispose]();
 	}
@@ -493,9 +492,8 @@ test('a rebuild discards one account replica and cannot touch the others', async
 		});
 		const runtime = await openHoneycrispRuntime({ auth });
 		expect(
-			requireAccount(runtime).data.tables.notes.create(
-				noteFields("kept bob's"),
-			).error,
+			requireAccount(runtime).data.tables.notes.create(noteFields("kept bob's"))
+				.error,
 		).toBeNull();
 		await runtime[Symbol.asyncDispose]();
 	}

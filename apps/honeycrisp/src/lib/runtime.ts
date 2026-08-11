@@ -326,8 +326,7 @@ function waitUntilReplicaIsBound({
 	/** Hear a permanent denial that lands while waiting; returns unsubscribe. */
 	onDenied: (notice: () => void) => () => void;
 }): Promise<void> {
-	const bound = (): boolean =>
-		store.sync.documentIdentity().data !== undefined;
+	const bound = (): boolean => store.sync.documentIdentity().data !== undefined;
 	if (bound()) return Promise.resolve();
 	return new Promise<void>((resolve, reject) => {
 		function cleanup(): void {

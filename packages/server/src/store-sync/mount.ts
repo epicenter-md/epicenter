@@ -106,21 +106,29 @@ export function mountStoreSyncApp<E extends Env = Env>(
 		}),
 		async (c) => {
 			if (!isWebSocketUpgrade(c)) {
-				return new Response('The store transport is WebSocket-only', { status: 426 });
+				return new Response('The store transport is WebSocket-only', {
+					status: 426,
+				});
 			}
 			const namespace = parseNamespace(c.req.query('namespace'));
 			if (namespace === undefined) {
-				return new Response('namespace must be a Lens namespace', { status: 400 });
+				return new Response('namespace must be a Lens namespace', {
+					status: 400,
+				});
 			}
 			const name = storeAuthorityName(c.var.principal.id, namespace);
-			const offered = parseSubprotocols(c.req.header('sec-websocket-protocol') ?? null);
+			const offered = parseSubprotocols(
+				c.req.header('sec-websocket-protocol') ?? null,
+			);
 			if (offered.length > 0 && !offered.includes(MAIN_SUBPROTOCOL)) {
 				return new Response(
 					`WebSocket upgrade must offer the ${MAIN_SUBPROTOCOL} subprotocol`,
 					{ status: 400 },
 				);
 			}
-			const response = await opts.resolveAuthority(c.env, name).fetch(c.req.raw);
+			const response = await opts
+				.resolveAuthority(c.env, name)
+				.fetch(c.req.raw);
 			if (response.status !== 101) return response;
 			return new Response(response.body, {
 				status: 101,
@@ -142,7 +150,9 @@ export function mountStoreSyncApp<E extends Env = Env>(
 		async (c) => {
 			const namespace = parseNamespace(c.req.query('namespace'));
 			if (namespace === undefined) {
-				return new Response('namespace must be a Lens namespace', { status: 400 });
+				return new Response('namespace must be a Lens namespace', {
+					status: 400,
+				});
 			}
 			const name = storeAuthorityName(c.var.principal.id, namespace);
 			return opts.resolveAuthority(c.env, name).fetch(c.req.raw);

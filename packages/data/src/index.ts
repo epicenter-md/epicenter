@@ -33,19 +33,19 @@ export {
 } from '@epicenter/lens';
 export { type OutboxEntry, SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
 export {
-	type DataOf,
 	asData,
 	type ClientLog,
 	createReplicaStore,
 	createStore,
+	type DataOf,
 	type KvHandle,
 	type LensView,
 	type QueryMethod,
 	type ReadRowError,
+	type ReplicaStore,
 	type Row,
 	type RowDocument,
 	type Store,
-	type ReplicaStore,
 	StoreError,
 	type StorePressure,
 	type TableHandle,

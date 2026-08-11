@@ -25,7 +25,10 @@ import { Database } from 'bun:sqlite';
 import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
-import { createReplicaStore, type ReplicaStore } from '../../src/store/store.js';
+import {
+	createReplicaStore,
+	type ReplicaStore,
+} from '../../src/store/store.js';
 import {
 	createSyncClient,
 	createSyncConnection,

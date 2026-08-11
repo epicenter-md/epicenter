@@ -37,7 +37,7 @@
 	// backend instead.
 	"secrets": {
 		"required": ["INSTANCE_TOKEN"]
-	},
+	}
 
 	// No Hyperdrive or Durable Object bindings: the instance composes no Postgres
 	// and no store sync today. It serves session, inference, transcription, and

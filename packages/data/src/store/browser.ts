@@ -37,7 +37,7 @@ import type { LensJson, LensParseError } from '@epicenter/lens';
 import type { SqliteDatabase } from '@epicenter/sqlite';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
-import { deleteDB, type DBSchema, type IDBPDatabase, openDB } from 'idb';
+import { type DBSchema, deleteDB, type IDBPDatabase, openDB } from 'idb';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { claimDocument, releaseDocument } from './claims.js';
 import {
@@ -49,10 +49,10 @@ import {
 	writeDocumentIdentity,
 } from './log.js';
 import {
-	type DataOf,
 	asData,
 	createReplicaStore,
 	createStore,
+	type DataOf,
 	type ReplicaStore,
 	type Store,
 	StoreError,

@@ -16,7 +16,11 @@
  * entry mounts it, so nothing deployable grows a class that exists for a test.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { createReplicaStore, defineLens, type ReplicaStore } from '@epicenter/data';
+import {
+	createReplicaStore,
+	defineLens,
+	type ReplicaStore,
+} from '@epicenter/data';
 import {
 	createSyncConnection,
 	rebuildWorkspace,
