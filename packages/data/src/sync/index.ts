@@ -1,4 +1,9 @@
 export {
+	type AttachStoreSyncOptions,
+	attachStoreSync,
+	type StoreSocketTransport,
+} from './attach.js';
+export {
 	AuthorityError,
 	applyAuthoritySchema,
 	type LogEntry,
