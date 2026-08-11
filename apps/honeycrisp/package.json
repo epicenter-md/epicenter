@@ -42,6 +42,7 @@
 		"@tailwindcss/vite": "catalog:",
 		"@tauri-apps/cli": "catalog:",
 		"@types/bun": "catalog:",
+		"fake-indexeddb": "^6.2.5",
 		"mode-watcher": "catalog:",
 		"playwright": "^1.61.1",
 		"svelte": "catalog:",
