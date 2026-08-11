@@ -147,15 +147,13 @@ I/O: a file or an IndexedDB read, a WASM compile, and the replay of a durable
 log. Everything after it is a property access on a document already in memory.
 
 ```ts
-const store = await openBrowserStore({ name: 'honeycrisp' });
-const bound = store.bind(honeycrispLens);
-if (bound.error !== null) throw bound.error;
-const db = bound.data;
+const { data: db, error } = await openDevice(honeycrispLens);
+if (error !== null) throw error;
 
-const listed = db.notes.list();          // { rows, nonconforming }
-db.notes.update(noteId, { title: 'x' }); // a transaction
-db.notes.subscribe((rowIds) => { ... }); // the ids a commit touched
-db.query`select count(*) from notes`;    // this app's own projection only
+const listed = db.tables.notes.list();          // { rows, nonconforming }
+db.tables.notes.update(noteId, { title: 'x' }); // a transaction
+db.tables.notes.subscribe((rowIds) => { ... }); // the ids a commit touched
+db.query`select count(*) from notes`;           // this app's own projection only
 ```
 
 `subscribe` fires after the projection commits and names the rows that changed

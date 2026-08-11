@@ -518,7 +518,8 @@ indefinitely without hurting anyone, and `raw` still holds it.
 1. Rewrite the Lens: arktype strings, nullable-with-default, no optionals, no
    objects, defaults inline. Settings to `kv`.
 2. Decide per field whether prose belongs in a row document or the row.
-3. Replace `openEpicenter` with `openBrowserStore({ name })` + `store.bind(lens)`.
+3. Replace `openEpicenter` with `openDevice(lens)` (and `openAccount(lens,
+   { principalId })` for a signed-in replica, per ADR-0233).
 4. Replace `scan` + `refresh` + generations with `read()` + `subscribe(read)`.
 5. Drop `await` from every read and every mutation; destructure `{ data, error }`.
 6. Delete chosen-id machinery; move anything that needed a stable name to `kv`.

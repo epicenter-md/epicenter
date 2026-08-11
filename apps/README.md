@@ -20,10 +20,11 @@ An application declares one inert Lens, opens its own store, and binds the two:
 defineLens({ namespace, title, kv, tables })
   pure JSON: no storage, no network, no framework
 
-openBrowserStore({ name })
-  sqlite-wasm in the page, three durable relations in IndexedDB
+openDevice(lens) / openAccount(lens, { principalId })
+  sqlite-wasm in the page, three durable relations in IndexedDB,
+  one database per document (ADR-0233)
 
-store.bind(lens)
+db.tables.notes.list()
   synchronous from here on
 ```
 

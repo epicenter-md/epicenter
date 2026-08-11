@@ -19,10 +19,9 @@ openers live at their own entry points rather than on `@epicenter/data`.
 ## Opening is the only asynchronous thing
 
 ```ts
-import { open } from '@epicenter/data/browser';
+import { openAccount } from '@epicenter/data/browser';
 
-const { data: app, error } = await open(honeycrispLens, {
-	owner: 'account',
+const { data: app, error } = await openAccount(honeycrispLens, {
 	principalId,
 });
 if (error !== null) return handle(error);
