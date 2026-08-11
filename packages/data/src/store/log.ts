@@ -1,5 +1,5 @@
 /**
- * The CRDT's own durable bytes: the update log, its compaction, the outbox and
+ * The CRDT's own durable bytes: the update log, its snapshot folding, the outbox and
  * the cursor.
  *
  * The lens's derived SQL used to live here too and now sits in `./projection.js`.
@@ -10,13 +10,13 @@ import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import * as Y from '@y/y';
 
 /**
- * How many appends the live log holds before it collapses (ADR-0159/0214).
+ * How many appends the live log holds before it folds into a snapshot (ADR-0159/0214).
  *
  * The file oscillates rather than growing: only the history file grows
  * monotonically, and it is the one with a pruning pragma and no correctness
  * role.
  */
-export const COMPACTION_THRESHOLD = 64;
+export const SNAPSHOT_FOLD_THRESHOLD = 64;
 
 /**
  * The one document in the log.
@@ -64,6 +64,17 @@ export function applyStoreSchema(database: SqliteDatabase): void {
 			document TEXT    NOT NULL,
 			seq      INTEGER NOT NULL CHECK (seq >= 0),
 			PRIMARY KEY (document)
+		) WITHOUT ROWID, STRICT
+	`);
+	// One durable fact beyond the log, the outbox and the cursor: which
+	// authority document this replica's state belongs to (ADR-0231). A
+	// key-value shape, mirroring the authority's own `_meta`, so a second
+	// fact is a row and not a migration.
+	database.run(`
+		CREATE TABLE IF NOT EXISTS _meta (
+			key   TEXT NOT NULL,
+			value TEXT NOT NULL,
+			PRIMARY KEY (key)
 		) WITHOUT ROWID, STRICT
 	`);
 }
@@ -136,10 +147,7 @@ export function dropOutboxThrough(
  *
  * Zero means nothing has been read, which is also what a fresh replica reports.
  */
-export function readCursor(
-	database: SqliteDatabase,
-	document: string,
-): number {
+export function readCursor(database: SqliteDatabase, document: string): number {
 	return (
 		database.all<SqliteRow & { seq: number }>(
 			'SELECT seq FROM _cursor WHERE document = ?',
@@ -151,10 +159,12 @@ export function readCursor(
 /**
  * Record that everything through `seq` has been applied.
  *
- * Written AFTER the bytes it accounts for have committed, never with them. A
- * crash in between leaves the cursor behind the document, so the entry arrives
- * a second time and applies again, which costs nothing because an update is
- * idempotent (`evidence/invariants.test.ts`). The other order would skip an
+ * Written WITH the bytes it accounts for, in the same transaction, or after
+ * them; never before. `applyRemote` commits both as one step, which is what
+ * makes "a durable cursor of zero means no foreign byte was ever applied"
+ * true rather than merely likely: a crash between the two halves would
+ * otherwise leave a replica holding another document's bytes while presenting
+ * the cursor of a fresh install (ADR-0231). The forbidden order would skip an
  * entry, and a skipped entry is invisible forever.
  */
 export function writeCursor(
@@ -162,9 +172,90 @@ export function writeCursor(
 	document: string,
 	seq: number,
 ): void {
+	database.run('INSERT OR REPLACE INTO _cursor (document, seq) VALUES (?, ?)', [
+		document,
+		seq,
+	]);
+}
+
+/**
+ * The store file format this code writes: the document-identity era.
+ *
+ * A file's format row is its birth certificate, written in the same
+ * transaction that first creates its state. A file holding state WITHOUT it
+ * predates the document identity: its bytes may belong to any document and
+ * nothing durable can say which, so it is untrusted whole (ADR-0231's
+ * deliberate break). There is no migration; the cutover is a wipe.
+ */
+export const STORE_FORMAT = '2';
+
+/**
+ * Enforce the format at open: certify a fresh file, keep a certified one,
+ * and wipe a pre-identity one whole.
+ *
+ * One transaction, so at any crash point the file holds what it held or the
+ * empty certified state; either way the next open converges. The wipe is the
+ * only in-place deletion in the design, and it exists because this is a
+ * format boundary rather than a document boundary: the file that comes out
+ * the other side is a NEW file that happens to share a name.
+ */
+export function adoptStoreFormat(database: SqliteDatabase): void {
+	database.transaction(() => {
+		const format = database.all<SqliteRow & { value: string }>(
+			"SELECT value FROM _meta WHERE key = 'format'",
+		)[0]?.value;
+		if (format !== undefined) return;
+		database.run('DELETE FROM _updates');
+		database.run('DELETE FROM _outbox');
+		database.run('DELETE FROM _cursor');
+		database.run('DELETE FROM _meta');
+		database.run("INSERT INTO _meta (key, value) VALUES ('format', ?)", [
+			STORE_FORMAT,
+		]);
+	});
+}
+
+/** The format this file was certified under, if any. */
+export function readFormat(database: SqliteDatabase): string | undefined {
+	return database.all<SqliteRow & { value: string }>(
+		"SELECT value FROM _meta WHERE key = 'format'",
+	)[0]?.value;
+}
+
+/**
+ * Which authority document this replica's state belongs to.
+ *
+ * The membership fact the cursor cannot carry (ADR-0231). The cursor records
+ * how far through a delivery log this replica has read; it says nothing about
+ * WHICH document its local bytes are entangled with, and both directions of
+ * that gap were reproduced as corruption: a crash between applying foreign
+ * bytes and advancing the cursor, and a push that landed while the ack died,
+ * each leave a committed replica wearing a fresh install's cursor. The
+ * identity is stamped at first entanglement (atomically with the first
+ * foreign apply, or durably before the first push leaves), never rewritten,
+ * and dies with the file, which is exactly when the membership does.
+ * `undefined` means this document has never exchanged a byte with any
+ * authority, and merging it is the one cross-document merge that is safe.
+ */
+export function readDocumentIdentity(
+	database: SqliteDatabase,
+): string | undefined {
+	return database.all<SqliteRow & { value: string }>(
+		"SELECT value FROM _meta WHERE key = 'document'",
+	)[0]?.value;
+}
+
+/**
+ * Stamp which document this replica's state belongs to. First write wins:
+ * membership never changes in place, only by discarding the file whole.
+ */
+export function writeDocumentIdentity(
+	database: SqliteDatabase,
+	id: string,
+): void {
 	database.run(
-		'INSERT OR REPLACE INTO _cursor (document, seq) VALUES (?, ?)',
-		[document, seq],
+		"INSERT OR IGNORE INTO _meta (key, value) VALUES ('document', ?)",
+		[id],
 	);
 }
 
@@ -249,13 +340,14 @@ export function appendUpdate({
 			'SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM _updates WHERE document = ?',
 			[document],
 		)[0]?.seq ?? 1;
-	database.run(
-		'INSERT INTO _updates (document, seq, bytes) VALUES (?, ?, ?)',
-		[document, nextSeq, new Uint8Array(update)],
-	);
+	database.run('INSERT INTO _updates (document, seq, bytes) VALUES (?, ?, ?)', [
+		document,
+		nextSeq,
+		new Uint8Array(update),
+	]);
 
 	const updates = readUpdates(database, document);
-	if (updates.length < COMPACTION_THRESHOLD) return;
+	if (updates.length < SNAPSHOT_FOLD_THRESHOLD) return;
 
 	if (history !== undefined) {
 		history.transaction(() => {
@@ -281,4 +373,3 @@ export function appendUpdate({
 		compacted.destroy();
 	}
 }
-

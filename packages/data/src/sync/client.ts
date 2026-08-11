@@ -118,15 +118,16 @@ export type SyncClientStatus = {
 	 */
 	needsResync: boolean;
 	/**
-	 * The CLIENT's conclusion from the boundary fact (ADR-0231): this
-	 * replica's cursor names a retired edition, and sync is over for good.
+	 * The CLIENT's conclusion from the announcement (ADR-0231): this
+	 * replica's document was replaced, and sync is over for good.
 	 *
-	 * Drawn only when a `boundary` frame arrived on the attached socket with
-	 * a position strictly ahead of this replica's own nonzero cursor; any
-	 * other frame, close, or failure leaves it false, which is what makes
-	 * "doubt never discards" structural. Sticky once true, in the same
-	 * set-and-wait shape as `needsResync`: the driver notices, stops for
-	 * good, and the host discards the local file whole and reloads.
+	 * Drawn only when the authority, on this replica's own authenticated
+	 * socket, named a document that is not the one this replica's state
+	 * durably belongs to. Any other frame, close, or failure leaves it
+	 * false, which is what makes "doubt never discards" structural. Sticky
+	 * once true, in the same set-and-wait shape as `needsResync`: the driver
+	 * notices, stops for good, and the host discards the local file whole
+	 * and reloads.
 	 */
 	superseded: boolean;
 };
@@ -134,6 +135,16 @@ export type SyncClientStatus = {
 export type SyncClient = {
 	/** The position to ask the authority to start from. Goes in the URL. */
 	cursor(): number;
+	/**
+	 * Which authority document this replica's state belongs to, or undefined
+	 * for one that never exchanged a byte. Goes in the URL beside the cursor
+	 * (ADR-0231).
+	 *
+	 * The membership fact the cursor cannot carry. Admission is equality on
+	 * it: the cursor says only how far through THAT document's log this
+	 * replica has read.
+	 */
+	document(): string | undefined;
 	/** A socket is live. Anything owed goes out now. */
 	attach(socket: SyncSocket): void;
 	/** The socket is gone. Whatever was in flight is owed again. */
@@ -185,6 +196,8 @@ export function createSyncClient({
 	let inFlight: { submission: number; throughId: number } | undefined;
 	let nextSubmission = 1;
 	let cursor = store.sync.cursor().data ?? 0;
+	/** The document this replica's state durably belongs to, if any. */
+	let identity = store.sync.documentIdentity().data ?? undefined;
 	let owed = 0;
 	let lastError: SyncClientError | undefined;
 	let needsResync = false;
@@ -210,6 +223,15 @@ export function createSyncClient({
 			return Ok(undefined);
 		}
 		owed = entry.bytes.length;
+
+		// No push ever leaves an unstamped replica (ADR-0231). Once these bytes
+		// are on the wire they may land in the authority's log while the ack
+		// dies with the socket, and membership in that log is a fact the cursor
+		// cannot record. The stamp commits when the document frame is handled,
+		// which on a bootstrap connection precedes admission itself; until then
+		// the work stays owed and goes out on a later nudge, which is the safe
+		// direction.
+		if (identity === undefined) return Ok(undefined);
 
 		const submission = nextSubmission;
 		nextSubmission += 1;
@@ -258,7 +280,14 @@ export function createSyncClient({
 			needsResync = true;
 			return gap;
 		}
-		const { error } = store.applyRemote(bytes);
+		// Bytes and bookmark in ONE transaction (ADR-0231). The old shape was
+		// bytes-first-cursor-after in two commits, and the crash between them
+		// manufactured a replica durably holding another document's bytes while
+		// presenting a fresh install's dial, which admission would greet and
+		// merge across the break. Atomicity keeps re-delivery free (a crash
+		// leaves neither); the membership stamp is already durable, because a
+		// frame like this one is dropped until it is.
+		const { error } = store.applyRemote(bytes, { advanceTo: seq });
 		if (error !== null) {
 			// The cursor does not move, so nothing is skipped and nothing is lost.
 			// But this replica is now stuck at this position on every reconnect
@@ -269,10 +298,6 @@ export function createSyncClient({
 			lastError = stuck.error;
 			return stuck;
 		}
-		// After the bytes have committed, never with them. A crash in between
-		// re-delivers, which is free because an update is idempotent; the other
-		// order skips an entry, and a skipped entry is invisible forever.
-		store.sync.advance(seq);
 		cursor = seq;
 		return Ok(undefined);
 	}
@@ -295,7 +320,7 @@ export function createSyncClient({
 		bytes: Uint8Array,
 	): Result<void, SyncClientError> {
 		if (position <= cursor) return Ok(undefined);
-		const { error } = store.applyRemote(bytes);
+		const { error } = store.applyRemote(bytes, { advanceTo: position });
 		if (error !== null) {
 			const stuck = SyncClientError.Unapplyable({
 				seq: position,
@@ -304,7 +329,6 @@ export function createSyncClient({
 			lastError = stuck.error;
 			return stuck;
 		}
-		store.sync.advance(position);
 		cursor = position;
 		return Ok(undefined);
 	}
@@ -337,6 +361,8 @@ export function createSyncClient({
 
 	return Object.freeze({
 		cursor: () => cursor,
+
+		document: () => identity,
 
 		attach(next: SyncSocket) {
 			socket = next;
@@ -377,6 +403,11 @@ export function createSyncClient({
 		receive(message: Uint8Array): Result<void, SyncClientError> {
 			const { data: frame, error } = decodeFrame(message);
 			if (error !== null) return Ok(undefined);
+			// A superseded replica takes nothing more. The conclusion is
+			// terminal, the driver is about to tear everything down, and bytes
+			// arriving after it must not be merged into a document that is
+			// already declared to belong elsewhere.
+			if (superseded) return Ok(undefined);
 
 			switch (frame.kind) {
 				case 'ack': {
@@ -430,6 +461,12 @@ export function createSyncClient({
 					return refused;
 				}
 				case 'entry': {
+					// An unstamped replica takes no foreign bytes. The document frame
+					// precedes everything on a well-behaved connection, so this is
+					// unreachable against a real authority; against anything else it
+					// is what keeps "persisted state and persisted document ID never
+					// disagree" structural rather than assumed (ADR-0231).
+					if (identity === undefined) return Ok(undefined);
 					const { data: whole, error: chunkError } = collector.accept(frame);
 					// A reassembly failure is NOT nothing. It means this replica's view
 					// of the stream is broken, and returning Ok here left it stalled
@@ -440,6 +477,7 @@ export function createSyncClient({
 					return apply(frame.seq, whole);
 				}
 				case 'snapshot': {
+					if (identity === undefined) return Ok(undefined);
 					const { data: whole, error: chunkError } = collector.accept(frame);
 					if (chunkError !== null) return brokenStream(chunkError.reason);
 					if (whole === undefined) return Ok(undefined);
@@ -447,13 +485,41 @@ export function createSyncClient({
 				}
 				case 'wanted':
 					return offerSnapshot(frame.position);
-				case 'boundary':
-					// The authority's fact; the conclusion is this replica's to draw,
-					// and only from a well-formed position strictly ahead of its own
-					// nonzero cursor. Anything else is ignored, which is the whole of
-					// "doubt never discards": no failure can fabricate this frame, and
-					// no malformed one is honored.
-					if (cursor > 0 && frame.position > cursor) superseded = true;
+				case 'document':
+					// The authority names its document; the conclusion is this
+					// replica's to draw. A different name than the one this
+					// replica's state belongs to is the whole of supersession: no
+					// ordering arithmetic, one inequality on an authenticated
+					// socket, which is what makes "doubt never discards"
+					// structural (no failure can fabricate a typed frame).
+					if (identity !== undefined && identity !== frame.id) {
+						superseded = true;
+						return Ok(undefined);
+					}
+					// The one stamping point, and the one place `isPristine` is read:
+					// a defensive assertion at the bootstrap boundary, not a product
+					// concept. A workspace replica is never allowed to grow before it
+					// adopts the authority's document, and the application enforces
+					// that by keeping an unbound signed-in workspace unavailable; if
+					// local bytes exist here anyway (a private local document meeting
+					// sync for the first time), they belong to no authority document
+					// and are not a merge case: the host discards them and starts
+					// again. The stamp commits durably before any foreign byte is
+					// applied and before any push can leave, because both are refused
+					// while `identity` is undefined.
+					if (identity === undefined) {
+						const { data: pristine, error: pristineError } =
+							store.sync.isPristine();
+						if (pristineError !== null || !pristine) {
+							superseded = true;
+							return Ok(undefined);
+						}
+						const { error: stampError } = store.sync.adoptDocumentIdentity(
+							frame.id,
+						);
+						if (stampError !== null) return Ok(undefined);
+						identity = frame.id;
+					}
 					return Ok(undefined);
 				case 'push':
 				case 'offer':

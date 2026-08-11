@@ -864,7 +864,7 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 			if (opened.error !== null) throw opened.error;
 			const app = opened.data;
 			const made = app.tables.notes.create({
-				title: 'retired edition work',
+				title: 'retired document work',
 				tags: [],
 				date: null,
 			});
@@ -877,7 +877,7 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 			expect(existsSync(join(root, lens.namespace, 'store.sqlite3'))).toBe(
 				false,
 			);
-			// The shelf is the owner's, not the edition's.
+			// The shelf is the owner's, not the document's.
 			expect(existsSync(join(root, lens.namespace, 'history.sqlite3'))).toBe(
 				true,
 			);

@@ -59,11 +59,11 @@
  * Do not reintroduce compaction, baselines, or coverage proofs here.
  *
  * The one thing that ever deletes history is not compaction: `replace`
- * (ADR-0231) publishes a caller-supplied state as the namespace's next
- * edition, whole log gone, boundary moved. It needs no coverage proof because
- * it makes no coverage claim; a person took responsibility, the lease
- * (`fromBoundary`, `atHead`) is the whole precondition, and the bytes stay as
- * unread as every other byte here.
+ * (ADR-0231) publishes a caller-supplied state as the workspace's next
+ * DOCUMENT, whole log gone, fresh id minted. It needs no coverage proof
+ * because it makes no coverage claim; a person took responsibility, the
+ * lease (`fromDocument`, `atHead`) is the whole precondition, and the bytes
+ * stay as unread as every other byte here.
  */
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
@@ -112,24 +112,24 @@ export const AuthorityError = defineErrors({
 		current,
 	}),
 	/**
-	 * A replace's compare-and-swap missed: the boundary is not what the caller
-	 * built from.
+	 * A replace's compare-and-swap missed: the current document is not the one
+	 * the caller built from.
 	 *
-	 * The answer carries the current boundary, which is the whole of what a
-	 * refused caller needs: a retried replace whose first attempt actually
-	 * landed sees its own result here, and a genuine loser sees what it must
-	 * reconsider against (ADR-0231).
+	 * The answer carries the current document's id, which is the whole of what
+	 * a refused caller needs: a retried replace whose first attempt actually
+	 * landed sees the document it published, and a genuine loser sees the one
+	 * it must adopt (ADR-0231).
 	 */
-	BoundaryMoved: ({
-		fromBoundary,
-		boundary,
+	DocumentMoved: ({
+		fromDocument,
+		document,
 	}: {
-		fromBoundary: number;
-		boundary: number;
+		fromDocument: string;
+		document: string;
 	}) => ({
-		message: `A replace from boundary ${fromBoundary} was refused: the boundary is now ${boundary}`,
-		fromBoundary,
-		boundary,
+		message: `A replace of document '${fromDocument}' was refused: the current document is '${document}'`,
+		fromDocument,
+		document,
 	}),
 	/**
 	 * A reclaim's lease expired: the log grew past the head it was built from.
@@ -183,38 +183,42 @@ export type SyncAuthority = {
 		bytes: Uint8Array,
 	): Result<void, AuthorityError>;
 	/**
-	 * Where the current edition began: the one fact the boundary row holds.
+	 * The opaque name of the document this log describes (ADR-0231).
 	 *
-	 * Zero for a namespace never replaced. Every cursor minted in a retired
-	 * edition is strictly below it, and the dial refuses `0 < cursor < boundary`
-	 * before any socket exists (ADR-0231).
+	 * Minted once at first need and re-minted by every replace, because a
+	 * replace publishes a NEW document: the rebuild re-mints every struct
+	 * identity, so the visible workspace survives and the Yjs ancestry does
+	 * not. Bytes merge only when they name the same document is the
+	 * invariant, and this name is how both sides state which document they
+	 * mean without anyone reading bytes.
 	 */
-	boundary(): Result<number, AuthorityError>;
+	document(): Result<string, AuthorityError>;
 	/**
-	 * Publish the supplied state as this namespace's next edition.
+	 * Publish the supplied state as this workspace's next DOCUMENT.
 	 *
-	 * A NEW verb, not a reuse of `replaceSnapshot`, whose "not past head" guard
-	 * is correct for an in-edition recap and stays: a recap must never stand for
-	 * entries nobody wrote. A replace files the fresh state at `head + 1`,
-	 * deliberately past everything, deletes the whole log and every older
-	 * snapshot, and moves the boundary there. Same tables, different verb,
-	 * different invariant (ADR-0231).
+	 * A NEW verb, not a reuse of `replaceSnapshot`: a recap replaces history
+	 * within one document and must never stand for entries nobody wrote; a
+	 * replace ends the document itself. It deletes the whole log and every
+	 * snapshot, files the replacement as the new document's snapshot at
+	 * position 1 (each document has its own log, starting over), and mints a
+	 * fresh document id, which is what retires every replica of the old one
+	 * at its next dial.
 	 *
-	 * `fromBoundary` is compare-and-swap, always: the replace applies only if
-	 * the boundary still holds that value, and a miss answers with the current
-	 * one. `atHead` is a lease by intent: reclaim supplies the head it built
-	 * from and is refused if the tail moved; reset and restore omit it, because
-	 * discarding entries is the operation. The whole swap is one transaction,
-	 * so a crash leaves either the old edition intact or the new one published,
-	 * never a mixture.
+	 * `fromDocument` is compare-and-swap, always: the replace applies only if
+	 * that is still the current document, and a miss answers with the current
+	 * id. `atHead` is a lease by intent: reclaim supplies the head it built
+	 * from and is refused if the tail moved; reset and restore omit it,
+	 * because discarding entries is the operation. The whole swap is one
+	 * transaction, so a crash leaves either the old document intact or the
+	 * new one published, never a mixture.
 	 *
-	 * Returns the new boundary, which is also the new head.
+	 * Returns the new document's id.
 	 */
 	replace(args: {
-		fromBoundary: number;
+		fromDocument: string;
 		bytes: Uint8Array;
 		atHead?: number;
-	}): Result<number, AuthorityError>;
+	}): Result<string, AuthorityError>;
 	/**
 	 * Whether the tail has outgrown the snapshot, and is worth replacing at all.
 	 *
@@ -260,14 +264,14 @@ export function applyAuthoritySchema(database: SqliteDatabase): void {
 			PRIMARY KEY (position, chunk)
 		)
 	`);
-	// One durable fact beyond the log and the snapshot: the boundary, the
-	// position where the current edition began (ADR-0231). A key-value shape
-	// rather than a one-column table so a second fact, if one ever earns its
-	// way in, is a row and not a migration.
+	// One durable fact beyond the log and the snapshot: the document, the
+	// opaque name of the history this log describes (ADR-0231). A key-value
+	// shape rather than a one-column table so a new fact is a row and not a
+	// migration.
 	database.run(`
 		CREATE TABLE IF NOT EXISTS _meta (
 			key   TEXT    NOT NULL,
-			value INTEGER NOT NULL,
+			value NOT NULL,
 			PRIMARY KEY (key)
 		)
 	`);
@@ -452,43 +456,65 @@ export function openSyncAuthority({
 			);
 		},
 
-		boundary: () => read(boundaryOf),
+		document(): Result<string, AuthorityError> {
+			return read(() => {
+				const existing = documentOf();
+				if (existing !== undefined) return existing;
+				// Minted lazily at first need, so a namespace that predates the
+				// identity acquires one on its next dial and every replica stamps
+				// the same name from then on.
+				const minted = crypto.randomUUID();
+				database.run(
+					"INSERT OR IGNORE INTO _meta (key, value) VALUES ('document', ?)",
+					[minted],
+				);
+				return documentOf() ?? minted;
+			});
+		},
 
-		replace({ fromBoundary, bytes, atHead }): Result<number, AuthorityError> {
-			// Both preconditions are read INSIDE the transaction that acts on them,
-			// so the compare and the swap are one step whatever runtime holds this
-			// database. A refusal returns before anything is written, so the commit
-			// of an empty transaction is the no-op it looks like.
+		replace({ fromDocument, bytes, atHead }): Result<string, AuthorityError> {
+			// Minted before the transaction because it is a pure value; compared
+			// and written INSIDE it, so the compare and the swap are one step
+			// whatever runtime holds this database. A refusal returns before
+			// anything is written, so the commit of an empty transaction is the
+			// no-op it looks like.
+			const minted = crypto.randomUUID();
 			const { data: outcome, error } = read(() =>
-				database.transaction((): Result<number, AuthorityError> => {
-					const boundary = boundaryOf();
-					if (boundary !== fromBoundary) {
-						return AuthorityError.BoundaryMoved({ fromBoundary, boundary });
+				database.transaction((): Result<string, AuthorityError> => {
+					const document = documentOf();
+					if (document !== undefined && document !== fromDocument) {
+						return AuthorityError.DocumentMoved({ fromDocument, document });
 					}
 					const head = headSeq();
 					if (atHead !== undefined && atHead !== head) {
 						return AuthorityError.HeadMoved({ atHead, head });
 					}
-					const next = head + 1;
+					// The old document goes whole: every log entry and EVERY
+					// snapshot, including the in-document fallback that
+					// `replaceSnapshot` keeps. The authority holds exactly one
+					// history, ever, and a retired document retrievable even
+					// briefly is the privacy leak ADR-0220's title retired
+					// (ADR-0231). Retirement IS this deletion; there is no
+					// registry of retired documents, because admission is an
+					// equality and an unknown id is already unservable.
+					database.run('DELETE FROM _log');
+					database.run('DELETE FROM _snapshot');
+					// The new document's own log starts over: its state is the
+					// snapshot at position 1.
 					const chunks = intoChunks(bytes, CHUNK_BYTES);
 					for (const [index, chunk] of chunks.entries()) {
 						database.run(
-							'INSERT OR REPLACE INTO _snapshot (position, chunk, bytes) VALUES (?, ?, ?)',
-							[next, index, new Uint8Array(chunk)],
+							'INSERT INTO _snapshot (position, chunk, bytes) VALUES (?, ?, ?)',
+							[1, index, new Uint8Array(chunk)],
 						);
 					}
-					// Every entry is at or below the head, so the whole log goes. The
-					// older snapshots go too, INCLUDING the in-edition fallback that
-					// `replaceSnapshot` keeps: the authority holds exactly one history,
-					// ever, and a retired edition retrievable even briefly is the
-					// privacy leak ADR-0220's title retired (ADR-0231).
-					database.run('DELETE FROM _log');
-					database.run('DELETE FROM _snapshot WHERE position < ?', [next]);
+					// The fresh name is what retires every replica of the old
+					// document at its next dial (ADR-0231).
 					database.run(
-						"INSERT OR REPLACE INTO _meta (key, value) VALUES ('boundary', ?)",
-						[next],
+						"INSERT OR REPLACE INTO _meta (key, value) VALUES ('document', ?)",
+						[minted],
 					);
-					return Ok(next);
+					return Ok(minted);
 				}),
 			);
 			if (error !== null) return Err(error);
@@ -531,12 +557,10 @@ export function openSyncAuthority({
 		);
 	}
 
-	function boundaryOf(): number {
-		return (
-			database.all<SqliteRow & { value: number }>(
-				"SELECT value FROM _meta WHERE key = 'boundary'",
-			)[0]?.value ?? 0
-		);
+	function documentOf(): string | undefined {
+		return database.all<SqliteRow & { value: string }>(
+			"SELECT value FROM _meta WHERE key = 'document'",
+		)[0]?.value;
 	}
 }
 

@@ -14,13 +14,6 @@ export {
 	type SyncSocket,
 } from './client.js';
 export {
-	CompactError,
-	compactStore,
-	type RebornState,
-	rebirth,
-	type StoreTransport,
-} from './compact.js';
-export {
 	createSyncConnection,
 	type ReconnectReason,
 	type SyncAttempt,
@@ -45,3 +38,10 @@ export {
 	type HubConnection,
 	type SyncHub,
 } from './hub.js';
+export {
+	RebuildError,
+	type RebuiltState,
+	rebuildDocument,
+	rebuildWorkspace,
+	type StoreTransport,
+} from './rebuild.js';

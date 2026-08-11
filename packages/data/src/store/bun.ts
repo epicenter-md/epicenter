@@ -18,7 +18,7 @@ export type BunStore = Store & {
 	/**
 	 * Delete this store's live file whole, disposing the store first.
 	 *
-	 * ADR-0231's one client-side deletion: a replica whose edition was retired
+	 * ADR-0231's one client-side deletion: a replica whose document was replaced
 	 * discards and rejoins at zero. `history.sqlite3` survives on purpose; it
 	 * is the owner's shelf, and the shelf is what makes an undone replace a
 	 * restore rather than a loss. Terminal for this store; the caller reopens

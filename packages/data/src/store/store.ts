@@ -36,6 +36,7 @@ import {
 } from './document.js';
 import {
 	APP_DOCUMENT,
+	adoptStoreFormat,
 	appendUpdate,
 	applyStoreSchema,
 	copyBytes,
@@ -43,10 +44,12 @@ import {
 	enqueueOutbox,
 	type OutboxEntry,
 	readCursor,
+	readDocumentIdentity,
 	readOutbox,
 	readUpdates,
 	replaceOutboxThrough,
 	writeCursor,
+	writeDocumentIdentity,
 } from './log.js';
 import {
 	applyProjectionSchema,
@@ -383,7 +386,10 @@ export type LensView<TLens> = {
  * this application already holds is the supported way to do it: one document,
  * two views, no second open to refuse.
  */
-export type ApplicationOf<TLens, TStore extends Store = Store> = LensView<TLens> & {
+export type ApplicationOf<
+	TLens,
+	TStore extends Store = Store,
+> = LensView<TLens> & {
 	/** This application's file: sync, pressure, and the CRDT verbs. */
 	readonly store: TStore;
 	/** Dispose what you opened, so `await using` works on the application. */
@@ -512,6 +518,31 @@ export type ClientLog = {
 	cursor(): Result<number, StoreError>;
 	/** Record that everything through `seq` has been applied. */
 	advance(seq: number): Result<void, StoreError>;
+	/**
+	 * Which authority document this replica's state belongs to, or undefined
+	 * for a document that has never exchanged a byte (ADR-0231).
+	 *
+	 * The cursor says how far through a delivery log this replica has read;
+	 * this says WHICH document its bytes are entangled with. Both facts are
+	 * needed: a push that landed while the ack died leaves the authority's
+	 * log holding this replica's bytes with the cursor still at zero, and
+	 * without the identity that replica would later present itself as a
+	 * fresh install and republish a retired document's bytes into a new one.
+	 */
+	documentIdentity(): Result<string | undefined, StoreError>;
+	/**
+	 * Whether this store holds no workspace document state at all.
+	 *
+	 * Only a pristine store may bootstrap from an authority without declaring a
+	 * document identity. Any persisted bytes or pending work without an identity
+	 * are unplaceable across the clean break and must be discarded, never merged.
+	 */
+	isPristine(): Result<boolean, StoreError>;
+	/**
+	 * Stamp membership, durably and before the first push leaves. First
+	 * write wins; membership changes only by discarding the file whole.
+	 */
+	adoptDocumentIdentity(id: string): Result<void, StoreError>;
 };
 
 /**
@@ -560,8 +591,20 @@ export type Store = {
 	bind<const TLens extends LensJson>(
 		lens: TLens,
 	): Result<LensView<TLens>, LensParseError | StoreError>;
-	/** Apply bytes from a peer. Durable, and never republished as local work. */
-	applyRemote(update: Uint8Array): Result<void, StoreError>;
+	/**
+	 * Apply bytes from a peer. Durable, and never republished as local work.
+	 *
+	 * `advanceTo` commits the cursor IN THE SAME TRANSACTION as the bytes.
+	 * The atomicity is load-bearing (ADR-0231): a crash can leave neither or
+	 * both, never bytes wearing a fresh install's cursor. Membership is not
+	 * stamped here: the sync client commits `adoptDocumentIdentity` at the
+	 * document announcement and refuses foreign bytes until it has, so an
+	 * absent identity always means no foreign byte was ever applied.
+	 */
+	applyRemote(
+		update: Uint8Array,
+		opts?: { advanceTo?: number },
+	): Result<void, StoreError>;
 	/**
 	 * Whether this replica is holding updates it cannot apply yet.
 	 *
@@ -652,6 +695,12 @@ export function createStore({
 	log?: Logger;
 }): Store {
 	applyStoreSchema(database);
+	// The cutover, enforced at every open (ADR-0231): a file holding state
+	// without a format certificate predates the document identity, so nothing
+	// durable can say which document its bytes belong to. Untrusted whole:
+	// wiped here, before hydration, and the replica rejoins from zero as a
+	// fresh install. A truly fresh file is simply certified.
+	adoptStoreFormat(database);
 
 	const index = createAppDocument();
 	let pending: Uint8Array[] = [];
@@ -742,58 +791,58 @@ export function createStore({
 			_document: Y.Doc,
 			transaction: Y.Transaction,
 		) => {
-		if (origin === hydrationOrigin) return;
-		// `applyRemote` persists the bytes it RECEIVED, in its own transaction, so
-		// the bytes the document emits in response describe a change that is
-		// already on its way to storage. Returning here is what makes that comment
-		// true: without it, a remote update landed in the log twice, once emitted
-		// and once received, and the log grew at double the rate it reported.
-		if (origin === remoteOrigin) return;
-		if (origin === localOrigin) {
-			// A store verb is mid-flight; `commit` flushes these with the
-			// projection write they imply, in one SQLite transaction.
-			pending.push(copyBytes(update));
-			return;
-		}
-		// What remains below must be a LOCAL transaction. `applyUpdateV2` forces
-		// `transaction.local` to false and a local `transact` defaults it to
-		// true, so this check makes the branch below provably an application
-		// writing through this document's own types rather than by convention.
-		// Decoded foreign bytes reaching it would be persisted as the EMITTED
-		// update rather than the received one (nothing at all when causal
-		// dependencies are missing; see `applyRemote`), would join the outbox as
-		// this device's authored work and be republished to the authority, and
-		// would deliver invalidations against a projection nothing rebuilt. The
-		// throw surfaces synchronously at the rogue `Y.applyUpdateV2` call site,
-		// before anything is persisted, so the store is not poisoned.
-		if (!transaction.local) {
-			throw new Error(
-				'Foreign bytes must enter through applyRemote. A direct Y.applyUpdateV2 on this document would be republished as this device\'s own work, and is lost entirely when its causal dependencies have not arrived.',
-			);
-		}
-		// An application writing into a row's document, typically an editor
-		// binding. These bytes must reach durable storage on their own, because
-		// nothing else is going to flush them. No projection work: Epicenter
-		// never looks inside a document, so nothing it holds is ever projected.
-		// They are still this device's own work, so they join the outbox.
-		const authored = copyBytes(update);
-		const { error } = persist(() => {
-			appendUpdate({
-				database,
-				history,
-				document: APP_DOCUMENT,
-				update: authored,
-				takenAt: now(),
+			if (origin === hydrationOrigin) return;
+			// `applyRemote` persists the bytes it RECEIVED, in its own transaction, so
+			// the bytes the document emits in response describe a change that is
+			// already on its way to storage. Returning here is what makes that comment
+			// true: without it, a remote update landed in the log twice, once emitted
+			// and once received, and the log grew at double the rate it reported.
+			if (origin === remoteOrigin) return;
+			if (origin === localOrigin) {
+				// A store verb is mid-flight; `commit` flushes these with the
+				// projection write they imply, in one SQLite transaction.
+				pending.push(copyBytes(update));
+				return;
+			}
+			// What remains below must be a LOCAL transaction. `applyUpdateV2` forces
+			// `transaction.local` to false and a local `transact` defaults it to
+			// true, so this check makes the branch below provably an application
+			// writing through this document's own types rather than by convention.
+			// Decoded foreign bytes reaching it would be persisted as the EMITTED
+			// update rather than the received one (nothing at all when causal
+			// dependencies are missing; see `applyRemote`), would join the outbox as
+			// this device's authored work and be republished to the authority, and
+			// would deliver invalidations against a projection nothing rebuilt. The
+			// throw surfaces synchronously at the rogue `Y.applyUpdateV2` call site,
+			// before anything is persisted, so the store is not poisoned.
+			if (!transaction.local) {
+				throw new Error(
+					"Foreign bytes must enter through applyRemote. A direct Y.applyUpdateV2 on this document would be republished as this device's own work, and is lost entirely when its causal dependencies have not arrived.",
+				);
+			}
+			// An application writing into a row's document, typically an editor
+			// binding. These bytes must reach durable storage on their own, because
+			// nothing else is going to flush them. No projection work: Epicenter
+			// never looks inside a document, so nothing it holds is ever projected.
+			// They are still this device's own work, so they join the outbox.
+			const authored = copyBytes(update);
+			const { error } = persist(() => {
+				appendUpdate({
+					database,
+					history,
+					document: APP_DOCUMENT,
+					update: authored,
+					takenAt: now(),
+				});
+				enqueueOutbox(database, authored);
+				owedSomething = true;
+				committedSomething = true;
 			});
-			enqueueOutbox(database, authored);
-			owedSomething = true;
-			committedSomething = true;
-		});
-		// Before the throw, deliberately. The live document already holds the
-		// change, so the ids are true whatever storage did with them, and leaving
-		// them buffered would attach them to whichever commit ran next.
-		flushCommitted();
-		if (error !== null) throw error;
+			// Before the throw, deliberately. The live document already holds the
+			// change, so the ids are true whatever storage did with them, and leaving
+			// them buffered would attach them to whichever commit ran next.
+			flushCommitted();
+			if (error !== null) throw error;
 		},
 	);
 
@@ -1296,7 +1345,10 @@ export function createStore({
 				LensView<TLens>,
 				LensParseError | StoreError
 			>,
-		applyRemote(update: Uint8Array): Result<void, StoreError> {
+		applyRemote(
+			update: Uint8Array,
+			opts?: { advanceTo?: number },
+		): Result<void, StoreError> {
 			const unusable = requireUsable();
 			if (unusable !== undefined) return Err(unusable);
 			// The RECEIVED bytes are what gets persisted, never what the document
@@ -1334,6 +1386,12 @@ export function createStore({
 						takenAt: now(),
 					});
 					committedSomething = true;
+				}
+				// With the bytes, never after them: the bookmark commits in the same
+				// step as what it accounts for, so no crash can leave foreign bytes
+				// behind a dial that still claims a fresh install (ADR-0231).
+				if (opts?.advanceTo !== undefined) {
+					writeCursor(database, APP_DOCUMENT, opts.advanceTo);
 				}
 				rebuildAllProjections();
 			});
@@ -1438,6 +1496,37 @@ export function createStore({
 				const unusable = requireUsable();
 				if (unusable !== undefined) return Err(unusable);
 				return persist(() => writeCursor(database, APP_DOCUMENT, seq));
+			},
+			documentIdentity(): Result<string | undefined, StoreError> {
+				return read(() => readDocumentIdentity(database));
+			},
+			isPristine(): Result<boolean, StoreError> {
+				return read(() => {
+					const updates =
+						database.all<SqliteRow & { count: number }>(
+							'SELECT COUNT(*) AS count FROM _updates',
+						)[0]?.count ?? 0;
+					const outbox =
+						database.all<SqliteRow & { count: number }>(
+							'SELECT COUNT(*) AS count FROM _outbox',
+						)[0]?.count ?? 0;
+					const cursor = readCursor(database, APP_DOCUMENT);
+					return updates === 0 && outbox === 0 && cursor === 0;
+				});
+			},
+			adoptDocumentIdentity(id: string): Result<void, StoreError> {
+				const unusable = requireUsable();
+				if (unusable !== undefined) return Err(unusable);
+				// Marked committed so a write-behind host (the browser) persists it
+				// now rather than whenever the next local edit happens to land: the
+				// stamp is only worth anything if it is durable before the push it
+				// precedes.
+				const written = persist(() => {
+					writeDocumentIdentity(database, id);
+					committedSomething = true;
+				});
+				flushCommitted();
+				return written;
 			},
 		});
 	}

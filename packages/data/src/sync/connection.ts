@@ -41,12 +41,13 @@
  *   app generation, which the host owns (reload on auth change), not a state
  *   in this driver.
  * - Stopping for good when the client concludes `superseded` (ADR-0231): the
- *   authority answered this replica's dial with the boundary fact, meaning
- *   its cursor names a retired edition. `onSuperseded` fires once, after the
- *   driver has let go of everything, and the host discards the local file
- *   whole and reloads. Nothing else can trigger it: a close without the
- *   frame, garbage, and every failure are ordinary weather and reconnect on
- *   backoff, which is what makes "doubt never discards" structural.
+ *   authority named a document that is not the one this replica's state
+ *   belongs to, meaning its document was replaced. `onSuperseded` fires
+ *   once, after the driver has let go of everything, and the host discards
+ *   the local file whole and reloads. Nothing else can trigger it: a close
+ *   without the announcement, garbage, and every failure are ordinary
+ *   weather and reconnect on backoff, which is what makes "doubt never
+ *   discards" structural.
  */
 import { Ok, type Result } from 'wellcrafted/result';
 
@@ -75,6 +76,16 @@ export type SyncAttempt = {
 	 * which is what makes a reconnect a catch-up rather than a fresh start.
 	 */
 	readonly cursor: number;
+	/**
+	 * Which authority document this replica's state belongs to, or undefined
+	 * for one that never exchanged a byte. Belongs in the URL beside the
+	 * cursor (ADR-0231).
+	 *
+	 * The membership fact the cursor cannot carry: admission compares it by
+	 * equality, and the cursor means only "how far through THAT document's
+	 * log".
+	 */
+	readonly document: string | undefined;
 	/** The socket is live and can carry bytes. */
 	opened(socket: SyncSocket): void;
 	/** Bytes arrived from the authority. */
@@ -124,12 +135,13 @@ export type SyncConnectionStatus = SyncClientStatus & {
 	 */
 	denied: boolean;
 	/**
-	 * Whether this replica's edition was confirmed retired (ADR-0231).
+	 * Whether this replica's document was confirmed replaced (ADR-0231).
 	 *
 	 * Once true it stays true, and `onSuperseded` has fired: the host is
 	 * discarding the local file and reloading, so this status exists only for
 	 * the moments in between. The one thing that sets it is the client's
-	 * `superseded` conclusion from a boundary frame; doubt has no path here.
+	 * `superseded` conclusion from a document announcement that names a
+	 * document this replica does not belong to; doubt has no path here.
 	 */
 	superseded: boolean;
 	/**
@@ -206,13 +218,13 @@ export function createSyncConnection({
 	healthyMs?: number;
 	unacknowledgedMs?: number;
 	/**
-	 * This replica's cursor names a retired edition; sync is over for good.
+	 * This replica's document was replaced; sync is over for good.
 	 *
 	 * Fires at most once, after the driver has already shut down, and only
-	 * because the client drew the `superseded` conclusion from a boundary
-	 * frame on this replica's own authenticated socket (ADR-0231). The host
-	 * discards the local file whole and reloads (ADR-0232's instrument);
-	 * adoption is the ordinary join the fresh boot runs.
+	 * because the client drew the `superseded` conclusion from a document
+	 * announcement on this replica's own authenticated socket (ADR-0231).
+	 * The host discards the local file whole and reloads (ADR-0232's
+	 * instrument); adoption is the ordinary join the fresh boot runs.
 	 */
 	onSuperseded?: () => void;
 }): SyncConnection {
@@ -293,8 +305,9 @@ export function createSyncConnection({
 	 * single delivery rather than on a timer: the client sets it and then waits
 	 * for someone to notice, and a randomised schedule showed that nobody does.
 	 * `superseded` rides the same set-and-wait shape, and it is terminal: the
-	 * one thing that can set it is a boundary frame the client already vetted
-	 * against its own cursor, so noticing it here IS the whole discovery.
+	 * one thing that can set it is an announcement the client already vetted
+	 * against its own stamped identity, so noticing it here IS the whole
+	 * discovery.
 	 */
 	function settle(): void {
 		if (!running) return;
@@ -325,10 +338,12 @@ export function createSyncConnection({
 	function open(): void {
 		if (!running || teardown !== undefined) return;
 		const attempt = ++generation;
+		const bootstrapping = client.document() === undefined;
 		const live = () => running && generation === attempt;
 
 		teardown = dial({
 			cursor: client.cursor(),
+			document: client.document(),
 			opened(socket: SyncSocket) {
 				if (!live()) return;
 				connected = true;
@@ -350,6 +365,16 @@ export function createSyncConnection({
 			},
 			closed() {
 				if (!live()) return;
+				// A bootstrap connection is intentionally one-way: the authority
+				// sends the current document, closes without admitting it, and the
+				// client has stamped the announced identity by the time this callback
+				// runs. Reopen immediately through the equality door. This is not a
+				// transport failure and should not consume backoff budget.
+				if (bootstrapping && client.document() !== undefined) {
+					abandon();
+					open();
+					return;
+				}
 				reconnect('closed');
 			},
 			denied() {

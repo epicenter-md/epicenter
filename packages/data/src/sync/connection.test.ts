@@ -135,11 +135,12 @@ function openDriven({
 	let generation = 0;
 	let breakSocket: (() => void) | undefined;
 
-	const dial: SyncDial = ({ cursor, opened, received, closed }) => {
+	const dial: SyncDial = ({ cursor, document, opened, received, closed }) => {
 		dialledFrom.push(cursor);
 		const mine = (generation += 1);
 		const connection: HubConnection = {
 			cursor,
+			document,
 			send: (bytes) =>
 				wire.defer(() => {
 					if (mine !== generation) return;
@@ -156,7 +157,17 @@ function openDriven({
 					if (mine === generation) hub.receive(connection, bytes);
 				}),
 		});
-		hub.join(connection);
+		const admission = hub.join(connection);
+		if (admission === 'bootstrap') {
+			// The authority sends bootstrap frames before closing. The close runs
+			// after the queued delivery, so the driver immediately redials with
+			// the identity it just persisted.
+			wire.defer(() => {
+				if (mine !== generation) return;
+				hub.leave(connection);
+				closed();
+			});
+		}
 		// The server dropping the socket, which is what a hibernating Durable
 		// Object, a lost network and a rejected credential all look like here.
 		breakSocket = () => {
@@ -376,7 +387,10 @@ describe('a socket that dies is dialled again from the replica own cursor', () =
 
 		// Not zero on the second dial. A reconnect that asked from the start
 		// would work, and would re-download everything on every wobble.
-		expect(laptop.dialledFrom).toEqual([0, 1]);
+		// The initial bootstrap is a one-way dial at zero, followed immediately
+		// by the identity-bearing connection. The later reconnect still resumes
+		// from the durable cursor rather than starting again.
+		expect(laptop.dialledFrom).toEqual([0, 0, 1]);
 	});
 
 	test('a socket that never stays up backs off, and a working one resets it', () => {
@@ -552,7 +566,7 @@ describe('the driver lets go of what it has abandoned', () => {
 	});
 });
 
-describe('the boundary frame supersedes the replica, and nothing else does (ADR-0231)', () => {
+describe('a foreign document name supersedes the replica, and nothing else does (ADR-0231)', () => {
 	/**
 	 * A replica whose door is scripted: the dial opens, the door answers with
 	 * whatever `answers` says, and the socket closes. This is the accepted-
@@ -562,11 +576,14 @@ describe('the boundary frame supersedes the replica, and nothing else does (ADR-
 	function openAtDoor({
 		clock,
 		cursor,
+		document,
 		answers,
 	}: {
 		clock: Clock;
 		/** What this replica has durably applied, seeded before the driver runs. */
 		cursor: number;
+		/** The identity this replica durably stamped, if any. */
+		document?: string;
 		/** Frames the door sends this dial before closing, if any. */
 		answers: (dial: number) => Uint8Array[];
 	}) {
@@ -575,6 +592,9 @@ describe('the boundary frame supersedes the replica, and nothing else does (ADR-
 		});
 		const db = expectOk(store.bind(lens)) as LensView<typeof lens>;
 		if (cursor > 0) expectOk(store.sync.advance(cursor));
+		if (document !== undefined) {
+			expectOk(store.sync.adoptDocumentIdentity(document));
+		}
 		let dials = 0;
 		let discarded = 0;
 		const connection = createSyncConnection({
@@ -594,12 +614,13 @@ describe('the boundary frame supersedes the replica, and nothing else does (ADR-
 		return { db, connection, dials: () => dials, discarded: () => discarded };
 	}
 
-	test('a boundary strictly ahead of a nonzero cursor stops the driver and fires onSuperseded once', () => {
+	test('a foreign document name stops the driver for good and fires onSuperseded once', () => {
 		const clock = createClock();
 		const replica = openAtDoor({
 			clock,
 			cursor: 7,
-			answers: () => [encodeFrame({ kind: 'boundary', position: 12 })],
+			document: 'the-old-document',
+			answers: () => [encodeFrame({ kind: 'document', id: 'a-new-document' })],
 		});
 		replica.connection.start();
 		clock.advance(120_000);
@@ -620,7 +641,7 @@ describe('the boundary frame supersedes the replica, and nothing else does (ADR-
 		expect(replica.connection.status().superseded).toBe(true);
 	});
 
-	test('CONTROL: a close with no boundary frame retries forever and never discards', () => {
+	test('CONTROL: a close with no announcement retries forever and never discards', () => {
 		// The structural half of "doubt never discards": a network blip, a dead
 		// authority, and an auth wobble all look like this, and none of them can
 		// fabricate the frame, so there is no path from here to a discard.
@@ -650,14 +671,17 @@ describe('the boundary frame supersedes the replica, and nothing else does (ADR-
 		replica.connection[Symbol.dispose]();
 	});
 
-	test('a boundary at or below the cursor is not supersession', () => {
-		// The hub never sends this shape, so receiving it means something is
-		// confused; the conclusion is drawn only from a position strictly ahead.
+	test('a retired opcode on the wire is ignored, not concluded from', () => {
+		// Opcode 8 carried `boundary` for one unreleased build. A decoder
+		// treats it as unknown, and unknown never discards.
 		const clock = createClock();
+		const retiredOpcode = new Uint8Array(5);
+		retiredOpcode[0] = 8;
 		const replica = openAtDoor({
 			clock,
 			cursor: 7,
-			answers: () => [encodeFrame({ kind: 'boundary', position: 7 })],
+			document: 'the-current-document',
+			answers: () => [retiredOpcode],
 		});
 		replica.connection.start();
 		clock.advance(120_000);
@@ -668,19 +692,56 @@ describe('the boundary frame supersedes the replica, and nothing else does (ADR-
 		replica.connection[Symbol.dispose]();
 	});
 
-	test('a fresh replica at cursor zero draws no conclusion: it holds no commitment', () => {
+	test('a stamped replica told a different document concludes superseded, even at cursor zero', () => {
+		// The membership fact at work (ADR-0231, seventh correction): a push
+		// that landed while the ack died leaves the cursor at zero, and the
+		// stamped identity is what keeps that replica from being greeted as
+		// fresh. The conclusion is one inequality, no ordering arithmetic.
 		const clock = createClock();
 		const replica = openAtDoor({
 			clock,
 			cursor: 0,
-			answers: () => [encodeFrame({ kind: 'boundary', position: 1_000 })],
+			document: 'the-old-document',
+			answers: () => [encodeFrame({ kind: 'document', id: 'a-new-document' })],
 		});
 		replica.connection.start();
 		clock.advance(120_000);
 
-		expect(replica.discarded()).toBe(0);
-		expect(replica.connection.status().superseded).toBe(false);
-		expect(replica.dials()).toBeGreaterThan(3);
-		replica.connection[Symbol.dispose]();
+		expect(replica.dials()).toBe(1);
+		expect(replica.discarded()).toBe(1);
+		expect(replica.connection.status().superseded).toBe(true);
+	});
+
+	test('CONTROL: the same document name is not supersession, and a bare announcement never is', () => {
+		// An equal name is the ordinary case on every healthy connection, and
+		// a fresh replica hearing its first announcement is being greeted, not
+		// retired. Neither may discard anything.
+		const clock = createClock();
+		const stamped = openAtDoor({
+			clock,
+			cursor: 7,
+			document: 'the-current-document',
+			answers: () => [
+				encodeFrame({ kind: 'document', id: 'the-current-document' }),
+			],
+		});
+		stamped.connection.start();
+		clock.advance(120_000);
+		expect(stamped.discarded()).toBe(0);
+		expect(stamped.connection.status().superseded).toBe(false);
+		stamped.connection[Symbol.dispose]();
+
+		const fresh = openAtDoor({
+			clock,
+			cursor: 0,
+			answers: () => [
+				encodeFrame({ kind: 'document', id: 'whatever-is-current' }),
+			],
+		});
+		fresh.connection.start();
+		clock.advance(120_000);
+		expect(fresh.discarded()).toBe(0);
+		expect(fresh.connection.status().superseded).toBe(false);
+		fresh.connection[Symbol.dispose]();
 	});
 });

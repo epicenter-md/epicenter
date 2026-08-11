@@ -1,15 +1,16 @@
 /**
- * The client half of ADR-0231's one verb: rebirth the state, publish it.
+ * The client half of ADR-0231's one verb: rebuild the document, publish it.
  *
- * "Compact store" is the product's one action over the wire's one verb. This
+ * "Rebuild workspace" is the product's one action over the wire's one verb. This
  * file owns its two halves: the reclaim walk, which re-encodes this replica's
  * live state into entirely new struct identities so every tombstone is
  * reclaimed; and the publish, which posts the reborn bytes with the lease
- * (`fromBoundary` compare-and-swap, `atHead` from this replica's own cursor)
- * and maps the authority's refusals into answers a person can act on.
+ * (`fromDocument` compare-and-swap on this replica's stamped identity,
+ * `atHead` from its own cursor) and maps the authority's refusals into
+ * answers a person can act on.
  *
  * What it deliberately does NOT own: the discard-and-reload that follows a
- * confirmed publish. The initiating device adopts the new edition through the
+ * confirmed publish. The initiating device adopts the new document through the
  * same move every superseded replica makes (`discard()` on its opener, then
  * reload), because one adoption path is the design.
  *
@@ -33,18 +34,18 @@ import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
 import type { Store, StoreError } from '../store/store.js';
 
-declare const reborn: unique symbol;
+declare const rebuilt: unique symbol;
 
 /**
  * Bytes the reclaim walk minted: fresh identities, zero tombstones.
  *
  * A distinct type on purpose (ADR-0231): `encodeStateSince()` preserves
- * struct identities and reclaims nothing, and handing it to a compact "works"
- * while silently defeating the verb. Only `rebirth` produces this.
+ * struct identities and reclaims nothing, and handing it to a rebuild "works"
+ * while silently defeating the verb. Only `rebuildDocument` produces this.
  */
-export type RebornState = Uint8Array & { readonly [reborn]: true };
+export type RebuiltState = Uint8Array & { readonly [rebuilt]: true };
 
-export const CompactError = defineErrors({
+export const RebuildError = defineErrors({
 	/**
 	 * This replica's view is incomplete, so it must not become the baseline.
 	 *
@@ -57,30 +58,40 @@ export const CompactError = defineErrors({
 			'This replica is holding updates whose dependencies never arrived, so its state must not become the baseline',
 	}),
 	/** The walk itself failed; nothing was published and nothing changed. */
-	RebirthFailed: ({ cause }: { cause: unknown }) => ({
+	RebuildFailed: ({ cause }: { cause: unknown }) => ({
 		message: 'The state could not be re-encoded into a fresh document',
 		cause,
 	}),
 	/**
-	 * The log moved past the head this compact was built from.
+	 * The log moved past the head this rebuild was built from.
 	 *
-	 * The `atHead` lease doing its job: an entry landed mid-compact, and
-	 * publishing anyway would silently lose it. Sync, then compact again.
+	 * The `atHead` lease doing its job: an entry landed mid-rebuild, and
+	 * publishing anyway would silently lose it. Sync, then rebuild again.
 	 */
 	StoreChanged: ({ head }: { head: number }) => ({
-		message: `The log moved to ${head} while compacting; sync and try again`,
+		message: `The log moved to ${head} while rebuilding; sync and try again`,
 		head,
 	}),
 	/**
-	 * Another replace won the boundary and kept winning through the retries.
+	 * The document this rebuild was built from is no longer the current one.
 	 *
-	 * This replica now belongs to a retired edition; its next dial runs the
-	 * ordinary adoption. Includes the crash-replay of a compact that already
-	 * landed, which is exactly why a replay can never double-publish.
+	 * Another replace won (or this is the crash-replay of a rebuild that
+	 * already landed and minted the current document). Either way this
+	 * replica now belongs to a retired document; its next dial runs the
+	 * ordinary adoption, and republishing stale-built bytes over the winner
+	 * is exactly what the refusal prevents.
 	 */
-	Contested: ({ boundary }: { boundary: number }) => ({
-		message: `Another replace moved the boundary to ${boundary}; adopt it instead`,
-		boundary,
+	Contested: ({ document }: { document: string }) => ({
+		message: `Another replace published document '${document}'; adopt it instead`,
+		document,
+	}),
+	/**
+	 * This replica has never synced, so there is no authority document its
+	 * state provably covers, and nothing for the lease to name.
+	 */
+	NeverSynced: () => ({
+		message:
+			'This replica has never synced; rebuild from a device that holds the current document',
 	}),
 	/** The POST itself failed: network trouble or a non-lease refusal. */
 	ReplaceFailed: ({ status, cause }: { status?: number; cause?: unknown }) => ({
@@ -92,11 +103,11 @@ export const CompactError = defineErrors({
 		cause,
 	}),
 });
-export type CompactError = InferErrors<typeof CompactError>;
+export type RebuildError = InferErrors<typeof RebuildError>;
 
 /**
- * How a compact reaches its authority: the host's authenticated fetch, the
- * deployment's base URL, and the Lens namespace it is compacting.
+ * How a rebuild reaches its authority: the host's authenticated fetch, the
+ * deployment's base URL, and the Lens namespace it is rebuilding.
  */
 export type StoreTransport = {
 	fetch(input: string, init?: RequestInit): Promise<Response>;
@@ -135,11 +146,11 @@ function copyInto(source: Y.Type, target: Y.Type): void {
  * or its handles. The scratch hydration costs one full decode, which is fine
  * for a person-initiated verb.
  */
-export function rebirth(
+export function rebuildDocument(
 	store: Pick<Store, 'encodeStateSince' | 'hasUnresolvedDependencies'>,
-): Result<RebornState, CompactError> {
+): Result<RebuiltState, RebuildError> {
 	if (store.hasUnresolvedDependencies()) {
-		return CompactError.UnresolvedDependencies();
+		return RebuildError.UnresolvedDependencies();
 	}
 	return trySync({
 		try: () => {
@@ -163,55 +174,55 @@ export function rebirth(
 						);
 					}
 				});
-				return new Uint8Array(Y.encodeStateAsUpdateV2(target)) as RebornState;
+				return new Uint8Array(Y.encodeStateAsUpdateV2(target)) as RebuiltState;
 			} finally {
 				source.destroy();
 				target.destroy();
 			}
 		},
-		catch: (cause) => CompactError.RebirthFailed({ cause }),
+		catch: (cause) => RebuildError.RebuildFailed({ cause }),
 	});
 }
 
 /** What one POST of the verb came back as, refusals included. */
 type ReplaceAnswer =
-	| { kind: 'published'; boundary: number }
-	| { kind: 'boundary'; boundary: number }
+	| { kind: 'published'; document: string }
+	| { kind: 'document'; document: string }
 	| { kind: 'head'; head: number };
 
 async function postReplace(
 	transport: StoreTransport,
-	params: { fromBoundary: number; atHead: number },
-	bytes: RebornState,
-): Promise<Result<ReplaceAnswer, CompactError>> {
+	params: { fromDocument: string; atHead: number },
+	bytes: RebuiltState,
+): Promise<Result<ReplaceAnswer, RebuildError>> {
 	const posted = await tryAsync({
 		try: () =>
 			transport.fetch(
 				STORE_REPLACE_ROUTE.url(transport.baseURL, {
 					namespace: transport.namespace,
-					fromBoundary: params.fromBoundary,
+					fromDocument: params.fromDocument,
 					atHead: params.atHead,
 				}),
 				{ method: 'POST', body: bytes as Uint8Array<ArrayBuffer> },
 			),
-		catch: (cause) => CompactError.ReplaceFailed({ cause }),
+		catch: (cause) => RebuildError.ReplaceFailed({ cause }),
 	});
 	if (posted.error !== null) return Err(posted.error);
 	const response = posted.data;
 
 	if (response.ok) {
 		const body = await tryAsync({
-			try: () => response.json() as Promise<{ boundary?: unknown }>,
-			catch: (cause) => CompactError.ReplaceFailed({ cause }),
+			try: () => response.json() as Promise<{ document?: unknown }>,
+			catch: (cause) => RebuildError.ReplaceFailed({ cause }),
 		});
 		if (body.error !== null) return Err(body.error);
-		const boundary = body.data.boundary;
-		if (typeof boundary !== 'number') {
-			return CompactError.ReplaceFailed({
-				cause: new Error('the replace answered without a boundary'),
+		const document = body.data.document;
+		if (typeof document !== 'string') {
+			return RebuildError.ReplaceFailed({
+				cause: new Error('the replace answered without a document'),
 			});
 		}
-		return Ok({ kind: 'published', boundary });
+		return Ok({ kind: 'published', document });
 	}
 
 	if (response.status === 409) {
@@ -219,77 +230,71 @@ async function postReplace(
 			try: () =>
 				response.json() as Promise<{
 					refused?: unknown;
-					boundary?: unknown;
+					document?: unknown;
 					head?: unknown;
 				}>,
-			catch: (cause) => CompactError.ReplaceFailed({ cause }),
+			catch: (cause) => RebuildError.ReplaceFailed({ cause }),
 		});
 		if (refusal.error !== null) return Err(refusal.error);
 		const answer = refusal.data;
-		if (answer.refused === 'boundary' && typeof answer.boundary === 'number') {
-			return Ok({ kind: 'boundary', boundary: answer.boundary });
+		if (answer.refused === 'document' && typeof answer.document === 'string') {
+			return Ok({ kind: 'document', document: answer.document });
 		}
 		if (answer.refused === 'head' && typeof answer.head === 'number') {
 			return Ok({ kind: 'head', head: answer.head });
 		}
 	}
-	return CompactError.ReplaceFailed({ status: response.status });
+	return RebuildError.ReplaceFailed({ status: response.status });
 }
 
 /**
- * Compact this store: publish its live state, reborn, as the next edition.
+ * Rebuild this workspace: publish its live state, reborn, as the next document.
  *
- * The lease is this replica's own facts: `atHead` is its cursor (what its
- * state provably covers; the authority refuses if the tail moved), and
- * `fromBoundary` bootstraps from zero through the CAS itself: a miss answers
- * the current boundary, and a bounded retry presents it. Every refusal is
- * typed for the one question the person asks next: sync and try again
- * (`StoreChanged`), or adopt the edition that beat you (`Contested`).
+ * The lease is this replica's own stamped facts, so there is no bootstrap
+ * and no retry loop: `fromDocument` is the identity its state belongs to
+ * (the authority refuses if that is no longer the current document), and
+ * `atHead` is its cursor (what its state provably covers; the authority
+ * refuses if the tail moved). Every refusal is typed for the one question
+ * the person asks next: sync and try again (`StoreChanged`), or adopt the
+ * document that beat you (`Contested`, which also covers the crash-replay
+ * of a rebuild that already landed, so a replay can never publish twice).
  *
  * On success the caller runs the same adoption every superseded replica
  * runs: `discard()` on the opener, then reload. This function never touches
  * the local file, so a crash between publish and discard reduces to the
  * ordinary supersession at the next dial.
  */
-export async function compactStore({
+export async function rebuildWorkspace({
 	store,
 	transport,
-	/** CAS retries after the first attempt. Bounded; a compact is not a loop. */
-	retries = 2,
 }: {
 	store: Store;
 	transport: StoreTransport;
-	retries?: number;
-}): Promise<Result<{ boundary: number }, CompactError | StoreError>> {
+}): Promise<Result<{ document: string }, RebuildError | StoreError>> {
 	if (!LENS_NAMESPACE.test(transport.namespace)) {
-		return CompactError.ReplaceFailed({
+		return RebuildError.ReplaceFailed({
 			cause: new Error(`'${transport.namespace}' is not a Lens namespace`),
 		});
 	}
+	const identity = store.sync.documentIdentity();
+	if (identity.error !== null) return Err(identity.error);
+	if (identity.data === undefined) return RebuildError.NeverSynced();
 	const cursor = store.sync.cursor();
 	if (cursor.error !== null) return Err(cursor.error);
-	const bytes = rebirth(store);
+	const bytes = rebuildDocument(store);
 	if (bytes.error !== null) return Err(bytes.error);
 
-	// The verb is its own bootstrap: the client durably knows no boundary, so
-	// the first post claims zero, and a CAS miss ANSWERS the current value,
-	// which the retry then presents. One extra round-trip on a rare,
-	// person-initiated action, and no read endpoint has to exist for it.
-	let fromBoundary = 0;
-	for (let attempt = 0; attempt <= retries; attempt += 1) {
-		const answer = await postReplace(
-			transport,
-			{ fromBoundary, atHead: cursor.data },
-			bytes.data,
-		);
-		if (answer.error !== null) return Err(answer.error);
-		if (answer.data.kind === 'published') {
-			return Ok({ boundary: answer.data.boundary });
-		}
-		if (answer.data.kind === 'head') {
-			return CompactError.StoreChanged({ head: answer.data.head });
-		}
-		fromBoundary = answer.data.boundary;
+	const answer = await postReplace(
+		transport,
+		{ fromDocument: identity.data, atHead: cursor.data },
+		bytes.data,
+	);
+	if (answer.error !== null) return Err(answer.error);
+	if (answer.data.kind === 'published') {
+		return Ok({ document: answer.data.document });
 	}
-	return CompactError.Contested({ boundary: fromBoundary });
+	if (answer.data.kind === 'head') {
+		return RebuildError.StoreChanged({ head: answer.data.head });
+	}
+	return RebuildError.Contested({ document: answer.data.document });
 }

@@ -21,7 +21,7 @@
  * cache. So the restored projection was thrown away every time.
  *
  * What actually has to survive is `_updates`, `_outbox` and `_cursor`, and all
- * three are small: `appendUpdate` collapses the log at `COMPACTION_THRESHOLD`
+ * three are small: `appendUpdate` folds the log at `SNAPSHOT_FOLD_THRESHOLD`
  * (64) into one baseline, the outbox is coalesced before it is sent, and the
  * cursor is one row. That is an IndexedDB record, not a file, and IndexedDB is
  * reachable from the page. `createSyncAccessHandle` being dedicated-worker-only
@@ -36,7 +36,14 @@ import type { LensJson, LensParseError } from '@epicenter/lens';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import { APP_DOCUMENT, applyStoreSchema, copyBytes } from './log.js';
+import {
+	APP_DOCUMENT,
+	applyStoreSchema,
+	copyBytes,
+	readDocumentIdentity,
+	readFormat,
+	writeDocumentIdentity,
+} from './log.js';
 import { claimNamespace, releaseNamespace } from './namespaces.js';
 import {
 	type ApplicationOf,
@@ -76,9 +83,9 @@ export type BrowserStore = Store & {
 	/**
 	 * Delete this store's durable record whole, disposing the store first.
 	 *
-	 * ADR-0231's one client-side deletion: a replica whose edition was retired
-	 * discards and rejoins at zero, and the initiating device adopts through
-	 * the same move after a confirmed replace. Terminal for this store; the
+	 * ADR-0231's one client-side deletion: a replica whose document was
+	 * replaced discards and rejoins at zero, and the initiating device adopts
+	 * through the same move after a confirmed replace. Terminal for this store; the
 	 * caller reloads (ADR-0232's instrument) and boot opens fresh. Crash-safe
 	 * by repetition: a discard that never ran leaves the old file, whose next
 	 * dial is refused again.
@@ -86,11 +93,21 @@ export type BrowserStore = Store & {
 	discard(): Promise<Result<void, StoreError>>;
 };
 
-/** The three relations that have to survive a reload. */
+/** The relations that have to survive a reload. */
 type DurableState = {
 	updates: { seq: number; bytes: Uint8Array }[];
 	outbox: { id: number; bytes: Uint8Array }[];
 	cursor: number;
+	/**
+	 * The store format this record was written under (ADR-0231).
+	 *
+	 * Absent on records from before the document identity, and that absence
+	 * is the cutover: a record without it is untrusted whole, so the open
+	 * wipes what was seeded and the replica rejoins from zero.
+	 */
+	format?: string;
+	/** Which authority document this replica's state belongs to (ADR-0231). */
+	document?: string;
 };
 
 const STORE_NAME = 'state';
@@ -260,6 +277,19 @@ async function openBrowserStore({
 							saved.cursor,
 						]);
 					}
+					// The certificate is seeded WITH the state it certifies. A record
+					// from before the document identity has none, and the open's
+					// format sweep wipes what was just seeded: the cutover, applied
+					// to the browser's copy (ADR-0231).
+					if (saved.format !== undefined) {
+						database.run(
+							"INSERT INTO _meta (key, value) VALUES ('format', ?)",
+							[saved.format],
+						);
+					}
+					if (saved.document !== undefined) {
+						writeDocumentIdentity(database, saved.document);
+					}
 				});
 			}
 			return database;
@@ -294,6 +324,14 @@ async function openBrowserStore({
 				bytes: copyBytes(row.bytes),
 			})),
 			cursor: cursor[0]?.seq ?? 0,
+			...(() => {
+				const format = readFormat(database);
+				const document = readDocumentIdentity(database);
+				return {
+					...(format === undefined ? {} : { format }),
+					...(document === undefined ? {} : { document }),
+				};
+			})(),
 		};
 	}
 
@@ -310,7 +348,7 @@ async function openBrowserStore({
 	 * commit per transaction rather than one durable write per transaction.
 	 *
 	 * Whole rather than incremental because the whole is small: `_updates` is
-	 * bounded at `COMPACTION_THRESHOLD`, and compaction renumbers it from 1, so
+	 * bounded at `SNAPSHOT_FOLD_THRESHOLD`, and snapshot folding renumbers it from 1, so
 	 * an incremental writer would need to notice that its positions had come to
 	 * mean different updates. There is no version of that which is worth 64 rows.
 	 */

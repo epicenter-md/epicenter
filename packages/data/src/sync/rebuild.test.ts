@@ -1,13 +1,14 @@
 /**
- * The reclaim walk and the compact client, against real stores and a
+ * The reclaim walk and the rebuild client, against real stores and a
  * scripted authority.
  *
  * The walk's claims are the expensive ones (ADR-0231 calls it the one part
  * that is real engineering), so they are asserted on full store round-trips:
  * same rows, same ids, same prose with its marks, and a struct count that
- * actually fell. The client's claims are about the lease: a compact built on
- * a moved log is refused, a contested boundary resolves into adoption, and a
- * crash-replay can never publish twice.
+ * actually fell. The client's claims are about the lease: the post names the
+ * document the replica is stamped into and the head its state covers, a
+ * rebuild built on a moved log is refused, and a contested document resolves
+ * into adoption, which is also why a crash-replay can never publish twice.
  */
 import { describe, expect, test } from 'bun:test';
 import { defineLens } from '@epicenter/lens';
@@ -16,14 +17,14 @@ import type { Result } from 'wellcrafted/result';
 import { openMemory } from '../store/bun.js';
 import type { ApplicationOf } from '../store/store.js';
 import {
-	compactStore,
-	type RebornState,
-	rebirth,
+	type RebuiltState,
+	rebuildDocument,
+	rebuildWorkspace,
 	type StoreTransport,
-} from './compact.js';
+} from './rebuild.js';
 
 const lens = defineLens({
-	namespace: 'so.epicenter.compact',
+	namespace: 'so.epicenter.rebuild',
 	kv: { theme: "'light'|'dark' = 'light'" },
 	tables: { notes: { title: 'string' } },
 });
@@ -68,10 +69,10 @@ function agedApplication(): ApplicationOf<typeof lens> {
 	return app;
 }
 
-describe('rebirth re-encodes the live state into new identities (ADR-0231)', () => {
+describe('rebuildDocument re-encodes live state into new identities (ADR-0231)', () => {
 	test('same rows, same ids, same kv, same prose and marks', () => {
 		const source = agedApplication();
-		const reborn = expectOk(rebirth(source.store));
+		const reborn = expectOk(rebuildDocument(source.store));
 
 		const adopted = openMemory(lens);
 		expectOk(adopted.store.applyRemote(reborn));
@@ -101,7 +102,7 @@ describe('rebirth re-encodes the live state into new identities (ADR-0231)', () 
 
 	test('the tombstones are actually gone: the struct count falls', () => {
 		const source = agedApplication();
-		const reborn = expectOk(rebirth(source.store));
+		const reborn = expectOk(rebuildDocument(source.store));
 		const adopted = openMemory(lens);
 		expectOk(adopted.store.applyRemote(reborn));
 
@@ -132,14 +133,16 @@ describe('rebirth re-encodes the live state into new identities (ADR-0231)', () 
 		expectOk(receiver.store.applyRemote(increment));
 		expect(receiver.store.hasUnresolvedDependencies()).toBe(true);
 
-		expect(rebirth(receiver.store).error?.name).toBe('UnresolvedDependencies');
+		expect(rebuildDocument(receiver.store).error?.name).toBe(
+			'UnresolvedDependencies',
+		);
 	});
 
 	test('the brand separates reborn bytes from a plain re-encoding', () => {
 		const app = openMemory(lens);
 		// @ts-expect-error encodeStateSince preserves identities and reclaims
-		// nothing; only rebirth() mints RebornState (ADR-0231).
-		const wrong: RebornState = app.store.encodeStateSince();
+		// nothing; only rebuildDocument() mints RebuiltState (ADR-0231).
+		const wrong: RebuiltState = app.store.encodeStateSince();
 		expect(wrong).toBeInstanceOf(Uint8Array);
 	});
 });
@@ -160,60 +163,56 @@ function scriptedTransport(script: { replace: (url: URL) => Response }) {
 	return { transport, replaces };
 }
 
-/** A store with a cursor, which is what the lease is built from. */
-function syncedApplication(cursor: number) {
+/** A synced store: stamped into a document, with a cursor. The lease's facts. */
+function syncedApplication(cursor: number, document = 'the-current-document') {
 	const app = openMemory(lens);
 	expectOk(app.tables.notes.create({ title: 'kept across compaction' }));
+	expectOk(app.store.sync.adoptDocumentIdentity(document));
 	if (cursor > 0) expectOk(app.store.sync.advance(cursor));
 	return app;
 }
 
-describe('compactStore holds the lease honestly', () => {
-	test('a never-replaced store publishes in one post, atHead = its own cursor', async () => {
+describe('rebuildWorkspace holds the lease honestly', () => {
+	test('a synced store publishes in one post: fromDocument is its stamp, atHead its cursor', async () => {
 		const app = syncedApplication(7);
 		const { transport, replaces } = scriptedTransport({
-			replace: () => Response.json({ boundary: 8 }),
+			replace: () => Response.json({ document: 'the-next-document' }),
 		});
 
-		const published = await compactStore({ store: app.store, transport });
+		const published = await rebuildWorkspace({ store: app.store, transport });
 
-		expect(expectOk(published)).toEqual({ boundary: 8 });
+		expect(expectOk(published)).toEqual({ document: 'the-next-document' });
 		expect(replaces).toHaveLength(1);
 		const url = replaces[0] as URL;
-		expect(url.searchParams.get('fromBoundary')).toBe('0');
+		expect(url.searchParams.get('fromDocument')).toBe('the-current-document');
 		expect(url.searchParams.get('atHead')).toBe('7');
 		expect(url.searchParams.get('namespace')).toBe(lens.namespace);
 	});
 
-	test('the verb is its own bootstrap: the CAS miss answers the boundary and the retry presents it', async () => {
-		// The client durably knows no boundary, deliberately (zero new client
-		// state), so the first post claims zero and learns from the refusal.
-		const app = syncedApplication(7);
-		let posts = 0;
+	test('an unstamped store is refused before anything is posted', async () => {
+		// A store that never synced has no authority document its state
+		// provably covers: nothing for the lease to name, nothing to rebuild
+		// against.
+		const app = openMemory(lens);
+		expectOk(app.tables.notes.create({ title: 'offline only' }));
 		const { transport, replaces } = scriptedTransport({
-			replace: () => {
-				posts += 1;
-				return posts === 1
-					? Response.json({ refused: 'boundary', boundary: 4 }, { status: 409 })
-					: Response.json({ boundary: 8 });
-			},
+			replace: () => Response.json({ document: 'never-reached' }),
 		});
 
-		const published = await compactStore({ store: app.store, transport });
+		const refused = await rebuildWorkspace({ store: app.store, transport });
 
-		expect(expectOk(published)).toEqual({ boundary: 8 });
-		expect((replaces[0] as URL).searchParams.get('fromBoundary')).toBe('0');
-		expect((replaces[1] as URL).searchParams.get('fromBoundary')).toBe('4');
+		expect(refused.error?.name).toBe('NeverSynced');
+		expect(replaces).toHaveLength(0);
 	});
 
-	test('a moved log refuses the compact: sync, then try again', async () => {
+	test('a moved log refuses the rebuild: sync, then try again', async () => {
 		const app = syncedApplication(7);
 		const { transport } = scriptedTransport({
 			replace: () =>
 				Response.json({ refused: 'head', head: 9 }, { status: 409 }),
 		});
 
-		const refused = await compactStore({ store: app.store, transport });
+		const refused = await rebuildWorkspace({ store: app.store, transport });
 
 		expect(refused.error?.name).toBe('StoreChanged');
 		expect(
@@ -221,44 +220,27 @@ describe('compactStore holds the lease honestly', () => {
 		).toBe(9);
 	});
 
-	test('a crash-replay of a compact that landed can never publish twice', async () => {
-		// The first attempt published boundary 8 and the device died before
-		// discarding. On replay its cursor is still 7: the bootstrap post learns
-		// the boundary moved to 8, and the retry's lease is refused, because
-		// head is 8 and atHead is 7. The replica falls into ordinary adoption;
-		// nothing is republished.
+	test('a contested document resolves into adoption, and a crash-replay can never publish twice', async () => {
+		// The loser of a concurrent pair and the crash-replay of a rebuild
+		// that already landed arrive the same way: naming a document that is
+		// no longer current. One post, one refusal, no retry that could stomp
+		// the winner with stale-built bytes; the replica's next dial runs the
+		// ordinary adoption.
 		const app = syncedApplication(7);
-		let posts = 0;
-		const { transport, replaces } = scriptedTransport({
-			replace: (url) => {
-				posts += 1;
-				expect(url.searchParams.get('atHead')).toBe('7');
-				return posts === 1
-					? Response.json({ refused: 'boundary', boundary: 8 }, { status: 409 })
-					: Response.json({ refused: 'head', head: 8 }, { status: 409 });
-			},
-		});
-
-		const replayed = await compactStore({ store: app.store, transport });
-
-		expect(replayed.error?.name).toBe('StoreChanged');
-		expect(replaces).toHaveLength(2);
-	});
-
-	test('a boundary contested through every retry resolves into adoption', async () => {
-		const app = syncedApplication(7);
-		let boundary = 10;
 		const { transport, replaces } = scriptedTransport({
 			replace: () =>
 				Response.json(
-					{ refused: 'boundary', boundary: (boundary += 1) },
+					{ refused: 'document', document: 'the-winning-document' },
 					{ status: 409 },
 				),
 		});
 
-		const contested = await compactStore({ store: app.store, transport });
+		const contested = await rebuildWorkspace({ store: app.store, transport });
 
 		expect(contested.error?.name).toBe('Contested');
-		expect(replaces).toHaveLength(3);
+		expect(
+			contested.error?.name === 'Contested' ? contested.error.document : '',
+		).toBe('the-winning-document');
+		expect(replaces).toHaveLength(1);
 	});
 });

@@ -117,16 +117,18 @@ export type SnapshotFrame = {
 export type WantedFrame = { kind: 'wanted'; position: number };
 
 /**
- * The authority stating where the current edition began (ADR-0231).
+ * The authority naming the document its log describes (ADR-0231).
  *
- * The one answer of the catch-up verb that carries a fact instead of
- * history: a connection whose cursor names a retired edition is sent this
- * frame, and nothing else, ever. Named for what the authority knows, the
- * way every frame is named for what it carries; "superseded" is the
- * CLIENT's conclusion, drawn only when a well-formed position arrives
- * strictly ahead of its own nonzero cursor.
+ * The first frame on every connection, admitted or not. The id is opaque
+ * and minted by the authority: once at first open, and again by every
+ * replace, because a replace publishes a NEW document (the rebuild re-mints
+ * every struct identity; the visible workspace survives, the Yjs ancestry
+ * does not). A replica compares it to the identity its own state belongs
+ * to: equal proceeds, absent adopts at first entanglement, different is the
+ * client's `superseded` conclusion. Fact on the wire, verdict in the
+ * client.
  */
-export type BoundaryFrame = { kind: 'boundary'; position: number };
+export type DocumentFrame = { kind: 'document'; id: string };
 
 export type Frame =
 	| PushFrame
@@ -136,7 +138,7 @@ export type Frame =
 	| OfferFrame
 	| SnapshotFrame
 	| WantedFrame
-	| BoundaryFrame;
+	| DocumentFrame;
 
 const PUSH = 1;
 const ACK = 2;
@@ -145,7 +147,9 @@ const ENTRY = 4;
 const OFFER = 5;
 const SNAPSHOT = 6;
 const WANTED = 7;
-const BOUNDARY = 8;
+// Opcode 8 carried `boundary` for one unreleased build and is retired; a
+// decoder treats it as unknown. Do not reuse it.
+const DOCUMENT = 9;
 
 /** `u8 kind` plus three `u32` fields, ahead of the payload. */
 const DATA_HEADER_BYTES = 13;
@@ -191,11 +195,11 @@ export function encodeFrame(frame: Frame): Uint8Array {
 			view.setUint32(1, frame.position);
 			return buffer;
 		}
-		case 'boundary': {
-			const buffer = new Uint8Array(5);
-			const view = new DataView(buffer.buffer);
-			view.setUint8(0, BOUNDARY);
-			view.setUint32(1, frame.position);
+		case 'document': {
+			const id = new TextEncoder().encode(frame.id);
+			const buffer = new Uint8Array(1 + id.length);
+			buffer[0] = DOCUMENT;
+			buffer.set(id, 1);
 			return buffer;
 		}
 		case 'ack': {
@@ -249,13 +253,16 @@ export function decodeFrame(input: Uint8Array): Result<Frame, FrameError> {
 		return Ok({ kind: 'wanted', position: view.getUint32(1) });
 	}
 
-	if (kind === BOUNDARY) {
-		if (input.length < 5) {
+	if (kind === DOCUMENT) {
+		if (input.length < 2) {
 			return FrameError.Malformed({
-				reason: `boundary is ${input.length} bytes`,
+				reason: `document is ${input.length} bytes`,
 			});
 		}
-		return Ok({ kind: 'boundary', position: view.getUint32(1) });
+		return Ok({
+			kind: 'document',
+			id: new TextDecoder().decode(input.subarray(1)),
+		});
 	}
 
 	if (kind === ACK || kind === REFUSE) {
