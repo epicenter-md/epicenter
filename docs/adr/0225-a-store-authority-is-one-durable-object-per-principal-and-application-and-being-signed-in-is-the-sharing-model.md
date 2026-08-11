@@ -13,6 +13,9 @@
   [ADR-0092](0092-identity-is-the-partition.md) (identity is the partition),
   [ADR-0095](0095-websocket-room-auth-uses-route-owned-subprotocol-bearers.md)
   (the upgrade credential).
+- **Amended by:** [ADR-0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md).
+  The authority owns the workspace's current opaque document ID. A connection
+  declares that ID as well as its cursor and is admitted only on equality.
 - Evidence: `packages/server/workers/e2e.test.ts`.
 
 ## Context
@@ -34,8 +37,8 @@ sharing a log would interleave positions neither could read past.
 
 **The principal comes from the resolved bearer, and the object is addressed by
 it.** That single fact is the whole of the authorization. A client supplies a
-namespace and a cursor and nothing else, so there is no value it can put in a
-query that reaches another partition. The isolation is structural rather than
+namespace, cursor, and opaque current-document ID. The ID never selects another
+partition: the resolved bearer and namespace do that. The isolation is structural rather than
 checked.
 
 **Being signed in on two devices IS the sharing model.** There is nothing to

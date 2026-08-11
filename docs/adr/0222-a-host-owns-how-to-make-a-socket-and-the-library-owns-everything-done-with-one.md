@@ -10,6 +10,10 @@
   (why a stuck replica is repaired rather than prevented),
   [ADR-0171](0171-every-durable-local-write-leaves-an-automatic-authority-obligation.md)
   (the obligation `onLocalWork` announces).
+- **Amended by:** [ADR-0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md).
+  Each dial also declares the locally persisted document ID. A pristine client
+  performs a bootstrap-only dial, persists the announced ID, then redials
+  before it may send or receive live workspace traffic.
 - Evidence: `packages/data/src/sync/connection.test.ts`,
   `packages/data/evidence/workerd/results.md`.
 
@@ -48,7 +52,7 @@ stall and flat latency, which rules out gradual degradation.
 handed the position to ask from and three callbacks, and returns a teardown. That
 is the whole of what a host writes.
 
-The library owns: the cursor in every dial, read fresh from what this replica
+The library owns: the cursor and document ID in every dial, read fresh from what this replica
 durably holds; attach on open, feed on message, detach on close; reconnect on
 close with backoff; reconnect on `needsResync`, evaluated after every single
 delivery rather than on a timer; and a watchdog.

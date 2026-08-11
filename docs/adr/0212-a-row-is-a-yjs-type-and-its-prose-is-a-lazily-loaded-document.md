@@ -10,11 +10,10 @@
 - **Amended by:** [ADR-0219](0219-a-deleted-row-is-removed-and-the-presence-flag-is-retired.md)
   at deletion only. Withdrawn: clear-and-flag, the `!presence` attribute and its
   grammar, and the reuse story in which writing at an absent address revives it.
-- **Amended by:** [ADR-0231](0231-one-verb-publishes-a-stores-next-edition-and-a-replica-adopts-it-at-boot.md)
-  at the promised-but-never-built generation: built there as an edition
-  carried by the log's own number line, whose positions never restart, so a
-  replica's cursor names its edition and one server boundary refuses the
-  stale.
+- **Amended by:** [ADR-0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md)
+  at workspace replacement: the workspace is rebuilt as a fresh Yjs document
+  with a new opaque document ID. A cursor is within that document only; it
+  does not name the document or authorize a stale replica.
 - **Relates:** [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md)
   (the lens and the application surface),
   [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md)

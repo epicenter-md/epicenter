@@ -10,6 +10,10 @@
   What survives, unchanged, is that the authority holds opaque bytes, that the
   merge belongs to the client, that catch-up and live relay are one path, and
   that there is no state vector in the transport.
+- **Amended by:** [ADR-0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md)
+  at scope only. This record's snapshot and tail are the retained state of one
+  current document. A workspace rebuild creates a different document and
+  deletes this document's snapshot and tail.
 - **Relates:** [ADR-0218](0218-the-authority-reads-nothing-and-a-poison-entry-is-repaired-rather-than-prevented.md)
   (the authority reads nothing, which this preserves),
   [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md)
