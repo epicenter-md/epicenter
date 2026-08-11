@@ -1,7 +1,8 @@
 # 0115. Super Chat remote attach rides an endpoint-addressed trusted relay
 
-- **Status:** Accepted (amended 2026-07-08: privacy equals self-host; hosted Cloud is trusted for live Super Chat attach frames; the sealing layer and anti-MITM pairing promise were removed)
+- **Status:** Superseded by [ADR-0236](0236-remote-super-chat-attach-is-deferred-until-the-complete-product-exists.md)
 - **Date:** 2026-07-07
+- **Superseded by:** [ADR-0236](0236-remote-super-chat-attach-is-deferred-until-the-complete-product-exists.md)
 - **Relates:** [ADR-0080](0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md) (Super Chat is a desktop host and remote devices attach to the session, not to per-app endpoints), [ADR-0079](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md) (remote attach is the live plane, distinct from durable sync), [ADR-0086](0086-no-live-consumer-for-network-reachable-capability-reach-opensidian-is-superseded-not-migrated.md) (network-reachable capability reach stays refused; a session channel is not a capability route), [ADR-0073](0073-tools-speak-mcp-natively-epicenter-owns-only-the-transport-mcp-lacks.md) (the relay-floor organs stay deleted), [ADR-0113](0113-super-chat-session-commands-are-host-owned-transports-only-frame-them.md) (Super Chat session commands are host-owned; the relay forwards their bytes), [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md) and [trust-model](../trust-model.md) (hosted Epicenter is trusted infrastructure, not zero-knowledge infrastructure), [ADR-0068](0068-privacy-is-a-deployment-not-a-product-feature.md) (privacy is the deployment: self-host makes the operator the user), [ADR-0075](0075-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) (a self-hosted instance is reached by URL and token)
 
 ## Context
