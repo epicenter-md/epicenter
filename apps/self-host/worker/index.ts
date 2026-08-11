@@ -13,9 +13,9 @@
  *
  * This is a reference, not an Epicenter-operated product. Copy this folder, set
  * `INSTANCE_TOKEN` (`wrangler secret put INSTANCE_TOKEN`, generated with
- * `bun run gen-token`), provision your Durable Object binding, and deploy. The
- * instance composes no Better Auth and no Postgres, so there is no Hyperdrive
- * binding and no `BETTER_AUTH_SECRET` (ADR-0075). Community-supported.
+ * `bun run gen-token`), and deploy. The instance composes no Better Auth,
+ * Postgres, or store authority, so there is no Hyperdrive binding and no
+ * `BETTER_AUTH_SECRET` (ADR-0075). Community-supported.
  *
  * Trust boundary: the deployer operates the infrastructure. Epicenter never holds
  * or sees the data stored here, so self-hosting is functionally zero-knowledge

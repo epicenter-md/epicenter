@@ -138,7 +138,7 @@ const PROFILE: Surface[] = [
 		url: `${ORIGIN}/api/account`,
 		worker: 'served',
 		bun: 'absent',
-		why: 'Deletion sweeps the `EPICENTER_SYNC` Durable Object namespace, the blob prefix, and the Autumn customer. A dev host holds none of those, and a partial sweep is worse than no route.',
+		why: 'Deletion is a hosted resource sweep. A dev host holds none of those resources, and a partial sweep is worse than no route.',
 	},
 	{
 		surface: 'dashboard SPA',

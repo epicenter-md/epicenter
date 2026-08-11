@@ -38,9 +38,9 @@
  * Four surfaces the Worker serves are intentionally absent here, and
  * `runtime-profile.test.ts` is where that list is declared and checked against
  * both entries: the dashboard SPA and the account-deletion route need Worker-only
- * bindings (`ASSETS`, the `EPICENTER_SYNC` namespace), billing is the hosted
- * Worker's concern, and attach rides the Durable Object transport. Everything
- * the shared library can mount on both runtimes is mounted on both.
+ * bindings (`ASSETS`, `STORE_AUTHORITY`), and billing is the hosted Worker's
+ * concern. Everything the shared library can mount on both runtimes is mounted
+ * on both.
  * Because this runtime cannot resolve the hosted storage allowance, first
  * contact is allowed only for workspaces already registered by the hosted
  * Worker. Existing current-state replicas in this runtime's own backend may

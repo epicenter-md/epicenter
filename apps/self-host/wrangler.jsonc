@@ -39,46 +39,7 @@
 		"required": ["INSTANCE_TOKEN"]
 	},
 
-	// --- Durable Objects ---
-	"durable_objects": {
-		"bindings": [
-			// EPICENTER_SYNC is deliberately still bound to a class this Worker no
-			// longer exports, the same way `apps/api` is. Removing a Durable
-			// Object class needs a `deleted_classes` migration, which DESTROYS
-			// its stored data on deploy. The binding is inert (nothing mounts it)
-			// and costs nothing until someone decides to run that migration on
-			// purpose (ADR-0227).
-			{
-				"name": "EPICENTER_SYNC",
-				"class_name": "EpicenterAuthority"
-			}
-		]
-	},
-	"migrations": [
-		{
-			"tag": "v1",
-			"new_sqlite_classes": ["Room"]
-		},
-		{
-			"tag": "v2",
-			"new_sqlite_classes": ["CurrentStateRowAuthorityDurableObject"]
-		},
-		{
-			"tag": "v3",
-			"new_sqlite_classes": ["EpicenterAuthority"]
-		},
-		{
-			"tag": "v4",
-			"deleted_classes": ["CurrentStateRowAuthorityDurableObject"]
-		},
-		{
-			"tag": "v5",
-			"deleted_classes": ["Room"]
-		}
-	]
-
-	// No Hyperdrive binding: the instance composes no Postgres (no Better Auth or
-	// telemetry). It also mounts NO store sync today: `mountStoreSyncApp` is
-	// Cloud-only, so an instance serves session, inference, transcription and
-	// blobs, and two devices do not converge through it (ADR-0075, ADR-0225).
+	// No Hyperdrive or Durable Object bindings: the instance composes no Postgres
+	// and no store sync today. It serves session, inference, transcription, and
+	// blobs; two devices do not converge through this reference Worker.
 }
