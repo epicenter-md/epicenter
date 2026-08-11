@@ -32,7 +32,7 @@ import * as Y from '@y/y';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
-import type { Store, StoreError } from '../store/store.js';
+import type { ReplicaStore, StoreError } from '../store/store.js';
 
 declare const rebuilt: unique symbol;
 
@@ -147,7 +147,7 @@ function copyInto(source: Y.Type, target: Y.Type): void {
  * for a person-initiated verb.
  */
 export function rebuildDocument(
-	store: Pick<Store, 'encodeStateSince' | 'hasUnresolvedDependencies'>,
+	store: Pick<ReplicaStore, 'encodeStateSince' | 'hasUnresolvedDependencies'>,
 ): Result<RebuiltState, RebuildError> {
 	if (store.hasUnresolvedDependencies()) {
 		return RebuildError.UnresolvedDependencies();
@@ -268,7 +268,7 @@ export async function rebuildWorkspace({
 	store,
 	transport,
 }: {
-	store: Store;
+	store: ReplicaStore;
 	transport: StoreTransport;
 }): Promise<Result<{ document: string }, RebuildError | StoreError>> {
 	if (!LENS_NAMESPACE.test(transport.namespace)) {

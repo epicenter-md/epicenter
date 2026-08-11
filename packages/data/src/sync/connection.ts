@@ -51,7 +51,7 @@
  */
 import { Ok, type Result } from 'wellcrafted/result';
 
-import type { Store } from '../store/store.js';
+import type { ReplicaStore } from '../store/store.js';
 import {
 	createSyncClient,
 	type Schedule,
@@ -209,7 +209,7 @@ export function createSyncConnection({
 	unacknowledgedMs = 30_000,
 	onSuperseded,
 }: {
-	store: Store;
+	store: ReplicaStore;
 	dial: SyncDial;
 	idleMs?: number;
 	maxBufferedBytes?: number;

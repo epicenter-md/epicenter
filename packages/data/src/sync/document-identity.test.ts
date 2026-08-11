@@ -29,7 +29,7 @@ import { defineLens, type LensJson } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
-import { createStore, type LensView } from '../store/store.js';
+import { createReplicaStore, type LensView } from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
 import { createSyncClient } from './client.js';
 import { encodeFrame } from './frames.js';
@@ -77,7 +77,7 @@ function openReplica(
 	through: LensJson = lens,
 	database = createBunSqliteAdapter(new Database(':memory:')),
 ) {
-	const store = createStore({ database });
+	const store = createReplicaStore({ database });
 	const db = expectOk(store.bind(through)) as LensView<typeof lens>;
 	const client = createSyncClient({
 		store,
@@ -220,7 +220,7 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 		// bytes, cursor 1, stamped.
 		const drawerDb = createBunSqliteAdapter(new Database(':memory:'));
 		{
-			const drawerStore = createStore({ database: drawerDb });
+			const drawerStore = createReplicaStore({ database: drawerDb });
 			const entry = expectOk(authority.since(0, 10))[0];
 			if (entry === undefined) throw new Error('the log holds no entry');
 			expectOk(
@@ -276,7 +276,7 @@ describe('workspace bootstrap names a document before any workspace write', () =
 
 		// Durable, not a session fact: a store reopened from the same file
 		// still knows which document its bytes belong to.
-		const reopened = createStore({ database });
+		const reopened = createReplicaStore({ database });
 		expect(expectOk(reopened.sync.documentIdentity())).toBe(
 			expectOk(authority.document()),
 		);
@@ -396,7 +396,7 @@ describe('the cutover: pre-identity local state is reset, never merged', () => {
 		// its `_meta` rows removed is byte-for-byte the old format.
 		const database = createBunSqliteAdapter(new Database(':memory:'));
 		{
-			const old = createStore({ database });
+			const old = createReplicaStore({ database });
 			const view = expectOk(old.bind(lens)) as LensView<typeof lens>;
 			expectOk(view.tables.notes.create({ title: 'untrusted old note' }));
 		}
@@ -420,11 +420,11 @@ describe('the cutover: pre-identity local state is reset, never merged', () => {
 	test('CONTROL: a certified file reopens intact', () => {
 		const database = createBunSqliteAdapter(new Database(':memory:'));
 		{
-			const store = createStore({ database });
+			const store = createReplicaStore({ database });
 			const view = expectOk(store.bind(lens)) as LensView<typeof lens>;
 			expectOk(view.tables.notes.create({ title: 'kept across reopen' }));
 		}
-		const reopened = createStore({ database });
+		const reopened = createReplicaStore({ database });
 		const view = expectOk(reopened.bind(lens)) as LensView<typeof lens>;
 		expect(
 			expectOk(view.tables.notes.list()).rows.map((row) => row.title),

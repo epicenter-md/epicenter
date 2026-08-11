@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { Database } from 'bun:sqlite';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TableInvalidation } from '@epicenter/lens';
 import { defineLens } from '@epicenter/lens';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 
 import { open, openMemory } from './bun.js';
-import type { ApplicationOf, Store } from './store.js';
+import { createStore, type DataOf, type ReplicaStore } from './store.js';
 
 const lens = defineLens({
 	namespace: 'so.epicenter.honeycrisp',
@@ -18,7 +20,7 @@ const lens = defineLens({
 	},
 });
 
-let db: ApplicationOf<typeof lens>;
+let db: DataOf<typeof lens>;
 
 beforeEach(() => {
 	db = openMemory(lens);
@@ -38,7 +40,7 @@ function note(
 	return data;
 }
 
-function exchange(a: Store, b: Store) {
+function exchange(a: ReplicaStore, b: ReplicaStore) {
 	const fromA = a.encodeStateSince(b.stateVector());
 	const fromB = b.encodeStateSince(a.stateVector());
 	b.applyRemote(fromA);
@@ -898,6 +900,44 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 			}
 		} finally {
 			await rm(root, { recursive: true, force: true });
+		}
+	});
+});
+
+describe('a document store owes nobody (ADR-0233)', () => {
+	test('local commits leave the outbox empty and no replica verb exists', async () => {
+		const database = createBunSqliteAdapter(new Database(':memory:'));
+		const store = createStore({ database });
+		try {
+			const bound = store.bind(lens);
+			if (bound.error !== null) throw bound.error;
+			const made = bound.data.tables.notes.create({
+				title: 'device work',
+				tags: [],
+				date: null,
+			});
+			expect(made.error).toBeNull();
+
+			// The write is durable, but it is owed to nobody: nothing could ever
+			// acknowledge a device document's outbox, so nothing may join it.
+			expect(database.all('SELECT COUNT(*) AS owed FROM _outbox')).toEqual([
+				{ owed: 0 },
+			]);
+			expect(
+				database.all<{ count: number }>(
+					'SELECT COUNT(*) AS count FROM _updates',
+				)[0]?.count,
+			).toBeGreaterThan(0);
+
+			// Missing at runtime exactly as the constructors say at the type.
+			expect('sync' in store).toBe(false);
+			expect('applyRemote' in store).toBe(false);
+			// @ts-expect-error a document store has no replica verbs
+			store.applyRemote;
+			// @ts-expect-error a document store has no client log
+			store.sync;
+		} finally {
+			await store[Symbol.asyncDispose]();
 		}
 	});
 });

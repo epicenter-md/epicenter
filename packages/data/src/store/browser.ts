@@ -34,6 +34,7 @@
  */
 import type { PrincipalId } from '@epicenter/identity';
 import type { LensJson, LensParseError } from '@epicenter/lens';
+import type { SqliteDatabase } from '@epicenter/sqlite';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { deleteDB, type DBSchema, type IDBPDatabase, openDB } from 'idb';
@@ -48,9 +49,11 @@ import {
 	writeDocumentIdentity,
 } from './log.js';
 import {
-	type ApplicationOf,
-	asApplication,
+	type DataOf,
+	asData,
+	createReplicaStore,
 	createStore,
+	type ReplicaStore,
 	type Store,
 	StoreError,
 } from './store.js';
@@ -77,30 +80,38 @@ export type StoreDurability =
 			readonly message: string;
 	  };
 
-export type BrowserStore = Store & {
+type BrowserDurability = {
 	/** Whether the durable copy has fallen behind, and why. */
 	durability(): StoreDurability;
 	/** Resolve once every write so far has reached durable storage. */
 	whenDurable(): Promise<Result<void, StoreError>>;
-	/**
-	 * Delete this store's durable record whole, disposing the store first.
-	 *
-	 * ADR-0231's one client-side deletion: a replica whose document was
-	 * replaced discards and rejoins at zero, and the initiating device adopts
-	 * through the same move after a confirmed replace. Terminal for this store; the
-	 * caller reloads (ADR-0232's instrument) and boot opens fresh. Crash-safe
-	 * by repetition: a discard that never ran leaves the old file, whose next
-	 * dial is refused again.
-	 *
-	 * Its blast radius is this store's own address and nothing else (ADR-0233),
-	 * so a workspace discard names one account's replica and can reach neither
-	 * the device document nor any other account's.
-	 */
-	discard(): Promise<Result<void, StoreError>>;
 };
 
-/** The relations that have to survive a reload. */
-type DurableState = {
+/** One opened browser document with its write-behind durable copy. */
+export type BrowserStore = Store & BrowserDurability;
+
+/** One browser document that replicates with an account authority. */
+export type BrowserReplicaStore = ReplicaStore &
+	BrowserDurability & {
+		/**
+		 * Delete this store's durable record whole, disposing the store first.
+		 *
+		 * ADR-0231's one client-side deletion: a replica whose document was
+		 * replaced discards and rejoins at zero, and the initiating device adopts
+		 * through the same move after a confirmed replace. Terminal for this store; the
+		 * caller reloads (ADR-0232's instrument) and boot opens fresh. Crash-safe
+		 * by repetition: a discard that never ran leaves the old file, whose next
+		 * dial is refused again.
+		 *
+		 * Its blast radius is this store's own address and nothing else (ADR-0233),
+		 * so a workspace discard names one account's replica and can reach neither
+		 * the device document nor any other account's.
+		 */
+		discard(): Promise<Result<void, StoreError>>;
+	};
+
+/** The relations needed to rebuild the browser runtime after a reload. */
+type BrowserCheckpoint = {
 	updates: { seq: number; bytes: Uint8Array }[];
 	outbox: { id: number; bytes: Uint8Array }[];
 	cursor: number;
@@ -118,26 +129,30 @@ type DurableState = {
 
 type BrowserPersistenceSchema = DBSchema & {
 	state: {
-		key: typeof STATE_KEY;
-		value: DurableState;
+		key: typeof CHECKPOINT_KEY;
+		value: BrowserCheckpoint;
 	};
 };
 
 type BrowserPersistenceDatabase = IDBPDatabase<BrowserPersistenceSchema>;
 
-const STORE_NAME = 'state';
-const STATE_KEY = 'durable';
+// These are persisted names. Changing them requires an IndexedDB migration.
+const CHECKPOINT_STORE = 'state';
+const CHECKPOINT_KEY = 'durable';
 
 function openIndexedDb(address: string): Promise<BrowserPersistenceDatabase> {
 	return new Promise((resolve, reject) => {
 		let blocked = false;
 		void openDB<BrowserPersistenceSchema>(address, 1, {
 			upgrade(database) {
-				if (!database.objectStoreNames.contains(STORE_NAME)) {
-					database.createObjectStore(STORE_NAME);
+				if (!database.objectStoreNames.contains(CHECKPOINT_STORE)) {
+					database.createObjectStore(CHECKPOINT_STORE);
 				}
 			},
 			blocked() {
+				// A later schema upgrade must not leave boot hanging behind a tab that
+				// still holds the old version. `idb` still resolves if that tab closes,
+				// so close the late connection rather than leaking it after rejection.
 				blocked = true;
 				reject(
 					new Error(
@@ -155,18 +170,18 @@ function openIndexedDb(address: string): Promise<BrowserPersistenceDatabase> {
 	});
 }
 
-function readDurable(
+function readCheckpoint(
 	database: BrowserPersistenceDatabase,
-): Promise<DurableState | undefined> {
-	return database.get(STORE_NAME, STATE_KEY);
+): Promise<BrowserCheckpoint | undefined> {
+	return database.get(CHECKPOINT_STORE, CHECKPOINT_KEY);
 }
 
-async function writeDurable(
+async function writeCheckpoint(
 	database: BrowserPersistenceDatabase,
-	state: DurableState,
+	checkpoint: BrowserCheckpoint,
 ): Promise<void> {
-	const transaction = database.transaction(STORE_NAME, 'readwrite');
-	await transaction.store.put(state, STATE_KEY);
+	const transaction = database.transaction(CHECKPOINT_STORE, 'readwrite');
+	await transaction.store.put(checkpoint, CHECKPOINT_KEY);
 	await transaction.done;
 }
 
@@ -182,6 +197,8 @@ function deleteIndexedDb(address: string): Promise<void> {
 		let blocked = false;
 		void deleteDB(address, {
 			blocked() {
+				// `deleteDB` waits for the other tab. This caller must instead know
+				// that its requested wipe did not happen before it reloads.
 				blocked = true;
 				reject(
 					new Error('Another tab is holding this store open. Close it first.'),
@@ -197,23 +214,6 @@ function deleteIndexedDb(address: string): Promise<void> {
 }
 
 /**
- * Which durable local document of an application to open, and whose (ADR-0233).
- *
- * A browser application keeps one device document and one retained account
- * replica per account. The device document never joins workspace sync and
- * survives every sign-in and sign-out; an account replica is this device's
- * replica of one principal's current authority document (ADR-0231), and it is
- * retained across sign-out too, which is why it is addressed by the account
- * that owns it rather than by the application alone.
- *
- * The principal rides on the account arm alone, so an account-less replica is
- * not a value this API can express.
- */
-export type BrowserStoreTarget =
-	| { owner: 'device' }
-	| { owner: 'account'; principalId: PrincipalId };
-
-/**
  * Where one of an application's durable documents lives, as ownership
  * (ADR-0233):
  *
@@ -221,6 +221,14 @@ export type BrowserStoreTarget =
  * epicenter/<namespace>/device
  * epicenter/<namespace>/account/<principal id>
  * ```
+ *
+ * A browser application keeps one device document and one retained account
+ * replica per account, and may hold them open at once. The device document
+ * never joins workspace sync and survives every sign-in and sign-out; an
+ * account replica is this device's replica of one principal's current
+ * authority document (ADR-0231), retained across sign-out too, which is why
+ * it is addressed by the account that owns it rather than by the application
+ * alone.
  *
  * Three identities, none of them collapsed into another: the namespace says
  * which application, the principal says whose replica this is, and the
@@ -233,10 +241,12 @@ export type BrowserStoreTarget =
  * segment after `epicenter/` is always exactly the application, and no address
  * can be read as another one.
  */
-function addressOf(namespace: string, target: BrowserStoreTarget): string {
-	return target.owner === 'device'
-		? `epicenter/${namespace}/device`
-		: `epicenter/${namespace}/account/${target.principalId}`;
+function deviceAddress(namespace: string): string {
+	return `epicenter/${namespace}/device`;
+}
+
+function accountAddress(namespace: string, principalId: PrincipalId): string {
+	return `epicenter/${namespace}/account/${principalId}`;
 }
 
 /**
@@ -258,15 +268,16 @@ function addressOf(namespace: string, target: BrowserStoreTarget): string {
  */
 function deleteSupersededStorage(
 	namespace: string,
-	target: BrowserStoreTarget,
+	owner: 'device' | 'account',
+	principalId?: PrincipalId,
 ): Promise<void> {
 	const superseded = [
 		`epicenter-store-${namespace}`,
 		`epicenter-store-${namespace}#private`,
 		`epicenter-store-${namespace}#workspace`,
-		target.owner === 'device'
+		owner === 'device'
 			? `epicenter/${namespace}/private`
-			: `epicenter/${namespace}/workspace/${target.principalId}`,
+			: `epicenter/${namespace}/workspace/${principalId}`,
 	];
 	return Promise.all(
 		superseded.map(
@@ -282,69 +293,153 @@ function deleteSupersededStorage(
 }
 
 /**
- * Open one durable document of the application this lens names, in a browser
- * page.
+ * Open this browser's device-owned document for the application this lens
+ * names.
  *
- * The lens names the application and the caller names the document and its
- * owner (ADR-0229 as amended by ADR-0233): the IndexedDB database is the
- * address derived from all of them, so the device document and any account's
- * replica can never share storage, and no document can be opened without
- * saying which one is meant. An account replica cannot be opened
- * without an account at all: the argument has nowhere to omit one, and an empty
- * id is refused rather than addressed, because a boot with no stable principal
- * has no account replica rather than a nameless one.
- *
- * @example
- * ```ts
- * const { data: mail } = await open(inbox, {
- * 	owner: 'account',
- * 	principalId,
- * });
- * mail.tables.messages.create({ subject: 'hi', unread: true });
- * mail.store.pressure();
- * ```
+ * This document has no remote authority, so it carries neither an outbox nor
+ * replica-only verbs, and no verb that could delete it. It can remain open
+ * while an account replica is open too.
  */
-export async function open<const TLens extends LensJson>(
+export async function openDevice<const TLens extends LensJson>(
 	lens: TLens,
-	target: BrowserStoreTarget,
-): Promise<
-	Result<ApplicationOf<TLens, BrowserStore>, StoreError | LensParseError>
-> {
-	if (target.owner === 'account' && target.principalId.trim() === '') {
-		return StoreError.Unaddressable();
-	}
-
-	const address = addressOf(lens.namespace, target);
+): Promise<Result<DataOf<TLens, BrowserStore>, StoreError | LensParseError>> {
+	const address = deviceAddress(lens.namespace);
 	const { error: claimError } = claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
-	await deleteSupersededStorage(lens.namespace, target);
+	await deleteSupersededStorage(lens.namespace, 'device');
 
-	const { data: store, error: storeError } = await openBrowserStore({
-		address,
-	});
-	if (storeError !== null) {
+	const { data: backing, error: backingError } =
+		await openBrowserBacking(address);
+	if (backingError !== null) {
 		releaseDocument(address);
-		return Err(storeError);
+		return Err(backingError);
 	}
 
-	const view = store.bind(lens);
+	const store = createStore({
+		database: backing.database,
+		dispose: () => {
+			backing.close();
+			releaseDocument(address);
+		},
+	});
+	const stopCommitted = store.onCommitted(backing.persistDurable);
+	const browserStore: BrowserStore = Object.freeze({
+		...store,
+		durability: backing.durability,
+		whenDurable: backing.whenDurable,
+		async [Symbol.asyncDispose]() {
+			stopCommitted();
+			await backing.drain();
+			await store[Symbol.asyncDispose]();
+		},
+	});
+
+	const view = browserStore.bind(lens);
 	if (view.error !== null) {
-		await store[Symbol.asyncDispose]().catch(() => undefined);
+		await browserStore[Symbol.asyncDispose]().catch(() => undefined);
 		return Err(view.error);
 	}
-	return Ok(asApplication<TLens, BrowserStore>(store, view.data));
+	return Ok(asData<TLens, BrowserStore>(browserStore, view.data));
 }
 
-async function openBrowserStore({
-	address,
-}: {
-	address: string;
-}): Promise<Result<BrowserStore, StoreError>> {
+/** Open this device's retained replica of one account's document. */
+export async function openAccount<const TLens extends LensJson>(
+	lens: TLens,
+	{ principalId }: { principalId: PrincipalId },
+): Promise<
+	Result<DataOf<TLens, BrowserReplicaStore>, StoreError | LensParseError>
+> {
+	if (principalId.trim() === '') return StoreError.Unaddressable();
+
+	const address = accountAddress(lens.namespace, principalId);
+	const { error: claimError } = claimDocument(address);
+	if (claimError !== null) return Err(claimError);
+
+	await deleteSupersededStorage(lens.namespace, 'account', principalId);
+
+	const { data: backing, error: backingError } =
+		await openBrowserBacking(address);
+	if (backingError !== null) {
+		releaseDocument(address);
+		return Err(backingError);
+	}
+
+	const store = createReplicaStore({
+		database: backing.database,
+		dispose: () => {
+			backing.close();
+			releaseDocument(address);
+		},
+	});
+	const stopCommitted = store.onCommitted(backing.persistDurable);
+	const disposeReplica = async (): Promise<void> => {
+		stopCommitted();
+		await backing.drain();
+		await store[Symbol.asyncDispose]();
+	};
+	const replicaStore: BrowserReplicaStore = Object.freeze({
+		...store,
+		durability: backing.durability,
+		whenDurable: backing.whenDurable,
+		async discard(): Promise<Result<void, StoreError>> {
+			// Dispose first: stop the write-behind before deleting, or a commit
+			// racing this call would re-create the database it is trying to
+			// remove. Disposing also closes our own IndexedDB connection, so the
+			// delete is not blocked by ourselves.
+			await disposeReplica();
+			return tryAsync({
+				try: () => deleteIndexedDb(address),
+				catch: (cause) => StoreError.StorageFailed({ cause }),
+			});
+		},
+		[Symbol.asyncDispose]: disposeReplica,
+	});
+
+	const view = replicaStore.bind(lens);
+	if (view.error !== null) {
+		await replicaStore[Symbol.asyncDispose]().catch(() => undefined);
+		return Err(view.error);
+	}
+	return Ok(asData<TLens, BrowserReplicaStore>(replicaStore, view.data));
+}
+
+/**
+ * The write-behind backing both browser stores share: an in-memory SQLite
+ * seeded from the IndexedDB checkpoint, and the machinery that persists the
+ * whole checkpoint back after every commit. The store on top decides what the
+ * document IS (a device document or an account replica); this decides only
+ * where its bytes survive a reload.
+ */
+type BrowserBacking = {
+	/** The seeded live database the store runs over. */
+	database: SqliteDatabase;
+	/** Close the IndexedDB connection. Runs inside the store's dispose. */
+	close(): void;
+	/**
+	 * Persist the current checkpoint, coalescing bursts into one write.
+	 *
+	 * Wire it to `onCommitted`: that fires for local writes, application
+	 * row-document writes, and arrived remote bytes alike. The store contract
+	 * says it is strictly wider than `onLocalWork`, so it alone is correct and
+	 * sufficient.
+	 */
+	persistDurable(): void;
+	/** Whether the durable copy has fallen behind, and why. */
+	durability(): StoreDurability;
+	/** Resolve once every write so far has reached durable storage. */
+	whenDurable(): Promise<Result<void, StoreError>>;
+	/** Resolve once no checkpoint write is in flight. */
+	drain(): Promise<void>;
+};
+
+async function openBrowserBacking(
+	address: string,
+): Promise<Result<BrowserBacking, StoreError>> {
 	const opened = await tryAsync({
 		try: async () => {
 			const durable = await openIndexedDb(address);
-			return { durable, saved: await readDurable(durable) };
+			return { durable, saved: await readCheckpoint(durable) };
 		},
 		catch: (cause) => StoreError.StorageFailed({ cause }),
 	});
@@ -406,7 +501,7 @@ async function openBrowserStore({
 	}
 	const database = built.data;
 
-	function snapshot(): DurableState {
+	function snapshot(): BrowserCheckpoint {
 		const updates = database.all<{ seq: number; bytes: Uint8Array }>(
 			'SELECT seq, bytes FROM _updates WHERE document = ? ORDER BY seq',
 			[APP_DOCUMENT],
@@ -462,7 +557,7 @@ async function openBrowserStore({
 			return;
 		}
 		const state = snapshot();
-		writing = writeDurable(durable, state)
+		writing = writeCheckpoint(durable, state)
 			.catch((cause) => {
 				// First failure wins: a durable copy that has fallen behind stays
 				// behind, so later failures are consequences.
@@ -478,52 +573,21 @@ async function openBrowserStore({
 			});
 	}
 
-	const store = createStore({
+	return Ok({
 		database,
-		dispose: () => {
-			durable.close();
-			releaseDocument(address);
+		close: () => durable.close(),
+		persistDurable,
+		durability: () => durability,
+		async whenDurable(): Promise<Result<void, StoreError>> {
+			while (writing !== undefined) await writing;
+			return durability.healthy
+				? Ok(undefined)
+				: StoreError.StorageFailed({
+						cause: new Error(`${durability.name}: ${durability.message}`),
+					});
+		},
+		async drain(): Promise<void> {
+			while (writing !== undefined) await writing;
 		},
 	});
-
-	// `onCommitted` fires for local writes, application row-document writes, and
-	// arrived remote bytes alike. The store contract says it is strictly wider
-	// than `onLocalWork`, so it alone is correct and sufficient.
-	const stopCommitted = store.onCommitted(persistDurable);
-
-	return Ok(
-		Object.freeze({
-			...store,
-			get sync() {
-				return store.sync;
-			},
-			durability: () => durability,
-			async whenDurable(): Promise<Result<void, StoreError>> {
-				while (writing !== undefined) await writing;
-				return durability.healthy
-					? Ok(undefined)
-					: StoreError.StorageFailed({
-							cause: new Error(`${durability.name}: ${durability.message}`),
-						});
-			},
-			async discard(): Promise<Result<void, StoreError>> {
-				// Dispose first, in the wrapper's own order: stop the write-behind
-				// before deleting, or a commit racing this call would re-create the
-				// database it is trying to remove. Disposing also closes our own
-				// IndexedDB connection, so the delete is not blocked by ourselves.
-				stopCommitted();
-				while (writing !== undefined) await writing;
-				await store[Symbol.asyncDispose]();
-				return tryAsync({
-					try: () => deleteIndexedDb(address),
-					catch: (cause) => StoreError.StorageFailed({ cause }),
-				});
-			},
-			async [Symbol.asyncDispose]() {
-				stopCommitted();
-				while (writing !== undefined) await writing;
-				await store[Symbol.asyncDispose]();
-			},
-		}) as BrowserStore,
-	);
 }

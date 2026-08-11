@@ -10,7 +10,7 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
-import type { Store } from '../store/store.js';
+import type { ReplicaStore } from '../store/store.js';
 import {
 	CHUNK_BYTES,
 	createChunkCollector,
@@ -183,7 +183,7 @@ export function createSyncClient({
 	/** Guards the authority's in-memory reassembly, and mirrors its limit. */
 	maxBufferedBytes = 64 * 1024 * 1024,
 }: {
-	store: Store;
+	store: ReplicaStore;
 	idleMs?: number;
 	schedule?: Schedule;
 	maxBufferedBytes?: number;

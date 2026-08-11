@@ -18,7 +18,7 @@ import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
-import { createStore } from '../src/store/store.js';
+import { createReplicaStore } from '../src/store/store.js';
 
 const lens = defineLens({
 	namespace: 'so.epicenter.honeycrisp',
@@ -31,7 +31,7 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
 }
 
 function open() {
-	const store = createStore({
+	const store = createReplicaStore({
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	return { store, db: expectOk(store.bind(lens)) };

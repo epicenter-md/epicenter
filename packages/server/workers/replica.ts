@@ -1,9 +1,9 @@
 /**
  * Test-only: a replica that lives inside `workerd`, driven by the real driver.
  *
- * It is a Durable Object for one reason. A replica is a `Store`, a `Store` is
+ * It is a Durable Object for one reason. A replica is a `ReplicaStore`, a store is
  * SQLite, and the only synchronous SQLite inside `workerd` is a Durable Object's
- * own storage. Everything else here is the deployed client: `createStore`,
+ * own storage. Everything else here is the deployed client: `createReplicaStore`,
  * `createSyncConnection` with the real supersession rule, and `rebuildWorkspace`
  * over a real WebSocket and the real routes, so a test can assert on the rows
  * a device actually holds rather than on frames a harness counted.
@@ -16,7 +16,7 @@
  * entry mounts it, so nothing deployable grows a class that exists for a test.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { createStore, defineLens, type Store } from '@epicenter/data';
+import { createReplicaStore, defineLens, type ReplicaStore } from '@epicenter/data';
 import {
 	createSyncConnection,
 	rebuildWorkspace,
@@ -34,7 +34,7 @@ const lens = defineLens({
 	tables: { notes: { title: 'string' } },
 });
 
-function bindNotes(store: Store) {
+function bindNotes(store: ReplicaStore) {
 	const bound = store.bind(lens);
 	if (bound.error !== null) throw bound.error;
 	return bound.data;
@@ -59,7 +59,7 @@ type Env = { SELF: { fetch(request: Request): Promise<Response> } };
 export class StoreTestReplica extends DurableObject<Env> {
 	private db: ReturnType<typeof bindNotes> | undefined;
 	private connection: SyncConnection | undefined;
-	private store: Store | undefined;
+	private store: ReplicaStore | undefined;
 	private bearer = '';
 	private origin = '';
 	private adoptions = 0;
@@ -86,7 +86,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 		const database = createDurableObjectSqliteAdapter(
 			this.ctx.storage as unknown as DurableObjectSqliteStorage,
 		);
-		this.store = createStore({ database });
+		this.store = createReplicaStore({ database });
 		this.db = bindNotes(this.store);
 		if (connect) this.startSync();
 	}

@@ -19,7 +19,7 @@ import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
-import { createStore, type LensView } from '../store/store.js';
+import { createReplicaStore, type LensView } from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
 import { createSyncConnection, type SyncDial } from './connection.js';
 import { encodeFrame } from './frames.js';
@@ -123,7 +123,7 @@ function openDriven({
 	unacknowledgedMs?: number;
 	backoff?: (attempts: number) => number;
 }) {
-	const store = createStore({
+	const store = createReplicaStore({
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const db = expectOk(store.bind(lens)) as LensView<typeof lens>;
@@ -478,7 +478,7 @@ describe('a dial that can never succeed stops the driver for good', () => {
 		clock: Clock;
 		denyEvery: boolean;
 	}) {
-		const store = createStore({
+		const store = createReplicaStore({
 			database: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const db = expectOk(store.bind(lens)) as LensView<typeof lens>;
@@ -587,7 +587,7 @@ describe('a foreign document name supersedes the replica, and nothing else does 
 		/** Frames the door sends this dial before closing, if any. */
 		answers: (dial: number) => Uint8Array[];
 	}) {
-		const store = createStore({
+		const store = createReplicaStore({
 			database: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const db = expectOk(store.bind(lens)) as LensView<typeof lens>;

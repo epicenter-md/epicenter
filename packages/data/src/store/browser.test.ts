@@ -28,7 +28,7 @@ import { asPrincipalId } from '@epicenter/identity';
 import { defineLens } from '@epicenter/lens';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
-import { open } from './browser.js';
+import { openAccount, openDevice } from './browser.js';
 
 /** One namespace per concern, so tests share no IndexedDB state. */
 function lensFor(label: string) {
@@ -44,6 +44,12 @@ const BOB = asPrincipalId('bob');
 const deviceAddress = (namespace: string) => `epicenter/${namespace}/device`;
 const accountAddress = (namespace: string, principalId: string) =>
 	`epicenter/${namespace}/account/${principalId}`;
+
+const openDeviceData = (lens: ReturnType<typeof lensFor>) => openDevice(lens);
+const openAccountData = (
+	lens: ReturnType<typeof lensFor>,
+	principalId: typeof ALICE,
+) => openAccount(lens, { principalId });
 
 function titles(app: {
 	tables: {
@@ -66,13 +72,9 @@ async function databaseNames(): Promise<string[]> {
 describe('one device document and one account replica per account', () => {
 	test('the device document and two accounts open at once, into their own databases', async () => {
 		const lens = lensFor('pair');
-		const device = expectOk(await open(lens, { owner: 'device' }));
-		const alice = expectOk(
-			await open(lens, { owner: 'account', principalId: ALICE }),
-		);
-		const bob = expectOk(
-			await open(lens, { owner: 'account', principalId: BOB }),
-		);
+		const device = expectOk(await openDeviceData(lens));
+		const alice = expectOk(await openAccountData(lens, ALICE));
+		const bob = expectOk(await openAccountData(lens, BOB));
 
 		expectOk(device.tables.notes.create({ title: 'mine alone' }));
 		expectOk(alice.tables.notes.create({ title: "alice's" }));
@@ -93,36 +95,28 @@ describe('one device document and one account replica per account', () => {
 
 	test('a second open of one address is refused, and another account is not that address', async () => {
 		const lens = lensFor('claim');
-		const alice = expectOk(
-			await open(lens, { owner: 'account', principalId: ALICE }),
-		);
-		const again = expectErr(
-			await open(lens, { owner: 'account', principalId: ALICE }),
-		);
+		const alice = expectOk(await openAccountData(lens, ALICE));
+		const again = expectErr(await openAccountData(lens, ALICE));
 		expect(again.name).toBe('AlreadyOpen');
 
 		// Another account's replica is a different document, so it opens.
-		const bob = expectOk(
-			await open(lens, { owner: 'account', principalId: BOB }),
-		);
+		const bob = expectOk(await openAccountData(lens, BOB));
 		await bob[Symbol.asyncDispose]();
 		await alice[Symbol.asyncDispose]();
 
 		// Disposal releases the claim, so the same address opens again.
-		const reopened = expectOk(
-			await open(lens, { owner: 'account', principalId: ALICE }),
-		);
+		const reopened = expectOk(await openAccountData(lens, ALICE));
 		await reopened[Symbol.asyncDispose]();
 	});
 
 	test('every address survives a close-and-reopen under its own name', async () => {
 		const lens = lensFor('reopen');
-		for (const [target, title] of [
-			[{ owner: 'device' }, 'kept device work'],
-			[{ owner: 'account', principalId: ALICE }, "kept alice's"],
-			[{ owner: 'account', principalId: BOB }, "kept bob's"],
+		for (const [openDocument, title] of [
+			[() => openDeviceData(lens), 'kept device work'],
+			[() => openAccountData(lens, ALICE), "kept alice's"],
+			[() => openAccountData(lens, BOB), "kept bob's"],
 		] as const) {
-			const opened = expectOk(await open(lens, target));
+			const opened = expectOk(await openDocument());
 			expectOk(opened.tables.notes.create({ title }));
 			await opened[Symbol.asyncDispose]();
 		}
@@ -130,13 +124,9 @@ describe('one device document and one account replica per account', () => {
 		// Retention is the whole reason the account is in the address: coming
 		// back to an account finds that account's replica, not the last one to
 		// have been open.
-		const device = expectOk(await open(lens, { owner: 'device' }));
-		const alice = expectOk(
-			await open(lens, { owner: 'account', principalId: ALICE }),
-		);
-		const bob = expectOk(
-			await open(lens, { owner: 'account', principalId: BOB }),
-		);
+		const device = expectOk(await openDeviceData(lens));
+		const alice = expectOk(await openAccountData(lens, ALICE));
+		const bob = expectOk(await openAccountData(lens, BOB));
 		expect(titles(device)).toEqual(['kept device work']);
 		expect(titles(alice)).toEqual(["kept alice's"]);
 		expect(titles(bob)).toEqual(["kept bob's"]);
@@ -148,20 +138,16 @@ describe('one device document and one account replica per account', () => {
 	test('discarding one account replica deletes only that account database', async () => {
 		const lens = lensFor('discard');
 		{
-			const device = expectOk(await open(lens, { owner: 'device' }));
+			const device = expectOk(await openDeviceData(lens));
 			expectOk(device.tables.notes.create({ title: 'device work' }));
 			await device[Symbol.asyncDispose]();
 
-			const bob = expectOk(
-				await open(lens, { owner: 'account', principalId: BOB }),
-			);
+			const bob = expectOk(await openAccountData(lens, BOB));
 			expectOk(bob.tables.notes.create({ title: "bob's work" }));
 			await bob[Symbol.asyncDispose]();
 		}
 
-		const alice = expectOk(
-			await open(lens, { owner: 'account', principalId: ALICE }),
-		);
+		const alice = expectOk(await openAccountData(lens, ALICE));
 		expectOk(alice.tables.notes.create({ title: 'doomed replica' }));
 		expectOk(await alice.store.discard());
 
@@ -171,17 +157,13 @@ describe('one device document and one account replica per account', () => {
 		expect(names).toContain(deviceAddress(lens.namespace));
 
 		// Alice rejoins at zero; nobody else moved.
-		const rejoined = expectOk(
-			await open(lens, { owner: 'account', principalId: ALICE }),
-		);
+		const rejoined = expectOk(await openAccountData(lens, ALICE));
 		expect(titles(rejoined)).toEqual([]);
 		await rejoined[Symbol.asyncDispose]();
-		const bob = expectOk(
-			await open(lens, { owner: 'account', principalId: BOB }),
-		);
+		const bob = expectOk(await openAccountData(lens, BOB));
 		expect(titles(bob)).toEqual(["bob's work"]);
 		await bob[Symbol.asyncDispose]();
-		const device = expectOk(await open(lens, { owner: 'device' }));
+		const device = expectOk(await openDeviceData(lens));
 		expect(titles(device)).toEqual(['device work']);
 		await device[Symbol.asyncDispose]();
 	});
@@ -191,18 +173,13 @@ describe('one device document and one account replica per account', () => {
 		const before = await databaseNames();
 
 		const refused = expectErr(
-			await open(lens, {
-				owner: 'account',
-				principalId: asPrincipalId('   '),
-			}),
+			await openAccount(lens, { principalId: asPrincipalId('   ') }),
 		);
 		expect(refused.name).toBe('Unaddressable');
 		expect(await databaseNames()).toEqual(before);
 
 		// And the refusal held no claim, so a real account still opens.
-		const alice = expectOk(
-			await open(lens, { owner: 'account', principalId: ALICE }),
-		);
+		const alice = expectOk(await openAccountData(lens, ALICE));
 		await alice[Symbol.asyncDispose]();
 	});
 });
@@ -250,7 +227,7 @@ describe('the clean break: storage from before the account-scoped address', () =
 			expect.arrayContaining(supersededNames(lens.namespace)),
 		);
 
-		const device = expectOk(await open(lens, { owner: 'device' }));
+		const device = expectOk(await openDeviceData(lens));
 		expect(titles(device)).toEqual([]);
 		for (const name of supersededNames(lens.namespace)) {
 			expect(await databaseNames()).not.toContain(name);
@@ -266,9 +243,7 @@ describe('the clean break: storage from before the account-scoped address', () =
 		}
 		const oldAlice = `epicenter/${lens.namespace}/workspace/${ALICE}`;
 		await seedSupersededDatabase(oldAlice);
-		const alice = expectOk(
-			await open(lens, { owner: 'account', principalId: ALICE }),
-		);
+		const alice = expectOk(await openAccountData(lens, ALICE));
 		expect(titles(alice)).toEqual([]);
 		for (const name of supersededNames(lens.namespace)) {
 			expect(await databaseNames()).not.toContain(name);

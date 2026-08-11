@@ -25,7 +25,7 @@ import { Database } from 'bun:sqlite';
 import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
-import { createStore, type Store } from '../../src/store/store.js';
+import { createReplicaStore, type ReplicaStore } from '../../src/store/store.js';
 import {
 	createSyncClient,
 	createSyncConnection,
@@ -67,7 +67,7 @@ async function stat(app: string = application): Promise<Stat> {
 }
 
 function openReplica() {
-	const store = createStore({
+	const store = createReplicaStore({
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const bound = store.bind(lens);
@@ -463,7 +463,7 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 	/** How many sockets each side has opened, which is how a recovery is counted. */
 	const dials = { author: 0, reader: 0 };
 
-	function drive(side: 'author' | 'reader', store: Store) {
+	function drive(side: 'author' | 'reader', store: ReplicaStore) {
 		return createSyncConnection({
 			store,
 			idleMs: 5,

@@ -1,9 +1,9 @@
 /**
  * THROWAWAY, and test-only: a replica that lives inside `workerd`.
  *
- * It is a Durable Object for one reason. A replica is a `Store`, a `Store` is
+ * It is a Durable Object for one reason. A replica is a `ReplicaStore`, a store is
  * SQLite, and the only synchronous SQLite inside `workerd` is a Durable Object's
- * own storage. Everything else here is the deployed client: `createStore`,
+ * own storage. Everything else here is the deployed client: `createReplicaStore`,
  * `createSyncClient` and a real WebSocket to the authority, so a test can assert
  * on the rows a device actually holds rather than on frames a harness counted.
  *
@@ -12,7 +12,7 @@
  * deploys grows a class that exists for a test.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { createStore, type Store } from '@epicenter/data';
+import { createReplicaStore, type ReplicaStore } from '@epicenter/data';
 import {
 	createSyncClient,
 	decodeFrame,
@@ -34,10 +34,10 @@ const lens = defineLens({
  *
  * A named function rather than an inline call, because `bind` is generic over
  * the lens and this is what carries `notes` and its `title` column into the
- * field type. Reaching for `ReturnType<Store['bind']>` instead loses the
+ * field type. Reaching for `ReturnType<ReplicaStore['bind']>` instead loses the
  * instantiation and every row silently becomes `any`.
  */
-function bindNotes(store: Store) {
+function bindNotes(store: ReplicaStore) {
 	const bound = store.bind(lens);
 	if (bound.error !== null) throw bound.error;
 	return bound.data;
@@ -79,7 +79,7 @@ export class SyncLabReplica extends DurableObject<Env> {
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		const store = createStore({
+		const store = createReplicaStore({
 			database: createDurableObjectSqliteAdapter(
 				ctx.storage as unknown as DurableObjectSqliteStorage,
 			),

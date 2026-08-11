@@ -15,7 +15,7 @@ import { defineLens } from '@epicenter/lens';
 import type { Result } from 'wellcrafted/result';
 
 import { openMemory } from '../store/bun.js';
-import type { ApplicationOf } from '../store/store.js';
+import type { DataOf } from '../store/store.js';
 import {
 	type RebuiltState,
 	rebuildDocument,
@@ -41,7 +41,7 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
  * while real churn leaves skeletons that cannot merge, which is the dead
  * weight ADR-0219 priced at about two items per deleted row.
  */
-function agedApplication(): ApplicationOf<typeof lens> {
+function agedApplication(): DataOf<typeof lens> {
 	const app = openMemory(lens);
 	const keep: string[] = [];
 	for (let index = 0; index < 100; index += 1) {

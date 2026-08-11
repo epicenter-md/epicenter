@@ -90,7 +90,7 @@ import { join } from 'node:path';
 import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
-import { createStore } from '../../src/store/store.js';
+import { createReplicaStore } from '../../src/store/store.js';
 import { openSyncAuthority } from '../../src/sync/authority.js';
 
 const lens = defineLens({
@@ -198,7 +198,7 @@ function build(
 	const authority = openSyncAuthority({
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	const store = createStore({
+	const store = createReplicaStore({
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const bound = store.bind(lens);
@@ -402,7 +402,7 @@ type Expectation = {
 
 function apply(packed: Uint8Array, expectation: Expectation): ApplyReport {
 	const updates = unpackPayload(packed);
-	const store = createStore({
+	const store = createReplicaStore({
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const bound = store.bind(lens);

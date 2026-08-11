@@ -6,11 +6,8 @@
  */
 import { defineLens } from '@epicenter/lens';
 
-import {
-	type BrowserStore,
-	open as openBrowser,
-} from '../../../src/store/browser.js';
-import type { ApplicationOf } from '../../../src/store/store.js';
+import { type BrowserStore, openDevice } from '../../../src/store/browser.js';
+import type { DataOf } from '../../../src/store/store.js';
 
 /**
  * Two namespaces, because a namespace is what makes two stores two stores.
@@ -30,7 +27,7 @@ const lenses = {
 	}),
 } as const;
 
-type ProbeApplication = ApplicationOf<(typeof lenses)['vault'], BrowserStore>;
+type ProbeApplication = DataOf<(typeof lenses)['vault'], BrowserStore>;
 
 let db: ProbeApplication | undefined;
 
@@ -50,9 +47,9 @@ Object.assign(globalThis, {
 		if (lens === undefined) return { error: `no lens named ${name}` };
 		// The device document: this probe proves durability, and a device
 		// document is the one that never has a sync story to confound it.
-		const opened = await openBrowser(lens, { owner: 'device' });
+		const opened = await openDevice(lens);
 		if (opened.error !== null) return { error: opened.error.message };
-		db = opened.data as ProbeApplication;
+		db = opened.data;
 		show({ opened: name, namespace: lens.namespace });
 		return { ok: true };
 	},

@@ -9,7 +9,7 @@ Four entry points, and no more:
 | --- | --- |
 | `@epicenter/data` | the store surface, plus the Lens vocabulary re-exported from `@epicenter/lens` |
 | `@epicenter/data/bun` | `open(lens, { root })`, and `openMemory(lens)` for tests |
-| `@epicenter/data/browser` | `open(lens, { owner: 'device' })`, and `open(lens, { owner: 'account', principalId })` |
+| `@epicenter/data/browser` | `openDevice(lens)`, and `openAccount(lens, { principalId })` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 
 A Bun opener imports `bun:sqlite` and a browser opener imports a WASM build, so

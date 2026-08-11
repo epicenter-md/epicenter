@@ -15,7 +15,7 @@ import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
 import { copyBytes } from './log.js';
-import { createStore } from './store.js';
+import { createReplicaStore } from './store.js';
 
 const lens = defineLens({
 	namespace: 'so.epicenter.honeycrisp',
@@ -25,7 +25,7 @@ const lens = defineLens({
 function open() {
 	const raw = new Database(':memory:');
 	const database = createBunSqliteAdapter(raw);
-	const store = createStore({ database });
+	const store = createReplicaStore({ database });
 	const { data: db, error } = store.bind(lens);
 	if (error !== null) throw error;
 	return {
@@ -197,9 +197,9 @@ describe('the cursor is a log position, and never a state vector', () => {
 
 	test('advancing survives a reopen of the same file', () => {
 		const database = createBunSqliteAdapter(new Database(':memory:'));
-		expectOk(createStore({ database }).sync.advance(7));
+		expectOk(createReplicaStore({ database }).sync.advance(7));
 
-		expect(expectOk(createStore({ database }).sync.cursor())).toBe(7);
+		expect(expectOk(createReplicaStore({ database }).sync.cursor())).toBe(7);
 	});
 });
 

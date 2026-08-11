@@ -399,39 +399,45 @@ export type LensView<TLens> = {
 };
 
 /**
- * One opened application: what the lens declared, and the file under `store`.
+ * One application's opened data: what the lens declared, and the file under
+ * `store`.
+ *
+ * Named for what it is to the caller. The application itself is a bigger
+ * thing that owns UI, state, and sync attachments; what an opener returns is
+ * that application's DATA, which is exactly what the reference app already
+ * called it (`HoneycrispData`, bound as `db`).
  *
  * The split is by who calls it. `tables`, `kv` and `query` are what an
- * application does; `store` holds sync, pressure, and the CRDT verbs a
- * transport needs and a feature never touches. Merging the two put thirteen
- * names on one object where four are used, and cost a forwarded getter and a
- * cast to build it.
+ * application does; `store` holds pressure, the CRDT verbs, and, on a
+ * replica, sync: what a transport needs and a feature never touches. Merging
+ * the two put thirteen names on one object where four are used, and cost a
+ * forwarded getter and a cast to build it.
  *
  * `store.bind` stays reachable, and that is deliberate. A namespace may carry
  * more than one interpretation (ADR-0160), so taking a second view of the file
  * this application already holds is the supported way to do it: one document,
  * two views, no second open to refuse.
  */
-export type ApplicationOf<
+export type DataOf<
 	TLens,
-	TStore extends Store = Store,
+	TStore extends Store = ReplicaStore,
 > = LensView<TLens> & {
-	/** This application's file: sync, pressure, and the CRDT verbs. */
+	/** This application's file: pressure, the CRDT verbs, and replica sync. */
 	readonly store: TStore;
-	/** Dispose what you opened, so `await using` works on the application. */
+	/** Dispose what you opened, so `await using` works on the data. */
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
 /**
  * Compose one file's verbs with one lens's view of it.
  *
- * Both openers end here, so the shape an application sees is decided once
+ * Every opener ends here, so the shape an application sees is decided once
  * rather than per runtime.
  */
-export function asApplication<TLens, TStore extends Store>(
+export function asData<TLens, TStore extends Store>(
 	store: TStore,
 	view: LensView<TLens>,
-): ApplicationOf<TLens, TStore> {
+): DataOf<TLens, TStore> {
 	return Object.freeze({
 		...view,
 		store,
@@ -586,6 +592,15 @@ export type StorePressure = {
 	itemsPerLiveRow: number;
 };
 
+/**
+ * One opened document's runtime: the live Yjs state and its durable log.
+ *
+ * Every verb here is a fact about the document itself: bind a lens over it,
+ * measure it, encode it, hear it commit. None implies an authority, which is
+ * what separates this from `ReplicaStore`: a device-owned document is a
+ * complete store all by itself, owes its work to nobody, and never receives a
+ * foreign byte (ADR-0233).
+ */
 export type Store = {
 	/**
 	 * The typed view of this file through one lens.
@@ -609,6 +624,60 @@ export type Store = {
 	bind<const TLens extends LensJson>(
 		lens: TLens,
 	): Result<LensView<TLens>, LensParseError | StoreError>;
+	/**
+	 * How much of this document is dead weight.
+	 *
+	 * The one number to watch, and the reason it exists rather than a design.
+	 * Deleting a row leaves a tombstone that every device pays for in memory on
+	 * every load, forever, and only a rebuild reclaims one
+	 * (`evidence/bench/tombstones.ts`). Whether that ever matters is a question
+	 * about how much a real person deletes, and nobody has that number.
+	 *
+	 * The arithmetic it feeds: memory tracks struct count at roughly 1 KB of rss
+	 * per item, and a dead row costs about 2. So 50,000 deletions is around
+	 * 100 MB, which is 14 deletions a day sustained for a decade. A vault of a
+	 * thousand notes does not get there; something with real churn might.
+	 *
+	 * Watch `itemsPerLiveRow`. A healthy application sits near the item cost of
+	 * one row, about 7 for a note with a body. Ten times that means the document
+	 * is mostly corpse, and the decision about what to do becomes worth having
+	 * against a measurement rather than against a guess.
+	 */
+	pressure(): Result<StorePressure, StoreError>;
+	/** This document's clocks: which authored state it holds, from whom. */
+	stateVector(): Uint8Array;
+	/** Everything this document has that the given state vector does not. */
+	encodeStateSince(stateVector?: Uint8Array): Uint8Array;
+	/**
+	 * Hear when anything durable changed, whoever authored it.
+	 *
+	 * Strictly wider than `onLocalWork`, and the two are not interchangeable.
+	 * The transport wants to know that THIS replica owes the authority
+	 * something, so bytes that arrived from a peer must not nudge it. A store
+	 * whose durable log is behind a port wants to know that the log moved at
+	 * all, and an arrived update moves it exactly as much as a local write does.
+	 */
+	onCommitted(listener: () => void): () => void;
+	[Symbol.asyncDispose](): Promise<void>;
+};
+
+/**
+ * A store that is one replica of an authority's current document.
+ *
+ * Everything added over `Store` is replica-against-authority vocabulary:
+ * bytes arriving from a peer, the obligation log of what this device authored
+ * and the authority has not taken, and the document identity that decides
+ * whether the two may exchange at all (ADR-0231). A store without an
+ * authority never earns these verbs; handing them to one anyway is how a
+ * device document grew an outbox nothing could ever drain.
+ */
+export type ReplicaStore = Store & ReplicaVerbs;
+
+/**
+ * What only a replica can do, kept nameable on its own so the factory can
+ * compose the two store shapes without asserting either one.
+ */
+type ReplicaVerbs = {
 	/**
 	 * Apply bytes from a peer. Durable, and never republished as local work.
 	 *
@@ -635,30 +704,6 @@ export type Store = {
 	 * advancing past the gap makes the loss permanent.
 	 */
 	hasUnresolvedDependencies(): boolean;
-	/**
-	 * How much of this document is dead weight.
-	 *
-	 * The one number to watch, and the reason it exists rather than a design.
-	 * Deleting a row leaves a tombstone that every device pays for in memory on
-	 * every load, forever, and only a rebuild reclaims one
-	 * (`evidence/bench/tombstones.ts`). Whether that ever matters is a question
-	 * about how much a real person deletes, and nobody has that number.
-	 *
-	 * The arithmetic it feeds: memory tracks struct count at roughly 1 KB of rss
-	 * per item, and a dead row costs about 2. So 50,000 deletions is around
-	 * 100 MB, which is 14 deletions a day sustained for a decade. A vault of a
-	 * thousand notes does not get there; something with real churn might.
-	 *
-	 * Watch `itemsPerLiveRow`. A healthy application sits near the item cost of
-	 * one row, about 7 for a note with a body. Ten times that means the document
-	 * is mostly corpse, and the decision about what to do becomes worth having
-	 * against a measurement rather than against a guess.
-	 */
-	pressure(): Result<StorePressure, StoreError>;
-	/** This replica's clocks, which is the whole sync manifest (ADR-0212). */
-	stateVector(): Uint8Array;
-	/** Everything this replica has that the given state vector does not. */
-	encodeStateSince(stateVector?: Uint8Array): Uint8Array;
 	/** What this replica owes the authority, and what it has read from it. */
 	readonly sync: ClientLog;
 	/**
@@ -677,26 +722,9 @@ export type Store = {
 	 * forgotten about.
 	 */
 	onLocalWork(listener: () => void): () => void;
-	/**
-	 * Hear when anything durable changed, whoever authored it.
-	 *
-	 * Strictly wider than `onLocalWork`, and the two are not interchangeable.
-	 * The transport wants to know that THIS replica owes the authority
-	 * something, so bytes that arrived from a peer must not nudge it. A store
-	 * whose durable log is behind a port wants to know that the log moved at
-	 * all, and an arrived update moves it exactly as much as a local write does.
-	 */
-	onCommitted(listener: () => void): () => void;
-	[Symbol.asyncDispose](): Promise<void>;
 };
 
-export function createStore({
-	database,
-	history,
-	now = () => Date.now(),
-	dispose = () => undefined,
-	log = createLogger('data/store'),
-}: {
+type CreateStoreOptions = {
 	database: SqliteDatabase;
 	history?: SqliteDatabase;
 	now?: () => number;
@@ -711,7 +739,55 @@ export function createStore({
 	 * subscriber look like a store that stopped notifying.
 	 */
 	log?: Logger;
-}): Store {
+};
+
+/**
+ * Open a document with no remote authority, the device document of ADR-0233.
+ *
+ * No commit is owed to anyone, so nothing joins the outbox and none of the
+ * replica verbs exists, at the type or at runtime. Without this, a device
+ * document enqueued every commit into an outbox that only a sync
+ * acknowledgement can drain, so its durable record grew with every write it
+ * ever took, forever.
+ */
+export function createStore(options: CreateStoreOptions): Store {
+	return createStoreEngine(options, 'none');
+}
+
+/**
+ * Open a store that is one replica of an authority's current document.
+ *
+ * Every local commit joins the outbox until the authority acknowledges it,
+ * and the replica verbs (`sync`, `applyRemote`, `onLocalWork`,
+ * `hasUnresolvedDependencies`) exist. The two constructors share one private
+ * engine because the obligation is transactional: authored bytes join the
+ * outbox in the same SQLite transaction as the log append and the projection,
+ * so a crash can never leave a write durable locally and unowed. A wrapper
+ * subscribing from outside would commit the obligation in a second
+ * transaction and break exactly that.
+ */
+export function createReplicaStore(options: CreateStoreOptions): ReplicaStore {
+	return createStoreEngine(options, 'remote');
+}
+
+function createStoreEngine(
+	options: CreateStoreOptions,
+	replication: 'none',
+): Store;
+function createStoreEngine(
+	options: CreateStoreOptions,
+	replication: 'remote',
+): ReplicaStore;
+function createStoreEngine(
+	{
+		database,
+		history,
+		now = () => Date.now(),
+		dispose = () => undefined,
+		log = createLogger('data/store'),
+	}: CreateStoreOptions,
+	replication: 'none' | 'remote',
+): Store | ReplicaStore {
 	applyStoreSchema(database);
 	// The cutover, enforced at every open (ADR-0231): a file holding state
 	// without a format certificate predates the document identity, so nothing
@@ -852,8 +928,10 @@ export function createStore({
 					update: authored,
 					takenAt: now(),
 				});
-				enqueueOutbox(database, authored);
-				owedSomething = true;
+				if (replication !== 'none') {
+					enqueueOutbox(database, authored);
+					owedSomething = true;
+				}
 				committedSomething = true;
 			});
 			// Before the throw, deliberately. The live document already holds the
@@ -913,9 +991,12 @@ export function createStore({
 				});
 				// One transaction holds the local log, the projection, and the claim
 				// that these bytes still owe the authority a delivery. A crash cannot
-				// leave a write durable locally and unowed.
-				enqueueOutbox(database, update);
-				owedSomething = true;
+				// leave a write durable locally and unowed. A store with no
+				// authority owes nobody, so it makes no claim to crash out of.
+				if (replication !== 'none') {
+					enqueueOutbox(database, update);
+					owedSomething = true;
+				}
 				committedSomething = true;
 			}
 			project();
@@ -1349,7 +1430,82 @@ export function createStore({
 		}) as TableHandle;
 	}
 
-	const store = Object.freeze({
+	/**
+	 * The replica verbs, or nothing at all.
+	 *
+	 * Composed rather than always present, so a store with no authority is
+	 * missing them at runtime exactly as the two constructors say it is at the
+	 * type: `'sync' in store` and the static picture agree.
+	 */
+	const replicaVerbs: ReplicaVerbs | undefined =
+		replication === 'none'
+			? undefined
+			: {
+					applyRemote(
+						update: Uint8Array,
+						opts?: { advanceTo?: number },
+					): Result<void, StoreError> {
+						const unusable = requireUsable();
+						if (unusable !== undefined) return Err(unusable);
+						// The RECEIVED bytes are what gets persisted, never what the document
+						// emitted in response to them. Measured against `@y/y@14.0.0-rc.24`: an
+						// update whose causal dependencies have not arrived is buffered into
+						// `store.pendingStructs`, `applyUpdateV2` returns normally, and the
+						// document emits NO `updateV2` event at all. Persisting emitted bytes
+						// therefore writes nothing, while the caller advances its cursor and the
+						// data is lost permanently with every layer reporting success.
+						pending = [];
+						const received = copyBytes(update);
+						const { error } = trySync({
+							try: () => Y.applyUpdateV2(index, received, remoteOrigin),
+							catch: (cause) => StoreError.StorageFailed({ cause }),
+						});
+						if (error !== null) return Err(error);
+						// Dropped deliberately: whatever the document emitted describes the same
+						// change these bytes already carry, and re-persisting it would duplicate
+						// the chain.
+						pending = [];
+						const authored = [received];
+						// The projection is rebuilt rather than patched, because a remote update
+						// does not say which rows it touched. Measured against
+						// `@y/y@14.0.0-rc.24`: `observeDeep` reports a nested row's field edit as
+						// an event on the TABLE ROOT with `keysChanged` empty, so the observer
+						// cannot name the row. A full rebuild is 2 ms on the real vault, and it
+						// is one code path instead of two that can disagree.
+						const applied = persist(() => {
+							for (const update of authored) {
+								appendUpdate({
+									database,
+									history,
+									document: APP_DOCUMENT,
+									update,
+									takenAt: now(),
+								});
+								committedSomething = true;
+							}
+							// With the bytes, never after them: the bookmark commits in the same
+							// step as what it accounts for, so no crash can leave foreign bytes
+							// behind a dial that still claims a fresh install (ADR-0231).
+							if (opts?.advanceTo !== undefined) {
+								writeCursor(database, APP_DOCUMENT, opts.advanceTo);
+							}
+							rebuildAllProjections();
+						});
+						// After the rebuild, which is the whole reason the ids were buffered:
+						// the `'delta'` that named them fired inside `applyUpdateV2` above,
+						// while the projection still described the state before it.
+						flushCommitted();
+						return applied;
+					},
+					sync: createClientLog(),
+					onLocalWork(listener: () => void): () => void {
+						localWorkListeners.add(listener);
+						return () => localWorkListeners.delete(listener);
+					},
+					hasUnresolvedDependencies: () => hasPendingStructs(index),
+				};
+
+	const base: Store = {
 		// One implementation, two doors onto it. The typed door exists so a lens
 		// authored as a literal carries its row types through; the untyped door is
 		// what a lens loaded from an application folder gets, where there is no
@@ -1363,72 +1519,10 @@ export function createStore({
 				LensView<TLens>,
 				LensParseError | StoreError
 			>,
-		applyRemote(
-			update: Uint8Array,
-			opts?: { advanceTo?: number },
-		): Result<void, StoreError> {
-			const unusable = requireUsable();
-			if (unusable !== undefined) return Err(unusable);
-			// The RECEIVED bytes are what gets persisted, never what the document
-			// emitted in response to them. Measured against `@y/y@14.0.0-rc.24`: an
-			// update whose causal dependencies have not arrived is buffered into
-			// `store.pendingStructs`, `applyUpdateV2` returns normally, and the
-			// document emits NO `updateV2` event at all. Persisting emitted bytes
-			// therefore writes nothing, while the caller advances its cursor and the
-			// data is lost permanently with every layer reporting success.
-			pending = [];
-			const received = copyBytes(update);
-			const { error } = trySync({
-				try: () => Y.applyUpdateV2(index, received, remoteOrigin),
-				catch: (cause) => StoreError.StorageFailed({ cause }),
-			});
-			if (error !== null) return Err(error);
-			// Dropped deliberately: whatever the document emitted describes the same
-			// change these bytes already carry, and re-persisting it would duplicate
-			// the chain.
-			pending = [];
-			const authored = [received];
-			// The projection is rebuilt rather than patched, because a remote update
-			// does not say which rows it touched. Measured against
-			// `@y/y@14.0.0-rc.24`: `observeDeep` reports a nested row's field edit as
-			// an event on the TABLE ROOT with `keysChanged` empty, so the observer
-			// cannot name the row. A full rebuild is 2 ms on the real vault, and it
-			// is one code path instead of two that can disagree.
-			const applied = persist(() => {
-				for (const update of authored) {
-					appendUpdate({
-						database,
-						history,
-						document: APP_DOCUMENT,
-						update,
-						takenAt: now(),
-					});
-					committedSomething = true;
-				}
-				// With the bytes, never after them: the bookmark commits in the same
-				// step as what it accounts for, so no crash can leave foreign bytes
-				// behind a dial that still claims a fresh install (ADR-0231).
-				if (opts?.advanceTo !== undefined) {
-					writeCursor(database, APP_DOCUMENT, opts.advanceTo);
-				}
-				rebuildAllProjections();
-			});
-			// After the rebuild, which is the whole reason the ids were buffered:
-			// the `'delta'` that named them fired inside `applyUpdateV2` above,
-			// while the projection still described the state before it.
-			flushCommitted();
-			return applied;
-		},
-		sync: createClientLog(),
-		onLocalWork(listener: () => void): () => void {
-			localWorkListeners.add(listener);
-			return () => localWorkListeners.delete(listener);
-		},
 		onCommitted(listener: () => void): () => void {
 			committedListeners.add(listener);
 			return () => committedListeners.delete(listener);
 		},
-		hasUnresolvedDependencies: () => hasPendingStructs(index),
 		pressure(): Result<StorePressure, StoreError> {
 			const unusable = requireUsable();
 			if (unusable !== undefined) return Err(unusable);
@@ -1461,8 +1555,13 @@ export function createStore({
 			index.destroy();
 			await dispose();
 		},
-	}) as Store;
-	return store;
+	};
+	// An authority-less store really has no replica keys at runtime, so
+	// `'sync' in store` agrees with what the constructors promise, and both
+	// arms typecheck structurally: no assertion decides what a store is.
+	return replicaVerbs === undefined
+		? Object.freeze(base)
+		: Object.freeze({ ...base, ...replicaVerbs });
 
 	/**
 	 * Rebuild every bound table's projection.

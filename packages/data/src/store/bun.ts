@@ -7,14 +7,14 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { claimDocument, releaseDocument } from './claims.js';
 import { applyHistorySchema } from './log.js';
 import {
-	type ApplicationOf,
-	asApplication,
-	createStore,
-	type Store,
+	asData,
+	createReplicaStore,
+	type DataOf,
+	type ReplicaStore,
 	StoreError,
 } from './store.js';
 
-export type BunStore = Store & {
+export type BunStore = ReplicaStore & {
 	/**
 	 * Delete this store's live file whole, disposing the store first.
 	 *
@@ -55,9 +55,7 @@ export async function open<const TLens extends LensJson>(
 		/** Whether collapse preserves what it supersedes (ADR-0214). */
 		keepHistory?: boolean;
 	},
-): Promise<
-	Result<ApplicationOf<TLens, BunStore>, StoreError | LensParseError>
-> {
+): Promise<Result<DataOf<TLens, BunStore>, StoreError | LensParseError>> {
 	const { error: claimError } = claimDocument(lens.namespace);
 	if (claimError !== null) return Err(claimError);
 
@@ -76,7 +74,7 @@ export async function open<const TLens extends LensJson>(
 		await store[Symbol.asyncDispose]().catch(() => undefined);
 		return Err(view.error);
 	}
-	return Ok(asApplication<TLens, BunStore>(store, view.data));
+	return Ok(asData<TLens, BunStore>(store, view.data));
 }
 
 /**
@@ -116,7 +114,7 @@ async function openBunStore({
 			: createBunSqliteAdapter(historyDatabase);
 	if (history !== undefined) applyHistorySchema(history);
 
-	const store = createStore({
+	const store = createReplicaStore({
 		database: createBunSqliteAdapter(live),
 		history,
 		dispose: () => {
@@ -129,11 +127,6 @@ async function openBunStore({
 	return Ok(
 		Object.freeze({
 			...store,
-			// Re-declared as a getter for the same reason `asApplication` does it:
-			// spread copies a getter's VALUE at the moment it runs.
-			get sync() {
-				return store.sync;
-			},
 			async discard(): Promise<Result<void, StoreError>> {
 				// Dispose first so the file handles are closed before the unlink,
 				// then delete the live file and its journals whole. The history
@@ -150,7 +143,7 @@ async function openBunStore({
 					catch: (cause) => StoreError.StorageFailed({ cause }),
 				});
 			},
-		}) as BunStore,
+		}),
 	);
 }
 
@@ -165,18 +158,18 @@ async function openBunStore({
  */
 export function openMemory<const TLens extends LensJson>(
 	lens: TLens,
-): ApplicationOf<TLens> {
+): DataOf<TLens, ReplicaStore> {
 	const store = openMemoryStore();
 	const view = store.bind(lens);
 	if (view.error !== null) throw view.error;
-	return asApplication(store, view.data);
+	return asData(store, view.data);
 }
 
-function openMemoryStore(): Store {
+function openMemoryStore(): ReplicaStore {
 	const live = new Database(':memory:');
 	const history = createBunSqliteAdapter(new Database(':memory:'));
 	applyHistorySchema(history);
-	return createStore({
+	return createReplicaStore({
 		database: createBunSqliteAdapter(live),
 		history,
 		dispose: () => live.close(),

@@ -17,7 +17,7 @@ import * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
 
 import {
-	createStore,
+	createReplicaStore,
 	type LensView,
 	type TableHandle,
 } from '../store/store.js';
@@ -116,7 +116,7 @@ function openReplica(
 	through: LensJson = lens,
 ) {
 	const database = createBunSqliteAdapter(new Database(':memory:'));
-	const store = createStore({ database });
+	const store = createReplicaStore({ database });
 	// One binding, two views of it: the typed view costs nothing and is honest
 	// for every replica running the default lens; a replica running another one
 	// reads through `bound`.

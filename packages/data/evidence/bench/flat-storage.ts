@@ -29,7 +29,7 @@ import { Database } from 'bun:sqlite';
 import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
-import { createStore } from '../../src/store/store.js';
+import { createReplicaStore } from '../../src/store/store.js';
 import { openSyncAuthority } from '../../src/sync/authority.js';
 
 const lens = defineLens({
@@ -43,7 +43,7 @@ const CHECKPOINT_EVERY = 500;
 const OPERATIONS = 6_000;
 
 function openReplica() {
-	const store = createStore({
+	const store = createReplicaStore({
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const bound = store.bind(lens);

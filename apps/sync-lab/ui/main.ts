@@ -7,7 +7,7 @@
  * thing no test in this repository can establish.
  */
 
-import { createStore } from '@epicenter/data';
+import { createReplicaStore } from '@epicenter/data';
 import { createSyncConnection } from '@epicenter/data/sync';
 import { defineLens } from '@epicenter/lens';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
@@ -27,7 +27,7 @@ const device =
 	})();
 
 const sqlite3 = await sqlite3InitModule();
-const store = createStore({
+const store = createReplicaStore({
 	database: createBrowserSqliteAdapter(new sqlite3.oo1.DB(':memory:') as never),
 });
 const bound = store.bind(lens);

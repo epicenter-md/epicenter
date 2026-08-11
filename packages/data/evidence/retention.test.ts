@@ -22,7 +22,7 @@ import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
-import { createStore } from '../src/store/store.js';
+import { createReplicaStore } from '../src/store/store.js';
 import { openSyncAuthority } from '../src/sync/authority.js';
 
 const lens = defineLens({
@@ -49,7 +49,7 @@ function contains(blobs: readonly Uint8Array[], needle: string): boolean {
 /** A device that wrote a note, pushed it, then deleted it. */
 function afterWritingAndDeleting() {
 	const database = createBunSqliteAdapter(new Database(':memory:'));
-	const store = createStore({ database });
+	const store = createReplicaStore({ database });
 	const db = expectOk(store.bind(lens));
 	const authorityDatabase = createBunSqliteAdapter(new Database(':memory:'));
 	const authority = openSyncAuthority({ database: authorityDatabase });
@@ -139,7 +139,7 @@ describe('and still in every log, for as long as the log exists', () => {
 
 		// And the arriving device shows nothing, which is why this is invisible
 		// rather than merely undesirable.
-		const arriving = createStore({
+		const arriving = createReplicaStore({
 			database: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const arrivingDb = expectOk(arriving.bind(lens));
