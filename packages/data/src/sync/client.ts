@@ -496,28 +496,28 @@ export function createSyncClient({
 						superseded = true;
 						return Ok(undefined);
 					}
-					// The one stamping point, and the one place `isPristine` is read:
-					// a defensive assertion at the bootstrap boundary, not a product
-					// concept. A workspace replica is never allowed to grow before it
-					// adopts the authority's document, and the application enforces
-					// that by keeping an unbound signed-in workspace unavailable; if
-					// local bytes exist here anyway (a private local document meeting
-					// sync for the first time), they belong to no authority document
-					// and are not a merge case: the host discards them and starts
+					// The one stamping point. The stamp itself refuses a store that
+					// grew before it was stamped (`Unstampable`), which is a
+					// defensive assertion at the bootstrap boundary rather than a
+					// product concept: a workspace replica is never allowed to grow
+					// before it adopts the authority's document, and the application
+					// enforces that by keeping an unbound signed-in workspace
+					// unavailable. Bytes that exist here anyway belong to no
+					// authority document and are not a merge case, so the refusal
+					// concludes `superseded` and the host discards them and starts
 					// again. The stamp commits durably before any foreign byte is
 					// applied and before any push can leave, because both are refused
 					// while `identity` is undefined.
 					if (identity === undefined) {
-						const { data: pristine, error: pristineError } =
-							store.sync.isPristine();
-						if (pristineError !== null || !pristine) {
-							superseded = true;
-							return Ok(undefined);
-						}
 						const { error: stampError } = store.sync.adoptDocumentIdentity(
 							frame.id,
 						);
-						if (stampError !== null) return Ok(undefined);
+						if (stampError !== null) {
+							// A storage failure leaves the replica unstamped to try again
+							// at the next announcement; only the refusal is a conclusion.
+							if (stampError.name === 'Unstampable') superseded = true;
+							return Ok(undefined);
+						}
 						identity = frame.id;
 					}
 					return Ok(undefined);

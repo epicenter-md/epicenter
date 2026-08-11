@@ -591,10 +591,12 @@ describe('a foreign document name supersedes the replica, and nothing else does 
 			database: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const db = expectOk(store.bind(lens)) as LensView<typeof lens>;
-		if (cursor > 0) expectOk(store.sync.advance(cursor));
+		// Stamped before the cursor moves, in the order every real replica
+		// follows: the stamp refuses a store that grew before it.
 		if (document !== undefined) {
 			expectOk(store.sync.adoptDocumentIdentity(document));
 		}
+		if (cursor > 0) expectOk(store.sync.advance(cursor));
 		let dials = 0;
 		let discarded = 0;
 		const connection = createSyncConnection({

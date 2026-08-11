@@ -156,6 +156,18 @@ export const StoreError = defineErrors({
 		message: 'A store subscriber threw while being told about a commit',
 		cause,
 	}),
+	/**
+	 * A document identity cannot be stamped onto a store already holding state.
+	 *
+	 * Membership is stamped at first entanglement, before any push leaves and
+	 * before any foreign byte applies, so a stampable store is necessarily
+	 * empty. State without an identity is unplaceable across the clean break
+	 * (ADR-0231): the caller discards it whole and rejoins, and nothing merges.
+	 */
+	Unstampable: () => ({
+		message:
+			'This store already holds state that belongs to no document, so it cannot adopt one; discard it and rejoin',
+	}),
 });
 export type StoreError = InferErrors<typeof StoreError>;
 
@@ -531,16 +543,13 @@ export type ClientLog = {
 	 */
 	documentIdentity(): Result<string | undefined, StoreError>;
 	/**
-	 * Whether this store holds no workspace document state at all.
+	 * Stamp membership, durably and before the first push leaves. First write
+	 * wins; membership changes only by discarding the file whole.
 	 *
-	 * Only a pristine store may bootstrap from an authority without declaring a
-	 * document identity. Any persisted bytes or pending work without an identity
-	 * are unplaceable across the clean break and must be discarded, never merged.
-	 */
-	isPristine(): Result<boolean, StoreError>;
-	/**
-	 * Stamp membership, durably and before the first push leaves. First
-	 * write wins; membership changes only by discarding the file whole.
+	 * Only an empty store can be stamped, because the stamp happens at first
+	 * entanglement and nothing may precede it. A store holding state without an
+	 * identity is refused with `Unstampable`: its bytes are unplaceable across
+	 * the clean break (ADR-0231) and must be discarded, never merged.
 	 */
 	adoptDocumentIdentity(id: string): Result<void, StoreError>;
 };
@@ -1500,8 +1509,16 @@ export function createStore({
 			documentIdentity(): Result<string | undefined, StoreError> {
 				return read(() => readDocumentIdentity(database));
 			},
-			isPristine(): Result<boolean, StoreError> {
-				return read(() => {
+			adoptDocumentIdentity(id: string): Result<void, StoreError> {
+				const unusable = requireUsable();
+				if (unusable !== undefined) return Err(unusable);
+				// The stamp lands only on an empty, unstamped store, checked here
+				// because this verb owns the invariant: any persisted bytes,
+				// pending work, or read progress without an identity are
+				// unplaceable across the clean break and must be discarded, never
+				// stamped into a document they may not belong to (ADR-0231).
+				const held = read(() => {
+					if (readDocumentIdentity(database) !== undefined) return 'stamped';
 					const updates =
 						database.all<SqliteRow & { count: number }>(
 							'SELECT COUNT(*) AS count FROM _updates',
@@ -1511,12 +1528,15 @@ export function createStore({
 							'SELECT COUNT(*) AS count FROM _outbox',
 						)[0]?.count ?? 0;
 					const cursor = readCursor(database, APP_DOCUMENT);
-					return updates === 0 && outbox === 0 && cursor === 0;
+					return updates === 0 && outbox === 0 && cursor === 0
+						? 'empty'
+						: 'holding';
 				});
-			},
-			adoptDocumentIdentity(id: string): Result<void, StoreError> {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
+				if (held.error !== null) return Err(held.error);
+				// First write wins, so a store that already carries its stamp has
+				// nothing to do; membership changes only by discarding the file.
+				if (held.data === 'stamped') return Ok(undefined);
+				if (held.data === 'holding') return StoreError.Unstampable();
 				// Marked committed so a write-behind host (the browser) persists it
 				// now rather than whenever the next local edit happens to land: the
 				// stamp is only worth anything if it is durable before the push it

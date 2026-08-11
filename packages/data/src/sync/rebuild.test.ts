@@ -166,8 +166,10 @@ function scriptedTransport(script: { replace: (url: URL) => Response }) {
 /** A synced store: stamped into a document, with a cursor. The lease's facts. */
 function syncedApplication(cursor: number, document = 'the-current-document') {
 	const app = openMemory(lens);
-	expectOk(app.tables.notes.create({ title: 'kept across compaction' }));
+	// Stamped first, in the order every real replica follows: the stamp
+	// refuses a store that grew before it.
 	expectOk(app.store.sync.adoptDocumentIdentity(document));
+	expectOk(app.tables.notes.create({ title: 'kept across compaction' }));
 	if (cursor > 0) expectOk(app.store.sync.advance(cursor));
 	return app;
 }

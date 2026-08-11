@@ -196,6 +196,36 @@ describe('the cursor is a log position, and never a state vector', () => {
 	});
 });
 
+describe('the stamp lands only on an empty store', () => {
+	test('a store that grew before it was stamped is refused with Unstampable', () => {
+		const { store, db } = open();
+		expectOk(db.tables.notes.create({ title: 'pre-bootstrap work' }));
+
+		const refused = store.sync.adoptDocumentIdentity('doc-1');
+		expect(refused.error?.name).toBe('Unstampable');
+		expect(expectOk(store.sync.documentIdentity())).toBeUndefined();
+	});
+
+	test('a stamped store keeps its first identity, and re-stamping is a no-op', () => {
+		const { store, db } = open();
+		expectOk(store.sync.adoptDocumentIdentity('doc-1'));
+		expectOk(db.tables.notes.create({ title: 'after the stamp' }));
+
+		// First write wins: membership never changes in place, even once the
+		// store holds state, and only discarding the file whole changes it.
+		expectOk(store.sync.adoptDocumentIdentity('doc-2'));
+		expect(expectOk(store.sync.documentIdentity())).toBe('doc-1');
+	});
+
+	test('read progress alone is a commitment: a moved cursor refuses the stamp', () => {
+		const { store } = open();
+		expectOk(store.sync.advance(3));
+
+		const refused = store.sync.adoptDocumentIdentity('doc-1');
+		expect(refused.error?.name).toBe('Unstampable');
+	});
+});
+
 describe('a row document root is created exactly once', () => {
 	test('two devices first-opening one note both keep their prose', () => {
 		// The window this closes. `document(id).get(name)` creates on miss, and a
