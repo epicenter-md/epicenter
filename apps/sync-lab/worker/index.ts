@@ -28,16 +28,24 @@ type Env = {
 };
 
 /**
- * A socket's position, kept where it survives hibernation.
+ * A socket's position and declared document, kept where they survive
+ * hibernation.
  *
  * The in-memory map is the fast path and the attachment is the fallback. They
  * can disagree only in the safe direction: a woken object reads a position that
  * is behind, re-sends entries the replica already has, and every one of them is
- * idempotent. The other direction would skip.
+ * idempotent. The other direction would skip. The document is set once at the
+ * dial and never moves.
  */
-function positionOf(socket: WebSocket): number {
-	const attached = socket.deserializeAttachment() as { cursor?: number } | null;
-	return attached?.cursor ?? 0;
+function attachmentOf(socket: WebSocket): {
+	cursor: number;
+	document: string | undefined;
+} {
+	const attached = socket.deserializeAttachment() as {
+		cursor?: number;
+		document?: string;
+	} | null;
+	return { cursor: attached?.cursor ?? 0, document: attached?.document };
 }
 
 export class SyncLabAuthority extends DurableObject {
@@ -75,13 +83,16 @@ export class SyncLabAuthority extends DurableObject {
 	 * cursor comes from the attachment, which is BEHIND what was really sent, so
 	 * entries go out again rather than being skipped.
 	 */
-	private adopt(socket: WebSocket): HubConnection {
+	private adopt(socket: WebSocket): HubConnection | undefined {
 		const existing = this.connections.get(socket);
 		if (existing !== undefined) return existing;
-		let written = positionOf(socket);
+		const attached = attachmentOf(socket);
+		let written = attached.cursor;
 		const connection: HubConnection = {
 			cursor: written,
+			document: attached.document,
 			send(bytes) {
+				if (socket.readyState !== WebSocket.OPEN) return;
 				socket.send(bytes);
 				// `serializeAttachment` is a DURABLE STORAGE WRITE, and this used to
 				// run on every frame. A chunked entry relayed to two sockets was
@@ -94,11 +105,30 @@ export class SyncLabAuthority extends DurableObject {
 				// replica already has, which is idempotent.
 				if (connection.cursor === written) return;
 				written = connection.cursor;
-				socket.serializeAttachment({ cursor: written });
+				socket.serializeAttachment({
+					cursor: written,
+					...(connection.document === undefined
+						? {}
+						: { document: connection.document }),
+				});
 			},
 		};
+		const admission = this.hub.join(connection);
+		if (admission !== 'admitted') {
+			// The same door as the deployed adapter: a bootstrap heard the name,
+			// a retired replica heard the verdict, and neither is a member. The
+			// driver redials with the identity it persisted.
+			socket.close(
+				1000,
+				admission === 'bootstrap'
+					? 'bootstrap complete: reconnect with document identity'
+					: admission === 'retired'
+						? 'document replaced'
+						: 'authority unavailable',
+			);
+			return undefined;
+		}
 		this.connections.set(socket, connection);
-		this.hub.join(connection);
 		return connection;
 	}
 
@@ -106,7 +136,14 @@ export class SyncLabAuthority extends DurableObject {
 		if (request.headers.get('Upgrade') !== 'websocket') {
 			return new Response('expected a websocket', { status: 426 });
 		}
-		const cursor = Number(new URL(request.url).searchParams.get('cursor') ?? '0');
+		const query = new URL(request.url).searchParams;
+		const asked = Number(query.get('cursor') ?? '0');
+		const cursor = Number.isFinite(asked) && asked >= 0 ? asked : 0;
+		const declared = query.get('document');
+		const documentId =
+			declared !== null && declared.length > 0 && declared.length <= 128
+				? declared
+				: undefined;
 		const pair = new WebSocketPair();
 		const client = pair[0];
 		const server = pair[1];
@@ -115,22 +152,29 @@ export class SyncLabAuthority extends DurableObject {
 		// Written before adopting, because the attachment is where a position
 		// comes from: this is the one place it is set from a request rather than
 		// read back off the socket, and there is no second source of truth.
-		server.serializeAttachment({ cursor: Number.isFinite(cursor) ? cursor : 0 });
-		// Adopting joins the hub, so catch-up runs here, synchronously, before
-		// this handler returns. A Durable Object is single threaded and a socket
-		// delivers in order, so everything queued now precedes any relay a later
-		// push produces, and the replica's contiguity check holds by construction
-		// rather than by luck.
+		server.serializeAttachment({
+			cursor,
+			...(documentId === undefined ? {} : { document: documentId }),
+		});
+		// Adopting decides everything (ADR-0231): a servable connection joins
+		// the hub and catch-up runs here, synchronously, before this handler
+		// returns, so the replica's contiguity check holds by construction; a
+		// bootstrap or retired one is answered with the announcement and closed.
 		this.adopt(server);
 
 		return new Response(null, { status: 101, webSocket: client });
 	}
 
-	override webSocketMessage(socket: WebSocket, message: ArrayBuffer | string): void {
+	override webSocketMessage(
+		socket: WebSocket,
+		message: ArrayBuffer | string,
+	): void {
 		if (typeof message === 'string') return;
 		// Nothing thrown. `workerd` swallows a throw here without closing the
 		// socket, so a refusal has to travel as a frame; the hub sends one.
-		this.hub.receive(this.adopt(socket), new Uint8Array(message));
+		const connection = this.adopt(socket);
+		if (connection === undefined) return;
+		this.hub.receive(connection, new Uint8Array(message));
 	}
 
 	override webSocketClose(socket: WebSocket): void {
@@ -195,13 +239,20 @@ export class SyncLabAuthority extends DurableObject {
 		sizes: readonly number[],
 	): { size: number; stored: boolean; failure?: string }[] {
 		const storage = this.ctx.storage as unknown as DurableObjectSqliteStorage;
-		storage.sql.exec('CREATE TABLE IF NOT EXISTS _probe (id INTEGER PRIMARY KEY, bytes BLOB)');
+		storage.sql.exec(
+			'CREATE TABLE IF NOT EXISTS _probe (id INTEGER PRIMARY KEY, bytes BLOB)',
+		);
 		return sizes.map((size) => {
 			try {
 				storage.sql.exec('DELETE FROM _probe');
-				storage.sql.exec('INSERT INTO _probe (id, bytes) VALUES (1, ?)', new Uint8Array(size));
+				storage.sql.exec(
+					'INSERT INTO _probe (id, bytes) VALUES (1, ?)',
+					new Uint8Array(size),
+				);
 				const read = storage.sql
-					.exec<{ n: number }>('SELECT length(bytes) AS n FROM _probe WHERE id = 1')
+					.exec<{ n: number }>(
+						'SELECT length(bytes) AS n FROM _probe WHERE id = 1',
+					)
 					.toArray()[0];
 				storage.sql.exec('DELETE FROM _probe');
 				// Written AND read back at the same length. A write that silently
@@ -240,9 +291,9 @@ export default {
 
 		switch (url.pathname) {
 			case '/sync':
-				return (stub as unknown as { fetch(request: Request): Promise<Response> }).fetch(
-					request,
-				);
+				return (
+					stub as unknown as { fetch(request: Request): Promise<Response> }
+				).fetch(request);
 			case '/stat':
 				return Response.json(await stub.stat());
 			case '/probe/value-cap': {

@@ -4,7 +4,7 @@
  * It is a Durable Object for one reason. A replica is a `Store`, a `Store` is
  * SQLite, and the only synchronous SQLite inside `workerd` is a Durable Object's
  * own storage. Everything else here is the deployed client: `createStore`,
- * `createSyncConnection` with the real supersession rule, and `compactStore`
+ * `createSyncConnection` with the real supersession rule, and `rebuildWorkspace`
  * over a real WebSocket and the real routes, so a test can assert on the rows
  * a device actually holds rather than on frames a harness counted.
  *
@@ -18,8 +18,8 @@
 import { DurableObject } from 'cloudflare:workers';
 import { createStore, defineLens, type Store } from '@epicenter/data';
 import {
-	compactStore,
 	createSyncConnection,
+	rebuildWorkspace,
 	type StoreTransport,
 	type SyncConnection,
 } from '@epicenter/data/sync';
@@ -42,6 +42,8 @@ function bindNotes(store: Store) {
 
 export type ReplicaReport = {
 	cursor: number;
+	/** The document this replica's state is stamped into, if any (ADR-0231). */
+	document: string | undefined;
 	connected: boolean;
 	titles: string[];
 	prose: string[];
@@ -98,16 +100,17 @@ export class StoreTestReplica extends DurableObject<Env> {
 		this.connection = createSyncConnection({
 			store: this.store,
 			idleMs: 20,
-			// Fast enough that a stale dial meets the boundary frame within a
+			// Fast enough that a stale dial meets the document announcement within a
 			// test's patience; the deployed default is seconds, not correctness.
 			backoff: () => 100,
 			onSuperseded: () => {
 				void this.adoptFresh();
 			},
-			dial: ({ cursor, opened, received, closed }) => {
+			dial: ({ cursor, document, opened, received, closed }) => {
 				const url = STORE_SYNC_ROUTE.url(origin, {
 					namespace: lens.namespace,
 					cursor,
+					...(document === undefined ? {} : { document }),
 				});
 				// The same handshake a browser performs: the credential rides as a
 				// subprotocol because an upgrade cannot set `Authorization`.
@@ -155,7 +158,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 		this.connection = undefined;
 	}
 
-	/** The authenticated door, for the compact POST. */
+	/** The authenticated door, for the rebuild's replace POST. */
 	private transport(): StoreTransport {
 		const bearer = this.bearer;
 		return {
@@ -175,7 +178,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 	 * The reload, replica-shaped: discard the local file whole, boot fresh.
 	 *
 	 * What a real host does with `discard()` and a page reload. The wipe is
-	 * whole (every store relation), never a surgical edit across editions.
+	 * whole (every store relation), never a surgical edit across documents.
 	 */
 	private async adoptFresh(): Promise<void> {
 		this.adoptions += 1;
@@ -187,22 +190,26 @@ export class StoreTestReplica extends DurableObject<Env> {
 		const database = createDurableObjectSqliteAdapter(
 			this.ctx.storage as unknown as DurableObjectSqliteStorage,
 		);
-		for (const relation of ['_updates', '_outbox', '_cursor']) {
+		// `_meta` included: the pledge is a commitment to the document being
+		// discarded, and a wipe that leaves it behind boots a "fresh" replica
+		// that is retired on sight, forever (a real host deletes the whole
+		// file, where this cannot be forgotten).
+		for (const relation of ['_updates', '_outbox', '_cursor', '_meta']) {
 			database.run(`DELETE FROM ${relation}`);
 		}
 		this.open(this.bearer, this.origin);
 	}
 
 	/**
-	 * The one product action, end to end: rebirth, publish, adopt.
+	 * The one product action, end to end: rebuild, publish, adopt.
 	 *
-	 * Returns the published boundary, or throws the typed refusal's name so a
+	 * Returns the published document, or throws the typed refusal's name so a
 	 * test can assert on it. On success this replica adopts through the same
 	 * discard-and-boot every superseded replica runs.
 	 */
-	async compact(): Promise<{ boundary: number }> {
+	async rebuild(): Promise<{ document: string }> {
 		if (this.store === undefined) throw new Error('open first');
-		const published = await compactStore({
+		const published = await rebuildWorkspace({
 			store: this.store,
 			transport: this.transport(),
 		});
@@ -253,6 +260,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 		if (this.db === undefined || this.store === undefined) {
 			return {
 				cursor: 0,
+				document: undefined,
 				connected: false,
 				titles: [],
 				prose: [],
@@ -267,6 +275,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 		const pressure = this.store.pressure();
 		return {
 			cursor: status?.cursor ?? 0,
+			document: this.store.sync.documentIdentity().data ?? undefined,
 			connected: status?.connected ?? false,
 			titles: listed.data.rows.map((row) => row.title).sort(),
 			prose: listed.data.rows

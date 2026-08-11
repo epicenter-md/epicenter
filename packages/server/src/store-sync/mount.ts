@@ -14,7 +14,7 @@
  *
  * Two doors, one partition rule. The sync upgrade is routine; the replace
  * POST (ADR-0231) is the person-initiated verb that publishes a namespace's
- * next edition, deliberately out of band from the socket.
+ * next document, deliberately out of band from the socket.
  */
 import {
 	LENS_NAMESPACE,
@@ -124,7 +124,7 @@ function createStoreSyncApp(resolve: ResolveStoreAuthority): Hono<Env> {
 			STORE_REPLACE_ROUTE.pattern,
 			describeRoute({
 				description:
-					"Publish this namespace's next edition: replace its log with the posted state (ADR-0231)",
+					"Publish this namespace's next document: replace its log with the posted state (ADR-0231)",
 				tags: ['store-sync'],
 			}),
 			async (c) => {
@@ -137,7 +137,7 @@ function createStoreSyncApp(resolve: ResolveStoreAuthority): Hono<Env> {
 				// The same partition rule as the upgrade: the principal comes from the
 				// resolved bearer, so this verb cannot be pointed at anyone else's
 				// authority however the query is written. The lease itself
-				// (`fromBoundary`, `atHead`) is the authority's to judge.
+				// (`fromDocument`, `atHead`) is the authority's to judge.
 				const name = storeAuthorityName(c.var.principal.id, namespace);
 				return resolve(c.env, name).fetch(c.req.raw);
 			},

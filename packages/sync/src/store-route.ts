@@ -33,44 +33,57 @@ export const STORE_SYNC_ROUTE = {
 	/**
 	 * Where this replica connects, asking for everything after `cursor`.
 	 *
-	 * The cursor is the replica's own durably applied position, so a reconnect is
-	 * a catch-up rather than a fresh start (ADR-0222).
+	 * The cursor is the replica's own durably applied position within the
+	 * document it declares, so a reconnect is a catch-up rather than a fresh
+	 * start (ADR-0222). `document` is the membership fact (ADR-0231): the
+	 * opaque identity of the authority document this replica's state belongs
+	 * to, stamped at first entanglement. Equality is the sole condition for
+	 * syncing an existing local document; absent is servable only with a
+	 * cursor of zero, because a replica with nothing to resume either has no
+	 * local document or holds one that grew alone.
 	 */
-	url(baseURL: string, params: { namespace: string; cursor: number }): string {
+	url(
+		baseURL: string,
+		params: { namespace: string; cursor: number; document?: string },
+	): string {
 		const url = new URL(`${stripTrailing(baseURL)}${STORE_SYNC_ROUTE.pattern}`);
 		url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
 		url.searchParams.set('namespace', params.namespace);
 		url.searchParams.set('cursor', String(params.cursor));
+		if (params.document !== undefined) {
+			url.searchParams.set('document', params.document);
+		}
 		return url.toString();
 	},
 } as const;
 
 /**
  * The one out-of-band verb on the store mount: publish a namespace's next
- * edition (ADR-0231).
+ * document (ADR-0231).
  *
  * A person-initiated, authenticated POST, deliberately outside the sync
  * socket: routine sync makes claims and needs provenance, while a replace
  * makes no coverage claim and needs a lease instead. The body is the encoded
  * replacement state, opaque to the server; the lease travels in the query.
  *
- * `fromBoundary` is compare-and-swap, always (`0` for a namespace never
- * replaced): the authority applies the replace only if its boundary still
- * holds that value, and answers a miss with the current one. `atHead` is
- * supplied by reclaim, which promises "same data" and must be refused if the
- * tail moved; reset and restore omit it.
+ * `fromDocument` is compare-and-swap, always: the id of the document the
+ * replacement was built from, which for a rebuild is the identity the
+ * initiating replica has durably stamped. The authority applies the replace
+ * only if that is still its current document, and answers a miss with the
+ * current id. `atHead` is supplied by reclaim, which promises "same data" and
+ * must be refused if the tail moved; reset and restore omit it.
  */
 export const STORE_REPLACE_ROUTE = {
 	pattern: '/api/store/v1/replace',
 	url(
 		baseURL: string,
-		params: { namespace: string; fromBoundary: number; atHead?: number },
+		params: { namespace: string; fromDocument: string; atHead?: number },
 	): string {
 		const url = new URL(
 			`${stripTrailing(baseURL)}${STORE_REPLACE_ROUTE.pattern}`,
 		);
 		url.searchParams.set('namespace', params.namespace);
-		url.searchParams.set('fromBoundary', String(params.fromBoundary));
+		url.searchParams.set('fromDocument', params.fromDocument);
 		if (params.atHead !== undefined) {
 			url.searchParams.set('atHead', String(params.atHead));
 		}

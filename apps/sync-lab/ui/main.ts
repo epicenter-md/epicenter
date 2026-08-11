@@ -45,11 +45,15 @@ const db = bound.data;
  */
 const connection = createSyncConnection({
 	store,
-	dial: ({ cursor, opened, received, closed }) => {
+	dial: ({ cursor, document: documentId, opened, received, closed }) => {
 		const url = new URL('/sync', location.href);
 		url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
 		url.searchParams.set('app', 'lab');
 		url.searchParams.set('cursor', String(cursor));
+		// The membership fact (ADR-0231). This store is in-memory, so every
+		// page load is a pristine replica: one bootstrap dial learns the name,
+		// and this redial declares it through the equality door.
+		if (documentId !== undefined) url.searchParams.set('document', documentId);
 		const socket = new WebSocket(url);
 		socket.binaryType = 'arraybuffer';
 

@@ -61,7 +61,7 @@ function openAccount(label: string) {
 					),
 				startSync: () => inside((replica) => replica.startSync()),
 				stopSync: () => inside((replica) => replica.stopSync()),
-				compact: () => inside((replica) => replica.compact()),
+				rebuild: () => inside((replica) => replica.rebuild()),
 				write: (title: string, prose: string) =>
 					inside((replica) => replica.write(title, prose)),
 				remove: (title: string) => inside((replica) => replica.remove(title)),
@@ -72,6 +72,22 @@ function openAccount(label: string) {
 			};
 		},
 	};
+}
+
+/**
+ * The boot gate, test-shaped (ADR-0231): a signed-in workspace that has never
+ * downloaded is unavailable until its first bootstrap binds it, so a device
+ * writes only once bound. Writing earlier authors work no authority document
+ * owns, and first contact discards it; the STATED LOSS test asserts that
+ * deliberately, and every other test binds before writing.
+ */
+async function bound(device: {
+	report(): Promise<ReplicaReport>;
+}): Promise<void> {
+	await until(
+		'the device to bind to the authority document',
+		async () => (await device.report()).document !== undefined,
+	);
 }
 
 /** Poll until `check` holds, or fail loudly rather than hang. */
@@ -96,6 +112,7 @@ describe('two devices on one account converge', () => {
 		const laptop = vault.device('laptop');
 		await phone.open();
 		await laptop.open();
+		await bound(phone);
 
 		await phone.write('Groceries', 'milk and eggs');
 
@@ -122,6 +139,7 @@ describe('two devices on one account converge', () => {
 		);
 		await mine.open();
 		await stranger.open();
+		await bound(mine);
 
 		await mine.write('Private', 'not for you');
 		await until('my own device to hold it', async () =>
@@ -140,6 +158,8 @@ describe('two devices on one account converge', () => {
 		const laptop = vault.device('laptop');
 		await phone.open();
 		await laptop.open();
+		await bound(phone);
+		await bound(laptop);
 
 		await phone.write('from the phone', 'one');
 		await laptop.write('from the laptop', 'two');
@@ -189,11 +209,11 @@ describe('two devices on one account converge', () => {
 	});
 });
 
-describe('one verb publishes the next edition (ADR-0231)', () => {
+describe('one verb publishes the next document (ADR-0231)', () => {
 	/** The person-initiated POST, built by the same helper a real caller uses. */
 	function postReplace(
 		account: string,
-		params: { fromBoundary: number; atHead?: number },
+		params: { fromDocument: string; atHead?: number },
 		body: Uint8Array,
 	): Promise<Response> {
 		return SELF.fetch(
@@ -215,10 +235,16 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		new Uint8Array(Y.encodeStateAsUpdateV2(new Y.Doc({ gc: true })));
 
 	/** Dial the sync route directly, so the refusal is visible as a response. */
-	function dial(account: string, cursor: number): Promise<Response> {
+	function dial(
+		account: string,
+		cursor: number,
+		document?: string,
+	): Promise<Response> {
+		const declared =
+			document === undefined ? '' : `&document=${encodeURIComponent(document)}`;
 		return SELF.fetch(
 			new Request(
-				`${ORIGIN}/api/store/v1/sync?namespace=${NAMESPACE}&cursor=${cursor}`,
+				`${ORIGIN}/api/store/v1/sync?namespace=${NAMESPACE}&cursor=${cursor}${declared}`,
 				{
 					headers: {
 						Upgrade: 'websocket',
@@ -229,32 +255,9 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		);
 	}
 
-	it('a stale cursor connects, receives exactly the boundary fact, and is never served history', async () => {
-		const vault = openAccount('edition');
-		const phone = vault.device('phone');
-		await phone.open();
-		await phone.write('Old', 'retired prose');
-		await until(
-			'the phone to sync its note',
-			async () => (await phone.report()).cursor > 0,
-		);
-		const staleCursor = (await phone.report()).cursor;
-
-		const published = await postReplace(
-			vault.account,
-			{ fromBoundary: 0 },
-			emptyState(),
-		);
-		expect(published.status).toBe(200);
-		const { boundary } = (await published.json()) as { boundary: number };
-		expect(boundary).toBeGreaterThan(staleCursor);
-
-		// Connecting is not admission: the upgrade succeeds, because a browser
-		// can read a frame and cannot read a refused handshake. What arrives is
-		// the fact, and nothing else, ever: no snapshot, no entries.
-		const stale = await dial(vault.account, staleCursor);
-		expect(stale.status).toBe(101);
-		const socket = (stale as unknown as { webSocket: WebSocket | null })
+	/** Collect every frame a dial is sent until its socket closes. */
+	async function framesUntilClose(response: Response): Promise<Frame[]> {
+		const socket = (response as unknown as { webSocket: WebSocket | null })
 			.webSocket;
 		if (socket === null) throw new Error('the upgrade produced no socket');
 		const received: Frame[] = [];
@@ -268,57 +271,103 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 			if (frame.error === null) received.push(frame.data);
 		});
 		await done;
-		expect(received).toEqual([{ kind: 'boundary', position: boundary }]);
+		return received;
+	}
 
-		// Zero holds no commitment: the unsynced offline install is greeted,
-		// and the first thing it is served is history (the snapshot), not a
-		// verdict.
-		const greeted = await dial(vault.account, 0);
-		expect(greeted.status).toBe(101);
-		const fresh = (greeted as unknown as { webSocket?: WebSocket }).webSocket;
-		if (fresh === undefined || fresh === null) {
-			throw new Error('the fresh join produced no socket');
+	it('a replica of a replaced document receives exactly the announcement, and is never served history', async () => {
+		const vault = openAccount('document');
+		const phone = vault.device('phone');
+		await phone.open();
+		await bound(phone);
+		await phone.write('Old', 'retired prose');
+		await until(
+			'the phone to sync its note',
+			async () => (await phone.report()).cursor > 0,
+		);
+		const stale = await phone.report();
+		if (stale.document === undefined)
+			throw new Error('the phone never stamped');
+
+		const published = await postReplace(
+			vault.account,
+			{ fromDocument: stale.document },
+			emptyState(),
+		);
+		expect(published.status).toBe(200);
+		const { document: next } = (await published.json()) as {
+			document: string;
+		};
+		expect(next).not.toBe(stale.document);
+
+		// Connecting is not admission: the upgrade succeeds, because a browser
+		// can read a frame and cannot read a refused handshake. What arrives is
+		// the announcement, and nothing else, ever: no snapshot, no entries.
+		const retired = await framesUntilClose(
+			await dial(vault.account, stale.cursor, stale.document),
+		);
+		expect(retired).toEqual([{ kind: 'document', id: next }]);
+
+		// An undeclared nonzero cursor is the former protocol, and the clean
+		// break refuses it the same way: announced, never served.
+		const undeclared = await framesUntilClose(
+			await dial(vault.account, stale.cursor),
+		);
+		expect(undeclared).toEqual([{ kind: 'document', id: next }]);
+
+		// A fresh install is greeted with the announcement and nothing else:
+		// bootstrap is announce-only, so no history moves before the replica
+		// has durably stamped the id it will declare.
+		const greeted = await framesUntilClose(await dial(vault.account, 0));
+		expect(greeted).toEqual([{ kind: 'document', id: next }]);
+
+		// The redial through the equality door is admitted, and only THERE is
+		// history served: the announcement again, then the snapshot.
+		const admitted = await dial(vault.account, 0, next);
+		expect(admitted.status).toBe(101);
+		const member = (admitted as unknown as { webSocket?: WebSocket }).webSocket;
+		if (member === undefined || member === null) {
+			throw new Error('the admitted join produced no socket');
 		}
-		const greeting = new Promise<Frame>((resolve) => {
-			fresh.addEventListener('message', (event) => {
+		const greeting = new Promise<Frame[]>((resolve) => {
+			const frames: Frame[] = [];
+			member.addEventListener('message', (event) => {
 				if (typeof event.data === 'string') return;
 				const frame = decodeFrame(new Uint8Array(event.data as ArrayBuffer));
-				if (frame.error === null) resolve(frame.data);
+				if (frame.error !== null) return;
+				frames.push(frame.data);
+				if (frames.length === 2) resolve(frames);
 			});
 		});
-		fresh.accept();
-		expect((await greeting).kind).toBe('snapshot');
-		fresh.close();
-
-		// And a cursor already inside the new edition is ordinary.
-		const current = await dial(vault.account, boundary);
-		expect(current.status).toBe(101);
-		const currentSocket = (current as unknown as { webSocket?: WebSocket })
-			.webSocket;
-		currentSocket?.accept();
-		currentSocket?.close();
+		member.accept();
+		const [name, history] = await greeting;
+		expect(name).toEqual({ kind: 'document', id: next });
+		expect(history?.kind).toBe('snapshot');
+		member.close();
 	});
 
 	it('authority wins: a superseded device discards on its own and resyncs to the replacement', async () => {
 		const vault = openAccount('adoption');
 		const phone = vault.device('phone');
 		await phone.open();
+		await bound(phone);
 		await phone.write('Old', 'not to be republished');
 		await until(
 			'the phone to sync its note',
 			async () => (await phone.report()).cursor > 0,
 		);
 
+		const stamped = (await phone.report()).document;
+		if (stamped === undefined) throw new Error('the phone never stamped');
 		const published = await postReplace(
 			vault.account,
-			{ fromBoundary: 0 },
+			{ fromDocument: stamped },
 			emptyState(),
 		);
 		expect(published.status).toBe(200);
 
-		// The phone's socket was closed by the replace. Its next dial is refused
-		// before any socket exists, the probe confirms the boundary, and it runs
-		// the one adoption path: discard whole, boot fresh, join at zero.
+		// The phone's socket was closed by the replace. Its next dial connects,
+		// meets a document that is not its own, and runs the one adoption path:
+		// discard whole, boot fresh, join at zero.
 		await until('the phone to discard and adopt', async () => {
 			const report = await phone.report();
 			return report.adoptions >= 1 && report.cursor > 0;
@@ -330,28 +379,29 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		const tablet = vault.device('tablet');
 		await tablet.open();
 		await until(
-			'the tablet to adopt the new edition',
+			'the tablet to adopt the new document',
 			async () => (await tablet.report()).cursor > 0,
 		);
 		await new Promise((resolve) => setTimeout(resolve, 500));
 		expect((await tablet.report()).titles).toEqual([]);
 	});
 
-	it('compact: one device compacts, every synced device adopts, tombstones are reclaimed, marks survive', async () => {
-		const vault = openAccount('compact');
+	it('rebuild: one device rebuilds, every synced device adopts, tombstones are reclaimed, marks survive', async () => {
+		const vault = openAccount('rebuild');
 		const phone = vault.device('phone');
 		const laptop = vault.device('laptop');
 		await phone.open();
 		await laptop.open();
+		await bound(phone);
 
-		await phone.write('SECRET-CANARY-deleted', 'gone before the compact');
+		await phone.write('SECRET-CANARY-deleted', 'gone before the rebuild');
 		await phone.write('kept', 'prose that survives');
 		await until('both devices to hold both notes', async () => {
 			const [a, b] = await Promise.all([phone.report(), laptop.report()]);
 			return a.titles.length === 2 && b.titles.length === 2;
 		});
 		// Retire the canary, then let the deletion cross: the aged document now
-		// carries tombstones that only a rebirth reclaims.
+		// carries tombstones that only a rebuild reclaims.
 		await phone.remove('SECRET-CANARY-deleted');
 		await until(
 			'the deletion to cross',
@@ -359,18 +409,18 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		);
 
 		const staleItems = (await laptop.report()).items;
-		const published = await phone.compact();
-		expect(published.boundary).toBeGreaterThan(0);
+		const published = await phone.rebuild();
+		expect(published.document.length).toBeGreaterThan(0);
 
 		// The initiator adopted through the same move as everyone else.
-		await until('the phone to rejoin the edition it published', async () => {
+		await until('the phone to rejoin the document it published', async () => {
 			const report = await phone.report();
-			return report.adoptions >= 1 && report.cursor === published.boundary;
+			return report.adoptions >= 1 && report.document === published.document;
 		});
 		// The laptop's socket was closed by the replace; it adopts on its own.
 		await until('the laptop to discard and adopt', async () => {
 			const report = await laptop.report();
-			return report.adoptions >= 1 && report.cursor === published.boundary;
+			return report.adoptions >= 1 && report.document === published.document;
 		});
 
 		const [phoneAfter, laptopAfter] = await Promise.all([
@@ -385,16 +435,19 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		expect(laptopAfter.items).toBeLessThanOrEqual(staleItems);
 	});
 
-	it('STATED LOSS: a device of the old edition loses its unpushed work, and a never-synced device merges instead', async () => {
-		// ADR-0231's fifth correction, asserted deliberately so the line stays a
-		// decision with a warning at the verb rather than a rediscovered bug.
-		// The line is the cursor: a device that had JOINED the old edition
-		// (cursor > 0) discards, unpushed work and all; a device that never
-		// exchanged a byte (cursor 0) holds no commitment and merges.
+	it('STATED LOSS: unpushed work of the old document and pre-bootstrap work are both discarded, never merged', async () => {
+		// ADR-0231, asserted deliberately so the line stays a decision with a
+		// warning at the verb rather than a rediscovered bug. Two kinds of
+		// unsynced work meet a rebuild, and both are discarded: a device of the
+		// OLD document loses its unpushed offline notes, and a device that
+		// wrote before ever bootstrapping loses everything at first contact,
+		// because bytes merge only when they name the same document and
+		// promotion is never automatic.
 		const vault = openAccount('statedloss');
 		const phone = vault.device('phone');
 		await phone.open();
-		await phone.write('kept', 'synced before the compact');
+		await bound(phone);
+		await phone.write('kept', 'synced before the rebuild');
 		await until(
 			'the phone to sync its note',
 			async () => (await phone.report()).cursor > 0,
@@ -404,7 +457,7 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		const drawer = vault.device('drawer');
 		await drawer.open();
 		await until(
-			'the drawer to join the old edition',
+			'the drawer to join the old document',
 			async () => (await drawer.report()).cursor > 0,
 		);
 		await drawer.stopSync();
@@ -416,149 +469,133 @@ describe('one verb publishes the next edition (ADR-0231)', () => {
 		await fresh.open({ connect: false });
 		await fresh.write('fresh install note', 'written before first sync');
 
-		const published = await phone.compact();
+		const published = await phone.rebuild();
 
-		// The drawer returns into a retired edition: probe, discard, adopt. Its
-		// unpushed note is gone, per the warning the person compacting saw.
+		// The drawer returns into a retired document: announced, discard, adopt.
+		// Its unpushed note is gone, per the warning the person rebuilding saw.
 		await drawer.startSync();
 		await until('the drawer to discard and adopt', async () => {
 			const report = await drawer.report();
-			return report.adoptions >= 1 && report.cursor >= published.boundary;
+			return report.adoptions >= 1 && report.document === published.document;
 		});
 		const adopted = await drawer.report();
 		expect(adopted.titles).toEqual(['kept']);
 		expect(adopted.adoptions).toBe(1);
 
-		// The fresh install is greeted, not asked to discard: its independent
-		// document is the one cross-edition merge that is safe, so its offline
-		// work survives and publishes.
+		// The fresh install wrote before ever bootstrapping, so its work
+		// belongs to no authority document. First contact discards it, never
+		// promotes it (ADR-0231): the device adopts the current document and
+		// holds exactly what the authority does.
 		await fresh.startSync();
-		await until('the fresh install to merge and publish', async () => {
+		await until('the fresh install to discard and adopt', async () => {
 			const report = await fresh.report();
-			return report.titles.length === 2 && report.cursor > published.boundary;
+			return (
+				report.adoptions >= 1 &&
+				report.document === published.document &&
+				report.titles.length === 1
+			);
 		});
-		expect((await fresh.report()).adoptions).toBe(0);
-		expect((await fresh.report()).titles).toEqual([
-			'fresh install note',
-			'kept',
-		]);
+		expect((await fresh.report()).titles).toEqual(['kept']);
 
-		// The one title nobody ever synced exists nowhere: the authority never
-		// heard of it, and every replica converges without it.
-		await until(
-			'the phone to hold the merged pair',
-			async () => (await phone.report()).titles.length === 2,
-		);
-		expect((await phone.report()).titles).toEqual([
-			'fresh install note',
-			'kept',
-		]);
-		expect((await phone.report()).titles).not.toContain(
-			'unsynced offline note',
-		);
+		// The titles nobody ever synced exist nowhere: the authority never
+		// heard of them, and every replica converges without them.
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		expect((await phone.report()).titles).toEqual(['kept']);
 	});
 
-	it('the lease over HTTP: fromBoundary is CAS, atHead refuses a moved tail, and a reclaim republishes the same data', async () => {
+	it('the lease over HTTP: fromDocument is CAS, atHead refuses a moved tail, and a reclaim republishes the same data', async () => {
 		const vault = openAccount('lease');
 		const phone = vault.device('phone');
 		await phone.open();
-		await phone.write('Seed', 'first edition');
+		await bound(phone);
+		await phone.write('Seed', 'first document');
 		await until(
 			'the phone to sync its note',
 			async () => (await phone.report()).cursor > 0,
 		);
+		const first = (await phone.report()).document;
+		if (first === undefined) throw new Error('the phone never stamped');
 
 		const reset = await postReplace(
 			vault.account,
-			{ fromBoundary: 0 },
+			{ fromDocument: first },
 			emptyState(),
 		);
 		expect(reset.status).toBe(200);
-		const { boundary } = (await reset.json()) as { boundary: number };
+		const { document: second } = (await reset.json()) as { document: string };
 
 		// A retry whose first attempt landed, or the loser of a concurrent pair:
-		// the CAS misses and the answer names the current boundary.
+		// the CAS misses and the answer names the current document. No retry may
+		// republish stale-built bytes over it.
 		const missed = await postReplace(
 			vault.account,
-			{ fromBoundary: 0 },
+			{ fromDocument: first },
 			emptyState(),
 		);
 		expect(missed.status).toBe(409);
-		expect(await missed.json()).toEqual({ refused: 'boundary', boundary });
+		expect(await missed.json()).toEqual({
+			refused: 'document',
+			document: second,
+		});
 
-		// New edition, new work: a fresh device adopts and writes.
+		// New document, new work: a fresh device adopts and writes.
 		const tablet = vault.device('tablet');
 		await tablet.open();
 		await until('the tablet to adopt and sync a write', async () => {
 			const report = await tablet.report();
-			if (report.cursor === boundary)
+			if (report.document === second && report.titles.length === 0) {
 				await tablet.write('New', 'kept across reclaim');
-			return report.cursor > boundary;
+			}
+			return report.document === second && report.titles.length === 1;
 		});
+		await until(
+			'the tablet write to land',
+			async () => (await tablet.report()).cursor > 1,
+		);
+		const built = await tablet.report();
 
-		// Reclaim promises "same data", so a lease built at the boundary is
-		// refused once the tail has moved past it.
+		// Reclaim promises "same data", so a lease built at a head the tail has
+		// moved past is refused.
 		const expired = await postReplace(
 			vault.account,
-			{ fromBoundary: boundary, atHead: boundary },
+			{ fromDocument: second, atHead: built.cursor + 5 },
 			await tablet.encodeState(),
 		);
 		expect(expired.status).toBe(409);
 		const expiry = (await expired.json()) as { refused: string; head: number };
 		expect(expiry.refused).toBe('head');
-		expect(expiry.head).toBeGreaterThan(boundary);
 
-		// The refused caller retries from what the refusal named, which is the
-		// whole protocol: rebuild at the head you are told, post again.
-		let lease = { fromBoundary: boundary, atHead: expiry.head };
-		let republished: { boundary: number } | undefined;
-		for (
-			let attempt = 0;
-			attempt < 10 && republished === undefined;
-			attempt += 1
-		) {
-			const response = await postReplace(
-				vault.account,
-				lease,
-				await tablet.encodeState(),
-			);
-			if (response.status === 200) {
-				republished = (await response.json()) as { boundary: number };
-				break;
-			}
-			const answer = (await response.json()) as {
-				refused: string;
-				boundary?: number;
-				head?: number;
-			};
-			lease = {
-				fromBoundary: answer.boundary ?? lease.fromBoundary,
-				atHead: answer.head ?? lease.atHead,
-			};
-		}
-		if (republished === undefined) throw new Error('the reclaim never landed');
+		// The honest lease lands: the current document, at its real head.
+		const landed = await postReplace(
+			vault.account,
+			{ fromDocument: second, atHead: expiry.head },
+			await tablet.encodeState(),
+		);
+		expect(landed.status).toBe(200);
+		const republished = (await landed.json()) as { document: string };
+		expect(republished.document).not.toBe(second);
 
-		// A third device joins the third edition and sees the reclaimed data:
+		// A third device joins the third document and sees the reclaimed data:
 		// same rows, none of the retired history.
 		const laptop = vault.device('laptop');
 		await laptop.open();
 		await until(
-			'the laptop to adopt the reclaimed edition',
+			'the laptop to adopt the reclaimed document',
 			async () => (await laptop.report()).titles.length > 0,
 		);
 		const adopted = await laptop.report();
 		expect(adopted.titles).toEqual(['New']);
-		expect(adopted.cursor).toBe(republished.boundary);
+		expect(adopted.document).toBe(republished.document);
 		expect(adopted.lastError).toBeUndefined();
 	});
 
 	it('a replace with no body is refused: an encoded empty document is still bytes', async () => {
-		// The edition an empty body would publish is one no replica could adopt;
-		// a reset posts `emptyState()`, never nothing.
+		// The document an empty body would publish is one no replica could
+		// adopt; a reset posts `emptyState()`, never nothing.
 		const vault = openAccount('emptybody');
 		const refused = await postReplace(
 			vault.account,
-			{ fromBoundary: 0 },
+			{ fromDocument: 'anything' },
 			new Uint8Array(0),
 		);
 		expect(refused.status).toBe(400);
