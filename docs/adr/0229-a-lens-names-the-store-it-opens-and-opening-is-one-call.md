@@ -4,10 +4,12 @@
 - **Date:** 2026-08-09
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0229 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
-- **Amended by:** [ADR-0233](0233-a-browser-application-keeps-two-durable-documents-and-auth-chooses-which-opens.md):
+- **Amended by:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md):
   in a browser the lens still names the application, and the caller also names
-  which of its two durable documents to open, so the derived location becomes
-  `<namespace>#<document>` and the open claim is that same identity.
+  which durable document to open and whose it is, so the derived location
+  becomes `epicenter/<namespace>/private` or
+  `epicenter/<namespace>/workspace/<principal id>` and the open claim is that
+  same address.
 - **Amends:** [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md)
   at two rows of its naming table and at `bind`. Withdrawn: that one opener per
   runtime must stand in front of a separate `bind` because "the three opens
