@@ -7,25 +7,32 @@ an app is built.
 
 Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0215](../../docs/adr/0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md) (an application is one document and a row owns a nested container), [ADR-0233](../../docs/adr/0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) (a device document and one account replica per account, chosen by auth at boot), [ADR-0231](../../docs/adr/0231-rebuilding-replaces-a-workspaces-current-yjs-document.md) (rebuild replaces the workspace's current Yjs document).
 
-## Two durable documents, and auth picks one at boot
+## Two durable documents, and the root opens them
 
-`src/lib/application.ts` is the only place that opens a store, and it opens
-exactly one (ADR-0233):
+`src/lib/runtime.ts` is the only place that opens a store. Every page
+lifetime eagerly opens the device document, and a generation whose boot auth
+carries a principal (`signed-in` or `reauth-required`) also opens that
+account's retained replica and attaches sync to it alone (ADR-0233):
 
 ```text
-epicenter/so.epicenter.honeycrisp/device                     signed out, never syncs
+epicenter/so.epicenter.honeycrisp/device                     never syncs, always open
 epicenter/so.epicenter.honeycrisp/account/<principal id>     one per account
 ```
 
-Signed out (or a build with no auth) opens the device document and attaches no
-sync. A known principal, `signed-in` or `reauth-required`, opens that account's
-own replica and attaches sync. A page lifetime is one auth generation
-(ADR-0232), so the choice never changes while the app lives; `reloadOnAuthChange`
-starts the next one.
+Ready surfaces see exactly two shapes: `{ deviceData }` and
+`{ deviceData, account: { data, syncStatus, rebuild } }`. There is no default
+document: the notes surface chooses `account?.data ?? deviceData` once at its
+own root (`src/routes/+page.svelte`), and document-bound UI state
+(`createHoneycrispState`) is created there, never in the runtime. A page
+lifetime is one auth generation (ADR-0232), so the composition never changes
+while the app lives; `reloadOnAuthChange` starts the next one.
 
-A signed-in workspace is unavailable until its first bootstrap binds it to an
-authority document, so the layout's boot gate holds while it waits. Signing out
-closes a replica and keeps it, so signing back in finds the same account's work.
+A signed-in account is unavailable until its first bootstrap binds it to an
+authority document, so the layout's boot gate holds the whole app while it
+waits, device data included; a partial-ready local-drafts surface is refused,
+and signing out (a new generation) is the way back to device-only use.
+Signing out closes a replica and keeps it, so signing back in finds the same
+account's work.
 
 ## Three builds, one store shape
 
@@ -36,7 +43,8 @@ closes a replica and keeps it, so signing back in finds the same account's work.
 | Epicenter-hosted | `bun run build:epicenter` |
 
 **They differ in nothing that concerns data.** Every build calls
-`open` from `@epicenter/data/browser` and owns its replica; the desktop host
+`openDevice` and `openAccount` from `@epicenter/data/browser` and owns its
+documents; the desktop host
 serves the bundle and brokers the credential and owns none of it (ADR-0226).
 There used to be a platform seam where the hosted build reached the host's
 shared `epicenter.sqlite3`, and ADR-0226 refused it.

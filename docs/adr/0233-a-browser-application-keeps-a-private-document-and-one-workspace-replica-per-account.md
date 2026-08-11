@@ -1,4 +1,4 @@
-# 0233. A browser application keeps a device document and one account replica per account, and auth chooses which opens
+# 0233. A browser application keeps a device document and one account replica per account, and auth chooses whether the replica also opens
 
 - **Status:** Accepted
 - **Date:** 2026-08-10
@@ -54,8 +54,9 @@ hidden one level down where no delete, discard, or rebuild can see it.
 ## Decision
 
 **A browser application keeps one device document and one retained account
-replica per account, and authentication chooses which one a
-generation opens.**
+replica per account. The device document opens for every page lifetime, and
+authentication chooses whether that generation also opens an account
+replica.**
 
 ```text
 epicenter
@@ -88,16 +89,17 @@ The first two are the address. The third lives inside the store, because
 rebuild changes it: a rebuilt workspace stays at the same address while its
 contents are discarded and re-downloaded.
 
-### The opener names the owner
+### The browser names each document by its capability
 
 ```ts
-await open(lens, { owner: 'device' });
-await open(lens, { owner: 'account', principalId });
+const device = await openDevice(lens);
+const account = await openAccount(lens, { principalId });
 ```
 
-The argument is a union, so an account-less account replica is not a value
-the API can express, and the IndexedDB database is the address derived from
-all of it:
+The names are not cosmetic. A device document has no authority, outbox,
+supersession, rebuild, or discard operation. An account opener returns a
+replica with exactly those capabilities. `openAccount` has nowhere to omit the
+principal id, and the IndexedDB database is the address derived from it:
 
 ```text
 epicenter/<namespace>/device
@@ -107,33 +109,46 @@ epicenter/<namespace>/account/<principal id>
 A namespace is dot-separated lowercase labels and holds no `/`, so the segment
 after `epicenter/` is always exactly the application and no address can be read
 as another one. The process-local open claim is the same address, so the
-device document and any number of accounts' replicas may be open at once (an
-explicit copy feature would need exactly that), while a second open of any one
-of them is refused.
+device document and any number of accounts' replicas may be open at once,
+which is the normal state of a signed-in generation rather than an edge case,
+while a second open of any one of them is refused.
 
 An empty principal id is refused as `Unaddressable` rather than addressed. A
 boot with no stable account has no account replica, not a nameless one.
 
 ### Auth chooses at boot, and only at boot
 
-A generation whose auth is signed out, or that has no auth at all, opens the
-device document and attaches nothing: a device document has no sync, so
-there is no dial whose refusal anyone would be reading. A generation with a
-known principal (`signed-in` or `reauth-required`) opens that principal's
-account replica and attaches sync. A page lifetime is one auth generation
-(ADR-0232), so the choice never changes while an application lives; signing
-in, signing out, or switching accounts reloads into a different document.
+Every generation opens the device document: it is the application's durable
+local space, present whether or not anyone is signed in, and it attaches
+nothing, because a device document has no sync and therefore no dial whose
+refusal anyone would be reading. A generation with a known principal
+(`signed-in` or `reauth-required`) also opens that principal's account
+replica and attaches sync to it alone. Both stay open for the whole
+generation, and features receive the document they mean to operate on; the
+runtime carries no default document that could quietly stand in for either.
+A page lifetime is one auth generation (ADR-0232), so the composition never
+changes while an application lives; signing in, signing out, or switching
+accounts reloads into the next one.
 
 An authenticated generation whose dial is permanently denied is not signed
-out. A bound workspace stays open and works offline. An unbound one rejects
+out. A bound replica stays open and works offline. An unbound one rejects
 its boot as unavailable, because only an auth change can repair it, and that
 change starts the next generation. An authenticated generation with no usable
 principal id rejects its boot the same way. Neither ever falls back to the
 device document, and neither ever guesses an address.
 
+A fresh unbound replica that cannot yet bind holds the whole boot behind the
+root's gate, device data included, until connectivity lets the first
+bootstrap bind it, the dial is permanently denied, or the page lifetime ends.
+A partial-ready surface ("use local drafts while the account binds") is
+refused: it would make an unbound account a third ready state that every
+screen must handle, to serve a window that is sub-second whenever the network
+exists. The way back to device-only use is a new generation: signing out.
+
 ### Signing out closes a replica, and keeps it
 
-Signing out of A closes A's replica and opens the device document. It deletes
+Signing out of A closes A's replica; the device document, open all along,
+carries the next generation alone. Signing out deletes
 nothing. Signing back in as A reopens A's replica with everything in it,
 including offline work made before the sign-out, and its stamped document id
 decides at the next dial whether that work is still current or the replica is
@@ -201,6 +216,8 @@ Tests must demonstrate that:
 
 - device work is unchanged after signing in, signing out, and signing into a
   second account;
+- the device document is open, readable, and editable during a signed-in
+  generation, and its edits land in the device database alone;
 - two accounts cannot open or claim one account database, and neither sees
   the other's rows;
 - returning to an account reopens its retained replica, offline work included;

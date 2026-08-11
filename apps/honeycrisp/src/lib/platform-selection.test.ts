@@ -78,9 +78,7 @@ describe('storage ownership', () => {
 		// The regression that would be invisible: a surface that still opened an
 		// `Epicenter` would compile, start, and keep notes in a replica the rest
 		// of this application no longer reads.
-		const source = await Bun.file(
-			join(appRoot, 'src/lib/application.ts'),
-		).text();
+		const source = await Bun.file(join(appRoot, 'src/lib/runtime.ts')).text();
 		expect(source).toContain("from '@epicenter/data/browser'");
 		expect(source).not.toContain('openDesktopEpicenter');
 		expect(source).not.toContain('openBrowserEpicenter');

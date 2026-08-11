@@ -1,5 +1,5 @@
 import { createContext } from 'svelte';
-import type { HoneycrispApplication } from './application.js';
+import type { HoneycrispRuntime } from './runtime.js';
 
-export const [getHoneycrispApp, setHoneycrispApp] =
-	createContext<HoneycrispApplication>();
+export const [getHoneycrispRuntime, setHoneycrispRuntime] =
+	createContext<HoneycrispRuntime>();

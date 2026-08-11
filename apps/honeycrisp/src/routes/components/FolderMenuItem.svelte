@@ -7,10 +7,10 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { getHoneycrispApp } from '$lib/context.js';
+	import { getNotesSurface } from '../state/index.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 
-	const honeycrisp = getHoneycrispApp();
+	const surface = getNotesSurface();
 
 	let { folder }: { folder: Folder } = $props();
 
@@ -22,7 +22,7 @@
 	function commitRename() {
 		if (editingName.trim()) {
 			runHoneycrispMutation(
-				() => honeycrisp.state.folders.rename(folder.id, editingName.trim()),
+				() => surface.state.folders.rename(folder.id, editingName.trim()),
 				'Could not rename folder',
 			);
 		}
@@ -55,8 +55,8 @@
 		</div>
 	{:else}
 		<Sidebar.MenuButton
-			isActive={honeycrisp.state.view.selectedFolderId === folder.id}
-			onclick={() => honeycrisp.state.view.selectFolder(folder.id)}
+			isActive={surface.state.view.selectedFolderId === folder.id}
+			onclick={() => surface.state.view.selectFolder(folder.id)}
 		>
 			{#if folder.icon}
 				<span class="text-base leading-none">{folder.icon}</span>
@@ -65,7 +65,7 @@
 			{/if}
 			<span>{folder.name}</span>
 			<span class="ml-auto text-xs text-muted-foreground">
-				{honeycrisp.state.notes.countsByFolder[folder.id] ?? 0}
+				{surface.state.notes.countsByFolder[folder.id] ?? 0}
 			</span>
 		</Sidebar.MenuButton>
 		<DropdownMenu.Root>
@@ -114,7 +114,7 @@
 				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 				onclick={() =>
 					runHoneycrispMutation(
-						() => honeycrisp.state.folders.delete(folder.id),
+						() => surface.state.folders.delete(folder.id),
 						'Could not delete folder',
 					)}
 			>

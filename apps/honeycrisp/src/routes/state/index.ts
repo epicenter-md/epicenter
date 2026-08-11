@@ -1,5 +1,7 @@
+import { createContext } from 'svelte';
 import { type HoneycrispData, NOTE_BODY } from '@epicenter/honeycrisp';
 import { reportBackgroundError } from '../../lib/report.js';
+import type { HoneycrispRuntime } from '../../lib/runtime.js';
 import {
 	createNoteSearchIndex,
 	readDocumentText,
@@ -32,5 +34,24 @@ export function createHoneycrispState({ db }: { db: HoneycrispData }) {
 		},
 	};
 }
+
+/**
+ * The notes surface: one document, deliberately chosen, and the UI state
+ * bound to it.
+ *
+ * The runtime carries no default document (ADR-0233), so the surface root is
+ * where the choice lives: the notes surface edits the account's notes when
+ * this generation has an account, and the device's otherwise, and a future
+ * Local Drafts surface writes `runtime.deviceData` in the same position. The
+ * state is document-bound, which is why the surface owns it instead of the
+ * runtime: two open documents would mean two states, never one global one.
+ */
+export type NotesSurface = {
+	/** The document this surface reads and edits. */
+	data: HoneycrispRuntime['deviceData'];
+	state: ReturnType<typeof createHoneycrispState>;
+};
+
+export const [getNotesSurface, setNotesSurface] = createContext<NotesSurface>();
 
 export { NOTE_BODY };

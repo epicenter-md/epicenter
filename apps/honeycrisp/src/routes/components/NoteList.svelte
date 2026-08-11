@@ -6,12 +6,12 @@
 	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { getHoneycrispApp } from '$lib/context.js';
+	import { getNotesSurface } from '../state/index.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import { getDateLabel } from '$lib/utils/date';
 	import NoteCard from '../components/NoteCard.svelte';
 
-	const honeycrisp = getHoneycrispApp();
+	const surface = getNotesSurface();
 
 	const sortOptions = [
 		{ value: 'dateEdited' as const, label: 'Date Edited' },
@@ -20,7 +20,7 @@
 	];
 
 	const groupedNotes = $derived.by(() => {
-		const notes = honeycrisp.state.view.currentNotes;
+		const notes = surface.state.view.currentNotes;
 		const pinned = notes
 			.filter((n) => n.pinned)
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -64,10 +64,10 @@
 	);
 
 	function createAndSelectNote(): void {
-		const { id } = honeycrisp.state.notes.create(
-			honeycrisp.state.view.selectedFolderId,
+		const { id } = surface.state.notes.create(
+			surface.state.view.selectedFolderId,
 		);
-		honeycrisp.state.view.selectNote(id);
+		surface.state.view.selectNote(id);
 	}
 </script>
 
@@ -79,18 +79,18 @@
 		if (flatNoteIds.length === 0) return;
 		e.preventDefault();
 
-		const currentIndex = honeycrisp.state.view.selectedNoteId
-			? flatNoteIds.indexOf(honeycrisp.state.view.selectedNoteId)
+		const currentIndex = surface.state.view.selectedNoteId
+			? flatNoteIds.indexOf(surface.state.view.selectedNoteId)
 			: -1;
 
 		if (e.key === 'ArrowDown') {
 			const nextIndex =
 				currentIndex < flatNoteIds.length - 1 ? currentIndex + 1 : 0;
-			honeycrisp.state.view.selectNote(flatNoteIds[nextIndex]!);
+			surface.state.view.selectNote(flatNoteIds[nextIndex]!);
 		} else {
 			const prevIndex =
 				currentIndex > 0 ? currentIndex - 1 : flatNoteIds.length - 1;
-			honeycrisp.state.view.selectNote(flatNoteIds[prevIndex]!);
+			surface.state.view.selectNote(flatNoteIds[prevIndex]!);
 		}
 	}}
 	tabindex="-1"
@@ -98,13 +98,13 @@
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<div class="flex items-center gap-2">
 			<h2 class="text-sm font-semibold">
-				{honeycrisp.state.view.currentTitle}
+				{surface.state.view.currentTitle}
 			</h2>
 			<span class="text-xs text-muted-foreground"
-				>{honeycrisp.state.view.currentNotes.length}</span
+				>{surface.state.view.currentNotes.length}</span
 			>
 		</div>
-		{#if honeycrisp.state.view.currentShowControls}
+		{#if surface.state.view.currentShowControls}
 			<div class="flex items-center gap-1">
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
@@ -117,9 +117,9 @@
 					<DropdownMenu.Content align="end" class="w-44">
 						{#each sortOptions as option}
 							<DropdownMenu.Item
-								onclick={() => honeycrisp.state.view.setSortBy(option.value)}
+								onclick={() => surface.state.view.setSortBy(option.value)}
 							>
-								{#if honeycrisp.state.view.sortBy === option.value}
+								{#if surface.state.view.sortBy === option.value}
 									<CheckIcon class="mr-2 size-4" />
 								{:else}
 									<span class="mr-2 size-4"></span>
@@ -146,11 +146,11 @@
 	</div>
 
 	<ScrollArea.Root class="flex-1">
-		{#if honeycrisp.state.view.currentNotes.length === 0}
+		{#if surface.state.view.currentNotes.length === 0}
 			<div
 				class="flex h-full items-center justify-center p-8 text-center text-muted-foreground"
 			>
-				<p class="text-sm">{honeycrisp.state.view.currentEmptyMessage}</p>
+				<p class="text-sm">{surface.state.view.currentEmptyMessage}</p>
 			</div>
 		{:else}
 			<div class="flex flex-col gap-4 p-2">
@@ -162,8 +162,8 @@
 						{#each group.entries as note (note.id)}
 							<NoteCard
 								{note}
-								isSelected={note.id === honeycrisp.state.view.selectedNoteId}
-								onSelect={() => honeycrisp.state.view.selectNote(note.id)}
+								isSelected={note.id === surface.state.view.selectedNoteId}
+								onSelect={() => surface.state.view.selectNote(note.id)}
 							/>
 						{/each}
 					</div>

@@ -14,14 +14,14 @@
  * @example
  * ```svelte
  * <script>
- *   import { getHoneycrispApp } from '$lib/context';
- *   const honeycrisp = getHoneycrispApp();
+ *   import { getNotesSurface } from '../state/index.js';
+ *   const surface = getNotesSurface();
  * </script>
  *
- * {#each honeycrisp.state.view.currentNotes as note (note.id)}
+ * {#each surface.state.view.currentNotes as note (note.id)}
  *   <p>{note.title}</p>
  * {/each}
- * <p>Current title: {honeycrisp.state.view.currentTitle}</p>
+ * <p>Current title: {surface.state.view.currentTitle}</p>
  * ```
  */
 

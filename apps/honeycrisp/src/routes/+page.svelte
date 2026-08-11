@@ -1,20 +1,28 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
-	import { getHoneycrispApp } from '$lib/context.js';
+	import { getHoneycrispRuntime } from '$lib/context.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
+	import { createHoneycrispState, setNotesSurface } from './state/index.js';
 	import CommandPalette from './components/CommandPalette.svelte';
 	import NoteBodyPane from './components/NoteBodyPane.svelte';
 	import NoteList from './components/NoteList.svelte';
 	import HoneycripSidebar from './components/Sidebar.svelte';
 
-	const honeycrisp = getHoneycrispApp();
+	const runtime = getHoneycrispRuntime();
+
+	// The surface chooses its document, once, here: account notes when this
+	// generation has an account, device notes otherwise. The runtime carries no
+	// default document, so this line is the whole of the choice, and a Local
+	// Drafts surface would write `runtime.deviceData` in the same position.
+	const data = runtime.account?.data ?? runtime.deviceData;
+	const state = createHoneycrispState({ db: data });
+	setNotesSurface({ data, state });
+	$effect(() => () => state[Symbol.dispose]());
 
 	function createAndSelectNote(): void {
-		const { id } = honeycrisp.state.notes.create(
-			honeycrisp.state.view.selectedFolderId,
-		);
-		honeycrisp.state.view.selectNote(id);
+		const { id } = state.notes.create(state.view.selectedFolderId);
+		state.view.selectNote(id);
 	}
 </script>
 
@@ -26,7 +34,7 @@
 		if (e.key === 'n' && e.shiftKey) {
 			e.preventDefault();
 			runHoneycrispMutation(
-				() => honeycrisp.state.folders.create(),
+				() => state.folders.create(),
 				'Could not create folder',
 			);
 		} else if (e.key === 'n') {
@@ -46,11 +54,11 @@
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
-				{#if honeycrisp.state.view.selectedNote && honeycrisp.state.view.selectedNoteId}
-					{#key honeycrisp.state.view.selectedNoteId}
+				{#if state.view.selectedNote && state.view.selectedNoteId}
+					{#key state.view.selectedNoteId}
 						<NoteBodyPane
-							noteId={honeycrisp.state.view.selectedNoteId}
-							focusRequest={honeycrisp.state.view.editorFocusRequest}
+							noteId={state.view.selectedNoteId}
+							focusRequest={state.view.editorFocusRequest}
 						/>
 					{/key}
 				{:else}

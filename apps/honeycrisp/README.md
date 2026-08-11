@@ -17,17 +17,18 @@ Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note 
 Honeycrisp declares one inert Lens over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and binds it to a store the surface owns:
 
 ```txt
-open(honeycrispLens, { owner: 'device' })            sqlite-wasm in the page,
-open(honeycrispLens, { owner: 'account',             durable relations in
-                       principalId })               IndexedDB, one database
+openDevice(honeycrispLens)                          sqlite-wasm in the page,
+openAccount(honeycrispLens, { principalId })        durable relations in
+                                                    IndexedDB, one database
                                                     per document
 db.tables.notes.list()                              synchronous from here on
 ```
 
-The lens names the application and the caller names which durable document it
+The lens names the application and the opener names which durable document it
 means and whose it is (ADR-0229 as amended by ADR-0233): one device document
-that never syncs, and one retained replica per account. Auth
-picks one at boot, in `src/lib/application.ts`, and nothing else opens a store.
+that never syncs and opens every generation, and one retained replica per
+account that also opens when the boot auth carries that principal. The root
+composes both in `src/lib/runtime.ts`, and nothing else opens a store.
 
 Every build opens its own store, with no platform seam, and reaches one
 authority per signed-in account (ADR-0225/0226). The desktop host serves

@@ -7,18 +7,18 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { getHoneycrispApp } from '$lib/context.js';
+	import { getNotesSurface } from '../state/index.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 
-	const honeycrisp = getHoneycrispApp();
+	const surface = getNotesSurface();
 
 	let isOpen = $state(false);
 
 	function createAndSelectNote(): void {
-		const { id } = honeycrisp.state.notes.create(
-			honeycrisp.state.view.selectedFolderId,
+		const { id } = surface.state.notes.create(
+			surface.state.view.selectedFolderId,
 		);
-		honeycrisp.state.view.selectNote(id);
+		surface.state.view.selectNote(id);
 	}
 
 	const items = $derived.by((): CommandPaletteItem[] => [
@@ -27,23 +27,23 @@
 			label: 'All Notes',
 			group: 'Folders',
 			icon: FileTextIcon,
-			onSelect: () => honeycrisp.state.view.selectFolder(null),
+			onSelect: () => surface.state.view.selectFolder(null),
 		},
-		...honeycrisp.state.folders.all.map((folder): CommandPaletteItem => ({
+		...surface.state.folders.all.map((folder): CommandPaletteItem => ({
 			id: `folder:${folder.id}`,
 			label: folder.icon ? `${folder.icon} ${folder.name}` : folder.name,
 			keywords: [folder.name],
 			group: 'Folders',
 			icon: folder.icon ? undefined : FolderIcon,
-			onSelect: () => honeycrisp.state.view.selectFolder(folder.id),
+			onSelect: () => surface.state.view.selectFolder(folder.id),
 		})),
-		...honeycrisp.state.notes.all.map((note): CommandPaletteItem => ({
+		...surface.state.notes.all.map((note): CommandPaletteItem => ({
 			id: `note:${note.id}`,
 			label: note.title || 'Untitled',
 			description: note.preview || undefined,
 			group: 'Notes',
 			icon: FileTextIcon,
-			onSelect: () => honeycrisp.state.view.selectNote(note.id),
+			onSelect: () => surface.state.view.selectNote(note.id),
 		})),
 		{
 			id: 'action:new-note',
@@ -60,7 +60,7 @@
 			icon: FolderPlusIcon,
 			onSelect: () =>
 				runHoneycrispMutation(
-					() => honeycrisp.state.folders.create(),
+					() => surface.state.folders.create(),
 					'Could not create folder',
 				),
 		},

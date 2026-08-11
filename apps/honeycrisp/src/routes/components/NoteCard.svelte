@@ -10,10 +10,10 @@
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
-	import { getHoneycrispApp } from '$lib/context.js';
+	import { getNotesSurface } from '../state/index.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 
-	const honeycrisp = getHoneycrispApp();
+	const surface = getNotesSurface();
 
 	let {
 		note,
@@ -68,7 +68,7 @@
 						onclick={(e) => {
 							e.stopPropagation();
 							runHoneycrispMutation(
-								() => honeycrisp.state.notes.restore(note.id),
+								() => surface.state.notes.restore(note.id),
 								'Could not restore note',
 							);
 						}}
@@ -100,7 +100,7 @@
 						onclick={(e) => {
 							e.stopPropagation();
 							runHoneycrispMutation(
-								() => honeycrisp.state.notes.togglePin(note.id),
+								() => surface.state.notes.togglePin(note.id),
 								'Could not update note',
 							);
 						}}
@@ -114,7 +114,7 @@
 						onclick={(e) => {
 							e.stopPropagation();
 							runHoneycrispMutation(
-								() => honeycrisp.state.notes.softDelete(note.id),
+								() => surface.state.notes.softDelete(note.id),
 								'Could not delete note',
 							);
 						}}
@@ -131,7 +131,7 @@
 			<ContextMenu.Item
 				onclick={() =>
 					runHoneycrispMutation(
-						() => honeycrisp.state.notes.restore(note.id),
+						() => surface.state.notes.restore(note.id),
 						'Could not restore note',
 					)}
 			>
@@ -152,7 +152,7 @@
 			<ContextMenu.Item
 				onclick={() =>
 					runHoneycrispMutation(
-						() => honeycrisp.state.notes.togglePin(note.id),
+						() => surface.state.notes.togglePin(note.id),
 						'Could not update note',
 					)}
 			>
@@ -169,7 +169,7 @@
 					<ContextMenu.Item
 						onclick={() =>
 							runHoneycrispMutation(
-								() => honeycrisp.state.notes.moveToFolder(note.id, null),
+								() => surface.state.notes.moveToFolder(note.id, null),
 								'Could not move note',
 							)}
 					>
@@ -177,11 +177,11 @@
 						Unfiled
 					</ContextMenu.Item>
 					<ContextMenu.Separator />
-					{#each honeycrisp.state.folders.all as folder (folder.id)}
+					{#each surface.state.folders.all as folder (folder.id)}
 						<ContextMenu.Item
 							onclick={() =>
 								runHoneycrispMutation(
-									() => honeycrisp.state.notes.moveToFolder(note.id, folder.id),
+									() => surface.state.notes.moveToFolder(note.id, folder.id),
 									'Could not move note',
 								)}
 						>
@@ -200,7 +200,7 @@
 				class="text-destructive focus:text-destructive"
 				onclick={() =>
 					runHoneycrispMutation(
-						() => honeycrisp.state.notes.softDelete(note.id),
+						() => surface.state.notes.softDelete(note.id),
 						'Could not delete note',
 					)}
 			>
@@ -224,7 +224,7 @@
 			<AlertDialog.Action
 				onclick={() =>
 					runHoneycrispMutation(
-						() => honeycrisp.state.notes.permanentlyDelete(note.id),
+						() => surface.state.notes.permanentlyDelete(note.id),
 						'Could not permanently delete note',
 					)}
 				>Delete</AlertDialog.Action

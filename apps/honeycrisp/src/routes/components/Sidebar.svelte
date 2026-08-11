@@ -12,19 +12,21 @@
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '#platform/auth';
 	import { instanceSetting } from '#platform/instance';
-	import { getHoneycrispApp } from '$lib/context.js';
+	import { getHoneycrispRuntime } from '$lib/context.js';
+	import { getNotesSurface } from '../state/index.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
-	const honeycrisp = getHoneycrispApp();
+	const runtime = getHoneycrispRuntime();
+	const surface = getNotesSurface();
 
-	// Bound once, not `$derived`: the application is frozen for this page
-	// lifetime, so whether this generation has a workspace to rebuild is settled
-	// before this component exists. Defined means an account replica already
-	// stamped into the current document, because that is the only way a workspace
-	// generation gets past its boot gate (ADR-0231, ADR-0233); a device document
-	// has no workspace and never offers this.
-	const rebuild = honeycrisp.rebuild;
+	// Bound once, not `$derived`: the runtime is frozen for this page lifetime,
+	// so whether this generation has an account to rebuild is settled before
+	// this component exists. A defined `account` is already a replica stamped
+	// into the current document, because that is the only way past the boot
+	// gate (ADR-0231, ADR-0233); a device-only generation never offers this.
+	const account = runtime.account;
+	const rebuild = account?.rebuild;
 
 	// Both footer readings are sampled, not derived. `pressure()` and
 	// `syncStatus()` are plain reads off the store and the sync driver, neither
@@ -36,7 +38,8 @@
 	// either moves: sync settles in milliseconds and pressure changes only on a
 	// write, so a faster tick would render the same footer again.
 	function readPressure() {
-		const { data, error } = honeycrisp.pressure();
+		// Pressure of the document this surface is showing, whichever that is.
+		const { data, error } = surface.data.store.pressure();
 		return error === null ? data : undefined;
 	}
 
@@ -51,12 +54,12 @@
 	// Undefined when sync is not part of this app generation, which is not an
 	// error state: a build with no auth, a signed-out replica, and a desktop
 	// window that holds no credential all show nothing here, correctly.
-	let sync = $state.raw(honeycrisp.syncStatus());
+	let sync = $state.raw(account?.syncStatus());
 
 	$effect(() => {
 		const timer = setInterval(() => {
 			pressure = readPressure();
-			sync = honeycrisp.syncStatus();
+			sync = account?.syncStatus();
 		}, 1_000);
 		return () => clearInterval(timer);
 	});
@@ -109,8 +112,8 @@
 		<div class="px-2 pb-1">
 			<Sidebar.Input
 				placeholder="Search notes…"
-				value={honeycrisp.state.view.searchQuery}
-				oninput={(e) => honeycrisp.state.view.setSearchQuery(e.currentTarget.value)}
+				value={surface.state.view.searchQuery}
+				oninput={(e) => surface.state.view.setSearchQuery(e.currentTarget.value)}
 			/>
 		</div>
 	</Sidebar.Header>
@@ -121,26 +124,26 @@
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={honeycrisp.state.view.selectedFolderId === null && !honeycrisp.state.view.isRecentlyDeletedView}
-							onclick={() => honeycrisp.state.view.selectFolder(null)}
+							isActive={surface.state.view.selectedFolderId === null && !surface.state.view.isRecentlyDeletedView}
+							onclick={() => surface.state.view.selectFolder(null)}
 						>
 							<FileTextIcon class="size-4" />
 							<span>All Notes</span>
 							<span class="ml-auto text-xs text-muted-foreground">
-								{honeycrisp.state.notes.all.length}
+								{surface.state.notes.all.length}
 							</span>
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={honeycrisp.state.view.isRecentlyDeletedView && honeycrisp.state.view.selectedFolderId === null}
-							onclick={() => honeycrisp.state.view.selectRecentlyDeleted()}
+							isActive={surface.state.view.isRecentlyDeletedView && surface.state.view.selectedFolderId === null}
+							onclick={() => surface.state.view.selectRecentlyDeleted()}
 						>
 							<TrashIcon class="size-4" />
 							<span>Recently Deleted</span>
-							{#if honeycrisp.state.notes.deleted.length > 0}
+							{#if surface.state.notes.deleted.length > 0}
 								<span class="ml-auto text-xs text-muted-foreground">
-									{honeycrisp.state.notes.deleted.length}
+									{surface.state.notes.deleted.length}
 								</span>
 							{/if}
 						</Sidebar.MenuButton>
@@ -158,7 +161,7 @@
 					title="New Folder"
 					onclick={() =>
 						runHoneycrispMutation(
-							() => honeycrisp.state.folders.create(),
+							() => surface.state.folders.create(),
 							'Could not create folder',
 						)}
 				>
@@ -168,7 +171,7 @@
 				<Collapsible.Content>
 					<Sidebar.GroupContent>
 						<Sidebar.Menu>
-							{#each honeycrisp.state.folders.all as folder (folder.id)}
+							{#each surface.state.folders.all as folder (folder.id)}
 								<FolderMenuItem {folder} />
 							{:else}
 								<Sidebar.MenuItem>

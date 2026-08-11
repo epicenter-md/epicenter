@@ -8,30 +8,34 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '#platform/auth';
-	import HoneycrispAppProvider from '$lib/HoneycrispAppProvider.svelte';
-	import { openHoneycrispApplication } from '$lib/application.js';
+	import HoneycrispRuntimeProvider from '$lib/HoneycrispRuntimeProvider.svelte';
+	import { openHoneycrispRuntime } from '$lib/runtime.js';
 	import '@epicenter/ui/app.css';
 
 	let { children } = $props();
 
-	// The ready-application shape. One transactional open acquired during layout
+	// The ready-runtime shape. One transactional open acquired during layout
 	// initialisation, and a raw `{#await}` owning pending, ready and failure;
-	// descendants receive the READY application through a typed context, so
-	// there is no module-scope boot, no half-open handle, and no `whenReady`
-	// accessor for anything to read too early.
+	// descendants receive the READY runtime through a typed context, so there
+	// is no module-scope boot, no half-open handle, and no `whenReady` accessor
+	// for anything to read too early.
 	//
 	// Gated rather than skeletoned because there is no useful partial UI: a
 	// route on an unopened store reads empty tables and flashes "No notes yet"
-	// at someone whose notes are about to appear.
+	// at someone whose notes are about to appear. The same gate deliberately
+	// holds a signed-in generation whose fresh account replica has not bound
+	// yet, device data included: a partial-ready surface is refused, and the
+	// way back to device-only use is a new generation (signing out).
 	const boot = new AbortController();
-	const opening = openHoneycrispApplication({ auth, signal: boot.signal });
+	const opening = openHoneycrispRuntime({ auth, signal: boot.signal });
 	$effect(() => () => boot.abort());
 
 	// A page lifetime is one auth generation. Everything above composed itself
 	// from the boot-time auth snapshot, so an identity change or a repaired
 	// credential reloads rather than swapping anything in place; the next boot
-	// rebuilds the right store and sync from scratch. On the desktop host this
-	// never fires (identity is immutable per process generation, ADR-0155).
+	// rebuilds the right documents and sync from scratch. On the desktop host
+	// this never fires (identity is immutable per process generation,
+	// ADR-0155).
 	$effect(() => reloadOnAuthChange(auth));
 </script>
 
@@ -39,10 +43,10 @@
 
 {#await opening}
 	<Loading class="h-dvh" />
-{:then application}
-	<HoneycrispAppProvider {application}>
+{:then runtime}
+	<HoneycrispRuntimeProvider {runtime}>
 		<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
-	</HoneycrispAppProvider>
+	</HoneycrispRuntimeProvider>
 {:catch error}
 	<div class="flex h-dvh items-center justify-center p-6 text-center">
 		<div class="max-w-md space-y-2">

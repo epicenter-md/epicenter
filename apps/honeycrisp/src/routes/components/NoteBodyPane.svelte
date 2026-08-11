@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { NOTE_BODY, type NoteId } from '@epicenter/honeycrisp';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
-	import { getHoneycrispApp } from '$lib/context.js';
+	import { getNotesSurface } from '../state/index.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 
-	const honeycrisp = getHoneycrispApp();
+	const surface = getNotesSurface();
 
 	let { noteId, focusRequest }: { noteId: NoteId; focusRequest: number } =
 		$props();
@@ -15,7 +15,7 @@
 	// through the transport like any other change. The editor binds to it
 	// directly, which is what `document-polling.ts` and its one-second interval
 	// existed to fake.
-	const body = $derived(honeycrisp.db.tables.notes.document(noteId)?.get(NOTE_BODY));
+	const body = $derived(surface.data.tables.notes.document(noteId)?.get(NOTE_BODY));
 </script>
 
 {#if body === undefined}
@@ -31,7 +31,7 @@
 					{focusRequest}
 					onContentChange={(change) =>
 						runHoneycrispMutation(
-							() => honeycrisp.state.notes.updateContent(noteId, change),
+							() => surface.state.notes.updateContent(noteId, change),
 							'Could not save note',
 						)}
 				/>

@@ -18,7 +18,7 @@
  */
 
 import type { AuthClient } from '@epicenter/auth';
-import type { Store } from '@epicenter/data';
+import type { ReplicaStore } from '@epicenter/data';
 import {
 	createSyncConnection,
 	type SyncConnection,
@@ -50,7 +50,7 @@ export function attachHoneycrispSync({
 	onSuperseded,
 	onDenied,
 }: {
-	store: Store;
+	store: ReplicaStore;
 	auth: AuthClient;
 	/**
 	 * This replica's document was replaced (ADR-0231). The driver has
