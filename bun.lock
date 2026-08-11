@@ -719,6 +719,7 @@
         "@epicenter/sync": "workspace:*",
         "@sqlite.org/sqlite-wasm": "catalog:",
         "@y/y": "14.0.0-rc.24",
+        "idb": "^8.0.3",
         "nanoid": "catalog:",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",

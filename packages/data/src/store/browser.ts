@@ -36,6 +36,7 @@ import type { PrincipalId } from '@epicenter/identity';
 import type { LensJson, LensParseError } from '@epicenter/lens';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
+import { deleteDB, type DBSchema, type IDBPDatabase, openDB } from 'idb';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { claimDocument, releaseDocument } from './claims.js';
 import {
@@ -115,63 +116,58 @@ type DurableState = {
 	document?: string;
 };
 
+type BrowserPersistenceSchema = DBSchema & {
+	state: {
+		key: typeof STATE_KEY;
+		value: DurableState;
+	};
+};
+
+type BrowserPersistenceDatabase = IDBPDatabase<BrowserPersistenceSchema>;
+
 const STORE_NAME = 'state';
 const STATE_KEY = 'durable';
 
-function openIndexedDb(address: string): Promise<IDBDatabase> {
+function openIndexedDb(address: string): Promise<BrowserPersistenceDatabase> {
 	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(address, 1);
-		request.onupgradeneeded = () => {
-			const database = request.result;
-			if (!database.objectStoreNames.contains(STORE_NAME)) {
-				database.createObjectStore(STORE_NAME);
-			}
-		};
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () =>
-			reject(request.error ?? new Error('indexedDB.open failed'));
-		// `blocked` fires when another tab holds an older version of this database
-		// open, and when it does NEITHER `success` NOR `error` follows. Without
-		// this the promise never settles, so `open` hangs with no
-		// error and the application simply never boots in that one tab.
-		//
-		// Unreachable at version 1, and that is exactly why it is here: it becomes
-		// reachable the first time anyone bumps the version, and the symptom then
-		// is a hang rather than anything that would point at the change.
-		request.onblocked = () =>
-			reject(
-				new Error(
-					'Another tab is holding an older version of this store open. Close it and reload.',
-				),
-			);
+		let blocked = false;
+		void openDB<BrowserPersistenceSchema>(address, 1, {
+			upgrade(database) {
+				if (!database.objectStoreNames.contains(STORE_NAME)) {
+					database.createObjectStore(STORE_NAME);
+				}
+			},
+			blocked() {
+				blocked = true;
+				reject(
+					new Error(
+						'Another tab is holding an older version of this store open. Close it and reload.',
+					),
+				);
+			},
+		}).then(
+			(database) => {
+				if (blocked) database.close();
+				else resolve(database);
+			},
+			(cause) => reject(cause),
+		);
 	});
 }
 
-function readDurable(database: IDBDatabase): Promise<DurableState | undefined> {
-	return new Promise((resolve, reject) => {
-		const request = database
-			.transaction(STORE_NAME, 'readonly')
-			.objectStore(STORE_NAME)
-			.get(STATE_KEY);
-		request.onsuccess = () =>
-			resolve(request.result as DurableState | undefined);
-		request.onerror = () => reject(request.error ?? new Error('read failed'));
-	});
+function readDurable(
+	database: BrowserPersistenceDatabase,
+): Promise<DurableState | undefined> {
+	return database.get(STORE_NAME, STATE_KEY);
 }
 
-function writeDurable(
-	database: IDBDatabase,
+async function writeDurable(
+	database: BrowserPersistenceDatabase,
 	state: DurableState,
 ): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const transaction = database.transaction(STORE_NAME, 'readwrite');
-		transaction.objectStore(STORE_NAME).put(state, STATE_KEY);
-		transaction.oncomplete = () => resolve();
-		transaction.onerror = () =>
-			reject(transaction.error ?? new Error('write failed'));
-		transaction.onabort = () =>
-			reject(transaction.error ?? new Error('write aborted'));
-	});
+	const transaction = database.transaction(STORE_NAME, 'readwrite');
+	await transaction.store.put(state, STATE_KEY);
+	await transaction.done;
 }
 
 function describe(cause: unknown): { name: string; message: string } {
@@ -183,18 +179,20 @@ function describe(cause: unknown): { name: string; message: string } {
 /** Delete one store's IndexedDB database whole. Our own connection is closed first. */
 function deleteIndexedDb(address: string): Promise<void> {
 	return new Promise((resolve, reject) => {
-		const request = indexedDB.deleteDatabase(address);
-		request.onsuccess = () => resolve();
-		request.onerror = () =>
-			reject(request.error ?? new Error('indexedDB.deleteDatabase failed'));
-		// Another tab still holds this store open. The delete would complete
-		// only when that tab closes, and resolving now would claim a wipe that
-		// has not happened; the caller's reload rediscovers the refusal and
-		// tries again, so failing loudly here is the honest answer.
-		request.onblocked = () =>
-			reject(
-				new Error('Another tab is holding this store open. Close it first.'),
-			);
+		let blocked = false;
+		void deleteDB(address, {
+			blocked() {
+				blocked = true;
+				reject(
+					new Error('Another tab is holding this store open. Close it first.'),
+				);
+			},
+		}).then(
+			() => {
+				if (!blocked) resolve();
+			},
+			(cause) => reject(cause),
+		);
 	});
 }
 
