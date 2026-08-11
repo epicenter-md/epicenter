@@ -27,8 +27,8 @@
 	"dependencies": {
 		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
+		"@epicenter/lens": "workspace:*",
 		"wellcrafted": "catalog:",
-		"typebox": "catalog:",
 		"yaml": "^2.8.0"
 	},
 	"devDependencies": {

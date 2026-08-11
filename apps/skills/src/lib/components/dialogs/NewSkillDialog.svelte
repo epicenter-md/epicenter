@@ -5,16 +5,17 @@
 	import { Label } from '@epicenter/ui/label';
 	import { toast } from '@epicenter/ui/sonner';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { getSkillsApp } from '$lib/context.js';
+	import { getSkills } from '$lib/context.js';
+	import { runSkillsMutation } from '$lib/mutation.js';
 	import { validateSkill } from '$lib/utils/validation';
 
-	const { state: skillsState } = getSkillsApp();
+	const { state: skillsState } = getSkills();
 
 	let isOpen = $state(false);
 	let name = $state('');
 	let error = $state('');
 
-	async function handleCreate() {
+	function handleCreate() {
 		const trimmed = name.trim();
 		if (!trimmed) return;
 
@@ -28,11 +29,13 @@
 			return;
 		}
 
-		await skillsState.createSkill(trimmed);
-		toast.success(`Created skill: ${trimmed}`);
-		isOpen = false;
-		name = '';
-		error = '';
+		runSkillsMutation(() => {
+			skillsState.createSkill(trimmed);
+			toast.success(`Created skill: ${trimmed}`);
+			isOpen = false;
+			name = '';
+			error = '';
+		}, 'Could not create skill');
 	}
 </script>
 

@@ -4,9 +4,10 @@
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as Item from '@epicenter/ui/item';
 	import { cn } from '@epicenter/ui/utils';
-	import { getSkillsApp } from '$lib/context.js';
+	import { getSkills } from '$lib/context.js';
+	import { runSkillsMutation } from '$lib/mutation.js';
 
-	const { state: skillsState } = getSkillsApp();
+	const { state: skillsState } = getSkills();
 
 	let {
 		skill,
@@ -58,7 +59,11 @@
 					description:
 						'This will delete the skill and its known reference records. This action cannot be undone.',
 					confirm: { text: 'Delete', variant: 'destructive' },
-					onConfirm: () => skillsState.deleteSkill(skill.id),
+					onConfirm: () =>
+						runSkillsMutation(
+							() => skillsState.deleteSkill(skill.id),
+							'Could not delete skill',
+						),
 				});
 			}}
 		>

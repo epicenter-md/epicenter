@@ -1,4 +1,4 @@
 import { createContext } from 'svelte';
-import type { SkillsApplication } from './application.js';
+import type { SkillsRuntime } from './application.js';
 
-export const [getSkillsApp, setSkillsApp] = createContext<SkillsApplication>();
+export const [getSkills, setSkills] = createContext<SkillsRuntime>();

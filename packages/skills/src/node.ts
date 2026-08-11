@@ -1,19 +1,30 @@
-/** Filesystem import and export over caller-bound Skills data. */
+/**
+ * Filesystem import and export over caller-bound Skills data.
+ *
+ * Synchronous against the store and asynchronous against the disk, which is the
+ * honest split now: a row read is a property access on a document already in
+ * memory, and the only thing worth awaiting is a file.
+ */
 
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { RowDocument } from '@epicenter/data/legacy';
 import { InstantString } from '@epicenter/field';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
+import {
+	type Reference,
+	SKILL_CONTENT,
+	type Skill,
+	type SkillsData,
+} from './lens.js';
 import { parseSkillMd } from './parse.js';
 import { serializeSkillMd } from './serialize.js';
-import { scanReferences, scanSkills } from './services.js';
-import type { Reference, Skill } from './tables.js';
-import type { SkillsData } from './workspace.js';
+
+/** Either Skills table, for the document helpers that treat them alike. */
+type SkillsTable = SkillsData['tables']['skills' | 'skillReferences'];
 
 export const SkillsIoError = defineErrors({
 	ScanDirectoryFailed: ({ dir, cause }: { dir: string; cause: unknown }) => ({
@@ -51,26 +62,28 @@ export async function importSkillsFromDisk({
 				}
 			}),
 	);
-	const skillsScan = await scanSkills(data);
-	const referencesScan = await scanReferences(data);
+	const skillsScan = readSkills(data);
+	const referencesScan = readReferences(data);
 	const skillsBySourceId = new Map<string, { id: string }>(
-		skillsScan.skills.map((skill) => [skill.sourceId, { id: skill.id }]),
+		skillsScan.rows.map((skill) => [skill.sourceId, { id: skill.id }]),
 	);
+	// A skill this release cannot read is matched too, through its stored
+	// payload: importing over it must repair that row rather than mint a second
+	// one at a new id, and an update validates only the values it is handed
+	// (ADR-0125).
 	for (const error of skillsScan.nonconforming) {
-		if (error.name !== 'NonconformingRow') continue;
 		const sourceId = error.raw.sourceId;
 		if (typeof sourceId === 'string' && !skillsBySourceId.has(sourceId)) {
 			skillsBySourceId.set(sourceId, { id: error.id });
 		}
 	}
 	const referencesByOwnerAndPath = new Map<string, { id: string }>(
-		referencesScan.references.map((reference) => [
+		referencesScan.rows.map((reference) => [
 			referenceKey(reference.skillId, reference.path),
 			{ id: reference.id },
 		]),
 	);
 	for (const error of referencesScan.nonconforming) {
-		if (error.name !== 'NonconformingRow') continue;
 		const { skillId, path } = error.raw;
 		if (typeof skillId === 'string' && typeof path === 'string') {
 			const key = referenceKey(skillId, path);
@@ -91,29 +104,22 @@ export async function importSkillsFromDisk({
 				? proposedSourceId
 				: crypto.randomUUID();
 		seenSourceIds.add(sourceId);
-		const input = {
-			sourceId,
-			name: read.skill.name,
-			description: read.skill.description,
-			license: read.skill.license,
-			compatibility: read.skill.compatibility,
-			metadata: read.skill.metadata,
-			allowedTools: read.skill.allowedTools,
-			updatedAt: read.skill.updatedAt,
-		};
+		const input = { ...read.skill, sourceId };
 		const existing = skillsBySourceId.get(sourceId);
 		let skill: Skill;
 		if (existing) {
-			const repaired = await data.skills.patch(existing.id, input);
-			if (repaired.error !== null || repaired.data === undefined) {
-				throw new Error(
-					repaired.error?.message ?? `Skill '${existing.id}' disappeared`,
-				);
-			}
-			skill = repaired.data;
+			const written = data.tables.skills.update(existing.id, input);
+			if (written.error !== null) throw written.error;
+			skill = written.data;
 			updated += 1;
 		} else {
-			skill = await data.skills.create(input);
+			// The instructions root is named with the row, so there is exactly one
+			// creator for it (ADR-0215).
+			const written = data.tables.skills.create(input, {
+				document: [SKILL_CONTENT],
+			});
+			if (written.error !== null) throw written.error;
+			skill = written.data;
 			skillsBySourceId.set(sourceId, { id: skill.id });
 			created += 1;
 		}
@@ -125,8 +131,7 @@ export async function importSkillsFromDisk({
 				'utf8',
 			);
 		}
-		await using instructions = await data.skills.openDocument(skill.id);
-		writeDocumentText(instructions, read.instructions);
+		writeDocumentText(data.tables.skills, skill.id, read.instructions);
 
 		const referencesPath = join(read.skillPath, 'references');
 		let referenceFiles: string[] = [];
@@ -142,18 +147,20 @@ export async function importSkillsFromDisk({
 				const content = await readFile(join(referencesPath, path), 'utf8');
 				const key = referenceKey(skill.id, path);
 				const existingReference = referencesByOwnerAndPath.get(key);
-				const reference = existingReference
-					? await repairReference(data, existingReference, path)
-					: await data.skillReferences.create({
-							skillId: skill.id,
-							path,
-							updatedAt: InstantString.now(),
+				const fields = {
+					skillId: skill.id,
+					path,
+					updatedAt: InstantString.now(),
+				};
+				const written = existingReference
+					? data.tables.skillReferences.update(existingReference.id, fields)
+					: data.tables.skillReferences.create(fields, {
+							document: [SKILL_CONTENT],
 						});
+				if (written.error !== null) throw written.error;
+				const reference: Reference = written.data;
 				referencesByOwnerAndPath.set(key, reference);
-				await using document = await data.skillReferences.openDocument(
-					reference.id,
-				);
-				writeDocumentText(document, content);
+				writeDocumentText(data.tables.skillReferences, reference.id, content);
 			}),
 		);
 	}
@@ -176,36 +183,32 @@ export async function exportSkillsToDisk({
 	data: SkillsData;
 	dir: string;
 }) {
-	const skillsScan = await scanSkills(data);
-	const referencesScan = await scanReferences(data);
-	const skillNames = new Set(skillsScan.skills.map((skill) => skill.name));
+	const skillsScan = readSkills(data);
+	const referencesScan = readReferences(data);
+	const skillNames = new Set(skillsScan.rows.map((skill) => skill.name));
 	await Promise.all(
-		skillsScan.skills.map(async (skill) => {
+		skillsScan.rows.map(async (skill) => {
 			const skillDir = join(dir, skill.name);
 			await mkdir(skillDir, { recursive: true });
-			await using instructions = await data.skills.openDocument(skill.id);
 			await writeFile(
 				join(skillDir, 'SKILL.md'),
-				serializeSkillMd(skill, instructions.get('content').toString()),
+				serializeSkillMd(skill, readDocumentText(data.tables.skills, skill.id)),
 				'utf8',
 			);
-			const references = referencesScan.references.filter(
+			const references = referencesScan.rows.filter(
 				(reference) => reference.skillId === skill.id,
 			);
 			if (references.length === 0) return;
 			const referencesDir = join(skillDir, 'references');
 			await mkdir(referencesDir, { recursive: true });
 			await Promise.all(
-				references.map(async (reference) => {
-					await using content = await data.skillReferences.openDocument(
-						reference.id,
-					);
-					await writeFile(
+				references.map((reference) =>
+					writeFile(
 						join(referencesDir, reference.path),
-						content.get('content').toString(),
+						readDocumentText(data.tables.skillReferences, reference.id),
 						'utf8',
-					);
-				}),
+					),
+				),
 			);
 		}),
 	);
@@ -226,7 +229,7 @@ export async function exportSkillsToDisk({
 		),
 	);
 	return {
-		exported: skillsScan.skills.length,
+		exported: skillsScan.rows.length,
 		nonconforming: [
 			...skillsScan.nonconforming,
 			...referencesScan.nonconforming,
@@ -234,33 +237,59 @@ export async function exportSkillsToDisk({
 	};
 }
 
-async function repairReference(
-	data: SkillsData,
-	reference: { id: string },
-	path: string,
-): Promise<Reference> {
-	const repaired = await data.skillReferences.patch(reference.id, {
-		path,
-		updatedAt: InstantString.now(),
-	});
-	if (repaired.error !== null || repaired.data === undefined) {
-		throw new Error(
-			repaired.error?.message ?? `Reference '${reference.id}' disappeared`,
-		);
-	}
-	return repaired.data;
+/**
+ * Read one table whole, or throw.
+ *
+ * Neither direction has anywhere to put a failed read: a whole-table read fails
+ * only when the projection is unusable, which is not a condition an import or
+ * an export recovers from. Nonconforming rows are a different thing, carried
+ * out to the caller as diagnostics rather than raised.
+ *
+ * Two functions rather than one generic, because the two tables have different
+ * row types and inferring that through a type parameter costs a cast that buys
+ * nothing back.
+ */
+function readSkills(data: SkillsData) {
+	const listed = data.tables.skills.list();
+	if (listed.error !== null) throw listed.error;
+	return listed.data;
 }
 
-function writeDocumentText(document: RowDocument, value: string): void {
-	const content = document.get('content');
-	document.transact(() => {
-		content.delete(0, content.length);
-		content.insert(0, value);
-	});
+function readReferences(data: SkillsData) {
+	const listed = data.tables.skillReferences.list();
+	if (listed.error !== null) throw listed.error;
+	return listed.data;
+}
+
+/**
+ * Replace one row's markdown whole, in a single operation.
+ *
+ * One delta rather than a delete followed by an insert: `applyDelta` opens its
+ * own transaction, so two calls would publish an empty document to every peer
+ * in between. It is still a wholesale replace, which is what importing a file
+ * means; a person's typing goes through the editor's own incremental binding.
+ *
+ * A row that vanished between the read and here writes nothing rather than
+ * reviving an address that no longer holds a skill.
+ */
+function writeDocumentText(
+	table: SkillsTable,
+	rowId: string,
+	value: string,
+): void {
+	const content = table.document(rowId)?.get(SKILL_CONTENT);
+	if (content === undefined) return;
+	content.applyDelta(
+		content.change.delete(content.length).insert(value) as never,
+	);
+}
+
+function readDocumentText(table: SkillsTable, rowId: string): string {
+	return table.document(rowId)?.get(SKILL_CONTENT).toString() ?? '';
 }
 
 function referenceKey(skillId: string, path: string): string {
-	return `${skillId}\u0000${path}`;
+	return `${skillId} ${path}`;
 }
 
 function isNotFound(cause: unknown): boolean {

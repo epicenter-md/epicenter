@@ -384,7 +384,9 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/data": "workspace:*",
+        "@epicenter/lens": "workspace:*",
         "mode-watcher": "^1.1.0",
+        "wellcrafted": "catalog:",
       },
       "devDependencies": {
         "@codemirror/commands": "^6.10.3",
@@ -840,7 +842,7 @@
       "dependencies": {
         "@epicenter/data": "workspace:*",
         "@epicenter/field": "workspace:*",
-        "typebox": "catalog:",
+        "@epicenter/lens": "workspace:*",
         "wellcrafted": "catalog:",
         "yaml": "^2.8.0",
       },

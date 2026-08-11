@@ -1,15 +1,15 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { SkillsApplication } from './application.js';
-	import { setSkillsApp } from './context.js';
+	import type { SkillsRuntime } from './application.js';
+	import { setSkills } from './context.js';
 
 	let {
-		application,
+		runtime,
 		children,
-	}: { application: SkillsApplication; children: Snippet } = $props();
+	}: { runtime: SkillsRuntime; children: Snippet } = $props();
 
 	/* svelte-ignore state_referenced_locally */
-	setSkillsApp(application);
+	setSkills(runtime);
 </script>
 
 {@render children()}

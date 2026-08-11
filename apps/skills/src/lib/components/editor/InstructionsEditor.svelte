@@ -1,21 +1,23 @@
 <script lang="ts">
-	import { getSkillsApp } from '$lib/context.js';
+	import { SKILL_CONTENT } from '@epicenter/skills';
+	import { getSkills } from '$lib/context.js';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { skillId }: { skillId: string } = $props();
-	const skills = getSkillsApp();
+	const skills = getSkills();
 
-	const lease = $derived(skills.skills.openDocument(skillId));
-	$effect(() => {
-		const openedLease = lease;
-		return () =>
-			void openedLease.then(
-				(opened) => opened[Symbol.asyncDispose](),
-				() => undefined,
-			);
-	});
+	// The skill's markdown, live. There is no lease to open, nothing to await,
+	// and nothing to release: the root was allocated with the row (ADR-0215) and
+	// it lives in the application's one document. Undefined means the row is
+	// gone, which the editor renders as nothing rather than as an empty file it
+	// could then save over.
+	const content = $derived(
+		skills.data.tables.skills.document(skillId)?.get(SKILL_CONTENT),
+	);
 </script>
 
-{#await lease then opened}
-	<CodeMirrorEditor document={opened} />
-{/await}
+{#if content !== undefined}
+	{#key skillId}
+		<CodeMirrorEditor {content} />
+	{/key}
+{/if}
