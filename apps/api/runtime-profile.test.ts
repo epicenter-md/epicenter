@@ -148,22 +148,6 @@ const PROFILE: Surface[] = [
 		bun: 'absent',
 		why: 'The shell comes from the Worker `ASSETS` binding. In Bun dev, Vite serves apps/api/ui directly, so the fallback shell has no job.',
 	},
-	{
-		surface: 'mountAttachGrantsApp',
-		method: 'GET',
-		url: `${ORIGIN}/attach/grants`,
-		worker: 'absent',
-		bun: 'absent',
-		why: 'ADR-0115 clause 3: a signed-in OAuth bearer IS the hosted attach authorization. Cloud has no device-grant store, pairing ceremony, or QR, and must not grow one.',
-	},
-	{
-		surface: 'mountHostDirectoryApp',
-		method: 'GET',
-		url: `${ORIGIN}/attach/hosts`,
-		worker: 'absent',
-		bun: 'absent',
-		why: "The directory reads a Bun relay's live host set; the Durable Object transport exposes no such reader. Hosted host discovery is unbuilt, not disabled.",
-	},
 ];
 
 const dataDir = mkdtempSync(join(tmpdir(), 'api-profile-'));
