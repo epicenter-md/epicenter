@@ -106,6 +106,12 @@ export { createServerApp } from './server-app.js';
 // proves its own Env against it (extends in apps/self-host, satisfies in
 // apps/api); a Bun host validates `process.env` with the schema at boot.
 export { ServerBindings } from './server-bindings.js';
+export { StoreAuthority } from './store-sync/authority.js';
+export {
+	mountStoreSyncApp,
+	type ResolveStoreAuthority,
+	type StoreAuthorityStub,
+} from './store-sync/mount.js';
 // Public Hono context types: the portable `Env` (both deployments), the cloud's
 // `CloudEnv` (Env + Better Auth/Postgres state), and the `ResolveBearerPrincipal<E>`
 // seam the deployment closes its auth wrappers over.
@@ -114,10 +120,3 @@ export type {
 	Env,
 	ResolveBearerPrincipal,
 } from './types.js';
-
-export { StoreAuthority } from './store-sync/authority.js';
-export {
-	mountStoreSyncApp,
-	type ResolveStoreAuthority,
-	type StoreAuthorityStub,
-} from './store-sync/mount.js';

@@ -35,7 +35,11 @@ try {
 	await page.goto(origin, { waitUntil: 'networkidle' });
 	await page.waitForTimeout(2500);
 	console.log('1. it boots');
-	check('no page errors on boot', errors.length === 0, errors.slice(0, 2).join(' | '));
+	check(
+		'no page errors on boot',
+		errors.length === 0,
+		errors.slice(0, 2).join(' | '),
+	);
 	check(
 		'the sidebar rendered',
 		await page.getByText('Honeycrisp', { exact: true }).first().isVisible(),
@@ -43,7 +47,9 @@ try {
 	check(
 		'pressure is on screen',
 		/\d+ items · \d+ notes/.test(await page.locator('body').innerText()),
-		(await page.locator('body').innerText()).match(/\d+ items · \d+ notes · [\d.]+ each/)?.[0] ?? 'not found',
+		(await page.locator('body').innerText()).match(
+			/\d+ items · \d+ notes · [\d.]+ each/,
+		)?.[0] ?? 'not found',
 	);
 
 	console.log('\n2. make a note and type into it');
@@ -61,22 +67,38 @@ try {
 	const after = await page.locator('body').innerText();
 	check('the note list shows the title', after.includes('Groceries'), '');
 	check('the list changed', after !== before);
-	check('still no page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
+	check(
+		'still no page errors',
+		errors.length === 0,
+		errors.slice(0, 2).join(' | '),
+	);
 
 	console.log('\n3. reload, and it is still there');
 	await page.reload({ waitUntil: 'networkidle' });
 	await page.waitForTimeout(2500);
 	const reloaded = await page.locator('body').innerText();
 	check('the note survived the reload', reloaded.includes('Groceries'));
-	const prose = await page.locator('.ProseMirror').first().innerText().catch(() => '');
+	const prose = await page
+		.locator('.ProseMirror')
+		.first()
+		.innerText()
+		.catch(() => '');
 	check(
 		'its prose survived too',
 		reloaded.includes('milk and eggs') || prose.includes('milk and eggs'),
 		prose.slice(0, 60),
 	);
-	check('no page errors after reload', errors.length === 0, errors.slice(0, 3).join(' | '));
+	check(
+		'no page errors after reload',
+		errors.length === 0,
+		errors.slice(0, 3).join(' | '),
+	);
 } finally {
 	await browser.close();
 }
-console.log(failures === 0 ? '\nHoneycrisp runs on the new store.\n' : `\n${failures} FAILED\n`);
+console.log(
+	failures === 0
+		? '\nHoneycrisp runs on the new store.\n'
+		: `\n${failures} FAILED\n`,
+);
 process.exit(failures === 0 ? 0 : 1);

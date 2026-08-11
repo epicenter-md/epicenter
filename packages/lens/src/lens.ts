@@ -152,9 +152,8 @@ export type RowOf<TFields> = Flatten<{ id: string } & FieldsOut<TFields>>;
 type Flatten<T> = { [K in keyof T]: T[K] };
 
 /** One table's fields on arktype's output side. */
-type FieldsOut<TFields> = type.instantiate<TFields> extends { infer: infer TOut }
-	? TOut
-	: never;
+type FieldsOut<TFields> =
+	type.instantiate<TFields> extends { infer: infer TOut } ? TOut : never;
 
 /**
  * What `create` takes: arktype's **input** side, where a field that declares a
@@ -164,11 +163,12 @@ type FieldsOut<TFields> = type.instantiate<TFields> extends { infer: infer TOut 
  * `{ title: string; theme?: 'light' | 'dark' }`. So "which fields may I omit"
  * is answered by the lens itself rather than by a second declaration.
  */
-export type CreateInputOf<TFields> = type.instantiate<TFields> extends {
-	inferIn: infer TIn;
-}
-	? TIn
-	: never;
+export type CreateInputOf<TFields> =
+	type.instantiate<TFields> extends {
+		inferIn: infer TIn;
+	}
+		? TIn
+		: never;
 
 /** One application's KV as a read hands it back: no id, and never absent. */
 export type KvOf<TLens> = TLens extends { kv: infer TKv }
@@ -442,7 +442,10 @@ function compileLens(
 			reason: `namespace '${namespace}' is not two or more lowercase dot-separated labels`,
 		});
 	}
-	if (title !== undefined && (typeof title !== 'string' || title.trim() === '')) {
+	if (
+		title !== undefined &&
+		(typeof title !== 'string' || title.trim() === '')
+	) {
 		return LensParseError.Malformed({
 			reason: 'its title must say something or be absent',
 		});

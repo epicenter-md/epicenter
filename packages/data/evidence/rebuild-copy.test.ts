@@ -28,8 +28,9 @@
  * still learns no formats and no meanings, but the phrase "learns none of the
  * names" is no longer literally true during a rebuild.
  */
-import * as Y from '@y/y';
+
 import { describe, expect, test } from 'bun:test';
+import * as Y from '@y/y';
 
 /** A row document with the shapes an application actually puts in one. */
 function sourceContainer(): { doc: Y.Doc; container: Y.Type } {
@@ -39,7 +40,9 @@ function sourceContainer(): { doc: Y.Doc; container: Y.Type } {
 		const text = new Y.Type('text' as never);
 		container.setAttr('editor' as never, text as never);
 		text.applyDelta(text.change.insert('plain ') as never);
-		text.applyDelta(text.change.retain(6).insert('bold', { bold: true }) as never);
+		text.applyDelta(
+			text.change.retain(6).insert('bold', { bold: true }) as never,
+		);
 
 		const meta = new Y.Type();
 		container.setAttr('meta' as never, meta as never);
@@ -149,7 +152,8 @@ describe('the library API for this is broken in rc.24', () => {
 
 		expect(failure).toBeUndefined();
 		expect(
-			(target.get('!doc').getAttr('editor' as never) as unknown as Y.Type).length,
+			(target.get('!doc').getAttr('editor' as never) as unknown as Y.Type)
+				.length,
 		).toBe('buy milk'.length);
 	});
 });
@@ -173,9 +177,11 @@ describe('the one BUILT-IN path that round-trips cannot be used', () => {
 });
 
 function itemCount(doc: Y.Doc): number {
-	const clients = (doc as unknown as {
-		store?: { clients?: Map<number, { length: number }[]> };
-	}).store?.clients;
+	const clients = (
+		doc as unknown as {
+			store?: { clients?: Map<number, { length: number }[]> };
+		}
+	).store?.clients;
 	let total = 0;
 	for (const structs of clients?.values() ?? []) total += structs.length;
 	return total;
@@ -214,7 +220,9 @@ describe('recursing by hand copies what clone() cannot', () => {
 		target.transact(() =>
 			target.get('notes').setAttr('n1' as never, deepCopy(container) as never),
 		);
-		const copied = target.get('notes').getAttr('n1' as never) as unknown as Y.Type;
+		const copied = target
+			.get('notes')
+			.getAttr('n1' as never) as unknown as Y.Type;
 
 		expect(JSON.stringify(copied.toDeltaDeep())).toBe(
 			JSON.stringify(container.toDeltaDeep()),

@@ -87,10 +87,9 @@ test('WebView surfaces share one replica and state survives restart', async () =
 		).toBe('Updated transcript');
 		// A singleton is a row you named, and `patch` does not create (ADR-0206),
 		// so the row is seeded before it is edited exactly as the app does at boot.
-		await firstData.settings.create(
-			SETTINGS_ROW_ID,
-			{ analyticsEnabled: true },
-		);
+		await firstData.settings.create(SETTINGS_ROW_ID, {
+			analyticsEnabled: true,
+		});
 		await firstData.settings.patch(SETTINGS_ROW_ID, {
 			analyticsEnabled: false,
 		});
@@ -100,9 +99,7 @@ test('WebView surfaces share one replica and state survives restart', async () =
 			updatedAt: InstantString.now(),
 		});
 		{
-			await using document = await firstData.documents.openDocument(
-				row.id,
-			);
+			await using document = await firstData.documents.openDocument(row.id);
 			document.get('content').insert(0, 'Desktop document');
 			await document.whenDurable();
 		}
@@ -122,9 +119,9 @@ test('WebView surfaces share one replica and state survives restart', async () =
 		expect(
 			(await secondData.recordings.get(recording.id)).data?.transcript,
 		).toBe('Updated transcript');
-		expect(
-			(await firstData.recordings.get(recording.id)).data?.title,
-		).toBe('Shared recording');
+		expect((await firstData.recordings.get(recording.id)).data?.title).toBe(
+			'Shared recording',
+		);
 
 		await first[Symbol.asyncDispose]();
 		await second[Symbol.asyncDispose]();
@@ -144,12 +141,11 @@ test('WebView surfaces share one replica and state survives restart', async () =
 					},
 				}),
 			);
+			expect((await data.recordings.get(recording.id)).data?.transcript).toBe(
+				'Updated transcript',
+			);
 			expect(
-				(await data.recordings.get(recording.id)).data?.transcript,
-			).toBe('Updated transcript');
-			expect(
-				(await data.settings.get(SETTINGS_ROW_ID)).data
-					?.analyticsEnabled,
+				(await data.settings.get(SETTINGS_ROW_ID)).data?.analyticsEnabled,
 			).toBeFalse();
 			await using document = await data.documents.openDocument(row.id);
 			expect(document.get('content').toString()).toBe('Desktop document');
@@ -177,9 +173,7 @@ test('unsetting an optional field crosses the JSON carrier', async () => {
 			updatedAt: InstantString.now(),
 			note: 'remove me',
 		});
-		expect((await data.documents.get(row.id)).data?.note).toBe(
-			'remove me',
-		);
+		expect((await data.documents.get(row.id)).data?.note).toBe('remove me');
 
 		// `JSON.stringify` drops a key whose value is `undefined`, so a patch that
 		// carried one arrived at the host meaning nothing and the field survived.
@@ -213,10 +207,9 @@ test('a write in one surface invalidates the same lens in another', async () => 
 		// write like any other now that a singleton is an ordinary row
 		// (ADR-0206). Doing it before subscribing keeps the counter below
 		// measuring exactly the edit this test is about.
-		await writerData.settings.create(
-			SETTINGS_ROW_ID,
-			{ analyticsEnabled: true },
-		);
+		await writerData.settings.create(SETTINGS_ROW_ID, {
+			analyticsEnabled: true,
+		});
 
 		// Subscribe, then read. Registration is synchronous and never fires
 		// initially, so nothing can land in between and nothing has to be
@@ -263,8 +256,7 @@ test('a write in one surface invalidates the same lens in another', async () => 
 		await waitFor(() => settingsInvalidations > 0);
 		expect(settingsInvalidations).toBe(1);
 		expect(
-			(await readerData.settings.get(SETTINGS_ROW_ID)).data
-				?.analyticsEnabled,
+			(await readerData.settings.get(SETTINGS_ROW_ID)).data?.analyticsEnabled,
 		).toBeFalse();
 
 		await writer[Symbol.asyncDispose]();

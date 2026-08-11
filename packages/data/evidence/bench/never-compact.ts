@@ -107,9 +107,9 @@ function simulate(days: number, policy: Policy) {
 		for (let keystroke = 0; keystroke < DAY.charsTyped; keystroke += 1) {
 			const id = `r${String((day * 3 + keystroke) % 986).padStart(23, '0')}`;
 			transaction(() => {
-				const container = (root.getAttr(id as never) as unknown as Y.Type).getAttr(
-					'!doc' as never,
-				) as unknown as Y.Type;
+				const container = (
+					root.getAttr(id as never) as unknown as Y.Type
+				).getAttr('!doc' as never) as unknown as Y.Type;
 				const text = container.getAttr('editor' as never) as unknown as Y.Type;
 				text.applyDelta(text.change.retain(10).insert('a') as never);
 			});

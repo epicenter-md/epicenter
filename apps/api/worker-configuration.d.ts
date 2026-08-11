@@ -26,9 +26,7 @@ declare namespace Cloudflare {
 		EPICENTER_SYNC: DurableObjectNamespace<
 			import('./worker/index').EpicenterAuthority
 		>;
-		STORE_SYNC: DurableObjectNamespace<
-			import('./worker/index').StoreAuthority
-		>;
+		STORE_SYNC: DurableObjectNamespace<import('./worker/index').StoreAuthority>;
 	}
 }
 interface Env extends Cloudflare.Env {}

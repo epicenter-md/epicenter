@@ -183,9 +183,7 @@ export async function exportSkillsToDisk({
 		skillsScan.skills.map(async (skill) => {
 			const skillDir = join(dir, skill.name);
 			await mkdir(skillDir, { recursive: true });
-			await using instructions = await data.skills.openDocument(
-				skill.id,
-			);
+			await using instructions = await data.skills.openDocument(skill.id);
 			await writeFile(
 				join(skillDir, 'SKILL.md'),
 				serializeSkillMd(skill, instructions.get('content').toString()),

@@ -140,10 +140,7 @@ describe('promoteAppCatalogCandidate', () => {
 			files: { 'assets/entry.js': 'console.log(1);' },
 		});
 
-		const promoted = await promoteAppCatalogCandidate(
-			root,
-			candidate,
-		);
+		const promoted = await promoteAppCatalogCandidate(root, candidate);
 		expect(promoted.apps).toEqual([{ id: 'so.test.notes', title: 'Notes' }]);
 
 		const catalog = await load(root);
@@ -152,7 +149,11 @@ describe('promoteAppCatalogCandidate', () => {
 		]);
 		expect(await pageText(catalog, 'so.test.notes')).toContain('so.test.notes');
 		expect(
-			await pageText(catalog, 'so.test.notes', '/apps/so.test.notes/assets/entry.js'),
+			await pageText(
+				catalog,
+				'so.test.notes',
+				'/apps/so.test.notes/assets/entry.js',
+			),
 		).toContain('console.log');
 	});
 
@@ -222,9 +223,9 @@ describe('promoteAppCatalogCandidate', () => {
 			[noDeclaration, 'so.test.silent'],
 			[strayFile, 'README.md'],
 		] as const) {
-			await expect(
-				promoteAppCatalogCandidate(root, candidate),
-			).rejects.toThrow(refused);
+			await expect(promoteAppCatalogCandidate(root, candidate)).rejects.toThrow(
+				refused,
+			);
 		}
 		await expect(
 			promoteAppCatalogCandidate(
@@ -251,7 +252,12 @@ describe('promoteAppCatalogCandidate', () => {
 		// this host already spent is a bare label. The sets are disjoint by
 		// grammar, which is what this test pins.
 		const root = tempDir('epicenter-catalog-root-');
-		for (const id of [...COMPOSED_APP_IDS, 'home', 'whispering', 'honeycrisp']) {
+		for (const id of [
+			...COMPOSED_APP_IDS,
+			'home',
+			'whispering',
+			'honeycrisp',
+		]) {
 			expect(isNamespace(id, DATA_ADDRESS_CEILINGS)).toBe(false);
 			await expect(
 				promoteAppCatalogCandidate(
@@ -270,19 +276,20 @@ describe('promoteAppCatalogCandidate', () => {
 		const candidate = tempDir('epicenter-candidate-');
 		writeApp(candidate, 'so.test.twin', { directory: 'first' });
 		writeApp(candidate, 'so.test.twin', { directory: 'second' });
-		await expect(
-			promoteAppCatalogCandidate(root, candidate),
-		).rejects.toThrow('second');
+		await expect(promoteAppCatalogCandidate(root, candidate)).rejects.toThrow(
+			'second',
+		);
 		expect((await load(root)).apps).toEqual([]);
 	});
 
 	test('a failed copy cleans staging and path overlap is refused before copying', async () => {
 		const root = tempDir('epicenter-catalog-root-');
 		const broken = candidateWith('so.test.notes');
-		symlinkSync(join(broken, 'missing.js'), join(broken, 'so.test.notes', 'broken.js'));
-		await expect(
-			promoteAppCatalogCandidate(root, broken),
-		).rejects.toThrow();
+		symlinkSync(
+			join(broken, 'missing.js'),
+			join(broken, 'so.test.notes', 'broken.js'),
+		);
+		await expect(promoteAppCatalogCandidate(root, broken)).rejects.toThrow();
 		expect(readdirSync(join(root, 'generations'))).toEqual([]);
 
 		const outerCandidate = candidateWith('so.test.notes');
@@ -304,10 +311,7 @@ describe('promoteAppCatalogCandidate', () => {
 	test('an empty candidate promotes an empty catalog (uninstall leaves data, not apps)', async () => {
 		const root = tempDir('epicenter-catalog-root-');
 		await promoteAppCatalogCandidate(root, candidateWith('so.test.notes'));
-		await promoteAppCatalogCandidate(
-			root,
-			tempDir('epicenter-candidate-'),
-		);
+		await promoteAppCatalogCandidate(root, tempDir('epicenter-candidate-'));
 		expect((await load(root)).apps).toEqual([]);
 	});
 
@@ -323,15 +327,18 @@ describe('promoteAppCatalogCandidate', () => {
 
 		await promoteAppCatalogCandidate(root, candidate);
 		const catalog = await load(root);
-		expect(await pageText(catalog, 'so.test.notes', '/apps/so.test.notes/shared.js')).toBe(
-			'original',
-		);
+		expect(
+			await pageText(catalog, 'so.test.notes', '/apps/so.test.notes/shared.js'),
+		).toBe('original');
 
 		writeFileSync(join(source, 'shared.js'), 'edited after publish');
-		writeFileSync(join(candidate, 'so.test.notes', 'index.html'), 'edited candidate');
-		expect(await pageText(catalog, 'so.test.notes', '/apps/so.test.notes/shared.js')).toBe(
-			'original',
+		writeFileSync(
+			join(candidate, 'so.test.notes', 'index.html'),
+			'edited candidate',
 		);
+		expect(
+			await pageText(catalog, 'so.test.notes', '/apps/so.test.notes/shared.js'),
+		).toBe('original');
 		expect(await pageText(catalog, 'so.test.notes')).toContain('so.test.notes');
 	});
 
@@ -347,7 +354,11 @@ describe('promoteAppCatalogCandidate', () => {
 		const catalog = await load(root);
 
 		expect(
-			await pageText(catalog, 'so.test.spa', '/apps/so.test.spa/settings/audio'),
+			await pageText(
+				catalog,
+				'so.test.spa',
+				'/apps/so.test.spa/settings/audio',
+			),
 		).toContain('so.test.spa');
 		for (const denied of [
 			'/apps/so.test.spa/../other/index.html',

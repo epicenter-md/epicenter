@@ -1,5 +1,5 @@
-import { reportBackgroundError } from '../../lib/report.js';
 import { type HoneycrispData, NOTE_BODY } from '@epicenter/honeycrisp';
+import { reportBackgroundError } from '../../lib/report.js';
 import {
 	createNoteSearchIndex,
 	readDocumentText,
@@ -8,11 +8,7 @@ import { createFolders } from './folders.svelte.js';
 import { createNotes } from './notes.svelte.js';
 import { createView } from './view.svelte.js';
 
-export function createHoneycrispState({
-	db,
-}: {
-	db: HoneycrispData;
-}) {
+export function createHoneycrispState({ db }: { db: HoneycrispData }) {
 	const folders = createFolders({ db });
 	// Honeycrisp's own body index (ADR-0207 keeps prose out of the row, so
 	// searching it is the application's job). Reading a note's text is now a walk

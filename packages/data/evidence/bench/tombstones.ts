@@ -22,10 +22,11 @@
  *   - Every case is paired with a CONTROL shape that must differ, so a run
  *     where deletion silently did nothing cannot read as a good result.
  */
-import * as Y from '@y/y';
+
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as Y from '@y/y';
 
 const RECORDING = {
 	audioBlobId: 'blob_01JQ8ZXY3M4N5P6Q7R8S9T0V',
@@ -48,12 +49,48 @@ type Case = {
 };
 
 const CASES: Case[] = [
-	{ label: 'baseline', live: 1_000, dead: 0, pattern: 'none', note: '1,000 live, nothing ever deleted' },
-	{ label: 'burst', live: 1_000, dead: 9_000, pattern: 'burst', note: '9,000 created together, deleted together' },
-	{ label: 'scattered', live: 1_000, dead: 9_000, pattern: 'scattered', note: '9,000 deleted one at a time, spread out' },
-	{ label: 'interleaved', live: 1_000, dead: 9_000, pattern: 'interleaved', note: 'create one, delete one, ten thousand times' },
-	{ label: 'ten years', live: 2_000, dead: 73_000, pattern: 'interleaved', note: '20 recordings a day for a decade' },
-	{ label: 'ten/dropped', live: 2_000, dead: 73_000, pattern: 'dropped', note: 'the same decade, deleting the CONTAINER instead' },
+	{
+		label: 'baseline',
+		live: 1_000,
+		dead: 0,
+		pattern: 'none',
+		note: '1,000 live, nothing ever deleted',
+	},
+	{
+		label: 'burst',
+		live: 1_000,
+		dead: 9_000,
+		pattern: 'burst',
+		note: '9,000 created together, deleted together',
+	},
+	{
+		label: 'scattered',
+		live: 1_000,
+		dead: 9_000,
+		pattern: 'scattered',
+		note: '9,000 deleted one at a time, spread out',
+	},
+	{
+		label: 'interleaved',
+		live: 1_000,
+		dead: 9_000,
+		pattern: 'interleaved',
+		note: 'create one, delete one, ten thousand times',
+	},
+	{
+		label: 'ten years',
+		live: 2_000,
+		dead: 73_000,
+		pattern: 'interleaved',
+		note: '20 recordings a day for a decade',
+	},
+	{
+		label: 'ten/dropped',
+		live: 2_000,
+		dead: 73_000,
+		pattern: 'dropped',
+		note: 'the same decade, deleting the CONTAINER instead',
+	},
 ];
 
 /**
@@ -112,7 +149,8 @@ function buildDoc({ live, dead, pattern }: Case): Y.Doc {
 		doc.transact(() => {
 			for (let index = 0; index < live; index += 1) create(id());
 		});
-	} else if (pattern === 'scattered') {  // eslint-disable-line
+	} else if (pattern === 'scattered') {
+		// eslint-disable-line
 		// Everything created together, then deleted one transaction at a time.
 		const keys: string[] = [];
 		doc.transact(() => {
@@ -124,7 +162,9 @@ function buildDoc({ live, dead, pattern }: Case): Y.Doc {
 		});
 		for (let index = 0; index < dead; index += 1) {
 			// Every other row, so the survivors sit between the casualties.
-			doc.transact(() => kill(keys[index * Math.floor(keys.length / dead)] ?? keys[index]!));
+			doc.transact(() =>
+				kill(keys[index * Math.floor(keys.length / dead)] ?? keys[index]!),
+			);
 		}
 	} else {
 		// The realistic shape: a device that makes something and throws something
@@ -164,9 +204,11 @@ function build(testCase: Case): Uint8Array {
 
 /** Structs the engine is holding, which is what memory actually tracks. */
 function itemCount(doc: Y.Doc): number {
-	const clients = (doc as unknown as {
-		store?: { clients?: Map<number, { length: number }[]> };
-	}).store?.clients;
+	const clients = (
+		doc as unknown as {
+			store?: { clients?: Map<number, { length: number }[]> };
+		}
+	).store?.clients;
 	let total = 0;
 	for (const structs of clients?.values() ?? []) total += structs.length;
 	return total;
@@ -212,8 +254,12 @@ if (process.argv[2] === '--measure') {
 
 const directory = await mkdtemp(join(tmpdir(), 'epicenter-tomb-'));
 try {
-	console.log(`runtime  bun ${Bun.version} (${process.platform}/${process.arch}), JavaScriptCore`);
-	console.log('a row is 6 fields plus a presence flag; deletion is clear-and-flag\n');
+	console.log(
+		`runtime  bun ${Bun.version} (${process.platform}/${process.arch}), JavaScriptCore`,
+	);
+	console.log(
+		'a row is 6 fields plus a presence flag; deletion is clear-and-flag\n',
+	);
 	console.log(
 		`  ${'shape'.padEnd(12)} ${'live'.padStart(6)} ${'dead'.padStart(7)} ${'encoded'.padStart(9)} ${'items'.padStart(9)} ${'rss'.padStart(8)} ${'heap'.padStart(8)} ${'open'.padStart(8)}  reads back`,
 	);
@@ -222,22 +268,33 @@ try {
 	for (const testCase of CASES) {
 		const path = join(directory, `${testCase.label}.bin`);
 		await Bun.write(path, build(testCase));
-		const proc = Bun.spawnSync([process.execPath, import.meta.path, '--measure', path]);
+		const proc = Bun.spawnSync([
+			process.execPath,
+			import.meta.path,
+			'--measure',
+			path,
+		]);
 		const out = proc.stdout.toString().trim();
 		if (!out) {
-			console.log(`  ${testCase.label}: FAILED\n${proc.stderr.toString().slice(0, 400)}`);
+			console.log(
+				`  ${testCase.label}: FAILED\n${proc.stderr.toString().slice(0, 400)}`,
+			);
 			continue;
 		}
 		const result = JSON.parse(out) as Record<string, number>;
 		measured.push({ testCase, result });
 		const mb = (n: number) =>
-			Math.abs(n) >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`;
+			Math.abs(n) >= 1048576
+				? `${(n / 1048576).toFixed(1)} MB`
+				: `${Math.round(n / 1024)} KB`;
 		console.log(
 			`  ${testCase.label.padEnd(12)} ${String(testCase.live).padStart(6)} ${testCase.dead.toLocaleString().padStart(7)} ${mb(result.encoded ?? 0).padStart(9)} ${(result.items ?? 0).toLocaleString().padStart(9)} ${mb(result.rss ?? 0).padStart(8)} ${mb(result.heap ?? 0).padStart(8)} ${`${(result.openMs ?? 0).toFixed(0)} ms`.padStart(8)}  ${(result.live ?? 0).toLocaleString()} rows`,
 		);
 	}
 
-	console.log('\n  what a single dead row costs, against the baseline of the same live set:');
+	console.log(
+		'\n  what a single dead row costs, against the baseline of the same live set:',
+	);
 	const baseline = measured.find((entry) => entry.testCase.pattern === 'none');
 	for (const { testCase, result } of measured) {
 		if (baseline === undefined || testCase.dead === 0) continue;
@@ -259,7 +316,9 @@ try {
 	);
 	// A tombstone has to cost LESS than the row it replaces, or clear-and-flag is
 	// not reclaiming and the comparison is measuring live data.
-	const tenYears = measured.find((entry) => entry.testCase.label === 'ten years');
+	const tenYears = measured.find(
+		(entry) => entry.testCase.label === 'ten years',
+	);
 	const perLiveRow =
 		(baseline?.result.encoded ?? 0) / Math.max(baseline?.testCase.live ?? 1, 1);
 	control(
@@ -285,12 +344,21 @@ try {
  */
 {
 	console.log('\n  rolling the log over, on the aged decade:');
-	const aged = buildDoc({ label: 'aged', live: 2_000, dead: 73_000, pattern: 'dropped', note: '' });
+	const aged = buildDoc({
+		label: 'aged',
+		live: 2_000,
+		dead: 73_000,
+		pattern: 'dropped',
+		note: '',
+	});
 
 	// SNAPSHOT: re-encode the same structs. Identities survive, so a device
 	// arriving with an offline edit merges onto the row it already knew.
 	const genA = new Y.Doc({ gc: true });
-	Y.applyUpdateV2(genA, new Uint8Array(Y.encodeStateAsUpdateV2(aged)) as Uint8Array<ArrayBuffer>);
+	Y.applyUpdateV2(
+		genA,
+		new Uint8Array(Y.encodeStateAsUpdateV2(aged)) as Uint8Array<ArrayBuffer>,
+	);
 
 	// REBUILD: write the values into a fresh document. New structs at new
 	// identities, so an offline edit has nothing to attach to.

@@ -11,8 +11,9 @@
  * At that price the benefit has to be real, so these tests ask what a reader
  * actually observes under each model rather than what the CRDT retains.
  */
-import * as Y from '@y/y';
+
 import { describe, expect, test } from 'bun:test';
+import * as Y from '@y/y';
 
 const PRESENCE = '!presence';
 const DOCUMENT = '!doc';
@@ -207,7 +208,9 @@ describe('a row document under a concurrent delete', () => {
 	for (const model of ['clear-and-flag', 'drop'] as const) {
 		test(`${model}: prose written concurrently does not revive the row`, () => {
 			const { laptop, phone, rowId } = pair();
-			const container = rowsOf(phone).getAttr(rowId as never) as unknown as Y.Type;
+			const container = rowsOf(phone).getAttr(
+				rowId as never,
+			) as unknown as Y.Type;
 			const text = container.getAttr(DOCUMENT as never) as unknown as Y.Type;
 
 			remove(laptop, rowId, model);

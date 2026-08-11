@@ -130,7 +130,9 @@ async function main(): Promise<void> {
 		// about which namespaces exist. The generation chosen here is what this
 		// process serves for its whole lifetime; promotions apply at the next
 		// restart (ADR-0179).
-		const appCatalog = await loadActiveAppCatalog(join(dataRoot, 'app-catalog'));
+		const appCatalog = await loadActiveAppCatalog(
+			join(dataRoot, 'app-catalog'),
+		);
 		const hostLenses = [
 			honeycrispMirrorLens,
 			homeLens,

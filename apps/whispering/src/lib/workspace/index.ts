@@ -146,7 +146,7 @@ const settingsKv = {
 	shortcutPushToTalkModifiers: shortcut.modifiers,
 	shortcutPushToTalkKeys: shortcut.keys,
 	shortcutToggleManualRecordingModifiers: shortcut.modifiers,
-	shortcutToggleManualRecordingKeys: "string[]|null = null",
+	shortcutToggleManualRecordingKeys: 'string[]|null = null',
 	shortcutCancelRecordingModifiers: shortcut.modifiers,
 	shortcutCancelRecordingKeys: 'string[]|null = null',
 	shortcutToggleVadRecordingModifiers: shortcut.modifiers,

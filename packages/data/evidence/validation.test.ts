@@ -33,8 +33,9 @@
  * Nothing here asserts an exact count, because counts move with the corpus; the
  * ORDERING and the DIRECTION are the properties.
  */
-import * as Y from '@y/y';
+
 import { describe, expect, test } from 'bun:test';
+import * as Y from '@y/y';
 
 const EMPTY_STATE_VECTOR = new Uint8Array(
 	Y.encodeStateVector(new Y.Doc({ gc: true })),
@@ -83,7 +84,8 @@ function receiverSurvives(
 ): boolean {
 	const doc = new Y.Doc({ gc: true });
 	try {
-		if (base !== undefined) Y.applyUpdateV2(doc, base as Uint8Array<ArrayBuffer>);
+		if (base !== undefined)
+			Y.applyUpdateV2(doc, base as Uint8Array<ArrayBuffer>);
 		Y.applyUpdateV2(doc, bytes as Uint8Array<ArrayBuffer>);
 		return true;
 	} catch {
@@ -100,7 +102,10 @@ function sample(rows: number): Uint8Array {
 	doc.transact(() => {
 		for (let index = 0; index < rows; index += 1) {
 			const row = new Y.Type();
-			root.setAttr(`r${String(index).padStart(23, '0')}` as never, row as never);
+			root.setAttr(
+				`r${String(index).padStart(23, '0')}` as never,
+				row as never,
+			);
 			row.setAttr('title' as never, `note ${index}` as never);
 			const container = new Y.Type();
 			row.setAttr('!doc' as never, container as never);
@@ -169,7 +174,12 @@ function mutations(valid: Uint8Array): Uint8Array[] {
 	return candidates;
 }
 
-type Leaks = { unsafe: number; stateVector: number; diff: number; document: number };
+type Leaks = {
+	unsafe: number;
+	stateVector: number;
+	diff: number;
+	document: number;
+};
 
 function measure(valid: Uint8Array, base: Uint8Array | undefined): Leaks {
 	const leaks: Leaks = { unsafe: 0, stateVector: 0, diff: 0, document: 0 };
@@ -267,7 +277,8 @@ describe('the best filter available was still only a filter', () => {
 		// safe direction on every mutation swept here.
 		const { seed, increment } = incrementOverSeed();
 		const overRefusals = mutations(increment).filter(
-			(candidate) => receiverSurvives(seed, candidate) && !acceptsByDiff(candidate),
+			(candidate) =>
+				receiverSurvives(seed, candidate) && !acceptsByDiff(candidate),
 		);
 
 		expect(overRefusals).toHaveLength(0);

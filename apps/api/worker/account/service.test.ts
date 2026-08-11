@@ -38,12 +38,7 @@ test('deletion runs every step in order with the auth user last', async () => {
 	expect(await runAccountDeletion(steps, alice)).toEqual({
 		outcome: 'deleted',
 	});
-	expect(calls).toEqual([
-		'blobs',
-		'billing',
-		'observations',
-		'auth-user',
-	]);
+	expect(calls).toEqual(['blobs', 'billing', 'observations', 'auth-user']);
 });
 
 test('the first failing step stops the sequence and is named for retry', async () => {

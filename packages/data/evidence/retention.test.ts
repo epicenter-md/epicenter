@@ -15,10 +15,11 @@
  * decides how long a superseded generation may be kept, which is otherwise easy
  * to reason about as though the only cost were disk.
  */
-import { defineLens } from '@epicenter/lens';
-import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { defineLens } from '@epicenter/lens';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
 import { createStore } from '../src/store/store.js';
@@ -123,10 +124,18 @@ describe('and still in every log, for as long as the log exists', () => {
 		const world = afterWritingAndDeleting();
 		const backlog = expectOk(world.authority.since(0, 1_000));
 
-		expect(contains(backlog.map((entry) => entry.bytes), CANARY)).toBe(true);
-		expect(contains(backlog.map((entry) => entry.bytes), NEVER_WRITTEN)).toBe(
-			false,
-		);
+		expect(
+			contains(
+				backlog.map((entry) => entry.bytes),
+				CANARY,
+			),
+		).toBe(true);
+		expect(
+			contains(
+				backlog.map((entry) => entry.bytes),
+				NEVER_WRITTEN,
+			),
+		).toBe(false);
 
 		// And the arriving device shows nothing, which is why this is invisible
 		// rather than merely undesirable.
@@ -152,7 +161,12 @@ describe('what makes a deletion real', () => {
 		expectOk(rebuilt.append(world.store.encodeStateSince()));
 
 		const fresh = expectOk(rebuilt.since(0, 1_000));
-		expect(contains(fresh.map((entry) => entry.bytes), CANARY)).toBe(false);
+		expect(
+			contains(
+				fresh.map((entry) => entry.bytes),
+				CANARY,
+			),
+		).toBe(false);
 		// CONTROL: the old generation still has it, so the difference is the
 		// rebuild and not the search.
 		expect(contains(world.authorityLog(), CANARY)).toBe(true);

@@ -10,8 +10,9 @@
  * A failure here is not a bug in the store. It means an upgrade changed
  * something a decision was resting on, and the decision has to be re-read.
  */
-import * as Y from '@y/y';
+
 import { describe, expect, test } from 'bun:test';
+import * as Y from '@y/y';
 
 /** Exchange everything each side is missing, both directions. */
 function sync(a: Y.Doc, b: Y.Doc): void {
@@ -34,8 +35,12 @@ describe('identity: a root is addressed by name, a nested type by struct', () =>
 		const laptop = new Y.Doc({ gc: true });
 		phone.get('!kv');
 		laptop.get('!kv');
-		phone.transact(() => phone.get('!kv').setAttr('theme' as never, 'dark' as never));
-		laptop.transact(() => laptop.get('!kv').setAttr('fontSize' as never, 22 as never));
+		phone.transact(() =>
+			phone.get('!kv').setAttr('theme' as never, 'dark' as never),
+		);
+		laptop.transact(() =>
+			laptop.get('!kv').setAttr('fontSize' as never, 22 as never),
+		);
 		sync(phone, laptop);
 
 		expect(attrs(phone.get('!kv'))).toEqual({ theme: 'dark', fontSize: 22 });
@@ -82,8 +87,12 @@ describe('identity: a root is addressed by name, a nested type by struct', () =>
 
 		const rowOf = (doc: Y.Doc) =>
 			doc.get('notes').getAttr('n1' as never) as unknown as Y.Type;
-		phone.transact(() => rowOf(phone).setAttr('title' as never, 'phone' as never));
-		laptop.transact(() => rowOf(laptop).setAttr('date' as never, '2026-08-07' as never));
+		phone.transact(() =>
+			rowOf(phone).setAttr('title' as never, 'phone' as never),
+		);
+		laptop.transact(() =>
+			rowOf(laptop).setAttr('date' as never, '2026-08-07' as never),
+		);
 		sync(phone, laptop);
 
 		expect(attrs(rowOf(phone))).toEqual({ title: 'phone', date: '2026-08-07' });
@@ -171,7 +180,9 @@ describe('delivery: what the transport must guarantee', () => {
 		// what makes the buffered update survive a restart.
 		Y.applyUpdateV2(replica, first);
 		expect(pendingOf(replica)).toBe(false);
-		const recovered = replica.get('notes').getAttr('n1' as never) as unknown as Y.Type;
+		const recovered = replica
+			.get('notes')
+			.getAttr('n1' as never) as unknown as Y.Type;
 		expect(attrs(recovered)).toEqual({ title: 'hello' });
 	});
 
@@ -179,7 +190,9 @@ describe('delivery: what the transport must guarantee', () => {
 		// The prose shape. Same silence, so an editor's updates are subject to it.
 		const origin = new Y.Doc({ gc: true });
 		const text = origin.get('editor', 'text');
-		origin.transact(() => text.applyDelta(text.change.insert('hello') as never));
+		origin.transact(() =>
+			text.applyDelta(text.change.insert('hello') as never),
+		);
 		const afterFirst = Y.encodeStateVector(origin);
 		origin.transact(() =>
 			text.applyDelta(text.change.retain(5).insert(' world') as never),
@@ -200,9 +213,13 @@ describe('delivery: what the transport must guarantee', () => {
 		// exchange resends what is missing. Silence is only dangerous where the
 		// structs are causally chained, as in the two tests above.
 		const origin = new Y.Doc({ gc: true });
-		origin.transact(() => origin.get('notes').setAttr('a' as never, 1 as never));
+		origin.transact(() =>
+			origin.get('notes').setAttr('a' as never, 1 as never),
+		);
 		const afterFirst = Y.encodeStateVector(origin);
-		origin.transact(() => origin.get('notes').setAttr('b' as never, 2 as never));
+		origin.transact(() =>
+			origin.get('notes').setAttr('b' as never, 2 as never),
+		);
 
 		const replica = new Y.Doc({ gc: true });
 		Y.applyUpdateV2(replica, Y.encodeStateAsUpdateV2(origin, afterFirst));
@@ -229,7 +246,9 @@ describe('delivery: what the transport must guarantee', () => {
 
 	test('updates are idempotent, so duplicate delivery is free', () => {
 		const origin = new Y.Doc({ gc: true });
-		origin.transact(() => origin.get('notes').setAttr('a' as never, 1 as never));
+		origin.transact(() =>
+			origin.get('notes').setAttr('a' as never, 1 as never),
+		);
 		const update = Y.encodeStateAsUpdateV2(origin);
 		const replica = new Y.Doc({ gc: true });
 		for (let i = 0; i < 3; i += 1) Y.applyUpdateV2(replica, update);
@@ -244,7 +263,9 @@ describe('delivery: what the transport must guarantee', () => {
 		const updates: Uint8Array[] = [];
 		let seen = Y.encodeStateVector(origin);
 		for (const key of ['a', 'b', 'c', 'd']) {
-			origin.transact(() => origin.get('notes').setAttr(key as never, key as never));
+			origin.transact(() =>
+				origin.get('notes').setAttr(key as never, key as never),
+			);
 			updates.push(Y.encodeStateAsUpdateV2(origin, seen));
 			seen = Y.encodeStateVector(origin);
 		}
@@ -268,7 +289,9 @@ describe('reclamation: what deletion actually returns', () => {
 		// flat reserved root a viable home for KV.
 		const doc = new Y.Doc({ gc: true });
 		const kv = doc.get('!kv');
-		doc.transact(() => kv.setAttr('big' as never, 'x'.repeat(100_000) as never));
+		doc.transact(() =>
+			kv.setAttr('big' as never, 'x'.repeat(100_000) as never),
+		);
 		const before = Y.encodeStateAsUpdateV2(doc).length;
 		doc.transact(() => kv.deleteAttr('big'));
 		const after = Y.encodeStateAsUpdateV2(doc).length;
@@ -287,7 +310,10 @@ describe('reclamation: what deletion actually returns', () => {
 			doc.transact(() => {
 				for (let index = 0; index < 200; index += 1) {
 					const row = new Y.Type();
-					root.setAttr(`r${String(index).padStart(23, '0')}` as never, row as never);
+					root.setAttr(
+						`r${String(index).padStart(23, '0')}` as never,
+						row as never,
+					);
 					row.setAttr('!presence' as never, 'present' as never);
 					row.setAttr('title' as never, 'x'.repeat(200) as never);
 				}
@@ -342,21 +368,28 @@ describe('claims a record got wrong, kept so they stay wrong', () => {
 		// nameless. Harmless while names are inert; arrival-order-dependent type
 		// identity the moment they are not.
 		const origin = new Y.Doc({ gc: true });
-		origin.transact(() => origin.get('editor', 'text').setAttr('a' as never, 1 as never));
+		origin.transact(() =>
+			origin.get('editor', 'text').setAttr('a' as never, 1 as never),
+		);
 		const replica = new Y.Doc({ gc: true });
 		Y.applyUpdateV2(replica, Y.encodeStateAsUpdateV2(origin));
 
-		const named = replica.get('editor', 'text') as unknown as { name?: unknown };
+		const named = replica.get('editor', 'text') as unknown as {
+			name?: unknown;
+		};
 		expect(named.name ?? null).toBeNull();
 	});
 });
 
 function pendingOf(doc: Y.Doc): boolean {
-	const store = (doc as unknown as {
-		store?: { pendingStructs?: unknown; pendingDs?: unknown };
-	}).store;
+	const store = (
+		doc as unknown as {
+			store?: { pendingStructs?: unknown; pendingDs?: unknown };
+		}
+	).store;
 	return (
-		(store?.pendingStructs ?? null) !== null || (store?.pendingDs ?? null) !== null
+		(store?.pendingStructs ?? null) !== null ||
+		(store?.pendingDs ?? null) !== null
 	);
 }
 
@@ -426,8 +459,7 @@ describe('a row document root is created lazily, and that is a defect', () => {
 					(
 						phone.get('notes').getAttr('n1' as never) as unknown as Y.Type
 					).getAttr('!doc' as never) as unknown as Y.Type
-				)
-					.getAttr('editor' as never) as unknown as Y.Type,
+				).getAttr('editor' as never) as unknown as Y.Type,
 			).includes(device),
 		);
 		expect(survivors.length).toBeLessThan(2);
@@ -444,15 +476,18 @@ describe('a row document root is created lazily, and that is a defect', () => {
 			phone.get('notes').setAttr('n1' as never, row as never);
 			const container = new Y.Type();
 			row.setAttr('!doc' as never, container as never);
-			container.setAttr('editor' as never, new Y.Type('text' as never) as never);
+			container.setAttr(
+				'editor' as never,
+				new Y.Type('text' as never) as never,
+			);
 		});
 		sync(phone, laptop);
 
 		const editorOf = (doc: Y.Doc) =>
 			(
-				(
-					doc.get('notes').getAttr('n1' as never) as unknown as Y.Type
-				).getAttr('!doc' as never) as unknown as Y.Type
+				(doc.get('notes').getAttr('n1' as never) as unknown as Y.Type).getAttr(
+					'!doc' as never,
+				) as unknown as Y.Type
 			).getAttr('editor' as never) as unknown as Y.Type;
 		for (const [doc, words] of [
 			[phone, 'AAA'],

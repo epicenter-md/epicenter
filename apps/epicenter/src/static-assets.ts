@@ -99,7 +99,9 @@ export type AppCatalog = {
  * fail. A check that cannot fail is worse than none, because it reads as
  * protection.
  */
-export async function deriveAppCatalog(catalogRoot: string): Promise<AppCatalog> {
+export async function deriveAppCatalog(
+	catalogRoot: string,
+): Promise<AppCatalog> {
 	let root: string;
 	try {
 		root = await realpath(catalogRoot);

@@ -7,10 +7,11 @@
  * A remote update landing in the log twice is invisible from every verb the
  * store exposes, and it was live for exactly that reason.
  */
-import { defineLens } from '@epicenter/lens';
-import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { defineLens } from '@epicenter/lens';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
 import { copyBytes } from './log.js';
@@ -93,9 +94,13 @@ describe('the local log holds each update once', () => {
 		// Prose reaches storage through the update listener rather than through a
 		// store verb, so it is the one local write that could plausibly be missed.
 		const author = open();
-		const note = expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
+		const note = expectOk(
+			author.db.tables.notes.create({ title: 'Groceries' }),
+		);
 		const before = author.outbox().length;
-		const text = author.db.tables.notes.document(note.id)?.get('editor', 'text');
+		const text = author.db.tables.notes
+			.document(note.id)
+			?.get('editor', 'text');
 		if (text === undefined) throw new Error('the row has no document');
 		text.applyDelta(text.change.insert('buy milk') as never);
 
@@ -160,7 +165,9 @@ describe('coalesce merges only what this replica authored', () => {
 		expectOk(author.db.tables.notes.create({ title: 'sent' }));
 		const inFlight = expectOk(author.store.sync.coalesce());
 		if (inFlight === undefined) throw new Error('nothing to send');
-		expectOk(author.db.tables.notes.create({ title: 'authored while in flight' }));
+		expectOk(
+			author.db.tables.notes.create({ title: 'authored while in flight' }),
+		);
 
 		expectOk(author.store.sync.acknowledge(inFlight.id));
 
@@ -236,7 +243,10 @@ describe('a row document root is created exactly once', () => {
 		const author = open();
 		const other = open();
 		const note = expectOk(
-			author.db.tables.notes.create({ title: 'Groceries' }, { document: ['editor'] }),
+			author.db.tables.notes.create(
+				{ title: 'Groceries' },
+				{ document: ['editor'] },
+			),
 		);
 		expectOk(other.store.applyRemote(author.store.encodeStateSince()));
 
@@ -249,8 +259,16 @@ describe('a row document root is created exactly once', () => {
 			text.applyDelta(text.change.insert(words) as never);
 		}
 
-		expectOk(author.store.applyRemote(other.store.encodeStateSince(author.store.stateVector())));
-		expectOk(other.store.applyRemote(author.store.encodeStateSince(other.store.stateVector())));
+		expectOk(
+			author.store.applyRemote(
+				other.store.encodeStateSince(author.store.stateVector()),
+			),
+		);
+		expectOk(
+			other.store.applyRemote(
+				author.store.encodeStateSince(other.store.stateVector()),
+			),
+		);
 
 		const merged = JSON.stringify(
 			author.db.tables.notes.document(note.id)?.get('editor').toJSON(),
@@ -258,7 +276,9 @@ describe('a row document root is created exactly once', () => {
 		expect(merged).toContain('phone');
 		expect(merged).toContain('laptop');
 		expect(merged).toBe(
-			JSON.stringify(other.db.tables.notes.document(note.id)?.get('editor').toJSON()),
+			JSON.stringify(
+				other.db.tables.notes.document(note.id)?.get('editor').toJSON(),
+			),
 		);
 	});
 
@@ -268,7 +288,9 @@ describe('a row document root is created exactly once', () => {
 		// `document` option sees what it was buying.
 		const author = open();
 		const other = open();
-		const note = expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
+		const note = expectOk(
+			author.db.tables.notes.create({ title: 'Groceries' }),
+		);
 		expectOk(other.store.applyRemote(author.store.encodeStateSince()));
 
 		for (const [replica, words] of [
@@ -280,13 +302,23 @@ describe('a row document root is created exactly once', () => {
 			text.applyDelta(text.change.insert(words) as never);
 		}
 
-		expectOk(author.store.applyRemote(other.store.encodeStateSince(author.store.stateVector())));
-		expectOk(other.store.applyRemote(author.store.encodeStateSince(other.store.stateVector())));
+		expectOk(
+			author.store.applyRemote(
+				other.store.encodeStateSince(author.store.stateVector()),
+			),
+		);
+		expectOk(
+			other.store.applyRemote(
+				author.store.encodeStateSince(other.store.stateVector()),
+			),
+		);
 
 		const merged = JSON.stringify(
 			author.db.tables.notes.document(note.id)?.get('editor').toJSON(),
 		);
-		const survivors = ['phone', 'laptop'].filter((device) => merged.includes(device));
+		const survivors = ['phone', 'laptop'].filter((device) =>
+			merged.includes(device),
+		);
 		expect(survivors).toHaveLength(1);
 	});
 });

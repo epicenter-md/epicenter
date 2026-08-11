@@ -11,10 +11,11 @@
  * because a design that gets it backwards looks identical until someone has
  * been offline.
  */
-import { defineLens } from '@epicenter/lens';
-import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { defineLens } from '@epicenter/lens';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
 import { createStore } from '../src/store/store.js';
@@ -57,7 +58,9 @@ describe('a new generation seeded by SNAPSHOT keeps every identity', () => {
 		const { laptop, phone, noteId } = synchronisedPair();
 
 		// The phone goes offline and edits a row it already holds.
-		expectOk(phone.db.tables.notes.update(noteId, { title: 'edited on a plane' }));
+		expectOk(
+			phone.db.tables.notes.update(noteId, { title: 'edited on a plane' }),
+		);
 
 		// The laptop starts generation 2 by snapshotting itself. This is the whole
 		// rollover: no rewrite, no transformation, no interpretation of what a row
@@ -77,7 +80,9 @@ describe('a new generation seeded by SNAPSHOT keeps every identity', () => {
 		// The offline edit is not merely present, it landed on the SAME row rather
 		// than creating a second one. That is what identity preservation buys.
 		expect(titles(arriving)).toEqual(['Reading list', 'edited on a plane']);
-		expect(expectOk(arriving.db.tables.notes.get(noteId))?.title).toBe('edited on a plane');
+		expect(expectOk(arriving.db.tables.notes.get(noteId))?.title).toBe(
+			'edited on a plane',
+		);
 		expect(arriving.store.hasUnresolvedDependencies()).toBe(false);
 	});
 
@@ -90,7 +95,9 @@ describe('a new generation seeded by SNAPSHOT keeps every identity', () => {
 		// If this test ever passes as a merge, snapshotting stopped being
 		// necessary and the test above proves nothing.
 		const { laptop, phone, noteId } = synchronisedPair();
-		expectOk(phone.db.tables.notes.update(noteId, { title: 'edited on a plane' }));
+		expectOk(
+			phone.db.tables.notes.update(noteId, { title: 'edited on a plane' }),
+		);
 
 		const rebuilt = open();
 		for (const row of expectOk(laptop.db.tables.notes.list()).rows) {
@@ -124,7 +131,9 @@ describe('the rollover needs no proof, which is why it is affordable', () => {
 		// snapshots of overlapping state merge into exactly the union. That is the
 		// requirement every withdrawn compaction design failed to satisfy.
 		const { laptop, phone, noteId } = synchronisedPair();
-		expectOk(phone.db.tables.notes.update(noteId, { title: 'edited on a plane' }));
+		expectOk(
+			phone.db.tables.notes.update(noteId, { title: 'edited on a plane' }),
+		);
 		expectOk(laptop.db.tables.notes.create({ title: 'written on the laptop' }));
 
 		const both = open();
@@ -166,8 +175,16 @@ describe('choosing the next generation is not a thing a CRDT can do', () => {
 		const proposals = open();
 		const laptop = open();
 		const phone = open();
-		expectOk(laptop.db.tables.notes.create({ title: 'the laptop says generation 2 is here' }));
-		expectOk(phone.db.tables.notes.create({ title: 'the phone says generation 2 is here' }));
+		expectOk(
+			laptop.db.tables.notes.create({
+				title: 'the laptop says generation 2 is here',
+			}),
+		);
+		expectOk(
+			phone.db.tables.notes.create({
+				title: 'the phone says generation 2 is here',
+			}),
+		);
 
 		expectOk(proposals.store.applyRemote(laptop.store.encodeStateSince()));
 		expectOk(proposals.store.applyRemote(phone.store.encodeStateSince()));

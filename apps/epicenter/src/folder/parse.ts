@@ -11,8 +11,15 @@
  * with a valid claim on a different row.
  */
 
-import { DATA_ADDRESS_CEILINGS, isRowId, type JsonObject } from '@epicenter/lens';
-import { compileTableDefinition, type TableDefinition } from '@epicenter/lens/legacy';
+import {
+	DATA_ADDRESS_CEILINGS,
+	isRowId,
+	type JsonObject,
+} from '@epicenter/lens';
+import {
+	compileTableDefinition,
+	type TableDefinition,
+} from '@epicenter/lens/legacy';
 import { parseMarkdown } from '@epicenter/matter-core';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';

@@ -29,13 +29,18 @@ import * as Y from '@y/y';
 
 const NOTE = {
 	title: 'Recording 2026-08-07 14:32',
-	preview: 'a hundred characters of list subtitle, which is what preview is for',
+	preview:
+		'a hundred characters of list subtitle, which is what preview is for',
 	pinned: false,
 	createdAt: '2026-08-07T14:32:11.000Z',
 	updatedAt: '2026-08-07T14:32:11.000Z',
 };
 
-function buildTable(rows: number): { document: Y.Doc; notes: Y.Type; ids: string[] } {
+function buildTable(rows: number): {
+	document: Y.Doc;
+	notes: Y.Type;
+	ids: string[];
+} {
 	const document = new Y.Doc({ gc: true });
 	const notes = document.get('notes');
 	const ids: string[] = [];
@@ -104,12 +109,20 @@ const CASES = [
 
 const COMMITS = 41;
 
-console.log(
-	'rows\tedited\tno sub (ms)\tsubscribed (ms)\tdelta (ms)\tids seen',
-);
+console.log('rows\tedited\tno sub (ms)\tsubscribed (ms)\tdelta (ms)\tids seen');
 for (const { rows, edited } of CASES) {
-	const bare = timeCommits({ rows, edited, commits: COMMITS, subscribe: false });
-	const watched = timeCommits({ rows, edited, commits: COMMITS, subscribe: true });
+	const bare = timeCommits({
+		rows,
+		edited,
+		commits: COMMITS,
+		subscribe: false,
+	});
+	const watched = timeCommits({
+		rows,
+		edited,
+		commits: COMMITS,
+		subscribe: true,
+	});
 
 	// LIVENESS CONTROL. Every commit must have named every row it edited; a run
 	// that collected nothing measured a listener that was not firing.
@@ -120,7 +133,9 @@ for (const { rows, edited } of CASES) {
 		);
 	}
 	if (bare.collected !== 0) {
-		throw new Error('the control run collected row ids and should have collected none');
+		throw new Error(
+			'the control run collected row ids and should have collected none',
+		);
 	}
 
 	console.log(

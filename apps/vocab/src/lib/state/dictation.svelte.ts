@@ -24,7 +24,6 @@
  * honest path is the registry's, not a hosted transport rebuilt here.
  */
 
-import { base } from '$app/paths';
 import { type TranscribeError, transcribe } from '@epicenter/client';
 import {
 	createVadRecorder,
@@ -33,6 +32,7 @@ import {
 } from '@epicenter/recorder';
 import { VOCAB_STT_MODEL } from '@epicenter/vocab';
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import { base } from '$app/paths';
 import { inferenceConnections } from './inference-connections.svelte';
 
 /**

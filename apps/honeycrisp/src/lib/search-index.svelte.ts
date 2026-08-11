@@ -39,7 +39,9 @@ export type NoteSearchIndex = ReturnType<typeof createNoteSearchIndex>;
  * blocks do not merge, which is the same rule `extractNoteMetadata` follows.
  */
 export function readDocumentText(
-	document: { get(root: string, typeName?: string | null): unknown } | undefined,
+	document:
+		| { get(root: string, typeName?: string | null): unknown }
+		| undefined,
 ): string {
 	const root = document?.get('body') as { toJSON?: () => unknown } | undefined;
 	if (typeof root?.toJSON !== 'function') return '';

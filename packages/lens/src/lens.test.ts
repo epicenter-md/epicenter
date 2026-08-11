@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test';
 
 import type { RowAddress } from './addresses.js';
 import {
+	type CreateInputsOf,
 	clearLensCache,
 	defineLens,
 	parseLens,
-	type CreateInputsOf,
 	type RowsOf,
 } from './lens.js';
 
@@ -205,7 +205,10 @@ describe('the grammar refuses what the records reserve', () => {
 		],
 		[
 			'an optional field key',
-			{ namespace: 'so.epicenter.app', tables: { notes: { 'date?': 'string' } } },
+			{
+				namespace: 'so.epicenter.app',
+				tables: { notes: { 'date?': 'string' } },
+			},
 		],
 		[
 			'the structural id',
@@ -298,12 +301,14 @@ describe('a field is one type through every door', () => {
 			tables: { notes: { when: 'string.date.iso' } },
 		});
 		const table = data?.tables.get('notes');
-		const { data: written } = table?.validateWrite({ when: '2026-08-07' }) ?? {};
+		const { data: written } =
+			table?.validateWrite({ when: '2026-08-07' }) ?? {};
 		expect(written).toEqual({ when: '2026-08-07' });
-		const { data: read } = table?.project(
-			{ namespace: 'so.epicenter.app', tableName: 'notes', rowId: 'n1' },
-			{ when: '2026-08-07' },
-		) ?? {};
+		const { data: read } =
+			table?.project(
+				{ namespace: 'so.epicenter.app', tableName: 'notes', rowId: 'n1' },
+				{ when: '2026-08-07' },
+			) ?? {};
 		// Same string in, same string out, and the same string in the projection.
 		expect(read).toEqual({ id: 'n1', when: '2026-08-07' });
 	});

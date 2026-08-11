@@ -24,9 +24,10 @@
  * table where both columns are flat would mean the workload was too small to
  * show anything, and a bench that cannot fail is decoration.
  */
-import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { defineLens } from '@epicenter/lens';
+
 import { Database } from 'bun:sqlite';
+import { defineLens } from '@epicenter/lens';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
 import { createStore } from '../../src/store/store.js';
 import { openSyncAuthority } from '../../src/sync/authority.js';
@@ -80,7 +81,9 @@ function run({ snapshots }: { snapshots: boolean }) {
 			if (removed.error !== null) throw removed.error;
 		} else {
 			const target = alive[operation % alive.length] as string;
-			const edited = db.tables.notes.update(target, { title: `note ${operation}` });
+			const edited = db.tables.notes.update(target, {
+				title: `note ${operation}`,
+			});
 			if (edited.error !== null) throw edited.error;
 		}
 
@@ -113,8 +116,13 @@ function run({ snapshots }: { snapshots: boolean }) {
 		if (operation % CHECKPOINT_EVERY === 0) {
 			const stored = authority.storedBytes();
 			const tail = authority.since(0, 1_000_000);
-			if (stored.error !== null || tail.error !== null) throw new Error('read failed');
-			samples.push({ operations: operation, stored: stored.data, tail: tail.data.length });
+			if (stored.error !== null || tail.error !== null)
+				throw new Error('read failed');
+			samples.push({
+				operations: operation,
+				stored: stored.data,
+				tail: tail.data.length,
+			});
 		}
 	}
 
@@ -135,7 +143,9 @@ console.log(
 for (const [index, sample] of withSnapshots.samples.entries()) {
 	const logged = control.samples[index];
 	const mb = (bytes: number) =>
-		bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
+		bytes >= 1048576
+			? `${(bytes / 1048576).toFixed(1)} MB`
+			: `${Math.round(bytes / 1024)} KB`;
 	console.log(
 		`  ${sample.operations.toLocaleString().padStart(11)} ${mb(sample.stored).padStart(14)} ${String(sample.tail).padStart(6)} ${mb(logged?.stored ?? 0).padStart(16)} ${`${((logged?.stored ?? 1) / Math.max(sample.stored, 1)).toFixed(1)}x`.padStart(8)}`,
 	);
@@ -150,7 +160,9 @@ console.log('\n  CONTROLS');
 const report = (held: boolean, label: string) =>
 	console.log(`    ${held ? 'held  ' : 'FAILED'}  ${label}`);
 // The honest claim: it grows more slowly than the log, and the gap widens.
-const early = (control.samples[1]?.stored ?? 1) / Math.max(withSnapshots.samples[1]?.stored ?? 1, 1);
+const early =
+	(control.samples[1]?.stored ?? 1) /
+	Math.max(withSnapshots.samples[1]?.stored ?? 1, 1);
 const late = controlLast / Math.max(snapshotLast, 1);
 report(
 	late > early,

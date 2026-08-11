@@ -82,12 +82,13 @@
  * the build processes. That is the cost of a corpus at real scale rather than a
  * tuned-down one, and it is not a measurement of anything.
  */
-import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { defineLens } from '@epicenter/lens';
+
 import { Database } from 'bun:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { defineLens } from '@epicenter/lens';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
 import { createStore } from '../../src/store/store.js';
 import { openSyncAuthority } from '../../src/sync/authority.js';
@@ -187,7 +188,10 @@ function bodyText(index: number): string {
 	return `note ${index} `.padEnd(BODY_CHARS, 'x');
 }
 
-function build(days: number, mode: Mode): {
+function build(
+	days: number,
+	mode: Mode,
+): {
 	report: Omit<BuildReport, 'buildMs'>;
 	payload: Uint8Array[];
 } {
@@ -247,7 +251,9 @@ function build(days: number, mode: Mode): {
 				title: canary ? 'the canary note' : `note ${index}`,
 			});
 			if (made.error !== null) throw made.error;
-			const text = db.tables.notes.document(made.data.id)?.get('editor', 'text');
+			const text = db.tables.notes
+				.document(made.data.id)
+				?.get('editor', 'text');
 			if (text === undefined) throw new Error('the row has no document');
 			text.applyDelta(
 				text.change.insert(
@@ -264,7 +270,9 @@ function build(days: number, mode: Mode): {
 		for (let edit = 0; edit < DAY.fieldEdits; edit += 1) {
 			const id = alive[(day * 7 + edit) % alive.length] as string;
 			transaction(() => {
-				const edited = db.tables.notes.update(id, { title: `edited on day ${day}` });
+				const edited = db.tables.notes.update(id, {
+					title: `edited on day ${day}`,
+				});
 				if (edited.error !== null) throw edited.error;
 			});
 		}
@@ -289,7 +297,9 @@ function build(days: number, mode: Mode): {
 			transaction(() => {
 				const made = db.tables.notes.create({ title: `note ${index}` });
 				if (made.error !== null) throw made.error;
-				const text = db.tables.notes.document(made.data.id)?.get('editor', 'text');
+				const text = db.tables.notes
+					.document(made.data.id)
+					?.get('editor', 'text');
 				if (text === undefined) throw new Error('the row has no document');
 				text.applyDelta(text.change.insert(bodyText(index)) as never);
 				alive.push(made.data.id);
@@ -369,7 +379,11 @@ function packPayload(updates: readonly Uint8Array[]): Uint8Array {
 }
 
 function unpackPayload(packed: Uint8Array): Uint8Array[] {
-	const view = new DataView(packed.buffer, packed.byteOffset, packed.byteLength);
+	const view = new DataView(
+		packed.buffer,
+		packed.byteOffset,
+		packed.byteLength,
+	);
 	const updates: Uint8Array[] = [];
 	let at = 0;
 	while (at < packed.length) {
@@ -380,7 +394,11 @@ function unpackPayload(packed: Uint8Array): Uint8Array[] {
 	return updates;
 }
 
-type Expectation = { liveRows: number; canaryTitle: string; canaryProse: string };
+type Expectation = {
+	liveRows: number;
+	canaryTitle: string;
+	canaryProse: string;
+};
 
 function apply(packed: Uint8Array, expectation: Expectation): ApplyReport {
 	const updates = unpackPayload(packed);
@@ -405,7 +423,9 @@ function apply(packed: Uint8Array, expectation: Expectation): ApplyReport {
 	// The control. Bytes moving is not the claim; the vault arriving is.
 	const rows = db.tables.notes.list();
 	if (rows.error !== null) throw rows.error;
-	const canary = rows.data.rows.find((row) => row.title === expectation.canaryTitle);
+	const canary = rows.data.rows.find(
+		(row) => row.title === expectation.canaryTitle,
+	);
 	const prose =
 		canary === undefined
 			? undefined
@@ -481,7 +501,9 @@ const mb = (bytes: number) =>
 
 const directory = await mkdtemp(join(tmpdir(), 'epicenter-first-sync-'));
 try {
-	console.log(`runtime  bun ${Bun.version} (${process.platform}/${process.arch})`);
+	console.log(
+		`runtime  bun ${Bun.version} (${process.platform}/${process.arch})`,
+	);
 	console.log(
 		`corpus   ${NOTES} notes with ${BODY_CHARS / 1000} KB prose bodies, then N days of use`,
 	);
@@ -496,12 +518,7 @@ try {
 	for (const days of DAY_SAMPLES) {
 		for (const mode of ['snapshot', 'log'] as const) {
 			const path = join(directory, `${mode}-${days}.bin`);
-			const built = child<BuildReport>([
-				'--build',
-				String(days),
-				mode,
-				path,
-			]);
+			const built = child<BuildReport>(['--build', String(days), mode, path]);
 			const applied = child<ApplyReport>([
 				'--apply',
 				path,
@@ -573,7 +590,8 @@ try {
 	const last = { snapshot: snapshots.at(-1), log: logs.at(-1) };
 
 	console.log('\nHOW EACH COLUMN MOVES AS HISTORY GROWS');
-	const growth = (from: number, to: number) => `${(to / Math.max(from, 1)).toFixed(1)}x`;
+	const growth = (from: number, to: number) =>
+		`${(to / Math.max(from, 1)).toFixed(1)}x`;
 	if (
 		first.snapshot !== undefined &&
 		last.snapshot !== undefined &&
@@ -648,8 +666,12 @@ try {
 
 	console.log('\nNOT MEASURED');
 	console.log('  memory on the arriving device (see evidence/bench/memory.ts)');
-	console.log('  network time: transfer bytes are reported, transfer seconds are not');
-	console.log('  hydration of an already-populated replica from its own SQLite file');
+	console.log(
+		'  network time: transfer bytes are reported, transfer seconds are not',
+	);
+	console.log(
+		'  hydration of an already-populated replica from its own SQLite file',
+	);
 	console.log(
 		'  a second writer: one device authored this whole history, so no concurrent merge is priced',
 	);

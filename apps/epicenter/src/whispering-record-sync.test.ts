@@ -53,7 +53,7 @@ test('offline Whispering scalar edits converge in both directions', async () => 
 		await using first = await openBunEpicenter({
 			directory: join(root, 'first'),
 		});
-	const firstRecordings = first.bind(whisperingLens).recordings;
+		const firstRecordings = first.bind(whisperingLens).recordings;
 		const recording = await firstRecordings.create({
 			audioBlobId: generateBlobId(),
 			uploadedAt: null,
@@ -70,7 +70,7 @@ test('offline Whispering scalar edits converge in both directions', async () => 
 		await using second = await openBunEpicenter({
 			directory: join(root, 'second'),
 		});
-	const secondRecordings = second.bind(whisperingLens).recordings;
+		const secondRecordings = second.bind(whisperingLens).recordings;
 		expect((await first.attachSync(attachment)).error).toBeNull();
 		expect((await second.attachSync(attachment)).error).toBeNull();
 		expect((await secondRecordings.get(recording.id)).data?.transcript).toBe(

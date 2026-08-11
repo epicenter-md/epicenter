@@ -17,9 +17,7 @@ describe('buildEpicenterTrustedOrigins', () => {
 		// one extension origin. There is no extension now, so ANY
 		// chrome-extension origin in the production set is a regression, and
 		// this fails on the entry rather than on its id.
-		expect(PROD.filter((o) => o.startsWith('chrome-extension://'))).toEqual(
-			[],
-		);
+		expect(PROD.filter((o) => o.startsWith('chrome-extension://'))).toEqual([]);
 	});
 
 	test('a production deployment does not trust localhost dev origins', () => {

@@ -20,19 +20,19 @@ import {
 	connectHyperdriveDb,
 	createDurableObjectAttachRelay,
 	createServerApp,
-	mountStoreSyncApp,
-	StoreAuthority,
 	mountAttachRelayApp,
 	mountBlobsApp,
 	mountCloudAuth,
 	mountCloudDb,
 	mountInferenceApp,
 	mountSessionApp,
+	mountStoreSyncApp,
 	mountTranscriptionApp,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
 	resolveRequestOAuthPrincipal,
 	type ServerBindings,
+	StoreAuthority,
 } from '@epicenter/server';
 import type { Context } from 'hono';
 import { describeRoute } from 'hono-openapi';

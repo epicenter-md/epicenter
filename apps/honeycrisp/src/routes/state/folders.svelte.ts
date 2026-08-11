@@ -1,11 +1,11 @@
-import { reportBackgroundError } from '../../lib/report.js';
-import type { NonconformingRowError } from '@epicenter/lens';
 import {
 	deleteHoneycrispFolder,
 	type Folder,
 	type FolderId,
 	type HoneycrispData,
 } from '@epicenter/honeycrisp';
+import type { NonconformingRowError } from '@epicenter/lens';
+import { reportBackgroundError } from '../../lib/report.js';
 import { searchParams } from './search-params.svelte.js';
 
 /**
@@ -14,11 +14,7 @@ import { searchParams } from './search-params.svelte.js';
  * Same shape as `createNotes` and for the same reason: the store says which
  * rows moved, so nothing here refreshes and nothing awaits a read.
  */
-export function createFolders({
-	db,
-}: {
-	db: HoneycrispData;
-}) {
+export function createFolders({ db }: { db: HoneycrispData }) {
 	let rows = $state.raw<Folder[]>([]);
 	let nonconforming = $state.raw<NonconformingRowError[]>([]);
 	let loadError = $state.raw<unknown>(null);

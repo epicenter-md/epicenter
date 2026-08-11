@@ -3,15 +3,8 @@
 	"compilerOptions": {
 		"jsx": "react-jsx",
 		"jsxImportSource": "hono/jsx",
-		"types": [
-			"bun",
-			"@cloudflare/workers-types"
-		]
+		"types": ["bun", "@cloudflare/workers-types"]
 	},
-	"include": [
-		"src"
-	],
-	"exclude": [
-		"workers"
-	]
+	"include": ["src"],
+	"exclude": ["workers"]
 }

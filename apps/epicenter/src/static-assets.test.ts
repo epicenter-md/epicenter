@@ -31,10 +31,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { COMPILED_APPLICATIONS } from './applications.ts';
-import {
-	APPLICATIONS_ROUTE,
-	BOOTSTRAP_ROUTE,
-} from './routes.ts';
+import { APPLICATIONS_ROUTE, BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import {
 	type AppCatalog,
@@ -146,8 +143,12 @@ describe('deriveAppCatalog', () => {
 
 	test('two directories declaring one namespace yield one member', async () => {
 		const root = tempDir('epicenter-catalog-');
-		writeApp(root, 'first', { lens: { namespace: 'so.test.twin', tables: {} } });
-		writeApp(root, 'second', { lens: { namespace: 'so.test.twin', tables: {} } });
+		writeApp(root, 'first', {
+			lens: { namespace: 'so.test.twin', tables: {} },
+		});
+		writeApp(root, 'second', {
+			lens: { namespace: 'so.test.twin', tables: {} },
+		});
 
 		const { apps } = await derive(root);
 		expect(apps.map((app) => [app.id, app.directory])).toEqual([
@@ -159,7 +160,10 @@ describe('deriveAppCatalog', () => {
 		const outside = tempDir('epicenter-outside-');
 		writeApp(outside, 'so.test.escapee');
 		const root = tempDir('epicenter-catalog-');
-		symlinkSync(join(outside, 'so.test.escapee'), join(root, 'so.test.escapee'));
+		symlinkSync(
+			join(outside, 'so.test.escapee'),
+			join(root, 'so.test.escapee'),
+		);
 
 		const { apps } = await derive(root);
 		expect(apps).toEqual([]);
@@ -205,7 +209,9 @@ describe('catalog member resolve', () => {
 		const fallback = await member.resolve('/apps/so.test.spa/settings/audio');
 		expect(await fallback?.file.text()).toContain('SPA');
 
-		expect(await member.resolve('/apps/so.test.spa/assets/missing.js')).toBeUndefined();
+		expect(
+			await member.resolve('/apps/so.test.spa/assets/missing.js'),
+		).toBeUndefined();
 	});
 
 	test('rejects traversal, smuggled separators, symlink escape, and foreign prefixes', async () => {
@@ -318,7 +324,9 @@ describe('home server catalog routes', () => {
 			expect(script.headers.get('content-type')).toBe('text/javascript');
 
 			expect((await fetch(`${origin}/apps/unknown/`)).status).toBe(404);
-			expect((await fetch(`${origin}/apps/so.epicenter.hello-http`)).status).toBe(404);
+			expect(
+				(await fetch(`${origin}/apps/so.epicenter.hello-http`)).status,
+			).toBe(404);
 
 			// The legacy closed layout stays intact beside the catalog. Surface
 			// documents carry the identity snapshot, so they require an
@@ -372,7 +380,9 @@ describe('home server catalog routes', () => {
 					?.split(';')
 					.map((directive) => directive.trim())
 					.find((directive) => directive.startsWith('script-src ')) ?? '';
-			const inlineHash = createHash('sha256').update('start();').digest('base64');
+			const inlineHash = createHash('sha256')
+				.update('start();')
+				.digest('base64');
 			expect(scriptSrc).toContain(`'sha256-${inlineHash}'`);
 		} finally {
 			await server.stop(true);

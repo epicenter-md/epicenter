@@ -21,7 +21,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defineLens, defineTable, type RowDocument } from '@epicenter/data/legacy';
+import {
+	defineLens,
+	defineTable,
+	type RowDocument,
+} from '@epicenter/data/legacy';
 import { openBunEpicenter } from '@epicenter/data/legacy/bun';
 import { field, InstantString } from '@epicenter/field';
 import { expectErr, expectOk } from 'wellcrafted/testing';
@@ -83,9 +87,7 @@ test('a stricter Skills lens exposes nonconformance until typed update repairs i
 		);
 		expect(repaired?.id).toBe(oldSkill.id);
 		expect((await scanSkills(skills)).nonconforming).toEqual([]);
-		await using instructions = await skills.skills.openDocument(
-			oldSkill.id,
-		);
+		await using instructions = await skills.skills.openDocument(oldSkill.id);
 		writeDocumentText(instructions, 'Keep the answer concise.');
 		const another = await skills.skills.create({
 			sourceId: 'agentskills-other',

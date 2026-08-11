@@ -23,10 +23,11 @@
  *     WebView is JSC on macOS and Linux and V8 on Windows, so bytes-per-item is
  *     a property of the platform and items are a property of the data.
  */
-import * as Y from '@y/y';
+
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as Y from '@y/y';
 
 const NOTE = {
 	title: 'A note title of typical length',
@@ -42,7 +43,10 @@ const RECORDING = {
 	transcript: 'a couple of sentences of transcript text that is fairly typical',
 	polishedTranscript: null,
 	duration: 42.5,
-	transcription: { status: 'completed', completedAt: '2026-08-07T14:32:59.000Z' },
+	transcription: {
+		status: 'completed',
+		completedAt: '2026-08-07T14:32:59.000Z',
+	},
 };
 const BODY = 'x'.repeat(2800);
 
@@ -62,7 +66,10 @@ function build({ rows, fields, body }: Case): Uint8Array {
 	doc.transact(() => {
 		for (let index = 0; index < rows; index += 1) {
 			const row = new Y.Type();
-			root.setAttr(`r${String(index).padStart(23, '0')}` as never, row as never);
+			root.setAttr(
+				`r${String(index).padStart(23, '0')}` as never,
+				row as never,
+			);
 			row.setAttr('!presence' as never, 'present' as never);
 			for (const [key, value] of Object.entries(fields)) {
 				row.setAttr(key as never, value as never);
@@ -90,8 +97,9 @@ function build({ rows, fields, body }: Case): Uint8Array {
  * replace.
  */
 function itemCount(doc: Y.Doc): number {
-	const clients = (doc as unknown as { store?: { clients?: Map<number, unknown[]> } })
-		.store?.clients;
+	const clients = (
+		doc as unknown as { store?: { clients?: Map<number, unknown[]> } }
+	).store?.clients;
 	let total = 0;
 	for (const structs of clients?.values() ?? []) total += structs.length;
 	return total;
@@ -126,7 +134,9 @@ if (process.argv[2] === '--measure') {
 
 const directory = await mkdtemp(join(tmpdir(), 'epicenter-mem-'));
 try {
-	console.log(`runtime  bun ${Bun.version} (${process.platform}/${process.arch})`);
+	console.log(
+		`runtime  bun ${Bun.version} (${process.platform}/${process.arch})`,
+	);
 	console.log('engine   JavaScriptCore\n');
 	console.log(
 		`  ${'shape'.padEnd(13)} ${'rows'.padStart(6)} ${'encoded'.padStart(9)} ${'items'.padStart(9)} ${'rss'.padStart(8)} ${'heap'.padStart(8)} ${'B/item'.padStart(7)} ${'open'.padStart(8)}`,

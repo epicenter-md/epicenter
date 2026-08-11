@@ -1,5 +1,3 @@
-import { reportBackgroundError } from '../../lib/report.js';
-import type { NonconformingRowError } from '@epicenter/lens';
 import { InstantString } from '@epicenter/field';
 import {
 	type FolderId,
@@ -8,6 +6,8 @@ import {
 	type Note,
 	type NoteId,
 } from '@epicenter/honeycrisp';
+import type { NonconformingRowError } from '@epicenter/lens';
+import { reportBackgroundError } from '../../lib/report.js';
 import type { NoteSearchIndex } from '../../lib/search-index.svelte.js';
 import { searchParams } from './search-params.svelte.js';
 
@@ -62,7 +62,8 @@ export function createNotes({
 	const countsByFolder = $derived.by(() => {
 		const counts: Record<string, number> = {};
 		for (const note of all) {
-			if (note.folderId) counts[note.folderId] = (counts[note.folderId] ?? 0) + 1;
+			if (note.folderId)
+				counts[note.folderId] = (counts[note.folderId] ?? 0) + 1;
 		}
 		return counts;
 	});

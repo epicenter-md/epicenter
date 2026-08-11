@@ -19,8 +19,9 @@
  * charges the whole tombstone machine for it. Pinned because "we need a CRDT
  * for rows" is an assumption nobody re-examines once it is in the walls.
  */
-import * as Y from '@y/y';
+
 import { describe, expect, test } from 'bun:test';
+import * as Y from '@y/y';
 
 function sync(a: Y.Doc, b: Y.Doc): void {
 	const fromA = Y.encodeStateAsUpdateV2(a, Y.encodeStateVector(b));
@@ -48,7 +49,9 @@ function pair() {
 describe('a row of scalars', () => {
 	test('DIFFERENT fields merge, which a per-field table also does', () => {
 		const { phone, laptop, row } = pair();
-		phone.transact(() => row(phone).setAttr('title' as never, 'from phone' as never));
+		phone.transact(() =>
+			row(phone).setAttr('title' as never, 'from phone' as never),
+		);
 		laptop.transact(() => row(laptop).setAttr('tags' as never, ['b'] as never));
 		sync(phone, laptop);
 
@@ -60,7 +63,9 @@ describe('a row of scalars', () => {
 		// sensible answer. Here it is not: one edit is thrown away, and the only
 		// question is which.
 		const { phone, laptop, row } = pair();
-		phone.transact(() => row(phone).setAttr('title' as never, 'from the phone' as never));
+		phone.transact(() =>
+			row(phone).setAttr('title' as never, 'from the phone' as never),
+		);
 		laptop.transact(() =>
 			row(laptop).setAttr('title' as never, 'from the laptop' as never),
 		);
@@ -80,8 +85,12 @@ describe('a row of scalars', () => {
 		const rounds = 40;
 		for (let round = 0; round < rounds; round += 1) {
 			const { phone, laptop, row } = pair();
-			phone.transact(() => row(phone).setAttr('title' as never, 'phone' as never));
-			laptop.transact(() => row(laptop).setAttr('title' as never, 'laptop' as never));
+			phone.transact(() =>
+				row(phone).setAttr('title' as never, 'phone' as never),
+			);
+			laptop.transact(() =>
+				row(laptop).setAttr('title' as never, 'laptop' as never),
+			);
 			sync(phone, laptop);
 			if (row(phone).getAttr('title' as never) === 'phone') phoneWon += 1;
 		}
@@ -109,7 +118,9 @@ describe('prose, where a CRDT does something nothing else can', () => {
 			),
 		);
 		laptop.transact(() =>
-			text(laptop).applyDelta(text(laptop).change.retain(11).insert('!!!') as never),
+			text(laptop).applyDelta(
+				text(laptop).change.retain(11).insert('!!!') as never,
+			),
 		);
 		sync(phone, laptop);
 

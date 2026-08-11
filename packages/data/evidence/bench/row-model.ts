@@ -45,7 +45,8 @@ const ROOT: Shape = {
 			for (const id of ids) {
 				const row = doc.get(`notes/${id}`);
 				row.setAttr('!presence' as never, 'present' as never);
-				for (const [k, v] of Object.entries(FIELDS)) row.setAttr(k as never, v as never);
+				for (const [k, v] of Object.entries(FIELDS))
+					row.setAttr(k as never, v as never);
 			}
 		});
 		return doc;
@@ -66,12 +67,20 @@ const ROOT: Shape = {
 	concurrentCreate() {
 		const phone = new Y.Doc({ gc: true });
 		const laptop = new Y.Doc({ gc: true });
-		phone.transact(() => phone.get('notes/n1').setAttr('title' as never, 'phone' as never));
-		laptop.transact(() => laptop.get('notes/n1').setAttr('date' as never, 'laptop' as never));
+		phone.transact(() =>
+			phone.get('notes/n1').setAttr('title' as never, 'phone' as never),
+		);
+		laptop.transact(() =>
+			laptop.get('notes/n1').setAttr('date' as never, 'laptop' as never),
+		);
 		exchange(phone, laptop);
 		const read = (d: Y.Doc) => d.get('notes/n1').getAttrs();
 		const merged = read(phone) as Record<string, unknown>;
-		return { phone: merged, laptop: read(laptop), lost: Object.keys(merged).length < 2 };
+		return {
+			phone: merged,
+			laptop: read(laptop),
+			lost: Object.keys(merged).length < 2,
+		};
 	},
 };
 
@@ -85,7 +94,8 @@ const NESTED: Shape = {
 				const row = new Y.Type();
 				root.setAttr(id as never, row as never);
 				row.setAttr('!presence' as never, 'present' as never);
-				for (const [k, v] of Object.entries(FIELDS)) row.setAttr(k as never, v as never);
+				for (const [k, v] of Object.entries(FIELDS))
+					row.setAttr(k as never, v as never);
 			}
 		});
 		return doc;
@@ -113,7 +123,11 @@ const NESTED: Shape = {
 		const read = (d: Y.Doc) =>
 			(d.get('notes').getAttr('n1' as never) as unknown as Y.Type).getAttrs();
 		const merged = read(phone) as Record<string, unknown>;
-		return { phone: merged, laptop: read(laptop), lost: Object.keys(merged).length < 2 };
+		return {
+			phone: merged,
+			laptop: read(laptop),
+			lost: Object.keys(merged).length < 2,
+		};
 	},
 };
 
@@ -144,18 +158,27 @@ const FLAT: Shape = {
 	concurrentCreate() {
 		const phone = new Y.Doc({ gc: true });
 		const laptop = new Y.Doc({ gc: true });
-		phone.transact(() => phone.get('notes').setAttr('n1.title' as never, 'phone' as never));
-		laptop.transact(() => laptop.get('notes').setAttr('n1.date' as never, 'laptop' as never));
+		phone.transact(() =>
+			phone.get('notes').setAttr('n1.title' as never, 'phone' as never),
+		);
+		laptop.transact(() =>
+			laptop.get('notes').setAttr('n1.date' as never, 'laptop' as never),
+		);
 		exchange(phone, laptop);
 		const read = (d: Y.Doc) => {
 			const out: Record<string, unknown> = {};
 			for (const key of d.get('notes').attrKeys()) {
-				if (String(key).startsWith("n1.")) out[String(key)] = d.get("notes").getAttr(key as never);
+				if (String(key).startsWith('n1.'))
+					out[String(key)] = d.get('notes').getAttr(key as never);
 			}
 			return out;
 		};
 		const merged = read(phone);
-		return { phone: merged, laptop: read(laptop), lost: Object.keys(merged).length < 2 };
+		return {
+			phone: merged,
+			laptop: read(laptop),
+			lost: Object.keys(merged).length < 2,
+		};
 	},
 };
 
@@ -181,7 +204,10 @@ function timed(run: () => void): number {
 	);
 }
 
-const counts = (process.argv.slice(2).map(Number).filter((n) => Number.isFinite(n) && n > 0));
+const counts = process.argv
+	.slice(2)
+	.map(Number)
+	.filter((n) => Number.isFinite(n) && n > 0);
 const rowCounts = counts.length > 0 ? counts : [1000, 5000, 20000];
 
 console.log('correctness: two devices independently create the SAME row id\n');

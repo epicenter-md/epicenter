@@ -20,8 +20,9 @@
  * `attrs` silently became empty, would read as a pass on every assertion that
  * only checks what the watched table saw.
  */
-import * as Y from '@y/y';
+
 import { beforeEach, describe, expect, test } from 'bun:test';
+import * as Y from '@y/y';
 
 /** Row ids one listener saw, in order, one entry per emitted delta. */
 type Recorded = { rowIds: string[][]; origins: unknown[] };
@@ -37,7 +38,11 @@ function watch(type: Y.Type): Recorded {
 }
 
 /** The store's own grammar: a row is a nested type at its id on the root. */
-function writeRow(root: Y.Type, rowId: string, fields: Record<string, unknown>) {
+function writeRow(
+	root: Y.Type,
+	rowId: string,
+	fields: Record<string, unknown>,
+) {
 	let row = root.getAttr(rowId as never) as Y.Type | undefined;
 	if (!(row instanceof Y.Type)) {
 		row = new Y.Type();
@@ -84,7 +89,7 @@ describe("a table root's 'delta' names the rows a commit touched", () => {
 		expect(control.rowIds).toEqual([]);
 	});
 
-	test('prose written deep inside the row\'s own document', () => {
+	test("prose written deep inside the row's own document", () => {
 		// The case that matters most for an editor binding, and the one an
 		// `observeDeep` observer reports without a row id. The write is three
 		// levels down: root -> row -> `!doc` -> `body`.
@@ -114,7 +119,9 @@ describe("a table root's 'delta' names the rows a commit touched", () => {
 
 	test('bytes that arrived from a peer', () => {
 		const peer = new Y.Doc({ gc: true });
-		peer.transact(() => writeRow(peer.get('notes'), 'note-b', { title: 'From the phone' }));
+		peer.transact(() =>
+			writeRow(peer.get('notes'), 'note-b', { title: 'From the phone' }),
+		);
 		const remote = { kind: 'epicenter-remote' };
 
 		Y.applyUpdateV2(document, Y.encodeStateAsUpdateV2(peer), remote);

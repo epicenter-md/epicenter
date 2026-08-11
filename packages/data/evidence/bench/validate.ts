@@ -25,10 +25,11 @@
  *     because the two disagree and rss is the one a Durable Object is billed on.
  *   - The answer is discarded exactly as an authority would discard it.
  */
-import * as Y from '@y/y';
+
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as Y from '@y/y';
 
 /** The constant the removed filter diffed against: an empty state vector. */
 const EMPTY_STATE_VECTOR = new Uint8Array([0]);
@@ -49,7 +50,10 @@ function build(rows: number): Uint8Array {
 	doc.transact(() => {
 		for (let index = 0; index < rows; index += 1) {
 			const row = new Y.Type();
-			root.setAttr(`r${String(index).padStart(23, '0')}` as never, row as never);
+			root.setAttr(
+				`r${String(index).padStart(23, '0')}` as never,
+				row as never,
+			);
 			row.setAttr('title' as never, 'A note title of typical length' as never);
 			const container = new Y.Type();
 			row.setAttr('!doc' as never, container as never);
@@ -84,7 +88,9 @@ function run(candidate: Candidate, bytes: Uint8Array): unknown {
 
 if (process.argv[2] === '--measure') {
 	const candidate = process.argv[3] as Candidate;
-	const bytes = new Uint8Array(await Bun.file(process.argv[4] ?? '').arrayBuffer());
+	const bytes = new Uint8Array(
+		await Bun.file(process.argv[4] ?? '').arrayBuffer(),
+	);
 	Bun.gc(true);
 	const before = process.memoryUsage();
 	const started = performance.now();
@@ -111,7 +117,9 @@ try {
 	console.log(
 		`runtime  bun ${Bun.version} (${process.platform}/${process.arch}), JavaScriptCore`,
 	);
-	console.log('one OS process per cell; the answer is discarded, as an authority would\n');
+	console.log(
+		'one OS process per cell; the answer is discarded, as an authority would\n',
+	);
 
 	for (const rows of [986, 5_000, 10_000]) {
 		const path = join(directory, `${rows}.bin`);

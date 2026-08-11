@@ -22,8 +22,7 @@ export async function scanSkills(data: SkillsData): Promise<SkillsScan> {
 export async function scanReferences(
 	data: SkillsData,
 ): Promise<ReferencesScan> {
-	const { rows: references, nonconforming } =
-		await data.skillReferences.scan();
+	const { rows: references, nonconforming } = await data.skillReferences.scan();
 	return { references, nonconforming };
 }
 
