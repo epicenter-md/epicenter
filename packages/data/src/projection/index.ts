@@ -71,7 +71,6 @@ export const SqliteProjectionError = defineErrors({
 	}),
 });
 export type SqliteProjectionError = InferErrors<typeof SqliteProjectionError>;
-export type QueryFailedError = SqliteProjectionError;
 
 /**
  * What the projection reads from one opened table: every row, with the ones
