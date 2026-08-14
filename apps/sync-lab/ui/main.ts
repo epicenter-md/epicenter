@@ -7,7 +7,7 @@
  * thing no test in this repository can establish.
  */
 
-import { createAccountStore } from '@epicenter/data';
+import { createAccountStore } from '@epicenter/data/engine';
 import { createSyncConnection } from '@epicenter/data/sync';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import { defineWorkspace } from '@epicenter/workspace';

@@ -6,11 +6,12 @@
  * opener imports `bun:sqlite` and a browser opener imports a WASM build, and
  * neither belongs in a barrel the other has to load.
  *
- * Four entry points and no more: `.` for the surface, `./bun` and `./browser`
- * for the openers, and `./sync` for the transport. The superseded stack that
- * used to answer at `./legacy` was deleted along with its consumers (ADR-0227),
- * so a developer arriving here finds one store rather than a choice between
- * two.
+ * The entry points: `.` for the surface, `./bun` and `./browser` for the
+ * openers, `./sync` for the transport, `./projection` for the composed SQL
+ * follower, and `./engine` for the construction seam test fixtures build on.
+ * The superseded stack that used to answer at `./legacy` was deleted along
+ * with its consumers (ADR-0227), so a developer arriving here finds one store
+ * rather than a choice between two.
  *
  * Each opener is called `open` and takes the workspace, because a workspace
  * names the store it opens (ADR-0229). The subpath already says which adapter,
@@ -49,8 +50,6 @@ export type {
 export {
 	type AccountStore,
 	type ApplyFailedError,
-	createAccountStore,
-	createDeviceStore,
 	type DataOf,
 	type DeviceStore,
 	type KvHandle,

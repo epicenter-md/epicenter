@@ -18,7 +18,7 @@
  * deploys grows a class that exists for a test.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { createAccountStore } from '@epicenter/data';
+import { createAccountStore } from '@epicenter/data/engine';
 import {
 	createSyncClient,
 	decodeFrame,
