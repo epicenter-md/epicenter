@@ -1,11 +1,10 @@
 /**
  * Test-only: a replica that lives inside `workerd`, driven by the real driver.
  *
- * It is a Durable Object for one reason. A replica is an `AccountStore`, a store
- * is SQLite, and the only synchronous SQLite inside `workerd` is a Durable
- * Object's own storage; its one database therefore holds the client's durable
- * record AND its projection, which the engine keeps honest by owning the
- * letter-named relations outright. Everything else here is the deployed
+ * It is a Durable Object for one reason. A replica is an `AccountStore`, a
+ * store's durable record is SQLite here, and the only synchronous SQLite
+ * inside `workerd` is a Durable Object's own storage. Everything else here is
+ * the deployed
  * client: `createAccountStore`,
  * `createSyncConnection` with the real supersession rule, and `rebuildWorkspace`
  * over a real WebSocket and the real routes, so a test can assert on the rows

@@ -3,11 +3,11 @@
  *
  * It is a Durable Object only because a Store needs synchronous SQLite and this
  * is the only such SQLite `workerd` supplies. This is NOT the browser storage
- * topology: a browser keeps its durable client facts in IndexedDB and its SQL
- * projection in memory. The peer deliberately keeps both in its one DO SQLite
- * database, an allowed low-level Store configuration, so this Worker-runtime
- * test can run the real `createAccountStore`, `createSyncClient`, and WebSocket
- * protocol against the real authority.
+ * topology: a browser keeps its durable client facts in IndexedDB. The peer
+ * keeps them in its one DO SQLite database through the engine seam
+ * (`@epicenter/data/engine`), so this Worker-runtime test can run the real
+ * `createAccountStore`, `createSyncClient`, and WebSocket protocol against
+ * the real authority.
  *
  * Therefore this fixture proves authority hibernation and protocol convergence,
  * not browser persistence. Browser storage behavior belongs in `packages/data`
