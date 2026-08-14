@@ -3,13 +3,13 @@
  * Objects as RPC targets rather than through `fetch`.
  */
 import type { SyncLabAuthority } from './index.js';
-import type { SyncLabReplica } from './replica.js';
+import type { SyncLabTestPeer } from './test-peer.js';
 
 declare global {
 	namespace Cloudflare {
 		interface Env {
 			SYNC: DurableObjectNamespace<SyncLabAuthority>;
-			REPLICA: DurableObjectNamespace<SyncLabReplica>;
+			TEST_PEER: DurableObjectNamespace<SyncLabTestPeer>;
 		}
 	}
 }

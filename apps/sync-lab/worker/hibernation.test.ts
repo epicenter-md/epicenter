@@ -1,6 +1,6 @@
 /**
  * A Durable Object is really evicted, its sockets really survive, and the
- * replicas on the other end really converge.
+ * test peers on the other end really converge.
  *
  * The wake path in `worker/index.ts` is the only code on this branch that had
  * never executed. It cannot be reached from `wrangler dev`, which will not evict
@@ -18,16 +18,18 @@
  * traffic without an eviction and requires it to be the SAME. Without the second
  * half, "it changed" is also what a per-call random value looks like.
  *
- * Convergence itself is asserted on the receiving replica's own rows, read back
- * through the workspace out of its own SQLite, never on a count the test kept. The
- * only numbers this file keeps are the re-delivery observations, and they are
- * there precisely because they are NOT visible in the rows: a run that re-sent
- * nothing and a run that re-sent and was correctly ignored converge identically.
+ * Convergence is asserted on the receiving test peer's own rows, read back
+ * through the Workspace out of its own SQLite, never on a count the test kept.
+ * The peer runs the real Store and sync client, but it is not a browser-storage
+ * simulation: browser persistence is covered separately in `packages/data`.
+ * The only numbers this file keeps are re-delivery observations, because a run
+ * that re-sent nothing and a run that re-sent and was correctly ignored converge
+ * identically.
  */
 import { env, evictDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 
-import type { ReplicaReport } from './replica.js';
+import type { TestPeerReport } from './test-peer.js';
 
 /** A partition and two devices nobody else in this file shares. */
 function openLab(label: string) {
@@ -35,8 +37,8 @@ function openLab(label: string) {
 	return {
 		partition,
 		authority: env.SYNC.get(env.SYNC.idFromName(partition)),
-		device: (name: string) =>
-			env.REPLICA.get(env.REPLICA.idFromName(`${partition}-${name}`)),
+		peer: (name: string) =>
+			env.TEST_PEER.get(env.TEST_PEER.idFromName(`${partition}-${name}`)),
 	};
 }
 
@@ -60,14 +62,14 @@ async function settle(
 }
 
 /**
- * A replica is quiet when it holds what it should and reports nothing wrong.
+ * A test peer is quiet when it holds what it should and reports nothing wrong.
  *
  * `inFlight` is in here because of what it caught. A woken object that had
  * rebuilt its socket map but not its hub took pushes and discarded them without
  * an ack and without a refusal, and the only symptom anywhere in the system was
- * a replica that owed work forever while every layer reported success.
+ * a peer that owed work forever while every layer reported success.
  */
-function expectHealthy(report: ReplicaReport, titles: string[]): void {
+function expectHealthy(report: TestPeerReport, titles: string[]): void {
 	expect(report.lastError).toBeUndefined();
 	expect(report.lastErrorMessage).toBeUndefined();
 	expect(report.needsResync).toBe(false);
@@ -79,8 +81,8 @@ function expectHealthy(report: ReplicaReport, titles: string[]): void {
 describe('a socket survives a wake and keeps syncing', () => {
 	it('the object is evicted, and the other device still receives what it missed', async () => {
 		const lab = openLab('survives');
-		const phone = lab.device('phone');
-		const laptop = lab.device('laptop');
+		const phone = lab.peer('phone');
+		const laptop = lab.peer('laptop');
 		await phone.openSocket(lab.partition);
 		await laptop.openSocket(lab.partition);
 
@@ -125,8 +127,8 @@ describe('a socket survives a wake and keeps syncing', () => {
 		// call, or an object being torn down by something other than the eviction,
 		// would look like.
 		const lab = openLab('control-no-eviction');
-		const phone = lab.device('phone');
-		const laptop = lab.device('laptop');
+		const phone = lab.peer('phone');
+		const laptop = lab.peer('laptop');
 		await phone.openSocket(lab.partition);
 		await laptop.openSocket(lab.partition);
 
@@ -156,15 +158,15 @@ describe('a socket survives a wake and keeps syncing', () => {
 });
 
 describe('a woken object re-sends rather than skipping', () => {
-	it('the replica is handed entries it already has, and ends up correct anyway', async () => {
+	it('the peer is handed entries it already has, and ends up correct anyway', async () => {
 		// The claim `positionOf` makes out loud: the attachment is written BEFORE
 		// the cursor moves, so a woken object reads a position that is behind what
 		// it really sent. It re-sends, and every re-send is idempotent. A shipped
 		// bug reported exactly this re-delivery as a `Gap`, so the assertion is
 		// both halves: the re-delivery happened, and nothing complained about it.
 		const lab = openLab('resends');
-		const phone = lab.device('phone');
-		const laptop = lab.device('laptop');
+		const phone = lab.peer('phone');
+		const laptop = lab.peer('laptop');
 		await phone.openSocket(lab.partition);
 		await laptop.openSocket(lab.partition);
 
@@ -187,7 +189,7 @@ describe('a woken object re-sends rather than skipping', () => {
 		expect(stat.incarnation).not.toBe(before);
 		const report = await laptop.report();
 		// The wake really did re-send: position 1 arrived a second time, after this
-		// replica had already applied it.
+		// peer had already applied it.
 		expect(report.redeliveredEntries).toContain(1);
 		// And it was harmless. No `Gap`, no `Unapplyable`, no resync owed, and the
 		// rows are exactly the two that were written, once each.
@@ -199,8 +201,8 @@ describe('a woken object re-sends rather than skipping', () => {
 		// The re-delivery above has to be caused by the wake. If ordinary traffic
 		// re-sends too, that assertion proves nothing about hibernation.
 		const lab = openLab('control-no-resend');
-		const phone = lab.device('phone');
-		const laptop = lab.device('laptop');
+		const phone = lab.peer('phone');
+		const laptop = lab.peer('laptop');
 		await phone.openSocket(lab.partition);
 		await laptop.openSocket(lab.partition);
 
@@ -232,7 +234,7 @@ describe('the snapshot path survives a wake', () => {
 		// which is exactly the case the snapshot exists for: the entries it would
 		// otherwise have read are gone.
 		const lab = openLab('snapshot');
-		const phone = lab.device('phone');
+		const phone = lab.peer('phone');
 		await phone.openSocket(lab.partition);
 
 		// One entry past the authority's 64 KB floor is enough on its own: the
@@ -248,7 +250,7 @@ describe('the snapshot path survives a wake', () => {
 
 		// A device that has never seen this partition. There is no tail at all, so
 		// the snapshot is the only thing that can serve it.
-		const tablet = lab.device('tablet');
+		const tablet = lab.peer('tablet');
 		await tablet.openSocket(lab.partition);
 		await settle('the tablet adopts the snapshot', async () =>
 			(await tablet.report()).titles.includes('a big paste'),
@@ -268,7 +270,7 @@ describe('the snapshot path survives a wake', () => {
 		const stat = await lab.authority.stat();
 		expect(stat.incarnation).not.toBe(before);
 		const report = await tablet.report();
-		// The woken object handed it the whole snapshot again, and the replica
+		// The woken object handed it the whole snapshot again, and the peer
 		// ignored it rather than adopting it and moving backwards.
 		expect(report.redeliveredSnapshots).toEqual([snapshotPosition]);
 		expectHealthy(report, ['a big paste', 'after the wake']);

@@ -3,13 +3,14 @@
  *
  * `SyncLabAuthority` is re-exported rather than redefined, so the class the test
  * hibernates is byte for byte the one `wrangler deploy` ships. The only addition
- * is `SyncLabReplica`, which exists because a replica needs SQLite and inside
- * `workerd` that means a Durable Object; keeping it here rather than in
- * `worker/index.ts` is what stops a test-only class from reaching the
- * deployable.
+ * is `SyncLabTestPeer`, a Worker-runtime client harness. It exists because a
+ * Store needs synchronous SQLite and inside `workerd` that means a Durable
+ * Object. Its deliberately shared durable-record/projection database is a test
+ * harness detail, not the browser client's storage design. Keeping it here
+ * rather than in `worker/index.ts` stops it reaching the deployable.
  */
 export { SyncLabAuthority } from './index.js';
-export { SyncLabReplica } from './replica.js';
+export { SyncLabTestPeer } from './test-peer.js';
 
 export default {
 	// Nothing routes through the entrypoint: the tests hold stubs directly. It

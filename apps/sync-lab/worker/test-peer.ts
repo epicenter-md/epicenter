@@ -1,14 +1,17 @@
 /**
- * THROWAWAY, and test-only: a replica that lives inside `workerd`.
+ * THROWAWAY, and test-only: a peer that lives inside `workerd`.
  *
- * It is a Durable Object for one reason. A replica is an `AccountStore`, a store
- * is SQLite, and the only synchronous SQLite inside `workerd` is a Durable
- * Object's own storage; its one database therefore holds the client's durable
- * record AND its projection, which the engine keeps honest by owning the
- * letter-named relations outright. Everything else here is the deployed
- * client: `createAccountStore`,
- * `createSyncClient` and a real WebSocket to the authority, so a test can assert
- * on the rows a device actually holds rather than on frames a harness counted.
+ * It is a Durable Object only because a Store needs synchronous SQLite and this
+ * is the only such SQLite `workerd` supplies. This is NOT the browser storage
+ * topology: a browser keeps its durable client facts in IndexedDB and its SQL
+ * projection in memory. The peer deliberately keeps both in its one DO SQLite
+ * database, an allowed low-level Store configuration, so this Worker-runtime
+ * test can run the real `createAccountStore`, `createSyncClient`, and WebSocket
+ * protocol against the real authority.
+ *
+ * Therefore this fixture proves authority hibernation and protocol convergence,
+ * not browser persistence. Browser storage behavior belongs in `packages/data`
+ * browser tests.
  *
  * It is deliberately NOT exported from `worker/index.ts` and NOT in
  * `wrangler.jsonc`. Only `worker/test-entry.ts` mounts it, so nothing that
@@ -47,15 +50,15 @@ function openNotes(
 /**
  * What a test is allowed to see, and all of it crosses RPC as plain data.
  *
- * `titles` is the assertion that matters: it is read out of the replica's own
+ * `titles` is the assertion that matters: it is read out of the peer's own
  * SQLite through the workspace, so it can only be satisfied by bytes that arrived,
  * committed and applied. The two `redelivered` arrays are the opposite kind of
  * fact. They are an observation of the WIRE, kept because "a woken authority
- * re-sends rather than skips" is otherwise invisible from a converged replica:
+ * re-sends rather than skips" is otherwise invisible from a converged peer:
  * a run that re-sent nothing and a run that re-sent and was correctly ignored
  * hold identical rows.
  */
-export type ReplicaReport = {
+export type TestPeerReport = {
 	cursor: number;
 	inFlight: boolean;
 	needsResync: boolean;
@@ -64,15 +67,15 @@ export type ReplicaReport = {
 	lastError: string | undefined;
 	lastErrorMessage: string | undefined;
 	titles: string[];
-	/** Entry positions the authority sent again after this replica already held them. */
+	/** Entry positions the authority sent again after this peer already held them. */
 	redeliveredEntries: number[];
-	/** Snapshot positions the authority sent again after this replica already held them. */
+	/** Snapshot positions the authority sent again after this peer already held them. */
 	redeliveredSnapshots: number[];
 };
 
 type Env = { SYNC: DurableObjectNamespace };
 
-export class SyncLabReplica extends DurableObject<Env> {
+export class SyncLabTestPeer extends DurableObject<Env> {
 	private readonly db: ReturnType<typeof openNotes>;
 	private readonly client: SyncClient;
 	private readonly redeliveredEntries = new Set<number>();
@@ -91,7 +94,7 @@ export class SyncLabReplica extends DurableObject<Env> {
 	}
 
 	/**
-	 * Open a real socket to the authority, from this replica's own cursor.
+	 * Open a real socket to the authority, from this peer's own cursor.
 	 *
 	 * First contact runs the identity handshake the deployed driver runs
 	 * (ADR-0231): an identity-less dial only bootstraps. The authority names
@@ -125,7 +128,7 @@ export class SyncLabReplica extends DurableObject<Env> {
 		this.client.attach({ send: (bytes) => socket.send(bytes) });
 	}
 
-	/** One upgrade at this replica's cursor, declaring its identity if it has one. */
+	/** One upgrade at this peer's cursor, declaring its identity if it has one. */
 	private async dial(partition: string): Promise<WebSocket> {
 		const stub = this.env.SYNC.get(this.env.SYNC.idFromName(partition));
 		const document = this.client.document();
@@ -143,7 +146,7 @@ export class SyncLabReplica extends DurableObject<Env> {
 
 	/**
 	 * The first-contact dial: hear the document announcement, wait out the
-	 * close the authority answers a pristine replica with, and return. The
+	 * close the authority answers a pristine peer with, and return. The
 	 * client stamps the identity from the frame; nothing else arrives on this
 	 * socket, by design.
 	 */
@@ -165,7 +168,7 @@ export class SyncLabReplica extends DurableObject<Env> {
 	}
 
 	/**
-	 * Note what the authority sent that this replica already had.
+	 * Note what the authority sent that this peer already had.
 	 *
 	 * Read BEFORE the frame reaches the client, because the client is what moves
 	 * the cursor past it. `seq <= cursor` is the exact condition the client
@@ -207,7 +210,7 @@ export class SyncLabReplica extends DurableObject<Env> {
 		this.client.flush();
 	}
 
-	report(): ReplicaReport {
+	report(): TestPeerReport {
 		const status = this.client.status();
 		const listed = this.db.tables.notes.list();
 		return {

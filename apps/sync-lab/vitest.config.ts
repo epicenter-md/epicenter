@@ -8,9 +8,11 @@
  * its WebSockets, which is exactly the transition under test.
  *
  * The entrypoint is NOT `worker/index.ts`. The tested class is, but a test also
- * needs replicas that hold a real store, and a store needs SQLite, which inside
- * `workerd` means a Durable Object. `worker/test-entry.ts` adds that second
- * class without putting it in `wrangler.jsonc`, so nothing deployable changes.
+ * needs a peer that holds a real Store, and a Store needs SQLite, which inside
+ * `workerd` means a Durable Object. That peer is a test harness, not a browser
+ * simulation: it shares one DO SQLite database where a browser uses IndexedDB
+ * plus an in-memory projection. `worker/test-entry.ts` adds it without putting
+ * it in `wrangler.jsonc`, so nothing deployable changes.
  */
 import { cloudflareTest } from '@cloudflare/vitest-pool-workers';
 import { defineConfig } from 'vitest/config';
@@ -24,7 +26,7 @@ export default defineConfig({
 				compatibilityFlags: ['nodejs_compat'],
 				durableObjects: {
 					SYNC: { className: 'SyncLabAuthority', useSQLite: true },
-					REPLICA: { className: 'SyncLabReplica', useSQLite: true },
+					TEST_PEER: { className: 'SyncLabTestPeer', useSQLite: true },
 				},
 			},
 		}),
