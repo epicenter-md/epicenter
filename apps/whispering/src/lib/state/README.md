@@ -18,7 +18,7 @@ Two shapes live here. Workspace-backed state (`settings`, `recordings`, `recipes
 
 ### `settings.svelte.ts`
 
-Synced workspace settings backed by the canonical workspace KV lens (ADR-0130). Settings roam across devices through row sync. The app core hydrates every key before the app resolves; `createSettingsView` wraps it with `createSubscriber` so reads are reactive. Product defaults remain release-local app policy.
+Synced workspace settings backed by the canonical workspace KV section (ADR-0130). Settings roam across devices through row sync. The app core hydrates every key before the app resolves; `createSettingsView` wraps it with `createSubscriber` so reads are reactive. Product defaults remain release-local app policy.
 
 ```typescript
 import { getWhisperingApp } from '$lib/whispering/context';

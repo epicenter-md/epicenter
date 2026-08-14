@@ -38,7 +38,7 @@ import type { AuthClient } from '@epicenter/auth';
 import type { BlobStore } from '@epicenter/blobs';
 import { encodeFrame } from '@epicenter/data/sync';
 import { Ok } from 'wellcrafted/result';
-import { whisperingLens } from '../workspace';
+import { whisperingWorkspace } from '../workspace';
 import { openWhisperingApp, type WhisperingAppDependencies } from './app';
 
 const local: BlobStore = {
@@ -180,7 +180,7 @@ test('a signed-out boot opens one document and never dials', async () => {
 	expect(app.recipes.count).toBe(0);
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
-	expect(names).toContain(`epicenter/${whisperingLens.namespace}/device`);
+	expect(names).toContain(`epicenter/${whisperingWorkspace.namespace}/device`);
 	expect(names.some((name) => name?.includes('/account/'))).toBe(false);
 });
 
@@ -190,7 +190,7 @@ test('settings read their declared defaults and survive a restart', async () => 
 		await using app = await openWhisperingApp(
 			dependencies(createFakeAuth({ status: 'signed-out' })),
 		);
-		// Declared in the Lens, applied by a read, never stored.
+		// Declared in the workspace, applied by a read, never stored.
 		expect(app.settings.get('transcriptionService')).toBe('local');
 		expect(app.settings.get('recordingAutoUpload')).toBe(false);
 		expect(app.settings.get('soundManualStart')).toBe(true);

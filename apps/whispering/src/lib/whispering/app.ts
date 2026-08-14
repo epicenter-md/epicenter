@@ -1,8 +1,8 @@
 import type { AuthClient } from '@epicenter/auth';
-import type { DataOf, ReplicaStore } from '@epicenter/data';
+import type { AccountStore, DataOf } from '@epicenter/data';
 import {
-	type BrowserReplicaStore,
-	type BrowserStore,
+	type BrowserAccountStore,
+	type DeviceStore,
 	openAccount,
 	openDevice,
 } from '@epicenter/data/browser';
@@ -11,7 +11,10 @@ import {
 	type SyncConnection,
 	type SyncConnectionStatus,
 } from '@epicenter/data/sync';
-import { type WhisperingSettingValues, whisperingLens } from '../workspace';
+import {
+	type WhisperingSettingValues,
+	whisperingWorkspace,
+} from '../workspace';
 import {
 	createWhisperingRecipes,
 	type WhisperingRecipes,
@@ -26,11 +29,14 @@ export type { WhisperingBlobs } from './recording-audio';
 
 /** The device-owned document: this machine's settings, and its work when
  * signed out. */
-export type WhisperingDeviceData = DataOf<typeof whisperingLens, BrowserStore>;
+export type WhisperingDeviceData = DataOf<
+	typeof whisperingWorkspace,
+	DeviceStore
+>;
 /** One account's retained replica of the portable work. */
 export type WhisperingAccountData = DataOf<
-	typeof whisperingLens,
-	BrowserReplicaStore
+	typeof whisperingWorkspace,
+	BrowserAccountStore
 >;
 
 /** Environment-owned inputs for one fully acquired Whispering app. */
@@ -69,7 +75,6 @@ export type WhisperingSettings = {
 		key: TKey,
 	): WhisperingSettingValues[TKey];
 	reset(): void;
-	readonly loadError: unknown;
 	subscribe(listener: () => void): () => void;
 };
 
@@ -116,7 +121,7 @@ export async function openWhisperingApp(
 			? undefined
 			: { principalId: auth.state.principalId };
 
-	const opened = await openDevice(whisperingLens);
+	const opened = await openDevice(whisperingWorkspace);
 	if (opened.error !== null) throw opened.error;
 	const deviceData = opened.data;
 
@@ -191,7 +196,7 @@ async function openAccountRuntime({
 	reportBackgroundError(cause: unknown): void;
 	signal?: AbortSignal;
 }): Promise<AccountRuntime> {
-	const opened = await openAccount(whisperingLens, { principalId });
+	const opened = await openAccount(whisperingWorkspace, { principalId });
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
 
@@ -215,7 +220,7 @@ async function openAccountRuntime({
 		let noticeDenied: (() => void) | undefined;
 		const connection = attachStoreSync({
 			store: data.store,
-			namespace: whisperingLens.namespace,
+			namespace: whisperingWorkspace.namespace,
 			transport: {
 				baseURL: auth.deployment.baseURL,
 				openWebSocket: (url) => auth.openWebSocket(url),
@@ -269,18 +274,18 @@ function waitUntilReplicaIsBound({
 	wasDenied,
 	onDenied,
 }: {
-	store: ReplicaStore;
+	store: AccountStore;
 	signal?: AbortSignal;
 	/** Whether the dial was already permanently denied before the wait began. */
 	wasDenied: () => boolean;
 	/** Hear a permanent denial that lands while waiting; returns unsubscribe. */
 	onDenied: (notice: () => void) => () => void;
 }): Promise<void> {
-	const bound = (): boolean => store.sync.documentIdentity().data !== undefined;
+	const bound = (): boolean => store.sync.get().document !== undefined;
 	if (bound()) return Promise.resolve();
 	return new Promise<void>((resolve, reject) => {
 		function cleanup(): void {
-			stopCommitted();
+			stopBound();
 			stopDenied();
 			signal?.removeEventListener('abort', onAbort);
 		}
@@ -300,7 +305,7 @@ function waitUntilReplicaIsBound({
 			cleanup();
 			reject(signal?.reason);
 		}
-		const stopCommitted = store.onCommitted(() => {
+		const stopBound = store.sync.subscribe(() => {
 			if (bound()) finish();
 		});
 		const stopDenied = onDenied(unavailable);
@@ -313,7 +318,7 @@ function waitUntilReplicaIsBound({
 type SettingKey = keyof WhisperingSettingValues;
 
 /**
- * Settings over the Lens's KV, which is one name-addressed root.
+ * Settings over the workspace's KV, which is one name-addressed root.
  *
  * What this replaces was substantial and every piece of it answered a problem
  * that no longer exists. Settings were one ROW at a chosen id, so there was a
@@ -331,7 +336,6 @@ type SettingKey = keyof WhisperingSettingValues;
  */
 function createWhisperingSettings({ kv }: { kv: WhisperingDeviceData['kv'] }) {
 	let values = kv.defaults as WhisperingSettingValues;
-	let loadError: unknown = null;
 	const listeners = new Set<() => void>();
 	const notify = () => {
 		for (const listener of listeners) listener();
@@ -340,18 +344,17 @@ function createWhisperingSettings({ kv }: { kv: WhisperingDeviceData['kv'] }) {
 	function read(): void {
 		const { data, error } = kv.get();
 		if (error !== null) {
-			// A stored value the current release cannot read costs that key, not
-			// the whole object: `conforming` carries the ones that did pass.
-			loadError = error;
+			// A stored value the current release cannot read costs those keys, not
+			// the whole object: the error arm is always the diagnostic, and its
+			// `conforming` carries the ones that did pass.
 			values = {
 				...kv.defaults,
-				...(error.name === 'Nonconforming' ? error.conforming : {}),
+				...error.conforming,
 			} as WhisperingSettingValues;
 			notify();
 			return;
 		}
 		values = data;
-		loadError = null;
 		notify();
 	}
 
@@ -359,13 +362,12 @@ function createWhisperingSettings({ kv }: { kv: WhisperingDeviceData['kv'] }) {
 	const stop = kv.subscribe(read);
 
 	const write = (patch: Partial<WhisperingSettingValues>): void => {
+		// Thrown so the caller's toast can present the refusal: every key here is
+		// workspace-declared, so a refused write is a bug rather than a state to hold.
 		const { error } = kv.update(patch);
-		if (error !== null) {
-			loadError = error;
-			notify();
-			return;
-		}
-		read();
+		if (error !== null) throw error;
+		// The subscription above already re-read inside the write; nothing left
+		// to refresh here.
 	};
 
 	const settings: WhisperingSettings = {
@@ -383,9 +385,6 @@ function createWhisperingSettings({ kv }: { kv: WhisperingDeviceData['kv'] }) {
 		},
 		reset() {
 			write(kv.defaults as WhisperingSettingValues);
-		},
-		get loadError() {
-			return loadError;
 		},
 		subscribe(listener) {
 			listeners.add(listener);

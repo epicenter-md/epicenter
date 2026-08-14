@@ -64,7 +64,7 @@ export type HomeHostInputs = {
  *
  * The host serves bundles and brokers credentials, and owns no application
  * data (ADR-0226). What used to arrive here was a Honeycrisp handle the host
- * had opened through a mirror Lens, a conversations table of its own, and a
+ * had opened through a mirror declaration, a conversations table of its own, and a
  * markdown folder rendered from both; all of it was the host-owned data plane
  * ADR-0227 broke from, and none of it is a shape this product has any more.
  */

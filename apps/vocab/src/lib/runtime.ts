@@ -1,8 +1,8 @@
 import type { AuthClient } from '@epicenter/auth';
-import type { DataOf, ReplicaStore } from '@epicenter/data';
+import type { AccountStore, DataOf } from '@epicenter/data';
 import {
-	type BrowserReplicaStore,
-	type BrowserStore,
+	type BrowserAccountStore,
+	type DeviceStore,
 	openAccount,
 	openDevice,
 } from '@epicenter/data/browser';
@@ -11,7 +11,7 @@ import {
 	type SyncConnection,
 	type SyncConnectionStatus,
 } from '@epicenter/data/sync';
-import { vocabLens } from '@epicenter/vocab';
+import { vocabWorkspace } from '@epicenter/vocab';
 import { reportBackgroundError } from './report.js';
 
 export type OpenVocabRuntimeOptions = {
@@ -51,7 +51,7 @@ export type VocabRuntime = {
 	 * never syncs, survives every sign-in and sign-out, and holds this device's
 	 * `kv` settings whether or not an account is present.
 	 */
-	readonly deviceData: DataOf<typeof vocabLens, BrowserStore>;
+	readonly deviceData: DataOf<typeof vocabWorkspace, DeviceStore>;
 	/**
 	 * The boot principal's retained account replica. Present exactly when the
 	 * boot auth snapshot carried an identity, and always past its bound gate: a
@@ -60,7 +60,7 @@ export type VocabRuntime = {
 	 */
 	readonly account?: {
 		/** The account's conversations and entries, offline included once bound. */
-		readonly data: DataOf<typeof vocabLens, BrowserReplicaStore>;
+		readonly data: DataOf<typeof vocabWorkspace, BrowserAccountStore>;
 		/**
 		 * What sync is doing, or undefined when it is not part of this generation
 		 * anymore: a bound replica whose dials were permanently denied works
@@ -104,7 +104,8 @@ export async function openVocabRuntime({
 			? undefined
 			: { auth, principalId: auth.state.principalId };
 
-	const { data: deviceData, error: deviceError } = await openDevice(vocabLens);
+	const { data: deviceData, error: deviceError } =
+		await openDevice(vocabWorkspace);
 	if (deviceError !== null) throw deviceError;
 
 	let account: AccountRuntime | undefined;
@@ -145,7 +146,7 @@ export async function openVocabRuntime({
 
 /** The account arm plus the disposal only the runtime may run. */
 type AccountRuntime = {
-	data: DataOf<typeof vocabLens, BrowserReplicaStore>;
+	data: DataOf<typeof vocabWorkspace, BrowserAccountStore>;
 	syncStatus(): SyncConnectionStatus | undefined;
 	dispose(): Promise<void>;
 };
@@ -167,7 +168,7 @@ async function openAccountRuntime({
 	principalId: Parameters<typeof openAccount>[1]['principalId'];
 	signal?: AbortSignal;
 }): Promise<AccountRuntime> {
-	const opened = await openAccount(vocabLens, { principalId });
+	const opened = await openAccount(vocabWorkspace, { principalId });
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
 
@@ -194,7 +195,7 @@ async function openAccountRuntime({
 		let noticeDenied: (() => void) | undefined;
 		const connection = attachStoreSync({
 			store: data.store,
-			namespace: vocabLens.namespace,
+			namespace: vocabWorkspace.namespace,
 			transport: {
 				baseURL: auth.deployment.baseURL,
 				openWebSocket: (url) => auth.openWebSocket(url),
@@ -257,18 +258,18 @@ function waitUntilReplicaIsBound({
 	wasDenied,
 	onDenied,
 }: {
-	store: ReplicaStore;
+	store: AccountStore;
 	signal?: AbortSignal;
 	/** Whether the dial was already permanently denied before the wait began. */
 	wasDenied: () => boolean;
 	/** Hear a permanent denial that lands while waiting; returns unsubscribe. */
 	onDenied: (notice: () => void) => () => void;
 }): Promise<void> {
-	const bound = (): boolean => store.sync.documentIdentity().data !== undefined;
+	const bound = (): boolean => store.sync.get().document !== undefined;
 	if (bound()) return Promise.resolve();
 	return new Promise<void>((resolve, reject) => {
 		function cleanup(): void {
-			stopCommitted();
+			stopBound();
 			stopDenied();
 			signal?.removeEventListener('abort', onAbort);
 		}
@@ -288,10 +289,11 @@ function waitUntilReplicaIsBound({
 			cleanup();
 			reject(signal?.reason);
 		}
-		// The stamp is a commit, so `onCommitted` is the notification that the
-		// replica became bound; denial arrives through the latch wired at the
-		// attach site, which may already have fired.
-		const stopCommitted = store.onCommitted(() => {
+		// The stamp is the one fact `sync.get()` reports, so its subscription
+		// is the notification that the replica became bound; denial arrives
+		// through the latch wired at the attach site, which may already have
+		// fired.
+		const stopBound = store.sync.subscribe(() => {
 			if (bound()) finish();
 		});
 		const stopDenied = onDenied(unavailable);

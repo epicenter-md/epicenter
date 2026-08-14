@@ -27,9 +27,10 @@ const OUTPUT_SCOPES = ['transcription', 'recipe'] as const;
 type OutputScope = (typeof OUTPUT_SCOPES)[number];
 
 /**
- * Where each scope's three delivery toggles live, as the Lens keys that hold
- * them. Written out rather than composed from the scope name: a durable key is
- * not something to compute from an identifier a rename could change.
+ * Where each scope's three delivery toggles live, as the workspace kv keys
+ * that hold them. Written out rather than composed from the scope name: a
+ * durable key is not something to compute from an identifier a rename could
+ * change.
  */
 const OUTPUT_KEYS = {
 	transcription: {

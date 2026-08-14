@@ -588,7 +588,7 @@ fn launch_on_main_thread(
 ///
 /// The grammar mirrors `APP_ID_PATTERN` in `@epicenter/constants`: lowercase
 /// alphanumerics, `-`, and `.`, beginning and ending alphanumeric. Dots are here
-/// because an admitted app's ID is the reverse-domain namespace its Lens
+/// because an admitted app's ID is the reverse-domain namespace its workspace
 /// declares (ADR-0210); bare labels stay legal for the compiled surfaces. The
 /// first and last character are constrained for the same reason the TypeScript
 /// side constrains them: an ID names a directory, and `.` or `..` would name one

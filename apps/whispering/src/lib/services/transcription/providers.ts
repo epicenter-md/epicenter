@@ -71,7 +71,7 @@ type KeyProvider = {
 	 * the cloud keys: a precise union here would make `typeof PROVIDERS`
 	 * reference a type derived from itself (`satisfies Record<...>` closes the
 	 * loop). The real guard is the call site `settings.get(modelSettingKey)`,
-	 * which rejects a key the Lens does not declare.
+	 * which rejects a key the workspace does not declare.
 	 */
 	modelSettingKey: `transcription${string}Model`;
 	/** Device config key for the endpoint override; null when not configurable. */

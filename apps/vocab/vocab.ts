@@ -1,12 +1,12 @@
 /**
- * Vocab's inert Lens: the namespace it owns, its tables, and its device-local
+ * Vocab's inert workspace declaration: the namespace it owns, its tables, and its device-local
  * values. Isomorphic: no IndexedDB, WebSockets, Svelte state, or browser APIs.
  *
  * Distribution: this file is the `@epicenter/vocab` package root file (the
- * target of the package's `"."` export). The browser root imports the Lens from
+ * target of the package's `"."` export). The browser root imports the workspace from
  * here and opens documents with it. The shapes here are the wire contract for
  * sync; forking a field shape breaks sync compatibility with peers running the
- * canonical Lens.
+ * canonical workspace.
  *
  * Composition lives in `src/lib/runtime.ts`, which decides which of these two
  * documents a generation writes.
@@ -15,8 +15,8 @@
 import type { AgentMessage } from '@epicenter/agent';
 import { conversationsTable } from '@epicenter/chat';
 import type { ServableModel } from '@epicenter/constants/ai-providers';
-import type { LensView } from '@epicenter/data';
-import { defineLens, type RowOf } from '@epicenter/lens';
+import type { WorkspaceView } from '@epicenter/data';
+import { defineWorkspace, type RowOf } from '@epicenter/workspace';
 
 /**
  * Vocab runs a single model. It is an app constant, not a per-conversation
@@ -88,11 +88,11 @@ const entriesTable = {
 } as const;
 
 /**
- * The isomorphic Vocab Lens.
+ * The isomorphic Vocab workspace.
  *
- * A Lens declares exactly one namespace (ADR-0160), so Vocab interprets the
+ * A workspace declares exactly one namespace, so Vocab owns the
  * canonical `conversationsTable` shape under its own namespace rather than
- * binding a chat Lens: the conversations are Vocab's, not a namespace another
+ * composing a chat table: the conversations are Vocab's, not a namespace another
  * application owns.
  *
  * Conversation transcripts are not rows: each conversation row owns a document
@@ -108,7 +108,7 @@ const entriesTable = {
  * (ADR-0213). It is read from the DEVICE document in every generation: how this
  * screen renders is a fact about this screen, not portable work (ADR-0233).
  */
-export const vocabLens = defineLens({
+export const vocabWorkspace = defineWorkspace({
 	namespace: 'so.epicenter.vocab',
 	title: 'Vocab',
 	kv: {
@@ -118,8 +118,8 @@ export const vocabLens = defineLens({
 	tables: { conversations: conversationsTable, entries: entriesTable },
 });
 
-/** The typed view of one store through Vocab's Lens. */
-export type VocabData = LensView<typeof vocabLens>;
+/** The typed view of one store through Vocab's workspace. */
+export type VocabData = WorkspaceView<typeof vocabWorkspace>;
 
-/** One entry row. Row ids are runtime-minted, so the Lens owns `id`. */
+/** One entry row. Row ids are runtime-minted, so the runtime owns `id`. */
 export type Entry = RowOf<typeof entriesTable>;

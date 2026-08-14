@@ -17,11 +17,11 @@
  * next document, deliberately out of band from the socket.
  */
 import {
-	LENS_NAMESPACE,
 	MAIN_SUBPROTOCOL,
 	parseSubprotocols,
 	STORE_REPLACE_ROUTE,
 	STORE_SYNC_ROUTE,
+	WORKSPACE_NAMESPACE,
 } from '@epicenter/sync';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
@@ -61,10 +61,10 @@ function requireStoreBearer<E extends Env>(
 	});
 }
 
-/** One namespace check for both routes: a name no Lens could carry is refused. */
+/** One namespace check for both routes: a name no workspace could carry is refused. */
 function parseNamespace(value: string | undefined): string | undefined {
 	if (value === undefined) return undefined;
-	if (!LENS_NAMESPACE.test(value) || value.length > 128) return undefined;
+	if (!WORKSPACE_NAMESPACE.test(value) || value.length > 128) return undefined;
 	return value;
 }
 
@@ -112,7 +112,7 @@ export function mountStoreSyncApp<E extends Env = Env>(
 			}
 			const namespace = parseNamespace(c.req.query('namespace'));
 			if (namespace === undefined) {
-				return new Response('namespace must be a Lens namespace', {
+				return new Response('namespace must be a workspace namespace', {
 					status: 400,
 				});
 			}
@@ -150,7 +150,7 @@ export function mountStoreSyncApp<E extends Env = Env>(
 		async (c) => {
 			const namespace = parseNamespace(c.req.query('namespace'));
 			if (namespace === undefined) {
-				return new Response('namespace must be a Lens namespace', {
+				return new Response('namespace must be a workspace namespace', {
 					status: 400,
 				});
 			}

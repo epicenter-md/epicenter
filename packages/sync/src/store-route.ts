@@ -92,12 +92,12 @@ export const STORE_REPLACE_ROUTE = {
 } as const;
 
 /**
- * A namespace a Lens could actually have declared.
+ * A namespace a workspace could actually have declared.
  *
  * Checked on both sides, from one definition. The server checks it because the
  * value becomes part of a Durable Object name; a client checks nothing, but
- * sharing the grammar means a name the server will refuse is a name no Lens
+ * sharing the grammar means a name the server will refuse is a name no workspace
  * could have carried either.
  */
-export const LENS_NAMESPACE =
+export const WORKSPACE_NAMESPACE =
 	/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;

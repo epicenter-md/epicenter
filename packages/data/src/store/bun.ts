@@ -1,20 +1,28 @@
 import { Database } from 'bun:sqlite';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { LensJson, LensParseError } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import {
+	type ParsedWorkspace,
+	parseWorkspace,
+	type WorkspaceJson,
+	type WorkspaceParseError,
+} from '@epicenter/workspace';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { claimDocument, releaseDocument } from './claims.js';
-import { applyHistorySchema } from './log.js';
+import { applyHistorySchema, createSqliteDurablePort } from './log.js';
 import {
+	type AccountStore,
 	asData,
-	createReplicaStore,
+	createAccountStore,
+	createAccountStoreOverPort,
 	type DataOf,
-	type ReplicaStore,
 	StoreError,
+	type UntypedWorkspaceView,
+	type WorkspaceView,
 } from './store.js';
 
-export type BunStore = ReplicaStore & {
+export type BunAccountStore = AccountStore & {
 	/**
 	 * Delete this store's live file whole, disposing the store first.
 	 *
@@ -28,11 +36,11 @@ export type BunStore = ReplicaStore & {
 };
 
 /**
- * Open the application this lens names, on Bun.
+ * Open the application this workspace names, on Bun.
  *
- * The lens names the store (ADR-0229), so the folder is
- * `<root>/<lens.namespace>` rather than a path a caller picks. The root is
- * where Epicenter lives on this machine (ADR-0201), which is an environment
+ * The workspace names the store (ADR-0229), so the folder is
+ * `<root>/<workspace.namespace>` rather than a path a caller picks. The root
+ * is where Epicenter lives on this machine (ADR-0201), which is an environment
  * fact rather than a second name for the application.
  *
  * **No application in this repository calls this today.** Honeycrisp opens the
@@ -44,8 +52,8 @@ export type BunStore = ReplicaStore & {
  * `store.test.ts` uses. An in-repo caller returning is a decision, not a
  * default.
  */
-export async function open<const TLens extends LensJson>(
-	lens: TLens,
+export async function open<const TWorkspace extends WorkspaceJson>(
+	workspace: TWorkspace,
 	{
 		root,
 		keepHistory = true,
@@ -55,40 +63,50 @@ export async function open<const TLens extends LensJson>(
 		/** Whether collapse preserves what it supersedes (ADR-0214). */
 		keepHistory?: boolean;
 	},
-): Promise<Result<DataOf<TLens, BunStore>, StoreError | LensParseError>> {
-	const { error: claimError } = claimDocument(lens.namespace);
+): Promise<
+	Result<DataOf<TWorkspace, BunAccountStore>, StoreError | WorkspaceParseError>
+> {
+	// Parsed before anything is claimed or opened: a declaration may arrive as
+	// data, and a refusal here is a boot outcome rather than a programmer
+	// error (ADR-0240).
+	const { data: parsed, error: parseError } = parseWorkspace(workspace);
+	if (parseError !== null) return Err(parseError);
+
+	const { error: claimError } = claimDocument(parsed.namespace);
 	if (claimError !== null) return Err(claimError);
 
-	const { data: store, error: storeError } = await openBunStore({
-		directory: join(root, lens.namespace),
-		namespace: lens.namespace,
+	const opened = await openBunStore({
+		directory: join(root, parsed.namespace),
+		workspace: parsed,
 		keepHistory,
 	});
-	if (storeError !== null) {
-		releaseDocument(lens.namespace);
-		return Err(storeError);
+	if (opened.error !== null) {
+		releaseDocument(parsed.namespace);
+		return Err(opened.error);
 	}
-
-	const view = store.bind(lens);
-	if (view.error !== null) {
-		await store[Symbol.asyncDispose]().catch(() => undefined);
-		return Err(view.error);
-	}
-	return Ok(asData<TLens, BunStore>(store, view.data));
+	const { store, view } = opened.data;
+	return Ok(
+		asData<TWorkspace, BunAccountStore>(
+			store,
+			// Through `unknown` deliberately: comparing the untyped view with
+			// `WorkspaceView<TWorkspace>` re-enters the per-field arktype
+			// instantiation and exceeds the depth limit.
+			view as unknown as WorkspaceView<TWorkspace>,
+		),
+	);
 }
 
 /**
  * @param directory The application's own folder. `store.sqlite3` holds the
- * update log and the projection; `history.sqlite3` holds what collapse
- * superseded.
+ * update log; `history.sqlite3` holds what collapse superseded.
  */
 async function openBunStore({
 	directory,
-	namespace,
+	workspace,
 	keepHistory = true,
 }: {
 	directory: string;
-	namespace: string;
+	workspace: ParsedWorkspace;
 	/**
 	 * Whether collapse preserves what it supersedes (ADR-0214).
 	 *
@@ -97,35 +115,80 @@ async function openBunStore({
 	 * without anyone deciding to.
 	 */
 	keepHistory?: boolean;
-}): Promise<Result<BunStore, StoreError>> {
+}): Promise<
+	Result<{ store: BunAccountStore; view: UntypedWorkspaceView }, StoreError>
+> {
 	const { error: directoryError } = await tryAsync({
 		try: () => mkdir(directory, { recursive: true }),
 		catch: (cause) => StoreError.StorageFailed({ cause }),
 	});
 	if (directoryError !== null) return Err(directoryError);
 
-	const live = new Database(join(directory, 'store.sqlite3'));
-	const historyDatabase = keepHistory
-		? new Database(join(directory, 'history.sqlite3'))
-		: undefined;
-	const history =
-		historyDatabase === undefined
-			? undefined
-			: createBunSqliteAdapter(historyDatabase);
-	if (history !== undefined) applyHistorySchema(history);
+	// Everything from the first file handle to a constructed engine can throw:
+	// an unopenable file, a corrupt log at `port.load()`, a stored update the
+	// hydration replay cannot decode. All of it is "the store could not read
+	// its durable record", which is `StorageFailed`'s exact contract, and a
+	// thrown escape here would leak the caller's claim and these handles, so
+	// the whole construction is contained and cleaned up on refusal.
+	let live: Database | undefined;
+	let historyDatabase: Database | undefined;
+	let projectionDatabase: Database | undefined;
+	try {
+		live = new Database(join(directory, 'store.sqlite3'));
+		historyDatabase = keepHistory
+			? new Database(join(directory, 'history.sqlite3'))
+			: undefined;
+		const history =
+			historyDatabase === undefined
+				? undefined
+				: createBunSqliteAdapter(historyDatabase);
+		if (history !== undefined) applyHistorySchema(history);
 
-	const store = createReplicaStore({
-		database: createBunSqliteAdapter(live),
-		history,
-		dispose: () => {
-			live.close();
-			historyDatabase?.close();
-			releaseDocument(namespace);
-		},
-	});
+		// The projection is an in-memory cache rebuilt at open (ADR-0238), so
+		// the durable file holds only the log, the outbox, the cursor and the
+		// metadata, and `query` keeps following accepted edits even while the
+		// durable file refuses a flush.
+		projectionDatabase = new Database(':memory:');
 
-	return Ok(
-		Object.freeze({
+		const port = createSqliteDurablePort({
+			database: createBunSqliteAdapter(live),
+			history,
+		});
+		const opened = live;
+		const openedHistory = historyDatabase;
+		const openedProjection = projectionDatabase;
+		const { store, view } = createAccountStoreOverPort({
+			workspace,
+			durable: port,
+			loaded: port.load(),
+			projection: createBunSqliteAdapter(projectionDatabase),
+			dispose: () => {
+				opened.close();
+				openedHistory?.close();
+				openedProjection.close();
+				releaseDocument(workspace.namespace);
+			},
+		});
+		return composeBunStore({ store, view, directory });
+	} catch (cause) {
+		live?.close();
+		historyDatabase?.close();
+		projectionDatabase?.close();
+		return StoreError.StorageFailed({ cause });
+	}
+}
+
+function composeBunStore({
+	store,
+	view,
+	directory,
+}: {
+	store: AccountStore;
+	view: UntypedWorkspaceView;
+	directory: string;
+}): Result<{ store: BunAccountStore; view: UntypedWorkspaceView }, StoreError> {
+	return Ok({
+		store: Object.freeze({
 			...store,
 			async discard(): Promise<Result<void, StoreError>> {
 				// Dispose first so the file handles are closed before the unlink,
@@ -144,32 +207,27 @@ async function openBunStore({
 				});
 			},
 		}),
-	);
+		view,
+	});
 }
 
 /**
  * Open an application that lives only as long as the process. Test support.
  *
- * It takes the lens for the same reason `open` does, so one entry point has one
- * shape. It claims no address, and that is not an oversight: two memory stores
- * of one namespace are two independent documents by construction, which is the
- * two-devices case rather than the two-handles-on-one-file case the claim
- * exists to refuse.
+ * It takes the workspace for the same reason `open` does, so one entry point
+ * has one shape. It claims no address, and that is not an oversight: two
+ * memory stores of one namespace are two independent documents by
+ * construction, which is the two-devices case rather than the
+ * two-handles-on-one-file case the claim exists to refuse.
  */
-export function openMemory<const TLens extends LensJson>(
-	lens: TLens,
-): DataOf<TLens, ReplicaStore> {
-	const store = openMemoryStore();
-	const view = store.bind(lens);
-	if (view.error !== null) throw view.error;
-	return asData(store, view.data);
-}
-
-function openMemoryStore(): ReplicaStore {
+export function openMemory<const TWorkspace extends WorkspaceJson>(
+	workspace: TWorkspace,
+): DataOf<TWorkspace, AccountStore> {
 	const live = new Database(':memory:');
 	const history = createBunSqliteAdapter(new Database(':memory:'));
 	applyHistorySchema(history);
-	return createReplicaStore({
+	return createAccountStore({
+		workspace,
 		database: createBunSqliteAdapter(live),
 		history,
 		dispose: () => live.close(),

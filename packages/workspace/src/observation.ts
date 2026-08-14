@@ -67,7 +67,7 @@ const ObservationError = defineErrors({
 /**
  * A private, order-stable key for one logical table.
  *
- * One Epicenter can bind several Lenses, so a registry keyed by local table
+ * One process can hold several workspaces, so a registry keyed by local table
  * name alone would cross namespaces and deliver one app's invalidations to
  * another's handle.
  */

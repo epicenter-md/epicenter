@@ -13,7 +13,7 @@ import { open } from '@epicenter/data/bun';
 import { InstantString } from '@epicenter/field';
 import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { type RecordingId, whisperingLens } from '../workspace';
+import { type RecordingId, whisperingWorkspace } from '../workspace';
 import { asStoredBlobId, type NewRecording } from './recording';
 import { createWhisperingRecordings } from './recordings';
 
@@ -75,7 +75,7 @@ async function setup({
 	seed?: ReturnType<typeof recording>[];
 } = {}) {
 	const root = mkdtempSync(join(tmpdir(), 'whispering-recordings-'));
-	const opened = await open(whisperingLens, { root });
+	const opened = await open(whisperingWorkspace, { root });
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
 	const table = data.tables.recordings;

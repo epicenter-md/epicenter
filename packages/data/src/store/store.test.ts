@@ -4,15 +4,24 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TableInvalidation } from '@epicenter/lens';
-import { defineLens } from '@epicenter/lens';
+import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import type { TableInvalidation } from '@epicenter/workspace';
+import { defineWorkspace } from '@epicenter/workspace';
 import * as Y from '@y/y';
-
 import { open, openMemory } from './bun.js';
-import { createStore, type DataOf, type ReplicaStore } from './store.js';
+import {
+	type AccountStore,
+	createAccountStore,
+	createDeviceStore,
+	type DataOf,
+	type DeviceStore,
+	StoreUnusableError,
+	type SyncCapability,
+	syncEngineOf,
+} from './store.js';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	kv: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
 	tables: {
@@ -20,10 +29,10 @@ const lens = defineLens({
 	},
 });
 
-let db: DataOf<typeof lens>;
+let db: DataOf<typeof workspace>;
 
 beforeEach(() => {
-	db = openMemory(lens);
+	db = openMemory(workspace);
 });
 
 /** A note, and its minted id, for tests that need one to exist. */
@@ -40,11 +49,11 @@ function note(
 	return data;
 }
 
-function exchange(a: ReplicaStore, b: ReplicaStore) {
+function exchange(a: AccountStore, b: AccountStore) {
 	const fromA = a.encodeStateSince(b.stateVector());
 	const fromB = b.encodeStateSince(a.stateVector());
-	b.applyRemote(fromA);
-	a.applyRemote(fromB);
+	syncEngineOf(b).applyRemote(fromA);
+	syncEngineOf(a).applyRemote(fromB);
 }
 
 describe('a read is a property access on a plain object', () => {
@@ -90,6 +99,17 @@ describe('a write that reaches nothing is a failure', () => {
 		expect(error?.name).toBe('RowAbsent');
 	});
 
+	test('create refuses a payload that would not read back whole', () => {
+		// The untyped door could omit a required field; the row then committed
+		// and the same call reported it unreadable, which callers reasonably
+		// read as "the row never existed". Refusing before the commit makes
+		// that reading true: an Err from create touches nothing.
+		const { data, error } = db.tables.notes.create({} as never);
+		expect(data).toBeNull();
+		expect(error?.name).toBe('Nonconforming');
+		expect(db.tables.notes.ids()).toEqual([]);
+	});
+
 	test('an invalid supplied value refuses the call and touches nothing', () => {
 		const made = note();
 		const { error } = db.tables.notes.update(made.id, {
@@ -105,16 +125,16 @@ describe('a write that reaches nothing is a failure', () => {
 describe('deletion', () => {
 	test('a deleted row reads as absent and leaves the projection', () => {
 		const made = note();
-		expect(db.tables.notes.delete(made.id).data).toBe(true);
+		expect(db.tables.notes.delete(made.id)).toBe(true);
 		expect(db.tables.notes.get(made.id).data).toBeUndefined();
-		expect(db.tables.notes.ids().data).toEqual([]);
+		expect(db.tables.notes.ids()).toEqual([]);
 		expect(db.query`SELECT id FROM notes`.data).toEqual([]);
 	});
 
 	test('deleting twice reports the second as a no-op', () => {
 		const made = note();
-		expect(db.tables.notes.delete(made.id).data).toBe(true);
-		expect(db.tables.notes.delete(made.id).data).toBe(false);
+		expect(db.tables.notes.delete(made.id)).toBe(true);
+		expect(db.tables.notes.delete(made.id)).toBe(false);
 	});
 
 	test('CHURN DOES NOT ACCUMULATE A CORPSE PER DELETED ROW', () => {
@@ -128,7 +148,7 @@ describe('deletion', () => {
 		for (let index = 0; index < 200; index += 1) {
 			db.tables.notes.delete(note({ title: 'x'.repeat(100) }).id);
 		}
-		expect(db.tables.notes.ids().data).toEqual([]);
+		expect(db.tables.notes.ids()).toEqual([]);
 		const perDeadRow = (db.store.encodeStateSince().length - empty) / 200;
 		expect(perDeadRow).toBeLessThan(60);
 	});
@@ -173,25 +193,45 @@ describe('the projection is written in the same transaction as the log', () => {
 });
 
 describe('a nonconforming row is reported, never repaired', () => {
-	const wrongLens = defineLens({
+	const wrongWorkspace = defineWorkspace({
 		namespace: 'so.epicenter.honeycrisp',
 		tables: { notes: { title: 'string', tags: 'string', date: 'string|null' } },
 	});
 
+	/**
+	 * Corrupt a stored value the way it actually happens: a peer device on a
+	 * release whose declaration disagrees syncs the row in, writes a value its
+	 * own declaration accepts, and syncs it back (ADR-0240: two definitions
+	 * are never live in one runtime, but two devices may run two releases).
+	 */
+	function corruptTags(rowId: string): void {
+		const peer = openMemory(wrongWorkspace);
+		exchange(db.store, peer.store);
+		const written = peer.tables.notes.update(rowId, { tags: 'food' });
+		if (written.error !== null) throw written.error;
+		exchange(db.store, peer.store);
+	}
+
 	test('the call site composes recovery from defaults and what survived', () => {
 		const made = note();
-		// Corrupt a stored value the way a peer on a newer release could.
-		const { data: raw, error: bindError } = db.store.bind(wrongLens);
-		if (bindError !== null) throw bindError;
-		raw.tables.notes?.update(made.id, { tags: 'food' });
+		corruptTags(made.id);
 
 		const { data, error } = db.tables.notes.get(made.id);
 		expect(data).toBeNull();
-		expect(error?.name).toBe('Nonconforming');
+		// Plain diagnostic data, not a tagged error: the read's only error IS
+		// nonconformance, so there is nothing to discriminate it from.
+		expect(error?.id).toBe(made.id);
+		expect(error?.issues.map((issue) => issue.field)).toEqual(['tags']);
+		// Never repaired and never hidden: the raw payload survives intact.
+		expect(error?.raw).toEqual({
+			title: 'Groceries',
+			tags: 'food',
+			date: null,
+		});
 
 		const recovered = data ?? {
 			...db.tables.notes.defaults,
-			...(error as { conforming?: object }).conforming,
+			...error?.conforming,
 		};
 		expect(recovered).toEqual({ id: made.id, title: 'Groceries', date: null });
 	});
@@ -199,17 +239,16 @@ describe('a nonconforming row is reported, never repaired', () => {
 	test('list separates what it can read from what it cannot', () => {
 		const broken = note({ title: 'broken' });
 		const fine = note({ title: 'fine' });
-		const { data: raw } = db.store.bind(wrongLens);
-		raw?.tables.notes?.update(broken.id, { tags: 'food' });
-		const { data } = db.tables.notes.list();
-		expect(data?.rows.map((row) => row.id)).toEqual([fine.id]);
-		expect(data?.nonconforming.map((issue) => issue.id)).toEqual([broken.id]);
+		corruptTags(broken.id);
+		const listed = db.tables.notes.list();
+		expect(listed.rows.map((row) => row.id)).toEqual([fine.id]);
+		expect(listed.nonconforming.map((issue) => issue.id)).toEqual([broken.id]);
 	});
 });
 
 describe('two replicas converge', () => {
 	function pair() {
-		return { laptop: openMemory(lens) };
+		return { laptop: openMemory(workspace) };
 	}
 
 	test('a row made on one device appears on the other', () => {
@@ -261,7 +300,7 @@ describe('two replicas converge', () => {
 
 		expect(db.tables.notes.get(made.id).data).toBeUndefined();
 		expect(laptop.tables.notes.get(made.id).data).toBeUndefined();
-		expect(laptop.tables.notes.ids().data).toEqual([]);
+		expect(laptop.tables.notes.ids()).toEqual([]);
 		expect(laptop.query`SELECT id FROM notes`.data).toEqual([]);
 	});
 
@@ -277,19 +316,19 @@ describe('two replicas converge', () => {
 		});
 		exchange(db.store, laptop.store);
 
-		expect(db.tables.notes.list().data?.rows).toHaveLength(2);
-		expect(laptop.tables.notes.list().data?.rows).toHaveLength(2);
+		expect(db.tables.notes.list().rows).toHaveLength(2);
+		expect(laptop.tables.notes.list().rows).toHaveLength(2);
 	});
 });
 
-describe('a lens names the store it opens', () => {
+describe('a workspace names the store it opens', () => {
 	test('one namespace opens once per process, and disposing releases it', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'epicenter-claim-'));
 		try {
-			const first = await open(lens, { root });
+			const first = await open(workspace, { root });
 			if (first.error !== null) throw first.error;
 
-			const second = await open(lens, { root });
+			const second = await open(workspace, { root });
 			expect(second.error?.name).toBe('AlreadyOpen');
 			// The refusal is the whole point: a second open would be a second
 			// `Y.Doc` over one document, and the two converge through storage
@@ -298,7 +337,7 @@ describe('a lens names the store it opens', () => {
 
 			await first.data[Symbol.asyncDispose]();
 
-			const third = await open(lens, { root });
+			const third = await open(workspace, { root });
 			expect(third.error).toBeNull();
 			await third.data?.[Symbol.asyncDispose]();
 		} finally {
@@ -306,28 +345,71 @@ describe('a lens names the store it opens', () => {
 		}
 	});
 
-	test('a lens that will not bind releases the namespace it claimed', async () => {
+	test('a workspace that will not parse releases the namespace it claimed', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'epicenter-refused-'));
 		try {
 			// A table named `kv` collides with the relation KV projects into, which
-			// is the one name a lens still reserves. The store this half-opened must
+			// is the one name a workspace still reserves. The store this half-opened must
 			// be disposed and its namespace released, or the namespace is claimed for
 			// the life of the process and the application can never start.
 			const refused = {
-				namespace: lens.namespace,
+				namespace: workspace.namespace,
 				tables: { kv: { a: 'string' } },
 			};
 			const attempt = await open(refused as never, { root });
 			expect(attempt.error).not.toBeNull();
 
-			const after = await open(lens, { root });
+			const after = await open(workspace, { root });
 			expect(after.error).toBeNull();
 			await after.data?.[Symbol.asyncDispose]();
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}
 	});
+
+	test('a corrupt durable record refuses the boot and releases the claim', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'epicenter-corrupt-'));
+		try {
+			{
+				const { data: first, error } = await open(workspace, { root });
+				if (error !== null) throw error;
+				expectOkCreate(first);
+				await first[Symbol.asyncDispose]();
+			}
+			// One garbage row in the update log: the hydration replay cannot
+			// decode it, which is "the store could not read its durable record".
+			const file = new Database(
+				join(root, workspace.namespace, 'store.sqlite3'),
+			);
+			file.run('UPDATE _updates SET bytes = ?', [
+				new Uint8Array([1, 2, 3, 4, 5]),
+			]);
+			file.close();
+
+			const refused = await open(workspace, { root });
+			expect(refused.data).toBeNull();
+			expect(refused.error?.name).toBe('StorageFailed');
+
+			// The claim was released with the refusal: a retry reports the same
+			// honest failure rather than `AlreadyOpen` for the life of the
+			// process.
+			const again = await open(workspace, { root });
+			expect(again.error?.name).toBe('StorageFailed');
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
 });
+
+/** One created note through whichever runtime the disk test holds. */
+function expectOkCreate(data: DataOf<typeof workspace>): void {
+	const made = data.tables.notes.create({
+		title: 'to be corrupted',
+		tags: [],
+		date: null,
+	});
+	if (made.error !== null) throw made.error;
+}
 
 describe('the document a row inherently owns', () => {
 	test('holds application-named roots and survives a reopen', async () => {
@@ -335,7 +417,9 @@ describe('the document a row inherently owns', () => {
 		try {
 			let id!: string;
 			{
-				const { data: diskDb, error } = await open(lens, { root: directory });
+				const { data: diskDb, error } = await open(workspace, {
+					root: directory,
+				});
 				if (error !== null) throw error;
 				const disk = diskDb;
 				const made = diskDb.tables.notes.create({
@@ -354,7 +438,7 @@ describe('the document a row inherently owns', () => {
 				container.get('meta').setAttr('cursor' as never, 8 as never);
 				await disk[Symbol.asyncDispose]();
 			}
-			const { data: db2, error } = await open(lens, { root: directory });
+			const { data: db2, error } = await open(workspace, { root: directory });
 			if (error !== null) throw error;
 			const container = db2.tables.notes.document(id);
 			expect(container?.get('editor', 'text').toString()).toContain('buy milk');
@@ -421,8 +505,8 @@ describe('kv is where anything two devices both write belongs', () => {
 		// own nested container and map LWW keeps one. A root is addressed by its
 		// name, so both survive. `evidence/bench/row-model.ts` keeps the losing
 		// contrast, now that the chosen-id door is gone from the API.
-		const phone = openMemory(lens);
-		const laptop = openMemory(lens);
+		const phone = openMemory(workspace);
+		const laptop = openMemory(workspace);
 
 		phone.kv.update({ theme: 'dark' });
 		laptop.kv.update({ fontSize: 22 });
@@ -448,7 +532,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		// bytes writes nothing, so the bytes are lost at restart while every
 		// layer reported success. The restart is the whole test: an in-memory
 		// store keeps the buffered update either way.
-		const origin = openMemory(lens);
+		const origin = openMemory(workspace);
 		const made = origin.tables.notes.create({
 			title: 'first',
 			tags: [],
@@ -463,25 +547,27 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		const directory = await mkdtemp(join(tmpdir(), 'epicenter-store-'));
 		try {
 			{
-				const { data: laptop, error: openError } = await open(lens, {
+				const { data: laptop, error: openError } = await open(workspace, {
 					root: directory,
 				});
 				if (openError !== null) throw openError;
-				expect(laptop.store.applyRemote(second).error).toBeNull();
-				expect(laptop.store.hasUnresolvedDependencies()).toBe(true);
+				expect(syncEngineOf(laptop.store).applyRemote(second).error).toBeNull();
+				expect(syncEngineOf(laptop.store).hasUnresolvedDependencies()).toBe(
+					true,
+				);
 				await laptop[Symbol.asyncDispose]();
 			}
-			const { data: db2, error: reopenError } = await open(lens, {
+			const { data: db2, error: reopenError } = await open(workspace, {
 				root: directory,
 			});
 			if (reopenError !== null) throw reopenError;
-			const reopened = db2.store;
+			const reopened = syncEngineOf(db2.store);
 			expect(reopened.hasUnresolvedDependencies()).toBe(true);
 
 			expect(reopened.applyRemote(first).error).toBeNull();
 			expect(reopened.hasUnresolvedDependencies()).toBe(false);
 			expect(db2.tables.notes.get(made.data.id).data?.title).toBe('second');
-			await reopened[Symbol.asyncDispose]();
+			await db2.store[Symbol.asyncDispose]();
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
@@ -489,12 +575,11 @@ describe('a received update is persisted as the bytes that arrived', () => {
 
 	test('a fully applied replica reports no unresolved dependencies', () => {
 		note();
-		const laptop = openMemory(lens);
-		laptop.store.bind(lens);
-		laptop.store.applyRemote(
+		const laptop = openMemory(workspace);
+		syncEngineOf(laptop.store).applyRemote(
 			db.store.encodeStateSince(laptop.store.stateVector()),
 		);
-		expect(laptop.store.hasUnresolvedDependencies()).toBe(false);
+		expect(syncEngineOf(laptop.store).hasUnresolvedDependencies()).toBe(false);
 	});
 });
 
@@ -502,13 +587,12 @@ describe('pressure is the number that decides whether any of this matters', () =
 	test('a healthy document sits near the item cost of one row', () => {
 		for (let index = 0; index < 20; index += 1)
 			note({ title: `note ${index}` });
-		const { data, error } = db.store.pressure();
+		const pressure = db.store.pressure();
 
-		expect(error).toBeNull();
-		expect(data?.liveRows).toBe(20);
+		expect(pressure.liveRows).toBe(20);
 		// A note here is a container, a document container and three fields, so
 		// single digits. The absolute number is not the point; the ratio is.
-		expect(data?.itemsPerLiveRow).toBeLessThan(15);
+		expect(pressure.itemsPerLiveRow).toBeLessThan(15);
 	});
 
 	test('churn drives it up, which is the whole signal', () => {
@@ -517,25 +601,23 @@ describe('pressure is the number that decides whether any of this matters', () =
 		// documents are indistinguishable from every other verb.
 		for (let index = 0; index < 20; index += 1)
 			note({ title: `keeper ${index}` });
-		const healthy = db.store.pressure().data?.itemsPerLiveRow ?? 0;
+		const healthy = db.store.pressure().itemsPerLiveRow;
 
 		for (let index = 0; index < 200; index += 1) {
 			const doomed = note({ title: `churn ${index}` });
-			const { error } = db.tables.notes.delete(doomed.id);
-			if (error !== null) throw error;
+			db.tables.notes.delete(doomed.id);
 		}
-		const churned = db.store.pressure().data;
+		const churned = db.store.pressure();
 
-		expect(churned?.liveRows).toBe(20);
-		expect(churned?.itemsPerLiveRow).toBeGreaterThan(healthy * 3);
+		expect(churned.liveRows).toBe(20);
+		expect(churned.itemsPerLiveRow).toBeGreaterThan(healthy * 3);
 	});
 
 	test('an empty document reports its items rather than dividing by zero', () => {
-		const { data, error } = db.store.pressure();
+		const pressure = db.store.pressure();
 
-		expect(error).toBeNull();
-		expect(data?.liveRows).toBe(0);
-		expect(Number.isFinite(data?.itemsPerLiveRow)).toBe(true);
+		expect(pressure.liveRows).toBe(0);
+		expect(Number.isFinite(pressure.itemsPerLiveRow)).toBe(true);
 	});
 });
 
@@ -576,9 +658,8 @@ describe('a subscription names the rows a commit touched', () => {
 	test("a write to another table is not this table's business", () => {
 		// The control. Without it every assertion above would still pass on an
 		// implementation that invalidated every subscriber on every commit.
-		const other = openMemory(lens);
-		const bound = other.store.bind(
-			defineLens({
+		const other = openMemory(
+			defineWorkspace({
 				namespace: 'so.epicenter.honeycrisp',
 				tables: {
 					notes: { title: 'string', tags: 'string[]', date: 'string|null' },
@@ -586,11 +667,10 @@ describe('a subscription names the rows a commit touched', () => {
 				},
 			}),
 		);
-		if (bound.error !== null) throw bound.error;
-		const notes = record(bound.data.tables.notes);
-		const folders = record(bound.data.tables.folders);
+		const notes = record(other.tables.notes);
+		const folders = record(other.tables.folders);
 
-		const made = bound.data.tables.folders.create({ name: 'Inbox' });
+		const made = other.tables.folders.create({ name: 'Inbox' });
 		if (made.error !== null) throw made.error;
 
 		expect(folders.seen).toEqual([{ scope: 'rows', rowIds: [made.data.id] }]);
@@ -600,7 +680,7 @@ describe('a subscription names the rows a commit touched', () => {
 	test('one commit touching many rows is ONE call carrying every id', () => {
 		// ADR-0187's law 3. A remote update is the only thing in this surface
 		// that commits more than one row at a time, so it is what proves it.
-		const author = openMemory(lens);
+		const author = openMemory(workspace);
 		const ids = [0, 1, 2].map((index) => {
 			const made = author.tables.notes.create({
 				title: `note ${index}`,
@@ -612,7 +692,7 @@ describe('a subscription names the rows a commit touched', () => {
 		});
 		const { seen } = record(db.tables.notes);
 
-		db.store.applyRemote(author.store.encodeStateSince());
+		syncEngineOf(db.store).applyRemote(author.store.encodeStateSince());
 
 		expect(seen).toHaveLength(1);
 		const only = seen[0];
@@ -659,7 +739,7 @@ describe('a subscription names the rows a commit touched', () => {
 		// projection has been rebuilt, so a subscriber notified there sees the
 		// CRDT reporting a row that `db.query` cannot find. Notifying after the
 		// projection commits is what makes these two agree.
-		const author = openMemory(lens);
+		const author = openMemory(workspace);
 		author.tables.notes.create({
 			title: 'from the phone',
 			tags: [],
@@ -669,11 +749,11 @@ describe('a subscription names the rows a commit touched', () => {
 		let atNotify: { crdt: number; sql: number } | undefined;
 		db.tables.notes.subscribe(() => {
 			atNotify = {
-				crdt: db.tables.notes.list().data?.rows.length ?? -1,
+				crdt: db.tables.notes.list().rows.length,
 				sql: db.query`SELECT count(*) AS n FROM notes`.data?.[0]?.n as number,
 			};
 		});
-		db.store.applyRemote(author.store.encodeStateSince());
+		syncEngineOf(db.store).applyRemote(author.store.encodeStateSince());
 
 		expect(atNotify).toEqual({ crdt: 1, sql: 1 });
 	});
@@ -751,12 +831,12 @@ describe('kv reports its own changes', () => {
 	test('a change that arrived from a peer notifies too', () => {
 		// The case a settings screen exists for: another device changed a
 		// preference and this one has to stop showing the old value.
-		const author = openMemory(lens);
+		const author = openMemory(workspace);
 		author.kv.update({ fontSize: 22 });
 		const seen: number[] = [];
 		db.kv.subscribe(() => seen.push(db.kv.get().data?.fontSize as number));
 
-		db.store.applyRemote(author.store.encodeStateSince());
+		syncEngineOf(db.store).applyRemote(author.store.encodeStateSince());
 
 		expect(seen).toEqual([22]);
 	});
@@ -797,25 +877,98 @@ describe('the kv projection is a cache, and is rebuilt like one', () => {
 		expect(rows).toEqual([{ id: 'kv', theme: 'light' }]);
 	});
 
-	test('a lens change does not leave the previous lens s row behind', () => {
-		// Tables are rebuilt at bind for exactly this reason; kv was not, so SQL
-		// kept answering with a row the old declaration wrote.
-		db.kv.update({ theme: 'dark' });
-		const relensed = openMemory(lens);
-		relensed.store.bind(lens);
-		const second = relensed.store.bind(
-			defineLens({
+	test('an upgraded declaration does not leave the previous release s row behind', async () => {
+		// Tables are rebuilt at open for exactly this reason; kv was not, so SQL
+		// kept answering with a row the old declaration wrote. The upgrade is a
+		// close and a reopen (ADR-0240): the same durable file, a newer
+		// declaration, one runtime at a time.
+		const database = createBunSqliteAdapter(new Database(':memory:'));
+		const first = createAccountStore({ workspace: workspace, database });
+		const written = first.kv.update({ theme: 'dark' });
+		if (written.error !== null) throw written.error;
+		await first[Symbol.asyncDispose]();
+
+		const second = createAccountStore({
+			workspace: defineWorkspace({
 				namespace: 'so.epicenter.honeycrisp',
 				kv: { theme: "'light'|'dark' = 'light'", added: "string = 'new'" },
 				tables: {
 					notes: { title: 'string', tags: 'string[]', date: 'string|null' },
 				},
 			}),
-		);
-		if (second.error !== null) throw second.error;
-		expect(second.data.query`SELECT id, theme, added FROM kv`.data).toEqual([
-			{ id: 'kv', theme: 'light', added: 'new' },
+			database,
+		});
+		// The stored write survives the upgrade, and the new declaration's
+		// default appears beside it: the row was rebuilt, not carried.
+		expect(second.query`SELECT id, theme, added FROM kv`.data).toEqual([
+			{ id: 'kv', theme: 'dark', added: 'new' },
 		]);
+	});
+});
+
+describe('a removed relation leaves SQL and waits in the CRDT (ADR-0240)', () => {
+	// The durable record and the projection deliberately share one database
+	// here, which is the Durable Object shape: the only synchronous SQLite in
+	// `workerd` is the object's own storage. The projection owns that
+	// database's letter-named relations OUTRIGHT, so a definition that stops
+	// declaring a table takes its relation out of `query`; the underscore
+	// relations are the durable record and are never the projection's to
+	// touch. The rows themselves stay in the CRDT, which is the truth.
+	const withScratch = defineWorkspace({
+		namespace: 'so.epicenter.honeycrisp',
+		kv: { theme: "'light'|'dark' = 'light'" },
+		tables: {
+			notes: { title: 'string' },
+			scratch: { body: 'string' },
+		},
+	});
+	const withoutScratch = defineWorkspace({
+		namespace: 'so.epicenter.honeycrisp',
+		tables: { notes: { title: 'string' } },
+	});
+
+	test('the next runtime drops it; one that re-declares it reads every row back', async () => {
+		const database = createBunSqliteAdapter(new Database(':memory:'));
+		const first = createAccountStore({ workspace: withScratch, database });
+		const made = first.tables.scratch.create({ body: 'kept in the CRDT' });
+		if (made.error !== null) throw made.error;
+		const wrote = first.kv.update({ theme: 'dark' });
+		if (wrote.error !== null) throw wrote.error;
+		expect(first.query`SELECT body FROM scratch`.data).toEqual([
+			{ body: 'kept in the CRDT' },
+		]);
+		await first[Symbol.asyncDispose]();
+
+		// The device updates (ADR-0240): same durable database, the next
+		// runtime, a declaration that no longer names `scratch` or `kv`.
+		const second = createAccountStore({ workspace: withoutScratch, database });
+		// Gone from SQL, not merely empty: the relation itself was dropped, so
+		// nothing can keep reading rows this runtime cannot see or update.
+		expect(second.query`SELECT body FROM scratch`.error?.name).toBe(
+			'QueryFailed',
+		);
+		expect(
+			second.query`SELECT name FROM sqlite_master WHERE name IN ('scratch', 'kv')`
+				.data,
+		).toEqual([]);
+		// And the durable record beside it was untouched: the sweep claims only
+		// the letter-named namespace, never the store's own relations.
+		expect(
+			database.all<SqliteRow & { total: number }>(
+				'SELECT COUNT(*) AS total FROM _updates',
+			)[0]?.total,
+		).toBeGreaterThan(0);
+		await second[Symbol.asyncDispose]();
+
+		// A later release declares them again: nothing was lost, because the
+		// projection is a cache and the CRDT never dropped a byte.
+		const third = createAccountStore({ workspace: withScratch, database });
+		expect(third.query`SELECT body FROM scratch`.data).toEqual([
+			{ body: 'kept in the CRDT' },
+		]);
+		const back = third.kv.get();
+		expect(back.data?.theme).toBe('dark');
+		await third[Symbol.asyncDispose]();
 	});
 });
 
@@ -839,7 +992,7 @@ describe('foreign bytes have exactly one door', () => {
 		const live = container.get('editor', 'text').doc;
 		if (live === null) throw new Error('root not attached to a document');
 
-		const stranger = openMemory(lens);
+		const stranger = openMemory(workspace);
 		stranger.tables.notes.create({ title: 'theirs', tags: [], date: null });
 		const foreign = stranger.store.encodeStateSince();
 
@@ -862,7 +1015,7 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 	test('a discarded store reopens empty at cursor zero, with history intact', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'epicenter-discard-'));
 		try {
-			const opened = await open(lens, { root });
+			const opened = await open(workspace, { root });
 			if (opened.error !== null) throw opened.error;
 			const app = opened.data;
 			const made = app.tables.notes.create({
@@ -871,30 +1024,25 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 				date: null,
 			});
 			if (made.error !== null) throw made.error;
-			const advanced = app.store.sync.advance(9);
-			if (advanced.error !== null) throw advanced.error;
+			syncEngineOf(app.store).advance(9);
 
 			const discarded = await app.store.discard();
 			expect(discarded.error).toBeNull();
-			expect(existsSync(join(root, lens.namespace, 'store.sqlite3'))).toBe(
+			expect(existsSync(join(root, workspace.namespace, 'store.sqlite3'))).toBe(
 				false,
 			);
 			// The shelf is the owner's, not the document's.
-			expect(existsSync(join(root, lens.namespace, 'history.sqlite3'))).toBe(
-				true,
-			);
+			expect(
+				existsSync(join(root, workspace.namespace, 'history.sqlite3')),
+			).toBe(true);
 
 			// Boot is the whole of adoption: a wiped store opens empty and asks
 			// the authority for everything, from zero.
-			const reopened = await open(lens, { root });
+			const reopened = await open(workspace, { root });
 			if (reopened.error !== null) throw reopened.error;
 			try {
-				const listed = reopened.data.tables.notes.list();
-				if (listed.error !== null) throw listed.error;
-				expect(listed.data.rows).toEqual([]);
-				const cursor = reopened.data.store.sync.cursor();
-				if (cursor.error !== null) throw cursor.error;
-				expect(cursor.data).toBe(0);
+				expect(reopened.data.tables.notes.list().rows).toEqual([]);
+				expect(syncEngineOf(reopened.data.store).cursor()).toBe(0);
 			} finally {
 				await reopened.data[Symbol.asyncDispose]();
 			}
@@ -907,11 +1055,10 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 describe('a document store owes nobody (ADR-0233)', () => {
 	test('local commits leave the outbox empty and no replica verb exists', async () => {
 		const database = createBunSqliteAdapter(new Database(':memory:'));
-		const store = createStore({ database });
+		const device = createDeviceStore({ workspace: workspace, database });
+		const store = device.store;
 		try {
-			const bound = store.bind(lens);
-			if (bound.error !== null) throw bound.error;
-			const made = bound.data.tables.notes.create({
+			const made = device.tables.notes.create({
 				title: 'device work',
 				tags: [],
 				date: null,
@@ -929,15 +1076,255 @@ describe('a document store owes nobody (ADR-0233)', () => {
 				)[0]?.count,
 			).toBeGreaterThan(0);
 
-			// Missing at runtime exactly as the constructors say at the type.
-			expect('sync' in store).toBe(false);
-			expect('applyRemote' in store).toBe(false);
-			// @ts-expect-error a document store has no replica verbs
-			store.applyRemote;
-			// @ts-expect-error a document store has no client log
-			store.sync;
+			// Both kinds carry `sync`; the VALUE is the discriminant, so a
+			// device store answers `undefined` rather than omitting the key.
+			expect('sync' in store).toBe(true);
+			expect(store.sync).toBeUndefined();
+			// And the delivery machinery is unreachable: nothing was registered.
+			// @ts-expect-error a device store has no sync engine
+			expect(() => syncEngineOf(store)).toThrow('not a replica');
 		} finally {
-			await store[Symbol.asyncDispose]();
+			await device[Symbol.asyncDispose]();
 		}
+	});
+
+	test('the sync VALUE discriminates the two kinds, at the type level too', async () => {
+		// Compile-time pins: `sync !== undefined` must narrow the union in both
+		// directions without an `in`-probe or a cast. The annotations are the
+		// assertions; a shape change fails typecheck before it fails a test.
+		function kindOf(store: DeviceStore | AccountStore): 'device' | 'account' {
+			if (store.sync !== undefined) {
+				const capability: SyncCapability = store.sync;
+				void capability;
+				const account: AccountStore = store;
+				void account;
+				return 'account';
+			}
+			const device: DeviceStore = store;
+			void device;
+			return 'device';
+		}
+
+		const device = createDeviceStore({
+			workspace: workspace,
+			database: createBunSqliteAdapter(new Database(':memory:')),
+		});
+		const account = openMemory(workspace);
+		try {
+			expect(kindOf(device.store)).toBe('device');
+			expect(kindOf(account.store)).toBe('account');
+		} finally {
+			await device[Symbol.asyncDispose]();
+			await account[Symbol.asyncDispose]();
+		}
+	});
+});
+
+describe('an unusable store throws, and never dresses up as a read outcome', () => {
+	test('using a disposed store throws StoreUnusableError', async () => {
+		const app = openMemory(workspace);
+		await app[Symbol.asyncDispose]();
+		expect(() => app.tables.notes.list()).toThrow(StoreUnusableError);
+		expect(() => app.kv.get()).toThrow(StoreUnusableError);
+		expect(() => app.tables.notes.get('anything')).toThrow(StoreUnusableError);
+	});
+
+	test('a refused durable flush leaves the store live and reports blocked', () => {
+		// The withdrawn poison (ADR-0238): storage failing is a visible debt,
+		// never the store's death. The live document is the truth while open.
+		const raw = new Database(':memory:');
+		const database = createBunSqliteAdapter(raw);
+		const projection = createBunSqliteAdapter(new Database(':memory:'));
+		const bound = createAccountStore({
+			workspace: workspace,
+			database,
+			projection,
+			// The refused flush is the subject here, not noise worth printing.
+			log: {
+				error: () => undefined,
+				warn: () => undefined,
+				info: () => undefined,
+				debug: () => undefined,
+				trace: () => undefined,
+			},
+		});
+		const store = bound.store;
+		// Pull durable storage out from under a live document.
+		raw.close();
+
+		const made = bound.tables.notes.create({
+			title: 'still accepted',
+			tags: [],
+			date: null,
+		});
+		expect(made.error).toBeNull();
+		// Reads and the query projection follow the accepted edit immediately.
+		expect(bound.tables.notes.list().rows.map((row) => row.title)).toEqual([
+			'still accepted',
+		]);
+		expect(bound.query`SELECT title FROM notes`.data).toEqual([
+			{ title: 'still accepted' },
+		]);
+		// The debt is visible: a restart would lose this edit, and the status
+		// says so instead of an exception pretending the data is gone now.
+		expect(store.persistence.get()).toBe('blocked');
+	});
+});
+
+describe('the read index is a rebuildable cache (ADR-0238)', () => {
+	/**
+	 * A healthy durable engine under a projection that can refuse: the exact
+	 * inverse of the failable-port harness in `persistence.test.ts`, because
+	 * the two debts must fail independently.
+	 */
+	function openWithFailableProjection() {
+		const durable = createBunSqliteAdapter(new Database(':memory:'));
+		const inner = createBunSqliteAdapter(new Database(':memory:'));
+		const gate = { failing: false };
+		const projection: SqliteDatabase = {
+			run(sql: string, parameters?: readonly SqliteValue[]): void {
+				if (gate.failing) throw new Error('projection refused');
+				inner.run(sql, parameters);
+			},
+			all<TRow extends SqliteRow>(
+				sql: string,
+				parameters?: readonly SqliteValue[],
+			): TRow[] {
+				if (gate.failing) throw new Error('projection refused');
+				return inner.all<TRow>(sql, parameters);
+			},
+			transaction<TResult>(run: () => TResult): TResult {
+				if (gate.failing) throw new Error('projection refused');
+				return inner.transaction(run);
+			},
+		};
+		const db = createAccountStore({
+			workspace: workspace,
+			database: durable,
+			projection,
+			// The refused projection write is the subject here, not noise.
+			log: {
+				error: () => undefined,
+				warn: () => undefined,
+				info: () => undefined,
+				debug: () => undefined,
+				trace: () => undefined,
+			},
+		});
+		return { store: db.store, db, gate, durable };
+	}
+
+	test('a failed projection write never fails the verb, and the durable debt stays separate', () => {
+		const { store, db, gate, durable } = openWithFailableProjection();
+		const before = db.tables.notes.create({
+			title: 'before',
+			tags: [],
+			date: null,
+		});
+		expect(before.error).toBeNull();
+
+		gate.failing = true;
+		const during = db.tables.notes.create({
+			title: 'while stale',
+			tags: [],
+			date: null,
+		});
+		expect(during.error).toBeNull();
+		// Live reads follow the accepted edit; the persistence debt is
+		// untouched, because the durable engine took both writes fine.
+		expect(
+			db.tables.notes
+				.list()
+				.rows.map((row) => row.title)
+				.sort(),
+		).toEqual(['before', 'while stale']);
+		expect(store.persistence.get()).toBe('saved');
+		expect(
+			durable.all<{ count: number }>(
+				'SELECT COUNT(*) AS count FROM _updates',
+			)[0]?.count,
+		).toBe(2);
+	});
+
+	test('a stale index refuses to answer rather than serving old rows', () => {
+		const { db, gate } = openWithFailableProjection();
+		expect(
+			db.tables.notes.create({ title: 'cached', tags: [], date: null }).error,
+		).toBeNull();
+
+		gate.failing = true;
+		expect(
+			db.tables.notes.create({ title: 'never cached', tags: [], date: null })
+				.error,
+		).toBeNull();
+
+		// The projection still physically holds only 'cached'. Serving it would
+		// be a lie, so the query is refused while the rebuild cannot run.
+		const refused = db.query`SELECT title FROM notes ORDER BY title`;
+		expect(refused.data).toBeNull();
+		expect(refused.error?.name).toBe('QueryFailed');
+
+		// The first query after healing rebuilds the whole index before it
+		// answers: no window where SQL disagrees with the live document.
+		gate.failing = false;
+		expect(db.query`SELECT title FROM notes ORDER BY title`.data).toEqual([
+			{ title: 'cached' },
+			{ title: 'never cached' },
+		]);
+	});
+
+	test('a remote update is durable even while the read index refuses', () => {
+		const author = openMemory(workspace);
+		const made = author.tables.notes.create({
+			title: 'from the authority',
+			tags: [],
+			date: null,
+		});
+		expect(made.error).toBeNull();
+		const update = author.store.encodeStateSince();
+
+		const replica = openWithFailableProjection();
+		replica.gate.failing = true;
+		const applied = syncEngineOf(replica.store).applyRemote(update, {
+			advanceTo: 4,
+		});
+		expect(applied.error).toBeNull();
+
+		// Live: rows and cursor advanced at once.
+		expect(replica.db.tables.notes.list().rows.map((row) => row.title)).toEqual(
+			['from the authority'],
+		);
+		expect(syncEngineOf(replica.store).cursor()).toBe(4);
+		// Durable: the bytes and their bookmark landed despite the projection,
+		// or a restart would silently drop an update every layer accepted.
+		expect(
+			replica.durable.all<{ count: number }>(
+				'SELECT COUNT(*) AS count FROM _updates',
+			)[0]?.count,
+		).toBe(1);
+		expect(
+			replica.durable.all<{ seq: number }>('SELECT seq FROM _cursor')[0]?.seq,
+		).toBe(4);
+
+		replica.gate.failing = false;
+		expect(replica.db.query`SELECT title FROM notes`.data).toEqual([
+			{ title: 'from the authority' },
+		]);
+	});
+
+	test('a remote KV change reaches query without a rebind', () => {
+		const author = openMemory(workspace);
+		expect(author.kv.update({ theme: 'dark' }).error).toBeNull();
+		const update = author.store.encodeStateSince();
+
+		const replica = openMemory(workspace);
+		expect(syncEngineOf(replica.store).applyRemote(update).error).toBeNull();
+
+		// The whole-index rebuild a remote update triggers covers KV too; it
+		// used to cover only tables, so this row stayed at the previous value
+		// until the next bind.
+		expect(replica.query`SELECT theme FROM kv`.data).toEqual([
+			{ theme: 'dark' },
+		]);
 	});
 });

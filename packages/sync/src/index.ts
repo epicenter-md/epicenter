@@ -19,7 +19,7 @@ export {
 	parseSubprotocols,
 } from './auth-subprotocol';
 export {
-	LENS_NAMESPACE,
 	STORE_REPLACE_ROUTE,
 	STORE_SYNC_ROUTE,
+	WORKSPACE_NAMESPACE,
 } from './store-route.js';

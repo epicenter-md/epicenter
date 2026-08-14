@@ -24,10 +24,6 @@ export function createRecordings({
 			invalidate();
 			return recordings.nonconforming;
 		},
-		get loadError() {
-			invalidate();
-			return recordings.loadError;
-		},
 		// Availability follows the platform's reactive auth state, which the
 		// underlying getter reads on every access; no record subscription needed.
 		get remoteAvailable() {

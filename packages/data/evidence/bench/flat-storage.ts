@@ -26,13 +26,13 @@
  */
 
 import { Database } from 'bun:sqlite';
-import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { defineWorkspace } from '@epicenter/workspace';
 
-import { createReplicaStore } from '../../src/store/store.js';
+import { createAccountStore, syncEngineOf } from '../../src/store/store.js';
 import { openSyncAuthority } from '../../src/sync/authority.js';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -43,12 +43,11 @@ const CHECKPOINT_EVERY = 500;
 const OPERATIONS = 6_000;
 
 function openReplica() {
-	const store = createReplicaStore({
+	const db = createAccountStore({
+		workspace: workspace,
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	const bound = store.bind(lens);
-	if (bound.error !== null) throw bound.error;
-	return { store, db: bound.data };
+	return { store: db.store, db };
 }
 
 /**
@@ -77,8 +76,7 @@ function run({ snapshots }: { snapshots: boolean }) {
 			// Retire the oldest and make a new one, so the live set stays flat
 			// while the operation count does not.
 			const victim = alive.shift() as string;
-			const removed = db.tables.notes.delete(victim);
-			if (removed.error !== null) throw removed.error;
+			db.tables.notes.delete(victim);
 		} else {
 			const target = alive[operation % alive.length] as string;
 			const edited = db.tables.notes.update(target, {
@@ -87,14 +85,12 @@ function run({ snapshots }: { snapshots: boolean }) {
 			if (edited.error !== null) throw edited.error;
 		}
 
-		const owed = store.sync.coalesce();
-		if (owed.error !== null) throw owed.error;
-		if (owed.data !== undefined) {
-			const position = authority.append(owed.data.bytes);
+		const owed = syncEngineOf(store).coalesce();
+		if (owed !== undefined) {
+			const position = authority.append(owed.bytes);
 			if (position.error !== null) throw position.error;
-			const acknowledged = store.sync.acknowledge(owed.data.id);
-			if (acknowledged.error !== null) throw acknowledged.error;
-			store.sync.advance(position.data);
+			syncEngineOf(store).acknowledge(owed.id);
+			syncEngineOf(store).advance(position.data);
 		}
 
 		if (snapshots) {
@@ -127,8 +123,7 @@ function run({ snapshots }: { snapshots: boolean }) {
 	}
 
 	const rows = db.tables.notes.ids();
-	if (rows.error !== null) throw rows.error;
-	return { samples, liveRows: rows.data.length };
+	return { samples, liveRows: rows.length };
 }
 
 const withSnapshots = run({ snapshots: true });

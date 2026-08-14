@@ -58,7 +58,7 @@
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
-		"@epicenter/lens": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
 		"@epicenter/sqlite": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/sync": "workspace:*",

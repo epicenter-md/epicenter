@@ -2,7 +2,7 @@
  * One recording as the app uses it: the row, with its audio id carrying the
  * brand the blob store requires.
  *
- * The Lens cannot express the brand. It declares `audioBlobId` as
+ * The workspace cannot express the brand. It declares `audioBlobId` as
  * `/^blob_[a-z0-9]{21}$/`, which is `BLOB_ID_ROUTE_REGEX` anchored: the exact
  * pattern `BlobId` validates and `generateBlobId` is locked to by a round-trip
  * test. What `RowOf` yields from it is the template literal type, which is the
@@ -26,7 +26,7 @@ export type Recording = Omit<RecordingRow, 'audioBlobId'> & {
 /**
  * What creating a recording needs.
  *
- * The Lens's own create input, so a field that declares a default is optional
+ * The workspace's own create input, so a field that declares a default is optional
  * to supply and the three transcription columns start `pending` without anyone
  * writing them. `uploadedAt` is withheld because the audio workflows are its
  * only writer, and `audioBlobId` carries the brand for the same reason

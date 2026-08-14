@@ -11,25 +11,24 @@
 
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
-import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { createReplicaStore, type ReplicaStore } from '../store/store.js';
+import { defineWorkspace } from '@epicenter/workspace';
+import { type AccountStore, createAccountStore } from '../store/store.js';
 import { attachStoreSync, type StoreSocketTransport } from './attach.js';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.attach-test',
 	tables: { notes: { title: 'string' } },
 });
 
-function openStore(): ReplicaStore {
+function openStore(): AccountStore {
 	const live = new Database(':memory:');
-	const store = createReplicaStore({
+	const db = createAccountStore({
+		workspace: workspace,
 		database: createBunSqliteAdapter(live),
 		dispose: () => live.close(),
 	});
-	const view = store.bind(lens);
-	if (view.error !== null) throw view.error;
-	return store;
+	return db.store;
 }
 
 /** Record every dial and settle it however the test says. */
@@ -52,7 +51,7 @@ test('the first dial names the namespace and a cursor of zero', async () => {
 	);
 	const connection = attachStoreSync({
 		store,
-		namespace: lens.namespace,
+		namespace: workspace.namespace,
 		transport,
 		onSuperseded: () => {},
 		onTransportError: (cause) => {
@@ -65,7 +64,7 @@ test('the first dial names the namespace and a cursor of zero', async () => {
 	const url = new URL(urls[0] as string);
 	expect(url.protocol).toBe('wss:');
 	expect(url.pathname).toBe('/api/store/v1/sync');
-	expect(url.searchParams.get('namespace')).toBe(lens.namespace);
+	expect(url.searchParams.get('namespace')).toBe(workspace.namespace);
 	expect(url.searchParams.get('cursor')).toBe('0');
 	// A replica that has never synced belongs to no document yet, so it must
 	// not claim one (ADR-0231).
@@ -85,7 +84,7 @@ test('a permanent denial stops the driver and is not a transport error', async (
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
-		namespace: lens.namespace,
+		namespace: workspace.namespace,
 		transport,
 		onSuperseded: () => {},
 		onDenied: () => denials++,
@@ -114,7 +113,7 @@ test('a transient denial is reported and left to the backoff', async () => {
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
-		namespace: lens.namespace,
+		namespace: workspace.namespace,
 		transport,
 		onSuperseded: () => {},
 		onDenied: () => denials++,
@@ -136,7 +135,7 @@ test('an unrecognised rejection is a close, never a denial', async () => {
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
-		namespace: lens.namespace,
+		namespace: workspace.namespace,
 		transport,
 		onSuperseded: () => {},
 		onDenied: () => denials++,
@@ -162,7 +161,7 @@ test('abandoning an attempt closes a socket that arrives late', async () => {
 	const { transport } = createTransport(() => arrival.promise);
 	const connection = attachStoreSync({
 		store,
-		namespace: lens.namespace,
+		namespace: workspace.namespace,
 		transport,
 		onSuperseded: () => {},
 		onTransportError: (cause) => {

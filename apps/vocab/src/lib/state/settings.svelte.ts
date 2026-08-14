@@ -22,12 +22,11 @@ export function createSettingsState({
 		const { data, error } = deviceData.kv.get();
 		if (data !== null) return data.showReadings;
 		// A declared key is never absent, so the only way here is a stored value
-		// that no longer satisfies the Lens. The surviving half over the declared
-		// defaults is a whole settings object, which is the recovery composition
-		// the KV handle documents; anything else (a projection that could not be
-		// read at all) falls through to the defaults alone.
-		const conforming = error.name === 'Nonconforming' ? error.conforming : {};
-		const settings = { ...deviceData.kv.defaults, ...conforming };
+		// that no longer satisfies the workspace: the error arm is always that
+		// diagnostic. Its surviving half over the declared defaults is a whole
+		// settings object, which is the recovery composition the KV handle
+		// documents.
+		const settings = { ...deviceData.kv.defaults, ...error.conforming };
 		return settings.showReadings === true;
 	}
 

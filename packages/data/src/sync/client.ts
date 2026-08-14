@@ -10,7 +10,7 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
-import type { ReplicaStore } from '../store/store.js';
+import { type AccountStore, syncEngineOf } from '../store/store.js';
 import {
 	CHUNK_BYTES,
 	createChunkCollector,
@@ -183,11 +183,15 @@ export function createSyncClient({
 	/** Guards the authority's in-memory reassembly, and mirrors its limit. */
 	maxBufferedBytes = 64 * 1024 * 1024,
 }: {
-	store: ReplicaStore;
+	store: AccountStore;
 	idleMs?: number;
 	schedule?: Schedule;
 	maxBufferedBytes?: number;
 }): SyncClient {
+	// The delivery machinery behind the store's public capability: the client
+	// log, applyRemote, and the dependency alarm. Only the transport drives
+	// these, which is the whole reason they are not on `AccountStore` itself.
+	const engine = syncEngineOf(store);
 	// Rebuilt on every attach rather than held for the life of the client. A
 	// collector keyed by position outliving its socket is how a partial left by a
 	// dead connection collides with a later frame at the same number.
@@ -195,9 +199,9 @@ export function createSyncClient({
 	let socket: SyncSocket | undefined;
 	let inFlight: { submission: number; throughId: number } | undefined;
 	let nextSubmission = 1;
-	let cursor = store.sync.cursor().data ?? 0;
+	let cursor = engine.cursor();
 	/** The document this replica's state durably belongs to, if any. */
-	let identity = store.sync.documentIdentity().data ?? undefined;
+	let identity = engine.documentIdentity();
 	let owed = 0;
 	let lastError: SyncClientError | undefined;
 	let needsResync = false;
@@ -216,8 +220,7 @@ export function createSyncClient({
 		// that work is still owed.
 		if (socket === undefined || inFlight !== undefined) return Ok(undefined);
 
-		const { data: entry, error } = store.sync.coalesce();
-		if (error !== null) return Ok(undefined);
+		const entry = engine.coalesce();
 		if (entry === undefined) {
 			owed = 0;
 			return Ok(undefined);
@@ -227,10 +230,13 @@ export function createSyncClient({
 		// No push ever leaves an unstamped replica (ADR-0231). Once these bytes
 		// are on the wire they may land in the authority's log while the ack
 		// dies with the socket, and membership in that log is a fact the cursor
-		// cannot record. The stamp commits when the document frame is handled,
-		// which on a bootstrap connection precedes admission itself; until then
-		// the work stays owed and goes out on a later nudge, which is the safe
-		// direction.
+		// cannot record. The stamp is accepted when the document frame is
+		// handled, which on a bootstrap connection precedes admission itself;
+		// until then the work stays owed and goes out on a later nudge, which is
+		// the safe direction. `coalesce` adds the second half of the guarantee:
+		// it offers only DURABLE outbox entries, and the stamp is queued ahead
+		// of every append, so a sendable entry implies a durably stamped
+		// replica (ADR-0238).
 		if (identity === undefined) return Ok(undefined);
 
 		const submission = nextSubmission;
@@ -287,7 +293,7 @@ export function createSyncClient({
 		// merge across the break. Atomicity keeps re-delivery free (a crash
 		// leaves neither); the membership stamp is already durable, because a
 		// frame like this one is dropped until it is.
-		const { error } = store.applyRemote(bytes, { advanceTo: seq });
+		const { error } = engine.applyRemote(bytes, { advanceTo: seq });
 		if (error !== null) {
 			// The cursor does not move, so nothing is skipped and nothing is lost.
 			// But this replica is now stuck at this position on every reconnect
@@ -320,7 +326,7 @@ export function createSyncClient({
 		bytes: Uint8Array,
 	): Result<void, SyncClientError> {
 		if (position <= cursor) return Ok(undefined);
-		const { error } = store.applyRemote(bytes, { advanceTo: position });
+		const { error } = engine.applyRemote(bytes, { advanceTo: position });
 		if (error !== null) {
 			const stuck = SyncClientError.Unapplyable({
 				seq: position,
@@ -343,7 +349,7 @@ export function createSyncClient({
 	 */
 	function offerSnapshot(position: number): Result<void, SyncClientError> {
 		if (socket === undefined || position !== cursor) return Ok(undefined);
-		if (store.hasUnresolvedDependencies()) return Ok(undefined);
+		if (engine.hasUnresolvedDependencies()) return Ok(undefined);
 		const chunks = intoChunks(store.encodeStateSince(), CHUNK_BYTES);
 		for (const [index, chunk] of chunks.entries()) {
 			socket.send(
@@ -423,7 +429,7 @@ export function createSyncClient({
 					// is the point: if it is ever false the ordering assumption is
 					// wrong, and a cursor that advanced anyway would skip real entries.
 					if (frame.seq === cursor + 1) {
-						store.sync.advance(frame.seq);
+						engine.advance(frame.seq);
 						cursor = frame.seq;
 					} else if (frame.seq > cursor + 1) {
 						lastError = SyncClientError.Gap({
@@ -432,7 +438,7 @@ export function createSyncClient({
 						}).error;
 						needsResync = true;
 					}
-					store.sync.acknowledge(inFlight.throughId);
+					engine.acknowledge(inFlight.throughId);
 					inFlight = undefined;
 					owed = 0;
 					// Work authored while that submission was out is still owed.
@@ -509,13 +515,17 @@ export function createSyncClient({
 					// applied and before any push can leave, because both are refused
 					// while `identity` is undefined.
 					if (identity === undefined) {
-						const { error: stampError } = store.sync.adoptDocumentIdentity(
+						const { error: stampError } = engine.adoptDocumentIdentity(
 							frame.id,
 						);
 						if (stampError !== null) {
-							// A storage failure leaves the replica unstamped to try again
-							// at the next announcement; only the refusal is a conclusion.
-							if (stampError.name === 'Unstampable') superseded = true;
+							// The one refusal the stamp can return: this store grew before
+							// it was stamped, so its bytes belong to no authority document
+							// and the conclusion is supersession. Storage is not here to
+							// distinguish from: the stamp is accepted live and queued
+							// durably, and the sender's durable-outbox gate keeps any
+							// push behind it (ADR-0238).
+							superseded = true;
 							return Ok(undefined);
 						}
 						identity = frame.id;
@@ -535,7 +545,7 @@ export function createSyncClient({
 			inFlightSubmission: inFlight?.submission,
 			owed,
 			lastError,
-			unresolvedDependencies: store.hasUnresolvedDependencies(),
+			unresolvedDependencies: engine.hasUnresolvedDependencies(),
 			needsResync,
 			superseded,
 		}),

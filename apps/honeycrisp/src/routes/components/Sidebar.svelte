@@ -39,8 +39,7 @@
 	// write, so a faster tick would render the same footer again.
 	function readPressure() {
 		// Pressure of the document this surface is showing, whichever that is.
-		const { data, error } = surface.data.store.pressure();
-		return error === null ? data : undefined;
+		return surface.data.store.pressure();
 	}
 
 	// The one number worth watching. A deleted row leaves a tombstone every
@@ -202,7 +201,7 @@
 		{#if pressure}
 			<div
 				class="text-muted-foreground px-2 pb-1 text-[11px] tabular-nums"
-				title="Structs the engine holds, over rows a lens can see. A healthy vault sits near the item cost of one note; ten times that means the document is mostly corpse."
+				title="Structs the engine holds, over rows the workspace can see. A healthy vault sits near the item cost of one note; ten times that means the document is mostly corpse."
 			>
 				{pressure.items} items · {pressure.liveRows} notes ·
 				{pressure.itemsPerLiveRow.toFixed(1)} each

@@ -22,7 +22,7 @@ import type { Shortcuts } from './types';
  * device's settings as two arrays per command, `shortcut<Command>Modifiers` and
  * `shortcut<Command>Keys`.
  *
- * Two columns rather than one structured value, because a Lens has no
+ * Two columns rather than one structured value, because a workspace has no
  * expression for an inline object and no way to default an array
  * (`workspace/index.ts`). So a binding is composed on read and decomposed on
  * write, and "no shortcut configured" is `null` on both halves rather than a
@@ -35,7 +35,8 @@ import type { Shortcuts } from './types';
  */
 
 /**
- * Where each command's binding is stored, as the two Lens keys that hold it.
+ * Where each command's binding is stored, as the two workspace kv keys that
+ * hold it.
  *
  * Written out rather than composed as `` `shortcut${Capitalize<id>}Keys` ``: a
  * durable key is not something to compute from an identifier that a rename
@@ -81,7 +82,7 @@ const SHORTCUT_KEYS = {
 export function createFocusedShortcuts({
 	settings,
 }: Pick<WhisperingApp, 'settings'>): Shortcuts {
-	// The Lens validates the stored arrays structurally as `string[]`, while
+	// The workspace validates the stored arrays structurally as `string[]`, while
 	// `KeyBinding` narrows them to `Modifier[]` and `Key[]`, so composing a
 	// binding crosses that boundary with one documented cast, like the global
 	// tier.
@@ -104,7 +105,7 @@ export function createFocusedShortcuts({
 
 	/**
 	 * The shipped binding, which is release-local product policy rather than a
-	 * Lens default: a Lens cannot default an array, so `keys` defaults to null
+	 * workspace default: a workspace cannot default an array, so `keys` defaults to null
 	 * and "no shortcut configured" and "the shipped shortcut" would otherwise be
 	 * the same stored value (`workspace/index.ts`).
 	 */

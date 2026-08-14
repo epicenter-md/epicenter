@@ -1,15 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { RowAddress } from './addresses.js';
 import {
 	type CreateInputsOf,
-	clearLensCache,
-	defineLens,
-	parseLens,
+	clearWorkspaceCache,
+	defineKv,
+	defineTable,
+	defineWorkspace,
+	parseWorkspace,
+	type RowOf,
 	type RowsOf,
-} from './lens.js';
+} from './workspace.js';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: {
 		notes: { title: 'string', tags: 'string[]', date: 'string|null' },
@@ -18,7 +20,7 @@ const lens = defineLens({
 });
 
 function parse() {
-	const { data, error } = parseLens(lens);
+	const { data, error } = parseWorkspace(workspace);
 	if (error !== null) throw error;
 	return data;
 }
@@ -29,28 +31,24 @@ function tableOf(name: string) {
 	return table;
 }
 
-function addressOf(tableName: string, rowId: string): RowAddress {
-	return { namespace: lens.namespace, tableName, rowId };
-}
-
-describe('a lens is arktype JSON', () => {
+describe('a workspace declaration is arktype JSON', () => {
 	test('the authored literal round-trips byte-identically', () => {
-		expect(JSON.stringify(JSON.parse(JSON.stringify(lens)))).toBe(
-			JSON.stringify(lens),
+		expect(JSON.stringify(JSON.parse(JSON.stringify(workspace)))).toBe(
+			JSON.stringify(workspace),
 		);
 	});
 
-	test('a lens loaded from disk compiles, which identity keying prevented', () => {
-		const fromDisk: unknown = JSON.parse(JSON.stringify(lens));
-		const { data, error } = parseLens(fromDisk);
+	test('a declaration loaded from disk compiles, which identity keying prevented', () => {
+		const fromDisk: unknown = JSON.parse(JSON.stringify(workspace));
+		const { data, error } = parseWorkspace(fromDisk);
 		expect(error).toBeNull();
 		expect(data?.tables.get('notes')?.fields.size).toBe(3);
 	});
 
 	test('compilation is memoised on content, not on object identity', () => {
-		clearLensCache();
-		const first = parseLens(structuredClone(lens));
-		const second = parseLens(structuredClone(lens));
+		clearWorkspaceCache();
+		const first = parseWorkspace(structuredClone(workspace));
+		const second = parseWorkspace(structuredClone(workspace));
 		expect(first.data).toBe(second.data);
 	});
 });
@@ -83,16 +81,15 @@ describe('defaults and conformance are one mechanism', () => {
 	});
 });
 
-describe('one read verb, recovery composed at the call site', () => {
-	test('a conforming payload projects to a row', () => {
-		const { data, error } = tableOf('notes').project(addressOf('notes', 'n1'), {
+describe('conformance selects, defaults, and reports; it never repairs', () => {
+	test('a conforming payload survives whole', () => {
+		const { conforming, issues } = tableOf('notes').conformance({
 			title: 'Groceries',
 			tags: ['food'],
 			date: null,
 		});
-		expect(error).toBeNull();
-		expect(data).toEqual({
-			id: 'n1',
+		expect(issues).toEqual([]);
+		expect(conforming).toEqual({
 			title: 'Groceries',
 			tags: ['food'],
 			date: null,
@@ -100,53 +97,36 @@ describe('one read verb, recovery composed at the call site', () => {
 	});
 
 	test('a nonconforming payload carries what did pass, unrepaired', () => {
-		const { data, error } = tableOf('notes').project(addressOf('notes', 'n1'), {
+		const { conforming, issues } = tableOf('notes').conformance({
 			title: 'Groceries',
 			tags: 'food',
 			date: null,
 		});
-		expect(data).toBeNull();
-		expect(error?.name).toBe('Nonconforming');
-		expect(error?.conforming).toEqual({
-			id: 'n1',
+		expect(conforming).toEqual({ title: 'Groceries', date: null });
+		expect(issues.map((issue) => issue.field)).toEqual(['tags']);
+	});
+
+	test('an undeclared field is selected out rather than reported', () => {
+		// Unknown fields stay preserved in the document; the declaration simply
+		// does not speak for them, so they appear in neither half of the answer.
+		const { conforming, issues } = tableOf('notes').conformance({
 			title: 'Groceries',
+			tags: [],
 			date: null,
+			futureField: 'from a release that has not shipped',
 		});
-		expect(error?.issues.map((issue) => issue.field)).toEqual(['tags']);
-		// Never repaired and never hidden: the raw payload survives intact.
-		expect(error?.raw).toEqual({
-			title: 'Groceries',
-			tags: 'food',
-			date: null,
-		});
+		expect(issues).toEqual([]);
+		expect(conforming).toEqual({ title: 'Groceries', tags: [], date: null });
 	});
 
 	test('the call site recovers with defaults under what survived', () => {
 		const settings = tableOf('settings');
-		const { data, error } = settings.project(addressOf('settings', 'app'), {
+		const { conforming } = settings.conformance({
 			theme: 'purple',
 			fontSize: 20,
 		});
-		// The one composition. `??` and never a destructuring default: an Err
-		// sets `data` to null, and a destructuring default fires only on
-		// `undefined`, so `const { data = fallback }` would hand back null.
-		const cfg = data ?? { ...settings.defaults, ...error?.conforming };
-		// A whole row either way, id included, so the two branches of `??` have
-		// the same shape and no call site has to add the id back.
-		expect(cfg).toEqual({ id: 'app', theme: 'light', fontSize: 20 });
-	});
-
-	test('a destructuring default does not fire on an Err, which is why ?? is the rule', () => {
-		const { data } = tableOf('notes').project(addressOf('notes', 'n1'), {});
-		const wrong = data ?? 'fallback';
-		expect(data).toBeNull();
-		expect(wrong).toBe('fallback');
-		// The trap, spelled out: `= fallback` never fires, because data is null.
-		const { data: trap = 'fallback' } = tableOf('notes').project(
-			addressOf('notes', 'n1'),
-			{},
-		);
-		expect(trap).toBeNull();
+		const cfg = { ...settings.defaults, ...conforming };
+		expect(cfg).toEqual({ theme: 'light', fontSize: 20 });
 	});
 });
 
@@ -240,7 +220,7 @@ describe('the grammar refuses what the records reserve', () => {
 
 	for (const [reason, value] of cases) {
 		test(`refuses ${reason}`, () => {
-			const { data, error } = parseLens(value);
+			const { data, error } = parseWorkspace(value);
 			expect(data).toBeNull();
 			expect(error).not.toBeNull();
 		});
@@ -249,7 +229,7 @@ describe('the grammar refuses what the records reserve', () => {
 
 describe('a field is one type through every door', () => {
 	test('a transforming field is refused by name, with the fix in the message', () => {
-		const { data, error } = parseLens({
+		const { data, error } = parseWorkspace({
 			namespace: 'so.epicenter.app',
 			tables: { notes: { when: 'string.date.parse' } },
 		});
@@ -263,14 +243,14 @@ describe('a field is one type through every door', () => {
 		// the WRAPPER for every defaulted field, because filling an absent key is
 		// a transformation; asking the property's value instead is what keeps
 		// defaults legal while still refusing a morph that carries one.
-		const { data, error } = parseLens({
+		const { data, error } = parseWorkspace({
 			namespace: 'so.epicenter.app',
 			tables: { settings: { theme: "'light'|'dark' = 'light'" } },
 		});
 		expect(error).toBeNull();
 		expect(data?.tables.get('settings')?.defaults).toEqual({ theme: 'light' });
 
-		const { error: stillRefused } = parseLens({
+		const { error: stillRefused } = parseWorkspace({
 			namespace: 'so.epicenter.app',
 			tables: { notes: { when: "string.date.parse = '2020-01-01'" } },
 		});
@@ -280,7 +260,7 @@ describe('a field is one type through every door', () => {
 	test('every validation-only rich type still passes', () => {
 		// Nothing expressive is lost by refusing morphs: arktype ships a
 		// validating form of each of these, and each keeps the stored value.
-		const { data, error } = parseLens({
+		const { data, error } = parseWorkspace({
 			namespace: 'so.epicenter.app',
 			tables: {
 				notes: {
@@ -296,7 +276,7 @@ describe('a field is one type through every door', () => {
 	});
 
 	test('a validated date round-trips as the string it was stored as', () => {
-		const { data } = parseLens({
+		const { data } = parseWorkspace({
 			namespace: 'so.epicenter.app',
 			tables: { notes: { when: 'string.date.iso' } },
 		});
@@ -304,19 +284,17 @@ describe('a field is one type through every door', () => {
 		const { data: written } =
 			table?.validateWrite({ when: '2026-08-07' }) ?? {};
 		expect(written).toEqual({ when: '2026-08-07' });
-		const { data: read } =
-			table?.project(
-				{ namespace: 'so.epicenter.app', tableName: 'notes', rowId: 'n1' },
-				{ when: '2026-08-07' },
-			) ?? {};
 		// Same string in, same string out, and the same string in the projection.
-		expect(read).toEqual({ id: 'n1', when: '2026-08-07' });
+		expect(table?.conformance({ when: '2026-08-07' })).toEqual({
+			conforming: { when: '2026-08-07' },
+			issues: [],
+		});
 	});
 });
 
 describe('types', () => {
 	test('a row type infers from the literal', () => {
-		type Rows = RowsOf<typeof lens>;
+		type Rows = RowsOf<typeof workspace>;
 		const note: Rows['notes'] = {
 			id: 'n1',
 			title: 'Groceries',
@@ -335,7 +313,7 @@ describe('types', () => {
 	});
 
 	test('a create input makes exactly the defaulted fields optional', () => {
-		type Inputs = CreateInputsOf<typeof lens>;
+		type Inputs = CreateInputsOf<typeof workspace>;
 		// Every declared default may be omitted...
 		const bare: Inputs['settings'] = {};
 		// ...and supplying one is still checked.
@@ -349,5 +327,44 @@ describe('types', () => {
 		expect(bare).toEqual({});
 		expect(full.theme).toBe('dark');
 		expect(note.title).toBe('Groceries');
+	});
+});
+
+describe('defineTable and defineKv are validation identities', () => {
+	test('the returned value is the argument, and inference is the literal', () => {
+		const notes = defineTable({
+			title: 'string',
+			tags: 'string[]',
+			date: 'string|null = null',
+		});
+		// Identity at runtime: nothing is compiled or copied at authoring time.
+		expect(notes).toEqual({
+			title: 'string',
+			tags: 'string[]',
+			date: 'string|null = null',
+		});
+		// Inference carries through the hoisted ingredient, which is the whole
+		// reason the helper exists: `RowOf` works on the table the app named.
+		const row: RowOf<typeof notes> = {
+			id: 'n1',
+			title: 'Groceries',
+			tags: [],
+			date: null,
+		};
+		expect(row.date).toBeNull();
+	});
+
+	test('ingredients compose into defineWorkspace unchanged', () => {
+		const notes = defineTable({ title: 'string' });
+		const preferences = defineKv({ theme: "'light'|'dark' = 'light'" });
+		const composed = defineWorkspace({
+			namespace: 'so.epicenter.composed',
+			tables: { notes },
+			kv: preferences,
+		});
+		const { data, error } = parseWorkspace(composed);
+		expect(error).toBeNull();
+		expect(data?.tables.get('notes')?.fields.size).toBe(1);
+		expect(data?.kv?.defaults).toEqual({ theme: 'light' });
 	});
 });

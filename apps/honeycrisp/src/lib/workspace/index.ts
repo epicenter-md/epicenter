@@ -1,16 +1,17 @@
 /**
- * Honeycrisp's inert Lens.
+ * Honeycrisp's inert workspace declaration.
  *
- * A Lens is pure JSON: arktype expressions for the fields, and nothing that
- * knows about storage, sync, or documents (ADR-0213). Runtimes own all of that.
+ * A workspace declaration is pure JSON: arktype expressions for the fields,
+ * and nothing that knows about storage, sync, or documents (ADR-0213,
+ * ADR-0240). Runtimes own all of that.
  *
  * The `folders` and `notes` property names are the durable table names. They are
  * what the row addresses carry, what a trusted inspection host mounts as
  * `SELECT * FROM notes`, and what the projection's relations are called.
  */
 
-import type { LensView } from '@epicenter/data';
-import { defineLens, type RowOf } from '@epicenter/lens';
+import type { WorkspaceView } from '@epicenter/data';
+import { defineWorkspace, type RowOf } from '@epicenter/workspace';
 
 /** Runtime-minted structural note row id. */
 export type NoteId = string;
@@ -20,7 +21,7 @@ export type FolderId = string;
 
 const foldersTable = {
 	name: 'string',
-	// Nullable with a default rather than optional. A Lens has no optional
+	// Nullable with a default rather than optional. A workspace has no optional
 	// fields on purpose: a field has to be one type through the CRDT attribute,
 	// the projection column and the row alike, and "absent" is not a SQL type.
 	// A default is applied at read time and never written (ADR-0213).
@@ -42,14 +43,14 @@ const notesTable = {
 	wordCount: 'number|null = null',
 } as const;
 
-export const honeycrispLens = defineLens({
+export const honeycrispWorkspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	title: 'Honeycrisp',
 	tables: { folders: foldersTable, notes: notesTable },
 });
 
-/** The typed view of one store through Honeycrisp's Lens. */
-export type HoneycrispData = LensView<typeof honeycrispLens>;
+/** The typed view of one store through Honeycrisp's workspace. */
+export type HoneycrispData = WorkspaceView<typeof honeycrispWorkspace>;
 
 export type Folder = RowOf<typeof foldersTable>;
 export type Note = RowOf<typeof notesTable>;
@@ -84,19 +85,18 @@ export function deleteHoneycrispFolder(
 	folderId: FolderId,
 ): void {
 	const listed = db.tables.notes.list();
-	if (listed.error !== null) throw listed.error;
 	const inFolder = [
-		...listed.data.rows
+		...listed.rows
 			.filter((note) => note.folderId === folderId)
 			.map((note) => note.id),
-		...listed.data.nonconforming
+		...listed.nonconforming
 			.filter((issue) => issue.raw.folderId === folderId)
-			.map((issue) => issue.address.rowId),
+			.map((issue) => issue.id),
 	];
 	for (const noteId of inFolder) {
 		const { error } = db.tables.notes.update(noteId, { folderId: null });
 		if (error !== null) throw error;
 	}
-	const { error } = db.tables.folders.delete(folderId);
-	if (error !== null) throw error;
+	// Deleting an absent folder is a no-op fact, not an error.
+	db.tables.folders.delete(folderId);
 }

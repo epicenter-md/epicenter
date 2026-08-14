@@ -1,3 +1,4 @@
+import type { NonconformingRow } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import {
 	type FolderId,
@@ -6,8 +7,6 @@ import {
 	type Note,
 	type NoteId,
 } from '@epicenter/honeycrisp';
-import type { NonconformingRowError } from '@epicenter/lens';
-import { reportBackgroundError } from '../../lib/report.js';
 import type { NoteSearchIndex } from '../../lib/search-index.svelte.js';
 import { searchParams } from './search-params.svelte.js';
 
@@ -33,23 +32,14 @@ export function createNotes({
 	searchIndex: NoteSearchIndex;
 }) {
 	let rows = $state.raw<Note[]>([]);
-	let nonconforming = $state.raw<NonconformingRowError[]>([]);
-	let loadError = $state.raw<unknown>(null);
+	let nonconforming = $state.raw<NonconformingRow[]>([]);
 
 	function read(): void {
-		const { data, error } = db.tables.notes.list();
-		if (error !== null) {
-			// Reported, not just remembered. A read that fails after boot leaves
-			// `rows` at its last value, which for a first read is empty, and an
-			// empty list renders as "you have never written one of these". The
-			// boot path has `{:catch}`; this path had nothing.
-			loadError = error;
-			reportBackgroundError(error);
-			return;
-		}
-		rows = data.rows;
-		nonconforming = data.nonconforming;
-		loadError = null;
+		// `list` cannot fail: a store that cannot serve reads throws
+		// `StoreUnusableError`, which surfaces at the app's error boundary.
+		const listed = db.tables.notes.list();
+		rows = listed.rows;
+		nonconforming = listed.nonconforming;
 	}
 
 	read();
@@ -91,9 +81,6 @@ export function createNotes({
 		get nonconforming() {
 			return nonconforming;
 		},
-		get loadError() {
-			return loadError;
-		},
 
 		create(folderId: FolderId | null): { id: NoteId } {
 			const now = InstantString.now();
@@ -125,8 +112,8 @@ export function createNotes({
 		},
 
 		permanentlyDelete(noteId: NoteId): void {
-			const { error } = db.tables.notes.delete(noteId);
-			if (error !== null) throw error;
+			// Deleting an absent note is a no-op fact, not an error.
+			db.tables.notes.delete(noteId);
 			searchIndex.forget(noteId);
 			if (searchParams.note === noteId) searchParams.update({ note: null });
 		},

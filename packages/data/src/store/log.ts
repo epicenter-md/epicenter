@@ -2,12 +2,21 @@
  * The CRDT's own durable bytes: the update log, its snapshot folding, the outbox and
  * the cursor.
  *
- * The lens's derived SQL used to live here too and now sits in `./projection.js`.
+ * The workspace's derived SQL used to live here too and now sits in `./projection.js`.
  * The two shared a file and nothing else: this is what the document IS and what
- * `../sync` reads, while a projection is a cache rebuilt from it at every bind.
+ * `../sync` reads, while a projection is a cache rebuilt from it at open.
  */
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import * as Y from '@y/y';
+
+import type {
+	DurableOp,
+	DurablePort,
+	DurableSnapshot,
+	OutboxEntry,
+} from './persistence.js';
+
+export type { OutboxEntry } from './persistence.js';
 
 /**
  * How many appends the live log holds before it folds into a snapshot (ADR-0159/0214).
@@ -37,7 +46,7 @@ type StoredUpdate = SqliteRow & {
 };
 
 /**
- * The live store file: the Yjs update log and the lens projection, together.
+ * The live store file: the Yjs update log and the workspace projection, together.
  *
  * They share a file rather than merely a directory so that an append and the
  * projection write it implies commit in one transaction. That is what makes
@@ -79,31 +88,27 @@ export function applyStoreSchema(database: SqliteDatabase): void {
 	`);
 }
 
-/** One unsent entry, at the local position that orders it. */
-export type OutboxEntry = { id: number; bytes: Uint8Array };
-
 /**
- * Hold one locally authored update as unsent.
+ * Hold one locally authored update as unsent, at the id the store assigned.
  *
  * A separate relation rather than a cursor into `_updates`, and that is a
  * correctness requirement rather than a preference: `appendUpdate` collapses
  * `_updates` and renumbers it from 1, so any position recorded against that
  * relation would silently come to mean a different update.
  *
- * Only bytes this device authored are ever enqueued. Bytes received from the
- * authority are already in the authority's log, so re-offering them would grow
- * the log with nothing new in it.
+ * The id arrives from the store rather than being minted here, so the
+ * in-memory mirror and this relation can never disagree about which entry an
+ * acknowledgement names (ADR-0238). Only bytes this device authored are ever
+ * enqueued: bytes received from the authority are already in the authority's
+ * log, so re-offering them would grow the log with nothing new in it.
  */
-export function enqueueOutbox(
+export function insertOutbox(
 	database: SqliteDatabase,
+	id: number,
 	update: Uint8Array,
 ): void {
-	const nextId =
-		database.all<SqliteRow & { id: number }>(
-			'SELECT COALESCE(MAX(id), 0) + 1 AS id FROM _outbox',
-		)[0]?.id ?? 1;
 	database.run('INSERT INTO _outbox (id, bytes) VALUES (?, ?)', [
-		nextId,
+		id,
 		new Uint8Array(update),
 	]);
 }
@@ -373,4 +378,76 @@ export function appendUpdate({
 	} finally {
 		compacted.destroy();
 	}
+}
+
+/**
+ * Everything this file durably held at open, materialized once.
+ *
+ * The store hydrates its document from `updates`, seeds its durable mirror
+ * from the rest, and never reads this file again outside a flush (ADR-0238).
+ */
+export function loadDurableSnapshot(database: SqliteDatabase): DurableSnapshot {
+	return {
+		updates: readUpdates(database, APP_DOCUMENT).map((stored) =>
+			copyBytes(stored.bytes),
+		),
+		outbox: readOutbox(database),
+		cursor: readCursor(database, APP_DOCUMENT),
+		identity: readDocumentIdentity(database),
+	};
+}
+
+/**
+ * The SQLite durable engine: one batch, one transaction, in order.
+ *
+ * Synchronous, which is what lets a verb on Bun or a Durable Object return
+ * with its write already durable. Opening applies the schema and enforces the
+ * format certificate (ADR-0231's cutover), exactly as every open always has.
+ */
+export function createSqliteDurablePort({
+	database,
+	history,
+}: {
+	database: SqliteDatabase;
+	/** Absent means this store keeps no history; collapse then simply deletes. */
+	history?: SqliteDatabase;
+}): DurablePort & { load(): DurableSnapshot } {
+	applyStoreSchema(database);
+	adoptStoreFormat(database);
+	return {
+		load: () => loadDurableSnapshot(database),
+		commit(ops: readonly DurableOp[]): void {
+			database.transaction(() => {
+				for (const op of ops) {
+					switch (op.kind) {
+						case 'append': {
+							appendUpdate({
+								database,
+								history,
+								document: APP_DOCUMENT,
+								update: op.bytes,
+								takenAt: op.takenAt,
+							});
+							if (op.outboxId !== undefined) {
+								insertOutbox(database, op.outboxId, op.bytes);
+							}
+							break;
+						}
+						case 'cursor':
+							writeCursor(database, APP_DOCUMENT, op.seq);
+							break;
+						case 'identity':
+							writeDocumentIdentity(database, op.id);
+							break;
+						case 'dropOutbox':
+							dropOutboxThrough(database, op.throughId);
+							break;
+						case 'replaceOutbox':
+							replaceOutboxThrough(database, op.throughId, op.merged);
+							break;
+					}
+				}
+			});
+		},
+	};
 }

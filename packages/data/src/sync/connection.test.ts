@@ -15,17 +15,21 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { defineWorkspace } from '@epicenter/workspace';
 import type { Result } from 'wellcrafted/result';
 
-import { createReplicaStore, type LensView } from '../store/store.js';
+import {
+	createAccountStore,
+	syncEngineOf,
+	type WorkspaceView,
+} from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
 import { createSyncConnection, type SyncDial } from './connection.js';
 import { encodeFrame } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -127,10 +131,12 @@ function openDriven({
 	unacknowledgedMs?: number;
 	backoff?: (attempts: number) => number;
 }) {
-	const store = createReplicaStore({
+	const data = createAccountStore({
+		workspace: workspace,
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	const db = expectOk(store.bind(lens)) as LensView<typeof lens>;
+	const store = data.store;
+	const db = data as WorkspaceView<typeof workspace>;
 
 	/** Cursor each dial asked the authority to start after, oldest first. */
 	const dialledFrom: number[] = [];
@@ -206,7 +212,8 @@ function openDriven({
 		},
 		breakSocket: () => breakSocket?.(),
 		titles: () =>
-			expectOk(db.tables.notes.list())
+			db.tables.notes
+				.list()
 				.rows.map((row) => row.title)
 				.sort(),
 	};
@@ -483,10 +490,12 @@ describe('a dial that can never succeed stops the driver for good', () => {
 		clock: Clock;
 		denyEvery: boolean;
 	}) {
-		const store = createReplicaStore({
+		const data = createAccountStore({
+			workspace: workspace,
 			database: createBunSqliteAdapter(new Database(':memory:')),
 		});
-		const db = expectOk(store.bind(lens)) as LensView<typeof lens>;
+		const store = data.store;
+		const db = data as WorkspaceView<typeof workspace>;
 		let dials = 0;
 		const connection = createSyncConnection({
 			store,
@@ -592,16 +601,18 @@ describe('a foreign document name supersedes the replica, and nothing else does 
 		/** Frames the door sends this dial before closing, if any. */
 		answers: (dial: number) => Uint8Array[];
 	}) {
-		const store = createReplicaStore({
+		const data = createAccountStore({
+			workspace: workspace,
 			database: createBunSqliteAdapter(new Database(':memory:')),
 		});
-		const db = expectOk(store.bind(lens)) as LensView<typeof lens>;
+		const store = data.store;
+		const db = data as WorkspaceView<typeof workspace>;
 		// Stamped before the cursor moves, in the order every real replica
 		// follows: the stamp refuses a store that grew before it.
 		if (document !== undefined) {
-			expectOk(store.sync.adoptDocumentIdentity(document));
+			expectOk(syncEngineOf(store).adoptDocumentIdentity(document));
 		}
-		if (cursor > 0) expectOk(store.sync.advance(cursor));
+		if (cursor > 0) syncEngineOf(store).advance(cursor);
 		let dials = 0;
 		let discarded = 0;
 		const connection = createSyncConnection({

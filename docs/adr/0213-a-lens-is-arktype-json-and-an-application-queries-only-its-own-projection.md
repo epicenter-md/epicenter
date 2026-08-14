@@ -2,6 +2,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-07
+- **Amended by:** [ADR-0240](0240-an-application-declares-one-workspace-and-an-opened-runtime-holds-exactly-one-definition.md)
+  at the noun only: the artifact is a workspace declaration
+  (`defineWorkspace`, `parseWorkspace`, `workspace.json`). Everything decided
+  here about the declaration itself stands verbatim.
 - **Provisional number.** Replaces an earlier 0213 that specified a multiset
   digest for a cell store that no longer exists. That draft was `Proposed` and is
   rewritten in place.

@@ -21,8 +21,8 @@ function catalogOf(...members: { id: string; title: string }[]): AppCatalog {
 					id,
 					title,
 					page: '<!doctype html><html></html>',
-					// An id is the namespace its Lens declared (ADR-0210), which is
-					// the only thing admission keeps: the compiled Lens itself is not
+					// An id is the namespace its declaration declared (ADR-0210), which is
+					// the only thing admission keeps: the compiled declaration itself is not
 					// carried past it, because the host reads nobody's rows.
 					directory: id,
 					resolve: async () => undefined,

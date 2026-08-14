@@ -60,7 +60,7 @@ function writeApp(
 		page = `<!doctype html><title>${id}</title>`,
 		files = {},
 		title,
-		lens = {
+		declaration = {
 			namespace: id,
 			...(title === undefined ? {} : { title }),
 			tables: {},
@@ -69,15 +69,17 @@ function writeApp(
 		page?: string;
 		files?: Record<string, string>;
 		title?: string;
-		lens?: unknown;
+		declaration?: unknown;
 	} = {},
 ): void {
 	mkdirSync(join(root, id), { recursive: true });
 	writeFileSync(join(root, id, 'index.html'), page);
-	if (lens !== null) {
+	if (declaration !== null) {
 		writeFileSync(
-			join(root, id, 'lens.json'),
-			typeof lens === 'string' ? lens : JSON.stringify(lens),
+			join(root, id, 'workspace.json'),
+			typeof declaration === 'string'
+				? declaration
+				: JSON.stringify(declaration),
 		);
 	}
 	for (const [name, content] of Object.entries(files)) {
@@ -108,8 +110,8 @@ describe('deriveAppCatalog', () => {
 		// A bare namespace is not a namespace, which is also why no built-in
 		// surface id can ever be claimed here (ADR-0210).
 		writeApp(root, 'whispering');
-		writeApp(root, 'so.test.badlens', { lens: '{ not json' });
-		writeApp(root, 'so.test.nolens', { lens: null });
+		writeApp(root, 'so.test.baddeclaration', { declaration: '{ not json' });
+		writeApp(root, 'so.test.nodeclaration', { declaration: null });
 		mkdirSync(join(root, 'no-index'));
 		writeFileSync(join(root, 'plain-file'), 'not a directory');
 
@@ -142,10 +144,10 @@ describe('deriveAppCatalog', () => {
 	test('two directories declaring one namespace yield one member', async () => {
 		const root = tempDir('epicenter-catalog-');
 		writeApp(root, 'first', {
-			lens: { namespace: 'so.test.twin', tables: {} },
+			declaration: { namespace: 'so.test.twin', tables: {} },
 		});
 		writeApp(root, 'second', {
-			lens: { namespace: 'so.test.twin', tables: {} },
+			declaration: { namespace: 'so.test.twin', tables: {} },
 		});
 
 		const { apps } = await derive(root);

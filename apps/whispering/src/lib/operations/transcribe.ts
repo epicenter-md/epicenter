@@ -333,7 +333,7 @@ export function prewarmOnDeviceModel(app: WhisperingApp): void {
  */
 function withDictionaryTerms(
 	prompt: string,
-	/** Null when the person has added no terms: a Lens cannot default an array. */
+	/** Null when the person has added no terms: a workspace cannot default an array. */
 	dictionary: readonly string[] | null,
 ): string {
 	if (dictionary === null || dictionary.length === 0) return prompt;
@@ -411,7 +411,7 @@ async function transcribeViaUpload(
 	// and the server answers 401, surfaced as a RequestFailed carrying that detail.
 	// The Dictionary terms fold into the prompt so cloud recognition spells them
 	// the user's way.
-	// Narrowed here rather than in the Lens: the stored code is a plain string so
+	// Narrowed here rather than in the workspace: the stored code is a plain string so
 	// a hand-written union could never drift from `constants/languages.ts`, and a
 	// code this release no longer supports falls back to letting the provider
 	// detect the language rather than being sent through unchecked.

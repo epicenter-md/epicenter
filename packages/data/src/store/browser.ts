@@ -1,152 +1,171 @@
 /**
  * Open one application's store in a browser page.
  *
- * The store runs HERE, on the main thread, over an in-memory SQLite, and its
- * durable state is three small relations in IndexedDB.
+ * The store runs HERE, on the main thread. The live Yjs document is the
+ * source of truth, the SQL projection is an in-memory SQLite rebuilt at open,
+ * and the durable facts (the update log, the outbox, the cursor, and the
+ * metadata) live directly in IndexedDB, written one atomic multi-store
+ * transaction per flush (ADR-0238).
  *
  * ## Why an in-memory database is not a compromise
  *
- * The store needs a synchronous HANDLE, not synchronous DURABILITY. It touches
- * SQLite in three places, the schema and the replay at construction and then
- * `transaction` and `all`, and every read a person makes (`get`, `list`, `ids`,
- * `document`) comes from the `Y.Doc` already in memory. SQLite is a
- * write-behind log and a query cache, never the read path.
+ * The store needs a synchronous HANDLE, not synchronous DURABILITY. Every
+ * read a person makes (`get`, `list`, `ids`, `document`) comes from the
+ * `Y.Doc` already in memory, and `query` runs over a projection that is a
+ * cache by contract, rebuilt from the document at open. Nothing
+ * queryable ever needs to survive a reload.
+ *
+ * ## Why IndexedDB owns the facts directly
+ *
+ * The previous shape snapshotted the whole in-memory SQLite (log, outbox,
+ * cursor) into one IndexedDB checkpoint record after every commit. That
+ * indirection stored one runtime's file format inside another's storage,
+ * paid a whole-file write per commit, and left ADR-0231's stamp-before-push
+ * window open: the identity stamp was durable only when the next checkpoint
+ * happened to land. Four object stores written through the persistence
+ * controller's atomic batch replace it; the controller's queue ordering is
+ * what closes the window (ADR-0238).
+ *
+ * y-indexeddb was considered and rejected: it exposes no public way to
+ * participate in its transactions, so the outbox and cursor could never
+ * commit atomically with the updates it stores, and its own debounce and
+ * compaction make its update store unreadable as a stable log.
  *
  * ## Why there is no worker
  *
- * There was one, holding the same database on OPFS and fed every statement, so
- * that reopening restored the file whole. It was justified by the projection
- * "coming back for free", and that is false: `bind` rebuilds every projected
- * table unconditionally, because the CRDT is the truth and a projection is a
- * cache. So the restored projection was thrown away every time.
- *
- * What actually has to survive is `_updates`, `_outbox` and `_cursor`, and all
- * three are small: `appendUpdate` folds the log at `SNAPSHOT_FOLD_THRESHOLD`
- * (64) into one baseline, the outbox is coalesced before it is sent, and the
- * cursor is one row. That is an IndexedDB record, not a file, and IndexedDB is
- * reachable from the page. `createSyncAccessHandle` being dedicated-worker-only
- * (`evidence/browser/sync-access-handle.ts`) decided where a FILE could live,
- * and once nothing needs a file it decides nothing at all.
- *
- * Deleted with it: a second sqlite-wasm instance, the OPFS SAH pool and its
- * exclusive-per-origin retry loop, a message protocol, and the mirroring of
- * every statement including the projection writes it turned out nobody wanted.
+ * There was one, holding an OPFS SQLite fed every statement, justified by the
+ * projection "coming back for free"; that was false, because opening rebuilds
+ * every projected table unconditionally. What actually has to survive is
+ * small: the log folds at `SNAPSHOT_FOLD_THRESHOLD` (64), the outbox is
+ * coalesced before it is sent, and the cursor is one row. IndexedDB holds
+ * that from the page.
  */
 import type { PrincipalId } from '@epicenter/identity';
-import type { LensJson, LensParseError } from '@epicenter/lens';
-import type { SqliteDatabase } from '@epicenter/sqlite';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
+import {
+	parseWorkspace,
+	type WorkspaceJson,
+	type WorkspaceParseError,
+} from '@epicenter/workspace';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
+import * as Y from '@y/y';
 import { type DBSchema, deleteDB, type IDBPDatabase, openDB } from 'idb';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { claimDocument, releaseDocument } from './claims.js';
 import {
-	APP_DOCUMENT,
-	applyStoreSchema,
 	copyBytes,
-	readDocumentIdentity,
-	readFormat,
-	writeDocumentIdentity,
+	replay,
+	SNAPSHOT_FOLD_THRESHOLD,
+	STORE_FORMAT,
 } from './log.js';
+import type { DurableOp, DurablePort, DurableSnapshot } from './persistence.js';
 import {
+	type AccountStore,
 	asData,
-	createReplicaStore,
-	createStore,
+	createAccountStoreOverPort,
+	createDeviceStoreOverPort,
 	type DataOf,
-	type ReplicaStore,
-	type Store,
+	type DeviceStore,
 	StoreError,
+	type UntypedWorkspaceView,
+	type WorkspaceView,
 } from './store.js';
 
-/**
- * Whether this device's durable copy is keeping up with its live one.
- *
- * The one thing a browser store has that a Bun store does not. On Bun the
- * durable write IS the write, so `persist` can poison the store the moment
- * storage refuses. IndexedDB is asynchronous, so a refusal arrives after the
- * write already returned `Ok` and there is nothing left to fail.
- *
- * Nothing is lost when this fires. The `Y.Doc` still holds the work and the
- * outbox still owes it to the authority, so it reaches every other device
- * normally. What is lost is the guarantee that a RELOAD of this device sees it.
- * That makes it an alarm an application shows rather than an error a call
- * returns, in the same shape as `hasUnresolvedDependencies`.
- */
-export type StoreDurability =
-	| { readonly healthy: true }
-	| {
-			readonly healthy: false;
-			readonly name: string;
-			readonly message: string;
-	  };
-
-type BrowserDurability = {
-	/** Whether the durable copy has fallen behind, and why. */
-	durability(): StoreDurability;
-	/** Resolve once every write so far has reached durable storage. */
-	whenDurable(): Promise<Result<void, StoreError>>;
-};
-
-/** One opened browser document with its write-behind durable copy. */
-export type BrowserStore = Store & BrowserDurability;
+// Re-exported so a browser caller's one import site names both kinds beside
+// the openers that produce them.
+export type { AccountStore, DeviceStore } from './store.js';
 
 /** One browser document that replicates with an account authority. */
-export type BrowserReplicaStore = ReplicaStore &
-	BrowserDurability & {
-		/**
-		 * Delete this store's durable record whole, disposing the store first.
-		 *
-		 * ADR-0231's one client-side deletion: a replica whose document was
-		 * replaced discards and rejoins at zero, and the initiating device adopts
-		 * through the same move after a confirmed replace. Terminal for this store; the
-		 * caller reloads (ADR-0232's instrument) and boot opens fresh. Crash-safe
-		 * by repetition: a discard that never ran leaves the old file, whose next
-		 * dial is refused again.
-		 *
-		 * Its blast radius is this store's own address and nothing else (ADR-0233),
-		 * so a workspace discard names one account's replica and can reach neither
-		 * the device document nor any other account's.
-		 */
-		discard(): Promise<Result<void, StoreError>>;
-	};
+export type BrowserAccountStore = AccountStore & {
+	/**
+	 * Delete this store's durable record whole, disposing the store first.
+	 *
+	 * ADR-0231's one client-side deletion: a replica whose document was
+	 * replaced discards and rejoins at zero, and the initiating device adopts
+	 * through the same move after a confirmed replace. Terminal for this store; the
+	 * caller reloads (ADR-0232's instrument) and boot opens fresh. Crash-safe
+	 * by repetition: a discard that never ran leaves the old file, whose next
+	 * dial is refused again.
+	 *
+	 * Its blast radius is this store's own address and nothing else (ADR-0233),
+	 * so a workspace discard names one account's replica and can reach neither
+	 * the device document nor any other account's.
+	 */
+	discard(): Promise<Result<void, StoreError>>;
+};
 
-/** The relations needed to rebuild the browser runtime after a reload. */
-type BrowserCheckpoint = {
+/**
+ * The durable facts, one object store each (ADR-0238).
+ *
+ * `updates` is the Yjs update log at explicit numeric keys; `outbox` holds
+ * locally authored bytes at the ids the store assigned; `meta` holds the
+ * format certificate, the cursor, and the document identity. These are
+ * persisted names: changing them requires an IndexedDB migration.
+ */
+type BrowserDurableSchema = DBSchema & {
+	updates: { key: number; value: Uint8Array };
+	outbox: { key: number; value: Uint8Array };
+	meta: { key: 'format' | 'cursor' | 'document'; value: string | number };
+};
+
+type BrowserDurableDatabase = IDBPDatabase<BrowserDurableSchema>;
+
+const DURABLE_STORES = ['updates', 'outbox', 'meta'] as const;
+
+/**
+ * The superseded version-1 record: the whole in-memory SQLite snapshotted as
+ * one value. Read once, during the version-2 upgrade, to migrate what was
+ * already durable; never written again.
+ */
+type SupersededCheckpoint = {
 	updates: { seq: number; bytes: Uint8Array }[];
 	outbox: { id: number; bytes: Uint8Array }[];
 	cursor: number;
-	/**
-	 * The store format this record was written under (ADR-0231).
-	 *
-	 * Absent on records from before the document identity, and that absence
-	 * is the cutover: a record without it is untrusted whole, so the open
-	 * wipes what was seeded and the replica rejoins from zero.
-	 */
 	format?: string;
-	/** Which authority document this replica's state belongs to (ADR-0231). */
 	document?: string;
 };
 
-type BrowserPersistenceSchema = DBSchema & {
-	state: {
-		key: typeof CHECKPOINT_KEY;
-		value: BrowserCheckpoint;
-	};
-};
-
-type BrowserPersistenceDatabase = IDBPDatabase<BrowserPersistenceSchema>;
-
-// These are persisted names. Changing them requires an IndexedDB migration.
-const CHECKPOINT_STORE = 'state';
-const CHECKPOINT_KEY = 'durable';
-
-function openIndexedDb(address: string): Promise<BrowserPersistenceDatabase> {
+function openIndexedDb(address: string): Promise<BrowserDurableDatabase> {
 	return new Promise((resolve, reject) => {
 		let blocked = false;
-		void openDB<BrowserPersistenceSchema>(address, 1, {
-			upgrade(database) {
-				if (!database.objectStoreNames.contains(CHECKPOINT_STORE)) {
-					database.createObjectStore(CHECKPOINT_STORE);
+		void openDB<BrowserDurableSchema>(address, 2, {
+			async upgrade(database, oldVersion, _newVersion, transaction) {
+				for (const name of DURABLE_STORES) {
+					if (!database.objectStoreNames.contains(name)) {
+						database.createObjectStore(name);
+					}
+				}
+				// Version 1 held one checkpoint record. Its contents were already
+				// durable, so they migrate rather than being wiped; the format rule
+				// at load still decides whether they are trusted (ADR-0231).
+				if (
+					oldVersion === 1 &&
+					(database.objectStoreNames as DOMStringList).contains('state')
+				) {
+					const checkpoint = (await transaction
+						.objectStore('state' as never)
+						.get('durable' as never)) as SupersededCheckpoint | undefined;
+					if (checkpoint !== undefined) {
+						const updates = transaction.objectStore('updates');
+						for (const update of checkpoint.updates) {
+							void updates.put(copyBytes(update.bytes), update.seq);
+						}
+						const outbox = transaction.objectStore('outbox');
+						for (const owed of checkpoint.outbox) {
+							void outbox.put(copyBytes(owed.bytes), owed.id);
+						}
+						const meta = transaction.objectStore('meta');
+						if (checkpoint.cursor > 0) {
+							void meta.put(checkpoint.cursor, 'cursor');
+						}
+						if (checkpoint.format !== undefined) {
+							void meta.put(checkpoint.format, 'format');
+						}
+						if (checkpoint.document !== undefined) {
+							void meta.put(checkpoint.document, 'document');
+						}
+					}
+					database.deleteObjectStore('state' as never);
 				}
 			},
 			blocked() {
@@ -170,27 +189,6 @@ function openIndexedDb(address: string): Promise<BrowserPersistenceDatabase> {
 	});
 }
 
-function readCheckpoint(
-	database: BrowserPersistenceDatabase,
-): Promise<BrowserCheckpoint | undefined> {
-	return database.get(CHECKPOINT_STORE, CHECKPOINT_KEY);
-}
-
-async function writeCheckpoint(
-	database: BrowserPersistenceDatabase,
-	checkpoint: BrowserCheckpoint,
-): Promise<void> {
-	const transaction = database.transaction(CHECKPOINT_STORE, 'readwrite');
-	await transaction.store.put(checkpoint, CHECKPOINT_KEY);
-	await transaction.done;
-}
-
-function describe(cause: unknown): { name: string; message: string } {
-	if (cause instanceof Error)
-		return { name: cause.name, message: cause.message };
-	return { name: 'Error', message: String(cause) };
-}
-
 /** Delete one store's IndexedDB database whole. Our own connection is closed first. */
 function deleteIndexedDb(address: string): Promise<void> {
 	return new Promise((resolve, reject) => {
@@ -210,6 +208,142 @@ function deleteIndexedDb(address: string): Promise<void> {
 			},
 			(cause) => reject(cause),
 		);
+	});
+}
+
+/** One address's durable engine, loaded and ready to commit batches. */
+type BrowserBacking = {
+	port: DurablePort;
+	loaded: DurableSnapshot;
+	close(): void;
+};
+
+async function openIdbBacking(
+	address: string,
+): Promise<Result<BrowserBacking, StoreError>> {
+	return tryAsync({
+		try: async () => {
+			const durable = await openIndexedDb(address);
+
+			// The format at open, exactly as the SQLite engine enforces it
+			// (ADR-0231): a record holding state without a certificate predates
+			// the document identity and is untrusted whole, so it is wiped and
+			// the replica rejoins from zero; a fresh record is simply certified.
+			// One transaction, so a crash converges at the next open either way.
+			const enforce = durable.transaction(DURABLE_STORES, 'readwrite');
+			const meta = enforce.objectStore('meta');
+			const format = (await meta.get('format')) as string | undefined;
+			if (format === undefined) {
+				const held =
+					(await enforce.objectStore('updates').count()) +
+					(await enforce.objectStore('outbox').count()) +
+					(await meta.count());
+				if (held > 0) {
+					await enforce.objectStore('updates').clear();
+					await enforce.objectStore('outbox').clear();
+					await meta.clear();
+				}
+				void meta.put(STORE_FORMAT, 'format');
+			}
+			await enforce.done;
+
+			const read = durable.transaction(DURABLE_STORES, 'readonly');
+			const updateRows = await read.objectStore('updates').getAll();
+			const updateKeys = await read.objectStore('updates').getAllKeys();
+			const outboxRows = await read.objectStore('outbox').getAll();
+			const outboxKeys = await read.objectStore('outbox').getAllKeys();
+			const cursor = (await read.objectStore('meta').get('cursor')) as
+				| number
+				| undefined;
+			const identity = (await read.objectStore('meta').get('document')) as
+				| string
+				| undefined;
+			await read.done;
+
+			const loaded: DurableSnapshot = {
+				// `getAll` returns key order, which is the append order.
+				updates: updateRows.map((bytes) => copyBytes(bytes)),
+				outbox: outboxRows.map((bytes, index) => ({
+					id: outboxKeys[index] as number,
+					bytes: copyBytes(bytes),
+				})),
+				cursor: cursor ?? 0,
+				identity,
+			};
+
+			// The port's own bookkeeping, committed only when a batch lands so a
+			// failed transaction never advances it.
+			let nextSeq =
+				updateKeys.reduce<number>((max, key) => Math.max(max, key), 0) + 1;
+			let updateCount = updateRows.length;
+
+			const port: DurablePort = {
+				async commit(ops: readonly DurableOp[]): Promise<void> {
+					const transaction = durable.transaction(DURABLE_STORES, 'readwrite');
+					const updates = transaction.objectStore('updates');
+					const outbox = transaction.objectStore('outbox');
+					const metaStore = transaction.objectStore('meta');
+					let seq = nextSeq;
+					let count = updateCount;
+					for (const op of ops) {
+						switch (op.kind) {
+							case 'append': {
+								void updates.put(copyBytes(op.bytes), seq);
+								seq += 1;
+								count += 1;
+								if (op.outboxId !== undefined) {
+									void outbox.put(copyBytes(op.bytes), op.outboxId);
+								}
+								break;
+							}
+							case 'cursor':
+								void metaStore.put(op.seq, 'cursor');
+								break;
+							case 'identity':
+								void metaStore.put(op.id, 'document');
+								break;
+							case 'dropOutbox':
+								void outbox.delete(IDBKeyRange.upperBound(op.throughId));
+								break;
+							case 'replaceOutbox': {
+								void outbox.delete(IDBKeyRange.upperBound(op.throughId));
+								void outbox.put(copyBytes(op.merged), op.throughId);
+								break;
+							}
+						}
+					}
+					// The same fold the SQLite engine applies, inside the same
+					// transaction as the appends that crossed the threshold: read
+					// the whole chain, replay it into one baseline, rewrite. The
+					// replay is synchronous, so the transaction stays active.
+					if (count >= SNAPSHOT_FOLD_THRESHOLD) {
+						const chain = await updates.getAll();
+						const folded = replay(
+							chain.map((bytes, index) => ({
+								seq: index + 1,
+								bytes: copyBytes(bytes),
+							})),
+						);
+						let baseline: Uint8Array;
+						try {
+							baseline = new Uint8Array(Y.encodeStateAsUpdateV2(folded));
+						} finally {
+							folded.destroy();
+						}
+						await updates.clear();
+						void updates.put(baseline, 1);
+						seq = 2;
+						count = 1;
+					}
+					await transaction.done;
+					nextSeq = seq;
+					updateCount = count;
+				},
+			};
+
+			return { port, loaded, close: () => durable.close() };
+		},
+		catch: (cause) => StoreError.StorageFailed({ cause }),
 	});
 }
 
@@ -292,302 +426,179 @@ function deleteSupersededStorage(
 	).then(() => undefined);
 }
 
+/** The in-memory projection database, rebuilt at open (ADR-0238). */
+async function createProjectionDatabase() {
+	const sqlite3 = await sqlite3InitModule();
+	const handle = new sqlite3.oo1.DB(':memory:');
+	return {
+		database: createBrowserSqliteAdapter(handle),
+		close: () => handle.close(),
+	};
+}
+
 /**
- * Open this browser's device-owned document for the application this lens
+ * Open this browser's device-owned document for the application this workspace
  * names.
  *
  * This document has no remote authority, so it carries neither an outbox nor
  * replica-only verbs, and no verb that could delete it. It can remain open
  * while an account replica is open too.
  */
-export async function openDevice<const TLens extends LensJson>(
-	lens: TLens,
-): Promise<Result<DataOf<TLens, BrowserStore>, StoreError | LensParseError>> {
-	const address = deviceAddress(lens.namespace);
+export async function openDevice<const TWorkspace extends WorkspaceJson>(
+	workspace: TWorkspace,
+): Promise<
+	Result<DataOf<TWorkspace, DeviceStore>, StoreError | WorkspaceParseError>
+> {
+	// Parsed before anything is claimed or opened: a declaration may arrive as
+	// data, and a refusal here is a boot outcome rather than a programmer
+	// error (ADR-0240).
+	const { data: parsed, error: parseError } = parseWorkspace(workspace);
+	if (parseError !== null) return Err(parseError);
+
+	const address = deviceAddress(parsed.namespace);
 	const { error: claimError } = claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
-	await deleteSupersededStorage(lens.namespace, 'device');
+	await deleteSupersededStorage(parsed.namespace, 'device');
 
-	const { data: backing, error: backingError } =
-		await openBrowserBacking(address);
-	if (backingError !== null) {
+	const prepared = await prepareBacking(address);
+	if (prepared.error !== null) {
 		releaseDocument(address);
-		return Err(backingError);
+		return Err(prepared.error);
 	}
+	const { backing, projection } = prepared.data;
 
-	const store = createStore({
-		database: backing.database,
-		dispose: () => {
-			backing.close();
-			releaseDocument(address);
-		},
-	});
-	const stopCommitted = store.onCommitted(backing.persistDurable);
-	const browserStore: BrowserStore = Object.freeze({
-		...store,
-		durability: backing.durability,
-		whenDurable: backing.whenDurable,
-		async [Symbol.asyncDispose]() {
-			stopCommitted();
-			await backing.drain();
-			await store[Symbol.asyncDispose]();
-		},
-	});
-
-	const view = browserStore.bind(lens);
-	if (view.error !== null) {
-		await browserStore[Symbol.asyncDispose]().catch(() => undefined);
-		return Err(view.error);
+	// The projection seed is contained (ADR-0238): a seed that fails only
+	// marks the read index stale. What can still throw is the hydration
+	// replay meeting a stored update it cannot decode, which is "the store
+	// could not read its durable record": contained here so a corrupt record
+	// refuses the boot instead of leaking the claim and the open connections.
+	let parts: { store: DeviceStore; view: UntypedWorkspaceView };
+	try {
+		parts = createDeviceStoreOverPort({
+			workspace: parsed,
+			durable: backing.port,
+			loaded: backing.loaded,
+			projection: projection.database,
+			dispose: () => {
+				backing.close();
+				projection.close();
+				releaseDocument(address);
+			},
+		});
+	} catch (cause) {
+		backing.close();
+		projection.close();
+		releaseDocument(address);
+		return StoreError.StorageFailed({ cause });
 	}
-	return Ok(asData<TLens, BrowserStore>(browserStore, view.data));
+	const { store, view } = parts;
+
+	return Ok(
+		asData<TWorkspace, DeviceStore>(
+			store,
+			// Through `unknown` deliberately: comparing the untyped view with
+			// `WorkspaceView<TWorkspace>` re-enters the per-field arktype
+			// instantiation and exceeds the depth limit.
+			view as unknown as WorkspaceView<TWorkspace>,
+		),
+	);
 }
 
 /** Open this device's retained replica of one account's document. */
-export async function openAccount<const TLens extends LensJson>(
-	lens: TLens,
+export async function openAccount<const TWorkspace extends WorkspaceJson>(
+	workspace: TWorkspace,
 	{ principalId }: { principalId: PrincipalId },
 ): Promise<
-	Result<DataOf<TLens, BrowserReplicaStore>, StoreError | LensParseError>
+	Result<
+		DataOf<TWorkspace, BrowserAccountStore>,
+		StoreError | WorkspaceParseError
+	>
 > {
 	if (principalId.trim() === '') return StoreError.Unaddressable();
 
-	const address = accountAddress(lens.namespace, principalId);
+	const { data: parsed, error: parseError } = parseWorkspace(workspace);
+	if (parseError !== null) return Err(parseError);
+
+	const address = accountAddress(parsed.namespace, principalId);
 	const { error: claimError } = claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
-	await deleteSupersededStorage(lens.namespace, 'account', principalId);
+	await deleteSupersededStorage(parsed.namespace, 'account', principalId);
 
-	const { data: backing, error: backingError } =
-		await openBrowserBacking(address);
-	if (backingError !== null) {
+	const prepared = await prepareBacking(address);
+	if (prepared.error !== null) {
 		releaseDocument(address);
-		return Err(backingError);
+		return Err(prepared.error);
 	}
+	const { backing, projection } = prepared.data;
 
-	const store = createReplicaStore({
-		database: backing.database,
-		dispose: () => {
-			backing.close();
-			releaseDocument(address);
-		},
-	});
-	const stopCommitted = store.onCommitted(backing.persistDurable);
-	const disposeReplica = async (): Promise<void> => {
-		stopCommitted();
-		await backing.drain();
-		await store[Symbol.asyncDispose]();
-	};
-	const replicaStore: BrowserReplicaStore = Object.freeze({
+	// Contained for the same reason the device open is: a hydration replay
+	// that throws must refuse the boot, not leak the claim.
+	let parts: { store: AccountStore; view: UntypedWorkspaceView };
+	try {
+		parts = createAccountStoreOverPort({
+			workspace: parsed,
+			durable: backing.port,
+			loaded: backing.loaded,
+			projection: projection.database,
+			dispose: () => {
+				backing.close();
+				projection.close();
+				releaseDocument(address);
+			},
+		});
+	} catch (cause) {
+		backing.close();
+		projection.close();
+		releaseDocument(address);
+		return StoreError.StorageFailed({ cause });
+	}
+	const { store, view } = parts;
+
+	const replicaStore: BrowserAccountStore = Object.freeze({
 		...store,
-		durability: backing.durability,
-		whenDurable: backing.whenDurable,
 		async discard(): Promise<Result<void, StoreError>> {
-			// Dispose first: stop the write-behind before deleting, or a commit
-			// racing this call would re-create the database it is trying to
-			// remove. Disposing also closes our own IndexedDB connection, so the
-			// delete is not blocked by ourselves.
-			await disposeReplica();
+			// Dispose first: the engine drains its queue and stops, and our own
+			// IndexedDB connection closes, so the delete is not blocked by
+			// ourselves and no flush can re-create the database mid-delete.
+			await store[Symbol.asyncDispose]();
 			return tryAsync({
 				try: () => deleteIndexedDb(address),
 				catch: (cause) => StoreError.StorageFailed({ cause }),
 			});
 		},
-		[Symbol.asyncDispose]: disposeReplica,
 	});
 
-	const view = replicaStore.bind(lens);
-	if (view.error !== null) {
-		await replicaStore[Symbol.asyncDispose]().catch(() => undefined);
-		return Err(view.error);
-	}
-	return Ok(asData<TLens, BrowserReplicaStore>(replicaStore, view.data));
+	return Ok(
+		asData<TWorkspace, BrowserAccountStore>(
+			replicaStore,
+			view as unknown as WorkspaceView<TWorkspace>,
+		),
+	);
 }
 
-/**
- * The write-behind backing both browser stores share: an in-memory SQLite
- * seeded from the IndexedDB checkpoint, and the machinery that persists the
- * whole checkpoint back after every commit. The store on top decides what the
- * document IS (a device document or an account replica); this decides only
- * where its bytes survive a reload.
- */
-type BrowserBacking = {
-	/** The seeded live database the store runs over. */
-	database: SqliteDatabase;
-	/** Close the IndexedDB connection. Runs inside the store's dispose. */
-	close(): void;
-	/**
-	 * Persist the current checkpoint, coalescing bursts into one write.
-	 *
-	 * Wire it to `onCommitted`: that fires for local writes, application
-	 * row-document writes, and arrived remote bytes alike. The store contract
-	 * says it is strictly wider than `onLocalWork`, so it alone is correct and
-	 * sufficient.
-	 */
-	persistDurable(): void;
-	/** Whether the durable copy has fallen behind, and why. */
-	durability(): StoreDurability;
-	/** Resolve once every write so far has reached durable storage. */
-	whenDurable(): Promise<Result<void, StoreError>>;
-	/** Resolve once no checkpoint write is in flight. */
-	drain(): Promise<void>;
-};
-
-async function openBrowserBacking(
-	address: string,
-): Promise<Result<BrowserBacking, StoreError>> {
-	const opened = await tryAsync({
-		try: async () => {
-			const durable = await openIndexedDb(address);
-			return { durable, saved: await readCheckpoint(durable) };
+/** The durable engine and the projection cache, opened together. */
+async function prepareBacking(address: string): Promise<
+	Result<
+		{
+			backing: BrowserBacking;
+			projection: Awaited<ReturnType<typeof createProjectionDatabase>>;
 		},
-		catch: (cause) => StoreError.StorageFailed({ cause }),
-	});
+		StoreError
+	>
+> {
+	const opened = await openIdbBacking(address);
 	if (opened.error !== null) return Err(opened.error);
-	const { durable, saved } = opened.data;
+	const backing = opened.data;
 
-	const built = await tryAsync({
-		try: async () => {
-			const sqlite3 = await sqlite3InitModule();
-			const database = createBrowserSqliteAdapter(
-				new sqlite3.oo1.DB(':memory:') as never,
-			);
-			applyStoreSchema(database);
-			if (saved !== undefined) {
-				// Seeded BEFORE `createStore`, because the replay that hydrates the
-				// document reads `_updates` out of exactly this handle. From there
-				// the browser is indistinguishable from Bun.
-				database.transaction(() => {
-					for (const update of saved.updates) {
-						database.run(
-							'INSERT INTO _updates (document, seq, bytes) VALUES (?, ?, ?)',
-							[APP_DOCUMENT, update.seq, copyBytes(update.bytes)],
-						);
-					}
-					for (const owed of saved.outbox) {
-						database.run('INSERT INTO _outbox (id, bytes) VALUES (?, ?)', [
-							owed.id,
-							copyBytes(owed.bytes),
-						]);
-					}
-					if (saved.cursor > 0) {
-						database.run('INSERT INTO _cursor (document, seq) VALUES (?, ?)', [
-							APP_DOCUMENT,
-							saved.cursor,
-						]);
-					}
-					// The certificate is seeded WITH the state it certifies. A record
-					// from before the document identity has none, and the open's
-					// format sweep wipes what was just seeded: the cutover, applied
-					// to the browser's copy (ADR-0231).
-					if (saved.format !== undefined) {
-						database.run(
-							"INSERT INTO _meta (key, value) VALUES ('format', ?)",
-							[saved.format],
-						);
-					}
-					if (saved.document !== undefined) {
-						writeDocumentIdentity(database, saved.document);
-					}
-				});
-			}
-			return database;
-		},
+	const projection = await tryAsync({
+		try: () => createProjectionDatabase(),
 		catch: (cause) => StoreError.StorageFailed({ cause }),
 	});
-	if (built.error !== null) {
-		durable.close();
-		return Err(built.error);
+	if (projection.error !== null) {
+		backing.close();
+		return Err(projection.error);
 	}
-	const database = built.data;
-
-	function snapshot(): BrowserCheckpoint {
-		const updates = database.all<{ seq: number; bytes: Uint8Array }>(
-			'SELECT seq, bytes FROM _updates WHERE document = ? ORDER BY seq',
-			[APP_DOCUMENT],
-		);
-		const outbox = database.all<{ id: number; bytes: Uint8Array }>(
-			'SELECT id, bytes FROM _outbox ORDER BY id',
-		);
-		const cursor = database.all<{ seq: number }>(
-			'SELECT seq FROM _cursor WHERE document = ?',
-			[APP_DOCUMENT],
-		);
-		return {
-			updates: updates.map((row) => ({
-				seq: row.seq,
-				bytes: copyBytes(row.bytes),
-			})),
-			outbox: outbox.map((row) => ({
-				id: row.id,
-				bytes: copyBytes(row.bytes),
-			})),
-			cursor: cursor[0]?.seq ?? 0,
-			...(() => {
-				const format = readFormat(database);
-				const document = readDocumentIdentity(database);
-				return {
-					...(format === undefined ? {} : { format }),
-					...(document === undefined ? {} : { document }),
-				};
-			})(),
-		};
-	}
-
-	let durability: StoreDurability = { healthy: true };
-	let writing: Promise<void> | undefined;
-	let again = false;
-
-	/**
-	 * Write the current durable state, coalescing bursts into one write.
-	 *
-	 * Latest-wins rather than a queue. Every write carries the WHOLE of the
-	 * three relations, so a write that is superseded before it starts had
-	 * nothing in it the next one does not, and a person typing produces one
-	 * commit per transaction rather than one durable write per transaction.
-	 *
-	 * Whole rather than incremental because the whole is small: `_updates` is
-	 * bounded at `SNAPSHOT_FOLD_THRESHOLD`, and snapshot folding renumbers it from 1, so
-	 * an incremental writer would need to notice that its positions had come to
-	 * mean different updates. There is no version of that which is worth 64 rows.
-	 */
-	function persistDurable(): void {
-		if (writing !== undefined) {
-			again = true;
-			return;
-		}
-		const state = snapshot();
-		writing = writeCheckpoint(durable, state)
-			.catch((cause) => {
-				// First failure wins: a durable copy that has fallen behind stays
-				// behind, so later failures are consequences.
-				if (durability.healthy)
-					durability = { healthy: false, ...describe(cause) };
-			})
-			.finally(() => {
-				writing = undefined;
-				if (again) {
-					again = false;
-					persistDurable();
-				}
-			});
-	}
-
-	return Ok({
-		database,
-		close: () => durable.close(),
-		persistDurable,
-		durability: () => durability,
-		async whenDurable(): Promise<Result<void, StoreError>> {
-			while (writing !== undefined) await writing;
-			return durability.healthy
-				? Ok(undefined)
-				: StoreError.StorageFailed({
-						cause: new Error(`${durability.name}: ${durability.message}`),
-					});
-		},
-		async drain(): Promise<void> {
-			while (writing !== undefined) await writing;
-		},
-	});
+	return Ok({ backing, projection: projection.data });
 }

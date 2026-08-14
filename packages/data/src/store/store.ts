@@ -1,22 +1,21 @@
+import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import {
+	type ConformanceIssue,
 	type CreateInputOf,
 	createInvalidationDispatcher,
 	type JsonObject,
 	type JsonValue,
 	KV_ROOT,
 	type KvOf,
-	type LensJson,
-	type LensParseError,
-	type NonconformingRowError,
-	type ParsedLens,
 	type ParsedTable,
-	parseLens,
+	type ParsedWorkspace,
+	parseWorkspace,
 	type RowAddress,
 	type RowOf,
 	RowWriteError,
 	type TableInvalidationListener,
-} from '@epicenter/lens';
-import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
+	type WorkspaceJson,
+} from '@epicenter/workspace';
 import * as Y from '@y/y';
 import { customAlphabet } from 'nanoid';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
@@ -34,23 +33,15 @@ import {
 	tableRoot,
 	writeRow,
 } from './document.js';
+import { copyBytes, createSqliteDurablePort } from './log.js';
 import {
-	APP_DOCUMENT,
-	adoptStoreFormat,
-	appendUpdate,
-	applyStoreSchema,
-	copyBytes,
-	dropOutboxThrough,
-	enqueueOutbox,
+	createPersistenceController,
+	type DurableOp,
+	type DurablePort,
+	type DurableSnapshot,
 	type OutboxEntry,
-	readCursor,
-	readDocumentIdentity,
-	readOutbox,
-	readUpdates,
-	replaceOutboxThrough,
-	writeCursor,
-	writeDocumentIdentity,
-} from './log.js';
+	type PersistenceCapability,
+} from './persistence.js';
 import {
 	applyProjectionSchema,
 	deleteProjectedRow,
@@ -108,6 +99,62 @@ const hydrationOrigin = Object.freeze({ kind: 'epicenter-hydration' });
 /** Bytes that arrived from a peer: durable, but not local work. */
 const remoteOrigin = Object.freeze({ kind: 'epicenter-remote' });
 
+/**
+ * The store capability itself is gone: the store was disposed.
+ *
+ * Thrown, never returned, and that is the boundary this type exists to hold
+ * (ADR-0237). Every verb's `Result` carries outcomes the caller can act on at
+ * that call site: a row that does not conform, a value a field refuses, an
+ * address that holds no row. Use-after-dispose is none of those; it is a
+ * programmer error, and it surfaces at the application's error boundary,
+ * once.
+ *
+ * Storage trouble is deliberately NOT here. A store whose durable writes fall
+ * behind keeps serving the live document and reports through
+ * `store.persistence` (ADR-0238); the poison that once lived in this class is
+ * withdrawn.
+ */
+export class StoreUnusableError extends Error {
+	override readonly name = 'StoreUnusableError';
+
+	constructor() {
+		super('This store is disposed');
+	}
+}
+
+/**
+ * A live stored value this release's declaration cannot fully read: what was
+ * stored, what did conform, and what failed, so the call site composes its own
+ * recovery.
+ *
+ * Plain diagnostic data, deliberately not a tagged error with a message. It is
+ * the entire error arm of a read's `Result`, so there is nothing to
+ * discriminate it from; it is about the relationship between one stored value
+ * and one release-local declaration, never about the store failing
+ * (ADR-0125). `raw` is the stored payload unmodified, including keys this
+ * release cannot interpret. Never repaired and never hidden.
+ */
+export type NonconformingValue = {
+	readonly raw: JsonObject;
+	/** The fields that did pass, which is what recovery is composed from. */
+	readonly conforming: JsonObject;
+	readonly issues: readonly ConformanceIssue[];
+};
+
+/**
+ * A live row this release's declaration cannot fully read.
+ *
+ * `conforming` carries the structural id, so the two branches of the one
+ * recovery composition produce the same shape:
+ * `data ?? { ...table.defaults, ...error.conforming }` is a whole row either
+ * way. The id is not a declared field and cannot fail, so including it costs
+ * no honesty.
+ */
+export type NonconformingRow = NonconformingValue & {
+	/** The structural row id, which is also the address that reported it. */
+	readonly id: string;
+};
+
 export const StoreError = defineErrors({
 	/**
 	 * A write named an address that holds no row.
@@ -122,17 +169,39 @@ export const StoreError = defineErrors({
 		rowId,
 	}),
 	/**
-	 * Durable storage refused a write the live document already made.
+	 * Opening could not reach or seed durable storage.
 	 *
-	 * Terminal for the store. Memory and SQLite have diverged, so continuing
-	 * would publish work that was never committed; every later call reports this
-	 * rather than compounding it.
+	 * A boot outcome, which is why it is returned rather than thrown: an opener
+	 * is fallible I/O and its caller renders a boot failure. A store that
+	 * cannot READ its durable record has nothing trustworthy to hydrate from.
+	 * Once a store is open, storage never fails a verb again: durable writes
+	 * are a visible, retryable debt reported through `store.persistence`
+	 * (ADR-0238).
 	 */
 	StorageFailed: ({ cause }: { cause: unknown }) => ({
 		message: 'The store could not commit to durable storage',
 		cause,
 	}),
-	Disposed: () => ({ message: 'This store is disposed' }),
+	/**
+	 * Foreign bytes arrived that this document cannot decode.
+	 *
+	 * A property of the bytes, not of the store: nothing was persisted and the
+	 * store is still usable. The transport treats the position as a poison pill
+	 * and says so loudly rather than advancing past it.
+	 */
+	ApplyFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'These bytes could not be applied to this document',
+		cause,
+	}),
+	/**
+	 * The statement itself was refused: a syntax error, an unknown relation, a
+	 * type SQLite will not bind. A property of the SQL, which may arrive from a
+	 * person or an agent, so it is an ordinary caller-actionable outcome.
+	 */
+	QueryFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'This statement could not be run against the projection',
+		cause,
+	}),
 	/**
 	 * This process already holds this document's address open.
 	 *
@@ -171,6 +240,19 @@ export const StoreError = defineErrors({
 		cause,
 	}),
 	/**
+	 * A read-index write failed while an accepted change was being projected.
+	 *
+	 * Logged, never returned. The Yjs edit stands and every table/KV read
+	 * serves it; only the SQL cache is behind, so the index is marked stale
+	 * and the next `query` rebuilds it whole from the live document
+	 * (ADR-0238). Failing the verb here would punish a write that committed.
+	 */
+	ProjectionFailed: ({ cause }: { cause: unknown }) => ({
+		message:
+			'A read-index write failed; the index is stale and rebuilds at the next query',
+		cause,
+	}),
+	/**
 	 * A document identity cannot be stamped onto a store already holding state.
 	 *
 	 * Membership is stamped at first entanglement, before any push leaves and
@@ -185,13 +267,18 @@ export const StoreError = defineErrors({
 });
 export type StoreError = InferErrors<typeof StoreError>;
 
-export type ReadRowError = StoreError | NonconformingRowError;
-export type WriteRowError = StoreError | RowWriteError | NonconformingRowError;
+export type RowAbsentError = Extract<StoreError, { name: 'RowAbsent' }>;
+export type ApplyFailedError = Extract<StoreError, { name: 'ApplyFailed' }>;
+export type QueryFailedError = Extract<StoreError, { name: 'QueryFailed' }>;
+export type UnstampableError = Extract<StoreError, { name: 'Unstampable' }>;
+
+/** What a write can refuse with: bad values, or an address holding no row. */
+export type UpdateRowError = RowAbsentError | RowWriteError;
 
 export type {
 	TableInvalidation,
 	TableInvalidationListener,
-} from '@epicenter/lens';
+} from '@epicenter/workspace';
 
 export type Row = { id: string } & JsonObject;
 
@@ -230,42 +317,56 @@ export type TableHandle = {
 	 * one along with every field in it. A 24-character minted id makes that
 	 * unreachable rather than merely unlikely. Anything an application wants to
 	 * name goes in `kv`, which lives at a name-addressed root.
+	 *
+	 * A create must conform whole: what it commits is the supplied fields plus
+	 * the declared defaults and nothing else, so a payload that would read back
+	 * nonconforming is refused here, before anything is written. The typed
+	 * surface already required exactly this; the runtime now agrees, which is
+	 * what makes `Ok` always a conforming row and lets a caller treat `Err` as
+	 * "the row never existed".
 	 */
 	create(
 		fields: JsonObject,
 		options?: { readonly document?: readonly string[] },
-	): Result<Row, WriteRowError>;
+	): Result<Row, RowWriteError>;
 	/**
-	 * The one read verb.
+	 * The one read verb, and conformance is its entire error arm.
 	 *
-	 * `Ok(undefined)` means the address holds no row, which is a fact rather
-	 * than a failure. `Err(Nonconforming)` carries `conforming`, so a caller
-	 * composes whatever forgiveness it wants without a second verb existing.
+	 * `Ok(Row)` is a live row this declaration reads whole. `Ok(undefined)` means the
+	 * address holds no row, which is a fact rather than a failure.
+	 * `Err(NonconformingRow)` is a live row this declaration cannot fully read; it
+	 * carries `conforming`, so a caller composes whatever forgiveness it wants
+	 * without a second verb existing. This Result is about conformance and
+	 * nothing else: a store that cannot serve reads at all throws
+	 * `StoreUnusableError` instead of dressing up as a read outcome.
 	 */
-	get(rowId: string): Result<Row | undefined, ReadRowError>;
+	get(rowId: string): Result<Row | undefined, NonconformingRow>;
 	/**
 	 * Merge fields into an existing row. Refuses an absent address.
 	 *
 	 * `update` rather than `set`, because only the fields handed in are touched
-	 * and every other field is left alone.
+	 * and every other field is left alone. `Ok` reports the write and nothing
+	 * more: what the row now reads as is `get`'s answer, because a patch may
+	 * legally land on a row whose OTHER fields this declaration cannot read (that is
+	 * how a nonconforming row is repaired, ADR-0125), and a write verb that
+	 * reported that read as its own failure punished a write that committed.
 	 */
-	update(rowId: string, fields: JsonObject): Result<Row, WriteRowError>;
-	delete(rowId: string): Result<boolean, StoreError>;
+	update(rowId: string, fields: JsonObject): Result<void, UpdateRowError>;
+	/** Take one row off the table. Reports whether there was a row to take. */
+	delete(rowId: string): boolean;
 	/** Every row id, sorted. */
-	ids(): Result<string[], StoreError>;
+	ids(): string[];
 	/**
-	 * Every row, with the ones this lens cannot read reported separately rather
-	 * than dropped or repaired.
+	 * Every row, with the ones this declaration cannot read reported separately rather
+	 * than dropped or repaired. Not a Result: there is nothing here that can
+	 * fail, so there is nothing for a caller to mishandle into an empty list.
 	 */
-	list(): Result<
-		{ rows: Row[]; nonconforming: NonconformingRowError[] },
-		StoreError
-	>;
+	list(): { rows: Row[]; nonconforming: NonconformingRow[] };
 	/**
 	 * The container this row's document lives in (ADR-0130/0215).
 	 *
 	 * Synchronous, because the application is one document that was replayed in
-	 * full before this binding existed, so there is nothing left to load. That
+	 * full before this runtime existed, so there is nothing left to load. That
 	 * reverses ADR-0135's asynchronous `open`, whose reason was that a
 	 * per-document lazy load returned a half-hydrated handle; with one document
 	 * no handle can be half-hydrated. Not disposable either, because nothing is
@@ -292,7 +393,7 @@ export type TableHandle = {
 	 * as `NULL` through `db.query`. That is
 	 * not free: the ids come from the type's `'delta'` event, which fires
 	 * synchronously inside `applyUpdateV2` while the projection is still one
-	 * transaction behind, so they are held until the write is durable.
+	 * write behind, so they are held until acceptance completes.
 	 *
 	 * Nothing emits `{scope:'table'}`. The arm exists because ADR-0187's
 	 * consumers already handle it and a future out-of-process proxy will need
@@ -317,9 +418,16 @@ export type RowDocument = {
  * Read-only SQL over this store's projection.
  *
  * It reaches one application's tables because a store holds one application,
- * not because anything here scopes by namespace: the statement runs against the
- * whole file, including `_updates`, `_outbox` and `_cursor`. That is a bound on
- * WHAT A STORE IS, and it is the only bound there is.
+ * not because anything here scopes by namespace: the statement runs against
+ * the projection database, one relation per bound table plus `kv`. The
+ * durable log lives behind the persistence port and is not queryable here
+ * (ADR-0238): the projection is an in-memory cache that follows every
+ * ACCEPTED edit, so `query` agrees with the live document even while the
+ * durable copy is behind. If a projection write ever fails, the index goes
+ * stale and this verb rebuilds it whole from the live document before the
+ * statement runs; a rebuild that fails is refused as `QueryFailed` rather
+ * than answered from a cache nothing trusts. Table and KV verbs never depend
+ * on any of that.
  *
  * It sits beside `tables` rather than inside it, because a statement spans
  * tables and belongs above them. It used to sit beside the table handles
@@ -329,13 +437,13 @@ export type RowDocument = {
 export type QueryMethod = (
 	strings: TemplateStringsArray,
 	...values: SqliteValue[]
-) => Result<SqliteRow[], StoreError>;
+) => Result<SqliteRow[], QueryFailedError>;
 
 /**
- * One table, with its own lens's row and create-input types.
+ * One table, with its own declaration's row and create-input types.
  *
  * Written out rather than derived as `Omit<TableHandle, ...> & {...}`. The
- * subtraction is what pushed a bound lens past TypeScript's instantiation depth
+ * subtraction is what pushed a typed view past TypeScript's instantiation depth
  * limit (`TS2589`), because `RowOf` already instantiates an arktype type per
  * field and `Omit` re-maps every remaining member on top of that.
  */
@@ -349,18 +457,15 @@ export type TypedTableHandle<TFields> =
 				create(
 					fields: TInput,
 					options?: { readonly document?: readonly string[] },
-				): Result<TRow, WriteRowError>;
-				get(rowId: string): Result<TRow | undefined, ReadRowError>;
+				): Result<TRow, RowWriteError>;
+				get(rowId: string): Result<TRow | undefined, NonconformingRow>;
 				update(
 					rowId: string,
 					fields: Partial<TInput>,
-				): Result<TRow, WriteRowError>;
-				delete(rowId: string): Result<boolean, StoreError>;
-				ids(): Result<string[], StoreError>;
-				list(): Result<
-					{ rows: TRow[]; nonconforming: NonconformingRowError[] },
-					StoreError
-				>;
+				): Result<void, UpdateRowError>;
+				delete(rowId: string): boolean;
+				ids(): string[];
+				list(): { rows: TRow[]; nonconforming: NonconformingRow[] };
 				document(rowId: string): RowDocument | undefined;
 				subscribe(listener: TableInvalidationListener): () => void;
 			}
@@ -380,27 +485,27 @@ type TableIo<TFields> = {
 };
 
 /**
- * The typed view of one store through one lens.
+ * The typed view of one store through its workspace definition.
  *
  * `tables` is a container rather than a spread, and that is the whole reason
- * the application has no reserved table names. A lens declares `tables` and
- * `kv`, so the view mirrors the declaration instead of flattening it, and every
- * verb the store grows is free to be a sibling forever. Flattening cost this
- * API three collisions in its first month: a draft that named the bound value
- * `notes` beside a table called `notes`, `query` reserved as a table name
+ * the application has no reserved table names. A workspace declares `tables`
+ * and `kv`, so the view mirrors the declaration instead of flattening it, and
+ * every verb the store grows is free to be a sibling forever. Flattening cost
+ * this API three collisions in its first month: a draft that named the bound
+ * value `notes` beside a table called `notes`, `query` reserved as a table name
  * (ADR-0213), and a `$store` sigil invented to hold nine more (ADR-0229).
  */
-export type LensView<TLens> = {
-	readonly tables: TLens extends { tables: infer TTables }
+export type WorkspaceView<TWorkspace> = {
+	readonly tables: TWorkspace extends { tables: infer TTables }
 		? { readonly [K in keyof TTables]: TypedTableHandle<TTables[K]> }
 		: never;
-	readonly kv: KvHandle<KvOf<TLens>>;
+	readonly kv: KvHandle<KvOf<TWorkspace>>;
 	readonly query: QueryMethod;
 };
 
 /**
- * One application's opened data: what the lens declared, and the file under
- * `store`.
+ * One application's opened data: what the workspace declared, and the file
+ * under `store`.
  *
  * Named for what it is to the caller. The application itself is a bigger
  * thing that owns UI, state, and sync attachments; what an opener returns is
@@ -413,15 +518,15 @@ export type LensView<TLens> = {
  * the two put thirteen names on one object where four are used, and cost a
  * forwarded getter and a cast to build it.
  *
- * `store.bind` stays reachable, and that is deliberate. A namespace may carry
- * more than one interpretation (ADR-0160), so taking a second view of the file
- * this application already holds is the supported way to do it: one document,
- * two views, no second open to refuse.
+ * The view and the store are born together: an opened runtime holds exactly
+ * one workspace definition for its whole life (ADR-0240), so there is no verb
+ * that takes a second view of a live store. A newer definition reads the same
+ * durable data by closing this runtime and opening the next one.
  */
 export type DataOf<
-	TLens,
-	TStore extends Store = ReplicaStore,
-> = LensView<TLens> & {
+	TWorkspace,
+	TStore extends WorkspaceStoreBase = AccountStore,
+> = WorkspaceView<TWorkspace> & {
 	/** This application's file: pressure, the CRDT verbs, and replica sync. */
 	readonly store: TStore;
 	/** Dispose what you opened, so `await using` works on the data. */
@@ -429,15 +534,17 @@ export type DataOf<
 };
 
 /**
- * Compose one file's verbs with one lens's view of it.
+ * Compose one file's verbs with its workspace's view of it.
  *
  * Every opener ends here, so the shape an application sees is decided once
- * rather than per runtime.
+ * rather than per runtime. Internal: the openers and factories compose the
+ * data they return, and nothing outside this package holds a store and a view
+ * apart.
  */
-export function asData<TLens, TStore extends Store>(
+export function asData<TWorkspace, TStore extends WorkspaceStoreBase>(
 	store: TStore,
-	view: LensView<TLens>,
-): DataOf<TLens, TStore> {
+	view: WorkspaceView<TWorkspace>,
+): DataOf<TWorkspace, TStore> {
 	return Object.freeze({
 		...view,
 		store,
@@ -469,15 +576,24 @@ export type KvHandle<TValues = JsonObject> = {
 	 * ```
 	 */
 	readonly defaults: Readonly<JsonObject>;
-	/** The one read verb. Every declared key is present, defaulted if unwritten. */
-	get(): Result<TValues, ReadRowError>;
+	/**
+	 * The one read verb. Every declared key is present, defaulted if unwritten.
+	 *
+	 * The same read law a table's `get` follows, minus absence: KV always
+	 * exists, so the only error is a stored value this declaration cannot fully read,
+	 * and the diagnostic carries what survived. No id, because KV has none;
+	 * `{ ...defaults, ...error.conforming }` is a whole settings object.
+	 */
+	get(): Result<TValues, NonconformingValue>;
 	/**
 	 * Merge some keys. Every other key is left alone.
 	 *
 	 * `update` rather than `set` for the same reason a table's is: only the keys
-	 * handed in are touched, and `set` promises replacement.
+	 * handed in are touched, and `set` promises replacement. `Ok` reports the
+	 * write; what KV now reads as is `get`'s answer, on the same reasoning as a
+	 * table's `update`.
 	 */
-	update(values: Partial<TValues>): Result<TValues, WriteRowError>;
+	update(values: Partial<TValues>): Result<void, RowWriteError>;
 	/**
 	 * Hear when any declared key changes, whoever changed it.
 	 *
@@ -495,13 +611,15 @@ export type KvHandle<TValues = JsonObject> = {
 };
 
 /**
- * The same view with the lens's shape erased, which is what `bind` builds.
+ * The same view with the workspace's shape erased, which is what the engine
+ * builds.
  *
- * Internal. It exists because `bind` constructs one object and then casts it to
- * the caller's `LensView<TLens>`; comparing the two structurally re-enters the
- * per-field arktype instantiation and exceeds TypeScript's depth limit.
+ * Internal. It exists because the engine constructs one object and the
+ * factories cast it to the caller's `WorkspaceView<TWorkspace>`; comparing the
+ * two structurally re-enters the per-field arktype instantiation and exceeds
+ * TypeScript's depth limit.
  */
-type UntypedLensView = {
+export type UntypedWorkspaceView = {
 	readonly tables: Readonly<Record<string, TableHandle>>;
 	readonly kv: KvHandle;
 	readonly query: QueryMethod;
@@ -538,13 +656,13 @@ export type ClientLog = {
 	 * the replacement covers what it replaced. A client merging bytes it
 	 * indisputably authored has nothing to prove.
 	 */
-	coalesce(): Result<OutboxEntry | undefined, StoreError>;
+	coalesce(): OutboxEntry | undefined;
 	/** The authority has taken responsibility through this entry. */
-	acknowledge(throughId: number): Result<void, StoreError>;
+	acknowledge(throughId: number): void;
 	/** How far through the authority's log this replica has read. */
-	cursor(): Result<number, StoreError>;
+	cursor(): number;
 	/** Record that everything through `seq` has been applied. */
-	advance(seq: number): Result<void, StoreError>;
+	advance(seq: number): void;
 	/**
 	 * Which authority document this replica's state belongs to, or undefined
 	 * for a document that has never exchanged a byte (ADR-0231).
@@ -556,7 +674,7 @@ export type ClientLog = {
 	 * without the identity that replica would later present itself as a
 	 * fresh install and republish a retired document's bytes into a new one.
 	 */
-	documentIdentity(): Result<string | undefined, StoreError>;
+	documentIdentity(): string | undefined;
 	/**
 	 * Stamp membership, durably and before the first push leaves. First write
 	 * wins; membership changes only by discarding the file whole.
@@ -564,9 +682,11 @@ export type ClientLog = {
 	 * Only an empty store can be stamped, because the stamp happens at first
 	 * entanglement and nothing may precede it. A store holding state without an
 	 * identity is refused with `Unstampable`: its bytes are unplaceable across
-	 * the clean break (ADR-0231) and must be discarded, never merged.
+	 * the clean break (ADR-0231) and must be discarded, never merged. That
+	 * refusal is the one outcome this log returns, because it is the one a
+	 * caller concludes something from (supersession).
 	 */
-	adoptDocumentIdentity(id: string): Result<void, StoreError>;
+	adoptDocumentIdentity(id: string): Result<void, UnstampableError>;
 };
 
 /**
@@ -581,7 +701,7 @@ export type ClientLog = {
 export type StorePressure = {
 	/** Structs the engine is holding, live and dead together. */
 	items: number;
-	/** Rows a lens can actually see, summed across bound tables. */
+	/** Rows the declaration can actually see, summed across declared tables. */
 	liveRows: number;
 	/**
 	 * `items / liveRows`, or the raw item count when nothing is live.
@@ -593,37 +713,19 @@ export type StorePressure = {
 };
 
 /**
- * One opened document's runtime: the live Yjs state and its durable log.
+ * One opened document's runtime: the live Yjs state and its durable record.
  *
- * Every verb here is a fact about the document itself: bind a lens over it,
- * measure it, encode it, hear it commit. None implies an authority, which is
- * what separates this from `ReplicaStore`: a device-owned document is a
- * complete store all by itself, owes its work to nobody, and never receives a
- * foreign byte (ADR-0233).
+ * Every verb here is a fact about the document itself: measure it, encode it,
+ * hear it commit, watch its persistence. The workspace definition is not on
+ * this surface, because it is not a verb: the engine closed over it at
+ * construction and every table handle, the KV handle, and the whole-index
+ * rebuild read the one parsed definition for the store's whole life
+ * (ADR-0240). What tells the two store kinds apart is `sync`, present on both
+ * and carrying the discriminating value: `undefined` on a device-owned
+ * document, a `SyncCapability` on a replica. Every store has local
+ * persistence; only a replica has a synchronization capability.
  */
-export type Store = {
-	/**
-	 * The typed view of this file through one lens.
-	 *
-	 * Synchronous because it does no I/O, and Result-returning because a lens may
-	 * arrive as data from an installed application folder rather than as a
-	 * TypeScript literal, and `parseLens` reports that as a value rather than
-	 * throwing.
-	 */
-	/**
-	 * Infers, and deliberately does not re-validate.
-	 *
-	 * `defineLens` is where a lens is typechecked against arktype, and doing it
-	 * again here is both redundant and expensive: instantiating `ValidateLens`
-	 * against the `LensJson` constraint rather than against a concrete literal
-	 * exceeds TypeScript's depth limit on its own, measured by bisecting this
-	 * signature. A lens that never went through `defineLens` is still caught, by
-	 * `parseLens`, at runtime, where a lens loaded from disk has to be caught
-	 * anyway.
-	 */
-	bind<const TLens extends LensJson>(
-		lens: TLens,
-	): Result<LensView<TLens>, LensParseError | StoreError>;
+export type WorkspaceStoreBase = {
 	/**
 	 * How much of this document is dead weight.
 	 *
@@ -643,55 +745,116 @@ export type Store = {
 	 * is mostly corpse, and the decision about what to do becomes worth having
 	 * against a measurement rather than against a guess.
 	 */
-	pressure(): Result<StorePressure, StoreError>;
+	pressure(): StorePressure;
 	/** This document's clocks: which authored state it holds, from whom. */
 	stateVector(): Uint8Array;
 	/** Everything this document has that the given state vector does not. */
 	encodeStateSince(stateVector?: Uint8Array): Uint8Array;
 	/**
-	 * Hear when anything durable changed, whoever authored it.
+	 * Hear when anything committed into this document, whoever authored it.
 	 *
-	 * Strictly wider than `onLocalWork`, and the two are not interchangeable.
-	 * The transport wants to know that THIS replica owes the authority
-	 * something, so bytes that arrived from a peer must not nudge it. A store
-	 * whose durable log is behind a port wants to know that the log moved at
-	 * all, and an arrived update moves it exactly as much as a local write does.
+	 * Fires at acceptance, after the projection write, whether or not the
+	 * durable copy has caught up: acceptance and durability are two steps
+	 * (ADR-0238), and durability has its own surface below. Strictly wider
+	 * than `onLocalWork`, and the two are not interchangeable: the transport
+	 * wants to know that THIS replica owes the authority something, so bytes
+	 * that arrived from a peer must not nudge it, while this fires for those
+	 * too.
 	 */
 	onCommitted(listener: () => void): () => void;
+	/**
+	 * This store's local-persistence debt: whether everything accepted has
+	 * reached durable storage (ADR-0238).
+	 *
+	 * `saved` | `pending` | `blocked`, with `subscribe` for changes and
+	 * `flush()` to request an attempt now. A `blocked` store keeps serving and
+	 * accepting; what is at risk is only what a RESTART would recover.
+	 */
+	readonly persistence: PersistenceCapability;
 	[Symbol.asyncDispose](): Promise<void>;
+};
+
+/**
+ * A device-owned document: a complete store all by itself, which owes its
+ * work to nobody and never receives a foreign byte (ADR-0233).
+ *
+ * `sync` is present and `undefined`, deliberately: the discriminant is the
+ * VALUE, not the property's absence, so `store.sync === undefined` narrows a
+ * `DeviceStore | AccountStore` without `in`-probing, and a future reader of
+ * either
+ * object sees the same shape with one honest difference.
+ */
+export type DeviceStore = WorkspaceStoreBase & {
+	readonly sync: undefined;
 };
 
 /**
  * A store that is one replica of an authority's current document.
  *
- * Everything added over `Store` is replica-against-authority vocabulary:
- * bytes arriving from a peer, the obligation log of what this device authored
- * and the authority has not taken, and the document identity that decides
- * whether the two may exchange at all (ADR-0231). A store without an
- * authority never earns these verbs; handing them to one anyway is how a
- * device document grew an outbox nothing could ever drain.
+ * The one thing it adds over `WorkspaceStoreBase` is a concrete `sync` capability:
+ * the app-facing facts of this replica's entanglement. The delivery
+ * machinery underneath (applying peer bytes, the outbox, cursors, the
+ * acknowledgement bookkeeping) is deliberately not public: only the
+ * transport drives it, and it reaches it through `syncEngineOf` inside this
+ * package. Handing those verbs to applications is how a device document once
+ * grew an outbox nothing could ever drain.
  */
-export type ReplicaStore = Store & ReplicaVerbs;
+export type AccountStore = WorkspaceStoreBase & {
+	readonly sync: SyncCapability;
+};
 
 /**
- * What only a replica can do, kept nameable on its own so the factory can
- * compose the two store shapes without asserting either one.
+ * The app-facing half of sync: what a surface renders and a boot gate reads.
+ *
+ * Mirrors `persistence` in shape: one snapshot, one change subscription.
+ * Everything else about sync (connection health, attempts, in-flight
+ * submissions) belongs to the connection driving the socket, not to the
+ * store.
  */
-type ReplicaVerbs = {
+export type SyncCapability = {
+	get(): SyncFacts;
+	/** Hear when the facts change. Never fires initially. */
+	subscribe(listener: () => void): () => void;
+};
+
+/**
+ * The facts a replica can state about its own entanglement.
+ *
+ * `document` is which authority document this replica's state belongs to,
+ * or `undefined` for one that has never exchanged a byte (ADR-0231). It is
+ * the boot gate's whole question: a signed-in workspace is safe to edit once
+ * it is stamped.
+ */
+export type SyncFacts = {
+	readonly document: string | undefined;
+};
+
+/**
+ * The delivery machinery only the transport drives (ADR-0238's audit): the
+ * client log's bookkeeping, plus the three verbs that move foreign bytes and
+ * wake the sender. Reached through `syncEngineOf`, never carried on the
+ * public store: no application consumer ever needed these, and every one of
+ * them can corrupt a replica if driven casually.
+ */
+export type SyncEngine = ClientLog & {
 	/**
-	 * Apply bytes from a peer. Durable, and never republished as local work.
+	 * Apply bytes from a peer. Never republished as local work.
 	 *
-	 * `advanceTo` commits the cursor IN THE SAME TRANSACTION as the bytes.
-	 * The atomicity is load-bearing (ADR-0231): a crash can leave neither or
-	 * both, never bytes wearing a fresh install's cursor. Membership is not
-	 * stamped here: the sync client commits `adoptDocumentIdentity` at the
-	 * document announcement and refuses foreign bytes until it has, so an
+	 * The bytes are accepted live immediately; the durable append and the
+	 * `advanceTo` bookmark join the persistence queue as ADJACENT OPS in one
+	 * atomic flush batch, so durable state can never hold a cursor ahead of
+	 * the bytes it accounts for (ADR-0231, carried by ADR-0238). Membership
+	 * is not stamped here: the sync client commits `adoptDocumentIdentity` at
+	 * the document announcement and refuses foreign bytes until it has, so an
 	 * absent identity always means no foreign byte was ever applied.
+	 *
+	 * The Result's one error is `ApplyFailed`: bytes this document cannot
+	 * decode, which is a property of the bytes and leaves the store usable.
 	 */
 	applyRemote(
 		update: Uint8Array,
 		opts?: { advanceTo?: number },
-	): Result<void, StoreError>;
+	): Result<void, ApplyFailedError>;
 	/**
 	 * Whether this replica is holding updates it cannot apply yet.
 	 *
@@ -704,42 +867,136 @@ type ReplicaVerbs = {
 	 * advancing past the gap makes the loss permanent.
 	 */
 	hasUnresolvedDependencies(): boolean;
-	/** What this replica owes the authority, and what it has read from it. */
-	readonly sync: ClientLog;
 	/**
-	 * Hear when this replica has authored work the authority has not taken.
+	 * Hear when this replica has durable authored work the authority has not
+	 * taken.
 	 *
-	 * Fires once per commit that added to the outbox, after that commit is
-	 * durable, and never for bytes that arrived from a peer.
-	 *
-	 * It exists so that nothing has to remember to say so. Every durable local
-	 * write leaves an authority obligation (ADR-0171), and the transport's idle
-	 * timer only starts when it is told one was made, so a caller that forgets
-	 * leaves that work sitting in the outbox until some unrelated write happens
-	 * to start the timer. That is a silent wedge of the same family as the
-	 * missing reconnect a fuzz found: the device looks connected, reports no
-	 * error, and never delivers. A write that announces itself cannot be
-	 * forgotten about.
+	 * Fires when a flush durably grows the outbox, and never for bytes that
+	 * arrived from a peer. It exists so that nothing has to remember to say
+	 * so: the transport's idle timer only starts when it is told work was
+	 * made, and a caller that forgets leaves that work sitting in the outbox
+	 * until some unrelated write happens to start the timer.
 	 */
 	onLocalWork(listener: () => void): () => void;
 };
 
-type CreateStoreOptions = {
-	database: SqliteDatabase;
-	history?: SqliteDatabase;
+/**
+ * The engines, keyed by the sync capability rather than by the store object.
+ *
+ * Openers wrap the engine's store in frozen spreads (`discard()` on Bun and
+ * in the browser), and a spread is a NEW object; the capability rides along
+ * by reference, so it is the one key every wrapper preserves.
+ */
+const syncEngines = new WeakMap<SyncCapability, SyncEngine>();
+
+/**
+ * The delivery machinery behind one replica's `sync` capability.
+ *
+ * Package-internal by convention: exported for the transport, the rebuild
+ * verb, and tests, and deliberately absent from the package barrel.
+ */
+export function syncEngineOf(store: AccountStore): SyncEngine {
+	const engine = syncEngines.get(store.sync);
+	if (engine === undefined) {
+		throw new Error(
+			'This store has no sync engine: it is not a replica of any authority.',
+		);
+	}
+	return engine;
+}
+
+/** What every store engine needs: the definition, the durable engine, a cache. */
+export type StoreEngineOptions = {
+	/**
+	 * The one workspace definition this runtime holds, already parsed
+	 * (ADR-0240). Every table handle, the KV handle, the projection schema,
+	 * and the whole-index rebuild close over it for the store's whole life; a
+	 * newer definition reads the same durable data by disposing this store and
+	 * constructing the next one.
+	 */
+	workspace: ParsedWorkspace;
+	/** The runtime-native durable engine: one atomic batch per flush. */
+	durable: DurablePort;
+	/** What that engine held at open, materialized once. */
+	loaded: DurableSnapshot;
+	/**
+	 * Where the projection lives: rebuilt at open, written synchronously with
+	 * every ACCEPTED edit (ADR-0238). The projection owns this database's
+	 * whole letter-named namespace: every declared relation is (re)built here,
+	 * and a relation the definition no longer declares is dropped at the next
+	 * rebuild. The real openers pass a fresh in-memory database; a runtime
+	 * whose only synchronous SQLite is the durable file may share it, because
+	 * the durable relations are all underscore-prefixed and the two namespaces
+	 * cannot meet.
+	 */
+	projection: SqliteDatabase;
 	now?: () => number;
 	dispose?: () => void | Promise<void>;
 	/**
-	 * Where a subscriber's own failure goes.
+	 * Where a subscriber's own failure and a failed durable flush go.
 	 *
-	 * The only thing the store logs. A listener that throws is contained rather
-	 * than allowed to abort a batch, because the commit that produced the batch
-	 * is already durable and one broken listener must not cost every other one
-	 * its notification; containing it without reporting it would make a broken
-	 * subscriber look like a store that stopped notifying.
+	 * A listener that throws is contained rather than allowed to abort a
+	 * batch, because the commit that produced the batch is already accepted
+	 * and one broken listener must not cost every other one its notification;
+	 * containing it without reporting it would make a broken subscriber look
+	 * like a store that stopped notifying.
 	 */
 	log?: Logger;
 };
+
+export type CreateStoreOptions<TWorkspace extends WorkspaceJson> = {
+	/** The application's workspace declaration, a `defineWorkspace` literal. */
+	workspace: TWorkspace;
+	database: SqliteDatabase;
+	history?: SqliteDatabase;
+	/**
+	 * Where the projection lives. Defaults to `database`, which suits a
+	 * Durable Object holding one SQLite; a runtime with a separate in-memory
+	 * database passes it so the projection follows accepted edits even while
+	 * the durable file refuses (ADR-0238). Sharing is safe because the
+	 * projection claims only the letter-named relations and the durable record
+	 * is entirely underscore-prefixed; on a shared database the projection
+	 * still drops relations a newer definition removed, so `query` never
+	 * serves a table the runtime cannot see.
+	 */
+	projection?: SqliteDatabase;
+	now?: () => number;
+	dispose?: () => void | Promise<void>;
+	log?: Logger;
+};
+
+/**
+ * Parse a declaration handed to a constructor as a literal.
+ *
+ * Throwing, not Result-returning, and that is a boundary rather than an
+ * accident: at this level the declaration is a `defineWorkspace` literal the
+ * compiler already validated, so a parse refusal is a programmer error. The
+ * openers, which may be handed a declaration that arrived as data, parse
+ * first and return the refusal as a boot outcome instead.
+ */
+function parsedWorkspaceOrThrow(workspace: WorkspaceJson): ParsedWorkspace {
+	const { data, error } = parseWorkspace(workspace);
+	if (error !== null) throw new Error(error.message, { cause: error });
+	return data;
+}
+
+/** Build the engine options for a synchronous SQLite durable engine. */
+function overSqlite<TWorkspace extends WorkspaceJson>({
+	workspace,
+	database,
+	history,
+	projection,
+	...rest
+}: CreateStoreOptions<TWorkspace>): StoreEngineOptions {
+	const port = createSqliteDurablePort({ database, history });
+	return {
+		workspace: parsedWorkspaceOrThrow(workspace),
+		durable: port,
+		loaded: port.load(),
+		projection: projection ?? database,
+		...rest,
+	};
+}
 
 /**
  * Open a document with no remote authority, the device document of ADR-0233.
@@ -750,8 +1007,15 @@ type CreateStoreOptions = {
  * acknowledgement can drain, so its durable record grew with every write it
  * ever took, forever.
  */
-export function createStore(options: CreateStoreOptions): Store {
-	return createStoreEngine(options, 'none');
+export function createDeviceStore<const TWorkspace extends WorkspaceJson>(
+	options: CreateStoreOptions<TWorkspace>,
+): DataOf<TWorkspace, DeviceStore> {
+	const { store, view } = createStoreEngine(overSqlite(options), 'none');
+	// Through `unknown` deliberately: comparing the untyped view with
+	// `WorkspaceView<TWorkspace>` re-enters the per-field arktype instantiation
+	// and exceeds the depth limit. The runtime value is the same object either
+	// way; only the static view of it differs.
+	return asData(store, view as unknown as WorkspaceView<TWorkspace>);
 }
 
 /**
@@ -760,51 +1024,101 @@ export function createStore(options: CreateStoreOptions): Store {
  * Every local commit joins the outbox until the authority acknowledges it,
  * and the replica verbs (`sync`, `applyRemote`, `onLocalWork`,
  * `hasUnresolvedDependencies`) exist. The two constructors share one private
- * engine because the obligation is transactional: authored bytes join the
- * outbox in the same SQLite transaction as the log append and the projection,
- * so a crash can never leave a write durable locally and unowed. A wrapper
- * subscribing from outside would commit the obligation in a second
- * transaction and break exactly that.
+ * engine because the obligation is one ordered queue: authored bytes and
+ * their outbox claim are adjacent ops in one atomic flush batch, so durable
+ * state can never hold a write locally and unowed (ADR-0238). A wrapper
+ * subscribing from outside would commit the obligation in a second batch and
+ * break exactly that.
  */
-export function createReplicaStore(options: CreateStoreOptions): ReplicaStore {
+export function createAccountStore<const TWorkspace extends WorkspaceJson>(
+	options: CreateStoreOptions<TWorkspace>,
+): DataOf<TWorkspace, AccountStore> {
+	const { store, view } = createStoreEngine(overSqlite(options), 'remote');
+	return asData(store, view as unknown as WorkspaceView<TWorkspace>);
+}
+
+/**
+ * The same two constructors over an arbitrary durable engine (ADR-0238),
+ * returned as parts rather than composed data.
+ *
+ * The browser passes an IndexedDB port here; the SQLite constructors above
+ * are this plus `createSqliteDurablePort`. The caller loads the snapshot
+ * first (that may be asynchronous), so construction itself stays synchronous.
+ * Parts, because an opener may still have to wrap the store (`discard` on a
+ * deletable replica) before composing what an application sees; the store and
+ * the view are one runtime either way, born over one definition.
+ */
+export function createDeviceStoreOverPort(options: StoreEngineOptions): {
+	store: DeviceStore;
+	view: UntypedWorkspaceView;
+} {
+	return createStoreEngine(options, 'none');
+}
+
+export function createAccountStoreOverPort(options: StoreEngineOptions): {
+	store: AccountStore;
+	view: UntypedWorkspaceView;
+} {
 	return createStoreEngine(options, 'remote');
 }
 
 function createStoreEngine(
-	options: CreateStoreOptions,
+	options: StoreEngineOptions,
 	replication: 'none',
-): Store;
+): { store: DeviceStore; view: UntypedWorkspaceView };
 function createStoreEngine(
-	options: CreateStoreOptions,
+	options: StoreEngineOptions,
 	replication: 'remote',
-): ReplicaStore;
+): { store: AccountStore; view: UntypedWorkspaceView };
 function createStoreEngine(
 	{
-		database,
-		history,
+		workspace,
+		durable,
+		loaded,
+		projection,
 		now = () => Date.now(),
 		dispose = () => undefined,
 		log = createLogger('data/store'),
-	}: CreateStoreOptions,
+	}: StoreEngineOptions,
 	replication: 'none' | 'remote',
-): Store | ReplicaStore {
-	applyStoreSchema(database);
-	// The cutover, enforced at every open (ADR-0231): a file holding state
-	// without a format certificate predates the document identity, so nothing
-	// durable can say which document its bytes belong to. Untrusted whole:
-	// wiped here, before hydration, and the replica rejoins from zero as a
-	// fresh install. A truly fresh file is simply certified.
-	adoptStoreFormat(database);
-
+): { store: DeviceStore | AccountStore; view: UntypedWorkspaceView } {
 	const index = createAppDocument();
 	let pending: Uint8Array[] = [];
-	let poisoned: StoreError | undefined;
 	let disposed = false;
+
+	/**
+	 * The local-persistence debt: accepted work the durable engine has not
+	 * confirmed (ADR-0238). Every verb enqueues here and returns; a refused
+	 * flush retains the work and reports `blocked`, and never fails the verb.
+	 */
+	const controller = createPersistenceController({
+		port: durable,
+		loaded,
+		log,
+	});
+
+	// The three durable facts the engine also tracks live. The controller's
+	// mirror says what storage has CONFIRMED; these say what the document has
+	// ACCEPTED, which is what `sync` reports to the client and what the
+	// rebuild lease reads. At open the two agree; a blocked flush is the only
+	// thing that separates them, and a restart then honestly recovers the
+	// mirror's version.
+	let liveCursor = loaded.cursor;
+	let liveIdentity = loaded.identity;
+	/**
+	 * The highest outbox id acknowledged this session. An overlay over the
+	 * durable mirror, so an acknowledged entry is never re-offered while its
+	 * `dropOutbox` op is still queued behind a blocked flush.
+	 */
+	let ackedThrough = 0;
+	/** The next outbox id to assign. The store mints ids, never the port. */
+	let nextOutboxId =
+		loaded.outbox.reduce((max, entry) => Math.max(max, entry.id), 0) + 1;
 
 	/**
 	 * Where a table's `'delta'` event becomes a subscriber's invalidation.
 	 *
-	 * `@epicenter/lens` owns the grouping, the per-table dedup and the delivery
+	 * `@epicenter/workspace` owns the grouping, the per-table dedup and the delivery
 	 * laws, and a delta-fed producer needs exactly those. Nothing about them is
 	 * specific to a carrier, which is why they were written once there rather
 	 * than here (ADR-0187).
@@ -822,44 +1136,29 @@ function createStoreEngine(
 	 * `persist` and go out afterwards.
 	 */
 	let touched: RowAddress[] = [];
-	/** Whether the commit in progress put anything into the outbox. */
-	let owedSomething = false;
-	/** Whether the commit in progress changed anything durable at all. */
+	/** Whether the commit in progress changed anything at all. */
 	let committedSomething = false;
 	/** Whether the commit in progress touched the KV root. */
 	let kvTouched = false;
 	const kvFlushers = new Set<() => void>();
 	const localWorkListeners = new Set<() => void>();
 	const committedListeners = new Set<() => void>();
+	/** Who is watching `sync.get()`'s facts; notified when the stamp lands. */
+	const syncFactsListeners = new Set<() => void>();
 
 	/**
 	 * Hand a committed change to whoever is waiting for it, and reset the buffers.
 	 *
-	 * Called after `persist` on every path a write can take, including the one
-	 * that fails: the buffers have to be drained either way, or a poisoned
-	 * store's stale ids would ride along with the next commit's.
-	 *
-	 * Each buffer is swapped before delivery rather than cleared after, because a
-	 * subscriber is allowed to write, and a nested write's addresses belong to
-	 * its own flush.
+	 * Runs at ACCEPTANCE, after the projection write: the live document and the
+	 * projection already agree, whatever the durable engine does later
+	 * (ADR-0238). Each buffer is swapped before delivery rather than cleared
+	 * after, because a subscriber is allowed to write, and a nested write's
+	 * addresses belong to its own flush.
 	 */
 	function flushCommitted(): void {
 		if (committedSomething) {
 			committedSomething = false;
 			for (const listener of [...committedListeners]) {
-				const { error } = trySync({
-					try: listener,
-					catch: (cause) => StoreError.SubscriberThrew({ cause }),
-				});
-				if (error !== null) log.error(error);
-			}
-		}
-		if (owedSomething) {
-			owedSomething = false;
-			for (const listener of [...localWorkListeners]) {
-				// Contained for the same reason a table subscriber is: one broken
-				// listener must not cost the transport its nudge, and the commit that
-				// produced this is already durable.
 				const { error } = trySync({
 					try: listener,
 					catch: (cause) => StoreError.SubscriberThrew({ cause }),
@@ -876,6 +1175,21 @@ function createStoreEngine(
 		touched = [];
 		invalidations.deliver(batch);
 	}
+
+	// The transport's nudge fires when a flush durably grows the outbox, not
+	// when a commit is accepted: the sender reads only the durable outbox, so
+	// nudging earlier would wake it to find nothing sendable (ADR-0238).
+	controller.onOutboxGrew(() => {
+		for (const listener of [...localWorkListeners]) {
+			// Contained for the same reason a table subscriber is: one broken
+			// listener must not cost the transport its nudge.
+			const { error } = trySync({
+				try: listener,
+				catch: (cause) => StoreError.SubscriberThrew({ cause }),
+			});
+			if (error !== null) log.error(error);
+		}
+	});
 
 	index.on(
 		'updateV2',
@@ -908,7 +1222,7 @@ function createStoreEngine(
 			// this device's authored work and be republished to the authority, and
 			// would deliver invalidations against a projection nothing rebuilt. The
 			// throw surfaces synchronously at the rogue `Y.applyUpdateV2` call site,
-			// before anything is persisted, so the store is not poisoned.
+			// before anything is accepted, so the store is untouched.
 			if (!transaction.local) {
 				throw new Error(
 					"Foreign bytes must enter through applyRemote. A direct Y.applyUpdateV2 on this document would be republished as this device's own work, and is lost entirely when its causal dependencies have not arrived.",
@@ -919,187 +1233,185 @@ function createStoreEngine(
 			// nothing else is going to flush them. No projection work: Epicenter
 			// never looks inside a document, so nothing it holds is ever projected.
 			// They are still this device's own work, so they join the outbox.
+			//
+			// The notification flush runs in a finally, deliberately: the live
+			// document already holds the change, so the ids are true whatever the
+			// durable engine later does with the bytes, and leaving them buffered
+			// would attach them to whichever commit ran next.
 			const authored = copyBytes(update);
-			const { error } = persist(() => {
-				appendUpdate({
-					database,
-					history,
-					document: APP_DOCUMENT,
-					update: authored,
-					takenAt: now(),
-				});
-				if (replication !== 'none') {
-					enqueueOutbox(database, authored);
-					owedSomething = true;
-				}
+			try {
 				committedSomething = true;
-			});
-			// Before the throw, deliberately. The live document already holds the
-			// change, so the ids are true whatever storage did with them, and leaving
-			// them buffered would attach them to whichever commit ran next.
-			flushCommitted();
-			if (error !== null) throw error;
+				controller.enqueue([
+					{
+						kind: 'append',
+						bytes: authored,
+						takenAt: now(),
+						outboxId: replication === 'none' ? undefined : nextOutboxId++,
+					},
+				]);
+			} finally {
+				flushCommitted();
+			}
 		},
 	);
 
 	// Attach the listener before hydrating, then replay under an origin the
 	// listener ignores, so loading cannot append the same bytes it just read.
-	for (const stored of readUpdates(database, APP_DOCUMENT)) {
-		Y.applyUpdateV2(index, copyBytes(stored.bytes), hydrationOrigin);
-	}
-
-	/** Which tables have a live projection, and the columns each one carries. */
-	const projectedTables = new Map<string, string[]>();
-
-	function requireUsable(): StoreError | undefined {
-		if (disposed) return StoreError.Disposed().error;
-		return poisoned;
+	for (const stored of loaded.updates) {
+		Y.applyUpdateV2(index, copyBytes(stored), hydrationOrigin);
 	}
 
 	/**
-	 * Run one mutation and commit its bytes and its projection together.
+	 * Whether the read index is behind the live document (ADR-0238).
+	 *
+	 * Set when any projection write fails; cleared only by a successful whole
+	 * rebuild at the next `query`. While stale, per-edit projection writes are
+	 * skipped rather than patched into a distrusted cache: they coalesce into
+	 * that one rebuild. Stale is never observable through `query` itself,
+	 * which either rebuilds first or refuses with `QueryFailed`.
+	 */
+	let projectionStale = false;
+
+	/**
+	 * Run one read-index write for an accepted change, containing failure.
+	 *
+	 * The live document already holds the change when this runs, so a failure
+	 * here must not fail the verb, undo the edit, or block the durable queue:
+	 * it is logged, the index is marked stale, and the next `query` rebuilds
+	 * whole (ADR-0238). Yjs, table, and KV operations never depend on it.
+	 */
+	function projectAccepted(project: () => void): void {
+		if (projectionStale) return;
+		const { error } = trySync({
+			try: project,
+			catch: (cause) => StoreError.ProjectionFailed({ cause }),
+		});
+		if (error !== null) {
+			projectionStale = true;
+			log.error(error);
+		}
+	}
+
+	/**
+	 * The one gate every verb passes: a disposed store throws, it never
+	 * returns. Fresh per throw so each call site gets its own stack.
+	 */
+	function assertUsable(): void {
+		if (disposed) throw new StoreUnusableError();
+	}
+
+	/**
+	 * Run one mutation, project it, and queue its bytes for durable storage.
 	 *
 	 * `updateV2` fires inside `transact`, after the observers and after
 	 * `afterTransaction` (verified against `@y/y@14.0.0-rc.24`), so by the time
-	 * this returns the bytes are already buffered and can join the same SQLite
-	 * transaction as the projection write they imply.
+	 * `transact` returns the bytes are already buffered. Acceptance is the
+	 * synchronous half: the live document and the projection move together,
+	 * and cannot fail for storage reasons. Durability is the queued half: the
+	 * bytes and, on a replica, their outbox claim join the controller's queue
+	 * as adjacent ops in one atomic batch, so durable state can never hold a
+	 * write locally and unowed (ADR-0238). On a synchronous engine the flush
+	 * completes before this returns.
 	 */
-	function commit(
-		documentName: string,
-		mutate: () => void,
-		project: () => void,
-	): Result<void, StoreError> {
+	function commit(mutate: () => void, project: () => void): void {
 		pending = [];
 		index.transact(mutate, localOrigin);
 		const authored = pending;
 		pending = [];
-		if (authored.length === 0) {
-			// Nothing changed, so there is nothing to persist. The projection still
-			// runs: a no-op write must not leave a stale projected row behind.
-			const unchanged = persist(() => project());
-			flushCommitted();
-			return unchanged;
-		}
-		const committed = persist(() => {
-			for (const update of authored) {
-				appendUpdate({
-					database,
-					history,
-					document: documentName,
-					update,
-					takenAt: now(),
-				});
-				// One transaction holds the local log, the projection, and the claim
-				// that these bytes still owe the authority a delivery. A crash cannot
-				// leave a write durable locally and unowed. A store with no
-				// authority owes nobody, so it makes no claim to crash out of.
-				if (replication !== 'none') {
-					enqueueOutbox(database, update);
-					owedSomething = true;
-				}
+		try {
+			// The projection runs even when nothing changed: a no-op write must
+			// not leave a stale projected row behind. Contained: a failed
+			// projection write marks the index stale and never fails the verb
+			// or keeps the bytes below from reaching the durable queue.
+			projectAccepted(project);
+			if (authored.length > 0) {
 				committedSomething = true;
-			}
-			project();
-		});
-		flushCommitted();
-		return committed;
-	}
-
-	function persist(run: () => void): Result<void, StoreError> {
-		const { error } = trySync({
-			try: () => database.transaction(run),
-			catch: (cause) => StoreError.StorageFailed({ cause }),
-		});
-		if (error !== null) {
-			// Fail closed. The live document holds work durable storage refused, so
-			// every later call reports this rather than compounding the divergence.
-			poisoned = error;
-			return Err(error);
-		}
-		return Ok(undefined);
-	}
-
-	function bindLens(
-		lensInput: unknown,
-	): Result<UntypedLensView, LensParseError | StoreError> {
-		const unusable = requireUsable();
-		if (unusable !== undefined) return Err(unusable);
-		const { data: lens, error } = parseLens(lensInput);
-		if (error !== null) return Err(error);
-
-		const { error: schemaError } = persist(() =>
-			applyProjectionSchema(database, lens),
-		);
-		if (schemaError !== null) return Err(schemaError);
-
-		const { handle: kv, project: projectKv } = createKvHandle(lens);
-
-		const tables: Record<string, TableHandle> = {};
-		for (const [tableName, table] of lens.tables) {
-			tables[tableName] = createTableHandle(lens, tableName, table);
-			projectedTables.set(tableName, [...table.fields.keys()]);
-		}
-		// The projection is rebuilt at bind rather than trusted, because the CRDT
-		// is the truth and a projection is a cache: a file whose projection is
-		// stale, absent, or written by an older lens costs 2 ms to make right.
-		const { error: rebuildError } = persist(() => {
-			for (const [tableName, table] of lens.tables) {
-				rebuildProjectedTable(
-					database,
-					tableName,
-					[...table.fields.keys()],
-					rowsOf(tableName),
+				controller.enqueue(
+					authored.map(
+						(update): DurableOp => ({
+							kind: 'append',
+							bytes: update,
+							takenAt: now(),
+							outboxId: replication === 'none' ? undefined : nextOutboxId++,
+						}),
+					),
 				);
 			}
-			// KV is rebuilt here for the same reason a table is, and it used to be
-			// missed. Its projection was written only by `kv.update`, so `db.query`
-			// saw NO kv row at all until something wrote one, and saw a row written
-			// by the PREVIOUS lens after a release changed the declaration. Both are
-			// the staleness this rebuild exists to remove.
-			projectKv();
-		});
-		if (rebuildError !== null) return Err(rebuildError);
-
-		const query: QueryMethod = (strings, ...values) => {
-			const unusableNow = requireUsable();
-			if (unusableNow !== undefined) return Err(unusableNow);
-			return trySync({
-				try: () => database.all(strings.join('?'), values),
-				catch: (cause) => StoreError.StorageFailed({ cause }),
-			});
-		};
-		return Ok(
-			Object.freeze({
-				tables: Object.freeze(tables),
-				kv,
-				query,
-			}) as UntypedLensView,
-		);
+		} finally {
+			// Either way the buffers drain, so stale ids never ride along with the
+			// next commit's.
+			flushCommitted();
+		}
 	}
 
 	/**
-	 * The KV handle for one bound lens.
+	 * The one typed surface this runtime will ever have, built over the one
+	 * definition (ADR-0240).
+	 *
+	 * Runs after hydration, so the seed below reads the rows the durable
+	 * record actually holds.
+	 */
+	function buildView(): UntypedWorkspaceView {
+		const kv = createKvHandle();
+
+		const tables: Record<string, TableHandle> = {};
+		for (const [tableName, table] of workspace.tables) {
+			tables[tableName] = createTableHandle(tableName, table);
+		}
+
+		// The projection is rebuilt at open rather than trusted, because the CRDT
+		// is the truth and a projection is a cache: a projection that is stale,
+		// absent, or written by an older release's definition costs 2 ms to make
+		// right. One transaction for speed, not durability; this database is a
+		// cache. Contained like every projection write: opening cannot fail for
+		// projection storage, so a seed that fails only marks the index stale,
+		// and the same whole rebuild that repairs every later failure repairs
+		// it at the next `query`.
+		projectAccepted(rebuildReadIndex);
+
+		const query: QueryMethod = (strings, ...values) => {
+			assertUsable();
+			// A stale index is rebuilt here, synchronously and whole, before the
+			// statement runs: SQL never serves rows the live document has moved
+			// past. If the rebuild itself fails, the statement is refused rather
+			// than answered from a cache nothing trusts (ADR-0238).
+			if (projectionStale) {
+				const { error: rebuildRefused } = trySync({
+					try: rebuildReadIndex,
+					catch: (cause) => StoreError.QueryFailed({ cause }),
+				});
+				if (rebuildRefused !== null) return Err(rebuildRefused);
+				projectionStale = false;
+			}
+			return trySync({
+				try: () => projection.all(strings.join('?'), values),
+				// The statement was refused: a property of the SQL, which may
+				// arrive from a person or an agent, so it is an ordinary
+				// caller-actionable outcome.
+				catch: (cause) => StoreError.QueryFailed({ cause }),
+			});
+		};
+		return Object.freeze({
+			tables: Object.freeze(tables),
+			kv,
+			query,
+		}) as UntypedWorkspaceView;
+	}
+
+	/**
+	 * The KV handle for this workspace's one KV section.
 	 *
 	 * The root is minted here, which is safe for the same reason KV lives there
 	 * at all: `Doc.get` is `setIfUndefined` on `doc.share`, so every device that
 	 * mints `kv` converges on one logical root.
 	 *
-	 * A lens with no `kv` section still gets a handle. It reads as an empty
-	 * object and refuses every write by name, which is a better answer than a
-	 * missing property that a caller has to feel for.
+	 * A workspace with no `kv` section still gets a handle. It reads as an
+	 * empty object and refuses every write by name, which is a better answer
+	 * than a missing property that a caller has to feel for.
 	 */
-	function createKvHandle(lens: ParsedLens): {
-		handle: KvHandle;
-		/** Rebuild the KV row, so `bind` can make a stale one right. */
-		project(): void;
-	} {
-		const table = lens.kv;
+	function createKvHandle(): KvHandle {
+		const table = workspace.kv;
 		const root = kvRoot(index);
-		const address = {
-			namespace: lens.namespace,
-			tableName: 'kv',
-			rowId: KV_ROOT,
-		};
 
 		function readStored(): JsonObject {
 			const payload: JsonObject = {};
@@ -1107,18 +1419,6 @@ function createStoreEngine(
 				payload[key as string] = root.getAttr(key as never) as JsonValue;
 			}
 			return payload;
-		}
-
-		function project(): void {
-			if (table === undefined) return;
-			const { conforming } = table.conformance(readStored());
-			upsertProjectedRow(
-				database,
-				'kv',
-				[...table.fields.keys()],
-				KV_ROOT,
-				conforming,
-			);
 		}
 
 		/**
@@ -1146,62 +1446,83 @@ function createStoreEngine(
 			kvTouched = true;
 		};
 
-		function readBack(): Result<JsonObject, ReadRowError> {
+		function readBack(): Result<JsonObject, NonconformingValue> {
 			if (table === undefined) return Ok({});
-			const projected = table.project(address, readStored());
-			if (projected.error !== null) return Err(projected.error);
-			// `project` adds the structural id a row has and KV does not.
-			const { id: _id, ...values } = projected.data;
-			return Ok(values);
+			const raw = readStored();
+			const { conforming, issues } = table.conformance(raw);
+			// No structural id, because KV has none: the diagnostic's `conforming`
+			// composes into a whole settings object without a stray key.
+			return issues.length === 0
+				? Ok(conforming)
+				: Err({ raw, conforming, issues });
 		}
 
-		return {
-			project,
-			handle: Object.freeze({
-				defaults: table?.defaults ?? Object.freeze({}),
-				get() {
-					const unusable = requireUsable();
-					if (unusable !== undefined) return Err(unusable);
-					return readBack();
-				},
-				subscribe(listener: () => void): () => void {
-					kvListeners.add(listener);
-					subscriptions += 1;
-					if (subscriptions === 1) root.on('delta', onKvDelta);
-					let stopped = false;
-					return () => {
-						if (stopped) return;
-						stopped = true;
-						kvListeners.delete(listener);
-						subscriptions -= 1;
-						if (subscriptions === 0) root.off('delta', onKvDelta);
-					};
-				},
-				update(values: JsonObject) {
-					const unusable = requireUsable();
-					if (unusable !== undefined) return Err(unusable);
-					if (table === undefined) {
-						const [field] = Object.keys(values);
-						return field === undefined
-							? readBack()
-							: RowWriteError.UnknownField({ table: 'kv', field });
+		return Object.freeze({
+			defaults: table?.defaults ?? Object.freeze({}),
+			get() {
+				assertUsable();
+				return readBack();
+			},
+			subscribe(listener: () => void): () => void {
+				kvListeners.add(listener);
+				subscriptions += 1;
+				if (subscriptions === 1) root.on('delta', onKvDelta);
+				let stopped = false;
+				return () => {
+					if (stopped) return;
+					stopped = true;
+					kvListeners.delete(listener);
+					subscriptions -= 1;
+					if (subscriptions === 0) root.off('delta', onKvDelta);
+				};
+			},
+			update(values: JsonObject): Result<void, RowWriteError> {
+				assertUsable();
+				if (table === undefined) {
+					const [field] = Object.keys(values);
+					return field === undefined
+						? Ok(undefined)
+						: RowWriteError.UnknownField({ table: 'kv', field });
+				}
+				const { data: validated, error } = table.validateWrite(values);
+				if (error !== null) return Err(error);
+				commit(() => {
+					for (const [name, value] of Object.entries(validated)) {
+						root.setAttr(name as never, value as never);
 					}
-					const { data: validated, error } = table.validateWrite(values);
-					if (error !== null) return Err(error);
-					const { error: commitError } = commit(
-						APP_DOCUMENT,
-						() => {
-							for (const [name, value] of Object.entries(validated)) {
-								root.setAttr(name as never, value as never);
-							}
-						},
-						project,
-					);
-					if (commitError !== null) return Err(commitError);
-					return readBack();
-				},
-			}) as KvHandle,
-		};
+				}, projectKvRow);
+				return Ok(undefined);
+			},
+		}) as KvHandle;
+	}
+
+	/**
+	 * Rebuild the one KV row in the projection from the live document.
+	 *
+	 * Engine-scope rather than a per-handle closure, because two callers share
+	 * it: the KV handle's own `update`, and the whole-index rebuild. It is
+	 * rebuilt there for the same reason a table is, and it used to be missed:
+	 * the KV projection was written only by `kv.update`, so `db.query` saw NO
+	 * kv row at all until something wrote one, and saw a row written by the
+	 * PREVIOUS release's declaration after an upgrade. Both are the staleness
+	 * the rebuild exists to remove.
+	 */
+	function projectKvRow(): void {
+		const table = workspace.kv;
+		if (table === undefined) return;
+		const root = kvRoot(index);
+		const payload: JsonObject = {};
+		for (const key of root.attrKeys()) {
+			payload[key as string] = root.getAttr(key as never) as JsonValue;
+		}
+		const { conforming } = table.conformance(payload);
+		upsertProjectedRow(
+			projection,
+			'kv',
+			[...table.fields.keys()],
+			KV_ROOT,
+			conforming,
+		);
 	}
 
 	/**
@@ -1238,14 +1559,13 @@ function createStoreEngine(
 	}
 
 	function createTableHandle(
-		lens: ParsedLens,
 		tableName: string,
 		table: ParsedTable,
 	): TableHandle {
 		const fieldNames = [...table.fields.keys()];
 		const root = tableRoot(index, tableName);
 		const addressOf = (rowId: string) => ({
-			namespace: lens.namespace,
+			namespace: workspace.namespace,
 			tableName,
 			rowId,
 		});
@@ -1253,10 +1573,10 @@ function createStoreEngine(
 		function projectRow(rowId: string): void {
 			const payload = readRow(root, rowId);
 			if (payload === undefined) {
-				deleteProjectedRow(database, tableName, rowId);
+				deleteProjectedRow(projection, tableName, rowId);
 				return;
 			}
-			upsertProjectedRow(database, tableName, fieldNames, rowId, payload);
+			upsertProjectedRow(projection, tableName, fieldNames, rowId, payload);
 		}
 
 		/**
@@ -1309,30 +1629,24 @@ function createStoreEngine(
 		 */
 		let subscriptions = 0;
 
-		/** Read one row back through the lens, after the write that changed it. */
-		function readBack(rowId: string): Result<Row, ReadRowError> {
-			const payload = readRow(root, rowId);
-			if (payload === undefined) {
-				return StoreError.RowAbsent({ table: tableName, rowId });
-			}
-			return table.project(addressOf(rowId), payload) as Result<
-				Row,
-				ReadRowError
-			>;
-		}
-
-		function write(
+		/** One stored payload, read through the declaration the way every read reads. */
+		function conformRow(
 			rowId: string,
-			fields: JsonObject,
-			documentRoots: readonly string[] = [],
-		): Result<Row, WriteRowError> {
-			const { error } = commit(
-				APP_DOCUMENT,
-				() => writeRow(root, rowId, fields, documentRoots),
-				() => projectRow(rowId),
-			);
-			if (error !== null) return Err(error);
-			return readBack(rowId);
+			payload: JsonObject,
+		): Result<Row, NonconformingRow> {
+			const { conforming, issues } = table.conformance(payload);
+			return issues.length === 0
+				? Ok({ id: rowId, ...conforming })
+				: Err({
+						id: rowId,
+						raw: payload,
+						// The structural id rides along, so the two branches of the one
+						// recovery composition produce the same shape:
+						// `data ?? { ...defaults, ...error.conforming }` is a whole row
+						// either way.
+						conforming: { id: rowId, ...conforming },
+						issues,
+					});
 		}
 
 		return Object.freeze({
@@ -1340,75 +1654,85 @@ function createStoreEngine(
 			create(
 				fields: JsonObject,
 				options?: { readonly document?: readonly string[] },
-			): Result<Row, WriteRowError> {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
+			): Result<Row, RowWriteError> {
+				assertUsable();
 				const { data: validated, error } = table.validateWrite(fields);
 				if (error !== null) return Err(error);
-				return write(mintRowId(), validated, options?.document ?? []);
+				// What a create commits is the supplied fields plus the declared
+				// defaults and nothing else, so whole-row conformance is decidable
+				// here, before anything is written. Refusing now is what makes an
+				// Err mean "the row never existed" and an Ok always a conforming
+				// row; without this check, an untyped caller omitting a required
+				// field committed a row the same call then reported unreadable.
+				const { conforming, issues } = table.conformance(validated);
+				if (issues.length > 0) {
+					return RowWriteError.Nonconforming({ table: tableName, issues });
+				}
+				const rowId = mintRowId();
+				commit(
+					() => writeRow(root, rowId, validated, options?.document ?? []),
+					() => projectRow(rowId),
+				);
+				// Supplied plus defaults IS the row a `get` would now read; nothing
+				// else exists in a row this call just minted.
+				return Ok({ id: rowId, ...conforming });
 			},
-			get(rowId: string): Result<Row | undefined, ReadRowError> {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
+			get(rowId: string): Result<Row | undefined, NonconformingRow> {
+				assertUsable();
 				const payload = readRow(root, rowId);
 				if (payload === undefined) return Ok(undefined);
-				return table.project(addressOf(rowId), payload) as Result<
-					Row,
-					ReadRowError
-				>;
+				return conformRow(rowId, payload);
 			},
-			update(rowId: string, fields: JsonObject): Result<Row, WriteRowError> {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
+			update(rowId: string, fields: JsonObject): Result<void, UpdateRowError> {
+				assertUsable();
 				if (!hasRow(root, rowId)) {
 					return StoreError.RowAbsent({ table: tableName, rowId });
 				}
 				const { data: validated, error } = table.validateWrite(fields);
 				if (error !== null) return Err(error);
-				return write(rowId, validated);
+				commit(
+					() => writeRow(root, rowId, validated),
+					() => projectRow(rowId),
+				);
+				return Ok(undefined);
 			},
-			delete(rowId: string): Result<boolean, StoreError> {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
+			delete(rowId: string): boolean {
+				assertUsable();
 				let removed = false;
-				const { error } = commit(
-					APP_DOCUMENT,
+				commit(
 					() => {
 						removed = deleteRow(root, rowId);
 					},
 					() => projectRow(rowId),
 				);
-				if (error !== null) return Err(error);
-				return Ok(removed);
+				return removed;
 			},
-			ids(): Result<string[], StoreError> {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
-				return Ok(listRowIds(root));
+			ids(): string[] {
+				assertUsable();
+				return listRowIds(root);
 			},
 			list() {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
+				assertUsable();
 				const rows: Row[] = [];
-				const nonconforming: NonconformingRowError[] = [];
+				const nonconforming: NonconformingRow[] = [];
 				for (const [rowId, payload] of rowsOf(tableName)) {
-					const { data, error } = table.project(addressOf(rowId), payload);
+					const { data, error } = conformRow(rowId, payload);
 					if (error !== null) nonconforming.push(error);
-					else rows.push(data as Row);
+					else rows.push(data);
 				}
-				return Ok({ rows, nonconforming });
+				return { rows, nonconforming };
 			},
 			document(rowId: string): RowDocument | undefined {
 				// No Result, because there is nothing here that can fail. An absent
 				// row is a fact rather than a failure, which is the same answer
 				// `get` gives it, and Epicenter never interprets what is inside a
-				// document so there is no lens to disagree with.
+				// document so there is no declaration to disagree with.
 				const container = documentContainer(root, rowId);
 				return container === undefined ? undefined : rowDocumentOver(container);
 			},
 			subscribe(listener: TableInvalidationListener): () => void {
 				const unsubscribe = invalidations.subscribeTable(
-					lens.namespace,
+					workspace.namespace,
 					tableName,
 					listener,
 				);
@@ -1431,22 +1755,22 @@ function createStoreEngine(
 	}
 
 	/**
-	 * The replica verbs, or nothing at all.
+	 * The delivery machinery, or nothing at all.
 	 *
-	 * Composed rather than always present, so a store with no authority is
-	 * missing them at runtime exactly as the two constructors say it is at the
-	 * type: `'sync' in store` and the static picture agree.
+	 * Composed rather than always present, so a store with no authority has
+	 * no engine to reach: `syncEngineOf` finds nothing because nothing was
+	 * registered, exactly as `sync: undefined` says at the type.
 	 */
-	const replicaVerbs: ReplicaVerbs | undefined =
+	const syncEngine: SyncEngine | undefined =
 		replication === 'none'
 			? undefined
 			: {
+					...createClientLog(),
 					applyRemote(
 						update: Uint8Array,
 						opts?: { advanceTo?: number },
-					): Result<void, StoreError> {
-						const unusable = requireUsable();
-						if (unusable !== undefined) return Err(unusable);
+					): Result<void, ApplyFailedError> {
+						assertUsable();
 						// The RECEIVED bytes are what gets persisted, never what the document
 						// emitted in response to them. Measured against `@y/y@14.0.0-rc.24`: an
 						// update whose causal dependencies have not arrived is buffered into
@@ -1456,48 +1780,60 @@ function createStoreEngine(
 						// data is lost permanently with every layer reporting success.
 						pending = [];
 						const received = copyBytes(update);
+						// A decode refusal is a property of the bytes: nothing was
+						// accepted and the store stays usable, so it is returned rather
+						// than thrown.
 						const { error } = trySync({
 							try: () => Y.applyUpdateV2(index, received, remoteOrigin),
-							catch: (cause) => StoreError.StorageFailed({ cause }),
+							catch: (cause) => StoreError.ApplyFailed({ cause }),
 						});
 						if (error !== null) return Err(error);
 						// Dropped deliberately: whatever the document emitted describes the same
 						// change these bytes already carry, and re-persisting it would duplicate
 						// the chain.
 						pending = [];
-						const authored = [received];
 						// The projection is rebuilt rather than patched, because a remote update
 						// does not say which rows it touched. Measured against
 						// `@y/y@14.0.0-rc.24`: `observeDeep` reports a nested row's field edit as
 						// an event on the TABLE ROOT with `keysChanged` empty, so the observer
 						// cannot name the row. A full rebuild is 2 ms on the real vault, and it
-						// is one code path instead of two that can disagree.
-						const applied = persist(() => {
-							for (const update of authored) {
-								appendUpdate({
-									database,
-									history,
-									document: APP_DOCUMENT,
-									update,
+						// is one code path instead of two that can disagree. Contained: a
+						// rebuild that fails marks the index stale and MUST NOT keep the
+						// received bytes below from joining the durable queue, or an
+						// accepted remote update would never survive a restart.
+						try {
+							projectAccepted(rebuildReadIndex);
+							committedSomething = true;
+							const ops: DurableOp[] = [
+								{
+									kind: 'append',
+									bytes: received,
 									takenAt: now(),
-								});
-								committedSomething = true;
-							}
-							// With the bytes, never after them: the bookmark commits in the same
-							// step as what it accounts for, so no crash can leave foreign bytes
-							// behind a dial that still claims a fresh install (ADR-0231).
+									// Never the outbox: these bytes came FROM the authority.
+									outboxId: undefined,
+								},
+							];
+							// With the bytes, never after them: the bookmark and what it
+							// accounts for are adjacent ops in one atomic flush batch, so
+							// durable state can never hold a cursor ahead of the bytes, and
+							// never bytes wearing a fresh install's cursor (ADR-0231,
+							// carried by ADR-0238's whole-queue flush). The LIVE cursor
+							// advances now; the durable one advances when the batch lands,
+							// and a crash before then re-receives, which is free because an
+							// update is idempotent.
 							if (opts?.advanceTo !== undefined) {
-								writeCursor(database, APP_DOCUMENT, opts.advanceTo);
+								ops.push({ kind: 'cursor', seq: opts.advanceTo });
+								liveCursor = opts.advanceTo;
 							}
-							rebuildAllProjections();
-						});
-						// After the rebuild, which is the whole reason the ids were buffered:
-						// the `'delta'` that named them fired inside `applyUpdateV2` above,
-						// while the projection still described the state before it.
-						flushCommitted();
-						return applied;
+							controller.enqueue(ops);
+						} finally {
+							// After the rebuild, which is the whole reason the ids were buffered:
+							// the `'delta'` that named them fired inside `applyUpdateV2` above,
+							// while the projection still described the state before it.
+							flushCommitted();
+						}
+						return Ok(undefined);
 					},
-					sync: createClientLog(),
 					onLocalWork(listener: () => void): () => void {
 						localWorkListeners.add(listener);
 						return () => localWorkListeners.delete(listener);
@@ -1505,163 +1841,190 @@ function createStoreEngine(
 					hasUnresolvedDependencies: () => hasPendingStructs(index),
 				};
 
-	const base: Store = {
-		// One implementation, two doors onto it. The typed door exists so a lens
-		// authored as a literal carries its row types through; the untyped door is
-		// what a lens loaded from an application folder gets, where there is no
-		// literal to infer from and `unknown` is the honest answer.
-		bind: <const TLens extends LensJson>(lens: TLens) =>
-			// Through `unknown` deliberately: comparing the untyped view with
-			// `Result<LensView<TLens>, ...>` re-enters the per-field arktype
-			// instantiation and exceeds the depth limit. The runtime value is the
-			// same object either way; only the static view of it differs.
-			bindLens(lens) as unknown as Result<
-				LensView<TLens>,
-				LensParseError | StoreError
-			>,
+	// The one view this runtime will ever hold, built over the one definition
+	// after hydration so its seed reads the rows the durable record holds.
+	const view = buildView();
+
+	const base: WorkspaceStoreBase = {
 		onCommitted(listener: () => void): () => void {
 			committedListeners.add(listener);
 			return () => committedListeners.delete(listener);
 		},
-		pressure(): Result<StorePressure, StoreError> {
-			const unusable = requireUsable();
-			if (unusable !== undefined) return Err(unusable);
-			return trySync({
-				try: () => {
-					let liveRows = 0;
-					// Only bound tables, for the same reason the projection rebuild
-					// counts only those: a document may carry a table this process
-					// holds no lens for, and guessing at it would report a number
-					// nobody could act on.
-					for (const tableName of projectedTables.keys()) {
-						liveRows += listRowIds(tableRoot(index, tableName)).length;
-					}
-					const items = structCount(index);
-					return {
-						items,
-						liveRows,
-						itemsPerLiveRow: liveRows === 0 ? items : items / liveRows,
-					};
-				},
-				catch: (cause) => StoreError.StorageFailed({ cause }),
-			});
+		pressure(): StorePressure {
+			assertUsable();
+			let liveRows = 0;
+			// Only declared tables, for the same reason the projection rebuild
+			// counts only those: a document may carry a table this definition
+			// does not declare, and guessing at it would report a number
+			// nobody could act on.
+			for (const tableName of workspace.tables.keys()) {
+				liveRows += listRowIds(tableRoot(index, tableName)).length;
+			}
+			const items = structCount(index);
+			return {
+				items,
+				liveRows,
+				itemsPerLiveRow: liveRows === 0 ? items : items / liveRows,
+			};
 		},
 		stateVector: () => new Uint8Array(Y.encodeStateVector(index)),
 		encodeStateSince: (stateVector?: Uint8Array) =>
 			new Uint8Array(Y.encodeStateAsUpdateV2(index, stateVector)),
+		persistence: controller.persistence,
 		async [Symbol.asyncDispose]() {
 			if (disposed) return;
 			disposed = true;
+			// One final attempt over whatever is still queued, then let go.
+			// Disposal never spins on a blocked engine: closing while blocked is
+			// the accepted loss ADR-0238 makes visible, not a reason to hang.
+			await controller.drain();
 			index.destroy();
 			await dispose();
 		},
 	};
-	// An authority-less store really has no replica keys at runtime, so
-	// `'sync' in store` agrees with what the constructors promise, and both
-	// arms typecheck structurally: no assertion decides what a store is.
-	return replicaVerbs === undefined
-		? Object.freeze(base)
-		: Object.freeze({ ...base, ...replicaVerbs });
+	// Both kinds carry `sync`; the VALUE is the discriminant. A device store
+	// holds `undefined`, a replica holds the frozen capability, and the
+	// delivery machinery is registered against the capability so wrappers
+	// that spread the store (a `discard()` opener) keep the door reachable.
+	if (syncEngine === undefined) {
+		return { store: Object.freeze({ ...base, sync: undefined }), view };
+	}
+	const sync: SyncCapability = Object.freeze({
+		get: (): SyncFacts => ({ document: liveIdentity }),
+		subscribe(listener: () => void): () => void {
+			syncFactsListeners.add(listener);
+			return () => syncFactsListeners.delete(listener);
+		},
+	});
+	syncEngines.set(sync, Object.freeze(syncEngine));
+	return { store: Object.freeze({ ...base, sync }), view };
 
-	/**
-	 * Rebuild every bound table's projection.
-	 *
-	 * Only tables a binding created a projection for are rebuilt. A remote update
-	 * may carry a table this process holds no lens for, and inventing a relation
-	 * for it would mean guessing at columns Epicenter cannot interpret; those
-	 * rows stay in the CRDT, which is the truth, and appear the moment a lens
-	 * that declares them binds.
-	 */
 	function createClientLog(): ClientLog {
-		/** A read, wrapped the way every other SQLite touch in this file is. */
-		function read<TValue>(run: () => TValue): Result<TValue, StoreError> {
-			const unusable = requireUsable();
-			if (unusable !== undefined) return Err(unusable);
-			return trySync({
-				try: run,
-				catch: (cause) => StoreError.StorageFailed({ cause }),
-			});
-		}
-
 		return Object.freeze({
-			coalesce(): Result<OutboxEntry | undefined, StoreError> {
-				const { data: entries, error } = read(() => readOutbox(database));
-				if (error !== null) return Err(error);
+			coalesce(): OutboxEntry | undefined {
+				assertUsable();
+				// The DURABLE outbox, filtered through this session's
+				// acknowledgements. A local edit is offered to the authority only
+				// once it is durable (ADR-0238): the queue's contents are not
+				// here, so a blocked flush simply leaves nothing new to send. The
+				// ack overlay keeps a taken entry from being re-offered while its
+				// own `dropOutbox` op waits behind a blocked flush.
+				const entries = controller
+					.durableOutbox()
+					.filter((entry) => entry.id > ackedThrough);
 				const last = entries.at(-1);
-				if (last === undefined) return Ok(undefined);
-				if (entries.length === 1) return Ok(last);
+				if (last === undefined) return undefined;
+				if (entries.length === 1) return last;
 				const merged = new Uint8Array(
 					Y.mergeUpdatesV2(
 						entries.map((entry) => entry.bytes) as Uint8Array<ArrayBuffer>[],
 					),
 				);
-				const { error: writeError } = persist(() =>
-					replaceOutboxThrough(database, last.id, merged),
-				);
-				if (writeError !== null) return Err(writeError);
-				return Ok({ id: last.id, bytes: merged });
+				// The durable outbox collapses to the merged entry too; until that
+				// lands, a repeated coalesce re-merges the same entries, which is
+				// idempotent.
+				controller.enqueue([
+					{ kind: 'replaceOutbox', throughId: last.id, merged },
+				]);
+				return { id: last.id, bytes: merged };
 			},
-			acknowledge(throughId: number): Result<void, StoreError> {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
-				return persist(() => dropOutboxThrough(database, throughId));
+			acknowledge(throughId: number): void {
+				assertUsable();
+				ackedThrough = Math.max(ackedThrough, throughId);
+				// If this op never lands and the client restarts, the entries are
+				// re-offered; the authority already holds them and an update is
+				// idempotent, so re-delivery is the safe direction.
+				controller.enqueue([{ kind: 'dropOutbox', throughId }]);
 			},
-			cursor(): Result<number, StoreError> {
-				return read(() => readCursor(database, APP_DOCUMENT));
+			cursor(): number {
+				assertUsable();
+				// The LIVE position: everything this document has applied, whether
+				// or not its durable record has caught up. The rebuild lease reads
+				// this beside `encodeStateSince()`, which is also live, so the two
+				// always describe the same state. At open, with nothing queued, it
+				// equals the durable cursor, which is what a reconnect dials from.
+				return liveCursor;
 			},
-			advance(seq: number): Result<void, StoreError> {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
-				return persist(() => writeCursor(database, APP_DOCUMENT, seq));
+			advance(seq: number): void {
+				assertUsable();
+				liveCursor = seq;
+				controller.enqueue([{ kind: 'cursor', seq }]);
 			},
-			documentIdentity(): Result<string | undefined, StoreError> {
-				return read(() => readDocumentIdentity(database));
+			documentIdentity(): string | undefined {
+				assertUsable();
+				return liveIdentity;
 			},
-			adoptDocumentIdentity(id: string): Result<void, StoreError> {
-				const unusable = requireUsable();
-				if (unusable !== undefined) return Err(unusable);
-				// The stamp lands only on an empty, unstamped store, checked here
-				// because this verb owns the invariant: any persisted bytes,
-				// pending work, or read progress without an identity are
-				// unplaceable across the clean break and must be discarded, never
-				// stamped into a document they may not belong to (ADR-0231).
-				const held = read(() => {
-					if (readDocumentIdentity(database) !== undefined) return 'stamped';
-					const updates =
-						database.all<SqliteRow & { count: number }>(
-							'SELECT COUNT(*) AS count FROM _updates',
-						)[0]?.count ?? 0;
-					const outbox =
-						database.all<SqliteRow & { count: number }>(
-							'SELECT COUNT(*) AS count FROM _outbox',
-						)[0]?.count ?? 0;
-					const cursor = readCursor(database, APP_DOCUMENT);
-					return updates === 0 && outbox === 0 && cursor === 0
-						? 'empty'
-						: 'holding';
-				});
-				if (held.error !== null) return Err(held.error);
+			adoptDocumentIdentity(id: string): Result<void, UnstampableError> {
+				assertUsable();
 				// First write wins, so a store that already carries its stamp has
 				// nothing to do; membership changes only by discarding the file.
-				if (held.data === 'stamped') return Ok(undefined);
-				if (held.data === 'holding') return StoreError.Unstampable();
-				// Marked committed so a write-behind host (the browser) persists it
-				// now rather than whenever the next local edit happens to land: the
-				// stamp is only worth anything if it is durable before the push it
-				// precedes.
-				const written = persist(() => {
-					writeDocumentIdentity(database, id);
+				if (liveIdentity !== undefined) return Ok(undefined);
+				// The stamp lands only on an empty, unstamped store, checked here
+				// because this verb owns the invariant: any bytes, pending work,
+				// or read progress without an identity are unplaceable across the
+				// clean break and must be discarded, never stamped into a document
+				// they may not belong to (ADR-0231). The check spans the durable
+				// mirror AND the queue, so work retained behind a blocked flush
+				// still counts as held.
+				if (controller.hasAnyState() || liveCursor > 0) {
+					return StoreError.Unstampable();
+				}
+				liveIdentity = id;
+				// Queued ahead of every append that follows, and the sender reads
+				// only the durable outbox, so no push can leave before the stamp
+				// is durable: a durable outbox entry structurally implies a
+				// durable identity (ADR-0238 closing ADR-0231's window).
+				try {
 					committedSomething = true;
-				});
-				flushCommitted();
-				return written;
+					controller.enqueue([{ kind: 'identity', id }]);
+				} finally {
+					flushCommitted();
+					// The one fact `sync.get()` reports just changed; the boot gate
+					// that waits on it hears it here. Contained like every listener.
+					for (const listener of [...syncFactsListeners]) {
+						const { error } = trySync({
+							try: listener,
+							catch: (cause) => StoreError.SubscriberThrew({ cause }),
+						});
+						if (error !== null) log.error(error);
+					}
+				}
+				return Ok(undefined);
 			},
 		});
 	}
 
-	function rebuildAllProjections(): void {
-		for (const [tableName, fieldNames] of projectedTables) {
-			rebuildProjectedTable(database, tableName, fieldNames, rowsOf(tableName));
-		}
+	/**
+	 * Rebuild the whole read index from the live document: schema, every
+	 * declared table, and KV, in one projection transaction.
+	 *
+	 * The one rebuild path, shared by the seed at construction, by a remote
+	 * update (which cannot name the rows it touched), and by a stale index at
+	 * `query` time (which cannot say what a failed write left behind, so
+	 * nothing short of everything is trustworthy). It reapplies exactly one
+	 * definition: the one this runtime was constructed over (ADR-0240). Only
+	 * declared tables are rebuilt: a document may carry a table this
+	 * definition does not declare, and inventing a relation for it would mean
+	 * guessing at columns Epicenter cannot interpret. Those rows stay in the
+	 * CRDT, which is the truth, and appear the moment a release that declares
+	 * them opens.
+	 */
+	function rebuildReadIndex(): void {
+		// Reapplied because a stale index may be stale at the schema: the write
+		// that failed could have been the seed itself, and a durable file may
+		// hold relations an older release's definition built. Idempotent when
+		// nothing changed.
+		applyProjectionSchema(projection, workspace);
+		projection.transaction(() => {
+			for (const [tableName, table] of workspace.tables) {
+				rebuildProjectedTable(
+					projection,
+					tableName,
+					[...table.fields.keys()],
+					rowsOf(tableName),
+				);
+			}
+			projectKvRow();
+		});
 	}
 }

@@ -1,5 +1,5 @@
 /**
- * Whispering's inert Lens.
+ * Whispering's inert workspace declaration.
  *
  * Pure JSON: arktype expressions for the fields and nothing that knows about
  * storage, sync or documents (ADR-0213). Runtimes own all of that.
@@ -26,8 +26,8 @@
  * which a read applies and a write never stores.
  */
 
-import type { LensView } from '@epicenter/data';
-import { defineLens, type KvOf, type RowOf } from '@epicenter/lens';
+import type { WorkspaceView } from '@epicenter/data';
+import { defineWorkspace, type KvOf, type RowOf } from '@epicenter/workspace';
 
 /** Runtime-minted structural row ids. */
 export type RecordingId = string;
@@ -53,7 +53,7 @@ const recordingsTable = {
 	/**
 	 * The transcription outcome, flattened into three columns.
 	 *
-	 * It was one nullable discriminated union, and a Lens cannot express an
+	 * It was one nullable discriminated union, and a workspace cannot express an
 	 * inline object: `'{ status: ... }'` does not parse, and `'object|null'`
 	 * parses but validates nothing and makes the whole outcome one LWW value.
 	 * Three columns keep every field checked and let a failure's message merge
@@ -85,9 +85,9 @@ const recipesTable = {
  * canonical single-string encoding would have to be invented and tested. Two
  * arrays need neither.
  *
- * `|null = null` rather than a default array, because a Lens CANNOT express an
+ * `|null = null` rather than a default array, because a workspace CANNOT express an
  * array default: `'string[] = []'` fails to parse. Every array field in every
- * lens hits this, so it is worth saying once loudly.
+ * workspace hits this, so it is worth saying once loudly.
  */
 const shortcut = {
 	modifiers: "('ctrl'|'alt'|'shift'|'meta'|'fn')[]|null = null",
@@ -126,7 +126,7 @@ const settingsKv = {
 	 * A plain string, not a union of the 58 supported languages.
 	 *
 	 * A hand-written union here would drift from `constants/languages.ts`, and
-	 * drift means the Lens refusing a write the UI offered. The app validates
+	 * drift means the declaration refusing a write the UI offered. The app validates
 	 * against the const; the three SMALL selects above are spelled out because
 	 * a two-to-eight-member union is worth checking at the storage boundary.
 	 */
@@ -159,15 +159,15 @@ const settingsKv = {
 	shortcutOpenSettingsKeys: 'string[]|null = null',
 } as const;
 
-export const whisperingLens = defineLens({
+export const whisperingWorkspace = defineWorkspace({
 	namespace: 'so.epicenter.whispering',
 	title: 'Whispering',
 	kv: settingsKv,
 	tables: { recordings: recordingsTable, recipes: recipesTable },
 });
 
-/** The typed view of one store through Whispering's Lens. */
-export type WhisperingData = LensView<typeof whisperingLens>;
+/** The typed view of one store through Whispering's workspace. */
+export type WhisperingData = WorkspaceView<typeof whisperingWorkspace>;
 
 export type Recording = RowOf<typeof recordingsTable>;
 export type Recipe = RowOf<typeof recipesTable>;
@@ -178,12 +178,12 @@ export type Recipe = RowOf<typeof recipesTable>;
  * Through `KvOf` rather than `typeof settingsKv`, which was the DECLARATION
  * (a record of arktype expressions in strings) wearing the name of the values.
  */
-export type WhisperingSettingValues = KvOf<typeof whisperingLens>;
+export type WhisperingSettingValues = KvOf<typeof whisperingWorkspace>;
 
 /**
- * Default shortcuts, applied by the app rather than declared in the Lens.
+ * Default shortcuts, applied by the app rather than declared in the workspace.
  *
- * A Lens cannot default an array, so `keys` defaults to null and "no shortcut
+ * A workspace cannot default an array, so `keys` defaults to null and "no shortcut
  * configured" and "the shipped shortcut" would otherwise be the same value.
  * These are release-local product policy anyway, which is where they were
  * before (`definition.ts`), and they are the only part of that file worth

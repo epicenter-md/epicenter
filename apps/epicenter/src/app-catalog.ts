@@ -9,7 +9,7 @@
  *   current                      one line: the selected generation ID
  *   generations/
  *     <generation>/              one complete, never-mutated catalog copy
- *       <any-name>/index.html + lens.json ...
+ *       <any-name>/index.html + workspace.json ...
  * ```
  *
  * The lifecycle contract:
@@ -72,7 +72,7 @@ export async function loadActiveAppCatalog(
 /**
  * Validate a candidate directory of built app outputs and promote it to the
  * next-start catalog generation. Every non-dot entry below `candidateRoot`
- * must satisfy the member contract (`index.html` and a valid `lens.json`
+ * must satisfy the member contract (`index.html` and a valid `workspace.json`
  * declaring a namespace no sibling already claimed, ADR-0210); one refused
  * entry fails the whole promotion so a typo cannot silently drop an app. The pointer is replaced
  * only after the complete generation exists. Failed copies and validations

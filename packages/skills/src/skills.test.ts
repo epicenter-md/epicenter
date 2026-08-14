@@ -1,5 +1,5 @@
 /**
- * Skills data tests, against the real Lens through the Bun store.
+ * Skills data tests, against the real workspace through the Bun store.
  *
  * Key behaviors:
  * - a stricter release surfaces old stored payloads until an explicit update repairs one
@@ -19,13 +19,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { open } from '@epicenter/data/bun';
 import { InstantString } from '@epicenter/field';
-import { defineLens } from '@epicenter/lens';
+import { defineWorkspace } from '@epicenter/workspace';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { SKILL_CONTENT, type SkillsData, skillsLens } from './lens.js';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
+import {
+	SKILL_CONTENT,
+	type SkillsData,
+	skillsWorkspace,
+} from './workspace.js';
 
-/** The Skills Lens as an earlier release declared it, before `sourceId`. */
-const historicalSkillsLens = defineLens({
+/** The Skills workspace as an earlier release declared it, before `sourceId`. */
+const historicalSkillsWorkspace = defineWorkspace({
 	namespace: 'so.epicenter.skills',
 	tables: {
 		skills: {
@@ -37,7 +41,7 @@ const historicalSkillsLens = defineLens({
 });
 
 async function openSkills(root: string) {
-	const opened = await open(skillsLens, { root });
+	const opened = await open(skillsWorkspace, { root });
 	if (opened.error !== null) throw opened.error;
 	return opened.data;
 }
@@ -48,13 +52,13 @@ function readInstructions(data: SkillsData, skillId: string): string {
 	return content.toString();
 }
 
-test('a stricter Skills Lens exposes nonconformance until an update repairs it', async () => {
+test('a stricter Skills workspace exposes nonconformance until an update repairs it', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-skills-'));
 	try {
-		// One file, two interpretations of it: the historical Lens writes a row
+		// One file, two interpretations of it: the historical workspace writes a row
 		// this release cannot read, and the current one has to say so rather than
 		// hide it (ADR-0125).
-		const historical = await open(historicalSkillsLens, { root });
+		const historical = await open(historicalSkillsWorkspace, { root });
 		if (historical.error !== null) throw historical.error;
 		const oldSkill = expectOk(
 			historical.data.tables.skills.create({
@@ -71,25 +75,27 @@ test('a stricter Skills Lens exposes nonconformance until an update repairs it',
 		);
 
 		const error = expectErr(data.tables.skills.get(oldSkill.id));
-		if (error.name !== 'Nonconforming') throw new Error(error.message);
 		expect(error.issues.map(({ field }) => field)).toContain('sourceId');
 		// The conforming half survives the failed read, which is what recovery is
 		// composed from.
 		expect(error.conforming.name).toBe('writing-voice');
 
-		const beforeRepair = expectOk(data.tables.skills.list());
+		const beforeRepair = data.tables.skills.list();
 		expect(beforeRepair.rows).toEqual([]);
 		expect(beforeRepair.nonconforming.map(({ id }) => id)).toEqual([
 			oldSkill.id,
 		]);
 
-		const repaired = expectOk(
+		expectOk(
 			data.tables.skills.update(oldSkill.id, {
 				sourceId: 'agentskills-writing-voice',
 			}),
 		);
-		expect(repaired.id).toBe(oldSkill.id);
-		expect(expectOk(data.tables.skills.list()).nonconforming).toEqual([]);
+		// The write reports only that it landed; the repaired row is `get`'s
+		// answer, at the same structural id.
+		const repaired = expectOk(data.tables.skills.get(oldSkill.id));
+		expect(repaired?.sourceId).toBe('agentskills-writing-voice');
+		expect(data.tables.skills.list().nonconforming).toEqual([]);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -159,7 +165,7 @@ test('filesystem import stores the metadata id as sourceId, not as the row id', 
 		const imported = await importSkillsFromDisk({ data, dir: inputRoot });
 		expect(imported.created).toBe(1);
 		expect(imported.nonconforming).toEqual([]);
-		const [skill] = expectOk(data.tables.skills.list()).rows;
+		const [skill] = data.tables.skills.list().rows;
 		expect(skill?.sourceId).toBe('portable-writing-voice');
 		expect(skill?.id).not.toBe('portable-writing-voice');
 

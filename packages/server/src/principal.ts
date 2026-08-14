@@ -43,7 +43,7 @@ export type BlobPrincipalPrefix = `principals/${string}/blobs/`;
  * client that names another application's namespace still lands inside its OWN
  * partition.
  *
- * The application is named by its Lens namespace, which is the same identifier
+ * The application is named by its workspace namespace, which is the same identifier
  * the replica derives its local storage from, so the two halves of one
  * application cannot come to disagree about which application they are.
  */

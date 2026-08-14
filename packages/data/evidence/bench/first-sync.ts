@@ -87,13 +87,13 @@ import { Database } from 'bun:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { defineWorkspace } from '@epicenter/workspace';
 
-import { createReplicaStore } from '../../src/store/store.js';
+import { createAccountStore, syncEngineOf } from '../../src/store/store.js';
 import { openSyncAuthority } from '../../src/sync/authority.js';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -198,25 +198,21 @@ function build(
 	const authority = openSyncAuthority({
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	const store = createReplicaStore({
+	const db = createAccountStore({
+		workspace: workspace,
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	const bound = store.bind(lens);
-	if (bound.error !== null) throw bound.error;
-	const db = bound.data;
+	const store = db.store;
 
 	let sinceSend = 0;
 	/** Hand everything unsent to the authority, exactly as the client does. */
 	const send = () => {
-		const owed = store.sync.coalesce();
-		if (owed.error !== null) throw owed.error;
-		if (owed.data === undefined) return;
-		const position = authority.append(owed.data.bytes);
+		const owed = syncEngineOf(store).coalesce();
+		if (owed === undefined) return;
+		const position = authority.append(owed.bytes);
 		if (position.error !== null) throw position.error;
-		const acknowledged = store.sync.acknowledge(owed.data.id);
-		if (acknowledged.error !== null) throw acknowledged.error;
-		const advanced = store.sync.advance(position.data);
-		if (advanced.error !== null) throw advanced.error;
+		syncEngineOf(store).acknowledge(owed.id);
+		syncEngineOf(store).advance(position.data);
 		if (mode === 'log') return;
 		// The snapshot half. The resident replica is at the head by construction,
 		// which is the condition the hub checks on a real connection before it asks
@@ -287,8 +283,7 @@ function build(
 		for (let gone = 0; gone < DAY.notesDeleted; gone += 1) {
 			const victim = alive.shift() as string;
 			transaction(() => {
-				const removed = db.tables.notes.delete(victim);
-				if (removed.error !== null) throw removed.error;
+				db.tables.notes.delete(victim);
 			});
 		}
 		for (let fresh = 0; fresh < DAY.notesCreated; fresh += 1) {
@@ -330,7 +325,6 @@ function build(
 	for (const entry of tail.data) tailBytes += entry.bytes.length;
 
 	const ids = db.tables.notes.ids();
-	if (ids.error !== null) throw ids.error;
 	const canary = db.tables.notes.get(canaryId);
 	if (canary.error !== null) throw canary.error;
 	const canaryProse = db.tables.notes
@@ -352,7 +346,7 @@ function build(
 			storedBytes: stored.data,
 			head: head.data,
 			snapshotPosition: snapshot.data?.position ?? 0,
-			liveRows: ids.data.length,
+			liveRows: ids.length,
 			canaryTitle: canary.data?.title ?? '',
 			canaryProse,
 		},
@@ -402,19 +396,18 @@ type Expectation = {
 
 function apply(packed: Uint8Array, expectation: Expectation): ApplyReport {
 	const updates = unpackPayload(packed);
-	const store = createReplicaStore({
+	const db = createAccountStore({
+		workspace: workspace,
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	const bound = store.bind(lens);
-	if (bound.error !== null) throw bound.error;
-	const db = bound.data;
+	const store = db.store;
 
 	let appliedBytes = 0;
 	const started = performance.now();
 	for (const update of updates) {
 		// `applyRemote` commits what it received, which is what a real replica does
 		// and is part of what the arriving device actually waits on.
-		const applied = store.applyRemote(new Uint8Array(update));
+		const applied = syncEngineOf(store).applyRemote(new Uint8Array(update));
 		if (applied.error !== null) throw applied.error;
 		appliedBytes += update.length;
 	}
@@ -422,10 +415,7 @@ function apply(packed: Uint8Array, expectation: Expectation): ApplyReport {
 
 	// The control. Bytes moving is not the claim; the vault arriving is.
 	const rows = db.tables.notes.list();
-	if (rows.error !== null) throw rows.error;
-	const canary = rows.data.rows.find(
-		(row) => row.title === expectation.canaryTitle,
-	);
+	const canary = rows.rows.find((row) => row.title === expectation.canaryTitle);
 	const prose =
 		canary === undefined
 			? undefined
@@ -438,20 +428,20 @@ function apply(packed: Uint8Array, expectation: Expectation): ApplyReport {
 		expectation.canaryProse.length > BODY_CHARS;
 	const verified =
 		expectationIsReal &&
-		rows.data.rows.length === expectation.liveRows &&
-		rows.data.nonconforming.length === 0 &&
+		rows.rows.length === expectation.liveRows &&
+		rows.nonconforming.length === 0 &&
 		canary !== undefined &&
 		prose === expectation.canaryProse &&
-		!store.hasUnresolvedDependencies();
+		!syncEngineOf(store).hasUnresolvedDependencies();
 
 	return {
 		applyMs,
 		appliedBytes,
 		appliedEntries: updates.length,
 		verified,
-		saw: `${rows.data.rows.length} rows and ${rows.data.nonconforming.length} nonconforming, canary ${
+		saw: `${rows.rows.length} rows and ${rows.nonconforming.length} nonconforming, canary ${
 			canary === undefined ? 'MISSING' : 'present'
-		}, prose ${prose === undefined ? 'MISSING' : `${prose.length} chars`}, unresolved dependencies ${store.hasUnresolvedDependencies()}`,
+		}, prose ${prose === undefined ? 'MISSING' : `${prose.length} chars`}, unresolved dependencies ${syncEngineOf(store).hasUnresolvedDependencies()}`,
 	};
 }
 

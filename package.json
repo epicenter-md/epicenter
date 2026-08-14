@@ -129,7 +129,7 @@
 	},
 	"scripts": {
 		"build": "bun run build:declarations && bun run --filter '*' build",
-		"build:declarations": "bun run --cwd packages/field build && bun run --cwd packages/lens build",
+		"build:declarations": "bun run --cwd packages/field build && bun run --cwd packages/workspace build",
 		"check": "bun run lint:ci && bun run typecheck && bun run test && bun run check:structure",
 		"dev": "bun run dev:honeycrisp",
 		"dev:api": "bun run --cwd apps/api dev",

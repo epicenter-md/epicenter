@@ -21,7 +21,7 @@
 
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { parseLens } from '@epicenter/lens';
+import { parseWorkspace } from '@epicenter/workspace';
 import mime from 'mime';
 
 export type StaticAsset = {
@@ -54,13 +54,14 @@ type ServedSpa = {
  */
 export type CatalogApp = ServedSpa & {
 	/**
-	 * The compiled `lens.json` is no longer carried past admission.
+	 * The compiled `workspace.json` is no longer carried past admission.
 	 *
 	 * It used to be, so the host could interpret the member's rows: render them
 	 * to markdown, project them to SQLite, and serve them raw. The host owns no
 	 * application data now (ADR-0226), so what a member declares matters at
-	 * admission (it must be a well-formed Lens, and its namespace is its id) and
-	 * nowhere after. A field with no reader is a field that goes stale.
+	 * admission (it must be a well-formed workspace declaration, and its
+	 * namespace is its id) and nowhere after. A field with no reader is a field
+	 * that goes stale.
 	 */
 	/**
 	 * The directory it arrived in, which names nothing and is carried only so
@@ -73,7 +74,7 @@ export type CatalogApp = ServedSpa & {
  * One compiled application's release build.
  *
  * A compiled application never enters the catalog (ADR-0179), so it declares no
- * Lens and arrives in no candidate directory. Everything the server does with
+ * workspace declaration and arrives in no candidate directory. Everything the server does with
  * it, it does identically to an admitted member, which is why both are
  * {@link ServedSpa} and one route loop serves them.
  */
@@ -93,7 +94,7 @@ export type AppCatalog = {
  * Derive the trusted app catalog from validated build output: one directory
  * per app below `catalogRoot`. The catalog is generated, never authored. A
  * missing root is an empty catalog; an entry that breaks the output contract
- * (a missing `index.html`, a missing or invalid `lens.json`, a namespace a
+ * (a missing `index.html`, a missing or invalid `workspace.json`, a namespace a
  * sibling already claimed, or a root that escapes the catalog directory) is not
  * a catalog member.
  *
@@ -136,35 +137,36 @@ export async function deriveAppCatalog(
 
 		const declaration = await containedFile(
 			appRoot,
-			resolve(appRoot, 'lens.json'),
+			resolve(appRoot, 'workspace.json'),
 		);
 		if (declaration.kind !== 'file') continue;
-		// Admission still requires a well-formed Lens, because the namespace it
-		// declares is the id everything else addresses this member by (ADR-0210).
+		// Admission still requires a well-formed workspace declaration, because
+		// the namespace it declares is the id everything else addresses this
+		// member by (ADR-0210).
 		let declared: unknown;
 		try {
 			declared = JSON.parse(await Bun.file(declaration.path).text());
 		} catch {
 			continue;
 		}
-		const { data: lens } = parseLens(declared);
-		if (lens === null) continue;
+		const { data: workspace } = parseWorkspace(declared);
+		if (workspace === null) continue;
 
 		// The namespace is the id (ADR-0210), so the directory this arrived in
 		// names nothing and two directories may declare one namespace. The
 		// filesystem used to refuse that by refusing two directories with one
 		// name; now the first declaration wins and the second is not a member,
 		// which `promoteAppCatalogCandidate` turns into a refused promotion.
-		if (claimed.has(lens.namespace)) continue;
-		claimed.add(lens.namespace);
+		if (claimed.has(workspace.namespace)) continue;
+		claimed.add(workspace.namespace);
 
 		apps.push({
-			id: lens.namespace,
-			title: lens.title ?? lens.namespace,
+			id: workspace.namespace,
+			title: workspace.title ?? workspace.namespace,
 			page: await Bun.file(index.path).text(),
 			directory: name,
 			resolve: createContainedResolver({
-				prefix: `/apps/${lens.namespace}/`,
+				prefix: `/apps/${workspace.namespace}/`,
 				root: appRoot,
 				index: index.path,
 			}),

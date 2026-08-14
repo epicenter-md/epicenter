@@ -27,12 +27,12 @@
  * loud `RebirthFailed` rather than degraded prose, which is the honest
  * failure until upstream fixes `clone()`.
  */
-import { LENS_NAMESPACE, STORE_REPLACE_ROUTE } from '@epicenter/sync';
+import { STORE_REPLACE_ROUTE, WORKSPACE_NAMESPACE } from '@epicenter/sync';
 import * as Y from '@y/y';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
-import type { ReplicaStore, StoreError } from '../store/store.js';
+import { type AccountStore, syncEngineOf } from '../store/store.js';
 
 declare const rebuilt: unique symbol;
 
@@ -107,7 +107,7 @@ export type RebuildError = InferErrors<typeof RebuildError>;
 
 /**
  * How a rebuild reaches its authority: the host's authenticated fetch, the
- * deployment's base URL, and the Lens namespace it is rebuilding.
+ * deployment's base URL, and the workspace namespace it is rebuilding.
  */
 export type StoreTransport = {
 	fetch(input: string, init?: RequestInit): Promise<Response>;
@@ -147,9 +147,9 @@ function copyInto(source: Y.Type, target: Y.Type): void {
  * for a person-initiated verb.
  */
 export function rebuildDocument(
-	store: Pick<ReplicaStore, 'encodeStateSince' | 'hasUnresolvedDependencies'>,
+	store: AccountStore,
 ): Result<RebuiltState, RebuildError> {
-	if (store.hasUnresolvedDependencies()) {
+	if (syncEngineOf(store).hasUnresolvedDependencies()) {
 		return RebuildError.UnresolvedDependencies();
 	}
 	return trySync({
@@ -268,25 +268,24 @@ export async function rebuildWorkspace({
 	store,
 	transport,
 }: {
-	store: ReplicaStore;
+	store: AccountStore;
 	transport: StoreTransport;
-}): Promise<Result<{ document: string }, RebuildError | StoreError>> {
-	if (!LENS_NAMESPACE.test(transport.namespace)) {
+}): Promise<Result<{ document: string }, RebuildError>> {
+	if (!WORKSPACE_NAMESPACE.test(transport.namespace)) {
 		return RebuildError.ReplaceFailed({
-			cause: new Error(`'${transport.namespace}' is not a Lens namespace`),
+			cause: new Error(`'${transport.namespace}' is not a workspace namespace`),
 		});
 	}
-	const identity = store.sync.documentIdentity();
-	if (identity.error !== null) return Err(identity.error);
-	if (identity.data === undefined) return RebuildError.NeverSynced();
-	const cursor = store.sync.cursor();
-	if (cursor.error !== null) return Err(cursor.error);
+	const engine = syncEngineOf(store);
+	const identity = engine.documentIdentity();
+	if (identity === undefined) return RebuildError.NeverSynced();
+	const cursor = engine.cursor();
 	const bytes = rebuildDocument(store);
 	if (bytes.error !== null) return Err(bytes.error);
 
 	const answer = await postReplace(
 		transport,
-		{ fromDocument: identity.data, atHead: cursor.data },
+		{ fromDocument: identity, atHead: cursor },
 		bytes.data,
 	);
 	if (answer.error !== null) return Err(answer.error);

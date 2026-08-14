@@ -7,12 +7,8 @@ import {
 	generateBlobId,
 	type RemoteBlobNotFound,
 } from '@epicenter/blobs';
-import type { NonconformingRowError } from '@epicenter/lens';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+import type { NonconformingRow } from '@epicenter/data';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { WhisperingData } from '../workspace';
 import {
@@ -29,10 +25,6 @@ import {
 } from './recording-audio';
 
 export const RecordingDeletionError = defineErrors({
-	RowDeleteFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Could not delete the recording row: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
 	DeletionFailed: ({
 		recordingId,
 		deletedRecordingIds,
@@ -41,7 +33,7 @@ export const RecordingDeletionError = defineErrors({
 	}: {
 		recordingId: Recording['id'];
 		deletedRecordingIds: Recording['id'][];
-		stage: 'online-copy' | 'device-copy' | 'recording-row';
+		stage: 'online-copy' | 'device-copy';
 		cause: unknown;
 	}) => ({
 		message:
@@ -59,8 +51,7 @@ export type RecordingDeletionError = InferErrors<typeof RecordingDeletionError>;
 export type WhisperingRecordings = {
 	readonly sorted: Recording[];
 	readonly count: number;
-	readonly nonconforming: NonconformingRowError[];
-	readonly loadError: unknown;
+	readonly nonconforming: NonconformingRow[];
 	/** Whether the environment currently has an online audio copy capability. */
 	readonly remoteAvailable: boolean;
 	get(id: Recording['id']): Recording | undefined;
@@ -131,8 +122,7 @@ export function createWhisperingRecordings({
 }) {
 	let rows: Recording[] = [];
 	let sorted: Recording[] = [];
-	let nonconforming: NonconformingRowError[] = [];
-	let loadError: unknown = null;
+	let nonconforming: NonconformingRow[] = [];
 	const listeners = new Set<() => void>();
 	const notify = () => {
 		for (const listener of listeners) listener();
@@ -162,15 +152,9 @@ export function createWhisperingRecordings({
 	 */
 	function read(): void {
 		const listed = table.list();
-		if (listed.error !== null) {
-			loadError = listed.error;
-			notify();
-			return;
-		}
-		rows = listed.data.rows.map(asRecording);
+		rows = listed.rows.map(asRecording);
 		sorted = sortRows(rows);
-		nonconforming = listed.data.nonconforming;
-		loadError = null;
+		nonconforming = listed.nonconforming;
 		notify();
 	}
 
@@ -243,17 +227,9 @@ export function createWhisperingRecordings({
 					cause: blobError,
 				});
 			}
-			const removed = table.delete(recording.id);
-			if (removed.error !== null) {
-				return RecordingDeletionError.DeletionFailed({
-					recordingId: recording.id,
-					deletedRecordingIds,
-					stage: 'recording-row',
-					cause: RecordingDeletionError.RowDeleteFailed({
-						cause: removed.error,
-					}).error,
-				});
-			}
+			// The row delete cannot fail: it reports only whether a row was there
+			// to take, and an already-gone row is still truthfully deleted.
+			table.delete(recording.id);
 			deletedRecordingIds.push(recording.id);
 		}
 		return Ok(undefined);
@@ -274,9 +250,6 @@ export function createWhisperingRecordings({
 		},
 		get nonconforming() {
 			return nonconforming;
-		},
-		get loadError() {
-			return loadError;
 		},
 		get remoteAvailable() {
 			return blobs.remote !== null;
@@ -326,7 +299,20 @@ export function createWhisperingRecordings({
 			} = partial as Partial<Recording>;
 			const written = table.update(id, changes);
 			if (written.error !== null) throw written.error;
-			return asRecording(written.data);
+			// The write reports only that it landed; what the row now reads as is
+			// `get`'s answer. Subscriptions fired inside the write, so the cache is
+			// already refreshed by the time this re-read runs.
+			const reread = table.get(id);
+			if (reread.error !== null) {
+				throw new Error(
+					`Recording '${id}' no longer reads whole after this patch`,
+					{ cause: reread.error },
+				);
+			}
+			if (reread.data === undefined) {
+				throw new Error(`Recording '${id}' vanished during this patch`);
+			}
+			return asRecording(reread.data);
 		},
 		async delete(toDelete) {
 			const ids = Array.isArray(toDelete) ? toDelete : [toDelete];

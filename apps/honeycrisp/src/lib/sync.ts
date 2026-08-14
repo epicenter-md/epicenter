@@ -16,9 +16,9 @@
  */
 
 import type { AuthClient } from '@epicenter/auth';
-import type { ReplicaStore } from '@epicenter/data';
+import type { AccountStore } from '@epicenter/data';
 import { attachStoreSync, type SyncConnection } from '@epicenter/data/sync';
-import { honeycrispLens } from '@epicenter/honeycrisp';
+import { honeycrispWorkspace } from '@epicenter/honeycrisp';
 import { reportBackgroundError } from './report.js';
 
 /**
@@ -36,7 +36,7 @@ export function attachHoneycrispSync({
 	onSuperseded,
 	onDenied,
 }: {
-	store: ReplicaStore;
+	store: AccountStore;
 	auth: AuthClient;
 	/**
 	 * This replica's document was replaced (ADR-0231). The driver has already
@@ -53,7 +53,7 @@ export function attachHoneycrispSync({
 }): SyncConnection {
 	return attachStoreSync({
 		store,
-		namespace: honeycrispLens.namespace,
+		namespace: honeycrispWorkspace.namespace,
 		transport: {
 			baseURL: auth.deployment.baseURL,
 			openWebSocket: (url) => auth.openWebSocket(url),

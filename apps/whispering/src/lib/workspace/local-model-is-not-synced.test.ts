@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { whisperingLens } from './index';
+import { whisperingWorkspace } from './index';
 
 /**
  * The active local transcription model must never synchronize (ADR-0180).
@@ -10,13 +10,13 @@ import { whisperingLens } from './index';
  * transcription *route* here and nothing about which local model runs; the host
  * owns that, device-locally, and Epicenter Home administers it.
  *
- * This guards the direction the mistake would come from. The Lens's `kv` section
+ * This guards the direction the mistake would come from. The workspace's `kv` section
  * IS the synced settings surface, so a local-model key landing in it is exactly
  * how the invariant would silently break: the key would look like an ordinary
  * setting and start replicating.
  */
 describe('the active local model is device-local', () => {
-	const settingKeys = Object.keys(whisperingLens.kv);
+	const settingKeys = Object.keys(whisperingWorkspace.kv);
 
 	it('is absent from the synced settings contract', () => {
 		const localModelKeys = settingKeys.filter(

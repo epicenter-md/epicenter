@@ -14,13 +14,13 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { defineWorkspace } from '@epicenter/workspace';
 import type { Result } from 'wellcrafted/result';
 
-import { createReplicaStore } from '../src/store/store.js';
+import { createAccountStore, syncEngineOf } from '../src/store/store.js';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -31,14 +31,16 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
 }
 
 function open() {
-	const store = createReplicaStore({
+	const db = createAccountStore({
+		workspace: workspace,
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	return { store, db: expectOk(store.bind(lens)) };
+	return { store: db.store, db };
 }
 
 function titles(replica: ReturnType<typeof open>): string[] {
-	return expectOk(replica.db.tables.notes.list())
+	return replica.db.tables.notes
+		.list()
 		.rows.map((row) => row.title)
 		.sort();
 }
@@ -49,7 +51,9 @@ function synchronisedPair() {
 	const phone = open();
 	const note = expectOk(laptop.db.tables.notes.create({ title: 'Groceries' }));
 	expectOk(laptop.db.tables.notes.create({ title: 'Reading list' }));
-	expectOk(phone.store.applyRemote(laptop.store.encodeStateSince()));
+	expectOk(
+		syncEngineOf(phone.store).applyRemote(laptop.store.encodeStateSince()),
+	);
 	return { laptop, phone, noteId: note.id };
 }
 
@@ -69,13 +73,15 @@ describe('a new generation seeded by SNAPSHOT keeps every identity', () => {
 
 		// A fresh replica reads generation 2 from its first entry.
 		const arriving = open();
-		expectOk(arriving.store.applyRemote(seed));
+		expectOk(syncEngineOf(arriving.store).applyRemote(seed));
 		expect(titles(arriving)).toEqual(['Groceries', 'Reading list']);
 
 		// The phone arrives at generation 2 holding work generation 1 never saw.
 		// The rollover rule is that its cursor resets to zero AND its whole state
 		// becomes unsent, so it pushes everything it has.
-		expectOk(arriving.store.applyRemote(phone.store.encodeStateSince()));
+		expectOk(
+			syncEngineOf(arriving.store).applyRemote(phone.store.encodeStateSince()),
+		);
 
 		// The offline edit is not merely present, it landed on the SAME row rather
 		// than creating a second one. That is what identity preservation buys.
@@ -83,7 +89,9 @@ describe('a new generation seeded by SNAPSHOT keeps every identity', () => {
 		expect(expectOk(arriving.db.tables.notes.get(noteId))?.title).toBe(
 			'edited on a plane',
 		);
-		expect(arriving.store.hasUnresolvedDependencies()).toBe(false);
+		expect(syncEngineOf(arriving.store).hasUnresolvedDependencies()).toBe(
+			false,
+		);
 	});
 
 	test('CONTROL: a REBUILT generation destroys exactly that edit', () => {
@@ -100,14 +108,16 @@ describe('a new generation seeded by SNAPSHOT keeps every identity', () => {
 		);
 
 		const rebuilt = open();
-		for (const row of expectOk(laptop.db.tables.notes.list()).rows) {
+		for (const row of laptop.db.tables.notes.list().rows) {
 			expectOk(rebuilt.db.tables.notes.create({ title: row.title }));
 		}
 		const seed = rebuilt.store.encodeStateSince();
 
 		const arriving = open();
-		expectOk(arriving.store.applyRemote(seed));
-		expectOk(arriving.store.applyRemote(phone.store.encodeStateSince()));
+		expectOk(syncEngineOf(arriving.store).applyRemote(seed));
+		expectOk(
+			syncEngineOf(arriving.store).applyRemote(phone.store.encodeStateSince()),
+		);
 
 		// The phone's row did not merge with anything. It arrived as a THIRD row
 		// beside two rebuilt strangers, so the note now exists twice: once as the
@@ -138,15 +148,19 @@ describe('the rollover needs no proof, which is why it is affordable', () => {
 
 		const both = open();
 		// Deliberately in the wrong order, and with the laggard first.
-		expectOk(both.store.applyRemote(phone.store.encodeStateSince()));
-		expectOk(both.store.applyRemote(laptop.store.encodeStateSince()));
+		expectOk(
+			syncEngineOf(both.store).applyRemote(phone.store.encodeStateSince()),
+		);
+		expectOk(
+			syncEngineOf(both.store).applyRemote(laptop.store.encodeStateSince()),
+		);
 
 		expect(titles(both)).toEqual([
 			'Reading list',
 			'edited on a plane',
 			'written on the laptop',
 		]);
-		expect(both.store.hasUnresolvedDependencies()).toBe(false);
+		expect(syncEngineOf(both.store).hasUnresolvedDependencies()).toBe(false);
 	});
 
 	test('a snapshot is a duplicate of history, not an addition to it', () => {
@@ -158,7 +172,7 @@ describe('the rollover needs no proof, which is why it is affordable', () => {
 
 		const arriving = open();
 		for (let index = 0; index < 5; index += 1) {
-			expectOk(arriving.store.applyRemote(seed));
+			expectOk(syncEngineOf(arriving.store).applyRemote(seed));
 		}
 
 		expect(titles(arriving)).toEqual(['Groceries', 'Reading list']);
@@ -186,8 +200,14 @@ describe('choosing the next generation is not a thing a CRDT can do', () => {
 			}),
 		);
 
-		expectOk(proposals.store.applyRemote(laptop.store.encodeStateSince()));
-		expectOk(proposals.store.applyRemote(phone.store.encodeStateSince()));
+		expectOk(
+			syncEngineOf(proposals.store).applyRemote(
+				laptop.store.encodeStateSince(),
+			),
+		);
+		expectOk(
+			syncEngineOf(proposals.store).applyRemote(phone.store.encodeStateSince()),
+		);
 
 		// Perfect convergence, and useless as an answer.
 		expect(titles(proposals)).toHaveLength(2);

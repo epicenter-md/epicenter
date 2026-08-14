@@ -4,9 +4,9 @@
  * differences injected rather than forked.
  *
  * The conversation list is a `conversations` table the app spliced into its own
- * lens (@epicenter/chat), in whichever document the app's root chose for this
- * generation (ADR-0233); each row's turns live at the `messages` root inside
- * that row's own document. A handle registry mirrors the table:
+ * workspace shape (@epicenter/chat), in whichever document the app's root
+ * chose for this generation (ADR-0233); each row's turns live at the `messages`
+ * root inside that row's own document. A handle registry mirrors the table:
  * {@link createAgentChatState} opens a handle for every row and disposes one
  * whose row is gone. Each handle binds that row's messages to the loop through
  * `bindAgentConversation`; the loop streams the live turn into component state
@@ -171,12 +171,9 @@ export function createAgentChatState({
 	let rows = $state.raw<Conversation[]>([]);
 
 	function readRows(): void {
-		const { data, error } = table.list();
-		if (error !== null) {
-			reportBackgroundError(error);
-			return;
-		}
-		rows = data.rows;
+		// Only the conforming rows; the doc comment on `rows` says why the
+		// nonconforming ones are skipped rather than surfaced.
+		rows = table.list().rows;
 	}
 
 	const rowById = (id: ConversationId): Conversation | undefined =>
@@ -535,7 +532,7 @@ export function createAgentChatState({
 	 * landed has nothing left to wait for.
 	 *
 	 * Throws on a refused write, so a caller's toast can present it. Reaching
-	 * here at all means the app's own lens declared these fields, so a refusal is
+	 * here at all means the app's own workspace declared these fields, so a refusal is
 	 * a bug rather than a condition a chat surface recovers from.
 	 */
 	function createConversation(opener: ConversationOpener = {}): ConversationId {
@@ -577,8 +574,9 @@ export function createAgentChatState({
 	}
 
 	function deleteConversation(conversationId: ConversationId): void {
-		const { error } = table.delete(conversationId);
-		if (error !== null) throw error;
+		// Reports only whether a row was there to take; an already-gone
+		// conversation is still truthfully deleted.
+		table.delete(conversationId);
 		readRows();
 		destroyConversation(conversationId);
 

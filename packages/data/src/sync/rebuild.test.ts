@@ -11,11 +11,11 @@
  * into adoption, which is also why a crash-replay can never publish twice.
  */
 import { describe, expect, test } from 'bun:test';
-import { defineLens } from '@epicenter/lens';
+import { defineWorkspace } from '@epicenter/workspace';
 import type { Result } from 'wellcrafted/result';
 
 import { openMemory } from '../store/bun.js';
-import type { DataOf } from '../store/store.js';
+import { type DataOf, syncEngineOf } from '../store/store.js';
 import {
 	type RebuiltState,
 	rebuildDocument,
@@ -23,7 +23,7 @@ import {
 	type StoreTransport,
 } from './rebuild.js';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.rebuild',
 	kv: { theme: "'light'|'dark' = 'light'" },
 	tables: { notes: { title: 'string' } },
@@ -41,8 +41,8 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
  * while real churn leaves skeletons that cannot merge, which is the dead
  * weight ADR-0219 priced at about two items per deleted row.
  */
-function agedApplication(): DataOf<typeof lens> {
-	const app = openMemory(lens);
+function agedApplication(): DataOf<typeof workspace> {
+	const app = openMemory(workspace);
 	const keep: string[] = [];
 	for (let index = 0; index < 100; index += 1) {
 		const row = expectOk(
@@ -62,7 +62,7 @@ function agedApplication(): DataOf<typeof lens> {
 		const older = keep[Math.max(0, keep.length - 3)] as string;
 		expectOk(app.tables.notes.update(older, { title: `touched ${index}` }));
 		if (keep.length > 10) {
-			expectOk(app.tables.notes.delete(keep.shift() as string));
+			app.tables.notes.delete(keep.shift() as string);
 		}
 	}
 	expectOk(app.kv.update({ theme: 'dark' }));
@@ -74,11 +74,11 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 		const source = agedApplication();
 		const reborn = expectOk(rebuildDocument(source.store));
 
-		const adopted = openMemory(lens);
-		expectOk(adopted.store.applyRemote(reborn));
+		const adopted = openMemory(workspace);
+		expectOk(syncEngineOf(adopted.store).applyRemote(reborn));
 
-		const before = expectOk(source.tables.notes.list()).rows;
-		const after = expectOk(adopted.tables.notes.list()).rows;
+		const before = source.tables.notes.list().rows;
+		const after = adopted.tables.notes.list().rows;
 		expect(after).toEqual(before);
 		expect(after.length).toBe(10);
 		expect(expectOk(adopted.kv.get())).toEqual(expectOk(source.kv.get()));
@@ -103,13 +103,13 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 	test('the tombstones are actually gone: the struct count falls', () => {
 		const source = agedApplication();
 		const reborn = expectOk(rebuildDocument(source.store));
-		const adopted = openMemory(lens);
-		expectOk(adopted.store.applyRemote(reborn));
+		const adopted = openMemory(workspace);
+		expectOk(syncEngineOf(adopted.store).applyRemote(reborn));
 
-		const agedItems = expectOk(source.store.pressure()).items;
-		const rebornItems = expectOk(adopted.store.pressure()).items;
-		expect(expectOk(adopted.store.pressure()).liveRows).toBe(
-			expectOk(source.store.pressure()).liveRows,
+		const agedItems = source.store.pressure().items;
+		const rebornItems = adopted.store.pressure().items;
+		expect(adopted.store.pressure().liveRows).toBe(
+			source.store.pressure().liveRows,
 		);
 		// 90 deleted rows of interleaved churn against 10 live rows.
 		expect(rebornItems).toBeLessThan(agedItems / 3);
@@ -119,7 +119,7 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 		// Prose whose container never arrived: Yjs buffers it silently (a bare
 		// clock gap integrates fine in @y/y 14; a missing PARENT struct is what
 		// pends), and a state built over that hole must not become the baseline.
-		const writer = openMemory(lens);
+		const writer = openMemory(workspace);
 		const row = expectOk(
 			writer.tables.notes.create({ title: 'base' }, { document: ['body'] }),
 		);
@@ -129,9 +129,9 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 		body.applyDelta(body.change.insert('orphaned prose') as never);
 		const increment = writer.store.encodeStateSince(beforeProse);
 
-		const receiver = openMemory(lens);
-		expectOk(receiver.store.applyRemote(increment));
-		expect(receiver.store.hasUnresolvedDependencies()).toBe(true);
+		const receiver = openMemory(workspace);
+		expectOk(syncEngineOf(receiver.store).applyRemote(increment));
+		expect(syncEngineOf(receiver.store).hasUnresolvedDependencies()).toBe(true);
 
 		expect(rebuildDocument(receiver.store).error?.name).toBe(
 			'UnresolvedDependencies',
@@ -139,7 +139,7 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 	});
 
 	test('the brand separates reborn bytes from a plain re-encoding', () => {
-		const app = openMemory(lens);
+		const app = openMemory(workspace);
 		// @ts-expect-error encodeStateSince preserves identities and reclaims
 		// nothing; only rebuildDocument() mints RebuiltState (ADR-0231).
 		const wrong: RebuiltState = app.store.encodeStateSince();
@@ -152,7 +152,7 @@ function scriptedTransport(script: { replace: (url: URL) => Response }) {
 	const replaces: URL[] = [];
 	const transport: StoreTransport = {
 		baseURL: 'https://api.example.com',
-		namespace: lens.namespace,
+		namespace: workspace.namespace,
 		fetch: async (input, init) => {
 			if (init?.method !== 'POST') throw new Error('unexpected non-POST');
 			const url = new URL(input);
@@ -165,12 +165,12 @@ function scriptedTransport(script: { replace: (url: URL) => Response }) {
 
 /** A synced store: stamped into a document, with a cursor. The lease's facts. */
 function syncedApplication(cursor: number, document = 'the-current-document') {
-	const app = openMemory(lens);
+	const app = openMemory(workspace);
 	// Stamped first, in the order every real replica follows: the stamp
 	// refuses a store that grew before it.
-	expectOk(app.store.sync.adoptDocumentIdentity(document));
+	expectOk(syncEngineOf(app.store).adoptDocumentIdentity(document));
 	expectOk(app.tables.notes.create({ title: 'kept across compaction' }));
-	if (cursor > 0) expectOk(app.store.sync.advance(cursor));
+	if (cursor > 0) syncEngineOf(app.store).advance(cursor);
 	return app;
 }
 
@@ -188,14 +188,14 @@ describe('rebuildWorkspace holds the lease honestly', () => {
 		const url = replaces[0] as URL;
 		expect(url.searchParams.get('fromDocument')).toBe('the-current-document');
 		expect(url.searchParams.get('atHead')).toBe('7');
-		expect(url.searchParams.get('namespace')).toBe(lens.namespace);
+		expect(url.searchParams.get('namespace')).toBe(workspace.namespace);
 	});
 
 	test('an unstamped store is refused before anything is posted', async () => {
 		// A store that never synced has no authority document its state
 		// provably covers: nothing for the lease to name, nothing to rebuild
 		// against.
-		const app = openMemory(lens);
+		const app = openMemory(workspace);
 		expectOk(app.tables.notes.create({ title: 'offline only' }));
 		const { transport, replaces } = scriptedTransport({
 			replace: () => Response.json({ document: 'never-reached' }),

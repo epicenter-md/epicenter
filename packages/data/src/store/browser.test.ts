@@ -25,14 +25,18 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/identity';
-import { defineLens } from '@epicenter/lens';
+import { defineWorkspace } from '@epicenter/workspace';
+import type { Result } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { openAccount, openDevice } from './browser.js';
+import { openMemory } from './bun.js';
+import { STORE_FORMAT } from './log.js';
+import { type DataOf, syncEngineOf, type WorkspaceStoreBase } from './store.js';
 
 /** One namespace per concern, so tests share no IndexedDB state. */
-function lensFor(label: string) {
-	return defineLens({
+function workspaceFor(label: string) {
+	return defineWorkspace({
 		namespace: `so.epicenter.browsertest.${label}`,
 		tables: { notes: { title: 'string' } },
 	});
@@ -45,19 +49,21 @@ const deviceAddress = (namespace: string) => `epicenter/${namespace}/device`;
 const accountAddress = (namespace: string, principalId: string) =>
 	`epicenter/${namespace}/account/${principalId}`;
 
-const openDeviceData = (lens: ReturnType<typeof lensFor>) => openDevice(lens);
+const openDeviceData = (workspace: ReturnType<typeof workspaceFor>) =>
+	openDevice(workspace);
 const openAccountData = (
-	lens: ReturnType<typeof lensFor>,
+	workspace: ReturnType<typeof workspaceFor>,
 	principalId: typeof ALICE,
-) => openAccount(lens, { principalId });
+) => openAccount(workspace, { principalId });
 
 function titles(app: {
 	tables: {
-		notes: { list(): { data: { rows: { title: string }[] } | null } };
+		notes: { list(): { rows: { title: string }[] } };
 	};
 }): string[] {
-	return (app.tables.notes.list().data?.rows ?? [])
-		.map((row) => row.title)
+	return app.tables.notes
+		.list()
+		.rows.map((row) => row.title)
 		.sort();
 }
 
@@ -71,10 +77,10 @@ async function databaseNames(): Promise<string[]> {
 
 describe('one device document and one account replica per account', () => {
 	test('the device document and two accounts open at once, into their own databases', async () => {
-		const lens = lensFor('pair');
-		const device = expectOk(await openDeviceData(lens));
-		const alice = expectOk(await openAccountData(lens, ALICE));
-		const bob = expectOk(await openAccountData(lens, BOB));
+		const workspace = workspaceFor('pair');
+		const device = expectOk(await openDeviceData(workspace));
+		const alice = expectOk(await openAccountData(workspace, ALICE));
+		const bob = expectOk(await openAccountData(workspace, BOB));
 
 		expectOk(device.tables.notes.create({ title: 'mine alone' }));
 		expectOk(alice.tables.notes.create({ title: "alice's" }));
@@ -84,9 +90,9 @@ describe('one device document and one account replica per account', () => {
 		expect(titles(bob)).toEqual(["bob's"]);
 
 		const names = await databaseNames();
-		expect(names).toContain(deviceAddress(lens.namespace));
-		expect(names).toContain(accountAddress(lens.namespace, ALICE));
-		expect(names).toContain(accountAddress(lens.namespace, BOB));
+		expect(names).toContain(deviceAddress(workspace.namespace));
+		expect(names).toContain(accountAddress(workspace.namespace, ALICE));
+		expect(names).toContain(accountAddress(workspace.namespace, BOB));
 
 		await device[Symbol.asyncDispose]();
 		await alice[Symbol.asyncDispose]();
@@ -94,28 +100,40 @@ describe('one device document and one account replica per account', () => {
 	});
 
 	test('a second open of one address is refused, and another account is not that address', async () => {
-		const lens = lensFor('claim');
-		const alice = expectOk(await openAccountData(lens, ALICE));
-		const again = expectErr(await openAccountData(lens, ALICE));
+		const workspace = workspaceFor('claim');
+		const alice = expectOk(await openAccountData(workspace, ALICE));
+		const again = expectErr(await openAccountData(workspace, ALICE));
 		expect(again.name).toBe('AlreadyOpen');
 
 		// Another account's replica is a different document, so it opens.
-		const bob = expectOk(await openAccountData(lens, BOB));
+		const bob = expectOk(await openAccountData(workspace, BOB));
 		await bob[Symbol.asyncDispose]();
 		await alice[Symbol.asyncDispose]();
 
 		// Disposal releases the claim, so the same address opens again.
-		const reopened = expectOk(await openAccountData(lens, ALICE));
+		const reopened = expectOk(await openAccountData(workspace, ALICE));
 		await reopened[Symbol.asyncDispose]();
 	});
 
 	test('every address survives a close-and-reopen under its own name', async () => {
-		const lens = lensFor('reopen');
-		for (const [openDocument, title] of [
-			[() => openDeviceData(lens), 'kept device work'],
-			[() => openAccountData(lens, ALICE), "kept alice's"],
-			[() => openAccountData(lens, BOB), "kept bob's"],
-		] as const) {
+		const workspace = workspaceFor('reopen');
+		// Widened to the base store kind: a device document and an account
+		// replica differ only in their `sync` value, which this test never
+		// touches.
+		const owners: [
+			() => Promise<
+				Result<
+					DataOf<ReturnType<typeof workspaceFor>, WorkspaceStoreBase>,
+					unknown
+				>
+			>,
+			string,
+		][] = [
+			[() => openDeviceData(workspace), 'kept device work'],
+			[() => openAccountData(workspace, ALICE), "kept alice's"],
+			[() => openAccountData(workspace, BOB), "kept bob's"],
+		];
+		for (const [openDocument, title] of owners) {
 			const opened = expectOk(await openDocument());
 			expectOk(opened.tables.notes.create({ title }));
 			await opened[Symbol.asyncDispose]();
@@ -124,63 +142,203 @@ describe('one device document and one account replica per account', () => {
 		// Retention is the whole reason the account is in the address: coming
 		// back to an account finds that account's replica, not the last one to
 		// have been open.
-		const device = expectOk(await openDeviceData(lens));
-		const alice = expectOk(await openAccountData(lens, ALICE));
-		const bob = expectOk(await openAccountData(lens, BOB));
+		const device = expectOk(await openDeviceData(workspace));
+		const alice = expectOk(await openAccountData(workspace, ALICE));
+		const bob = expectOk(await openAccountData(workspace, BOB));
 		expect(titles(device)).toEqual(['kept device work']);
 		expect(titles(alice)).toEqual(["kept alice's"]);
 		expect(titles(bob)).toEqual(["kept bob's"]);
+		// The SQL read index came back too, rebuilt at bind from the replayed
+		// document: durable storage held no SQLite checkpoint to restore it
+		// from (ADR-0238).
+		expect(device.query`SELECT title FROM notes`.data).toEqual([
+			{ title: 'kept device work' },
+		]);
 		await device[Symbol.asyncDispose]();
 		await alice[Symbol.asyncDispose]();
 		await bob[Symbol.asyncDispose]();
 	});
 
 	test('discarding one account replica deletes only that account database', async () => {
-		const lens = lensFor('discard');
+		const workspace = workspaceFor('discard');
 		{
-			const device = expectOk(await openDeviceData(lens));
+			const device = expectOk(await openDeviceData(workspace));
 			expectOk(device.tables.notes.create({ title: 'device work' }));
 			await device[Symbol.asyncDispose]();
 
-			const bob = expectOk(await openAccountData(lens, BOB));
+			const bob = expectOk(await openAccountData(workspace, BOB));
 			expectOk(bob.tables.notes.create({ title: "bob's work" }));
 			await bob[Symbol.asyncDispose]();
 		}
 
-		const alice = expectOk(await openAccountData(lens, ALICE));
+		const alice = expectOk(await openAccountData(workspace, ALICE));
 		expectOk(alice.tables.notes.create({ title: 'doomed replica' }));
 		expectOk(await alice.store.discard());
 
 		const names = await databaseNames();
-		expect(names).not.toContain(accountAddress(lens.namespace, ALICE));
-		expect(names).toContain(accountAddress(lens.namespace, BOB));
-		expect(names).toContain(deviceAddress(lens.namespace));
+		expect(names).not.toContain(accountAddress(workspace.namespace, ALICE));
+		expect(names).toContain(accountAddress(workspace.namespace, BOB));
+		expect(names).toContain(deviceAddress(workspace.namespace));
 
 		// Alice rejoins at zero; nobody else moved.
-		const rejoined = expectOk(await openAccountData(lens, ALICE));
+		const rejoined = expectOk(await openAccountData(workspace, ALICE));
 		expect(titles(rejoined)).toEqual([]);
 		await rejoined[Symbol.asyncDispose]();
-		const bob = expectOk(await openAccountData(lens, BOB));
+		const bob = expectOk(await openAccountData(workspace, BOB));
 		expect(titles(bob)).toEqual(["bob's work"]);
 		await bob[Symbol.asyncDispose]();
-		const device = expectOk(await openDeviceData(lens));
+		const device = expectOk(await openDeviceData(workspace));
 		expect(titles(device)).toEqual(['device work']);
 		await device[Symbol.asyncDispose]();
 	});
 
 	test('an account replica with no account id is refused, and no database is made for it', async () => {
-		const lens = lensFor('unaddressable');
+		const workspace = workspaceFor('unaddressable');
 		const before = await databaseNames();
 
 		const refused = expectErr(
-			await openAccount(lens, { principalId: asPrincipalId('   ') }),
+			await openAccount(workspace, { principalId: asPrincipalId('   ') }),
 		);
 		expect(refused.name).toBe('Unaddressable');
 		expect(await databaseNames()).toEqual(before);
 
 		// And the refusal held no claim, so a real account still opens.
-		const alice = expectOk(await openAccountData(lens, ALICE));
+		const alice = expectOk(await openAccountData(workspace, ALICE));
 		await alice[Symbol.asyncDispose]();
+	});
+});
+
+describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
+	/** Fabricate the superseded version-1 checkpoint record at an address. */
+	function seedVersionOne(
+		address: string,
+		checkpoint: Record<string, unknown>,
+	): Promise<void> {
+		return new Promise((resolve, reject) => {
+			const request = indexedDB.open(address, 1);
+			request.onupgradeneeded = () => {
+				request.result.createObjectStore('state');
+			};
+			request.onsuccess = () => {
+				const database = request.result;
+				const transaction = database.transaction('state', 'readwrite');
+				transaction.objectStore('state').put(checkpoint, 'durable');
+				transaction.oncomplete = () => {
+					database.close();
+					resolve();
+				};
+				transaction.onerror = () => reject(transaction.error);
+			};
+			request.onerror = () => reject(request.error);
+		});
+	}
+
+	/** How many rows one object store holds, read outside any store handle. */
+	function countRows(address: string, storeName: string): Promise<number> {
+		return new Promise((resolve, reject) => {
+			const request = indexedDB.open(address);
+			request.onsuccess = () => {
+				const database = request.result;
+				const transaction = database.transaction(storeName, 'readonly');
+				const count = transaction.objectStore(storeName).count();
+				count.onsuccess = () => {
+					database.close();
+					resolve(count.result);
+				};
+				count.onerror = () => reject(count.error);
+			};
+			request.onerror = () => reject(request.error);
+		});
+	}
+
+	test('a certified version-1 checkpoint migrates into the new object stores', async () => {
+		const workspace = workspaceFor('migration');
+		// Real update bytes for this workspace, authored by a store of the same shape.
+		const author = openMemory(workspace);
+		expectOk(author.tables.notes.create({ title: 'migrated note' }));
+		const bytes = author.store.encodeStateSince();
+		await author[Symbol.asyncDispose]();
+
+		await seedVersionOne(`epicenter/${workspace.namespace}/device`, {
+			updates: [{ seq: 1, bytes }],
+			outbox: [],
+			cursor: 0,
+			format: STORE_FORMAT,
+		});
+
+		const device = expectOk(await openDeviceData(workspace));
+		expect(titles(device)).toEqual(['migrated note']);
+		await device[Symbol.asyncDispose]();
+
+		// And the migrated record round-trips through the new layout.
+		const reopened = expectOk(await openDeviceData(workspace));
+		expect(titles(reopened)).toEqual(['migrated note']);
+		await reopened[Symbol.asyncDispose]();
+	});
+
+	test('a version-1 checkpoint migrates its outbox, cursor, and identity too', async () => {
+		const workspace = workspaceFor('migrationfacts');
+		const author = openMemory(workspace);
+		expectOk(author.tables.notes.create({ title: 'owed note' }));
+		const bytes = author.store.encodeStateSince();
+		await author[Symbol.asyncDispose]();
+
+		await seedVersionOne(accountAddress(workspace.namespace, ALICE), {
+			updates: [{ seq: 1, bytes }],
+			outbox: [{ id: 3, bytes }],
+			cursor: 5,
+			format: STORE_FORMAT,
+			document: 'doc-9',
+		});
+
+		const replica = expectOk(await openAccountData(workspace, ALICE));
+		try {
+			expect(titles(replica)).toEqual(['owed note']);
+			// The replication facts crossed whole: what is owed, how far this
+			// replica has read, and which document it is entangled with.
+			expect(syncEngineOf(replica.store).cursor()).toBe(5);
+			expect(syncEngineOf(replica.store).documentIdentity()).toBe('doc-9');
+			expect(syncEngineOf(replica.store).coalesce()?.id).toBe(3);
+		} finally {
+			await replica[Symbol.asyncDispose]();
+		}
+	});
+
+	test('an uncertified version-1 checkpoint is wiped whole, never merged (ADR-0231)', async () => {
+		const workspace = workspaceFor('uncertified');
+		const author = openMemory(workspace);
+		expectOk(author.tables.notes.create({ title: 'pre-identity work' }));
+		const bytes = author.store.encodeStateSince();
+		await author[Symbol.asyncDispose]();
+
+		await seedVersionOne(`epicenter/${workspace.namespace}/device`, {
+			updates: [{ seq: 1, bytes }],
+			outbox: [],
+			cursor: 4,
+			// No `format`: the record predates the document identity.
+		});
+
+		const device = expectOk(await openDeviceData(workspace));
+		expect(titles(device)).toEqual([]);
+		await device[Symbol.asyncDispose]();
+	});
+
+	test('the update log folds at the threshold instead of growing forever', async () => {
+		const workspace = workspaceFor('fold');
+		const address = `epicenter/${workspace.namespace}/device`;
+		const device = expectOk(await openDeviceData(workspace));
+		for (let index = 0; index < 70; index += 1) {
+			expectOk(device.tables.notes.create({ title: `note ${index}` }));
+		}
+		await device.store.persistence.flush();
+		expect(device.store.persistence.get()).toBe('saved');
+		await device[Symbol.asyncDispose]();
+
+		expect(await countRows(address, 'updates')).toBeLessThan(70);
+
+		const reopened = expectOk(await openDeviceData(workspace));
+		expect(titles(reopened)).toHaveLength(70);
+		await reopened[Symbol.asyncDispose]();
 	});
 });
 
@@ -217,19 +375,19 @@ describe('the clean break: storage from before the account-scoped address', () =
 	}
 
 	test('opening an owner deletes its superseded storage and reads nothing from it', async () => {
-		const lens = lensFor('superseded');
-		for (const name of supersededNames(lens.namespace)) {
+		const workspace = workspaceFor('superseded');
+		for (const name of supersededNames(workspace.namespace)) {
 			await seedSupersededDatabase(name);
 		}
-		const oldDevice = `epicenter/${lens.namespace}/private`;
+		const oldDevice = `epicenter/${workspace.namespace}/private`;
 		await seedSupersededDatabase(oldDevice);
 		expect(await databaseNames()).toEqual(
-			expect.arrayContaining(supersededNames(lens.namespace)),
+			expect.arrayContaining(supersededNames(workspace.namespace)),
 		);
 
-		const device = expectOk(await openDeviceData(lens));
+		const device = expectOk(await openDeviceData(workspace));
 		expect(titles(device)).toEqual([]);
-		for (const name of supersededNames(lens.namespace)) {
+		for (const name of supersededNames(workspace.namespace)) {
 			expect(await databaseNames()).not.toContain(name);
 		}
 		expect(await databaseNames()).not.toContain(oldDevice);
@@ -238,14 +396,14 @@ describe('the clean break: storage from before the account-scoped address', () =
 		// The deletion repeats at every open, so a superseded database
 		// reappearing (an old tab writing after this one deleted) dies at the
 		// next boot too.
-		for (const name of supersededNames(lens.namespace)) {
+		for (const name of supersededNames(workspace.namespace)) {
 			await seedSupersededDatabase(name);
 		}
-		const oldAlice = `epicenter/${lens.namespace}/workspace/${ALICE}`;
+		const oldAlice = `epicenter/${workspace.namespace}/workspace/${ALICE}`;
 		await seedSupersededDatabase(oldAlice);
-		const alice = expectOk(await openAccountData(lens, ALICE));
+		const alice = expectOk(await openAccountData(workspace, ALICE));
 		expect(titles(alice)).toEqual([]);
-		for (const name of supersededNames(lens.namespace)) {
+		for (const name of supersededNames(workspace.namespace)) {
 			expect(await databaseNames()).not.toContain(name);
 		}
 		expect(await databaseNames()).not.toContain(oldAlice);

@@ -1,5 +1,5 @@
+import type { NonconformingRow } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
-import type { NonconformingRowError } from '@epicenter/lens';
 import {
 	type Reference,
 	SKILL_CONTENT,
@@ -25,27 +25,15 @@ export type SkillMetadataUpdate = Partial<
 export function createSkillsState({ data }: { data: SkillsData }) {
 	let skillRows = $state.raw<Skill[]>([]);
 	let referenceRows = $state.raw<Reference[]>([]);
-	let nonconforming = $state.raw<NonconformingRowError[]>([]);
-	let loadError = $state.raw<unknown>(null);
+	let nonconforming = $state.raw<NonconformingRow[]>([]);
 	let selectedSkillId = $state<string | null>(null);
 
 	function read(): void {
 		const skills = data.tables.skills.list();
 		const references = data.tables.skillReferences.list();
-		if (skills.error !== null || references.error !== null) {
-			// Reported rather than just remembered: a read that fails after boot
-			// leaves the lists at their last value, and an empty one renders as
-			// "you have never written a skill".
-			loadError = skills.error ?? references.error;
-			return;
-		}
-		skillRows = skills.data.rows;
-		referenceRows = references.data.rows;
-		nonconforming = [
-			...skills.data.nonconforming,
-			...references.data.nonconforming,
-		];
-		loadError = null;
+		skillRows = skills.rows;
+		referenceRows = references.rows;
+		nonconforming = [...skills.nonconforming, ...references.nonconforming];
 	}
 
 	read();
@@ -86,9 +74,6 @@ export function createSkillsState({ data }: { data: SkillsData }) {
 		get nonconforming() {
 			return nonconforming;
 		},
-		get loadError() {
-			return loadError;
-		},
 		selectSkill(id: string | null) {
 			selectedSkillId = id;
 		},
@@ -122,11 +107,9 @@ export function createSkillsState({ data }: { data: SkillsData }) {
 		deleteSkill(id: string): void {
 			for (const reference of referenceRows) {
 				if (reference.skillId !== id) continue;
-				const { error } = data.tables.skillReferences.delete(reference.id);
-				if (error !== null) throw error;
+				data.tables.skillReferences.delete(reference.id);
 			}
-			const { error } = data.tables.skills.delete(id);
-			if (error !== null) throw error;
+			data.tables.skills.delete(id);
 			if (selectedSkillId === id) {
 				selectedSkillId =
 					sortedSkills.find((skill) => skill.id !== id)?.id ?? null;
@@ -143,8 +126,7 @@ export function createSkillsState({ data }: { data: SkillsData }) {
 		},
 
 		deleteReference(id: string): void {
-			const { error } = data.tables.skillReferences.delete(id);
-			if (error !== null) throw error;
+			data.tables.skillReferences.delete(id);
 		},
 
 		[Symbol.dispose]() {

@@ -1,9 +1,9 @@
 /**
  * What this package promises: the canonical table splices into an application's
- * own lens, and a conversation's messages survive a restart of that
+ * own workspace, and a conversation's messages survive a restart of that
  * application's store.
  *
- * The lens here is a stand-in for a real application's (Vocab's is the live
+ * The workspace here is a stand-in for a real application's (Vocab's is the live
  * one), which is the whole point: this package publishes a table shape, not a
  * namespace.
  */
@@ -15,14 +15,14 @@ import { join } from 'node:path';
 import type { AgentMessage } from '@epicenter/agent';
 import { open } from '@epicenter/data/bun';
 import { InstantString } from '@epicenter/field';
-import { defineLens } from '@epicenter/lens';
+import { defineWorkspace } from '@epicenter/workspace';
 import {
 	CONVERSATION_MESSAGES,
 	conversationsTable,
 	createAgentMessageStore,
 } from './index.js';
 
-const testLens = defineLens({
+const testWorkspace = defineWorkspace({
 	namespace: 'so.epicenter.chat-test',
 	tables: { conversations: conversationsTable },
 });
@@ -39,7 +39,7 @@ test('the agent store observes writes and survives a restart', async () => {
 	let rowId: string;
 	try {
 		{
-			const opened = await open(testLens, { root });
+			const opened = await open(testWorkspace, { root });
 			if (opened.error !== null) throw opened.error;
 			await using db = opened.data;
 			const now = InstantString.fromDate(new Date('2026-07-19T00:00:00.000Z'));
@@ -60,7 +60,7 @@ test('the agent store observes writes and survives a restart', async () => {
 			expect(observations).toBe(1);
 		}
 
-		const reopened = await open(testLens, { root });
+		const reopened = await open(testWorkspace, { root });
 		if (reopened.error !== null) throw reopened.error;
 		await using db = reopened.data;
 		const document = db.tables.conversations.document(rowId);

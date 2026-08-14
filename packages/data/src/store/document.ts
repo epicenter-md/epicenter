@@ -1,5 +1,5 @@
-import type { JsonObject, JsonValue } from '@epicenter/lens';
-import { RESERVED_ATTRIBUTE_PREFIX } from '@epicenter/lens';
+import type { JsonObject, JsonValue } from '@epicenter/workspace';
+import { RESERVED_ATTRIBUTE_PREFIX } from '@epicenter/workspace';
 import * as Y from '@y/y';
 
 /**
@@ -12,7 +12,8 @@ import * as Y from '@y/y';
  * moves the only race to row creation, which minted ids make unreachable.
  *
  * It is spelled with the reserved prefix so it can never collide with a declared
- * field, and the lens refuses any field name that begins with that prefix.
+ * field, and the workspace parser refuses any field name that begins with that
+ * prefix.
  */
 export const DOCUMENT_ATTRIBUTE = `${RESERVED_ATTRIBUTE_PREFIX}doc`;
 
@@ -31,8 +32,8 @@ export function createAppDocument(): Y.Doc {
  * `map.setIfUndefined(this.share, key, ...)`, so it creates on miss, and a root
  * can never be removed: reaching into `doc.share` and deleting one corrupts the
  * encoder outright. Every key that reaches this function is a table name the
- * lens declares, so the set of roots is bounded by the lens rather than by user
- * input. A row id must never be passed here; rows are attributes on this root,
+ * workspace declares, so the set of roots is bounded by the declaration rather
+ * than by user input. A row id must never be passed here; rows are attributes on this root,
  * which is what keeps `doc.share` at table count rather than row count.
  *
  * That bound is the whole reason for the nested grammar. `Item.write` calls
@@ -54,7 +55,7 @@ export function tableRoot(document: Y.Doc, tableName: string): Y.Type {
  * exist.
  *
  * The tag is legibility rather than safety, and it is worth being clear about
- * that. `parseLens` already refuses `kv` as a table name outright, because it
+ * that. `parseWorkspace` already refuses `kv` as a table name outright, because it
  * would collide with the `db.kv` handle key, so a table can no more reach the
  * settings root than it can be declared. `tables:kv` is a second guard on a
  * collision the first one already made unreachable.
@@ -108,11 +109,11 @@ export function hasRow(root: Y.Type, rowId: string): boolean {
 /**
  * One row's declared fields, or undefined when the table holds no row there.
  *
- * Reserved attributes are filtered out, so what comes back is only what a lens
- * could have declared: a row's document container is an attribute like any
- * other and is not part of the payload. Nothing is validated here: interpreting
- * the payload is the lens's job, and a row this release cannot read must still
- * be readable as raw JSON (ADR-0125).
+ * Reserved attributes are filtered out, so what comes back is only what a
+ * workspace could have declared: a row's document container is an attribute
+ * like any other and is not part of the payload. Nothing is validated here:
+ * interpreting the payload is the declaration's job, and a row this release
+ * cannot read must still be readable as raw JSON (ADR-0125).
  */
 export function readRow(root: Y.Type, rowId: string): JsonObject | undefined {
 	const row = rowType(root, rowId);

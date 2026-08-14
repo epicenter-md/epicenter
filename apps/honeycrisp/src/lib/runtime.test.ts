@@ -28,7 +28,7 @@ import 'fake-indexeddb/auto';
 import { expect, mock, test } from 'bun:test';
 import type { AuthClient } from '@epicenter/auth';
 import { encodeFrame } from '@epicenter/data/sync';
-import { honeycrispLens } from '@epicenter/honeycrisp';
+import { honeycrispWorkspace } from '@epicenter/honeycrisp';
 
 mock.module('$app/navigation', () => ({ goto: mock() }));
 mock.module('$app/state', () => ({
@@ -54,9 +54,9 @@ const { openHoneycrispRuntime } = await import('./runtime.js');
 type Runtime = Awaited<ReturnType<typeof openHoneycrispRuntime>>;
 
 /** The durable addresses this application can hold (ADR-0233). */
-const DEVICE = `epicenter/${honeycrispLens.namespace}/device`;
+const DEVICE = `epicenter/${honeycrispWorkspace.namespace}/device`;
 const accountOf = (principalId: string) =>
-	`epicenter/${honeycrispLens.namespace}/account/${principalId}`;
+	`epicenter/${honeycrispWorkspace.namespace}/account/${principalId}`;
 
 async function until(condition: () => boolean, label: string): Promise<void> {
 	for (let attempt = 0; attempt < 400; attempt += 1) {
@@ -192,10 +192,11 @@ function announcingAuth({
 }
 
 function titles(data: {
-	tables: { notes: { list(): { data: { rows: unknown[] } | null } } };
+	tables: { notes: { list(): { rows: unknown[] } } };
 }): string[] {
-	return (data.tables.notes.list().data?.rows ?? [])
-		.map((row) => (row as { title: string }).title)
+	return data.tables.notes
+		.list()
+		.rows.map((row) => (row as { title: string }).title)
 		.sort();
 }
 

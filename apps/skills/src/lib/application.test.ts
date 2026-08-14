@@ -29,7 +29,7 @@ import { expect, test } from 'bun:test';
 	{ by: <TValue>(derive: () => TValue) => derive() },
 );
 
-import { SKILL_CONTENT, skillsLens } from '@epicenter/skills';
+import { SKILL_CONTENT, skillsWorkspace } from '@epicenter/skills';
 import { openSkillsRuntime } from './application.js';
 
 async function resetStorage(): Promise<void> {
@@ -49,10 +49,9 @@ test('the runtime opens the device document and nothing else', async () => {
 	await using runtime = await openSkillsRuntime();
 
 	expect(runtime.state.skills).toEqual([]);
-	expect(runtime.state.loadError).toBeNull();
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
-	expect(names).toEqual([`epicenter/${skillsLens.namespace}/device`]);
+	expect(names).toEqual([`epicenter/${skillsWorkspace.namespace}/device`]);
 });
 
 test('a skill and its instructions survive reopening', async () => {
@@ -66,9 +65,9 @@ test('a skill and its instructions survive reopening', async () => {
 			?.get(SKILL_CONTENT);
 		if (content === undefined) throw new Error('the row has no document');
 		content.applyDelta(content.change.insert('Write directly.') as never);
-		// The write-behind copy is asynchronous, so a reopen must wait for it.
-		const durable = await runtime.data.store.whenDurable();
-		if (durable.error !== null) throw durable.error;
+		// The durable flush is asynchronous, so a reopen must wait for it.
+		await runtime.data.store.persistence.flush();
+		expect(runtime.data.store.persistence.get()).toBe('saved');
 	}
 
 	await using reopened = await openSkillsRuntime();

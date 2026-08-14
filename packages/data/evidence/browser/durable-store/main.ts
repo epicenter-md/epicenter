@@ -4,30 +4,30 @@
  * It exposes verbs rather than running a script, so the runner decides when a
  * reload happens, which is the only part of this that matters.
  */
-import { defineLens } from '@epicenter/lens';
+import { defineWorkspace } from '@epicenter/workspace';
 
-import { type BrowserStore, openDevice } from '../../../src/store/browser.js';
+import { type DeviceStore, openDevice } from '../../../src/store/browser.js';
 import type { DataOf } from '../../../src/store/store.js';
 
 /**
  * Two namespaces, because a namespace is what makes two stores two stores.
  *
  * The control below used to open one namespace under a second NAME and call
- * that a different file. A lens names the store it opens (ADR-0229), so there
+ * that a different file. A workspace names the store it opens (ADR-0229), so there
  * is no second name left to vary, and the honest control is a second namespace.
  */
-const lenses = {
-	vault: defineLens({
+const workspaces = {
+	vault: defineWorkspace({
 		namespace: 'so.epicenter.durableprobe',
 		tables: { notes: { title: 'string' } },
 	}),
-	'somewhere-else': defineLens({
+	'somewhere-else': defineWorkspace({
 		namespace: 'so.epicenter.durableprobe.elsewhere',
 		tables: { notes: { title: 'string' } },
 	}),
 } as const;
 
-type ProbeApplication = DataOf<(typeof lenses)['vault'], BrowserStore>;
+type ProbeApplication = DataOf<(typeof workspaces)['vault'], DeviceStore>;
 
 let db: ProbeApplication | undefined;
 
@@ -42,15 +42,15 @@ function show(value: unknown): void {
 }
 
 Object.assign(globalThis, {
-	async open(name: keyof typeof lenses) {
-		const lens = lenses[name];
-		if (lens === undefined) return { error: `no lens named ${name}` };
+	async open(name: keyof typeof workspaces) {
+		const workspace = workspaces[name];
+		if (workspace === undefined) return { error: `no workspace named ${name}` };
 		// The device document: this probe proves durability, and a device
 		// document is the one that never has a sync story to confound it.
-		const opened = await openDevice(lens);
+		const opened = await openDevice(workspace);
 		if (opened.error !== null) return { error: opened.error.message };
 		db = opened.data;
-		show({ opened: name, namespace: lens.namespace });
+		show({ opened: name, namespace: workspace.namespace });
 		return { ok: true };
 	},
 
@@ -62,16 +62,18 @@ Object.assign(globalThis, {
 		const body = db.tables.notes.document(made.data.id)?.get('body', 'text');
 		if (body === undefined) return { error: 'the row has no document' };
 		body.applyDelta(body.change.insert(prose) as never);
-		const durable = await db.store.whenDurable();
-		return { id: made.data.id, durable: durable.error === null };
+		await db.store.persistence.flush();
+		return {
+			id: made.data.id,
+			durable: db.store.persistence.get() === 'saved',
+		};
 	},
 
 	/** Everything this store can see right now, read synchronously. */
 	read() {
 		const db = bound();
 		const listed = db.tables.notes.list();
-		if (listed.error !== null) return { error: listed.error.message };
-		const notes = listed.data.rows.map((row) => ({
+		const notes = listed.rows.map((row) => ({
 			title: row.title,
 			// Through the CRDT, not through a cache the harness keeps.
 			prose: JSON.stringify(
@@ -84,8 +86,8 @@ Object.assign(globalThis, {
 		return {
 			notes: notes.sort((left, right) => left.title.localeCompare(right.title)),
 			projected: counted.data?.[0]?.n ?? -1,
-			durability: db.store.durability(),
-			pressure: db.store.pressure().data,
+			durability: { healthy: db.store.persistence.get() !== 'blocked' },
+			pressure: db.store.pressure(),
 		};
 	},
 });

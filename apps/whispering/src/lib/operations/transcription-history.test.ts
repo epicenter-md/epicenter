@@ -63,7 +63,7 @@ test('successful transcription carries its history Result', () => {
 	);
 	expect(success.text).toBe('usable text');
 	expectOk(success.history);
-	// Three flat columns rather than one nested outcome: a Lens has no
+	// Three flat columns rather than one nested outcome: a workspace has no
 	// expression for an inline object (`workspace/index.ts`).
 	expect(patch).toHaveBeenLastCalledWith(recordingId, {
 		transcript: 'usable text',

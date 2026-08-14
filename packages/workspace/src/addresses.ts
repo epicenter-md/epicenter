@@ -14,7 +14,7 @@
  * SQL column names, so one vocabulary spans the typed API, the wire, and
  * storage.
  *
- * Namespace and table are durable names a Lens authors. A row id comes from
+ * Namespace and table are durable names a workspace declares. A row id comes from
  * whoever knows it: the runtime mints one when nobody does, and an application
  * supplies one when it does (ADR-0206). Renaming any coordinate produces a
  * different address, and therefore a different unit of convergence; there is no
@@ -64,8 +64,8 @@ const ROW_ID = new RegExp(ROW_ID_PATTERN);
  * the promise is that `SELECT * FROM notes` needs no quoting. Some keywords
  * break that promise: `SELECT * FROM order` is a syntax error however carefully
  * the host generated the view. Refusing the name where it is declared is the
- * only point where the author can still fix it; refusing later would mean a Lens
- * that binds cleanly and then cannot be inspected.
+ * only point where the author can still fix it; refusing later would mean a
+ * workspace that parses cleanly and then cannot be inspected.
  *
  * This is not the full keyword list, and deliberately so. SQLite accepts most of
  * its own keywords as identifiers: `rows`, `key`, `view`, `first`, `range` and
@@ -75,7 +75,7 @@ const ROW_ID = new RegExp(ROW_ID_PATTERN);
  *
  * The set is a property of SQLite's parser, so `addresses.test.ts` re-derives it
  * against the linked SQLite and fails if the two ever disagree. A version that
- * changes the set is then a loud test failure rather than a Lens that silently
+ * changes the set is then a loud test failure rather than a workspace that silently
  * stops being inspectable.
  */
 export const SQLITE_UNUSABLE_AS_RELATION_NAME: readonly string[] = `add all
@@ -215,9 +215,9 @@ export function isNamespace(
  * does not enter SQLite's reserved `sqlite_` space, and it does not collide with
  * a relation Epicenter storage already occupies.
  *
- * The same rule governs a Lens declaration and an address arriving on the wire.
- * One grammar, checked in one place: a name a Lens may not declare is a name no
- * peer may introduce either.
+ * The same rule governs a workspace declaration and an address arriving on the
+ * wire. One grammar, checked in one place: a name a workspace may not declare is
+ * a name no peer may introduce either.
  */
 export function isTableName(
 	value: string,

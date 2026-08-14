@@ -25,18 +25,22 @@
  */
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineLens, type LensJson } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { defineWorkspace, type WorkspaceJson } from '@epicenter/workspace';
 import type { Result } from 'wellcrafted/result';
 
-import { createReplicaStore, type LensView } from '../store/store.js';
+import {
+	createAccountStore,
+	type DataOf,
+	syncEngineOf,
+} from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
 import { createSyncClient } from './client.js';
 import { encodeFrame } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 import { rebuildDocument } from './rebuild.js';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -74,11 +78,14 @@ function openReplica(
 	label: string,
 	hub: ReturnType<typeof createSyncHub>,
 	wire: Wire,
-	through: LensJson = lens,
+	through: WorkspaceJson = workspace,
 	database = createBunSqliteAdapter(new Database(':memory:')),
 ) {
-	const store = createReplicaStore({ database });
-	const db = expectOk(store.bind(through)) as LensView<typeof lens>;
+	const db = createAccountStore({
+		workspace: through,
+		database,
+	}) as unknown as DataOf<typeof workspace>;
+	const store = db.store;
 	const client = createSyncClient({
 		store,
 		idleMs: 0,
@@ -113,7 +120,7 @@ function openReplica(
 		client,
 		connect() {
 			connection.cursor = client.cursor();
-			connection.document = expectOk(store.sync.documentIdentity());
+			connection.document = syncEngineOf(store).documentIdentity();
 			const admission = hub.join(connection);
 			client.attach(socket);
 			if (admission === 'bootstrap') {
@@ -131,7 +138,8 @@ function openReplica(
 			client.detach();
 		},
 		titles: () =>
-			expectOk(db.tables.notes.list())
+			db.tables.notes
+				.list()
 				.rows.map((row) => row.title)
 				.sort(),
 	};
@@ -159,8 +167,8 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 		const victim = openReplica('victim', hub, wire);
 		const name = expectOk(authority.document());
 		victim.client.receive(encodeFrame({ kind: 'document', id: name }));
-		expect(expectOk(victim.store.sync.documentIdentity())).toBe(name);
-		expect(expectOk(victim.store.sync.cursor())).toBe(0);
+		expect(syncEngineOf(victim.store).documentIdentity()).toBe(name);
+		expect(syncEngineOf(victim.store).cursor()).toBe(0);
 
 		// The entry then commits bytes and bookmark as one step: after it there
 		// is no gap for a crash to land in.
@@ -175,7 +183,7 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 				bytes: entry.bytes,
 			}),
 		);
-		expect(expectOk(victim.store.sync.cursor())).toBe(entry.seq);
+		expect(syncEngineOf(victim.store).cursor()).toBe(entry.seq);
 		expect(victim.titles()).toEqual(['X']);
 	});
 
@@ -203,8 +211,8 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 			}),
 		);
 		expect(victim.titles()).toEqual([]);
-		expect(expectOk(victim.store.sync.cursor())).toBe(0);
-		expect(expectOk(victim.store.sync.documentIdentity())).toBeUndefined();
+		expect(syncEngineOf(victim.store).cursor()).toBe(0);
+		expect(syncEngineOf(victim.store).documentIdentity()).toBeUndefined();
 	});
 
 	test('a replica holding old-document bytes is retired at its next dial, never merged across the break', () => {
@@ -220,19 +228,28 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 		// bytes, cursor 1, stamped.
 		const drawerDb = createBunSqliteAdapter(new Database(':memory:'));
 		{
-			const drawerStore = createReplicaStore({ database: drawerDb });
+			const drawerStore = createAccountStore({
+				workspace: workspace,
+				database: drawerDb,
+			}).store;
 			const entry = expectOk(authority.since(0, 10))[0];
 			if (entry === undefined) throw new Error('the log holds no entry');
 			expectOk(
-				drawerStore.sync.adoptDocumentIdentity(expectOk(authority.document())),
+				syncEngineOf(drawerStore).adoptDocumentIdentity(
+					expectOk(authority.document()),
+				),
 			);
-			expectOk(drawerStore.applyRemote(entry.bytes, { advanceTo: entry.seq }));
+			expectOk(
+				syncEngineOf(drawerStore).applyRemote(entry.bytes, {
+					advanceTo: entry.seq,
+				}),
+			);
 		}
 
 		// X is deleted and the person rebuilds. The replace publishes a NEW
 		// document: no X, and no tombstone of X, so a cross-document merge
 		// would resurrect it.
-		expectOk(phone.db.tables.notes.delete(x.id));
+		phone.db.tables.notes.delete(x.id);
 		phone.client.flush();
 		wire.settle();
 		expectOk(phone.db.tables.notes.create({ title: 'kept' }));
@@ -247,7 +264,7 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 
 		// The drawer device reboots from its durable file. Its stamp names the
 		// retired document, so it is answered with the facts and nothing else.
-		const drawer = openReplica('drawer', hub, wire, lens, drawerDb);
+		const drawer = openReplica('drawer', hub, wire, workspace, drawerDb);
 		expect(drawer.titles()).toEqual(['X']);
 		expect(drawer.connect()).toBe('retired');
 		wire.settle();
@@ -262,7 +279,7 @@ describe('workspace bootstrap names a document before any workspace write', () =
 	test('a pristine replica bootstraps, then its first push survives a reopen', () => {
 		const { wire, authority, hub } = setup();
 		const database = createBunSqliteAdapter(new Database(':memory:'));
-		const replica = openReplica('replica', hub, wire, lens, database);
+		const replica = openReplica('replica', hub, wire, workspace, database);
 		expect(replica.client.document()).toBeUndefined();
 
 		// The empty store receives the authority name, persists it, and reconnects
@@ -276,8 +293,8 @@ describe('workspace bootstrap names a document before any workspace write', () =
 
 		// Durable, not a session fact: a store reopened from the same file
 		// still knows which document its bytes belong to.
-		const reopened = createReplicaStore({ database });
-		expect(expectOk(reopened.sync.documentIdentity())).toBe(
+		const reopened = createAccountStore({ workspace: workspace, database });
+		expect(syncEngineOf(reopened.store).documentIdentity()).toBe(
 			expectOk(authority.document()),
 		);
 	});
@@ -305,9 +322,9 @@ describe('workspace bootstrap names a document before any workspace write', () =
 		phone.connect();
 		wire.settle();
 		expect(phone.titles()).toEqual(['X']);
-		const row = expectOk(phone.db.tables.notes.list()).rows[0];
+		const row = phone.db.tables.notes.list().rows[0];
 		if (row === undefined) throw new Error('the phone holds no row');
-		expectOk(phone.db.tables.notes.delete(row.id));
+		phone.db.tables.notes.delete(row.id);
 		phone.client.flush();
 		wire.settle();
 		expectOk(
@@ -396,15 +413,14 @@ describe('the cutover: pre-identity local state is reset, never merged', () => {
 		// its `_meta` rows removed is byte-for-byte the old format.
 		const database = createBunSqliteAdapter(new Database(':memory:'));
 		{
-			const old = createReplicaStore({ database });
-			const view = expectOk(old.bind(lens)) as LensView<typeof lens>;
-			expectOk(view.tables.notes.create({ title: 'untrusted old note' }));
+			const old = createAccountStore({ workspace: workspace, database });
+			expectOk(old.tables.notes.create({ title: 'untrusted old note' }));
 		}
 		database.run('DELETE FROM _meta');
 
 		// The open is the cutover: untrusted whole, wiped whole. A missing
 		// identity must never read as a fresh install when state exists.
-		const reopened = openReplica('reopened', hub, wire, lens, database);
+		const reopened = openReplica('reopened', hub, wire, workspace, database);
 		expect(reopened.titles()).toEqual([]);
 		expect(reopened.client.status().cursor).toBe(0);
 		expect(reopened.client.document()).toBeUndefined();
@@ -420,14 +436,12 @@ describe('the cutover: pre-identity local state is reset, never merged', () => {
 	test('CONTROL: a certified file reopens intact', () => {
 		const database = createBunSqliteAdapter(new Database(':memory:'));
 		{
-			const store = createReplicaStore({ database });
-			const view = expectOk(store.bind(lens)) as LensView<typeof lens>;
-			expectOk(view.tables.notes.create({ title: 'kept across reopen' }));
+			const first = createAccountStore({ workspace: workspace, database });
+			expectOk(first.tables.notes.create({ title: 'kept across reopen' }));
 		}
-		const reopened = createReplicaStore({ database });
-		const view = expectOk(reopened.bind(lens)) as LensView<typeof lens>;
-		expect(
-			expectOk(view.tables.notes.list()).rows.map((row) => row.title),
-		).toEqual(['kept across reopen']);
+		const reopened = createAccountStore({ workspace: workspace, database });
+		expect(reopened.tables.notes.list().rows.map((row) => row.title)).toEqual([
+			'kept across reopen',
+		]);
 	});
 });

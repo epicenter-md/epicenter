@@ -22,12 +22,12 @@
  */
 
 import { Database } from 'bun:sqlite';
-import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { defineWorkspace } from '@epicenter/workspace';
 
 import {
-	createReplicaStore,
-	type ReplicaStore,
+	type AccountStore,
+	createAccountStore,
 } from '../../src/store/store.js';
 import {
 	createSyncClient,
@@ -42,7 +42,7 @@ import {
 const origin = process.argv[2] ?? 'http://127.0.0.1:8787';
 const application = `probe-${Date.now()}`;
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.synclab',
 	tables: { notes: { title: 'string', device: 'string', at: 'string' } },
 });
@@ -70,12 +70,11 @@ async function stat(app: string = application): Promise<Stat> {
 }
 
 function openReplica() {
-	const store = createReplicaStore({
+	const db = createAccountStore({
+		workspace: workspace,
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	const bound = store.bind(lens);
-	if (bound.error !== null) throw bound.error;
-	return { store, db: bound.data };
+	return { store: db.store, db };
 }
 
 /** A live socket to the authority, feeding a real client. */
@@ -293,10 +292,7 @@ console.log('\n3. sustained traffic through ONE instance');
 		'bytes per entry',
 		Math.round(after.storedBytes / Math.max(after.head, 1)),
 	);
-	report(
-		'rows on the OTHER replica',
-		reader.db.tables.notes.ids().data?.length ?? 'READ FAILED',
-	);
+	report('rows on the OTHER replica', reader.db.tables.notes.ids().length);
 	// The control that makes "one instance" mean anything. A run that crossed an
 	// eviction measured two cold objects and should not be quoted as sustained.
 	report(
@@ -314,9 +310,7 @@ console.log('\n3. sustained traffic through ONE instance');
 	);
 	report(
 		'CONTROL the reader holds every row, not just a cursor',
-		(reader.db.tables.notes.ids().data?.length ?? 0) === pushed
-			? 'held'
-			: 'FAILED',
+		reader.db.tables.notes.ids().length === pushed ? 'held' : 'FAILED',
 	);
 	// The whole point of the snapshot: the authority forgets what it covers, so
 	// the tail is a fraction of what was pushed rather than all of it.
@@ -466,7 +460,7 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 	/** How many sockets each side has opened, which is how a recovery is counted. */
 	const dials = { author: 0, reader: 0 };
 
-	function drive(side: 'author' | 'reader', store: ReplicaStore) {
+	function drive(side: 'author' | 'reader', store: AccountStore) {
 		return createSyncConnection({
 			store,
 			idleMs: 5,
@@ -545,7 +539,7 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 
 	await until(
 		'the reader to catch up',
-		() => (reader.db.tables.notes.ids().data?.length ?? 0) >= pushed,
+		() => reader.db.tables.notes.ids().length >= pushed,
 		60_000,
 	).catch(() => undefined);
 	const after = await stat(partition);
@@ -585,9 +579,9 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 	// while having carried no data at all.
 	report(
 		'CONTROL the reader holds every row, not just a cursor',
-		(reader.db.tables.notes.ids().data?.length ?? 0) === pushed
+		reader.db.tables.notes.ids().length === pushed
 			? `held  (${pushed} rows)`
-			: `FAILED  (${reader.db.tables.notes.ids().data?.length ?? 0} of ${pushed})`,
+			: `FAILED  (${reader.db.tables.notes.ids().length} of ${pushed})`,
 	);
 	report(
 		'CONTROL one incarnation start to end',

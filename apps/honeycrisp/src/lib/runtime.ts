@@ -1,8 +1,8 @@
 import type { AuthClient } from '@epicenter/auth';
-import type { DataOf, ReplicaStore, StoreError } from '@epicenter/data';
+import type { AccountStore, DataOf } from '@epicenter/data';
 import {
-	type BrowserReplicaStore,
-	type BrowserStore,
+	type BrowserAccountStore,
+	type DeviceStore,
 	openAccount,
 	openDevice,
 } from '@epicenter/data/browser';
@@ -12,7 +12,7 @@ import {
 	type SyncConnection,
 	type SyncConnectionStatus,
 } from '@epicenter/data/sync';
-import { honeycrispLens } from '@epicenter/honeycrisp';
+import { honeycrispWorkspace } from '@epicenter/honeycrisp';
 import type { Result } from 'wellcrafted/result';
 import { reportBackgroundError } from './report.js';
 import { attachHoneycrispSync } from './sync.js';
@@ -61,7 +61,7 @@ export type HoneycrispRuntime = {
 	 * never syncs, survives every sign-in and sign-out, and no verb anywhere
 	 * can delete it.
 	 */
-	readonly deviceData: DataOf<typeof honeycrispLens, BrowserStore>;
+	readonly deviceData: DataOf<typeof honeycrispWorkspace, DeviceStore>;
 	/**
 	 * The boot principal's retained account replica, plus what this generation
 	 * composed onto it: sync wiring and the rebuild lifecycle. Present exactly
@@ -72,7 +72,7 @@ export type HoneycrispRuntime = {
 	 */
 	readonly account?: {
 		/** The account's notes, editable, offline included once bound. */
-		readonly data: DataOf<typeof honeycrispLens, BrowserReplicaStore>;
+		readonly data: DataOf<typeof honeycrispWorkspace, BrowserAccountStore>;
 		/**
 		 * What sync is doing, or undefined when it is not part of this
 		 * generation anymore: a bound replica whose dials were permanently
@@ -94,7 +94,7 @@ export type HoneycrispRuntime = {
 		 * show that sentence is the one that owns asking. This layer owns the
 		 * lifecycle: publish, then adopt.
 		 */
-		rebuild(): Promise<Result<{ document: string }, RebuildError | StoreError>>;
+		rebuild(): Promise<Result<{ document: string }, RebuildError>>;
 	};
 	[Symbol.asyncDispose](): Promise<void>;
 };
@@ -145,7 +145,7 @@ export async function openHoneycrispRuntime({
 			: undefined;
 
 	const { data: deviceData, error: deviceError } =
-		await openDevice(honeycrispLens);
+		await openDevice(honeycrispWorkspace);
 	if (deviceError !== null) throw deviceError;
 
 	let account: AccountRuntime | undefined;
@@ -188,9 +188,9 @@ export async function openHoneycrispRuntime({
 
 /** The account arm plus the disposal only the runtime may run. */
 type AccountRuntime = {
-	data: DataOf<typeof honeycrispLens, BrowserReplicaStore>;
+	data: DataOf<typeof honeycrispWorkspace, BrowserAccountStore>;
 	syncStatus(): SyncConnectionStatus | undefined;
-	rebuild(): Promise<Result<{ document: string }, RebuildError | StoreError>>;
+	rebuild(): Promise<Result<{ document: string }, RebuildError>>;
 	dispose(): Promise<void>;
 };
 
@@ -213,7 +213,7 @@ async function openAccountRuntime({
 	principalId: Parameters<typeof openAccount>[1]['principalId'];
 	signal?: AbortSignal;
 }): Promise<AccountRuntime> {
-	const opened = await openAccount(honeycrispLens, { principalId });
+	const opened = await openAccount(honeycrispWorkspace, { principalId });
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
 
@@ -272,7 +272,7 @@ async function openAccountRuntime({
 					transport: {
 						fetch: (input, init) => auth.fetch(input, init),
 						baseURL: auth.deployment.baseURL,
-						namespace: honeycrispLens.namespace,
+						namespace: honeycrispWorkspace.namespace,
 					},
 				});
 				if (published.error !== null) return published;
@@ -319,18 +319,18 @@ function waitUntilReplicaIsBound({
 	wasDenied,
 	onDenied,
 }: {
-	store: ReplicaStore;
+	store: AccountStore;
 	signal?: AbortSignal;
 	/** Whether the dial was already permanently denied before the wait began. */
 	wasDenied: () => boolean;
 	/** Hear a permanent denial that lands while waiting; returns unsubscribe. */
 	onDenied: (notice: () => void) => () => void;
 }): Promise<void> {
-	const bound = (): boolean => store.sync.documentIdentity().data !== undefined;
+	const bound = (): boolean => store.sync.get().document !== undefined;
 	if (bound()) return Promise.resolve();
 	return new Promise<void>((resolve, reject) => {
 		function cleanup(): void {
-			stopCommitted();
+			stopBound();
 			stopDenied();
 			signal?.removeEventListener('abort', onAbort);
 		}
@@ -350,10 +350,11 @@ function waitUntilReplicaIsBound({
 			cleanup();
 			reject(signal?.reason);
 		}
-		// The stamp is a commit, so `onCommitted` is the notification that the
-		// replica became bound; denial arrives through the latch wired at the
-		// attach site, which may already have fired.
-		const stopCommitted = store.onCommitted(() => {
+		// The stamp is the one fact `sync.get()` reports, so its subscription
+		// is the notification that the replica became bound; denial arrives
+		// through the latch wired at the attach site, which may already have
+		// fired.
+		const stopBound = store.sync.subscribe(() => {
 			if (bound()) finish();
 		});
 		const stopDenied = onDenied(unavailable);

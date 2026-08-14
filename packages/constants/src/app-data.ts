@@ -34,7 +34,7 @@ export const EPICENTER_BUNDLE_IDENTIFIER = 'so.epicenter';
  * The one grammar for an app id, shared with catalog admission.
  *
  * An app id names a place, and two issuers name into that one space: admission
- * issues one when it accepts a folder, which is the namespace that folder's Lens
+ * issues one when it accepts a folder, which is the namespace that folder's workspace
  * declares (ADR-0210), and the composition root issues one for an engine it
  * composes. The grammar has one definition because the namespace is one
  * namespace; a second copy of this pattern is how the two would drift apart.

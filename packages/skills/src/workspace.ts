@@ -1,24 +1,26 @@
 /**
- * Skills' inert Lens: the namespace it owns and the two tables in it.
+ * Skills' inert workspace declaration: the namespace it owns and the two
+ * tables in it.
  *
- * A Lens is pure JSON (ADR-0213): arktype expressions for the fields, and
- * nothing that knows about storage, sync, or documents. The `skills` and
- * `skillReferences` property names are the durable table names, so they are
- * what row addresses carry and what the projection's relations are called.
+ * A workspace declaration is pure JSON (ADR-0213, ADR-0240): arktype
+ * expressions for the fields, and nothing that knows about storage, sync, or
+ * documents. The `skills` and `skillReferences` property names are the durable
+ * table names, so they are what row addresses carry and what the projection's
+ * relations are called.
  *
  * Structural row ids are minted by the store. `sourceId` is the portable
  * agentskills.io identity kept in SKILL.md frontmatter; it may be used to match
  * a later import, and it never becomes record identity.
  */
 
-import type { LensView } from '@epicenter/data';
-import { defineLens, type RowOf } from '@epicenter/lens';
+import type { WorkspaceView } from '@epicenter/data';
+import { defineWorkspace, type RowOf } from '@epicenter/workspace';
 
 const skillsTable = {
 	sourceId: 'string',
 	name: 'string',
 	description: 'string',
-	// Nullable with a default rather than optional. A Lens has no optional
+	// Nullable with a default rather than optional. A workspace has no optional
 	// fields on purpose: a field has to be one type through the CRDT attribute,
 	// the projection column and the row alike, and "absent" is not a SQL type.
 	license: 'string|null = null',
@@ -41,14 +43,14 @@ const referencesTable = {
 	updatedAt: 'string.date.iso',
 } as const;
 
-export const skillsLens = defineLens({
+export const skillsWorkspace = defineWorkspace({
 	namespace: 'so.epicenter.skills',
 	title: 'Skills',
 	tables: { skills: skillsTable, skillReferences: referencesTable },
 });
 
-/** The typed view of one store through the Skills Lens. */
-export type SkillsData = LensView<typeof skillsLens>;
+/** The typed view of one store through the Skills workspace. */
+export type SkillsData = WorkspaceView<typeof skillsWorkspace>;
 
 export type Skill = RowOf<typeof skillsTable>;
 export type Reference = RowOf<typeof referencesTable>;

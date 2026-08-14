@@ -14,14 +14,9 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import {
-	type Reference,
-	SKILL_CONTENT,
-	type Skill,
-	type SkillsData,
-} from './lens.js';
 import { parseSkillMd } from './parse.js';
 import { serializeSkillMd } from './serialize.js';
+import { SKILL_CONTENT, type Skill, type SkillsData } from './workspace.js';
 
 /** Either Skills table, for the document helpers that treat them alike. */
 type SkillsTable = SkillsData['tables']['skills' | 'skillReferences'];
@@ -62,8 +57,8 @@ export async function importSkillsFromDisk({
 				}
 			}),
 	);
-	const skillsScan = readSkills(data);
-	const referencesScan = readReferences(data);
+	const skillsScan = data.tables.skills.list();
+	const referencesScan = data.tables.skillReferences.list();
 	const skillsBySourceId = new Map<string, { id: string }>(
 		skillsScan.rows.map((skill) => [skill.sourceId, { id: skill.id }]),
 	);
@@ -110,7 +105,22 @@ export async function importSkillsFromDisk({
 		if (existing) {
 			const written = data.tables.skills.update(existing.id, input);
 			if (written.error !== null) throw written.error;
-			skill = written.data;
+			// The write reports only that it landed; the repaired row is `get`'s
+			// answer. The import wrote every declared field, so a read that still
+			// fails means the repair did not take, which is worth failing loudly.
+			const { data: repaired, error: readError } = data.tables.skills.get(
+				existing.id,
+			);
+			if (readError !== null) {
+				throw new Error(
+					`Skill '${existing.id}' still does not read whole after import repaired it`,
+					{ cause: readError },
+				);
+			}
+			if (repaired === undefined) {
+				throw new Error(`Skill '${existing.id}' vanished during import`);
+			}
+			skill = repaired;
 			updated += 1;
 		} else {
 			// The instructions root is named with the row, so there is exactly one
@@ -152,15 +162,23 @@ export async function importSkillsFromDisk({
 					path,
 					updatedAt: InstantString.now(),
 				};
-				const written = existingReference
-					? data.tables.skillReferences.update(existingReference.id, fields)
-					: data.tables.skillReferences.create(fields, {
-							document: [SKILL_CONTENT],
-						});
-				if (written.error !== null) throw written.error;
-				const reference: Reference = written.data;
-				referencesByOwnerAndPath.set(key, reference);
-				writeDocumentText(data.tables.skillReferences, reference.id, content);
+				let referenceId: string;
+				if (existingReference) {
+					const written = data.tables.skillReferences.update(
+						existingReference.id,
+						fields,
+					);
+					if (written.error !== null) throw written.error;
+					referenceId = existingReference.id;
+				} else {
+					const written = data.tables.skillReferences.create(fields, {
+						document: [SKILL_CONTENT],
+					});
+					if (written.error !== null) throw written.error;
+					referenceId = written.data.id;
+				}
+				referencesByOwnerAndPath.set(key, { id: referenceId });
+				writeDocumentText(data.tables.skillReferences, referenceId, content);
 			}),
 		);
 	}
@@ -183,8 +201,8 @@ export async function exportSkillsToDisk({
 	data: SkillsData;
 	dir: string;
 }) {
-	const skillsScan = readSkills(data);
-	const referencesScan = readReferences(data);
+	const skillsScan = data.tables.skills.list();
+	const referencesScan = data.tables.skillReferences.list();
 	const skillNames = new Set(skillsScan.rows.map((skill) => skill.name));
 	await Promise.all(
 		skillsScan.rows.map(async (skill) => {
@@ -235,30 +253,6 @@ export async function exportSkillsToDisk({
 			...referencesScan.nonconforming,
 		],
 	};
-}
-
-/**
- * Read one table whole, or throw.
- *
- * Neither direction has anywhere to put a failed read: a whole-table read fails
- * only when the projection is unusable, which is not a condition an import or
- * an export recovers from. Nonconforming rows are a different thing, carried
- * out to the caller as diagnostics rather than raised.
- *
- * Two functions rather than one generic, because the two tables have different
- * row types and inferring that through a type parameter costs a cast that buys
- * nothing back.
- */
-function readSkills(data: SkillsData) {
-	const listed = data.tables.skills.list();
-	if (listed.error !== null) throw listed.error;
-	return listed.data;
-}
-
-function readReferences(data: SkillsData) {
-	const listed = data.tables.skillReferences.list();
-	if (listed.error !== null) throw listed.error;
-	return listed.data;
 }
 
 /**

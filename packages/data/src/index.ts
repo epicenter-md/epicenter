@@ -1,8 +1,8 @@
 /**
  * What a developer gets from `@epicenter/data`.
  *
- * The store, the transport that carries it, and the vocabulary a Lens is
- * written in. Runtime openers live at their own entry points, because a Bun
+ * The store, the transport that carries it, and the vocabulary a workspace is
+ * declared in. Runtime openers live at their own entry points, because a Bun
  * opener imports `bun:sqlite` and a browser opener imports a WASM build, and
  * neither belongs in a barrel the other has to load.
  *
@@ -12,45 +12,66 @@
  * so a developer arriving here finds one store rather than a choice between
  * two.
  *
- * Each opener is called `open` and takes the lens, because a lens names the
- * store it opens (ADR-0229). The subpath already says which adapter, so the
- * identifier does not repeat it.
+ * Each opener is called `open` and takes the workspace, because a workspace
+ * names the store it opens (ADR-0229). The subpath already says which adapter,
+ * so the identifier does not repeat it.
  *
  * The transport answers at `./sync` and nowhere else. This barrel used to
  * re-export all of it as well, which no consumer ever used: every one of them
  * imports `@epicenter/data/sync` by name.
  */
 
-export type { JsonObject, JsonValue, RowAddress } from '@epicenter/lens';
+export type {
+	ConformanceIssue,
+	JsonObject,
+	JsonValue,
+	RowAddress,
+} from '@epicenter/workspace';
 export {
-	defineLens,
-	type LensJson,
-	type LensParseError,
-	type NonconformingRowError,
-	parseLens,
+	defineKv,
+	defineTable,
+	defineWorkspace,
+	parseWorkspace,
 	type RowOf,
 	RowWriteError,
-} from '@epicenter/lens';
-export { type OutboxEntry, SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
+	type WorkspaceJson,
+	type WorkspaceParseError,
+} from '@epicenter/workspace';
+export { SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
+export type {
+	DurableOp,
+	DurablePort,
+	DurableSnapshot,
+	OutboxEntry,
+	PersistenceCapability,
+	PersistenceStatus,
+} from './store/persistence.js';
 export {
-	asData,
-	type ClientLog,
-	createReplicaStore,
-	createStore,
+	type AccountStore,
+	type ApplyFailedError,
+	createAccountStore,
+	createDeviceStore,
 	type DataOf,
+	type DeviceStore,
 	type KvHandle,
-	type LensView,
+	type NonconformingRow,
+	type NonconformingValue,
+	type QueryFailedError,
 	type QueryMethod,
-	type ReadRowError,
-	type ReplicaStore,
 	type Row,
+	type RowAbsentError,
 	type RowDocument,
-	type Store,
 	StoreError,
 	type StorePressure,
+	StoreUnusableError,
+	type SyncCapability,
+	type SyncFacts,
 	type TableHandle,
 	type TableInvalidation,
 	type TableInvalidationListener,
 	type TypedTableHandle,
-	type WriteRowError,
+	type UnstampableError,
+	type UpdateRowError,
+	type WorkspaceStoreBase,
+	type WorkspaceView,
 } from './store/store.js';

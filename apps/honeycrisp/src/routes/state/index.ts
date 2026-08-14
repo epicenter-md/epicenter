@@ -47,8 +47,16 @@ export function createHoneycrispState({ db }: { db: HoneycrispData }) {
  * runtime: two open documents would mean two states, never one global one.
  */
 export type NotesSurface = {
-	/** The document this surface reads and edits. */
-	data: HoneycrispRuntime['deviceData'];
+	/**
+	 * The document this surface reads and edits.
+	 *
+	 * Widened to the base store kind: the device document and the account
+	 * replica differ only in their `sync` value, and this surface reads
+	 * neither's.
+	 */
+	data:
+		| HoneycrispRuntime['deviceData']
+		| NonNullable<HoneycrispRuntime['account']>['data'];
 	state: ReturnType<typeof createHoneycrispState>;
 };
 

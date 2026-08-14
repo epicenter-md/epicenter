@@ -10,14 +10,14 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { defineWorkspace } from '@epicenter/workspace';
 import type { Result } from 'wellcrafted/result';
 
 import { copyBytes } from './log.js';
-import { createReplicaStore } from './store.js';
+import { createAccountStore, syncEngineOf } from './store.js';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -25,11 +25,9 @@ const lens = defineLens({
 function open() {
 	const raw = new Database(':memory:');
 	const database = createBunSqliteAdapter(raw);
-	const store = createReplicaStore({ database });
-	const { data: db, error } = store.bind(lens);
-	if (error !== null) throw error;
+	const db = createAccountStore({ workspace: workspace, database });
 	return {
-		store,
+		store: db.store,
 		db,
 		logRows: () =>
 			database.all<{ seq: number; len: number }>(
@@ -53,7 +51,8 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
 }
 
 function titles(replica: ReturnType<typeof open>): string[] {
-	return expectOk(replica.db.tables.notes.list())
+	return replica.db.tables.notes
+		.list()
 		.rows.map((row) => row.title)
 		.sort();
 }
@@ -70,7 +69,7 @@ describe('the local log holds each update once', () => {
 		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
 		const update = author.store.encodeStateSince();
 
-		expectOk(reader.store.applyRemote(update));
+		expectOk(syncEngineOf(reader.store).applyRemote(update));
 
 		const rows = reader.logRows();
 		expect(rows).toHaveLength(1);
@@ -84,10 +83,12 @@ describe('the local log holds each update once', () => {
 		const author = open();
 		const reader = open();
 		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
-		expectOk(reader.store.applyRemote(author.store.encodeStateSince()));
+		expectOk(
+			syncEngineOf(reader.store).applyRemote(author.store.encodeStateSince()),
+		);
 
 		expect(reader.outbox()).toHaveLength(0);
-		expect(expectOk(reader.store.sync.coalesce())).toBeUndefined();
+		expect(syncEngineOf(reader.store).coalesce()).toBeUndefined();
 	});
 
 	test('an application writing inside a row document owes it, like any local work', () => {
@@ -117,13 +118,13 @@ describe('coalesce merges only what this replica authored', () => {
 		}
 		expect(author.outbox()).toHaveLength(20);
 
-		const merged = expectOk(author.store.sync.coalesce());
+		const merged = syncEngineOf(author.store).coalesce();
 		if (merged === undefined) throw new Error('nothing to send');
 		expect(author.outbox()).toHaveLength(1);
 
-		expectOk(reader.store.applyRemote(merged.bytes));
+		expectOk(syncEngineOf(reader.store).applyRemote(merged.bytes));
 		expect(titles(reader)).toHaveLength(20);
-		expect(reader.store.hasUnresolvedDependencies()).toBe(false);
+		expect(syncEngineOf(reader.store).hasUnresolvedDependencies()).toBe(false);
 	});
 
 	test('CONTROL: the last entry ALONE carries one note and leaves a gap', () => {
@@ -139,20 +140,22 @@ describe('coalesce merges only what this replica authored', () => {
 		const last = author.outbox().at(-1);
 		if (last === undefined) throw new Error('empty outbox');
 
-		expectOk(lastOnly.store.applyRemote(last.bytes));
+		expectOk(syncEngineOf(lastOnly.store).applyRemote(last.bytes));
 
 		expect(titles(lastOnly)).toEqual(['note 19']);
 		// And the replica cannot even report the shortfall as an error, which is
 		// why the merge has to be right rather than merely checked.
-		expect(lastOnly.store.hasUnresolvedDependencies()).toBe(false);
+		expect(syncEngineOf(lastOnly.store).hasUnresolvedDependencies()).toBe(
+			false,
+		);
 	});
 
 	test('coalescing twice is a no-op rather than a re-merge', () => {
 		const author = open();
 		expectOk(author.db.tables.notes.create({ title: 'a' }));
 		expectOk(author.db.tables.notes.create({ title: 'b' }));
-		const first = expectOk(author.store.sync.coalesce());
-		const second = expectOk(author.store.sync.coalesce());
+		const first = syncEngineOf(author.store).coalesce();
+		const second = syncEngineOf(author.store).coalesce();
 
 		expect(second?.id).toBe(first?.id);
 		expect(second?.bytes).toEqual(first?.bytes as Uint8Array);
@@ -163,13 +166,13 @@ describe('coalesce merges only what this replica authored', () => {
 		// while a submission was in flight has been acknowledged by nobody.
 		const author = open();
 		expectOk(author.db.tables.notes.create({ title: 'sent' }));
-		const inFlight = expectOk(author.store.sync.coalesce());
+		const inFlight = syncEngineOf(author.store).coalesce();
 		if (inFlight === undefined) throw new Error('nothing to send');
 		expectOk(
 			author.db.tables.notes.create({ title: 'authored while in flight' }),
 		);
 
-		expectOk(author.store.sync.acknowledge(inFlight.id));
+		syncEngineOf(author.store).acknowledge(inFlight.id);
 
 		const remaining = author.outbox();
 		expect(remaining).toHaveLength(1);
@@ -181,9 +184,9 @@ describe('coalesce merges only what this replica authored', () => {
 		// two would empty itself every time sync succeeded.
 		const author = open();
 		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
-		const sent = expectOk(author.store.sync.coalesce());
+		const sent = syncEngineOf(author.store).coalesce();
 		if (sent === undefined) throw new Error('nothing to send');
-		expectOk(author.store.sync.acknowledge(sent.id));
+		syncEngineOf(author.store).acknowledge(sent.id);
 
 		expect(titles(author)).toEqual(['Groceries']);
 		expect(author.outbox()).toHaveLength(0);
@@ -192,14 +195,20 @@ describe('coalesce merges only what this replica authored', () => {
 
 describe('the cursor is a log position, and never a state vector', () => {
 	test('a fresh replica reads zero, which is also "I have read nothing"', () => {
-		expect(expectOk(open().store.sync.cursor())).toBe(0);
+		expect(syncEngineOf(open().store).cursor()).toBe(0);
 	});
 
 	test('advancing survives a reopen of the same file', () => {
 		const database = createBunSqliteAdapter(new Database(':memory:'));
-		expectOk(createReplicaStore({ database }).sync.advance(7));
+		syncEngineOf(
+			createAccountStore({ workspace: workspace, database }).store,
+		).advance(7);
 
-		expect(expectOk(createReplicaStore({ database }).sync.cursor())).toBe(7);
+		expect(
+			syncEngineOf(
+				createAccountStore({ workspace: workspace, database }).store,
+			).cursor(),
+		).toBe(7);
 	});
 });
 
@@ -208,27 +217,27 @@ describe('the stamp lands only on an empty store', () => {
 		const { store, db } = open();
 		expectOk(db.tables.notes.create({ title: 'pre-bootstrap work' }));
 
-		const refused = store.sync.adoptDocumentIdentity('doc-1');
+		const refused = syncEngineOf(store).adoptDocumentIdentity('doc-1');
 		expect(refused.error?.name).toBe('Unstampable');
-		expect(expectOk(store.sync.documentIdentity())).toBeUndefined();
+		expect(syncEngineOf(store).documentIdentity()).toBeUndefined();
 	});
 
 	test('a stamped store keeps its first identity, and re-stamping is a no-op', () => {
 		const { store, db } = open();
-		expectOk(store.sync.adoptDocumentIdentity('doc-1'));
+		expectOk(syncEngineOf(store).adoptDocumentIdentity('doc-1'));
 		expectOk(db.tables.notes.create({ title: 'after the stamp' }));
 
 		// First write wins: membership never changes in place, even once the
 		// store holds state, and only discarding the file whole changes it.
-		expectOk(store.sync.adoptDocumentIdentity('doc-2'));
-		expect(expectOk(store.sync.documentIdentity())).toBe('doc-1');
+		expectOk(syncEngineOf(store).adoptDocumentIdentity('doc-2'));
+		expect(syncEngineOf(store).documentIdentity()).toBe('doc-1');
 	});
 
 	test('read progress alone is a commitment: a moved cursor refuses the stamp', () => {
 		const { store } = open();
-		expectOk(store.sync.advance(3));
+		syncEngineOf(store).advance(3);
 
-		const refused = store.sync.adoptDocumentIdentity('doc-1');
+		const refused = syncEngineOf(store).adoptDocumentIdentity('doc-1');
 		expect(refused.error?.name).toBe('Unstampable');
 	});
 });
@@ -248,7 +257,9 @@ describe('a row document root is created exactly once', () => {
 				{ document: ['editor'] },
 			),
 		);
-		expectOk(other.store.applyRemote(author.store.encodeStateSince()));
+		expectOk(
+			syncEngineOf(other.store).applyRemote(author.store.encodeStateSince()),
+		);
 
 		for (const [replica, words] of [
 			[author, 'written on the phone'],
@@ -260,12 +271,12 @@ describe('a row document root is created exactly once', () => {
 		}
 
 		expectOk(
-			author.store.applyRemote(
+			syncEngineOf(author.store).applyRemote(
 				other.store.encodeStateSince(author.store.stateVector()),
 			),
 		);
 		expectOk(
-			other.store.applyRemote(
+			syncEngineOf(other.store).applyRemote(
 				author.store.encodeStateSince(other.store.stateVector()),
 			),
 		);
@@ -291,7 +302,9 @@ describe('a row document root is created exactly once', () => {
 		const note = expectOk(
 			author.db.tables.notes.create({ title: 'Groceries' }),
 		);
-		expectOk(other.store.applyRemote(author.store.encodeStateSince()));
+		expectOk(
+			syncEngineOf(other.store).applyRemote(author.store.encodeStateSince()),
+		);
 
 		for (const [replica, words] of [
 			[author, 'written on the phone'],
@@ -303,12 +316,12 @@ describe('a row document root is created exactly once', () => {
 		}
 
 		expectOk(
-			author.store.applyRemote(
+			syncEngineOf(author.store).applyRemote(
 				other.store.encodeStateSince(author.store.stateVector()),
 			),
 		);
 		expectOk(
-			other.store.applyRemote(
+			syncEngineOf(other.store).applyRemote(
 				author.store.encodeStateSince(other.store.stateVector()),
 			),
 		);

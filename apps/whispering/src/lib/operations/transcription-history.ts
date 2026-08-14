@@ -62,7 +62,7 @@ export function recordTranscriptionOutcome<TError extends AnyTaggedError>(
 	transcription: Result<string, TError>,
 	log: Logger = defaultLog,
 ): Result<TranscriptionSuccess, TError> {
-	// The outcome is three columns rather than one nested object: a Lens has no
+	// The outcome is three columns rather than one nested object: a workspace has no
 	// expression for an inline object, and flattening also lets a failure's
 	// message merge independently of its timestamp (`workspace/index.ts`).
 	if (isErr(transcription)) {

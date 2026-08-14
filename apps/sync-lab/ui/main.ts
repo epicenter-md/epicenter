@@ -7,13 +7,13 @@
  * thing no test in this repository can establish.
  */
 
-import { createReplicaStore } from '@epicenter/data';
+import { createAccountStore } from '@epicenter/data';
 import { createSyncConnection } from '@epicenter/data/sync';
-import { defineLens } from '@epicenter/lens';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
+import { defineWorkspace } from '@epicenter/workspace';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.synclab',
 	tables: { notes: { title: 'string', device: 'string', at: 'string' } },
 });
@@ -27,12 +27,11 @@ const device =
 	})();
 
 const sqlite3 = await sqlite3InitModule();
-const store = createReplicaStore({
-	database: createBrowserSqliteAdapter(new sqlite3.oo1.DB(':memory:') as never),
+const db = createAccountStore({
+	workspace: workspace,
+	database: createBrowserSqliteAdapter(new sqlite3.oo1.DB(':memory:')),
 });
-const bound = store.bind(lens);
-if (bound.error !== null) throw bound.error;
-const db = bound.data;
+const store = db.store;
 
 /**
  * The whole of what this host writes: how to make a socket.
@@ -84,15 +83,14 @@ const paste = document.querySelector('#paste') as HTMLButtonElement;
 
 /** The one number worth watching: how much of this document is dead weight. */
 function pressureLine(): string {
-	const { data } = store.pressure();
-	if (data === null) return '';
-	return `${data.items} items / ${data.liveRows} rows = ${data.itemsPerLiveRow.toFixed(1)}`;
+	const pressure = store.pressure();
+	return `${pressure.items} items / ${pressure.liveRows} rows = ${pressure.itemsPerLiveRow.toFixed(1)}`;
 }
 
 function render(): void {
 	const listed = db.tables.notes.list();
 	rows.replaceChildren(
-		...(listed.data?.rows ?? [])
+		...listed.rows
 			.sort((left, right) => left.at.localeCompare(right.at))
 			.map((row) => {
 				const item = document.createElement('li');

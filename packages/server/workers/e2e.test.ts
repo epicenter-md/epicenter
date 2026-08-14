@@ -9,7 +9,7 @@
  * ## The controls
  *
  * Convergence is asserted on the RECEIVING replica's own rows, read back
- * through its lens out of its own SQLite, never on a count this file kept. A
+ * through its workspace out of its own SQLite, never on a count this file kept. A
  * rule on this branch once "worked" in a simulation that delivered nothing.
  *
  * And the isolation that gives the claim its meaning: a device on a DIFFERENT
@@ -196,7 +196,7 @@ describe('two devices on one account converge', () => {
 		expect(response.status).toBe(401);
 	});
 
-	it('a namespace no Lens could declare is refused', async () => {
+	it('a namespace no workspace could declare is refused', async () => {
 		const response = await SELF.fetch(
 			new Request(`${ORIGIN}/api/store/v1/sync?namespace=../escape&cursor=0`, {
 				headers: {
@@ -412,15 +412,26 @@ describe('one verb publishes the next document (ADR-0231)', () => {
 		const published = await phone.rebuild();
 		expect(published.document.length).toBeGreaterThan(0);
 
-		// The initiator adopted through the same move as everyone else.
+		// The initiator adopted through the same move as everyone else. Cursor
+		// too, not just the stamp: the announcement stamps the document before
+		// the equality-door redial delivers the snapshot, and a report taken in
+		// that window truthfully holds nothing yet.
 		await until('the phone to rejoin the document it published', async () => {
 			const report = await phone.report();
-			return report.adoptions >= 1 && report.document === published.document;
+			return (
+				report.adoptions >= 1 &&
+				report.document === published.document &&
+				report.cursor > 0
+			);
 		});
 		// The laptop's socket was closed by the replace; it adopts on its own.
 		await until('the laptop to discard and adopt', async () => {
 			const report = await laptop.report();
-			return report.adoptions >= 1 && report.document === published.document;
+			return (
+				report.adoptions >= 1 &&
+				report.document === published.document &&
+				report.cursor > 0
+			);
 		});
 
 		const [phoneAfter, laptopAfter] = await Promise.all([

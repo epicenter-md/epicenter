@@ -17,16 +17,9 @@ import type { Entry, VocabData } from '@epicenter/vocab';
 
 export function createEntriesState({ data }: { data: VocabData }) {
 	let rows = $state.raw<Entry[]>([]);
-	let loadError = $state.raw<unknown>(null);
 
 	function read(): void {
-		const listed = data.tables.entries.list();
-		if (listed.error !== null) {
-			loadError = listed.error;
-			return;
-		}
-		rows = listed.data.rows;
-		loadError = null;
+		rows = data.tables.entries.list().rows;
 	}
 
 	read();
@@ -56,9 +49,6 @@ export function createEntriesState({ data }: { data: VocabData }) {
 		},
 		get usableCount() {
 			return usableCount;
-		},
-		get loadError() {
-			return loadError;
 		},
 
 		/**
@@ -92,10 +82,9 @@ export function createEntriesState({ data }: { data: VocabData }) {
 			update(id, { note });
 		},
 
-		/** Remove an entry from the pool. */
+		/** Remove an entry from the pool. Idempotent over an already-gone row. */
 		remove(id: string) {
-			const { error } = data.tables.entries.delete(id);
-			if (error !== null) throw error;
+			data.tables.entries.delete(id);
 		},
 
 		[Symbol.dispose]: stop,

@@ -18,14 +18,14 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineLens } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { defineWorkspace } from '@epicenter/workspace';
 import type { Result } from 'wellcrafted/result';
 
-import { createReplicaStore } from '../src/store/store.js';
+import { createAccountStore, syncEngineOf } from '../src/store/store.js';
 import { openSyncAuthority } from '../src/sync/authority.js';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -49,19 +49,19 @@ function contains(blobs: readonly Uint8Array[], needle: string): boolean {
 /** A device that wrote a note, pushed it, then deleted it. */
 function afterWritingAndDeleting() {
 	const database = createBunSqliteAdapter(new Database(':memory:'));
-	const store = createReplicaStore({ database });
-	const db = expectOk(store.bind(lens));
+	const db = createAccountStore({ workspace: workspace, database });
+	const store = db.store;
 	const authorityDatabase = createBunSqliteAdapter(new Database(':memory:'));
 	const authority = openSyncAuthority({ database: authorityDatabase });
 
 	const note = expectOk(db.tables.notes.create({ title: CANARY }));
-	const created = expectOk(store.sync.coalesce());
+	const created = syncEngineOf(store).coalesce();
 	if (created === undefined) throw new Error('nothing to send');
 	expectOk(authority.append(created.bytes));
-	expectOk(store.sync.acknowledge(created.id));
+	syncEngineOf(store).acknowledge(created.id);
 
-	expectOk(db.tables.notes.delete(note.id));
-	const deleted = expectOk(store.sync.coalesce());
+	db.tables.notes.delete(note.id);
+	const deleted = syncEngineOf(store).coalesce();
 	if (deleted !== undefined) expectOk(authority.append(deleted.bytes));
 
 	return {
@@ -85,8 +85,8 @@ describe('a deleted row is gone from the application', () => {
 		const world = afterWritingAndDeleting();
 
 		expect(expectOk(world.db.tables.notes.get(world.note.id))).toBeUndefined();
-		expect(expectOk(world.db.tables.notes.ids())).toEqual([]);
-		expect(expectOk(world.db.tables.notes.list()).rows).toEqual([]);
+		expect(world.db.tables.notes.ids()).toEqual([]);
+		expect(world.db.tables.notes.list().rows).toEqual([]);
 	});
 
 	test('and gone from the current state, which is what gc reclaims', () => {
@@ -119,7 +119,7 @@ describe('and still in every log, for as long as the log exists', () => {
 		// The consequence that matters. Catch-up is "everything after your
 		// cursor", and a new device's cursor is zero, so a person who joins a
 		// phone today receives every note anyone has ever deleted. Nothing
-		// surfaces it, because the lens reads current state; it arrives, is
+		// surfaces it, because the workspace reads current state; it arrives, is
 		// applied, and is invisible.
 		const world = afterWritingAndDeleting();
 		const backlog = expectOk(world.authority.since(0, 1_000));
@@ -139,12 +139,14 @@ describe('and still in every log, for as long as the log exists', () => {
 
 		// And the arriving device shows nothing, which is why this is invisible
 		// rather than merely undesirable.
-		const arriving = createReplicaStore({
+		const arrivingDb = createAccountStore({
+			workspace: workspace,
 			database: createBunSqliteAdapter(new Database(':memory:')),
 		});
-		const arrivingDb = expectOk(arriving.bind(lens));
-		for (const entry of backlog) expectOk(arriving.applyRemote(entry.bytes));
-		expect(expectOk(arrivingDb.tables.notes.list()).rows).toEqual([]);
+		const arriving = arrivingDb.store;
+		for (const entry of backlog)
+			expectOk(syncEngineOf(arriving).applyRemote(entry.bytes));
+		expect(arrivingDb.tables.notes.list().rows).toEqual([]);
 	});
 });
 

@@ -5,13 +5,13 @@
  *
  * Inert, and deliberately so. Nothing here opens a document, mints an address,
  * or knows which document a conversation lives in. An application splices
- * {@link conversationsTable} into its own lens under its own namespace, opens
- * its own document (device or account, ADR-0233), and hands the row's message
- * root to {@link createAgentMessageStore}. Vocab has always worked this way and
- * said so; the `chatLens` that used to sit beside the table was a lens no
- * application ever bound, kept alive by its own test, and a standalone lens is
- * a standalone document, which is exactly what a sub-feature of an application
- * must not be.
+ * {@link conversationsTable} into its own workspace under its own namespace,
+ * opens its own document (device or account, ADR-0233), and hands the row's
+ * message root to {@link createAgentMessageStore}. Vocab has always worked this
+ * way and said so; the `chatLens` that used to sit beside the table was a
+ * declaration no application ever bound, kept alive by its own test, and a
+ * standalone declaration is a standalone document, which is exactly what a
+ * sub-feature of an application must not be.
  */
 
 import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
@@ -20,7 +20,7 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
  *
  * `RowDocument` and `TypedTableHandle` are runtime handles a store constructs,
  * so they come from `@epicenter/data`. `RowOf` is inert contract vocabulary
- * owned by `@epicenter/lens`; `@epicenter/data` re-exports it, but reaching it
+ * owned by `@epicenter/workspace`; `@epicenter/data` re-exports it, but reaching it
  * through the runtime would say this module builds its schema out of a SQLite
  * projection, which it never does.
  *
@@ -30,7 +30,7 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
  * is as fatal as a value one.
  */
 import type { RowDocument, TypedTableHandle } from '@epicenter/data';
-import type { RowOf } from '@epicenter/lens';
+import type { RowOf } from '@epicenter/workspace';
 import type { Brand } from 'wellcrafted/brand';
 
 export type ConversationId = string & Brand<'ConversationId'>;
@@ -39,18 +39,18 @@ export const asConversationId = (value: string): ConversationId =>
 	value as ConversationId;
 
 /**
- * The fields a conversation row carries, as the arktype expressions a lens is
- * written in (ADR-0213).
+ * The fields a conversation row carries, as the arktype expressions a
+ * workspace is written in (ADR-0213).
  *
- * Spliced into an application's own lens rather than published as one, because
- * a table root is addressed by its NAME inside whichever document holds it: two
- * lenses bound over one store share `conversations` whatever namespaces they
- * declare. So the shape is the reusable thing, and the namespace is the
- * application's.
+ * Spliced into an application's own workspace rather than published as one,
+ * because a table root is addressed by its NAME inside whichever document holds
+ * it: two workspaces opened over one store share `conversations` whatever
+ * namespaces they declare. So the shape is the reusable thing, and the
+ * namespace is the application's.
  *
  * @example
  * ```ts
- * export const vocabLens = defineLens({
+ * export const vocabWorkspace = defineWorkspace({
  *   namespace: 'so.epicenter.vocab',
  *   tables: { conversations: conversationsTable, entries: entriesTable },
  * });

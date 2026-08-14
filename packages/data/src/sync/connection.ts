@@ -51,7 +51,7 @@
  */
 import { Ok, type Result } from 'wellcrafted/result';
 
-import type { ReplicaStore } from '../store/store.js';
+import { type AccountStore, syncEngineOf } from '../store/store.js';
 import {
 	createSyncClient,
 	type Schedule,
@@ -72,8 +72,12 @@ export type SyncAttempt = {
 	/**
 	 * The position to ask the authority to start after. Belongs in the URL.
 	 *
-	 * Read fresh on every attempt from what this replica has durably applied,
-	 * which is what makes a reconnect a catch-up rather than a fresh start.
+	 * Read fresh on every attempt from what this replica has applied, which is
+	 * what makes a reconnect a catch-up rather than a fresh start. At boot
+	 * that is exactly what the durable record recovered; mid-session it may
+	 * run ahead of a blocked durable copy, and a restart then re-fetches from
+	 * the durable cursor, which is safe because an update is idempotent
+	 * (ADR-0238).
 	 */
 	readonly cursor: number;
 	/**
@@ -209,7 +213,7 @@ export function createSyncConnection({
 	unacknowledgedMs = 30_000,
 	onSuperseded,
 }: {
-	store: ReplicaStore;
+	store: AccountStore;
 	dial: SyncDial;
 	idleMs?: number;
 	maxBufferedBytes?: number;
@@ -258,7 +262,7 @@ export function createSyncConnection({
 	/** The submission the watchdog saw on its previous tick. */
 	let watched: number | undefined;
 
-	const stopLocalWork = store.onLocalWork(() => client.nudge());
+	const stopLocalWork = syncEngineOf(store).onLocalWork(() => client.nudge());
 
 	function cancelTimers(): void {
 		cancelHealthy?.();

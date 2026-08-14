@@ -1,20 +1,20 @@
 {
-	"name": "@epicenter/lens",
-	"version": "0.1.0",
-	"description": "The Epicenter data-contract vocabulary for installed applications: inert, compiled, and free of storage, sockets and Yjs.",
+	"name": "@epicenter/workspace",
+	"version": "0.4.0",
+	"description": "The Epicenter data-contract vocabulary for applications: one immutable workspace declaration per application, inert, compiled, and free of storage, sockets and Yjs.",
 	"type": "module",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/EpicenterHQ/epicenter.git",
-		"directory": "packages/lens"
+		"directory": "packages/workspace"
 	},
 	"homepage": "https://epicenter.so",
 	"keywords": [
 		"epicenter",
 		"local-first",
 		"schema",
-		"lens",
+		"workspace",
 		"sdk"
 	],
 	"sideEffects": false,

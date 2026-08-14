@@ -26,7 +26,7 @@ export function validateSkill(fields: {
 	description: string;
 	/**
 	 * Omitted by a caller validating a name before a row exists; `null` on a
-	 * row that declares none, because a Lens has no optional fields (ADR-0213).
+	 * row that declares none, because a workspace has no optional fields (ADR-0213).
 	 */
 	compatibility?: string | null;
 }): string[] {

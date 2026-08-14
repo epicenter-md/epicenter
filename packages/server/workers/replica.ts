@@ -1,9 +1,12 @@
 /**
  * Test-only: a replica that lives inside `workerd`, driven by the real driver.
  *
- * It is a Durable Object for one reason. A replica is a `ReplicaStore`, a store is
- * SQLite, and the only synchronous SQLite inside `workerd` is a Durable Object's
- * own storage. Everything else here is the deployed client: `createReplicaStore`,
+ * It is a Durable Object for one reason. A replica is an `AccountStore`, a store
+ * is SQLite, and the only synchronous SQLite inside `workerd` is a Durable
+ * Object's own storage; its one database therefore holds the client's durable
+ * record AND its projection, which the engine keeps honest by owning the
+ * letter-named relations outright. Everything else here is the deployed
+ * client: `createAccountStore`,
  * `createSyncConnection` with the real supersession rule, and `rebuildWorkspace`
  * over a real WebSocket and the real routes, so a test can assert on the rows
  * a device actually holds rather than on frames a harness counted.
@@ -17,9 +20,9 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import {
-	createReplicaStore,
-	defineLens,
-	type ReplicaStore,
+	type AccountStore,
+	createAccountStore,
+	defineWorkspace,
 } from '@epicenter/data';
 import {
 	createSyncConnection,
@@ -33,15 +36,15 @@ import {
 } from '@epicenter/sqlite/durable-object';
 import { MAIN_SUBPROTOCOL, STORE_SYNC_ROUTE } from '@epicenter/sync';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.storeprobe',
 	tables: { notes: { title: 'string' } },
 });
 
-function bindNotes(store: ReplicaStore) {
-	const bound = store.bind(lens);
-	if (bound.error !== null) throw bound.error;
-	return bound.data;
+function openNotes(
+	database: ReturnType<typeof createDurableObjectSqliteAdapter>,
+) {
+	return createAccountStore({ workspace: workspace, database });
 }
 
 export type ReplicaReport = {
@@ -61,9 +64,9 @@ export type ReplicaReport = {
 type Env = { SELF: { fetch(request: Request): Promise<Response> } };
 
 export class StoreTestReplica extends DurableObject<Env> {
-	private db: ReturnType<typeof bindNotes> | undefined;
+	private db: ReturnType<typeof openNotes> | undefined;
 	private connection: SyncConnection | undefined;
-	private store: ReplicaStore | undefined;
+	private store: AccountStore | undefined;
 	private bearer = '';
 	private origin = '';
 	private adoptions = 0;
@@ -90,8 +93,8 @@ export class StoreTestReplica extends DurableObject<Env> {
 		const database = createDurableObjectSqliteAdapter(
 			this.ctx.storage as unknown as DurableObjectSqliteStorage,
 		);
-		this.store = createReplicaStore({ database });
-		this.db = bindNotes(this.store);
+		this.db = openNotes(database);
+		this.store = this.db.store;
 		if (connect) this.startSync();
 	}
 
@@ -112,7 +115,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 			},
 			dial: ({ cursor, document, opened, received, closed }) => {
 				const url = STORE_SYNC_ROUTE.url(origin, {
-					namespace: lens.namespace,
+					namespace: workspace.namespace,
 					cursor,
 					...(document === undefined ? {} : { document }),
 				});
@@ -167,7 +170,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 		const bearer = this.bearer;
 		return {
 			baseURL: this.origin,
-			namespace: lens.namespace,
+			namespace: workspace.namespace,
 			fetch: (input, init) =>
 				this.env.SELF.fetch(
 					new Request(input, {
@@ -240,11 +243,9 @@ export class StoreTestReplica extends DurableObject<Env> {
 	remove(title: string): void {
 		if (this.db === undefined) throw new Error('open first');
 		const listed = this.db.tables.notes.list();
-		if (listed.error !== null) throw listed.error;
-		const row = listed.data.rows.find((candidate) => candidate.title === title);
+		const row = listed.rows.find((candidate) => candidate.title === title);
 		if (row === undefined) throw new Error(`no note titled '${title}'`);
-		const removed = this.db.tables.notes.delete(row.id);
-		if (removed.error !== null) throw removed.error;
+		this.db.tables.notes.delete(row.id);
 	}
 
 	/** This replica's whole state, re-encoded: the argument a replace posts. */
@@ -274,15 +275,14 @@ export class StoreTestReplica extends DurableObject<Env> {
 			};
 		}
 		const listed = this.db.tables.notes.list();
-		if (listed.error !== null) throw listed.error;
 		const status = this.connection?.status();
 		const pressure = this.store.pressure();
 		return {
 			cursor: status?.cursor ?? 0,
-			document: this.store.sync.documentIdentity().data ?? undefined,
+			document: this.store.sync.get().document,
 			connected: status?.connected ?? false,
-			titles: listed.data.rows.map((row) => row.title).sort(),
-			prose: listed.data.rows
+			titles: listed.rows.map((row) => row.title).sort(),
+			prose: listed.rows
 				.map((row) =>
 					JSON.stringify(
 						this.db?.tables.notes
@@ -293,7 +293,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 				)
 				.sort(),
 			lastError: status?.lastError?.name,
-			items: pressure.error !== null ? -1 : pressure.data.items,
+			items: pressure.items,
 			adoptions: this.adoptions,
 		};
 	}

@@ -22,7 +22,7 @@
 
 import { isOpenWebSocketDenial } from '@epicenter/sync/auth-subprotocol';
 import { STORE_SYNC_ROUTE } from '@epicenter/sync/store-route';
-import type { ReplicaStore } from '../store/store.js';
+import type { AccountStore } from '../store/store.js';
 import { createSyncConnection, type SyncConnection } from './connection.js';
 
 /**
@@ -48,8 +48,8 @@ export type StoreSocketTransport = {
 
 export type AttachStoreSyncOptions = {
 	/** The open account replica this connection carries. */
-	store: ReplicaStore;
-	/** The Lens namespace being synced, which addresses the authority. */
+	store: AccountStore;
+	/** The workspace namespace being synced, which addresses the authority. */
 	namespace: string;
 	transport: StoreSocketTransport;
 	/**

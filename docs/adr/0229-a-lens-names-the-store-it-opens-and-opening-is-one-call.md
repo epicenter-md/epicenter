@@ -10,6 +10,15 @@
   becomes `epicenter/<namespace>/device` or
   `epicenter/<namespace>/account/<principal id>` and the open claim is that
   same address.
+- **Amended by:** [ADR-0240](0240-an-application-declares-one-workspace-and-an-opened-runtime-holds-exactly-one-definition.md):
+  withdrawn are "`bind` stays reachable on an application" and "`lens` keeps
+  its name", both of which stood on ADR-0160's multi-interpretation model.
+  The declaration is `defineWorkspace`, an opened runtime holds exactly one
+  definition, and there is no `bind`. Everything else here stands.
+- **Amended by:** [ADR-0237](0237-nonconformance-is-a-reads-only-error-and-a-disposed-store-throws.md):
+  `bind`'s Result error arm narrows to `LensParseError`; a storage refusal
+  while binding throws `StoreUnusableError`, which the openers convert to an
+  open-time failure.
 - **Amends:** [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md)
   at two rows of its naming table and at `bind`. Withdrawn: that one opener per
   runtime must stand in front of a separate `bind` because "the three opens

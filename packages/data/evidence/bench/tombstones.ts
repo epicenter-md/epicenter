@@ -214,7 +214,7 @@ function itemCount(doc: Y.Doc): number {
 	return total;
 }
 
-/** Rows a lens would actually return, so "live" is not taken on trust. */
+/** Rows a workspace would actually return, so "live" is not taken on trust. */
 function liveRows(doc: Y.Doc): number {
 	const root = doc.get('recordings');
 	let alive = 0;

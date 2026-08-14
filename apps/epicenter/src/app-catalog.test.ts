@@ -32,7 +32,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { COMPOSED_APP_IDS } from '@epicenter/constants/app-data';
-import { DATA_ADDRESS_CEILINGS, isNamespace } from '@epicenter/lens';
+import { DATA_ADDRESS_CEILINGS, isNamespace } from '@epicenter/workspace';
 import {
 	loadActiveAppCatalog,
 	promoteAppCatalogCandidate,
@@ -44,10 +44,10 @@ function tempDir(prefix: string): string {
 }
 
 /**
- * One candidate app output: `<root>/<dir>/index.html` and its `lens.json`.
+ * One candidate app output: `<root>/<dir>/index.html` and its `workspace.json`.
  *
  * The directory name means nothing (ADR-0210), so these fixtures name it after
- * the namespace the Lens declares. That keeps a test readable while leaving the
+ * the namespace the declaration declares. That keeps a test readable while leaving the
  * id where it really comes from, which is the declaration.
  */
 function writeApp(
@@ -57,7 +57,7 @@ function writeApp(
 		page = `<!doctype html><title>${id}</title>`,
 		files = {},
 		title,
-		lens = {
+		declaration = {
 			namespace: id,
 			...(title === undefined ? {} : { title }),
 			tables: {},
@@ -67,16 +67,18 @@ function writeApp(
 		page?: string;
 		files?: Record<string, string>;
 		title?: string;
-		lens?: unknown;
+		declaration?: unknown;
 		directory?: string;
 	} = {},
 ): void {
 	mkdirSync(join(root, directory), { recursive: true });
 	writeFileSync(join(root, directory, 'index.html'), page);
-	if (lens !== null) {
+	if (declaration !== null) {
 		writeFileSync(
-			join(root, directory, 'lens.json'),
-			typeof lens === 'string' ? lens : JSON.stringify(lens),
+			join(root, directory, 'workspace.json'),
+			typeof declaration === 'string'
+				? declaration
+				: JSON.stringify(declaration),
 		);
 	}
 	id = directory;
@@ -199,18 +201,18 @@ describe('promoteAppCatalogCandidate', () => {
 		writeApp(noIndex, 'so.test.valid');
 		mkdirSync(join(noIndex, 'no-index'));
 
-		// A declaration that is not a Lens, and one whose namespace is a bare
+		// A declaration that is not well-formed, and one whose namespace is a bare
 		// label. Both are the same refusal now: an id is a namespace (ADR-0210).
-		const notALens = tempDir('epicenter-candidate-');
-		writeApp(notALens, 'so.test.broken', { lens: '{ not json' });
+		const notADeclaration = tempDir('epicenter-candidate-');
+		writeApp(notADeclaration, 'so.test.broken', { declaration: '{ not json' });
 
 		const bareNamespace = tempDir('epicenter-candidate-');
 		writeApp(bareNamespace, 'whispering', {
-			lens: { namespace: 'whispering', tables: {} },
+			declaration: { namespace: 'whispering', tables: {} },
 		});
 
 		const noDeclaration = tempDir('epicenter-candidate-');
-		writeApp(noDeclaration, 'so.test.silent', { lens: null });
+		writeApp(noDeclaration, 'so.test.silent', { declaration: null });
 
 		const strayFile = tempDir('epicenter-candidate-');
 		writeApp(strayFile, 'so.test.valid');
@@ -218,7 +220,7 @@ describe('promoteAppCatalogCandidate', () => {
 
 		for (const [candidate, refused] of [
 			[noIndex, 'no-index'],
-			[notALens, 'so.test.broken'],
+			[notADeclaration, 'so.test.broken'],
 			[bareNamespace, 'whispering'],
 			[noDeclaration, 'so.test.silent'],
 			[strayFile, 'README.md'],
@@ -262,7 +264,7 @@ describe('promoteAppCatalogCandidate', () => {
 			await expect(
 				promoteAppCatalogCandidate(
 					root,
-					candidateWith(id, { lens: { namespace: id, tables: {} } }),
+					candidateWith(id, { declaration: { namespace: id, tables: {} } }),
 				),
 			).rejects.toThrow(id);
 		}

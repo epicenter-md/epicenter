@@ -11,15 +11,17 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineLens, type LensJson } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { defineWorkspace, type WorkspaceJson } from '@epicenter/workspace';
 import * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
 
 import {
-	createReplicaStore,
-	type LensView,
+	createAccountStore,
+	syncEngineOf,
 	type TableHandle,
+	type UntypedWorkspaceView,
+	type WorkspaceView,
 } from '../store/store.js';
 import {
 	AuthorityError,
@@ -35,7 +37,7 @@ import {
 } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -50,15 +52,16 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
  *
  * An untyped view holds a record of tables, so every one reads as possibly
  * absent. Where a
- * test is about a lens NOT declaring a table it looks for that `undefined`
- * deliberately; everywhere else the lens declares it, and this says so once.
+ * test is about a workspace NOT declaring a table it looks for that `undefined`
+ * deliberately; everywhere else the workspace declares it, and this says so once.
  */
 function tableOf(
 	view: { tables: Readonly<Record<string, TableHandle>> },
 	name: string,
 ): TableHandle {
 	const handle = view.tables[name];
-	if (handle === undefined) throw new Error(`this lens declares no '${name}'`);
+	if (handle === undefined)
+		throw new Error(`this workspace declares no '${name}'`);
 	return handle;
 }
 
@@ -108,21 +111,25 @@ function openReplica(
 	hub: ReturnType<typeof createSyncHub>,
 	wire: Wire,
 	/**
-	 * The lens this device is running, which is not always the same one.
+	 * The workspace this device is running, which is not always the same one.
 	 *
 	 * A device updates before another device does, so two replicas of one
-	 * partition routinely hold lenses that disagree. Everything here declares
-	 * `notes.title`, which is what keeps `titles()` meaningful across all of them.
+	 * partition routinely hold declarations that disagree. Everything here
+	 * declares `notes.title`, which is what keeps `titles()` meaningful across
+	 * all of them. One runtime holds one definition (ADR-0240); a device that
+	 * updates goes through `upgrade`, which closes this runtime and opens the
+	 * next one over the same durable file.
 	 */
-	through: LensJson = lens,
-) {
-	const database = createBunSqliteAdapter(new Database(':memory:'));
-	const store = createReplicaStore({ database });
-	// One binding, two views of it: the typed view costs nothing and is honest
-	// for every replica running the default lens; a replica running another one
-	// reads through `bound`.
-	const bound = expectOk(store.bind(through));
-	const db = bound as unknown as LensView<typeof lens>;
+	through: WorkspaceJson = workspace,
+	database = createBunSqliteAdapter(new Database(':memory:')),
+): Replica {
+	const data = createAccountStore({ workspace: through, database });
+	const store = data.store;
+	// One runtime, two static views of it: the typed view costs nothing and is
+	// honest for every replica running the default workspace; a replica running
+	// another one reads through `bound`.
+	const bound = data as unknown as UntypedWorkspaceView;
+	const db = data as unknown as WorkspaceView<typeof workspace>;
 	const client = createSyncClient({
 		store,
 		idleMs: 0,
@@ -169,7 +176,7 @@ function openReplica(
 			// Tests sometimes seed the durable identity after creating the client.
 			// A real client reads it when it is constructed; use the durable value
 			// here so the simulated connection has the same declared identity.
-			connection.document = expectOk(store.sync.documentIdentity());
+			connection.document = syncEngineOf(store).documentIdentity();
 			const admission = hub.join(connection);
 			client.attach(socket);
 			if (admission === 'bootstrap') {
@@ -189,12 +196,40 @@ function openReplica(
 			hub.leave(connection);
 			client.detach();
 		},
+		/**
+		 * The release upgrade, told honestly (ADR-0240): close this runtime,
+		 * reopen the same durable file under the newer declaration. The
+		 * successor is a whole replica; the caller connects it when the test
+		 * needs the wire.
+		 */
+		async upgrade(next: WorkspaceJson): Promise<Replica> {
+			generation += 1;
+			hub.leave(connection);
+			client.detach();
+			await store[Symbol.asyncDispose]();
+			return openReplica(label, hub, wire, next, database);
+		},
 		titles: () =>
-			expectOk(db.tables.notes.list())
+			db.tables.notes
+				.list()
 				.rows.map((row) => row.title)
 				.sort(),
 	};
 }
+
+type Replica = {
+	label: string;
+	store: ReturnType<typeof createAccountStore>['store'];
+	db: WorkspaceView<typeof workspace>;
+	bound: UntypedWorkspaceView;
+	client: ReturnType<typeof createSyncClient>;
+	connection: HubConnection;
+	socket: { send: (bytes: Uint8Array) => void };
+	connect(): string;
+	disconnect(): void;
+	upgrade(next: WorkspaceJson): Promise<Replica>;
+	titles(): string[];
+};
 
 function openAuthority(snapshotFloorBytes?: number) {
 	const database = createBunSqliteAdapter(new Database(':memory:'));
@@ -308,7 +343,7 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		wire.settle();
 		expect(laptop.titles()).toEqual(['Groceries']);
 
-		expectOk(phone.db.tables.notes.delete(note.id));
+		phone.db.tables.notes.delete(note.id);
 		phone.client.flush();
 		wire.settle();
 
@@ -682,7 +717,9 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		expect(expectOk(authority.since(0, 1_000))).toEqual([]);
 
 		expectOk(
-			laptop.store.sync.adoptDocumentIdentity(expectOk(authority.document())),
+			syncEngineOf(laptop.store).adoptDocumentIdentity(
+				expectOk(authority.document()),
+			),
 		);
 		laptop.connect();
 		expect(wire.inFlight()).toBeGreaterThan(1);
@@ -714,7 +751,7 @@ describe('a socket that dies part way through a chunked transfer', () => {
  * Driven directly rather than through the client, because everything here is
  * about chunk arithmetic and reaching it through the transport would mean
  * multi-megabyte payloads per case. The BYTES are real and the reassembled
- * result is applied to a real replica and read back through its lens, so what is
+ * result is applied to a real replica and read back through its workspace, so what is
  * synthetic is the chunk size and nothing else.
  */
 describe('reassembly holds partials in memory, and only in memory', () => {
@@ -754,8 +791,8 @@ describe('reassembly holds partials in memory, and only in memory', () => {
 		expect(collector.bufferedBytes()).toBe(0);
 		// Byte equality alone would not show the update still works, so it is
 		// applied to a replica that has never seen this row and read back through
-		// that replica's own lens.
-		expectOk(laptop.store.applyRemote(whole as Uint8Array));
+		// that replica's own workspace.
+		expectOk(syncEngineOf(laptop.store).applyRemote(whole as Uint8Array));
 		expect(laptop.titles()).toEqual(['Groceries']);
 	});
 
@@ -794,7 +831,7 @@ describe('reassembly holds partials in memory, and only in memory', () => {
 
 		expect(whole).toEqual(bytes);
 		expect(collector.bufferedBytes()).toBe(0);
-		expectOk(laptop.store.applyRemote(whole as Uint8Array));
+		expectOk(syncEngineOf(laptop.store).applyRemote(whole as Uint8Array));
 		expect(laptop.titles()).toEqual(['Groceries']);
 	});
 
@@ -909,7 +946,9 @@ describe('a partial that outlives the socket that opened it', () => {
 		// equality path rather than completing bootstrap synchronously in the
 		// harness.
 		expectOk(
-			laptop.store.sync.adoptDocumentIdentity(expectOk(authority.document())),
+			syncEngineOf(laptop.store).adoptDocumentIdentity(
+				expectOk(authority.document()),
+			),
 		);
 
 		// Entry 2 is a second paste: two chunks, where the state through 2 is four.
@@ -1291,7 +1330,7 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 		const note = expectOk(phone.db.tables.notes.create({ title: secret }));
 		phone.client.flush();
 		wire.settle();
-		expectOk(phone.db.tables.notes.delete(note.id));
+		phone.db.tables.notes.delete(note.id);
 		phone.client.flush();
 		wire.settle();
 		for (let index = 0; index < 40; index += 1) {
@@ -1432,27 +1471,27 @@ describe('the snapshot path under sustained traffic', () => {
  * The same application one release later: `notes` grew a field.
  *
  * `pinned` declares no default, so it is a field the older release's rows cannot
- * satisfy. That asymmetry is the point: an extra field is invisible to a lens
- * that does not declare it, while a missing one is a row a lens cannot read, and
+ * satisfy. That asymmetry is the point: an extra field is invisible to a workspace
+ * that does not declare it, while a missing one is a row a workspace cannot read, and
  * the two directions have to be told apart.
  */
-const newerLens = defineLens({
+const newerWorkspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string', pinned: 'boolean' } },
 });
 
 /** The same application again, one release later still: a whole new table. */
-const twoTableLens = defineLens({
+const twoTableWorkspace = defineWorkspace({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' }, tasks: { label: 'string' } },
 });
 
-describe('two devices whose lenses disagree', () => {
+describe('two devices whose workspaces disagree', () => {
 	/** One partition, two devices, each running the release it was given. */
-	function pair(updatedLens: LensJson) {
+	function pair(updatedWorkspace: WorkspaceJson) {
 		const wire = createWire();
 		const { authority, hub } = openAuthority();
-		const updated = openReplica('updated', hub, wire, updatedLens);
+		const updated = openReplica('updated', hub, wire, updatedWorkspace);
 		const older = openReplica('older', hub, wire);
 		updated.connect();
 		older.connect();
@@ -1469,10 +1508,11 @@ describe('two devices whose lenses disagree', () => {
 
 	test('a field the older release cannot name survives a round trip through it', () => {
 		// The case that decides whether a release can be rolled out to one device at
-		// a time. If the older release rewrote rows as its own lens sees them, every
+		// a time. If the older release rewrote rows as its own workspace sees them, every
 		// edit made on the un-updated phone would silently strip the new field from
 		// the updated laptop's rows.
-		const { wire, updated, updatedNotes, older, olderNotes } = pair(newerLens);
+		const { wire, updated, updatedNotes, older, olderNotes } =
+			pair(newerWorkspace);
 		const made = expectOk(
 			updatedNotes.create({ title: 'Groceries', pinned: true }),
 		);
@@ -1481,7 +1521,7 @@ describe('two devices whose lenses disagree', () => {
 
 		// The older release sees the row, minus the one field it cannot name, and
 		// reports no trouble: an undeclared key is not a conformance failure.
-		const seen = expectOk(olderNotes.list());
+		const seen = olderNotes.list();
 		expect(seen.nonconforming).toEqual([]);
 		expect(seen.rows).toEqual([{ id: made.id, title: 'Groceries' }]);
 
@@ -1503,19 +1543,20 @@ describe('two devices whose lenses disagree', () => {
 		// Without this, "the field survived" would pass for a channel that carries
 		// nothing back from the older device at all. A delete authored there has to
 		// reach the updated device and take the row with it.
-		const { wire, updated, updatedNotes, older, olderNotes } = pair(newerLens);
+		const { wire, updated, updatedNotes, older, olderNotes } =
+			pair(newerWorkspace);
 		const made = expectOk(
 			updatedNotes.create({ title: 'Groceries', pinned: true }),
 		);
 		updated.client.flush();
 		wire.settle();
 
-		expectOk(olderNotes.delete(made.id));
+		olderNotes.delete(made.id);
 		older.client.flush();
 		wire.settle();
 
 		expect(expectOk(updatedNotes.get(made.id))).toBeUndefined();
-		expect(expectOk(updatedNotes.ids())).toEqual([]);
+		expect(updatedNotes.ids()).toEqual([]);
 	});
 
 	test('a row the newer release cannot read is reported, not dropped', () => {
@@ -1523,32 +1564,28 @@ describe('two devices whose lenses disagree', () => {
 		// the un-updated one writes. A row it cannot read is still a row and is
 		// still in the CRDT: the failure names the address and carries what did
 		// pass, so the application can repair it or show it.
-		const { wire, updatedNotes, older, olderNotes } = pair(newerLens);
+		const { wire, updatedNotes, older, olderNotes } = pair(newerWorkspace);
 		const made = expectOk(olderNotes.create({ title: 'Groceries' }));
 		older.client.flush();
 		wire.settle();
 
-		const seen = expectOk(updatedNotes.list());
+		const seen = updatedNotes.list();
 		expect(seen.rows).toEqual([]);
 		expect(seen.nonconforming).toHaveLength(1);
 		const failure = seen.nonconforming[0];
-		expect(failure?.address).toEqual({
-			namespace: 'so.epicenter.honeycrisp',
-			tableName: 'notes',
-			rowId: made.id,
-		});
+		expect(failure?.id).toBe(made.id);
 		expect(failure?.issues.map((issue) => issue.field)).toEqual(['pinned']);
 		// What could be read, which is what recovery is composed from.
 		expect(failure?.conforming).toEqual({ id: made.id, title: 'Groceries' });
 		expect(failure?.raw).toEqual({ title: 'Groceries' });
 		// And it was not dropped on the way in: the row is on this device.
-		expect(expectOk(updatedNotes.ids())).toEqual([made.id]);
+		expect(updatedNotes.ids()).toEqual([made.id]);
 	});
 
 	test('CONTROL: a row the newer release CAN read is in rows and reported nowhere', () => {
-		// Without this, "reported rather than dropped" would pass for a lens that
+		// Without this, "reported rather than dropped" would pass for a workspace that
 		// reports every row it is handed.
-		const { wire, updated, updatedNotes, older } = pair(newerLens);
+		const { wire, updated, updatedNotes, older } = pair(newerWorkspace);
 		const made = expectOk(
 			updatedNotes.create({ title: 'Groceries', pinned: false }),
 		);
@@ -1556,19 +1593,19 @@ describe('two devices whose lenses disagree', () => {
 		wire.settle();
 		expect(older.titles()).toEqual(['Groceries']);
 
-		const seen = expectOk(updatedNotes.list());
+		const seen = updatedNotes.list();
 		expect(seen.nonconforming).toEqual([]);
 		expect(seen.rows).toEqual([
 			{ id: made.id, title: 'Groceries', pinned: false },
 		]);
 	});
 
-	test('a table the older release does not declare waits in the CRDT for one that does', () => {
-		// The claim `rebuildAllProjections` makes in a comment, checked across the
+	test('a table the older release does not declare waits in the CRDT for one that does', async () => {
+		// The claim the whole-index rebuild makes in a comment, checked across the
 		// transport rather than inside one store. The older device relays and stores
 		// rows of a table it has no name for, and they are there the moment it is
 		// updated, without anybody re-sending anything.
-		const { wire, updated, updatedNotes, older } = pair(twoTableLens);
+		const { wire, updated, updatedNotes, older } = pair(twoTableWorkspace);
 		expectOk(updatedNotes.create({ title: 'Groceries' }));
 		const task = expectOk(
 			tableOf(updated.bound, 'tasks').create({ label: 'buy milk' }),
@@ -1585,25 +1622,25 @@ describe('two devices whose lenses disagree', () => {
 			),
 		).toEqual([]);
 
-		// The device is updated: same store, same file, a lens that now declares it.
-		const rebound = expectOk(older.store.bind(twoTableLens));
-		expect(expectOk(tableOf(rebound, 'tasks').list()).rows).toEqual([
+		// The device is updated: same durable file, the next runtime, a
+		// declaration that now names the table (ADR-0240).
+		const upgraded = await older.upgrade(twoTableWorkspace);
+		expect(tableOf(upgraded.bound, 'tasks').list().rows).toEqual([
 			{ id: task.id, label: 'buy milk' },
 		]);
-		// Through the projection too, so this is not just a CRDT read: binding
+		// Through the projection too, so this is not just a CRDT read: opening
 		// rebuilt the relation from rows that were already here.
-		expect(expectOk(rebound.query`SELECT id, label FROM tasks`)).toEqual([
-			{ id: task.id, label: 'buy milk' },
-		]);
+		expect(expectOk(upgraded.bound.query`SELECT id, label FROM tasks`)).toEqual(
+			[{ id: task.id, label: 'buy milk' }],
+		);
 	});
 
-	test('updating a device to a lens with a new FIELD reprojects and keeps working', () => {
-		// The mismatch seen from the device that is doing the updating, which is the
-		// likeliest way a lens ever changes. `applyProjectionSchema` is
-		// `CREATE TABLE IF NOT EXISTS`, so binding a lens that added a field to a
-		// table this store already projected leaves the relation as the old lens
-		// built it, and the rebuild that follows inserts into a column that is not
-		// there.
+	test('updating a device to a declaration with a new FIELD reprojects and keeps working', async () => {
+		// The mismatch seen from the device that is doing the updating, which is
+		// the likeliest way a declaration ever changes. `applyProjectionSchema`
+		// was `CREATE TABLE IF NOT EXISTS`, so a projection relation an older
+		// release built into the same file lacked the new column, and the
+		// rebuild that follows inserted into a column that was not there.
 		const wire = createWire();
 		const { hub } = openAuthority();
 		const updating = openReplica('updating', hub, wire);
@@ -1616,48 +1653,44 @@ describe('two devices whose lenses disagree', () => {
 		wire.settle();
 		expect(updating.titles()).toEqual(['Groceries']);
 
-		// This used to kill the store outright. `applyProjectionSchema` was
-		// `CREATE TABLE IF NOT EXISTS`, so the old relation stayed without the new
-		// column and `rebuildProjectedTable` failed with "no column named pinned".
-		// `persist` fails closed, so the damage was not confined to the new
-		// binding: the binding the app already held started returning
-		// `StorageFailed` for every read and write, and through the transport it
-		// was indistinguishable from a poison pill. Adding a field is the most
-		// ordinary lens change there is.
-		const rebound = expectOk(updating.store.bind(newerLens));
+		// The device is updated (ADR-0240): close this runtime, reopen the same
+		// durable file under the declaration that adds the field. Adding a
+		// field is the most ordinary change a release makes.
+		const upgraded = await updating.upgrade(newerWorkspace);
+		upgraded.connect();
 
-		const reboundNotes = tableOf(rebound, 'notes');
+		const upgradedNotes = tableOf(upgraded.bound, 'notes');
 		// The pre-existing row is REPORTED rather than repaired or dropped, because
 		// `pinned` is declared without a default and that row predates it
 		// (ADR-0213). It is still in the CRDT, and `conforming` carries what could
 		// be read, which is the whole recovery composition.
-		const listed = expectOk(reboundNotes.list());
+		const listed = upgradedNotes.list();
 		expect(listed.rows).toHaveLength(0);
 		expect(listed.nonconforming).toHaveLength(1);
 		expect(listed.nonconforming[0]?.conforming).toMatchObject({
 			title: 'Groceries',
 		});
-		expect(expectOk(reboundNotes.ids())).toHaveLength(1);
+		expect(upgradedNotes.ids()).toHaveLength(1);
 
 		// CONTROL: the new column really is there now, which is exactly what the
 		// old relation was missing. A drop that failed to recreate fails here.
 		expect(
-			expectOk(reboundNotes.create({ title: 'Bread', pinned: true })).pinned,
+			expectOk(upgradedNotes.create({ title: 'Bread', pinned: true })).pinned,
 		).toBe(true);
 
 		// And it keeps syncing rather than stopping dead at the next entry.
 		expectOk(otherNotes.create({ title: 'Milk' }));
 		other.client.flush();
 		wire.settle();
-		expect(updating.client.status().lastError).toBeUndefined();
-		expect(expectOk(reboundNotes.ids())).toHaveLength(3);
+		expect(upgraded.client.status().lastError).toBeUndefined();
+		expect(upgradedNotes.ids()).toHaveLength(3);
 	});
 
-	test('CONTROL: updating a device to a lens with a new TABLE leaves it working', () => {
+	test('CONTROL: updating a device to a declaration with a new TABLE leaves it working', async () => {
 		// The isolation, and the reason the defect above is about a column rather
-		// than about rebinding at all. A new table is a new relation, which
-		// `CREATE TABLE IF NOT EXISTS` does create, so the same move on the same
-		// store succeeds and the device keeps syncing.
+		// than about upgrading at all. A new table is a new relation, which
+		// `CREATE TABLE IF NOT EXISTS` does create, so the same upgrade over the
+		// same file succeeds and the device keeps syncing.
 		const wire = createWire();
 		const { hub } = openAuthority();
 		const updating = openReplica('updating', hub, wire);
@@ -1669,26 +1702,27 @@ describe('two devices whose lenses disagree', () => {
 		other.client.flush();
 		wire.settle();
 
-		const rebound = expectOk(updating.store.bind(twoTableLens));
+		const upgraded = await updating.upgrade(twoTableWorkspace);
+		upgraded.connect();
 
-		expect(expectOk(tableOf(rebound, 'tasks').list()).rows).toEqual([]);
+		expect(tableOf(upgraded.bound, 'tasks').list().rows).toEqual([]);
 		expectOk(otherNotes.create({ title: 'Bread' }));
 		other.client.flush();
 		wire.settle();
-		expect(updating.titles()).toEqual(['Bread', 'Groceries']);
-		expect(updating.client.status().lastError).toBeUndefined();
+		expect(upgraded.titles()).toEqual(['Bread', 'Groceries']);
+		expect(upgraded.client.status().lastError).toBeUndefined();
 	});
 
-	test('CONTROL: the new table on a device that never received them holds nothing', () => {
-		// Without this, the rebind above would pass for a bind that invents rows, or
-		// for a `tasks` relation that was somehow already populated.
+	test('CONTROL: the new table on a device that never received them holds nothing', async () => {
+		// Without this, the upgrade above would pass for an open that invents
+		// rows, or for a `tasks` relation that was somehow already populated.
 		const wire = createWire();
 		const { hub } = openAuthority();
 		const absent = openReplica('absent', hub, wire);
 
-		const rebound = expectOk(absent.store.bind(twoTableLens));
+		const upgraded = await absent.upgrade(twoTableWorkspace);
 
-		expect(expectOk(tableOf(rebound, 'tasks').list()).rows).toEqual([]);
+		expect(tableOf(upgraded.bound, 'tasks').list().rows).toEqual([]);
 	});
 });
 
@@ -1786,7 +1820,7 @@ function fuzz(
 		} else if (roll < 0.78) {
 			const at = random.below(mine.length);
 			const rowId = mine[at] as string;
-			expectOk(device.db.tables.notes.delete(rowId));
+			device.db.tables.notes.delete(rowId);
 			mine.splice(at, 1);
 			expected.delete(rowId);
 			seen.deletes += 1;
@@ -1981,7 +2015,7 @@ describe('one verb publishes the next document (ADR-0231)', () => {
 		const note = expectOk(phone.db.tables.notes.create({ title: secret }));
 		phone.client.flush();
 		wire.settle();
-		expectOk(phone.db.tables.notes.delete(note.id));
+		phone.db.tables.notes.delete(note.id);
 		author(wire, phone, 4, 'kept');
 
 		// Reclaim: same live data, re-minted, zero tombstones. The generic

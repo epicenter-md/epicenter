@@ -6,7 +6,6 @@ import {
 	DATA_ADDRESS_CEILINGS,
 	isNamespace,
 	isTableName,
-	type RowAddress,
 } from './addresses.js';
 import { canonicalJson, sha256Hex } from './canonical.js';
 import { isJsonValue, type JsonObject, type JsonValue } from './json.js';
@@ -22,7 +21,8 @@ import { isJsonValue, type JsonObject, type JsonValue } from './json.js';
 export const RESERVED_ATTRIBUTE_PREFIX = '!';
 
 /**
- * The one table name a lens cannot use, and the reason is SQL rather than JS.
+ * The one table name a workspace cannot use, and the reason is SQL rather than
+ * JS.
  *
  * KV projects as a one-row relation literally named `kv`, so a table called `kv`
  * would collide with it in the projection (`projection.ts`).
@@ -35,12 +35,6 @@ export const RESERVED_ATTRIBUTE_PREFIX = '!';
 export const RESERVED_TABLE_NAMES: readonly string[] = ['kv'];
 
 /**
- * The root holding one application's KV, reserved so no table can reach it.
- *
- * Unreachable by construction rather than by rule: a table name must start with
- * a letter, so `!kv` is not expressible in a lens at all.
- */
-/**
  * The id the one KV record is addressed by.
  *
  * A plain `kv` rather than the old `!kv`. It names a row in the `kv` projection
@@ -52,18 +46,19 @@ export const RESERVED_TABLE_NAMES: readonly string[] = ['kv'];
 export const KV_ROOT = 'kv';
 
 /**
- * One application's complete interpretation of one durable namespace, as the
- * JSON it literally is (ADR-0213).
+ * One application's complete declaration of its durable workspace, as the JSON
+ * it literally is (ADR-0213, carried forward by ADR-0240).
  *
  * Every field is an arktype expression in a string, so this object serializes
- * and round-trips byte-identically. A hand-written `lens.json` and a TypeScript
- * lens are the same artifact.
+ * and round-trips byte-identically. A hand-written `workspace.json` in an
+ * admitted application folder and a TypeScript declaration are the same
+ * artifact.
  *
  * Each `tables` property name is the durable local key for that table forever:
  * there is no second `key` field to keep in step, and no rename, because a
  * different property name is a different address and therefore different data.
  */
-export type LensJson = {
+export type WorkspaceJson = {
 	namespace: string;
 	/**
 	 * The values this application keeps exactly one of.
@@ -81,7 +76,7 @@ export type LensJson = {
 	 */
 	kv?: Record<string, string>;
 	/**
-	 * What a person calls this namespace, when it has a name worth showing.
+	 * What a person calls this workspace, when it has a name worth showing.
 	 * Presentation only: no address, no identity, and nothing resolves by it.
 	 */
 	title?: string;
@@ -89,17 +84,30 @@ export type LensJson = {
 };
 
 /**
- * Typecheck one authored lens against arktype's own validator.
+ * Typecheck one table's fields against arktype's own validator.
  *
- * Homomorphic over `TLens`, which is the whole trick. Mapping over `keyof TLens`
- * keeps every property an inference site and lets `type.validate` return the
- * definition unchanged when it is valid, so a correct lens infers exactly the
- * literal it was written as. Measured against three shapes:
+ * `type.validate` returns the definition unchanged when it is valid, so a
+ * correct table infers exactly the literal it was written as, and a bad
+ * expression reports arktype's own sentence on the offending field. The same
+ * machinery {@link ValidateWorkspace} applies per table, exposed here so
+ * {@link defineTable} and {@link defineKv} can report the error at the
+ * ingredient rather than at the composition.
+ */
+export type ValidateFields<TFields> = type.validate<TFields>;
+
+/**
+ * Typecheck one authored workspace against arktype's own validator.
+ *
+ * Homomorphic over `TWorkspace`, which is the whole trick. Mapping over
+ * `keyof TWorkspace` keeps every property an inference site and lets
+ * `type.validate` return the definition unchanged when it is valid, so a
+ * correct declaration infers exactly the literal it was written as. Measured
+ * against three shapes:
  *
  * | shape | infers | a bad expression reports |
  * | --- | --- | --- |
- * | `TLens & Fresh<TLens>` | the literal | `not assignable to 'never'` |
- * | `Fresh<TLens>` alone | `unknown`, and catches nothing | nothing |
+ * | `TWorkspace & Fresh<TWorkspace>` | the literal | `not assignable to 'never'` |
+ * | `Fresh<TWorkspace>` alone | `unknown`, and catches nothing | nothing |
  * | this one | the literal | ``not assignable to `'strng' is unresolvable` `` |
  *
  * The first two were both built and rejected on that table. A freshly
@@ -113,12 +121,14 @@ export type LensJson = {
  * as a property of an object or tuple. Verified against the installed arktype:
  * `type("'light'|'dark' = 'light'")` throws, `type({ theme: ... })` does not.
  */
-export type ValidateLens<TLens> = {
-	[K in keyof TLens]: K extends 'tables'
-		? { [TTable in keyof TLens[K]]: type.validate<TLens[K][TTable]> }
+export type ValidateWorkspace<TWorkspace> = {
+	[K in keyof TWorkspace]: K extends 'tables'
+		? {
+				[TTable in keyof TWorkspace[K]]: type.validate<TWorkspace[K][TTable]>;
+			}
 		: K extends 'kv'
-			? type.validate<TLens[K]>
-			: TLens[K];
+			? type.validate<TWorkspace[K]>
+			: TWorkspace[K];
 };
 
 /**
@@ -161,7 +171,7 @@ type FieldsOut<TFields> =
  *
  * The same measurement, on the other side: `inferIn` yields
  * `{ title: string; theme?: 'light' | 'dark' }`. So "which fields may I omit"
- * is answered by the lens itself rather than by a second declaration.
+ * is answered by the declaration itself rather than by a second declaration.
  */
 export type CreateInputOf<TFields> =
 	type.instantiate<TFields> extends {
@@ -171,56 +181,120 @@ export type CreateInputOf<TFields> =
 		: never;
 
 /** One application's KV as a read hands it back: no id, and never absent. */
-export type KvOf<TLens> = TLens extends { kv: infer TKv }
+export type KvOf<TWorkspace> = TWorkspace extends { kv: infer TKv }
 	? FieldsOut<TKv>
 	: Record<string, never>;
 
-/** Every table's row type in one authored lens, by its declared name. */
-export type RowsOf<TLens> = TLens extends { tables: infer TTables }
+/** Every table's row type in one authored workspace, by its declared name. */
+export type RowsOf<TWorkspace> = TWorkspace extends { tables: infer TTables }
 	? { [K in keyof TTables]: RowOf<TTables[K]> }
 	: never;
 
-/** Every table's create input in one authored lens, by its declared name. */
-export type CreateInputsOf<TLens> = TLens extends { tables: infer TTables }
+/** Every table's create input in one authored workspace, by its declared name. */
+export type CreateInputsOf<TWorkspace> = TWorkspace extends {
+	tables: infer TTables;
+}
 	? { [K in keyof TTables]: CreateInputOf<TTables[K]> }
 	: never;
 
 /**
- * Declare one application's lens.
+ * Declare one table's fields.
  *
- * Inference and validation, never construction. The returned value is the
- * argument: `TLens` infers from the literal so a table's row type is known, and
- * `ValidateLens<TLens>` applies arktype's own `type.validate` per table so a
- * malformed expression is a compile error on the field that is wrong.
- *
- * A bad expression reports arktype's own sentence on the offending field:
- * *"Type '\"strng\"' is not assignable to type \"'strng' is unresolvable\""*.
- * See {@link ValidateLens} for the two shapes that lost either that message or
- * inference itself.
- *
- * Nothing is compiled here, which is the point. The earlier builder-based lens
- * carried two live bugs that both came from compiling at authoring time: a
- * compilation cache keyed on object identity, which made a lens loaded from
- * disk uncompilable, and an optionality marker that did not survive a JSON
- * round trip. A lens that *is* its JSON cannot have either. {@link parseLens}
- * is the one runtime grammar, and it accepts a lens whatever its provenance.
+ * Inference and validation, never construction: the returned value is the
+ * argument, and the only work is the compile-time `type.validate` per field.
+ * It exists so an application that hoists a table to name its row type
+ * (`RowOf<typeof notesTable>`) gets arktype's error at the table it wrote,
+ * rather than at the `defineWorkspace` call that later composes it, and so the
+ * hoisted literal needs no `as const`.
  *
  * @example
  * ```ts
- * export const lens = defineLens({
- *   namespace: 'so.epicenter.honeycrisp',
- *   tables: {
- *     notes: { title: 'string', tags: 'string[]', date: 'string|null' },
- *     // A singleton is a row whose id you chose. Not a second kind of thing.
- *     settings: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
- *   },
+ * const notes = defineTable({
+ *   title: 'string',
+ *   tags: 'string[]',
+ *   date: 'string|null = null',
+ * });
+ * export type Note = RowOf<typeof notes>;
+ * ```
+ */
+export function defineTable<const TFields extends Record<string, string>>(
+	fields: ValidateFields<TFields>,
+): TFields {
+	return fields as TFields;
+}
+
+/**
+ * Declare one application's KV section: the values it keeps exactly one of.
+ *
+ * The same validation identity as {@link defineTable}, under the name of the
+ * thing being declared. KV compiles through the same machinery as a table
+ * (one row, no id), so the ingredient shape is the same too.
+ *
+ * @example
+ * ```ts
+ * const preferences = defineKv({
+ *   theme: "'light'|'dark' = 'light'",
  * });
  * ```
  */
-export function defineLens<const TLens extends LensJson>(
-	lens: ValidateLens<TLens>,
-): TLens {
-	return lens as TLens;
+export function defineKv<const TFields extends Record<string, string>>(
+	fields: ValidateFields<TFields>,
+): TFields {
+	return fields as TFields;
+}
+
+/**
+ * Declare one application's workspace: its namespace, its tables, and its KV.
+ *
+ * Inference and validation, never construction. The returned value is the
+ * argument: `TWorkspace` infers from the literal so a table's row type is
+ * known, and `ValidateWorkspace<TWorkspace>` applies arktype's own
+ * `type.validate` per table so a malformed expression is a compile error on
+ * the field that is wrong.
+ *
+ * A bad expression reports arktype's own sentence on the offending field:
+ * *"Type '\"strng\"' is not assignable to type \"'strng' is unresolvable\""*.
+ * See {@link ValidateWorkspace} for the two shapes that lost either that
+ * message or inference itself.
+ *
+ * One workspace per application, complete and immutable for the life of every
+ * runtime that opens it (ADR-0240). Schema evolution is a new release opening
+ * the same durable data with a newer declaration; nothing rebinds a live
+ * runtime, and nothing merges two declarations. The application's workspace
+ * module writes the one final object, assembling {@link defineTable} and
+ * {@link defineKv} ingredients explicitly.
+ *
+ * Nothing is compiled here, which is the point. The earlier builder-based
+ * vocabulary carried two live bugs that both came from compiling at authoring
+ * time: a compilation cache keyed on object identity, which made a declaration
+ * loaded from disk uncompilable, and an optionality marker that did not
+ * survive a JSON round trip. A declaration that *is* its JSON cannot have
+ * either. {@link parseWorkspace} is the one runtime grammar, and it accepts a
+ * declaration whatever its provenance.
+ *
+ * @example
+ * ```ts
+ * const notes = defineTable({
+ *   title: 'string',
+ *   tags: 'string[]',
+ *   date: 'string|null = null',
+ * });
+ *
+ * const preferences = defineKv({
+ *   theme: "'light'|'dark' = 'light'",
+ * });
+ *
+ * export const honeycrispWorkspace = defineWorkspace({
+ *   namespace: 'so.epicenter.honeycrisp',
+ *   tables: { notes },
+ *   kv: preferences,
+ * });
+ * ```
+ */
+export function defineWorkspace<const TWorkspace extends WorkspaceJson>(
+	workspace: ValidateWorkspace<TWorkspace>,
+): TWorkspace {
+	return workspace as TWorkspace;
 }
 
 export type ConformanceIssue = {
@@ -228,9 +302,9 @@ export type ConformanceIssue = {
 	message: string;
 };
 
-export const LensParseError = defineErrors({
+export const WorkspaceParseError = defineErrors({
 	Malformed: ({ reason }: { reason: string }) => ({
-		message: `This lens is not a well-formed lens: ${reason}`,
+		message: `This workspace is not a well-formed declaration: ${reason}`,
 		reason,
 	}),
 	UnrecognizedField: ({
@@ -279,43 +353,7 @@ export const LensParseError = defineErrors({
 		expression,
 	}),
 });
-export type LensParseError = InferErrors<typeof LensParseError>;
-
-export const RowReadError = defineErrors({
-	/**
-	 * The stored payload does not satisfy the current lens.
-	 *
-	 * Carries what did pass, so a caller composes its own recovery without a
-	 * second read verb: `data ?? { ...table.defaults, ...error.conforming }`.
-	 * Never repaired and never hidden; `raw` is the stored payload unmodified,
-	 * including keys this release cannot interpret (ADR-0125).
-	 */
-	Nonconforming: ({
-		address,
-		raw,
-		conforming,
-		issues,
-	}: {
-		address: RowAddress;
-		raw: JsonObject;
-		conforming: JsonObject;
-		issues: readonly ConformanceIssue[];
-	}) => ({
-		message: `Stored row '${address.namespace}/${address.tableName}/${address.rowId}' does not satisfy the current lens`,
-		address,
-		/** The structural row id, which is also `address.rowId`. */
-		id: address.rowId,
-		raw,
-		/** The fields that did pass, which is what recovery is composed from. */
-		conforming,
-		issues,
-	}),
-});
-export type RowReadError = InferErrors<typeof RowReadError>;
-export type NonconformingRowError = Extract<
-	RowReadError,
-	{ name: 'Nonconforming' }
->;
+export type WorkspaceParseError = InferErrors<typeof WorkspaceParseError>;
 
 export const RowWriteError = defineErrors({
 	/** One or more supplied values fail their field. No other field is touched. */
@@ -332,7 +370,7 @@ export const RowWriteError = defineErrors({
 		table,
 		issues,
 	}),
-	/** A supplied key this lens does not declare. */
+	/** A supplied key this workspace does not declare. */
 	UnknownField: ({ table, field }: { table: string; field: string }) => ({
 		message: `Table '${table}' declares no field '${field}'`,
 		table,
@@ -366,13 +404,14 @@ export type ParsedTable = {
 	 * Per field rather than whole-object because arktype's error value carries
 	 * no partial data (verified: `'data' in errors` is false), and a caller
 	 * composing recovery needs to know which fields survived.
+	 *
+	 * This is the declaration's one read primitive. It selects declared fields,
+	 * applies declared defaults, and reports what failed; it never transforms
+	 * a value and never manufactures a read outcome. The store composes its
+	 * own diagnostics from this, because whether a payload IS a row, and at
+	 * what address, are facts the store owns.
 	 */
 	conformance(payload: JsonObject): Conformance;
-	/** Project one stored payload into a row, or report what failed. */
-	project(
-		address: RowAddress,
-		payload: JsonObject,
-	): Result<JsonObject, NonconformingRowError>;
 	/**
 	 * Validate only the values a caller supplied (ADR-0125).
 	 *
@@ -384,7 +423,7 @@ export type ParsedTable = {
 	): Result<JsonObject, RowWriteError>;
 };
 
-export type ParsedLens = {
+export type ParsedWorkspace = {
 	namespace: string;
 	title?: string;
 	/**
@@ -392,53 +431,61 @@ export type ParsedLens = {
 	 *
 	 * KV is a table with exactly one row and no id, so nothing new validates it:
 	 * `conformance`, `defaults` and `validateWrite` all apply unchanged. Absent
-	 * when the lens declares none.
+	 * when the workspace declares none.
 	 */
 	kv?: ParsedTable;
 	tables: ReadonlyMap<string, ParsedTable>;
-	/** The canonical JSON this lens parsed from, which is also its cache key. */
+	/** The canonical JSON this parsed from, which is also its cache key. */
 	canonical: string;
 };
 
 /**
- * Compiled lenses, keyed on the content hash of their canonical JSON.
+ * Compiled workspaces, keyed on the content hash of their canonical JSON.
  *
  * On the hash rather than on object identity, which is the bug that made the
- * previous implementation unable to compile a lens loaded from disk: two
- * structurally identical lenses are one lens, however they arrived.
+ * previous implementation unable to compile a declaration loaded from disk:
+ * two structurally identical declarations are one workspace, however they
+ * arrived.
  */
-const parsed = new Map<string, Result<ParsedLens, LensParseError>>();
+const parsed = new Map<string, Result<ParsedWorkspace, WorkspaceParseError>>();
 
 /**
- * Compile one lens, whatever its provenance: a TypeScript literal, a
- * `lens.json` in an installed application folder, or a lens an agent wrote.
+ * Compile one workspace declaration, whatever its provenance: a TypeScript
+ * literal, a `workspace.json` in an admitted application folder, or a
+ * declaration an agent wrote.
  *
- * Result-returning rather than throwing, because a lens that arrives as data is
- * a visible broken artifact rather than a programmer error.
+ * Result-returning rather than throwing, because a declaration that arrives as
+ * data is a visible broken artifact rather than a programmer error.
  */
-export function parseLens(value: unknown): Result<ParsedLens, LensParseError> {
+export function parseWorkspace(
+	value: unknown,
+): Result<ParsedWorkspace, WorkspaceParseError> {
 	const canonical = canonicalJson(value);
 	const key = sha256Hex(canonical);
 	const memoised = parsed.get(key);
 	if (memoised !== undefined) return memoised;
-	const compiled = compileLens(value, canonical);
+	const compiled = compileWorkspace(value, canonical);
 	parsed.set(key, compiled);
 	return compiled;
 }
 
-function compileLens(
+function compileWorkspace(
 	value: unknown,
 	canonical: string,
-): Result<ParsedLens, LensParseError> {
+): Result<ParsedWorkspace, WorkspaceParseError> {
 	if (!isPlainObject(value)) {
-		return LensParseError.Malformed({ reason: 'it is not a plain object' });
+		return WorkspaceParseError.Malformed({
+			reason: 'it is not a plain object',
+		});
 	}
-	const { namespace, title, kv, tables } = value as Partial<LensJson>;
+	const { namespace, title, kv, tables } = value as Partial<WorkspaceJson>;
 	if (typeof namespace !== 'string') {
-		return LensParseError.Malformed({ reason: 'it declares no namespace' });
+		return WorkspaceParseError.Malformed({
+			reason: 'it declares no namespace',
+		});
 	}
 	if (!isNamespace(namespace, DATA_ADDRESS_CEILINGS)) {
-		return LensParseError.Malformed({
+		return WorkspaceParseError.Malformed({
 			reason: `namespace '${namespace}' is not two or more lowercase dot-separated labels`,
 		});
 	}
@@ -446,18 +493,18 @@ function compileLens(
 		title !== undefined &&
 		(typeof title !== 'string' || title.trim() === '')
 	) {
-		return LensParseError.Malformed({
+		return WorkspaceParseError.Malformed({
 			reason: 'its title must say something or be absent',
 		});
 	}
 	if (!isPlainObject(tables)) {
-		return LensParseError.Malformed({ reason: 'it declares no tables' });
+		return WorkspaceParseError.Malformed({ reason: 'it declares no tables' });
 	}
 
 	let compiledKv: ParsedTable | undefined;
 	if (kv !== undefined) {
 		if (!isPlainObject(kv)) {
-			return LensParseError.Malformed({
+			return WorkspaceParseError.Malformed({
 				reason: 'its kv section is not a plain object of fields',
 			});
 		}
@@ -470,13 +517,13 @@ function compileLens(
 	const seenTableNames = new Map<string, string>();
 	for (const [tableName, fields] of Object.entries(tables)) {
 		if (!isTableName(tableName, DATA_ADDRESS_CEILINGS)) {
-			return LensParseError.Malformed({
+			return WorkspaceParseError.Malformed({
 				reason: `table name '${tableName}' must start with a letter and use letters, digits, and underscores, because it is mounted as a SQL relation`,
 			});
 		}
 		if (RESERVED_TABLE_NAMES.includes(tableName)) {
-			return LensParseError.Malformed({
-				reason: `'${tableName}' is reserved, because a table is a key on the same handle that carries it`,
+			return WorkspaceParseError.Malformed({
+				reason: `'${tableName}' is reserved, because KV projects as a one-row relation of that name`,
 			});
 		}
 		// SQL identifiers are case-insensitive, so two names differing only by
@@ -484,7 +531,7 @@ function compileLens(
 		const folded = tableName.toLowerCase();
 		const collision = seenTableNames.get(folded);
 		if (collision !== undefined) {
-			return LensParseError.Malformed({
+			return WorkspaceParseError.Malformed({
 				reason: `table names '${collision}' and '${tableName}' differ only by case`,
 			});
 		}
@@ -508,9 +555,9 @@ function compileLens(
 function compileTable(
 	tableName: string,
 	fields: unknown,
-): Result<ParsedTable, LensParseError> {
+): Result<ParsedTable, WorkspaceParseError> {
 	if (!isPlainObject(fields)) {
-		return LensParseError.Malformed({
+		return WorkspaceParseError.Malformed({
 			reason: `table '${tableName}' does not declare a plain object of fields`,
 		});
 	}
@@ -522,13 +569,13 @@ function compileTable(
 		const folded = fieldName.toLowerCase();
 		const collision = seenFieldNames.get(folded);
 		if (collision !== undefined) {
-			return LensParseError.Malformed({
+			return WorkspaceParseError.Malformed({
 				reason: `fields '${collision}' and '${fieldName}' on table '${tableName}' differ only by case`,
 			});
 		}
 		seenFieldNames.set(folded, fieldName);
 		if (typeof expression !== 'string') {
-			return LensParseError.UnrecognizedField({
+			return WorkspaceParseError.UnrecognizedField({
 				table: tableName,
 				field: fieldName,
 				reason: 'a field is an arktype expression in a string',
@@ -542,7 +589,7 @@ function compileTable(
 		try {
 			fieldType = type({ [fieldName]: expression } as never) as type.Any;
 		} catch (cause) {
-			return LensParseError.UnrecognizedField({
+			return WorkspaceParseError.UnrecognizedField({
 				table: tableName,
 				field: fieldName,
 				reason: cause instanceof Error ? cause.message : String(cause),
@@ -570,7 +617,7 @@ function compileTable(
 			}
 		).props?.[0]?.value;
 		if (valueNode?.includesTransform === true) {
-			return LensParseError.TransformingField({
+			return WorkspaceParseError.TransformingField({
 				table: tableName,
 				field: fieldName,
 				expression,
@@ -584,9 +631,9 @@ function compileTable(
 function fieldNameProblem(
 	tableName: string,
 	fieldName: string,
-): Result<never, LensParseError> | undefined {
+): Result<never, WorkspaceParseError> | undefined {
 	if (fieldName.startsWith(RESERVED_ATTRIBUTE_PREFIX)) {
-		return LensParseError.Malformed({
+		return WorkspaceParseError.Malformed({
 			reason: `field '${tableName}.${fieldName}' begins with the reserved '${RESERVED_ATTRIBUTE_PREFIX}' prefix`,
 		});
 	}
@@ -594,17 +641,17 @@ function fieldNameProblem(
 		// Fields are nullable, never optional (ADR-0213). An optionality marker
 		// lives in the key, and a key marker is exactly what stopped surviving a
 		// JSON round trip in the previous implementation.
-		return LensParseError.Malformed({
+		return WorkspaceParseError.Malformed({
 			reason: `field '${tableName}.${fieldName}' is optional; declare it nullable instead, as 'string|null'`,
 		});
 	}
 	if (fieldName.toLowerCase() === 'id') {
-		return LensParseError.Malformed({
+		return WorkspaceParseError.Malformed({
 			reason: `table '${tableName}' cannot declare the structural 'id' field`,
 		});
 	}
 	if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName)) {
-		return LensParseError.Malformed({
+		return WorkspaceParseError.Malformed({
 			reason: `field name '${tableName}.${fieldName}' must start with a letter and use letters, digits, and underscores`,
 		});
 	}
@@ -637,8 +684,8 @@ function createParsedTable(
 		return { conforming, issues };
 	}
 
-	// Computed once at parse time: a default is a fact about the lens, not about
-	// any payload, so it is the conforming subset of nothing.
+	// Computed once at parse time: a default is a fact about the declaration,
+	// not about any payload, so it is the conforming subset of nothing.
 	const defaults = Object.freeze(conformance({}).conforming);
 
 	return Object.freeze({
@@ -646,22 +693,6 @@ function createParsedTable(
 		fields,
 		defaults,
 		conformance,
-		project(address, payload) {
-			const { conforming, issues } = conformance(payload);
-			return issues.length === 0
-				? Ok({ id: address.rowId, ...conforming })
-				: RowReadError.Nonconforming({
-						address,
-						raw: payload,
-						// Carries the structural id, so the two branches of the one
-						// recovery composition produce the same shape:
-						// `data ?? { ...defaults, ...error.conforming }` is a whole row
-						// either way. The id is not a declared field and cannot fail,
-						// so including it costs no honesty.
-						conforming: { id: address.rowId, ...conforming },
-						issues,
-					});
-		},
 		validateWrite(supplied) {
 			const validated: JsonObject = {};
 			const issues: ConformanceIssue[] = [];
@@ -699,7 +730,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return prototype === Object.prototype || prototype === null;
 }
 
-/** Forget every compiled lens. Test support; nothing in production calls it. */
-export function clearLensCache(): void {
+/** Forget every compiled workspace. Test support; nothing in production calls it. */
+export function clearWorkspaceCache(): void {
 	parsed.clear();
 }

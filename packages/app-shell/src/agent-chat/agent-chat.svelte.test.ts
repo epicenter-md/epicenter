@@ -110,19 +110,19 @@ function createFakeChat() {
 			updates.push({ id, patch });
 			const existing = rows.get(id);
 			if (existing) rows.set(id, { ...existing, ...patch });
-			return Ok(rows.get(id));
+			return Ok(undefined);
 		},
 		delete(id: string) {
 			const existed = rows.delete(id);
 			documents.delete(id);
 			announce();
-			return Ok(existed);
+			return existed;
 		},
 		get(id: string) {
 			return Ok(rows.get(id));
 		},
 		list() {
-			return Ok({ rows: [...rows.values()], nonconforming: [] });
+			return { rows: [...rows.values()], nonconforming: [] };
 		},
 		document: (id: string) => documents.get(id)?.document,
 		subscribe(listener: () => void) {
