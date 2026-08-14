@@ -27,11 +27,12 @@ shapes, see `docs/adr/`.
 - **Replica**: one complete local or server copy of an Epicenter. A native
   installation, browser origin, OS profile, or server actor may impose its own
   physical replica, but that adapter boundary is not a product data owner.
-- **Epicenter store**: the storage backing one replica: one SQLite file that is
-  both the update log and the query projection. In the browser that is an
-  in-memory sqlite-wasm database on the main thread plus three small IndexedDB
-  relations, with no worker and no OPFS (ADR-0223). Its physical relations are
-  implementation details; `db.query` is the application-facing SQL contract.
+- **Epicenter store**: the storage backing one replica: the durable ledgers a
+  crash cannot reconstruct (the update log, the outbox, the cursor, the
+  document identity), one SQLite file on Bun and three small IndexedDB
+  relations in the browser, with no worker and no OPFS (ADR-0223, ADR-0241).
+  SQL is not stored here: it is a follower an application composes
+  (`@epicenter/data/projection`).
 - **Sync attachment**: the permanent binding from a local replica to one
   principal. First sign-in adds synchronization to the existing replica;
   signing out pauses it, and another principal requires a fresh replica or
@@ -119,10 +120,10 @@ shapes, see `docs/adr/`.
 
 ## Data API
 
-- **Store**: one application's replica. One `Y.Doc` held in memory, one SQLite
-  file that is both the update log and the query projection, and a synchronous
-  surface over both. Opening one is the only asynchronous operation an
-  application has.
+- **Store**: one application's replica. One `Y.Doc` held in memory, its
+  durable ledgers behind a persistence controller, and a synchronous surface
+  over both. Opening one is the only asynchronous operation an application
+  has.
 - **Workspace declaration**: one application's complete, pure JSON declaration
   of its durable data, written in arktype expression strings with
   `defineWorkspace` (ADR-0240). Release-local in the sense that a newer release
@@ -168,14 +169,15 @@ shapes, see `docs/adr/`.
 - **`kv`**: the root holding one application's settings, as a single value with
   `get`, `update` and `subscribe`. Its subscriber takes no ids, because kv is one
   value.
-- **`db.query`**: read-only SQL over this application's own projection, as a
-  template tag on the workspace view rather than on the store, so an application can
-  reach only its own data. Nonconforming rows stay in the projection, so SQL can
-  show one; it cannot tell you a row is nonconforming, which is what `list()` is
-  for.
+- **SQL projection**: a composed follower, not a store verb
+  (`createSqliteProjection` from `@epicenter/data/projection`, ADR-0241). It
+  rebuilds from the live document at the next read, so its `query` never
+  serves rows the document has moved past. Nonconforming rows project raw, so
+  SQL can show one; it cannot tell you a row is nonconforming, which is what
+  `list()` is for.
 - **`subscribe`**: a table's change notification, carrying the row ids a commit
-  touched and firing after the projection commits (ADR-0221). Not a query and not
-  a diff.
+  touched and firing after every `onCommitted` listener has run (ADR-0221,
+  ADR-0241). Not a query and not a diff.
 - **Pressure**: structs the engine holds over rows the declaration can see. The one
   number worth watching, because a deleted row leaves a small permanent cost that
   only a rebuild reclaims.

@@ -33,7 +33,7 @@ independent changes.
 | one row | `await table.get(id)` | `db.notes.get(id)` |
 | all rows | `await table.scan()` | `db.notes.list()` |
 | ids | (part of scan) | `db.notes.ids()` |
-| SQL | a separate inspection surface | ``db.query`SELECT ...` `` |
+| SQL | a separate inspection surface | a composed follower: `createSqliteProjection` (`@epicenter/data/projection`, ADR-0241) |
 
 `list()` returns `{ rows, nonconforming }`, plainly: a row the current declaration
 cannot read is REPORTED, never dropped and never repaired (ADR-0125), and
@@ -81,9 +81,10 @@ a problem that no longer exists.
 
 **New:** `db.notes.subscribe(listener)` fires once per commit with the ROW IDS
 that commit touched (ADR-0221), and fires for a local write, for prose typed
-into a row's document, and for bytes that arrived from another device alike. It
-fires AFTER the projection commits, so a listener sees `list()` and `db.query`
-agree.
+into a row's document, and for bytes that arrived from another device alike.
+It fires after every `onCommitted` listener has run, so a composed follower
+(like the SQL projection) is already marked dirty by the time a subscriber
+reads through it (ADR-0241).
 
 The whole consumer is now:
 
@@ -287,14 +288,15 @@ approve, and no identifier a client can supply that reaches another partition.
 **Old:** a worker owned the replica and the page was its asynchronous client,
 which is why every read in an application on that stack was awaited.
 
-**New:** the store runs in the page; the projection is an in-memory SQLite,
-and the durable facts (`updates`, `outbox`, `meta`) live directly in
-IndexedDB, one atomic transaction per flush (ADR-0238).
+**New:** the store runs in the page, and the durable facts (`updates`,
+`outbox`, `meta`) live directly in IndexedDB, one atomic transaction per
+flush (ADR-0238). SQL, when an application wants it, is a follower it
+composes (`@epicenter/data/projection`, ADR-0241).
 
 The measured fact behind it: a page cannot take a synchronous handle to durable
 storage. That decides where the LOG lives, not where the store runs: the store
 needs a synchronous HANDLE, not synchronous durability, because reads come from
-the `Y.Doc` and the projection is a cache rebuilt at open.
+the `Y.Doc` already in memory.
 
 The durability gap is surfaced rather than hidden, on every runtime alike:
 `store.persistence` reports `saved`, `pending`, or `blocked`, and a blocked
@@ -401,10 +403,9 @@ table.
 at the character. That is the whole reason prose lives there rather than in a
 `string` field, and the reason a machine-produced transcript does not need to.
 
-**The projection has different granularity, and it does not matter.** A local
-commit upserts one row; an arrived update rebuilds every bound table. Both are
-writes to a cache derived from the CRDT, so neither affects what merges with
-what.
+**The projection has different granularity, and it does not matter.** The
+composed SQL projection rebuilds whole at the next read (ADR-0241). It is a
+cache derived from the CRDT, so it never affects what merges with what.
 
 | where | granularity |
 | --- | --- |
@@ -412,7 +413,7 @@ what.
 | one scalar field | last write wins, converged |
 | one array or object field | last write wins on the WHOLE value (kept, see above) |
 | a row document | per character |
-| the SQL projection | a cache; row upsert locally, full rebuild on arrival |
+| the SQL projection | a composed cache; rebuilt whole at the next read |
 
 ---
 
@@ -491,18 +492,16 @@ because a patch validates only the values it supplies:
 db.notes.update(issue.id, { n: 7 });
 ```
 
-Nonconforming rows are also still in the projection with their raw values, so
-`db.query` can SHOW them. It cannot FIND them: the projection carries one column
-per declared field and no conformance marker, and SQL cannot re-run arktype. The
-typed read is the only thing that knows which rows failed, so a repair surface
-identifies them with `list().nonconforming` and may then use SQL to display or
-group them.
+Nonconforming rows project raw in the composed SQL projection, so SQL can
+SHOW them. It cannot FIND them: the projection carries one column per
+declared field and no conformance marker, and SQL cannot re-run arktype. The
+typed read is the only thing that knows which rows failed, so a repair
+surface identifies them with `list().nonconforming` and may then use SQL to
+display or group them.
 
-Two things the projection does NOT promise, worth knowing before building on it.
-It stores what was WRITTEN, so a field nobody has written reads as its declared
-default through `list()` and as `NULL` through `db.query`. And it is a cache: it
-is rebuilt at open, so it is current, but it is derived from the CRDT rather
-than authoritative over it.
+One thing the projection does NOT promise, worth knowing before building on
+it: it is a cache, derived from the CRDT rather than authoritative over it,
+and it can always be discarded and rebuilt.
 
 **So the answer here is to add nothing.** No schema version, no migration chain,
 no repair API, no alias, no compatibility classifier — ADR-0125 refused all of

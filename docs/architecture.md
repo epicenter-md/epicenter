@@ -129,9 +129,9 @@ release-local and rows arrive from NEWER releases, so no discipline in this
 release stops a future one retyping a field. What exists instead is the material
 to heal: `list()` returns `{ rows, nonconforming }`, each failure carries its
 `address`, machine-readable `issues`, the `conforming` survivors and the
-unmodified `raw`, nonconforming rows stay in the SQL projection so `db.query`
-still finds them, and repair is an ordinary `update` because a patch validates
-only the values it supplies.
+unmodified `raw`, a composed SQL projection stores nonconforming rows raw so
+SQL can still show them, and repair is an ordinary `update` because a patch
+validates only the values it supplies.
 
 ```text
 durable JSON stays unchanged
@@ -143,8 +143,8 @@ durable JSON stays unchanged
 ## Reads are synchronous
 
 Opening a store is the only asynchronous operation in an application. It is real
-I/O: a file or an IndexedDB read, a WASM compile, and the replay of a durable
-log. Everything after it is a property access on a document already in memory.
+I/O: a file or an IndexedDB read, and the replay of a durable log. Everything
+after it is a property access on a document already in memory.
 
 ```ts
 const { data: db, error } = await openDevice(honeycrispWorkspace);
@@ -153,19 +153,21 @@ if (error !== null) throw error;
 const listed = db.tables.notes.list();          // { rows, nonconforming }
 db.tables.notes.update(noteId, { title: 'x' }); // a transaction
 db.tables.notes.subscribe((rowIds) => { ... }); // the ids a commit touched
-db.query`select count(*) from notes`;           // this app's own projection only
 ```
 
-`subscribe` fires after the projection commits and names the rows that changed
-(ADR-0221), so a view refreshes what moved rather than everything.
+`subscribe` names the rows a commit touched (ADR-0221), so a view refreshes
+what moved rather than everything. SQL, when an application wants it, is a
+follower it composes: `createSqliteProjection` from
+`@epicenter/data/projection` rebuilds an in-memory database from the live
+document at the next read (ADR-0241).
 
-## One SQLite file
+## Where the durable facts live
 
-The same file is the update log and the query projection. In the browser that is
-an in-memory sqlite-wasm database on the main thread plus three small IndexedDB
-relations: `_updates`, `_outbox`, `_cursor` (ADR-0223). There is no worker and
-no OPFS. The projection is never restored, only rebuilt, which is what removed
-the reason for both.
+The store keeps exactly the ledgers a crash cannot reconstruct: the update
+log, the outbox, the cursor, and the document identity (ADR-0241). On Bun
+they live in one SQLite file; in the browser they are small IndexedDB
+relations: `updates`, `outbox`, `meta` (ADR-0223, ADR-0238). There is no
+worker and no OPFS, and nothing derived is ever restored, only rebuilt.
 
 History lives outside the CRDT (ADR-0214). The document runs with garbage
 collection on, which is what collapses a field edited five thousand times to two

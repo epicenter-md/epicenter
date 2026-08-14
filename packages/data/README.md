@@ -86,9 +86,11 @@ Settings live on `app.kv`, which has `get()`, `update(patch)`, `subscribe`, and
 `defaults`. There is no id and no `create`, because there is exactly one and it
 always exists.
 
-`app.query` is a read-only SQL template tag over this application's own
-projection. It reaches one application's tables because a store holds one
-application, not because it scopes by namespace.
+SQL, when an application wants it, is a follower it composes over this
+surface: `createSqliteProjection` from `@epicenter/data/projection` hydrates
+from `list()`, follows commits through `store.onCommitted`, and rebuilds
+whole at the next `query`, so SQL can never serve rows the live document has
+moved past (ADR-0241).
 
 `app.store` carries the document itself: `pressure()` (how much of it is dead
 weight), `onCommitted` (anything committed, whoever wrote it),
@@ -137,9 +139,10 @@ const note = data ?? { ...app.tables.notes.defaults, ...error?.conforming };
 
 `subscribe` fires once per commit, carrying the row ids that commit touched
 (ADR-0221). It fires for a local write, for prose typed into a row's document,
-and for bytes that arrived from another device alike, and it fires AFTER the
-projection commits, so a listener sees `list()` and `app.query` agree about which
-rows exist.
+and for bytes that arrived from another device alike, and it fires after every
+`onCommitted` listener has run, so a composed follower (like the SQL
+projection) is already marked dirty by the time a subscriber reads through
+it.
 
 Registration is synchronous, does no I/O, and never fires initially, so a
 caller that subscribes and then reads has already seen everything. There is no
@@ -301,10 +304,9 @@ app.tables.notes.update(issue.id, { n: 7 }); // an ordinary write repairs it
 ```
 
 A patch validates only the values it supplies, so it can fix the offending key
-even though the whole payload does not currently pass. Nonconforming rows stay
-in the SQL projection with their raw values, so `app.query` can show them; it
-cannot find them, because the projection carries no conformance marker and SQL
-cannot re-run arktype. `list().nonconforming` is the only thing that knows.
+even though the whole payload does not currently pass. A composed SQL
+projection stores nonconforming rows with their raw values, so SQL can show
+them; `list().nonconforming` is the only thing that knows they failed.
 
 Whether an application shows a person the broken row, has an agent propose a
 fix, or ignores it until someone cares is a product decision this layer does not
@@ -314,15 +316,13 @@ prevent.
 ## Where it stores
 
 The `Y.Doc` is the truth while the client is open; everything else follows it
-(ADR-0238). The query projection is an in-memory SQLite rebuilt at open,
-written synchronously with every accepted edit. A projection write that
-fails never fails the verb: the index goes stale and the next `query`
-rebuilds it whole from the live document before answering, or refuses with
-`QueryFailed` if it cannot; a stale index never serves old rows, and table
-and KV verbs never depend on it. The durable facts (the
-update log, the outbox, the cursor, and the metadata) live behind a per-store
-persistence controller: every accepted edit queues its durable work and one
-coalesced flush commits the whole queue atomically.
+(ADR-0238). The store keeps exactly the ledgers a crash cannot reconstruct:
+the update log, the outbox, the cursor, and the document identity, each
+written in the same atomic act that incurs it (ADR-0241). They live behind a
+per-store persistence controller: every accepted edit queues its durable work
+and one coalesced flush commits the whole queue atomically. Everything
+derived from the document (SQL, search, exports) is a follower composed
+outside the store.
 
 On Bun the durable facts are `store.sqlite3` in the application's directory,
 beside `history.sqlite3` for what collapse superseded, and a flush is a
