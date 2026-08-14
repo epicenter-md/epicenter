@@ -5,23 +5,19 @@ services over an already opened handle. The package does not open storage,
 construct browser or Node runtimes, expose Yjs GUIDs, or register actions.
 
 ```ts
-import {
-	listSkills,
-	skillsLens,
-} from '@epicenter/skills';
-import { openBunEpicenter } from '@epicenter/data/bun';
+import { openDevice } from '@epicenter/data/browser';
+import { skillsWorkspace } from '@epicenter/skills';
 
-await using epicenter = await openBunEpicenter({
-	path: '/app/data/epicenter.sqlite3',
-});
-const skills = epicenter.bind(skillsLens);
-const catalog = await listSkills(skills);
+const { data: skills, error } = await openDevice(skillsWorkspace);
+if (error !== null) return handle(error);
+const { rows } = skills.tables.skills.list();
 ```
 
 ## Data model
 
 Skill and reference metadata are canonical JSON rows interpreted by the
-release-local table lenses. The runtime allocates structural row ids. A
+release-local workspace declaration. The runtime allocates structural row
+ids. A
 SKILL.md `metadata.id` is stored separately as `sourceId`, so filesystem
 round-trips can match records without forging canonical identity.
 

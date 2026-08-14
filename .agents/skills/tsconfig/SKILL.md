@@ -12,7 +12,7 @@ Every package here is **source-only `.ts`**: `exports` point at `./src/*.ts`,
 there is no build step, and consumers (Bun, Vite, Tauri, the Cloudflare Worker)
 operate on raw `.ts`. That single fact decides the whole config.
 
-**The exceptions are the audience, not the package.** `packages/lens` and
+**The exceptions are the audience, not the package.** `packages/workspace` and
 `packages/field` are published for toolchains we do not control, so shipping
 source would subject them to a stranger's compiler settings. They emit `.js` and
 `.d.ts`, and their `exports` point at `./dist`. Each leaf `tsconfig.json` is an
@@ -71,7 +71,7 @@ its `lib`/`module` win where they must. Never hand-edit a generated config.
 The two canonical library shapes in full:
 
 ```jsonc
-// bun library: packages/data, lens, field, sqlite, sync, identity, ...
+// bun library: packages/data, workspace, field, sqlite, sync, identity, ...
 {
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {

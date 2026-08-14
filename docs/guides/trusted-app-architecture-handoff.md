@@ -10,7 +10,7 @@ Epicenter authenticates one person and owns the shared curated workspace. It
 admits trusted installed apps. Every trusted app receives:
 
 ```txt
-- a shared Epicenter client: Lenses and person-wide capabilities
+- a shared Epicenter client: workspaces and person-wide capabilities
 - one private operational directory: named by its app id
 ```
 
@@ -32,12 +32,12 @@ the app writes into it.
 
 ## Runtime shape
 
-Static UI apps use Lenses and published app capabilities. They do not get a raw
+Static UI apps use workspaces and published app capabilities. They do not get a raw
 webview filesystem bridge. When an app needs private operational state, a
 trusted Bun/native runtime is composed with its own directory.
 
 ```txt
-UI app -> shared Epicenter client -> Lens data / shared capabilities
+UI app -> shared Epicenter client -> workspace data / shared capabilities
 UI app -> app runtime             -> app-specific verbs
 app runtime -> injected appDir    -> private operational files
 ```
@@ -166,7 +166,7 @@ train worktree. Reconcile `docs/adr/README.md` deliberately, and regenerate
 
 Success means a new app is explainable in one sentence:
 
-> It receives a private place it alone owns, shares curated facts through Lenses,
+> It receives a private place it alone owns, shares curated facts through workspaces,
 > and owns any provider relationship whose durable state it creates.
 
 Use `/codex:rescue` only for a bounded second opinion or recovery need. Do not

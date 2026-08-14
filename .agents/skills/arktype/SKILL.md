@@ -307,13 +307,13 @@ const transcriptionConfig = type.or(
 - **Auto-sync**: Adding a model to the array automatically updates the workspace schema
 - **No string drift**: Impossible for the schema to list models that don't exist in the app
 
-## Lens Field Expressions
+## Workspace Field Expressions
 
-A Lens is pure-JSON arktype expression strings, so two arktype affordances are
+A workspace is pure-JSON arktype expression strings, so two arktype affordances are
 unavailable inside one and the failures look unrelated to each other.
 
-**Fields are nullable, never optional.** The lens refuses any field key ending in
-`?` (`packages/lens/src/lens.ts`), because an optionality marker lives in the key
+**Fields are nullable, never optional.** The workspace parser refuses any field key ending in
+`?` (`packages/workspace/src/workspace.ts`), because an optionality marker lives in the key
 and a key marker is what stopped surviving the JSON round trip (ADR-0213).
 
 ```typescript

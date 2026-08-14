@@ -58,7 +58,7 @@ A row's document roots (`db.notes.create({...}, { document: ['body'] })`) are na
 The collapse pass should stop and surface to the user (not silently proceed) when about to:
 
 - Change any string from the list above
-- Delete a public exported name that has zero in-repo callers but plausible external consumers (the published MIT packages, `@epicenter/lens` and `@epicenter/field`, are the load-bearing example: they emit to `dist` for toolchains we do not control)
+- Delete a public exported name that has zero in-repo callers but plausible external consumers (the published MIT packages, `@epicenter/workspace` and `@epicenter/field`, are the load-bearing example: they emit to `dist` for toolchains we do not control)
 - Collapse two files where one's JSDoc documents a non-obvious invariant (the JSDoc is the documentation of a contract; losing it loses the contract)
 - Merge packages or move exports across package boundaries
 - Change a function signature that crosses a published package boundary

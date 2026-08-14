@@ -37,7 +37,7 @@ What the authority itself does is narrower, and the difference is worth being
 exact about because it is easy to overstate in either direction. **The authority
 reads nothing it stores** (ADR-0218). It appends opaque entries, hands them back
 in order, and keeps one snapshot plus the entries after it (ADR-0220). Nothing
-in `packages/server/src/store-sync/authority.ts` imports Yjs or a lens, and
+in `packages/server/src/store-sync/authority.ts` imports Yjs or a workspace, and
 there is no verb there that could interpret an update. So the honest statement
 is not "the server reads your rows" and not "the server cannot read your rows":
 it is that the server does not read them, and could, because it holds them in

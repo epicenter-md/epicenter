@@ -22,7 +22,8 @@ shapes, see `docs/adr/`.
   the person's synchronized Epicenter.
 - **Epicenter**: one person's logical body of application data. Each application
   is one document holding its own tables and settings, and applications bind
-  typed Lenses to it; no workspace or database lifecycle exists beneath it.
+  a typed workspace declaration over it; the namespace is the one lifecycle
+  scope beneath it (ADR-0229, ADR-0240).
 - **Replica**: one complete local or server copy of an Epicenter. A native
   installation, browser origin, OS profile, or server actor may impose its own
   physical replica, but that adapter boundary is not a product data owner.
@@ -122,13 +123,15 @@ shapes, see `docs/adr/`.
   file that is both the update log and the query projection, and a synchronous
   surface over both. Opening one is the only asynchronous operation an
   application has.
-- **Lens**: a pure JSON, release-local interpretation of one application's data,
-  written in arktype expression strings. Never an authoritative schema, an owner,
-  or a lifecycle boundary. It has no optional fields (write `'string|null =
-  null'`) and no array defaults (`'string[] = []'` throws; write `'string[]|null
-  = null'`).
-- **Bound lens**: the synchronous typed view `store.bind(lens)` returns. It
-  creates no storage and owns no disposal.
+- **Workspace declaration**: one application's complete, pure JSON declaration
+  of its durable data, written in arktype expression strings with
+  `defineWorkspace` (ADR-0240). Release-local in the sense that a newer release
+  ships a newer declaration over the same durable data. It has no optional
+  fields (write `'string|null = null'`) and no array defaults (`'string[] =
+  []'` throws; write `'string[]|null = null'`).
+- **Workspace view**: the synchronous typed surface (`tables`, `kv`, `query`)
+  an opened runtime holds over its one definition. Born with the store; nothing
+  rebinds a live runtime.
 - **Table root**: the `tables:<name>` root holding one table's rows. Every
   top-level root says what kind of thing it is, so a table genuinely named `kv`
   lands at `tables:kv` and cannot reach the settings root.
@@ -152,28 +155,28 @@ shapes, see `docs/adr/`.
   subtree goes with it, including the document container. There is no tombstone,
   no presence flag and no revive path, so a deleted address is indistinguishable
   from one never used (ADR-0219).
-- **Nonconforming row**: a row this release's Lens cannot read. A view, not
+- **Nonconforming row**: a row this release's declaration cannot read. A view, not
   damage. `list()` returns `{ rows, nonconforming }`, and each failure carries
   its `address`, machine-readable `issues`, the `conforming` survivors, and the
   unmodified `raw`.
 - **Healing**: repairing a nonconforming row with an ordinary `update`, because
   a patch validates only the values it supplies. Prevention is not on the table:
-  a Lens is release-local and rows arrive from newer releases, so nothing this
+  a declaration is release-local and rows arrive from newer releases, so nothing this
   release ships stops a future one retyping a field.
-- **Unknown field**: a field this release's Lens does not declare. Ignored on
+- **Unknown field**: a field this release's declaration does not declare. Ignored on
   read and preserved on write, which is what makes a mixed-version fleet safe.
 - **`kv`**: the root holding one application's settings, as a single value with
   `get`, `update` and `subscribe`. Its subscriber takes no ids, because kv is one
   value.
 - **`db.query`**: read-only SQL over this application's own projection, as a
-  template tag on the bound lens rather than on the store, so an application can
+  template tag on the workspace view rather than on the store, so an application can
   reach only its own data. Nonconforming rows stay in the projection, so SQL can
   show one; it cannot tell you a row is nonconforming, which is what `list()` is
   for.
 - **`subscribe`**: a table's change notification, carrying the row ids a commit
   touched and firing after the projection commits (ADR-0221). Not a query and not
   a diff.
-- **Pressure**: structs the engine holds over rows a Lens can see. The one
+- **Pressure**: structs the engine holds over rows the declaration can see. The one
   number worth watching, because a deleted row leaves a small permanent cost that
   only a rebuild reclaims.
 - **Store authority**: one Durable Object per principal and application, named
@@ -212,7 +215,7 @@ shapes, see `docs/adr/`.
 
 ## App composition
 
-- **Application factory**: the one function that opens a store, binds the Lens,
+- **Application factory**: the one function that opens the workspace,
   and returns a ready handle, as `apps/honeycrisp/src/lib/runtime.ts` does.
   There is no readiness promise beside it: opening is the only asynchronous
   thing, so wanting a separate `whenReady` means a half-open handle.

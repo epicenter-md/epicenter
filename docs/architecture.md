@@ -44,7 +44,7 @@ refused was a hosted surface that reached a host-owned replica instead.
 | CORE                                                                      |
 |                                                                           |
 | @epicenter/data      the store, and the transport that carries it         |
-| @epicenter/lens      the vocabulary a Lens is written in                  |
+| @epicenter/workspace      the workspace declaration vocabulary                  |
 | @epicenter/field     release-local field declarations                     |
 | @epicenter/sqlite    one engine seam over bun:sqlite and sqlite-wasm      |
 | @epicenter/sync      route contracts a browser can import                 |
@@ -117,14 +117,14 @@ is that a set several devices append to concurrently loses an addition, and the
 answer is that such a collection wants to be a table, where each element is its
 own row and nothing collides.
 
-## Lens evolution never migrates user data
+## Workspace evolution never migrates user data
 
-A Lens is a release-local view over durable JSON (ADR-0125, ADR-0213). A release
+A workspace declaration is a release-local view over durable JSON (ADR-0125, ADR-0213). A release
 may add a field, remove one, or change validation. Rows that no longer conform
 stay exactly as written and surface as nonconforming for that release. Nothing
 copies a database, runs an upcaster, or reinterprets an old write.
 
-Prevention is not available and asking for it is the wrong axis. A Lens is
+Prevention is not available and asking for it is the wrong axis. A declaration is
 release-local and rows arrive from NEWER releases, so no discipline in this
 release stops a future one retyping a field. What exists instead is the material
 to heal: `list()` returns `{ rows, nonconforming }`, each failure carries its
@@ -136,8 +136,8 @@ only the values it supplies.
 ```text
 durable JSON stays unchanged
         |
-        +-- old release's lens -> one interpretation
-        `-- new release's lens -> typed rows plus nonconforming diagnostics
+        +-- old release's declaration -> one interpretation
+        `-- new release's declaration -> typed rows plus nonconforming diagnostics
 ```
 
 ## Reads are synchronous
@@ -147,7 +147,7 @@ I/O: a file or an IndexedDB read, a WASM compile, and the replay of a durable
 log. Everything after it is a property access on a document already in memory.
 
 ```ts
-const { data: db, error } = await openDevice(honeycrispLens);
+const { data: db, error } = await openDevice(honeycrispWorkspace);
 if (error !== null) throw error;
 
 const listed = db.tables.notes.list();          // { rows, nonconforming }
@@ -204,5 +204,5 @@ ADR-0227 was executed as a clean break, so the applications that had not moved
 are broken on purpose and their data on the old stack is gone: `apps/whispering`,
 `apps/vocab`, `apps/skills`, `apps/epicenter`, `packages/chat`,
 `packages/skills`, and `packages/app-shell`'s agent chat. Green:
-`packages/data`, `lens`, `sync`, `sqlite`, `svelte-utils`, `apps/api`,
+`packages/data`, `workspace`, `sync`, `sqlite`, `svelte-utils`, `apps/api`,
 `apps/self-host`, `apps/honeycrisp`, `apps/sync-lab`.

@@ -47,34 +47,37 @@ property access, not a round trip, so nothing is awaited and nothing needs cache
 invalidation or race protection.
 
 ```typescript
-import { openBrowserStore } from '@epicenter/data/browser';
-import { defineLens } from '@epicenter/lens';
+import { openDevice } from '@epicenter/data/browser';
+import { defineTable, defineWorkspace } from '@epicenter/workspace';
 
-const notesLens = defineLens({
+const notes = defineTable({
+  title: 'string',
+  pinned: 'boolean',
+  folderId: 'string|null = null',
+});
+
+const notesWorkspace = defineWorkspace({
   namespace: 'com.example.notes',
-  tables: {
-    notes: { title: 'string', pinned: 'boolean', folderId: 'string|null = null' },
-  },
+  tables: { notes },
 });
 
 // Every verb returns a Result; the error arm is elided here for length.
-const { data: store } = await openBrowserStore({ name: 'notes' });  // the only await
-const { data: db } = store.bind(notesLens);
+const { data: db } = await openDevice(notesWorkspace);  // the only await
 
-db.notes.create({ title: 'Hello', pinned: false }, { document: ['body'] });
+db.tables.notes.create({ title: 'Hello', pinned: false }, { document: ['body'] });
 
-const { data } = db.notes.list();          // synchronous: { rows, nonconforming }
-const stop = db.notes.subscribe(read);     // fires with the row ids a commit touched
+const listed = db.tables.notes.list();          // synchronous: { rows, nonconforming }
+const stop = db.tables.notes.subscribe(read);   // fires with the row ids a commit touched
 ```
 
-A *Lens* is one application's interpretation of one durable namespace: pure
-JSON, arktype expression strings, no storage and no lifecycle of its own. It is
+A *workspace* is one application's declaration of its durable data: pure JSON,
+arktype expression strings, no storage and no lifecycle of its own. It is
 release-local and never migrates your data. A row it cannot read is reported
 beside the rows it can, with the reason and the raw values intact, and an
 ordinary write repairs it.
 
 Prose merges per character: a row is allocated a document container when it is
-created, and `db.notes.document(id)?.get('body')` hands an editor a live type to
+created, and `db.tables.notes.document(id)?.get('body')` hands an editor a live type to
 bind to. Epicenter never looks inside it.
 
 Sync is one Cloudflare Durable Object per (account, application). Being signed
@@ -85,7 +88,7 @@ approved.
 
 ## Build With The Toolkit
 
-The developer toolkit is MIT: build anything on it, including closed-source and commercial products, and you own what you build, with no obligation back to Epicenter. [`@epicenter/data`](packages/data), [`@epicenter/lens`](packages/lens), and [`@epicenter/ui`](packages/ui) are the packages meant to leave this repo. They are pre-1.0 and tuned for our own apps, so treat them as fork-and-own rather than a stability-guaranteed SDK for now.
+The developer toolkit is MIT: build anything on it, including closed-source and commercial products, and you own what you build, with no obligation back to Epicenter. [`@epicenter/data`](packages/data), [`@epicenter/workspace`](packages/workspace), and [`@epicenter/ui`](packages/ui) are the packages meant to leave this repo. They are pre-1.0 and tuned for our own apps, so treat them as fork-and-own rather than a stability-guaranteed SDK for now.
 
 ## Status
 
@@ -143,7 +146,7 @@ These packages carry the main architecture.
 | Package | Role | License |
 | --- | --- | --- |
 | [`@epicenter/data`](packages/data) | The store: one Yjs document per application, a synchronous surface over it, and the transport that carries it. | MIT |
-| [`@epicenter/lens`](packages/lens) | The inert vocabulary a Lens is written in: arktype JSON, row addresses, and nonconformance. | MIT |
+| [`@epicenter/workspace`](packages/workspace) | The inert workspace declaration vocabulary: arktype JSON, row addresses, and nonconformance. | MIT |
 | [`@epicenter/sqlite`](packages/sqlite) | Neutral embedded-SQLite driver with Browser, Bun, and Durable Object adapters. It owns no product schema. | MIT |
 | [`@epicenter/sync`](packages/sync) | The WebSocket subprotocol vocabulary both halves of a handshake must agree on. | MIT |
 | [`@epicenter/ui`](packages/ui) | Shared Svelte component library used by multiple app surfaces. | MIT |
@@ -234,7 +237,7 @@ Contributors coordinate in [Discord](https://go.epicenter.so/discord).
 
 Epicenter uses a two-tier split by how you use the code:
 
-- [MIT](licenses/LICENSE-MIT) for code you build with: the toolkit roots (`@epicenter/data`, `@epicenter/lens`, `@epicenter/ui`) and the toolkit-internal contracts they carry (`@epicenter/field`, `@epicenter/sqlite`, `@epicenter/sync`, `@epicenter/identity`, `@epicenter/agent-protocol`, `@epicenter/chat`).
+- [MIT](licenses/LICENSE-MIT) for code you build with: the toolkit roots (`@epicenter/data`, `@epicenter/workspace`, `@epicenter/ui`) and the toolkit-internal contracts they carry (`@epicenter/field`, `@epicenter/sqlite`, `@epicenter/sync`, `@epicenter/identity`, `@epicenter/agent-protocol`, `@epicenter/chat`).
 - [AGPL-3.0](licenses/LICENSE-AGPL-3.0) or later for code we ship or run: every app, the shared server library, and the rest of the internal packages.
 - There is no proprietary tier today. Revenue is intended to come from hosting and services, not from selling closed licenses.
 

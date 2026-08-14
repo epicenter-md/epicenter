@@ -35,10 +35,15 @@ independent changes.
 | ids | (part of scan) | `db.notes.ids()` |
 | SQL | a separate inspection surface | ``db.query`SELECT ...` `` |
 
-`list()` returns `{ rows, nonconforming }`. A row the current Lens cannot read
-is REPORTED, never dropped and never repaired (ADR-0125): you get the rows that
-parsed and the failures beside them, and the failure carries `conforming` so a
-caller can compose its own recovery.
+`list()` returns `{ rows, nonconforming }`, plainly: a row the current declaration
+cannot read is REPORTED, never dropped and never repaired (ADR-0125), and
+nothing in a read can fail, so there is no `Result` to unwrap. A disposed
+store throws `StoreUnusableError` instead of dressing up as a read outcome
+(ADR-0237); storage falling behind is neither, and reports through
+`store.persistence` (ADR-0238).
+
+A point read's one error is the nonconformance diagnostic, plain data with
+`conforming` carried so a caller composes its own recovery:
 
 ```ts
 const { data, error } = db.notes.get(id);
@@ -84,23 +89,23 @@ The whole consumer is now:
 
 ```ts
 let rows = $state.raw<Note[]>([]);
-let unreadable = $state.raw<NonconformingRowError[]>([]);
+let unreadable = $state.raw<NonconformingRow[]>([]);
 
 function read() {
-  const { data, error } = db.notes.list();
-  if (error !== null) { reportBackgroundError(error); return; }
-  rows = data.rows;
-  unreadable = data.nonconforming;   // not `?? []`, and not dropped
+  const listed = db.notes.list();
+  rows = listed.rows;
+  unreadable = listed.nonconforming;   // not dropped
 }
 read();
 const stop = db.notes.subscribe(read);
 ```
 
-The two lines people are tempted to skip are the ones that matter. `list()`
-returns a `Result`, so `.data?.rows ?? []` turns a storage failure into an empty
-list, and an empty list renders as "you have never written one of these".
-`nonconforming` is the same trap one level down: discard it and rows a person
-wrote are simply missing from the screen with nothing to explain why.
+The line people are tempted to skip is the one that matters: discard
+`nonconforming` and rows a person wrote are simply missing from the screen
+with nothing to explain why. `list()` used to return a `Result` too, and
+`.data?.rows ?? []` turned an operational failure into "you have never
+written one of these"; a disposed store now throws `StoreUnusableError`
+instead, so that mistake is no longer expressible (ADR-0237).
 
 No generations, no `refresh()` discipline, no adapter. `fromTable` was deleted
 rather than ported because the fifteen lines above are the whole of what it did,
@@ -117,9 +122,15 @@ KV is one value at a name-addressed root, so there are no ids to carry.
 **Old:** promises that threw. **New:** synchronous, `Result`-returning.
 
 ```ts
-const { data, error } = db.notes.update(id, { title: 'Shopping' });
+const { error } = db.notes.update(id, { title: 'Shopping' });
 if (error !== null) …
 ```
+
+A write reports the write: `update` returns `Result<void, …>` rather than the
+row, because a patch may legally land on a row whose OTHER fields this declaration
+cannot read (that is how a nonconforming row is repaired), and what the row
+now reads as is `get`'s answer. `delete` returns a plain boolean: whether
+there was a row to take.
 
 Two behaviour changes worth knowing:
 
@@ -154,7 +165,7 @@ Consequences you will hit:
 ## Settings
 
 **Old:** one row at the chosen id `'settings'`.
-**New:** the Lens's `kv` section.
+**New:** the workspace's `kv` section.
 
 Same reason as above, and it was a live data-loss shape rather than tidiness:
 every device writes settings on its own boot path, so two devices both creating
@@ -194,7 +205,7 @@ machine-produced, replaced wholesale, and rendered in a list.
 
 ---
 
-## The Lens
+## The workspace declaration
 
 **Old:** TypeBox, `defineTable({ fields: { title: field.string() } })`, with
 defaults living outside in application code.
@@ -203,7 +214,7 @@ defaults living outside in application code.
 (ADR-0213).
 
 ```ts
-export const lens = defineLens({
+export const workspace = defineWorkspace({
   namespace: 'so.epicenter.honeycrisp',
   kv: { theme: "'light'|'dark' = 'light'" },
   tables: { notes: { title: 'string', folderId: 'string|null = null' } },
@@ -216,13 +227,13 @@ Three things bite immediately:
    attribute, the projection column and the row alike, and "absent" is not a SQL
    type. What would have been optional is `'T|null = null'`, applied at read
    time and never written.
-2. **A Lens cannot express an array default, and arktype is RIGHT to refuse
+2. **A declaration cannot express an array default, and arktype is RIGHT to refuse
    it.** `'string[] = []'` does not parse, and the tuple form
    `['string[]', '=', []]` is refused too, with "Non-primitive default must be
    specified as a function". That is not a gap: a literal default would hand
    every row the SAME array, and a caller that pushed to one would mutate the
    default for all of them. A function is how you say "a fresh one each time",
-   and a Lens is pure JSON so it cannot carry one.
+   and a declaration is pure JSON so it cannot carry one.
 
    So `'string[]|null = null'` is the principled answer rather than a
    workaround: `null` is a primitive, so it is expressible, and it forces the
@@ -235,13 +246,13 @@ Objects have no STRING expression, so `'{ status: ... }'` does not parse and
 `'object|null'` validates nothing. Today that means flattening a
 `{ status, completedAt, error }` shape into columns.
 
-**That is a limitation of `parseLens`, not of arktype or of the projection, and
+**That is a limitation of `parseWorkspace`, not of arktype or of the projection, and
 it is worth knowing before you flatten anything by hand.** Measured against the
 installed arktype: a nested JSON literal (`{ transcription: { status: "'a'|'b'"
 } }`) parses, accepts a good value and refuses a bad one, and it is still pure
 JSON. And `projectValue` already `JSON.stringify`s any non-scalar into its
 column, which is exactly how array fields work today and why they are queryable
-with `json_each`. The only missing piece is `parseLens` recursing into a nested
+with `json_each`. The only missing piece is `parseWorkspace` recursing into a nested
 field. Flattening is the shape available now, not the shape that is possible.
 
 ---
@@ -261,8 +272,8 @@ createSyncConnection({ store, dial: ({ cursor, opened, received, closed }) => { 
 
 The library owns the cursor, attach/detach, reconnect on close, reconnect on
 `needsResync`, and a watchdog for a submission nobody answers. The store
-announces its own local work (`onLocalWork`), so **nothing calls `nudge`** —
-forgetting to was the same class of silent wedge.
+announces its own durable local work to the transport internally, so
+**nothing calls `nudge`**; forgetting to was the same class of silent wedge.
 
 Server side: one Durable Object per (principal, application namespace),
 addressed by a principal resolved from the bearer (ADR-0225). **Being signed in
@@ -276,18 +287,20 @@ approve, and no identifier a client can supply that reaches another partition.
 **Old:** a worker owned the replica and the page was its asynchronous client,
 which is why every read in an application on that stack was awaited.
 
-**New:** the store runs in the page over an in-memory SQLite, and three small
-relations (`_updates`, `_outbox`, `_cursor`) live in IndexedDB (ADR-0223).
+**New:** the store runs in the page; the projection is an in-memory SQLite,
+and the durable facts (`updates`, `outbox`, `meta`) live directly in
+IndexedDB, one atomic transaction per flush (ADR-0238).
 
 The measured fact behind it: a page cannot take a synchronous handle to durable
-storage. That decides where the LOG lives, not where the store runs — the store
+storage. That decides where the LOG lives, not where the store runs: the store
 needs a synchronous HANDLE, not synchronous durability, because reads come from
-the `Y.Doc` and SQLite is a write-behind log plus a query cache.
+the `Y.Doc` and the projection is a cache rebuilt at open.
 
-One property is genuinely weaker and is surfaced rather than hidden:
-`store.durability()` is an ALARM, because IndexedDB is asynchronous so a refusal
-arrives after the write returned `Ok`. Nothing is lost when it fires; what is
-lost is the guarantee that a reload sees it.
+The durability gap is surfaced rather than hidden, on every runtime alike:
+`store.persistence` reports `saved`, `pending`, or `blocked`, and a blocked
+store keeps serving and accepting. Nothing is lost while the client is open;
+what `blocked` puts at risk is only what a RESTART would recover, and a later
+edit or `flush()` retries.
 
 ---
 
@@ -368,7 +381,7 @@ counters that add, maps that deep-merge, and a declaration syntax rich enough to
 say which. Every one of those is a second merge semantics an author has to learn
 and a reader has to hold, and each is a place two releases can disagree about
 what a field even is. Refusing all of it means there is exactly one rule for
-every scalar, array and object a Lens can declare, and the rule fits on a line.
+every scalar, array and object a workspace can declare, and the rule fits on a line.
 
 The price is bounded and nameable: **a set that several devices append to
 concurrently will lose an addition.** That is a real cost and it is paid by a
@@ -405,7 +418,7 @@ what.
 
 ## How a row evolves
 
-Two devices on two releases hold two Lenses over one namespace, and rows written
+Two devices on two releases hold two declarations over one namespace, and rows written
 by either arrive at the other in any order. There is no migration step to
 sequence, no schema version, and no compatibility classifier: ADR-0125 decided
 that, and the behaviour below is that decision verified against the store rather
@@ -413,13 +426,13 @@ than restated.
 
 **Fields are independent, and that is the load-bearing invariant.** A row is an
 attribute map, a write sets only the attributes handed to it, and a read
-interprets only the fields the Lens declares. Everything else follows.
+interprets only the fields the declaration declares. Everything else follows.
 
 | what changed | what the other release sees |
 | --- | --- |
 | a field was ADDED, with a default | old rows read, the default fills in |
 | a field was ADDED, no default | **old rows go `Nonconforming`** |
-| a row has a field this Lens never heard of | ignored on read, **preserved on write** |
+| a row has a field this declaration never heard of | ignored on read, **preserved on write** |
 | a field's TYPE changed | `Nonconforming`, with `conforming` carrying what survived |
 | a field was REMOVED | the attribute lingers, unread, costing only `pressure()` |
 
@@ -447,10 +460,10 @@ The instinct on first meeting a `Nonconforming` row is to prevent it: default
 every field, require every field at `create`, make the schema watertight.
 
 **That cannot work, and it is worth understanding why before designing around
-it.** A Lens is release-local, and rows arrive from the future. A release that
+it.** A declaration is release-local, and rows arrive from the future. A release that
 has not shipped yet can retype a field and write it, and your release will not
 be able to read the result — no default you declare today prevents that, because
-the change is not yours. Verified: a v1 Lens reading a row a v3 Lens wrote is
+the change is not yours. Verified: a v1 declaration reading a row a v3 declaration wrote is
 `Nonconforming`, and nothing in v1 could have avoided it.
 
 So prevention is impossible in principle, and a discipline aimed at it buys a
@@ -461,9 +474,8 @@ A failed read is not an absence. It carries everything an app, a person, or an
 agent needs to act:
 
 ```ts
-const { data } = db.notes.list();
-for (const issue of data.nonconforming) {
-  issue.address     // { namespace, tableName, rowId }
+for (const issue of db.notes.list().nonconforming) {
+  issue.id          // the structural row id
   issue.issues      // [{ field: 'n', message: 'n must be a number (was a string)' }]
   issue.conforming  // { id, title }              what survived
   issue.raw         // { title, n: 'seven' }      the stored truth, unmodified
@@ -476,7 +488,7 @@ nothing is lost while the row is unreadable. And repair is an ordinary write,
 because a patch validates only the values it supplies:
 
 ```ts
-db.notes.update(issue.address.rowId, { n: 7 });
+db.notes.update(issue.id, { n: 7 });
 ```
 
 Nonconforming rows are also still in the projection with their raw values, so
@@ -489,7 +501,7 @@ group them.
 Two things the projection does NOT promise, worth knowing before building on it.
 It stores what was WRITTEN, so a field nobody has written reads as its declared
 default through `list()` and as `NULL` through `db.query`. And it is a cache: it
-is rebuilt at `bind`, so it is current, but it is derived from the CRDT rather
+is rebuilt at open, so it is current, but it is derived from the CRDT rather
 than authoritative over it.
 
 **So the answer here is to add nothing.** No schema version, no migration chain,
@@ -515,10 +527,10 @@ indefinitely without hurting anyone, and `raw` still holds it.
 
 ## A migration checklist
 
-1. Rewrite the Lens: arktype strings, nullable-with-default, no optionals, no
+1. Rewrite the workspace: arktype strings, nullable-with-default, no optionals, no
    objects, defaults inline. Settings to `kv`.
 2. Decide per field whether prose belongs in a row document or the row.
-3. Replace `openEpicenter` with `openDevice(lens)` (and `openAccount(lens,
+3. Replace `openEpicenter` with `openDevice(workspace)` (and `openAccount(workspace,
    { principalId })` for a signed-in replica, per ADR-0233).
 4. Replace `scan` + `refresh` + generations with `read()` + `subscribe(read)`.
 5. Drop `await` from every read and every mutation; destructure `{ data, error }`.

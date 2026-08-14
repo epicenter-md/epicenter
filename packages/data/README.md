@@ -7,9 +7,9 @@ Four entry points, and no more:
 
 | Import | What it gives you |
 | --- | --- |
-| `@epicenter/data` | the store surface, plus the Lens vocabulary re-exported from `@epicenter/lens` |
-| `@epicenter/data/bun` | `open(lens, { root })`, and `openMemory(lens)` for tests |
-| `@epicenter/data/browser` | `openDevice(lens)`, and `openAccount(lens, { principalId })` |
+| `@epicenter/data` | the store surface, plus the workspace vocabulary re-exported from `@epicenter/workspace` |
+| `@epicenter/data/bun` | `open(workspace, { root })`, and `openMemory(workspace)` for tests |
+| `@epicenter/data/browser` | `openDevice(workspace)`, and `openAccount(workspace, { principalId })` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 
 A Bun opener imports `bun:sqlite` and a browser opener imports a WASM build, so
@@ -21,7 +21,7 @@ openers live at their own entry points rather than on `@epicenter/data`.
 ```ts
 import { openAccount } from '@epicenter/data/browser';
 
-const { data: app, error } = await openAccount(honeycrispLens, {
+const { data: app, error } = await openAccount(honeycrispWorkspace, {
 	principalId,
 });
 if (error !== null) return handle(error);
@@ -30,11 +30,14 @@ const listed = app.tables.notes.list();          // no await
 app.tables.notes.update(id, { title: 'Draft' }); // no await
 ```
 
-A Lens names the store it opens (ADR-0229), so there is one call and one name:
-the namespace is the document, the file, the folder and the authority address.
-Nothing takes a path or a database name. In a browser the durable address is
-derived from that namespace and the document named below rather than supplied
-(ADR-0233), so a Lens still cannot be bound to a store it does not name.
+A workspace names the store it opens (ADR-0229), so there is one call and one
+name: the namespace is the document, the file, the folder and the authority
+address. Nothing takes a path or a database name. In a browser the durable
+address is derived from that namespace and the document named below rather
+than supplied (ADR-0233), so a declaration still cannot open a store it does
+not name. The runtime that comes back holds exactly this one definition for
+its whole life (ADR-0240); a newer declaration reads the same durable data by
+closing it and opening the next one.
 
 In a browser the caller also names which durable document it means and whose it
 is (ADR-0233). An application keeps one device document that never joins
@@ -64,17 +67,17 @@ open at once.
 
 ## The surface
 
-Each table the Lens declares is a key on `app.tables`. The file itself sits
+Each table the workspace declares is a key on `app.tables`. The file itself sits
 under `app.store`, so a table can be named anything a person names it:
 
 ```ts
 app.tables.notes.defaults                        // what a read supplies for unwritten keys
 app.tables.notes.create(fields, options?)        // Result<Row>, at a minted 24-character id
-app.tables.notes.get(id)                         // Result<Row | undefined>
-app.tables.notes.update(id, patch)               // merges; refuses an absent address
-app.tables.notes.delete(id)                      // Result<boolean>
-app.tables.notes.ids()                           // Result<string[]>, sorted
-app.tables.notes.list()                          // Result<{ rows, nonconforming }>
+app.tables.notes.get(id)                         // Result<Row | undefined, NonconformingRow>
+app.tables.notes.update(id, patch)               // Result<void>; merges; refuses an absent address
+app.tables.notes.delete(id)                      // boolean: was there a row to take?
+app.tables.notes.ids()                           // string[], sorted
+app.tables.notes.list()                          // { rows, nonconforming }
 app.tables.notes.document(id)                    // RowDocument | undefined
 app.tables.notes.subscribe(listener)             // returns its own unsubscribe
 ```
@@ -87,33 +90,43 @@ always exists.
 projection. It reaches one application's tables because a store holds one
 application, not because it scopes by namespace.
 
-`app.store` carries the file: `pressure()` (how much of the document is dead
-weight), `onLocalWork` (this replica authored something the authority has not
-taken), `onCommitted` (anything durable changed, whoever wrote it), and the
-CRDT verbs a transport needs. They live under one key rather than beside the
-tables so that no table name is reserved: `kv` is the only one a Lens refuses,
-and that is because KV projects as a SQL relation of that name.
+`app.store` carries the document itself: `pressure()` (how much of it is dead
+weight), `onCommitted` (anything committed, whoever wrote it),
+`persistence` (whether accepted work has reached durable storage, ADR-0238),
+and `sync`, the value that tells the two store kinds apart (ADR-0239):
+`undefined` on a device document, and `{ get, subscribe }` over
+`{ document }` on an account replica. They live under one key rather than
+beside the tables so that no table name is reserved: `kv` is the only one a
+workspace refuses, and that is because KV projects as a SQL relation of that
+name.
+The delivery machinery underneath sync (the outbox, cursors,
+acknowledgements) is internal; only the transport drives it.
 
 ### Reading
 
 `list()` returns the rows this release could read and the ones it could not,
-side by side. Neither is optional to handle:
+side by side, as a plain object:
 
 ```ts
-const { data, error } = app.tables.notes.list();
-if (error !== null) return void report(error);
-rows = data.rows;
-unreadable = data.nonconforming;
+const { rows, nonconforming } = app.tables.notes.list();
 ```
 
-`.data?.rows ?? []` turns a storage failure into an empty list, and an empty
-list renders as "you have never written one of these". Discarding
-`nonconforming` is the same trap one level down: rows a person wrote are simply
-missing from the screen with nothing to explain why.
+It is not a `Result`, because nothing in it can fail: reads come from a
+document already in memory. A disposed store throws `StoreUnusableError`
+instead of dressing that up as a read outcome (ADR-0237). The old shape
+returned a `Result` here, and `.data?.rows ?? []` quietly rendered an
+operational failure as "you have never written one of these"; the throw makes
+that unwritable. Storage falling behind is not a read outcome either: the
+store keeps serving the live document and reports through
+`store.persistence` (ADR-0238). Discarding `nonconforming` is still the trap
+it always was: rows a person wrote are simply missing from the screen with
+nothing to explain why.
 
-On a failed point read, recover with `??` and never with a destructuring
-default. An `Err` sets `data` to `null`, and `= fallback` fires only on
-`undefined`:
+A point read's one error is a live row this declaration cannot fully read, as plain
+diagnostic data: `{ id, raw, conforming, issues }`, no `name` and no
+`message`, because there is nothing else in the arm to tell it apart from.
+Recover with `??` and never with a destructuring default. An `Err` sets `data`
+to `null`, and `= fallback` fires only on `undefined`:
 
 ```ts
 const { data, error } = app.tables.notes.get(id);
@@ -219,26 +232,33 @@ new machinery, because the store already has a per-element merge primitive.
 each element is its own row, nothing collides, and deletion is a real operation
 rather than an array splice that races.
 
-## The Lens
+## The workspace declaration
 
-A Lens is one application's release-local interpretation of one durable
-namespace: pure JSON, arktype expression strings, defaults declared inline
-(ADR-0213). It creates no storage and no lifecycle, and it never migrates user
-data (ADR-0125).
+A workspace is one application's complete declaration of its durable data
+domain: pure JSON, arktype expression strings, defaults declared inline
+(ADR-0213, ADR-0240). It creates no storage and no lifecycle, and it never
+migrates user data (ADR-0125). It is still release-local in one honest sense:
+a newer release ships a newer declaration and reads the same durable data
+through it.
 
 ```ts
-export const notesLens = defineLens({
+const notes = defineTable({
+	title: 'string',
+	folderId: 'string|null = null',
+	createdAt: 'string.date.iso',
+});
+
+export const notesWorkspace = defineWorkspace({
 	namespace: 'com.example.notes',
-	kv: { theme: "'light'|'dark' = 'light'" },
-	tables: {
-		notes: {
-			title: 'string',
-			folderId: 'string|null = null',
-			createdAt: 'string.date.iso',
-		},
-	},
+	kv: defineKv({ theme: "'light'|'dark' = 'light'" }),
+	tables: { notes },
 });
 ```
+
+`defineTable` and `defineKv` are validation identities: the returned value is
+the argument, and arktype's compile error lands on the ingredient the app
+wrote, which is also what lets `RowOf<typeof notes>` name a row type without
+`as const`.
 
 Each `tables` property name is that table's durable name forever: it is what a
 row address carries, what the projection's relation is called, and what
@@ -252,7 +272,7 @@ Three rules bite immediately:
    attribute, the projection column, and the row alike, and "absent" is not a
    SQL type. Write `'string|null = null'`, never `'field?'`. The default is
    applied at read time and never stored.
-2. **A Lens cannot express an array default.** `'string[] = []'` throws, and
+2. **A declaration cannot express an array default.** `'string[] = []'` throws, and
    arktype is right to refuse it: a literal default would hand every row the
    SAME array. Write `'string[]|null = null'` and materialise a fresh array at
    the point of use.
@@ -263,21 +283,21 @@ Three rules bite immediately:
 ### Nonconforming is a view, not damage
 
 A row this release cannot read is reported, never dropped and never silently
-repaired. Prevention is impossible in principle, because a Lens is release-local
-and rows arrive from the future: a release that has not shipped yet can retype a
-field, and no default you declare today prevents that.
+repaired. Prevention is impossible in principle, because a declaration is
+release-local and rows arrive from the future: a release that has not shipped
+yet can retype a field, and no default you declare today prevents that.
 
 What is possible is healing, and the primitives already exist:
 
 ```ts
-for (const issue of data.nonconforming) {
-	issue.address     // { namespace, tableName, rowId }
+for (const issue of app.tables.notes.list().nonconforming) {
+	issue.id          // the structural row id
 	issue.issues      // [{ field: 'n', message: 'n must be a number (was a string)' }]
 	issue.conforming  // what survived
 	issue.raw         // the stored truth, unmodified
 }
 
-app.tables.notes.update(issue.address.rowId, { n: 7 }); // an ordinary write repairs it
+app.tables.notes.update(issue.id, { n: 7 }); // an ordinary write repairs it
 ```
 
 A patch validates only the values it supplies, so it can fix the offending key
@@ -293,27 +313,44 @@ prevent.
 
 ## Where it stores
 
-One SQLite file holds both the update log and the query projection (ADR-0214).
-The `Y.Doc` is the truth; SQLite is a write-behind log plus a query cache, never
-the read path.
+The `Y.Doc` is the truth while the client is open; everything else follows it
+(ADR-0238). The query projection is an in-memory SQLite rebuilt at open,
+written synchronously with every accepted edit. A projection write that
+fails never fails the verb: the index goes stale and the next `query`
+rebuilds it whole from the live document before answering, or refuses with
+`QueryFailed` if it cannot; a stale index never serves old rows, and table
+and KV verbs never depend on it. The durable facts (the
+update log, the outbox, the cursor, and the metadata) live behind a per-store
+persistence controller: every accepted edit queues its durable work and one
+coalesced flush commits the whole queue atomically.
 
-On Bun that file is `store.sqlite3` in the directory the caller names, beside
-`history.sqlite3` for what collapse superseded. In the browser it is in-memory
-sqlite-wasm **on the main thread**, plus three small relations in IndexedDB:
-`_updates`, `_outbox`, `_cursor` (ADR-0223).
+On Bun the durable facts are `store.sqlite3` in the application's directory,
+beside `history.sqlite3` for what collapse superseded, and a flush is a
+synchronous transaction, so a successful write is durable when the verb
+returns. In the browser they live directly in IndexedDB, three object stores
+(`updates`, `outbox`, `meta`) written one atomic transaction per flush.
 
 There is no worker and no OPFS. The reasoning is in the module comment titled
 "Why there is no worker" at the top of `packages/data/src/store/browser.ts`, and
-it is worth reading before proposing one: `bind` rebuilds every projected table
-unconditionally, so a restored file bought nothing, and what actually has to
-survive is three small relations that IndexedDB holds fine.
+it is worth reading before proposing one: opening rebuilds every projected
+table unconditionally, so a restored file bought nothing, and what actually
+has to survive is a handful of small facts that IndexedDB holds fine.
 
-One property is genuinely weaker in the browser and is surfaced rather than
-hidden. A browser store's `durability()` is an alarm rather than an error a call
-returns, because IndexedDB is asynchronous, so
-a storage refusal arrives after the write already returned `Ok`. Nothing is
-lost when it fires: the `Y.Doc` still holds the work and the outbox still owes
-it to the authority. What is lost is the guarantee that a reload sees it.
+Persistence failing never fails a verb and never poisons the store. The debt
+is observable instead:
+
+```ts
+db.store.persistence.get(); // 'saved' | 'pending' | 'blocked'
+db.store.persistence.subscribe(listener);
+await db.store.persistence.flush();
+```
+
+`blocked` means the latest flush failed and a restart would lose the retained
+work; a later edit or an explicit `flush()` retries. Nothing is lost while
+the client stays open: the `Y.Doc` still holds the work, and on a replica the
+outbox still owes it to the authority once it lands durably. Sync sends only
+durable work, so an edit is never offered to the authority merely because it
+is visible in memory.
 
 ## Sync
 
@@ -332,9 +369,9 @@ const connection = createSyncConnection({
 The cursor, attach and detach, reconnect on close, reconnect when the client is
 stuck behind a gap, and a watchdog for a submission nobody answers all live
 here, because every one of them is correctness rather than transport. A fuzz
-proved that omitting the resync reconnect wedges a device permanently. The store
-announces its own local work through `onLocalWork`, so nothing has to remember
-to nudge the transport.
+proved that omitting the resync reconnect wedges a device permanently. The
+store announces its own durable local work to the transport internally, so
+nothing has to remember to nudge it.
 
 The authority is one Cloudflare Durable Object per (principal, namespace), named
 `principals/<principalId>/stores/<namespace>`, keeping a snapshot plus the

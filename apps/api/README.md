@@ -22,7 +22,7 @@ the sharing model.** Both devices resolve to one principal, address one
 authority, and converge; nothing is paired, invited, or approved.
 
 The authority reads nothing it stores (ADR-0218). It holds opaque bytes, hands
-them back in order, and imports neither Yjs nor a lens.
+them back in order, and imports neither Yjs nor a workspace.
 
 ## Why a hub exists
 
@@ -209,4 +209,4 @@ See `wrangler.jsonc` for Durable Object bindings and Hyperdrive (Postgres connec
 
 ## License
 
-[AGPL-3.0](../../licenses/LICENSE-AGPL-3.0). The apps, the shared server library, and internal glue are AGPL so that anyone hosting a modified version shares their changes. The embeddable toolkit (`data`, `lens`, `field`, `sqlite`, `sync`, `ui`, `identity`, `chat`, `agent`, `agent-protocol`) is MIT. This follows the same pattern as Yjs (MIT core, AGPL y-redis), Liveblocks (Apache clients, AGPL server), and Bitwarden (GPL clients, AGPL server).
+[AGPL-3.0](../../licenses/LICENSE-AGPL-3.0). The apps, the shared server library, and internal glue are AGPL so that anyone hosting a modified version shares their changes. The embeddable toolkit (`data`, `workspace`, `field`, `sqlite`, `sync`, `ui`, `identity`, `chat`, `agent`, `agent-protocol`) is MIT. This follows the same pattern as Yjs (MIT core, AGPL y-redis), Liveblocks (Apache clients, AGPL server), and Bitwarden (GPL clients, AGPL server).

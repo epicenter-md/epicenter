@@ -20,7 +20,7 @@ Epicenter targets `@y/y` 14 only. Do not add `yjs` 13, `y-indexeddb`, a compatib
 
 Skip DeepWiki for stable basics and repo-local patterns already documented below.
 
-> **Related Skills**: See `svelte` for reading store data into a component, and `arktype` for the expression strings a Lens is written in.
+> **Related Skills**: See `svelte` for reading store data into a component, and `arktype` for the expression strings a workspace is written in.
 
 ## Transactions, Origins, And Undo
 
@@ -37,7 +37,7 @@ Skip DeepWiki for stable basics and repo-local patterns already documented below
 ## Store Connection
 
 - Yjs is network-agnostic. It supplies CRDT state, state vectors, updates, and awareness behavior, not Epicenter's connection topology, authorization, or durability contract.
-- One socket per application, not one per open document. A replica connects to `STORE_SYNC_ROUTE.pattern` (`/api/store/v1/sync`, in `packages/sync/src/store-route.ts`) with a `namespace` naming the Lens and a `cursor` naming its own durably applied position, so a reconnect is a catch-up rather than a fresh start (ADR-0222).
+- One socket per application, not one per open document. A replica connects to `STORE_SYNC_ROUTE.pattern` (`/api/store/v1/sync`, in `packages/sync/src/store-route.ts`) with a `namespace` naming the workspace and a `cursor` naming its own durably applied position, so a reconnect is a catch-up rather than a fresh start (ADR-0222).
 - Whose data it is never appears in the query. It comes from the resolved bearer, server-side, so there is no value a client can put in the URL that reaches another partition (ADR-0092).
 - Browser upgrades authenticate through exactly one `bearer.<token>` subprotocol entry, because a browser upgrade cannot set `Authorization`; the mount echoes only the main subprotocol on the 101, so the token never round-trips. Non-browser clients may use an `Authorization` header. Do not use cookie-only upgrades, query-string credentials, or post-accept authentication frames.
 - The wire is framing and nothing else: `push`, `ack`, `refuse`, `entry`, `offer`, `snapshot`, `wanted` (`packages/data/src/sync/frames.ts`). No frame knows what an update means, what a row is, or what Yjs is, which is exactly why chunking is safe at that layer.
@@ -230,7 +230,7 @@ const body = db.notes.document(noteId)?.get('body'); // a Y.Type an editor binds
 ```
 
 Only `Doc.get` mints. It is `setIfUndefined`, and a root can never be removed, so
-every key reaching it must be a table name the Lens declares. Never pass a row id
+every key reaching it must be a table name the workspace declares. Never pass a row id
 to it: reading an unknown row through `getAttr` costs nothing, while a misspelled
 table name costs a permanent root.
 

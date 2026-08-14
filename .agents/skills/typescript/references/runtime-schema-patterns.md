@@ -84,8 +84,8 @@ const id = generateId() as string as SavedTabId;
 
 The `generate*` prefix means "new ID from scratch." The `create*` prefix means "assemble from inputs" (e.g., `createTabCompositeId(deviceId, tabId)`).
 
-See the `arktype` skill for the expression strings a Lens declares fields with. A
-Lens is release-local and never migrates user data, so there are no migration
+See the `arktype` skill for the expression strings a workspace declares fields with. A
+workspace is release-local and never migrates user data, so there are no migration
 rules to follow.
 
 ## Arktype-Validated IDs: Validator First, Type Inferred, Optional `as*` Helper

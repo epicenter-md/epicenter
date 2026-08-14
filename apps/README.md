@@ -14,13 +14,13 @@ data.
 
 ## How a surface is put together
 
-An application declares one inert Lens, opens its own store, and binds the two:
+An application declares one inert workspace and opens its own store through it:
 
 ```txt
-defineLens({ namespace, title, kv, tables })
+defineWorkspace({ namespace, title, kv, tables })
   pure JSON: no storage, no network, no framework
 
-openDevice(lens) / openAccount(lens, { principalId })
+openDevice(workspace) / openAccount(workspace, { principalId })
   sqlite-wasm in the page, three durable relations in IndexedDB,
   one database per document (ADR-0233)
 
@@ -45,21 +45,22 @@ The full contract for the store is in
 
 ## Layout
 
-The inert Lens is the package root export, and runtime composition sits beside
-it:
+The inert workspace is the package root export, and runtime composition sits
+beside it:
 
 ```txt
 apps/<app>/
-├── src/lib/workspace/index.ts   the Lens and its row types
+├── src/lib/workspace/index.ts   the workspace and its row types
 ├── src/lib/                     the store opener, sync, and app services
 ├── src/                         SvelteKit routes and components
 └── package.json                 "exports": { ".": "./src/lib/workspace/index.ts" }
 ```
 
-`honeycrisp` and `whispering` use that nesting; `vocab` keeps its Lens at the
-package root instead (`apps/vocab/vocab.ts`) and composes in
+`honeycrisp` and `whispering` use that nesting; `vocab` keeps its workspace at
+the package root instead (`apps/vocab/vocab.ts`) and composes in
 `apps/vocab/src/lib/runtime.ts`. Follow the existing package shape. Forking the
-Lens file forks sync compatibility with every peer running the canonical one.
+workspace file forks sync compatibility with every peer running the canonical
+one.
 
 Where a build genuinely differs, put the difference behind a `#platform/*`
 build-time subpath import rather than a runtime branch. Honeycrisp's
@@ -70,16 +71,16 @@ cannot obtain; storage does not, because it does not differ.
 
 ## Adding an app
 
-1. Write the Lens at `apps/<app>/src/lib/workspace/index.ts`: one
-   `defineLens({ namespace, tables })` value plus its row types. Read the Lens
-   rules first, especially that there are no optional fields and no array
-   defaults.
+1. Write the workspace at `apps/<app>/src/lib/workspace/index.ts`: one
+   `defineWorkspace({ namespace, tables })` value plus its row types. Read the
+   workspace rules first, especially that there are no optional fields and no
+   array defaults.
 2. Point `package.json` `exports["."]` at that file.
 3. Add the store opener beside it, and a `dial` if the app syncs. The host
    supplies the socket; `@epicenter/data/sync` owns everything done with one
    (ADR-0222).
-4. Bind the Lens once where the app is acquired and pass the bound handle to
-   ordinary services. Do not spread it through the UI.
+4. Open the workspace once where the app is acquired and pass the opened data
+   handle to ordinary services. Do not spread it through the UI.
 5. Add the app to `docs/licensing/licensing-strategy.md` and, if it needs the
    hosted API in development, a `dev:<app>` script at the repo root.
 

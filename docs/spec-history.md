@@ -173,9 +173,9 @@
 | 2026-06-12 | whispering-custom-backend-profiles | in tree | specs/20260612T091000-whispering-custom-backend-profiles.md |
 | 2026-06-12 | whispering-pipelines-workspace-boundary | in tree | specs/20260612T110000-whispering-pipelines-workspace-boundary.md |
 | 2026-06-12 | local-model-recommended-defaults-rebuild | in tree | specs/20260612T164300-local-model-recommended-defaults-rebuild.md |
-| 2026-06-12 | workspace-schema-conformance.handoff | in tree | specs/20260612T182447-workspace-schema-conformance.handoff.md |
-| 2026-06-12 | workspace-schema-conformance | in tree | specs/20260612T182447-workspace-schema-conformance.md |
-| 2026-06-12 | table-read-surface.handoff | in tree | specs/20260612T193000-table-read-surface.handoff.md |
+| 2026-06-12 | workspace-schema-conformance.handoff | removed | specs/20260612T182447-workspace-schema-conformance.handoff.md |
+| 2026-06-12 | workspace-schema-conformance | removed | specs/20260612T182447-workspace-schema-conformance.md |
+| 2026-06-12 | table-read-surface.handoff | removed | specs/20260612T193000-table-read-surface.handoff.md |
 | 2026-06-12 | zhongwen-conversation-deletion-refusal | in tree | specs/zhongwen-conversation-deletion-refusal.md |
 | 2026-06-12 | epicenter-namespace-root-layout | removed | specs/20260612T000201-epicenter-namespace-root-layout.md |
 | 2026-06-12 | table-read-surface | removed | specs/20260612T193000-table-read-surface.md |

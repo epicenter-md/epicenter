@@ -14,17 +14,17 @@ Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note 
 
 ### Data layer
 
-Honeycrisp declares one inert Lens over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and binds it to a store the surface owns:
+Honeycrisp declares one inert workspace over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and opens it as a store the surface owns:
 
 ```txt
-openDevice(honeycrispLens)                          sqlite-wasm in the page,
-openAccount(honeycrispLens, { principalId })        durable relations in
+openDevice(honeycrispWorkspace)                          sqlite-wasm in the page,
+openAccount(honeycrispWorkspace, { principalId })        durable relations in
                                                     IndexedDB, one database
                                                     per document
 db.tables.notes.list()                              synchronous from here on
 ```
 
-The lens names the application and the opener names which durable document it
+The workspace names the application and the opener names which durable document it
 means and whose it is (ADR-0229 as amended by ADR-0233): one device document
 that never syncs and opens every generation, and one retained replica per
 account that also opens when the boot auth carries that principal. The root
@@ -102,7 +102,7 @@ transport (ADR-0222).
 | `deletedAt` | `string.date.iso \| null` (soft delete) |
 | `wordCount` | `number \| null` |
 
-A Lens has no optional fields: a field has to be one type through the CRDT
+A workspace has no optional fields: a field has to be one type through the CRDT
 attribute, the projection column and the row alike, and "absent" is not a SQL
 type. So what would have been optional is nullable with a `= null` default,
 which a read applies and a write never stores.
@@ -164,7 +164,7 @@ storage partition (ADR-0177), so they are one device rather than two.
 - `@y/y` 14: row-owned note body documents
 - [Tailwind CSS](https://tailwindcss.com): styling
 - [Better Auth](https://better-auth.com): authentication
-- `@epicenter/data`: the store, its transport, and the Lens vocabulary
+- `@epicenter/data`: the store, its transport, and the workspace vocabulary
 - `@epicenter/sync`: the bearer-in-subprotocol handshake the upgrade uses
 - `@epicenter/svelte`: auth and browser lifecycle helpers
 - `@epicenter/ui`: shadcn-svelte component library

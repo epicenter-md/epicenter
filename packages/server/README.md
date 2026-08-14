@@ -27,7 +27,7 @@ more. Every rule about who has been sent what lives in `@epicenter/data/sync`,
 so what is deployed and what the transport's own tests drive are the same
 object. The authority reads nothing (ADR-0218): it holds opaque bytes, hands
 them back in order, and keeps one snapshot plus the entries after it
-(ADR-0220). Nothing in it imports Yjs or a Lens.
+(ADR-0220). Nothing in it imports Yjs or a workspace.
 
 Rooms, the row-document HTTP pull, and the `src/epicenter-sync/` authority they
 shared were deleted with the superseded data stack (ADR-0227), and the store

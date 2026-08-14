@@ -7,7 +7,7 @@
  *
  * The authority reads nothing (ADR-0218). It holds opaque bytes, hands them
  * back in order, and keeps one snapshot plus the entries after it (ADR-0220).
- * Nothing here imports Yjs or a lens, and there is no verb that could.
+ * Nothing here imports Yjs or a workspace, and there is no verb that could.
  *
  * It also names the current document and answers the replace POST
  * (ADR-0231). Connecting is not admission: every authenticated upgrade is

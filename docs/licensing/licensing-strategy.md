@@ -10,7 +10,7 @@
 
 The whole model in one line: **run our apps freely (AGPL-3.0, which only blocks taking our work, closing it, and reselling it), build on our toolkit freely (MIT, build and own anything).**
 
-Epicenter uses two active license tiers, split by how you use the code rather than by package type: code you *run* (all apps and the shared `server` library) is AGPL-3.0, and code you *build with* (the embeddable toolkit: `data`, `lens`, `ui`, `sqlite`, `sync`, and their internal utilities) is MIT to maximize developer adoption. A third proprietary tier is documented as an escape hatch but deferred indefinitely; revenue comes from hosting, not licensing. There is no Contributor License Agreement; we do not dual-license.
+Epicenter uses two active license tiers, split by how you use the code rather than by package type: code you *run* (all apps and the shared `server` library) is AGPL-3.0, and code you *build with* (the embeddable toolkit: `data`, `workspace`, `ui`, `sqlite`, `sync`, and their internal utilities) is MIT to maximize developer adoption. A third proprietary tier is documented as an escape hatch but deferred indefinitely; revenue comes from hosting, not licensing. There is no Contributor License Agreement; we do not dual-license.
 
 This document is the canonical reference and the human-readable registry behind `bun run check:licenses`. That script walks dependency manifests only, so it cannot see the roster below: when a package is added, removed, or relicensed, this table has to be edited by hand or it goes stale silently. The companion document [FINANCIAL_SUSTAINABILITY.md](../../FINANCIAL_SUSTAINABILITY.md) is the public-facing narrative for why we made these choices. The root [LICENSE](../../LICENSE) is the legal dispatch. This spec is the technical reasoning, threat model, and decision procedure for new packages.
 
@@ -26,7 +26,7 @@ A package that is neither a chosen root nor inside a root's closure is something
 To the two audiences it reads as two promises:
 
 - **Run our apps freely** (all apps, plus the code we run them on: the shared `server` library). These are AGPL-3.0. Running is not distribution, so for someone running the apps locally AGPL never triggers; they can run, read, and modify their own copy with no obligation. What AGPL blocks is taking our work, closing it, and shipping it to others: a closed-source rebrand (blocked by GPL conveyance copyleft) or a network-served modified fork that hides its source (blocked by AGPL §13). This costs an honest user nothing.
-- **Build on our toolkit freely** (`data`, `lens`, `ui`, `sqlite`, `sync`, and the MIT-clean contracts they carry). These are MIT. For a library, "use" means shipping it inside your own software, which is the whole point; AGPL would force every app built on the toolkit to also be AGPL, blocking the primary use and killing adoption. So: build anything on the toolkit, including closed-source and commercial products, and own what you build.
+- **Build on our toolkit freely** (`data`, `workspace`, `ui`, `sqlite`, `sync`, and the MIT-clean contracts they carry). These are MIT. For a library, "use" means shipping it inside your own software, which is the whole point; AGPL would force every app built on the toolkit to also be AGPL, blocking the primary use and killing adoption. So: build anything on the toolkit, including closed-source and commercial products, and own what you build.
 
 Note that "does it run" is not the discriminator, because all code runs; "is it offered for you to embed" is. `packages/server` is a library our two deployables build with, yet it is AGPL, because it is our sync/auth/hosting engine, not a toolkit we offer third parties. That is the case the embed test sorts correctly and a naive "library means permissive" rule would get wrong.
 
@@ -59,11 +59,11 @@ Scenario 4 (a hosted competitor) is the one where the license is most load-beari
 
 ### Tier 1: MIT
 
-**Applies to:** exactly ten packages, which is what `bun run check:licenses` reports. The embeddable toolkit libraries `packages/data`, `packages/lens`, `packages/ui`, `packages/sqlite`, `packages/sync`, and `packages/agent`, plus the toolkit-internal packages they carry: `packages/field`, `packages/identity`, `packages/chat`, and `packages/agent-protocol`.
+**Applies to:** exactly ten packages, which is what `bun run check:licenses` reports. The embeddable toolkit libraries `packages/data`, `packages/workspace`, `packages/ui`, `packages/sqlite`, `packages/sync`, and `packages/agent`, plus the toolkit-internal packages they carry: `packages/field`, `packages/identity`, `packages/chat`, and `packages/agent-protocol`.
 
 **Rationale:**
 - Libraries: we want developers to embed `@epicenter/data` in their own projects with zero friction. AGPL would forbid that for closed-source consumers, killing adoption. The library is not what we sell.
-- `packages/lens` is the inert data-contract vocabulary: pure JSON declarations with no runtime attached. It stays MIT as the seam a third-party plane would be rebuilt from, and it is what survived when that plane was refused (ADR-0227).
+- `packages/workspace` is the inert data-contract vocabulary: pure JSON declarations with no runtime attached. It stays MIT as the seam a third-party plane would be rebuilt from, and it is what survived when that plane was refused (ADR-0227).
 - Toolkit-internal packages (`field`, `identity`, `chat`, `agent-protocol`): these are dependencies bundled into the MIT toolkit libraries, so they must be MIT-compatible for the toolkit to stay distributable as MIT. `@epicenter/identity` owns the capability and identity vocabulary shared by the MIT toolkit and the AGPL auth layer; `@epicenter/agent-protocol` is the agent wire contract shared the same way. They are not separately marketed.
 - MIT-clean closure: the toolkit depends on no AGPL package. `PrincipalId` and `AuthState` live in `@epicenter/identity`; the store sync route and bearer subprotocol live in the MIT `@epicenter/sync`; the agent wire contract is the MIT `@epicenter/agent-protocol`. `bun run check:licenses` enforces this, on dependency edges only.
 
@@ -132,7 +132,7 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `apps/local-mail` | AGPL-3.0 | Gmail mirror |
 | `apps/sync-lab` | AGPL-3.0 | Store transport lab |
 | `packages/data` | MIT | The store: one document per application, its SQLite log and projection, and its transport (toolkit) |
-| `packages/lens` | MIT | Inert JSON data-contract vocabulary (toolkit) |
+| `packages/workspace` | MIT | Inert JSON data-contract vocabulary (toolkit) |
 | `packages/ui` | MIT | shadcn-svelte components (toolkit) |
 | `packages/sqlite` | MIT | Domain-free synchronous SQLite adapter contract shared across embedded runtimes (toolkit) |
 | `packages/sync` | MIT | Store sync route contract plus the WebSocket bearer subprotocol (toolkit) |

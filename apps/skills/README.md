@@ -14,7 +14,7 @@ AGPL-3.0 licensed.
 The mounted root layout calls `openSkillsApplication()`, renders its stable boot
 promise with Svelte's `{#await}` block, and provides only the fully opened and
 hydrated application to descendants. Importing Skills modules does not open
-storage. Record lenses validate canonical JSON when it is read. Rows that do not
+storage. The workspace declaration validates canonical JSON when it is read. Rows that do not
 conform stay stored and appear in the UI's invalid-record count rather than
 being silently deleted or migrated.
 
