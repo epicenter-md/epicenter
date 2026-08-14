@@ -858,6 +858,7 @@
       "version": "0.0.1",
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20260405.1",
+        "@sqlite.org/sqlite-wasm": "catalog:",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
