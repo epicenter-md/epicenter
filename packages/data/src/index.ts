@@ -56,8 +56,6 @@ export {
 	type KvHandle,
 	type NonconformingRow,
 	type NonconformingValue,
-	type QueryFailedError,
-	type QueryMethod,
 	type Row,
 	type RowAbsentError,
 	type RowDocument,

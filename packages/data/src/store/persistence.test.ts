@@ -72,7 +72,6 @@ function openFailable() {
 			},
 		},
 		loaded: inner.load(),
-		projection: createBunSqliteAdapter(new Database(':memory:')),
 		log: silent,
 	});
 	return {
@@ -101,7 +100,6 @@ function reopen(database: ReturnType<typeof createBunSqliteAdapter>) {
 		workspace: parsed(),
 		durable: port,
 		loaded: port.load(),
-		projection: createBunSqliteAdapter(new Database(':memory:')),
 		log: silent,
 	});
 	return { store, db: view as unknown as WorkspaceView<typeof workspace> };
@@ -123,9 +121,6 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expectOk(replica.db.tables.notes.create({ title: 'second' }));
 
 		expect(titles(replica.db)).toEqual(['first', 'second']);
-		expect(
-			replica.db.query`SELECT title FROM notes ORDER BY title`.data,
-		).toEqual([{ title: 'first' }, { title: 'second' }]);
 		expect(replica.store.persistence.get()).toBe('blocked');
 		// Nothing reached the durable engine.
 		expect(replica.durableUpdateCount()).toBe(0);
@@ -189,9 +184,6 @@ describe('acceptance is live, durability is a visible debt', () => {
 		// KV: accepted live, visible at once.
 		expectOk(replica.db.kv.update({ theme: 'dark' }));
 		expect(replica.db.kv.get().data?.theme).toBe('dark');
-		expect(replica.db.query`SELECT theme FROM kv`.data).toEqual([
-			{ theme: 'dark' },
-		]);
 
 		// A row's document: an editor keeps writing prose while blocked.
 		const container = replica.db.tables.notes.document(made.id);
@@ -233,7 +225,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 
 	test('an asynchronous engine reports pending, and mid-flight edits coalesce in order', async () => {
 		// The browser shape: the port commits on its own schedule, and the
-		// store never waits for it. Reads and query follow acceptance.
+		// store never waits for it. Reads follow acceptance.
 		const raw = new Database(':memory:');
 		const database = createBunSqliteAdapter(raw);
 		const inner = createSqliteDurablePort({ database });
@@ -252,17 +244,15 @@ describe('acceptance is live, durability is a visible debt', () => {
 				},
 			},
 			loaded: inner.load(),
-			projection: createBunSqliteAdapter(new Database(':memory:')),
 			log: silent,
 		});
 		const db = view as unknown as WorkspaceView<typeof workspace>;
 
 		expectOk(db.tables.notes.create({ title: 'a' }));
 		expect(store.persistence.get()).toBe('pending');
-		// Acceptance is not waiting on the flight: live reads and SQL already
-		// hold the row.
+		// Acceptance is not waiting on the flight: live reads already hold the
+		// row.
 		expect(db.tables.notes.list().rows.map((row) => row.title)).toEqual(['a']);
-		expect(db.query`SELECT title FROM notes`.data).toEqual([{ title: 'a' }]);
 
 		// Two more accepted mid-flight; they must ride the NEXT batch together.
 		expectOk(db.tables.notes.create({ title: 'b' }));

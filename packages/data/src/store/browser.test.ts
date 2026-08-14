@@ -148,12 +148,6 @@ describe('one device document and one account replica per account', () => {
 		expect(titles(device)).toEqual(['kept device work']);
 		expect(titles(alice)).toEqual(["kept alice's"]);
 		expect(titles(bob)).toEqual(["kept bob's"]);
-		// The SQL read index came back too, rebuilt at bind from the replayed
-		// document: durable storage held no SQLite checkpoint to restore it
-		// from (ADR-0238).
-		expect(device.query`SELECT title FROM notes`.data).toEqual([
-			{ title: 'kept device work' },
-		]);
 		await device[Symbol.asyncDispose]();
 		await alice[Symbol.asyncDispose]();
 		await bob[Symbol.asyncDispose]();

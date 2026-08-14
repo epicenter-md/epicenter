@@ -80,12 +80,8 @@ Object.assign(globalThis, {
 				db.tables.notes.document(row.id)?.get('body', 'text')?.toJSON() ?? null,
 			),
 		}));
-		// `db.query` reads the projection, which is a different relation entirely,
-		// so agreeing with `list` is what proves the restored file carried both.
-		const counted = db.query`SELECT count(*) AS n FROM notes`;
 		return {
 			notes: notes.sort((left, right) => left.title.localeCompare(right.title)),
-			projected: counted.data?.[0]?.n ?? -1,
 			durability: { healthy: db.store.persistence.get() !== 'blocked' },
 			pressure: db.store.pressure(),
 		};

@@ -4,7 +4,6 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { TableInvalidation } from '@epicenter/workspace';
 import { defineWorkspace } from '@epicenter/workspace';
@@ -83,7 +82,6 @@ describe('a read is a property access on a plain object', () => {
 			db.tables.notes.document(made.id),
 			db.kv.get(),
 			db.kv.update({ theme: 'dark' }),
-			db.query`SELECT 1 AS one`,
 			db.tables.notes.delete(made.id),
 		]) {
 			expect(value).not.toBeInstanceOf(Promise);
@@ -123,12 +121,11 @@ describe('a write that reaches nothing is a failure', () => {
 });
 
 describe('deletion', () => {
-	test('a deleted row reads as absent and leaves the projection', () => {
+	test('a deleted row reads as absent', () => {
 		const made = note();
 		expect(db.tables.notes.delete(made.id)).toBe(true);
 		expect(db.tables.notes.get(made.id).data).toBeUndefined();
 		expect(db.tables.notes.ids()).toEqual([]);
-		expect(db.query`SELECT id FROM notes`.data).toEqual([]);
 	});
 
 	test('deleting twice reports the second as a no-op', () => {
@@ -163,32 +160,6 @@ describe('deletion', () => {
 		expect(data).toBeNull();
 		expect(error?.name).toBe('RowAbsent');
 		expect(db.tables.notes.get(made.id).data).toBeUndefined();
-	});
-});
-
-describe('the projection is written in the same transaction as the log', () => {
-	test('query sees a committed local write immediately', () => {
-		const made = note({ title: 'Groceries' });
-		const { data: rows, error } = db.query`
-			SELECT id, title FROM notes WHERE id = ${made.id}`;
-		expect(error).toBeNull();
-		expect(rows).toEqual([{ id: made.id, title: 'Groceries' }]);
-	});
-
-	test('an array field is queryable through json_each', () => {
-		const found = note({ title: 'Groceries', tags: ['food', 'errands'] });
-		note({ title: 'Ideas', tags: ['work'] });
-		const { data: rows } = db.query`
-			SELECT id FROM notes
-			WHERE EXISTS (SELECT 1 FROM json_each(notes.tags) WHERE value = ${'food'})`;
-		expect(rows).toEqual([{ id: found.id }]);
-	});
-
-	test('a scalar binds natively, so equality works without quoting JSON', () => {
-		db.kv.update({ fontSize: 18 });
-		expect(
-			db.query`SELECT fontSize FROM kv WHERE fontSize = ${18}`.data,
-		).toEqual([{ fontSize: 18 }]);
 	});
 });
 
@@ -259,10 +230,6 @@ describe('two replicas converge', () => {
 		expect(laptop.tables.notes.get(made.id).data?.title).toBe(
 			'Recorded on the phone',
 		);
-		// And the laptop's projection was rebuilt, so SQL sees it too.
-		expect(laptop.query`SELECT id, title FROM notes`.data).toEqual([
-			{ id: made.id, title: 'Recorded on the phone' },
-		]);
 	});
 
 	test('offline edits to different fields of one row both survive', () => {
@@ -301,7 +268,6 @@ describe('two replicas converge', () => {
 		expect(db.tables.notes.get(made.id).data).toBeUndefined();
 		expect(laptop.tables.notes.get(made.id).data).toBeUndefined();
 		expect(laptop.tables.notes.ids()).toEqual([]);
-		expect(laptop.query`SELECT id FROM notes`.data).toEqual([]);
 	});
 
 	test('two devices creating rows concurrently keep both', () => {
@@ -517,12 +483,6 @@ describe('kv is where anything two devices both write belongs', () => {
 		expect(laptop.kv.get().data).toEqual(expected);
 	});
 
-	test('kv is queryable as a one-row relation', () => {
-		db.kv.update({ theme: 'dark', fontSize: 20 });
-		expect(db.query`SELECT theme, fontSize FROM kv`.data).toEqual([
-			{ theme: 'dark', fontSize: 20 },
-		]);
-	});
 });
 
 describe('a received update is persisted as the bytes that arrived', () => {
@@ -733,31 +693,6 @@ describe('a subscription names the rows a commit touched', () => {
 		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.data.id] }]);
 	});
 
-	test('the listener reads the same rows through the CRDT and through SQL', () => {
-		// The measured hazard this whole buffer exists for. The `'delta'` that
-		// names the row fires synchronously inside `applyUpdateV2`, BEFORE the
-		// projection has been rebuilt, so a subscriber notified there sees the
-		// CRDT reporting a row that `db.query` cannot find. Notifying after the
-		// projection commits is what makes these two agree.
-		const author = openMemory(workspace);
-		author.tables.notes.create({
-			title: 'from the phone',
-			tags: [],
-			date: null,
-		});
-
-		let atNotify: { crdt: number; sql: number } | undefined;
-		db.tables.notes.subscribe(() => {
-			atNotify = {
-				crdt: db.tables.notes.list().rows.length,
-				sql: db.query`SELECT count(*) AS n FROM notes`.data?.[0]?.n as number,
-			};
-		});
-		syncEngineOf(db.store).applyRemote(author.store.encodeStateSince());
-
-		expect(atNotify).toEqual({ crdt: 1, sql: 1 });
-	});
-
 	test('unsubscribing stops delivery, and doing it twice is harmless', () => {
 		const { seen, stop } = record(db.tables.notes);
 		note();
@@ -868,20 +803,10 @@ describe('kv reports its own changes', () => {
 	});
 });
 
-describe('the kv projection is a cache, and is rebuilt like one', () => {
-	test('db.query sees kv before anything has written to it', () => {
-		// It used to see nothing. The kv projection was written only by
-		// `kv.update`, so a store nobody had configured yet had a `kv` relation
-		// with no row in it while `db.kv.get()` happily returned defaults.
-		const rows = db.query`SELECT id, theme FROM kv`.data;
-		expect(rows).toEqual([{ id: 'kv', theme: 'light' }]);
-	});
-
-	test('an upgraded declaration does not leave the previous release s row behind', async () => {
-		// Tables are rebuilt at open for exactly this reason; kv was not, so SQL
-		// kept answering with a row the old declaration wrote. The upgrade is a
-		// close and a reopen (ADR-0240): the same durable file, a newer
-		// declaration, one runtime at a time.
+describe('kv survives a declaration upgrade (ADR-0240)', () => {
+	test('a stored write outlives the runtime that wrote it', async () => {
+		// The upgrade is a close and a reopen (ADR-0240): the same durable
+		// file, a newer declaration, one runtime at a time.
 		const database = createBunSqliteAdapter(new Database(':memory:'));
 		const first = createAccountStore({ workspace: workspace, database });
 		const written = first.kv.update({ theme: 'dark' });
@@ -899,21 +824,13 @@ describe('the kv projection is a cache, and is rebuilt like one', () => {
 			database,
 		});
 		// The stored write survives the upgrade, and the new declaration's
-		// default appears beside it: the row was rebuilt, not carried.
-		expect(second.query`SELECT id, theme, added FROM kv`.data).toEqual([
-			{ id: 'kv', theme: 'dark', added: 'new' },
-		]);
+		// default appears beside it.
+		expect(second.kv.get().data).toEqual({ theme: 'dark', added: 'new' });
+		await second[Symbol.asyncDispose]();
 	});
 });
 
-describe('a removed relation leaves SQL and waits in the CRDT (ADR-0240)', () => {
-	// The durable record and the projection deliberately share one database
-	// here, which is the Durable Object shape: the only synchronous SQLite in
-	// `workerd` is the object's own storage. The projection owns that
-	// database's letter-named relations OUTRIGHT, so a definition that stops
-	// declaring a table takes its relation out of `query`; the underscore
-	// relations are the durable record and are never the projection's to
-	// touch. The rows themselves stay in the CRDT, which is the truth.
+describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 	const withScratch = defineWorkspace({
 		namespace: 'so.epicenter.honeycrisp',
 		kv: { theme: "'light'|'dark' = 'light'" },
@@ -927,47 +844,30 @@ describe('a removed relation leaves SQL and waits in the CRDT (ADR-0240)', () =>
 		tables: { notes: { title: 'string' } },
 	});
 
-	test('the next runtime drops it; one that re-declares it reads every row back', async () => {
+	test('the next runtime has no handle; one that re-declares it reads every row back', async () => {
 		const database = createBunSqliteAdapter(new Database(':memory:'));
 		const first = createAccountStore({ workspace: withScratch, database });
 		const made = first.tables.scratch.create({ body: 'kept in the CRDT' });
 		if (made.error !== null) throw made.error;
 		const wrote = first.kv.update({ theme: 'dark' });
 		if (wrote.error !== null) throw wrote.error;
-		expect(first.query`SELECT body FROM scratch`.data).toEqual([
-			{ body: 'kept in the CRDT' },
-		]);
 		await first[Symbol.asyncDispose]();
 
 		// The device updates (ADR-0240): same durable database, the next
 		// runtime, a declaration that no longer names `scratch` or `kv`.
 		const second = createAccountStore({ workspace: withoutScratch, database });
-		// Gone from SQL, not merely empty: the relation itself was dropped, so
-		// nothing can keep reading rows this runtime cannot see or update.
-		expect(second.query`SELECT body FROM scratch`.error?.name).toBe(
-			'QueryFailed',
-		);
 		expect(
-			second.query`SELECT name FROM sqlite_master WHERE name IN ('scratch', 'kv')`
-				.data,
-		).toEqual([]);
-		// And the durable record beside it was untouched: the sweep claims only
-		// the letter-named namespace, never the store's own relations.
-		expect(
-			database.all<SqliteRow & { total: number }>(
-				'SELECT COUNT(*) AS total FROM _updates',
-			)[0]?.total,
-		).toBeGreaterThan(0);
+			(second.tables as Record<string, unknown>).scratch,
+		).toBeUndefined();
 		await second[Symbol.asyncDispose]();
 
 		// A later release declares them again: nothing was lost, because the
-		// projection is a cache and the CRDT never dropped a byte.
+		// CRDT is the truth and never dropped a byte.
 		const third = createAccountStore({ workspace: withScratch, database });
-		expect(third.query`SELECT body FROM scratch`.data).toEqual([
-			{ body: 'kept in the CRDT' },
+		expect(third.tables.scratch.list().rows).toEqual([
+			{ id: made.data.id, body: 'kept in the CRDT' },
 		]);
-		const back = third.kv.get();
-		expect(back.data?.theme).toBe('dark');
+		expect(third.kv.get().data?.theme).toBe('dark');
 		await third[Symbol.asyncDispose]();
 	});
 });
@@ -1134,11 +1034,9 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 		// never the store's death. The live document is the truth while open.
 		const raw = new Database(':memory:');
 		const database = createBunSqliteAdapter(raw);
-		const projection = createBunSqliteAdapter(new Database(':memory:'));
 		const bound = createAccountStore({
 			workspace: workspace,
 			database,
-			projection,
 			// The refused flush is the subject here, not noise worth printing.
 			log: {
 				error: () => undefined,
@@ -1158,173 +1056,12 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 			date: null,
 		});
 		expect(made.error).toBeNull();
-		// Reads and the query projection follow the accepted edit immediately.
+		// Reads follow the accepted edit immediately.
 		expect(bound.tables.notes.list().rows.map((row) => row.title)).toEqual([
 			'still accepted',
-		]);
-		expect(bound.query`SELECT title FROM notes`.data).toEqual([
-			{ title: 'still accepted' },
 		]);
 		// The debt is visible: a restart would lose this edit, and the status
 		// says so instead of an exception pretending the data is gone now.
 		expect(store.persistence.get()).toBe('blocked');
-	});
-});
-
-describe('the read index is a rebuildable cache (ADR-0238)', () => {
-	/**
-	 * A healthy durable engine under a projection that can refuse: the exact
-	 * inverse of the failable-port harness in `persistence.test.ts`, because
-	 * the two debts must fail independently.
-	 */
-	function openWithFailableProjection() {
-		const durable = createBunSqliteAdapter(new Database(':memory:'));
-		const inner = createBunSqliteAdapter(new Database(':memory:'));
-		const gate = { failing: false };
-		const projection: SqliteDatabase = {
-			run(sql: string, parameters?: readonly SqliteValue[]): void {
-				if (gate.failing) throw new Error('projection refused');
-				inner.run(sql, parameters);
-			},
-			all<TRow extends SqliteRow>(
-				sql: string,
-				parameters?: readonly SqliteValue[],
-			): TRow[] {
-				if (gate.failing) throw new Error('projection refused');
-				return inner.all<TRow>(sql, parameters);
-			},
-			transaction<TResult>(run: () => TResult): TResult {
-				if (gate.failing) throw new Error('projection refused');
-				return inner.transaction(run);
-			},
-		};
-		const db = createAccountStore({
-			workspace: workspace,
-			database: durable,
-			projection,
-			// The refused projection write is the subject here, not noise.
-			log: {
-				error: () => undefined,
-				warn: () => undefined,
-				info: () => undefined,
-				debug: () => undefined,
-				trace: () => undefined,
-			},
-		});
-		return { store: db.store, db, gate, durable };
-	}
-
-	test('a failed projection write never fails the verb, and the durable debt stays separate', () => {
-		const { store, db, gate, durable } = openWithFailableProjection();
-		const before = db.tables.notes.create({
-			title: 'before',
-			tags: [],
-			date: null,
-		});
-		expect(before.error).toBeNull();
-
-		gate.failing = true;
-		const during = db.tables.notes.create({
-			title: 'while stale',
-			tags: [],
-			date: null,
-		});
-		expect(during.error).toBeNull();
-		// Live reads follow the accepted edit; the persistence debt is
-		// untouched, because the durable engine took both writes fine.
-		expect(
-			db.tables.notes
-				.list()
-				.rows.map((row) => row.title)
-				.sort(),
-		).toEqual(['before', 'while stale']);
-		expect(store.persistence.get()).toBe('saved');
-		expect(
-			durable.all<{ count: number }>(
-				'SELECT COUNT(*) AS count FROM _updates',
-			)[0]?.count,
-		).toBe(2);
-	});
-
-	test('a stale index refuses to answer rather than serving old rows', () => {
-		const { db, gate } = openWithFailableProjection();
-		expect(
-			db.tables.notes.create({ title: 'cached', tags: [], date: null }).error,
-		).toBeNull();
-
-		gate.failing = true;
-		expect(
-			db.tables.notes.create({ title: 'never cached', tags: [], date: null })
-				.error,
-		).toBeNull();
-
-		// The projection still physically holds only 'cached'. Serving it would
-		// be a lie, so the query is refused while the rebuild cannot run.
-		const refused = db.query`SELECT title FROM notes ORDER BY title`;
-		expect(refused.data).toBeNull();
-		expect(refused.error?.name).toBe('QueryFailed');
-
-		// The first query after healing rebuilds the whole index before it
-		// answers: no window where SQL disagrees with the live document.
-		gate.failing = false;
-		expect(db.query`SELECT title FROM notes ORDER BY title`.data).toEqual([
-			{ title: 'cached' },
-			{ title: 'never cached' },
-		]);
-	});
-
-	test('a remote update is durable even while the read index refuses', () => {
-		const author = openMemory(workspace);
-		const made = author.tables.notes.create({
-			title: 'from the authority',
-			tags: [],
-			date: null,
-		});
-		expect(made.error).toBeNull();
-		const update = author.store.encodeStateSince();
-
-		const replica = openWithFailableProjection();
-		replica.gate.failing = true;
-		const applied = syncEngineOf(replica.store).applyRemote(update, {
-			advanceTo: 4,
-		});
-		expect(applied.error).toBeNull();
-
-		// Live: rows and cursor advanced at once.
-		expect(replica.db.tables.notes.list().rows.map((row) => row.title)).toEqual(
-			['from the authority'],
-		);
-		expect(syncEngineOf(replica.store).cursor()).toBe(4);
-		// Durable: the bytes and their bookmark landed despite the projection,
-		// or a restart would silently drop an update every layer accepted.
-		expect(
-			replica.durable.all<{ count: number }>(
-				'SELECT COUNT(*) AS count FROM _updates',
-			)[0]?.count,
-		).toBe(1);
-		expect(
-			replica.durable.all<{ seq: number }>('SELECT seq FROM _cursor')[0]?.seq,
-		).toBe(4);
-
-		replica.gate.failing = false;
-		expect(replica.db.query`SELECT title FROM notes`.data).toEqual([
-			{ title: 'from the authority' },
-		]);
-	});
-
-	test('a remote KV change reaches query without a rebind', () => {
-		const author = openMemory(workspace);
-		expect(author.kv.update({ theme: 'dark' }).error).toBeNull();
-		const update = author.store.encodeStateSince();
-
-		const replica = openMemory(workspace);
-		expect(syncEngineOf(replica.store).applyRemote(update).error).toBeNull();
-
-		// The whole-index rebuild a remote update triggers covers KV too; it
-		// used to cover only tables, so this row stayed at the previous value
-		// until the next bind.
-		expect(replica.query`SELECT theme FROM kv`.data).toEqual([
-			{ theme: 'dark' },
-		]);
 	});
 });

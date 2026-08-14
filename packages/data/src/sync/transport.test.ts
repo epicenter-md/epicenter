@@ -1614,13 +1614,8 @@ describe('two devices whose workspaces disagree', () => {
 		wire.settle();
 
 		expect(older.titles()).toEqual(['Groceries']);
-		// It holds no handle for the table and no relation to query it through.
+		// It holds no handle for the table it has no name for.
 		expect(older.bound.tables.tasks).toBeUndefined();
-		expect(
-			expectOk(
-				older.bound.query`SELECT name FROM sqlite_schema WHERE name = 'tasks'`,
-			),
-		).toEqual([]);
 
 		// The device is updated: same durable file, the next runtime, a
 		// declaration that now names the table (ADR-0240).
@@ -1628,19 +1623,11 @@ describe('two devices whose workspaces disagree', () => {
 		expect(tableOf(upgraded.bound, 'tasks').list().rows).toEqual([
 			{ id: task.id, label: 'buy milk' },
 		]);
-		// Through the projection too, so this is not just a CRDT read: opening
-		// rebuilt the relation from rows that were already here.
-		expect(expectOk(upgraded.bound.query`SELECT id, label FROM tasks`)).toEqual(
-			[{ id: task.id, label: 'buy milk' }],
-		);
 	});
 
-	test('updating a device to a declaration with a new FIELD reprojects and keeps working', async () => {
+	test('updating a device to a declaration with a new FIELD keeps working', async () => {
 		// The mismatch seen from the device that is doing the updating, which is
-		// the likeliest way a declaration ever changes. `applyProjectionSchema`
-		// was `CREATE TABLE IF NOT EXISTS`, so a projection relation an older
-		// release built into the same file lacked the new column, and the
-		// rebuild that follows inserted into a column that was not there.
+		// the likeliest way a declaration ever changes.
 		const wire = createWire();
 		const { hub } = openAuthority();
 		const updating = openReplica('updating', hub, wire);
@@ -1687,10 +1674,8 @@ describe('two devices whose workspaces disagree', () => {
 	});
 
 	test('CONTROL: updating a device to a declaration with a new TABLE leaves it working', async () => {
-		// The isolation, and the reason the defect above is about a column rather
-		// than about upgrading at all. A new table is a new relation, which
-		// `CREATE TABLE IF NOT EXISTS` does create, so the same upgrade over the
-		// same file succeeds and the device keeps syncing.
+		// The isolation: upgrading to a declaration that ADDS a table over the
+		// same file succeeds, and the device keeps syncing.
 		const wire = createWire();
 		const { hub } = openAuthority();
 		const updating = openReplica('updating', hub, wire);

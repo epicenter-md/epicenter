@@ -17,13 +17,9 @@
  *   - **CONTROL: a different name must see nothing.** If a second store opened
  *     under another name found the first one's notes, this would be measuring a
  *     page that never reloaded, or a read of the wrong record.
- *   - **CONTROL: prose, not just rows.** Prose lives inside the row's document
- *     and never reaches the projection, so a run that restored rows and lost
- *     documents would otherwise read as a pass.
- *   - **CONTROL: `db.query` agrees with `list`.** They read different relations,
- *     the projection and the CRDT. The projection is NOT durable and is rebuilt
- *     at bind out of the replayed document, so agreement is what proves the
- *     replay happened rather than rows coming back from a stale cache.
+ *   - **CONTROL: prose, not just rows.** Prose lives inside the row's document,
+ *     so a run that restored rows and lost documents would otherwise read as a
+ *     pass.
  */
 import { chromium } from 'playwright';
 import { build } from 'vite';
@@ -58,7 +54,6 @@ const origin = `http://localhost:${server.port}`;
 
 type Reading = {
 	notes: { title: string; prose: string }[];
-	projected: number;
 	durability: { healthy: boolean };
 	pressure?: { items: number; liveRows: number; itemsPerLiveRow: number };
 };
@@ -108,11 +103,6 @@ try {
 				note.prose.includes('milk and eggs') ||
 				note.prose.includes('a note about notes'),
 		),
-	);
-	check(
-		'CONTROL db.query agrees with list, so the projection came back',
-		after.projected === after.notes.length,
-		`${after.projected} projected, ${after.notes.length} listed`,
 	);
 	check('the durable log reports healthy', after.durability.healthy === true);
 	check(

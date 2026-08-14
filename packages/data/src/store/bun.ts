@@ -132,7 +132,6 @@ async function openBunStore({
 	// the whole construction is contained and cleaned up on refusal.
 	let live: Database | undefined;
 	let historyDatabase: Database | undefined;
-	let projectionDatabase: Database | undefined;
 	try {
 		live = new Database(join(directory, 'store.sqlite3'));
 		historyDatabase = keepHistory
@@ -144,28 +143,19 @@ async function openBunStore({
 				: createBunSqliteAdapter(historyDatabase);
 		if (history !== undefined) applyHistorySchema(history);
 
-		// The projection is an in-memory cache rebuilt at open (ADR-0238), so
-		// the durable file holds only the log, the outbox, the cursor and the
-		// metadata, and `query` keeps following accepted edits even while the
-		// durable file refuses a flush.
-		projectionDatabase = new Database(':memory:');
-
 		const port = createSqliteDurablePort({
 			database: createBunSqliteAdapter(live),
 			history,
 		});
 		const opened = live;
 		const openedHistory = historyDatabase;
-		const openedProjection = projectionDatabase;
 		const { store, view } = createAccountStoreOverPort({
 			workspace,
 			durable: port,
 			loaded: port.load(),
-			projection: createBunSqliteAdapter(projectionDatabase),
 			dispose: () => {
 				opened.close();
 				openedHistory?.close();
-				openedProjection.close();
 				releaseDocument(workspace.namespace);
 			},
 		});
@@ -173,7 +163,6 @@ async function openBunStore({
 	} catch (cause) {
 		live?.close();
 		historyDatabase?.close();
-		projectionDatabase?.close();
 		return StoreError.StorageFailed({ cause });
 	}
 }

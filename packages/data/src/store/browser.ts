@@ -2,18 +2,13 @@
  * Open one application's store in a browser page.
  *
  * The store runs HERE, on the main thread. The live Yjs document is the
- * source of truth, the SQL projection is an in-memory SQLite rebuilt at open,
- * and the durable facts (the update log, the outbox, the cursor, and the
- * metadata) live directly in IndexedDB, written one atomic multi-store
- * transaction per flush (ADR-0238).
- *
- * ## Why an in-memory database is not a compromise
- *
- * The store needs a synchronous HANDLE, not synchronous DURABILITY. Every
- * read a person makes (`get`, `list`, `ids`, `document`) comes from the
- * `Y.Doc` already in memory, and `query` runs over a projection that is a
- * cache by contract, rebuilt from the document at open. Nothing
- * queryable ever needs to survive a reload.
+ * source of truth, and the durable facts (the update log, the outbox, the
+ * cursor, and the metadata) live directly in IndexedDB, written one atomic
+ * multi-store transaction per flush (ADR-0238). Every read a person makes
+ * (`get`, `list`, `ids`, `document`) comes from the `Y.Doc` already in
+ * memory; SQL, when an application wants it, is a follower it composes over
+ * this surface (`@epicenter/data/projection`), so opening a store here loads
+ * no SQLite at all.
  *
  * ## Why IndexedDB owns the facts directly
  *
@@ -41,13 +36,11 @@
  * that from the page.
  */
 import type { PrincipalId } from '@epicenter/identity';
-import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import {
 	parseWorkspace,
 	type WorkspaceJson,
 	type WorkspaceParseError,
 } from '@epicenter/workspace';
-import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import * as Y from '@y/y';
 import { type DBSchema, deleteDB, type IDBPDatabase, openDB } from 'idb';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
@@ -426,16 +419,6 @@ function deleteSupersededStorage(
 	).then(() => undefined);
 }
 
-/** The in-memory projection database, rebuilt at open (ADR-0238). */
-async function createProjectionDatabase() {
-	const sqlite3 = await sqlite3InitModule();
-	const handle = new sqlite3.oo1.DB(':memory:');
-	return {
-		database: createBrowserSqliteAdapter(handle),
-		close: () => handle.close(),
-	};
-}
-
 /**
  * Open this browser's device-owned document for the application this workspace
  * names.
@@ -461,34 +444,30 @@ export async function openDevice<const TWorkspace extends WorkspaceJson>(
 
 	await deleteSupersededStorage(parsed.namespace, 'device');
 
-	const prepared = await prepareBacking(address);
-	if (prepared.error !== null) {
+	const opened = await openIdbBacking(address);
+	if (opened.error !== null) {
 		releaseDocument(address);
-		return Err(prepared.error);
+		return Err(opened.error);
 	}
-	const { backing, projection } = prepared.data;
+	const backing = opened.data;
 
-	// The projection seed is contained (ADR-0238): a seed that fails only
-	// marks the read index stale. What can still throw is the hydration
-	// replay meeting a stored update it cannot decode, which is "the store
-	// could not read its durable record": contained here so a corrupt record
-	// refuses the boot instead of leaking the claim and the open connections.
+	// What can throw here is the hydration replay meeting a stored update it
+	// cannot decode, which is "the store could not read its durable record":
+	// contained so a corrupt record refuses the boot instead of leaking the
+	// claim and the open connections.
 	let parts: { store: DeviceStore; view: UntypedWorkspaceView };
 	try {
 		parts = createDeviceStoreOverPort({
 			workspace: parsed,
 			durable: backing.port,
 			loaded: backing.loaded,
-			projection: projection.database,
 			dispose: () => {
 				backing.close();
-				projection.close();
 				releaseDocument(address);
 			},
 		});
 	} catch (cause) {
 		backing.close();
-		projection.close();
 		releaseDocument(address);
 		return StoreError.StorageFailed({ cause });
 	}
@@ -526,12 +505,12 @@ export async function openAccount<const TWorkspace extends WorkspaceJson>(
 
 	await deleteSupersededStorage(parsed.namespace, 'account', principalId);
 
-	const prepared = await prepareBacking(address);
-	if (prepared.error !== null) {
+	const opened = await openIdbBacking(address);
+	if (opened.error !== null) {
 		releaseDocument(address);
-		return Err(prepared.error);
+		return Err(opened.error);
 	}
-	const { backing, projection } = prepared.data;
+	const backing = opened.data;
 
 	// Contained for the same reason the device open is: a hydration replay
 	// that throws must refuse the boot, not leak the claim.
@@ -541,16 +520,13 @@ export async function openAccount<const TWorkspace extends WorkspaceJson>(
 			workspace: parsed,
 			durable: backing.port,
 			loaded: backing.loaded,
-			projection: projection.database,
 			dispose: () => {
 				backing.close();
-				projection.close();
 				releaseDocument(address);
 			},
 		});
 	} catch (cause) {
 		backing.close();
-		projection.close();
 		releaseDocument(address);
 		return StoreError.StorageFailed({ cause });
 	}
@@ -578,27 +554,3 @@ export async function openAccount<const TWorkspace extends WorkspaceJson>(
 	);
 }
 
-/** The durable engine and the projection cache, opened together. */
-async function prepareBacking(address: string): Promise<
-	Result<
-		{
-			backing: BrowserBacking;
-			projection: Awaited<ReturnType<typeof createProjectionDatabase>>;
-		},
-		StoreError
-	>
-> {
-	const opened = await openIdbBacking(address);
-	if (opened.error !== null) return Err(opened.error);
-	const backing = opened.data;
-
-	const projection = await tryAsync({
-		try: () => createProjectionDatabase(),
-		catch: (cause) => StoreError.StorageFailed({ cause }),
-	});
-	if (projection.error !== null) {
-		backing.close();
-		return Err(projection.error);
-	}
-	return Ok({ backing, projection: projection.data });
-}
