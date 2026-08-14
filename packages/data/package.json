@@ -5,6 +5,7 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./projection": "./src/projection/index.ts",
 		"./bun": "./src/store/bun.ts",
 		"./browser": "./src/store/browser.ts",
 		"./sync": "./src/sync/index.ts"
