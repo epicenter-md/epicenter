@@ -19,7 +19,7 @@
  * half, "it changed" is also what a per-call random value looks like.
  *
  * Convergence itself is asserted on the receiving replica's own rows, read back
- * through the lens out of its own SQLite, never on a count the test kept. The
+ * through the workspace out of its own SQLite, never on a count the test kept. The
  * only numbers this file keeps are the re-delivery observations, and they are
  * there precisely because they are NOT visible in the rows: a run that re-sent
  * nothing and a run that re-sent and was correctly ignored converge identically.

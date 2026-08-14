@@ -1,9 +1,12 @@
 /**
  * THROWAWAY, and test-only: a replica that lives inside `workerd`.
  *
- * It is a Durable Object for one reason. A replica is a `ReplicaStore`, a store is
- * SQLite, and the only synchronous SQLite inside `workerd` is a Durable Object's
- * own storage. Everything else here is the deployed client: `createReplicaStore`,
+ * It is a Durable Object for one reason. A replica is an `AccountStore`, a store
+ * is SQLite, and the only synchronous SQLite inside `workerd` is a Durable
+ * Object's own storage; its one database therefore holds the client's durable
+ * record AND its projection, which the engine keeps honest by owning the
+ * letter-named relations outright. Everything else here is the deployed
+ * client: `createAccountStore`,
  * `createSyncClient` and a real WebSocket to the authority, so a test can assert
  * on the rows a device actually holds rather than on frames a harness counted.
  *
@@ -12,42 +15,40 @@
  * deploys grows a class that exists for a test.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { createReplicaStore, type ReplicaStore } from '@epicenter/data';
+import { createAccountStore } from '@epicenter/data';
 import {
 	createSyncClient,
 	decodeFrame,
 	type SyncClient,
 } from '@epicenter/data/sync';
-import { defineLens } from '@epicenter/lens';
 import {
 	createDurableObjectSqliteAdapter,
 	type DurableObjectSqliteStorage,
 } from '@epicenter/sqlite/durable-object';
+import { defineWorkspace } from '@epicenter/workspace';
 
-const lens = defineLens({
+const workspace = defineWorkspace({
 	namespace: 'so.epicenter.synclab',
 	tables: { notes: { title: 'string' } },
 });
 
 /**
- * Bind the lab lens, or fail loudly.
+ * Open the lab workspace over this Durable Object's own SQLite.
  *
- * A named function rather than an inline call, because `bind` is generic over
- * the lens and this is what carries `notes` and its `title` column into the
- * field type. Reaching for `ReturnType<ReplicaStore['bind']>` instead loses the
- * instantiation and every row silently becomes `any`.
+ * A named function rather than an inline call so `ReturnType<typeof openNotes>`
+ * carries `notes` and its `title` column into the field type.
  */
-function bindNotes(store: ReplicaStore) {
-	const bound = store.bind(lens);
-	if (bound.error !== null) throw bound.error;
-	return bound.data;
+function openNotes(
+	database: ReturnType<typeof createDurableObjectSqliteAdapter>,
+) {
+	return createAccountStore({ workspace: workspace, database });
 }
 
 /**
  * What a test is allowed to see, and all of it crosses RPC as plain data.
  *
  * `titles` is the assertion that matters: it is read out of the replica's own
- * SQLite through the lens, so it can only be satisfied by bytes that arrived,
+ * SQLite through the workspace, so it can only be satisfied by bytes that arrived,
  * committed and applied. The two `redelivered` arrays are the opposite kind of
  * fact. They are an observation of the WIRE, kept because "a woken authority
  * re-sends rather than skips" is otherwise invisible from a converged replica:
@@ -72,26 +73,32 @@ export type ReplicaReport = {
 type Env = { SYNC: DurableObjectNamespace };
 
 export class SyncLabReplica extends DurableObject<Env> {
-	private readonly db: ReturnType<typeof bindNotes>;
+	private readonly db: ReturnType<typeof openNotes>;
 	private readonly client: SyncClient;
 	private readonly redeliveredEntries = new Set<number>();
 	private readonly redeliveredSnapshots = new Set<number>();
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		const store = createReplicaStore({
-			database: createDurableObjectSqliteAdapter(
+		this.db = openNotes(
+			createDurableObjectSqliteAdapter(
 				ctx.storage as unknown as DurableObjectSqliteStorage,
 			),
-		});
-		this.db = bindNotes(store);
+		);
 		// Every send in this file is explicit, so the idle timer never fires and a
 		// test never waits on a clock it does not control.
-		this.client = createSyncClient({ store, idleMs: 60_000 });
+		this.client = createSyncClient({ store: this.db.store, idleMs: 60_000 });
 	}
 
 	/**
 	 * Open a real socket to the authority, from this replica's own cursor.
+	 *
+	 * First contact runs the identity handshake the deployed driver runs
+	 * (ADR-0231): an identity-less dial only bootstraps. The authority names
+	 * its document as the first frame and closes without admitting the
+	 * connection; the client stamps the name durably, and the membership dial
+	 * below goes through the equality door and is served like any other
+	 * catch-up.
 	 *
 	 * Named `openSocket` rather than `connect` because a `DurableObjectStub` is a
 	 * `Fetcher`, and `Fetcher.connect` is the built-in TCP socket API. A method
@@ -99,14 +106,13 @@ export class SyncLabReplica extends DurableObject<Env> {
 	 * with the deeply unhelpful "Specified address is missing port".
 	 */
 	async openSocket(partition: string): Promise<void> {
-		const stub = this.env.SYNC.get(this.env.SYNC.idFromName(partition));
-		const response = await stub.fetch(
-			`https://sync-lab.invalid/sync?cursor=${this.client.cursor()}`,
-			{ headers: { Upgrade: 'websocket' } },
-		);
-		const socket = response.webSocket;
-		if (socket === null)
-			throw new Error(`the authority answered ${response.status}`);
+		if (this.client.document() === undefined) {
+			await this.dialBootstrap(partition);
+			if (this.client.document() === undefined) {
+				throw new Error('the bootstrap dial named no document');
+			}
+		}
+		const socket = await this.dial(partition);
 		socket.accept();
 		// Attached in the same synchronous turn as `accept()`, because catch-up
 		// frames were already queued by the authority's `fetch` before it returned.
@@ -117,6 +123,45 @@ export class SyncLabReplica extends DurableObject<Env> {
 		});
 		socket.addEventListener('close', () => this.client.detach());
 		this.client.attach({ send: (bytes) => socket.send(bytes) });
+	}
+
+	/** One upgrade at this replica's cursor, declaring its identity if it has one. */
+	private async dial(partition: string): Promise<WebSocket> {
+		const stub = this.env.SYNC.get(this.env.SYNC.idFromName(partition));
+		const document = this.client.document();
+		const declared =
+			document === undefined ? '' : `&document=${encodeURIComponent(document)}`;
+		const response = await stub.fetch(
+			`https://sync-lab.invalid/sync?cursor=${this.client.cursor()}${declared}`,
+			{ headers: { Upgrade: 'websocket' } },
+		);
+		const socket = response.webSocket;
+		if (socket === null)
+			throw new Error(`the authority answered ${response.status}`);
+		return socket;
+	}
+
+	/**
+	 * The first-contact dial: hear the document announcement, wait out the
+	 * close the authority answers a pristine replica with, and return. The
+	 * client stamps the identity from the frame; nothing else arrives on this
+	 * socket, by design.
+	 */
+	private async dialBootstrap(partition: string): Promise<void> {
+		const socket = await this.dial(partition);
+		socket.accept();
+		await new Promise<void>((resolve) => {
+			socket.addEventListener('message', (event) => {
+				if (typeof event.data === 'string') return;
+				this.client.receive(new Uint8Array(event.data));
+				// Close this half too, once the stamp landed. The authority already
+				// closed its own; without this echo the server half lingers in the
+				// hibernation set and `stat().sockets` counts a corpse.
+				if (this.client.document() !== undefined) socket.close(1000, 'stamped');
+			});
+			socket.addEventListener('close', () => resolve());
+			socket.addEventListener('error', () => resolve());
+		});
 	}
 
 	/**
@@ -165,7 +210,6 @@ export class SyncLabReplica extends DurableObject<Env> {
 	report(): ReplicaReport {
 		const status = this.client.status();
 		const listed = this.db.tables.notes.list();
-		if (listed.error !== null) throw listed.error;
 		return {
 			cursor: status.cursor,
 			inFlight: status.inFlight,
@@ -173,7 +217,7 @@ export class SyncLabReplica extends DurableObject<Env> {
 			unresolvedDependencies: status.unresolvedDependencies,
 			lastError: status.lastError?.name,
 			lastErrorMessage: status.lastError?.message,
-			titles: listed.data.rows.map((row) => row.title).sort(),
+			titles: listed.rows.map((row) => row.title).sort(),
 			redeliveredEntries: [...this.redeliveredEntries].sort((a, b) => a - b),
 			redeliveredSnapshots: [...this.redeliveredSnapshots].sort(
 				(a, b) => a - b,
