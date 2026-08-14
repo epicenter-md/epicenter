@@ -553,4 +553,3 @@ export async function openAccount<const TWorkspace extends WorkspaceJson>(
 		),
 	);
 }
-

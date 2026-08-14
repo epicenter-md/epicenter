@@ -13,8 +13,8 @@
  * others, not a reason to reach here.
  */
 export {
+	type CreateStoreOptions,
 	createAccountStore,
 	createDeviceStore,
-	type CreateStoreOptions,
 	syncEngineOf,
 } from './store/store.js';

@@ -158,7 +158,8 @@ export function createSqliteProjection({
 	 */
 	database: SqliteDatabase;
 }): SqliteProjection {
-	const { data: parsedWorkspace, error: parseError } = parseWorkspace(workspace);
+	const { data: parsedWorkspace, error: parseError } =
+		parseWorkspace(workspace);
 	if (parseError !== null) {
 		throw new Error(parseError.message, { cause: parseError });
 	}
