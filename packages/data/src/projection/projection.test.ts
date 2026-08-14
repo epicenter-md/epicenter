@@ -168,9 +168,10 @@ describe('failure stays at the read, and heals at the read', () => {
 		);
 
 		gate.failing = false;
-		expect(
-			fragile.query`SELECT title FROM notes ORDER BY title`.data,
-		).toEqual([{ title: 'first' }, { title: 'second' }]);
+		expect(fragile.query`SELECT title FROM notes ORDER BY title`.data).toEqual([
+			{ title: 'first' },
+			{ title: 'second' },
+		]);
 	});
 });
 
@@ -201,8 +202,9 @@ describe('lifecycle', () => {
 		handle.run('CREATE TABLE scratch (id TEXT PRIMARY KEY, body ANY)');
 		note();
 		expect(sql.query`SELECT id FROM notes`.data).toHaveLength(1);
-		expect(sql.query`SELECT name FROM sqlite_master WHERE name = 'scratch'`
-			.data).toEqual([]);
+		expect(
+			sql.query`SELECT name FROM sqlite_master WHERE name = 'scratch'`.data,
+		).toEqual([]);
 	});
 
 	test('dispose detaches; later commits no longer touch the projection', () => {

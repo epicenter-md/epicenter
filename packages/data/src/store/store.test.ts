@@ -482,7 +482,6 @@ describe('kv is where anything two devices both write belongs', () => {
 		expect(phone.kv.get().data).toEqual(expected);
 		expect(laptop.kv.get().data).toEqual(expected);
 	});
-
 });
 
 describe('a received update is persisted as the bytes that arrived', () => {
@@ -856,9 +855,7 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		// The device updates (ADR-0240): same durable database, the next
 		// runtime, a declaration that no longer names `scratch` or `kv`.
 		const second = createAccountStore({ workspace: withoutScratch, database });
-		expect(
-			(second.tables as Record<string, unknown>).scratch,
-		).toBeUndefined();
+		expect((second.tables as Record<string, unknown>).scratch).toBeUndefined();
 		await second[Symbol.asyncDispose]();
 
 		// A later release declares them again: nothing was lost, because the
