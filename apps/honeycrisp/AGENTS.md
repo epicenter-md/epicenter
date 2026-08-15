@@ -51,10 +51,8 @@ shared `epicenter.sqlite3`, and ADR-0226 refused it.
 
 What remains behind `#platform/*` is auth and instance only: how a build gets a
 bearer, not where its data lives. `src/lib/platform-selection.test.ts` reads the
-declarations and names a broken seam, and
-`../epicenter/scripts/build-applications.test.ts` runs the real build and reads
-the emitted bytes. `typecheck` runs all three conditions; only the default one
-is checked by an editor.
+declarations and names a broken seam. `typecheck` runs all three conditions;
+only the default one is checked by an editor.
 
 ## Don'ts
 

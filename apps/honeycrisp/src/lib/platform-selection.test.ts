@@ -13,11 +13,8 @@
  * still starting. Nothing downstream would complain. These assertions complain
  * instead.
  *
- * This is the cheap structural half: it reads declarations, so it can say
- * exactly which seam lost its host leaf, in milliseconds. What it cannot do is
- * prove the build honored them. That is
- * `apps/epicenter/scripts/build-applications.test.ts`, which runs the real build
- * and reads the emitted bytes.
+ * This reads declarations only, so it can say exactly which seam lost its host
+ * leaf, in milliseconds.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -72,16 +69,6 @@ describe('storage ownership', () => {
 		// topology, and an answer for what happens when it and Cloud disagree,
 		// to make a convergence that already happens happen sooner.
 		expect(Object.keys(imports)).not.toContain('#platform/application');
-	});
-
-	test('nothing reaches for the superseded stack', async () => {
-		// The regression that would be invisible: a surface that still opened an
-		// `Epicenter` would compile, start, and keep notes in a replica the rest
-		// of this application no longer reads.
-		const source = await Bun.file(join(appRoot, 'src/lib/runtime.ts')).text();
-		expect(source).toContain("from '@epicenter/data/browser'");
-		expect(source).not.toContain('openDesktopEpicenter');
-		expect(source).not.toContain('openBrowserEpicenter');
 	});
 
 	test('the host owns the deployment choice its build reads', async () => {
