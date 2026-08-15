@@ -16,6 +16,10 @@
 - **Amended by:** [ADR-0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md).
   The authority owns the workspace's current opaque document ID. A connection
   declares that ID as well as its cursor and is admitted only on equality.
+- **Amended by:** [ADR-0242](0242-hosted-postgres-registers-store-addresses-before-an-authority-accepts-data.md)
+  (**Proposed**) at lifecycle only. An open hosted ecosystem needs an account's
+  complete authority address book for hard account deletion; Postgres records
+  `(principal, namespace)` metadata and never workspace contents.
 - Evidence: `packages/server/workers/e2e.test.ts`.
 
 ## Context
