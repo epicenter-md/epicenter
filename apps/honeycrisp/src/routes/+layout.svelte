@@ -8,7 +8,7 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '#platform/auth';
-	import HoneycrispRuntimeProvider from '$lib/HoneycrispRuntimeProvider.svelte';
+	import HoneycrispProvider from '$lib/HoneycrispProvider.svelte';
 	import { openHoneycrispRuntime } from '$lib/runtime.js';
 	import '@epicenter/ui/app.css';
 
@@ -16,9 +16,10 @@
 
 	// The ready-runtime shape. One transactional open acquired during layout
 	// initialisation, and a raw `{#await}` owning pending, ready and failure;
-	// descendants receive the READY runtime through a typed context, so there
-	// is no module-scope boot, no half-open handle, and no `whenReady` accessor
-	// for anything to read too early.
+	// the provider turns the READY runtime into the reactive Honeycrisp
+	// application and provides that through a typed context, so there is no
+	// module-scope boot, no half-open handle, and no `whenReady` accessor for
+	// anything to read too early.
 	//
 	// Gated rather than skeletoned because there is no useful partial UI: a
 	// route on an unopened store reads empty tables and flashes "No notes yet"
@@ -44,9 +45,9 @@
 {#await opening}
 	<Loading class="h-dvh" />
 {:then runtime}
-	<HoneycrispRuntimeProvider {runtime}>
+	<HoneycrispProvider {runtime}>
 		<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
-	</HoneycrispRuntimeProvider>
+	</HoneycrispProvider>
 {:catch error}
 	<div class="flex h-dvh items-center justify-center p-6 text-center">
 		<div class="max-w-md space-y-2">

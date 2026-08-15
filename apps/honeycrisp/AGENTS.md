@@ -19,13 +19,19 @@ epicenter/so.epicenter.honeycrisp/device                     never syncs, always
 epicenter/so.epicenter.honeycrisp/account/<principal id>     one per account
 ```
 
-Ready surfaces see exactly two shapes: `{ deviceData }` and
-`{ deviceData, account: { data, syncStatus, rebuild } }`. There is no default
-document: the notes surface chooses `account?.data ?? deviceData` once at its
-own root (`src/routes/+page.svelte`), and document-bound UI state
-(`createHoneycrispState`) is created there, never in the runtime. A page
-lifetime is one auth generation (ADR-0232), so the composition never changes
-while the app lives; `reloadOnAuthChange` starts the next one.
+A ready runtime has exactly two shapes: `{ deviceData }` and
+`{ deviceData, account: { data, syncStatus, rebuild } }`, and it stops at the
+layout's provider. `createHoneycrisp` (`src/lib/honeycrisp/index.ts`) turns
+one ready runtime into the reactive application object the UI consumes: it
+makes the document choice (`account?.data ?? deviceData`) visible once,
+adapts that document into Svelte-reactive named tables with `fromWorkspace`
+(from `@epicenter/svelte`), layers Honeycrisp's domain operations, search,
+and `view` navigation on top, and exposes only the narrow capabilities the UI
+needs (`pressure()`, `account.syncStatus`, `account.rebuild`). Components
+reach it through `getHoneycrisp()`; the raw runtime, store, and sync plane
+never cross that boundary. A page lifetime is one auth generation (ADR-0232),
+so the composition never changes while the app lives; `reloadOnAuthChange`
+starts the next one.
 
 A signed-in account is unavailable until its first bootstrap binds it to an
 authority document, so the layout's boot gate holds the whole app while it

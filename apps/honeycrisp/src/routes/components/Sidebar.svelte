@@ -12,20 +12,19 @@
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '#platform/auth';
 	import { instanceSetting } from '#platform/instance';
-	import { getHoneycrispRuntime } from '$lib/context.js';
-	import { getNotesSurface } from '../state/index.js';
+	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
-	const runtime = getHoneycrispRuntime();
-	const surface = getNotesSurface();
+	const honeycrisp = getHoneycrisp();
 
-	// Bound once, not `$derived`: the runtime is frozen for this page lifetime,
-	// so whether this generation has an account to rebuild is settled before
-	// this component exists. A defined `account` is already a replica stamped
-	// into the current document, because that is the only way past the boot
-	// gate (ADR-0231, ADR-0233); a device-only generation never offers this.
-	const account = runtime.account;
+	// Bound once, not `$derived`: the application object is frozen for this
+	// page lifetime, so whether this generation has an account to rebuild is
+	// settled before this component exists. A defined `account` is already a
+	// replica stamped into the current document, because that is the only way
+	// past the boot gate (ADR-0231, ADR-0233); a device-only generation never
+	// offers this.
+	const account = honeycrisp.account;
 	const rebuild = account?.rebuild;
 
 	// Both footer readings are sampled, not derived. `pressure()` and
@@ -38,8 +37,8 @@
 	// either moves: sync settles in milliseconds and pressure changes only on a
 	// write, so a faster tick would render the same footer again.
 	function readPressure() {
-		// Pressure of the document this surface is showing, whichever that is.
-		return surface.data.store.pressure();
+		// Pressure of the document this generation is showing, whichever that is.
+		return honeycrisp.pressure();
 	}
 
 	// The one number worth watching. A deleted row leaves a tombstone every
@@ -111,8 +110,8 @@
 		<div class="px-2 pb-1">
 			<Sidebar.Input
 				placeholder="Search notes…"
-				value={surface.state.view.searchQuery}
-				oninput={(e) => surface.state.view.setSearchQuery(e.currentTarget.value)}
+				value={honeycrisp.view.searchQuery}
+				oninput={(e) => honeycrisp.view.setSearchQuery(e.currentTarget.value)}
 			/>
 		</div>
 	</Sidebar.Header>
@@ -123,26 +122,26 @@
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={surface.state.view.selectedFolderId === null && !surface.state.view.isRecentlyDeletedView}
-							onclick={() => surface.state.view.selectFolder(null)}
+							isActive={honeycrisp.view.selectedFolderId === null && !honeycrisp.view.isRecentlyDeletedView}
+							onclick={() => honeycrisp.view.selectFolder(null)}
 						>
 							<FileTextIcon class="size-4" />
 							<span>All Notes</span>
 							<span class="ml-auto text-xs text-muted-foreground">
-								{surface.state.notes.all.length}
+								{honeycrisp.notes.all.length}
 							</span>
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={surface.state.view.isRecentlyDeletedView && surface.state.view.selectedFolderId === null}
-							onclick={() => surface.state.view.selectRecentlyDeleted()}
+							isActive={honeycrisp.view.isRecentlyDeletedView && honeycrisp.view.selectedFolderId === null}
+							onclick={() => honeycrisp.view.selectRecentlyDeleted()}
 						>
 							<TrashIcon class="size-4" />
 							<span>Recently Deleted</span>
-							{#if surface.state.notes.deleted.length > 0}
+							{#if honeycrisp.notes.deleted.length > 0}
 								<span class="ml-auto text-xs text-muted-foreground">
-									{surface.state.notes.deleted.length}
+									{honeycrisp.notes.deleted.length}
 								</span>
 							{/if}
 						</Sidebar.MenuButton>
@@ -160,7 +159,7 @@
 					title="New Folder"
 					onclick={() =>
 						runHoneycrispMutation(
-							() => surface.state.folders.create(),
+							() => honeycrisp.folders.create(),
 							'Could not create folder',
 						)}
 				>
@@ -170,7 +169,7 @@
 				<Collapsible.Content>
 					<Sidebar.GroupContent>
 						<Sidebar.Menu>
-							{#each surface.state.folders.all as folder (folder.id)}
+							{#each honeycrisp.folders.all as folder (folder.id)}
 								<FolderMenuItem {folder} />
 							{:else}
 								<Sidebar.MenuItem>

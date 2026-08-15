@@ -1,4 +1,3 @@
-import type { NonconformingRow } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import {
 	type FolderId,
@@ -7,48 +6,35 @@ import {
 	type Note,
 	type NoteId,
 } from '@epicenter/honeycrisp';
-import type { NoteSearchIndex } from '../../lib/search-index.svelte.js';
+import type { ReactiveWorkspace } from '@epicenter/svelte';
+import type { NoteSearchIndex } from '../search-index.svelte.js';
 import { searchParams } from './search-params.svelte.js';
 
 /**
- * Honeycrisp's notes, read straight out of the store.
+ * Honeycrisp's own note concepts, over the reactive `notes` table.
  *
- * There is no `refresh`, no generation counter, and no `await` on a read. The
- * store's `subscribe` says which rows a commit touched and fires for a local
- * write, for prose typed into a note's document, and for bytes that arrived from
- * another device alike (ADR-0221), so a re-read after a mutation is something
- * this module hears about rather than something every call site remembers.
- *
- * `$state.raw` holding a re-read snapshot rather than a reactive proxy: the rows
- * are plain JSON that the store hands back fresh each time, so there is nothing
- * for fine-grained reactivity to track and a whole-array swap is the honest
- * shape.
+ * The table already answers "what rows are here right now" reactively
+ * (`fromWorkspace`): a read inside `$derived` re-runs on any commit that
+ * touched the table, local writes, prose typed into a note's document, and
+ * bytes from another device alike (ADR-0221), and a read in an event handler
+ * is fresh. What this module adds is what the platform cannot know: which
+ * rows count as deleted, per-folder counts, the search-index bookkeeping, and
+ * the domain commands (soft delete, pinning, re-parenting) with their URL
+ * cleanup.
  */
 export function createNotes({
-	db,
+	workspace,
 	searchIndex,
 }: {
-	db: HoneycrispData;
+	workspace: ReactiveWorkspace<HoneycrispData>;
 	searchIndex: NoteSearchIndex;
 }) {
-	let rows = $state.raw<Note[]>([]);
-	let nonconforming = $state.raw<NonconformingRow[]>([]);
+	const table = workspace.tables.notes;
 
-	function read(): void {
-		// `list` cannot fail: a store that cannot serve reads throws
-		// `StoreUnusableError`, which surfaces at the app's error boundary.
-		const listed = db.tables.notes.list();
-		rows = listed.rows;
-		nonconforming = listed.nonconforming;
-	}
-
-	read();
-	// Registration is synchronous, does no I/O and never fires initially, so the
-	// read above has already seen everything (ADR-0187).
-	const stop = db.tables.notes.subscribe(read);
-
-	const all = $derived(rows.filter((note) => note.deletedAt === null));
-	const deleted = $derived(rows.filter((note) => note.deletedAt !== null));
+	const all = $derived(table.rows.filter((note) => note.deletedAt === null));
+	const deleted = $derived(
+		table.rows.filter((note) => note.deletedAt !== null),
+	);
 	const countsByFolder = $derived.by(() => {
 		const counts: Record<string, number> = {};
 		for (const note of all) {
@@ -60,14 +46,13 @@ export function createNotes({
 
 	/** Apply a change, or throw so the caller's toast can present it. */
 	function update(noteId: NoteId, changes: Partial<Note>): void {
-		const { error } = db.tables.notes.update(noteId, changes);
+		const { error } = table.update(noteId, changes);
 		if (error !== null) throw error;
 	}
 
 	return {
-		[Symbol.dispose]: stop,
 		get(id: NoteId) {
-			return rows.find((note) => note.id === id);
+			return table.rows.find((note) => note.id === id);
 		},
 		get all() {
 			return all;
@@ -79,12 +64,12 @@ export function createNotes({
 			return countsByFolder;
 		},
 		get nonconforming() {
-			return nonconforming;
+			return table.nonconforming;
 		},
 
 		create(folderId: FolderId | null): { id: NoteId } {
 			const now = InstantString.now();
-			const { data, error } = db.tables.notes.create(
+			const { data, error } = table.create(
 				{
 					folderId,
 					title: '',
@@ -113,13 +98,13 @@ export function createNotes({
 
 		permanentlyDelete(noteId: NoteId): void {
 			// Deleting an absent note is a no-op fact, not an error.
-			db.tables.notes.delete(noteId);
+			table.delete(noteId);
 			searchIndex.forget(noteId);
 			if (searchParams.note === noteId) searchParams.update({ note: null });
 		},
 
 		togglePin(noteId: NoteId): void {
-			const note = rows.find((candidate) => candidate.id === noteId);
+			const note = table.rows.find((candidate) => candidate.id === noteId);
 			if (!note) return;
 			update(noteId, { pinned: !note.pinned });
 		},

@@ -41,19 +41,20 @@ export type OpenHoneycrispRuntimeOptions = {
 };
 
 /**
- * One page lifetime's runtime: the opened documents and what this generation
- * composed onto them. The root owns it, provides it through context, and
- * disposes it; it deliberately owns no note, folder, or search state, because
- * that state is bound to one document and a surface chooses which document it
- * means.
+ * One page lifetime's boot machinery: the opened documents and what this
+ * generation composed onto them. The root owns it, hands it to
+ * `createHoneycrisp`, and disposes it; it deliberately owns no note, folder,
+ * or search state, because the application object built on top owns the
+ * document choice and everything bound to it, and this runtime never crosses
+ * the provider boundary.
  *
- * Ready surfaces see exactly two shapes: `{ deviceData }`, and
+ * A ready runtime has exactly two shapes: `{ deviceData }`, and
  * `{ deviceData, account }`. There is no third: an unbound account replica is
  * a transitional state hidden inside `openHoneycrispRuntime`'s promise, never
- * a value a surface renders. And there is no default document: a surface that
- * wants "the notes this generation edits" writes
+ * a value the application sees. And there is no default document: the
+ * consumer that wants "the notes this generation edits" writes
  * `runtime.account?.data ?? runtime.deviceData` itself, once, where the
- * choice is visible.
+ * choice is visible (`createHoneycrisp`).
  */
 export type HoneycrispRuntime = {
 	/**

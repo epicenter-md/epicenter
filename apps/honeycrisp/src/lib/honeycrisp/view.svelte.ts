@@ -14,22 +14,22 @@
  * @example
  * ```svelte
  * <script>
- *   import { getNotesSurface } from '../state/index.js';
- *   const surface = getNotesSurface();
+ *   import { getHoneycrisp } from '$lib/honeycrisp/index.js';
+ *   const honeycrisp = getHoneycrisp();
  * </script>
  *
- * {#each surface.state.view.currentNotes as note (note.id)}
+ * {#each honeycrisp.view.currentNotes as note (note.id)}
  *   <p>{note.title}</p>
  * {/each}
- * <p>Current title: {surface.state.view.currentTitle}</p>
+ * <p>Current title: {honeycrisp.view.currentTitle}</p>
  * ```
  */
 
 import type { FolderId, NoteId } from '@epicenter/honeycrisp';
-import type { NoteSearchIndex } from '../../lib/search-index.svelte.js';
-import type { createFolders } from './folders.svelte';
-import type { createNotes } from './notes.svelte';
-import { type SortBy, searchParams } from './search-params.svelte';
+import type { NoteSearchIndex } from '../search-index.svelte.js';
+import type { createFolders } from './folders.svelte.js';
+import type { createNotes } from './notes.svelte.js';
+import { type SortBy, searchParams } from './search-params.svelte.js';
 
 export function createView({
 	folders,
@@ -85,7 +85,6 @@ export function createView({
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
-		[Symbol.dispose]() {},
 		get selectedFolderId(): FolderId | null {
 			return searchParams.folder;
 		},
@@ -156,10 +155,10 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * app.state.view.selectFolder(folderId);
+		 * honeycrisp.view.selectFolder(folderId);
 		 *
 		 * // Show all notes
-		 * app.state.view.selectFolder(null);
+		 * honeycrisp.view.selectFolder(null);
 		 * ```
 		 */
 		selectFolder(folderId: FolderId | null) {
@@ -174,7 +173,7 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * app.state.view.selectRecentlyDeleted();
+		 * honeycrisp.view.selectRecentlyDeleted();
 		 * ```
 		 */
 		selectRecentlyDeleted() {
@@ -186,7 +185,7 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * app.state.view.selectNote(noteId);
+		 * honeycrisp.view.selectNote(noteId);
 		 * ```
 		 */
 		selectNote(noteId: NoteId) {
@@ -202,8 +201,8 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * app.state.view.setSortBy('title');
-		 * app.state.view.setSortBy('dateEdited');
+		 * honeycrisp.view.setSortBy('title');
+		 * honeycrisp.view.setSortBy('dateEdited');
 		 * ```
 		 */
 		setSortBy(value: SortBy) {
@@ -225,8 +224,8 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * app.state.view.setSearchQuery('meeting');
-		 * app.state.view.setSearchQuery(''); // clear
+		 * honeycrisp.view.setSearchQuery('meeting');
+		 * honeycrisp.view.setSearchQuery(''); // clear
 		 * ```
 		 */
 		setSearchQuery(query: string) {

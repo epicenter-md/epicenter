@@ -11,7 +11,7 @@
  *
  * @example
  * ```typescript
- * import { searchParams } from './search-params.svelte';
+ * import { searchParams } from './search-params.svelte.js';
  *
  * // Read (reactive, tracked by $derived automatically)
  * const folder = searchParams.folder;
