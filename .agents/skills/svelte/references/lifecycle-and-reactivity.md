@@ -103,7 +103,7 @@ Three problems, every time:
 
 ### When you still need `$state` flags
 
-`{#await}` is for **one stable promise** driving one render branch. Reach for `$state` + `$effect` only when:Wait, I think you're good now. Like you can now apply the actual fix on top.er).
+`{#await}` is for **one stable promise** driving one render branch. Reach for `$state` + `$effect` only when:
 - You're composing multiple promises with custom logic (race, timeout, retry).
 - The flag reflects an external reactive source (`$derived(query.isPending)` from TanStack Query, a Svelte store, `createSubscriber`).
 
@@ -278,7 +278,7 @@ value with `set(id, next)`.
 
 | Data Shape | Use | Example |
 |---|---|---|
-| Epicenter store table rows | `$state.raw<T[]>` + `subscribe` | notes, folders |
+| Epicenter store table rows | `fromWorkspace` reactive tables | notes, folders |
 | Browser API keyed data | `new SvelteMap()` + listeners | media devices, windows |
 | Primitive value | `$state(value)` | `$state(false)`, `$state('')`, `$state(0)` |
 | Replace-only sequential data without IDs | `$state.raw<T[]>([])` | terminal history, command history |
@@ -293,46 +293,42 @@ TanStack Table into an infinite loop. See
 # Reactive Table State Pattern
 
 Store reads are synchronous and return plain JSON, so the source of truth is a
-re-read, not a long-lived reactive collection. `db.<table>.list()` returns
-`{ rows, nonconforming }`, and `db.<table>.subscribe(listener)` fires after the
-projection commits (ADR-0221) for a local write, for prose typed into a row's
-document, and for bytes that arrived from another device alike.
+re-read, not a long-lived reactive collection. `fromWorkspace` from
+`@epicenter/svelte` packages that re-read once: it mirrors an opened
+workspace's declared `tables`/`kv` and makes every read verb reactive
+(`rows`, `nonconforming`, `list`, `get`, `ids`, `document`), while `create`,
+`update`, and `delete` pass through unchanged. The invalidation it rides fires
+after the projection commits (ADR-0221) for a local write, for prose typed
+into a row's document, and for bytes that arrived from another device alike.
 
 ```typescript
-// 1. Raw snapshot: the rows are plain JSON handed back fresh on every read, so
-//    a whole-array swap is the honest shape and the deep proxy buys nothing.
-let rows = $state.raw<Note[]>([]);
+// Root of the surface: adapt the chosen document once, then layer app state.
+const workspace = fromWorkspace(data);
+const table = workspace.tables.notes;
 
-function read(): void {
-	const { data, error } = db.notes.list();
-	if (error !== null) return reportBackgroundError(error);
-	rows = data.rows;
-}
-
-// 2. Read once, then let the subscription drive every later read. Registration
-//    is synchronous, does no I/O, and never fires initially (ADR-0187).
-read();
-const stop = db.notes.subscribe(read);
-
-// 3. Derived views: filtering and sorting are cached here, not in the getter.
-const all = $derived(rows.filter((note) => note.deletedAt === null));
+// Derived views: filtering and sorting are cached here, not in the getter.
+const all = $derived(table.rows.filter((note) => note.deletedAt === null));
 
 return {
-	[Symbol.dispose]: stop,
 	get all() {
 		return all;
 	},
 	get(id: NoteId) {
-		return rows.find((note) => note.id === id);
+		return table.rows.find((note) => note.id === id);
 	},
 };
 ```
 
-There is no `refresh`, no generation counter, and no `await` on a read. A
-re-read after a mutation is something the module hears about rather than
-something every call site remembers.
+There is no `refresh`, no generation counter, no `await` on a read, and no
+`Symbol.dispose`: the adapter's subscriptions are ref-counted to the effects
+that read them, so they detach when the consuming components unmount, and a
+declared table nothing reads never subscribes at all. A read inside
+`$derived` or a template tracks; a read in an event handler is fresh and
+untracked. Do not hand-roll `db.<table>.subscribe(listener)` feeding
+`$state.raw` for table reads; that pattern is what the adapter replaced.
 
-Full exemplar: `apps/honeycrisp/src/routes/state/notes.svelte.ts`.
+Adapter: `packages/svelte-utils/src/from-workspace.svelte.ts`. Full app
+exemplar: `apps/honeycrisp/src/lib/honeycrisp/notes.svelte.ts`.
 
 See the `typescript` skill for iterator helpers (`.toArray()`, `.filter()`, `.find()` on `IteratorObject`).
 
