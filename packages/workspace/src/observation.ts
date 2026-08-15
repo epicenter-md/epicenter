@@ -68,11 +68,11 @@ const ObservationError = defineErrors({
  * A private, order-stable key for one logical table.
  *
  * One process can hold several workspaces, so a registry keyed by local table
- * name alone would cross namespaces and deliver one app's invalidations to
+ * name alone would cross workspace ids and deliver one app's invalidations to
  * another's handle.
  */
-function tableKey(namespace: string, tableName: string): string {
-	return `${JSON.stringify(namespace)}:${JSON.stringify(tableName)}`;
+function tableKey(workspaceId: string, tableName: string): string {
+	return `${JSON.stringify(workspaceId)}:${JSON.stringify(tableName)}`;
 }
 
 /**
@@ -130,11 +130,11 @@ export function createInvalidationDispatcher({
 
 	return {
 		subscribeTable(
-			namespace: string,
+			workspaceId: string,
 			tableName: string,
 			listener: TableInvalidationListener,
 		): () => void {
-			const key = tableKey(namespace, tableName);
+			const key = tableKey(workspaceId, tableName);
 			const listeners = tableListeners.get(key) ?? new Set();
 			listeners.add(listener);
 			tableListeners.set(key, listeners);
@@ -157,7 +157,7 @@ export function createInvalidationDispatcher({
 			if (addresses.length === 0) return;
 			const rowsByTable = new Map<string, Set<string>>();
 			for (const address of addresses) {
-				const key = tableKey(address.namespace, address.tableName);
+				const key = tableKey(address.workspaceId, address.tableName);
 				const ids = rowsByTable.get(key) ?? new Set<string>();
 				ids.add(address.rowId);
 				rowsByTable.set(key, ids);

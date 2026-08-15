@@ -1,5 +1,5 @@
 /**
- * Vocab's inert workspace declaration: the namespace it owns, its tables, and its device-local
+ * Vocab's inert workspace declaration: the workspace id it owns, its tables, and its device-local
  * values. Isomorphic: no IndexedDB, WebSockets, Svelte state, or browser APIs.
  *
  * Distribution: this file is the `@epicenter/vocab` package root file (the
@@ -90,9 +90,9 @@ const entriesTable = {
 /**
  * The isomorphic Vocab workspace.
  *
- * A workspace declares exactly one namespace, so Vocab owns the
- * canonical `conversationsTable` shape under its own namespace rather than
- * composing a chat table: the conversations are Vocab's, not a namespace another
+ * A workspace declares exactly one workspace id, so Vocab owns the
+ * canonical `conversationsTable` shape under its own id rather than
+ * composing a chat table: the conversations are Vocab's, not a workspace id another
  * application owns.
  *
  * Conversation transcripts are not rows: each conversation row owns a document
@@ -109,7 +109,7 @@ const entriesTable = {
  * screen renders is a fact about this screen, not portable work (ADR-0233).
  */
 export const vocabWorkspace = defineWorkspace({
-	namespace: 'so.epicenter.vocab',
+	id: 'so.epicenter.vocab',
 	title: 'Vocab',
 	kv: {
 		/** Readings render by default. */

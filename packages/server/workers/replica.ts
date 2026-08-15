@@ -33,7 +33,7 @@ import {
 import { MAIN_SUBPROTOCOL, STORE_SYNC_ROUTE } from '@epicenter/sync';
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.storeprobe',
+	id: 'so.epicenter.storeprobe',
 	tables: { notes: { title: 'string' } },
 });
 
@@ -111,7 +111,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 			},
 			dial: ({ cursor, document, opened, received, closed }) => {
 				const url = STORE_SYNC_ROUTE.url(origin, {
-					namespace: workspace.namespace,
+					workspaceId: workspace.id,
 					cursor,
 					...(document === undefined ? {} : { document }),
 				});
@@ -166,7 +166,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 		const bearer = this.bearer;
 		return {
 			baseURL: this.origin,
-			namespace: workspace.namespace,
+			workspaceId: workspace.id,
 			fetch: (input, init) =>
 				this.env.SELF.fetch(
 					new Request(input, {

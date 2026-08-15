@@ -32,7 +32,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { COMPOSED_APP_IDS } from '@epicenter/constants/app-data';
-import { DATA_ADDRESS_CEILINGS, isNamespace } from '@epicenter/workspace';
+import { DATA_ADDRESS_CEILINGS, isWorkspaceId } from '@epicenter/workspace';
 import {
 	loadActiveAppCatalog,
 	promoteAppCatalogCandidate,
@@ -47,7 +47,7 @@ function tempDir(prefix: string): string {
  * One candidate app output: `<root>/<dir>/index.html` and its `workspace.json`.
  *
  * The directory name means nothing (ADR-0210), so these fixtures name it after
- * the namespace the declaration declares. That keeps a test readable while leaving the
+ * the id the declaration declares. That keeps a test readable while leaving the
  * id where it really comes from, which is the declaration.
  */
 function writeApp(
@@ -58,7 +58,7 @@ function writeApp(
 		files = {},
 		title,
 		declaration = {
-			namespace: id,
+			id: id,
 			...(title === undefined ? {} : { title }),
 			tables: {},
 		} as unknown,
@@ -201,14 +201,14 @@ describe('promoteAppCatalogCandidate', () => {
 		writeApp(noIndex, 'so.test.valid');
 		mkdirSync(join(noIndex, 'no-index'));
 
-		// A declaration that is not well-formed, and one whose namespace is a bare
-		// label. Both are the same refusal now: an id is a namespace (ADR-0210).
+		// A declaration that is not well-formed, and one whose id is a bare
+		// label. Both are the same refusal now: an id is a workspace id (ADR-0210).
 		const notADeclaration = tempDir('epicenter-candidate-');
 		writeApp(notADeclaration, 'so.test.broken', { declaration: '{ not json' });
 
 		const bareNamespace = tempDir('epicenter-candidate-');
 		writeApp(bareNamespace, 'whispering', {
-			declaration: { namespace: 'whispering', tables: {} },
+			declaration: { id: 'whispering', tables: {} },
 		});
 
 		const noDeclaration = tempDir('epicenter-candidate-');
@@ -245,12 +245,12 @@ describe('promoteAppCatalogCandidate', () => {
 		expect(generations).toHaveLength(1);
 	});
 
-	test('an id the host already spent cannot be claimed, because it is not a namespace', async () => {
+	test('an id the host already spent cannot be claimed, because it is not a workspace id', async () => {
 		// An app id names a place under the one data root, and every trusted app
 		// has one (ADR-0201). A second claimant on the directory holding Local
 		// Mail's credentials and its undelivered intent used to be refused by a
 		// reserved-id list. There is none now: an installed app's id is the
-		// namespace it declares (ADR-0210), so it always has a dot, and every id
+		// id it declares (ADR-0210), so it always has a dot, and every id
 		// this host already spent is a bare label. The sets are disjoint by
 		// grammar, which is what this test pins.
 		const root = tempDir('epicenter-catalog-root-');
@@ -260,18 +260,18 @@ describe('promoteAppCatalogCandidate', () => {
 			'whispering',
 			'honeycrisp',
 		]) {
-			expect(isNamespace(id, DATA_ADDRESS_CEILINGS)).toBe(false);
+			expect(isWorkspaceId(id, DATA_ADDRESS_CEILINGS)).toBe(false);
 			await expect(
 				promoteAppCatalogCandidate(
 					root,
-					candidateWith(id, { declaration: { namespace: id, tables: {} } }),
+					candidateWith(id, { declaration: { id: id, tables: {} } }),
 				),
 			).rejects.toThrow(id);
 		}
 		expect((await load(root)).apps).toEqual([]);
 	});
 
-	test('two folders declaring one namespace admit neither', async () => {
+	test('two folders declaring one workspace id admit neither', async () => {
 		// The filesystem used to make this check for us by refusing two
 		// directories with one name. Folder names mean nothing now.
 		const root = tempDir('epicenter-catalog-root-');

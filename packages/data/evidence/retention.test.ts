@@ -26,7 +26,7 @@ import { createAccountStore, syncEngineOf } from '../src/store/store.js';
 import { openSyncAuthority } from '../src/sync/authority.js';
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.honeycrisp',
+	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
 

@@ -5,7 +5,7 @@
  *
  * The workspace here is a stand-in for a real application's (Vocab's is the live
  * one), which is the whole point: this package publishes a table shape, not a
- * namespace.
+ * workspace id.
  */
 
 import { expect, test } from 'bun:test';
@@ -23,7 +23,7 @@ import {
 } from './index.js';
 
 const testWorkspace = defineWorkspace({
-	namespace: 'so.epicenter.chat-test',
+	id: 'so.epicenter.chat-test',
 	tables: { conversations: conversationsTable },
 });
 

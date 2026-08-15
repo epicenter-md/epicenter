@@ -6,7 +6,7 @@
  * immutable declaration of its durable workspace (ADR-0240). The package is
  * named for it. It used to be `@epicenter/lens`, after the model this one
  * replaced, where several release-local "lenses" could interpret one shared
- * namespace and none was canonical; an application now owns its namespace and
+ * workspaceId and none was canonical; an application now owns its workspaceId and
  * an opened runtime holds exactly one definition.
  *
  * Everything reachable from here is inert: types, an arktype schema, an address

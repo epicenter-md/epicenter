@@ -21,7 +21,7 @@ import type { Result } from 'wellcrafted/result';
 import { createAccountStore, syncEngineOf } from '../src/store/store.js';
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.honeycrisp',
+	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
 

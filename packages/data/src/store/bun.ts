@@ -39,7 +39,7 @@ export type BunAccountStore = AccountStore & {
  * Open the application this workspace names, on Bun.
  *
  * The workspace names the store (ADR-0229), so the folder is
- * `<root>/<workspace.namespace>` rather than a path a caller picks. The root
+ * `<root>/<workspace.id>` rather than a path a caller picks. The root
  * is where Epicenter lives on this machine (ADR-0201), which is an environment
  * fact rather than a second name for the application.
  *
@@ -72,16 +72,16 @@ export async function open<const TWorkspace extends WorkspaceJson>(
 	const { data: parsed, error: parseError } = parseWorkspace(workspace);
 	if (parseError !== null) return Err(parseError);
 
-	const { error: claimError } = claimDocument(parsed.namespace);
+	const { error: claimError } = claimDocument(parsed.id);
 	if (claimError !== null) return Err(claimError);
 
 	const opened = await openBunStore({
-		directory: join(root, parsed.namespace),
+		directory: join(root, parsed.id),
 		workspace: parsed,
 		keepHistory,
 	});
 	if (opened.error !== null) {
-		releaseDocument(parsed.namespace);
+		releaseDocument(parsed.id);
 		return Err(opened.error);
 	}
 	const { store, view } = opened.data;
@@ -156,7 +156,7 @@ async function openBunStore({
 			dispose: () => {
 				opened.close();
 				openedHistory?.close();
-				releaseDocument(workspace.namespace);
+				releaseDocument(workspace.id);
 			},
 		});
 		return composeBunStore({ store, view, directory });
@@ -205,7 +205,7 @@ function composeBunStore({
  *
  * It takes the workspace for the same reason `open` does, so one entry point
  * has one shape. It claims no address, and that is not an oversight: two
- * memory stores of one namespace are two independent documents by
+ * memory stores of one workspace id are two independent documents by
  * construction, which is the two-devices case rather than the
  * two-handles-on-one-file case the claim exists to refuse.
  */

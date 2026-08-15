@@ -13,7 +13,7 @@
  * to ask. Being signed in on two devices IS the sharing model.
  *
  * Two doors, one partition rule. The sync upgrade is routine; the replace
- * POST (ADR-0231) is the person-initiated verb that publishes a namespace's
+ * POST (ADR-0231) is the person-initiated verb that publishes a workspace's
  * next document, deliberately out of band from the socket.
  */
 import {
@@ -21,7 +21,7 @@ import {
 	parseSubprotocols,
 	STORE_REPLACE_ROUTE,
 	STORE_SYNC_ROUTE,
-	WORKSPACE_NAMESPACE,
+	WORKSPACE_ID,
 } from '@epicenter/sync';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
@@ -41,7 +41,7 @@ export type StoreAuthorityStub = {
 	fetch(request: Request): Promise<Response>;
 };
 
-/** How this runtime finds the authority for one (principal, namespace). */
+/** How this runtime finds the authority for one (principal, workspace id). */
 export type ResolveStoreAuthority = (
 	env: ServerBindings,
 	name: string,
@@ -61,10 +61,10 @@ function requireStoreBearer<E extends Env>(
 	});
 }
 
-/** One namespace check for both routes: a name no workspace could carry is refused. */
-function parseNamespace(value: string | undefined): string | undefined {
+/** One id check for both routes: a name no workspace could carry is refused. */
+function parseWorkspaceId(value: string | undefined): string | undefined {
 	if (value === undefined) return undefined;
-	if (!WORKSPACE_NAMESPACE.test(value) || value.length > 128) return undefined;
+	if (!WORKSPACE_ID.test(value) || value.length > 128) return undefined;
 	return value;
 }
 
@@ -110,13 +110,13 @@ export function mountStoreSyncApp<E extends Env = Env>(
 					status: 426,
 				});
 			}
-			const namespace = parseNamespace(c.req.query('namespace'));
-			if (namespace === undefined) {
-				return new Response('namespace must be a workspace namespace', {
+			const workspaceId = parseWorkspaceId(c.req.query('workspaceId'));
+			if (workspaceId === undefined) {
+				return new Response('workspaceId must be a workspace id', {
 					status: 400,
 				});
 			}
-			const name = storeAuthorityName(c.var.principal.id, namespace);
+			const name = storeAuthorityName(c.var.principal.id, workspaceId);
 			const offered = parseSubprotocols(
 				c.req.header('sec-websocket-protocol') ?? null,
 			);
@@ -144,17 +144,17 @@ export function mountStoreSyncApp<E extends Env = Env>(
 		STORE_REPLACE_ROUTE.pattern,
 		describeRoute({
 			description:
-				"Publish this namespace's next document: replace its log with the posted state (ADR-0231)",
+				"Publish this workspace's next document: replace its log with the posted state (ADR-0231)",
 			tags: ['store-sync'],
 		}),
 		async (c) => {
-			const namespace = parseNamespace(c.req.query('namespace'));
-			if (namespace === undefined) {
-				return new Response('namespace must be a workspace namespace', {
+			const workspaceId = parseWorkspaceId(c.req.query('workspaceId'));
+			if (workspaceId === undefined) {
+				return new Response('workspaceId must be a workspace id', {
 					status: 400,
 				});
 			}
-			const name = storeAuthorityName(c.var.principal.id, namespace);
+			const name = storeAuthorityName(c.var.principal.id, workspaceId);
 			return opts.resolveAuthority(c.env, name).fetch(c.req.raw);
 		},
 	);

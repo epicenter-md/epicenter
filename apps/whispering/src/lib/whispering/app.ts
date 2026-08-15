@@ -220,7 +220,7 @@ async function openAccountRuntime({
 		let noticeDenied: (() => void) | undefined;
 		const connection = attachStoreSync({
 			store: data.store,
-			namespace: whisperingWorkspace.namespace,
+			workspaceId: whisperingWorkspace.id,
 			transport: {
 				baseURL: auth.deployment.baseURL,
 				openWebSocket: (url) => auth.openWebSocket(url),

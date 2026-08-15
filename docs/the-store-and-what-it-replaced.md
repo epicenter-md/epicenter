@@ -216,7 +216,7 @@ defaults living outside in application code.
 
 ```ts
 export const workspace = defineWorkspace({
-  namespace: 'so.epicenter.honeycrisp',
+  id: 'so.epicenter.honeycrisp',
   kv: { theme: "'light'|'dark' = 'light'" },
   tables: { notes: { title: 'string', folderId: 'string|null = null' } },
 });
@@ -276,7 +276,7 @@ The library owns the cursor, attach/detach, reconnect on close, reconnect on
 announces its own durable local work to the transport internally, so
 **nothing calls `nudge`**; forgetting to was the same class of silent wedge.
 
-Server side: one Durable Object per (principal, application namespace),
+Server side: one Durable Object per (principal, application id),
 addressed by a principal resolved from the bearer (ADR-0225). **Being signed in
 on two devices is the entire sharing model** — nothing to pair, invite or
 approve, and no identifier a client can supply that reaches another partition.
@@ -419,7 +419,7 @@ cache derived from the CRDT, so it never affects what merges with what.
 
 ## How a row evolves
 
-Two devices on two releases hold two declarations over one namespace, and rows written
+Two devices on two releases hold two declarations over one workspace id, and rows written
 by either arrive at the other in any order. There is no migration step to
 sequence, no schema version, and no compatibility classifier: ADR-0125 decided
 that, and the behaviour below is that decision verified against the store rather

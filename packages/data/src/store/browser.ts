@@ -345,8 +345,8 @@ async function openIdbBacking(
  * (ADR-0233):
  *
  * ```text
- * epicenter/<namespace>/device
- * epicenter/<namespace>/account/<principal id>
+ * epicenter/<workspace id>/device
+ * epicenter/<workspace id>/account/<principal id>
  * ```
  *
  * A browser application keeps one device document and one retained account
@@ -357,32 +357,32 @@ async function openIdbBacking(
  * it is addressed by the account that owns it rather than by the application
  * alone.
  *
- * Three identities, none of them collapsed into another: the namespace says
+ * Three identities, none of them collapsed into another: the workspace id says
  * which application, the principal says whose replica this is, and the
  * authority document id says which current Yjs document that replica belongs
  * to. Only the first two are in the name. The third lives inside the store
  * because it changes on rebuild, and a rebuilt workspace has to stay at the
  * same address while its contents are discarded.
  *
- * A namespace is dot-separated lowercase labels, so it holds no `/`: the
+ * A workspace id is dot-separated lowercase labels, so it holds no `/`: the
  * segment after `epicenter/` is always exactly the application, and no address
  * can be read as another one.
  */
-function deviceAddress(namespace: string): string {
-	return `epicenter/${namespace}/device`;
+function deviceAddress(workspaceId: string): string {
+	return `epicenter/${workspaceId}/device`;
 }
 
-function accountAddress(namespace: string, principalId: PrincipalId): string {
-	return `epicenter/${namespace}/account/${principalId}`;
+function accountAddress(workspaceId: string, principalId: PrincipalId): string {
+	return `epicenter/${workspaceId}/account/${principalId}`;
 }
 
 /**
  * Delete the browser storage that came before the account-scoped address.
  *
- * Two superseded shapes, neither of them read: `epicenter-store-<namespace>`,
+ * Two superseded shapes, neither of them read: `epicenter-store-<workspace id>`,
  * the single database from before an application had two documents, which held
  * anonymous work or an account replica indistinguishably; and
- * `epicenter-store-<namespace>#private` / `#workspace`, the per-application
+ * `epicenter-store-<workspace id>#private` / `#workspace`, the per-application
  * split that separated the two documents but left an account replica with no
  * owner, so a second account would have opened the first account's bytes.
  * Neither is the final address, so both are deleted rather than renamed,
@@ -394,17 +394,17 @@ function accountAddress(namespace: string, principalId: PrincipalId): string {
  * every open makes the deletion certain without anyone waiting on it.
  */
 function deleteSupersededStorage(
-	namespace: string,
+	workspaceId: string,
 	owner: 'device' | 'account',
 	principalId?: PrincipalId,
 ): Promise<void> {
 	const superseded = [
-		`epicenter-store-${namespace}`,
-		`epicenter-store-${namespace}#private`,
-		`epicenter-store-${namespace}#workspace`,
+		`epicenter-store-${workspaceId}`,
+		`epicenter-store-${workspaceId}#private`,
+		`epicenter-store-${workspaceId}#workspace`,
 		owner === 'device'
-			? `epicenter/${namespace}/private`
-			: `epicenter/${namespace}/workspace/${principalId}`,
+			? `epicenter/${workspaceId}/private`
+			: `epicenter/${workspaceId}/workspace/${principalId}`,
 	];
 	return Promise.all(
 		superseded.map(
@@ -438,11 +438,11 @@ export async function openDevice<const TWorkspace extends WorkspaceJson>(
 	const { data: parsed, error: parseError } = parseWorkspace(workspace);
 	if (parseError !== null) return Err(parseError);
 
-	const address = deviceAddress(parsed.namespace);
+	const address = deviceAddress(parsed.id);
 	const { error: claimError } = claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
-	await deleteSupersededStorage(parsed.namespace, 'device');
+	await deleteSupersededStorage(parsed.id, 'device');
 
 	const opened = await openIdbBacking(address);
 	if (opened.error !== null) {
@@ -499,11 +499,11 @@ export async function openAccount<const TWorkspace extends WorkspaceJson>(
 	const { data: parsed, error: parseError } = parseWorkspace(workspace);
 	if (parseError !== null) return Err(parseError);
 
-	const address = accountAddress(parsed.namespace, principalId);
+	const address = accountAddress(parsed.id, principalId);
 	const { error: claimError } = claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
-	await deleteSupersededStorage(parsed.namespace, 'account', principalId);
+	await deleteSupersededStorage(parsed.id, 'account', principalId);
 
 	const opened = await openIdbBacking(address);
 	if (opened.error !== null) {

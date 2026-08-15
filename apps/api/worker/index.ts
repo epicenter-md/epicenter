@@ -125,7 +125,7 @@ mountCloudAuth(app, {
 // Principal-partitioned reusable surfaces.
 mountSessionApp(app, { auth: cookieOrBearer });
 // The store transport (ADR-0220/0222): one Durable Object per
-// (principal, application namespace), reached by a WebSocket upgrade carrying
+// (principal, application id), reached by a WebSocket upgrade carrying
 // the same OAuth bearer every other surface uses. The principal is stamped from
 // the resolved bearer and the DO is addressed by it, so being signed in on two
 // devices is the whole of the sharing model: both dial their own partition and
@@ -133,12 +133,14 @@ mountSessionApp(app, { auth: cookieOrBearer });
 mountStoreSyncApp(app, {
 	resolveBearerPrincipal: resolveRequestOAuthPrincipal,
 	resolveAuthority: (env, name) => {
-		const namespace = (
+		const authorityNamespace = (
 			env as Cloudflare.Env & {
 				STORE_AUTHORITY: DurableObjectNamespace<StoreAuthority>;
 			}
 		).STORE_AUTHORITY;
-		return namespace.get(namespace.idFromName(name)) as unknown as {
+		return authorityNamespace.get(
+			authorityNamespace.idFromName(name),
+		) as unknown as {
 			fetch(request: Request): Promise<Response>;
 		};
 	},

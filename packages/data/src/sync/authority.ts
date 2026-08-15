@@ -460,7 +460,7 @@ export function openSyncAuthority({
 			return read(() => {
 				const existing = documentOf();
 				if (existing !== undefined) return existing;
-				// Minted lazily at first need, so a namespace that predates the
+				// Minted lazily at first need, so a workspaceId that predates the
 				// identity acquires one on its next dial and every replica stamps
 				// the same name from then on.
 				const minted = crypto.randomUUID();

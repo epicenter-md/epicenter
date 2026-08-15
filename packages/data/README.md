@@ -31,9 +31,9 @@ app.tables.notes.update(id, { title: 'Draft' }); // no await
 ```
 
 A workspace names the store it opens (ADR-0229), so there is one call and one
-name: the namespace is the document, the file, the folder and the authority
+name: the workspaceId is the document, the file, the folder and the authority
 address. Nothing takes a path or a database name. In a browser the durable
-address is derived from that namespace and the document named below rather
+address is derived from that workspaceId and the document named below rather
 than supplied (ADR-0233), so a declaration still cannot open a store it does
 not name. The runtime that comes back holds exactly this one definition for
 its whole life (ADR-0240); a newer declaration reads the same durable data by
@@ -44,8 +44,8 @@ is (ADR-0233). An application keeps one device document that never joins
 workspace sync, and one retained replica per account:
 
 ```text
-epicenter/<namespace>/device
-epicenter/<namespace>/account/<principal id>
+epicenter/<workspaceId>/device
+epicenter/<workspaceId>/account/<principal id>
 ```
 
 That address is the IndexedDB database name, so a workspace discard,
@@ -252,7 +252,7 @@ const notes = defineTable({
 });
 
 export const notesWorkspace = defineWorkspace({
-	namespace: 'com.example.notes',
+	id: 'com.example.notes',
 	kv: defineKv({ theme: "'light'|'dark' = 'light'" }),
 	tables: { notes },
 });
@@ -373,8 +373,8 @@ proved that omitting the resync reconnect wedges a device permanently. The
 store announces its own durable local work to the transport internally, so
 nothing has to remember to nudge it.
 
-The authority is one Cloudflare Durable Object per (principal, namespace), named
-`principals/<principalId>/stores/<namespace>`, keeping a snapshot plus the
+The authority is one Cloudflare Durable Object per (principal, workspaceId), named
+`principals/<principalId>/stores/<workspaceId>`, keeping a snapshot plus the
 entries after it (ADR-0220, ADR-0225). It reads nothing and holds opaque bytes.
 `packages/server/src/store-sync/` is the mount; `@epicenter/data/sync` is where
 every merge rule actually lives, so what is deployed and what the transport's

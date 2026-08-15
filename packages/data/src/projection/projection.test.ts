@@ -16,7 +16,7 @@ import { type DataOf, syncEngineOf } from '../store/store.js';
 import { createSqliteProjection, type SqliteProjection } from './index.js';
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.projectionlab',
+	id: 'so.epicenter.projectionlab',
 	kv: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
 	tables: {
 		notes: { title: 'string', tags: 'string[]', date: 'string|null' },
@@ -182,7 +182,7 @@ describe('a nonconforming row projects raw, so SQL can show what failed', () => 
 		// this declaration cannot read, and the bytes arrive through sync.
 		const older = openMemory(
 			defineWorkspace({
-				namespace: 'so.epicenter.projectionlab',
+				id: 'so.epicenter.projectionlab',
 				tables: { notes: { title: 'string', tags: 'string' } },
 			}),
 		);

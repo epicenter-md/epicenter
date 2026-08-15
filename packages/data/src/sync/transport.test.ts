@@ -38,7 +38,7 @@ import {
 import { createSyncHub, type HubConnection } from './hub.js';
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.honeycrisp',
+	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
 
@@ -1476,13 +1476,13 @@ describe('the snapshot path under sustained traffic', () => {
  * the two directions have to be told apart.
  */
 const newerWorkspace = defineWorkspace({
-	namespace: 'so.epicenter.honeycrisp',
+	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string', pinned: 'boolean' } },
 });
 
 /** The same application again, one release later still: a whole new table. */
 const twoTableWorkspace = defineWorkspace({
-	namespace: 'so.epicenter.honeycrisp',
+	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' }, tasks: { label: 'string' } },
 });
 

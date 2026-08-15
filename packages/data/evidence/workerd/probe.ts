@@ -43,7 +43,7 @@ const origin = process.argv[2] ?? 'http://127.0.0.1:8787';
 const application = `probe-${Date.now()}`;
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.synclab',
+	id: 'so.epicenter.synclab',
 	tables: { notes: { title: 'string', device: 'string', at: 'string' } },
 });
 

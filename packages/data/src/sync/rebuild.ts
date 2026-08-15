@@ -27,7 +27,7 @@
  * loud `RebirthFailed` rather than degraded prose, which is the honest
  * failure until upstream fixes `clone()`.
  */
-import { STORE_REPLACE_ROUTE, WORKSPACE_NAMESPACE } from '@epicenter/sync';
+import { STORE_REPLACE_ROUTE, WORKSPACE_ID } from '@epicenter/sync';
 import * as Y from '@y/y';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
@@ -107,12 +107,12 @@ export type RebuildError = InferErrors<typeof RebuildError>;
 
 /**
  * How a rebuild reaches its authority: the host's authenticated fetch, the
- * deployment's base URL, and the workspace namespace it is rebuilding.
+ * deployment's base URL, and the workspace id it is rebuilding.
  */
 export type StoreTransport = {
 	fetch(input: string, init?: RequestInit): Promise<Response>;
 	baseURL: string;
-	namespace: string;
+	workspaceId: string;
 };
 
 /**
@@ -199,7 +199,7 @@ async function postReplace(
 		try: () =>
 			transport.fetch(
 				STORE_REPLACE_ROUTE.url(transport.baseURL, {
-					namespace: transport.namespace,
+					workspaceId: transport.workspaceId,
 					fromDocument: params.fromDocument,
 					atHead: params.atHead,
 				}),
@@ -271,9 +271,9 @@ export async function rebuildWorkspace({
 	store: AccountStore;
 	transport: StoreTransport;
 }): Promise<Result<{ document: string }, RebuildError>> {
-	if (!WORKSPACE_NAMESPACE.test(transport.namespace)) {
+	if (!WORKSPACE_ID.test(transport.workspaceId)) {
 		return RebuildError.ReplaceFailed({
-			cause: new Error(`'${transport.namespace}' is not a workspace namespace`),
+			cause: new Error(`'${transport.workspaceId}' is not a workspace id`),
 		});
 	}
 	const engine = syncEngineOf(store);

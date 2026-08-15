@@ -14,7 +14,7 @@ import { defineWorkspace } from '@epicenter/workspace';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.synclab',
+	id: 'so.epicenter.synclab',
 	tables: { notes: { title: 'string', device: 'string', at: 'string' } },
 });
 

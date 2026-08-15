@@ -9,12 +9,12 @@ Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL
 Runs on Cloudflare Workers with Durable Objects. Store sync is one WebSocket
 route, `/api/store/v1/sync`, mounted by `mountStoreSyncApp`
 (`packages/server/src/store-sync/`). It resolves one Durable Object per
-(principal, application namespace), named
-`principals/<principalId>/stores/<namespace>`, holding a snapshot plus the
+(principal, application id), named
+`principals/<principalId>/stores/<workspaceId>`, holding a snapshot plus the
 entries after it (ADR-0220, ADR-0225).
 
 The principal is stamped from the resolved bearer and the Durable Object is
-addressed by it, so a client supplies a namespace and a cursor and nothing
+addressed by it, so a client supplies a workspace id and a cursor and nothing
 else. There is no catalog, grant table, or authorization lookup, and no value a
 client can put in the query that reaches another partition: the isolation is
 structural rather than checked. **Being signed in on two devices is the whole of
@@ -72,7 +72,7 @@ so self-hosting is functionally zero-knowledge against Epicenter.
 
 That confidentiality covers content, not the wire, and it does not erase three
 things a self-hoster should weigh. The operator still sees the metadata around
-the bytes (principal id, application namespace, message timing, size, and IP);
+the bytes (principal id, application id, message timing, size, and IP);
 that operator is Epicenter when hosted and you when self-hosted, and even a
 future blind server keeps seeing this envelope. Blobs land wherever
 `BLOBS_S3_ENDPOINT` points, so renting Epicenter's blob service puts your media
@@ -109,7 +109,7 @@ Cloudflare Workers
 │   └── /api/store/v1/sync     store sync upgrade (mountStoreSyncApp)
 │
 ├── StoreAuthority (Durable Object, SQLite-backed)
-│   └── One opaque log per (principal, application namespace)
+│   └── One opaque log per (principal, application id)
 ```
 
 API keys for AI providers are environment secrets (`wrangler secret put`). They never leave the hub. The client sends a session token, the hub validates it and swaps in the real key before forwarding to the provider.

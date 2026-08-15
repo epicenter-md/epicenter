@@ -24,7 +24,7 @@ import {
 } from './store.js';
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.honeycrisp',
+	id: 'so.epicenter.honeycrisp',
 	kv: { theme: "'light'|'dark' = 'light'" },
 	tables: { notes: { title: 'string' } },
 });

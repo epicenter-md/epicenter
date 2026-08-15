@@ -180,7 +180,7 @@ test('a signed-out boot opens one document and never dials', async () => {
 	expect(app.recipes.count).toBe(0);
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
-	expect(names).toContain(`epicenter/${whisperingWorkspace.namespace}/device`);
+	expect(names).toContain(`epicenter/${whisperingWorkspace.id}/device`);
 	expect(names.some((name) => name?.includes('/account/'))).toBe(false);
 });
 

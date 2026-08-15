@@ -7,7 +7,7 @@
  * business importing Hono to learn what path to ask for.
  *
  * One path, and the addressing lives in the query. A replica says which
- * application namespace it is syncing and how far through the log it has read.
+ * application id it is syncing and how far through the log it has read.
  * WHOSE data that is comes from the resolved bearer, server-side, and is never
  * in the query at all, so there is no value a client can put here that reaches
  * another partition (ADR-0092).
@@ -44,11 +44,11 @@ export const STORE_SYNC_ROUTE = {
 	 */
 	url(
 		baseURL: string,
-		params: { namespace: string; cursor: number; document?: string },
+		params: { workspaceId: string; cursor: number; document?: string },
 	): string {
 		const url = new URL(`${stripTrailing(baseURL)}${STORE_SYNC_ROUTE.pattern}`);
 		url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-		url.searchParams.set('namespace', params.namespace);
+		url.searchParams.set('workspaceId', params.workspaceId);
 		url.searchParams.set('cursor', String(params.cursor));
 		if (params.document !== undefined) {
 			url.searchParams.set('document', params.document);
@@ -58,7 +58,7 @@ export const STORE_SYNC_ROUTE = {
 } as const;
 
 /**
- * The one out-of-band verb on the store mount: publish a namespace's next
+ * The one out-of-band verb on the store mount: publish a workspace's next
  * document (ADR-0231).
  *
  * A person-initiated, authenticated POST, deliberately outside the sync
@@ -77,12 +77,12 @@ export const STORE_REPLACE_ROUTE = {
 	pattern: '/api/store/v1/replace',
 	url(
 		baseURL: string,
-		params: { namespace: string; fromDocument: string; atHead?: number },
+		params: { workspaceId: string; fromDocument: string; atHead?: number },
 	): string {
 		const url = new URL(
 			`${stripTrailing(baseURL)}${STORE_REPLACE_ROUTE.pattern}`,
 		);
-		url.searchParams.set('namespace', params.namespace);
+		url.searchParams.set('workspaceId', params.workspaceId);
 		url.searchParams.set('fromDocument', params.fromDocument);
 		if (params.atHead !== undefined) {
 			url.searchParams.set('atHead', String(params.atHead));
@@ -92,12 +92,12 @@ export const STORE_REPLACE_ROUTE = {
 } as const;
 
 /**
- * A namespace a workspace could actually have declared.
+ * An id a workspace could actually have declared.
  *
  * Checked on both sides, from one definition. The server checks it because the
  * value becomes part of a Durable Object name; a client checks nothing, but
  * sharing the grammar means a name the server will refuse is a name no workspace
  * could have carried either.
  */
-export const WORKSPACE_NAMESPACE =
+export const WORKSPACE_ID =
 	/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;

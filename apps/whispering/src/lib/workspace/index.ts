@@ -160,7 +160,7 @@ const settingsKv = {
 } as const;
 
 export const whisperingWorkspace = defineWorkspace({
-	namespace: 'so.epicenter.whispering',
+	id: 'so.epicenter.whispering',
 	title: 'Whispering',
 	kv: settingsKv,
 	tables: { recordings: recordingsTable, recipes: recipesTable },

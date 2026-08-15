@@ -272,7 +272,7 @@ async function openAccountRuntime({
 					transport: {
 						fetch: (input, init) => auth.fetch(input, init),
 						baseURL: auth.deployment.baseURL,
-						namespace: honeycrispWorkspace.namespace,
+						workspaceId: honeycrispWorkspace.id,
 					},
 				});
 				if (published.error !== null) return published;

@@ -10,19 +10,19 @@ import { type DeviceStore, openDevice } from '../../../src/store/browser.js';
 import type { DataOf } from '../../../src/store/store.js';
 
 /**
- * Two namespaces, because a namespace is what makes two stores two stores.
+ * Two namespaces, because a workspaceId is what makes two stores two stores.
  *
- * The control below used to open one namespace under a second NAME and call
+ * The control below used to open one workspaceId under a second NAME and call
  * that a different file. A workspace names the store it opens (ADR-0229), so there
- * is no second name left to vary, and the honest control is a second namespace.
+ * is no second name left to vary, and the honest control is a second workspaceId.
  */
 const workspaces = {
 	vault: defineWorkspace({
-		namespace: 'so.epicenter.durableprobe',
+		id: 'so.epicenter.durableprobe',
 		tables: { notes: { title: 'string' } },
 	}),
 	'somewhere-else': defineWorkspace({
-		namespace: 'so.epicenter.durableprobe.elsewhere',
+		id: 'so.epicenter.durableprobe.elsewhere',
 		tables: { notes: { title: 'string' } },
 	}),
 } as const;
@@ -50,7 +50,7 @@ Object.assign(globalThis, {
 		const opened = await openDevice(workspace);
 		if (opened.error !== null) return { error: opened.error.message };
 		db = opened.data;
-		show({ opened: name, namespace: workspace.namespace });
+		show({ opened: name, workspaceId: workspace.id });
 		return { ok: true };
 	},
 

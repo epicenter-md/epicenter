@@ -21,7 +21,7 @@ import {
 } from './store.js';
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.honeycrisp',
+	id: 'so.epicenter.honeycrisp',
 	kv: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
 	tables: {
 		notes: { title: 'string', tags: 'string[]', date: 'string|null' },
@@ -165,7 +165,7 @@ describe('deletion', () => {
 
 describe('a nonconforming row is reported, never repaired', () => {
 	const wrongWorkspace = defineWorkspace({
-		namespace: 'so.epicenter.honeycrisp',
+		id: 'so.epicenter.honeycrisp',
 		tables: { notes: { title: 'string', tags: 'string', date: 'string|null' } },
 	});
 
@@ -288,7 +288,7 @@ describe('two replicas converge', () => {
 });
 
 describe('a workspace names the store it opens', () => {
-	test('one namespace opens once per process, and disposing releases it', async () => {
+	test('one workspaceId opens once per process, and disposing releases it', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'epicenter-claim-'));
 		try {
 			const first = await open(workspace, { root });
@@ -311,15 +311,15 @@ describe('a workspace names the store it opens', () => {
 		}
 	});
 
-	test('a workspace that will not parse releases the namespace it claimed', async () => {
+	test('a workspace that will not parse releases the workspaceId it claimed', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'epicenter-refused-'));
 		try {
 			// A table named `kv` collides with the relation KV projects into, which
 			// is the one name a workspace still reserves. The store this half-opened must
-			// be disposed and its namespace released, or the namespace is claimed for
+			// be disposed and its workspaceId released, or the workspaceId is claimed for
 			// the life of the process and the application can never start.
 			const refused = {
-				namespace: workspace.namespace,
+				workspaceId: workspace.id,
 				tables: { kv: { a: 'string' } },
 			};
 			const attempt = await open(refused as never, { root });
@@ -344,9 +344,7 @@ describe('a workspace names the store it opens', () => {
 			}
 			// One garbage row in the update log: the hydration replay cannot
 			// decode it, which is "the store could not read its durable record".
-			const file = new Database(
-				join(root, workspace.namespace, 'store.sqlite3'),
-			);
+			const file = new Database(join(root, workspace.id, 'store.sqlite3'));
 			file.run('UPDATE _updates SET bytes = ?', [
 				new Uint8Array([1, 2, 3, 4, 5]),
 			]);
@@ -619,7 +617,7 @@ describe('a subscription names the rows a commit touched', () => {
 		// implementation that invalidated every subscriber on every commit.
 		const other = openMemory(
 			defineWorkspace({
-				namespace: 'so.epicenter.honeycrisp',
+				id: 'so.epicenter.honeycrisp',
 				tables: {
 					notes: { title: 'string', tags: 'string[]', date: 'string|null' },
 					folders: { name: 'string' },
@@ -814,7 +812,7 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 
 		const second = createAccountStore({
 			workspace: defineWorkspace({
-				namespace: 'so.epicenter.honeycrisp',
+				id: 'so.epicenter.honeycrisp',
 				kv: { theme: "'light'|'dark' = 'light'", added: "string = 'new'" },
 				tables: {
 					notes: { title: 'string', tags: 'string[]', date: 'string|null' },
@@ -831,7 +829,7 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 
 describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 	const withScratch = defineWorkspace({
-		namespace: 'so.epicenter.honeycrisp',
+		id: 'so.epicenter.honeycrisp',
 		kv: { theme: "'light'|'dark' = 'light'" },
 		tables: {
 			notes: { title: 'string' },
@@ -839,7 +837,7 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		},
 	});
 	const withoutScratch = defineWorkspace({
-		namespace: 'so.epicenter.honeycrisp',
+		id: 'so.epicenter.honeycrisp',
 		tables: { notes: { title: 'string' } },
 	});
 
@@ -925,13 +923,11 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 
 			const discarded = await app.store.discard();
 			expect(discarded.error).toBeNull();
-			expect(existsSync(join(root, workspace.namespace, 'store.sqlite3'))).toBe(
-				false,
-			);
+			expect(existsSync(join(root, workspace.id, 'store.sqlite3'))).toBe(false);
 			// The shelf is the owner's, not the document's.
-			expect(
-				existsSync(join(root, workspace.namespace, 'history.sqlite3')),
-			).toBe(true);
+			expect(existsSync(join(root, workspace.id, 'history.sqlite3'))).toBe(
+				true,
+			);
 
 			// Boot is the whole of adoption: a wiped store opens empty and asks
 			// the authority for everything, from zero.

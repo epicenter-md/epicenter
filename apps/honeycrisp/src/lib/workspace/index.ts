@@ -44,7 +44,7 @@ const notesTable = {
 } as const;
 
 export const honeycrispWorkspace = defineWorkspace({
-	namespace: 'so.epicenter.honeycrisp',
+	id: 'so.epicenter.honeycrisp',
 	title: 'Honeycrisp',
 	tables: { folders: foldersTable, notes: notesTable },
 });

@@ -3,8 +3,8 @@
  *
  * A browser application keeps one device document and one retained account
  * replica per account (ADR-0233). These tests pin the addresses that hold them
- * apart: `epicenter/<namespace>/device` and
- * `epicenter/<namespace>/account/<principal id>`, one IndexedDB database and
+ * apart: `epicenter/<workspaceId>/device` and
+ * `epicenter/<workspaceId>/account/<principal id>`, one IndexedDB database and
  * one open claim each.
  *
  * Key behaviors:
@@ -34,10 +34,10 @@ import { openMemory } from './bun.js';
 import { STORE_FORMAT } from './log.js';
 import { type DataOf, syncEngineOf, type WorkspaceStoreBase } from './store.js';
 
-/** One namespace per concern, so tests share no IndexedDB state. */
+/** One workspaceId per concern, so tests share no IndexedDB state. */
 function workspaceFor(label: string) {
 	return defineWorkspace({
-		namespace: `so.epicenter.browsertest.${label}`,
+		id: `so.epicenter.browsertest.${label}`,
 		tables: { notes: { title: 'string' } },
 	});
 }
@@ -45,9 +45,10 @@ function workspaceFor(label: string) {
 const ALICE = asPrincipalId('alice');
 const BOB = asPrincipalId('bob');
 
-const deviceAddress = (namespace: string) => `epicenter/${namespace}/device`;
-const accountAddress = (namespace: string, principalId: string) =>
-	`epicenter/${namespace}/account/${principalId}`;
+const deviceAddress = (workspaceId: string) =>
+	`epicenter/${workspaceId}/device`;
+const accountAddress = (workspaceId: string, principalId: string) =>
+	`epicenter/${workspaceId}/account/${principalId}`;
 
 const openDeviceData = (workspace: ReturnType<typeof workspaceFor>) =>
 	openDevice(workspace);
@@ -90,9 +91,9 @@ describe('one device document and one account replica per account', () => {
 		expect(titles(bob)).toEqual(["bob's"]);
 
 		const names = await databaseNames();
-		expect(names).toContain(deviceAddress(workspace.namespace));
-		expect(names).toContain(accountAddress(workspace.namespace, ALICE));
-		expect(names).toContain(accountAddress(workspace.namespace, BOB));
+		expect(names).toContain(deviceAddress(workspace.id));
+		expect(names).toContain(accountAddress(workspace.id, ALICE));
+		expect(names).toContain(accountAddress(workspace.id, BOB));
 
 		await device[Symbol.asyncDispose]();
 		await alice[Symbol.asyncDispose]();
@@ -170,9 +171,9 @@ describe('one device document and one account replica per account', () => {
 		expectOk(await alice.store.discard());
 
 		const names = await databaseNames();
-		expect(names).not.toContain(accountAddress(workspace.namespace, ALICE));
-		expect(names).toContain(accountAddress(workspace.namespace, BOB));
-		expect(names).toContain(deviceAddress(workspace.namespace));
+		expect(names).not.toContain(accountAddress(workspace.id, ALICE));
+		expect(names).toContain(accountAddress(workspace.id, BOB));
+		expect(names).toContain(deviceAddress(workspace.id));
 
 		// Alice rejoins at zero; nobody else moved.
 		const rejoined = expectOk(await openAccountData(workspace, ALICE));
@@ -253,7 +254,7 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		const bytes = author.store.encodeStateSince();
 		await author[Symbol.asyncDispose]();
 
-		await seedVersionOne(`epicenter/${workspace.namespace}/device`, {
+		await seedVersionOne(`epicenter/${workspace.id}/device`, {
 			updates: [{ seq: 1, bytes }],
 			outbox: [],
 			cursor: 0,
@@ -277,7 +278,7 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		const bytes = author.store.encodeStateSince();
 		await author[Symbol.asyncDispose]();
 
-		await seedVersionOne(accountAddress(workspace.namespace, ALICE), {
+		await seedVersionOne(accountAddress(workspace.id, ALICE), {
 			updates: [{ seq: 1, bytes }],
 			outbox: [{ id: 3, bytes }],
 			cursor: 5,
@@ -305,7 +306,7 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		const bytes = author.store.encodeStateSince();
 		await author[Symbol.asyncDispose]();
 
-		await seedVersionOne(`epicenter/${workspace.namespace}/device`, {
+		await seedVersionOne(`epicenter/${workspace.id}/device`, {
 			updates: [{ seq: 1, bytes }],
 			outbox: [],
 			cursor: 4,
@@ -319,7 +320,7 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 
 	test('the update log folds at the threshold instead of growing forever', async () => {
 		const workspace = workspaceFor('fold');
-		const address = `epicenter/${workspace.namespace}/device`;
+		const address = `epicenter/${workspace.id}/device`;
 		const device = expectOk(await openDeviceData(workspace));
 		for (let index = 0; index < 70; index += 1) {
 			expectOk(device.tables.notes.create({ title: `note ${index}` }));
@@ -360,28 +361,28 @@ describe('the clean break: storage from before the account-scoped address', () =
 		});
 	}
 
-	function supersededNames(namespace: string): string[] {
+	function supersededNames(workspaceId: string): string[] {
 		return [
-			`epicenter-store-${namespace}`,
-			`epicenter-store-${namespace}#private`,
-			`epicenter-store-${namespace}#workspace`,
+			`epicenter-store-${workspaceId}`,
+			`epicenter-store-${workspaceId}#private`,
+			`epicenter-store-${workspaceId}#workspace`,
 		];
 	}
 
 	test('opening an owner deletes its superseded storage and reads nothing from it', async () => {
 		const workspace = workspaceFor('superseded');
-		for (const name of supersededNames(workspace.namespace)) {
+		for (const name of supersededNames(workspace.id)) {
 			await seedSupersededDatabase(name);
 		}
-		const oldDevice = `epicenter/${workspace.namespace}/private`;
+		const oldDevice = `epicenter/${workspace.id}/private`;
 		await seedSupersededDatabase(oldDevice);
 		expect(await databaseNames()).toEqual(
-			expect.arrayContaining(supersededNames(workspace.namespace)),
+			expect.arrayContaining(supersededNames(workspace.id)),
 		);
 
 		const device = expectOk(await openDeviceData(workspace));
 		expect(titles(device)).toEqual([]);
-		for (const name of supersededNames(workspace.namespace)) {
+		for (const name of supersededNames(workspace.id)) {
 			expect(await databaseNames()).not.toContain(name);
 		}
 		expect(await databaseNames()).not.toContain(oldDevice);
@@ -390,14 +391,14 @@ describe('the clean break: storage from before the account-scoped address', () =
 		// The deletion repeats at every open, so a superseded database
 		// reappearing (an old tab writing after this one deleted) dies at the
 		// next boot too.
-		for (const name of supersededNames(workspace.namespace)) {
+		for (const name of supersededNames(workspace.id)) {
 			await seedSupersededDatabase(name);
 		}
-		const oldAlice = `epicenter/${workspace.namespace}/workspace/${ALICE}`;
+		const oldAlice = `epicenter/${workspace.id}/workspace/${ALICE}`;
 		await seedSupersededDatabase(oldAlice);
 		const alice = expectOk(await openAccountData(workspace, ALICE));
 		expect(titles(alice)).toEqual([]);
-		for (const name of supersededNames(workspace.namespace)) {
+		for (const name of supersededNames(workspace.id)) {
 			expect(await databaseNames()).not.toContain(name);
 		}
 		expect(await databaseNames()).not.toContain(oldAlice);

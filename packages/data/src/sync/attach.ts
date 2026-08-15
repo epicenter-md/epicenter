@@ -12,7 +12,7 @@
  * It lives beside the driver rather than in the app that first wrote it,
  * because the classification is correctness rather than taste: getting
  * "permanent" wrong spins a backoff against a refusal forever, or gives up on
- * a network blip. What an application actually varies is its namespace.
+ * a network blip. What an application actually varies is its workspace id.
  *
  * The credential model arrives as a two-member port, not as an `AuthClient`.
  * That keeps this file MIT alongside the rest of the store, and an
@@ -49,8 +49,8 @@ export type StoreSocketTransport = {
 export type AttachStoreSyncOptions = {
 	/** The open account replica this connection carries. */
 	store: AccountStore;
-	/** The workspace namespace being synced, which addresses the authority. */
-	namespace: string;
+	/** The workspace id being synced, which addresses the authority. */
+	workspaceId: string;
 	transport: StoreSocketTransport;
 	/**
 	 * This replica's document was replaced (ADR-0231). The driver has already
@@ -90,7 +90,7 @@ export type AttachStoreSyncOptions = {
  */
 export function attachStoreSync({
 	store,
-	namespace,
+	workspaceId,
 	transport,
 	onSuperseded,
 	onDenied,
@@ -105,7 +105,7 @@ export function attachStoreSync({
 			void transport
 				.openWebSocket(
 					STORE_SYNC_ROUTE.url(transport.baseURL, {
-						namespace,
+						workspaceId,
 						cursor,
 						...(document === undefined ? {} : { document }),
 					}),

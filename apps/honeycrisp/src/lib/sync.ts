@@ -1,5 +1,5 @@
 /**
- * Honeycrisp's sync: a namespace, and where a transient failure gets reported.
+ * Honeycrisp's sync: a workspace id, and where a transient failure gets reported.
  *
  * Everything else moved to `attachStoreSync` in `@epicenter/data/sync`, which
  * is where it belonged: building the store route's URL, wiring the socket's
@@ -53,7 +53,7 @@ export function attachHoneycrispSync({
 }): SyncConnection {
 	return attachStoreSync({
 		store,
-		namespace: honeycrispWorkspace.namespace,
+		workspaceId: honeycrispWorkspace.id,
 		transport: {
 			baseURL: auth.deployment.baseURL,
 			openWebSocket: (url) => auth.openWebSocket(url),

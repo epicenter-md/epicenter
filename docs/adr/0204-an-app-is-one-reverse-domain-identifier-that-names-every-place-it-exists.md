@@ -2,6 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-03
+- **Amended by:** [ADR-0243](0243-a-workspaces-id-is-its-applications-reverse-domain-identifier.md)
+  at the public name: a workspace exposes this value as `id`, not `namespace`.
 - **Provisional number.** ADR-0191 through ADR-0203 are spread across open branches; `main` ends at ADR-0190. Reconcile this integer at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0201](0201-epicenter-owns-one-app-data-root-and-an-app-partitions-its-one-directory-by-a-stable-authority-identifier.md) at one clause, the grammar of an app id, which becomes the reverse-domain namespace grammar ADR-0178 already defines. Everything else there stands: the host still names rather than allocates, the directory is still a place and never an inter-app API, and reach is still refused. Also [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md) at one clause, what a candidate folder is named, which is now the app's declared identifier rather than a bare folder name.
 - **Relates:** [ADR-0178](0178-row-facts-and-value-facts-are-separate-relations-keyed-by-structured-coordinates.md) (the reverse-domain namespace grammar this adopts), [ADR-0160](0160-lenses-interpret-durable-namespaces-without-creating-lifecycle-scopes.md), [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md), [ADR-0186](0186-an-app-reaches-epicenter-through-one-bundled-mit-client-it-installs-itself.md), [ADR-0203](0203-epicenter-owns-only-what-is-already-contended.md) (the id is the one contended resource, which is why this record is about a name and nothing else)

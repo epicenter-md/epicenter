@@ -54,9 +54,9 @@ const { openHoneycrispRuntime } = await import('./runtime.js');
 type Runtime = Awaited<ReturnType<typeof openHoneycrispRuntime>>;
 
 /** The durable addresses this application can hold (ADR-0233). */
-const DEVICE = `epicenter/${honeycrispWorkspace.namespace}/device`;
+const DEVICE = `epicenter/${honeycrispWorkspace.id}/device`;
 const accountOf = (principalId: string) =>
-	`epicenter/${honeycrispWorkspace.namespace}/account/${principalId}`;
+	`epicenter/${honeycrispWorkspace.id}/account/${principalId}`;
 
 async function until(condition: () => boolean, label: string): Promise<void> {
 	for (let attempt = 0; attempt < 400; attempt += 1) {

@@ -295,8 +295,8 @@ export class StoreAuthority extends DurableObject {
 	/**
 	 * Throw this partition's whole log away. Account deletion only.
 	 *
-	 * One authority holds one application's document, so this is one namespace's
-	 * data. Deleting an ACCOUNT means calling it once per namespace; the list is
+	 * One authority holds one application's document, so this is one workspaceId's
+	 * data. Deleting an ACCOUNT means calling it once per workspaceId; the list is
 	 * `DELETABLE_NAMESPACES` and its limits are documented there.
 	 */
 	async deleteStore(): Promise<void> {

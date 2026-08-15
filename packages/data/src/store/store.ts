@@ -1392,7 +1392,7 @@ function createStoreEngine(
 	): TableHandle {
 		const root = tableRoot(index, tableName);
 		const addressOf = (rowId: string) => ({
-			namespace: workspace.namespace,
+			workspaceId: workspace.id,
 			tableName,
 			rowId,
 		});
@@ -1536,7 +1536,7 @@ function createStoreEngine(
 			},
 			subscribe(listener: TableInvalidationListener): () => void {
 				const unsubscribe = invalidations.subscribeTable(
-					workspace.namespace,
+					workspace.id,
 					tableName,
 					listener,
 				);

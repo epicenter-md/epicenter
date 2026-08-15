@@ -6,22 +6,22 @@ import {
 	type TableInvalidation,
 } from './observation.js';
 
-const NAMESPACE = 'so.epicenter.test';
+const WORKSPACE_ID = 'so.epicenter.test';
 
 function rowId(index: number): string {
 	return `row${String(index).padStart(21, '0')}`;
 }
 
 function row(tableName: string, index: number): RowAddress {
-	return { namespace: NAMESPACE, tableName, rowId: rowId(index) };
+	return { workspaceId: WORKSPACE_ID, tableName, rowId: rowId(index) };
 }
 
 test('one batched commit produces one invalidation per logical table', () => {
 	const dispatcher = createInvalidationDispatcher();
 	const notes: TableInvalidation[] = [];
 	const tasks: TableInvalidation[] = [];
-	dispatcher.subscribeTable(NAMESPACE, 'notes', (i) => notes.push(i));
-	dispatcher.subscribeTable(NAMESPACE, 'tasks', (i) => tasks.push(i));
+	dispatcher.subscribeTable(WORKSPACE_ID, 'notes', (i) => notes.push(i));
+	dispatcher.subscribeTable(WORKSPACE_ID, 'tasks', (i) => tasks.push(i));
 
 	const changes = [
 		...Array.from({ length: 64 }, (_, index) => row('notes', index)),
@@ -42,7 +42,7 @@ test('one batched commit produces one invalidation per logical table', () => {
 test('a repeated address is named once', () => {
 	const dispatcher = createInvalidationDispatcher();
 	const seen: TableInvalidation[] = [];
-	dispatcher.subscribeTable(NAMESPACE, 'notes', (i) => seen.push(i));
+	dispatcher.subscribeTable(WORKSPACE_ID, 'notes', (i) => seen.push(i));
 
 	dispatcher.deliver([row('notes', 1), row('notes', 1), row('notes', 2)]);
 
@@ -53,7 +53,7 @@ test('the same table name in two namespaces is two handles', () => {
 	const dispatcher = createInvalidationDispatcher();
 	const mine: TableInvalidation[] = [];
 	const theirs: TableInvalidation[] = [];
-	dispatcher.subscribeTable(NAMESPACE, 'notes', (i) => mine.push(i));
+	dispatcher.subscribeTable(WORKSPACE_ID, 'notes', (i) => mine.push(i));
 	dispatcher.subscribeTable('so.epicenter.other', 'notes', (i) =>
 		theirs.push(i),
 	);
@@ -67,7 +67,7 @@ test('the same table name in two namespaces is two handles', () => {
 test('registration never fires and unsubscribing is complete', () => {
 	const dispatcher = createInvalidationDispatcher();
 	const seen: TableInvalidation[] = [];
-	const stop = dispatcher.subscribeTable(NAMESPACE, 'notes', (i) =>
+	const stop = dispatcher.subscribeTable(WORKSPACE_ID, 'notes', (i) =>
 		seen.push(i),
 	);
 	expect(seen).toEqual([]);
@@ -83,8 +83,8 @@ test('a gap heals every subscribed handle at the strongest honest scope', () => 
 	const dispatcher = createInvalidationDispatcher();
 	const notes: TableInvalidation[] = [];
 	const settings: TableInvalidation[] = [];
-	dispatcher.subscribeTable(NAMESPACE, 'notes', (i) => notes.push(i));
-	dispatcher.subscribeTable(NAMESPACE, 'settings', (i) => settings.push(i));
+	dispatcher.subscribeTable(WORKSPACE_ID, 'notes', (i) => notes.push(i));
+	dispatcher.subscribeTable(WORKSPACE_ID, 'settings', (i) => settings.push(i));
 
 	dispatcher.invalidateAll();
 
@@ -98,10 +98,10 @@ test('a subscriber that throws does not cost another handle its invalidation', (
 		log: createLogger('test/observation', sink),
 	});
 	const survivor: TableInvalidation[] = [];
-	dispatcher.subscribeTable(NAMESPACE, 'notes', () => {
+	dispatcher.subscribeTable(WORKSPACE_ID, 'notes', () => {
 		throw new Error('subscriber exploded');
 	});
-	dispatcher.subscribeTable(NAMESPACE, 'tasks', (i) => survivor.push(i));
+	dispatcher.subscribeTable(WORKSPACE_ID, 'tasks', (i) => survivor.push(i));
 
 	dispatcher.deliver([row('notes', 5), row('tasks', 6)]);
 
@@ -112,7 +112,7 @@ test('a subscriber that throws does not cost another handle its invalidation', (
 test('an empty commit reaches nobody', () => {
 	const dispatcher = createInvalidationDispatcher();
 	let calls = 0;
-	dispatcher.subscribeTable(NAMESPACE, 'notes', () => {
+	dispatcher.subscribeTable(WORKSPACE_ID, 'notes', () => {
 		calls += 1;
 	});
 

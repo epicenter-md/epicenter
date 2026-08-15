@@ -30,7 +30,7 @@ import {
 
 /** The Skills workspace as an earlier release declared it, before `sourceId`. */
 const historicalSkillsWorkspace = defineWorkspace({
-	namespace: 'so.epicenter.skills',
+	id: 'so.epicenter.skills',
 	tables: {
 		skills: {
 			name: 'string',

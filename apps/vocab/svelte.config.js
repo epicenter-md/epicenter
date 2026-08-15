@@ -8,7 +8,7 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
  * for `/_app/...`, gets the host's 404, and shows a blank window.
  *
  * The prefix arrives as an environment variable rather than a constant because
- * the namespace is declared once, in the workspace, and `build:epicenter` reads it
+ * the workspace id is declared once, in the workspace, and `build:epicenter` reads it
  * from there. Vocab's own deploy sets nothing and keeps the site root.
  */
 const epicenterBase = process.env.EPICENTER_APP_BASE;

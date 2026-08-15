@@ -43,7 +43,7 @@ export function applyProjectionSchema(
 			: ([['kv', workspace.kv]] as [string, ParsedTable][])),
 		...workspace.tables,
 	];
-	// The projection owns this database's whole letter-named namespace, so a
+	// The projection owns this database's whole letter-named workspaceId, so a
 	// relation the current definition no longer declares is dropped, not just
 	// left behind: a workspace upgrade that REMOVES a table must remove it
 	// from SQL too, or `query` keeps serving rows the runtime cannot see and

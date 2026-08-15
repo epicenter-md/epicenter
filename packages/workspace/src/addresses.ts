@@ -14,7 +14,7 @@
  * SQL column names, so one vocabulary spans the typed API, the wire, and
  * storage.
  *
- * Namespace and table are durable names a workspace declares. A row id comes from
+ * A workspace id and table are durable names a workspace declares. A row id comes from
  * whoever knows it: the runtime mints one when nobody does, and an application
  * supplies one when it does (ADR-0206). Renaming any coordinate produces a
  * different address, and therefore a different unit of convergence; there is no
@@ -33,8 +33,8 @@ import { canonicalJson } from './canonical.js';
 
 const CLOSED = { additionalProperties: false } as const;
 
-/** Reverse-domain namespace: two or more lowercase, dot-separated labels. */
-const NAMESPACE_PATTERN =
+/** Reverse-domain workspace id: two or more lowercase, dot-separated labels. */
+const WORKSPACE_ID_PATTERN =
 	'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$';
 /** A durable table name: one bare SQL identifier, so a mount needs no quoting. */
 const TABLE_NAME_PATTERN = '^[A-Za-z][A-Za-z0-9_]*$';
@@ -53,7 +53,7 @@ const TABLE_NAME_PATTERN = '^[A-Za-z][A-Za-z0-9_]*$';
  */
 const ROW_ID_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._-]*$';
 
-const NAMESPACE = new RegExp(NAMESPACE_PATTERN);
+const WORKSPACE_ID = new RegExp(WORKSPACE_ID_PATTERN);
 const TABLE_NAME = new RegExp(TABLE_NAME_PATTERN);
 const ROW_ID = new RegExp(ROW_ID_PATTERN);
 
@@ -111,14 +111,14 @@ const RESERVED_TABLE_NAMES = new Set([
  * their own capacity models.
  */
 export type AddressByteCeilings = {
-	namespaceBytes: number;
+	workspaceIdBytes: number;
 	tableNameBytes: number;
 	rowIdBytes: number;
 };
 
 /** The address-coordinate ceilings admitted by the public data vocabulary. */
 export const DATA_ADDRESS_CEILINGS: AddressByteCeilings = {
-	namespaceBytes: 128,
+	workspaceIdBytes: 128,
 	tableNameBytes: 64,
 	rowIdBytes: 128,
 };
@@ -150,9 +150,9 @@ function utf8ByteLength(value: string): number {
 	return bytes;
 }
 
-const namespaceSchema = Type.String({
+const workspaceIdSchema = Type.String({
 	minLength: 3,
-	pattern: NAMESPACE_PATTERN,
+	pattern: WORKSPACE_ID_PATTERN,
 });
 const tableNameSchema = Type.String({
 	minLength: 1,
@@ -165,7 +165,7 @@ const rowIdSchema = Type.String({
 
 export const RowAddressSchema = Type.Object(
 	{
-		namespace: namespaceSchema,
+		workspaceId: workspaceIdSchema,
 		tableName: tableNameSchema,
 		rowId: rowIdSchema,
 	},
@@ -188,20 +188,20 @@ export function addressKey(address: RowAddress): string {
 /** Structured identity equality: equal exactly when every coordinate matches. */
 export function addressesEqual(left: RowAddress, right: RowAddress): boolean {
 	return (
-		left.namespace === right.namespace &&
+		left.workspaceId === right.workspaceId &&
 		left.tableName === right.tableName &&
 		left.rowId === right.rowId
 	);
 }
 
-/** Whether a durable namespace name is well formed and within its ceiling. */
-export function isNamespace(
+/** Whether a durable workspace id is well formed and within its ceiling. */
+export function isWorkspaceId(
 	value: string,
 	ceilings: AddressByteCeilings,
 ): boolean {
 	const bytes = utf8ByteLength(value);
 	return (
-		bytes >= 3 && bytes <= ceilings.namespaceBytes && NAMESPACE.test(value)
+		bytes >= 3 && bytes <= ceilings.workspaceIdBytes && WORKSPACE_ID.test(value)
 	);
 }
 
@@ -251,7 +251,7 @@ export function isAdmissibleAddress(
 	ceilings: AddressByteCeilings,
 ): boolean {
 	return (
-		isNamespace(address.namespace, ceilings) &&
+		isWorkspaceId(address.workspaceId, ceilings) &&
 		isTableName(address.tableName, ceilings) &&
 		isRowId(address.rowId, ceilings)
 	);

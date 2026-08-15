@@ -30,7 +30,7 @@ import { encodeFrame } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.honeycrisp',
+	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
 

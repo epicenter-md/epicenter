@@ -5,7 +5,7 @@
  *
  * Inert, and deliberately so. Nothing here opens a document, mints an address,
  * or knows which document a conversation lives in. An application splices
- * {@link conversationsTable} into its own workspace under its own namespace,
+ * {@link conversationsTable} into its own workspace under its own id,
  * opens its own document (device or account, ADR-0233), and hands the row's
  * message root to {@link createAgentMessageStore}. Vocab has always worked this
  * way and said so; the `chatLens` that used to sit beside the table was a
@@ -46,12 +46,12 @@ export const asConversationId = (value: string): ConversationId =>
  * because a table root is addressed by its NAME inside whichever document holds
  * it: two workspaces opened over one store share `conversations` whatever
  * namespaces they declare. So the shape is the reusable thing, and the
- * namespace is the application's.
+ * id is the application.s.
  *
  * @example
  * ```ts
  * export const vocabWorkspace = defineWorkspace({
- *   namespace: 'so.epicenter.vocab',
+ *   id: 'so.epicenter.vocab',
  *   tables: { conversations: conversationsTable, entries: entriesTable },
  * });
  * ```

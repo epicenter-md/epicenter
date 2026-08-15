@@ -18,7 +18,7 @@ import { copyBytes } from './log.js';
 import { createAccountStore, syncEngineOf } from './store.js';
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.honeycrisp',
+	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
 

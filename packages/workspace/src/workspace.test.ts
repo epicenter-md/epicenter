@@ -12,7 +12,7 @@ import {
 } from './workspace.js';
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.honeycrisp',
+	id: 'so.epicenter.honeycrisp',
 	tables: {
 		notes: { title: 'string', tags: 'string[]', date: 'string|null' },
 		settings: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
@@ -163,56 +163,56 @@ describe('a write validates only what it was handed', () => {
 describe('the grammar refuses what the records reserve', () => {
 	const cases: [string, unknown][] = [
 		['a non-object', 'nope'],
-		['no namespace', { tables: {} }],
-		['a one-label namespace', { namespace: 'honeycrisp', tables: {} }],
+		['no id', { tables: {} }],
+		['a one-label id', { id: 'honeycrisp', tables: {} }],
 		[
 			'the reserved table name, which collides with the KV relation',
-			{ namespace: 'so.epicenter.app', tables: { kv: { a: 'string' } } },
+			{ id: 'so.epicenter.app', tables: { kv: { a: 'string' } } },
 		],
 		[
 			'table names differing only by case',
 			{
-				namespace: 'so.epicenter.app',
+				id: 'so.epicenter.app',
 				tables: { notes: { a: 'string' }, Notes: { a: 'string' } },
 			},
 		],
 		[
 			'a reserved field prefix',
 			{
-				namespace: 'so.epicenter.app',
+				id: 'so.epicenter.app',
 				tables: { notes: { '!presence': 'string' } },
 			},
 		],
 		[
 			'an optional field key',
 			{
-				namespace: 'so.epicenter.app',
+				id: 'so.epicenter.app',
 				tables: { notes: { 'date?': 'string' } },
 			},
 		],
 		[
 			'the structural id',
-			{ namespace: 'so.epicenter.app', tables: { notes: { id: 'string' } } },
+			{ id: 'so.epicenter.app', tables: { notes: { id: 'string' } } },
 		],
 		[
 			'a non-keyword expression',
-			{ namespace: 'so.epicenter.app', tables: { notes: { title: 'strng' } } },
+			{ id: 'so.epicenter.app', tables: { notes: { title: 'strng' } } },
 		],
 		[
 			'a non-string field',
-			{ namespace: 'so.epicenter.app', tables: { notes: { title: 42 } } },
+			{ id: 'so.epicenter.app', tables: { notes: { title: 42 } } },
 		],
 		[
 			'a field that transforms its value',
 			{
-				namespace: 'so.epicenter.app',
+				id: 'so.epicenter.app',
 				tables: { notes: { when: 'string.date.parse' } },
 			},
 		],
 		[
 			'a field that transforms nested',
 			{
-				namespace: 'so.epicenter.app',
+				id: 'so.epicenter.app',
 				tables: { notes: { payload: 'string.json.parse' } },
 			},
 		],
@@ -230,7 +230,7 @@ describe('the grammar refuses what the records reserve', () => {
 describe('a field is one type through every door', () => {
 	test('a transforming field is refused by name, with the fix in the message', () => {
 		const { data, error } = parseWorkspace({
-			namespace: 'so.epicenter.app',
+			id: 'so.epicenter.app',
 			tables: { notes: { when: 'string.date.parse' } },
 		});
 		expect(data).toBeNull();
@@ -244,14 +244,14 @@ describe('a field is one type through every door', () => {
 		// a transformation; asking the property's value instead is what keeps
 		// defaults legal while still refusing a morph that carries one.
 		const { data, error } = parseWorkspace({
-			namespace: 'so.epicenter.app',
+			id: 'so.epicenter.app',
 			tables: { settings: { theme: "'light'|'dark' = 'light'" } },
 		});
 		expect(error).toBeNull();
 		expect(data?.tables.get('settings')?.defaults).toEqual({ theme: 'light' });
 
 		const { error: stillRefused } = parseWorkspace({
-			namespace: 'so.epicenter.app',
+			id: 'so.epicenter.app',
 			tables: { notes: { when: "string.date.parse = '2020-01-01'" } },
 		});
 		expect(stillRefused?.name).toBe('TransformingField');
@@ -261,7 +261,7 @@ describe('a field is one type through every door', () => {
 		// Nothing expressive is lost by refusing morphs: arktype ships a
 		// validating form of each of these, and each keeps the stored value.
 		const { data, error } = parseWorkspace({
-			namespace: 'so.epicenter.app',
+			id: 'so.epicenter.app',
 			tables: {
 				notes: {
 					when: 'string.date.iso',
@@ -277,7 +277,7 @@ describe('a field is one type through every door', () => {
 
 	test('a validated date round-trips as the string it was stored as', () => {
 		const { data } = parseWorkspace({
-			namespace: 'so.epicenter.app',
+			id: 'so.epicenter.app',
 			tables: { notes: { when: 'string.date.iso' } },
 		});
 		const table = data?.tables.get('notes');
@@ -358,7 +358,7 @@ describe('defineTable and defineKv are validation identities', () => {
 		const notes = defineTable({ title: 'string' });
 		const preferences = defineKv({ theme: "'light'|'dark' = 'light'" });
 		const composed = defineWorkspace({
-			namespace: 'so.epicenter.composed',
+			id: 'so.epicenter.composed',
 			tables: { notes },
 			kv: preferences,
 		});

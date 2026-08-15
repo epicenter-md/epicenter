@@ -11,7 +11,7 @@
  *   bun run scripts/publish-app-catalog.ts <candidate-dir>
  *
  * `<candidate-dir>` holds one directory per app, each with `index.html` and
- * a `workspace.json` declaring the namespace it owns (ADR-0210). The directory name
+ * a `workspace.json` declaring the workspace id it owns (ADR-0210). The directory name
  * itself means nothing.
  * The catalog is published into the one Epicenter root, which the host itself
  * resolves at boot; `EPICENTER_DATA_DIR` moves both together (ADR-0201). There

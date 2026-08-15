@@ -31,7 +31,7 @@ import {
 import { defineWorkspace } from '@epicenter/workspace';
 
 const workspace = defineWorkspace({
-	namespace: 'so.epicenter.synclab',
+	id: 'so.epicenter.synclab',
 	tables: { notes: { title: 'string' } },
 });
 

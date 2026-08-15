@@ -61,7 +61,7 @@ function writeApp(
 		files = {},
 		title,
 		declaration = {
-			namespace: id,
+			id,
 			...(title === undefined ? {} : { title }),
 			tables: {},
 		} as unknown,
@@ -95,7 +95,7 @@ async function derive(root: string): Promise<AppCatalog> {
 
 // The app-id grammar itself lives in `@epicenter/constants/app-data` and is
 // tested there: an id names a served route and a directory, and one grammar is
-// what keeps those from being two namespaces (ADR-0201).
+// what keeps those from being two workspace ids (ADR-0201).
 
 describe('deriveAppCatalog', () => {
 	test('missing catalog root derives an empty catalog', async () => {
@@ -107,7 +107,7 @@ describe('deriveAppCatalog', () => {
 		const root = tempDir('epicenter-catalog-');
 		writeApp(root, 'so.test.zeta');
 		writeApp(root, 'so.test.alpha');
-		// A bare namespace is not a namespace, which is also why no built-in
+		// A bare label is not a workspace id, which is also why no built-in
 		// surface id can ever be claimed here (ADR-0210).
 		writeApp(root, 'whispering');
 		writeApp(root, 'so.test.baddeclaration', { declaration: '{ not json' });
@@ -122,7 +122,7 @@ describe('deriveAppCatalog', () => {
 		]);
 	});
 
-	test('derives title from the declaration with the namespace as fallback', async () => {
+	test('derives title from the declaration with the id as the fallback', async () => {
 		const root = tempDir('epicenter-catalog-');
 		// The document's own <title> is deliberately misleading here: it used to
 		// be the source, and nothing reads it now (ADR-0210).
@@ -141,13 +141,13 @@ describe('deriveAppCatalog', () => {
 		]);
 	});
 
-	test('two directories declaring one namespace yield one member', async () => {
+	test('two directories declaring one workspace id yield one member', async () => {
 		const root = tempDir('epicenter-catalog-');
 		writeApp(root, 'first', {
-			declaration: { namespace: 'so.test.twin', tables: {} },
+			declaration: { id: 'so.test.twin', tables: {} },
 		});
 		writeApp(root, 'second', {
-			declaration: { namespace: 'so.test.twin', tables: {} },
+			declaration: { id: 'so.test.twin', tables: {} },
 		});
 
 		const { apps } = await derive(root);

@@ -57,7 +57,7 @@ declare them there (or regenerate with `bun run typegen` and re-add the
 
 ## What this isn't
 
-This is not Epicenter Cloud. There are no billing routes (billing is hosted-only and lives in `apps/api/worker/billing/`), no dashboard SPA, and no SLA, support contract, or paid hosting from Epicenter. There is also no per-user partitioning: every valid token reaches the one `principals/instance` partition. Multi-tenancy, where everyone signs in and gets their own private namespace, is Epicenter Cloud's only. An enterprise that wants on-prem runs one instance (shared), or one instance per person or team.
+This is not Epicenter Cloud. There are no billing routes (billing is hosted-only and lives in `apps/api/worker/billing/`), no dashboard SPA, and no SLA, support contract, or paid hosting from Epicenter. There is also no per-user partitioning: every valid token reaches the one `principals/instance` partition. Multi-tenancy, where everyone signs in and gets their own private partition, is Epicenter Cloud's only. An enterprise that wants on-prem runs one instance (shared), or one instance per person or team.
 
 Community-supported, not Epicenter-operated. Issues filed against this folder are accepted as community contributions.
 
@@ -65,7 +65,7 @@ Community-supported, not Epicenter-operated. Issues filed against this folder ar
 
 The store transport is `mountStoreSyncApp` in
 `packages/server/src/store-sync/`, and only the hosted Worker mounts it today.
-It resolves one authority per (principal, application namespace) as a Cloudflare
+It resolves one authority per (principal, application id) as a Cloudflare
 Durable Object, and no other runtime implements that backend yet. So an instance
 currently serves session, inference, transcription, and blobs. An application
 pointed at it keeps its data locally without converging with a second device.

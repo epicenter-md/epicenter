@@ -22,7 +22,7 @@ shapes, see `docs/adr/`.
   the person's synchronized Epicenter.
 - **Epicenter**: one person's logical body of application data. Each application
   is one document holding its own tables and settings, and applications bind
-  a typed workspace declaration over it; the namespace is the one lifecycle
+  a typed workspace declaration over it; the workspace id is the one lifecycle
   scope beneath it (ADR-0229, ADR-0240).
 - **Replica**: one complete local or server copy of an Epicenter. A native
   installation, browser origin, OS profile, or server actor may impose its own

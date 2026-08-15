@@ -50,7 +50,7 @@ type ServedSpa = {
 
 /**
  * One derived catalog member: enough to list it and serve its static root. Its
- * `id` is the namespace it declared and owns (ADR-0210).
+ * `id` comes from the workspace declaration (ADR-0210).
  */
 export type CatalogApp = ServedSpa & {
 	/**
@@ -59,8 +59,8 @@ export type CatalogApp = ServedSpa & {
 	 * It used to be, so the host could interpret the member's rows: render them
 	 * to markdown, project them to SQLite, and serve them raw. The host owns no
 	 * application data now (ADR-0226), so what a member declares matters at
-	 * admission (it must be a well-formed workspace declaration, and its
-	 * namespace is its id) and nowhere after. A field with no reader is a field
+	 * admission (it must be a well-formed workspace declaration) and nowhere
+	 * after. A field with no reader is a field
 	 * that goes stale.
 	 */
 	/**
@@ -94,12 +94,12 @@ export type AppCatalog = {
  * Derive the trusted app catalog from validated build output: one directory
  * per app below `catalogRoot`. The catalog is generated, never authored. A
  * missing root is an empty catalog; an entry that breaks the output contract
- * (a missing `index.html`, a missing or invalid `workspace.json`, a namespace a
+ * (a missing `index.html`, a missing or invalid `workspace.json`, a workspace id a
  * sibling already claimed, or a root that escapes the catalog directory) is not
  * a catalog member.
  *
  * There is deliberately no reserved-id list. An installed app's id is the
- * namespace it declares (ADR-0210), so it always contains a dot, and every id
+ * id it declares (ADR-0210), so it always contains a dot, and every id
  * this host has already issued is a bare label: the built-in surface routes and
  * the composed app ids that name a directory under the one data root
  * (ADR-0201). The two sets are disjoint by grammar, so a candidate cannot claim
@@ -140,9 +140,8 @@ export async function deriveAppCatalog(
 			resolve(appRoot, 'workspace.json'),
 		);
 		if (declaration.kind !== 'file') continue;
-		// Admission still requires a well-formed workspace declaration, because
-		// the namespace it declares is the id everything else addresses this
-		// member by (ADR-0210).
+		// Admission still requires a well-formed workspace declaration. Its id is
+		// what addresses this member everywhere else (ADR-0210).
 		let declared: unknown;
 		try {
 			declared = JSON.parse(await Bun.file(declaration.path).text());
@@ -152,21 +151,21 @@ export async function deriveAppCatalog(
 		const { data: workspace } = parseWorkspace(declared);
 		if (workspace === null) continue;
 
-		// The namespace is the id (ADR-0210), so the directory this arrived in
-		// names nothing and two directories may declare one namespace. The
+		// The directory this arrived in is not an identity (ADR-0210), so two
+		// directories may declare one workspace id. The
 		// filesystem used to refuse that by refusing two directories with one
 		// name; now the first declaration wins and the second is not a member,
 		// which `promoteAppCatalogCandidate` turns into a refused promotion.
-		if (claimed.has(workspace.namespace)) continue;
-		claimed.add(workspace.namespace);
+		if (claimed.has(workspace.id)) continue;
+		claimed.add(workspace.id);
 
 		apps.push({
-			id: workspace.namespace,
-			title: workspace.title ?? workspace.namespace,
+			id: workspace.id,
+			title: workspace.title ?? workspace.id,
 			page: await Bun.file(index.path).text(),
 			directory: name,
 			resolve: createContainedResolver({
-				prefix: `/apps/${workspace.namespace}/`,
+				prefix: `/apps/${workspace.id}/`,
 				root: appRoot,
 				index: index.path,
 			}),

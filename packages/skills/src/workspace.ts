@@ -1,5 +1,5 @@
 /**
- * Skills' inert workspace declaration: the namespace it owns and the two
+ * Skills' inert workspace declaration: the workspace id it owns and the two
  * tables in it.
  *
  * A workspace declaration is pure JSON (ADR-0213, ADR-0240): arktype
@@ -44,7 +44,7 @@ const referencesTable = {
 } as const;
 
 export const skillsWorkspace = defineWorkspace({
-	namespace: 'so.epicenter.skills',
+	id: 'so.epicenter.skills',
 	title: 'Skills',
 	tables: { skills: skillsTable, skillReferences: referencesTable },
 });

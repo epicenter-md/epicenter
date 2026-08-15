@@ -4,8 +4,8 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 import {
 	DATA_ADDRESS_CEILINGS,
-	isNamespace,
 	isTableName,
+	isWorkspaceId,
 } from './addresses.js';
 import { canonicalJson, sha256Hex } from './canonical.js';
 import { isJsonValue, type JsonObject, type JsonValue } from './json.js';
@@ -59,7 +59,7 @@ export const KV_ROOT = 'kv';
  * different property name is a different address and therefore different data.
  */
 export type WorkspaceJson = {
-	namespace: string;
+	id: string;
 	/**
 	 * The values this application keeps exactly one of.
 	 *
@@ -244,7 +244,7 @@ export function defineKv<const TFields extends Record<string, string>>(
 }
 
 /**
- * Declare one application's workspace: its namespace, its tables, and its KV.
+ * Declare one application's workspace: its id, its tables, and its KV.
  *
  * Inference and validation, never construction. The returned value is the
  * argument: `TWorkspace` infers from the literal so a table's row type is
@@ -285,7 +285,7 @@ export function defineKv<const TFields extends Record<string, string>>(
  * });
  *
  * export const honeycrispWorkspace = defineWorkspace({
- *   namespace: 'so.epicenter.honeycrisp',
+ *   id: 'so.epicenter.honeycrisp',
  *   tables: { notes },
  *   kv: preferences,
  * });
@@ -424,7 +424,7 @@ export type ParsedTable = {
 };
 
 export type ParsedWorkspace = {
-	namespace: string;
+	id: string;
 	title?: string;
 	/**
 	 * The KV section, compiled through the same machinery as a table.
@@ -478,15 +478,15 @@ function compileWorkspace(
 			reason: 'it is not a plain object',
 		});
 	}
-	const { namespace, title, kv, tables } = value as Partial<WorkspaceJson>;
-	if (typeof namespace !== 'string') {
+	const { id, title, kv, tables } = value as Partial<WorkspaceJson>;
+	if (typeof id !== 'string') {
 		return WorkspaceParseError.Malformed({
-			reason: 'it declares no namespace',
+			reason: 'it declares no id',
 		});
 	}
-	if (!isNamespace(namespace, DATA_ADDRESS_CEILINGS)) {
+	if (!isWorkspaceId(id, DATA_ADDRESS_CEILINGS)) {
 		return WorkspaceParseError.Malformed({
-			reason: `namespace '${namespace}' is not two or more lowercase dot-separated labels`,
+			reason: `id '${id}' is not two or more lowercase dot-separated labels`,
 		});
 	}
 	if (
@@ -543,7 +543,7 @@ function compileWorkspace(
 
 	return Ok(
 		Object.freeze({
-			namespace,
+			id,
 			...(title === undefined ? {} : { title }),
 			...(compiledKv === undefined ? {} : { kv: compiledKv }),
 			tables: compiled,

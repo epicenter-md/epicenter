@@ -26,7 +26,7 @@ import { describe, expect, it } from 'vitest';
 import type { ReplicaReport, StoreTestReplica } from './replica.js';
 
 const ORIGIN = 'http://example.com';
-const NAMESPACE = 'so.epicenter.storeprobe';
+const WORKSPACE_ID = 'so.epicenter.storeprobe';
 
 type Replicas = ReturnType<typeof openAccount>;
 
@@ -187,7 +187,7 @@ describe('two devices on one account converge', () => {
 	it('an upgrade with no bearer is refused', async () => {
 		const response = await SELF.fetch(
 			new Request(
-				`${ORIGIN}/api/store/v1/sync?namespace=so.epicenter.storeprobe&cursor=0`,
+				`${ORIGIN}/api/store/v1/sync?workspaceId=so.epicenter.storeprobe&cursor=0`,
 				{
 					headers: { Upgrade: 'websocket' },
 				},
@@ -196,14 +196,17 @@ describe('two devices on one account converge', () => {
 		expect(response.status).toBe(401);
 	});
 
-	it('a namespace no workspace could declare is refused', async () => {
+	it('a workspaceId no workspace could declare is refused', async () => {
 		const response = await SELF.fetch(
-			new Request(`${ORIGIN}/api/store/v1/sync?namespace=../escape&cursor=0`, {
-				headers: {
-					Upgrade: 'websocket',
-					'sec-websocket-protocol': 'epicenter, bearer.device:someone',
+			new Request(
+				`${ORIGIN}/api/store/v1/sync?workspaceId=../escape&cursor=0`,
+				{
+					headers: {
+						Upgrade: 'websocket',
+						'sec-websocket-protocol': 'epicenter, bearer.device:someone',
+					},
 				},
-			}),
+			),
 		);
 		expect(response.status).toBe(400);
 	});
@@ -218,7 +221,10 @@ describe('one verb publishes the next document (ADR-0231)', () => {
 	): Promise<Response> {
 		return SELF.fetch(
 			new Request(
-				STORE_REPLACE_ROUTE.url(ORIGIN, { namespace: NAMESPACE, ...params }),
+				STORE_REPLACE_ROUTE.url(ORIGIN, {
+					workspaceId: WORKSPACE_ID,
+					...params,
+				}),
 				{
 					method: 'POST',
 					headers: { authorization: `Bearer device:${account}` },
@@ -244,7 +250,7 @@ describe('one verb publishes the next document (ADR-0231)', () => {
 			document === undefined ? '' : `&document=${encodeURIComponent(document)}`;
 		return SELF.fetch(
 			new Request(
-				`${ORIGIN}/api/store/v1/sync?namespace=${NAMESPACE}&cursor=${cursor}${declared}`,
+				`${ORIGIN}/api/store/v1/sync?workspaceId=${WORKSPACE_ID}&cursor=${cursor}${declared}`,
 				{
 					headers: {
 						Upgrade: 'websocket',

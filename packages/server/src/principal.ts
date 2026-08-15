@@ -36,14 +36,14 @@ export type BlobPrincipalPrefix = `principals/${string}/blobs/`;
 /**
  * Durable Object name template for one partition's store of one application.
  *
- * One Durable Object per `(principalId, namespace)` rather than per principal,
+ * One Durable Object per `(principalId, workspaceId)` rather than per principal,
  * because ADR-0215 makes an application ONE document and the authority's log is
  * that document's: two applications sharing a log would interleave positions
  * neither could read past. The `principalId` segment is the partition, so a
- * client that names another application's namespace still lands inside its OWN
+ * client that names another application's id still lands inside its OWN
  * partition.
  *
- * The application is named by its workspace namespace, which is the same identifier
+ * The application is named by its workspace id, which is the same identifier
  * the replica derives its local storage from, so the two halves of one
  * application cannot come to disagree about which application they are.
  */
@@ -64,7 +64,7 @@ export function blobPrincipalPrefix(
 /** Durable name of one partition's store authority for one application. */
 export function storeAuthorityName(
 	principalId: PrincipalId,
-	namespace: string,
+	workspaceId: string,
 ): StoreAuthorityDoName {
-	return `principals/${principalId}/stores/${namespace}`;
+	return `principals/${principalId}/stores/${workspaceId}`;
 }

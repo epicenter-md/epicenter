@@ -45,7 +45,7 @@ export type DictationStatus = 'idle' | 'listening' | 'speaking';
 function createDictation() {
 	// The VAD model and wasm are fetched at runtime, so their URL has to carry
 	// whatever prefix this build was served under. `base` is empty on Vocab's
-	// own deploy and `/apps/<namespace>` inside Epicenter (ADR-0210), which is
+	// own deploy and `/apps/<workspaceId>` inside Epicenter (ADR-0210), which is
 	// exactly the difference, and it is the same value `svelte.config.js` set.
 	//
 	// `base` carries a deprecation hint toward `asset()`, which does not fit:

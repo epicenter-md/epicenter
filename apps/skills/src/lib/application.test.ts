@@ -51,7 +51,7 @@ test('the runtime opens the device document and nothing else', async () => {
 	expect(runtime.state.skills).toEqual([]);
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
-	expect(names).toEqual([`epicenter/${skillsWorkspace.namespace}/device`]);
+	expect(names).toEqual([`epicenter/${skillsWorkspace.id}/device`]);
 });
 
 test('a skill and its instructions survive reopening', async () => {

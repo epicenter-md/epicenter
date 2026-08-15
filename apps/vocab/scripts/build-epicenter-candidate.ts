@@ -3,18 +3,18 @@
  * Stage Vocab as a candidate directory Epicenter can admit (ADR-0210).
  *
  * An installed app is an inert built folder holding `index.html` and a
- * `workspace.json` declaring the namespace it owns. Vocab already has the workspace in
+ * `workspace.json` declaring the workspace id it owns. Vocab already has the workspace in
  * source, so this writes it out beside the build rather than asking anyone to
  * keep a second copy in sync by hand.
  *
  * The candidate's inner directory name means nothing: the id is the declared
- * namespace. It is named after it here only so a person reading the staged
+ * id. It is named after it here only so a person reading the staged
  * folder recognizes what is in it.
  *
  * This runs the build itself rather than expecting one to be sitting there. A
- * build headed for Epicenter has to carry `/apps/<namespace>/` in its own asset
- * URLs, and the namespace is declared in the workspace, so the one step that knows
- * the namespace is the one that must set the prefix. Staging a build made
+ * build headed for Epicenter has to carry `/apps/<workspaceId>/` in its own asset
+ * URLs, and the workspace id is declared in the workspace, so the one step that knows
+ * the workspace id is the one that must set the prefix. Staging a build made
  * without it produces a folder that admits cleanly and then shows a blank
  * window, which is a failure worth making unreachable rather than documenting.
  *
@@ -30,8 +30,8 @@ import { vocabWorkspace } from '../vocab.ts';
 const app = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const built = join(app, 'build');
 const candidate = join(app, 'dist-epicenter');
-const member = join(candidate, vocabWorkspace.namespace);
-const base = `/apps/${vocabWorkspace.namespace}`;
+const member = join(candidate, vocabWorkspace.id);
+const base = `/apps/${vocabWorkspace.id}`;
 
 const build = Bun.spawnSync(['bun', 'run', 'build'], {
 	cwd: app,
@@ -58,7 +58,7 @@ await Bun.write(
 );
 
 console.log(`Candidate staged at ${candidate}`);
-console.log(`  ${vocabWorkspace.namespace} (Vocab)`);
+console.log(`  ${vocabWorkspace.id} (Vocab)`);
 console.log('\nAdmit it with `bun run install:vocab` from the repo root, or:');
 // An absolute path, because `catalog:publish` runs with `--cwd apps/epicenter`
 // and would resolve a relative one against that directory instead of yours.

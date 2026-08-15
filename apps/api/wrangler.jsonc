@@ -46,7 +46,7 @@
 	// --- Durable Objects ---
 	"durable_objects": {
 		"bindings": [
-			// One StoreAuthority per (principalId, application namespace) holds the
+			// One StoreAuthority per (principalId, application id) holds the
 			// opaque log for the new store transport (ADR-0220). It reads nothing
 			// it stores, and it is addressed only by a name built from a resolved
 			// bearer's principal, never from a query.

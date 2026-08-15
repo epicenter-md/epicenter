@@ -41,7 +41,7 @@ shell above them (ADR-0209). Its Apps pane lists what this build can launch, the
 compiled applications plus the selected catalog generation's members, and
 launching one opens its own window; the OS is the switcher from there, and
 closing Home leaves everything it launched running. Its Data pane is Epicenter's
-own job: every namespace as real read-only tables, where picking one makes
+own job: every workspace id as real read-only tables, where picking one makes
 `SELECT * FROM notes` mean something and "Everything raw" shows the storage as it
 is. Whispering hands transcription setup back to Home's Settings pane
 when the host has no usable local model, and Settings offers the ordinary launch
