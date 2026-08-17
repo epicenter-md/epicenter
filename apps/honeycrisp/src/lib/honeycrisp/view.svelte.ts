@@ -26,7 +26,6 @@
  */
 
 import type { FolderId, NoteId } from '@epicenter/honeycrisp';
-import type { NoteSearchIndex } from '../search-index.svelte.js';
 import type { createFolders } from './folders.svelte.js';
 import type { createNotes } from './notes.svelte.js';
 import { searchParams } from './search-params.svelte.js';
@@ -34,11 +33,9 @@ import { searchParams } from './search-params.svelte.js';
 export function createView({
 	folders,
 	notes,
-	searchIndex,
 }: {
 	folders: ReturnType<typeof createFolders>;
 	notes: ReturnType<typeof createNotes>;
-	searchIndex: NoteSearchIndex;
 }) {
 	let editorFocusRequest = $state(0);
 
@@ -65,12 +62,12 @@ export function createView({
 			.filter((n) => {
 				if (!q) return true;
 				if (n.title.toLowerCase().includes(q)) return true;
-				// The whole note when it has been indexed, and its opening line
-				// until then. `preview` is a hundred characters for a list
-				// subtitle, so searching it alone could not find a word past the
-				// first line, and prose is not the row's to carry (ADR-0207).
-				const text = searchIndex.textFor(n.id);
-				return (text ?? n.preview).toLowerCase().includes(q);
+				// The whole note, read out of its document. `preview` is a hundred
+				// characters for a list subtitle, so searching it alone could not
+				// find a word past the first line, and prose is not the row's to
+				// carry (ADR-0207). It answers for a note whose document has not
+				// arrived yet, which is what search could do before.
+				return (notes.text(n.id) || n.preview).toLowerCase().includes(q);
 			})
 			.toSorted(byRecentEdit);
 	});
@@ -203,12 +200,11 @@ export function createView({
 		 * Filters the note list to show only notes whose title or body contains
 		 * the query (case-insensitive). Pass an empty string to clear it.
 		 *
-		 * Searching is also what warms the body index. A note's prose lives in
-		 * its document so it can merge per character (ADR-0207), so reading it
-		 * means opening documents, and someone who never searches should never
-		 * pay for that. The first query starts the sweep and results fill in as
-		 * it runs; until a note is reached its preview answers, which is the
-		 * behavior search had before the index existed.
+		 * Reading every note's prose is the cost of a query, and it is paid only
+		 * while one is active: an empty query short-circuits before the body is
+		 * ever touched, so typing inside a note never walks the vault. The prose
+		 * is a type in the application's own document, so a walk is memory, not
+		 * I/O.
 		 *
 		 * @example
 		 * ```typescript
@@ -218,9 +214,6 @@ export function createView({
 		 */
 		setSearchQuery(query: string) {
 			searchParams.update({ q: query });
-			if (query.trim() !== '') {
-				searchIndex.warm(notes.all.map((note) => note.id));
-			}
 		},
 	};
 }

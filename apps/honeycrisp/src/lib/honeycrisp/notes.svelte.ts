@@ -7,7 +7,7 @@ import {
 	type NoteId,
 } from '@epicenter/honeycrisp';
 import type { ReactiveWorkspace } from '@epicenter/svelte';
-import type { NoteSearchIndex } from '../search-index.svelte.js';
+import { readNoteText } from '../note-text.js';
 import { searchParams } from './search-params.svelte.js';
 
 /**
@@ -18,16 +18,13 @@ import { searchParams } from './search-params.svelte.js';
  * touched the table, local writes, prose typed into a note's document, and
  * bytes from another device alike (ADR-0221), and a read in an event handler
  * is fresh. What this module adds is what the platform cannot know: which
- * rows count as deleted, per-folder counts, the search-index bookkeeping, and
- * the domain commands (soft delete, pinning, re-parenting) with their URL
- * cleanup.
+ * rows count as deleted, per-folder counts, where a note's prose is, and the
+ * domain commands (soft delete, pinning, re-parenting) with their URL cleanup.
  */
 export function createNotes({
 	workspace,
-	searchIndex,
 }: {
 	workspace: ReactiveWorkspace<HoneycrispData>;
-	searchIndex: NoteSearchIndex;
 }) {
 	const table = workspace.tables.notes;
 
@@ -53,6 +50,17 @@ export function createNotes({
 	return {
 		get(id: NoteId) {
 			return table.rows.find((note) => note.id === id);
+		},
+		/**
+		 * This note's prose as one flat string, read straight out of the document.
+		 *
+		 * A read rather than an index: the text is a type in the application's own
+		 * document, so there is nothing to open and nothing to warm, and reading
+		 * through means a paragraph that arrived from another device is findable
+		 * the moment it lands.
+		 */
+		text(id: NoteId): string {
+			return readNoteText(table.document(id));
 		},
 		get all() {
 			return all;
@@ -99,7 +107,6 @@ export function createNotes({
 		permanentlyDelete(noteId: NoteId): void {
 			// Deleting an absent note is a no-op fact, not an error.
 			table.delete(noteId);
-			searchIndex.forget(noteId);
 			if (searchParams.note === noteId) searchParams.update({ note: null });
 		},
 
@@ -113,20 +120,18 @@ export function createNotes({
 			update(noteId, { folderId });
 		},
 
+		/**
+		 * Record the row metadata the editor derived from a note's prose.
+		 *
+		 * Only the row: the prose itself is already durable in the document, which
+		 * is where it merges per character (ADR-0207), so this write is the title,
+		 * preview and word count the list renders, plus the edit time it sorts on.
+		 */
 		updateContent(
 			noteId: NoteId,
-			content: Pick<Note, 'title' | 'preview'> & {
-				wordCount: number;
-				text: string;
-			},
+			content: Pick<Note, 'title' | 'preview' | 'wordCount'>,
 		): void {
-			// The body's text goes to the device-local index, never to the row:
-			// prose stays in the document plane so it can merge per character
-			// (ADR-0207), and this keeps the open note's index entry current
-			// without a sweep ever reaching it.
-			const { text, ...row } = content;
-			searchIndex.record(noteId, text);
-			update(noteId, { ...row, updatedAt: InstantString.now() });
+			update(noteId, { ...content, updatedAt: InstantString.now() });
 		},
 	};
 }

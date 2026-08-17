@@ -1,11 +1,6 @@
 import { fromWorkspace } from '@epicenter/svelte';
 import { createContext } from 'svelte';
-import { reportBackgroundError } from '../report.js';
 import type { HoneycrispDatabases } from '../databases.js';
-import {
-	createNoteSearchIndex,
-	readDocumentText,
-} from '../search-index.svelte.js';
 import { createFolders } from './folders.svelte.js';
 import { createNotes } from './notes.svelte.js';
 import { createView } from './view.svelte.js';
@@ -17,8 +12,8 @@ import { createView } from './view.svelte.js';
  * disposal that closes them (ADR-0233). This is the application built on top
  * of them, and the one object the UI consumes. It owns the document-selection policy, the
  * reactive named tables over that document (`fromWorkspace`), Honeycrisp's
- * domain operations (`notes`, `folders`), the body search index, the
- * navigation and filtering state (`view`), and the narrow account and store
+ * domain operations (`notes`, `folders`), the navigation and filtering state
+ * (`view`), and the narrow account and store
  * capabilities the UI actually needs. The raw databases never cross this
  * boundary: the account's data is already adapted into `tables`, and what
  * remains of the account is its two capabilities.
@@ -34,7 +29,7 @@ import { createView } from './view.svelte.js';
  * and reached through `getHoneycrisp`, never a module-global singleton.
  * Nothing here needs disposing: the adapter's subscriptions are ref-counted
  * to the effects that read them, so they detach when the consuming
- * components unmount, and the search index is plain memory.
+ * components unmount.
  */
 export function createHoneycrisp({
 	databases,
@@ -43,18 +38,9 @@ export function createHoneycrisp({
 }) {
 	const data = databases.account?.data ?? databases.device;
 	const workspace = fromWorkspace(data);
-	// Honeycrisp's own body index (ADR-0207 keeps prose out of the row, so
-	// searching it is the application's job). Reading a note's text is a walk
-	// over a type already in memory, so there is no document to open and release
-	// and no failure to report.
-	const searchIndex = createNoteSearchIndex({
-		readText: (noteId) =>
-			readDocumentText(workspace.tables.notes.document(noteId)),
-		onError: reportBackgroundError,
-	});
 	const folders = createFolders({ workspace });
-	const notes = createNotes({ workspace, searchIndex });
-	const view = createView({ folders, notes, searchIndex });
+	const notes = createNotes({ workspace });
+	const view = createView({ folders, notes });
 
 	return {
 		tables: workspace.tables,

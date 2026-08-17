@@ -50,7 +50,6 @@ describe('extractNoteMetadata', () => {
 			title: '',
 			preview: '',
 			wordCount: 0,
-			text: '',
 		});
 	});
 
