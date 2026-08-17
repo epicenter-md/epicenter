@@ -2319,6 +2319,7 @@ mod tests {
         }
 
         for denied in [
+            "epicenter://surface/home",
             "epicenter://window/unknown",
             "epicenter://window/home/",
             "epicenter://window/home/extra",
