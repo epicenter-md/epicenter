@@ -4,6 +4,7 @@
 		CommandPalette,
 		type CommandPaletteItem,
 	} from '@epicenter/ui/command-palette';
+	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import * as Tooltip from '@epicenter/ui/tooltip';
@@ -41,7 +42,10 @@
 						>
 							Skills
 						</span>
-						<NewSkillDialog />
+						<div class="flex items-center gap-1">
+							<LightSwitch variant="ghost" />
+							<NewSkillDialog />
+						</div>
 					</div>
 
 					<!-- Search Trigger: opens command palette -->

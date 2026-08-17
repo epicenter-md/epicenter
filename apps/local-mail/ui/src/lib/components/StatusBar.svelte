@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import AlertTriangleIcon from '@lucide/svelte/icons/triangle-alert';
@@ -146,5 +147,6 @@
 			{/if}
 			<span>Reconcile</span>
 		</Button>
+		<LightSwitch variant="ghost" />
 	</div>
 </header>

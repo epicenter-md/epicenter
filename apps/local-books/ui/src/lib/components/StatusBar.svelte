@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import AlertTriangleIcon from '@lucide/svelte/icons/triangle-alert';
 	import LockIcon from '@lucide/svelte/icons/lock';
@@ -94,5 +95,6 @@
 			{/if}
 			<span>Sync</span>
 		</Button>
+		<LightSwitch variant="ghost" />
 	</div>
 </header>
