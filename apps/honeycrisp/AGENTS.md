@@ -63,6 +63,14 @@ only the default one is checked by an editor.
 
 ## Don'ts
 
+- Do not render a store error to a person as the message. `src/lib/boot-failure.ts`
+  picks the sentence someone reads; the library's own wording goes underneath as
+  detail, so a bug report keeps it and a wrong arm stays visible. Give a new
+  failure a `name` before giving it an arm, and only add an arm when the repair
+  is specific enough to be worth saying.
+- Do not put `workspace`, `replica`, `authority`, `document`, or `sync cursor`
+  in anything a person reads. They are the right words in this file and in
+  `packages/data`, and the wrong ones in a tooltip.
 - Do not detect the host at runtime. The build already answered.
 - Do not migrate, import, or delete data belonging to another build. The
   standalone bundle and the hosted build are two stores on one machine, and
