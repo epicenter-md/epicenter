@@ -9,7 +9,7 @@
  *
  * Key behaviors:
  * - Only directories satisfying the output contract become catalog members
-	 * - Reserved built-in window IDs are never derived as members
+ * - Reserved built-in window IDs are never derived as members
  * - Titles come from the app document with the ID as fallback
  * - The resolver serves real files, SPA-falls-back only for extensionless
  *   routes, and refuses traversal, smuggled separators, and symlink escape

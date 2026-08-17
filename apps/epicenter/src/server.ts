@@ -21,6 +21,7 @@ import {
 	type HomeSessionSnapshot,
 	parseHomeCommand,
 } from './host.ts';
+import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
 	ACCOUNT_PROFILE_ROUTE,
@@ -28,14 +29,13 @@ import {
 	ACCOUNT_SIGN_OUT_ROUTE,
 	APPLICATIONS_ROUTE,
 	BOOTSTRAP_ROUTE,
+	BUILT_IN_ROUTES,
 	LOCAL_BLOB_REMOTE_ROUTES,
 	LOCAL_BLOB_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
-	BUILT_IN_ROUTES,
 } from './routes.ts';
 import type { AppCatalog, EpicenterStaticAssets } from './static-assets.ts';
-import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 
 export type HomeServerEvent = {
 	type: 'snapshot';

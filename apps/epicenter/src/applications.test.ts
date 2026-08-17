@@ -9,9 +9,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { COMPILED_APPLICATIONS, listApplications } from './applications.ts';
+import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import { BUILT_IN_ROUTES } from './routes.ts';
 import type { AppCatalog, CatalogApp } from './static-assets.ts';
-import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 
 function catalogOf(...members: { id: string; title: string }[]): AppCatalog {
 	return {
@@ -88,9 +88,9 @@ describe('built-in route coverage', () => {
 			...COMPILED_APPLICATIONS.map(({ id }) => id),
 			...Object.keys(PLACEHOLDER_PAGES),
 		]);
-		expect(Object.keys(BUILT_IN_ROUTES).filter((id) => !served.has(id))).toEqual(
-			[],
-		);
+		expect(
+			Object.keys(BUILT_IN_ROUTES).filter((id) => !served.has(id)),
+		).toEqual([]);
 	});
 
 	test('each compiled application has its own built-in route', () => {

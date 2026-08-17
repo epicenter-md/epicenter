@@ -10,7 +10,7 @@
  * - The launch token is accepted only by the bootstrap route
  * - Home APIs and WebSockets require an HttpOnly browser session
  * - Home and Whispering serve their builds; Mail and Books stay placeholders
-	 * - Unknown, non-canonical, and traversal-shaped app paths stay closed
+ * - Unknown, non-canonical, and traversal-shaped app paths stay closed
  * - Host, Origin, CSP, frame, and referrer policies are enforced
  * - Malformed WebSocket frames drop silently without killing the socket
  * - The real vite build emits one document with no external asset references
@@ -51,12 +51,12 @@ import {
 	ACCOUNT_SIGN_OUT_ROUTE,
 	BOOKS_ROUTE,
 	BOOTSTRAP_ROUTE,
+	BUILT_IN_ROUTES,
 	HOME_ROUTE,
 	HONEYCRISP_ROUTE,
 	MAIL_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
-	BUILT_IN_ROUTES,
 	WHISPERING_ROUTE,
 } from './routes.ts';
 import {
