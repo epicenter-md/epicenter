@@ -88,11 +88,7 @@
 {#if !tooltipContent}
 	{@render Button({})}
 {:else}
-	<!--
-		delayDuration={0}: when the sidebar is collapsed this tooltip is the
-		icon's only label, so waiting to read it defeats the point.
-	-->
-	<Tooltip.Root delayDuration={0}>
+	<Tooltip.Root>
 		<Tooltip.Trigger>
 			{#snippet child({ props })}
 				{@render Button({ props })}

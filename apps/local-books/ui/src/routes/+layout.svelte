@@ -20,7 +20,7 @@
 <svelte:head><title>Local Books</title></svelte:head>
 
 <QueryClientProvider client={queryClient}>
-	<Tooltip.Provider delayDuration={300}>
+	<Tooltip.Provider>
 		<div class="h-dvh bg-background text-foreground">
 			{@render children()}
 		</div>
