@@ -132,7 +132,10 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<!-- One native emoji string is what the row stores, so `emoji` goes
+		<!-- Root, then Viewport holding Search, List and Footer: Viewport is the
+		     bordered frame the three parts sit inside, so composing them as its
+		     siblings leaves the search field floating outside the box.
+		     One native emoji string is what the row stores, so `emoji` goes
 		     straight through. Recents are device-local and keyed per app, not per
 		     folder: the point is the handful of emoji this person reaches for. -->
 		<EmojiPicker.Root
@@ -140,24 +143,27 @@
 			recentsKey="honeycrisp.folder-icon.recents"
 			onSelect={({ emoji }) => setIcon(emoji)}
 		>
-			<EmojiPicker.Search placeholder="Search emoji" />
 			<EmojiPicker.Viewport>
+				<EmojiPicker.Search placeholder="Search emoji" />
 				<EmojiPicker.List emptyMessage="No emoji found." />
+				<EmojiPicker.Footer>
+					{#snippet children({ active })}
+						<div class="flex items-center gap-2">
+							<EmojiPicker.SkinToneSelector />
+							{#if active}
+								<span class="text-base leading-none">{active.emoji}</span>
+								<span class="truncate text-xs text-muted-foreground">
+									{active.data.name}
+								</span>
+							{:else}
+								<span class="text-xs text-muted-foreground">
+									Select an emoji
+								</span>
+							{/if}
+						</div>
+					{/snippet}
+				</EmojiPicker.Footer>
 			</EmojiPicker.Viewport>
-			<EmojiPicker.Footer>
-				{#snippet children({ active })}
-					<div
-						class="flex h-8 items-center gap-2 px-1 text-xs text-muted-foreground"
-					>
-						{#if active}
-							<span class="text-base leading-none">{active.emoji}</span>
-							<span class="truncate">{active.data.name}</span>
-						{:else}
-							<span>Select an emoji</span>
-						{/if}
-					</div>
-				{/snippet}
-			</EmojiPicker.Footer>
 		</EmojiPicker.Root>
 
 		{#if folder.icon}
