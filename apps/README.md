@@ -17,7 +17,7 @@ data.
 An application declares one inert workspace and opens its own store through it:
 
 ```txt
-defineWorkspace({ namespace, title, kv, tables })
+defineWorkspace({ id, title, kv, tables })
   pure JSON: no storage, no network, no framework
 
 openDevice(workspace) / openAccount(workspace, { principalId })
@@ -72,7 +72,7 @@ cannot obtain; storage does not, because it does not differ.
 ## Adding an app
 
 1. Write the workspace at `apps/<app>/src/lib/workspace/index.ts`: one
-   `defineWorkspace({ namespace, tables })` value plus its row types. Read the
+   `defineWorkspace({ id, tables })` value plus its row types. Read the
    workspace rules first, especially that there are no optional fields and no
    array defaults.
 2. Point `package.json` `exports["."]` at that file.

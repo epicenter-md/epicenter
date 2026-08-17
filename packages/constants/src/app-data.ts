@@ -9,7 +9,7 @@
  * hand-off between two of them: Epicenter names the root and its own
  * directories, an app names everything in its directory, and an external
  * authority names a partition. `apps/` and the partition-kind directory exist
- * because a namespace whose next name is chosen by somebody else cannot be
+ * because a directory whose next name is chosen by somebody else cannot be
  * defended by the party that would have to defend it. There is no level here
  * that is not one of those hand-offs.
  *
@@ -34,13 +34,14 @@ export const EPICENTER_BUNDLE_IDENTIFIER = 'so.epicenter';
  * The one grammar for an app id, shared with catalog admission.
  *
  * An app id names a place, and two issuers name into that one space: admission
- * issues one when it accepts a folder, which is the namespace that folder's workspace
- * declares (ADR-0210), and the composition root issues one for an engine it
- * composes. The grammar has one definition because the namespace is one
- * namespace; a second copy of this pattern is how the two would drift apart.
+ * issues one when it accepts a folder. For an admitted app, that id is the
+ * reverse-domain workspace id the folder declares (ADR-0210); the composition
+ * root also issues ids for the engines it composes. The grammar has one
+ * definition because those ids share one identifier space; a second copy of this
+ * pattern is how they would drift apart.
  *
  * Dots are admitted because an admitted app's id *is* its reverse-domain
- * namespace, and bare labels stay legal so the composed ids (`local-mail`,
+ * workspace id, and bare labels stay legal so the composed ids (`local-mail`,
  * `local-books`) keep the directories they already own.
  *
  * The first and last character must be alphanumeric, and that is load-bearing

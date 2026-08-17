@@ -588,8 +588,8 @@ fn launch_on_main_thread(
 ///
 /// The grammar mirrors `APP_ID_PATTERN` in `@epicenter/constants`: lowercase
 /// alphanumerics, `-`, and `.`, beginning and ending alphanumeric. Dots are here
-/// because an admitted app's ID is the reverse-domain namespace its workspace
-/// declares (ADR-0210); bare labels stay legal for the compiled surfaces. The
+/// because an admitted app's ID is the reverse-domain workspace ID it declares
+/// (ADR-0210); bare labels stay legal for the compiled surfaces. The
 /// first and last character are constrained for the same reason the TypeScript
 /// side constrains them: an ID names a directory, and `.` or `..` would name one
 /// outside it.
@@ -622,8 +622,8 @@ fn parse_application_id(id: &str) -> Option<Application> {
 /// The Tauri handle for one application's window.
 ///
 /// A window label admits alphanumerics, `-`, `/`, `:`, and `_`, and no `.`, and
-/// Tauri enforces that with an assertion rather than an error, so an ID that is
-/// a namespace would panic the host. Mapping `.` to `_` is a bijection and not
+/// Tauri enforces that with an assertion rather than an error, so a workspace
+/// ID with dots would panic the host. Mapping `.` to `_` is a bijection and not
 /// an escape: an app ID's whole alphabet is `[a-z0-9-.]`, so `_` cannot occur in
 /// one and no two IDs can produce one label.
 ///

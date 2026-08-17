@@ -2,8 +2,8 @@ import staticAdapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
 /**
- * Epicenter serves an installed app below `/apps/<namespace>/` (ADR-0210), so a
- * build headed there has to write that prefix into its own asset URLs: nothing
+ * Epicenter serves an installed app below `/apps/<workspace-id>/` (ADR-0210),
+ * so a build headed there has to write that prefix into its own asset URLs: nothing
  * rewrites them afterwards, and a build that assumes it owns the site root asks
  * for `/_app/...`, gets the host's 404, and shows a blank window.
  *

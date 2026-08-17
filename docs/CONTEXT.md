@@ -15,7 +15,7 @@ shapes, see `docs/adr/`.
 - **Principal**: the authenticated identity Epicenter uses as the partition key
   (ADR-0092). Cloud resolves many principals from Better Auth users; a
   self-hosted instance resolves every valid operator bearer to the literal
-  `instance` principal. Durable namespaces use `principals/<principalId>/...`.
+  `instance` principal. Durable keys use `principals/<principalId>/...`.
   Billing is hosted-only and lives in `apps/api/worker/billing/`.
 - **Account**: one resolved principal inside one deployment. Credentials may
   rotate, but deployment identity plus `principalId` is the stable identity of

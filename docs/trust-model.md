@@ -51,8 +51,8 @@ is a decision rather than a rebuild.
 
 Content is only half of what a server learns. Sealed payloads would still leave
 the routing in the clear, so the server sees the metadata around the bytes: the
-authenticated principal id, the application namespace, and the timing, size, and
-client IP of every request. That envelope outlives any future blind server,
+authenticated principal id, the application's workspace id, and the timing,
+size, and client IP of every request. That envelope outlives any future blind server,
 which stops reading the values but still routes them; sealing a payload hides
 what is inside it, not the fact that your phone and laptop wrote at this minute.
 Run the deployment yourself and the metadata is yours. Use Epicenter's and it is
