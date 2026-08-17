@@ -474,11 +474,11 @@ export function createHomeServer({
 /**
  * Stamp one served page with the one-shot auth bootstrap.
  *
- * This is the only thing the host injects. An app window parses the bootstrap and
- * then removes it, because it carries an identity snapshot that has no business
-	 * sitting in the DOM afterwards, and nothing else may read it: which replica an
-	 * app window opens is decided by which build the host serves, not by what survives
- * in its `<head>`.
+ * This is the only thing the host injects. An app window parses the bootstrap
+ * and then removes it, because it carries an identity snapshot that has no
+ * business sitting in the DOM afterwards, and nothing else may read it: which
+ * replica an app window opens is decided by which build the host serves, not by
+ * what survives in its `<head>`.
  */
 function injectAuthBootstrap(
 	page: string,
