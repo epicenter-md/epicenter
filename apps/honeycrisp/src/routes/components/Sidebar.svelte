@@ -14,7 +14,6 @@
 	import { instanceSetting } from '#platform/instance';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
-	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
 	const honeycrisp = getHoneycrisp();
@@ -159,10 +158,7 @@
 				<Sidebar.GroupAction
 					title="New Folder"
 					onclick={() =>
-						runHoneycrispMutation(
-							() => honeycrisp.folders.create(),
-							'Could not create folder',
-						)}
+						honeycrisp.folders.create()}
 				>
 					<PlusIcon />
 					<span class="sr-only">New Folder</span>

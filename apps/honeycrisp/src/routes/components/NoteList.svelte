@@ -5,7 +5,6 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
-	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import { getDateLabel } from '$lib/date-label.js';
 	import NoteCard from '../components/NoteCard.svelte';
 
@@ -123,10 +122,7 @@
 					size="icon"
 					class="size-7"
 					onclick={() =>
-						runHoneycrispMutation(
-							() => honeycrisp.createNote(),
-							'Could not create note',
-						)}
+						honeycrisp.createNote()}
 				>
 					<PlusIcon class="size-4" />
 				</Button>

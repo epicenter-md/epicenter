@@ -3,7 +3,6 @@
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
-	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import CommandPalette from './components/CommandPalette.svelte';
 	import NoteBodyPane from './components/NoteBodyPane.svelte';
 	import NoteList from './components/NoteList.svelte';
@@ -19,16 +18,10 @@
 
 		if (e.key === 'n' && e.shiftKey) {
 			e.preventDefault();
-			runHoneycrispMutation(
-				() => honeycrisp.folders.create(),
-				'Could not create folder',
-			);
+			honeycrisp.folders.create();
 		} else if (e.key === 'n') {
 			e.preventDefault();
-			runHoneycrispMutation(
-				() => honeycrisp.createNote(),
-				'Could not create note',
-			);
+			honeycrisp.createNote();
 		}
 	}}
 />

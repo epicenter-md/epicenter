@@ -9,7 +9,6 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
-	import { runHoneycrispMutation } from '$lib/mutation.js';
 
 	const honeycrisp = getHoneycrisp();
 
@@ -22,10 +21,7 @@
 
 	function commitRename() {
 		if (editingName.trim()) {
-			runHoneycrispMutation(
-				() => honeycrisp.folders.rename(folder.id, editingName.trim()),
-				'Could not rename folder',
-			);
+			honeycrisp.folders.rename(folder.id, editingName.trim());
 		}
 		isEditing = false;
 		editingName = '';
@@ -114,10 +110,7 @@
 			<AlertDialog.Action
 				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 				onclick={() =>
-					runHoneycrispMutation(
-						() => honeycrisp.folders.delete(folder.id),
-						'Could not delete folder',
-					)}
+					honeycrisp.folders.delete(folder.id)}
 			>
 				Delete
 			</AlertDialog.Action>

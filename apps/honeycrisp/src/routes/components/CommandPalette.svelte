@@ -9,7 +9,6 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
-	import { runHoneycrispMutation } from '$lib/mutation.js';
 
 	const honeycrisp = getHoneycrisp();
 
@@ -45,10 +44,7 @@
 			group: 'Actions',
 			icon: PlusIcon,
 			onSelect: () =>
-				runHoneycrispMutation(
-					() => honeycrisp.createNote(),
-					'Could not create note',
-				),
+				honeycrisp.createNote(),
 		},
 		{
 			id: 'action:new-folder',
@@ -56,10 +52,7 @@
 			group: 'Actions',
 			icon: FolderPlusIcon,
 			onSelect: () =>
-				runHoneycrispMutation(
-					() => honeycrisp.folders.create(),
-					'Could not create folder',
-				),
+				honeycrisp.folders.create(),
 		},
 	]);
 </script>

@@ -72,6 +72,12 @@ export const NOTE_BODY = 'body';
  * is already in memory. A failed note update stops before the folder goes, so
  * the operation can be retried without knowingly leaving a dangling folder id.
  *
+ * A note that vanished between the `list()` and its own update is skipped
+ * rather than raised: it is no longer in this folder, which is the outcome the
+ * caller wanted, and another device deleting a note mid-pass is ordinary in a
+ * synced document. Every other refusal means a declaration and this code
+ * disagree, and that throws.
+ *
  * A note this release cannot read is re-parented too, through its `raw`
  * payload. `list()` returns those separately, and skipping them would leave a
  * note pointing at a folder that no longer exists while reporting success —
@@ -94,7 +100,7 @@ export function deleteHoneycrispFolder(
 	];
 	for (const noteId of inFolder) {
 		const { error } = db.tables.notes.update(noteId, { folderId: null });
-		if (error !== null) throw error;
+		if (error !== null && error.name !== 'RowAbsent') throw error;
 	}
 	// Deleting an absent folder is a no-op fact, not an error.
 	db.tables.folders.delete(folderId);

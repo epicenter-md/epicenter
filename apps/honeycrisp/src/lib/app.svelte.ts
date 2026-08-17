@@ -1,3 +1,4 @@
+import type { UpdateRowError } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import {
 	deleteHoneycrispFolder,
@@ -22,9 +23,13 @@ import { readNoteText } from './note-text.js';
  * policy, the reactive named tables over that document (`fromWorkspace`),
  * Honeycrisp's domain operations (`notes`, `folders`), the one derivation that
  * needs both those tables and where the user is (`visibleNotes`), and the
- * narrow account and store capabilities the UI actually needs. The raw
- * databases never cross this boundary: the account's data is already adapted
- * into `tables`, and what remains of the account is its two capabilities.
+ * narrow account and store capabilities the UI actually needs.
+ *
+ * The tables themselves do not cross this boundary either. `notes` and
+ * `folders` are the whole vocabulary a component gets, so nothing downstream
+ * can reach a raw write verb, the `kv` root, or the other table. That was not
+ * true until recently: `tables` was exposed so one editor pane could reach one
+ * note's prose, and it now asks for that by name (`notes.body`).
  *
  * Where the user is looking is deliberately NOT here. That lives in the URL,
  * and `navigation.svelte.ts` is its module singleton, imported directly by the
@@ -52,8 +57,11 @@ export function createHoneycrisp({
 }) {
 	const data = databases.account?.data ?? databases.device;
 	const workspace = fromWorkspace(data);
-	const folders = createFolders({ workspace });
-	const notes = createNotes({ workspace });
+	// Asymmetric on purpose: notes are table-local, folders are not. Deleting a
+	// folder re-parents the notes that were in it, so it needs both tables and
+	// says so by taking the workspace.
+	const folders = createFolders(workspace);
+	const notes = createNotes(workspace.tables.notes);
 
 	/**
 	 * The notes the user is currently looking at, in the order they appear.
@@ -84,7 +92,6 @@ export function createHoneycrisp({
 	});
 
 	return {
-		tables: workspace.tables,
 		folders,
 		notes,
 		get visibleNotes() {
@@ -97,8 +104,7 @@ export function createHoneycrisp({
 		 * list's + button, the palette) means exactly this composition.
 		 */
 		createNote(): void {
-			const { id } = notes.create(navigation.folderId);
-			navigation.selectNote(id);
+			navigation.selectNote(notes.create(navigation.folderId));
 		},
 		/**
 		 * Storage pressure of the document this generation is showing,
@@ -108,8 +114,8 @@ export function createHoneycrisp({
 		pressure: () => data.store.pressure(),
 		/**
 		 * The account's two capabilities, present exactly when this generation
-		 * has one. Its data is not here, because it already is: the tables
-		 * above are the chosen document.
+		 * has one. Its data is not here, because it already is: `notes` and
+		 * `folders` above are the chosen document.
 		 */
 		account:
 			databases.account === undefined
@@ -129,6 +135,37 @@ export const [getHoneycrisp, setHoneycrisp] = createContext<Honeycrisp>();
 // The pieces the application above is made of. Nothing below is exported: they
 // are one caller each, and reading them is optional until you need the detail.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * An update landed, or the row was already gone, which is not news.
+ *
+ * Honeycrisp reports no write failures at all, and that is a claim about what
+ * can actually go wrong rather than a shrug. An update is refused three ways.
+ * `UnknownField` is a compile error before it is a runtime one. `Nonconforming`
+ * needs a value that fails its declared arktype, and every value this file
+ * writes is statically that type: a `boolean` into `'boolean'`, an
+ * `InstantString.now()` into `'string.date.iso'`. That leaves `RowAbsent`,
+ * which means another device deleted the row between the render and the click.
+ *
+ * That last one is ordinary, and this app already ruled on it twice:
+ * `permanentlyDelete` calls an absent row "a no-op fact, not an error", and
+ * `togglePin` returns early on one. The reactive list is about to drop the row
+ * on its own, so a sentence would only ask the person to care about a race they
+ * cannot lose. Silence is the honest answer, and it is what deleted the toast
+ * wrapper every call site used to carry.
+ *
+ * The other two mean a declaration and this file disagree. That is ours, not
+ * theirs, so it throws: uncaught, into the console, with a stack. The wrapper
+ * this replaces caught around the whole call rather than the write, so a
+ * `TypeError` in domain code and the `StoreUnusableError` a disposed store
+ * throws both surfaced as "Could not update note". The second is especially
+ * wrong: a disposed store means this generation is over, and the answer is a
+ * reload rather than a retry.
+ */
+function updated(error: UpdateRowError | null): void {
+	if (error === null || error.name === 'RowAbsent') return;
+	throw error;
+}
 
 /**
  * The one order notes appear in: newest edit first.
@@ -154,11 +191,7 @@ function byRecentEdit(
  * new-folder defaults, renaming, and the delete that re-parents notes and
  * cleans up the URL.
  */
-function createFolders({
-	workspace,
-}: {
-	workspace: ReactiveWorkspace<HoneycrispData>;
-}) {
+function createFolders(workspace: ReactiveWorkspace<HoneycrispData>) {
 	const table = workspace.tables.folders;
 
 	// Name order, and nothing durable about order at all: it is deterministic
@@ -176,15 +209,19 @@ function createFolders({
 			return all;
 		},
 
-		create(): { id: FolderId } {
-			const { data, error } = table.create({ name: 'New Folder' });
+		// Nothing is returned because nothing wants it: all three create surfaces
+		// make a folder and leave the person where they are. A note is different,
+		// and says so by handing back its id.
+		create(): void {
+			const { error } = table.create({ name: 'New Folder' });
+			// A create has no `RowAbsent` arm to forgive: there is no row yet. So
+			// every refusal it can make is the impossible kind, and it throws.
 			if (error !== null) throw error;
-			return { id: data.id };
 		},
 
 		rename(folderId: FolderId, name: string): void {
 			const { error } = table.update(folderId, { name });
-			if (error !== null) throw error;
+			updated(error);
 		},
 
 		delete(folderId: FolderId): void {
@@ -207,13 +244,9 @@ function createFolders({
  * as deleted, per-folder counts, where a note's prose is, and the domain
  * commands (soft delete, pinning, re-parenting) with their URL cleanup.
  */
-function createNotes({
-	workspace,
-}: {
-	workspace: ReactiveWorkspace<HoneycrispData>;
-}) {
-	const table = workspace.tables.notes;
-
+function createNotes(
+	table: ReactiveWorkspace<HoneycrispData>['tables']['notes'],
+) {
 	const all = $derived(table.rows.filter((note) => note.deletedAt === null));
 	const deleted = $derived(
 		table.rows.filter((note) => note.deletedAt !== null),
@@ -227,15 +260,29 @@ function createNotes({
 		return counts;
 	});
 
-	/** Apply a change, or throw so the caller's toast can present it. */
+	/** Merge fields into a note, silently if the note is gone ({@link updated}). */
 	function update(noteId: NoteId, changes: Partial<Note>): void {
 		const { error } = table.update(noteId, changes);
-		if (error !== null) throw error;
+		updated(error);
 	}
 
 	return {
 		/**
-		 * This note's prose as one flat string, read straight out of the document.
+		 * This note's prose, live, for the editor to bind to.
+		 *
+		 * The root was allocated with the row (ADR-0215) and lives in the
+		 * application's one document, so there is no lease to open and nothing to
+		 * await; edits from every device reach it through the transport like any
+		 * other change. `undefined` means this note is no longer here.
+		 *
+		 * Exposed as a verb so the raw `tables` never has to be. The editor pane
+		 * wanted one call and was given the whole store shape to make it.
+		 */
+		body(id: NoteId) {
+			return table.document(id)?.get(NOTE_BODY);
+		},
+		/**
+		 * This note's prose as one flat string, for search.
 		 *
 		 * A read rather than an index: the text is a type in the application's own
 		 * document, so there is nothing to open and nothing to warm, and reading
@@ -258,7 +305,7 @@ function createNotes({
 			return table.nonconforming;
 		},
 
-		create(folderId: FolderId | null): { id: NoteId } {
+		create(folderId: FolderId | null): NoteId {
 			const now = InstantString.now();
 			const { data, error } = table.create(
 				{
@@ -274,8 +321,10 @@ function createNotes({
 				// one note each mint their own and lose one (ADR-0215).
 				{ document: [NOTE_BODY] },
 			);
+			// No `RowAbsent` arm to forgive: there is no row yet, so every refusal a
+			// create can make is the impossible kind.
 			if (error !== null) throw error;
-			return { id: data.id };
+			return data.id;
 		},
 
 		softDelete(noteId: NoteId): void {
