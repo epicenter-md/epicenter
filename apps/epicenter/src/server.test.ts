@@ -509,25 +509,16 @@ describe('createHomeServer', () => {
 		const server = await serveHost(host);
 		try {
 			expect(
-				Object.values(BUILT_IN_ROUTES).map(({ id, pattern, windowLabel }) => ({
+				Object.values(BUILT_IN_ROUTES).map(({ id, pattern }) => ({
 					id,
 					pattern,
-					windowLabel,
 				})),
 			).toEqual([
-				{ id: 'home', pattern: '/apps/home/', windowLabel: 'home' },
-				{
-					id: 'whispering',
-					pattern: '/apps/whispering/',
-					windowLabel: 'whispering',
-				},
-				{
-					id: 'honeycrisp',
-					pattern: '/apps/honeycrisp/',
-					windowLabel: 'honeycrisp',
-				},
-				{ id: 'mail', pattern: '/apps/mail/', windowLabel: 'mail' },
-				{ id: 'books', pattern: '/apps/books/', windowLabel: 'books' },
+				{ id: 'home', pattern: '/apps/home/' },
+				{ id: 'whispering', pattern: '/apps/whispering/' },
+				{ id: 'honeycrisp', pattern: '/apps/honeycrisp/' },
+				{ id: 'mail', pattern: '/apps/mail/' },
+				{ id: 'books', pattern: '/apps/books/' },
 			]);
 
 			const query = await fetch(HOME_ROUTE.url(server.url.origin), {

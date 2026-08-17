@@ -2,10 +2,11 @@
  * Bun-owned routes on the one trusted Epicenter origin.
  *
  * The built-in route table is deliberately closed and compiled. Rust can mirror
- * the IDs, paths, and stable window labels without discovering or loading an
- * application registry. The bootstrap route is host infrastructure: Tauri
- * exchanges the per-launch credential there before any SPA reaches domain
- * code.
+ * the IDs and paths without discovering or loading an application registry, and
+ * it derives its own window labels from those IDs: a window label is Tauri's
+ * handle, so Bun states no opinion about one. The bootstrap route is host
+ * infrastructure: Tauri exchanges the per-launch credential there before any
+ * SPA reaches domain code.
  */
 
 import { LOCAL_BLOB_PATH } from '@epicenter/blobs/webview';
@@ -23,7 +24,6 @@ function builtInRoute<const TId extends string>(id: TId, title: string) {
 	return {
 		id,
 		title,
-		windowLabel: id,
 		...route(`/apps/${id}/`),
 	};
 }
