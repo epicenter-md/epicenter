@@ -67,8 +67,8 @@
 	 * Ask, then rebuild (ADR-0231).
 	 *
 	 * The application owns the lifecycle and refuses to guess at consent, so the
-	 * surface that can show the sentence is the one that asks. Cancelling needs no
-	 * handler: nothing has happened yet.
+	 * component that can show the sentence is the one that asks. Cancelling needs
+	 * no handler: nothing has happened yet.
 	 *
 	 * `onConfirm` returns the promise, which is how the dialog earns the rest:
 	 * it spins, disables its own confirm, and holds the modal open, so a second
@@ -79,14 +79,14 @@
 	 */
 	function confirmRebuild(rebuildWorkspace: NonNullable<typeof rebuild>): void {
 		confirmationDialog.open({
-			title: 'Rebuild workspace?',
+			title: 'Reclaim space?',
 			description:
-				'This publishes what this device holds now as a fresh workspace document and deletes the old one, which is how the weight of deleted notes is reclaimed. Every device, this one included, discards its local copy and downloads the new document. Any workspace edit that has not synced yet, on another device or made here while this runs, is not in the new document and cannot be recovered.',
-			confirm: { text: 'Rebuild workspace', variant: 'destructive' },
+				'Deleted notes still take up room until this runs. Your notes stay, and every device downloads a fresh copy. Anything not yet synced, on another device or written here while this runs, will be lost.',
+			confirm: { text: 'Reclaim space', variant: 'destructive' },
 			onConfirm: async () => {
 				const { error } = await rebuildWorkspace();
 				if (error === null) return;
-				toast.error('Could not rebuild workspace', {
+				toast.error('Could not reclaim space', {
 					description: extractErrorMessage(error),
 					id: 'rebuild-workspace',
 				});
@@ -188,18 +188,18 @@
 		{#if sync}
 			<div
 				class="text-muted-foreground px-2 pb-1 text-[11px] tabular-nums"
-				title="Whether this device currently holds a socket to its authority, and how far through the authority's log it has read. `attempts` counts failed dials since the last one that stayed up."
+				title="Whether this device is connected and caught up with your other devices."
 			>
-				{sync.connected ? 'synced' : 'offline'} · read {sync.cursor}
+				{sync.connected ? 'Synced' : 'Offline'} · {sync.cursor} changes received
 				{#if !sync.connected && sync.attempts > 0}
-					· {sync.attempts} failed
+					· {sync.attempts} failed {sync.attempts === 1 ? 'retry' : 'retries'}
 				{/if}
 			</div>
 		{/if}
 		{#if pressure}
 			<div
 				class="text-muted-foreground px-2 pb-1 text-[11px] tabular-nums"
-				title="Structs the engine holds, over rows the workspace can see. A healthy vault sits near the item cost of one note; ten times that means the document is mostly corpse."
+				title="How much space your notes take up compared to what they need. Deleted notes still take space until you reclaim it."
 			>
 				{pressure.items} items · {pressure.liveRows} notes ·
 				{pressure.itemsPerLiveRow.toFixed(1)} each
@@ -217,7 +217,7 @@
 				onclick={() => confirmRebuild(rebuild)}
 			>
 				<RefreshCwIcon class="size-3.5" />
-				Rebuild workspace
+				Reclaim space
 			</Button>
 		{/if}
 	</Sidebar.Footer>
