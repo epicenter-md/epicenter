@@ -39,7 +39,6 @@ const notesTable = {
 	createdAt: 'string.date.iso',
 	updatedAt: 'string.date.iso',
 	deletedAt: 'string.date.iso|null = null',
-	wordCount: 'number|null = null',
 } as const;
 
 export const honeycrispWorkspace = defineWorkspace({
