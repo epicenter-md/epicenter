@@ -116,7 +116,16 @@ export function openIntentDb({ dataDir, accountEmail }: IntentDbLocation) {
 	ensureAccountDir(dataDir, accountEmail);
 	const path = intentDbPath(dataDir, accountEmail);
 	const db = new Database(path, { create: true });
-	db.run('PRAGMA journal_mode = WAL;');
+	// Not WAL, unlike the mirror. The mirror connection ATTACHes this file
+	// `mode=ro` to build the effective-label view, and SQLite cannot open a
+	// WAL database read-only: reading one means creating the `-shm` sidecar,
+	// which a read-only handle may not do. macOS leaves `-shm` behind after a
+	// close so the attach finds one and succeeds; Linux tidies it away and the
+	// attach fails, which is SQLite being right and macOS being lucky. Rollback
+	// journalling costs this file nothing it needs: one writer holds it, the
+	// writes are single assertions, and `synchronous = FULL` below is the
+	// durability that matters here.
+	db.run('PRAGMA journal_mode = DELETE;');
 	db.run('PRAGMA busy_timeout = 5000;');
 	// The mirror runs NORMAL because Gmail can rebuild it. Nothing can rebuild
 	// this file, so it pays the fsync.
