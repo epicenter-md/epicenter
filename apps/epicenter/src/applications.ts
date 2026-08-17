@@ -33,8 +33,8 @@ export type Application = {
 /**
  * The compiled applications this release can launch.
  *
- * Rust holds the matching decision for its own window table
- * (`BuiltInWindow::is_application`). Both sides are small closed lists rather than a
+ * Rust holds the matching decision for its own built-in app table
+ * (`BuiltInApp::is_launchable`). Both sides are small closed lists rather than a
  * shared manifest, and each is checked against this one by its own tests.
  */
 export const WHISPERING_APPLICATION: Application = {

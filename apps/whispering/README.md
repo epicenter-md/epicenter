@@ -45,11 +45,11 @@ bun dev:whispering
 # Browser UI only
 bun dev:whispering:ui
 
-# Epicenter desktop with Whispering mounted as a native surface
+# Epicenter desktop with Whispering as a native app window
 bun dev:epicenter
 ```
 
-The browser app runs on `http://localhost:1420`. Epicenter also serves Whispering at `epicenter://surface/whispering`.
+The browser app runs on `http://localhost:1420`. Epicenter also opens Whispering at `epicenter://app/whispering`.
 
 ## Build and verify
 

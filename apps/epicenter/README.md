@@ -49,9 +49,9 @@ action once there is one. The tray and deep links remain shortcuts into the same
 windows:
 
 ```bash
-open 'epicenter://window/whispering'
-open 'epicenter://window/honeycrisp'
-open 'epicenter://window/home'
+open 'epicenter://app/whispering'
+open 'epicenter://app/honeycrisp'
+open 'epicenter://app/home'
 ```
 
 ## Publish an app catalog

@@ -9,7 +9,7 @@
  *
  * Key behaviors:
  * - Only directories satisfying the output contract become catalog members
- * - Reserved built-in window IDs are never derived as members
+ * - Reserved built-in app IDs are never derived as members
  * - Titles come from the app document with the ID as fallback
  * - The resolver serves real files, SPA-falls-back only for extensionless
  *   routes, and refuses traversal, smuggled separators, and symlink escape
@@ -108,7 +108,7 @@ describe('deriveAppCatalog', () => {
 		writeApp(root, 'so.test.zeta');
 		writeApp(root, 'so.test.alpha');
 		// A bare label is not a workspace id, which is also why no built-in
-		// built-in window id can ever be claimed here (ADR-0210).
+		// built-in app id can ever be claimed here (ADR-0210).
 		writeApp(root, 'whispering');
 		writeApp(root, 'so.test.baddeclaration', { declaration: '{ not json' });
 		writeApp(root, 'so.test.nodeclaration', { declaration: null });

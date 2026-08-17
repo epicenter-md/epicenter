@@ -34,7 +34,7 @@ Every build opens its own store, with no platform seam, and reaches one
 authority per signed-in account (ADR-0225/0226). The desktop host serves
 Honeycrisp's bundle and brokers its credential; it owns none of its data.
 
-**The app is synchronous.** Opening the store is the only asynchronous thing
+**Reads are synchronous.** Opening the store is the only asynchronous thing
 the application does: it replays a durable log into one `Y.Doc` and everything
 after that is a property access. `db.notes.list()` returns rows, not a promise.
 

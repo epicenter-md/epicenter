@@ -56,7 +56,7 @@ This is a monorepo with the following structure:
 epicenter/
 ├── apps/
 │   ├── whispering/     # Main transcription app (ready for contributions)
-│   ├── epicenter/      # Native host for trusted app surfaces
+│   ├── epicenter/      # Native host for trusted app windows
 │   ├── sh/             # Local assistant (in development)
 │   └── ...             # Other apps in various stages
 ├── packages/
@@ -222,7 +222,7 @@ git push && git push --tags
 Apps deploy separately from npm packages:
 
 - **Whispering (browser)**: Merge to `main`. `deploy.cloudflare.yml` builds and deploys the static SPA.
-- **Epicenter (desktop)**: Epicenter owns native packaging for Whispering and every other trusted desktop surface. There is no standalone Whispering desktop release workflow.
+- **Epicenter (desktop)**: Epicenter owns native packaging for Whispering and every other trusted desktop app. There is no standalone Whispering desktop release workflow.
 - **Other web apps (Cloudflare Workers)**: Merge to `main`. `deploy.cloudflare.yml` deploys automatically.
 
 See [`.github/workflows/README.md`](.github/workflows/README.md) for the full workflow reference.

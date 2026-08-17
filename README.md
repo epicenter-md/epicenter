@@ -5,7 +5,7 @@
   <h1 align="center">Epicenter</h1>
   <p align="center"><strong>Local-first apps over a store you own.</strong></p>
   <p align="center">An app's whole data set is one CRDT document on your machine, complete enough to work with the network off. Sign in on a second device and the two converge. No server holds the only copy, and no app owns your storage.</p>
-  <p align="center"><a href="apps/honeycrisp">Honeycrisp</a>, a local-first notes app, is the surface built on it today.</p>
+  <p align="center"><a href="apps/honeycrisp">Honeycrisp</a>, a local-first notes app, is the app built on it today.</p>
   <p align="center">Run the apps freely under AGPL-3.0; build on the developer toolkit freely under MIT. <a href="#license">What that means</a>.</p>
 </p>
 
@@ -97,7 +97,7 @@ A host serves bundles and brokers credentials; it owns no application data. A
 hosted web runtime with a host-owned replica is refused, and so are third-party
 installed apps, for now.
 
-[Honeycrisp](apps/honeycrisp) is the surface running on the store, and its
+[Honeycrisp](apps/honeycrisp) is the app running on the store, and its
 README is the worked example.
 
 Whispering, vocab, skills, and the Epicenter host do not compile right now. The
@@ -127,9 +127,9 @@ Signed-in sync sends your data to a trusted server that reads it in plaintext. O
 
 ## Repo Map
 
-### Surfaces
+### Apps
 
-| Surface | Status | Notes |
+| App | Status | Notes |
 | --- | --- | --- |
 | [Honeycrisp](apps/honeycrisp) | Runs on the store | Local-first notes. Folders and notes are rows; a note's prose is a rich-text type inside its row. |
 | [Matter](apps/matter) | Runs, separately | Typed grid over user-owned Markdown folders. It edits ordinary `.md` files directly; `matter.sqlite` is a disposable query mirror. |
@@ -149,7 +149,7 @@ These packages carry the main architecture.
 | [`@epicenter/workspace`](packages/workspace) | The inert workspace declaration vocabulary: arktype JSON, row addresses, and nonconformance. | MIT |
 | [`@epicenter/sqlite`](packages/sqlite) | Neutral embedded-SQLite driver with Browser, Bun, and Durable Object adapters. It owns no product schema. | MIT |
 | [`@epicenter/sync`](packages/sync) | The WebSocket subprotocol vocabulary both halves of a handshake must agree on. | MIT |
-| [`@epicenter/ui`](packages/ui) | Shared Svelte component library used by multiple app surfaces. | MIT |
+| [`@epicenter/ui`](packages/ui) | Shared Svelte component library used by multiple apps. | MIT |
 | [`@epicenter/server`](packages/server) | Shared Hono server library composed by the hosted API and the self-host reference deployable. | AGPL-3.0-or-later |
 
 ## Architecture
