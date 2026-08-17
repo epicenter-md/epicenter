@@ -32,7 +32,7 @@ describe('Epicenter-hosted Whispering identity', () => {
 		const vite = read('vite.config.ts');
 		expect(config).toContain("pages: '../epicenter/dist/whispering'");
 		expect(config).toContain("paths: { base: '/apps/whispering' }");
-		expect(vite).toContain("process.env.EPICENTER_SURFACE === '1'");
+		expect(vite).toContain("process.env.EPICENTER_HOST === '1'");
 		expect(vite).not.toContain('TAURI_ENV_PLATFORM');
 		expect(vite).not.toContain('TAURI_DEV_HOST');
 		expect(read('src/lib/platform/base-path.browser.ts')).toContain(

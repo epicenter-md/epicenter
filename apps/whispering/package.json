@@ -44,7 +44,7 @@
 		"dev": "vite dev",
 		"test": "bun test",
 		"build": "NODE_ENV=production vite build",
-		"build:epicenter": "EPICENTER_SURFACE=1 bun run build",
+		"build:epicenter": "EPICENTER_HOST=1 bun run build",
 		"check": "bun run typecheck",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
