@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Folder } from '@epicenter/honeycrisp';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
-	import { Button } from '@epicenter/ui/button';
+	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Dialog from '@epicenter/ui/dialog';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as EmojiPicker from '@epicenter/ui/emoji-picker';
@@ -191,7 +191,7 @@
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
 			<AlertDialog.Action
-				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+				class={buttonVariants({ variant: 'destructive' })}
 				onclick={() =>
 					honeycrisp.folders.delete(folder.id)}
 			>

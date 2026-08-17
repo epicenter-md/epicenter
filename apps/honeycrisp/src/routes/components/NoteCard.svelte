@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Note } from '@epicenter/honeycrisp';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
-	import { Button } from '@epicenter/ui/button';
+	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as Item from '@epicenter/ui/item';
 	import { cn } from '@epicenter/ui/utils';
@@ -213,6 +213,7 @@
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
 			<AlertDialog.Action
+				class={buttonVariants({ variant: 'destructive' })}
 				onclick={() =>
 					honeycrisp.notes.permanentlyDelete(note.id)}
 				>Delete</AlertDialog.Action
