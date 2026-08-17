@@ -63,5 +63,5 @@
 
 <Toaster />
 <ConfirmationDialog />
-<ModeWatcher />
+<ModeWatcher defaultMode="dark" track={false} />
 <FlushEditsOnHide />

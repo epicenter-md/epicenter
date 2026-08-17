@@ -25,7 +25,7 @@
 
 <ConfirmationDialog />
 <Toaster />
-<ModeWatcher />
+<ModeWatcher defaultMode="dark" track={false} />
 {#await opening}
 	<Loading class="h-dvh" />
 {:then runtime}

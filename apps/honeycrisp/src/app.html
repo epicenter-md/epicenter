@@ -6,14 +6,11 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>Honeycrisp</title>
 		<!--
-			Honeycrisp is dark, so the html tag above is already correct and this
-			only undoes it for someone who chose light. ModeWatcher ships the same
-			pre-paint script, but it arrives through `svelte:head`, and this app
-			sets `ssr = false`, so nothing from a component reaches the served
-			HTML: its copy runs after first paint, which is too late to prevent
-			the flash. Only `light` is tested because `toggleMode` writes exactly
-			`light` or `dark` and no surface calls `resetMode`, so `system` is
-			never stored.
+			Undoes the dark default before paint for whoever chose light.
+			ModeWatcher ships this same script but injects it through
+			`svelte:head`, which arrives after first paint because this app sets
+			`ssr = false`. Only `light` is tested: `toggleMode` writes `light` or
+			`dark`, and nothing calls `resetMode`, so `system` is never stored.
 		-->
 		<script>
 			if (localStorage.getItem('mode-watcher-mode') === 'light') {
