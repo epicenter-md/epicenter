@@ -26,7 +26,6 @@ const foldersTable = {
 	// the projection column and the row alike, and "absent" is not a SQL type.
 	// A default is applied at read time and never written (ADR-0213).
 	icon: 'string|null = null',
-	sortOrder: 'number',
 } as const;
 
 const notesTable = {

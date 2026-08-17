@@ -7,7 +7,7 @@
  * in a single `goto()` call.
  *
  * Defaults are elided from the URL to keep it clean: `/` means all defaults
- * (all notes, sorted by date edited, no search, no deleted view).
+ * (all notes, no search, no deleted view).
  *
  * @example
  * ```typescript
@@ -26,8 +26,6 @@ import type { FolderId, NoteId } from '@epicenter/honeycrisp';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 
-type SortBy = 'dateEdited' | 'dateCreated' | 'title';
-
 /**
  * The complete URL state schema for Honeycrisp.
  *
@@ -39,7 +37,6 @@ type SearchParams = {
 	folder: FolderId | null;
 	note: NoteId | null;
 	view: 'deleted' | null;
-	sort: SortBy;
 	q: string;
 };
 
@@ -48,11 +45,8 @@ const DEFAULTS = {
 	folder: null,
 	note: null,
 	view: null,
-	sort: 'dateEdited',
 	q: '',
 } satisfies SearchParams;
-
-const SORT_KEYS = ['dateEdited', 'dateCreated', 'title'] satisfies SortBy[];
 
 function createSearchParams() {
 	/**
@@ -99,12 +93,6 @@ function createSearchParams() {
 			return page.url.searchParams.get('view') === 'deleted';
 		},
 
-		/** Current sort order. Defaults to `'dateEdited'` when absent from URL. */
-		get sort(): SortBy {
-			const raw = page.url.searchParams.get('sort');
-			return SORT_KEYS.includes(raw as SortBy) ? (raw as SortBy) : 'dateEdited';
-		},
-
 		/** Current search query. Defaults to `''` when absent from URL. */
 		get q(): string {
 			return page.url.searchParams.get('q') ?? '';
@@ -114,5 +102,4 @@ function createSearchParams() {
 	};
 }
 
-export type { SortBy };
 export const searchParams = createSearchParams();

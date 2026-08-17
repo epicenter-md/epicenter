@@ -21,22 +21,26 @@ export function createFolders({
 }) {
 	const table = workspace.tables.folders;
 
+	// Name order, and nothing durable about order at all: it is deterministic
+	// on every device without a schema field, and every surface that lists
+	// folders (sidebar, move-to menu, palette) wants the same answer.
+	const all = $derived(
+		table.rows.toSorted((a, b) => a.name.localeCompare(b.name)),
+	);
+
 	return {
 		get(id: FolderId) {
 			return table.rows.find((folder) => folder.id === id);
 		},
 		get all() {
-			return table.rows;
+			return all;
 		},
 		get nonconforming() {
 			return table.nonconforming;
 		},
 
 		create(): { id: FolderId } {
-			const { data, error } = table.create({
-				name: 'New Folder',
-				sortOrder: table.rows.length,
-			});
+			const { data, error } = table.create({ name: 'New Folder' });
 			if (error !== null) throw error;
 			return { id: data.id };
 		},

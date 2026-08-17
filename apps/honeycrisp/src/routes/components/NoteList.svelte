@@ -1,10 +1,7 @@
 <script lang="ts">
 	import type { Note } from '@epicenter/honeycrisp';
 	import { Button } from '@epicenter/ui/button';
-	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as ScrollArea from '@epicenter/ui/scroll-area';
-	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down';
-	import CheckIcon from '@lucide/svelte/icons/check';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
@@ -13,21 +10,12 @@
 
 	const honeycrisp = getHoneycrisp();
 
-	const sortOptions = [
-		{ value: 'dateEdited' as const, label: 'Date Edited' },
-		{ value: 'dateCreated' as const, label: 'Date Created' },
-		{ value: 'title' as const, label: 'Title' },
-	];
-
+	// Grouping only: `view.currentNotes` already owns the order (newest edit
+	// first), so the pinned partition and the date labels preserve it.
 	const groupedNotes = $derived.by(() => {
 		const notes = honeycrisp.view.currentNotes;
-		const pinned = notes
-			.filter((n) => n.pinned)
-			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-
-		const unpinned = notes
-			.filter((n) => !n.pinned)
-			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+		const pinned = notes.filter((n) => n.pinned);
+		const unpinned = notes.filter((n) => !n.pinned);
 
 		const groups: { label: string; entries: Note[] }[] = [];
 
@@ -106,29 +94,6 @@
 		</div>
 		{#if honeycrisp.view.currentShowControls}
 			<div class="flex items-center gap-1">
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger>
-						{#snippet child({ props })}
-							<Button variant="ghost" size="icon" class="size-7" {...props}>
-								<ArrowUpDownIcon class="size-4" />
-							</Button>
-						{/snippet}
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="w-44">
-						{#each sortOptions as option}
-							<DropdownMenu.Item
-								onclick={() => honeycrisp.view.setSortBy(option.value)}
-							>
-								{#if honeycrisp.view.sortBy === option.value}
-									<CheckIcon class="mr-2 size-4" />
-								{:else}
-									<span class="mr-2 size-4"></span>
-								{/if}
-								{option.label}
-							</DropdownMenu.Item>
-						{/each}
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
 				<Button
 					variant="ghost"
 					size="icon"

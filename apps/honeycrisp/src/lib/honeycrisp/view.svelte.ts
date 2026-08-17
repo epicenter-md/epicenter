@@ -2,14 +2,14 @@
  * Reactive view state for Honeycrisp, backed by URL search params.
  *
  * The lens the user is currently looking through. Owns navigation,
- * selection, search, sort, view mode, and the derived "what notes does
+ * selection, search, view mode, and the derived "what notes does
  * the user see right now" question (`currentNotes` plus its title and
  * empty-state messaging).
  *
  * Navigation state lives in the URL so it's bookmarkable, shareable, and
  * works with browser back/forward. Default values are elided from the URL to
- * keep it clean: `/` means all defaults (all notes, sorted by date edited, no
- * search). Transient editor focus requests stay in memory.
+ * keep it clean: `/` means all defaults (all notes, no search). Transient
+ * editor focus requests stay in memory.
  *
  * @example
  * ```svelte
@@ -29,7 +29,7 @@ import type { FolderId, NoteId } from '@epicenter/honeycrisp';
 import type { NoteSearchIndex } from '../search-index.svelte.js';
 import type { createFolders } from './folders.svelte.js';
 import type { createNotes } from './notes.svelte.js';
-import { type SortBy, searchParams } from './search-params.svelte.js';
+import { searchParams } from './search-params.svelte.js';
 
 export function createView({
 	folders,
@@ -44,11 +44,21 @@ export function createView({
 
 	// ─── Derived State ───────────────────────────────────────────────────
 
-	/** Notes filtered by selected folder and search query, then sorted. */
+	// The one order notes appear in: newest edit first. There is no
+	// user-selectable sort by decision; the earlier sort control was inert (the
+	// list re-sorted by updatedAt regardless) and nobody noticed, so the
+	// feature was deleted rather than repaired. This comparator is ordering's
+	// single owner: the list component groups (pinned, date labels) without
+	// ever re-sorting.
+	const byRecentEdit = (
+		a: { updatedAt: string },
+		b: { updatedAt: string },
+	): number => b.updatedAt.localeCompare(a.updatedAt);
+
+	/** Notes filtered by selected folder and search query, newest edit first. */
 	const filteredNotes = $derived.by(() => {
 		const folderId = searchParams.folder;
 		const q = searchParams.q.trim().toLowerCase();
-		const sort = searchParams.sort;
 
 		return notes.all
 			.filter((n) => folderId === null || n.folderId === folderId)
@@ -62,12 +72,7 @@ export function createView({
 				const text = searchIndex.textFor(n.id);
 				return (text ?? n.preview).toLowerCase().includes(q);
 			})
-			.toSorted((a, b) => {
-				if (sort === 'title') return a.title.localeCompare(b.title);
-				if (sort === 'dateCreated')
-					return b.createdAt.localeCompare(a.createdAt);
-				return b.updatedAt.localeCompare(a.updatedAt);
-			});
+			.toSorted(byRecentEdit);
 	});
 
 	/** Human-readable name for the current folder. Feeds `currentTitle`. */
@@ -100,9 +105,6 @@ export function createView({
 		get searchQuery() {
 			return searchParams.q;
 		},
-		get sortBy(): SortBy {
-			return searchParams.sort;
-		},
 		get isRecentlyDeletedView() {
 			return searchParams.isDeletedView;
 		},
@@ -112,13 +114,15 @@ export function createView({
 		 * Recently Deleted, otherwise the folder/search-filtered + sorted list.
 		 */
 		get currentNotes() {
-			return searchParams.isDeletedView ? notes.deleted : filteredNotes;
+			return searchParams.isDeletedView
+				? notes.deleted.toSorted(byRecentEdit)
+				: filteredNotes;
 		},
 		/** The header title for the current notes list. */
 		get currentTitle(): string {
 			return searchParams.isDeletedView ? 'Recently Deleted' : folderName;
 		},
-		/** Whether the sort + new-note controls should appear. Off in Recently Deleted. */
+		/** Whether the new-note control should appear. Off in Recently Deleted. */
 		get currentShowControls(): boolean {
 			return !searchParams.isDeletedView;
 		},
@@ -191,22 +195,6 @@ export function createView({
 		selectNote(noteId: NoteId) {
 			editorFocusRequest += 1;
 			searchParams.update({ note: noteId });
-		},
-
-		/**
-		 * Change the note sort order.
-		 *
-		 * Sorts the note list by the specified criteria. The default
-		 * ('dateEdited') is elided from the URL to keep it clean.
-		 *
-		 * @example
-		 * ```typescript
-		 * honeycrisp.view.setSortBy('title');
-		 * honeycrisp.view.setSortBy('dateEdited');
-		 * ```
-		 */
-		setSortBy(value: SortBy) {
-			searchParams.update({ sort: value });
 		},
 
 		/**
