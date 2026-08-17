@@ -36,7 +36,7 @@ starts the next one.
 
 A signed-in account is unavailable until its first bootstrap binds it to an
 authority document, so the layout's boot gate holds the whole app while it
-waits, device data included; a partial-ready local-drafts surface is refused,
+waits, device data included; a partial-ready local-drafts state is refused,
 and signing out (a new generation) is the way back to device-only use.
 Signing out closes a replica and keeps it, so signing back in finds the same
 account's work.

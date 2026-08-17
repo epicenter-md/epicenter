@@ -21,7 +21,7 @@
 	 * and ADR-0226 withdrew what it read: an application on the store writes to
 	 * its own client-owned store, so a reader that wants an application's rows
 	 * has to become a replica of that application's authority. That is a real
-	 * surface somebody may build; it is not this one reimported.
+	 * app somebody may build; it is not this one reimported.
 	 */
 
 	const { sessionReady }: { sessionReady: Promise<void> } = $props();

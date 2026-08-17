@@ -14,7 +14,7 @@ Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note 
 
 ### Data layer
 
-Honeycrisp declares one inert workspace over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and opens it as a store the surface owns:
+Honeycrisp declares one inert workspace over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and opens it as a store the app owns:
 
 ```txt
 openDevice(honeycrispWorkspace)                          sqlite-wasm in the page,
@@ -34,7 +34,7 @@ Every build opens its own store, with no platform seam, and reaches one
 authority per signed-in account (ADR-0225/0226). The desktop host serves
 Honeycrisp's bundle and brokers its credential; it owns none of its data.
 
-**The surface is synchronous.** Opening the store is the only asynchronous thing
+**The app is synchronous.** Opening the store is the only asynchronous thing
 the application does: it replays a durable log into one `Y.Doc` and everything
 after that is a property access. `db.notes.list()` returns rows, not a promise.
 

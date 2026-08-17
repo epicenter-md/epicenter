@@ -1,6 +1,6 @@
 # Epicenter desktop host
 
-Epicenter is the repository's native application host. It owns one Tauri runtime, one native command surface, and the trusted app catalog. Product SPAs keep their source in their own `apps/*` folders; Epicenter builds and serves their desktop variants without copying that source into this folder.
+Epicenter is the repository's native application host. It owns one Tauri runtime, one native command API, and the trusted app catalog. Product SPAs keep their source in their own `apps/*` folders; Epicenter builds and serves their desktop variants without copying that source into this folder.
 
 ```text
 trusted SPA source                 Epicenter build output
@@ -49,9 +49,9 @@ action once there is one. The tray and deep links remain shortcuts into the same
 windows:
 
 ```bash
-open 'epicenter://surface/whispering'
-open 'epicenter://surface/honeycrisp'
-open 'epicenter://surface/home'
+open 'epicenter://window/whispering'
+open 'epicenter://window/honeycrisp'
+open 'epicenter://window/home'
 ```
 
 ## Publish an app catalog
@@ -92,7 +92,7 @@ bun run --cwd apps/epicenter desktop:build
 # Typecheck Home plus every compiled application's platform conditions
 bun run --cwd apps/epicenter typecheck
 
-# Host, routing, sidecar, and surface tests
+# Host, routing, sidecar, and window tests
 bun test apps/epicenter/scripts apps/epicenter/src
 
 # Native command and fixture tests
@@ -106,6 +106,6 @@ cargo test --manifest-path apps/epicenter/src-tauri/Cargo.toml
 - `dist` is generated. Never edit it or commit product source beneath it.
 - A product SPA owns its UI and browser deployment from its own app folder.
 - A multi-host SPA selects implementations through build-time `#platform/*` conditions. Runtime checks guard optional capabilities; they do not choose which implementation was bundled.
-- Do not create `apps/epicenter/<surface>` source copies. The build must consume the canonical app source directly.
+- Do not create `apps/epicenter/<app>` source copies. The build must consume the canonical app source directly.
 
 The durable host and trust decision is recorded in [ADR-0118](../../docs/adr/0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md).
