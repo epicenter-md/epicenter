@@ -4,6 +4,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as Item from '@epicenter/ui/item';
+	import { cn } from '@epicenter/ui/utils';
 	import ArchiveRestoreIcon from '@lucide/svelte/icons/archive-restore';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import FolderIcon from '@lucide/svelte/icons/folder';
@@ -34,9 +35,10 @@
 	<ContextMenu.Trigger>
 		<Item.Root
 			size="sm"
-			class="cursor-pointer flex-col items-stretch gap-0.5 rounded-lg py-2 hover:bg-accent/30 {isSelected
-				? 'bg-accent'
-				: ''}"
+			class={cn(
+				'cursor-pointer flex-col items-stretch gap-0.5 rounded-lg py-2 hover:bg-accent/30',
+				isSelected && 'bg-accent',
+			)}
 			onclick={onSelect}
 		>
 			<div class="flex items-start justify-between gap-2">
@@ -56,9 +58,12 @@
 
 			{#if isDeleted}
 				<div
-					class="absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover/item:flex {isSelected
-						? 'flex'
-						: ''}"
+					class={cn(
+						'absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover/item:flex',
+						// `cn` merges this against `hidden` rather than stacking both and
+						// letting stylesheet order decide which display wins.
+						isSelected && 'flex',
+					)}
 				>
 					<Button
 						variant="ghost"
@@ -89,9 +94,12 @@
 				</div>
 			{:else}
 				<div
-					class="absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover/item:flex {isSelected
-						? 'flex'
-						: ''}"
+					class={cn(
+						'absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover/item:flex',
+						// `cn` merges this against `hidden` rather than stacking both and
+						// letting stylesheet order decide which display wins.
+						isSelected && 'flex',
+					)}
 				>
 					<Button
 						variant="ghost"
@@ -104,7 +112,7 @@
 							honeycrisp.notes.togglePin(note.id);
 						}}
 					>
-						<PinIcon class="size-3 {note.pinned ? 'fill-current' : ''}" />
+						<PinIcon class={cn('size-3', note.pinned && 'fill-current')} />
 					</Button>
 					<Button
 						variant="ghost-destructive"
@@ -148,7 +156,7 @@
 				onclick={() =>
 					honeycrisp.notes.togglePin(note.id)}
 			>
-				<PinIcon class="mr-2 size-4 {note.pinned ? 'fill-current' : ''}" />
+				<PinIcon class={cn('mr-2 size-4', note.pinned && 'fill-current')} />
 				{note.pinned ? 'Unpin' : 'Pin'}
 			</ContextMenu.Item>
 			<ContextMenu.Separator />
