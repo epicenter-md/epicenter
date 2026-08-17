@@ -8,6 +8,7 @@
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
+	import { navigation } from '$lib/honeycrisp/navigation.svelte.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 
 	const honeycrisp = getHoneycrisp();
@@ -55,8 +56,8 @@
 		</div>
 	{:else}
 		<Sidebar.MenuButton
-			isActive={honeycrisp.view.selectedFolderId === folder.id}
-			onclick={() => honeycrisp.view.selectFolder(folder.id)}
+			isActive={navigation.folderId === folder.id}
+			onclick={() => navigation.selectFolder(folder.id)}
 		>
 			{#if folder.icon}
 				<span class="text-base leading-none">{folder.icon}</span>

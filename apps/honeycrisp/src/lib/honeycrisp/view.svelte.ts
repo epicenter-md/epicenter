@@ -1,15 +1,10 @@
 /**
- * Reactive view state for Honeycrisp, backed by URL search params.
+ * What the user is looking at right now, derived from where they are.
  *
- * The lens the user is currently looking through. Owns navigation,
- * selection, search, view mode, and the derived "what notes does
- * the user see right now" question (`currentNotes` plus its title and
- * empty-state messaging).
- *
- * Navigation state lives in the URL so it's bookmarkable, shareable, and
- * works with browser back/forward. Default values are elided from the URL to
- * keep it clean: `/` means all defaults (all notes, no search). Transient
- * editor focus requests stay in memory.
+ * `navigation` owns where: the folder, the note, the query, the deleted view.
+ * This owns the answer that follows from it. The two are separate because one
+ * is a place the URL can hold and the other is a question only the notes table
+ * can answer.
  *
  * @example
  * ```svelte
@@ -25,10 +20,9 @@
  * ```
  */
 
-import type { FolderId, NoteId } from '@epicenter/honeycrisp';
 import type { createFolders } from './folders.svelte.js';
+import { navigation } from './navigation.svelte.js';
 import type { createNotes } from './notes.svelte.js';
-import { searchParams } from './search-params.svelte.js';
 
 export function createView({
 	folders,
@@ -37,10 +31,6 @@ export function createView({
 	folders: ReturnType<typeof createFolders>;
 	notes: ReturnType<typeof createNotes>;
 }) {
-	let editorFocusRequest = $state(0);
-
-	// ─── Derived State ───────────────────────────────────────────────────
-
 	// The one order notes appear in: newest edit first. There is no
 	// user-selectable sort by decision; the earlier sort control was inert (the
 	// list re-sorted by updatedAt regardless) and nobody noticed, so the
@@ -54,8 +44,8 @@ export function createView({
 
 	/** Notes filtered by selected folder and search query, newest edit first. */
 	const filteredNotes = $derived.by(() => {
-		const folderId = searchParams.folder;
-		const q = searchParams.q.trim().toLowerCase();
+		const folderId = navigation.folderId;
+		const q = navigation.query.trim().toLowerCase();
 
 		return notes.all
 			.filter((n) => folderId === null || n.folderId === folderId)
@@ -74,54 +64,27 @@ export function createView({
 
 	/** Human-readable name for the current folder. Feeds `currentTitle`. */
 	const folderName = $derived.by(() => {
-		const folderId = searchParams.folder;
+		const folderId = navigation.folderId;
 		return folderId ? (folders.get(folderId)?.name ?? 'Notes') : 'All Notes';
 	});
 
-	/** The currently selected note (can be active or deleted). */
-	const selectedNote = $derived.by(() => {
-		const noteId = searchParams.note;
-		return noteId ? (notes.get(noteId) ?? null) : null;
-	});
-
-	// ─── Public API ──────────────────────────────────────────────────────
-
 	return {
-		get selectedFolderId(): FolderId | null {
-			return searchParams.folder;
-		},
-		get selectedNoteId(): NoteId | null {
-			return searchParams.note;
-		},
-		get selectedNote() {
-			return selectedNote;
-		},
-		get editorFocusRequest() {
-			return editorFocusRequest;
-		},
-		get searchQuery() {
-			return searchParams.q;
-		},
-		get isRecentlyDeletedView() {
-			return searchParams.isDeletedView;
-		},
-
 		/**
 		 * The list of notes the user currently sees: deleted notes when in
 		 * Recently Deleted, otherwise the folder/search-filtered + sorted list.
 		 */
 		get currentNotes() {
-			return searchParams.isDeletedView
+			return navigation.isDeletedView
 				? notes.deleted.toSorted(byRecentEdit)
 				: filteredNotes;
 		},
 		/** The header title for the current notes list. */
 		get currentTitle(): string {
-			return searchParams.isDeletedView ? 'Recently Deleted' : folderName;
+			return navigation.isDeletedView ? 'Recently Deleted' : folderName;
 		},
 		/** Whether the new-note control should appear. Off in Recently Deleted. */
 		get currentShowControls(): boolean {
-			return !searchParams.isDeletedView;
+			return !navigation.isDeletedView;
 		},
 		/**
 		 * The empty-state message for the current notes list.
@@ -134,86 +97,13 @@ export function createView({
 		 * different sentence.
 		 */
 		get currentEmptyMessage(): string {
-			if (notes.nonconforming.length > 0) {
-				const count = notes.nonconforming.length;
-				return `${count} ${count === 1 ? 'note is' : 'notes are'} here but this version of Honeycrisp cannot read ${count === 1 ? 'it' : 'them'}. Nothing has been lost.`;
+			const unreadable = notes.nonconforming.length;
+			if (unreadable > 0) {
+				return `${unreadable} ${unreadable === 1 ? 'note is' : 'notes are'} here but this version of Honeycrisp cannot read ${unreadable === 1 ? 'it' : 'them'}. Nothing has been lost.`;
 			}
-			return searchParams.isDeletedView
+			return navigation.isDeletedView
 				? 'No deleted notes'
 				: 'No notes yet. Click + to create one.';
-		},
-		/** How many rows are stored but unreadable, for anything that wants to say so. */
-		get unreadableCount(): number {
-			return notes.nonconforming.length;
-		},
-
-		/**
-		 * Select a folder and clear the note selection.
-		 *
-		 * Switches the view to show notes in the selected folder. If `null` is
-		 * passed, shows all notes (unfiled + all folders). Also clears the
-		 * Recently Deleted view if it was active.
-		 *
-		 * @example
-		 * ```typescript
-		 * honeycrisp.view.selectFolder(folderId);
-		 *
-		 * // Show all notes
-		 * honeycrisp.view.selectFolder(null);
-		 * ```
-		 */
-		selectFolder(folderId: FolderId | null) {
-			searchParams.update({ view: null, note: null, folder: folderId });
-		},
-
-		/**
-		 * Switch to the Recently Deleted view.
-		 *
-		 * Shows only soft-deleted notes. Clears the folder selection and note
-		 * selection.
-		 *
-		 * @example
-		 * ```typescript
-		 * honeycrisp.view.selectRecentlyDeleted();
-		 * ```
-		 */
-		selectRecentlyDeleted() {
-			searchParams.update({ folder: null, note: null, view: 'deleted' });
-		},
-
-		/**
-		 * Select a note by ID to open it in the editor.
-		 *
-		 * @example
-		 * ```typescript
-		 * honeycrisp.view.selectNote(noteId);
-		 * ```
-		 */
-		selectNote(noteId: NoteId) {
-			editorFocusRequest += 1;
-			searchParams.update({ note: noteId });
-		},
-
-		/**
-		 * Update the search filter text.
-		 *
-		 * Filters the note list to show only notes whose title or body contains
-		 * the query (case-insensitive). Pass an empty string to clear it.
-		 *
-		 * Reading every note's prose is the cost of a query, and it is paid only
-		 * while one is active: an empty query short-circuits before the body is
-		 * ever touched, so typing inside a note never walks the vault. The prose
-		 * is a type in the application's own document, so a walk is memory, not
-		 * I/O.
-		 *
-		 * @example
-		 * ```typescript
-		 * honeycrisp.view.setSearchQuery('meeting');
-		 * honeycrisp.view.setSearchQuery(''); // clear
-		 * ```
-		 */
-		setSearchQuery(query: string) {
-			searchParams.update({ q: query });
 		},
 	};
 }

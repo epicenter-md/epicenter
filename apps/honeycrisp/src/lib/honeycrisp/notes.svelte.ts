@@ -8,7 +8,7 @@ import {
 } from '@epicenter/honeycrisp';
 import type { ReactiveWorkspace } from '@epicenter/svelte';
 import { readNoteText } from '../note-text.js';
-import { searchParams } from './search-params.svelte.js';
+import { navigation } from './navigation.svelte.js';
 
 /**
  * Honeycrisp's own note concepts, over the reactive `notes` table.
@@ -97,7 +97,7 @@ export function createNotes({
 
 		softDelete(noteId: NoteId): void {
 			update(noteId, { deletedAt: InstantString.now() });
-			if (searchParams.note === noteId) searchParams.update({ note: null });
+			navigation.noteRemoved(noteId);
 		},
 
 		restore(noteId: NoteId): void {
@@ -107,7 +107,7 @@ export function createNotes({
 		permanentlyDelete(noteId: NoteId): void {
 			// Deleting an absent note is a no-op fact, not an error.
 			table.delete(noteId);
-			if (searchParams.note === noteId) searchParams.update({ note: null });
+			navigation.noteRemoved(noteId);
 		},
 
 		togglePin(noteId: NoteId): void {

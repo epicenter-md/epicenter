@@ -2,6 +2,7 @@ import { fromWorkspace } from '@epicenter/svelte';
 import { createContext } from 'svelte';
 import type { HoneycrispDatabases } from '../databases.js';
 import { createFolders } from './folders.svelte.js';
+import { navigation } from './navigation.svelte.js';
 import { createNotes } from './notes.svelte.js';
 import { createView } from './view.svelte.js';
 
@@ -54,8 +55,8 @@ export function createHoneycrisp({
 		 * + button, the palette) means exactly this composition.
 		 */
 		createNote(): void {
-			const { id } = notes.create(view.selectedFolderId);
-			view.selectNote(id);
+			const { id } = notes.create(navigation.folderId);
+			navigation.selectNote(id);
 		},
 		/**
 		 * Storage pressure of the document this generation is showing,

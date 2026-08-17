@@ -4,6 +4,7 @@
 	import * as ScrollArea from '@epicenter/ui/scroll-area';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
+	import { navigation } from '$lib/honeycrisp/navigation.svelte.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import { getDateLabel } from '$lib/utils/date';
 	import NoteCard from '../components/NoteCard.svelte';
@@ -61,18 +62,18 @@
 		if (flatNoteIds.length === 0) return;
 		e.preventDefault();
 
-		const currentIndex = honeycrisp.view.selectedNoteId
-			? flatNoteIds.indexOf(honeycrisp.view.selectedNoteId)
+		const currentIndex = navigation.noteId
+			? flatNoteIds.indexOf(navigation.noteId)
 			: -1;
 
 		if (e.key === 'ArrowDown') {
 			const nextIndex =
 				currentIndex < flatNoteIds.length - 1 ? currentIndex + 1 : 0;
-			honeycrisp.view.selectNote(flatNoteIds[nextIndex]!);
+			navigation.selectNote(flatNoteIds[nextIndex]!);
 		} else {
 			const prevIndex =
 				currentIndex > 0 ? currentIndex - 1 : flatNoteIds.length - 1;
-			honeycrisp.view.selectNote(flatNoteIds[prevIndex]!);
+			navigation.selectNote(flatNoteIds[prevIndex]!);
 		}
 	}}
 	tabindex="-1"
@@ -121,8 +122,8 @@
 						{#each group.entries as note (note.id)}
 							<NoteCard
 								{note}
-								isSelected={note.id === honeycrisp.view.selectedNoteId}
-								onSelect={() => honeycrisp.view.selectNote(note.id)}
+								isSelected={note.id === navigation.noteId}
+								onSelect={() => navigation.selectNote(note.id)}
 							/>
 						{/each}
 					</div>

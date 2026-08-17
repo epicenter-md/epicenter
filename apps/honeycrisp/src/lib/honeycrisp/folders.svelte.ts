@@ -4,7 +4,7 @@ import {
 	type HoneycrispData,
 } from '@epicenter/honeycrisp';
 import type { ReactiveWorkspace } from '@epicenter/svelte';
-import { searchParams } from './search-params.svelte.js';
+import { navigation } from './navigation.svelte.js';
 
 /**
  * Honeycrisp's own folder concepts, over the reactive `folders` table.
@@ -54,9 +54,7 @@ export function createFolders({
 			// Re-parents this folder's notes and then removes it. Both tables
 			// invalidate on their own, so nothing has to be told to re-read.
 			deleteHoneycrispFolder(workspace, folderId);
-			if (searchParams.folder === folderId) {
-				searchParams.update({ folder: null, note: null });
-			}
+			navigation.folderRemoved(folderId);
 		},
 	};
 }

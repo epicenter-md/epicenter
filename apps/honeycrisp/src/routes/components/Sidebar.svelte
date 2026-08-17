@@ -13,6 +13,7 @@
 	import { auth } from '#platform/auth';
 	import { instanceSetting } from '#platform/instance';
 	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
+	import { navigation } from '$lib/honeycrisp/navigation.svelte.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
@@ -110,8 +111,8 @@
 		<div class="px-2 pb-1">
 			<Sidebar.Input
 				placeholder="Search notes…"
-				value={honeycrisp.view.searchQuery}
-				oninput={(e) => honeycrisp.view.setSearchQuery(e.currentTarget.value)}
+				value={navigation.query}
+				oninput={(e) => navigation.setQuery(e.currentTarget.value)}
 			/>
 		</div>
 	</Sidebar.Header>
@@ -122,8 +123,8 @@
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={honeycrisp.view.selectedFolderId === null && !honeycrisp.view.isRecentlyDeletedView}
-							onclick={() => honeycrisp.view.selectFolder(null)}
+							isActive={navigation.folderId === null && !navigation.isDeletedView}
+							onclick={() => navigation.selectFolder(null)}
 						>
 							<FileTextIcon class="size-4" />
 							<span>All Notes</span>
@@ -134,8 +135,8 @@
 					</Sidebar.MenuItem>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={honeycrisp.view.isRecentlyDeletedView && honeycrisp.view.selectedFolderId === null}
-							onclick={() => honeycrisp.view.selectRecentlyDeleted()}
+							isActive={navigation.isDeletedView && navigation.folderId === null}
+							onclick={() => navigation.selectRecentlyDeleted()}
 						>
 							<TrashIcon class="size-4" />
 							<span>Recently Deleted</span>

@@ -8,6 +8,7 @@
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
+	import { navigation } from '$lib/honeycrisp/navigation.svelte.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 
 	const honeycrisp = getHoneycrisp();
@@ -20,7 +21,7 @@
 			label: 'All Notes',
 			group: 'Folders',
 			icon: FileTextIcon,
-			onSelect: () => honeycrisp.view.selectFolder(null),
+			onSelect: () => navigation.selectFolder(null),
 		},
 		...honeycrisp.folders.all.map((folder): CommandPaletteItem => ({
 			id: `folder:${folder.id}`,
@@ -28,7 +29,7 @@
 			keywords: [folder.name],
 			group: 'Folders',
 			icon: folder.icon ? undefined : FolderIcon,
-			onSelect: () => honeycrisp.view.selectFolder(folder.id),
+			onSelect: () => navigation.selectFolder(folder.id),
 		})),
 		...honeycrisp.notes.all.map((note): CommandPaletteItem => ({
 			id: `note:${note.id}`,
@@ -36,7 +37,7 @@
 			description: note.preview || undefined,
 			group: 'Notes',
 			icon: FileTextIcon,
-			onSelect: () => honeycrisp.view.selectNote(note.id),
+			onSelect: () => navigation.selectNote(note.id),
 		})),
 		{
 			id: 'action:new-note',

@@ -2,6 +2,7 @@
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
+	import { navigation } from '$lib/honeycrisp/navigation.svelte.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import CommandPalette from './components/CommandPalette.svelte';
 	import NoteBodyPane from './components/NoteBodyPane.svelte';
@@ -42,11 +43,14 @@
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
-				{#if honeycrisp.view.selectedNote && honeycrisp.view.selectedNoteId}
-					{#key honeycrisp.view.selectedNoteId}
+				<!-- Guarded on the selection alone, not on the row still existing.
+				     `NoteBodyPane` already reports a note that is no longer here,
+				     and it says so more honestly than an empty pane does. -->
+				{#if navigation.noteId}
+					{#key navigation.noteId}
 						<NoteBodyPane
-							noteId={honeycrisp.view.selectedNoteId}
-							focusRequest={honeycrisp.view.editorFocusRequest}
+							noteId={navigation.noteId}
+							focusRequest={navigation.editorFocusRequest}
 						/>
 					{/key}
 				{:else}
