@@ -9,7 +9,7 @@ Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-broke
 
 ## Two durable documents, and the root opens them
 
-`src/lib/runtime.ts` is the only place that opens a store. Every page
+`src/lib/databases.ts` is the only place that opens a store. Every page
 lifetime eagerly opens the device document, and a generation whose boot auth
 carries a principal (`signed-in` or `reauth-required`) also opens that
 account's retained replica and attaches sync to it alone (ADR-0233):
@@ -19,17 +19,18 @@ epicenter/so.epicenter.honeycrisp/device                     never syncs, always
 epicenter/so.epicenter.honeycrisp/account/<principal id>     one per account
 ```
 
-A ready runtime has exactly two shapes: `{ deviceData }` and
-`{ deviceData, account: { data, syncStatus, rebuild } }`, and it stops at the
+A generation's opened databases (`HoneycrispDatabases`) have exactly two
+shapes: `{ device }` and
+`{ device, account: { data, syncStatus, rebuild } }`, and they stop at the
 layout's provider. `createHoneycrisp` (`src/lib/honeycrisp/index.ts`) turns
-one ready runtime into the reactive application object the UI consumes: it
-makes the document choice (`account?.data ?? deviceData`) visible once,
-adapts that document into Svelte-reactive named tables with `fromWorkspace`
-(from `@epicenter/svelte`), layers Honeycrisp's domain operations, search,
-and `view` navigation on top, and exposes only the narrow capabilities the UI
-needs (`pressure()`, `account.syncStatus`, `account.rebuild`). Components
-reach it through `getHoneycrisp()`; the raw runtime, store, and sync plane
-never cross that boundary. A page lifetime is one auth generation (ADR-0232),
+one generation's databases into the reactive application object the UI
+consumes: it makes the document choice (`account?.data ?? device`) visible
+once, adapts that document into Svelte-reactive named tables with
+`fromWorkspace` (from `@epicenter/svelte`), layers Honeycrisp's domain
+operations, search, and `view` navigation on top, and exposes only the narrow
+capabilities the UI needs (`pressure()`, `account.syncStatus`,
+`account.rebuild`). Components reach it through `getHoneycrisp()`; the raw
+databases, store, and sync plane never cross that boundary. A page lifetime is one auth generation (ADR-0232),
 so the composition never changes while the app lives; `reloadOnAuthChange`
 starts the next one.
 

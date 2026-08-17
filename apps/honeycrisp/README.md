@@ -28,7 +28,7 @@ The workspace names the application and the opener names which durable document 
 means and whose it is (ADR-0229 as amended by ADR-0233): one device document
 that never syncs and opens every generation, and one retained replica per
 account that also opens when the boot auth carries that principal. The root
-composes both in `src/lib/runtime.ts`, and nothing else opens a store.
+composes both in `src/lib/databases.ts`, and nothing else opens a store.
 
 Every build opens its own store, with no platform seam, and reaches one
 authority per signed-in account (ADR-0225/0226). The desktop host serves

@@ -1,7 +1,7 @@
 import { fromWorkspace } from '@epicenter/svelte';
 import { createContext } from 'svelte';
 import { reportBackgroundError } from '../report.js';
-import type { HoneycrispRuntime } from '../runtime.js';
+import type { HoneycrispDatabases } from '../databases.js';
 import {
 	createNoteSearchIndex,
 	readDocumentText,
@@ -13,20 +13,20 @@ import { createView } from './view.svelte.js';
 /**
  * The reactive Honeycrisp application, for one mounted app generation.
  *
- * The runtime is boot machinery: it opens documents, attaches sync, and owns
- * disposal (ADR-0233). This is the application built on top of it, and the
- * one object the UI consumes. It owns the document-selection policy, the
+ * The databases are boot's yield: opened documents, attached sync, and the
+ * disposal that closes them (ADR-0233). This is the application built on top
+ * of them, and the one object the UI consumes. It owns the document-selection policy, the
  * reactive named tables over that document (`fromWorkspace`), Honeycrisp's
  * domain operations (`notes`, `folders`), the body search index, the
  * navigation and filtering state (`view`), and the narrow account and store
- * capabilities the UI actually needs. The raw runtime never crosses this
+ * capabilities the UI actually needs. The raw databases never cross this
  * boundary: the account's data is already adapted into `tables`, and what
  * remains of the account is its two capabilities.
  *
  * The document choice lives here, visible once: account notes when this
- * generation has an account, device notes otherwise. The runtime carries no
- * default document, so this line is the whole of the policy, and a Local
- * Drafts feature would build a second object over `runtime.deviceData` in
+ * generation has an account, device notes otherwise. The databases carry no
+ * default, so this line is the whole of the policy, and a Local
+ * Drafts feature would build a second object over `databases.device` in
  * the same way. A page lifetime is one auth generation (ADR-0232), so the
  * choice never changes while this object lives.
  *
@@ -36,8 +36,12 @@ import { createView } from './view.svelte.js';
  * to the effects that read them, so they detach when the consuming
  * components unmount, and the search index is plain memory.
  */
-export function createHoneycrisp({ runtime }: { runtime: HoneycrispRuntime }) {
-	const data = runtime.account?.data ?? runtime.deviceData;
+export function createHoneycrisp({
+	databases,
+}: {
+	databases: HoneycrispDatabases;
+}) {
+	const data = databases.account?.data ?? databases.device;
 	const workspace = fromWorkspace(data);
 	// Honeycrisp's own body index (ADR-0207 keeps prose out of the row, so
 	// searching it is the application's job). Reading a note's text is a walk
@@ -58,6 +62,16 @@ export function createHoneycrisp({ runtime }: { runtime: HoneycrispRuntime }) {
 		notes,
 		view,
 		/**
+		 * Create a note in the folder the user is looking at and open it in the
+		 * editor. Lives here rather than on `notes` or `view` because it is the
+		 * one command that spans both, and every create surface (⌘N, the list's
+		 * + button, the palette) means exactly this composition.
+		 */
+		createNote(): void {
+			const { id } = notes.create(view.selectedFolderId);
+			view.selectNote(id);
+		},
+		/**
 		 * Storage pressure of the document this generation is showing,
 		 * whichever that is. The one store verb the UI reads, exposed narrowly
 		 * so the raw store plane stays behind this boundary.
@@ -69,11 +83,11 @@ export function createHoneycrisp({ runtime }: { runtime: HoneycrispRuntime }) {
 		 * above are the chosen document.
 		 */
 		account:
-			runtime.account === undefined
+			databases.account === undefined
 				? undefined
 				: {
-						syncStatus: runtime.account.syncStatus,
-						rebuild: runtime.account.rebuild,
+						syncStatus: databases.account.syncStatus,
+						rebuild: databases.account.rebuild,
 					},
 	};
 }

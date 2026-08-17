@@ -45,7 +45,7 @@ export type BunAccountStore = AccountStore & {
  *
  * **No application in this repository calls this today.** Honeycrisp opens the
  * browser store in every build including the Tauri one, by the refusal in
- * `apps/honeycrisp/src/lib/runtime.ts`: a host serves bundles and owns no
+ * `apps/honeycrisp/src/lib/databases.ts`: a host serves bundles and owns no
  * application data (ADR-0226). This stays exported because it is a
  * published entry point of an MIT package and because it is the only opener
  * that proves the log survives a real reopen from a real file, which

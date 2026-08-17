@@ -9,14 +9,14 @@
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '#platform/auth';
 	import HoneycrispProvider from '$lib/HoneycrispProvider.svelte';
-	import { openHoneycrispRuntime } from '$lib/runtime.js';
+	import { openHoneycrispDatabases } from '$lib/databases.js';
 	import '@epicenter/ui/app.css';
 
 	let { children } = $props();
 
-	// The ready-runtime shape. One transactional open acquired during layout
-	// initialisation, and a raw `{#await}` owning pending, ready and failure;
-	// the provider turns the READY runtime into the reactive Honeycrisp
+	// The generation's databases: one transactional open acquired during
+	// layout initialisation, and a raw `{#await}` owning pending, ready and
+	// failure; the provider turns the ready databases into the reactive Honeycrisp
 	// application and provides that through a typed context, so there is no
 	// module-scope boot, no half-open handle, and no `whenReady` accessor for
 	// anything to read too early.
@@ -28,7 +28,7 @@
 	// yet, device data included: a partial-ready surface is refused, and the
 	// way back to device-only use is a new generation (signing out).
 	const boot = new AbortController();
-	const opening = openHoneycrispRuntime({ auth, signal: boot.signal });
+	const opening = openHoneycrispDatabases({ auth, signal: boot.signal });
 	$effect(() => () => boot.abort());
 
 	// A page lifetime is one auth generation. Everything above composed itself
@@ -44,8 +44,8 @@
 
 {#await opening}
 	<Loading class="h-dvh" />
-{:then runtime}
-	<HoneycrispProvider {runtime}>
+{:then databases}
+	<HoneycrispProvider {databases}>
 		<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
 	</HoneycrispProvider>
 {:catch error}

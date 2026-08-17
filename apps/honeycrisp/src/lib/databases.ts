@@ -17,7 +17,7 @@ import type { Result } from 'wellcrafted/result';
 import { reportBackgroundError } from './report.js';
 import { attachHoneycrispSync } from './sync.js';
 
-export type OpenHoneycrispRuntimeOptions = {
+export type OpenHoneycrispDatabasesOptions = {
 	/**
 	 * This build's auth, when it has one.
 	 *
@@ -41,31 +41,34 @@ export type OpenHoneycrispRuntimeOptions = {
 };
 
 /**
- * One page lifetime's boot machinery: the opened documents and what this
- * generation composed onto them. The root owns it, hands it to
- * `createHoneycrisp`, and disposes it; it deliberately owns no note, folder,
- * or search state, because the application object built on top owns the
- * document choice and everything bound to it, and this runtime never crosses
- * the provider boundary.
+ * One generation's opened databases: the device database always, the account
+ * database when the boot auth snapshot carried an identity, and what this
+ * generation composed onto them. The root owns the object and hands it to
+ * `createHoneycrisp`; a pending open aborts with the layout, and a resolved
+ * one lives until the page dies, because a page lifetime is one auth
+ * generation (ADR-0232) and page death is its disposal. It deliberately owns
+ * no note, folder, or search state, because the application object built on
+ * top owns the document choice and everything bound to it, and these
+ * databases never cross the provider boundary raw.
  *
- * A ready runtime has exactly two shapes: `{ deviceData }`, and
- * `{ deviceData, account }`. There is no third: an unbound account replica is
- * a transitional state hidden inside `openHoneycrispRuntime`'s promise, never
- * a value the application sees. And there is no default document: the
- * consumer that wants "the notes this generation edits" writes
- * `runtime.account?.data ?? runtime.deviceData` itself, once, where the
- * choice is visible (`createHoneycrisp`).
+ * There is no third shape beyond `{ device }` and `{ device, account }`: an
+ * unbound account replica is a transitional state hidden inside
+ * `openHoneycrispDatabases`'s promise, never a value the application sees.
+ * And there is no default: the consumer that wants "the notes this
+ * generation edits" writes `databases.account?.data ?? databases.device`
+ * itself, once, where the choice is visible (`createHoneycrisp`).
  */
-export type HoneycrispRuntime = {
+export type HoneycrispDatabases = {
 	/**
-	 * The device-owned document, open for every page lifetime (ADR-0233). It
+	 * The device database, open for every page lifetime (ADR-0233). It
 	 * never syncs, survives every sign-in and sign-out, and no verb anywhere
 	 * can delete it.
 	 */
-	readonly deviceData: DataOf<typeof honeycrispWorkspace, DeviceStore>;
+	readonly device: DataOf<typeof honeycrispWorkspace, DeviceStore>;
 	/**
-	 * The boot principal's retained account replica, plus what this generation
-	 * composed onto it: sync wiring and the rebuild lifecycle. Present exactly
+	 * The account database: the boot principal's retained replica, plus what
+	 * this generation composed onto it — sync wiring and the rebuild
+	 * lifecycle. Present exactly
 	 * when the boot auth snapshot carried an identity (`signed-in` or
 	 * `reauth-required`), and always past its bound gate: a defined `account`
 	 * is already a replica stamped into the current authority document, which
@@ -101,18 +104,18 @@ export type HoneycrispRuntime = {
 };
 
 /**
- * Open one Honeycrisp generation, hydrated and ready to read synchronously.
+ * Open one generation's databases, hydrated and ready to read synchronously.
  *
  * The only asynchronous thing left in this application. Opening a store is
  * real I/O: an IndexedDB checkpoint, a WASM compile, and the replay of a
  * durable log. Everything after it is a property access on documents already
  * in memory, which is why nothing below this line returns a promise.
  *
- * The device document opens for every page lifetime. When the boot auth
- * snapshot carries an identity, that principal's retained account replica
- * opens too and sync attaches; both stay open for the whole generation. A
- * page lifetime is one auth generation (ADR-0232), so neither choice changes
- * while the runtime lives; signing in, out, or into a second account reloads,
+ * The device database opens for every page lifetime. When the boot auth
+ * snapshot carries an identity, that principal's account database opens too
+ * and sync attaches; both stay open for the whole generation. A page
+ * lifetime is one auth generation (ADR-0232), so neither choice changes
+ * while they live; signing in, out, or into a second account reloads,
  * and the next boot composes from scratch.
  *
  * The account arm resolves only with a replica that is safe to edit
@@ -125,12 +128,12 @@ export type HoneycrispRuntime = {
  * whose account is still binding, because a third ready shape would leak into
  * every screen to serve a window that is sub-second whenever the network
  * exists. A signed-in generation with no usable principal rejects the same
- * way. Neither ever falls back to the device document.
+ * way. Neither ever falls back to the device database.
  */
-export async function openHoneycrispRuntime({
+export async function openHoneycrispDatabases({
 	auth,
 	signal,
-}: OpenHoneycrispRuntimeOptions = {}): Promise<HoneycrispRuntime> {
+}: OpenHoneycrispDatabasesOptions = {}): Promise<HoneycrispDatabases> {
 	signal?.throwIfAborted();
 	// The boot snapshot, read once. A signed-out generation, or a build with no
 	// auth at all, opens the device document alone; a generation with a
@@ -145,29 +148,29 @@ export async function openHoneycrispRuntime({
 			? { auth, principalId: auth.state.principalId }
 			: undefined;
 
-	const { data: deviceData, error: deviceError } =
+	const { data: device, error: deviceError } =
 		await openDevice(honeycrispWorkspace);
 	if (deviceError !== null) throw deviceError;
 
-	let account: AccountRuntime | undefined;
+	let account: AccountDatabase | undefined;
 	try {
 		signal?.throwIfAborted();
 		if (boot !== undefined) {
-			account = await openAccountRuntime({
+			account = await openAccountDatabase({
 				auth: boot.auth,
 				principalId: boot.principalId,
 				signal,
 			});
 		}
 	} catch (cause) {
-		await deviceData[Symbol.asyncDispose]().catch(() => undefined);
+		await device[Symbol.asyncDispose]().catch(() => undefined);
 		throw cause;
 	}
 
 	const opened = account;
 	let disposed = false;
-	const runtime: HoneycrispRuntime = {
-		deviceData,
+	const databases: HoneycrispDatabases = {
+		device,
 		...(opened === undefined
 			? {}
 			: {
@@ -181,14 +184,14 @@ export async function openHoneycrispRuntime({
 			if (disposed) return;
 			disposed = true;
 			await opened?.dispose();
-			await deviceData[Symbol.asyncDispose]();
+			await device[Symbol.asyncDispose]();
 		},
 	};
-	return Object.freeze(runtime);
+	return Object.freeze(databases);
 }
 
-/** The account arm plus the disposal only the runtime may run. */
-type AccountRuntime = {
+/** The account database plus the disposal only the databases object may run. */
+type AccountDatabase = {
 	data: DataOf<typeof honeycrispWorkspace, BrowserAccountStore>;
 	syncStatus(): SyncConnectionStatus | undefined;
 	rebuild(): Promise<Result<{ document: string }, RebuildError>>;
@@ -196,7 +199,7 @@ type AccountRuntime = {
 };
 
 /**
- * Open one account's replica and see it through its bound gate.
+ * Open one account's database and see it through its bound gate.
  *
  * Resolves only with a replica that is stamped into the current authority
  * document; everything sync-shaped lives here, so nothing in a device-only
@@ -204,7 +207,7 @@ type AccountRuntime = {
  * replica, an aborted boot, a storage refusal) it lets go of everything it
  * acquired and rethrows.
  */
-async function openAccountRuntime({
+async function openAccountDatabase({
 	auth,
 	principalId,
 	signal,
@@ -213,7 +216,7 @@ async function openAccountRuntime({
 	/** Derived from `openAccount` itself: exactly what an address needs. */
 	principalId: Parameters<typeof openAccount>[1]['principalId'];
 	signal?: AbortSignal;
-}): Promise<AccountRuntime> {
+}): Promise<AccountDatabase> {
 	const opened = await openAccount(honeycrispWorkspace, { principalId });
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
