@@ -293,9 +293,9 @@
 				{#if onForgetDevice}
 					<div class="border-t pt-3">
 						<Button
-							variant="ghost"
+							variant="ghost-destructive"
 							size="sm"
-							class="w-full justify-start text-destructive hover:text-destructive"
+							class="w-full justify-start"
 							onclick={forgetDevice}
 							disabled={forgettingDevice || accountLocked}
 						>
