@@ -100,7 +100,7 @@ export type AppCatalog = {
  *
  * There is deliberately no reserved-id list. An installed app's id is the
  * id it declares (ADR-0210), so it always contains a dot, and every id
- * this host has already issued is a bare label: the built-in surface routes and
+ * this host has already issued is a bare label: the built-in routes and
  * the composed app ids that name a directory under the one data root
  * (ADR-0201). The two sets are disjoint by grammar, so a candidate cannot claim
  * `home` or `local-mail` whatever it declares, and a check for it could never

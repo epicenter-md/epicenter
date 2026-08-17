@@ -9,7 +9,7 @@
  *
  * Key behaviors:
  * - Only directories satisfying the output contract become catalog members
- * - Reserved built-in surface IDs are never derived as members
+	 * - Reserved built-in window IDs are never derived as members
  * - Titles come from the app document with the ID as fallback
  * - The resolver serves real files, SPA-falls-back only for extensionless
  *   routes, and refuses traversal, smuggled separators, and symlink escape
@@ -108,7 +108,7 @@ describe('deriveAppCatalog', () => {
 		writeApp(root, 'so.test.zeta');
 		writeApp(root, 'so.test.alpha');
 		// A bare label is not a workspace id, which is also why no built-in
-		// surface id can ever be claimed here (ADR-0210).
+		// built-in window id can ever be claimed here (ADR-0210).
 		writeApp(root, 'whispering');
 		writeApp(root, 'so.test.baddeclaration', { declaration: '{ not json' });
 		writeApp(root, 'so.test.nodeclaration', { declaration: null });
@@ -327,7 +327,7 @@ describe('home server catalog routes', () => {
 				(await fetch(`${origin}/apps/so.epicenter.hello-http`)).status,
 			).toBe(404);
 
-			// The legacy closed layout stays intact beside the catalog. Surface
+			// The legacy closed layout stays intact beside the catalog. Built-in
 			// documents carry the identity snapshot, so they require an
 			// established browser session and are served with the bootstrap
 			// element injected.

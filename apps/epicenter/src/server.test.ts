@@ -10,7 +10,7 @@
  * - The launch token is accepted only by the bootstrap route
  * - Home APIs and WebSockets require an HttpOnly browser session
  * - Home and Whispering serve their builds; Mail and Books stay placeholders
- * - Unknown, non-canonical, and traversal-shaped surface paths stay closed
+	 * - Unknown, non-canonical, and traversal-shaped app paths stay closed
  * - Host, Origin, CSP, frame, and referrer policies are enforced
  * - Malformed WebSocket frames drop silently without killing the socket
  * - The real vite build emits one document with no external asset references
@@ -56,7 +56,7 @@ import {
 	MAIL_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
-	SURFACE_ROUTES,
+	BUILT_IN_ROUTES,
 	WHISPERING_ROUTE,
 } from './routes.ts';
 import {
@@ -99,7 +99,7 @@ function cspDirectives(header: string | null): Map<string, string[]> {
 	return directives;
 }
 
-/** Strip what the host stamps onto a surface, recovering the built page. */
+/** Strip what the host stamps onto an app window, recovering the built page. */
 function withoutAuthBootstrap(page: string): string {
 	return page.replace(
 		/<script id="epicenter-auth-bootstrap" type="application\/json">[\s\S]*?<\/script>/,
@@ -509,7 +509,7 @@ describe('createHomeServer', () => {
 		const server = await serveHost(host);
 		try {
 			expect(
-				Object.values(SURFACE_ROUTES).map(({ id, pattern, windowLabel }) => ({
+				Object.values(BUILT_IN_ROUTES).map(({ id, pattern, windowLabel }) => ({
 					id,
 					pattern,
 					windowLabel,
@@ -616,7 +616,7 @@ describe('createHomeServer', () => {
 		}
 	});
 
-	test('rejects alternate surface request targets without exposing filesystem paths', async () => {
+	test('rejects alternate app request targets without exposing filesystem paths', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
@@ -635,7 +635,7 @@ describe('createHomeServer', () => {
 				expect(await response.text()).not.toContain('"scripts"');
 			}
 
-			// Home strings are SPA state, not an alternate server-side surface.
+			// Home strings are SPA state, not an alternate server-side app page.
 			const queryState = await fetch(
 				`${HOME_ROUTE.url(server.url.origin)}?conversation=recent`,
 				{ headers: authenticatedHeaders(server) },

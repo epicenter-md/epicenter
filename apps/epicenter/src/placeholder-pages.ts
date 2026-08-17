@@ -1,9 +1,9 @@
-/** Release-bundled documents for surfaces that have not landed their SPA yet. */
+/** Release-bundled documents for built-in routes without an app yet. */
 
-import type { SurfaceId } from './routes.ts';
+import type { BuiltInRouteId } from './routes.ts';
 
-type PlaceholderSurfaceId = Exclude<
-	SurfaceId,
+type PlaceholderRouteId = Exclude<
+	BuiltInRouteId,
 	'home' | 'whispering' | 'honeycrisp'
 >;
 
@@ -35,7 +35,7 @@ function placeholderPage(title: string, status: string): string {
 </html>`;
 }
 
-export const PLACEHOLDER_SURFACE_PAGES = {
+export const PLACEHOLDER_PAGES = {
 	mail: placeholderPage(
 		'Mail',
 		'Mail has its permanent place in Epicenter, but the full Mail experience is not included in this milestone.',
@@ -44,4 +44,4 @@ export const PLACEHOLDER_SURFACE_PAGES = {
 		'Books',
 		'Books has its permanent place in Epicenter, but the full Books experience is not included in this milestone.',
 	),
-} satisfies Record<PlaceholderSurfaceId, string>;
+} satisfies Record<PlaceholderRouteId, string>;

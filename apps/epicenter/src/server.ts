@@ -32,10 +32,10 @@ import {
 	LOCAL_BLOB_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
-	SURFACE_ROUTES,
+	BUILT_IN_ROUTES,
 } from './routes.ts';
 import type { AppCatalog, EpicenterStaticAssets } from './static-assets.ts';
-import { PLACEHOLDER_SURFACE_PAGES } from './surface-pages.ts';
+import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 
 export type HomeServerEvent = {
 	type: 'snapshot';
@@ -61,9 +61,9 @@ export type HomeServerOptions = {
 	staticAssets: EpicenterStaticAssets;
 	/** Derived trusted app catalog (ADR-0153); absent means no members. */
 	appCatalog?: AppCatalog;
-	/** Canonical device-local bytes shared by every trusted app surface. */
+	/** Canonical device-local bytes shared by every trusted app window. */
 	blobs: BunBlobStore;
-	/** One credential owner for every compiled desktop surface. */
+	/** One credential owner for every compiled desktop window. */
 	desktopAuth: DesktopAuthAuthority;
 	/**
 	 * Host-owned remote copy capability over the same local bytes, or `null`
@@ -96,7 +96,7 @@ export function createHomeServer({
 	const sessionHashes = new Set<string>();
 	const hostPages = {
 		home: injectAuthBootstrap(staticAssets.homePage, desktopAuth.bootSnapshot),
-		...PLACEHOLDER_SURFACE_PAGES,
+		...PLACEHOLDER_PAGES,
 	};
 	// A compiled application and an admitted catalog member are the same thing
 	// to this server: a built SPA below `/apps/<id>/` whose document the host
@@ -230,15 +230,15 @@ export function createHomeServer({
 
 	// Home and the release-bundled placeholders: one document each, no asset
 	// tree behind them.
-	for (const surface of [
-		SURFACE_ROUTES.home,
-		SURFACE_ROUTES.mail,
-		SURFACE_ROUTES.books,
+	for (const builtInRoute of [
+		BUILT_IN_ROUTES.home,
+		BUILT_IN_ROUTES.mail,
+		BUILT_IN_ROUTES.books,
 	]) {
-		app.get(surface.pattern, (c) => {
+		app.get(builtInRoute.pattern, (c) => {
 			c.header('cache-control', 'no-store');
 			if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
-			return c.html(hostPages[surface.id]);
+			return c.html(hostPages[builtInRoute.id]);
 		});
 	}
 	// One contained asset tree each, with the document served from memory so
@@ -474,10 +474,10 @@ export function createHomeServer({
 /**
  * Stamp one served page with the one-shot auth bootstrap.
  *
- * This is the only thing the host injects. A surface parses the bootstrap and
+ * This is the only thing the host injects. An app window parses the bootstrap and
  * then removes it, because it carries an identity snapshot that has no business
- * sitting in the DOM afterwards, and nothing else may read it: which replica a
- * surface opens is decided by which build the host serves, not by what survives
+	 * sitting in the DOM afterwards, and nothing else may read it: which replica an
+	 * app window opens is decided by which build the host serves, not by what survives
  * in its `<head>`.
  */
 function injectAuthBootstrap(
@@ -594,7 +594,7 @@ function contentSecurityPolicy(page: string): string {
 		// it does not restore `eval` or `new Function`, which is why it exists
 		// separately from `'unsafe-eval'`. Voice activity detection runs
 		// onnxruntime in this WebView over assets Epicenter itself ships, so
-		// WebAssembly is a first-party capability of the surface rather than
+		// WebAssembly is a first-party capability of the app window rather than
 		// something a policy is being bent to tolerate. Without it the browser
 		// refuses the compile and the recording trigger dies mid-boot.
 		`script-src 'self' 'wasm-unsafe-eval' ${scriptHashes.join(' ')}`,
