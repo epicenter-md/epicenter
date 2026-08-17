@@ -186,10 +186,13 @@ function byRecentEdit(
 /**
  * Honeycrisp's own folder concepts, over the reactive `folders` table.
  *
- * Same shape as `createNotes` and for the same reason: the reactive table
- * answers the "what rows are here" question, so what remains is domain: the
- * new-folder defaults, renaming, and the delete that re-parents notes and
- * cleans up the URL.
+ * Same job as `createNotes`: the reactive table answers "what rows are here",
+ * so what remains is domain, which here is the new-folder defaults, renaming,
+ * and the delete that re-parents notes and cleans up the URL.
+ *
+ * It takes the whole workspace where `createNotes` takes one table, and that
+ * difference is the point rather than an oversight: deleting a folder has to
+ * reach the notes in it.
  */
 function createFolders(workspace: ReactiveWorkspace<HoneycrispData>) {
 	const table = workspace.tables.folders;
@@ -266,21 +269,27 @@ function createNotes(
 		updated(error);
 	}
 
+	/**
+	 * This note's prose, live, for the editor to bind to.
+	 *
+	 * The root was allocated with the row (ADR-0215) and lives in the
+	 * application's one document, so there is no lease to open and nothing to
+	 * await; edits from every device reach it through the transport like any
+	 * other change. `undefined` means this note is no longer here.
+	 *
+	 * The only place `NOTE_BODY` is read, which is why `readNoteText` takes what
+	 * this returns rather than the document: one spelling of the root name.
+	 */
+	function body(id: NoteId) {
+		return table.document(id)?.get(NOTE_BODY);
+	}
+
 	return {
 		/**
-		 * This note's prose, live, for the editor to bind to.
-		 *
-		 * The root was allocated with the row (ADR-0215) and lives in the
-		 * application's one document, so there is no lease to open and nothing to
-		 * await; edits from every device reach it through the transport like any
-		 * other change. `undefined` means this note is no longer here.
-		 *
 		 * Exposed as a verb so the raw `tables` never has to be. The editor pane
-		 * wanted one call and was given the whole store shape to make it.
+		 * wanted this one call and was given the whole store shape to make it.
 		 */
-		body(id: NoteId) {
-			return table.document(id)?.get(NOTE_BODY);
-		},
+		body,
 		/**
 		 * This note's prose as one flat string, for search.
 		 *
@@ -290,7 +299,7 @@ function createNotes(
 		 * the moment it lands.
 		 */
 		text(id: NoteId): string {
-			return readNoteText(table.document(id));
+			return readNoteText(body(id));
 		},
 		get all() {
 			return all;

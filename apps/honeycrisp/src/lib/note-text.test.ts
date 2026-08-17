@@ -28,8 +28,9 @@ const schema = new Schema({
  * `pmToFragment` binding, so this exercises the real stored shape rather than a
  * hand-built imitation of it.
  */
-function documentOf(...paragraphs: string[]) {
+function bodyOf(...paragraphs: string[]) {
 	const doc = new Y.Doc();
+	const body = doc.get('body');
 	pmToFragment(
 		schema.node(
 			'doc',
@@ -38,24 +39,24 @@ function documentOf(...paragraphs: string[]) {
 				schema.node('paragraph', null, text === '' ? [] : [schema.text(text)]),
 			),
 		),
-		doc.get('body'),
+		body,
 	);
-	return doc;
+	return body;
 }
 
 describe('readNoteText', () => {
 	test('reads every block, which is the point', () => {
-		const doc = documentOf('The opening line', 'A much later paragraph');
-		expect(readNoteText(doc)).toBe('The opening line A much later paragraph');
+		const body = bodyOf('The opening line', 'A much later paragraph');
+		expect(readNoteText(body)).toBe('The opening line A much later paragraph');
 	});
 
 	test('joins blocks with a space so adjacent words never merge', () => {
-		expect(readNoteText(documentOf('one', 'two'))).toBe('one two');
+		expect(readNoteText(bodyOf('one', 'two'))).toBe('one two');
 	});
 
 	test('an empty document reads as empty rather than throwing', () => {
-		expect(readNoteText(new Y.Doc())).toBe('');
-		expect(readNoteText(documentOf(''))).toBe('');
+		expect(readNoteText(new Y.Doc().get('body'))).toBe('');
+		expect(readNoteText(bodyOf(''))).toBe('');
 	});
 
 	test('a note whose document has not arrived reads as empty', () => {
@@ -66,7 +67,7 @@ describe('readNoteText', () => {
 
 	test('a long note is not truncated, unlike the preview it replaces', () => {
 		const long = 'word '.repeat(400).trim();
-		const text = readNoteText(documentOf('Title line', long));
+		const text = readNoteText(bodyOf('Title line', long));
 		expect(text.length).toBeGreaterThan(1000);
 		expect(text).toContain('Title line');
 	});
