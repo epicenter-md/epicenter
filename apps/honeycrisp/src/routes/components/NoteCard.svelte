@@ -64,6 +64,8 @@
 						variant="ghost"
 						size="icon"
 						class="size-6"
+						tooltip="Restore"
+						aria-label="Restore"
 						onclick={(e) => {
 							e.stopPropagation();
 							honeycrisp.notes.restore(note.id);
@@ -72,9 +74,11 @@
 						<ArchiveRestoreIcon class="size-3" />
 					</Button>
 					<Button
-						variant="ghost"
+						variant="ghost-destructive"
 						size="icon"
-						class="size-6 text-destructive hover:text-destructive"
+						class="size-6"
+						tooltip="Delete permanently"
+						aria-label="Delete permanently"
 						onclick={(e) => {
 							e.stopPropagation();
 							confirmingPermanentDelete = true;
@@ -93,6 +97,8 @@
 						variant="ghost"
 						size="icon"
 						class="size-6"
+						tooltip={note.pinned ? 'Unpin' : 'Pin'}
+						aria-label={note.pinned ? 'Unpin' : 'Pin'}
 						onclick={(e) => {
 							e.stopPropagation();
 							honeycrisp.notes.togglePin(note.id);
@@ -101,9 +107,11 @@
 						<PinIcon class="size-3 {note.pinned ? 'fill-current' : ''}" />
 					</Button>
 					<Button
-						variant="ghost"
+						variant="ghost-destructive"
 						size="icon"
-						class="size-6 text-destructive hover:text-destructive"
+						class="size-6"
+						tooltip="Delete"
+						aria-label="Delete"
 						onclick={(e) => {
 							e.stopPropagation();
 							honeycrisp.notes.softDelete(note.id);

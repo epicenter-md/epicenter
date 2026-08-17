@@ -121,6 +121,8 @@
 					variant="ghost"
 					size="icon"
 					class="size-7"
+					tooltip="New note"
+					aria-label="New note"
 					onclick={() =>
 						honeycrisp.createNote()}
 				>
