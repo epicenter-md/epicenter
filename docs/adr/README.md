@@ -321,5 +321,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0242](0242-hosted-postgres-registers-store-addresses-before-an-authority-accepts-data.md) | Hosted Postgres registers store addresses before an authority accepts data | Proposed (provisional number; amends 0225 at authority lifecycle: Postgres is the hosted address book, never an application-data replica) |
 | [0243](0243-a-workspaces-id-is-its-applications-reverse-domain-identifier.md) | A workspace's id is its application's reverse-domain identifier | Accepted (provisional number; amends 0204 and 0240 at the public name; `id` is the declaration field and `workspaceId` names it beside other identifiers) |
 | [0244](0244-epicenter-speaks-of-apps-and-windows-not-surfaces.md) | Epicenter models its built-in host set as windows, not surfaces | Accepted (provisional number; relates to 0189 and 0209 at human-facing host vocabulary) |
+| [0245](0245-an-app-declares-its-theme-in-its-html-tag-and-the-pre-paint-script-only-undoes-it.md) | An app declares its theme in its html tag, and the pre-paint script only undoes it | Accepted (provisional number; `ssr = false` makes ModeWatcher's own flash script too late, so each app writes four visible lines instead of sharing a theme package) |
 
 When you add an ADR, add its row here.
