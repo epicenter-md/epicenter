@@ -26,7 +26,7 @@
 	} = $props();
 
 	/** Derive deleted status from the note itself, no need to check view mode. */
-	const isDeleted = $derived(note.deletedAt !== undefined);
+	const isDeleted = $derived(note.deletedAt !== null);
 
 	let confirmingPermanentDelete = $state(false);
 </script>

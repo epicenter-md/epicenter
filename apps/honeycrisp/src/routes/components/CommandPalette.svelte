@@ -14,13 +14,6 @@
 
 	let isOpen = $state(false);
 
-	function createAndSelectNote(): void {
-		const { id } = honeycrisp.notes.create(
-			honeycrisp.view.selectedFolderId,
-		);
-		honeycrisp.view.selectNote(id);
-	}
-
 	const items = $derived.by((): CommandPaletteItem[] => [
 		{
 			id: 'folder:all',
@@ -51,7 +44,10 @@
 			group: 'Actions',
 			icon: PlusIcon,
 			onSelect: () =>
-				runHoneycrispMutation(() => createAndSelectNote(), 'Could not create note'),
+				runHoneycrispMutation(
+					() => honeycrisp.createNote(),
+					'Could not create note',
+				),
 		},
 		{
 			id: 'action:new-folder',

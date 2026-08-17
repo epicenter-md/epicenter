@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { NOTE_BODY, type NoteId } from '@epicenter/honeycrisp';
-	import HoneycripEditor from '$lib/editor/Editor.svelte';
+	import HoneycrispEditor from '$lib/editor/Editor.svelte';
 	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 
@@ -26,7 +26,7 @@
 	<div class="flex h-full flex-col">
 		<div class="min-h-0 flex-1">
 			{#key noteId}
-				<HoneycripEditor
+				<HoneycrispEditor
 					yxmlfragment={body}
 					{focusRequest}
 					onContentChange={(change) =>

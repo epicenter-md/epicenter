@@ -51,12 +51,6 @@
 		groupedNotes.flatMap((g) => g.entries.map((n) => n.id)),
 	);
 
-	function createAndSelectNote(): void {
-		const { id } = honeycrisp.notes.create(
-			honeycrisp.view.selectedFolderId,
-		);
-		honeycrisp.view.selectNote(id);
-	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -100,7 +94,7 @@
 					class="size-7"
 					onclick={() =>
 						runHoneycrispMutation(
-							() => createAndSelectNote(),
+							() => honeycrisp.createNote(),
 							'Could not create note',
 						)}
 				>

@@ -6,14 +6,9 @@
 	import CommandPalette from './components/CommandPalette.svelte';
 	import NoteBodyPane from './components/NoteBodyPane.svelte';
 	import NoteList from './components/NoteList.svelte';
-	import HoneycripSidebar from './components/Sidebar.svelte';
+	import HoneycrispSidebar from './components/Sidebar.svelte';
 
 	const honeycrisp = getHoneycrisp();
-
-	function createAndSelectNote(): void {
-		const { id } = honeycrisp.notes.create(honeycrisp.view.selectedFolderId);
-		honeycrisp.view.selectNote(id);
-	}
 </script>
 
 <svelte:window
@@ -29,13 +24,16 @@
 			);
 		} else if (e.key === 'n') {
 			e.preventDefault();
-			runHoneycrispMutation(() => createAndSelectNote(), 'Could not create note');
+			runHoneycrispMutation(
+				() => honeycrisp.createNote(),
+				'Could not create note',
+			);
 		}
 	}}
 />
 
 <SidebarProvider>
-	<HoneycripSidebar />
+	<HoneycrispSidebar />
 
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">
