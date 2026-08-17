@@ -3,6 +3,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Collapsible from '@epicenter/ui/collapsible';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { toast } from '@epicenter/ui/sonner';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
@@ -99,6 +100,7 @@
 		<div class="flex items-center justify-between px-2 py-1">
 			<span class="text-sm font-semibold">Honeycrisp</span>
 			<div class="flex items-center gap-1">
+				<LightSwitch variant="ghost" />
 				<AccountPopover
 					{auth}
 					syncNoun="notes"

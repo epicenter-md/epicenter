@@ -15,7 +15,7 @@
 	let { variant = 'outline' }: LightSwitchProps = $props();
 </script>
 
-<Button onclick={toggleMode} {variant} size="icon">
+<Button onclick={toggleMode} {variant} size="icon" tooltip="Toggle theme">
 	<SunIcon
 		class="scale-100 rotate-0 !transition-all dark:scale-0 dark:-rotate-90"
 	/>
