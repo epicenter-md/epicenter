@@ -403,9 +403,12 @@ test('an unbound replica whose dial is permanently denied is unavailable, not th
 				code: 'reauth-required',
 			}),
 	});
-	await expect(openHoneycrispDatabases({ auth })).rejects.toThrow(
-		/sign in again/i,
-	);
+	// The name, not the wording. What a person is told to do about this lives in
+	// `bootFailureMessage`, which is the only thing that gets to phrase it; this
+	// asserts the fact that boot copy switches on.
+	await expect(openHoneycrispDatabases({ auth })).rejects.toMatchObject({
+		name: 'CredentialRefused',
+	});
 });
 
 test('a supersession discards one account replica and cannot touch the others', async () => {

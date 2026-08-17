@@ -9,6 +9,7 @@
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '#platform/auth';
 	import HoneycrispProvider from '$lib/HoneycrispProvider.svelte';
+	import { bootFailureMessage } from '$lib/boot-failure.js';
 	import { openHoneycrispDatabases } from '$lib/databases.js';
 	import '@epicenter/ui/app.css';
 
@@ -52,10 +53,14 @@
 	<div class="flex h-dvh items-center justify-center p-6 text-center">
 		<div class="max-w-md space-y-2">
 			<h1 class="text-lg font-semibold">Honeycrisp could not start</h1>
-			<p class="text-sm text-muted-foreground">
-				<!-- `extractErrorMessage`, not `String(error)`: a tagged error is a
-				     plain object with a `message`, so stringifying one renders
-				     "[object Object]" and hides the only useful thing it carries. -->
+			<p class="text-sm text-muted-foreground">{bootFailureMessage(error)}</p>
+			<!-- The library's own sentence, kept rather than swallowed. It is what
+			     makes a bug report useful, and it is how anyone works out that the
+			     friendlier line above picked the wrong arm.
+			     `extractErrorMessage`, not `String(error)`: a tagged error is a
+			     plain object with a `message`, so stringifying one renders
+			     "[object Object]" and hides the only useful thing it carries. -->
+			<p class="text-muted-foreground/70 text-xs">
 				{extractErrorMessage(error)}
 			</p>
 		</div>

@@ -344,11 +344,16 @@ function waitUntilReplicaIsBound({
 		}
 		function unavailable(): void {
 			cleanup();
-			reject(
-				new Error(
-					'This workspace is signed in, but its credential was refused before the first download. Sign in again to load it.',
-				),
+			// Named, not just worded: the boot gate turns a name into the sentence
+			// a person reads, and this is the one failure here whose repair is
+			// specific enough to be worth saying (sign in again, rather than
+			// restart). The message stays technical, because it is what a bug
+			// report carries.
+			const refused = new Error(
+				'The account credential was refused before this replica bound to an authority document',
 			);
+			refused.name = 'CredentialRefused';
+			reject(refused);
 		}
 		function onAbort(): void {
 			cleanup();
