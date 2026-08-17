@@ -11,10 +11,39 @@
 
 	const honeycrisp = getHoneycrisp();
 
-	// Grouping only: `view.currentNotes` already owns the order (newest edit
-	// first), so the pinned partition and the date labels preserve it.
+	const title = $derived.by(() => {
+		if (navigation.isDeletedView) return 'Recently Deleted';
+		const folderId = navigation.folderId;
+		if (folderId === null) return 'All Notes';
+		return honeycrisp.folders.get(folderId)?.name ?? 'Notes';
+	});
+
+	/**
+	 * What to say when the list is empty.
+	 *
+	 * "No notes yet" is a claim about the person's history, and it is false when
+	 * the list is empty because this release cannot INTERPRET what they wrote. A
+	 * note written by a newer release, or by a workspace this one has since
+	 * changed, reads as `Nonconforming` (ADR-0125); the row is intact and
+	 * unreadable, which is a different thing from absent and deserves a
+	 * different sentence.
+	 */
+	const emptyMessage = $derived.by(() => {
+		const unreadable = honeycrisp.notes.nonconforming.length;
+		if (unreadable > 0) {
+			const [subject, object] =
+				unreadable === 1 ? ['note is', 'it'] : ['notes are', 'them'];
+			return `${unreadable} ${subject} here but this version of Honeycrisp cannot read ${object}. Nothing has been lost.`;
+		}
+		return navigation.isDeletedView
+			? 'No deleted notes'
+			: 'No notes yet. Click + to create one.';
+	});
+
+	// Grouping only: `visibleNotes` already owns the order (newest edit first),
+	// so the pinned partition and the date labels preserve it.
 	const groupedNotes = $derived.by(() => {
-		const notes = honeycrisp.view.currentNotes;
+		const notes = honeycrisp.visibleNotes;
 		const pinned = notes.filter((n) => n.pinned);
 		const unpinned = notes.filter((n) => !n.pinned);
 
@@ -81,13 +110,13 @@
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<div class="flex items-center gap-2">
 			<h2 class="text-sm font-semibold">
-				{honeycrisp.view.currentTitle}
+				{title}
 			</h2>
 			<span class="text-xs text-muted-foreground"
-				>{honeycrisp.view.currentNotes.length}</span
+				>{honeycrisp.visibleNotes.length}</span
 			>
 		</div>
-		{#if honeycrisp.view.currentShowControls}
+		{#if !navigation.isDeletedView}
 			<div class="flex items-center gap-1">
 				<Button
 					variant="ghost"
@@ -106,11 +135,11 @@
 	</div>
 
 	<ScrollArea.Root class="flex-1">
-		{#if honeycrisp.view.currentNotes.length === 0}
+		{#if honeycrisp.visibleNotes.length === 0}
 			<div
 				class="flex h-full items-center justify-center p-8 text-center text-muted-foreground"
 			>
-				<p class="text-sm">{honeycrisp.view.currentEmptyMessage}</p>
+				<p class="text-sm">{emptyMessage}</p>
 			</div>
 		{:else}
 			<div class="flex flex-col gap-4 p-2">
