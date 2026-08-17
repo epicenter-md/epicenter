@@ -1,11 +1,15 @@
 <script lang="ts">
 	import type { Folder } from '@epicenter/honeycrisp';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
+	import { Button } from '@epicenter/ui/button';
+	import * as Dialog from '@epicenter/ui/dialog';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
+	import * as EmojiPicker from '@epicenter/ui/emoji-picker';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
+	import SmilePlusIcon from '@lucide/svelte/icons/smile-plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
@@ -25,6 +29,20 @@
 		}
 		isEditing = false;
 		editingName = '';
+	}
+
+	// ─── Icon ────────────────────────────────────────────────────────────
+
+	// A dialog rather than a popover, and that is the component's size talking
+	// rather than ceremony: a search field over a scrolling grid of every emoji
+	// is a focused task, and the menu that would have anchored a popover closes
+	// on select. Picking one commits and closes, so the whole interaction is two
+	// clicks.
+	let isPickingIcon = $state(false);
+
+	function setIcon(icon: string | null) {
+		honeycrisp.folders.setIcon(folder.id, icon);
+		isPickingIcon = false;
 	}
 
 	// ─── Delete Confirmation ─────────────────────────────────────────────
@@ -84,6 +102,14 @@
 					<PencilIcon class="mr-2 size-4" />
 					Rename
 				</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => (isPickingIcon = true)}>
+					{#if folder.icon}
+						<span class="mr-2 text-base leading-none">{folder.icon}</span>
+					{:else}
+						<SmilePlusIcon class="mr-2 size-4" />
+					{/if}
+					{folder.icon ? 'Change icon' : 'Add icon'}
+				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
 				<DropdownMenu.Item
 					class="text-destructive focus:text-destructive"
@@ -96,6 +122,57 @@
 		</DropdownMenu.Root>
 	{/if}
 </Sidebar.MenuItem>
+
+<Dialog.Root bind:open={isPickingIcon}>
+	<Dialog.Content class="w-auto max-w-fit gap-3 p-3">
+		<Dialog.Header class="px-1 text-left">
+			<Dialog.Title class="text-sm">Folder icon</Dialog.Title>
+			<Dialog.Description class="text-xs">
+				Pick an emoji for {folder.name}.
+			</Dialog.Description>
+		</Dialog.Header>
+
+		<!-- One native emoji string is what the row stores, so `emoji` goes
+		     straight through. Recents are device-local and keyed per app, not per
+		     folder: the point is the handful of emoji this person reaches for. -->
+		<EmojiPicker.Root
+			showRecents
+			recentsKey="honeycrisp.folder-icon.recents"
+			onSelect={({ emoji }) => setIcon(emoji)}
+		>
+			<EmojiPicker.Search placeholder="Search emoji" />
+			<EmojiPicker.Viewport>
+				<EmojiPicker.List emptyMessage="No emoji found." />
+			</EmojiPicker.Viewport>
+			<EmojiPicker.Footer>
+				{#snippet children({ active })}
+					<div
+						class="flex h-8 items-center gap-2 px-1 text-xs text-muted-foreground"
+					>
+						{#if active}
+							<span class="text-base leading-none">{active.emoji}</span>
+							<span class="truncate">{active.data.name}</span>
+						{:else}
+							<span>Select an emoji</span>
+						{/if}
+					</div>
+				{/snippet}
+			</EmojiPicker.Footer>
+		</EmojiPicker.Root>
+
+		{#if folder.icon}
+			<Button
+				variant="ghost"
+				size="sm"
+				class="w-full justify-start text-muted-foreground"
+				onclick={() => setIcon(null)}
+			>
+				<TrashIcon class="mr-2 size-3.5" />
+				Remove icon
+			</Button>
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>
 
 <AlertDialog.Root bind:open={confirmingDelete}>
 	<AlertDialog.Content>

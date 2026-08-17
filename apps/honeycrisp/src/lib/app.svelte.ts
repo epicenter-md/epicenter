@@ -227,6 +227,20 @@ function createFolders(workspace: ReactiveWorkspace<HoneycrispData>) {
 			updated(error);
 		},
 
+		/**
+		 * Set this folder's emoji, or clear it with `null`.
+		 *
+		 * One native emoji string, stored as-is. Not a shortcode and not an icon
+		 * name: the row has to carry a value that renders on every device without
+		 * this release agreeing with the next one about a lookup table, and an
+		 * emoji is already that. It is also why the field is `string|null` rather
+		 * than an enum of the icons this version happens to ship.
+		 */
+		setIcon(folderId: FolderId, icon: string | null): void {
+			const { error } = table.update(folderId, { icon });
+			updated(error);
+		},
+
 		delete(folderId: FolderId): void {
 			// Re-parents this folder's notes and then removes it. Both tables
 			// invalidate on their own, so nothing has to be told to re-read.
@@ -365,12 +379,12 @@ function createNotes(
 		 * Record the row metadata the editor derived from a note's prose.
 		 *
 		 * Only the row: the prose itself is already durable in the document, which
-		 * is where it merges per character (ADR-0207), so this write is the title,
-		 * preview and word count the list renders, plus the edit time it sorts on.
+		 * is where it merges per character (ADR-0207), so this write is the title
+		 * and preview the list renders, plus the edit time it sorts on.
 		 */
 		updateContent(
 			noteId: NoteId,
-			content: Pick<Note, 'title' | 'preview' | 'wordCount'>,
+			content: Pick<Note, 'title' | 'preview'>,
 		): void {
 			update(noteId, { ...content, updatedAt: InstantString.now() });
 		},
