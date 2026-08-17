@@ -96,7 +96,7 @@ const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BuiltInWindow {
+enum BuiltInApp {
     Home,
     Whispering,
     Honeycrisp,
@@ -104,7 +104,7 @@ enum BuiltInWindow {
     Books,
 }
 
-impl BuiltInWindow {
+impl BuiltInApp {
     const ALL: [Self; 5] = [
         Self::Home,
         Self::Whispering,
@@ -113,15 +113,15 @@ impl BuiltInWindow {
         Self::Books,
     ];
 
-    /// Whether Home lists this window as an application a person can open
-    /// (ADR-0189).
+    /// Whether Home lists this app as one a person can open (ADR-0189).
     ///
-    /// Home is absent because you are already looking at it, not because it is
-    /// above the others (ADR-0209). Mail and Books are release-bundled
-    /// placeholder documents with nothing behind them to open. All stay
-    /// reserved IDs the catalog refuses to admit, so "not launchable" never
-    /// means "free for someone else to claim".
-    const fn is_application(self) -> bool {
+    /// Every variant here is an app in the product model; this says only which
+    /// ones Home offers. Home is absent because you are already looking at it,
+    /// not because it is above the others (ADR-0209). Mail and Books are
+    /// release-bundled placeholder documents with nothing behind them to open.
+    /// All stay reserved IDs the catalog refuses to admit, so "not launchable"
+    /// never means "free for someone else to claim".
+    const fn is_launchable(self) -> bool {
         matches!(self, Self::Whispering | Self::Honeycrisp)
     }
 
@@ -156,7 +156,7 @@ impl BuiltInWindow {
     }
 
     fn from_id(id: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|window| window.id() == id)
+        Self::ALL.into_iter().find(|built_in| built_in.id() == id)
     }
 }
 
@@ -222,7 +222,7 @@ struct HostState {
     next_generation: AtomicU64,
     process: Mutex<Option<ManagedChild>>,
     active_token: Mutex<Option<String>>,
-    pending_windows: Mutex<Vec<BuiltInWindow>>,
+    pending_apps: Mutex<Vec<BuiltInApp>>,
     pending_oauth_callback: Mutex<Option<String>>,
     /// A section of Home an application asked the shell to open, held until Home
     /// is able to claim it. Only the latest survives: two recovery nudges in a
@@ -239,7 +239,7 @@ impl HostState {
             next_generation: AtomicU64::new(1),
             process: Mutex::new(None),
             active_token: Mutex::new(None),
-            pending_windows: Mutex::new(Vec::new()),
+            pending_apps: Mutex::new(Vec::new()),
             pending_oauth_callback: Mutex::new(None),
             pending_home_section: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
@@ -254,23 +254,15 @@ impl HostState {
             .map_err(|error| anyhow!(error.clone()))
     }
 
-    fn queue_window(&self, window: BuiltInWindow) {
-        let mut pending = self
-            .pending_windows
-            .lock()
-            .expect("pending window lock poisoned");
-        if !pending.contains(&window) {
-            pending.push(window);
+    fn queue_app(&self, built_in: BuiltInApp) {
+        let mut pending = self.pending_apps.lock().expect("pending app lock poisoned");
+        if !pending.contains(&built_in) {
+            pending.push(built_in);
         }
     }
 
-    fn take_pending_windows(&self) -> Vec<BuiltInWindow> {
-        std::mem::take(
-            &mut *self
-                .pending_windows
-                .lock()
-                .expect("pending window lock poisoned"),
-        )
+    fn take_pending_apps(&self) -> Vec<BuiltInApp> {
+        std::mem::take(&mut *self.pending_apps.lock().expect("pending app lock poisoned"))
     }
 
     fn queue_home_section(&self, section: HomeSection) {
@@ -421,7 +413,7 @@ mod export_bindings {
 /// A section of Epicenter Home an application can ask the shell to open.
 ///
 /// A closed set, not a string-addressed destination: Home is a privileged
-/// built-in window, so what an application may name inside it is enumerated
+/// built-in app, so what an application may name inside it is enumerated
 /// here rather than parsed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
@@ -437,7 +429,7 @@ pub enum HomeSection {
 #[derive(Clone, Debug, serde::Serialize, specta::Type, tauri_specta::Event)]
 pub struct HomeSectionPending;
 
-/// Take the user to the window that can fix an unavailable local transcription
+/// Take the user to the app that can fix an unavailable local transcription
 /// route.
 ///
 /// The app shell owns this navigation. The host reports that the route is
@@ -457,8 +449,8 @@ pub struct HomeSectionPending;
 #[specta::specta]
 fn open_home(section: HomeSection, app: DesktopAppHandle) {
     app.state::<HostState>().queue_home_section(section);
-    request_window(&app, BuiltInWindow::Home);
-    let _ = HomeSectionPending.emit_to(&app, BuiltInWindow::Home.id());
+    request_window(&app, BuiltInApp::Home);
+    let _ = HomeSectionPending.emit_to(&app, BuiltInApp::Home.id());
 }
 
 /// Claim the pending section intent, if any. Home calls this on mount and
@@ -481,7 +473,7 @@ fn take_pending_home_section(app: DesktopAppHandle) -> Option<HomeSection> {
 enum Application {
     /// A compiled application with its own stable window label and enumerated
     /// capabilities.
-    Compiled(BuiltInWindow),
+    Compiled(BuiltInApp),
     /// Anything else: opened in an `app-` window pointed at `/apps/<id>/`.
     Admitted(String),
 }
@@ -504,7 +496,7 @@ enum Application {
 /// # Who decides an ID is real
 ///
 /// Not this function. Rust validates the ID's *shape* and resolves it against
-/// its own compiled window table; it never asks whether a folder was admitted,
+/// its own compiled app table; it never asks whether a folder was admitted,
 /// because the catalog is one immutable generation owned by Bun (ADR-0179) and
 /// a second copy in Rust would be a second answer. What keeps a made-up ID from
 /// arriving is that Home only offers IDs from the authenticated list Bun serves.
@@ -530,7 +522,7 @@ fn launch_application(
 ) -> std::result::Result<(), String> {
     let Some(application) = parse_application_id(&app_id) else {
         return Err(format!(
-            "app id must match [a-z0-9-]+ and must not name a built-in window that is not an application: {app_id}"
+            "app id must match [a-z0-9-]+ and must not name a built-in app Home does not offer: {app_id}"
         ));
     };
     // Unlike the tray, deep links, and startup, a user-invoked launch does not
@@ -562,8 +554,8 @@ fn launch_on_main_thread(
     app.run_on_main_thread(move || {
         let result = if window_app.state::<HostState>().token_is_active(&token) {
             match application {
-                Application::Compiled(window) => {
-                    ensure_window(&window_app, window, port, &token, true)
+                Application::Compiled(built_in) => {
+                    ensure_window(&window_app, built_in, port, &token, true)
                 }
                 Application::Admitted(id) => ensure_app_window(&window_app, &id, port, &token),
             }
@@ -584,18 +576,18 @@ fn launch_on_main_thread(
 }
 
 /// Accept the ID shapes this command can act on, resolved against the compiled
-/// window table.
+/// app table.
 ///
 /// The grammar mirrors `APP_ID_PATTERN` in `@epicenter/constants`: lowercase
 /// alphanumerics, `-`, and `.`, beginning and ending alphanumeric. Dots are here
 /// because an admitted app's ID is the reverse-domain workspace ID it declares
-/// (ADR-0210); bare labels stay legal for the compiled windows. The
+/// (ADR-0210); bare labels stay legal for the compiled apps. The
 /// first and last character are constrained for the same reason the TypeScript
 /// side constrains them: an ID names a directory, and `.` or `..` would name one
 /// outside it.
 ///
-/// This is a shape check, not a membership check. A reserved window that is not
-/// an application (Home itself, a placeholder) and an ID with characters no ID
+/// This is a shape check, not a membership check. A reserved built-in app Home
+/// does not offer (Home itself, a placeholder) and an ID with characters no ID
 /// may contain are the same refusal, because Home offers neither.
 fn parse_application_id(id: &str) -> Option<Application> {
     let is_inner = |byte: u8| {
@@ -612,8 +604,8 @@ fn parse_application_id(id: &str) -> Option<Application> {
     if !matches_pattern {
         return None;
     }
-    match BuiltInWindow::from_id(id) {
-        Some(window) if window.is_application() => Some(Application::Compiled(window)),
+    match BuiltInApp::from_id(id) {
+        Some(built_in) if built_in.is_launchable() => Some(Application::Compiled(built_in)),
         Some(_) => None,
         None => Some(Application::Admitted(id.to_string())),
     }
@@ -775,14 +767,14 @@ pub fn run() {
                     if let Some(callback) = parse_oauth_callback(url) {
                         queue_or_send_oauth_callback(app.handle(), callback);
                     }
-                    if let Some(window) = parse_window_deep_link(url) {
-                        request_window(app.handle(), window);
+                    if let Some(built_in) = parse_app_deep_link(url) {
+                        request_window(app.handle(), built_in);
                         opened_window = true;
                     }
                 }
             }
             if !opened_window {
-                request_window(app.handle(), BuiltInWindow::Home);
+                request_window(app.handle(), BuiltInApp::Home);
             }
             request_start(app.handle().clone(), None);
             Ok(())
@@ -790,14 +782,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build Epicenter")
         .run(|app, event| match event {
-            RunEvent::Reopen { .. } => request_window(app, BuiltInWindow::Home),
+            RunEvent::Reopen { .. } => request_window(app, BuiltInApp::Home),
             RunEvent::Exit => shutdown_host(app),
             _ => {}
         });
 }
 
 fn open_forwarded_deep_links(app: &DesktopAppHandle, arguments: &[String]) {
-    let windows = windows_from_arguments(arguments);
+    let built_ins = apps_from_arguments(arguments);
     for argument in arguments {
         let Ok(url) = tauri::Url::parse(argument) else {
             continue;
@@ -806,29 +798,29 @@ fn open_forwarded_deep_links(app: &DesktopAppHandle, arguments: &[String]) {
             queue_or_send_oauth_callback(app, callback);
         }
     }
-    if windows.is_empty() {
-        request_window(app, BuiltInWindow::Home);
+    if built_ins.is_empty() {
+        request_window(app, BuiltInApp::Home);
     } else {
-        for window in windows {
-            request_window(app, window);
+        for built_in in built_ins {
+            request_window(app, built_in);
         }
     }
 }
 
-fn windows_from_arguments(arguments: &[String]) -> Vec<BuiltInWindow> {
-    let mut windows = Vec::new();
+fn apps_from_arguments(arguments: &[String]) -> Vec<BuiltInApp> {
+    let mut built_ins = Vec::new();
     for argument in arguments {
         let Ok(url) = tauri::Url::parse(argument) else {
             continue;
         };
-        let Some(window) = parse_window_deep_link(&url) else {
+        let Some(built_in) = parse_app_deep_link(&url) else {
             continue;
         };
-        if !windows.contains(&window) {
-            windows.push(window);
+        if !built_ins.contains(&built_in) {
+            built_ins.push(built_in);
         }
     }
-    windows
+    built_ins
 }
 
 fn open_deep_links(app: &DesktopAppHandle, urls: &[tauri::Url]) {
@@ -836,8 +828,8 @@ fn open_deep_links(app: &DesktopAppHandle, urls: &[tauri::Url]) {
         if let Some(callback) = parse_oauth_callback(url) {
             queue_or_send_oauth_callback(app, callback);
         }
-        if let Some(window) = parse_window_deep_link(url) {
-            request_window(app, window);
+        if let Some(built_in) = parse_app_deep_link(url) {
+            request_window(app, built_in);
         }
     }
 }
@@ -887,10 +879,10 @@ fn queue_or_send_oauth_callback(app: &DesktopAppHandle, url: String) {
 /// tray, a deep link, macOS reopen, an app asking for a section of Home). It is
 /// wrong for `launch_application`, where a person clicked and is owed an
 /// outcome, so that command waits on the main thread instead.
-fn request_window(app: &DesktopAppHandle, window: BuiltInWindow) {
+fn request_window(app: &DesktopAppHandle, built_in: BuiltInApp) {
     let state = app.state::<HostState>();
     let Some(token) = state.active_token() else {
-        state.queue_window(window);
+        state.queue_app(built_in);
         return;
     };
     let Ok(port) = state.port() else {
@@ -902,21 +894,28 @@ fn request_window(app: &DesktopAppHandle, window: BuiltInWindow) {
         if !window_app.state::<HostState>().token_is_active(&token) {
             return;
         }
-        if let Err(error) = ensure_window(&window_app, window, port, &token, true) {
+        if let Err(error) = ensure_window(&window_app, built_in, port, &token, true) {
             append_parent_log(
                 &window_app,
-                &format!("open {} window: {error:#}", window.id()),
+                &format!("open {} window: {error:#}", built_in.id()),
             );
         }
     });
     if let Err(error) = schedule {
-        append_parent_log(app, &format!("schedule {} window: {error}", window.id()));
+        append_parent_log(app, &format!("schedule {} window: {error}", built_in.id()));
     }
 }
 
-fn parse_window_deep_link(url: &tauri::Url) -> Option<BuiltInWindow> {
+/// Resolve `epicenter://app/<id>` to the built-in app it names.
+///
+/// The segment is `app` because it is the same ID space as `/apps/<id>/` and
+/// the list Home shows: a person pasting a link names the thing they want, not
+/// the frame it arrives in. `epicenter://auth/...` stays disjoint by segment,
+/// and an admitted app's dotted ID cannot collide with these bare labels
+/// (ADR-0210), so widening this to the catalog later needs no new grammar.
+fn parse_app_deep_link(url: &tauri::Url) -> Option<BuiltInApp> {
     if url.scheme() != "epicenter"
-        || url.host_str() != Some("window")
+        || url.host_str() != Some("app")
         || !url.username().is_empty()
         || url.password().is_some()
         || url.port().is_some()
@@ -930,7 +929,7 @@ fn parse_window_deep_link(url: &tauri::Url) -> Option<BuiltInWindow> {
     if id.is_empty() || id.contains('/') {
         return None;
     }
-    BuiltInWindow::from_id(id)
+    BuiltInApp::from_id(id)
 }
 
 fn request_start(app: DesktopAppHandle, initial_error: Option<String>) {
@@ -1018,11 +1017,11 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
     }
 
     state.activate(&token);
-    let mut windows = state.take_pending_windows();
-    if windows.is_empty() {
-        windows.push(BuiltInWindow::Home);
+    let mut built_ins = state.take_pending_apps();
+    if built_ins.is_empty() {
+        built_ins.push(BuiltInApp::Home);
     }
-    if let Err(error) = create_windows_on_main_thread(app, port, &token, windows) {
+    if let Err(error) = create_windows_on_main_thread(app, port, &token, built_ins) {
         state.deactivate();
         if let Some(child) = take_generation(&state, generation) {
             stop_child(child);
@@ -1381,7 +1380,7 @@ fn create_windows_on_main_thread(
     app: &DesktopAppHandle,
     port: u16,
     token: &str,
-    windows: Vec<BuiltInWindow>,
+    built_ins: Vec<BuiltInApp>,
 ) -> Result<()> {
     let (sender, receiver) = mpsc::sync_channel(1);
     let app = app.clone();
@@ -1391,11 +1390,11 @@ fn create_windows_on_main_thread(
             #[cfg(target_os = "macos")]
             create_recording_overlay(&app, port, &token)?;
 
-            ensure_window(&app, BuiltInWindow::Whispering, port, &token, false)?;
+            ensure_window(&app, BuiltInApp::Whispering, port, &token, false)?;
 
-            windows
+            built_ins
                 .into_iter()
-                .try_for_each(|window| ensure_window(&app, window, port, &token, true))
+                .try_for_each(|built_in| ensure_window(&app, built_in, port, &token, true))
         })();
         let _ = sender.send(result);
     })?;
@@ -1413,14 +1412,20 @@ fn create_recording_overlay(app: &DesktopAppHandle, port: u16, token: &str) -> R
         .context("create the Whispering recording overlay")
 }
 
+/// Make sure the one window for this built-in app exists, and reveal it.
+///
+/// The window label is the app's ID, which is what every capability file in
+/// `src-tauri/capabilities/` selects on. One built-in app has one window here;
+/// an app owning a second window (Whispering's recording overlay) creates it
+/// separately, under its own label.
 fn ensure_window(
     app: &DesktopAppHandle,
-    window: BuiltInWindow,
+    built_in: BuiltInApp,
     port: u16,
     token: &str,
     reveal: bool,
 ) -> Result<()> {
-    if let Some(window) = app.get_webview_window(window.id()) {
+    if let Some(window) = app.get_webview_window(built_in.id()) {
         if reveal {
             focus(window);
         }
@@ -1428,10 +1433,10 @@ fn ensure_window(
     }
 
     let origin = origin(port);
-    let url: tauri::Url = format!("{origin}{}", window.path()).parse()?;
+    let url: tauri::Url = format!("{origin}{}", built_in.path()).parse()?;
     let initialization_script = initialization_script(&origin, token)?;
-    let window = WebviewWindowBuilder::new(app, window.id(), WebviewUrl::External(url))
-        .title(window.title())
+    let window = WebviewWindowBuilder::new(app, built_in.id(), WebviewUrl::External(url))
+        .title(built_in.title())
         .inner_size(1100.0, 760.0)
         .min_inner_size(680.0, 480.0)
         .visible(reveal)
@@ -1439,7 +1444,7 @@ fn ensure_window(
         .on_navigation(move |url| is_allowed_navigation(url, port))
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .build()
-        .with_context(|| format!("create the {} WebView", window.title()))?;
+        .with_context(|| format!("create the {} WebView", built_in.title()))?;
 
     let close_window = window.clone();
     window.on_window_event(move |event| {
@@ -1465,8 +1470,8 @@ fn invalidate_windows(app: &DesktopAppHandle) {
     let (sender, receiver) = mpsc::sync_channel(1);
     let app = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
-        for window in BuiltInWindow::ALL {
-            if let Some(window) = app.get_webview_window(window.id()) {
+        for built_in in BuiltInApp::ALL {
+            if let Some(window) = app.get_webview_window(built_in.id()) {
                 if window.destroy().is_err() {
                     let _ = window.hide();
                 }
@@ -1741,7 +1746,7 @@ mod tests {
 
     #[test]
     fn built_in_window_table_has_stable_ids_routes_and_titles() {
-        let actual = BuiltInWindow::ALL.map(|window| (window.id(), window.path(), window.title()));
+        let actual = BuiltInApp::ALL.map(|window| (window.id(), window.path(), window.title()));
         assert_eq!(
             actual,
             [
@@ -1760,10 +1765,10 @@ mod tests {
     /// asserts the same list against `applications.ts`.
     #[test]
     fn compiled_applications_are_the_release_built_spas() {
-        let launchable: Vec<&str> = BuiltInWindow::ALL
+        let launchable: Vec<&str> = BuiltInApp::ALL
             .into_iter()
-            .filter(|window| window.is_application())
-            .map(BuiltInWindow::id)
+            .filter(|window| window.is_launchable())
+            .map(BuiltInApp::id)
             .collect();
         assert_eq!(launchable, ["whispering", "honeycrisp"]);
     }
@@ -1772,11 +1777,11 @@ mod tests {
     fn one_verb_opens_compiled_and_admitted_applications_alike() {
         assert!(matches!(
             parse_application_id("whispering"),
-            Some(Application::Compiled(BuiltInWindow::Whispering))
+            Some(Application::Compiled(BuiltInApp::Whispering))
         ));
         assert!(matches!(
             parse_application_id("honeycrisp"),
-            Some(Application::Compiled(BuiltInWindow::Honeycrisp))
+            Some(Application::Compiled(BuiltInApp::Honeycrisp))
         ));
 
         // Every well-formed non-reserved ID resolves to the app-window path,
@@ -1818,7 +1823,7 @@ mod tests {
     fn app_window_labels_are_reserved_and_never_collide_with_host_windows() {
         assert_eq!(app_window_label("hello-http"), "app-hello-http");
 
-        let mut host_labels: Vec<&str> = BuiltInWindow::ALL.map(BuiltInWindow::id).to_vec();
+        let mut host_labels: Vec<&str> = BuiltInApp::ALL.map(BuiltInApp::id).to_vec();
         host_labels.push("recording-overlay");
         for label in host_labels {
             assert!(
@@ -2304,33 +2309,32 @@ mod tests {
     }
 
     #[test]
-    fn deep_links_accept_only_the_closed_built_in_window_table() {
+    fn deep_links_accept_only_the_closed_built_in_app_table() {
         for (url, expected) in [
-            ("epicenter://window/home", BuiltInWindow::Home),
-            ("epicenter://window/whispering", BuiltInWindow::Whispering),
-            ("epicenter://window/honeycrisp", BuiltInWindow::Honeycrisp),
-            ("epicenter://window/mail", BuiltInWindow::Mail),
-            ("epicenter://window/books", BuiltInWindow::Books),
+            ("epicenter://app/home", BuiltInApp::Home),
+            ("epicenter://app/whispering", BuiltInApp::Whispering),
+            ("epicenter://app/honeycrisp", BuiltInApp::Honeycrisp),
+            ("epicenter://app/mail", BuiltInApp::Mail),
+            ("epicenter://app/books", BuiltInApp::Books),
         ] {
-            assert_eq!(
-                parse_window_deep_link(&url.parse().unwrap()),
-                Some(expected)
-            );
+            assert_eq!(parse_app_deep_link(&url.parse().unwrap()), Some(expected));
         }
 
         for denied in [
+            // Both retired spellings. Neither is kept as a compatibility alias.
             "epicenter://surface/home",
-            "epicenter://window/unknown",
-            "epicenter://window/home/",
-            "epicenter://window/home/extra",
-            "epicenter://window/home?mode=other",
-            "epicenter://window/home#other",
-            "epicenter://user@window/home",
-            "epicenter://user:secret@window/home",
+            "epicenter://window/home",
+            "epicenter://app/unknown",
+            "epicenter://app/home/",
+            "epicenter://app/home/extra",
+            "epicenter://app/home?mode=other",
+            "epicenter://app/home#other",
+            "epicenter://user@app/home",
+            "epicenter://user:secret@app/home",
             "epicenter://other/query",
-            "https://window/home",
+            "https://app/home",
         ] {
-            assert_eq!(parse_window_deep_link(&denied.parse().unwrap()), None);
+            assert_eq!(parse_app_deep_link(&denied.parse().unwrap()), None);
         }
     }
 
@@ -2400,18 +2404,18 @@ mod tests {
     }
 
     #[test]
-    fn forwarded_arguments_extract_valid_unique_window_links() {
+    fn forwarded_arguments_extract_valid_unique_app_links() {
         let arguments = [
             "/Applications/Epicenter.app/Contents/MacOS/Epicenter",
-            "epicenter://window/mail",
-            "epicenter://window/unknown",
-            "epicenter://window/mail",
-            "epicenter://window/books",
+            "epicenter://app/mail",
+            "epicenter://app/unknown",
+            "epicenter://app/mail",
+            "epicenter://app/books",
         ]
         .map(String::from);
         assert_eq!(
-            windows_from_arguments(&arguments),
-            vec![BuiltInWindow::Mail, BuiltInWindow::Books]
+            apps_from_arguments(&arguments),
+            vec![BuiltInApp::Mail, BuiltInApp::Books]
         );
     }
 

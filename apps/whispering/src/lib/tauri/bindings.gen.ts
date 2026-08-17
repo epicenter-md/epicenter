@@ -231,7 +231,7 @@ export const commands = {
 			'get_local_transcription_readiness',
 		),
 	/**
-	 *  Take the user to the surface that can fix an unavailable local transcription
+	 *  Take the user to the app that can fix an unavailable local transcription
 	 *  route.
 	 *
 	 *  The app shell owns this navigation. The host reports that the route is
@@ -588,7 +588,7 @@ export type GlobalShortcutTriggered = {
  *  A section of Epicenter Home an application can ask the shell to open.
  *
  *  A closed set, not a string-addressed destination: Home is a privileged
- *  built-in surface, so what an application may name inside it is enumerated
+ *  built-in app, so what an application may name inside it is enumerated
  *  here rather than parsed.
  */
 export type HomeSection =
