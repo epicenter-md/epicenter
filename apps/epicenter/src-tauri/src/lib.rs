@@ -1499,8 +1499,11 @@ fn show_failure_dialog(app: &DesktopAppHandle, message: &str) -> FailureChoice {
     loop {
         let result = app
             .dialog()
+            // A person reads the first two lines and the buttons; the detail is
+            // kept because this is a startup crash, where the one useful thing
+            // anybody can do with it is paste it into a report.
             .message(format!(
-                "Epicenter could not start its application host.\n\n{message}\n\nNo application window was opened."
+                "Epicenter could not start.\n\nNo app window was opened. Retry, or reveal the logs if it keeps happening.\n\nDetails: {message}"
             ))
             .title("Epicenter could not start")
             .kind(MessageDialogKind::Error)

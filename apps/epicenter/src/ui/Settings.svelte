@@ -73,8 +73,8 @@
 		<Empty.Header>
 			<Empty.Title>Settings live on the desktop</Empty.Title>
 			<Empty.Description>
-				The active local transcription model names files and an accelerator on
-				the machine running Epicenter, so it is administered there.
+				Choosing the local transcription model needs the model files and the
+				hardware on the machine running Epicenter, so it happens there.
 			</Empty.Description>
 		</Empty.Header>
 	</Empty.Root>

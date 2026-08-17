@@ -45,6 +45,7 @@ import { desktopBlobUrl } from '@epicenter/blobs/webview';
 import { Ok } from 'wellcrafted/result';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
+import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
 	ACCOUNT_PROFILE_ROUTE,
@@ -572,18 +573,18 @@ describe('createHomeServer', () => {
 				applicationPage('Honeycrisp'),
 			);
 
+			// The page itself, not a phrase inside it: what this route owes is the
+			// release-bundled placeholder rather than an app or a 404, and pinning
+			// a sentence here only means the copy cannot be improved without
+			// editing a test that was never about the copy.
 			const mail = await fetch(MAIL_ROUTE.url(server.url.origin), {
 				headers: authenticatedHeaders(server),
 			});
-			expect(await mail.text()).toContain(
-				'the full Mail experience is not included',
-			);
+			expect(await mail.text()).toBe(PLACEHOLDER_PAGES.mail);
 			const books = await fetch(BOOKS_ROUTE.url(server.url.origin), {
 				headers: authenticatedHeaders(server),
 			});
-			expect(await books.text()).toContain(
-				'the full Books experience is not included',
-			);
+			expect(await books.text()).toBe(PLACEHOLDER_PAGES.books);
 
 			for (const response of [
 				query,

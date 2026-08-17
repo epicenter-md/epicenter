@@ -38,10 +38,10 @@ function placeholderPage(title: string, status: string): string {
 export const PLACEHOLDER_PAGES = {
 	mail: placeholderPage(
 		'Mail',
-		'Mail has its permanent place in Epicenter, but the full Mail experience is not included in this milestone.',
+		'Mail is coming to Epicenter. Its place is reserved, but there is nothing here yet.',
 	),
 	books: placeholderPage(
 		'Books',
-		'Books has its permanent place in Epicenter, but the full Books experience is not included in this milestone.',
+		'Books is coming to Epicenter. Its place is reserved, but there is nothing here yet.',
 	),
 } satisfies Record<PlaceholderRouteId, string>;
