@@ -1,8 +1,8 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
-	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
-	import { navigation } from '$lib/honeycrisp/navigation.svelte.js';
+	import { getHoneycrisp } from '$lib/app.svelte.js';
+	import { navigation } from '$lib/navigation.svelte.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import CommandPalette from './components/CommandPalette.svelte';
 	import NoteBodyPane from './components/NoteBodyPane.svelte';

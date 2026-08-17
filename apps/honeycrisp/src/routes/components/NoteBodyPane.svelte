@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { NOTE_BODY, type NoteId } from '@epicenter/honeycrisp';
 	import HoneycrispEditor from '$lib/editor/Editor.svelte';
-	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
+	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 
 	const honeycrisp = getHoneycrisp();

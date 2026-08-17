@@ -7,8 +7,8 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
-	import { navigation } from '$lib/honeycrisp/navigation.svelte.js';
+	import { getHoneycrisp } from '$lib/app.svelte.js';
+	import { navigation } from '$lib/navigation.svelte.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 
 	const honeycrisp = getHoneycrisp();

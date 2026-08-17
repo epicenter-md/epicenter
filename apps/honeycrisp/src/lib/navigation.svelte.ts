@@ -19,7 +19,7 @@
  * @example
  * ```svelte
  * <script>
- *   import { navigation } from '$lib/honeycrisp/navigation.svelte.js';
+ *   import { navigation } from '$lib/navigation.svelte.js';
  * </script>
  * <button onclick={() => navigation.selectFolder(null)}>All Notes</button>
  * ```

@@ -9,9 +9,9 @@ import {
 } from '@epicenter/honeycrisp';
 import { fromWorkspace, type ReactiveWorkspace } from '@epicenter/svelte';
 import { createContext } from 'svelte';
-import type { HoneycrispDatabases } from '../databases.js';
-import { readNoteText } from '../note-text.js';
+import type { HoneycrispDatabases } from './databases.js';
 import { navigation } from './navigation.svelte.js';
+import { readNoteText } from './note-text.js';
 
 /**
  * The reactive Honeycrisp application, for one mounted app generation.

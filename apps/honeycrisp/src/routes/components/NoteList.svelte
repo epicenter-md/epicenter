@@ -3,10 +3,10 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as ScrollArea from '@epicenter/ui/scroll-area';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
-	import { navigation } from '$lib/honeycrisp/navigation.svelte.js';
+	import { getHoneycrisp } from '$lib/app.svelte.js';
+	import { navigation } from '$lib/navigation.svelte.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
-	import { getDateLabel } from '$lib/utils/date';
+	import { getDateLabel } from '$lib/date-label.js';
 	import NoteCard from '../components/NoteCard.svelte';
 
 	const honeycrisp = getHoneycrisp();

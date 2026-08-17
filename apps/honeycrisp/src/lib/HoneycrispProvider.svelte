@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { createHoneycrisp, setHoneycrisp } from './honeycrisp/index.js';
+	import { createHoneycrisp, setHoneycrisp } from './app.svelte.js';
 	import type { HoneycrispDatabases } from './databases.js';
 
 	let {

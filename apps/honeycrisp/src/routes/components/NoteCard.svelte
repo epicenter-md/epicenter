@@ -10,7 +10,7 @@
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
-	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
+	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 
 	const honeycrisp = getHoneycrisp();

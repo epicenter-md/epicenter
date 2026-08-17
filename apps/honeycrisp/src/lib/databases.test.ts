@@ -201,7 +201,9 @@ function titles(data: {
 }
 
 /** The account arm, which an account generation must have resolved with. */
-function requireAccount(databases: Databases): NonNullable<Databases['account']> {
+function requireAccount(
+	databases: Databases,
+): NonNullable<Databases['account']> {
 	const account = databases.account;
 	if (account === undefined) {
 		throw new Error('this generation was expected to carry an account');
@@ -230,8 +232,7 @@ test('device work survives signing in, signing out, and a second account', async
 		const databases = await openHoneycrispDatabases({ auth: signedOut });
 		expect(databases.account).toBeUndefined();
 		expect(
-			databases.device.tables.notes.create(noteFields('anonymous draft'))
-				.error,
+			databases.device.tables.notes.create(noteFields('anonymous draft')).error,
 		).toBeNull();
 		await databases[Symbol.asyncDispose]();
 	}
@@ -377,7 +378,9 @@ test('a signed-in state with no account id opens no account store', async () => 
 	// derive, so the boot fails rather than guessing one or falling back to the
 	// device document.
 	const auth = createFakeAuth({ status: 'signed-in', principalId: '' });
-	const failure = await openHoneycrispDatabases({ auth }).catch((cause) => cause);
+	const failure = await openHoneycrispDatabases({ auth }).catch(
+		(cause) => cause,
+	);
 	expect((failure as { name?: string }).name).toBe('Unaddressable');
 	// The device document opened first and remains the durable local space even
 	// though this malformed account boot cannot open a replica.
@@ -427,8 +430,9 @@ test('a supersession discards one account replica and cannot touch the others', 
 		});
 		const databases = await openHoneycrispDatabases({ auth });
 		expect(
-			requireAccount(databases).data.tables.notes.create(noteFields("kept bob's"))
-				.error,
+			requireAccount(databases).data.tables.notes.create(
+				noteFields("kept bob's"),
+			).error,
 		).toBeNull();
 		await databases[Symbol.asyncDispose]();
 	}
@@ -493,8 +497,9 @@ test('a rebuild discards one account replica and cannot touch the others', async
 		});
 		const databases = await openHoneycrispDatabases({ auth });
 		expect(
-			requireAccount(databases).data.tables.notes.create(noteFields("kept bob's"))
-				.error,
+			requireAccount(databases).data.tables.notes.create(
+				noteFields("kept bob's"),
+			).error,
 		).toBeNull();
 		await databases[Symbol.asyncDispose]();
 	}

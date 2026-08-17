@@ -12,8 +12,8 @@
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '#platform/auth';
 	import { instanceSetting } from '#platform/instance';
-	import { getHoneycrisp } from '$lib/honeycrisp/index.js';
-	import { navigation } from '$lib/honeycrisp/navigation.svelte.js';
+	import { getHoneycrisp } from '$lib/app.svelte.js';
+	import { navigation } from '$lib/navigation.svelte.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
