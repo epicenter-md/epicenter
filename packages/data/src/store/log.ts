@@ -2,7 +2,7 @@
  * The CRDT's own durable bytes: the update log, its snapshot folding, the outbox and
  * the cursor.
  *
- * The workspace's derived SQL used to live here too and now sits in `./projection.js`.
+ * The database's derived SQL used to live here too and now sits in `./projection.js`.
  * The two shared a file and nothing else: this is what the document IS and what
  * `../sync` reads, while a projection is a cache rebuilt from it at open.
  */
@@ -46,7 +46,7 @@ type StoredUpdate = SqliteRow & {
 };
 
 /**
- * The live store file: the Yjs update log and the workspace projection, together.
+ * The live store file: the Yjs update log and the database projection, together.
  *
  * They share a file rather than merely a directory so that an append and the
  * projection write it implies commit in one transaction. That is what makes

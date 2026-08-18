@@ -82,7 +82,7 @@ export type BrowserAccountStore = AccountStore & {
 	 * dial is refused again.
 	 *
 	 * Its blast radius is this store's own address and nothing else (ADR-0233),
-	 * so a workspace discard names one account's replica and can reach neither
+	 * so a database discard names one account's replica and can reach neither
 	 * the device document nor any other account's.
 	 */
 	discard(): Promise<Result<void, StoreError>>;
@@ -346,26 +346,26 @@ async function openIdbBacking(
  * (ADR-0233):
  *
  * ```text
- * epicenter/<workspace id>/device
- * epicenter/<workspace id>/account/<principal id>
+ * epicenter/<database id>/device
+ * epicenter/<database id>/account/<principal id>
  * ```
  *
  * A browser application keeps one device document and one retained account
  * replica per account, and may hold them open at once. The device document
- * never joins workspace sync and survives every sign-in and sign-out; an
+ * never joins database sync and survives every sign-in and sign-out; an
  * account replica is this device's replica of one principal's current
  * authority document (ADR-0231), retained across sign-out too, which is why
  * it is addressed by the account that owns it rather than by the application
  * alone.
  *
- * Three identities, none of them collapsed into another: the workspace id says
+ * Three identities, none of them collapsed into another: the database id says
  * which application, the principal says whose replica this is, and the
  * authority document id says which current Yjs document that replica belongs
  * to. Only the first two are in the name. The third lives inside the store
- * because it changes on rebuild, and a rebuilt workspace has to stay at the
+ * because it changes on rebuild, and a rebuilt database has to stay at the
  * same address while its contents are discarded.
  *
- * A workspace id is dot-separated lowercase labels, so it holds no `/`: the
+ * A database id is dot-separated lowercase labels, so it holds no `/`: the
  * segment after `epicenter/` is always exactly the application, and no address
  * can be read as another one.
  */
@@ -380,10 +380,10 @@ function accountAddress(databaseId: string, principalId: PrincipalId): string {
 /**
  * Delete the browser storage that came before the account-scoped address.
  *
- * Two superseded shapes, neither of them read: `epicenter-store-<workspace id>`,
+ * Two superseded shapes, neither of them read: `epicenter-store-<database id>`,
  * the single database from before an application had two documents, which held
  * anonymous work or an account replica indistinguishably; and
- * `epicenter-store-<workspace id>#private` / `#workspace`, the per-application
+ * `epicenter-store-<database id>#private` / `#database`, the per-application
  * split that separated the two documents but left an account replica with no
  * owner, so a second account would have opened the first account's bytes.
  * Neither is the final address, so both are deleted rather than renamed,
@@ -402,10 +402,10 @@ function deleteSupersededStorage(
 	const superseded = [
 		`epicenter-store-${databaseId}`,
 		`epicenter-store-${databaseId}#private`,
-		`epicenter-store-${databaseId}#workspace`,
+		`epicenter-store-${databaseId}#database`,
 		owner === 'device'
 			? `epicenter/${databaseId}/private`
-			: `epicenter/${databaseId}/workspace/${principalId}`,
+			: `epicenter/${databaseId}/database/${principalId}`,
 	];
 	return Promise.all(
 		superseded.map(
@@ -421,7 +421,7 @@ function deleteSupersededStorage(
 }
 
 /**
- * Open this browser's device-owned document for the application this workspace
+ * Open this browser's device-owned document for the application this database
  * names.
  *
  * This document has no remote authority, so it carries neither an outbox nor
@@ -429,14 +429,14 @@ function deleteSupersededStorage(
  * while an account replica is open too.
  */
 export async function openDevice<const TDatabase extends DatabaseJson>(
-	workspace: TDatabase,
+	database: TDatabase,
 ): Promise<
 	Result<DataOf<TDatabase, DeviceStore>, StoreError | DatabaseParseError>
 > {
 	// Parsed before anything is claimed or opened: a declaration may arrive as
 	// data, and a refusal here is a boot outcome rather than a programmer
 	// error (ADR-0240).
-	const { data: parsed, error: parseError } = parseDatabase(workspace);
+	const { data: parsed, error: parseError } = parseDatabase(database);
 	if (parseError !== null) return Err(parseError);
 
 	const address = deviceAddress(parsed.id);
@@ -459,7 +459,7 @@ export async function openDevice<const TDatabase extends DatabaseJson>(
 	let parts: { store: DeviceStore; view: UntypedDatabaseView };
 	try {
 		parts = createDeviceStoreOverPort({
-			workspace: parsed,
+			database: parsed,
 			durable: backing.port,
 			loaded: backing.loaded,
 			dispose: () => {
@@ -487,7 +487,7 @@ export async function openDevice<const TDatabase extends DatabaseJson>(
 
 /** Open this device's retained replica of one account's document. */
 export async function openAccount<const TDatabase extends DatabaseJson>(
-	workspace: TDatabase,
+	database: TDatabase,
 	{ principalId }: { principalId: PrincipalId },
 ): Promise<
 	Result<
@@ -497,7 +497,7 @@ export async function openAccount<const TDatabase extends DatabaseJson>(
 > {
 	if (principalId.trim() === '') return StoreError.Unaddressable();
 
-	const { data: parsed, error: parseError } = parseDatabase(workspace);
+	const { data: parsed, error: parseError } = parseDatabase(database);
 	if (parseError !== null) return Err(parseError);
 
 	const address = accountAddress(parsed.id, principalId);
@@ -518,7 +518,7 @@ export async function openAccount<const TDatabase extends DatabaseJson>(
 	let parts: { store: AccountStore; view: UntypedDatabaseView };
 	try {
 		parts = createAccountStoreOverPort({
-			workspace: parsed,
+			database: parsed,
 			durable: backing.port,
 			loaded: backing.loaded,
 			dispose: () => {

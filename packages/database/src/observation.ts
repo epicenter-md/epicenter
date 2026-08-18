@@ -67,8 +67,8 @@ const ObservationError = defineErrors({
 /**
  * A private, order-stable key for one logical table.
  *
- * One process can hold several workspaces, so a registry keyed by local table
- * name alone would cross workspace ids and deliver one app's invalidations to
+ * One process can hold several databases, so a registry keyed by local table
+ * name alone would cross database ids and deliver one app's invalidations to
  * another's handle.
  */
 function tableKey(databaseId: string, tableName: string): string {

@@ -17,7 +17,7 @@ import type { Result } from 'wellcrafted/result';
 import { copyBytes } from './log.js';
 import { createAccountStore, syncEngineOf } from './store.js';
 
-const workspace = defineDatabase({
+const database = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -25,7 +25,7 @@ const workspace = defineDatabase({
 function open() {
 	const raw = new Database(':memory:');
 	const sqlite = createBunSqliteAdapter(raw);
-	const db = createAccountStore({ workspace: workspace, sqlite });
+	const db = createAccountStore({ database: database, sqlite });
 	return {
 		store: db.store,
 		db,
@@ -201,12 +201,12 @@ describe('the cursor is a log position, and never a state vector', () => {
 	test('advancing survives a reopen of the same file', () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 		syncEngineOf(
-			createAccountStore({ workspace: workspace, sqlite }).store,
+			createAccountStore({ database: database, sqlite }).store,
 		).advance(7);
 
 		expect(
 			syncEngineOf(
-				createAccountStore({ workspace: workspace, sqlite }).store,
+				createAccountStore({ database: database, sqlite }).store,
 			).cursor(),
 		).toBe(7);
 	});

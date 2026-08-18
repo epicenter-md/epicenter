@@ -12,12 +12,12 @@
  * It lives beside the driver rather than in the app that first wrote it,
  * because the classification is correctness rather than taste: getting
  * "permanent" wrong spins a backoff against a refusal forever, or gives up on
- * a network blip. What an application actually varies is its workspace id.
+ * a network blip. What an application actually varies is its database id.
  *
  * The credential model arrives as a two-member port, not as an `AuthClient`.
  * That keeps this file MIT alongside the rest of the store, and an
  * `AuthClient` satisfies it structurally with no adapter, the same way
- * `rebuildWorkspace` takes a `StoreTransport` rather than the client itself.
+ * `rebuildDatabase` takes a `StoreTransport` rather than the client itself.
  */
 
 import { isOpenWebSocketDenial } from '@epicenter/sync/auth-subprotocol';
@@ -49,7 +49,7 @@ export type StoreSocketTransport = {
 export type AttachStoreSyncOptions = {
 	/** The open account replica this connection carries. */
 	store: AccountStore;
-	/** The workspace id being synced, which addresses the authority. */
+	/** The database id being synced, which addresses the authority. */
 	databaseId: string;
 	transport: StoreSocketTransport;
 	/**

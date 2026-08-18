@@ -22,7 +22,7 @@
 	 *
 	 * "No notes yet" is a claim about the person's history, and it is false when
 	 * the list is empty because this release cannot INTERPRET what they wrote. A
-	 * note written by a newer release, or by a workspace this one has since
+	 * note written by a newer release, or by a database this one has since
 	 * changed, reads as `Nonconforming` (ADR-0125); the row is intact and
 	 * unreadable, which is a different thing from absent and deserves a
 	 * different sentence.

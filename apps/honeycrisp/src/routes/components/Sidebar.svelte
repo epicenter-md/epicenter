@@ -77,18 +77,18 @@
 	 * it is honest news rather than a broken app, so it is a toast over an
 	 * untouched replica.
 	 */
-	function confirmRebuild(rebuildWorkspace: NonNullable<typeof rebuild>): void {
+	function confirmRebuild(rebuildDatabase: NonNullable<typeof rebuild>): void {
 		confirmationDialog.open({
 			title: 'Reclaim space?',
 			description:
 				'Deleted notes still take up room until this runs. Your notes stay, and every device downloads a fresh copy. Anything not yet synced, on another device or written here while this runs, will be lost.',
 			confirm: { text: 'Reclaim space', variant: 'destructive' },
 			onConfirm: async () => {
-				const { error } = await rebuildWorkspace();
+				const { error } = await rebuildDatabase();
 				if (error === null) return;
 				toast.error('Could not reclaim space', {
 					description: extractErrorMessage(error),
-					id: 'rebuild-workspace',
+					id: 'rebuild-database',
 				});
 			},
 		});
@@ -208,7 +208,7 @@
 		<!-- Directly under the pressure reading, because that number is the only
 		     reason a person rebuilds: it is where they learn the document is mostly
 		     corpse, and the verb that reclaims it belongs in the same breath.
-		     Absent in a device generation, which has no workspace. -->
+		     Absent in a device generation, which has no database. -->
 		{#if rebuild}
 			<Button
 				variant="ghost-destructive"

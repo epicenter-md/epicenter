@@ -14,7 +14,7 @@
  * SQL column names, so one vocabulary spans the typed API, the wire, and
  * storage.
  *
- * A workspace id and table are durable names a workspace declares. A row id comes from
+ * A database id and table are durable names a database declares. A row id comes from
  * whoever knows it: the runtime mints one when nobody does, and an application
  * supplies one when it does (ADR-0206). Renaming any coordinate produces a
  * different address, and therefore a different unit of convergence; there is no
@@ -33,7 +33,7 @@ import { canonicalJson } from './canonical.js';
 
 const CLOSED = { additionalProperties: false } as const;
 
-/** Reverse-domain workspace id: two or more lowercase, dot-separated labels. */
+/** Reverse-domain database id: two or more lowercase, dot-separated labels. */
 const WORKSPACE_ID_PATTERN =
 	'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$';
 /** A durable table name: one bare SQL identifier, so a mount needs no quoting. */
@@ -65,7 +65,7 @@ const ROW_ID = new RegExp(ROW_ID_PATTERN);
  * break that promise: `SELECT * FROM order` is a syntax error however carefully
  * the host generated the view. Refusing the name where it is declared is the
  * only point where the author can still fix it; refusing later would mean a
- * workspace that parses cleanly and then cannot be inspected.
+ * database that parses cleanly and then cannot be inspected.
  *
  * This is not the full keyword list, and deliberately so. SQLite accepts most of
  * its own keywords as identifiers: `rows`, `key`, `view`, `first`, `range` and
@@ -75,7 +75,7 @@ const ROW_ID = new RegExp(ROW_ID_PATTERN);
  *
  * The set is a property of SQLite's parser, so `addresses.test.ts` re-derives it
  * against the linked SQLite and fails if the two ever disagree. A version that
- * changes the set is then a loud test failure rather than a workspace that silently
+ * changes the set is then a loud test failure rather than a database that silently
  * stops being inspectable.
  */
 export const SQLITE_UNUSABLE_AS_RELATION_NAME: readonly string[] = `add all
@@ -194,7 +194,7 @@ export function addressesEqual(left: RowAddress, right: RowAddress): boolean {
 	);
 }
 
-/** Whether a durable workspace id is well formed and within its ceiling. */
+/** Whether a durable database id is well formed and within its ceiling. */
 export function isDatabaseId(
 	value: string,
 	ceilings: AddressByteCeilings,
@@ -215,8 +215,8 @@ export function isDatabaseId(
  * does not enter SQLite's reserved `sqlite_` space, and it does not collide with
  * a relation Epicenter storage already occupies.
  *
- * The same rule governs a workspace declaration and an address arriving on the
- * wire. One grammar, checked in one place: a name a workspace may not declare is
+ * The same rule governs a database declaration and an address arriving on the
+ * wire. One grammar, checked in one place: a name a database may not declare is
  * a name no peer may introduce either.
  */
 export function isTableName(

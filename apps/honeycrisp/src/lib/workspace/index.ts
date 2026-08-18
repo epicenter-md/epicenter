@@ -1,7 +1,7 @@
 /**
- * Honeycrisp's inert workspace declaration.
+ * Honeycrisp's inert database declaration.
  *
- * A workspace declaration is pure JSON: arktype expressions for the fields,
+ * A database declaration is pure JSON: arktype expressions for the fields,
  * and nothing that knows about storage, sync, or documents (ADR-0213,
  * ADR-0240). Runtimes own all of that.
  *
@@ -21,7 +21,7 @@ export type FolderId = string;
 
 const foldersTable = {
 	name: 'string',
-	// Nullable with a default rather than optional. A workspace has no optional
+	// Nullable with a default rather than optional. A database has no optional
 	// fields on purpose: a field has to be one type through the CRDT attribute,
 	// the projection column and the row alike, and "absent" is not a SQL type.
 	// A default is applied at read time and never written (ADR-0213).
@@ -47,7 +47,7 @@ export const honeycrispDatabase = defineDatabase({
 	tables: { folders: foldersTable, notes: notesTable },
 });
 
-/** The typed view of one store through Honeycrisp's workspace. */
+/** The typed view of one store through Honeycrisp's database. */
 export type HoneycrispData = DatabaseView<typeof honeycrispDatabase>;
 
 export type Folder = RowOf<typeof foldersTable>;

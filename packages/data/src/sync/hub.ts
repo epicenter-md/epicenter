@@ -63,7 +63,7 @@ export type HubConnection = {
  * `bootstrap` names the current document to a pristine replica, and that is
  * all it does: no history, no membership. The replica persists the ID and
  * reconnects with it; every byte of state moves on that admitted connection,
- * so "a replica exchanges workspace updates only when its persisted document
+ * so "a replica exchanges database updates only when its persisted document
  * ID equals the authority's current ID" is true without an exception for
  * first contact. `admitted` is membership: catch-up ran and the connection
  * now receives relays and may push. `retired` means this connection cannot sync the

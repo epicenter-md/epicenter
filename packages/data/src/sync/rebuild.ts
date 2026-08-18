@@ -1,7 +1,7 @@
 /**
  * The client half of ADR-0231's one verb: rebuild the document, publish it.
  *
- * "Rebuild workspace" is the product's one action over the wire's one verb. This
+ * "Rebuild database" is the product's one action over the wire's one verb. This
  * file owns its two halves: the reclaim walk, which re-encodes this replica's
  * live state into entirely new struct identities so every tombstone is
  * reclaimed; and the publish, which posts the reborn bytes with the lease
@@ -107,7 +107,7 @@ export type RebuildError = InferErrors<typeof RebuildError>;
 
 /**
  * How a rebuild reaches its authority: the host's authenticated fetch, the
- * deployment's base URL, and the workspace id it is rebuilding.
+ * deployment's base URL, and the database id it is rebuilding.
  */
 export type StoreTransport = {
 	fetch(input: string, init?: RequestInit): Promise<Response>;
@@ -248,7 +248,7 @@ async function postReplace(
 }
 
 /**
- * Rebuild this workspace: publish its live state, reborn, as the next document.
+ * Rebuild this database: publish its live state, reborn, as the next document.
  *
  * The lease is this replica's own stamped facts, so there is no bootstrap
  * and no retry loop: `fromDocument` is the identity its state belongs to
@@ -264,7 +264,7 @@ async function postReplace(
  * the local file, so a crash between publish and discard reduces to the
  * ordinary supersession at the next dial.
  */
-export async function rebuildWorkspace({
+export async function rebuildDatabase({
 	store,
 	transport,
 }: {
@@ -273,7 +273,7 @@ export async function rebuildWorkspace({
 }): Promise<Result<{ document: string }, RebuildError>> {
 	if (!WORKSPACE_ID.test(transport.databaseId)) {
 		return RebuildError.ReplaceFailed({
-			cause: new Error(`'${transport.databaseId}' is not a workspace id`),
+			cause: new Error(`'${transport.databaseId}' is not a database id`),
 		});
 	}
 	const engine = syncEngineOf(store);

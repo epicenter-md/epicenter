@@ -29,7 +29,7 @@ import { createSyncConnection, type SyncDial } from './connection.js';
 import { encodeFrame } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 
-const workspace = defineDatabase({
+const database = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -132,11 +132,11 @@ function openDriven({
 	backoff?: (attempts: number) => number;
 }) {
 	const data = createAccountStore({
-		workspace: workspace,
+		database: database,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const store = data.store;
-	const db = data as DatabaseView<typeof workspace>;
+	const db = data as DatabaseView<typeof database>;
 
 	/** Cursor each dial asked the authority to start after, oldest first. */
 	const dialledFrom: number[] = [];
@@ -491,11 +491,11 @@ describe('a dial that can never succeed stops the driver for good', () => {
 		denyEvery: boolean;
 	}) {
 		const data = createAccountStore({
-			workspace: workspace,
+			database: database,
 			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const store = data.store;
-		const db = data as DatabaseView<typeof workspace>;
+		const db = data as DatabaseView<typeof database>;
 		let dials = 0;
 		const connection = createSyncConnection({
 			store,
@@ -602,11 +602,11 @@ describe('a foreign document name supersedes the replica, and nothing else does 
 		answers: (dial: number) => Uint8Array[];
 	}) {
 		const data = createAccountStore({
-			workspace: workspace,
+			database: database,
 			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const store = data.store;
-		const db = data as DatabaseView<typeof workspace>;
+		const db = data as DatabaseView<typeof database>;
 		// Stamped before the cursor moves, in the order every real replica
 		// follows: the stamp refuses a store that grew before it.
 		if (document !== undefined) {

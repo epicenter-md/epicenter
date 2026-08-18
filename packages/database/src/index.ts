@@ -3,7 +3,7 @@
  * what names the rows it declares.
  *
  * The central export is `defineDatabase`: one application's complete,
- * immutable declaration of its durable workspace (ADR-0240). The package is
+ * immutable declaration of its durable database (ADR-0240). The package is
  * named for it. It used to be `@epicenter/lens`, after the model this one
  * replaced, where several release-local "lenses" could interpret one shared
  * databaseId and none was canonical; an application now owns its databaseId and

@@ -1,7 +1,7 @@
 /**
  * What a developer gets from `@epicenter/data`.
  *
- * The store, the transport that carries it, and the vocabulary a workspace is
+ * The store, the transport that carries it, and the vocabulary a database is
  * declared in. Runtime openers live at their own entry points, because a Bun
  * opener imports `bun:sqlite` and a browser opener imports a WASM build, and
  * neither belongs in a barrel the other has to load.
@@ -13,7 +13,7 @@
  * with its consumers (ADR-0227), so a developer arriving here finds one store
  * rather than a choice between two.
  *
- * Each opener is called `open` and takes the workspace, because a workspace
+ * Each opener is called `open` and takes the database, because a database
  * names the store it opens (ADR-0229). The subpath already says which adapter,
  * so the identifier does not repeat it.
  *

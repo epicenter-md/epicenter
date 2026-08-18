@@ -23,7 +23,7 @@ import {
 	syncEngineOf,
 } from './store.js';
 
-const workspace = defineDatabase({
+const database = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: "'light'|'dark' = 'light'" },
 	tables: { notes: { title: 'string' } },
@@ -31,7 +31,7 @@ const workspace = defineDatabase({
 
 /** The parsed form the over-port constructors take (ADR-0240). */
 function parsed() {
-	const { data, error } = parseDatabase(workspace);
+	const { data, error } = parseDatabase(database);
 	if (error !== null) throw new Error(error.message);
 	return data;
 }
@@ -63,7 +63,7 @@ function openFailable() {
 	/** Every batch the engine accepted, for tests that pin op ordering. */
 	const batches: DurableOp[][] = [];
 	const { store, view } = createAccountStoreOverPort({
-		workspace: parsed(),
+		database: parsed(),
 		durable: {
 			commit(ops) {
 				if (gate.failing) throw new Error('durable storage refused');
@@ -76,7 +76,7 @@ function openFailable() {
 	});
 	return {
 		store,
-		db: view as unknown as DatabaseView<typeof workspace>,
+		db: view as unknown as DatabaseView<typeof database>,
 		sqlite,
 		gate,
 		batches,
@@ -96,12 +96,12 @@ function openFailable() {
 function reopen(sqlite: ReturnType<typeof createBunSqliteAdapter>) {
 	const port = createSqliteDurablePort({ sqlite });
 	const { store, view } = createAccountStoreOverPort({
-		workspace: parsed(),
+		database: parsed(),
 		durable: port,
 		loaded: port.load(),
 		log: silent,
 	});
-	return { store, db: view as unknown as DatabaseView<typeof workspace> };
+	return { store, db: view as unknown as DatabaseView<typeof database> };
 }
 
 function titles(db: ReturnType<typeof openFailable>['db']): string[] {
@@ -230,7 +230,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		const inner = createSqliteDurablePort({ sqlite });
 		const release: (() => void)[] = [];
 		const { store, view } = createAccountStoreOverPort({
-			workspace: parsed(),
+			database: parsed(),
 			durable: {
 				commit(ops) {
 					const batch = [...ops];
@@ -245,7 +245,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 			loaded: inner.load(),
 			log: silent,
 		});
-		const db = view as unknown as DatabaseView<typeof workspace>;
+		const db = view as unknown as DatabaseView<typeof database>;
 
 		expectOk(db.tables.notes.create({ title: 'a' }));
 		expect(store.persistence.get()).toBe('pending');

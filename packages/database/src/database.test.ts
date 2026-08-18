@@ -11,7 +11,7 @@ import {
 	type RowsOf,
 } from './database.js';
 
-const workspace = defineDatabase({
+const database = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: {
 		notes: { title: 'string', tags: 'string[]', date: 'string|null' },
@@ -20,7 +20,7 @@ const workspace = defineDatabase({
 });
 
 function parse() {
-	const { data, error } = parseDatabase(workspace);
+	const { data, error } = parseDatabase(database);
 	if (error !== null) throw error;
 	return data;
 }
@@ -31,15 +31,15 @@ function tableOf(name: string) {
 	return table;
 }
 
-describe('a workspace declaration is arktype JSON', () => {
+describe('a database declaration is arktype JSON', () => {
 	test('the authored literal round-trips byte-identically', () => {
-		expect(JSON.stringify(JSON.parse(JSON.stringify(workspace)))).toBe(
-			JSON.stringify(workspace),
+		expect(JSON.stringify(JSON.parse(JSON.stringify(database)))).toBe(
+			JSON.stringify(database),
 		);
 	});
 
 	test('a declaration loaded from disk compiles, which identity keying prevented', () => {
-		const fromDisk: unknown = JSON.parse(JSON.stringify(workspace));
+		const fromDisk: unknown = JSON.parse(JSON.stringify(database));
 		const { data, error } = parseDatabase(fromDisk);
 		expect(error).toBeNull();
 		expect(data?.tables.get('notes')?.fields.size).toBe(3);
@@ -47,8 +47,8 @@ describe('a workspace declaration is arktype JSON', () => {
 
 	test('compilation is memoised on content, not on object identity', () => {
 		clearDatabaseCache();
-		const first = parseDatabase(structuredClone(workspace));
-		const second = parseDatabase(structuredClone(workspace));
+		const first = parseDatabase(structuredClone(database));
+		const second = parseDatabase(structuredClone(database));
 		expect(first.data).toBe(second.data);
 	});
 });
@@ -294,7 +294,7 @@ describe('a field is one type through every door', () => {
 
 describe('types', () => {
 	test('a row type infers from the literal', () => {
-		type Rows = RowsOf<typeof workspace>;
+		type Rows = RowsOf<typeof database>;
 		const note: Rows['notes'] = {
 			id: 'n1',
 			title: 'Groceries',
@@ -313,7 +313,7 @@ describe('types', () => {
 	});
 
 	test('a create input makes exactly the defaulted fields optional', () => {
-		type Inputs = CreateInputsOf<typeof workspace>;
+		type Inputs = CreateInputsOf<typeof database>;
 		// Every declared default may be omitted...
 		const bare: Inputs['settings'] = {};
 		// ...and supplying one is still checked.

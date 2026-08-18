@@ -59,7 +59,7 @@
  * Do not reintroduce compaction, baselines, or coverage proofs here.
  *
  * The one thing that ever deletes history is not compaction: `replace`
- * (ADR-0231) publishes a caller-supplied state as the workspace's next
+ * (ADR-0231) publishes a caller-supplied state as the database's next
  * DOCUMENT, whole log gone, fresh id minted. It needs no coverage proof
  * because it makes no coverage claim; a person took responsibility, the
  * lease (`fromDocument`, `atHead`) is the whole precondition, and the bytes
@@ -187,14 +187,14 @@ export type SyncAuthority = {
 	 *
 	 * Minted once at first need and re-minted by every replace, because a
 	 * replace publishes a NEW document: the rebuild re-mints every struct
-	 * identity, so the visible workspace survives and the Yjs ancestry does
+	 * identity, so the visible database survives and the Yjs ancestry does
 	 * not. Bytes merge only when they name the same document is the
 	 * invariant, and this name is how both sides state which document they
 	 * mean without anyone reading bytes.
 	 */
 	document(): Result<string, AuthorityError>;
 	/**
-	 * Publish the supplied state as this workspace's next DOCUMENT.
+	 * Publish the supplied state as this database's next DOCUMENT.
 	 *
 	 * A NEW verb, not a reuse of `replaceSnapshot`: a recap replaces history
 	 * within one document and must never stand for entries nobody wrote; a

@@ -3,12 +3,12 @@ export {
 	bindAgentConversation,
 } from './agent-conversation.svelte.js';
 export { default as FlushEditsOnHide } from './flush-edits-on-hide.svelte';
-export { fromDisposableCache } from './from-disposable-cache.svelte.js';
 export {
-	fromWorkspace,
+	fromDatabase,
+	type ReactiveDatabase,
 	type ReactiveTable,
-	type ReactiveWorkspace,
-} from './from-workspace.svelte.js';
+} from './from-database.svelte.js';
+export { fromDisposableCache } from './from-disposable-cache.svelte.js';
 export {
 	createPersistedMap,
 	defineEntry,

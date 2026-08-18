@@ -20,7 +20,7 @@ import {
 	syncEngineOf,
 } from './store.js';
 
-const workspace = defineDatabase({
+const database = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
 	tables: {
@@ -28,10 +28,10 @@ const workspace = defineDatabase({
 	},
 });
 
-let db: DataOf<typeof workspace>;
+let db: DataOf<typeof database>;
 
 beforeEach(() => {
-	db = openMemory(workspace);
+	db = openMemory(database);
 });
 
 /** A note, and its minted id, for tests that need one to exist. */
@@ -164,7 +164,7 @@ describe('deletion', () => {
 });
 
 describe('a nonconforming row is reported, never repaired', () => {
-	const wrongWorkspace = defineDatabase({
+	const wrongDatabase = defineDatabase({
 		id: 'so.epicenter.honeycrisp',
 		tables: { notes: { title: 'string', tags: 'string', date: 'string|null' } },
 	});
@@ -176,7 +176,7 @@ describe('a nonconforming row is reported, never repaired', () => {
 	 * are never live in one runtime, but two devices may run two releases).
 	 */
 	function corruptTags(rowId: string): void {
-		const peer = openMemory(wrongWorkspace);
+		const peer = openMemory(wrongDatabase);
 		exchange(db.store, peer.store);
 		const written = peer.tables.notes.update(rowId, { tags: 'food' });
 		if (written.error !== null) throw written.error;
@@ -219,7 +219,7 @@ describe('a nonconforming row is reported, never repaired', () => {
 
 describe('two replicas converge', () => {
 	function pair() {
-		return { laptop: openMemory(workspace) };
+		return { laptop: openMemory(database) };
 	}
 
 	test('a row made on one device appears on the other', () => {
@@ -287,14 +287,14 @@ describe('two replicas converge', () => {
 	});
 });
 
-describe('a workspace names the store it opens', () => {
+describe('a database names the store it opens', () => {
 	test('one databaseId opens once per process, and disposing releases it', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'epicenter-claim-'));
 		try {
-			const first = await open(workspace, { root });
+			const first = await open(database, { root });
 			if (first.error !== null) throw first.error;
 
-			const second = await open(workspace, { root });
+			const second = await open(database, { root });
 			expect(second.error?.name).toBe('AlreadyOpen');
 			// The refusal is the whole point: a second open would be a second
 			// `Y.Doc` over one document, and the two converge through storage
@@ -303,7 +303,7 @@ describe('a workspace names the store it opens', () => {
 
 			await first.data[Symbol.asyncDispose]();
 
-			const third = await open(workspace, { root });
+			const third = await open(database, { root });
 			expect(third.error).toBeNull();
 			await third.data?.[Symbol.asyncDispose]();
 		} finally {
@@ -311,21 +311,21 @@ describe('a workspace names the store it opens', () => {
 		}
 	});
 
-	test('a workspace that will not parse releases the databaseId it claimed', async () => {
+	test('a database that will not parse releases the databaseId it claimed', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'epicenter-refused-'));
 		try {
 			// A table named `kv` collides with the relation KV projects into, which
-			// is the one name a workspace still reserves. The store this half-opened must
+			// is the one name a database still reserves. The store this half-opened must
 			// be disposed and its databaseId released, or the databaseId is claimed for
 			// the life of the process and the application can never start.
 			const refused = {
-				databaseId: workspace.id,
+				databaseId: database.id,
 				tables: { kv: { a: 'string' } },
 			};
 			const attempt = await open(refused as never, { root });
 			expect(attempt.error).not.toBeNull();
 
-			const after = await open(workspace, { root });
+			const after = await open(database, { root });
 			expect(after.error).toBeNull();
 			await after.data?.[Symbol.asyncDispose]();
 		} finally {
@@ -337,27 +337,27 @@ describe('a workspace names the store it opens', () => {
 		const root = await mkdtemp(join(tmpdir(), 'epicenter-corrupt-'));
 		try {
 			{
-				const { data: first, error } = await open(workspace, { root });
+				const { data: first, error } = await open(database, { root });
 				if (error !== null) throw error;
 				expectOkCreate(first);
 				await first[Symbol.asyncDispose]();
 			}
 			// One garbage row in the update log: the hydration replay cannot
 			// decode it, which is "the store could not read its durable record".
-			const file = new Database(join(root, workspace.id, 'store.sqlite3'));
+			const file = new Database(join(root, database.id, 'store.sqlite3'));
 			file.run('UPDATE _updates SET bytes = ?', [
 				new Uint8Array([1, 2, 3, 4, 5]),
 			]);
 			file.close();
 
-			const refused = await open(workspace, { root });
+			const refused = await open(database, { root });
 			expect(refused.data).toBeNull();
 			expect(refused.error?.name).toBe('StorageFailed');
 
 			// The claim was released with the refusal: a retry reports the same
 			// honest failure rather than `AlreadyOpen` for the life of the
 			// process.
-			const again = await open(workspace, { root });
+			const again = await open(database, { root });
 			expect(again.error?.name).toBe('StorageFailed');
 		} finally {
 			await rm(root, { recursive: true, force: true });
@@ -366,7 +366,7 @@ describe('a workspace names the store it opens', () => {
 });
 
 /** One created note through whichever runtime the disk test holds. */
-function expectOkCreate(data: DataOf<typeof workspace>): void {
+function expectOkCreate(data: DataOf<typeof database>): void {
 	const made = data.tables.notes.create({
 		title: 'to be corrupted',
 		tags: [],
@@ -381,7 +381,7 @@ describe('the document a row inherently owns', () => {
 		try {
 			let id!: string;
 			{
-				const { data: diskDb, error } = await open(workspace, {
+				const { data: diskDb, error } = await open(database, {
 					root: directory,
 				});
 				if (error !== null) throw error;
@@ -402,7 +402,7 @@ describe('the document a row inherently owns', () => {
 				container.get('meta').setAttr('cursor' as never, 8 as never);
 				await disk[Symbol.asyncDispose]();
 			}
-			const { data: db2, error } = await open(workspace, { root: directory });
+			const { data: db2, error } = await open(database, { root: directory });
 			if (error !== null) throw error;
 			const container = db2.tables.notes.document(id);
 			expect(container?.get('editor', 'text').toString()).toContain('buy milk');
@@ -469,8 +469,8 @@ describe('kv is where anything two devices both write belongs', () => {
 		// own nested container and map LWW keeps one. A root is addressed by its
 		// name, so both survive. `evidence/bench/row-model.ts` keeps the losing
 		// contrast, now that the chosen-id door is gone from the API.
-		const phone = openMemory(workspace);
-		const laptop = openMemory(workspace);
+		const phone = openMemory(database);
+		const laptop = openMemory(database);
 
 		phone.kv.update({ theme: 'dark' });
 		laptop.kv.update({ fontSize: 22 });
@@ -489,7 +489,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		// bytes writes nothing, so the bytes are lost at restart while every
 		// layer reported success. The restart is the whole test: an in-memory
 		// store keeps the buffered update either way.
-		const origin = openMemory(workspace);
+		const origin = openMemory(database);
 		const made = origin.tables.notes.create({
 			title: 'first',
 			tags: [],
@@ -504,7 +504,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		const directory = await mkdtemp(join(tmpdir(), 'epicenter-store-'));
 		try {
 			{
-				const { data: laptop, error: openError } = await open(workspace, {
+				const { data: laptop, error: openError } = await open(database, {
 					root: directory,
 				});
 				if (openError !== null) throw openError;
@@ -514,7 +514,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 				);
 				await laptop[Symbol.asyncDispose]();
 			}
-			const { data: db2, error: reopenError } = await open(workspace, {
+			const { data: db2, error: reopenError } = await open(database, {
 				root: directory,
 			});
 			if (reopenError !== null) throw reopenError;
@@ -532,7 +532,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 
 	test('a fully applied replica reports no unresolved dependencies', () => {
 		note();
-		const laptop = openMemory(workspace);
+		const laptop = openMemory(database);
 		syncEngineOf(laptop.store).applyRemote(
 			db.store.encodeStateSince(laptop.store.stateVector()),
 		);
@@ -637,7 +637,7 @@ describe('a subscription names the rows a commit touched', () => {
 	test('one commit touching many rows is ONE call carrying every id', () => {
 		// ADR-0187's law 3. A remote update is the only thing in this surface
 		// that commits more than one row at a time, so it is what proves it.
-		const author = openMemory(workspace);
+		const author = openMemory(database);
 		const ids = [0, 1, 2].map((index) => {
 			const made = author.tables.notes.create({
 				title: `note ${index}`,
@@ -763,7 +763,7 @@ describe('kv reports its own changes', () => {
 	test('a change that arrived from a peer notifies too', () => {
 		// The case a settings screen exists for: another device changed a
 		// preference and this one has to stop showing the old value.
-		const author = openMemory(workspace);
+		const author = openMemory(database);
 		author.kv.update({ fontSize: 22 });
 		const seen: number[] = [];
 		db.kv.subscribe(() => seen.push(db.kv.get().data?.fontSize as number));
@@ -805,13 +805,13 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 		// The upgrade is a close and a reopen (ADR-0240): the same durable
 		// file, a newer declaration, one runtime at a time.
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const first = createAccountStore({ workspace: workspace, sqlite });
+		const first = createAccountStore({ database: database, sqlite });
 		const written = first.kv.update({ theme: 'dark' });
 		if (written.error !== null) throw written.error;
 		await first[Symbol.asyncDispose]();
 
 		const second = createAccountStore({
-			workspace: defineDatabase({
+			database: defineDatabase({
 				id: 'so.epicenter.honeycrisp',
 				kv: { theme: "'light'|'dark' = 'light'", added: "string = 'new'" },
 				tables: {
@@ -843,7 +843,7 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 
 	test('the next runtime has no handle; one that re-declares it reads every row back', async () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const first = createAccountStore({ workspace: withScratch, sqlite });
+		const first = createAccountStore({ database: withScratch, sqlite });
 		const made = first.tables.scratch.create({ body: 'kept in the CRDT' });
 		if (made.error !== null) throw made.error;
 		const wrote = first.kv.update({ theme: 'dark' });
@@ -852,13 +852,13 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 
 		// The device updates (ADR-0240): same durable sqlite, the next
 		// runtime, a declaration that no longer names `scratch` or `kv`.
-		const second = createAccountStore({ workspace: withoutScratch, sqlite });
+		const second = createAccountStore({ database: withoutScratch, sqlite });
 		expect((second.tables as Record<string, unknown>).scratch).toBeUndefined();
 		await second[Symbol.asyncDispose]();
 
 		// A later release declares them again: nothing was lost, because the
 		// CRDT is the truth and never dropped a byte.
-		const third = createAccountStore({ workspace: withScratch, sqlite });
+		const third = createAccountStore({ database: withScratch, sqlite });
 		expect(third.tables.scratch.list().rows).toEqual([
 			{ id: made.data.id, body: 'kept in the CRDT' },
 		]);
@@ -887,7 +887,7 @@ describe('foreign bytes have exactly one door', () => {
 		const live = container.get('editor', 'text').doc;
 		if (live === null) throw new Error('root not attached to a document');
 
-		const stranger = openMemory(workspace);
+		const stranger = openMemory(database);
 		stranger.tables.notes.create({ title: 'theirs', tags: [], date: null });
 		const foreign = stranger.store.encodeStateSince();
 
@@ -910,7 +910,7 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 	test('a discarded store reopens empty at cursor zero, with history intact', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'epicenter-discard-'));
 		try {
-			const opened = await open(workspace, { root });
+			const opened = await open(database, { root });
 			if (opened.error !== null) throw opened.error;
 			const app = opened.data;
 			const made = app.tables.notes.create({
@@ -923,15 +923,13 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 
 			const discarded = await app.store.discard();
 			expect(discarded.error).toBeNull();
-			expect(existsSync(join(root, workspace.id, 'store.sqlite3'))).toBe(false);
+			expect(existsSync(join(root, database.id, 'store.sqlite3'))).toBe(false);
 			// The shelf is the owner's, not the document's.
-			expect(existsSync(join(root, workspace.id, 'history.sqlite3'))).toBe(
-				true,
-			);
+			expect(existsSync(join(root, database.id, 'history.sqlite3'))).toBe(true);
 
 			// Boot is the whole of adoption: a wiped store opens empty and asks
 			// the authority for everything, from zero.
-			const reopened = await open(workspace, { root });
+			const reopened = await open(database, { root });
 			if (reopened.error !== null) throw reopened.error;
 			try {
 				expect(reopened.data.tables.notes.list().rows).toEqual([]);
@@ -948,7 +946,7 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 describe('a document store owes nobody (ADR-0233)', () => {
 	test('local commits leave the outbox empty and no replica verb exists', async () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const device = createDeviceStore({ workspace: workspace, sqlite });
+		const device = createDeviceStore({ database: database, sqlite });
 		const store = device.store;
 		try {
 			const made = device.tables.notes.create({
@@ -999,10 +997,10 @@ describe('a document store owes nobody (ADR-0233)', () => {
 		}
 
 		const device = createDeviceStore({
-			workspace: workspace,
+			database: database,
 			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
-		const account = openMemory(workspace);
+		const account = openMemory(database);
 		try {
 			expect(kindOf(device.store)).toBe('device');
 			expect(kindOf(account.store)).toBe('account');
@@ -1015,7 +1013,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 
 describe('an unusable store throws, and never dresses up as a read outcome', () => {
 	test('using a disposed store throws StoreUnusableError', async () => {
-		const app = openMemory(workspace);
+		const app = openMemory(database);
 		await app[Symbol.asyncDispose]();
 		expect(() => app.tables.notes.list()).toThrow(StoreUnusableError);
 		expect(() => app.kv.get()).toThrow(StoreUnusableError);
@@ -1028,7 +1026,7 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 		const raw = new Database(':memory:');
 		const sqlite = createBunSqliteAdapter(raw);
 		const bound = createAccountStore({
-			workspace: workspace,
+			database: database,
 			sqlite,
 			// The refused flush is the subject here, not noise worth printing.
 			log: {

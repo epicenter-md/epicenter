@@ -12,7 +12,7 @@ import * as Y from '@y/y';
  * moves the only race to row creation, which minted ids make unreachable.
  *
  * It is spelled with the reserved prefix so it can never collide with a declared
- * field, and the workspace parser refuses any field name that begins with that
+ * field, and the database parser refuses any field name that begins with that
  * prefix.
  */
 export const DOCUMENT_ATTRIBUTE = `${RESERVED_ATTRIBUTE_PREFIX}doc`;
@@ -32,7 +32,7 @@ export function createAppDocument(): Y.Doc {
  * `map.setIfUndefined(this.share, key, ...)`, so it creates on miss, and a root
  * can never be removed: reaching into `doc.share` and deleting one corrupts the
  * encoder outright. Every key that reaches this function is a table name the
- * workspace declares, so the set of roots is bounded by the declaration rather
+ * database declares, so the set of roots is bounded by the declaration rather
  * than by user input. A row id must never be passed here; rows are attributes on this root,
  * which is what keeps `doc.share` at table count rather than row count.
  *
@@ -110,7 +110,7 @@ export function hasRow(root: Y.Type, rowId: string): boolean {
  * One row's declared fields, or undefined when the table holds no row there.
  *
  * Reserved attributes are filtered out, so what comes back is only what a
- * workspace could have declared: a row's document container is an attribute
+ * database could have declared: a row's document container is an attribute
  * like any other and is not part of the payload. Nothing is validated here:
  * interpreting the payload is the declaration's job, and a row this release
  * cannot read must still be readable as raw JSON (ADR-0125).

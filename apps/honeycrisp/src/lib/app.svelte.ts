@@ -8,7 +8,7 @@ import {
 	type Note,
 	type NoteId,
 } from '@epicenter/honeycrisp';
-import { fromWorkspace, type ReactiveWorkspace } from '@epicenter/svelte';
+import { fromDatabase, type ReactiveDatabase } from '@epicenter/svelte';
 import { createContext } from 'svelte';
 import type { HoneycrispDatabases } from './databases.js';
 import { navigation } from './navigation.svelte.js';
@@ -20,7 +20,7 @@ import { readNoteText } from './note-text.js';
  * The databases are boot's yield: opened documents, attached sync, and the
  * disposal that closes them (ADR-0233). This is the application built on top
  * of them, and the one object the UI consumes. It owns the document-selection
- * policy, the reactive named tables over that document (`fromWorkspace`),
+ * policy, the reactive named tables over that document (`fromDatabase`),
  * Honeycrisp's domain operations (`notes`, `folders`), the one derivation that
  * needs both those tables and where the user is (`visibleNotes`), and the
  * narrow account and store capabilities the UI actually needs.
@@ -56,12 +56,12 @@ export function createHoneycrisp({
 	databases: HoneycrispDatabases;
 }) {
 	const data = databases.account?.data ?? databases.device;
-	const workspace = fromWorkspace(data);
+	const database = fromDatabase(data);
 	// Asymmetric on purpose: notes are table-local, folders are not. Deleting a
 	// folder re-parents the notes that were in it, so it needs both tables and
-	// says so by taking the workspace.
-	const folders = createFolders(workspace);
-	const notes = createNotes(workspace.tables.notes);
+	// says so by taking the database.
+	const folders = createFolders(database);
+	const notes = createNotes(database.tables.notes);
 
 	/**
 	 * The notes the user is currently looking at, in the order they appear.
@@ -190,12 +190,12 @@ function byRecentEdit(
  * so what remains is domain, which here is the new-folder defaults, renaming,
  * and the delete that re-parents notes and cleans up the URL.
  *
- * It takes the whole workspace where `createNotes` takes one table, and that
+ * It takes the whole database where `createNotes` takes one table, and that
  * difference is the point rather than an oversight: deleting a folder has to
  * reach the notes in it.
  */
-function createFolders(workspace: ReactiveWorkspace<HoneycrispData>) {
-	const table = workspace.tables.folders;
+function createFolders(database: ReactiveDatabase<HoneycrispData>) {
+	const table = database.tables.folders;
 
 	// Name order, and nothing durable about order at all: it is deterministic
 	// on every device without a schema field, and every surface that lists
@@ -244,7 +244,7 @@ function createFolders(workspace: ReactiveWorkspace<HoneycrispData>) {
 		delete(folderId: FolderId): void {
 			// Re-parents this folder's notes and then removes it. Both tables
 			// invalidate on their own, so nothing has to be told to re-read.
-			deleteHoneycrispFolder(workspace, folderId);
+			deleteHoneycrispFolder(database, folderId);
 			navigation.folderRemoved(folderId);
 		},
 	};
@@ -254,7 +254,7 @@ function createFolders(workspace: ReactiveWorkspace<HoneycrispData>) {
  * Honeycrisp's own note concepts, over the reactive `notes` table.
  *
  * The table already answers "what rows are here right now" reactively
- * (`fromWorkspace`): a read inside `$derived` re-runs on any commit that
+ * (`fromDatabase`): a read inside `$derived` re-runs on any commit that
  * touched the table, local writes, prose typed into a note's document, and
  * bytes from another device alike (ADR-0221), and a read in an event handler
  * is fresh. What this adds is what the platform cannot know: which rows count
@@ -262,7 +262,7 @@ function createFolders(workspace: ReactiveWorkspace<HoneycrispData>) {
  * commands (soft delete, pinning, re-parenting) with their URL cleanup.
  */
 function createNotes(
-	table: ReactiveWorkspace<HoneycrispData>['tables']['notes'],
+	table: ReactiveDatabase<HoneycrispData>['tables']['notes'],
 ) {
 	const all = $derived(table.rows.filter((note) => note.deletedAt === null));
 	const deleted = $derived(

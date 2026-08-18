@@ -199,18 +199,18 @@ export const StoreError = defineErrors({
 		address,
 	}),
 	/**
-	 * A workspace replica was asked for without the account that owns it.
+	 * A database replica was asked for without the account that owns it.
 	 *
-	 * A workspace replica is retained across sign-out, so its address carries
+	 * A database replica is retained across sign-out, so its address carries
 	 * the principal it belongs to (ADR-0233). An auth state that cannot supply a
-	 * stable principal id therefore names no workspace, and guessing one would
+	 * stable principal id therefore names no database, and guessing one would
 	 * either open another account's bytes or take edits into storage no account
 	 * can claim afterwards. Unavailable is the honest answer, and only an auth
 	 * change repairs it.
 	 */
 	Unaddressable: () => ({
 		message:
-			'A workspace replica belongs to one account, and no account id was supplied, so it has no address',
+			'A database replica belongs to one account, and no account id was supplied, so it has no address',
 	}),
 	/**
 	 * A subscriber threw while being told about a committed change.
@@ -430,10 +430,10 @@ type TableIo<TFields> = {
 };
 
 /**
- * The typed view of one store through its workspace definition.
+ * The typed view of one store through its database definition.
  *
  * `tables` is a container rather than a spread, and that is the whole reason
- * the application has no reserved table names. A workspace declares `tables`
+ * the application has no reserved table names. A database declares `tables`
  * and `kv`, so the view mirrors the declaration instead of flattening it, and
  * every verb the store grows is free to be a sibling forever. Flattening cost
  * this API three collisions in its first month: a draft that named the bound
@@ -448,7 +448,7 @@ export type DatabaseView<TDatabase> = {
 };
 
 /**
- * One application's opened data: what the workspace declared, and the file
+ * One application's opened data: what the database declared, and the file
  * under `store`.
  *
  * Named for what it is to the caller. The application itself is a bigger
@@ -465,7 +465,7 @@ export type DatabaseView<TDatabase> = {
  * a verb the store owes.
  *
  * The view and the store are born together: an opened runtime holds exactly
- * one workspace definition for its whole life (ADR-0240), so there is no verb
+ * one database definition for its whole life (ADR-0240), so there is no verb
  * that takes a second view of a live store. A newer definition reads the same
  * durable data by closing this runtime and opening the next one.
  */
@@ -480,7 +480,7 @@ export type DataOf<
 };
 
 /**
- * Compose one file's verbs with its workspace's view of it.
+ * Compose one file's verbs with its database's view of it.
  *
  * Every opener ends here, so the shape an application sees is decided once
  * rather than per runtime. Internal: the openers and factories compose the
@@ -558,7 +558,7 @@ export type KvHandle<TValues = JsonObject> = {
 };
 
 /**
- * The same view with the workspace's shape erased, which is what the engine
+ * The same view with the database's shape erased, which is what the engine
  * builds.
  *
  * Internal. It exists because the engine constructs one object and the
@@ -662,7 +662,7 @@ export type StorePressure = {
  * One opened document's runtime: the live Yjs state and its durable record.
  *
  * Every verb here is a fact about the document itself: measure it, encode it,
- * hear it commit, watch its persistence. The workspace definition is not on
+ * hear it commit, watch its persistence. The database definition is not on
  * this surface, because it is not a verb: the engine closed over it at
  * construction and every table handle, the KV handle, and the whole-index
  * rebuild read the one parsed definition for the store's whole life
@@ -771,7 +771,7 @@ export type SyncCapability = {
  *
  * `document` is which authority document this replica's state belongs to,
  * or `undefined` for one that has never exchanged a byte (ADR-0231). It is
- * the boot gate's whole question: a signed-in workspace is safe to edit once
+ * the boot gate's whole question: a signed-in database is safe to edit once
  * it is stamped.
  */
 export type SyncFacts = {
@@ -857,12 +857,12 @@ export function syncEngineOf(store: AccountStore): SyncEngine {
 /** What every store engine needs: the definition and the durable engine. */
 export type StoreEngineOptions = {
 	/**
-	 * The one workspace definition this runtime holds, already parsed
+	 * The one database definition this runtime holds, already parsed
 	 * (ADR-0240). Every table handle and the KV handle close over it for the
 	 * store's whole life; a newer definition reads the same durable data by
 	 * disposing this store and constructing the next one.
 	 */
-	workspace: ParsedDatabase;
+	database: ParsedDatabase;
 	/** The runtime-native durable engine: one atomic batch per flush. */
 	durable: DurablePort;
 	/** What that engine held at open, materialized once. */
@@ -882,8 +882,8 @@ export type StoreEngineOptions = {
 };
 
 export type CreateStoreOptions<TDatabase extends DatabaseJson> = {
-	/** The application's workspace declaration, a `defineDatabase` literal. */
-	workspace: TDatabase;
+	/** The application's database declaration, a `defineDatabase` literal. */
+	database: TDatabase;
 	/** The durable file: the update log, the outbox, the cursor, the metadata. */
 	sqlite: SqliteDatabase;
 	history?: SqliteDatabase;
@@ -901,22 +901,22 @@ export type CreateStoreOptions<TDatabase extends DatabaseJson> = {
  * openers, which may be handed a declaration that arrived as data, parse
  * first and return the refusal as a boot outcome instead.
  */
-function parsedWorkspaceOrThrow(workspace: DatabaseJson): ParsedDatabase {
-	const { data, error } = parseDatabase(workspace);
+function parsedDatabaseOrThrow(database: DatabaseJson): ParsedDatabase {
+	const { data, error } = parseDatabase(database);
 	if (error !== null) throw new Error(error.message, { cause: error });
 	return data;
 }
 
 /** Build the engine options for a synchronous SQLite durable engine. */
 function overSqlite<TDatabase extends DatabaseJson>({
-	workspace,
+	database,
 	sqlite,
 	history,
 	...rest
 }: CreateStoreOptions<TDatabase>): StoreEngineOptions {
 	const port = createSqliteDurablePort({ sqlite, history });
 	return {
-		workspace: parsedWorkspaceOrThrow(workspace),
+		database: parsedDatabaseOrThrow(database),
 		durable: port,
 		loaded: port.load(),
 		...rest,
@@ -997,7 +997,7 @@ function createStoreEngine(
 ): { store: AccountStore; view: UntypedDatabaseView };
 function createStoreEngine(
 	{
-		workspace,
+		database,
 		durable,
 		loaded,
 		now = () => Date.now(),
@@ -1245,7 +1245,7 @@ function createStoreEngine(
 		const kv = createKvHandle();
 
 		const tables: Record<string, TableHandle> = {};
-		for (const [tableName, table] of workspace.tables) {
+		for (const [tableName, table] of database.tables) {
 			tables[tableName] = createTableHandle(tableName, table);
 		}
 
@@ -1256,18 +1256,18 @@ function createStoreEngine(
 	}
 
 	/**
-	 * The KV handle for this workspace's one KV section.
+	 * The KV handle for this database's one KV section.
 	 *
 	 * The root is minted here, which is safe for the same reason KV lives there
 	 * at all: `Doc.get` is `setIfUndefined` on `doc.share`, so every device that
 	 * mints `kv` converges on one logical root.
 	 *
-	 * A workspace with no `kv` section still gets a handle. It reads as an
+	 * A database with no `kv` section still gets a handle. It reads as an
 	 * empty object and refuses every write by name, which is a better answer
 	 * than a missing property that a caller has to feel for.
 	 */
 	function createKvHandle(): KvHandle {
-		const table = workspace.kv;
+		const table = database.kv;
 		const root = kvRoot(index);
 
 		function readStored(): JsonObject {
@@ -1392,7 +1392,7 @@ function createStoreEngine(
 	): TableHandle {
 		const root = tableRoot(index, tableName);
 		const addressOf = (rowId: string) => ({
-			databaseId: workspace.id,
+			databaseId: database.id,
 			tableName,
 			rowId,
 		});
@@ -1536,7 +1536,7 @@ function createStoreEngine(
 			},
 			subscribe(listener: TableInvalidationListener): () => void {
 				const unsubscribe = invalidations.subscribeTable(
-					workspace.id,
+					database.id,
 					tableName,
 					listener,
 				);
@@ -1651,7 +1651,7 @@ function createStoreEngine(
 			// Only declared tables: a document may carry a table this definition
 			// does not declare, and guessing at it would report a number
 			// nobody could act on.
-			for (const tableName of workspace.tables.keys()) {
+			for (const tableName of database.tables.keys()) {
 				liveRows += listRowIds(tableRoot(index, tableName)).length;
 			}
 			const items = structCount(index);

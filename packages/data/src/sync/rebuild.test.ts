@@ -18,12 +18,12 @@ import { openMemory } from '../store/bun.js';
 import { type DataOf, syncEngineOf } from '../store/store.js';
 import {
 	type RebuiltState,
+	rebuildDatabase,
 	rebuildDocument,
-	rebuildWorkspace,
 	type StoreTransport,
 } from './rebuild.js';
 
-const workspace = defineDatabase({
+const database = defineDatabase({
 	id: 'so.epicenter.rebuild',
 	kv: { theme: "'light'|'dark' = 'light'" },
 	tables: { notes: { title: 'string' } },
@@ -41,8 +41,8 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
  * while real churn leaves skeletons that cannot merge, which is the dead
  * weight ADR-0219 priced at about two items per deleted row.
  */
-function agedApplication(): DataOf<typeof workspace> {
-	const app = openMemory(workspace);
+function agedApplication(): DataOf<typeof database> {
+	const app = openMemory(database);
 	const keep: string[] = [];
 	for (let index = 0; index < 100; index += 1) {
 		const row = expectOk(
@@ -74,7 +74,7 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 		const source = agedApplication();
 		const reborn = expectOk(rebuildDocument(source.store));
 
-		const adopted = openMemory(workspace);
+		const adopted = openMemory(database);
 		expectOk(syncEngineOf(adopted.store).applyRemote(reborn));
 
 		const before = source.tables.notes.list().rows;
@@ -103,7 +103,7 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 	test('the tombstones are actually gone: the struct count falls', () => {
 		const source = agedApplication();
 		const reborn = expectOk(rebuildDocument(source.store));
-		const adopted = openMemory(workspace);
+		const adopted = openMemory(database);
 		expectOk(syncEngineOf(adopted.store).applyRemote(reborn));
 
 		const agedItems = source.store.pressure().items;
@@ -119,7 +119,7 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 		// Prose whose container never arrived: Yjs buffers it silently (a bare
 		// clock gap integrates fine in @y/y 14; a missing PARENT struct is what
 		// pends), and a state built over that hole must not become the baseline.
-		const writer = openMemory(workspace);
+		const writer = openMemory(database);
 		const row = expectOk(
 			writer.tables.notes.create({ title: 'base' }, { document: ['body'] }),
 		);
@@ -129,7 +129,7 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 		body.applyDelta(body.change.insert('orphaned prose') as never);
 		const increment = writer.store.encodeStateSince(beforeProse);
 
-		const receiver = openMemory(workspace);
+		const receiver = openMemory(database);
 		expectOk(syncEngineOf(receiver.store).applyRemote(increment));
 		expect(syncEngineOf(receiver.store).hasUnresolvedDependencies()).toBe(true);
 
@@ -139,7 +139,7 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 	});
 
 	test('the brand separates reborn bytes from a plain re-encoding', () => {
-		const app = openMemory(workspace);
+		const app = openMemory(database);
 		// @ts-expect-error encodeStateSince preserves identities and reclaims
 		// nothing; only rebuildDocument() mints RebuiltState (ADR-0231).
 		const wrong: RebuiltState = app.store.encodeStateSince();
@@ -152,7 +152,7 @@ function scriptedTransport(script: { replace: (url: URL) => Response }) {
 	const replaces: URL[] = [];
 	const transport: StoreTransport = {
 		baseURL: 'https://api.example.com',
-		databaseId: workspace.id,
+		databaseId: database.id,
 		fetch: async (input, init) => {
 			if (init?.method !== 'POST') throw new Error('unexpected non-POST');
 			const url = new URL(input);
@@ -165,7 +165,7 @@ function scriptedTransport(script: { replace: (url: URL) => Response }) {
 
 /** A synced store: stamped into a document, with a cursor. The lease's facts. */
 function syncedApplication(cursor: number, document = 'the-current-document') {
-	const app = openMemory(workspace);
+	const app = openMemory(database);
 	// Stamped first, in the order every real replica follows: the stamp
 	// refuses a store that grew before it.
 	expectOk(syncEngineOf(app.store).adoptDocumentIdentity(document));
@@ -174,34 +174,34 @@ function syncedApplication(cursor: number, document = 'the-current-document') {
 	return app;
 }
 
-describe('rebuildWorkspace holds the lease honestly', () => {
+describe('rebuildDatabase holds the lease honestly', () => {
 	test('a synced store publishes in one post: fromDocument is its stamp, atHead its cursor', async () => {
 		const app = syncedApplication(7);
 		const { transport, replaces } = scriptedTransport({
 			replace: () => Response.json({ document: 'the-next-document' }),
 		});
 
-		const published = await rebuildWorkspace({ store: app.store, transport });
+		const published = await rebuildDatabase({ store: app.store, transport });
 
 		expect(expectOk(published)).toEqual({ document: 'the-next-document' });
 		expect(replaces).toHaveLength(1);
 		const url = replaces[0] as URL;
 		expect(url.searchParams.get('fromDocument')).toBe('the-current-document');
 		expect(url.searchParams.get('atHead')).toBe('7');
-		expect(url.searchParams.get('databaseId')).toBe(workspace.id);
+		expect(url.searchParams.get('databaseId')).toBe(database.id);
 	});
 
 	test('an unstamped store is refused before anything is posted', async () => {
 		// A store that never synced has no authority document its state
 		// provably covers: nothing for the lease to name, nothing to rebuild
 		// against.
-		const app = openMemory(workspace);
+		const app = openMemory(database);
 		expectOk(app.tables.notes.create({ title: 'offline only' }));
 		const { transport, replaces } = scriptedTransport({
 			replace: () => Response.json({ document: 'never-reached' }),
 		});
 
-		const refused = await rebuildWorkspace({ store: app.store, transport });
+		const refused = await rebuildDatabase({ store: app.store, transport });
 
 		expect(refused.error?.name).toBe('NeverSynced');
 		expect(replaces).toHaveLength(0);
@@ -214,7 +214,7 @@ describe('rebuildWorkspace holds the lease honestly', () => {
 				Response.json({ refused: 'head', head: 9 }, { status: 409 }),
 		});
 
-		const refused = await rebuildWorkspace({ store: app.store, transport });
+		const refused = await rebuildDatabase({ store: app.store, transport });
 
 		expect(refused.error?.name).toBe('StoreChanged');
 		expect(
@@ -237,7 +237,7 @@ describe('rebuildWorkspace holds the lease honestly', () => {
 				),
 		});
 
-		const contested = await rebuildWorkspace({ store: app.store, transport });
+		const contested = await rebuildDatabase({ store: app.store, transport });
 
 		expect(contested.error?.name).toBe('Contested');
 		expect(

@@ -21,7 +21,7 @@ import { isJsonValue, type JsonObject, type JsonValue } from './json.js';
 export const RESERVED_ATTRIBUTE_PREFIX = '!';
 
 /**
- * The one table name a workspace cannot use, and the reason is SQL rather than
+ * The one table name a database cannot use, and the reason is SQL rather than
  * JS.
  *
  * KV projects as a one-row relation literally named `kv`, so a table called `kv`
@@ -46,11 +46,11 @@ export const RESERVED_TABLE_NAMES: readonly string[] = ['kv'];
 export const KV_ROOT = 'kv';
 
 /**
- * One application's complete declaration of its durable workspace, as the JSON
+ * One application's complete declaration of its durable database, as the JSON
  * it literally is (ADR-0213, carried forward by ADR-0240).
  *
  * Every field is an arktype expression in a string, so this object serializes
- * and round-trips byte-identically. A hand-written `workspace.json` in an
+ * and round-trips byte-identically. A hand-written `database.json` in an
  * admitted application folder and a TypeScript declaration are the same
  * artifact.
  *
@@ -76,7 +76,7 @@ export type DatabaseJson = {
 	 */
 	kv?: Record<string, string>;
 	/**
-	 * What a person calls this workspace, when it has a name worth showing.
+	 * What a person calls this database, when it has a name worth showing.
 	 * Presentation only: no address, no identity, and nothing resolves by it.
 	 */
 	title?: string;
@@ -89,14 +89,14 @@ export type DatabaseJson = {
  * `type.validate` returns the definition unchanged when it is valid, so a
  * correct table infers exactly the literal it was written as, and a bad
  * expression reports arktype's own sentence on the offending field. The same
- * machinery {@link ValidateWorkspace} applies per table, exposed here so
+ * machinery {@link ValidateDatabase} applies per table, exposed here so
  * {@link defineTable} and {@link defineKv} can report the error at the
  * ingredient rather than at the composition.
  */
 export type ValidateFields<TFields> = type.validate<TFields>;
 
 /**
- * Typecheck one authored workspace against arktype's own validator.
+ * Typecheck one authored database against arktype's own validator.
  *
  * Homomorphic over `TDatabase`, which is the whole trick. Mapping over
  * `keyof TDatabase` keeps every property an inference site and lets
@@ -121,7 +121,7 @@ export type ValidateFields<TFields> = type.validate<TFields>;
  * as a property of an object or tuple. Verified against the installed arktype:
  * `type("'light'|'dark' = 'light'")` throws, `type({ theme: ... })` does not.
  */
-export type ValidateWorkspace<TDatabase> = {
+export type ValidateDatabase<TDatabase> = {
 	[K in keyof TDatabase]: K extends 'tables'
 		? {
 				[TTable in keyof TDatabase[K]]: type.validate<TDatabase[K][TTable]>;
@@ -185,12 +185,12 @@ export type KvOf<TDatabase> = TDatabase extends { kv: infer TKv }
 	? FieldsOut<TKv>
 	: Record<string, never>;
 
-/** Every table's row type in one authored workspace, by its declared name. */
+/** Every table's row type in one authored database, by its declared name. */
 export type RowsOf<TDatabase> = TDatabase extends { tables: infer TTables }
 	? { [K in keyof TTables]: RowOf<TTables[K]> }
 	: never;
 
-/** Every table's create input in one authored workspace, by its declared name. */
+/** Every table's create input in one authored database, by its declared name. */
 export type CreateInputsOf<TDatabase> = TDatabase extends {
 	tables: infer TTables;
 }
@@ -244,23 +244,23 @@ export function defineKv<const TFields extends Record<string, string>>(
 }
 
 /**
- * Declare one application's workspace: its id, its tables, and its KV.
+ * Declare one application's database: its id, its tables, and its KV.
  *
  * Inference and validation, never construction. The returned value is the
  * argument: `TDatabase` infers from the literal so a table's row type is
- * known, and `ValidateWorkspace<TDatabase>` applies arktype's own
+ * known, and `ValidateDatabase<TDatabase>` applies arktype's own
  * `type.validate` per table so a malformed expression is a compile error on
  * the field that is wrong.
  *
  * A bad expression reports arktype's own sentence on the offending field:
  * *"Type '\"strng\"' is not assignable to type \"'strng' is unresolvable\""*.
- * See {@link ValidateWorkspace} for the two shapes that lost either that
+ * See {@link ValidateDatabase} for the two shapes that lost either that
  * message or inference itself.
  *
- * One workspace per application, complete and immutable for the life of every
+ * One database per application, complete and immutable for the life of every
  * runtime that opens it (ADR-0240). Schema evolution is a new release opening
  * the same durable data with a newer declaration; nothing rebinds a live
- * runtime, and nothing merges two declarations. The application's workspace
+ * runtime, and nothing merges two declarations. The application's database
  * module writes the one final object, assembling {@link defineTable} and
  * {@link defineKv} ingredients explicitly.
  *
@@ -292,9 +292,9 @@ export function defineKv<const TFields extends Record<string, string>>(
  * ```
  */
 export function defineDatabase<const TDatabase extends DatabaseJson>(
-	workspace: ValidateWorkspace<TDatabase>,
+	database: ValidateDatabase<TDatabase>,
 ): TDatabase {
-	return workspace as TDatabase;
+	return database as TDatabase;
 }
 
 export type ConformanceIssue = {
@@ -304,7 +304,7 @@ export type ConformanceIssue = {
 
 export const DatabaseParseError = defineErrors({
 	Malformed: ({ reason }: { reason: string }) => ({
-		message: `This workspace is not a well-formed declaration: ${reason}`,
+		message: `This database is not a well-formed declaration: ${reason}`,
 		reason,
 	}),
 	UnrecognizedField: ({
@@ -370,7 +370,7 @@ export const RowWriteError = defineErrors({
 		table,
 		issues,
 	}),
-	/** A supplied key this workspace does not declare. */
+	/** A supplied key this database does not declare. */
 	UnknownField: ({ table, field }: { table: string; field: string }) => ({
 		message: `Table '${table}' declares no field '${field}'`,
 		table,
@@ -431,7 +431,7 @@ export type ParsedDatabase = {
 	 *
 	 * KV is a table with exactly one row and no id, so nothing new validates it:
 	 * `conformance`, `defaults` and `validateWrite` all apply unchanged. Absent
-	 * when the workspace declares none.
+	 * when the database declares none.
 	 */
 	kv?: ParsedTable;
 	tables: ReadonlyMap<string, ParsedTable>;
@@ -440,18 +440,18 @@ export type ParsedDatabase = {
 };
 
 /**
- * Compiled workspaces, keyed on the content hash of their canonical JSON.
+ * Compiled databases, keyed on the content hash of their canonical JSON.
  *
  * On the hash rather than on object identity, which is the bug that made the
  * previous implementation unable to compile a declaration loaded from disk:
- * two structurally identical declarations are one workspace, however they
+ * two structurally identical declarations are one database, however they
  * arrived.
  */
 const parsed = new Map<string, Result<ParsedDatabase, DatabaseParseError>>();
 
 /**
- * Compile one workspace declaration, whatever its provenance: a TypeScript
- * literal, a `workspace.json` in an admitted application folder, or a
+ * Compile one database declaration, whatever its provenance: a TypeScript
+ * literal, a `database.json` in an admitted application folder, or a
  * declaration an agent wrote.
  *
  * Result-returning rather than throwing, because a declaration that arrives as
@@ -464,12 +464,12 @@ export function parseDatabase(
 	const key = sha256Hex(canonical);
 	const memoised = parsed.get(key);
 	if (memoised !== undefined) return memoised;
-	const compiled = compileWorkspace(value, canonical);
+	const compiled = compileDatabase(value, canonical);
 	parsed.set(key, compiled);
 	return compiled;
 }
 
-function compileWorkspace(
+function compileDatabase(
 	value: unknown,
 	canonical: string,
 ): Result<ParsedDatabase, DatabaseParseError> {
@@ -730,7 +730,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return prototype === Object.prototype || prototype === null;
 }
 
-/** Forget every compiled workspace. Test support; nothing in production calls it. */
+/** Forget every compiled database. Test support; nothing in production calls it. */
 export function clearDatabaseCache(): void {
 	parsed.clear();
 }

@@ -505,9 +505,9 @@ export function createSyncClient({
 					// The one stamping point. The stamp itself refuses a store that
 					// grew before it was stamped (`Unstampable`), which is a
 					// defensive assertion at the bootstrap boundary rather than a
-					// product concept: a workspace replica is never allowed to grow
+					// product concept: a database replica is never allowed to grow
 					// before it adopts the authority's document, and the application
-					// enforces that by keeping an unbound signed-in workspace
+					// enforces that by keeping an unbound signed-in database
 					// unavailable. Bytes that exist here anyway belong to no
 					// authority document and are not a merge case, so the refusal
 					// concludes `superseded` and the host discards them and starts

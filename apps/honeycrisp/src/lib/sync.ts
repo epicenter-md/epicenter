@@ -1,5 +1,5 @@
 /**
- * Honeycrisp's sync: a workspace id, and where a transient failure gets reported.
+ * Honeycrisp's sync: a database id, and where a transient failure gets reported.
  *
  * Everything else moved to `attachStoreSync` in `@epicenter/data/sync`, which
  * is where it belonged: building the store route's URL, wiring the socket's
@@ -46,7 +46,7 @@ export function attachHoneycrispSync({
 	onSuperseded: () => void;
 	/**
 	 * No dial in this app generation can ever succeed (reauth required, a
-	 * refused credential), so the boot gate can reject an unbound workspace as
+	 * refused credential), so the boot gate can reject an unbound database as
 	 * unavailable rather than waiting on a bootstrap that will never come.
 	 */
 	onDenied?: () => void;

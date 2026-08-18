@@ -37,7 +37,7 @@ import {
 } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 
-const workspace = defineDatabase({
+const database = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -52,8 +52,8 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
  *
  * An untyped view holds a record of tables, so every one reads as possibly
  * absent. Where a
- * test is about a workspace NOT declaring a table it looks for that `undefined`
- * deliberately; everywhere else the workspace declares it, and this says so once.
+ * test is about a database NOT declaring a table it looks for that `undefined`
+ * deliberately; everywhere else the database declares it, and this says so once.
  */
 function tableOf(
 	view: { tables: Readonly<Record<string, TableHandle>> },
@@ -61,7 +61,7 @@ function tableOf(
 ): TableHandle {
 	const handle = view.tables[name];
 	if (handle === undefined)
-		throw new Error(`this workspace declares no '${name}'`);
+		throw new Error(`this database declares no '${name}'`);
 	return handle;
 }
 
@@ -111,7 +111,7 @@ function openReplica(
 	hub: ReturnType<typeof createSyncHub>,
 	wire: Wire,
 	/**
-	 * The workspace this device is running, which is not always the same one.
+	 * The database this device is running, which is not always the same one.
 	 *
 	 * A device updates before another device does, so two replicas of one
 	 * partition routinely hold declarations that disagree. Everything here
@@ -120,16 +120,16 @@ function openReplica(
 	 * updates goes through `upgrade`, which closes this runtime and opens the
 	 * next one over the same durable file.
 	 */
-	through: DatabaseJson = workspace,
+	through: DatabaseJson = database,
 	sqlite = createBunSqliteAdapter(new Database(':memory:')),
 ): Replica {
-	const data = createAccountStore({ workspace: through, sqlite });
+	const data = createAccountStore({ database: through, sqlite });
 	const store = data.store;
 	// One runtime, two static views of it: the typed view costs nothing and is
-	// honest for every replica running the default workspace; a replica running
+	// honest for every replica running the default database; a replica running
 	// another one reads through `bound`.
 	const bound = data as unknown as UntypedDatabaseView;
-	const db = data as unknown as DatabaseView<typeof workspace>;
+	const db = data as unknown as DatabaseView<typeof database>;
 	const client = createSyncClient({
 		store,
 		idleMs: 0,
@@ -220,7 +220,7 @@ function openReplica(
 type Replica = {
 	label: string;
 	store: ReturnType<typeof createAccountStore>['store'];
-	db: DatabaseView<typeof workspace>;
+	db: DatabaseView<typeof database>;
 	bound: UntypedDatabaseView;
 	client: ReturnType<typeof createSyncClient>;
 	connection: HubConnection;
@@ -313,7 +313,7 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		expect(laptop.client.status().unresolvedDependencies).toBe(false);
 	});
 
-	test('workspace work authored before bootstrap is discarded instead of merged', () => {
+	test('database work authored before bootstrap is discarded instead of merged', () => {
 		const { wire, authority, phone, laptop } = setup();
 		laptop.connect();
 
@@ -328,7 +328,7 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		wire.settle();
 
 		// A pre-bootstrap document has no authority identity. It is not an
-		// offline workspace replica, so it never joins or republishes its bytes.
+		// offline database replica, so it never joins or republishes its bytes.
 		expect(phone.client.status().superseded).toBe(true);
 		expect(laptop.titles()).toEqual([]);
 		expect(expectOk(authority.head())).toBe(0);
@@ -751,7 +751,7 @@ describe('a socket that dies part way through a chunked transfer', () => {
  * Driven directly rather than through the client, because everything here is
  * about chunk arithmetic and reaching it through the transport would mean
  * multi-megabyte payloads per case. The BYTES are real and the reassembled
- * result is applied to a real replica and read back through its workspace, so what is
+ * result is applied to a real replica and read back through its database, so what is
  * synthetic is the chunk size and nothing else.
  */
 describe('reassembly holds partials in memory, and only in memory', () => {
@@ -791,7 +791,7 @@ describe('reassembly holds partials in memory, and only in memory', () => {
 		expect(collector.bufferedBytes()).toBe(0);
 		// Byte equality alone would not show the update still works, so it is
 		// applied to a replica that has never seen this row and read back through
-		// that replica's own workspace.
+		// that replica's own database.
 		expectOk(syncEngineOf(laptop.store).applyRemote(whole as Uint8Array));
 		expect(laptop.titles()).toEqual(['Groceries']);
 	});
@@ -1305,7 +1305,7 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 		);
 
 		// This work is offline but not unlabelled: the replica already adopted
-		// this workspace document before it went away.
+		// this database document before it went away.
 		expectOk(laptop.db.tables.notes.create({ title: 'WRITTEN OFFLINE' }));
 		laptop.connect();
 		wire.settle();
@@ -1471,27 +1471,27 @@ describe('the snapshot path under sustained traffic', () => {
  * The same application one release later: `notes` grew a field.
  *
  * `pinned` declares no default, so it is a field the older release's rows cannot
- * satisfy. That asymmetry is the point: an extra field is invisible to a workspace
- * that does not declare it, while a missing one is a row a workspace cannot read, and
+ * satisfy. That asymmetry is the point: an extra field is invisible to a database
+ * that does not declare it, while a missing one is a row a database cannot read, and
  * the two directions have to be told apart.
  */
-const newerWorkspace = defineDatabase({
+const newerDatabase = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string', pinned: 'boolean' } },
 });
 
 /** The same application again, one release later still: a whole new table. */
-const twoTableWorkspace = defineDatabase({
+const twoTableDatabase = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' }, tasks: { label: 'string' } },
 });
 
-describe('two devices whose workspaces disagree', () => {
+describe('two devices whose databases disagree', () => {
 	/** One partition, two devices, each running the release it was given. */
-	function pair(updatedWorkspace: DatabaseJson) {
+	function pair(updatedDatabase: DatabaseJson) {
 		const wire = createWire();
 		const { authority, hub } = openAuthority();
-		const updated = openReplica('updated', hub, wire, updatedWorkspace);
+		const updated = openReplica('updated', hub, wire, updatedDatabase);
 		const older = openReplica('older', hub, wire);
 		updated.connect();
 		older.connect();
@@ -1508,11 +1508,11 @@ describe('two devices whose workspaces disagree', () => {
 
 	test('a field the older release cannot name survives a round trip through it', () => {
 		// The case that decides whether a release can be rolled out to one device at
-		// a time. If the older release rewrote rows as its own workspace sees them, every
+		// a time. If the older release rewrote rows as its own database sees them, every
 		// edit made on the un-updated phone would silently strip the new field from
 		// the updated laptop's rows.
 		const { wire, updated, updatedNotes, older, olderNotes } =
-			pair(newerWorkspace);
+			pair(newerDatabase);
 		const made = expectOk(
 			updatedNotes.create({ title: 'Groceries', pinned: true }),
 		);
@@ -1544,7 +1544,7 @@ describe('two devices whose workspaces disagree', () => {
 		// nothing back from the older device at all. A delete authored there has to
 		// reach the updated device and take the row with it.
 		const { wire, updated, updatedNotes, older, olderNotes } =
-			pair(newerWorkspace);
+			pair(newerDatabase);
 		const made = expectOk(
 			updatedNotes.create({ title: 'Groceries', pinned: true }),
 		);
@@ -1564,7 +1564,7 @@ describe('two devices whose workspaces disagree', () => {
 		// the un-updated one writes. A row it cannot read is still a row and is
 		// still in the CRDT: the failure names the address and carries what did
 		// pass, so the application can repair it or show it.
-		const { wire, updatedNotes, older, olderNotes } = pair(newerWorkspace);
+		const { wire, updatedNotes, older, olderNotes } = pair(newerDatabase);
 		const made = expectOk(olderNotes.create({ title: 'Groceries' }));
 		older.client.flush();
 		wire.settle();
@@ -1583,9 +1583,9 @@ describe('two devices whose workspaces disagree', () => {
 	});
 
 	test('CONTROL: a row the newer release CAN read is in rows and reported nowhere', () => {
-		// Without this, "reported rather than dropped" would pass for a workspace that
+		// Without this, "reported rather than dropped" would pass for a database that
 		// reports every row it is handed.
-		const { wire, updated, updatedNotes, older } = pair(newerWorkspace);
+		const { wire, updated, updatedNotes, older } = pair(newerDatabase);
 		const made = expectOk(
 			updatedNotes.create({ title: 'Groceries', pinned: false }),
 		);
@@ -1605,7 +1605,7 @@ describe('two devices whose workspaces disagree', () => {
 		// transport rather than inside one store. The older device relays and stores
 		// rows of a table it has no name for, and they are there the moment it is
 		// updated, without anybody re-sending anything.
-		const { wire, updated, updatedNotes, older } = pair(twoTableWorkspace);
+		const { wire, updated, updatedNotes, older } = pair(twoTableDatabase);
 		expectOk(updatedNotes.create({ title: 'Groceries' }));
 		const task = expectOk(
 			tableOf(updated.bound, 'tasks').create({ label: 'buy milk' }),
@@ -1619,7 +1619,7 @@ describe('two devices whose workspaces disagree', () => {
 
 		// The device is updated: same durable file, the next runtime, a
 		// declaration that now names the table (ADR-0240).
-		const upgraded = await older.upgrade(twoTableWorkspace);
+		const upgraded = await older.upgrade(twoTableDatabase);
 		expect(tableOf(upgraded.bound, 'tasks').list().rows).toEqual([
 			{ id: task.id, label: 'buy milk' },
 		]);
@@ -1643,7 +1643,7 @@ describe('two devices whose workspaces disagree', () => {
 		// The device is updated (ADR-0240): close this runtime, reopen the same
 		// durable file under the declaration that adds the field. Adding a
 		// field is the most ordinary change a release makes.
-		const upgraded = await updating.upgrade(newerWorkspace);
+		const upgraded = await updating.upgrade(newerDatabase);
 		upgraded.connect();
 
 		const upgradedNotes = tableOf(upgraded.bound, 'notes');
@@ -1687,7 +1687,7 @@ describe('two devices whose workspaces disagree', () => {
 		other.client.flush();
 		wire.settle();
 
-		const upgraded = await updating.upgrade(twoTableWorkspace);
+		const upgraded = await updating.upgrade(twoTableDatabase);
 		upgraded.connect();
 
 		expect(tableOf(upgraded.bound, 'tasks').list().rows).toEqual([]);
@@ -1705,7 +1705,7 @@ describe('two devices whose workspaces disagree', () => {
 		const { hub } = openAuthority();
 		const absent = openReplica('absent', hub, wire);
 
-		const upgraded = await absent.upgrade(twoTableWorkspace);
+		const upgraded = await absent.upgrade(twoTableDatabase);
 
 		expect(tableOf(upgraded.bound, 'tasks').list().rows).toEqual([]);
 	});
@@ -1916,7 +1916,7 @@ describe('one verb publishes the next document (ADR-0231)', () => {
 			}),
 		);
 
-		// The workspace survives; the document does not. A fresh id names the
+		// The database survives; the document does not. A fresh id names the
 		// new history, and its log is its own: the replacement is the snapshot
 		// at position 1.
 		expect(published).not.toBe(before);

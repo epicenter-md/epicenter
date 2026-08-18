@@ -1,8 +1,8 @@
 /**
- * A Svelte 5 reactivity adapter over one opened workspace's declared shape.
+ * A Svelte 5 reactivity adapter over one opened database's declared shape.
  *
- * `fromWorkspace(data)` mirrors the declaration exactly: `tables.<name>` and
- * `kv`, with the names and row types the workspace declared. It earns its
+ * `fromDatabase(data)` mirrors the declaration exactly: `tables.<name>` and
+ * `kv`, with the names and row types the database declared. It earns its
  * existence by adding reactivity, not by renaming anything, and the rule is
  * one sentence: every read verb tracks the table's invalidation signal, and
  * every write verb passes through unchanged.
@@ -46,7 +46,7 @@
  * @example
  * ```svelte
  * <script lang="ts">
- *   const honeycrisp = fromWorkspace(data);
+ *   const honeycrisp = fromDatabase(data);
  *   const notes = honeycrisp.tables.notes;
  *   const active = $derived(notes.rows.filter((n) => n.deletedAt === null));
  * </script>
@@ -84,8 +84,8 @@ type AdaptableKv = {
 	subscribe(listener: () => void): () => void;
 };
 
-/** What `fromWorkspace` needs from opened data: the declared view, no store. */
-type AdaptableWorkspaceData = {
+/** What `fromDatabase` needs from opened data: the declared view, no store. */
+type AdaptableDatabaseData = {
 	tables: Record<string, AdaptableTable>;
 	kv: AdaptableKv;
 };
@@ -102,12 +102,12 @@ export type ReactiveTable<TTable extends AdaptableTable> = TTable & {
 };
 
 /**
- * The declared shape of one opened workspace, made Svelte-reactive.
+ * The declared shape of one opened database, made Svelte-reactive.
  *
  * The table names pass through unchanged at both levels: `keyof` at compile
  * time, `Object.entries` at runtime.
  */
-export type ReactiveWorkspace<TData extends AdaptableWorkspaceData> = {
+export type ReactiveDatabase<TData extends AdaptableDatabaseData> = {
 	readonly tables: {
 		readonly [TName in keyof TData['tables']]: ReactiveTable<
 			TData['tables'][TName]
@@ -117,10 +117,10 @@ export type ReactiveWorkspace<TData extends AdaptableWorkspaceData> = {
 	readonly kv: TData['kv'];
 };
 
-/** Adapt one opened workspace's `tables` and `kv` into Svelte reactivity. */
-export function fromWorkspace<TData extends AdaptableWorkspaceData>(
+/** Adapt one opened database's `tables` and `kv` into Svelte reactivity. */
+export function fromDatabase<TData extends AdaptableDatabaseData>(
 	data: TData,
-): ReactiveWorkspace<TData> {
+): ReactiveDatabase<TData> {
 	return Object.freeze({
 		tables: Object.freeze(
 			Object.fromEntries(
@@ -131,7 +131,7 @@ export function fromWorkspace<TData extends AdaptableWorkspaceData>(
 			),
 		),
 		kv: reactiveKv(data.kv),
-	}) as ReactiveWorkspace<TData>;
+	}) as ReactiveDatabase<TData>;
 }
 
 function reactiveTable<TTable extends AdaptableTable>(

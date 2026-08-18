@@ -39,7 +39,7 @@ describe('bootFailureMessage', () => {
 
 	test('no arm leaks store vocabulary to a person', () => {
 		const machineWords =
-			/replica|authority|workspace|document|log|head|dial|socket|struct|principal|projection/i;
+			/replica|authority|database|document|log|head|dial|socket|struct|principal|projection/i;
 		for (const error of [
 			{ name: 'AlreadyOpen' },
 			{ name: 'Unaddressable' },

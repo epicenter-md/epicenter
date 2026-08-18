@@ -1,5 +1,5 @@
 /**
- * SQL over an opened workspace, composed outside the store.
+ * SQL over an opened database, composed outside the store.
  *
  * A store is truth plus debts: the live document and the ledgers that must be
  * written in the same atomic act that incurs them. Everything downstream of
@@ -15,13 +15,13 @@
  * per-row patching, it returns as an optimization behind this same contract.
  *
  * Built deliberately on nothing but the opened data's own surface (`list`,
- * `get`, `store.onCommitted`) plus the portable workspace declaration. That
+ * `get`, `store.onCommitted`) plus the portable database declaration. That
  * is the proof that the follower seam is complete: an FTS index, a Markdown
  * exporter, or an embedding pipeline composes the same way.
  *
  * ```ts
- * const db = await openAccount(workspace, { principalId });
- * const sql = createSqliteProjection({ data: db, workspace, sqlite });
+ * const db = await openAccount(database, { principalId });
+ * const sql = createSqliteProjection({ data: db, database, sqlite });
  * sql.query`SELECT id, title FROM notes WHERE pinned = 1`;
  * ```
  *
@@ -35,7 +35,7 @@
  * const handle = new sqlite3.oo1.DB(':memory:');
  * const sql = createSqliteProjection({
  *   data: db,
- *   workspace,
+ *   database,
  *   sqlite: createBrowserSqliteAdapter(handle),
  * });
  * ```
@@ -89,7 +89,7 @@ export type ProjectableTable = {
 };
 
 /**
- * The slice of an opened workspace's data the projection follows.
+ * The slice of an opened database's data the projection follows.
  *
  * Dirty-marking rides `store.onCommitted` rather than per-table
  * subscriptions, and that choice is what makes freshness structural. The
@@ -117,7 +117,7 @@ export type ProjectableData = {
 
 export type SqliteProjection = {
 	/**
-	 * Read-only SQL over the projected workspace: one relation per declared
+	 * Read-only SQL over the projected database: one relation per declared
 	 * table, plus `kv` as a one-row relation.
 	 *
 	 * Rebuilds first when dirty, so the answer always agrees with what `list()`
@@ -136,7 +136,7 @@ export type SqliteProjection = {
 };
 
 /**
- * Project one opened workspace into a SQLite database the caller supplies.
+ * Project one opened database into a SQLite database the caller supplies.
  *
  * Throwing on a declaration that does not parse, because at this call site the
  * declaration is a `defineDatabase` literal the compiler already validated,
@@ -144,13 +144,13 @@ export type SqliteProjection = {
  */
 export function createSqliteProjection({
 	data,
-	workspace,
+	database,
 	sqlite,
 }: {
-	/** The opened workspace's data: the tables and KV this projection follows. */
+	/** The opened database's data: the tables and KV this projection follows. */
 	data: ProjectableData;
 	/** The portable declaration naming the tables and fields to project. */
-	workspace: DatabaseJson;
+	database: DatabaseJson;
 	/**
 	 * Where the projection lives. An in-memory database by convention: the
 	 * projection is a cache rebuilt from the live document, and nothing here
@@ -158,12 +158,12 @@ export function createSqliteProjection({
 	 */
 	sqlite: SqliteDatabase;
 }): SqliteProjection {
-	const { data: parsedWorkspace, error: parseError } = parseDatabase(workspace);
+	const { data: parsedDatabase, error: parseError } = parseDatabase(database);
 	if (parseError !== null) {
 		throw new Error(parseError.message, { cause: parseError });
 	}
 	// Rebound after the guard so the closures below see a non-null binding.
-	const parsed = parsedWorkspace;
+	const parsed = parsedDatabase;
 
 	let dirty = true;
 	let disposed = false;

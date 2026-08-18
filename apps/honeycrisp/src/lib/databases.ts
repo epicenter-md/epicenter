@@ -8,7 +8,7 @@ import {
 } from '@epicenter/data/browser';
 import {
 	type RebuildError,
-	rebuildWorkspace,
+	rebuildDatabase,
 	type SyncConnection,
 	type SyncConnectionStatus,
 } from '@epicenter/data/sync';
@@ -84,7 +84,7 @@ export type HoneycrispDatabases = {
 		 */
 		syncStatus(): SyncConnectionStatus | undefined;
 		/**
-		 * Rebuild this workspace (ADR-0231): the one product action over the
+		 * Rebuild this database (ADR-0231): the one product action over the
 		 * one wire verb.
 		 *
 		 * On success this device discards its local replica whole and reloads;
@@ -271,7 +271,7 @@ async function openAccountDatabase({
 				return status.denied ? undefined : status;
 			},
 			rebuild: async () => {
-				const published = await rebuildWorkspace({
+				const published = await rebuildDatabase({
 					store: data.store,
 					transport: {
 						fetch: (input, init) => auth.fetch(input, init),
@@ -306,7 +306,7 @@ async function openAccountDatabase({
  *
  * A correctness gate, not a loading delay: a fresh replica must not take
  * edits that a later bootstrap would have to discard, so a signed-in
- * generation resolves only with a workspace that is safe to edit. A replica
+ * generation resolves only with a database that is safe to edit. A replica
  * already stamped resolves at once. An unbound one waits for the first
  * bootstrap to commit the stamp; if the dial is permanently denied first,
  * this rejects with the honest answer instead, because only an auth change

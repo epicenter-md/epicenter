@@ -46,7 +46,7 @@ export {
 export {
 	RebuildError,
 	type RebuiltState,
+	rebuildDatabase,
 	rebuildDocument,
-	rebuildWorkspace,
 	type StoreTransport,
 } from './rebuild.js';

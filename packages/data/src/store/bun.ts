@@ -36,10 +36,10 @@ export type BunAccountStore = AccountStore & {
 };
 
 /**
- * Open the application this workspace names, on Bun.
+ * Open the application this database names, on Bun.
  *
- * The workspace names the store (ADR-0229), so the folder is
- * `<root>/<workspace.id>` rather than a path a caller picks. The root
+ * The database names the store (ADR-0229), so the folder is
+ * `<root>/<database.id>` rather than a path a caller picks. The root
  * is where Epicenter lives on this machine (ADR-0201), which is an environment
  * fact rather than a second name for the application.
  *
@@ -53,7 +53,7 @@ export type BunAccountStore = AccountStore & {
  * default.
  */
 export async function open<const TDatabase extends DatabaseJson>(
-	workspace: TDatabase,
+	database: TDatabase,
 	{
 		root,
 		keepHistory = true,
@@ -69,7 +69,7 @@ export async function open<const TDatabase extends DatabaseJson>(
 	// Parsed before anything is claimed or opened: a declaration may arrive as
 	// data, and a refusal here is a boot outcome rather than a programmer
 	// error (ADR-0240).
-	const { data: parsed, error: parseError } = parseDatabase(workspace);
+	const { data: parsed, error: parseError } = parseDatabase(database);
 	if (parseError !== null) return Err(parseError);
 
 	const { error: claimError } = claimDocument(parsed.id);
@@ -77,7 +77,7 @@ export async function open<const TDatabase extends DatabaseJson>(
 
 	const opened = await openBunStore({
 		directory: join(root, parsed.id),
-		workspace: parsed,
+		database: parsed,
 		keepHistory,
 	});
 	if (opened.error !== null) {
@@ -102,11 +102,11 @@ export async function open<const TDatabase extends DatabaseJson>(
  */
 async function openBunStore({
 	directory,
-	workspace,
+	database,
 	keepHistory = true,
 }: {
 	directory: string;
-	workspace: ParsedDatabase;
+	database: ParsedDatabase;
 	/**
 	 * Whether collapse preserves what it supersedes (ADR-0214).
 	 *
@@ -150,13 +150,13 @@ async function openBunStore({
 		const opened = live;
 		const openedHistory = historyDatabase;
 		const { store, view } = createAccountStoreOverPort({
-			workspace,
+			database,
 			durable: port,
 			loaded: port.load(),
 			dispose: () => {
 				opened.close();
 				openedHistory?.close();
-				releaseDocument(workspace.id);
+				releaseDocument(database.id);
 			},
 		});
 		return composeBunStore({ store, view, directory });
@@ -203,20 +203,20 @@ function composeBunStore({
 /**
  * Open an application that lives only as long as the process. Test support.
  *
- * It takes the workspace for the same reason `open` does, so one entry point
+ * It takes the database for the same reason `open` does, so one entry point
  * has one shape. It claims no address, and that is not an oversight: two
- * memory stores of one workspace id are two independent documents by
+ * memory stores of one database id are two independent documents by
  * construction, which is the two-devices case rather than the
  * two-handles-on-one-file case the claim exists to refuse.
  */
 export function openMemory<const TDatabase extends DatabaseJson>(
-	workspace: TDatabase,
+	database: TDatabase,
 ): DataOf<TDatabase, AccountStore> {
 	const live = new Database(':memory:');
 	const history = createBunSqliteAdapter(new Database(':memory:'));
 	applyHistorySchema(history);
 	return createAccountStore({
-		workspace,
+		database,
 		sqlite: createBunSqliteAdapter(live),
 		history,
 		dispose: () => live.close(),

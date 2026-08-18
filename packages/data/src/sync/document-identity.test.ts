@@ -40,7 +40,7 @@ import { encodeFrame } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 import { rebuildDocument } from './rebuild.js';
 
-const workspace = defineDatabase({
+const database = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -78,13 +78,13 @@ function openReplica(
 	label: string,
 	hub: ReturnType<typeof createSyncHub>,
 	wire: Wire,
-	through: DatabaseJson = workspace,
+	through: DatabaseJson = database,
 	sqlite = createBunSqliteAdapter(new Database(':memory:')),
 ) {
 	const db = createAccountStore({
-		workspace: through,
+		database: through,
 		sqlite,
-	}) as unknown as DataOf<typeof workspace>;
+	}) as unknown as DataOf<typeof database>;
 	const store = db.store;
 	const client = createSyncClient({
 		store,
@@ -229,7 +229,7 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 		const drawerDb = createBunSqliteAdapter(new Database(':memory:'));
 		{
 			const drawerStore = createAccountStore({
-				workspace: workspace,
+				database: database,
 				sqlite: drawerDb,
 			}).store;
 			const entry = expectOk(authority.since(0, 10))[0];
@@ -264,7 +264,7 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 
 		// The drawer device reboots from its durable file. Its stamp names the
 		// retired document, so it is answered with the facts and nothing else.
-		const drawer = openReplica('drawer', hub, wire, workspace, drawerDb);
+		const drawer = openReplica('drawer', hub, wire, database, drawerDb);
 		expect(drawer.titles()).toEqual(['X']);
 		expect(drawer.connect()).toBe('retired');
 		wire.settle();
@@ -275,15 +275,15 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 	});
 });
 
-describe('workspace bootstrap names a document before any workspace write', () => {
+describe('database bootstrap names a document before any database write', () => {
 	test('a pristine replica bootstraps, then its first push survives a reopen', () => {
 		const { wire, authority, hub } = setup();
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const replica = openReplica('replica', hub, wire, workspace, sqlite);
+		const replica = openReplica('replica', hub, wire, database, sqlite);
 		expect(replica.client.document()).toBeUndefined();
 
 		// The empty store receives the authority name, persists it, and reconnects
-		// through the equality door before it is allowed to author workspace data.
+		// through the equality door before it is allowed to author database data.
 		expect(replica.connect()).toBe('admitted');
 		wire.settle();
 		expect(replica.client.document()).toBe(expectOk(authority.document()));
@@ -293,7 +293,7 @@ describe('workspace bootstrap names a document before any workspace write', () =
 
 		// Durable, not a session fact: a store reopened from the same file
 		// still knows which document its bytes belong to.
-		const reopened = createAccountStore({ workspace: workspace, sqlite });
+		const reopened = createAccountStore({ database: database, sqlite });
 		expect(syncEngineOf(reopened.store).documentIdentity()).toBe(
 			expectOk(authority.document()),
 		);
@@ -353,13 +353,13 @@ describe('workspace bootstrap names a document before any workspace write', () =
 		expect(laptop.titles()).toEqual([]);
 	});
 
-	test('local workspace work before bootstrap is discarded, never stamped and sent', () => {
+	test('local database work before bootstrap is discarded, never stamped and sent', () => {
 		const { wire, authority, hub } = setup();
 		const replica = openReplica('replica', hub, wire);
 		expectOk(replica.db.tables.notes.create({ title: 'held' }));
 		replica.connect();
 
-		// The announcement proves this local state never adopted a workspace
+		// The announcement proves this local state never adopted a database
 		// document. It is discarded by the host, not promoted by the protocol.
 		replica.client.flush();
 		expect(expectOk(authority.head())).toBe(0);
@@ -384,8 +384,8 @@ describe('workspace bootstrap names a document before any workspace write', () =
 			}),
 		);
 
-		// A new workspace replica has no local document at all. It bootstraps
-		// before it can author workspace work, so there is no cross-document
+		// A new database replica has no local document at all. It bootstraps
+		// before it can author database work, so there is no cross-document
 		// merge exception.
 		const fresh = openReplica('fresh', hub, wire);
 		expect(fresh.connect()).toBe('admitted');
@@ -413,14 +413,14 @@ describe('the cutover: pre-identity local state is reset, never merged', () => {
 		// its `_meta` rows removed is byte-for-byte the old format.
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 		{
-			const old = createAccountStore({ workspace: workspace, sqlite });
+			const old = createAccountStore({ database: database, sqlite });
 			expectOk(old.tables.notes.create({ title: 'untrusted old note' }));
 		}
 		sqlite.run('DELETE FROM _meta');
 
 		// The open is the cutover: untrusted whole, wiped whole. A missing
 		// identity must never read as a fresh install when state exists.
-		const reopened = openReplica('reopened', hub, wire, workspace, sqlite);
+		const reopened = openReplica('reopened', hub, wire, database, sqlite);
 		expect(reopened.titles()).toEqual([]);
 		expect(reopened.client.status().cursor).toBe(0);
 		expect(reopened.client.document()).toBeUndefined();
@@ -436,10 +436,10 @@ describe('the cutover: pre-identity local state is reset, never merged', () => {
 	test('CONTROL: a certified file reopens intact', () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 		{
-			const first = createAccountStore({ workspace: workspace, sqlite });
+			const first = createAccountStore({ database: database, sqlite });
 			expectOk(first.tables.notes.create({ title: 'kept across reopen' }));
 		}
-		const reopened = createAccountStore({ workspace: workspace, sqlite });
+		const reopened = createAccountStore({ database: database, sqlite });
 		expect(reopened.tables.notes.list().rows.map((row) => row.title)).toEqual([
 			'kept across reopen',
 		]);

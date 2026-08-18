@@ -34,7 +34,7 @@ mock.module('svelte/reactivity', () => ({
 	},
 }));
 
-import { fromWorkspace } from './from-workspace.svelte.js';
+import { fromDatabase } from './from-database.svelte.js';
 
 /**
  * An in-memory stand-in for one store table handle: the same closure-object
@@ -123,7 +123,7 @@ function setup() {
 	const notes = createFakeTable<Note>([{ id: 'n1', title: 'first' }]);
 	const folders = createFakeTable<Folder>([]);
 	const kv = createFakeKv({ theme: 'dark' });
-	const reactive = fromWorkspace({
+	const reactive = fromDatabase({
 		tables: { notes: notes.handle, folders: folders.handle },
 		kv: kv.handle,
 	});

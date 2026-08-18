@@ -33,7 +33,7 @@ export type CreateHostedDeepLinkAuthOptions = {
  * only what varies: its persisted instance setting, OAuth client id,
  * registered redirect URI, hosted API origin, and credential-backed grant
  * store. The result is a reactive `AuthClient` carrying a bearer, ready for
- * signed-in workspace sync.
+ * signed-in database sync.
  *
  * The launcher's PKCE transaction always lives in `localStorage`, never
  * `sessionStorage`: a deep-link callback can cold-start the app, which would

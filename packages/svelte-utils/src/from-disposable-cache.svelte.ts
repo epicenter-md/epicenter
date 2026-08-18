@@ -9,7 +9,7 @@
  * Takes only an `{ open(id) }` opener, not a full `DisposableCache`: this
  * binding disposes the per-call *handle*, never the cache itself, so anything
  * that hands out disposable handles fits, a `createDisposableCache` or a
- * workspace `tables.<t>.docs.<field>` row child-doc opener alike.
+ * database `tables.<t>.docs.<field>` row child-doc opener alike.
  *
  * Why a getter (`() => id`) and not the id directly: destructured props and
  * `$state` reads are not reactive when captured at module top. See Svelte's

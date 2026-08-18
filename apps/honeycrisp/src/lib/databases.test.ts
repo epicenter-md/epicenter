@@ -5,7 +5,7 @@
  * snapshot chooses whether an account replica also opens (ADR-0233). These
  * tests pin the boundaries between the two documents: sync, supersession, and
  * rebuild exist only on the account arm, they can reach only the one
- * account's replica that opened, and no workspace event can reach the device
+ * account's replica that opened, and no database event can reach the device
  * document.
  *
  * Key behaviors:

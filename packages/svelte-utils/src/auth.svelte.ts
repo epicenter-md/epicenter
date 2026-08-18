@@ -73,7 +73,7 @@ export function createAppAuthClient(
 /**
  * Svelte 5 wrapper around `createSameOriginCookieAuth` (cookie client for a
  * browser app the API serves from its own origin, e.g. the dashboard). It
- * cannot drive workspace sync: `openWebSocket` denies permanently, because a
+ * cannot drive database sync: `openWebSocket` denies permanently, because a
  * cookie cannot carry the bearer subprotocol.
  */
 export function createSameOriginCookieAuth(
@@ -116,7 +116,7 @@ export type CreateHostedBrowserRedirectAuthOptions = {
  * persisted `Instance` fed to {@link createAppAuthClient}. Each app passes
  * only what varies: its namespace, OAuth client id, the hosted API origin,
  * and an optional SvelteKit base path. The result is a reactive `AuthClient`
- * carrying a bearer, ready for signed-in workspace sync.
+ * carrying a bearer, ready for signed-in database sync.
  *
  * Redirect-only and hosted-only by construction: it owns no Tauri deep-link or
  * extension launcher and no self-host token branch. The self-host path still works

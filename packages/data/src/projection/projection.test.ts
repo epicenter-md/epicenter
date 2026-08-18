@@ -15,7 +15,7 @@ import { openMemory } from '../store/bun.js';
 import { type DataOf, syncEngineOf } from '../store/store.js';
 import { createSqliteProjection, type SqliteProjection } from './index.js';
 
-const workspace = defineDatabase({
+const database = defineDatabase({
 	id: 'so.epicenter.projectionlab',
 	kv: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
 	tables: {
@@ -23,16 +23,16 @@ const workspace = defineDatabase({
 	},
 });
 
-let db: DataOf<typeof workspace>;
+let db: DataOf<typeof database>;
 let sql: SqliteProjection;
 let handle: Database;
 
 beforeEach(() => {
-	db = openMemory(workspace);
+	db = openMemory(database);
 	handle = new Database(':memory:');
 	sql = createSqliteProjection({
 		data: db,
-		workspace,
+		database,
 		sqlite: createBunSqliteAdapter(handle),
 	});
 });
@@ -71,7 +71,7 @@ describe('query always agrees with the live document', () => {
 		// still fresh: dirty-marking rides `onCommitted`, which the store's
 		// flush delivers before any table notification, so reading inside a
 		// table subscriber always repairs first.
-		const fresh = openMemory(workspace);
+		const fresh = openMemory(database);
 		const seen: number[] = [];
 		let lateSql: SqliteProjection | undefined;
 		fresh.tables.notes.subscribe(() => {
@@ -86,7 +86,7 @@ describe('query always agrees with the live document', () => {
 		});
 		lateSql = createSqliteProjection({
 			data: fresh,
-			workspace,
+			database,
 			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		fresh.tables.notes.create({ title: 'one', tags: [], date: null });
@@ -95,7 +95,7 @@ describe('query always agrees with the live document', () => {
 	});
 
 	test('a remote update reaches query without any patching path', () => {
-		const remote = openMemory(workspace);
+		const remote = openMemory(database);
 		remote.tables.notes.create({ title: 'from afar', tags: [], date: null });
 		const bytes = remote.store.encodeStateSince(db.store.stateVector());
 		syncEngineOf(db.store).applyRemote(bytes);
@@ -151,7 +151,7 @@ describe('failure stays at the read, and heals at the read', () => {
 		};
 		const fragile = createSqliteProjection({
 			data: db,
-			workspace,
+			database,
 			sqlite: failable,
 		});
 		note({ title: 'first' });
@@ -196,7 +196,7 @@ describe('a nonconforming row projects raw, so SQL can show what failed', () => 
 });
 
 describe('lifecycle', () => {
-	test('a workspace that drops a table sweeps its relation at rebuild', () => {
+	test('a database that drops a table sweeps its relation at rebuild', () => {
 		// A relation left behind by an older declaration is dropped, so query
 		// never serves a table the runtime cannot see.
 		handle.run('CREATE TABLE scratch (id TEXT PRIMARY KEY, body ANY)');

@@ -26,7 +26,7 @@ function openAuthority() {
 	return openSyncAuthority({ sqlite, snapshotFloorBytes: 1 });
 }
 
-describe('an authority needs no workspace: every verb moves unread bytes', () => {
+describe('an authority needs no database: every verb moves unread bytes', () => {
 	test('append assigns positions and since returns the bytes untouched', () => {
 		const authority = openAuthority();
 		const first = authority.append(opaque(1));

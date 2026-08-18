@@ -1,5 +1,5 @@
 /**
- * The SQL shape of a projected workspace: one relation per declared table,
+ * The SQL shape of a projected database: one relation per declared table,
  * plus `kv` as a one-row relation.
  *
  * Deliberately whole-rebuild only. The store's superseded built-in projection
@@ -33,19 +33,19 @@ import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
  */
 export function applyProjectionSchema(
 	sqlite: SqliteDatabase,
-	workspace: ParsedDatabase,
+	database: ParsedDatabase,
 ): void {
 	// KV projects as a one-row relation named `kv`, which the parser reserves as
 	// a table name so nothing can collide with it.
 	const relations: [string, ParsedTable][] = [
-		...(workspace.kv === undefined
+		...(database.kv === undefined
 			? []
-			: ([['kv', workspace.kv]] as [string, ParsedTable][])),
-		...workspace.tables,
+			: ([['kv', database.kv]] as [string, ParsedTable][])),
+		...database.tables,
 	];
 	// The projection owns this database's whole letter-named databaseId, so a
 	// relation the current definition no longer declares is dropped, not just
-	// left behind: a workspace upgrade that REMOVES a table must remove it
+	// left behind: a database upgrade that REMOVES a table must remove it
 	// from SQL too, or `query` keeps serving rows the runtime cannot see and
 	// will never update (the data itself stays preserved in the live document,
 	// and reappears the moment a definition that declares it opens). The sweep
@@ -157,7 +157,7 @@ export function insertProjectedRow(
 /**
  * Quote one SQL identifier.
  *
- * The workspace parser already refuses any table or field name that is not a
+ * The database parser already refuses any table or field name that is not a
  * bare identifier, so this never has real work to do. It stays because the
  * projection builds SQL by concatenation, and a schema that depends on a
  * validator two packages away for its safety should not also depend on nobody
