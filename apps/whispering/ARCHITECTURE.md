@@ -60,12 +60,12 @@ The Tauri build activates the `tauri` condition; the web build falls through to 
 
 ```ts
 // vite.config.ts
-const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
+const isEpicenterHost = process.env.EPICENTER_HOST === '1';
 export default defineConfig(async () => ({
   resolve: {
     // The `...defaultClientConditions` spread is load-bearing: custom
     // conditions REPLACE Vite's defaults rather than adding to them.
-    ...(isEpicenterSurface && {
+    ...(isEpicenterHost && {
       conditions: ['tauri', ...defaultClientConditions],
     }),
   },

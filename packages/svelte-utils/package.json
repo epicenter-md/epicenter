@@ -20,8 +20,6 @@
 	"dependencies": {
 		"@epicenter/agent": "workspace:*",
 		"@epicenter/auth": "workspace:*",
-		"@epicenter/data": "workspace:*",
-		"@epicenter/identity": "workspace:*",
 		"arktype": "catalog:",
 		"wellcrafted": "catalog:"
 	},
@@ -42,17 +40,14 @@
 		}
 	},
 	"devDependencies": {
-		"@epicenter/field": "workspace:*",
 		"@standard-schema/spec": "catalog:",
 		"@tauri-apps/api": "catalog:",
 		"@tauri-apps/plugin-deep-link": "catalog:",
 		"@tauri-apps/plugin-opener": "catalog:",
 		"@types/bun": "catalog:",
-		"fake-indexeddb": "^6.2.5",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
-		"typescript": "catalog:",
-		"yjs": "catalog:"
+		"typescript": "catalog:"
 	},
 	"scripts": {
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json",

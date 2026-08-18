@@ -18,12 +18,10 @@ import type { ServerBindings } from './server-bindings.js';
  * How an explicit bearer token resolves to the calling principal: the one auth
  * seam.
  *
- * The surface wrappers (`requireCookieOrBearerPrincipal`, `requireBearerPrincipal`,
- * the attach relay's bearer with its WebSocket-reject path) own credential
- * EXTRACTION: each knows where its transport carries the token (`Authorization`
- * header, or the `bearer.<token>` WebSocket subprotocol for the relay) and hands
- * the resolver a bare token. The resolver only VERIFIES; it never reads request headers, so
- * no transport ever has to fake another transport's header to authenticate.
+ * The surface wrappers (`requireCookieOrBearerPrincipal`, `requireBearerPrincipal`)
+ * own credential extraction from the `Authorization` header and hand the resolver
+ * a bare token. The resolver only verifies; it never reads request headers, so
+ * no route has to fake another route's header to authenticate.
  * The deployment builds each wrapper by closing it over its resolver
  * (`requireBearerPrincipal(resolveBearerPrincipal)`), so the resolver is held in
  * the wrapper's closure, not stamped on the context: there is no

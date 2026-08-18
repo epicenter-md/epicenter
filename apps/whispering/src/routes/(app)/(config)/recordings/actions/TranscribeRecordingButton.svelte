@@ -44,10 +44,14 @@
 		() => queries.transcription.transcribeRecording.options,
 	);
 
+	// `pending` is the workspace's stored default for a recording nobody has
+	// transcribed yet, which is this button's "unprocessed".
 	const transcriptionState = $derived.by(() => {
 		if (transcribeRecording.isPending)
 			return { status: 'transcribing' } as const;
-		return recording.transcription ?? ({ status: 'unprocessed' } as const);
+		if (recording.transcriptionStatus === 'pending')
+			return { status: 'unprocessed' } as const;
+		return { status: recording.transcriptionStatus } as const;
 	});
 
 	const tooltip = $derived.by(() => {
@@ -59,7 +63,7 @@
 			case 'completed':
 				return 'Retry transcription';
 			case 'failed':
-				return `Transcription failed: ${transcriptionState.error}. Click to retry`;
+				return `Transcription failed: ${recording.transcriptionError}. Click to retry`;
 		}
 	});
 

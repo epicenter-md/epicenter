@@ -9,9 +9,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { COMPILED_APPLICATIONS, listApplications } from './applications.ts';
-import { SURFACE_ROUTES } from './routes.ts';
+import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
+import { BUILT_IN_ROUTES } from './routes.ts';
 import type { AppCatalog, CatalogApp } from './static-assets.ts';
-import { PLACEHOLDER_SURFACE_PAGES } from './surface-pages.ts';
 
 function catalogOf(...members: { id: string; title: string }[]): AppCatalog {
 	return {
@@ -20,6 +20,11 @@ function catalogOf(...members: { id: string; title: string }[]): AppCatalog {
 				({
 					id,
 					title,
+					page: '<!doctype html><html></html>',
+					// An id is the database id its declaration declared (ADR-0210), which is
+					// the only thing admission keeps: the compiled declaration itself is not
+					// carried past it, because the host reads nobody's rows.
+					directory: id,
 					resolve: async () => undefined,
 				}) satisfies CatalogApp,
 		),
@@ -57,42 +62,42 @@ describe('listApplications', () => {
 		expect(Object.keys(application ?? {}).sort()).toEqual(['id', 'title']);
 	});
 
-	test('Home and placeholder surfaces are not applications a person can open', () => {
+	test('Home and placeholder routes are not applications a person can open', () => {
 		const listed = new Set(listApplications({ apps: [] }).map(({ id }) => id));
 		for (const id of [
 			'home',
 			'mail',
 			'books',
-		] satisfies (keyof typeof SURFACE_ROUTES)[]) {
+		] satisfies (keyof typeof BUILT_IN_ROUTES)[]) {
 			expect(listed.has(id)).toBe(false);
 		}
 	});
 });
 
 /**
- * Every surface the host routes has something behind it, and every compiled
- * application is a surface. The two lists used to be one object literal the
+ * Every built-in route the host serves has something behind it, and every compiled
+ * application has its own route. The two lists used to be one object literal the
  * type checker cross-checked; now that compiled builds arrive at runtime, this
- * is where a surface with no document, or an application with no route, shows
+ * is where a built-in route with no document, or an application with no route, shows
  * up.
  */
-describe('surface coverage', () => {
-	test('each surface is Home, a compiled application, or a placeholder', () => {
+describe('built-in route coverage', () => {
+	test('each built-in route is Home, a compiled application, or a placeholder', () => {
 		const served = new Set<string>([
-			SURFACE_ROUTES.home.id,
+			BUILT_IN_ROUTES.home.id,
 			...COMPILED_APPLICATIONS.map(({ id }) => id),
-			...Object.keys(PLACEHOLDER_SURFACE_PAGES),
+			...Object.keys(PLACEHOLDER_PAGES),
 		]);
-		expect(Object.keys(SURFACE_ROUTES).filter((id) => !served.has(id))).toEqual(
-			[],
-		);
+		expect(
+			Object.keys(BUILT_IN_ROUTES).filter((id) => !served.has(id)),
+		).toEqual([]);
 	});
 
-	test('each compiled application has its own surface route', () => {
+	test('each compiled application has its own built-in route', () => {
 		expect(
 			COMPILED_APPLICATIONS.filter(
 				({ id, title }) =>
-					SURFACE_ROUTES[id as keyof typeof SURFACE_ROUTES]?.title !== title,
+					BUILT_IN_ROUTES[id as keyof typeof BUILT_IN_ROUTES]?.title !== title,
 			),
 		).toEqual([]);
 	});

@@ -21,13 +21,14 @@
 	},
 	"license": "AGPL-3.0-or-later",
 	"scripts": {
+		"test": "bun test",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
+		"@epicenter/database": "workspace:*",
 		"wellcrafted": "catalog:",
-		"typebox": "catalog:",
 		"yaml": "^2.8.0"
 	},
 	"devDependencies": {

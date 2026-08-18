@@ -1,8 +1,12 @@
 /**
  * A tiny stdio MCP server standing in for `local-books mcp` in the host smoke
  * test, so the arm-B path is exercised without depending on the
- * `@epicenter/local-books` app, its config, or a mirror database. It exposes
- * one read-only `customers` tool mirroring the "who owes me money?" answer.
+ * `@epicenter/local-books` app, its config, or a mirror database.
+ *
+ * Two tools, one of each kind: a read-only `customers` mirroring the "who owes
+ * me money?" answer, and a `write_off` that mutates. The host projects the
+ * read-only hint to `query` and everything else to `mutation`, so the pair is
+ * what lets the approval-gate tests reach both sides of that policy.
  *
  * stdout is the JSON-RPC channel: nothing else may print to it.
  */
@@ -30,17 +34,32 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 			inputSchema: { type: 'object', properties: {} },
 			annotations: { readOnlyHint: true },
 		},
+		{
+			name: 'write_off',
+			title: 'Write off a balance',
+			description: "Forgive one customer's outstanding balance.",
+			inputSchema: {
+				type: 'object',
+				properties: { name: { type: 'string' } },
+			},
+		},
 	],
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
-	if (req.params.name !== 'customers') {
+	if (req.params.name === 'customers') {
+		return { content: [{ type: 'text', text: CUSTOMERS.join('\n') }] };
+	}
+	if (req.params.name === 'write_off') {
+		const name = (req.params.arguments as { name?: string } | undefined)?.name;
 		return {
-			content: [{ type: 'text', text: `Unknown tool: ${req.params.name}` }],
-			isError: true,
+			content: [{ type: 'text', text: `Wrote off ${name ?? 'nobody'}` }],
 		};
 	}
-	return { content: [{ type: 'text', text: CUSTOMERS.join('\n') }] };
+	return {
+		content: [{ type: 'text', text: `Unknown tool: ${req.params.name}` }],
+		isError: true,
+	};
 });
 
 const transport = new StdioServerTransport();

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { type Static, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { DEFAULT_ENTITIES, isKnownEntity } from './entities.ts';
-import { credentialsFilePath, resolveDataDir } from './paths.ts';
+import { booksDataDir, credentialsFilePath } from './paths.ts';
 
 /**
  * Which QuickBooks deployment a company lives in. This schema is the single
@@ -18,10 +18,15 @@ export type QbEnvironment = Static<typeof QbEnvironmentSchema>;
 
 /**
  * Fully-resolved runtime configuration. Precedence is CLI flags > environment >
- * `<data-dir>/config.json` > built-in defaults. Base-URL fields are overridable
+ * `<app-dir>/config.json` > built-in defaults. Base-URL fields are overridable
  * so tests can point the client at a mock QuickBooks server.
  */
 export type AppConfig = {
+	/**
+	 * Local Books' one directory, `<epicenter-root>/apps/local-books`. Not the
+	 * Epicenter root above it: the app never sees that, and never computes an OS
+	 * application-data path (ADR-0201).
+	 */
 	dataDir: string;
 	environment: QbEnvironment;
 	redirectUri: string;
@@ -45,7 +50,7 @@ export type AppConfig = {
 	pageSize: number;
 	/**
 	 * Absolute path to the `0600` `credentials.json` holding the realm's OAuth
-	 * tokens. Defaults to the data-dir root; override with `LOCAL_BOOKS_TOKEN_FILE`
+	 * tokens. Defaults to the app-directory root; override with `LOCAL_BOOKS_TOKEN_FILE`
 	 * (used by the test harness and any custom location). See ADR-0062.
 	 */
 	credentialsPath: string;
@@ -60,13 +65,12 @@ export type AppConfig = {
 	 * Reads only: the `query` and `report` verbs stay available, but `recategorize`
 	 * (the one QuickBooks write) is refused. The safety posture for "analyze my
 	 * books, do not mutate them", whether you run the verbs yourself or hand the
-	 * `books.db` to an agent. `LOCAL_BOOKS_READ_ONLY`.
+	 * mirror artifact to an agent. `LOCAL_BOOKS_READ_ONLY`.
 	 */
 	readOnly: boolean;
 };
 
 export type CliConfigOverrides = {
-	dataDir?: string;
 	environment?: QbEnvironment;
 	realm?: string;
 };
@@ -137,7 +141,7 @@ function resolveEntities(file: ConfigFile): string[] {
 }
 
 export function loadConfig(overrides: CliConfigOverrides = {}): AppConfig {
-	const dataDir = resolveDataDir(overrides.dataDir);
+	const dataDir = booksDataDir();
 	const file = readConfigFile(dataDir);
 	const callbackPortEnv = env('LOCAL_BOOKS_CALLBACK_PORT');
 

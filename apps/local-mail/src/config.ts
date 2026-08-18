@@ -1,9 +1,9 @@
-import { credentialsFilePath, resolveDataDir } from './paths.ts';
+import { credentialsFilePath, mailDataDir } from './paths.ts';
 
 /**
  * Fully-resolved runtime configuration. Precedence is env > built-in defaults;
  * BYO client credentials are resolved at the machine tier by
- * `gmailCredentialSource` (env, then `<data-dir>/provider.json`), so no
+ * `gmailCredentialSource` (env, then `<app-dir>/provider.json`), so no
  * `config.json` is needed here. Base-URL fields are overridable so tests can
  * point the client at a mock Gmail server.
  *
@@ -57,7 +57,7 @@ function envFlag(name: string): boolean | undefined {
 }
 
 export function loadConfig(): AppConfig {
-	const dataDir = resolveDataDir();
+	const dataDir = mailDataDir();
 
 	return {
 		dataDir,

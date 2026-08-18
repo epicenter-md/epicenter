@@ -56,7 +56,7 @@ This is a monorepo with the following structure:
 epicenter/
 ├── apps/
 │   ├── whispering/     # Main transcription app (ready for contributions)
-│   ├── epicenter/      # Native host for trusted app surfaces
+│   ├── epicenter/      # Native host for trusted app windows
 │   ├── sh/             # Local assistant (in development)
 │   └── ...             # Other apps in various stages
 ├── packages/
@@ -100,12 +100,15 @@ The convention in one line: `:local` works on a fresh clone, `:remote` wraps wit
 
 2. **Make your changes** following our coding standards (see below)
 
-3. **Test your changes** thoroughly
+3. **Run the gate** from the repo root
 
    ```bash
-   # Run tests if available
-   bun test
+   bun run check
    ```
+
+   This is the same gate CI runs: lint, typecheck, every workspace test, and
+   structural checks. Formatting is handled separately by the autofix workflow.
+   While iterating, `bun run test` or `bun run typecheck` alone is faster.
 
 4. **Commit using conventional commits**
 
@@ -170,40 +173,6 @@ git rebase upstream/main
 
 </details>
 
-## Local Development: Testing the CLI
-
-If you're working on Epicenter's CLI (`packages/epicenter`), you can test it locally without publishing using `bun link`.
-
-### One-Time Setup
-
-Link the package globally from the package directory:
-
-```bash
-cd packages/epicenter
-bun link
-```
-
-This makes the `epicenter` command available globally on your system, pointing to your local development version.
-
-### Using the CLI
-
-Now you can use the `epicenter` command from any directory:
-
-```bash
-epicenter --help
-```
-
-The CLI will use your local development version, so any changes you make to the CLI code will be reflected immediately.
-
-### Unlinking
-
-When you're done testing, you can unlink the package:
-
-```bash
-cd packages/epicenter
-bun unlink
-```
-
 ## Releasing
 
 This section is for maintainers with npm publish access to the `@epicenter` scope.
@@ -253,7 +222,7 @@ git push && git push --tags
 Apps deploy separately from npm packages:
 
 - **Whispering (browser)**: Merge to `main`. `deploy.cloudflare.yml` builds and deploys the static SPA.
-- **Epicenter (desktop)**: Epicenter owns native packaging for Whispering and every other trusted desktop surface. There is no standalone Whispering desktop release workflow.
+- **Epicenter (desktop)**: Epicenter owns native packaging for Whispering and every other trusted desktop app. There is no standalone Whispering desktop release workflow.
 - **Other web apps (Cloudflare Workers)**: Merge to `main`. `deploy.cloudflare.yml` deploys automatically.
 
 See [`.github/workflows/README.md`](.github/workflows/README.md) for the full workflow reference.
@@ -316,7 +285,7 @@ curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.19"
 
 ## Licensing
 
-Epicenter uses split licensing by how you use the code. Code you build with (the toolkit: `@epicenter/lens`, `@epicenter/field`, `@epicenter/ui`, and the contracts they carry) is MIT: contribute freely, no strings attached. Code we ship or run (all apps, the shared `@epicenter/server` library, and internal glue) is AGPL-3.0. Contributions to either layer are welcome under the license of the file you are editing (inbound = outbound).
+Epicenter uses split licensing by how you use the code. Code you build with (the toolkit: `@epicenter/workspace`, `@epicenter/field`, `@epicenter/ui`, and the contracts they carry) is MIT: contribute freely, no strings attached. Code we ship or run (all apps, the shared `@epicenter/server` library, and internal glue) is AGPL-3.0. Contributions to either layer are welcome under the license of the file you are editing (inbound = outbound).
 
 See [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAINABILITY.md) for the full reasoning behind the split.
 

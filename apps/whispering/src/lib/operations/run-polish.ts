@@ -33,7 +33,7 @@ export type RunPolishError = InferErrors<typeof RunPolishError>;
 
 /**
  * The Polish control's effective state, derived from two independent facts:
- * intent (`settings.polish.enabled`, the toggle) and capability (the selected provider can
+ * intent (`polishEnabled`, the toggle) and capability (the selected provider can
  * serve a completion). Speed mode is `off`; `on` means a pass will run; and
  * `needs-key` is the "wanted but blocked" state, intent without capability,
  * which a bare boolean used to hide by collapsing it into the same `false` as
@@ -46,7 +46,7 @@ export type RunPolishError = InferErrors<typeof RunPolishError>;
 export type PolishStatus = 'off' | 'on' | 'needs-key';
 
 export function polishStatus(app: WhisperingApp): PolishStatus {
-	if (!app.settings.get('settings.polish.enabled')) return 'off';
+	if (!app.settings.get('polishEnabled')) return 'off';
 	return resolveCompletionState(app).canRun ? 'on' : 'needs-key';
 }
 
@@ -60,11 +60,11 @@ export function polishStatus(app: WhisperingApp): PolishStatus {
 export function polishDestination(app: WhisperingApp): string {
 	return describePolishDestination(
 		resolveTranscriptionLocalityFromConfig({
-			service: app.settings.get('settings.transcription.service'),
+			service: app.settings.get('transcriptionService'),
 			getDeviceConfig: deviceConfig.get,
 			sessionBaseUrl: auth.deployment.baseURL,
 		}),
-		app.settings.get('settings.completion.provider'),
+		app.settings.get('completionProvider'),
 		resolveCompletionState(app),
 	);
 }
@@ -83,7 +83,7 @@ export function polishWillRun(app: WhisperingApp, input: string): boolean {
 /**
  * Polish: the always-on, meaning-preserving AI base, run once after every
  * transcription. One optional completion whose system prompt is
- * `settings.polish.instructions` plus a Dictionary block (via `buildPolishSystemPrompt`)
+ * `polishInstructions` plus a Dictionary block (via `buildPolishSystemPrompt`)
  * and whose content is the raw transcript. Skips the call (returns the raw
  * input) whenever {@link polishWillRun} is false.
  *
@@ -110,8 +110,8 @@ export async function runPolish(
 
 	const result = await completeWithGlobalDefault(app, {
 		systemPrompt: buildPolishSystemPrompt(
-			app.settings.get('settings.polish.instructions'),
-			app.settings.get('settings.dictionary'),
+			app.settings.get('polishInstructions'),
+			app.settings.get('dictionary'),
 		),
 		userPrompt: input,
 		signal,

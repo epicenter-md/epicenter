@@ -5,6 +5,7 @@
 	let {
 		unsafeHtml,
 		text,
+		externalized = false,
 	}: {
 		/** The raw `text/html` body from the read model, unsanitized. This
 		 * component is the only place it may render: it passes through
@@ -12,6 +13,10 @@
 		unsafeHtml: string | null;
 		/** The extracted plain-text body, the fallback and the "Plain text" view. */
 		text: string | null;
+		/** Whether Gmail holds this message's body as an attachment rather than
+		 * inline, so there is no offline copy to show. It changes only what the
+		 * empty state says; there is nothing to fetch and no state to advance. */
+		externalized?: boolean;
 	} = $props();
 
 	// Sanitize once per body. This derived value is the ONLY string in the app
@@ -61,6 +66,16 @@
 			</div>
 		{:else if text}
 			<pre class="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-foreground/90">{text}</pre>
+		{:else if externalized}
+			<!-- Named, not papered over: Gmail returned this body as an attachment
+			     reference instead of inline bytes, and one full message fetch is the
+			     whole per-message budget, so it was never downloaded. The message is
+			     fully synced; only the body lives elsewhere. -->
+			<p class="text-sm text-muted-foreground">
+				Gmail stores this message's body as an attachment, so there is no offline
+				copy. Everything else about the message is here. Open it in Gmail to read
+				the body.
+			</p>
 		{:else}
 			<p class="text-sm italic text-muted-foreground">
 				No readable body for this message.

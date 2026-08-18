@@ -1,19 +1,19 @@
-import { Database } from 'bun:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import type { Database } from 'bun:sqlite';
+import { type Mirror, mirrorAt } from '@epicenter/sqlite/bun-mirror';
 import {
+	type ColumnType,
 	type EntityDef,
 	isDeleted,
-	type JsonPathSegment,
 	lastUpdatedTime,
 	type QbObject,
+	type SqlIdent,
 	sqlIdent,
 } from './entities.ts';
+import { companyDir } from './paths.ts';
 
 /**
- * The local mirror: one SQLite file per company. Holds an entity table per QB
- * type plus `_meta`, a key/value store that carries the schema version and the
- * realm's sync state.
+ * The local mirror: one SQLite artifact per company. Holds an entity table per
+ * QB type plus `_meta`, a key/value store that carries the realm's sync state.
  *
  * CDC is a high-water-mark protocol: `changedSince` is a single timestamp for a
  * multi-entity call. So the mirror keeps ONE cursor for the whole company, not
@@ -24,18 +24,114 @@ import {
  * same transaction as the rows it accounts for (see `ingest`), so
  * ingest-and-advance is atomic and crash-safe.
  *
- * The realm owns its identity through the path (`<dataDir>/<realmId>/books.db`),
- * not a stored column, so the db need not know which company it holds.
+ * The realm owns its identity through the directory
+ * (`<dataDir>/companies/<realmId>/`), not a stored column, so the db need not
+ * know which company it holds. Inside that directory the artifact is named by
+ * `MIRROR_VERSION` (ADR-0197), so nothing about the stored shape is stamped
+ * inside the file and nothing is ever dropped on open.
  */
 
-export const SCHEMA_VERSION = '2';
+/**
+ * One column of a declared table: the SQLite name and affinity, an optional
+ * trailing constraint, and the `json_extract` path when the column is a
+ * projection of `raw` rather than a stored value.
+ *
+ * `constraint` is a raw SQL fragment, which is safe because this file is the
+ * only author of one and the set is closed. `name` is branded by `sqlIdent`, and
+ * `generated` is built from path segments the registry already validated, so the
+ * whole declaration is interpolable into DDL without re-checking.
+ */
+type ColumnDeclaration = {
+	name: SqlIdent;
+	type: ColumnType;
+	constraint: string | null;
+	generated: string | null;
+};
 
-/** The `_meta` keys that hold the realm's one sync cursor. */
-const CURSOR_KEYS = [
-	'cdc_cursor',
-	'last_full_pull_at',
-	'last_synced_at',
-] as const;
+type TableDeclaration = { table: SqlIdent; columns: ColumnDeclaration[] };
+
+/** A stored (non-generated) column. */
+function stored(
+	name: string,
+	type: ColumnType,
+	constraint: string | null = null,
+): ColumnDeclaration {
+	return { name: sqlIdent(name), type, constraint, generated: null };
+}
+
+/** The bookkeeping columns every entity table carries, in DDL order. */
+const ROW_COLUMNS: ColumnDeclaration[] = [
+	stored('id', 'TEXT', 'PRIMARY KEY'),
+	stored('raw', 'TEXT', 'NOT NULL'),
+	stored('updated_at', 'TEXT'),
+	stored('synced_at', 'TEXT', 'NOT NULL'),
+	stored('deleted', 'INTEGER', 'NOT NULL DEFAULT 0'),
+];
+
+/** The key/value table holding the realm's one CDC cursor. */
+const META_TABLE: TableDeclaration = {
+	table: sqlIdent('_meta'),
+	columns: [stored('key', 'TEXT', 'PRIMARY KEY'), stored('value', 'TEXT')],
+};
+
+/**
+ * One entity's table: the bookkeeping columns plus this entity's extracted
+ * scalars, each a VIRTUAL projection of `raw`, so the blob stays the single
+ * source of truth and a missing field is `json_extract`'s null for free.
+ */
+function declareEntityTable(def: EntityDef): TableDeclaration {
+	return {
+		table: def.table,
+		columns: [
+			...ROW_COLUMNS,
+			...def.columns.map((c) => ({
+				name: c.name,
+				type: c.type,
+				constraint: null,
+				generated: `$.${c.path.join('.')}`,
+			})),
+		],
+	};
+}
+
+/**
+ * The version of the corpus contract this build stores, and the whole of the
+ * artifact's identity on disk: `books.v<MIRROR_VERSION>.db` (ADR-0197). It is
+ * not the app's release version and it is not a migration target. Nothing reads
+ * a lower version, and nothing rewrites one.
+ *
+ * Bump it when this build would store something a previous build did not: an
+ * added, removed, or retyped column; a changed meaning for what a stored column
+ * holds; or a change to which QuickBooks entities `entities.ts` can mirror,
+ * since that is what a full pull covers. That last one is why editing the
+ * registry is not free: adding one entity is a new corpus, so it is a new
+ * artifact and one full re-pull of the company.
+ *
+ * Do not bump it for an index, a read-time projection, a comment, or an app
+ * release. None of those change what is on disk, and each bump costs a rebuild.
+ */
+const MIRROR_VERSION = 1;
+
+/** The mirror as materialized for one company: `<dataDir>/companies/<realmId>/`. */
+export function booksMirror(dataDir: string, realmId: string): Mirror {
+	return mirrorAt({
+		name: 'books',
+		version: MIRROR_VERSION,
+		directory: companyDir(dataDir, realmId),
+	});
+}
+
+/** `CREATE TABLE IF NOT EXISTS` for one declared table. */
+function createTableSql({ table, columns }: TableDeclaration): string {
+	const defs = columns.map((c) => {
+		const constraint = c.constraint ? ` ${c.constraint}` : '';
+		const generated = c.generated
+			? ` GENERATED ALWAYS AS (json_extract(raw, '${c.generated}')) VIRTUAL`
+			: '';
+		return `${c.name} ${c.type}${constraint}${generated}`;
+	});
+	return `CREATE TABLE IF NOT EXISTS ${table} (\n\t${defs.join(',\n\t')}\n);`;
+}
 
 /**
  * The whole company's CDC position, the single high-water mark. `cdcCursor` is
@@ -78,52 +174,37 @@ export type EntityStatus = {
 	initialized: boolean;
 };
 
+export type BooksDb = ReturnType<typeof booksDb>;
+
+/**
+ * Open the company's current mirror artifact for writing, creating it if absent,
+ * and declare `_meta` on it. Nothing here inspects, migrates, or drops what it
+ * finds: a different corpus contract is a different filename, so an artifact
+ * this opens is always one a build of this version wrote (ADR-0197).
+ */
+export function openBooksDb(mirror: Mirror): BooksDb {
+	const db = mirror.open();
+	db.run(createTableSql(META_TABLE));
+	return booksDb(db);
+}
+
+/**
+ * The same reads against a read-only handle on the current artifact, or `null`
+ * when the company has no current materialization yet. "Not built" is a state a
+ * caller reports, not an error, and never a file this conjures. The connection
+ * rejects every write statement, so `ingest` on this handle throws by
+ * construction.
+ */
+export function openBooksDbReadonly(mirror: Mirror): BooksDb | null {
+	const db = mirror.openReadonly();
+	return db === null ? null : booksDb(db);
+}
+
 // The registry (`entities.ts`) is the SQL-identifier boundary: it validates and
 // brands every table name, generated-column name (`SqlIdent`), and path segment
 // (`JsonPathSegment`) when it is built, so this module interpolates registry
-// values into SQL without re-checking them. `sqlIdent` is reused at exactly one
-// site below, the schema-migration drop, whose table names come from
-// `sqlite_master` rather than the registry.
-function jsonExtractPath(segments: JsonPathSegment[]): string {
-	return `$.${segments.join('.')}`;
-}
-
-export type BooksDb = ReturnType<typeof openBooksDb>;
-
-export function openBooksDb(
-	path: string,
-	{ readonly = false }: { readonly?: boolean } = {},
-) {
-	// A read-only handle (status, diagnostics) opens the existing file and touches
-	// nothing: no journal-mode change, no `_meta` creation, no schema-version
-	// write, and crucially no drop-migration. A reader must never mutate the mirror
-	// or, worse, drop its tables, and must not fail with SQLITE_BUSY just to bump a
-	// bookkeeping row while a sync holds the write lock. The connection rejects any
-	// write statement, so `ingest` on a read-only handle throws by construction.
-	if (!readonly) mkdirSync(dirname(path), { recursive: true });
-	const db = new Database(
-		path,
-		readonly ? { readonly: true } : { create: true },
-	);
-	if (readonly) {
-		db.exec('PRAGMA busy_timeout = 5000;');
-	} else {
-		// The mirror's concurrency contract, set once for every writer connection.
-		// The daemon's recategorize write-back and `local-books sync` are separate
-		// processes on one file, so: WAL (readers never block the writer), a
-		// busy_timeout (a writer waits for a concurrent writer's lock instead of
-		// failing instantly with SQLITE_BUSY), and synchronous=NORMAL (the mirror is
-		// a re-pullable cache, so a lost last-commit on power loss just re-pulls; it
-		// cannot corrupt the ledger, which QuickBooks owns).
-		db.exec('PRAGMA journal_mode = WAL;');
-		db.exec('PRAGMA busy_timeout = 5000;');
-		db.exec('PRAGMA synchronous = NORMAL;');
-		db.exec('PRAGMA foreign_keys = ON;');
-		db.exec(
-			`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT);`,
-		);
-	}
-
+// values into SQL without re-checking them.
+function booksDb(db: Database) {
 	const setMetaStmt = db.query(
 		`INSERT INTO _meta (key, value) VALUES (?, ?)
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
@@ -132,57 +213,21 @@ export function openBooksDb(
 		`SELECT value FROM _meta WHERE key = ?`,
 	);
 
-	// Schema-version gate (writers only). The mirror is a re-pullable cache
-	// QuickBooks owns the truth for, so a format change carries no migration
-	// reader: on a mismatch we drop the derived tables and clear the cursor, and
-	// the next sync rebuilds with one `sync --full`. That asymmetric win is what
-	// lets the schema change for free. A read-only handle never runs this: it
-	// cannot write, and a reader has no business dropping tables.
-	if (!readonly) {
-		const storedVersion = getMetaStmt.get('schema_version')?.value ?? null;
-		if (storedVersion !== null && storedVersion !== SCHEMA_VERSION) {
-			for (const { name } of db
-				.query<{ name: string }, []>(
-					`SELECT name FROM sqlite_master
-					 WHERE type='table' AND name != '_meta' AND name NOT LIKE 'sqlite_%'`,
-				)
-				.all()) {
-				db.exec(`DROP TABLE IF EXISTS ${sqlIdent(name)};`);
-			}
-			// CURSOR_KEYS are compile-time constants, so interpolating them as quoted
-			// literals is safe (no user input reaches this string).
-			db.exec(
-				`DELETE FROM _meta WHERE key IN (${CURSOR_KEYS.map((k) => `'${k}'`).join(', ')});`,
-			);
-		}
-		setMetaStmt.run('schema_version', SCHEMA_VERSION);
-	}
-
 	// `db.query()` caches the compiled statement by SQL text, so the per-table
 	// statements below are prepared once and reused on repeat calls without a
 	// hand-rolled cache.
 
 	function ensureEntityTable(def: EntityDef): void {
-		const table = def.table;
-		// Each extracted column is a VIRTUAL generated projection of `raw`, so the
-		// blob stays the single source of truth: no write-path extraction, and a
-		// missing field is `json_extract`'s null for free.
-		const extra = def.columns
-			.map(
-				(c) =>
-					`${c.name} ${c.type} GENERATED ALWAYS AS (json_extract(raw, '${jsonExtractPath(c.path)}')) VIRTUAL`,
-			)
-			.join(',\n\t\t\t\t');
-		db.exec(`
-			CREATE TABLE IF NOT EXISTS ${table} (
-				id          TEXT PRIMARY KEY,
-				raw         TEXT NOT NULL,
-				updated_at  TEXT,
-				synced_at   TEXT NOT NULL,
-				deleted     INTEGER NOT NULL DEFAULT 0${extra ? ',\n\t\t\t\t' + extra : ''}
-			);
-			CREATE INDEX IF NOT EXISTS idx_${table}_updated_at ON ${table}(updated_at);
-		`);
+		// Table existence is the per-entity init latch (ADR-0064), so entity tables
+		// are created on first ingest rather than at open. The DDL comes from the
+		// registry `MIRROR_VERSION` describes, so a table can never be created in a
+		// shape the filename does not promise. The index is applied here and
+		// deliberately outside that promise: it holds no mirror facts, so adding one
+		// must not force a re-pull.
+		db.run(createTableSql(declareEntityTable(def)));
+		db.run(
+			`CREATE INDEX IF NOT EXISTS idx_${def.table}_updated_at ON ${def.table}(updated_at);`,
+		);
 	}
 
 	function upsertStmtFor(def: EntityDef) {
@@ -392,10 +437,6 @@ export function openBooksDb(
 		/** Whether this entity has had its first full pull, i.e. its table exists. */
 		isInitialized(def: EntityDef): boolean {
 			return tableExists(def.table);
-		},
-
-		getMeta(key: string): string | null {
-			return getMetaStmt.get(key)?.value ?? null;
 		},
 
 		entityStatus(def: EntityDef): EntityStatus {

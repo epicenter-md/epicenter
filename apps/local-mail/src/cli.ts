@@ -1,18 +1,17 @@
+import { type AssertLabelsOutcome, assertMessageLabels } from './assert.ts';
 import { loadConfig } from './config.ts';
-import {
-	acquireSyncLock,
-	syncOwnerBusy,
-	syncOwnerBusyMessage,
-} from './lock.ts';
-import {
-	type MessageWriteOutcome,
-	resolveAndModifyMessageLabels,
-} from './modify.ts';
+import { openIntentDb, readPendingSummary } from './intent.ts';
+import { acquireReconcileLock, reconcileOwnerBusy } from './lock.ts';
 import { redeemRefreshToken, runAuthorizationFlow } from './oauth.ts';
 import { queryMail } from './query.ts';
-import { openLocalMailRuntime, openSyncSession } from './runtime.ts';
+import {
+	type ReconcileDeps,
+	type ReconcileOutcome,
+	reconcileAccount,
+	runReconcileLoop,
+} from './reconcile.ts';
+import { openAccountSession, openLocalMailRuntime } from './runtime.ts';
 import { type MailStatus, readMailStatus } from './status.ts';
-import { runSyncLoop, type SyncOutcome, syncMailbox } from './sync.ts';
 import { createFileTokenStore } from './token-store.ts';
 import { VERSION } from './version.ts';
 
@@ -23,6 +22,8 @@ export type ParsedArgs = {
 	watch: boolean;
 	watchIntervalMs?: number;
 	port?: number;
+	/** `discard --all`. Deliberately not a default: see `runDiscard`. */
+	all: boolean;
 	addLabels: string[];
 	removeLabels: string[];
 	json: boolean;
@@ -37,11 +38,12 @@ const HELP = `local-mail: keep a private local copy of Gmail for local tools and
 Usage:
   local-mail connect
   local-mail seed-token <refreshToken>
-  local-mail sync [--full] [--watch [intervalMs]] [--json]
+  local-mail reconcile [--full] [--watch [intervalMs]] [--json]
   local-mail status [--json]
   local-mail query "<sql>"
-  local-mail archive|unarchive|mark-read|mark-unread <id...> [--json]
+  local-mail archive|unarchive|mark-read|mark-unread|trash|untrash <id...> [--json]
   local-mail label <id...> [--add <label>...] [--remove <label>...] [--json]
+  local-mail discard --all [--json]
   local-mail app [--port <n>]
   local-mail mcp
 
@@ -50,20 +52,32 @@ Commands:
   seed-token   Redeem an existing refresh token for headless bootstrap.
                Verifies it against Google; the account email comes from
                the Gmail profile.
-  sync         Refresh the local mirror. Use --watch to keep polling.
-  status       Show connection state, cursor, and row counts.
+  reconcile    Deliver pending local changes to Gmail, then refresh the mirror.
+               Use --watch to keep reconciling on a loop.
+  status       Show connection state, cursor, row counts, and pending changes.
   query        Run a read-only SQL query over the local mirror (JSON output).
-  archive      Archive messages by removing INBOX, then fold Gmail's response.
-  unarchive    Move messages back to the inbox by adding INBOX.
-  mark-read    Mark messages read by removing UNREAD.
-  mark-unread  Mark messages unread by adding UNREAD.
+  archive      Archive messages by asserting INBOX off.
+  unarchive    Move messages back to the inbox by asserting INBOX on.
+  mark-read    Mark messages read by asserting UNREAD off.
+  mark-unread  Mark messages unread by asserting UNREAD on.
+  trash        Move messages to Trash by asserting TRASH on.
+  untrash      Restore messages from Trash by asserting TRASH off.
   label        Add or remove Gmail labels by exact name or id.
-  app          Run the desktop runtime host: keep the mirror fresh and serve the triage UI + API on 127.0.0.1. Prints the origin to open.
-  mcp          Serve query/status/sync/modify_labels tools over stdio.
+  discard      Abandon every change Gmail has not been told about yet. Needs
+               --all, because nothing else ever drops a recorded change, and
+               the account's reconcile lock, so it cannot race a pass that is
+               already sending them.
+  app          Run the desktop runtime host: reconcile in the background and serve the triage UI + API on 127.0.0.1. Prints the origin to open.
+  mcp          Serve query/status/reconcile/assert_labels tools over stdio.
+
+Every triage verb records the change locally and immediately; a reconcile pass
+delivers it to Gmail. If this process can take the account's reconcile lock it
+runs one right away, otherwise the open app or the next pass delivers it.
 
 Options:
-  --full                Force a full pull on the first sync pass.
-  --watch [intervalMs]  Keep syncing on a loop. Default: 30000.
+  --full                Force a full pull on the first reconcile pass.
+  --watch [intervalMs]  Keep reconciling on a loop. Default: 30000.
+  --all                 Required by discard; there is no partial form.
   --add <label>         Add a Gmail label by exact name or id. Repeatable.
   --remove <label>      Remove a Gmail label by exact name or id. Repeatable.
   --port <n>            Pin the app server port (app only; default: ephemeral).
@@ -75,18 +89,20 @@ Options:
 Environment:
   GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET   Machine-wide Google OAuth client override.
   LOCAL_MAIL_ACCOUNT                      Account override when multiple are connected.
-  LOCAL_MAIL_DIR                          Where the local copy lives.
+  EPICENTER_DATA_DIR                      The one Epicenter data root. The local
+                                          copy lives at <root>/apps/local-mail.
   LOCAL_MAIL_TOKEN_FILE                   Override the credentials file path.
   LOCAL_MAIL_READ_ONLY                    Disable Gmail mutations.
 `;
 
 /**
- * The four triage verbs desugar to a fixed Gmail label change. `label` is the
+ * The triage verbs desugar to a fixed label assertion. `label` is the
  * transparent primitive: it takes the same add/remove sets these verbs hide.
- * One core (`resolveAndModifyMessageLabels`) runs all five.
+ * Trash is in this table too, because trash is only special at delivery, where
+ * Gmail's own endpoint takes over; here it is the `TRASH` label like any other.
  */
 const TRIAGE_VERBS: Record<
-	'archive' | 'unarchive' | 'mark-read' | 'mark-unread',
+	'archive' | 'unarchive' | 'mark-read' | 'mark-unread' | 'trash' | 'untrash',
 	{ addLabels: string[]; removeLabels: string[]; done: string }
 > = {
 	archive: { addLabels: [], removeLabels: ['INBOX'], done: 'archived' },
@@ -96,6 +112,12 @@ const TRIAGE_VERBS: Record<
 		addLabels: ['UNREAD'],
 		removeLabels: [],
 		done: 'marked unread',
+	},
+	trash: { addLabels: ['TRASH'], removeLabels: [], done: 'moved to trash' },
+	untrash: {
+		addLabels: [],
+		removeLabels: ['TRASH'],
+		done: 'restored from trash',
 	},
 };
 
@@ -115,6 +137,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 		positionals: [],
 		full: false,
 		watch: false,
+		all: false,
 		addLabels: [],
 		removeLabels: [],
 		json: false,
@@ -144,6 +167,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
 		switch (name) {
 			case '--full':
 				args.full = true;
+				break;
+			case '--all':
+				args.all = true;
 				break;
 			case '--watch': {
 				args.watch = true;
@@ -208,7 +234,7 @@ async function runConnect(_args: ParsedArgs): Promise<number> {
 	await store.set(token);
 	console.log(`Connected ${token.accountEmail}.`);
 	console.log(`Tokens stored in ${config.credentialsPath}.`);
-	console.log(`Next: run "local-mail sync --full".`);
+	console.log(`Next: run "local-mail reconcile --full".`);
 	return 0;
 }
 
@@ -233,27 +259,62 @@ async function runSeedToken(args: ParsedArgs): Promise<number> {
 	const store = createFileTokenStore(config.credentialsPath);
 	await store.set(token);
 	console.log(`Seeded ${token.accountEmail} at ${config.credentialsPath}.`);
-	console.log(`Next: run "local-mail sync --full".`);
+	console.log(`Next: run "local-mail reconcile --full".`);
 	return 0;
 }
 
-function renderSyncOutcome(outcome: SyncOutcome): string {
-	if (outcome.failure) {
-		return `Sync failed (${outcome.failure.name}): ${outcome.failure.message}. The cursor did not advance.`;
+function renderReconcileOutcome(outcome: ReconcileOutcome): string {
+	const { delivery, pull } = outcome;
+	const lines: string[] = [];
+	if (delivery.pending > 0 || delivery.failure) {
+		const parts = [`${delivery.delivered} delivered`];
+		if (delivery.discarded.length > 0) {
+			parts.push(`${delivery.discarded.length} refused by Gmail`);
+		}
+		if (delivery.retained > 0) parts.push(`${delivery.retained} still pending`);
+		lines.push(`Delivery: ${parts.join(', ')}.`);
+		// The discarded list exists only in this outcome, so print it in full: it
+		// is the user's one chance to see what Gmail would not accept.
+		for (const dropped of delivery.discarded) {
+			lines.push(
+				`  dropped ${dropped.want ? '+' : '-'}${dropped.labelId} on ${dropped.messageId} (${dropped.status}): ${dropped.reason}`,
+			);
+		}
+		if (delivery.failure) {
+			lines.push(
+				`Delivery stopped (${delivery.failure.name}): ${delivery.failure.message}. Nothing was lost; the next pass retries.`,
+			);
+		}
 	}
-	const mode = outcome.mode === 'FULL' ? 'Full sync' : 'Incremental sync';
-	const labelWord = outcome.labelsPatched === 1 ? 'label' : 'labels';
+	if (pull.failure) {
+		lines.push(
+			`Pull failed (${pull.failure.name}): ${pull.failure.message}. The cursor did not advance.`,
+		);
+		return lines.join('\n');
+	}
+	const mode = pull.mode === 'FULL' ? 'Full pull' : 'Incremental pull';
+	const labelWord = pull.labelsPatched === 1 ? 'label' : 'labels';
 	const cursor =
-		outcome.cursorBefore === outcome.cursorAfter
-			? `cursor ${outcome.cursorAfter ?? 'none'}`
-			: `cursor ${outcome.cursorBefore ?? 'none'} to ${outcome.cursorAfter ?? 'none'}`;
-	return `${mode}: ${outcome.messagesUpserted} upserted, ${outcome.messagesDeleted} deleted, ${outcome.labelsPatched} ${labelWord} patched, ${cursor}.`;
+		pull.cursorBefore === pull.cursorAfter
+			? `cursor ${pull.cursorAfter ?? 'none'}`
+			: `cursor ${pull.cursorBefore ?? 'none'} to ${pull.cursorAfter ?? 'none'}`;
+	lines.push(
+		`${mode}: ${pull.messagesUpserted} upserted, ${pull.messagesDeleted} deleted, ${pull.labelsPatched} ${labelWord} patched, ${cursor}.`,
+	);
+	return lines.join('\n');
 }
 
-async function runSync(args: ParsedArgs): Promise<number> {
+/** A pass failed if either phase did. Delivery failures count: a supervisor
+ * restarting on nonzero should see that Gmail is not hearing about this
+ * machine's triage, even though nothing was lost. */
+function reconcileFailed(outcome: ReconcileOutcome): boolean {
+	return outcome.delivery.failure !== null || outcome.pull.failure !== null;
+}
+
+async function runReconcile(args: ParsedArgs): Promise<number> {
 	if (args.positionals.length > 0) {
 		console.error(
-			`sync takes no positional arguments (got: ${args.positionals.join(' ')}).`,
+			`reconcile takes no positional arguments (got: ${args.positionals.join(' ')}).`,
 		);
 		return 1;
 	}
@@ -263,28 +324,25 @@ async function runSync(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	// Sync is the one operation that needs a single owner per account. If the app
-	// (or another sync) already holds the lock, yield cleanly instead of racing a
-	// second bulk pull. Reads and Gmail-first triage writes never take this lock.
-	const lock = acquireSyncLock({
+	// A reconcile is the one operation that needs a single owner per account: it
+	// is the only thing that writes to Gmail. If the app (or another pass) holds
+	// the lock, yield cleanly. Reads and triage acts never take this lock.
+	const lock = acquireReconcileLock({
 		dataDir: runtime.config.dataDir,
 		accountEmail: runtime.accountEmail,
 	});
 	if (!lock) {
 		// A busy yield is a terminal outcome, so it goes to stdout like the success
-		// and failure summaries do. --json emits the structured payload (discriminated
-		// by `synced: false`); the human form is the same one-line note.
-		console.log(
-			args.json
-				? JSON.stringify(syncOwnerBusy(runtime.accountEmail), null, 2)
-				: syncOwnerBusyMessage(runtime.accountEmail),
-		);
+		// and failure summaries do. --json emits the structured payload
+		// (discriminated by `reconciled: false`); the human form is its message.
+		const busy = reconcileOwnerBusy(runtime.accountEmail);
+		console.log(args.json ? JSON.stringify(busy, null, 2) : busy.message);
 		return 0;
 	}
 
 	// Progress goes to stderr so stdout carries only the outcome, keeping
 	// --json (and the human summary line) a clean single-value stream.
-	const { data: session, error: sessionError } = await openSyncSession(
+	const { data: session, error: sessionError } = await openAccountSession(
 		runtime,
 		{
 			gmailLog: (m) => console.error(`[gmail] ${m}`),
@@ -299,33 +357,39 @@ async function runSync(args: ParsedArgs): Promise<number> {
 
 	try {
 		if (!args.watch) {
-			const outcome = await syncMailbox(session.deps, { forceFull: args.full });
+			const outcome = await reconcileAccount(session.deps, {
+				forceFull: args.full,
+				readOnly: runtime.config.readOnly,
+				lock,
+			});
 			console.log(
 				args.json
 					? JSON.stringify(outcome, null, 2)
-					: renderSyncOutcome(outcome),
+					: renderReconcileOutcome(outcome),
 			);
-			return outcome.failure ? 1 : 0;
+			return reconcileFailed(outcome) ? 1 : 0;
 		}
 
 		const intervalMs = args.watchIntervalMs ?? DEFAULT_WATCH_INTERVAL_MS;
-		console.error(`Watching every ${intervalMs}ms. Ctrl-C to stop.`);
+		console.error(`Reconciling every ${intervalMs}ms. Ctrl-C to stop.`);
 		const controller = new AbortController();
 		process.on('SIGINT', () => controller.abort());
 		// The exit code reflects the LAST pass, so a supervisor restarting on
 		// nonzero sees current health, not a transient failure hours ago.
 		let lastPassFailed = false;
-		await runSyncLoop(session.deps, {
+		await runReconcileLoop(session.deps, {
 			forceFull: args.full,
+			readOnly: runtime.config.readOnly,
 			intervalMs,
+			lock,
 			signal: controller.signal,
-			onPass: (outcome, pass) => {
-				lastPassFailed = outcome.failure !== null;
+			onPass: (outcome, passNumber) => {
+				lastPassFailed = reconcileFailed(outcome);
 				if (args.json) {
 					console.log(JSON.stringify(outcome));
 				} else {
-					console.log(`=== pass ${pass} ===`);
-					console.log(renderSyncOutcome(outcome));
+					console.log(`=== pass ${passNumber} ===`);
+					console.log(renderReconcileOutcome(outcome));
 				}
 			},
 		});
@@ -336,39 +400,33 @@ async function runSync(args: ParsedArgs): Promise<number> {
 	}
 }
 
-/**
- * 0 only when Gmail accepted every id. Any per-id rejection or a systemic
- * abort exits 1 so `local-mail mark-read <id> && next` never proceeds on a
- * mailbox that did not change.
- */
-export function modifyExitCode(outcome: MessageWriteOutcome): number {
-	const anyFailed = outcome.results.some((result) => result.error !== null);
-	return outcome.aborted !== null || anyFailed ? 1 : 0;
-}
+/** What a triage verb prints: what was recorded, and what happened to it. The
+ * assertion itself cannot fail once it is written, so the delivery half is a
+ * report, not a verdict. */
+type TriageActReport = {
+	act: AssertLabelsOutcome;
+	/** The pass this process ran, or null when another owner holds the lock. */
+	reconcile: ReconcileOutcome | null;
+};
 
-function renderModifyOutcome(
-	outcome: MessageWriteOutcome,
-	done: string,
-): string {
-	const lines = outcome.results.map((result) => {
-		if (result.error) return `✗ ${result.id}  ${result.error.message}`;
-		const tail = result.folded
-			? ''
-			: ' (local mirror will catch up on next sync)';
-		return `✓ ${result.id}  ${done}${tail}`;
-	});
-	const ok = outcome.results.filter((result) => result.error === null).length;
-	const failed = outcome.results.length - ok;
-	lines.push(`${ok} succeeded, ${failed} failed`);
-	if (outcome.aborted) {
-		lines.push(
-			`Aborted after ${outcome.results.length}: ${outcome.aborted.message}`,
-		);
-	}
+function renderTriageAct(report: TriageActReport, done: string): string {
+	const lines = [`${report.act.asserted} change(s) recorded (${done}).`];
+	lines.push(
+		report.reconcile === null
+			? 'Another reconciler owns this account (the app is open, or a pass is running); it delivers this shortly.'
+			: renderReconcileOutcome(report.reconcile),
+	);
 	return lines.join('\n');
 }
 
-async function runLabelMutation(
+/**
+ * Record a triage act, then deliver it if this process can become the account's
+ * reconciler. Exit 0 means the act is durable, not that Gmail has heard: an
+ * undelivered assertion is kept, and the next pass (here, the open app, or a
+ * later `reconcile`) sends it. Only a refusal, which records nothing, exits
+ * nonzero.
+ */
+async function runTriageAct(
 	args: ParsedArgs,
 	verb: { addLabels: string[]; removeLabels: string[]; done: string },
 ): Promise<number> {
@@ -386,32 +444,135 @@ async function runLabelMutation(
 		console.error(runtimeError.message);
 		return 1;
 	}
-	const { data: session, error: sessionError } = await openSyncSession(runtime);
+	const { data: session, error: sessionError } = await openAccountSession(
+		runtime,
+		{ gmailLog: (m) => console.error(`[gmail] ${m}`) },
+	);
 	if (sessionError) {
 		console.error(sessionError.message);
 		return 1;
 	}
 
 	try {
-		const { data, error } = await resolveAndModifyMessageLabels({
-			deps: session.deps,
-			ids: args.positionals,
-			addLabels: verb.addLabels,
-			removeLabels: verb.removeLabels,
+		const deps: ReconcileDeps = session.deps;
+		const { data: act, error } = assertMessageLabels({
+			deps,
+			input: {
+				ids: args.positionals,
+				addLabels: verb.addLabels,
+				removeLabels: verb.removeLabels,
+			},
 			readOnly: runtime.config.readOnly,
 		});
 		if (error) {
 			console.error(error.message);
 			return 1;
 		}
+
+		const lock = acquireReconcileLock({
+			dataDir: runtime.config.dataDir,
+			accountEmail: runtime.accountEmail,
+		});
+		let reconcile: ReconcileOutcome | null = null;
+		if (lock) {
+			try {
+				reconcile = await reconcileAccount(deps, {
+					forceFull: false,
+					readOnly: runtime.config.readOnly,
+					lock,
+				});
+			} finally {
+				lock.release();
+			}
+		}
+
+		const report: TriageActReport = { act, reconcile };
 		console.log(
 			args.json
-				? JSON.stringify(data, null, 2)
-				: renderModifyOutcome(data, verb.done),
+				? JSON.stringify(report, null, 2)
+				: renderTriageAct(report, verb.done),
 		);
-		return modifyExitCode(data);
+		return 0;
 	} finally {
 		session.close();
+	}
+}
+
+/**
+ * Abandon every undelivered assertion. This is the human bound on retrying:
+ * nothing ages out and nothing gives up after N attempts, so discarding is the
+ * only exit an undelivered act has other than reaching Gmail (ADR-0199).
+ *
+ * It takes the account's reconcile lock, and that is what makes its promise
+ * true. A reconciler snapshots the pending set at the start of its drain, so a
+ * discard racing an in-flight pass would delete rows the pass is still holding
+ * in memory and about to send: the report would say the change was abandoned
+ * while Gmail was being told the opposite. Taking the lock means either the pass
+ * finishes first (and the discard abandons only what is genuinely still owed) or
+ * the discard refuses. Held for the whole read-then-delete, so the count in the
+ * message is the count that was removed.
+ *
+ * `--all` is mandatory, and there is no per-assertion form, because the only
+ * vocabulary the product has for pending work is a count and an age. Nothing is
+ * created to answer the question: an account with no intent store discards
+ * nothing and leaves no file behind.
+ */
+async function runDiscard(args: ParsedArgs): Promise<number> {
+	if (!args.all) {
+		console.error(
+			'Refusing to discard without --all. This abandons every change Gmail has not been told about yet, and it cannot recall a change already delivered.',
+		);
+		return 1;
+	}
+	const { data: runtime, error } = await openLocalMailRuntime();
+	if (error) {
+		console.error(error.message);
+		return 1;
+	}
+	const location = {
+		dataDir: runtime.config.dataDir,
+		accountEmail: runtime.accountEmail,
+	};
+
+	const lock = acquireReconcileLock(location);
+	if (!lock) {
+		// The same busy payload a reconcile yields, because it is the same
+		// ownership question. The exit code is NOT the same: a busy reconcile is
+		// fine because the owner does that work for you, and nobody discards on
+		// your behalf, so this exits nonzero to say the change is still owed.
+		const busy = reconcileOwnerBusy(runtime.accountEmail);
+		console.error(
+			args.json
+				? JSON.stringify(busy, null, 2)
+				: `Refusing to discard: ${busy.message} Close the app or stop that pass, then try again.`,
+		);
+		return 1;
+	}
+
+	try {
+		const before = readPendingSummary(location);
+		if (before.assertions === 0) {
+			console.log(
+				args.json
+					? JSON.stringify({ discarded: 0 }, null, 2)
+					: `Nothing to discard for ${runtime.accountEmail}.`,
+			);
+			return 0;
+		}
+		const intent = openIntentDb(location);
+		try {
+			const discarded = intent.discardAll();
+			console.log(
+				args.json
+					? JSON.stringify({ discarded }, null, 2)
+					: `Discarded ${discarded} undelivered change(s) for ${runtime.accountEmail}, oldest asserted ${before.oldestAssertedAt}. Gmail was never told, and anything already delivered stays delivered.`,
+			);
+			return 0;
+		} finally {
+			intent.close();
+		}
+	} finally {
+		lock.release();
 	}
 }
 
@@ -435,7 +596,7 @@ async function runQuery(args: ParsedArgs): Promise<number> {
 		console.error(error.message);
 		return 1;
 	}
-	// query is JSON-first by design: an arbitrary SELECT over raw/body_text is
+	// query is JSON-first by design: an arbitrary SELECT over resource/body_text is
 	// not column-shaped, and the rows pipe straight to jq. --json is a no-op.
 	console.log(JSON.stringify(data.rows, null, 2));
 	const note = data.truncated ? ' (capped; more rows matched)' : '';
@@ -456,12 +617,20 @@ function renderStatus(status: MailStatus): string {
 		['connected', status.connected ? 'yes' : 'no'],
 		['access token', accessToken],
 		['mirror', status.mirror],
-		['schema version', status.schemaVersion ?? 'none'],
+		['mirror file', status.mirrorPath],
+		[
+			'predecessors',
+			status.predecessors.length === 0
+				? 'none'
+				: status.predecessors.map((version) => `v${version}`).join(', '),
+		],
 		['history cursor', status.historyId ?? 'none'],
 		['last full pull', status.lastFullPullAt ?? 'never'],
 		['last synced', status.lastSyncedAt ?? 'never'],
 		['messages', String(status.rows.messages)],
 		['labels', String(status.rows.labels)],
+		['pending changes', String(status.pending.assertions)],
+		['oldest pending', status.pending.oldestAssertedAt ?? 'none'],
 	];
 	const width = Math.max(...rows.map(([key]) => key.length));
 	return rows
@@ -499,8 +668,8 @@ export async function runCli(argv: string[]): Promise<number> {
 			return runConnect(args);
 		case 'seed-token':
 			return runSeedToken(args);
-		case 'sync':
-			return runSync(args);
+		case 'reconcile':
+			return runReconcile(args);
 		case 'status':
 			return runStatus(args);
 		case 'query':
@@ -509,13 +678,17 @@ export async function runCli(argv: string[]): Promise<number> {
 		case 'unarchive':
 		case 'mark-read':
 		case 'mark-unread':
-			return runLabelMutation(args, TRIAGE_VERBS[args.command]);
+		case 'trash':
+		case 'untrash':
+			return runTriageAct(args, TRIAGE_VERBS[args.command]);
 		case 'label':
-			return runLabelMutation(args, {
+			return runTriageAct(args, {
 				addLabels: args.addLabels,
 				removeLabels: args.removeLabels,
 				done: 'labels updated',
 			});
+		case 'discard':
+			return runDiscard(args);
 		case 'app': {
 			const { runApp } = await import('./app.ts');
 			return runApp({ port: args.port });

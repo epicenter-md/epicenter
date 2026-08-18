@@ -10,8 +10,9 @@
 		"./cloud-db": "./src/cloud-db.ts"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit",
-		"test": "bun test"
+		"typecheck": "tsc --noEmit && tsc --noEmit -p workers/tsconfig.json",
+		"test": "bun test src",
+		"test:workers": "vitest run -c vitest.workers.config.ts"
 	},
 	"dependencies": {
 		"@better-auth/drizzle-adapter": "catalog:",
@@ -21,7 +22,6 @@
 		"@epicenter/blobs": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/data": "workspace:*",
-		"@epicenter/document-sync": "workspace:*",
 		"@epicenter/identity": "workspace:*",
 		"@epicenter/sqlite": "workspace:*",
 		"@epicenter/sync": "workspace:*",
@@ -37,16 +37,17 @@
 		"lib0": "catalog:",
 		"nanoid": "catalog:",
 		"pg": "^8.20.0",
-		"wellcrafted": "catalog:",
-		"y-protocols": "catalog:",
-		"yjs": "catalog:"
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
+		"@cloudflare/vitest-pool-workers": "^0.20.3",
 		"@cloudflare/workers-types": "^4.20260405.1",
 		"@epicenter/field": "workspace:*",
 		"@types/bun": "catalog:",
 		"@types/pg": "^8.18.0",
-		"typescript": "catalog:"
+		"miniflare": "^5.20260801.1-alpha",
+		"typescript": "catalog:",
+		"vitest": "^4.1.0"
 	},
 	"license": "AGPL-3.0-or-later"
 }

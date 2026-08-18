@@ -1,13 +1,9 @@
 /**
- * Skills Data Tests
- *
- * Exercises the real package definitions through the Bun Data runtime.
- * The tests prove release-local nonconformance, explicit typed repair,
- * row documents and honest filesystem ids.
+ * Skills data tests, against the real workspace through the Bun store.
  *
  * Key behaviors:
- * - a stricter release surfaces old canonical JSON until an explicit patch repairs it
- * - row documents persist under their owning structural row ids
+ * - a stricter release surfaces old stored payloads until an explicit update repairs one
+ * - a row's instructions persist under its own structural row id
  * - agentskills.io metadata ids round-trip as payload source ids
  */
 
@@ -21,100 +17,136 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defineLens, defineTable, type RowDocument } from '@epicenter/data';
-import { openBunEpicenter } from '@epicenter/data/bun';
-import { field, InstantString } from '@epicenter/field';
+import { open } from '@epicenter/data/bun';
+import { defineDatabase } from '@epicenter/database';
+import { InstantString } from '@epicenter/field';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
-import { getSkill, listSkills, scanSkills } from './services.js';
-import { skillsLens } from './workspace.js';
+import {
+	SKILL_CONTENT,
+	type SkillsData,
+	skillsWorkspace,
+} from './workspace.js';
 
-const historicalSkillsTable = defineTable({
-	fields: {
-		name: field.string(),
-		description: field.string(),
-		updatedAt: field.instant(),
+/** The Skills workspace as an earlier release declared it, before `sourceId`. */
+const historicalSkillsWorkspace = defineDatabase({
+	id: 'so.epicenter.skills',
+	tables: {
+		skills: {
+			name: 'string',
+			description: 'string',
+			updatedAt: 'string.date.iso',
+		},
 	},
 });
 
-const historicalSkillsLens = defineLens({
-	namespace: 'so.epicenter.skills',
-	tables: { skills: historicalSkillsTable },
-	values: {},
-});
+async function openSkills(root: string) {
+	const opened = await open(skillsWorkspace, { root });
+	if (opened.error !== null) throw opened.error;
+	return opened.data;
+}
 
-test('a stricter Skills lens exposes nonconformance until typed update repairs it', async () => {
-	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-skills-'));
-	const path = join(storageRoot, 'epicenter.sqlite3');
+function readInstructions(data: SkillsData, skillId: string): string {
+	const content = data.tables.skills.document(skillId)?.get(SKILL_CONTENT);
+	if (content === undefined) throw new Error(`Skill '${skillId}' has no row`);
+	return content.toString();
+}
+
+test('a stricter Skills workspace exposes nonconformance until an update repairs it', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-skills-'));
 	try {
-		const historicalEpicenter = await openBunEpicenter({ path });
-		const historical = historicalEpicenter.bind(historicalSkillsLens);
-		const oldSkill = await historical.tables.skills.create({
-			name: 'writing-voice',
-			description: 'Write directly',
-			updatedAt: InstantString.now(),
-		});
-		await historicalEpicenter[Symbol.asyncDispose]();
+		// One file, two interpretations of it: the historical workspace writes a row
+		// this release cannot read, and the current one has to say so rather than
+		// hide it (ADR-0125).
+		const historical = await open(historicalSkillsWorkspace, { root });
+		if (historical.error !== null) throw historical.error;
+		const oldSkill = expectOk(
+			historical.data.tables.skills.create({
+				name: 'writing-voice',
+				description: 'Write directly',
+				updatedAt: InstantString.now(),
+			}),
+		);
+		await historical.data[Symbol.asyncDispose]();
 
-		await using epicenter = await openBunEpicenter({ path });
-		const skills = epicenter.bind(skillsLens);
-		expect(await getSkill(skills, 'aaaaaaaaaaaaaaaaaaaaaaaa')).toEqual({
-			skill: undefined,
-			instructions: undefined,
-			nonconforming: [],
-		});
-		const error = expectErr(await skills.tables.skills.get(oldSkill.id));
-		expect(error.name).toBe('NonconformingRow');
-		if (error.name !== 'NonconformingRow') throw new Error(error.message);
-		expect(error.issues).toContainEqual({
-			field: 'sourceId',
-			kind: 'missing',
-			message: "Missing required field 'sourceId'",
-		});
-		const catalogBeforeRepair = await listSkills(skills);
-		expect(catalogBeforeRepair.skills).toEqual([]);
-		expect(catalogBeforeRepair.nonconforming.map(({ id }) => id)).toEqual([
+		await using data = await openSkills(root);
+		expect(expectOk(data.tables.skills.get('aaaaaaaaaaaaaaaaaaaaaaaa'))).toBe(
+			undefined,
+		);
+
+		const error = expectErr(data.tables.skills.get(oldSkill.id));
+		expect(error.issues.map(({ field }) => field)).toContain('sourceId');
+		// The conforming half survives the failed read, which is what recovery is
+		// composed from.
+		expect(error.conforming.name).toBe('writing-voice');
+
+		const beforeRepair = data.tables.skills.list();
+		expect(beforeRepair.rows).toEqual([]);
+		expect(beforeRepair.nonconforming.map(({ id }) => id)).toEqual([
 			oldSkill.id,
 		]);
 
-		const repaired = expectOk(
-			await skills.tables.skills.update(oldSkill.id, {
+		expectOk(
+			data.tables.skills.update(oldSkill.id, {
 				sourceId: 'agentskills-writing-voice',
 			}),
 		);
-		expect(repaired?.id).toBe(oldSkill.id);
-		expect((await scanSkills(skills)).nonconforming).toEqual([]);
-		await using instructions = await skills.tables.skills.openDocument(
-			oldSkill.id,
-		);
-		writeDocumentText(instructions, 'Keep the answer concise.');
-		const another = await skills.tables.skills.create({
-			sourceId: 'agentskills-other',
-			name: 'other',
-			description: 'Another skill',
-			updatedAt: InstantString.now(),
-		});
-		await using otherInstructions = await skills.tables.skills.openDocument(
-			another.id,
-		);
-		expect(otherInstructions.get('content').toString()).toBe('');
-		expect(instructions.get('content').toString()).toBe(
-			'Keep the answer concise.',
-		);
+		// The write reports only that it landed; the repaired row is `get`'s
+		// answer, at the same structural id.
+		const repaired = expectOk(data.tables.skills.get(oldSkill.id));
+		expect(repaired?.sourceId).toBe('agentskills-writing-voice');
+		expect(data.tables.skills.list().nonconforming).toEqual([]);
 	} finally {
-		rmSync(storageRoot, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-function writeDocumentText(document: RowDocument, value: string): void {
-	const content = document.get('content');
-	document.transact(() => {
-		content.delete(0, content.length);
-		content.insert(0, value);
-	});
-}
+test("a skill's instructions live under its own row id", async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-skills-doc-'));
+	try {
+		let writtenTo: string;
+		{
+			await using data = await openSkills(root);
+			const written = expectOk(
+				data.tables.skills.create(
+					{
+						sourceId: 'agentskills-writing-voice',
+						name: 'writing-voice',
+						description: 'Write directly',
+						updatedAt: InstantString.now(),
+					},
+					{ document: [SKILL_CONTENT] },
+				),
+			);
+			writtenTo = written.id;
+			const content = data.tables.skills
+				.document(writtenTo)
+				?.get(SKILL_CONTENT);
+			if (content === undefined) throw new Error('the row has no document');
+			content.applyDelta(content.change.insert('Keep it concise.') as never);
 
-test('filesystem import stores metadata id as sourceId instead of structural id', async () => {
+			const other = expectOk(
+				data.tables.skills.create(
+					{
+						sourceId: 'agentskills-other',
+						name: 'other',
+						description: 'Another skill',
+						updatedAt: InstantString.now(),
+					},
+					{ document: [SKILL_CONTENT] },
+				),
+			);
+			expect(readInstructions(data, other.id)).toBe('');
+		}
+
+		await using reopened = await openSkills(root);
+		expect(readInstructions(reopened, writtenTo)).toBe('Keep it concise.');
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('filesystem import stores the metadata id as sourceId, not as the row id', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-skills-io-'));
 	const storageRoot = join(root, 'storage');
 	const inputRoot = join(root, 'input');
@@ -128,24 +160,16 @@ test('filesystem import stores metadata id as sourceId instead of structural id'
 			'---\ndescription: Write directly\nmetadata:\n  id: portable-writing-voice\n---\n\nUse plain language.\n',
 		);
 		writeFileSync(join(skillRoot, 'references', 'examples.md'), '# Examples\n');
-		await using epicenter = await openBunEpicenter({
-			path: join(storageRoot, 'epicenter.sqlite3'),
-		});
-		const skills = epicenter.bind(skillsLens);
-		const imported = await importSkillsFromDisk({
-			data: skills,
-			dir: inputRoot,
-		});
+
+		await using data = await openSkills(storageRoot);
+		const imported = await importSkillsFromDisk({ data, dir: inputRoot });
 		expect(imported.created).toBe(1);
 		expect(imported.nonconforming).toEqual([]);
-		const [skill] = (await scanSkills(skills)).skills;
+		const [skill] = data.tables.skills.list().rows;
 		expect(skill?.sourceId).toBe('portable-writing-voice');
 		expect(skill?.id).not.toBe('portable-writing-voice');
 
-		const exported = await exportSkillsToDisk({
-			data: skills,
-			dir: outputRoot,
-		});
+		const exported = await exportSkillsToDisk({ data, dir: outputRoot });
 		expect(exported).toMatchObject({ exported: 1, nonconforming: [] });
 		const markdown = readFileSync(
 			join(outputRoot, 'writing-voice', 'SKILL.md'),

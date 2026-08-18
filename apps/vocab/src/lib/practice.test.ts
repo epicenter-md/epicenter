@@ -1,25 +1,64 @@
 import { describe, expect, test } from 'bun:test';
-import { buildPracticePrompt } from './practice.js';
+import { buildPracticeOpening } from './practice.js';
 
-describe('buildPracticePrompt', () => {
+describe('buildPracticeOpening: the opening turn', () => {
 	test('lists each entry verbatim, one bullet per entry, in order', () => {
-		const prompt = buildPracticePrompt(['你好', '学习中文', 'chengyu']);
-		expect(prompt).toContain('- 你好\n- 学习中文\n- chengyu');
+		const { opening } = buildPracticeOpening(['你好', '学习中文', 'chengyu']);
+		expect(opening).toContain('- 你好\n- 学习中文\n- chengyu');
 	});
 
 	test('does not normalize or trim the given text', () => {
-		const prompt = buildPracticePrompt(['  spaced  phrase  ']);
-		expect(prompt).toContain('-   spaced  phrase  ');
+		const { opening } = buildPracticeOpening(['  spaced  phrase  ']);
+		expect(opening).toContain('-   spaced  phrase  ');
 	});
 
 	test('names no target or source language: the tutor persona owns that', () => {
-		const prompt = buildPracticePrompt(['你好']).toLowerCase();
+		const lowered = buildPracticeOpening(['你好']).opening.toLowerCase();
 		for (const leak of ['chinese', 'mandarin', 'english', 'pinyin', '简体']) {
-			expect(prompt).not.toContain(leak);
+			expect(lowered).not.toContain(leak);
 		}
 	});
 
 	test('handles a single entry', () => {
-		expect(buildPracticePrompt(['你好'])).toContain('- 你好');
+		expect(buildPracticeOpening(['你好']).opening).toContain('- 你好');
+	});
+});
+
+describe('buildPracticeOpening: the conversation title', () => {
+	test('names the chosen entries, so the conversation is findable later', () => {
+		expect(buildPracticeOpening(['你好', '学习中文']).title).toBe(
+			'Practice: 你好, 学习中文',
+		);
+	});
+
+	test('summarizes the rest once past the named few', () => {
+		expect(buildPracticeOpening(['一', '二', '三', '四', '五']).title).toBe(
+			'Practice: 一, 二, 三 +2',
+		);
+	});
+
+	test('two different selections do not collide in the conversation list', () => {
+		expect(buildPracticeOpening(['你好', '再见']).title).not.toBe(
+			buildPracticeOpening(['学习', '中文']).title,
+		);
+	});
+
+	// The shared registry's auto-title only overwrites 'New Chat'. Colliding with
+	// that placeholder would hand the conversation back to the auto-title and put
+	// every practice session under the same generic name again.
+	test('is never the blank-conversation placeholder', () => {
+		expect(buildPracticeOpening(['你好']).title).not.toBe('New Chat');
+		expect(buildPracticeOpening([]).title).not.toBe('New Chat');
+	});
+
+	test('trims for display without touching the verbatim opening turn', () => {
+		const { title, opening } = buildPracticeOpening(['  你好  ']);
+		expect(title).toBe('Practice: 你好');
+		expect(opening).toContain('-   你好  ');
+	});
+
+	test('stays a usable label when nothing nameable was passed', () => {
+		expect(buildPracticeOpening([]).title).toBe('Practice');
+		expect(buildPracticeOpening(['   ']).title).toBe('Practice');
 	});
 });

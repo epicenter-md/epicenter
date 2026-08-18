@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import type {
+	AuthClient,
 	AuthFetch,
 	InstanceConnectionStatus,
-	SyncAuthClient,
 } from './auth-contract.js';
 import { createInstanceTokenAuth } from './instance-token-auth.js';
 
@@ -29,7 +29,7 @@ function json(value: unknown, status = 200) {
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** Narrow to the self-hosted deployment's connection channel. */
-function connection(auth: SyncAuthClient) {
+function connection(auth: AuthClient) {
 	if (auth.deployment.kind !== 'self-hosted') {
 		throw new Error('expected a self-hosted deployment');
 	}
@@ -67,7 +67,7 @@ describe('createInstanceTokenAuth', () => {
 	test('a real instance (instance principal) sees no principal change across boot', async () => {
 		// The self-host box resolves every valid bearer to INSTANCE_PRINCIPAL_ID
 		// (ADR-0075), so the optimistic boot identity and the verified identity
-		// match: no `null -> instance` flip, so `reloadOnPrincipalChange` never
+		// match: no `null -> instance` flip, so `reloadOnAuthChange` never
 		// reloads the page mid-session. This is the IndexedDB-race fix.
 		const seen: string[] = [];
 		const fetch: AuthFetch = async () => json(sessionBody('instance'));

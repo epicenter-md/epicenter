@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-17
+- **Superseded by:** [ADR-0212](0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md) (`Proposed`). This record was already superseded by ADR-0163, which ADR-0212 also supersedes, so the link is restated here rather than left to a broken chain. Withdrawn: the settled-watermark lifecycle and the caller-visible watermark itself, replaced by a dirty flag on each cell and a cursor the replica never stores per cell.
 
 ## Context
 

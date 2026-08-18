@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
+import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono } from 'hono';
@@ -88,8 +89,8 @@ type ApiDeps = {
 	config: AppConfig;
 	realmId: string;
 	store: TokenStore;
-	/** `<dataDir>/<realmId>/books.db`: the mirror the read verbs open per call. */
-	dbPath: string;
+	/** The company's mirror: the read verbs open its current artifact per call. */
+	mirror: Mirror;
 	readOnly: boolean;
 	/** Reloads the newest token and opens a QB client (report/recategorize). */
 	openQb: OpenQbClient;
@@ -117,7 +118,7 @@ function clampInt(
 }
 
 export function createApiApp(deps: ApiDeps) {
-	const { config, realmId, store, dbPath, readOnly, openQb, gate, syncNow } =
+	const { config, realmId, store, mirror, readOnly, openQb, gate, syncNow } =
 		deps;
 	const { sessionBearers } = deps;
 
@@ -168,12 +169,12 @@ export function createApiApp(deps: ApiDeps) {
 			return c.json({ token: bearer });
 		})
 		.get('/api/status', async (c) => {
-			const status = await readBooksStatus({ config, realmId, store });
+			const status = await readBooksStatus({ config, realmId, mirror, store });
 			return c.json({ ...status, readOnly });
 		})
 		.get('/api/entities', (c) => {
 			const defs = config.entities.map((name) => entityDef(name));
-			return c.json(listEntities({ dbPath, defs }));
+			return c.json(listEntities({ mirror, defs }));
 		})
 		.get('/api/entities/:entity', sValidator('query', RowsQuery), (c) => {
 			const entity = c.req.param('entity');
@@ -186,7 +187,7 @@ export function createApiApp(deps: ApiDeps) {
 			const { limit, offset } = c.req.valid('query');
 			return c.json(
 				pageEntityRows({
-					dbPath,
+					mirror,
 					def: entityDef(entity),
 					limit: clampInt(limit, 100, 500),
 					offset: clampInt(offset, 0, Number.MAX_SAFE_INTEGER),
@@ -200,7 +201,7 @@ export function createApiApp(deps: ApiDeps) {
 				return c.json(err, err.error.status);
 			}
 			const detail = getEntityRow({
-				dbPath,
+				mirror,
 				def: entityDef(entity),
 				id: c.req.param('id'),
 			});
@@ -212,7 +213,7 @@ export function createApiApp(deps: ApiDeps) {
 		})
 		.post('/api/query', sValidator('json', QueryBody), (c) => {
 			const { sql } = c.req.valid('json');
-			const { data, error } = queryBooks({ dbPath, sql });
+			const { data, error } = queryBooks({ mirror, sql });
 			if (error) {
 				const err = ApiError.QueryFailed({ message: error.message });
 				return c.json(err, err.error.status);
@@ -247,7 +248,7 @@ export function createApiApp(deps: ApiDeps) {
 				// only maps that refusal to a 403 rather than re-implementing it.
 				const { data, error } = await recategorizeExpense({
 					openQb,
-					dbPath,
+					mirror,
 					input: c.req.valid('json'),
 					readOnly,
 				});

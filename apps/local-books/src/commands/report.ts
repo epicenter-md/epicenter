@@ -33,7 +33,7 @@ export async function runReport(args: ParsedArgs): Promise<number> {
 		accounting_method = args.method;
 	}
 
-	const { data: company, error } = resolveCompany(args);
+	const { data: company, error } = await resolveCompany(args);
 	if (error !== null) {
 		console.error(error);
 		return 1;

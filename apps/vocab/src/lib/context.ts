@@ -1,4 +1,4 @@
 import { createContext } from 'svelte';
-import type { VocabApplication } from './application.js';
+import type { VocabRuntime } from './runtime.js';
 
-export const [getVocabApp, setVocabApp] = createContext<VocabApplication>();
+export const [getVocabRuntime, setVocabRuntime] = createContext<VocabRuntime>();

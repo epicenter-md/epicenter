@@ -466,8 +466,8 @@
 							<EllipsisIcon class="size-4" />
 						{:else if selectedRecordingRows.some(
 							(recording) =>
-								app.recordings.get(recording.original.id)?.transcription?.status ===
-								'completed',
+								app.recordings.get(recording.original.id)
+									?.transcriptionStatus === 'completed',
 						)}
 							<RetryTranscriptionIcon class="size-4" />
 						{:else}

@@ -20,7 +20,7 @@ Epicenter targets `@y/y` 14 only. Do not add `yjs` 13, `y-indexeddb`, a compatib
 
 Skip DeepWiki for stable basics and repo-local patterns already documented below.
 
-> **Related Skills**: See `workspace-api` for the workspace abstraction built on Yjs.
+> **Related Skills**: See `svelte` for reading store data into a component, and `arktype` for the expression strings a workspace is written in.
 
 ## Transactions, Origins, And Undo
 
@@ -34,20 +34,15 @@ Skip DeepWiki for stable basics and repo-local patterns already documented below
 - `Y.snapshot()` is a historical marker that depends on retained delete history. `Y.encodeStateAsUpdateV2(doc)` is the self-contained checkpoint format.
 - Prefer separate top-level docs over Yjs subdocuments unless Epicenter owns the whole provider lifecycle for the subdoc path.
 
-## Row Document Connection
+## Store Connection
 
-- Yjs is network-agnostic. It supplies CRDT state, state vectors, updates, and awareness behavior, not Epicenter's connection topology, authorization, row lifecycle, or durability contract.
-- Each currently open row document uses one authenticated WebSocket at `/api/workspaces/:workspaceId/tables/:table/rows/:rowId/document`. Do not create an arbitrary room id or a mutable multiplex subscription set.
-- Authenticate the bearer into a principal. The account authority derives deterministically from that principal alone (ADR-0092: the principal is the partition and the actor); the route workspace id is a name inside the requester's own partition. There is no catalog, grant, or authority key.
-- The structured `(workspaceId, table, rowId)` route address selects one lifecycle-bound document inside the account authority. The address is a name, not a secret or capability. Check row liveness atomically with committed-state load on admission and again on every persisted update.
-- Select the exact `epicenter-document-v3` WebSocket subprotocol. Binary messages carry only `sync-request(stateVector)`, `sync-response(updateV2)`, and `update(updateV2)`. Both peers request missing state. Do not add an envelope fact already owned by the route, subprotocol, WebSocket boundary, close code, state vector, or update bytes.
-- There is no terminal document close verdict. The authority enforces the shared compound bound (`DOCUMENT_BOUND`: canonical encoded bytes and decoded struct count) exactly on the post-candidate state; the client measures the same bound, suppresses every upstream update-bearing frame while over it (including its deferred handshake reply), keeps applying downstream, and resumes automatically when a measure comes back under. Close 1009 is a retryable defensive backstop, never a product state. A row that is not live refuses or closes retryably with no reserved code; the client's scalar plane owns pending-versus-deleted knowledge and revokes the document when a deletion marker installs. Do not encode lifecycle verdicts as Yjs binary frames.
-- On Cloudflare, serialize the socket's complete fixed address within the 16,384 byte hibernation attachment limit and fan out by enumerating the actor's sockets and comparing complete attachment addresses. No tag index until measured socket counts earn one. The server retains no live Y.Doc; hydrate disposable committed state per admission and acceptance.
-- Reconnect with the same structured route and repeat state-vector exchange. Do not add durable subscription recovery or multiplexing until measured open-document socket pressure earns that machinery.
-- Use state-vector exchange followed by incremental `updateV2` messages instead of exchanging complete documents by default.
-- Presence is deliberately absent from document v3 until a concrete consumer earns awareness state, disconnect cleanup, and a later protocol major. If added later, awareness is ephemeral and must never be persisted into Y.Doc or the SQLite update log as canonical data.
-- Browser upgrades authenticate through exactly one `bearer.<token>` subprotocol entry. Non-browser clients may instead use an `Authorization` header. Do not use cookie-only upgrades, query-string credentials, or post-accept authentication frames.
-- Authentication, deterministic authority resolution, and row liveness are three distinct facts with one surface. Row liveness is a lifecycle invariant, not a second per-row authorization system.
+- Yjs is network-agnostic. It supplies CRDT state, state vectors, updates, and awareness behavior, not Epicenter's connection topology, authorization, or durability contract.
+- One socket per application, not one per open document. A replica connects to `STORE_SYNC_ROUTE.pattern` (`/api/store/v1/sync`, in `packages/sync/src/store-route.ts`) with a `namespace` naming the workspace and a `cursor` naming its own durably applied position, so a reconnect is a catch-up rather than a fresh start (ADR-0222).
+- Whose data it is never appears in the query. It comes from the resolved bearer, server-side, so there is no value a client can put in the URL that reaches another partition (ADR-0092).
+- Browser upgrades authenticate through exactly one `bearer.<token>` subprotocol entry, because a browser upgrade cannot set `Authorization`; the mount echoes only the main subprotocol on the 101, so the token never round-trips. Non-browser clients may use an `Authorization` header. Do not use cookie-only upgrades, query-string credentials, or post-accept authentication frames.
+- The wire is framing and nothing else: `push`, `ack`, `refuse`, `entry`, `offer`, `snapshot`, `wanted` (`packages/data/src/sync/frames.ts`). No frame knows what an update means, what a row is, or what Yjs is, which is exactly why chunking is safe at that layer.
+- Large updates are chunked at `CHUNK_BYTES`, set by Cloudflare's documented Durable Object SQLite value cap rather than by anything about Yjs. Do not raise it to the measured wall; the documented limit is the one Cloudflare is entitled to enforce.
+- Presence is deliberately absent until a concrete consumer earns awareness state and disconnect cleanup. If added later, awareness is ephemeral and must never be persisted into the Y.Doc or the SQLite update log as canonical data.
 
 ## Owner-Side SQLite Persistence
 
@@ -105,8 +100,11 @@ return dec2.curr.id.client - dec1.curr.id.client; // Higher clientID wins
 
 This is deterministic (all clients converge to the same state) but not
 intuitive: a later edit can lose. Design document roots around that fact.
-Epicenter's scalar tables and KV do not use Yjs or `YKeyValueLww`; runtime-native
-SQLite and the scalar row protocol own their convergence semantics.
+
+It is also why a row's document container and its named roots are allocated when
+the row is created rather than on first access: a write at a well-known address
+lets two devices each mint their own type there, and map LWW discards one along
+with everything written into it.
 
 ### Shared Types Cannot Move
 
@@ -204,28 +202,42 @@ titleSchema.set('default', 'Untitled');
 
 ## Storage Optimization
 
-### Y.Map vs Scalar Rows
+### One Document, Nested Roots
 
-`Y.Map` tombstones retain the key forever. Every `ymap.set(key, value)` creates a new internal item and tombstones the previous one.
+An application is one `Y.Doc` (ADR-0215). Its roots are `tables:<name>` and `kv`,
+and nothing else at the top level, so dumping `doc.share` reads as a description
+of the application. SQLite holds the same facts as a query projection, never as a
+second source of truth: every read a person makes comes from the `Y.Doc` already
+in memory.
 
-Do not use one workspace-wide Y.Doc as the row or KV database. Scalar tables and
-KV live in runtime-native SQLite so large record sets remain queryable without
-hydrating one CRDT graph into memory. Yjs is reserved for lazy row documents.
+A row **is** a nested `Y.Type` attribute on its table root, and a field is an
+attribute on the row. Holding one is what it means to exist, and removing it is
+what deletion does; there is no second fact that can disagree.
+
+The nesting is not stylistic. `Item.write` calls `findRootTypeKey`, a linear scan
+of `doc.share`, so one root per row makes encoding quadratic in rows: measured at
+5,417 ms for 20,000 rows against 13 ms nested.
 
 ```typescript
-// Scalar data stays on the row plane.
-workspace.tables.notes.set(note);
-workspace.kv.set('theme.mode', 'dark');
+// Scalar fields are attributes on the row, written through the table.
+db.notes.update(noteId, { title, pinned: true });
+db.kv.update({ 'theme.mode': 'dark' });
 
-// Keyed collaborative content may live inside one opened row document.
-using messages = workspace.tables.conversations.docs.messages.open(id);
-messages.set(message.id, message);
+// Prose never lives in a field. Each row owns a reserved container holding
+// application-named roots, declared at create time so there is one creator.
+db.notes.create({ title: '' }, { document: ['body'] });
+const body = db.notes.document(noteId)?.get('body'); // a Y.Type an editor binds to
 ```
 
-Use raw `Y.Map` for bounded, rarely changing structures inside a private
-attachment. Use workspace tables and KV for scalar keyed data. Existing
-`YKeyValueLww` table and KV code is legacy replacement work; do not extend it or
-describe it as the final scalar storage model.
+Only `Doc.get` mints. It is `setIfUndefined`, and a root can never be removed, so
+every key reaching it must be a table name the workspace declares. Never pass a row id
+to it: reading an unknown row through `getAttr` costs nothing, while a misspelled
+table name costs a permanent root.
+
+Use raw `Y.Map` for bounded, rarely changing structures inside a document root.
+`Y.Map` tombstones retain the key forever, and every `ymap.set(key, value)`
+creates a new internal item and tombstones the previous one, which is why
+`gc: true` is what collapses a field edited 5,000 times down to two structs.
 
 ### Epoch-Based Compaction
 
@@ -298,7 +310,7 @@ handle.append(text);
 
 ```typescript
 // BAD: consumer constructs Y.Maps to call an internal CSV helper
-import { parseSheetFromCsv } from '@epicenter/workspace';
+import { parseSheetFromCsv } from './internal/sheet.js';
 const columns = new Y.Map<Y.Map<string>>();
 const rows = new Y.Map<Y.Map<string>>();
 parseSheetFromCsv(csv, columns, rows);
@@ -377,9 +389,10 @@ If documents grow unexpectedly, check for:
 - [GitHub issue #520](https://github.com/yjs/yjs/issues/520) - Conflict resolution discussion with dmonad
 - [fractional-indexing](https://github.com/rocicorp/fractional-indexing) - Production library
 - [YATA paper](https://www.researchgate.net/publication/310212186_Near_Real-Time_Peer-to-Peer_Shared_Editing_on_Extensible_Data_Types) - Academic foundation
-- `packages/data/src/documents.ts`: the row-document runtime (load, append, compaction, capture, deletion, and publication obligations)
-- `packages/data/src/replica/schema.ts`: the SQLite relations that durably store document updates and publication state
-- `packages/sync/src/document-v3/`: the Yjs 14 row-document wire
-- [ADR-0145](../../../docs/adr/0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md): workspace authority and document connection ownership
+- `packages/data/src/store/document.ts`: the document grammar (roots, row types, field reads, and the reserved document container)
+- `packages/data/src/store/persistence.ts`: the SQLite relations that durably store the update log and the projection
+- `packages/data/src/sync/`: the Yjs 14 wire (frames, connection, client, authority)
+- [ADR-0215](../../../docs/adr/0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md): one document per application, and the container a row owns
+- [ADR-0221](../../../docs/adr/0221-a-table-names-the-rows-a-commit-touched-and-says-so-after-the-projection-commits.md): what `subscribe` reports and when it fires
 - [ADR-0146](../../../docs/adr/0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md): Yjs 14-only persistence decision
 - [ADR-0159](../../../docs/adr/0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md): one owner-side SQLite update log and shared attachment seam

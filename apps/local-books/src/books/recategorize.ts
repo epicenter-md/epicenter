@@ -21,7 +21,7 @@
  * promises is safe to wrap. A future daemon/MCP adapter over this core cannot
  * forget the gate and move money, because `readOnly` is a required argument.
  */
-
+import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import Type, { type Static } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
@@ -151,12 +151,12 @@ export function parseRecategorizeEntity(
 
 export async function recategorizeExpense({
 	openQb,
-	dbPath,
+	mirror,
 	input,
 	readOnly,
 }: {
 	openQb: OpenQbClient;
-	dbPath: string;
+	mirror: Mirror;
 	input: RecategorizeInput;
 	/**
 	 * Whether writes are forbidden. Required (no default) so every caller, the
@@ -170,7 +170,7 @@ export async function recategorizeExpense({
 > {
 	if (readOnly) return RecategorizeError.ReadOnly();
 	const def = entityDef(input.entity);
-	const db = openBooksDb(dbPath);
+	const db = openBooksDb(mirror);
 	try {
 		const raw = db.getLiveRaw(def, input.id);
 		if (raw === null) {

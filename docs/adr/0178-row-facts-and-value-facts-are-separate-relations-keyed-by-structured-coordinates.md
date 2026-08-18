@@ -1,7 +1,8 @@
 # 0178. Row facts and value facts are separate relations keyed by structured coordinates
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-25
+- **Superseded by:** [ADR-0206](0206-a-rows-id-comes-from-whoever-knows-it-and-one-relation-holds-every-fact.md), which collapses the two relations into one because a row id may be chosen rather than minted, so a value is a row you named. Withdrawn there: the two-relation split, the dotted value-name grammar and its case exception, the disjoint row and value key spaces, the two outboxes, and the `UNION ALL` sequence projection. Everything else this record decided survives and is restated in ADR-0206 so that record stands alone.
 - **Amends:** [ADR-0163](0163-scalar-sync-separates-fact-reads-from-numbered-intent-submissions.md), [ADR-0172](0172-sqlite-stores-convergent-facts-and-documents-raw-files-store-blob-bytes.md)
 
 ## Context

@@ -14,27 +14,6 @@
  * applicable). See `apps/api/worker/index.ts` for the cloud composition.
  */
 
-export {
-	AttachRelay,
-	createDurableObjectAttachRelay,
-} from './attach-relay/cloudflare-do.js';
-// The AttachRelay (ADR-0115): the endpoint-addressed relay that forwards live
-// Super Chat bytes between two authenticated endpoints of one principal. The
-// wire contract (the connect route and the frame delivered to a host) is the
-// shared addressing vocabulary any transport or client speaks; the coordinator
-// itself stays package-internal. On Cloud the
-// transport is a Durable Object: `createDurableObjectAttachRelay` is the backend
-// a deployment wires into `mountAttachRelayApp`'s `resolveRelay`, and the
-// `AttachRelay` class is re-exported so a deployment's wrangler.jsonc can resolve
-// `class_name: "AttachRelay"` against this entrypoint (the Bun transport lives in
-// the `/bun` barrel instead). The relay forwards opaque bytes for one consumer,
-// Super Chat attach (clause 4); it is never a routing product.
-export {
-	RELAY_CLOSE,
-	type RelayToHostFrame,
-} from './attach-relay/contracts.js';
-export { mountAttachRelayApp } from './attach-relay/mount.js';
-export { ATTACH_RELAY_ROUTE } from './attach-relay/route.js';
 // The single-partition instance's bearer resolver (self-host; ADR-0075). The
 // deployment injects `createEnvTokenResolver(secret)` as its `ResolveBearerPrincipal`.
 // The pure generator + boot entropy gate (`generateInstanceToken`
@@ -58,11 +37,6 @@ export {
 	type StorageSourceKind,
 	upsertStorageObservation,
 } from './db/storage-data.js';
-export {
-	createDurableObjectAccountAuthorities,
-	EpicenterAuthority,
-	mountCloudflareEpicenterSyncApp,
-} from './epicenter-sync/cloudflare.js';
 // An opt-in burn-rate cap for the inference `policies` seam: caps requests per
 // principal partition so a shared house key cannot be run up unbounded (ADR-0076).
 export { rateLimit } from './middleware/rate-limit.js';
@@ -96,7 +70,7 @@ export { mountCloudDb } from './mount-cloud-db.js';
 // only the deployment-controlled knobs (auth choice, optional policies). The
 // cloud's Better Auth surface (sessions, OAuth, `c.var.auth`) is bundled into
 // `mountCloudAuth`; an instance composes none of it (ADR-0075).
-export { blobPrincipalPrefix } from './principal.js';
+export { blobPrincipalPrefix, storeAuthorityName } from './principal.js';
 export { mountBlobsApp, resolveDeploymentBlobStore } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountSessionApp } from './routes/session.js';
@@ -111,6 +85,12 @@ export { createServerApp } from './server-app.js';
 // proves its own Env against it (extends in apps/self-host, satisfies in
 // apps/api); a Bun host validates `process.env` with the schema at boot.
 export { ServerBindings } from './server-bindings.js';
+export { StoreAuthority } from './store-sync/authority.js';
+export {
+	mountStoreSyncApp,
+	type ResolveStoreAuthority,
+	type StoreAuthorityStub,
+} from './store-sync/mount.js';
 // Public Hono context types: the portable `Env` (both deployments), the cloud's
 // `CloudEnv` (Env + Better Auth/Postgres state), and the `ResolveBearerPrincipal<E>`
 // seam the deployment closes its auth wrappers over.

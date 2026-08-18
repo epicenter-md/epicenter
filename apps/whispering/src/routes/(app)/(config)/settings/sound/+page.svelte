@@ -19,15 +19,15 @@
 			</Field.Description>
 			<Field.Group>
 				<SettingSwitch
-					key="settings.sound.manualStart"
+					key="soundManualStart"
 					label="Play sound when starting manual recording"
 				/>
 				<SettingSwitch
-					key="settings.sound.manualStop"
+					key="soundManualStop"
 					label="Play sound when stopping manual recording"
 				/>
 				<SettingSwitch
-					key="settings.sound.manualCancel"
+					key="soundManualCancel"
 					label="Play sound when canceling manual recording"
 				/>
 			</Field.Group>
@@ -42,15 +42,15 @@
 			</Field.Description>
 			<Field.Group>
 				<SettingSwitch
-					key="settings.sound.vadStart"
+					key="soundVadStart"
 					label="Play sound when starting VAD recording session"
 				/>
 				<SettingSwitch
-					key="settings.sound.vadCapture"
+					key="soundVadCapture"
 					label="Play sound on VAD capture"
 				/>
 				<SettingSwitch
-					key="settings.sound.vadStop"
+					key="soundVadStop"
 					label="Play sound when stopping VAD recording session"
 				/>
 			</Field.Group>
@@ -65,11 +65,11 @@
 			</Field.Description>
 			<Field.Group>
 				<SettingSwitch
-					key="settings.sound.transcriptionComplete"
+					key="soundTranscriptionComplete"
 					label="Play sound after transcription"
 				/>
 				<SettingSwitch
-					key="settings.sound.recipeComplete"
+					key="soundRecipeComplete"
 					label="Play sound after a recipe runs"
 				/>
 			</Field.Group>

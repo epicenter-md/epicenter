@@ -4,11 +4,12 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import { getSkillsApp } from '$lib/context.js';
+	import { getSkills } from '$lib/context.js';
+	import { runSkillsMutation } from '$lib/mutation.js';
 	import type { SkillMetadataUpdate } from '$lib/state/skills-state.svelte';
 	import { validateSkill } from '$lib/utils/validation';
 
-	const { state: skillsState } = getSkillsApp();
+	const { state: skillsState } = getSkills();
 
 	let { skill }: { skill: Skill } = $props();
 
@@ -20,13 +21,15 @@
 		validateSkill({
 			name: skill.name,
 			description: skill.description,
-			license: skill.license,
 			compatibility: skill.compatibility,
 		}),
 	);
 
 	function updateSkill(updates: SkillMetadataUpdate) {
-		void skillsState.updateSkill(skill.id, updates);
+		runSkillsMutation(
+			() => skillsState.updateSkill(skill.id, updates),
+			'Could not save skill',
+		);
 	}
 </script>
 

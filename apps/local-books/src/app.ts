@@ -6,7 +6,7 @@ import { resolveCompany } from './commands/context.ts';
 import type { CliConfigOverrides } from './config.ts';
 import { openBooksDb } from './db.ts';
 import { createApiApp, mintToken, type SyncPassResult } from './http/api.ts';
-import { dbPath } from './paths.ts';
+import { companyDir } from './paths.ts';
 import { type SyncDeps, syncRealm } from './sync.ts';
 
 /**
@@ -43,10 +43,11 @@ type LockHandle = { db: Database; release(): void };
 /**
  * A dedicated `lock.db` held with `BEGIN EXCLUSIVE` for the process lifetime, so
  * a second `app` for the same company is refused instantly. It is a separate file
- * from `books.db`, so it never blocks a concurrent `local-books sync` (which is
- * the whole point: query while sync runs). `flock` has no Bun API and an `O_EXCL`
- * lockfile is stale-on-crash; the fcntl lock a live SQLite transaction holds is
- * released by the kernel on `kill -9`.
+ * from the mirror artifact, so it never blocks a concurrent `local-books sync`
+ * (which is the whole point: query while sync runs), and the mirror's filename
+ * grammar cannot name it, so `reclaim` can never delete it. `flock` has no Bun
+ * API and an `O_EXCL` lockfile is stale-on-crash; the fcntl lock a live SQLite
+ * transaction holds is released by the kernel on `kill -9`.
  */
 function acquireRealmLock(dir: string): LockHandle | null {
 	mkdirSync(dir, { recursive: true });
@@ -146,18 +147,17 @@ export async function runApp(
 	options: CliConfigOverrides & { noOpen?: boolean; port?: number },
 ): Promise<number> {
 	// Resolve the company the same way `sync`/`status` do: config from flags/env,
-	// then the realm (explicit flag, recorded default, or the sole authenticated
-	// one). Ambiguity is an error, not a silent guess.
-	const { data: company, error } = resolveCompany(options);
+	// then the realm (explicit flag, or the sole connected company). Ambiguity is
+	// an error, not a silent guess.
+	const { data: company, error } = await resolveCompany(options);
 	if (error !== null) {
 		console.error(error);
 		return 1;
 	}
-	const { config, realmId, store } = company;
+	const { config, realmId, mirror, store } = company;
 	const readOnly = config.readOnly;
-	const mirrorPath = dbPath(config.dataDir, realmId);
 
-	const lock = acquireRealmLock(join(config.dataDir, realmId));
+	const lock = acquireRealmLock(companyDir(config.dataDir, realmId));
 	if (!lock) {
 		console.error(
 			`local-books app is already running for company ${realmId}. Stop it first, or open the URL it printed.`,
@@ -203,7 +203,7 @@ export async function runApp(
 	async function syncNow(): Promise<SyncPassResult> {
 		const { data: client, error: openError } = await openQb();
 		if (openError !== null) return { failed: openError.message };
-		const db = openBooksDb(mirrorPath);
+		const db = openBooksDb(mirror);
 		try {
 			const deps: SyncDeps = {
 				db,
@@ -226,7 +226,7 @@ export async function runApp(
 		config,
 		realmId,
 		store,
-		dbPath: mirrorPath,
+		mirror,
 		readOnly,
 		openQb,
 		gate,

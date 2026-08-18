@@ -21,10 +21,8 @@
 
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { parseDatabase } from '@epicenter/database';
 import mime from 'mime';
-
-/** The direct-folder-name contract for derived catalog app IDs (ADR-0153). */
-const APP_ID_PATTERN = /^[a-z0-9-]+$/;
 
 export type StaticAsset = {
 	file: ReturnType<typeof Bun.file>;
@@ -32,29 +30,55 @@ export type StaticAsset = {
 	isDocument: boolean;
 };
 
-/** One derived catalog member: enough to list it and serve its static root. */
-export type CatalogApp = {
-	id: string;
-	title: string;
-	resolve(pathname: string): Promise<StaticAsset | undefined>;
-};
-
 /**
- * One compiled application's release build.
+ * A built SPA the host serves below `/apps/<id>/`, and the document it boots
+ * from.
  *
- * Deliberately not an extension of {@link CatalogApp}: a compiled application
- * never enters the catalog (ADR-0179), and the two only look alike because the
- * host serves both below `/apps/<id>/`. What it has and a member does not is
- * `page`, its own document, which the host holds so it can gate it behind a
- * browser session and stamp the auth bootstrap into it. That stamp is what lets
- * the build open the host-owned replica instead of one of its own.
+ * `page` is held in memory rather than streamed off disk because the host has
+ * three things to do to it that a file cannot carry: gate it behind an
+ * established browser session, stamp the auth bootstrap into it, and hash its
+ * inline scripts into the one Content-Security-Policy this origin sends. That
+ * stamp is what lets a build open the host-owned replica instead of one of its
+ * own, and the hash is what lets its own boot script run at all.
  */
-export type CompiledApplicationAssets = {
+type ServedSpa = {
 	id: string;
 	title: string;
 	page: string;
 	resolve(pathname: string): Promise<StaticAsset | undefined>;
 };
+
+/**
+ * One derived catalog member: enough to list it and serve its static root. Its
+ * `id` comes from the database declaration (ADR-0210).
+ */
+export type CatalogApp = ServedSpa & {
+	/**
+	 * The compiled `database.json` is no longer carried past admission.
+	 *
+	 * It used to be, so the host could interpret the member's rows: render them
+	 * to markdown, project them to SQLite, and serve them raw. The host owns no
+	 * application data now (ADR-0226), so what a member declares matters at
+	 * admission (it must be a well-formed database declaration) and nowhere
+	 * after. A field with no reader is a field
+	 * that goes stale.
+	 */
+	/**
+	 * The directory it arrived in, which names nothing and is carried only so
+	 * promotion can report which candidate entry was refused.
+	 */
+	directory: string;
+};
+
+/**
+ * One compiled application's release build.
+ *
+ * A compiled application never enters the catalog (ADR-0179), so it declares no
+ * database declaration and arrives in no candidate directory. Everything the server does with
+ * it, it does identically to an admitted member, which is why both are
+ * {@link ServedSpa} and one route loop serves them.
+ */
+export type CompiledApplicationAssets = ServedSpa;
 
 export type EpicenterStaticAssets = {
 	homePage: string;
@@ -66,20 +90,25 @@ export type AppCatalog = {
 	apps: CatalogApp[];
 };
 
-export function isValidAppId(value: string): boolean {
-	return APP_ID_PATTERN.test(value);
-}
-
 /**
  * Derive the trusted app catalog from validated build output: one directory
  * per app below `catalogRoot`. The catalog is generated, never authored. A
  * missing root is an empty catalog; an entry that breaks the output contract
- * (invalid ID, reserved built-in ID, missing `index.html`, or a root that
- * escapes the catalog directory) is not a catalog member.
+ * (a missing `index.html`, a missing or invalid `database.json`, a database id a
+ * sibling already claimed, or a root that escapes the catalog directory) is not
+ * a catalog member.
+ *
+ * There is deliberately no reserved-id list. An installed app's id is the
+ * id it declares (ADR-0210), so it always contains a dot, and every id
+ * this host has already issued is a bare label: the built-in routes and
+ * the composed app ids that name a directory under the one data root
+ * (ADR-0201). The two sets are disjoint by grammar, so a candidate cannot claim
+ * `home` or `local-mail` whatever it declares, and a check for it could never
+ * fail. A check that cannot fail is worse than none, because it reads as
+ * protection.
  */
 export async function deriveAppCatalog(
 	catalogRoot: string,
-	{ reservedIds }: { reservedIds: readonly string[] },
 ): Promise<AppCatalog> {
 	let root: string;
 	try {
@@ -90,10 +119,9 @@ export async function deriveAppCatalog(
 	}
 
 	const apps: CatalogApp[] = [];
+	const claimed = new Set<string>();
 	const names = (await readdir(root)).sort();
 	for (const name of names) {
-		if (!isValidAppId(name) || reservedIds.includes(name)) continue;
-
 		let appRoot: string;
 		try {
 			appRoot = await requiredContainedDirectory(
@@ -107,23 +135,43 @@ export async function deriveAppCatalog(
 		const index = await containedFile(appRoot, resolve(appRoot, 'index.html'));
 		if (index.kind !== 'file') continue;
 
+		const declaration = await containedFile(
+			appRoot,
+			resolve(appRoot, 'database.json'),
+		);
+		if (declaration.kind !== 'file') continue;
+		// Admission still requires a well-formed database declaration. Its id is
+		// what addresses this member everywhere else (ADR-0210).
+		let declared: unknown;
+		try {
+			declared = JSON.parse(await Bun.file(declaration.path).text());
+		} catch {
+			continue;
+		}
+		const { data: database } = parseDatabase(declared);
+		if (database === null) continue;
+
+		// The directory this arrived in is not an identity (ADR-0210), so two
+		// directories may declare one database id. The
+		// filesystem used to refuse that by refusing two directories with one
+		// name; now the first declaration wins and the second is not a member,
+		// which `promoteAppCatalogCandidate` turns into a refused promotion.
+		if (claimed.has(database.id)) continue;
+		claimed.add(database.id);
+
 		apps.push({
-			id: name,
-			title: documentTitle(await Bun.file(index.path).text()) ?? name,
+			id: database.id,
+			title: database.title ?? database.id,
+			page: await Bun.file(index.path).text(),
+			directory: name,
 			resolve: createContainedResolver({
-				prefix: `/apps/${name}/`,
+				prefix: `/apps/${database.id}/`,
 				root: appRoot,
 				index: index.path,
 			}),
 		});
 	}
 	return { apps };
-}
-
-/** `<title>` from the app's own document; presentation metadata only. */
-function documentTitle(page: string): string | undefined {
-	const title = /<title[^>]*>([^<]*)<\/title>/i.exec(page)?.[1]?.trim();
-	return title === undefined || title === '' ? undefined : title;
 }
 
 /**

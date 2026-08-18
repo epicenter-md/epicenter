@@ -1,67 +1,74 @@
-export type { TableInvalidation } from '@epicenter/lens';
-export {
-	type ConformanceIssue,
-	type ConstrainedUpdate,
-	type CreateInputFor,
-	DataReadError,
-	defineLens,
-	defineTable,
-	defineValue,
-	type FieldsFor,
-	type Lens,
-	type NonconformingRowError,
-	type NonconformingValueError,
-	optional,
-	type RowFor,
-	type TableDefinition,
-	type TableDefinitions,
-	type ValueDefinition,
-	type ValueDefinitions,
-	type ValueFor,
-} from '@epicenter/lens';
-export {
-	acceptedDocumentOrigin,
-	applyRowDocumentUpdate,
-	type DocumentPublishOutcome,
-	DocumentPullError,
-	type DocumentPullResponse,
-	type DocumentSyncIssue,
-	encodeRowDocumentState,
-	observeRowDocumentUpdates,
-	type PublishDocument,
-	type PullDocument,
-	type RowDocument,
-	type RowDocumentConnectionTarget,
-} from './documents.js';
-export {
-	type BoundData,
-	type CreateEpicenterOptions,
-	createEpicenter,
-	type Epicenter,
-	type EpicenterSyncSession,
-	type LocalEpicenter,
-	type TableEntry,
-	type TableLens,
-	type TableScan,
-	type ValueLens,
-} from './epicenter.js';
+/**
+ * What a developer gets from `@epicenter/data`.
+ *
+ * The store, the transport that carries it, and the vocabulary a database is
+ * declared in. Runtime openers live at their own entry points, because a Bun
+ * opener imports `bun:sqlite` and a browser opener imports a WASM build, and
+ * neither belongs in a barrel the other has to load.
+ *
+ * The entry points: `.` for the surface, `./bun` and `./browser` for the
+ * openers, `./sync` for the transport, `./projection` for the composed SQL
+ * follower, and `./engine` for the construction seam test fixtures build on.
+ * The superseded stack that used to answer at `./legacy` was deleted along
+ * with its consumers (ADR-0227), so a developer arriving here finds one store
+ * rather than a choice between two.
+ *
+ * Each opener is called `open` and takes the database, because a database
+ * names the store it opens (ADR-0229). The subpath already says which adapter,
+ * so the identifier does not repeat it.
+ *
+ * The transport answers at `./sync` and nowhere else. This barrel used to
+ * re-export all of it as well, which no consumer ever used: every one of them
+ * imports `@epicenter/data/sync` by name.
+ */
+
 export type {
-	Address,
+	ConformanceIssue,
+	JsonObject,
+	JsonValue,
 	RowAddress,
-	ValueAddress,
-} from './protocol/index.js';
+} from '@epicenter/database';
 export {
-	type Exchange,
-	type OpenReplicaOptions,
-	openReplica,
-	REPLICA_FORMAT_VERSION,
-	type Replica,
-	ReplicaError,
-	type ReplicaMetadata,
-} from './replica/index.js';
+	type DatabaseJson,
+	type DatabaseParseError,
+	defineDatabase,
+	defineKv,
+	defineTable,
+	parseDatabase,
+	type RowOf,
+	RowWriteError,
+} from '@epicenter/database';
+export { SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
 export type {
-	SyncCredentialProvider,
-	SyncSchedule,
-	SyncState,
-	SyncStatus,
-} from './sync-supervisor.js';
+	DurableOp,
+	DurablePort,
+	DurableSnapshot,
+	OutboxEntry,
+	PersistenceCapability,
+	PersistenceStatus,
+} from './store/persistence.js';
+export {
+	type AccountStore,
+	type ApplyFailedError,
+	type DatabaseStoreBase,
+	type DatabaseView,
+	type DataOf,
+	type DeviceStore,
+	type KvHandle,
+	type NonconformingRow,
+	type NonconformingValue,
+	type Row,
+	type RowAbsentError,
+	type RowDocument,
+	StoreError,
+	type StorePressure,
+	StoreUnusableError,
+	type SyncCapability,
+	type SyncFacts,
+	type TableHandle,
+	type TableInvalidation,
+	type TableInvalidationListener,
+	type TypedTableHandle,
+	type UnstampableError,
+	type UpdateRowError,
+} from './store/store.js';

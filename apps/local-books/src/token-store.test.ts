@@ -10,7 +10,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from './config.ts';
 import { credentialsFilePath } from './paths.ts';
-import { createFileTokenStore } from './token-store.ts';
+import {
+	createFileTokenStore,
+	resolveRealm,
+	type TokenStore,
+} from './token-store.ts';
 import type { TokenSet } from './tokens.ts';
 
 function tempDir(): { dir: string; cleanup: () => void } {
@@ -60,10 +64,83 @@ describe('createFileTokenStore', () => {
 			cleanup();
 		}
 	});
+
+	test('listRealms is the connected-company index, and skips malformed entries', async () => {
+		const { dir, cleanup } = tempDir();
+		try {
+			const file = join(dir, 'credentials.json');
+			const store = createFileTokenStore(file);
+			expect(await store.listRealms()).toEqual([]);
+
+			await store.set(token);
+			await store.set({ ...token, realmId: 'realm-0' });
+			expect(await store.listRealms()).toEqual(['realm-0', 'realm-1']);
+
+			// A partial entry is absent to `get`, so it must be absent here too, or
+			// `resolveRealm` would offer a company no verb can use.
+			const map = JSON.parse(readFileSync(file, 'utf8'));
+			map['realm-2'] = JSON.stringify({ realmId: 'realm-2' });
+			writeFileSync(file, JSON.stringify(map));
+			expect(await store.listRealms()).toEqual(['realm-0', 'realm-1']);
+		} finally {
+			cleanup();
+		}
+	});
+});
+
+describe('resolveRealm', () => {
+	function storeWith(realms: string[]): TokenStore {
+		return {
+			async get(realmId) {
+				return realms.includes(realmId) ? { ...token, realmId } : null;
+			},
+			async listRealms() {
+				return [...realms].sort();
+			},
+			async set() {},
+		};
+	}
+
+	test('uses the sole connected company', async () => {
+		const { data, error } = await resolveRealm(
+			{ realmOverride: null },
+			storeWith(['realm-1']),
+		);
+		expect(error).toBeNull();
+		expect(data).toBe('realm-1');
+	});
+
+	test('asks for --realm when more than one is connected', async () => {
+		const { error } = await resolveRealm(
+			{ realmOverride: null },
+			storeWith(['realm-1', 'realm-2']),
+		);
+		expect(error).toContain('--realm');
+	});
+
+	test('says to run auth when none is connected', async () => {
+		const { error } = await resolveRealm(
+			{ realmOverride: null },
+			storeWith([]),
+		);
+		expect(error).toContain('local-books auth');
+	});
+
+	test('takes an override at its word, so a mirror without a token stays readable', async () => {
+		// `demo` builds a company that never authenticates, and the read verbs work
+		// without a token, so an override is not checked against the store.
+		const { data, error } = await resolveRealm(
+			{ realmOverride: 'realm-9' },
+			storeWith([]),
+		);
+		expect(error).toBeNull();
+		expect(data).toBe('realm-9');
+	});
 });
 
 describe('credentials path resolution', () => {
 	const FILE = 'LOCAL_BOOKS_TOKEN_FILE';
+	const ROOT = 'EPICENTER_DATA_DIR';
 
 	/** Run `fn` with `LOCAL_BOOKS_TOKEN_FILE` set to `file`, restored after. */
 	function withFileEnv(file: string | undefined, fn: () => void): void {
@@ -78,13 +155,21 @@ describe('credentials path resolution', () => {
 		}
 	}
 
-	test('defaults to a file at <data-dir>/credentials.json', () => {
-		withFileEnv(undefined, () => {
-			const config = loadConfig({ dataDir: '/tmp/lb-resolve' });
-			expect(config.credentialsPath).toBe(
-				credentialsFilePath('/tmp/lb-resolve'),
-			);
-		});
+	test('defaults to a file at the app directory root, below the one Epicenter root', () => {
+		const prevRoot = process.env[ROOT];
+		process.env[ROOT] = '/tmp/lb-resolve';
+		try {
+			withFileEnv(undefined, () => {
+				const config = loadConfig();
+				expect(config.dataDir).toBe('/tmp/lb-resolve/apps/local-books');
+				expect(config.credentialsPath).toBe(
+					credentialsFilePath('/tmp/lb-resolve/apps/local-books'),
+				);
+			});
+		} finally {
+			if (prevRoot === undefined) delete process.env[ROOT];
+			else process.env[ROOT] = prevRoot;
+		}
 	});
 
 	test('an explicit LOCAL_BOOKS_TOKEN_FILE wins', () => {

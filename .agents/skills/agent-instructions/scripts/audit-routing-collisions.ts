@@ -14,14 +14,28 @@
  * opposite. The annotation informs the reader; it deliberately does not change
  * the hit count or the exit code, so a caller that only reads the exit status
  * keeps its behavior.
+ *
+ * Always-on hits are reported the same additive way, and they exist because a
+ * skill description is not the only thing that routes. `AGENTS.md` loads before
+ * any description is weighed and names skills outright, and a live probe obeys
+ * it: an `AGENTS.md` sentence sending overflow reports to `documentation` beat
+ * `styling`'s own description 3 times out of 3. A phrase claimed by one
+ * description and by `AGENTS.md` has two claimants while this script reports
+ * one hit, which is exactly the collision it exists to catch. The report goes
+ * to stderr so the stdout contract above is untouched.
  */
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { classifyClaim, readSkillCatalog } from './skill-catalog';
+import {
+	classifyClaim,
+	readAlwaysOnInstructions,
+	readSkillCatalog,
+} from './skill-catalog';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultSkillsDir = join(scriptDir, '..', '..');
+const repoRoot = join(scriptDir, '..', '..', '..', '..');
 
 const USAGE = `Usage: bun run .agents/skills/agent-instructions/scripts/audit-routing-collisions.ts [--explain] "trigger phrase"
 
@@ -59,6 +73,15 @@ for (const skill of matches) {
 		? ` [${classifyClaim(skill.description, phrase)}]`
 		: '';
 	console.log(`${phrase} -> ${skill.name}/SKILL.md${annotation}`);
+}
+
+for (const { path, contents } of await readAlwaysOnInstructions(repoRoot)) {
+	contents.split(/\r?\n/).forEach((line, index) => {
+		if (!line.toLowerCase().includes(phrase.toLowerCase())) return;
+		console.error(
+			`also claimed by ${path}:${index + 1}, which loads before any description`,
+		);
+	});
 }
 
 if (matches.length === 1) {

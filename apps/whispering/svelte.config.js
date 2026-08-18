@@ -5,19 +5,19 @@
 import staticAdapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
-const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
+const isEpicenterHost = process.env.EPICENTER_HOST === '1';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
 	kit: {
 		adapter: staticAdapter({
-			...(isEpicenterSurface && {
+			...(isEpicenterHost && {
 				pages: '../epicenter/dist/whispering',
 				assets: '../epicenter/dist/whispering',
 			}),
 			fallback: 'index.html', // SPA fallback for dynamic routes
 		}),
-		...(isEpicenterSurface && { paths: { base: '/apps/whispering' } }),
+		...(isEpicenterHost && { paths: { base: '/apps/whispering' } }),
 		alias: {
 			$routes: './src/routes',
 		},

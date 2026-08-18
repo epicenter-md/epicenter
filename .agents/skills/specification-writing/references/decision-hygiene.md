@@ -85,12 +85,13 @@ Near the end of the spec, list every Class 3 keep with its constraint and a `Rev
 ```markdown
 ## Decisions Log
 
-- Keep `MachineAuthRequestError`: codebase typed-error pattern consistency.
-  Revisit when: any caller branches on the discriminator.
-- Module-level singleton auth client: roughly 1 to 2 ms saved per CLI invocation.
+- Keep `InstanceConnectionStatus` as a four-state union: codebase typed-state
+  pattern consistency.
+  Revisit when: any caller branches on more than connected versus not.
+- Module-level singleton auth client: roughly 1 to 2 ms saved per app boot.
   Revisit when: per-call construction profiles become a real concern.
-- Narrow capability types per function: prevents accidental device-plugin
-  coupling for status/logout tests.
+- Narrow capability types per function: prevents accidental launcher coupling
+  for sign-out tests.
   Revisit when: type-level overhead exceeds value during maintenance.
 ```
 

@@ -12,7 +12,7 @@ import { defaultClientConditions, defineConfig, mergeConfig } from 'vite';
 import devtoolsJson from 'vite-plugin-devtools-json';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
-const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
+const isEpicenterHost = process.env.EPICENTER_HOST === '1';
 
 export default defineConfig(
 	mergeConfig(workspaceAppViteConfig(APPS.WHISPERING), {
@@ -60,7 +60,7 @@ export default defineConfig(
 			// code is unresolvable there and fails at vite build time rather than
 			// at user runtime. The `...defaultClientConditions` spread is
 			// load-bearing: custom conditions REPLACE Vite's defaults.
-			...(isEpicenterSurface && {
+			...(isEpicenterHost && {
 				conditions: ['epicenter-host', 'tauri', ...defaultClientConditions],
 			}),
 		},

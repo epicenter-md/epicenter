@@ -13,7 +13,7 @@ import { extractErrorMessage } from 'wellcrafted/error';
 
 export type StorageAdmissionTarget = {
 	principalId: PrincipalId;
-	workspaceId: string;
+	databaseId: string;
 };
 
 export type StorageAdmissionDependencies = {
@@ -45,13 +45,13 @@ export async function admitRegisteredStorageFirstContact(
 		return observations.some(
 			(observation) =>
 				observation.sourceKind === 'workspace' &&
-				observation.sourceId === target.workspaceId,
+				observation.sourceId === target.databaseId,
 		)
 			? 'allow'
 			: 'refuse';
 	} catch (cause) {
 		reportError(
-			`[storage] first-contact admission for ${target.principalId}/${target.workspaceId} failed: ${extractErrorMessage(cause)}`,
+			`[storage] first-contact admission for ${target.principalId}/${target.databaseId} failed: ${extractErrorMessage(cause)}`,
 		);
 		return 'refuse';
 	}
@@ -70,7 +70,7 @@ export async function admitStorageFirstContact(
 ): Promise<'allow' | 'refuse'> {
 	try {
 		const observations = await listObservations();
-		const registeredWorkspaceIds = new Set(
+		const registeredDatabaseIds = new Set(
 			observations
 				.filter((observation) => observation.sourceKind === 'workspace')
 				.map((observation) => observation.sourceId),
@@ -90,18 +90,18 @@ export async function admitStorageFirstContact(
 			return 'refuse';
 		}
 
-		if (!registeredWorkspaceIds.has(target.workspaceId)) {
+		if (!registeredDatabaseIds.has(target.databaseId)) {
 			await upsertObservation({
 				principalId: target.principalId,
 				sourceKind: 'workspace',
-				sourceId: target.workspaceId,
+				sourceId: target.databaseId,
 				observedBytes: 0,
 			});
 		}
 		return 'allow';
 	} catch (cause) {
 		reportError(
-			`[storage] first-contact admission for ${target.principalId}/${target.workspaceId} failed: ${extractErrorMessage(cause)}`,
+			`[storage] first-contact admission for ${target.principalId}/${target.databaseId} failed: ${extractErrorMessage(cause)}`,
 		);
 		return 'refuse';
 	}

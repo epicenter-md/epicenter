@@ -16,10 +16,7 @@ import {
 	createEpicenterClient,
 	createOpenAiAgentEngine,
 } from '@epicenter/client';
-import type { SyncCredentialProvider } from '@epicenter/data';
-import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
-import { parseExchangeResponse } from '@epicenter/data/protocol';
-import { createHttpDocumentTransports } from '@epicenter/document-sync';
+import { epicenterDataRoot } from '@epicenter/constants/app-data';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { loadActiveAppCatalog } from './app-catalog.ts';
 import { COMPILED_APPLICATIONS } from './applications.ts';
@@ -29,7 +26,6 @@ import {
 } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
 import { createHomeHost, type HomeHost } from './host.ts';
-import { SURFACE_ROUTES } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import {
 	createNativeAuthPort,
@@ -40,14 +36,10 @@ import {
 	watchParentPipe,
 } from './sidecar-runtime.ts';
 import { loadStaticAssets } from './static-assets.ts';
-import { homeLens, honeycrispMirrorLens } from './workspace.ts';
 
 async function main(): Promise<void> {
 	const parentPipe = watchParentPipe(Bun.stdin.stream());
 	let host: HomeHost | undefined;
-	let dataOwner:
-		| Awaited<ReturnType<typeof createDesktopEpicenterOwner>>
-		| undefined;
 	let desktopAuth: DesktopAuthAuthority | undefined;
 	let server: ReturnType<typeof Bun.serve> | undefined;
 	let lifecycleOwnsResources = false;
@@ -64,58 +56,28 @@ async function main(): Promise<void> {
 
 		const { engine, model } = homeEngineFromEnvironment(process.env);
 
-		const epicenterDataDir = process.env.EPICENTER_DATA_DIR;
-		if (!epicenterDataDir) {
-			throw new Error(
-				'EPICENTER_DATA_DIR must name the Epicenter app data directory.',
-			);
-		}
-		const authorityFetch = createDesktopAuthorityFetch(auth);
-		const documentCredentials = createDesktopSyncCredentials();
-		if (auth.bootSnapshot.state.status === 'signed-in') {
-			await documentCredentials.refresh(auth);
-		}
-		dataOwner = await createDesktopEpicenterOwner({
-			directory: join(epicenterDataDir, 'data'),
-		});
-		if (auth.bootSnapshot.state.status === 'signed-in') {
-			const syncUrl = new URL('/api/sync/v1', auth.baseURL);
-			const attached = await dataOwner.epicenter.attachSync({
-				deploymentId: new URL(auth.baseURL).href,
-				principalId: auth.bootSnapshot.state.principalId,
-				credentials: documentCredentials,
-				exchange: async (request) => {
-					await documentCredentials.refresh(auth);
-					const response = await authorityFetch(syncUrl, {
-						method: 'POST',
-						headers: { 'content-type': 'application/json' },
-						body: JSON.stringify(request),
-					});
-					if (!response.ok) {
-						throw new Error(`Epicenter sync failed (${response.status})`);
-					}
-					const parsed = parseExchangeResponse(await response.json());
-					if (parsed.error !== null) throw parsed.error;
-					return parsed.data;
-				},
-				...createHttpDocumentTransports({
-					baseUrl: auth.baseURL,
-					fetch: async (url, init) => {
-						await documentCredentials.refresh(auth);
-						return authorityFetch(url, init);
-					},
-				}),
-			});
-			if (attached.error !== null) throw attached.error;
-		}
-		host = await createHomeHost({
-			engine,
-			model,
-			honeycrisp: dataOwner.epicenter.bind(honeycrispMirrorLens).tables,
-			conversations: dataOwner.epicenter.bind(homeLens).tables,
-		});
+		// The one Epicenter root, resolved here rather than received. A desktop
+		// host and a CLI that each computed this path would have to agree on it
+		// exactly, so one TypeScript function owns it and everything else calls
+		// that (ADR-0201). `blobs` and `app-catalog` below it are the host's own
+		// names, and everything under `apps/` is somebody else's.
+		//
+		// There is no `data/` any more. The host used to open a store there, sync
+		// it, render it to markdown, project it to SQLite and serve it raw; every
+		// one of those read application data the host had no business holding
+		// (ADR-0226), and the applications on the store each own their own now
+		// (ADR-0227).
+		const dataRoot = epicenterDataRoot();
+
+		// The selected generation. It is what this process serves for its whole
+		// lifetime; promotions apply at the next restart (ADR-0179).
+		const appCatalog = await loadActiveAppCatalog(
+			join(dataRoot, 'app-catalog'),
+		);
+
+		host = await createHomeHost({ engine, model });
 		const blobs = createBunBlobStore({
-			directory: join(epicenterDataDir, 'blobs'),
+			directory: join(dataRoot, 'blobs'),
 		});
 		// Identity is immutable per process generation, so remote availability
 		// is a boot-time fact: a signed-in generation composes the streaming
@@ -142,14 +104,6 @@ async function main(): Promise<void> {
 			appsDist,
 			COMPILED_APPLICATIONS,
 		);
-		// Source-built catalog members live in host-owned app data; the
-		// built-in surfaces stay on the legacy closed layout for this slice.
-		// The generation selected here is what this process serves for its
-		// whole lifetime; promotions apply at the next restart (ADR-0153).
-		const appCatalog = await loadActiveAppCatalog(
-			join(epicenterDataDir, 'app-catalog'),
-			{ reservedIds: Object.keys(SURFACE_ROUTES) },
-		);
 		const origin = `http://127.0.0.1:${boot.port}`;
 		const { app, websocket } = createHomeServer({
 			host,
@@ -157,7 +111,6 @@ async function main(): Promise<void> {
 			launchToken: boot.token,
 			staticAssets,
 			appCatalog,
-			dataOwner,
 			blobs,
 			desktopAuth: auth,
 			blobRemote,
@@ -173,7 +126,6 @@ async function main(): Promise<void> {
 		process.stdout.write(`${JSON.stringify(createReadyFrame(boot.port))}\n`);
 		lifecycleOwnsResources = true;
 		const ownedHost = host;
-		const ownedData = dataOwner;
 		const ownedDesktopAuth = auth;
 		await superviseSidecar({
 			server,
@@ -181,7 +133,6 @@ async function main(): Promise<void> {
 				async [Symbol.asyncDispose]() {
 					ownedDesktopAuth[Symbol.dispose]();
 					await ownedHost[Symbol.asyncDispose]();
-					await ownedData[Symbol.asyncDispose]();
 				},
 			},
 			parentPipe,
@@ -192,34 +143,9 @@ async function main(): Promise<void> {
 			if (server) await server.stop(true);
 			desktopAuth?.[Symbol.dispose]();
 			if (host) await host[Symbol.asyncDispose]();
-			if (dataOwner) await dataOwner[Symbol.asyncDispose]();
 			await parentPipe.cancel();
 		}
 	}
-}
-
-function createDesktopSyncCredentials(): SyncCredentialProvider & {
-	refresh(authority: DesktopAuthAuthority): Promise<void>;
-} {
-	let bearer: string | undefined;
-	const listeners = new Set<() => void>();
-	return {
-		get: () => bearer,
-		subscribe(listener) {
-			listeners.add(listener);
-			return () => listeners.delete(listener);
-		},
-		async refresh(authority) {
-			const authorization = await authority.authorize();
-			const next =
-				authorization.status === 'authorized'
-					? authorization.accessToken
-					: undefined;
-			if (next === bearer) return;
-			bearer = next;
-			for (const listener of listeners) listener();
-		},
-	};
 }
 
 export function homeEngineFromEnvironment(

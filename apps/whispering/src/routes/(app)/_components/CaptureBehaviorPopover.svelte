@@ -39,7 +39,7 @@
 	<Popover.Content class="w-80">
 		<div class="flex flex-col gap-3">
 			<SettingSwitch
-				key="settings.recording.pausePlayback"
+				key="recordingPausePlayback"
 				label="Pause playback while recording"
 				description={pausePlaybackDescription}
 			/>

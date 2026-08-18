@@ -2,8 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-28
+- **Superseded by:** [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md): the third-party installed-app plane is refused for now, so the bundled client this record exists to define is deleted with it. `packages/lens`, the inert vocabulary this record's amendment moved the contract into, survives.
 - **Amends:** [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md) at the delivery and namespace boundary: it settles how an app obtains the handle, which ADR-0181 left open, and adds `recording` to the initial capability set. The handle's shape, its refusal of optional namespaces, and its transcription rules are unchanged. Also [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md) at one bounded clause of the native command surface: recording and transcription reach every app window through the app-window capability file, so they no longer stay host-only or bound to Whispering. The admission boundary, the full-trust ceremony, and the refusal of per-app permissions and prompts are unchanged.
-- **Amended by:** [ADR-0187](0187-a-bound-handle-reports-staleness-tables-can-name-rows-values-cannot.md), which settles the `data` half of what this record deferred
+- **Amended by:** [ADR-0187](0187-a-bound-handle-reports-staleness-tables-can-name-rows-values-cannot.md), which settles the `data` half of what this record deferred; and [ADR-0211](0211-an-installed-app-runs-only-inside-epicenter-so-its-client-stops-asking.md), which withdraws the dual-mode promise below and deletes `HostUnavailable`, because an installed app is served by a host and runs nowhere else
 - **Relates:** [ADR-0180](0180-epicenter-has-one-host-owned-active-local-transcription-model.md), [ADR-0184](0184-one-host-recorder-progressively-stages-each-claimable-recording-until-its-owner-stops-or-cancels-it.md)
 
 ## Context
@@ -67,7 +68,8 @@ ending can fall into a gap; it stays best-effort, and `current().endedReason`
 remains the durable recovery path exactly as ADR-0184 requires.
 
 **Environment differences are typed values.** An operation outside an Epicenter
-host answers `HostUnavailable`; an operation a window was never granted answers
+host answers `HostUnavailable` (withdrawn by ADR-0211: there is no outside);
+an operation a window was never granted answers
 `CapabilityUnavailable`. Neither is a missing namespace, an optional method, or
 a rejected promise. An unrecognized failure becomes that operation's `*Failed`
 variant with its cause attached, never an "unavailable": unavailability is a

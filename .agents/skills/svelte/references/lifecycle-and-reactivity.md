@@ -103,7 +103,7 @@ Three problems, every time:
 
 ### When you still need `$state` flags
 
-`{#await}` is for **one stable promise** driving one render branch. Reach for `$state` + `$effect` only when:Wait, I think you're good now. Like you can now apply the actual fix on top.er).
+`{#await}` is for **one stable promise** driving one render branch. Reach for `$state` + `$effect` only when:
 - You're composing multiple promises with custom logic (race, timeout, retry).
 - The flag reflects an external reactive source (`$derived(query.isPending)` from TanStack Query, a Svelte store, `createSubscriber`).
 
@@ -161,14 +161,14 @@ Svelte template expressions already track reactive property reads. Do not add a 
 </script>
 
 {#if current}
-	<WorkspaceGate pending={current.workspace.app.idb.whenLoaded} />
+	<AccountPopover principal={current.principal} />
 {/if}
 ```
 
 ```svelte
 <!-- Good: read the source directly in markup -->
 {#if session.current}
-	<WorkspaceGate pending={session.current.workspace.app.idb.whenLoaded} />
+	<AccountPopover principal={session.current.principal} />
 {/if}
 ```
 
@@ -176,23 +176,23 @@ The same rule applies to block-local `{@const}` passthroughs:
 
 ```svelte
 <!-- Bad -->
-{#await tabManagerSession.whenReady}
+{#await session.whenReady}
 	<Loading />
 {:then _}
-	{@const current = tabManagerSession.current}
+	{@const current = session.current}
 	{#if current}
-		<SignedInApp workspace={current.workspace} />
+		<SignedInApp principal={current.principal} />
 	{/if}
 {/await}
 ```
 
 ```svelte
 <!-- Good -->
-{#await tabManagerSession.whenReady}
+{#await session.whenReady}
 	<Loading />
 {:then _}
-	{#if tabManagerSession.current}
-		<SignedInApp workspace={tabManagerSession.current.workspace} />
+	{#if session.current}
+		<SignedInApp principal={session.current.principal} />
 	{/if}
 {/await}
 ```
@@ -273,70 +273,62 @@ happen inside a template, `$derived`, or `$effect`. Use `$state` for primitives,
 local UI booleans, and sequential data without identity.
 
 `SvelteMap` does not deep-proxy its values. If nested fields must update
-reactively, store row objects that are already reactive, mutate through the
-workspace table API, or replace the map value with `set(id, next)`.
+reactively, store row objects that are already reactive, or replace the map
+value with `set(id, next)`.
 
 | Data Shape | Use | Example |
 |---|---|---|
-| Workspace table rows (have IDs) | `fromTable()` -> `SvelteMap` | recordings, conversations, notes |
-| Workspace KV (single key) | `fromKv()` | selectedFolderId, sortBy |
-| Browser API keyed data | `new SvelteMap()` + listeners | Chrome tabs, windows |
+| Epicenter store table rows | `fromWorkspace` reactive tables | notes, folders |
+| Browser API keyed data | `new SvelteMap()` + listeners | media devices, windows |
 | Primitive value | `$state(value)` | `$state(false)`, `$state('')`, `$state(0)` |
 | Replace-only sequential data without IDs | `$state.raw<T[]>([])` | terminal history, command history |
 | Replace-only ordered list where position matters | `$state.raw<T[]>([])` | open file tab order |
 
-### Anti-Pattern: $state for ID-Keyed Collections
-
-```typescript
-// Bad: O(n) lookups, coarse reactivity, referential instability
-let conversations = $state<Conversation[]>(readAll());
-const metadata = $derived(conversations.find((c) => c.id === id)); // O(n) scan
-
-// Good: O(1) lookups, per-key map reactivity, stable $derived array
-const conversationsMap = fromTable(workspace.tables.conversations);
-const conversations = $derived(
-	conversationsMap.values().toArray().sort((a, b) => b.updatedAt - a.updatedAt),
-);
-const metadata = $derived(conversationsMap.get(id)); // O(1) lookup
-```
-
-Three problems with `$state<T[]>` for keyed data:
-
-1. **O(n) lookups**: every `.find()` scans the whole array
-2. **Coarse reactivity**: updating one item re-triggers everything reading the array
-3. **Referential instability**: sorting in a getter creates a new array every access, causing TanStack Table infinite loops
-
-See `docs/articles/sveltemap-over-state-for-keyed-collections.md` for the full rationale.
+For an id-keyed collection you own and mutate in place, `SvelteMap` still beats
+`$state<T[]>`: `.find()` scans, a whole-array write re-triggers every reader, and
+sorting inside a getter returns a fresh array on every access, which sends
+TanStack Table into an infinite loop. See
+`docs/articles/sveltemap-over-state-for-keyed-collections.md`.
 
 # Reactive Table State Pattern
 
-When a factory function exposes workspace table data via `fromTable`, follow this three-layer convention:
+Store reads are synchronous and return plain JSON, so the source of truth is a
+re-read, not a long-lived reactive collection. `fromWorkspace` from
+`@epicenter/svelte` packages that re-read once: it mirrors an opened
+workspace's declared `tables`/`kv` and makes every read verb reactive
+(`rows`, `nonconforming`, `list`, `get`, `ids`, `document`), while `create`,
+`update`, and `delete` pass through unchanged. The invalidation it rides fires
+after the projection commits (ADR-0221) for a local write, for prose typed
+into a row's document, and for bytes that arrived from another device alike.
 
 ```typescript
-// 1. Map: reactive source (private, suffixed with Map)
-const foldersMap = fromTable(workspaceClient.tables.folders);
+// Root of the surface: adapt the chosen document once, then layer app state.
+const workspace = fromWorkspace(data);
+const table = workspace.tables.notes;
 
-// 2. Derived array: cached materialization (private, no suffix)
-const folders = $derived(foldersMap.values().toArray());
+// Derived views: filtering and sorting are cached here, not in the getter.
+const all = $derived(table.rows.filter((note) => note.deletedAt === null));
 
-// 3. Getter: public API (matches the derived name)
 return {
-	get folders() {
-		return folders;
+	get all() {
+		return all;
+	},
+	get(id: NoteId) {
+		return table.rows.find((note) => note.id === id);
 	},
 };
 ```
 
-Naming: `{name}Map` (private source) -> `{name}` (cached derived) -> `get {name}()` (public getter).
+There is no `refresh`, no generation counter, no `await` on a read, and no
+`Symbol.dispose`: the adapter's subscriptions are ref-counted to the effects
+that read them, so they detach when the consuming components unmount, and a
+declared table nothing reads never subscribes at all. A read inside
+`$derived` or a template tracks; a read in an event handler is fresh and
+untracked. Do not hand-roll `db.<table>.subscribe(listener)` feeding
+`$state.raw` for table reads; that pattern is what the adapter replaced.
 
-### With Sort or Filter
-
-Chain operations inside `$derived`: the entire pipeline is cached:
-
-```typescript
-const tabs = $derived(tabsMap.values().toArray().sort((a, b) => b.savedAt - a.savedAt));
-const notes = $derived(allNotes.filter((n) => n.deletedAt === undefined));
-```
+Adapter: `packages/svelte-utils/src/from-workspace.svelte.ts`. Full app
+exemplar: `apps/honeycrisp/src/lib/honeycrisp/notes.svelte.ts`.
 
 See the `typescript` skill for iterator helpers (`.toArray()`, `.filter()`, `.find()` on `IteratorObject`).
 
@@ -370,18 +362,27 @@ See `docs/articles/derived-vs-getter-caching-matters.md` for rationale.
 State modules use a factory function that returns a flat object with getters and methods, exported as a singleton.
 
 ```typescript
-function createBookmarkState() {
-	const bookmarksMap = fromTable(workspaceClient.tables.bookmarks);
-	const bookmarks = $derived(bookmarksMap.values().toArray());
+function createBookmarkState(db: AppData) {
+	let rows = $state.raw<Bookmark[]>([]);
+	function read() {
+		const { data, error } = db.bookmarks.list();
+		if (error !== null) return reportBackgroundError(error);
+		rows = data.rows;
+	}
+	read();
+	const stop = db.bookmarks.subscribe(read);
+
+	const bookmarks = $derived(rows.filter((b) => b.deletedAt === null));
 
 	return {
+		[Symbol.dispose]: stop,
 		get bookmarks() { return bookmarks; },
-		async add(tab: Tab) { /* ... */ },
+		add(fields: BookmarkFields) { /* ... */ },
 		remove(id: BookmarkId) { /* ... */ },
 	};
 }
 
-export const bookmarkState = createBookmarkState();
+export const bookmarkState = createBookmarkState(db);
 ```
 
 ## Naming

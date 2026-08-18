@@ -2,7 +2,7 @@
  * What a person can launch from Epicenter Home (ADR-0189).
  *
  * Two sources, one list. A compiled application ships in the release and is
- * served from its own surface route behind the host's session gate. An admitted
+ * served from its own built-in route behind the host's session gate. An admitted
  * application is a member of the catalog: one immutable generation of inert
  * built folders, selected once at startup (ADR-0179). "Catalog" keeps that
  * narrower meaning everywhere; this list is not one, and admitting a folder is
@@ -13,13 +13,15 @@
  * (window label, capability file, how Bun serves the document) is decided by
  * the host when Home launches one, so nothing downstream branches on origin.
  *
- * Home is not in the list: it is the shell the list lives in. Neither is a
- * release-bundled placeholder document, because there is nothing behind it to
- * open. Both remain reserved surface IDs the catalog refuses to admit, so "not
- * launchable" never means "available for someone else to claim".
+ * Home is not in the list, for a smaller reason than it used to be: you are
+ * already looking at it, so launching it is a no-op rather than a window
+ * (ADR-0209). It is not above the others, it simply has no second copy to open.
+ * Neither is a release-bundled placeholder document, because there is nothing
+ * behind it to open. Both remain reserved built-in IDs the catalog refuses to
+ * admit, so "not launchable" never means "available for someone else to claim".
  */
 
-import { SURFACE_ROUTES } from './routes.ts';
+import { BUILT_IN_ROUTES } from './routes.ts';
 import type { AppCatalog } from './static-assets.ts';
 
 /** One application a person can launch, however the host serves it. */
@@ -31,18 +33,18 @@ export type Application = {
 /**
  * The compiled applications this release can launch.
  *
- * Rust holds the matching decision for its own window table
- * (`Surface::is_application`). Both sides are small closed lists rather than a
+ * Rust holds the matching decision for its own built-in app table
+ * (`BuiltInApp::is_launchable`). Both sides are small closed lists rather than a
  * shared manifest, and each is checked against this one by its own tests.
  */
 export const WHISPERING_APPLICATION: Application = {
-	id: SURFACE_ROUTES.whispering.id,
-	title: SURFACE_ROUTES.whispering.title,
+	id: BUILT_IN_ROUTES.whispering.id,
+	title: BUILT_IN_ROUTES.whispering.title,
 };
 
 export const HONEYCRISP_APPLICATION: Application = {
-	id: SURFACE_ROUTES.honeycrisp.id,
-	title: SURFACE_ROUTES.honeycrisp.title,
+	id: BUILT_IN_ROUTES.honeycrisp.id,
+	title: BUILT_IN_ROUTES.honeycrisp.title,
 };
 
 /**
@@ -59,7 +61,7 @@ export const COMPILED_APPLICATIONS: readonly Application[] = [
 
 /**
  * Compose the one list Home renders. An admitted member can never collide with
- * a compiled application: catalog derivation refuses every reserved surface ID,
+ * a compiled application: catalog derivation refuses every reserved built-in ID,
  * so this concatenation needs no deduplication and no precedence rule.
  */
 export function listApplications(catalog: AppCatalog): Application[] {

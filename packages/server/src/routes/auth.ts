@@ -5,7 +5,6 @@
  *
  *   /sign-in          hosted auth UI shell after redirect policy
  *   /consent          hosted consent UI shell after session policy
- *   /cli-callback     CLI OOB landing page shell
  *   /auth/.well-known/openid-configuration   OIDC discovery
  *   /auth/.well-known/oauth-authorization-server   OAuth metadata
  *   /.well-known/oauth-protected-resource   resource server metadata
@@ -23,7 +22,6 @@ import {
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import { OAUTH_ROUTES } from '@epicenter/constants/oauth-routes';
 import { Hono } from 'hono';
-import { secureHeaders } from 'hono/secure-headers';
 import { describeRoute } from 'hono-openapi';
 import {
 	createOAuthIssuerURL,
@@ -73,26 +71,6 @@ export const authApp = new Hono<CloudEnv>()
 		}
 		return c.var.authUiShell(c);
 	})
-	// CLI OOB callback. The code is useless without the CLI's PKCE verifier,
-	// but `Cache-Control: no-store` keeps the edge from caching the shell.
-	.get(
-		OAUTH_ROUTES.cliCallback.pattern,
-		describeRoute({
-			description: 'CLI OAuth out-of-band callback page',
-			tags: ['auth', 'oauth'],
-		}),
-		secureHeaders(),
-		async (c) => {
-			const response = await c.var.authUiShell(c);
-			const headers = new Headers(response.headers);
-			headers.set('Cache-Control', 'no-store, no-transform');
-			return new Response(response.body, {
-				status: response.status,
-				statusText: response.statusText,
-				headers,
-			});
-		},
-	)
 	// OAuth discovery. MUST register before /auth/* below; Hono matches in
 	// registration order and the catch-all otherwise wins.
 	.get(

@@ -1,21 +1,20 @@
 /**
- * Which build opens which replica.
+ * Which build gets which credential.
  *
  * Honeycrisp has three: the hosted web SPA, the standalone desktop bundle, and
- * the build the desktop Epicenter host serves. The first two own their storage
- * and their credential; the third borrows both from the host.
+ * the build the desktop Epicenter host serves. What separates them is auth and
+ * the deployment they talk to, and NOT their storage: every build owns its own
+ * store and reaches the same authority per account (ADR-0226), so there is no
+ * `#platform/application` seam any more and nothing here asserts one.
  *
  * The failure this guards is silent. Drop the `epicenter-host` leaf from a seam
- * and resolution falls back to `default`, so the host-served build would open
- * its WebView's own OPFS and keep notes somewhere nobody else can read, while
- * still building and still starting. Nothing downstream would complain. These
- * assertions complain instead.
+ * and resolution falls back to `default`, so the host-served build would go
+ * looking for a credential only a browser can obtain, while still building and
+ * still starting. Nothing downstream would complain. These assertions complain
+ * instead.
  *
- * This is the cheap structural half: it reads declarations, so it can say
- * exactly which seam lost its host leaf, in milliseconds. What it cannot do is
- * prove the build honored them. That is
- * `apps/epicenter/scripts/build-applications.test.ts`, which runs the real build
- * and reads the emitted bytes.
+ * This reads declarations only, so it can say exactly which seam lost its host
+ * leaf, in milliseconds.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -63,16 +62,13 @@ describe('platform seams', () => {
 });
 
 describe('storage ownership', () => {
-	test('the host-served build opens the host-owned replica', async () => {
-		const source = await leafSource('#platform/application', 'epicenter-host');
-		expect(source).toContain('openDesktopEpicenter');
-		expect(source).not.toContain('openHoneycrispBrowserEpicenter');
-	});
-
-	test('every other build opens its own browser-owned replica', async () => {
-		const source = await leafSource('#platform/application', 'default');
-		expect(source).toContain('openHoneycrispBrowserEpicenter');
-		expect(source).not.toContain('openDesktopEpicenter');
+	test('storage is not a platform seam at all', async () => {
+		// The refusal, asserted so that re-adding the seam is a decision someone
+		// makes rather than a file someone drops in. A host that owned its
+		// windows' data would need a second authority, a second transport
+		// topology, and an answer for what happens when it and Cloud disagree,
+		// to make a convergence that already happens happen sooner.
+		expect(Object.keys(imports)).not.toContain('#platform/application');
 	});
 
 	test('the host owns the deployment choice its build reads', async () => {

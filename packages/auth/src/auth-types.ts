@@ -43,9 +43,8 @@ export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
 /**
  * The single persisted auth cell.
  *
- * Browser persists to localStorage, extension to chrome.storage.local, CLI
- * to a per-API-target file under the platform data directory (mode 0o600);
- * see {@link machineAuthFilePath}. All three cells validate against this
+ * Browser persists to localStorage, extension to chrome.storage.local, and
+ * the desktop host through its native auth port. Every cell validates against this
  * arktype, which satisfies StandardSchemaV1 natively via `~standard`, so it
  * plugs straight into Standard-Schema consumers like createPersistedState.
  * Profile data is intentionally absent; application surfaces fetch it when
@@ -65,8 +64,7 @@ export type PersistedAuth = typeof PersistedAuth.infer;
 
 /**
  * Canonical `/api/session` response shape. The single contract between the
- * API and every Epicenter auth client (browser, extension, CLI machine,
- * daemon).
+ * API and every Epicenter auth client (browser, extension, desktop host).
  *
  * The session endpoint exposes Epicenter's resource-server projection, not
  * Better Auth's internal session shape.

@@ -32,6 +32,12 @@ export class StorageUpgradeRequiredError extends Error {
  * Transactions are synchronous because every supported embedded SQLite engine
  * provides a synchronous transaction callback. Network and hashing work stays
  * outside this boundary.
+ *
+ * `transaction` does not nest: no caller in this repository nests one, and
+ * the engines disagree about what nesting would mean (bun:sqlite savepoints
+ * it, sqlite.org's OO1 throws on a nested BEGIN), so the contract refuses to
+ * promise either. A nested call is a bug that surfaces loudly on at least one
+ * runtime rather than a behavior to rely on.
  */
 export type SqliteDatabase = {
 	run(sql: string, parameters?: readonly SqliteValue[]): void;

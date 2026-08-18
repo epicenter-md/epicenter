@@ -9,10 +9,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createRequestHandler } from '../src/app.ts';
 import { type OpenQbClient, QbAccessError } from '../src/books/qb-access.ts';
-import { openBooksDb } from '../src/db.ts';
+import { booksMirror, openBooksDb } from '../src/db.ts';
 import { entityDef } from '../src/entities.ts';
 import { createApiApp } from '../src/http/api.ts';
-import { dbPath } from '../src/paths.ts';
 import { makeConfig, tempDir } from './helpers.ts';
 
 const REALM = 'realm-1';
@@ -23,10 +22,15 @@ const BOOT = 'bootstrap-token-abc';
 const refusingOpenQb: OpenQbClient = async () =>
 	QbAccessError.NotAuthenticated({ realmId: 'test-realm' });
 
-/** Seed a mirror with two invoices and one purchase carrying an expense line. */
-function seedMirror(dataDir: string) {
-	const path = dbPath(dataDir, REALM);
-	const db = openBooksDb(path);
+/**
+ * Seed a mirror with two invoices and one purchase carrying an expense line, and
+ * record the realm cursor a clean full pull would have written. Without that
+ * cursor the artifact is honestly `building`, and the app surfaces read a corpus
+ * a full pull has finished.
+ */
+function seedMirror(dataDir: string): void {
+	const mirror = booksMirror(dataDir, REALM);
+	const db = openBooksDb(mirror);
 	const syncedAt = '2026-01-01T00:00:00Z';
 	db.ingest(
 		[
@@ -70,10 +74,16 @@ function seedMirror(dataDir: string) {
 				],
 			},
 		],
-		{ syncedAt },
+		{
+			syncedAt,
+			realmState: {
+				cdcCursor: syncedAt,
+				lastFullPullAt: syncedAt,
+				lastSyncedAt: syncedAt,
+			},
+		},
 	);
 	db.close();
-	return path;
 }
 
 function buildApp({ readOnly = false }: { readOnly?: boolean } = {}) {
@@ -87,13 +97,16 @@ function buildApp({ readOnly = false }: { readOnly?: boolean } = {}) {
 		async get() {
 			return null;
 		},
+		async listRealms() {
+			return [];
+		},
 		async set() {},
 	};
 	const app = createApiApp({
 		config,
 		realmId: REALM,
 		store,
-		dbPath: dbPath(dir, REALM),
+		mirror: booksMirror(dir, REALM),
 		readOnly,
 		openQb: refusingOpenQb,
 		gate: (fn) => fn(),
@@ -180,11 +193,11 @@ describe('local-books app /api', () => {
 		const body = (await res.json()) as {
 			realmId: string;
 			readOnly: boolean;
-			mirrorBuilt: boolean;
+			mirror: string;
 		};
 		expect(body.realmId).toBe(REALM);
 		expect(body.readOnly).toBe(true);
-		expect(body.mirrorBuilt).toBe(true);
+		expect(body.mirror).toBe('ready');
 	});
 
 	test('entities lists the configured record types with counts', async () => {

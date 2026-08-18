@@ -84,7 +84,9 @@ const id = generateId() as string as SavedTabId;
 
 The `generate*` prefix means "new ID from scratch." The `create*` prefix means "assemble from inputs" (e.g., `createTabCompositeId(deviceId, tabId)`).
 
-See the `workspace-api` skill for the full schema/migration rules.
+See the `arktype` skill for the expression strings a workspace declares fields with. A
+workspace is release-local and never migrates user data, so there are no migration
+rules to follow.
 
 ## Arktype-Validated IDs: Validator First, Type Inferred, Optional `as*` Helper
 
@@ -174,5 +176,3 @@ This is rejected in favor of the validator-first pattern because:
 3. The same name (`UserId`) serves two unrelated runtime behaviors (typed cast vs. arktype validator), splitting reader intent.
 
 The validator-first + `as*` helper pattern keeps the arktype schema name unified and pushes brand-casting into a clearly named function.
-
-See the `workspace-api` skill for the full workspace file structure and rules.

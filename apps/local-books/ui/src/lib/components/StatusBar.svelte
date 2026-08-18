@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import AlertTriangleIcon from '@lucide/svelte/icons/triangle-alert';
 	import LockIcon from '@lucide/svelte/icons/lock';
@@ -19,11 +20,11 @@
 		onRefresh: () => void;
 	} = $props();
 
-	// The mirror is "ready" once built and connected, "stale" when built but the
-	// token has lapsed (browse still works, sync will fail), "empty" before the
-	// first pull.
+	// Grey before a full pull has finished, because a half-backfilled artifact is
+	// not a corpus anyone should read as complete. Once it is, green when a token
+	// still works and amber when it has lapsed (browse keeps working, sync fails).
 	const tone = $derived(
-		!status || !status.mirrorBuilt
+		!status || status.mirror !== 'ready'
 			? 'bg-muted-foreground'
 			: status.accessToken?.valid || status.refreshToken?.valid
 				? 'bg-emerald-500'
@@ -32,11 +33,13 @@
 	const label = $derived(
 		!status
 			? 'loading'
-			: !status.mirrorBuilt
+			: status.mirror === 'empty'
 				? 'not built'
-				: status.connected
-					? 'ready'
-					: 'disconnected',
+				: status.mirror === 'building'
+					? 'building'
+					: status.connected
+						? 'ready'
+						: 'disconnected',
 	);
 </script>
 
@@ -92,5 +95,6 @@
 			{/if}
 			<span>Sync</span>
 		</Button>
+		<LightSwitch variant="ghost" />
 	</div>
 </header>

@@ -4,7 +4,6 @@ import {
 	recategorizeExpense,
 } from '../books/recategorize.ts';
 import type { ParsedArgs } from '../cli.ts';
-import { dbPath } from '../paths.ts';
 import { resolveCompany } from './context.ts';
 
 /**
@@ -29,12 +28,12 @@ export async function runRecategorize(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	const { data: company, error } = resolveCompany(args);
+	const { data: company, error } = await resolveCompany(args);
 	if (error !== null) {
 		console.error(error);
 		return 1;
 	}
-	const { config, realmId, store } = company;
+	const { config, realmId, mirror, store } = company;
 
 	const openQb = createQbAccess({
 		config,
@@ -44,7 +43,7 @@ export async function runRecategorize(args: ParsedArgs): Promise<number> {
 	});
 	const { data, error: writeError } = await recategorizeExpense({
 		openQb,
-		dbPath: dbPath(config.dataDir, realmId),
+		mirror,
 		readOnly: config.readOnly,
 		input: {
 			entity,

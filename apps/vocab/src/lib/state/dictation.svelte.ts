@@ -32,6 +32,7 @@ import {
 } from '@epicenter/recorder';
 import { VOCAB_STT_MODEL } from '@epicenter/vocab';
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import { base } from '$app/paths';
 import { inferenceConnections } from './inference-connections.svelte';
 
 /**
@@ -42,7 +43,16 @@ import { inferenceConnections } from './inference-connections.svelte';
 export type DictationStatus = 'idle' | 'listening' | 'speaking';
 
 function createDictation() {
-	const vad = createVadRecorder();
+	// The VAD model and wasm are fetched at runtime, so their URL has to carry
+	// whatever prefix this build was served under. `base` is empty on Vocab's
+	// own deploy and `/apps/<databaseId>` inside Epicenter (ADR-0210), which is
+	// exactly the difference, and it is the same value `svelte.config.js` set.
+	//
+	// `base` carries a deprecation hint toward `asset()`, which does not fit:
+	// `asset()` resolves one named file in `static/`, and these are a directory
+	// of files the build copies in, addressed by prefix. A prefix is what this
+	// needs, so a prefix is what it reads.
+	const vad = createVadRecorder({ assetBaseUrl: `${base}/vad/` });
 	let status = $state<DictationStatus>('idle');
 	let inFlightCount = $state(0);
 	// Utterances can overlap in transcription (speak phrase B while phrase A is

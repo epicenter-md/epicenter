@@ -9,7 +9,7 @@
  *   current                      one line: the selected generation ID
  *   generations/
  *     <generation>/              one complete, never-mutated catalog copy
- *       <app-id>/index.html ...
+ *       <any-name>/index.html + database.json ...
  * ```
  *
  * The lifecycle contract:
@@ -56,7 +56,6 @@ const GENERATION_ID_PATTERN = /^\d+-[0-9a-f]{8}$/;
  */
 export async function loadActiveAppCatalog(
 	catalogRoot: string,
-	{ reservedIds }: { reservedIds: readonly string[] },
 ): Promise<AppCatalog> {
 	let pointer: string;
 	try {
@@ -67,17 +66,15 @@ export async function loadActiveAppCatalog(
 		return { apps: [] };
 	}
 	if (!GENERATION_ID_PATTERN.test(pointer)) return { apps: [] };
-	return deriveAppCatalog(join(catalogRoot, GENERATIONS_DIRECTORY, pointer), {
-		reservedIds,
-	});
+	return deriveAppCatalog(join(catalogRoot, GENERATIONS_DIRECTORY, pointer));
 }
 
 /**
  * Validate a candidate directory of built app outputs and promote it to the
  * next-start catalog generation. Every non-dot entry below `candidateRoot`
- * must satisfy the member contract (ADR-0153 direct-folder ID, not a reserved
- * built-in surface, `index.html` present); one refused entry fails the whole
- * promotion so a typo cannot silently drop an app. The pointer is replaced
+ * must satisfy the member contract (`index.html` and a valid `database.json`
+ * declaring a database id no sibling already claimed, ADR-0210); one refused
+ * entry fails the whole promotion so a typo cannot silently drop an app. The pointer is replaced
  * only after the complete generation exists. Failed copies and validations
  * clean their staging paths; a failure after the generation rename may leave
  * a complete unselected generation, never a partial selection. The new
@@ -86,7 +83,6 @@ export async function loadActiveAppCatalog(
 export async function promoteAppCatalogCandidate(
 	catalogRoot: string,
 	candidateRoot: string,
-	{ reservedIds }: { reservedIds: readonly string[] },
 ): Promise<{ generation: string; apps: { id: string; title: string }[] }> {
 	if (!(await stat(candidateRoot).catch(() => undefined))?.isDirectory()) {
 		throw new Error(`Candidate catalog is not a directory: ${candidateRoot}`);
@@ -119,8 +115,11 @@ export async function promoteAppCatalogCandidate(
 		const expected = (await readdir(staging))
 			.filter((name) => !name.startsWith('.'))
 			.sort();
-		const { apps } = await deriveAppCatalog(staging, { reservedIds });
-		const admitted = new Set(apps.map((app) => app.id));
+		const { apps } = await deriveAppCatalog(staging);
+		// By directory, not by id: an id is the declared database id now, so the
+		// only way to say which candidate entry was refused is the folder it
+		// arrived in.
+		const admitted = new Set(apps.map((app) => app.directory));
 		const refused = expected.filter((name) => !admitted.has(name));
 		if (refused.length > 0) {
 			throw new Error(

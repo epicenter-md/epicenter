@@ -1,6 +1,6 @@
 # 0188. The Gmail application identity belongs to the shipped distribution, and no Epicenter server enters the Gmail path
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-29
 - **Relates:** [ADR-0082](0082-local-mail-syncs-by-push-free-history-list-polling.md) (originally carried this decision on the wrong axis; retains push-free polling), [ADR-0081](0081-per-upstream-oauth-concurrency-decides-mirror-topology.md) (a per-device grant is free under Google's concurrency ceiling, which is what makes device-local consent affordable), [ADR-0071](0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md) (Epicenter's *own* OAuth is hosted-only; that is a different credential from the Gmail grant and does not govern here), [ADR-0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) (the local engine that holds the grant), [ADR-0062](0062-local-books-stores-oauth-tokens-in-a-single-0600-file.md) (the 0600 on-disk token lineage this follows), [ADR-0068](0068-privacy-is-a-deployment-not-a-product-feature.md) (privacy is where you run it)
 
@@ -25,7 +25,7 @@ Local Mail originally made every build bring-your-own: `GMAIL_CLIENT_ID` and `GM
 5. **No Epicenter server participates in the Gmail path.** Authorization, code exchange, refresh, every Gmail API call, the access and refresh tokens, and the SQLite mirror are all device-local. Epicenter Cloud and a self-hosted Epicenter instance never broker the flow and never receive Gmail tokens, mail, or metadata. A cloud token broker is refused here, not left open as an implementation detail for a later convenience patch to introduce.
 6. **A Desktop client id, and any client secret Google requires alongside it, are public application configuration, not user secrets.** They identify a build, not a person, machine, or install. User secrets are the access and refresh tokens, which clause 5 keeps on the device.
 
-**What is not true yet, stated plainly:** no official Epicenter Google client is provisioned or verified. The distribution-owned code path exists, but source builds and current unsigned local bundles are bring-your-own unless built with a test client. No code, UI string, README, or marketing copy may claim a one-click Gmail connect until the official client exists and has passed Google verification. Clause 1 is the committed destination, not a description of current release behavior.
+**What is not true yet, stated plainly:** no official Epicenter Google client is provisioned or verified. That is a release task, not an open question in this record: the distribution-owned code path is built, and this record is accepted on that basis. The distribution-owned code path exists, but source builds and current unsigned local bundles are bring-your-own unless built with a test client. No code, UI string, README, or marketing copy may claim a one-click Gmail connect until the official client exists and has passed Google verification. Clause 1 is the committed destination, not a description of current release behavior.
 
 ## Consequences
 

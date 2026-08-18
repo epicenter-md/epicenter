@@ -4,7 +4,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - 'apps/whispering/**'
       - 'apps/landing/**'
       - 'apps/honeycrisp/**'
       - 'apps/vocab/**'
@@ -79,7 +78,11 @@ jobs:
           # abort the loop on the first app that fails to build or upload.
           set -uo pipefail
 
-          apps=(whispering landing honeycrisp vocab)
+          # No whispering: ADR-0227 refused its hosted web runtime, so it has no
+          # wrangler.jsonc to preview from. vocab stays and is expected to show
+          # :x: until it is rebuilt against the store, which is the point of a
+          # loop that reports per-app failures instead of aborting.
+          apps=(landing honeycrisp vocab)
           preview_alias="pr-${PR_NUMBER}"
           rows=""
           for app in "${apps[@]}"; do

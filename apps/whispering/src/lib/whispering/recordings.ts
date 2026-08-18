@@ -7,14 +7,16 @@ import {
 	generateBlobId,
 	type RemoteBlobNotFound,
 } from '@epicenter/blobs';
-import type { NonconformingRowError, TableLens } from '@epicenter/data';
+import type { NonconformingRow } from '@epicenter/data';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { Ok, type Result } from 'wellcrafted/result';
+import type { WhisperingData } from '../workspace';
 import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
-import { Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { Recording, recordingsTable } from '../workspace';
+	asRecording,
+	asStoredBlobId,
+	type NewRecording,
+	type Recording,
+} from './recording.js';
 import {
 	createRecordingAudio,
 	type RecordingAudioAvailability,
@@ -23,10 +25,6 @@ import {
 } from './recording-audio';
 
 export const RecordingDeletionError = defineErrors({
-	RowDeleteFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Could not delete the recording row: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
 	DeletionFailed: ({
 		recordingId,
 		deletedRecordingIds,
@@ -35,7 +33,7 @@ export const RecordingDeletionError = defineErrors({
 	}: {
 		recordingId: Recording['id'];
 		deletedRecordingIds: Recording['id'][];
-		stage: 'online-copy' | 'device-copy' | 'recording-row';
+		stage: 'online-copy' | 'device-copy';
 		cause: unknown;
 	}) => ({
 		message:
@@ -53,8 +51,7 @@ export type RecordingDeletionError = InferErrors<typeof RecordingDeletionError>;
 export type WhisperingRecordings = {
 	readonly sorted: Recording[];
 	readonly count: number;
-	readonly nonconforming: NonconformingRowError[];
-	readonly loadError: unknown;
+	readonly nonconforming: NonconformingRow[];
 	/** Whether the environment currently has an online audio copy capability. */
 	readonly remoteAvailable: boolean;
 	get(id: Recording['id']): Recording | undefined;
@@ -67,11 +64,11 @@ export type WhisperingRecordings = {
 			BlobAlreadyExists | BlobStoreFailed
 		>
 	>;
-	create(value: Omit<Recording, 'id' | 'uploadedAt'>): Promise<Recording>;
-	update(
+	create(value: NewRecording): Recording;
+	patch(
 		id: Recording['id'],
 		partial: Partial<Omit<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>>,
-	): ReturnType<TableLens<typeof recordingsTable>['update']>;
+	): Recording;
 	delete(
 		toDelete: Recording['id'] | Recording['id'][],
 	): Promise<Result<void, RecordingAudioError | RecordingDeletionError>>;
@@ -107,7 +104,6 @@ export type WhisperingRecordings = {
 			BlobNotFound | BlobStoreFailed | BlobRemoteFailed | RecordingAudioError
 		>
 	>;
-	refresh(): Promise<void>;
 	subscribe(listener: () => void): () => void;
 };
 
@@ -120,18 +116,13 @@ export type WhisperingRecordings = {
 export function createWhisperingRecordings({
 	table,
 	blobs,
-	reportBackgroundError,
 }: {
-	table: TableLens<typeof recordingsTable>;
+	table: WhisperingData['tables']['recordings'];
 	blobs: WhisperingBlobs;
-	reportBackgroundError(cause: unknown): void;
 }) {
 	let rows: Recording[] = [];
 	let sorted: Recording[] = [];
-	let nonconforming: NonconformingRowError[] = [];
-	let loadError: unknown = null;
-	let refreshGeneration = 0;
-	let isDisposed = false;
+	let nonconforming: NonconformingRow[] = [];
 	const listeners = new Set<() => void>();
 	const notify = () => {
 		for (const listener of listeners) listener();
@@ -140,44 +131,31 @@ export function createWhisperingRecordings({
 	const audio = createRecordingAudio({
 		blobs,
 		updateUploadedAt: async (id, uploadedAt) => {
-			const result = await table.update(id, {
-				uploadedAt,
-			});
-			// Write the marker through to the cache before this workflow resolves,
-			// so a delete that immediately follows an upload sees the uploaded
-			// state and purges the online copy instead of orphaning it.
-			if (result.error === null && result.data !== undefined) {
-				applyRowToCache(result.data as Recording);
-			}
-			void refresh();
-			return result;
+			const written = table.update(id, { uploadedAt });
+			// The marker is in the document the moment this returns, so a delete
+			// that immediately follows an upload sees the uploaded state and
+			// purges the online copy instead of orphaning it. `subscribe` refreshes
+			// the cache on the same commit.
+			return written;
 		},
 	});
 
-	async function refresh({ rethrow = false }: { rethrow?: boolean } = {}) {
-		refreshGeneration += 1;
-		while (!isDisposed) {
-			const generation = refreshGeneration;
-			try {
-				const { rows: nextRows, nonconforming: nextNonconforming } =
-					await table.scan();
-				if (isDisposed) return;
-				if (generation !== refreshGeneration) continue;
-				rows = nextRows as Recording[];
-				sorted = sortRows(rows);
-				nonconforming = nextNonconforming;
-				loadError = null;
-				notify();
-			} catch (cause) {
-				if (isDisposed) return;
-				if (generation !== refreshGeneration) continue;
-				loadError = cause;
-				notify();
-				if (rethrow) throw cause;
-				reportBackgroundError(cause);
-			}
-			return;
-		}
+	/**
+	 * Re-read the table whole.
+	 *
+	 * There is no generation counter, no in-flight guard and no retry loop.
+	 * Those arbitrated between asynchronous reads that could land out of order,
+	 * and a read is now a walk over a document already in memory (ADR-0215), so
+	 * none of it can happen. There is also no optimistic cache write before a
+	 * refresh: the write and the read see the same document, so there is no
+	 * window to paper over.
+	 */
+	function read(): void {
+		const listed = table.list();
+		rows = listed.rows.map(asRecording);
+		sorted = sortRows(rows);
+		nonconforming = listed.nonconforming;
+		notify();
 	}
 
 	function resolve(id: Recording['id']) {
@@ -190,22 +168,6 @@ export function createWhisperingRecordings({
 				new Date(right.recordedAt).getTime() -
 				new Date(left.recordedAt).getTime(),
 		);
-	}
-
-	/** Reflect one committed write in the cache before the refresh lands. */
-	function applyRowToCache(row: Recording) {
-		rows = rows.some((existing) => existing.id === row.id)
-			? rows.map((existing) => (existing.id === row.id ? row : existing))
-			: [...rows, row];
-		sorted = sortRows(rows);
-		notify();
-	}
-
-	/** Reflect one committed deletion in the cache before the refresh lands. */
-	function removeRowFromCache(id: Recording['id']) {
-		rows = rows.filter((row) => row.id !== id);
-		sorted = sortRows(rows);
-		notify();
 	}
 
 	/**
@@ -265,30 +227,20 @@ export function createWhisperingRecordings({
 					cause: blobError,
 				});
 			}
-			const { error: rowError } = await tryAsync({
-				try: async () => {
-					if (!(await table.delete(recording.id))) {
-						throw new Error(`Recording row ${recording.id} was already absent`);
-					}
-				},
-				catch: (cause) => RecordingDeletionError.RowDeleteFailed({ cause }),
-			});
-			if (rowError !== null) {
-				return RecordingDeletionError.DeletionFailed({
-					recordingId: recording.id,
-					deletedRecordingIds,
-					stage: 'recording-row',
-					cause: rowError,
-				});
-			}
+			// The row delete cannot fail: it reports only whether a row was there
+			// to take, and an already-gone row is still truthfully deleted.
+			table.delete(recording.id);
 			deletedRecordingIds.push(recording.id);
-			removeRowFromCache(recording.id);
 		}
 		return Ok(undefined);
 	}
 
-	const unsubscribeRecords = table.subscribe(() => void refresh());
-	const ready = refresh({ rethrow: true });
+	read();
+	// Registration is synchronous, does no I/O and never fires initially, so the
+	// read above has already seen everything (ADR-0187). It fires for a local
+	// write and for bytes that arrived from another device alike, which is what
+	// retired every hand-maintained cache patch below.
+	const unsubscribeRecords = table.subscribe(read);
 	const recordings: WhisperingRecordings = {
 		get sorted() {
 			return sorted;
@@ -298,9 +250,6 @@ export function createWhisperingRecordings({
 		},
 		get nonconforming() {
 			return nonconforming;
-		},
-		get loadError() {
-			return loadError;
 		},
 		get remoteAvailable() {
 			return blobs.remote !== null;
@@ -314,34 +263,31 @@ export function createWhisperingRecordings({
 			if (result.error !== null) return result;
 			return Ok({ audioBlobId, byteLength: blob.size });
 		},
-		async create(value) {
-			let created: Recording;
-			try {
-				created = (await table.create({
-					...value,
-					uploadedAt: null,
-				})) as Recording;
-			} catch (cause) {
-				// The row never existed, so the already-committed audio is orphaned:
-				// remove it rather than leaking unreachable bytes.
-				const { error: cleanupError } = await blobs.local.delete(
-					value.audioBlobId,
-				);
-				if (cleanupError !== null) {
-					throw new AggregateError(
-						[cause, cleanupError],
-						'Could not create the recording row or clean up its stored audio.',
-					);
-				}
-				throw cause;
+		create(value) {
+			const written = table.create({
+				...value,
+				audioBlobId: asStoredBlobId(value.audioBlobId),
+				uploadedAt: null,
+			});
+			if (written.error !== null) {
+				// The row never existed, so the already-committed audio is orphaned.
+				// Removing it is asynchronous and this verb is not, so the cleanup is
+				// launched and its own failure reported rather than joined: a caller
+				// holding a refused create has nothing to do with a second error, and
+				// leaking the bytes silently is the outcome worth avoiding.
+				void blobs.local.delete(value.audioBlobId).then(({ error }) => {
+					if (error !== null) {
+						throw new AggregateError(
+							[written.error, error],
+							'Could not create the recording row or clean up its stored audio.',
+						);
+					}
+				});
+				throw written.error;
 			}
-			// Insert optimistically so follow-up workflows (auto-upload, delete)
-			// resolve the new row before the background refresh lands.
-			applyRowToCache(created);
-			void refresh();
-			return created;
+			return asRecording(written.data);
 		},
-		async update(id, partial) {
+		patch(id, partial) {
 			// Structural typing lets a whole row flow in as the partial, so drop
 			// the protected keys at runtime: the audio workflows stay the only
 			// writer of uploadedAt and audio identity stays immutable.
@@ -351,12 +297,22 @@ export function createWhisperingRecordings({
 				uploadedAt: _uploadedAt,
 				...changes
 			} = partial as Partial<Recording>;
-			const result = await table.update(id, changes);
-			if (result.error === null && result.data !== undefined) {
-				applyRowToCache(result.data as Recording);
+			const written = table.update(id, changes);
+			if (written.error !== null) throw written.error;
+			// The write reports only that it landed; what the row now reads as is
+			// `get`'s answer. Subscriptions fired inside the write, so the cache is
+			// already refreshed by the time this re-read runs.
+			const reread = table.get(id);
+			if (reread.error !== null) {
+				throw new Error(
+					`Recording '${id}' no longer reads whole after this patch`,
+					{ cause: reread.error },
+				);
 			}
-			void refresh();
-			return result;
+			if (reread.data === undefined) {
+				throw new Error(`Recording '${id}' vanished during this patch`);
+			}
+			return asRecording(reread.data);
 		},
 		async delete(toDelete) {
 			const ids = Array.isArray(toDelete) ? toDelete : [toDelete];
@@ -364,9 +320,7 @@ export function createWhisperingRecordings({
 			const selected = ids
 				.map(resolve)
 				.filter((recording) => recording !== undefined);
-			const result = await deleteResolved(selected);
-			void refresh();
-			return result;
+			return deleteResolved(selected);
 		},
 		audioAvailability(id) {
 			return withRecording(id, audio.availability);
@@ -380,7 +334,6 @@ export function createWhisperingRecordings({
 		removeLocalAudio(id) {
 			return withRecording(id, audio.removeLocal);
 		},
-		refresh,
 		subscribe(listener) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
@@ -389,10 +342,7 @@ export function createWhisperingRecordings({
 
 	return {
 		recordings,
-		ready,
-		dispose() {
-			isDisposed = true;
-			refreshGeneration += 1;
+		[Symbol.dispose]() {
 			unsubscribeRecords();
 			listeners.clear();
 		},

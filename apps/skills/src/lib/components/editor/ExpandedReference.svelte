@@ -1,23 +1,20 @@
 <script lang="ts">
-	import { getSkillsApp } from '$lib/context.js';
+	import { SKILL_CONTENT } from '@epicenter/skills';
+	import { getSkills } from '$lib/context.js';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { id }: { id: string } = $props();
-	const skills = getSkillsApp();
+	const skills = getSkills();
 
-	const lease = $derived(skills.tables.skillReferences.openDocument(id));
-	$effect(() => {
-		const openedLease = lease;
-		return () =>
-			void openedLease.then(
-				(opened) => opened[Symbol.asyncDispose](),
-				() => undefined,
-			);
-	});
+	const content = $derived(
+		skills.data.tables.skillReferences.document(id)?.get(SKILL_CONTENT),
+	);
 </script>
 
 <div class="h-48 border-t">
-	{#await lease then opened}
-		<CodeMirrorEditor document={opened} />
-	{/await}
+	{#if content !== undefined}
+		{#key id}
+			<CodeMirrorEditor {content} />
+		{/key}
+	{/if}
 </div>

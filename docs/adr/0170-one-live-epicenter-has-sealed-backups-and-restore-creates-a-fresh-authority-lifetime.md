@@ -2,6 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-20
+- **Relates:** [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md) (`Proposed`), which borrows this record's authority lifetime rather than minting a second noun, and which refuses a rebase for the reason this record's Restore already implies: measured, rebuilding a document from its final state reclaims 1% and duplicates content on any device that missed it. Restore stays the one deliberate rebase, and ADR-0214 adds a read-only historical copy for everything short of one.
 - **Amends:** [ADR-0161](0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0163](0163-scalar-sync-separates-fact-reads-from-numbered-intent-submissions.md), and [ADR-0167](0167-a-portable-epicenter-is-an-identity-free-export-of-one-authority-cut.md)
 
 ## Context

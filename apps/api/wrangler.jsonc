@@ -16,7 +16,7 @@
 	// --- Static assets: cloud UI SPA (built by SvelteKit adapter-static) ---
 	// SvelteKit writes hashed assets to ui/build/_app/* plus a fallback.html
 	// shell. The asset layer serves matching files (/_app/*, favicon) before the
-	// Worker runs; UI URLs (/dashboard, /sign-in, /consent, /cli-callback)
+	// Worker runs; UI URLs (/dashboard, /sign-in, /consent)
 	// match no file and fall through to Hono, which serves fallback.html for
 	// the routes it owns. The shell is deliberately not index.html so the asset
 	// layer never shadows the Worker's `/` route. `html_handling: none` keeps
@@ -46,58 +46,23 @@
 	// --- Durable Objects ---
 	"durable_objects": {
 		"bindings": [
-			// One AttachRelay actor per (principalId, hostId) pair holds the live
-			// Super Chat rendezvous sockets (ADR-0115). It stores no frames and owns
-			// no ctx.storage; the DO is a pure socket router.
+			// One StoreAuthority per (principalId, application id) holds the
+			// opaque log for the new store transport (ADR-0220). It reads nothing
+			// it stores, and it is addressed only by a name built from a resolved
+			// bearer's principal, never from a query.
 			{
-				"name": "ATTACH_RELAY",
-				"class_name": "AttachRelay"
-			},
-			{
-				"name": "EPICENTER_SYNC",
-				"class_name": "EpicenterAuthority"
+				"name": "STORE_AUTHORITY",
+				"class_name": "StoreAuthority"
 			}
 		]
 	},
-	// SQLite-backed DO: persistent storage survives hibernation. AttachRelay
-	// stores nothing, but new DO classes take the SQLite storage backend (the
-	// modern default) whether or not they touch it.
+	// A fresh Worker begins with the store authority only. Deploy this configuration
+	// only after deleting the old Worker and its Durable Object state, as ADR-0236
+	// requires.
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_sqlite_classes": ["WorkspaceRoom", "DocumentRoom"]
-		},
-		{
-			"tag": "v2",
-			"new_sqlite_classes": ["Room"],
-			"deleted_classes": ["WorkspaceRoom", "DocumentRoom"]
-		},
-		{
-			"tag": "v3",
-			"new_sqlite_classes": ["AttachRelay"]
-		},
-		{
-			"tag": "v4",
-			"new_sqlite_classes": ["RowAuthorityDurableObject"]
-		},
-		{
-			// Reset-only protocol break: create a fresh namespace for the
-			// current-state authority and permanently delete every legacy authority.
-			"tag": "v5",
-			"new_sqlite_classes": ["CurrentStateRowAuthorityDurableObject"],
-			"deleted_classes": ["RowAuthorityDurableObject"]
-		},
-		{
-			"tag": "v6",
-			"new_sqlite_classes": ["EpicenterAuthority"]
-		},
-		{
-			"tag": "v7",
-			"deleted_classes": ["CurrentStateRowAuthorityDurableObject"]
-		},
-		{
-			"tag": "v8",
-			"deleted_classes": ["Room"]
+			"new_sqlite_classes": ["StoreAuthority"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

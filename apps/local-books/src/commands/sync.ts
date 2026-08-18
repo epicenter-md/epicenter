@@ -3,7 +3,6 @@ import { createQbAccess } from '../books/qb-access.ts';
 import type { ParsedArgs } from '../cli.ts';
 import { openBooksDb } from '../db.ts';
 import { DEFAULT_ENTITIES, isKnownEntity } from '../entities.ts';
-import { dbPath } from '../paths.ts';
 import {
 	repairEntities,
 	runSyncLoop,
@@ -38,12 +37,12 @@ function reportOutcome(o: SyncOutcome): void {
  * `--interval` keeps the realm pass running on a loop until Ctrl-C.
  */
 export async function runSync(args: ParsedArgs): Promise<number> {
-	const { data: company, error } = resolveCompany(args);
+	const { data: company, error } = await resolveCompany(args);
 	if (error !== null) {
 		console.error(error);
 		return 1;
 	}
-	const { config, realmId, store } = company;
+	const { config, realmId, mirror, store } = company;
 
 	const repairTargets = args.entities;
 	const unknown = repairTargets.filter((name) => !isKnownEntity(name));
@@ -75,7 +74,7 @@ export async function runSync(args: ParsedArgs): Promise<number> {
 		console.error(openError);
 		return 1;
 	}
-	const db = openBooksDb(dbPath(config.dataDir, realmId));
+	const db = openBooksDb(mirror);
 	const deps: SyncDeps = { db, client, config, now, log };
 
 	// Looping mode: keep the mirror fresh until interrupted.

@@ -65,8 +65,6 @@ export type Identity = {
  * relational-auth context (`c.var.auth`, `c.var.db`) is NOT installed here: the
  * cloud adds it via {@link mountCloudAuth} + {@link mountCloudDb}, so the
  * single-partition instance composes no Better Auth and no Postgres (ADR-0076).
- * WebSocket auth-transport normalization is likewise not global: it lives in the
- * attach relay, the only remaining WebSocket surface.
  */
 export function createServerApp<E extends Env = Env>({
 	resolveOrigin,

@@ -10,7 +10,7 @@
 
 	let { children } = $props();
 
-	const authSurfacePaths = ['/sign-in', '/consent', '/cli-callback'];
+	const authSurfacePaths = ['/sign-in', '/consent'];
 	const showQueryDevtools = $derived(
 		dev && !authSurfacePaths.includes(page.url.pathname),
 	);

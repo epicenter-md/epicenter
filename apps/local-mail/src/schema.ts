@@ -13,10 +13,39 @@ import { type Static, Type } from 'typebox';
  * No schema sets `additionalProperties: false`: these describe only the
  * fields this package actually reads (Gmail messages carry many more, e.g.
  * `payload.parts`/`payload.body`/`sizeEstimate`), so an unread field must
- * never fail validation. `db.ts` stores the full original parsed object as
- * `raw` (via `JSON.stringify`), not a schema-narrowed copy: `Value.Check` is
- * a non-mutating predicate, it never strips unknown properties.
+ * never fail validation. `db.ts` stores the full original parsed object in the
+ * `resource` column (via `JSON.stringify`), not a schema-narrowed copy:
+ * `Value.Check` is a non-mutating predicate, it never strips unknown properties.
  */
+
+/**
+ * Gmail's system label ids. These are protocol constants, not mailbox data:
+ * Gmail assigns them, they are identical in every account, and unlike a user
+ * label they can be neither renamed nor deleted (Gmail `users.labels`
+ * reference, verified 2026-08-01). Knowing them is what lets triage work before
+ * the first pull and across a mirror rebuild, when the mirrored label table is
+ * empty but archiving still has an unambiguous meaning (ADR-0198).
+ *
+ * `CATEGORY_*` are included because Gmail's inbox tabs are system labels a user
+ * can legitimately act on. Custom labels are `Label_<n>` and are NOT here: their
+ * ids and names are account data, so they resolve against the mirror.
+ */
+export const GMAIL_SYSTEM_LABEL_IDS = new Set([
+	'INBOX',
+	'SENT',
+	'DRAFT',
+	'SPAM',
+	'TRASH',
+	'UNREAD',
+	'STARRED',
+	'IMPORTANT',
+	'CHAT',
+	'CATEGORY_PERSONAL',
+	'CATEGORY_SOCIAL',
+	'CATEGORY_PROMOTIONS',
+	'CATEGORY_UPDATES',
+	'CATEGORY_FORUMS',
+]);
 
 /** One Gmail message resource. `messages.get(format=full)` populates every
  * field; a `history.list` record's embedded `message` is thinner (id/threadId/
@@ -31,9 +60,14 @@ export const GmailMessageSchema = Type.Object({
 	payload: Type.Optional(
 		Type.Object({
 			mimeType: Type.Optional(Type.String()),
+			// A `MessagePartBody` carries either inline base64url `data` or an
+			// `attachmentId` naming bytes only `messages.attachments.get` returns.
+			// Local Mail reads the latter to say the body is not local; it never
+			// fetches it (ADR-0196).
 			body: Type.Optional(
 				Type.Object({
 					data: Type.Optional(Type.String()),
+					attachmentId: Type.Optional(Type.String()),
 				}),
 			),
 			headers: Type.Optional(

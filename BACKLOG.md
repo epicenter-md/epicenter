@@ -2,9 +2,9 @@
 
 ## Remove Local Mail's headless continuous watcher
 
-- Desired result: Remove `local-mail sync --watch` so the open desktop app is
-  the only continuous synchronization owner while one-shot `sync` remains
-  available for explicit freshness.
+- Desired result: Remove `local-mail reconcile --watch` so the open desktop app
+  is the only continuous reconcile owner while a one-shot `reconcile` remains
+  available for explicit delivery and freshness.
 - Grounding:
   [ADR-0116](docs/adr/0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md)
   says Local Mail does not update automatically while the app is closed.
@@ -45,12 +45,14 @@
   reintroducing a mount, a lease, or a folder-shaped root.
 - Grounding: `@epicenter/cli` did this as `epicenter up`, with `down`,
   `status`, and `logs` managing the process through pid metadata and OS
-  signals. It was deleted in
+  signals, plus a resident folder watcher that kept a project directory and the
+  replica in step. It was deleted in
   [commit 946064c1](https://github.com/EpicenterHQ/epicenter/commit/946064c128)
   because every verb read `@epicenter/workspace`, whose mount and daemon model
   ADR-0166 replaced. Treat that implementation as evidence of the process
   lifecycle problems already solved (lease claiming, pid liveness, log
-  rotation, signal handling), not as code to restore.
+  rotation, signal handling, debounced filesystem events), not as code to
+  restore.
 - Revisit when: A real always-on deployment needs data resident without a
   window, or the anchor role in ADR-0068 gets built.
 
@@ -60,12 +62,33 @@
   and exchange a large local file for a durable URL, without shipping a whole
   CLI to do it.
 - Grounding: `epicenter auth` held a machine session and `epicenter blobs`
-  traded a file for an opaque-id S3 URL. Both were deleted with the CLI in
-  [commit 946064c1](https://github.com/EpicenterHQ/epicenter/commit/946064c128).
+  traded a file for an opaque-id S3 URL. The commands went with the CLI in
+  [commit 946064c1](https://github.com/EpicenterHQ/epicenter/commit/946064c128);
+  the auth machinery under them followed, because nothing but a terminal ever
+  called it. What that machinery provided, as history rather than a
+  compatibility commitment:
+  - Terminal OAuth login. `loginWithOob` ran one out-of-band authorization-code
+    + PKCE exchange against the same `/auth/oauth2/token` endpoint the browser
+    uses. A dedicated `epicenter-cli` public client redirected to an
+    Epicenter-owned `/cli-callback` page that rendered a one-time code for the
+    user to paste back into the terminal.
+  - Persisted machine sessions. One `PersistedAuth` cell per API target at
+    `<dataDir>/auth/<host>.json`, mode `0o600`, refusing to load a file whose
+    permissions were wider. `createMachineAuthClient` booted a daemon from that
+    cell with a launcher that errored rather than prompting, and `status`
+    reported `'unverified'` offline so a cached identity still printed.
+  - A headless credential fork. `resolveMachineAuthClient` chose between a
+    static self-host bearer (`EPICENTER_TOKEN`, or `EPICENTER_TOKEN_FILE` to
+    keep the secret out of the process environment) and the persisted OAuth
+    cell, so one entry point served both deployment kinds.
   The blob half is also superseded in shape:
   [ADR-0173](docs/adr/0173-each-row-owns-at-most-one-write-once-immutable-blob.md)
   makes a blob a row-owned write-once slot addressed by row, not an opaque id,
   so any replacement addresses a row rather than minting a BlobId.
+  Authentication is now owned entirely by the apps, and there is no headless
+  login workflow. Any future headless tool should be designed around a concrete
+  workflow and re-derive its credential story from that, treating the above as
+  inspiration rather than a target to restore.
 - Revisit when: A scripted or agent workflow needs to authenticate or publish
   bytes from outside an app window.
 
@@ -113,6 +136,23 @@
   `docs/licensing/licensing-strategy.md` treats as a relicensing act.
 - Revisit when: The published toolkit surface is next revised, or the attach
   relay's auth handshake changes.
+
+## Revoke the `epicenter-cli` OAuth client row in each deployed database
+
+- Desired result: No deployment still advertises a registered OAuth client for
+  the deleted CLI.
+- Grounding: `apps/api/scripts/seed-oauth-clients.ts` only upserts the clients
+  it knows about; it never deletes. The `epicenter-cli` row seeded before that
+  client was removed from `buildTrustedOAuthClients` therefore survives in every
+  database that was seeded, still carrying its `/cli-callback` redirect URI. It
+  no longer skips consent (it left `trustedOAuthClientIds`) and its redirect
+  target now 404s, but it remains valid client metadata at `/authorize` and
+  `/token`. The fix is one `DELETE FROM oauth_client WHERE client_id =
+  'epicenter-cli'` per deployed database, or setting `disabled = true` to keep
+  the row for audit. Deliberately not executed here: this is a production
+  database mutation, not a code change.
+- Revisit when: The next production deploy of `apps/api`, or sooner if an audit
+  of registered OAuth clients is run.
 
 ## Deprecate the npm packages this repository no longer builds
 

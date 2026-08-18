@@ -18,7 +18,7 @@ import type { WhisperingApp } from '$lib/whispering/app';
  */
 export function resolveCompletionState(app: WhisperingApp): CompletionState {
 	return resolveCompletionStateFromConfig({
-		provider: app.settings.get('settings.completion.provider'),
+		provider: app.settings.get('completionProvider'),
 		getDeviceConfig: deviceConfig.get,
 	});
 }
@@ -49,7 +49,7 @@ export function completeWithGlobalDefault(
 ): Promise<Result<string, CompleteError>> {
 	const { target } = resolveCompletionState(app);
 	if (!target) {
-		const provider = app.settings.get('settings.completion.provider');
+		const provider = app.settings.get('completionProvider');
 		return Promise.resolve(
 			CompleteError.TransportFailed({
 				cause: new Error(
@@ -64,7 +64,7 @@ export function completeWithGlobalDefault(
 			customFetch,
 		),
 		{
-			model: app.settings.get('settings.completion.model').trim(),
+			model: app.settings.get('completionModel').trim(),
 			systemPrompt,
 			userPrompt,
 			signal,

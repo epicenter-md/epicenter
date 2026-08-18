@@ -32,7 +32,7 @@ Selection happens at build time through the `#platform/*` imports in `package.js
 - The `tauri` condition resolves `*.tauri.ts` implementations.
 - Shared code can use the nullable `tauri` capability namespace as a guard, but it does not choose implementations at runtime.
 
-Epicenter's asset build sets `EPICENTER_SURFACE=1`, which activates the `tauri` module condition and the `/apps/whispering` asset base. No other build signal selects Whispering's native implementations.
+Epicenter's asset build sets `EPICENTER_HOST=1`, which activates the `tauri` module condition and the `/apps/whispering` asset base. No other build signal selects Whispering's native implementations.
 
 ## Run locally
 
@@ -45,11 +45,11 @@ bun dev:whispering
 # Browser UI only
 bun dev:whispering:ui
 
-# Epicenter desktop with Whispering mounted as a native surface
+# Epicenter desktop with Whispering as a native app window
 bun dev:epicenter
 ```
 
-The browser app runs on `http://localhost:1420`. Epicenter also serves Whispering at `epicenter://surface/whispering`.
+The browser app runs on `http://localhost:1420`. Epicenter also opens Whispering at `epicenter://app/whispering`.
 
 ## Build and verify
 
@@ -94,12 +94,8 @@ Whispering stores settings and recording metadata locally first. Audio leaves th
 
 See the repository [trust model](../../docs/trust-model.md) for hosted sync and account boundaries.
 
-## Deploy the browser app
+## There is no hosted browser deploy
 
-`wrangler.jsonc` publishes the static SPA and routes unknown paths back to `index.html`.
+`wrangler.jsonc` published the static SPA to `whispering.epicenter.so`. ADR-0227 refused that runtime: a browser tab is not a target, so the config and its deploy step are gone. Whatever Cloudflare last published keeps serving until somebody deletes the Worker, because removing the config stops republishing rather than taking anything down.
 
-```bash
-bun run --cwd apps/whispering deploy
-```
-
-Cloudflare runs the browser build from the same configuration before deployment. It never packages or executes the Epicenter native runtime.
+ADR-0227 says what would reopen this, which is trying-before-installing turning out to matter more than the capability seams cost.

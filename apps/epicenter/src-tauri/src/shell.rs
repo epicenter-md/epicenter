@@ -10,7 +10,7 @@ use tauri_plugin_autostart::ManagerExt as AutostartExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState as NativeShortcutState};
 use tauri_specta::Event;
 
-use crate::{request_surface, DesktopAppHandle, Surface};
+use crate::{request_window, BuiltInApp, DesktopAppHandle};
 
 const TRAY_ID: &str = "epicenter-tray";
 const WHISPERING_WINDOW: &str = "whispering";
@@ -52,8 +52,8 @@ pub fn create_tray(app: &DesktopAppHandle) -> tauri::Result<()> {
         .tooltip("Epicenter")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            "show-home" => request_surface(app, Surface::Home),
-            "show-whispering" => request_surface(app, Surface::Whispering),
+            "show-home" => request_window(app, BuiltInApp::Home),
+            "show-whispering" => request_window(app, BuiltInApp::Whispering),
             "quit" => app.exit(0),
             _ => {}
         })

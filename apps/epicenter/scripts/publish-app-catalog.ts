@@ -8,42 +8,35 @@
  * full restart.
  *
  * Usage:
- *   bun run scripts/publish-app-catalog.ts <candidate-dir> [--data-dir <dir>]
+ *   bun run scripts/publish-app-catalog.ts <candidate-dir>
  *
- * `<candidate-dir>` holds one directory per app: `<id>/index.html ...`.
- * `--data-dir` defaults to EPICENTER_DATA_DIR.
+ * `<candidate-dir>` holds one directory per app, each with `index.html` and
+ * a `workspace.json` declaring the workspace id it owns (ADR-0210). The directory name
+ * itself means nothing.
+ * The catalog is published into the one Epicenter root, which the host itself
+ * resolves at boot; `EPICENTER_DATA_DIR` moves both together (ADR-0201). There
+ * is deliberately no second flag for it: a script that could name a different
+ * root than the running host would publish a generation nothing ever selects.
  */
 
 import { join, resolve } from 'node:path';
+import { epicenterDataRoot } from '@epicenter/constants/app-data';
 import { promoteAppCatalogCandidate } from '../src/app-catalog.ts';
-import { SURFACE_ROUTES } from '../src/routes.ts';
 
 function usage(): never {
 	console.error(
-		'Usage: bun run scripts/publish-app-catalog.ts <candidate-dir> [--data-dir <dir>]',
+		'Usage: bun run scripts/publish-app-catalog.ts <candidate-dir>',
 	);
 	process.exit(1);
 }
 
 const args = Bun.argv.slice(2);
-const dataDirFlag = args.indexOf('--data-dir');
-const dataDir =
-	dataDirFlag === -1
-		? process.env.EPICENTER_DATA_DIR
-		: args.splice(dataDirFlag, 2)[1];
 const [candidate] = args;
 if (candidate === undefined || args.length !== 1) usage();
-if (!dataDir) {
-	console.error(
-		'Pass --data-dir or set EPICENTER_DATA_DIR to the Epicenter app data directory.',
-	);
-	process.exit(1);
-}
 
 const { generation, apps } = await promoteAppCatalogCandidate(
-	join(dataDir, 'app-catalog'),
+	join(epicenterDataRoot(), 'app-catalog'),
 	resolve(candidate),
-	{ reservedIds: Object.keys(SURFACE_ROUTES) },
 );
 console.log(`Published catalog generation ${generation}:`);
 for (const app of apps) {

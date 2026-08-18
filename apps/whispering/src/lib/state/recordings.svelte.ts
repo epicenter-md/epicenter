@@ -1,8 +1,8 @@
 import { createSubscriber } from 'svelte/reactivity';
 import type { WhisperingApp } from '$lib/whispering/app';
-import type { Recording } from '$lib/workspace';
+import type { Recording } from '$lib/whispering/recording';
 
-export type { Recording } from '$lib/workspace';
+export type { Recording } from '$lib/whispering/recording';
 
 export type Recordings = ReturnType<typeof createRecordings>;
 
@@ -24,10 +24,6 @@ export function createRecordings({
 			invalidate();
 			return recordings.nonconforming;
 		},
-		get loadError() {
-			invalidate();
-			return recordings.loadError;
-		},
 		// Availability follows the platform's reactive auth state, which the
 		// underlying getter reads on every access; no record subscription needed.
 		get remoteAvailable() {
@@ -39,13 +35,12 @@ export function createRecordings({
 		},
 		storeAudio: recordings.storeAudio,
 		create: recordings.create,
-		update: recordings.update,
+		patch: recordings.patch,
 		delete: recordings.delete,
 		audioAvailability: recordings.audioAvailability,
 		uploadAudio: recordings.uploadAudio,
 		downloadAudio: recordings.downloadAudio,
 		removeLocalAudio: recordings.removeLocalAudio,
-		refresh: recordings.refresh,
 		subscribe: recordings.subscribe,
 	};
 }

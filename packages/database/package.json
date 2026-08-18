@@ -1,0 +1,49 @@
+{
+	"name": "@epicenter/database",
+	"version": "0.4.0",
+	"description": "The Epicenter data-contract vocabulary for applications: one immutable workspace declaration per application, inert, compiled, and free of storage, sockets and Yjs.",
+	"type": "module",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/EpicenterHQ/epicenter.git",
+		"directory": "packages/database"
+	},
+	"homepage": "https://epicenter.so",
+	"keywords": [
+		"epicenter",
+		"local-first",
+		"schema",
+		"workspace",
+		"sdk"
+	],
+	"sideEffects": false,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src",
+		"!src/**/*.test.ts",
+		"LICENSE"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test",
+		"prepack": "bun run build"
+	},
+	"dependencies": {
+		"@epicenter/field": "workspace:*",
+		"typebox": "catalog:",
+		"wellcrafted": "catalog:",
+		"arktype": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
+}

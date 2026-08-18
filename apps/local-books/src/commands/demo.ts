@@ -4,18 +4,17 @@
  * the point in ten seconds. The sample lands under the `demo` realm, so it never
  * collides with a real connected company.
  *
- * This writes the same `books.db` shape `sync` produces (one table per record
+ * This writes the same mirror shape `sync` produces (one table per record
  * type, raw QB JSON plus generated columns), so every example below is a real
  * `local-books query` you can re-run yourself.
  */
 
 import { rmSync } from 'node:fs';
-import { dirname } from 'node:path';
+import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import { queryBooks } from '../books/query.ts';
-import type { ParsedArgs } from '../cli.ts';
-import { openBooksDb } from '../db.ts';
+import { booksMirror, openBooksDb } from '../db.ts';
 import { entityDef, type QbObject } from '../entities.ts';
-import { dbPath, resolveDataDir } from '../paths.ts';
+import { booksDataDir, companyDir } from '../paths.ts';
 
 const DEMO_REALM = 'demo';
 
@@ -91,8 +90,8 @@ const purchase = (
 });
 
 /** Print a query's rows as a compact aligned table. */
-function table(dbFile: string, sql: string): void {
-	const { data, error } = queryBooks({ dbPath: dbFile, sql });
+function table(mirror: Mirror, sql: string): void {
+	const { data, error } = queryBooks({ mirror, sql });
 	if (error !== null) {
 		console.log(`  (query failed: ${error.message})`);
 		return;
@@ -121,11 +120,12 @@ function table(dbFile: string, sql: string): void {
 	}
 }
 
-export async function runDemo(args: ParsedArgs): Promise<number> {
-	const dataDir = resolveDataDir(args.dataDir);
-	const dbFile = dbPath(dataDir, DEMO_REALM);
-	// Fresh each run: the demo is disposable sample data, not a real mirror.
-	rmSync(dirname(dbFile), { recursive: true, force: true });
+export async function runDemo(): Promise<number> {
+	const dataDir = booksDataDir();
+	// Fresh each run: the demo is disposable sample data, not a real mirror, so it
+	// clears the whole realm directory rather than reclaiming one artifact.
+	rmSync(companyDir(dataDir, DEMO_REALM), { recursive: true, force: true });
+	const mirror = booksMirror(dataDir, DEMO_REALM);
 
 	const acme = { value: '1', name: 'Acme Corp' };
 	const globex = { value: '2', name: 'Globex Inc' };
@@ -133,7 +133,7 @@ export async function runDemo(args: ParsedArgs): Promise<number> {
 	const aws = { value: '10', name: 'AWS' };
 	const wework = { value: '13', name: 'WeWork' };
 
-	const db = openBooksDb(dbFile);
+	const db = openBooksDb(mirror);
 	const seed: Array<{ entity: string; objects: QbObject[] }> = [
 		{
 			entity: 'Account',
@@ -219,11 +219,11 @@ export async function runDemo(args: ParsedArgs): Promise<number> {
 	console.log(
 		'Built a sample company (Northwind Consulting) in your local copy.',
 	);
-	console.log(`Stored at: ${dbFile}\n`);
+	console.log(`Stored at: ${mirror.path}\n`);
 
 	console.log('Who owes us money? (open invoices)');
 	table(
-		dbFile,
+		mirror,
 		`SELECT c.display_name AS customer, i.doc_number AS invoice, i.doc_date AS date,
 		        printf('$%,.2f', i.balance) AS outstanding
 		 FROM invoices i JOIN customers c ON c.id = i.customer_ref
@@ -232,7 +232,7 @@ export async function runDemo(args: ParsedArgs): Promise<number> {
 
 	console.log('\nWhere is the money going? (expense spend by category)');
 	table(
-		dbFile,
+		mirror,
 		`SELECT json_extract(line.value, '$.AccountBasedExpenseLineDetail.AccountRef.name') AS category,
 		        COUNT(*) AS txns, printf('$%,.2f', SUM(json_extract(line.value, '$.Amount'))) AS spent
 		 FROM purchases p, json_each(p.raw, '$.Line') line
@@ -242,7 +242,7 @@ export async function runDemo(args: ParsedArgs): Promise<number> {
 
 	console.log('\nWhat still needs categorizing?');
 	table(
-		dbFile,
+		mirror,
 		`SELECT id, txn_date AS date, payee, printf('$%,.2f', total_amt) AS amount
 		 FROM purchases WHERE deleted = 0 AND raw LIKE '%Uncategorized Expense%' ORDER BY txn_date`,
 	);

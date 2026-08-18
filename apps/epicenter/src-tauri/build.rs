@@ -1,6 +1,6 @@
 //! Epicenter Tauri build script.
 //!
-//! The Whispering surface links transcribe-cpp statically on macOS and
+//! The Whispering build links transcribe-cpp statically on macOS and
 //! aarch64 Windows. Linux and x86_64 Windows use dynamic backends, so their
 //! runtime libraries are staged for the final bundle here.
 

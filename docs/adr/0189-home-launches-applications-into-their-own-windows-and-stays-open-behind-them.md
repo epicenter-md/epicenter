@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-30
+- **Amended by:** [ADR-0209](0209-epicenter-is-the-raw-view-beside-its-applications-not-a-shell-above-them.md), which withdraws "stays open behind them", Home-as-shell, and the refusal of a fourth pane. The per-application windows this record decided are kept, and so are its one launchable list, its one launch verb, and its refusal of an installation UI. The fourth pane returns as `Data`, which is Epicenter's own job rather than another way to launch something.
 - **Relates:** [ADR-0152](0152-epicenter-home-is-a-shell-above-workspaces.md) (Home owns navigation; this record decides its shape), [ADR-0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md), [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md), [ADR-0180](0180-epicenter-has-one-host-owned-active-local-transcription-model.md), [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md), [ADR-0186](0186-an-app-reaches-epicenter-through-one-bundled-mit-client-it-installs-itself.md)
 
 ## Context

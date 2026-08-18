@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { HTMLAttributes } from 'svelte/elements';
-	import * as Tooltip from '../tooltip/index.js';
 	import { cn, type WithElementRef } from '../utils.js';
 	import {
 		SIDEBAR_COOKIE_MAX_AGE,
@@ -38,17 +37,22 @@
 
 <svelte:window onkeydown={sidebar.handleShortcutKeydown} />
 
-<Tooltip.Provider delayDuration={0}>
-	<div
-		data-slot="sidebar-wrapper"
-		style="--sidebar-width: {SIDEBAR_WIDTH}; --sidebar-width-icon: {SIDEBAR_WIDTH_ICON}; {style}"
-		class={cn(
-			'group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar flex min-h-svh w-full',
-			className,
-		)}
-		bind:this={ref}
-		{...restProps}
-	>
-		{@render children?.()}
-	</div>
-</Tooltip.Provider>
+<!--
+	No Tooltip.Provider here. This wrapper holds the whole app, not just the
+	sidebar, so a provider here would set the hover delay for every tooltip on
+	the page and shadow the app's own. The instant delay the collapsed rail
+	wants belongs to the rail: see sidebar-menu-button.svelte.
+	Apps supply a Tooltip.Provider at their root.
+-->
+<div
+	data-slot="sidebar-wrapper"
+	style="--sidebar-width: {SIDEBAR_WIDTH}; --sidebar-width-icon: {SIDEBAR_WIDTH_ICON}; {style}"
+	class={cn(
+		'group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar flex min-h-svh w-full',
+		className,
+	)}
+	bind:this={ref}
+	{...restProps}
+>
+	{@render children?.()}
+</div>

@@ -10,7 +10,6 @@
 	"scripts": {
 		"dev": "bun run dev:desktop",
 		"dev:desktop": "tauri dev --config src-tauri/tauri.dev.conf.json",
-		"remote:dev": "bun run scripts/remote-dev-smoke.ts",
 		"build": "bun run clean:dist && bun run build:home && bun run build:whispering && bun run build:honeycrisp",
 		"build:home": "vite build",
 		"build:honeycrisp": "bun run --cwd ../honeycrisp build:epicenter",
@@ -32,8 +31,9 @@
 		"@epicenter/client": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/data": "workspace:*",
-		"@epicenter/document-sync": "workspace:*",
 		"@epicenter/field": "workspace:*",
+		"@epicenter/database": "workspace:*",
+		"@epicenter/matter-core": "workspace:*",
 		"@epicenter/server": "workspace:*",
 		"@epicenter/skills": "workspace:*",
 		"@epicenter/sync": "workspace:*",
@@ -46,9 +46,7 @@
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
-		"@epicenter/app": "workspace:*",
 		"@epicenter/honeycrisp": "workspace:*",
-		"@epicenter/lens": "workspace:*",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/vite": "catalog:",
 		"@tauri-apps/cli": "catalog:",

@@ -18,7 +18,6 @@ export type ParsedArgs = {
 	entities: string[];
 	/** When set, `sync` loops on this interval (ms) instead of running once. */
 	intervalMs?: number;
-	dataDir?: string;
 	realm?: string;
 	environment?: QbEnvironment;
 	/** `report` period bounds (YYYY-MM-DD) and basis. */
@@ -81,7 +80,6 @@ Options:
   --no-open                       Print the launch URL instead of opening a browser (app only).
   --port <n>                      Pin the app server port (app only; default: ephemeral).
   --realm <id>                    Target company (default: the connected one).
-  --data-dir <path>               Where the local copy lives (or LOCAL_BOOKS_DIR).
   --qb-env <sandbox|production>   Which QuickBooks to talk to (default: sandbox). Was --env.
   -h, --help                      Show this help.
   -v, --version                   Show version.
@@ -89,8 +87,9 @@ Options:
 Environment:
   QB_SANDBOX_CLIENT_ID / QB_SANDBOX_CLIENT_SECRET          Intuit sandbox app keys (auth --qb-env sandbox).
   QB_PRODUCTION_CLIENT_ID / QB_PRODUCTION_CLIENT_SECRET    Intuit production app keys (auth --qb-env production).
-  LOCAL_BOOKS_DIR                   Where the local copy lives.
-  LOCAL_BOOKS_TOKEN_FILE            Override the credentials file path (default: <data-dir>/credentials.json).
+  EPICENTER_DATA_DIR                Where Epicenter stores everything; local-books lives in <root>/apps/local-books.
+  LOCAL_BOOKS_QB_REALM              Target company when more than one is connected (same as --realm).
+  LOCAL_BOOKS_TOKEN_FILE            Override the credentials file path (default: <app-dir>/credentials.json).
   LOCAL_BOOKS_READ_ONLY             Disable recategorize (reads only).
   LOCAL_BOOKS_PORT                  Fallback for pinning the app server port; prefer --port.
   LOCAL_BOOKS_NO_OPEN               Fallback for making app print the URL without opening a browser; prefer --no-open.
@@ -165,9 +164,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
 				break;
 			case '--realm':
 				args.realm = takeValue();
-				break;
-			case '--data-dir':
-				args.dataDir = takeValue();
 				break;
 			case '--start':
 				args.start = takeValue();
@@ -246,7 +242,6 @@ export async function runCli(argv: string[]): Promise<number> {
 		case 'app': {
 			const { runApp } = await import('./app.ts');
 			return runApp({
-				dataDir: args.dataDir,
 				environment: args.environment,
 				realm: args.realm,
 				noOpen: args.noOpen,
@@ -254,7 +249,7 @@ export async function runCli(argv: string[]): Promise<number> {
 			});
 		}
 		case 'demo':
-			return runDemo(args);
+			return runDemo();
 		case 'mcp':
 			return runMcpServer(args);
 		default:

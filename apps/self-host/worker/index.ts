@@ -1,9 +1,11 @@
 /**
  * Epicenter self-hosted instance Worker (Cloudflare; ADR-0075).
  *
- * The instance on Cloudflare: the SAME `@epicenter/server` composition the Bun
- * entry (`server.ts`) builds, wired to Cloudflare bindings instead of plain
- * primitives (ADR-0066). One single-partition instance, not a multi-user wiki and not
+ * The instance on Cloudflare: the same `@epicenter/server` surfaces the Bun entry
+ * (`server.ts`) builds, wired to Cloudflare bindings instead of plain
+ * primitives (ADR-0066). `runtime-profile.test.ts` keeps the two entries in
+ * parity.
+ * One single-partition instance, not a multi-user wiki and not
  * a mode: every request resolves to the pinned `principals/instance` partition,
  * and authentication is one operator-supplied static
  * bearer (`INSTANCE_TOKEN`), constant-time compared. No OAuth, no allowlist, no
@@ -11,9 +13,9 @@
  *
  * This is a reference, not an Epicenter-operated product. Copy this folder, set
  * `INSTANCE_TOKEN` (`wrangler secret put INSTANCE_TOKEN`, generated with
- * `bun run gen-token`), provision your Durable Object binding, and deploy. The
- * instance composes no Better Auth and no Postgres, so there is no Hyperdrive
- * binding and no `BETTER_AUTH_SECRET` (ADR-0075). Community-supported.
+ * `bun run gen-token`), and deploy. The instance composes no Better Auth,
+ * Postgres, or store authority, so there is no Hyperdrive binding and no
+ * `BETTER_AUTH_SECRET` (ADR-0075). Community-supported.
  *
  * Trust boundary: the deployer operates the infrastructure. Epicenter never holds
  * or sees the data stored here, so self-hosting is functionally zero-knowledge
@@ -24,9 +26,7 @@ import { assertStrongToken } from '@epicenter/auth';
 import {
 	createEnvTokenResolver,
 	createServerApp,
-	EpicenterAuthority,
 	mountBlobsApp,
-	mountCloudflareEpicenterSyncApp,
 	mountInferenceApp,
 	mountSessionApp,
 	mountTranscriptionApp,
@@ -68,15 +68,6 @@ app.get('/', (c) =>
 // operator bearer (`auth` above) is the only gate, so every surface is
 // bearer-authenticated (ADR-0075).
 mountSessionApp(app, { auth });
-mountCloudflareEpicenterSyncApp(app, {
-	auth,
-	resolveNamespace: (env) =>
-		(
-			env as Cloudflare.Env & {
-				EPICENTER_SYNC: DurableObjectNamespace<EpicenterAuthority>;
-			}
-		).EPICENTER_SYNC,
-});
 // Cap the inference burn rate so a leaked or overused bearer cannot run the
 // operator's house key up unbounded. Per-isolate on Cloudflare (approximate);
 // the real ceiling is the hard spend limit on the provider key itself (README).
@@ -98,4 +89,3 @@ mountTranscriptionApp(app, {
 mountBlobsApp(app, { auth });
 
 export default app;
-export { EpicenterAuthority };

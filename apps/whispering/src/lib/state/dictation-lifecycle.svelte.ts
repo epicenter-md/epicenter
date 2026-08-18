@@ -1,6 +1,7 @@
 import type { AnyTaggedError } from 'wellcrafted/error';
 import type { VadState } from '$lib/constants/audio';
 import type { DeliveryReach } from '$lib/operations/delivery';
+import { log } from '$lib/report';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 
@@ -147,6 +148,22 @@ function createDictationLifecycle() {
 		 * resets it. Transient, not a held state: the pill glances it (manual), the
 		 * notification path fires it, and the recordings row is the durable record. */
 		markFailed(failure: DictationFailure): void {
+			// Log here rather than at each call site, because this is the funnel every
+			// failure already passes through, so a new failure path cannot be added
+			// without one. Nothing else writes the cause down: the pill renders the
+			// tier's label and drops the error, and the OS notification carries the
+			// message but only if notifications are permitted and seen. Without this
+			// line a failed dictation leaves no trace to read afterwards.
+			//
+			// A tagged error is `{ name, message }` and not an `Error`, so it travels
+			// as the cause of one and again as `data`, which is what carries its
+			// context fields.
+			log.warn(
+				new Error(`Dictation failed (${failure.tier})`, {
+					cause: failure.error,
+				}),
+				failure.error,
+			);
 			clearDeliveredTimer();
 			outcome = { kind: 'failed', ...failure };
 		},

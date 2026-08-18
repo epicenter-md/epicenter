@@ -1,4 +1,7 @@
-import { createSerializedPersistedAuthStorage } from '@epicenter/auth';
+import {
+	type AuthClient,
+	createSerializedPersistedAuthStorage,
+} from '@epicenter/auth';
 import {
 	EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 	EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
@@ -10,7 +13,6 @@ import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import { tryAsync } from 'wellcrafted/result';
 import { instanceSetting } from '$lib/instance';
-import type { PlatformAuth } from './types';
 
 const log = createLogger('honeycrisp/platform/auth');
 
@@ -58,7 +60,7 @@ if (bootstrap.error !== null) {
 	log.warn(KeyringError.ReadFailed({ cause: new Error(bootstrap.error) }));
 }
 
-export const auth: PlatformAuth = createHostedDeepLinkAuth({
+export const auth: AuthClient = createHostedDeepLinkAuth({
 	instanceSetting,
 	clientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 	redirectUri: EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,

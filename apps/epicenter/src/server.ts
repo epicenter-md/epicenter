@@ -10,18 +10,6 @@ import type { AgentToolDefinition } from '@epicenter/agent';
 import { getProfileVia } from '@epicenter/auth';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
-import type { Address } from '@epicenter/data';
-import {
-	DESKTOP_EPICENTER_OBSERVE_ROUTE,
-	DESKTOP_EPICENTER_ROUTE,
-	type DesktopInvalidationFrame,
-	type DesktopResponse,
-	describeThrownError,
-} from '@epicenter/data/desktop';
-import {
-	type DesktopEpicenterOwner,
-	EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME,
-} from '@epicenter/data/desktop-owner';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
@@ -33,6 +21,7 @@ import {
 	type HomeSessionSnapshot,
 	parseHomeCommand,
 } from './host.ts';
+import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
 	ACCOUNT_PROFILE_ROUTE,
@@ -40,14 +29,13 @@ import {
 	ACCOUNT_SIGN_OUT_ROUTE,
 	APPLICATIONS_ROUTE,
 	BOOTSTRAP_ROUTE,
+	BUILT_IN_ROUTES,
 	LOCAL_BLOB_REMOTE_ROUTES,
 	LOCAL_BLOB_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
-	SURFACE_ROUTES,
 } from './routes.ts';
 import type { AppCatalog, EpicenterStaticAssets } from './static-assets.ts';
-import { PLACEHOLDER_SURFACE_PAGES } from './surface-pages.ts';
 
 export type HomeServerEvent = {
 	type: 'snapshot';
@@ -73,10 +61,9 @@ export type HomeServerOptions = {
 	staticAssets: EpicenterStaticAssets;
 	/** Derived trusted app catalog (ADR-0153); absent means no members. */
 	appCatalog?: AppCatalog;
-	dataOwner?: DesktopEpicenterOwner;
-	/** Canonical device-local bytes shared by every trusted app surface. */
+	/** Canonical device-local bytes shared by every trusted app window. */
 	blobs: BunBlobStore;
-	/** One credential owner for every compiled desktop surface. */
+	/** One credential owner for every compiled desktop window. */
 	desktopAuth: DesktopAuthAuthority;
 	/**
 	 * Host-owned remote copy capability over the same local bytes, or `null`
@@ -91,43 +78,12 @@ const SESSION_COOKIE = 'epicenter_session';
 const MAX_BROWSER_SESSIONS = 32;
 const SESSION_SHELL = `<!doctype html><html><head><meta charset="utf-8"><title>Epicenter</title><script>window.__EPICENTER_SESSION_READY__.then(() => window.location.reload())</script></head><body></body></html>`;
 
-type ObservationWebSocket = {
-	raw?: unknown;
-};
-
-/**
- * Send one observation frame without erasing Bun's delivery status.
- *
- * Hono's portable `WSContext` intentionally exposes a void `send`, but this
- * Bun-owned route needs to distinguish delivered, dropped, and backpressured
- * frames. A non-positive native result is therefore a carrier failure: the
- * caller closes it and reconnect recovery emits the strongest honest
- * invalidation for every subscribed handle.
- */
-export function sendObservationFrame(
-	ws: ObservationWebSocket,
-	frame: DesktopInvalidationFrame,
-): void {
-	const payload = JSON.stringify(frame);
-	if (ws.raw === undefined) {
-		throw new Error('Observation carrier has no Bun delivery status');
-	}
-	const status = (ws.raw as { send(data: string): number }).send(payload);
-	if (status > 0) return;
-	throw new Error(
-		status === 0
-			? 'Observation frame was dropped'
-			: 'Observation carrier is backpressured',
-	);
-}
-
 export function createHomeServer({
 	host,
 	origin,
 	launchToken,
 	staticAssets,
 	appCatalog = { apps: [] },
-	dataOwner,
 	blobs,
 	desktopAuth,
 	blobRemote,
@@ -140,16 +96,26 @@ export function createHomeServer({
 	const sessionHashes = new Set<string>();
 	const hostPages = {
 		home: injectAuthBootstrap(staticAssets.homePage, desktopAuth.bootSnapshot),
-		...PLACEHOLDER_SURFACE_PAGES,
+		...PLACEHOLDER_PAGES,
 	};
-	const applications = staticAssets.applications.map((application) => ({
-		...application,
-		page: injectAuthBootstrap(application.page, desktopAuth.bootSnapshot),
-	}));
+	// A compiled application and an admitted catalog member are the same thing
+	// to this server: a built SPA below `/apps/<id>/` whose document the host
+	// stamps, gates, and hashes. They differ only in where they came from, so
+	// they are served by one loop rather than by two that have to be kept in
+	// agreement. Their ids cannot collide: an admitted app's id is the database id
+	// it declares and always contains a dot, and every id this host issues
+	// itself is a bare label (ADR-0210).
+	const servedApps = [...staticAssets.applications, ...appCatalog.apps].map(
+		(application) => ({
+			id: application.id,
+			page: injectAuthBootstrap(application.page, desktopAuth.bootSnapshot),
+			resolve: application.resolve,
+		}),
+	);
 	const csp = contentSecurityPolicy(
 		[
 			...Object.values(hostPages),
-			...applications.map(({ page }) => page),
+			...servedApps.map(({ page }) => page),
 			SESSION_SHELL,
 		].join('\n'),
 	);
@@ -264,20 +230,20 @@ export function createHomeServer({
 
 	// Home and the release-bundled placeholders: one document each, no asset
 	// tree behind them.
-	for (const surface of [
-		SURFACE_ROUTES.home,
-		SURFACE_ROUTES.mail,
-		SURFACE_ROUTES.books,
+	for (const builtInRoute of [
+		BUILT_IN_ROUTES.home,
+		BUILT_IN_ROUTES.mail,
+		BUILT_IN_ROUTES.books,
 	]) {
-		app.get(surface.pattern, (c) => {
+		app.get(builtInRoute.pattern, (c) => {
 			c.header('cache-control', 'no-store');
 			if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
-			return c.html(hostPages[surface.id]);
+			return c.html(hostPages[builtInRoute.id]);
 		});
 	}
-	// Compiled applications: one contained asset tree each, with the document
-	// served from memory so every client route lands on the stamped page.
-	for (const application of applications) {
+	// One contained asset tree each, with the document served from memory so
+	// every client route lands on the stamped page.
+	for (const application of servedApps) {
 		const prefix = `/apps/${application.id}/`;
 		app.get(`${prefix}*`, async (c) => {
 			const pathname = new URL(c.req.url).pathname;
@@ -299,34 +265,10 @@ export function createHomeServer({
 			return c.body(asset.file.stream());
 		});
 	}
-	// Derived catalog members (ADR-0153). Reserved built-in IDs never reach
-	// this handler: the surface and compiled-application routes above win
-	// registration order and the catalog derivation refuses them.
-	app.get('/apps/:appId/*', async (c) => {
-		const member = appCatalog.apps.find(
-			(catalogApp) => catalogApp.id === c.req.param('appId'),
-		);
-		if (!member) return c.text('Not Found', 404);
-		const asset = await member.resolve(new URL(c.req.url).pathname);
-		if (!asset) return c.text('Not Found', 404);
-		c.header('cache-control', 'no-store');
-		c.header('content-type', asset.contentType);
-		return c.body(asset.file.stream());
-	});
 	app.get('/apps/*', (c) => c.text('Not Found', 404));
 
 	app.use(APPLICATIONS_ROUTE.pattern, requireBrowserSession);
 	app.use('/api/home/*', requireBrowserSession);
-	app.use(DESKTOP_EPICENTER_ROUTE, requireBrowserSession);
-	// The observation carrier is guarded exactly like the operations route it
-	// sits beside, plus the explicit Origin equality every WebSocket upgrade
-	// here carries: a browser always sends Origin on a handshake, so unlike a
-	// same-origin GET there is no reason to accept its absence.
-	app.use(DESKTOP_EPICENTER_OBSERVE_ROUTE, async (c, next) => {
-		if (!hasBrowserSession(c)) return c.text('Unauthorized', 401);
-		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
-		await next();
-	});
 	app.use('/api/local-blobs/*', requireBrowserSession);
 	app.use(SESSION_STREAM_ROUTE.pattern, async (c, next) => {
 		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
@@ -497,84 +439,6 @@ export function createHomeServer({
 		requireBlobRemote((remote, id) => remote.purge(id)),
 	);
 
-	app.post(DESKTOP_EPICENTER_ROUTE, async (c) => {
-		if (!dataOwner) {
-			return c.json(
-				{
-					data: null,
-					error: {
-						name: 'DesktopEpicenterUnavailable',
-						message: 'The desktop Epicenter owner is unavailable.',
-					},
-				} satisfies DesktopResponse,
-				404,
-			);
-		}
-		try {
-			return c.json({
-				data: (await dataOwner.execute(await c.req.json())) ?? null,
-				error: null,
-			} satisfies DesktopResponse);
-		} catch (cause) {
-			// A bound Lens reports its refusals by throwing what a `defineErrors`
-			// factory produced, and those are plain objects rather than `Error`
-			// instances. Describing them is what keeps the variant name, which is
-			// the only thing either client classifies on.
-			const error = describeThrownError(cause);
-			return c.json(
-				{ data: null, error } satisfies DesktopResponse,
-				error.name === EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME ? 409 : 400,
-			);
-		}
-	});
-
-	// One socket per trusted surface, carrying committed addresses and nothing
-	// else. This is Epicenter observing its own replica on behalf of the
-	// surfaces it serves, which is why it does not reopen ADR-0185: that record
-	// refuses observing an installed app's *ordinary* HTTP, and nothing here
-	// reports where an app went or what it sent.
-	app.get(
-		DESKTOP_EPICENTER_OBSERVE_ROUTE,
-		upgradeWebSocket(() => {
-			let unsubscribe: (() => void) | undefined;
-			return {
-				onOpen(_event, ws) {
-					if (!dataOwner) {
-						// Nothing to observe and nothing that will start: closing is
-						// honest, and the client's redial is bounded and cheap.
-						ws.close(1011, 'Desktop Epicenter is unavailable');
-						return;
-					}
-					unsubscribe = dataOwner.subscribeInvalidations(
-						(changes: readonly Address[]) => {
-							const frame: DesktopInvalidationFrame = {
-								type: 'invalidation',
-								changes,
-							};
-							try {
-								sendObservationFrame(ws, frame);
-							} catch (cause) {
-								// A send that fails has already lost a frame, and there is
-								// no way to know how much else this socket would drop. Fail
-								// into the client's reconnect path, which recovers by
-								// invalidating every handle it holds, rather than
-								// continuing on a carrier that silently skips commits.
-								unsubscribe?.();
-								unsubscribe = undefined;
-								ws.close(1011, 'Observation carrier failed');
-								void cause;
-							}
-						},
-					);
-				},
-				onClose() {
-					unsubscribe?.();
-					unsubscribe = undefined;
-				},
-			};
-		}),
-	);
-
 	app.get(
 		SESSION_STREAM_ROUTE.pattern,
 		upgradeWebSocket(() => {
@@ -610,11 +474,11 @@ export function createHomeServer({
 /**
  * Stamp one served page with the one-shot auth bootstrap.
  *
- * This is the only thing the host injects. A surface parses the bootstrap and
- * then removes it, because it carries an identity snapshot that has no business
- * sitting in the DOM afterwards, and nothing else may read it: which replica a
- * surface opens is decided by which build the host serves, not by what survives
- * in its `<head>`.
+ * This is the only thing the host injects. An app window parses the bootstrap
+ * and then removes it, because it carries an identity snapshot that has no
+ * business sitting in the DOM afterwards, and nothing else may read it: which
+ * replica an app window opens is decided by which build the host serves, not by
+ * what survives in its `<head>`.
  */
 function injectAuthBootstrap(
 	page: string,
@@ -623,9 +487,16 @@ function injectAuthBootstrap(
 	const serialized = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
 	const element = `<script id="epicenter-auth-bootstrap" type="application/json">${serialized}</script>`;
 	const head = page.search(/<\/head\s*>/i);
-	return head === -1
-		? page.replace(/<body\b/i, `${element}<body`)
-		: `${page.slice(0, head)}${element}${page.slice(head)}`;
+	if (head !== -1) return `${page.slice(0, head)}${element}${page.slice(head)}`;
+	// A document with no `</head>` and no `<body` used to come back unstamped,
+	// which is the worst of the three outcomes: the app loads, finds no
+	// snapshot, and boots signed out with nothing anywhere saying why. The
+	// element is inert JSON read by id, so where it lands does not matter and
+	// prepending always works. Position is a preference; stamping is not.
+	const body = page.search(/<body\b/i);
+	return body === -1
+		? `${element}${page}`
+		: `${page.slice(0, body)}${element}${page.slice(body)}`;
 }
 
 function blobResponseHeaders(contentType: string): Record<string, string> {
@@ -723,7 +594,7 @@ function contentSecurityPolicy(page: string): string {
 		// it does not restore `eval` or `new Function`, which is why it exists
 		// separately from `'unsafe-eval'`. Voice activity detection runs
 		// onnxruntime in this WebView over assets Epicenter itself ships, so
-		// WebAssembly is a first-party capability of the surface rather than
+		// WebAssembly is a first-party capability of the app window rather than
 		// something a policy is being bent to tolerate. Without it the browser
 		// refuses the compile and the recording trigger dies mid-boot.
 		`script-src 'self' 'wasm-unsafe-eval' ${scriptHashes.join(' ')}`,

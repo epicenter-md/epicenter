@@ -46,12 +46,28 @@ claim it. More than one is an over-trigger.
 bun run agent-instructions/scripts/audit-routing-collisions.ts "asymmetric wins"
 ```
 
-The script searches only the `description` field in each skill's frontmatter.
+Stdout counts hits in the `description` field of each skill's frontmatter.
 Exactly one hit = clean routing. Zero hits = no owner. Two or more hits =
 collision. Fix by narrowing every description except the one true owner: do not
 let a hub or manual *open* with a move's name. (This check catches the case where
 a manual was branded "Asymmetric-wins pass" while a dedicated `asymmetric-wins`
 move also existed.)
+
+Descriptions are not the only routing surface, so a phrase can read as clean on
+stdout while two surfaces claim it. Always-on hits print on stderr and
+deliberately leave the hit count and the exit code alone:
+
+```txt
+clean break -> greenfield-clean-breaks/SKILL.md
+also claimed by AGENTS.md:35, which loads before any description
+```
+
+Read that against the measured asymmetry (`references/evaluation.md`): where a
+description already owns the phrase, the always-on rule does not change its
+route, so the second claimant is a deletion *candidate*. Where the description
+column is empty, the always-on rule is the only thing routing the phrase, and it
+is carrying the paragraph. Neither reading makes a deletion free, since
+shortening the paragraph cost routes it still named.
 
 A hit counts the phrase, not the intent. Add `--explain` to see whether each hit
 claims the phrase or routes it elsewhere:

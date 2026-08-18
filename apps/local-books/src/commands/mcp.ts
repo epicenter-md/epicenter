@@ -29,7 +29,7 @@
  *    a normal result with `isError: true` and a text message, so the model can
  *    read it and self-correct.
  */
-
+import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -51,19 +51,21 @@ import {
 import { fetchReport, ReportInput } from '../books/report.ts';
 import { readBooksStatus } from '../books/status.ts';
 import { type ParsedArgs, VERSION } from '../cli.ts';
-import { resolveRealm } from '../companies.ts';
 import { type AppConfig, loadConfig } from '../config.ts';
-import { openBooksDb } from '../db.ts';
-import { dbPath } from '../paths.ts';
+import { booksMirror, openBooksDb } from '../db.ts';
 import { syncRealm } from '../sync.ts';
-import { createFileTokenStore, type TokenStore } from '../token-store.ts';
+import {
+	createFileTokenStore,
+	resolveRealm,
+	type TokenStore,
+} from '../token-store.ts';
 
 /** What every tool `run` is handed: the resolved company plus its opened deps. */
 type ToolContext = {
 	config: AppConfig;
 	realmId: string;
-	/** The mirror db path for the resolved company. */
-	dbPath: string;
+	/** The resolved company's mirror: its current artifact is what tools read. */
+	mirror: Mirror;
 	/** A QB client opener for the resolved company; the token loads when called. */
 	openQb: OpenQbClient;
 	/** The realm's token store (built once per server, reloaded on each `get`). */
@@ -127,7 +129,7 @@ const TOOLS: ToolDescriptor[] = [
 		}),
 		tier: 'read',
 		async run(ctx, args) {
-			return queryBooks({ dbPath: ctx.dbPath, sql: args.sql });
+			return queryBooks({ mirror: ctx.mirror, sql: args.sql });
 		},
 	}),
 	defineMcpTool({
@@ -142,6 +144,7 @@ const TOOLS: ToolDescriptor[] = [
 				await readBooksStatus({
 					config: ctx.config,
 					realmId: ctx.realmId,
+					mirror: ctx.mirror,
 					store: ctx.store,
 				}),
 			);
@@ -176,7 +179,7 @@ const TOOLS: ToolDescriptor[] = [
 			// auth" reason. No bespoke not-connected error.
 			const { data: client, error } = await ctx.openQb();
 			if (error !== null) return Err(error);
-			const db = openBooksDb(ctx.dbPath);
+			const db = openBooksDb(ctx.mirror);
 			try {
 				const outcome = await syncRealm(
 					{ db, client, config: ctx.config, now: ctx.now },
@@ -202,7 +205,7 @@ const TOOLS: ToolDescriptor[] = [
 			// removing the filter later cannot silently enable the write.
 			return recategorizeExpense({
 				openQb: ctx.openQb,
-				dbPath: ctx.dbPath,
+				mirror: ctx.mirror,
 				readOnly: ctx.config.readOnly,
 				input: args,
 			});
@@ -225,10 +228,9 @@ function toCallResult({ data, error }: ToolOutcome): CallToolResult {
 
 export async function runMcpServer(args: ParsedArgs): Promise<number> {
 	// Same precedence the other verbs use (CLI > env > config.json > defaults);
-	// the host typically passes LOCAL_BOOKS_DIR / _TOKEN_FILE / _READ_ONLY / the
-	// realm via the MCP client config's `env`.
+	// the host typically passes EPICENTER_DATA_DIR / LOCAL_BOOKS_TOKEN_FILE /
+	// LOCAL_BOOKS_READ_ONLY / the realm via the MCP client config's `env`.
 	const config = loadConfig({
-		dataDir: args.dataDir,
 		environment: args.environment,
 		realm: args.realm,
 	});
@@ -292,14 +294,17 @@ export async function runMcpServer(args: ParsedArgs): Promise<number> {
 
 		// Resolve the company per call so a freshly-authenticated realm is picked
 		// up, and a missing one is a self-correctable result, not a startup crash.
-		const { data: realmId, error: realmError } = resolveRealm(config);
+		const { data: realmId, error: realmError } = await resolveRealm(
+			config,
+			store,
+		);
 		if (realmError !== null) {
 			return { content: [{ type: 'text', text: realmError }], isError: true };
 		}
 		const ctx: ToolContext = {
 			config,
 			realmId,
-			dbPath: dbPath(config.dataDir, realmId),
+			mirror: booksMirror(config.dataDir, realmId),
 			openQb: createQbAccess({ config, realmId, store, now }),
 			store,
 			now,

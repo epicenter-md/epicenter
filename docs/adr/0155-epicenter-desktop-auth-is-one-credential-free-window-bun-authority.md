@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-19
 - **Amends:** [ADR-0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md): the refusal is a generic Bun-to-Rust command bridge; one closed auth-native port may reach keychain storage, system-browser launch, and deep-link delivery.
+- **Amended by:** [ADR-0230](0230-an-auth-client-always-offers-openwebsocket-and-a-model-that-cannot-sync-denies-permanently.md): the consequence below naming `SyncAuthClient` as the application contract is withdrawn. The contract is `AuthClient`, and the broker projection expresses its inability to sync as a permanent `openWebSocket` denial rather than by satisfying a sync-capable type it could not honor. Credential-free windows and the broker projection are otherwise unchanged.
 - **Relates:** [ADR-0053](0053-the-epicenter-bearer-is-an-audience-scoped-credential.md), [ADR-0071](0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md), [ADR-0075](0075-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md), [ADR-0109](0109-hosted-tauri-auth-keeps-app-owned-keyring-edges-until-three-real-callers-earn-sharing.md), [ADR-0149](0149-local-blob-stores-are-canonical-and-remote-replication-is-explicit.md), [ADR-0153](0153-trusted-apps-are-source-built-static-catalog-members.md), [ADR-0154](0154-blob-access-is-address-only.md)
 
 ## Context

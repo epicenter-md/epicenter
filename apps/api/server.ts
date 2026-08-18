@@ -35,8 +35,12 @@
  * alarm timing, edge placement) will not surface here, so `wrangler dev` /
  * staging stays the fidelity gate before any deploy touching runtime behavior.
  *
- * The dashboard SPA and billing data plane are intentionally omitted: Vite
- * serves the dashboard in dev, and billing is the hosted Worker's concern.
+ * Four surfaces the Worker serves are intentionally absent here, and
+ * `runtime-profile.test.ts` is where that list is declared and checked against
+ * both entries: the dashboard SPA and the account-deletion route need Worker-only
+ * bindings (`ASSETS`, `STORE_AUTHORITY`), and billing is the hosted Worker's
+ * concern. Everything the shared library can mount on both runtimes is mounted
+ * on both.
  * Because this runtime cannot resolve the hosted storage allowance, first
  * contact is allowed only for workspaces already registered by the hosted
  * Worker. Existing current-state replicas in this runtime's own backend may
@@ -44,21 +48,18 @@
  * reset and does not resume legacy receipts.
  */
 
-import { mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
 import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 import {
 	CloudAuthBindings,
 	type CloudEnv,
-	createBunEpicenterSyncRuntime,
 	createDb,
 	createServerApp,
 	mountBlobsApp,
-	mountBunEpicenterSyncApp,
 	mountCloudAuth,
 	mountCloudDb,
 	mountInferenceApp,
 	mountSessionApp,
+	mountTranscriptionApp,
 	type ResolveBearerPrincipal,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
@@ -72,7 +73,7 @@ import { buildEpicenterTrustedOrigins } from './worker/trusted-origins.js';
 /**
  * The apps/api Bun env contract: the portable {@link ServerBindings}, the
  * Cloud-only {@link CloudAuthBindings} (Better Auth + OAuth secrets, ADR-0076),
- * and this host's process config (`DATABASE_URL`, port, origin, data dir).
+ * and this host's process config (`DATABASE_URL`, port, origin).
  *
  * `CloudAuthBindings` already requires `BETTER_AUTH_SECRET` and leaves each OAuth
  * provider optional (register-when-present, ADR-0071). This hosted hub is
@@ -88,7 +89,6 @@ const ApiBunBindings = ServerBindings.merge(CloudAuthBindings).merge({
 	DATABASE_URL: 'string',
 	'PORT?': 'string',
 	'API_PUBLIC_ORIGIN?': 'string',
-	'DATA_DIR?': 'string',
 	GOOGLE_CLIENT_ID: 'string',
 	GOOGLE_CLIENT_SECRET: 'string',
 	GITHUB_CLIENT_ID: 'string',
@@ -124,16 +124,6 @@ export function startBunApiServer(
 	// OAuth issuer, the token audience all derive from it). Default to localhost
 	// on the chosen port; an operator overrides it with their domain.
 	const origin = env.API_PUBLIC_ORIGIN ?? `http://localhost:${port}`;
-
-	// One data directory for this host's record SQLite files.
-	const dataDir = resolve(env.DATA_DIR ?? './.data');
-	mkdirSync(dataDir, { recursive: true });
-	// Keep the operator-selected directory stable, but the replacement authority
-	// deliberately drops the legacy table family on first open. There is no
-	// compatibility reader or receipt migration across this protocol reset.
-	const epicenterSync = createBunEpicenterSyncRuntime({
-		dir: join(dataDir, 'records'),
-	});
 
 	// One pool for the process; drizzle checks a client out per query and returns
 	// it, so the `mountCloudDb` connect leg below hands back the shared handle with
@@ -183,11 +173,13 @@ export function startBunApiServer(
 		serveAuthUiShell,
 	});
 	mountSessionApp(app, { auth: cookieOrBearer });
-	mountBunEpicenterSyncApp(app, {
-		auth: bearer,
-		runtime: epicenterSync,
-	});
 	mountInferenceApp(app, { auth: bearer });
+	// The STT sibling of the inference gateway, on the same house key. Unmetered
+	// here for the same reason inference is: this host composes no billing, so
+	// there is no Autumn policy to attach. Mounting it is what keeps a `star`
+	// transcription working against `dev:bun`; the Worker is the only hosted
+	// artifact, and it meters both gateways.
+	mountTranscriptionApp(app, { auth: bearer });
 	mountBlobsApp(app, { auth: cookieOrBearer });
 
 	const server = Bun.serve({
@@ -198,17 +190,17 @@ export function startBunApiServer(
 		fetch: (req) => app.fetch(req, env),
 	});
 
-	// Close authority databases and their sockets before the process dies so WAL
-	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.
+	// Nothing durable to close here any more: the store lives in the client
+	// (ADR-0223) and the authority is a Durable Object, so this process owns no
+	// database whose WAL has to be checkpointed.
 	const shutdown = () => {
-		epicenterSync.close();
 		void server.stop(true);
 		process.exit(0);
 	};
 	process.once('SIGINT', shutdown);
 	process.once('SIGTERM', shutdown);
 
-	console.log(`apps/api (Bun) listening on ${origin} (data in ${dataDir})`);
+	console.log(`apps/api (Bun) listening on ${origin}`);
 }
 
 // Run production only when this file is the entrypoint. `server.dev.ts` imports

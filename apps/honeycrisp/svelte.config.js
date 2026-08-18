@@ -4,19 +4,19 @@
 import staticAdapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
-const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
+const isEpicenterHost = process.env.EPICENTER_HOST === '1';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
 	kit: {
 		adapter: staticAdapter({
-			...(isEpicenterSurface && {
+			...(isEpicenterHost && {
 				pages: '../epicenter/dist/honeycrisp',
 				assets: '../epicenter/dist/honeycrisp',
 			}),
 			fallback: 'index.html',
 		}),
-		...(isEpicenterSurface && { paths: { base: '/apps/honeycrisp' } }),
+		...(isEpicenterHost && { paths: { base: '/apps/honeycrisp' } }),
 		alias: {
 			$routes: './src/routes',
 		},

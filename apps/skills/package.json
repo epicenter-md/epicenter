@@ -9,6 +9,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
+		"test": "bun test",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check": "bun run typecheck"
 	},
@@ -21,13 +22,14 @@
 		"@epicenter/field": "workspace:*",
 		"@epicenter/skills": "workspace:*",
 		"@epicenter/ui": "workspace:*",
-		"shiki": "^3.7.0",
+		"@lucide/svelte": "catalog:",
 		"@sveltejs/adapter-auto": "catalog:",
 		"@sveltejs/kit": "catalog:",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/vite": "catalog:",
 		"@types/bun": "catalog:",
-		"@lucide/svelte": "catalog:",
+		"fake-indexeddb": "^6.2.5",
+		"shiki": "^3.7.0",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
 		"svelte-sonner": "catalog:",
@@ -38,6 +40,8 @@
 	"license": "AGPL-3.0-or-later",
 	"dependencies": {
 		"@epicenter/data": "workspace:*",
-		"mode-watcher": "^1.1.0"
+		"@epicenter/database": "workspace:*",
+		"mode-watcher": "^1.1.0",
+		"wellcrafted": "catalog:"
 	}
 }

@@ -1,15 +1,14 @@
-import { existsSync } from 'node:fs';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { mailDbPath, openMailDbReadonly } from './db.ts';
+import { mailMirror, openMailDbReadonly } from './db.ts';
 
 export const MailQueryError = defineErrors({
 	NoMirror: ({ path }: { path: string }) => ({
-		message: `No Gmail mirror at ${path}. Run "local-mail sync --full" first.`,
+		message: `No Gmail mirror at ${path}. Run "local-mail reconcile --full" first.`,
 	}),
 	QueryFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Read-only query failed (the mirror rejects writes): ${extractErrorMessage(cause)}`,
@@ -35,11 +34,15 @@ export function queryMail({
 	accountEmail: string;
 	sql: string;
 }): Result<MailQueryResult, MailQueryError> {
-	const path = mailDbPath(dataDir, accountEmail);
-	if (!existsSync(path)) return MailQueryError.NoMirror({ path });
-	let db: ReturnType<typeof openMailDbReadonly> | undefined;
+	// The reader never creates a file, so an absent mirror is reported rather
+	// than conjured: querying an account that has never synced leaves the
+	// directory exactly as it was.
+	const db = openMailDbReadonly({ dataDir, accountEmail });
+	if (db === null) {
+		const { path } = mailMirror(dataDir, accountEmail);
+		return MailQueryError.NoMirror({ path });
+	}
 	try {
-		db = openMailDbReadonly({ dataDir, accountEmail });
 		const rows: Record<string, unknown>[] = [];
 		let truncated = false;
 		for (const row of db.raw.query(sql).iterate()) {
@@ -53,6 +56,6 @@ export function queryMail({
 	} catch (cause) {
 		return MailQueryError.QueryFailed({ cause });
 	} finally {
-		db?.close();
+		db.close();
 	}
 }

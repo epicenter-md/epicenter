@@ -7,37 +7,32 @@ import {
 	createWebStoragePersistedAuthStorage,
 	type Instance,
 	type InstanceSetting,
-	type SyncAuthClient,
 } from '@epicenter/auth';
 import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { createSubscriber } from 'svelte/reactivity';
 
-export { reloadOnPrincipalChange } from './reload-on-principal-change.js';
-// The one composition shape (ADR-0088/ADR-0094): boot-time doc selection plus
-// reload-on-principal-change. Apps boot with one call:
-// `model.connect(toConnection(auth, nodeId), compose?)`.
-export { toConnection } from './to-connection.js';
+// The one composition shape (ADR-0088): the app reads `auth.state` once at
+// boot, and a change of auth generation reloads the page so the next boot
+// composes from scratch.
+export { reloadOnAuthChange } from './reload-on-auth-change.js';
 
 /**
  * Make an auth client's `state` Svelte-reactive: spread the closure-bound
  * client and override `state` with a getter that calls `subscribe()` so reads
- * inside `$derived` / `$effect` track changes. Generic over the client type so
- * a `SyncAuthClient` stays a `SyncAuthClient` (the same transform applies to
- * either credential model; only the underlying client differs). The cast is
- * needed because a spread over a generic loses the precise type even though the
- * shape is preserved.
+ * inside `$derived` / `$effect` track changes. The same transform applies to
+ * every credential model; only the underlying client differs.
  */
-function reactiveAuthClient<T extends AuthClient>(auth: T): T {
+function reactiveAuthClient(auth: AuthClient): AuthClient {
 	const subscribeState = createSubscriber((update) =>
 		auth.onStateChange(update),
 	);
-	const reactive = {
+	const reactive: AuthClient = {
 		...auth,
 		get state() {
 			subscribeState();
 			return auth.state;
 		},
-	} as T;
+	};
 	// A self-hosted deployment carries a live connection status (connecting /
 	// connected / unreachable / rejected) that changes without touching `state`,
 	// so give it its own subscriber. Hosted deployments are plain data and keep
@@ -64,20 +59,22 @@ function reactiveAuthClient<T extends AuthClient>(auth: T): T {
 /**
  * Svelte 5 wrapper around `createAppAuthClient`: the one client-side choke point
  * that turns a persisted `Instance` into a hosted-OAuth or self-host-token
- * client (the branch is internal). Returns a Svelte-reactive `SyncAuthClient`,
- * so workspace boots can project it with `toConnection(auth, nodeId)`.
+ * client (the branch is internal). Both branches carry a bearer, so the
+ * returned reactive client can open the sync socket a signed-in app
+ * generation dials with.
  */
 export function createAppAuthClient(
 	instance: Instance,
 	options: CreateAppAuthClientOptions,
-): SyncAuthClient {
+): AuthClient {
 	return reactiveAuthClient(createCoreAppAuthClient(instance, options));
 }
 
 /**
  * Svelte 5 wrapper around `createSameOriginCookieAuth` (cookie client for a
- * browser app the API serves from its own origin, e.g. the dashboard). Returns
- * a plain `AuthClient` (no `openWebSocket`); it cannot drive workspace sync.
+ * browser app the API serves from its own origin, e.g. the dashboard). It
+ * cannot drive database sync: `openWebSocket` denies permanently, because a
+ * cookie cannot carry the bearer subprotocol.
  */
 export function createSameOriginCookieAuth(
 	config: CreateSameOriginCookieAuthConfig,
@@ -118,8 +115,8 @@ export type CreateHostedBrowserRedirectAuthOptions = {
  * `api` as the resource, `sessionStorage` for the PKCE state), and the
  * persisted `Instance` fed to {@link createAppAuthClient}. Each app passes
  * only what varies: its namespace, OAuth client id, the hosted API origin,
- * and an optional SvelteKit base path. The result is a reactive
- * `SyncAuthClient`, ready for signed-in workspace sync.
+ * and an optional SvelteKit base path. The result is a reactive `AuthClient`
+ * carrying a bearer, ready for signed-in database sync.
  *
  * Redirect-only and hosted-only by construction: it owns no Tauri deep-link or
  * extension launcher and no self-host token branch. The self-host path still works
@@ -135,7 +132,7 @@ export function createHostedBrowserRedirectAuth({
 	api,
 	basePath = '',
 	persistedStorage = window.localStorage,
-}: CreateHostedBrowserRedirectAuthOptions): SyncAuthClient {
+}: CreateHostedBrowserRedirectAuthOptions): AuthClient {
 	return createAppAuthClient(instanceSetting.read(), {
 		clientId,
 		persistedAuthStorage: createWebStoragePersistedAuthStorage({

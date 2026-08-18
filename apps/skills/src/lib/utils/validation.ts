@@ -24,8 +24,11 @@ const SKILL_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 export function validateSkill(fields: {
 	name: string;
 	description: string;
-	license?: string;
-	compatibility?: string;
+	/**
+	 * Omitted by a caller validating a name before a row exists; `null` on a
+	 * row that declares none, because a workspace has no optional fields (ADR-0213).
+	 */
+	compatibility?: string | null;
 }): string[] {
 	const errors: string[] = [];
 

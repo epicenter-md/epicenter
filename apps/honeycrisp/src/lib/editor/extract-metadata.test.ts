@@ -3,8 +3,8 @@
  *
  * These lock the two extraction bugs fixed alongside the editor init repair: the
  * title must come from the first block alone (not every block concatenated), and
- * the preview and word count must separate adjacent blocks with a space (not run
- * the last word of one block into the first word of the next).
+ * the preview must separate adjacent blocks with a space (not run the last word
+ * of one block into the first word of the next).
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -39,17 +39,10 @@ describe('extractNoteMetadata', () => {
 		expect(preview).toBe('Hello World');
 	});
 
-	test('word count separates adjacent blocks so boundary words are not merged', () => {
-		// Without a separator "two" and "three" merge into one token -> 3 words.
-		const { wordCount } = extractNoteMetadata(docOf('one two', 'three four'));
-		expect(wordCount).toBe(4);
-	});
-
 	test('empty document yields empty metadata', () => {
 		expect(extractNoteMetadata(docOf(''))).toEqual({
 			title: '',
 			preview: '',
-			wordCount: 0,
 		});
 	});
 

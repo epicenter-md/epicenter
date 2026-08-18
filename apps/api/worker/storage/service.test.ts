@@ -21,7 +21,7 @@ import {
 
 const partition = {
 	principalId: asPrincipalId('alice'),
-	workspaceId: 'target',
+	databaseId: 'target',
 };
 
 function setup({

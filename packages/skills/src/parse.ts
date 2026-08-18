@@ -1,6 +1,6 @@
 /** Pure parsing for the agentskills.io SKILL.md representation. */
 
-import type { JsonValue } from '@epicenter/data/protocol';
+import { isJsonObject, type JsonObject } from '@epicenter/database';
 import { InstantString } from '@epicenter/field';
 import { parse as parseYaml } from 'yaml';
 
@@ -21,7 +21,7 @@ function splitFrontmatter(content: string) {
 export function parseSkillMd(name: string, content: string) {
 	const { frontmatter, body } = splitFrontmatter(content);
 	let sourceId: string | undefined;
-	let metadata: Record<string, JsonValue> | undefined;
+	let metadata: JsonObject | undefined;
 
 	if (
 		frontmatter.metadata !== null &&
@@ -37,6 +37,9 @@ export function parseSkillMd(name: string, content: string) {
 		) {
 			sourceId = id;
 		}
+		// Gated here rather than left to the store's write gate, so a value that
+		// cannot be stored is dropped from the import instead of failing it: YAML
+		// admits dates, `Infinity` and cyclic anchors, and none belong in a row.
 		if (isJsonObject(rest) && Object.keys(rest).length > 0) metadata = rest;
 	}
 
@@ -62,32 +65,3 @@ export function parseSkillMd(name: string, content: string) {
 }
 
 export type ParsedSkill = ReturnType<typeof parseSkillMd>['skill'];
-
-function isJsonObject(
-	value: Record<string, unknown>,
-): value is Record<string, JsonValue> {
-	return Object.values(value).every((child) => isJsonValue(child));
-}
-
-function isJsonValue(
-	value: unknown,
-	ancestors = new Set<object>(),
-): value is JsonValue {
-	if (
-		value === null ||
-		typeof value === 'string' ||
-		typeof value === 'boolean'
-	) {
-		return true;
-	}
-	if (typeof value === 'number') return Number.isFinite(value);
-	if (typeof value !== 'object' || ancestors.has(value)) return false;
-	ancestors.add(value);
-	const valid = Array.isArray(value)
-		? value.every((child) => isJsonValue(child, ancestors))
-		: (Object.getPrototypeOf(value) === Object.prototype ||
-				Object.getPrototypeOf(value) === null) &&
-			Object.values(value).every((child) => isJsonValue(child, ancestors));
-	ancestors.delete(value);
-	return valid;
-}
