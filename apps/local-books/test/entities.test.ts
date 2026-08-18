@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { type BooksDb, booksMirror, openBooksDb } from '../src/db.ts';
+import { type BooksDb, booksDbFile, openBooksDb } from '../src/db.ts';
 import { entityDef, type QbObject } from '../src/entities.ts';
 import { tempDir } from './helpers.ts';
 
@@ -20,7 +20,7 @@ function project(entity: string, raw: QbObject): Record<string, unknown> {
 	const tmp = tempDir();
 	let db: BooksDb | undefined;
 	try {
-		db = openBooksDb(booksMirror(tmp.dir, 'r1'));
+		db = openBooksDb(booksDbFile(tmp.dir, 'r1'));
 		const id = String(raw.Id);
 		db.ingest([{ def, objects: [raw] }], {
 			syncedAt: '2026-06-21T00:00:00.000Z',

@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createRequestHandler } from '../src/app.ts';
 import { type OpenQbClient, QbAccessError } from '../src/books/qb-access.ts';
-import { booksMirror, openBooksDb } from '../src/db.ts';
+import { booksDbFile, openBooksDb } from '../src/db.ts';
 import { entityDef } from '../src/entities.ts';
 import { createApiApp } from '../src/http/api.ts';
 import { makeConfig, tempDir } from './helpers.ts';
@@ -29,7 +29,7 @@ const refusingOpenQb: OpenQbClient = async () =>
  * a full pull has finished.
  */
 function seedMirror(dataDir: string): void {
-	const mirror = booksMirror(dataDir, REALM);
+	const mirror = booksDbFile(dataDir, REALM);
 	const db = openBooksDb(mirror);
 	const syncedAt = '2026-01-01T00:00:00Z';
 	db.ingest(
@@ -106,7 +106,7 @@ function buildApp({ readOnly = false }: { readOnly?: boolean } = {}) {
 		config,
 		realmId: REALM,
 		store,
-		mirror: booksMirror(dir, REALM),
+		mirror: booksDbFile(dir, REALM),
 		readOnly,
 		openQb: refusingOpenQb,
 		gate: (fn) => fn(),

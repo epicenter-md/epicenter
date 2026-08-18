@@ -11,14 +11,14 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { Mirror } from '@epicenter/sqlite/bun-mirror';
-import { mirrorAt } from '@epicenter/sqlite/bun-mirror';
 import {
 	createMemoryTokenStore,
 	makeConfig,
 	tempDir,
 } from '../../test/helpers.ts';
-import { booksMirror, openBooksDb } from '../db.ts';
+import { booksDbFile, openBooksDb } from '../db.ts';
+import type { DbFile } from '../db-file.ts';
+import { dbFileAt } from '../db-file.ts';
 import { entityDef } from '../entities.ts';
 import { companyDir } from '../paths.ts';
 import { readBooksStatus } from './status.ts';
@@ -26,11 +26,11 @@ import { readBooksStatus } from './status.ts';
 const REALM = 'r1';
 
 /** Status for one temp data dir, optionally against a substitute mirror. */
-async function statusFor(dataDir: string, mirror?: Mirror) {
+async function statusFor(dataDir: string, mirror?: DbFile) {
 	return readBooksStatus({
 		config: makeConfig({ dataDir, entities: ['Invoice'] }),
 		realmId: REALM,
-		mirror: mirror ?? booksMirror(dataDir, REALM),
+		mirror: mirror ?? booksDbFile(dataDir, REALM),
 		store: createMemoryTokenStore(),
 	});
 }
@@ -38,7 +38,7 @@ async function statusFor(dataDir: string, mirror?: Mirror) {
 describe('readBooksStatus', () => {
 	test('reports an unbuilt mirror without creating it', async () => {
 		const tmp = tempDir();
-		const mirror = booksMirror(tmp.dir, REALM);
+		const mirror = booksDbFile(tmp.dir, REALM);
 
 		const status = await statusFor(tmp.dir);
 		expect(status.mirror).toBe('empty');
@@ -46,13 +46,13 @@ describe('readBooksStatus', () => {
 		expect(status.predecessors).toEqual([]);
 		expect(status.entities).toEqual([]);
 		// A status read is not a build: the reader conjured nothing.
-		expect(mirror.artifacts()).toEqual([]);
+		expect(mirror.versions()).toEqual([]);
 		tmp.cleanup();
 	});
 
 	test('reports an artifact with rows but no finished full pull as building', async () => {
 		const tmp = tempDir();
-		const mirror = booksMirror(tmp.dir, REALM);
+		const mirror = booksDbFile(tmp.dir, REALM);
 		// Rows without a realm cursor: what a full pull that failed partway leaves
 		// behind. The file exists and it has content, and it is still not a corpus.
 		const db = openBooksDb(mirror);
@@ -72,7 +72,7 @@ describe('readBooksStatus', () => {
 
 	test('reports the built mirror, its path, and its counts', async () => {
 		const tmp = tempDir();
-		const mirror = booksMirror(tmp.dir, REALM);
+		const mirror = booksDbFile(tmp.dir, REALM);
 		const db = openBooksDb(mirror);
 		db.ingest([{ def: entityDef('Invoice'), objects: [{ Id: 'i1' }] }], {
 			syncedAt: '2026-01-01T00:00:00Z',
@@ -99,11 +99,10 @@ describe('readBooksStatus', () => {
 		const tmp = tempDir();
 		// Build under today's version, then read status as a build whose corpus
 		// version has since been bumped.
-		const built = booksMirror(tmp.dir, REALM);
+		const built = booksDbFile(tmp.dir, REALM);
 		openBooksDb(built).close();
 
-		const next = mirrorAt({
-			name: 'books',
+		const next = dbFileAt({
 			version: built.version + 1,
 			directory: companyDir(tmp.dir, REALM),
 		});

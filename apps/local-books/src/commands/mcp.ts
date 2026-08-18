@@ -29,7 +29,7 @@
  *    a normal result with `isError: true` and a text message, so the model can
  *    read it and self-correct.
  */
-import type { Mirror } from '@epicenter/sqlite/bun-mirror';
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -52,7 +52,8 @@ import { fetchReport, ReportInput } from '../books/report.ts';
 import { readBooksStatus } from '../books/status.ts';
 import { type ParsedArgs, VERSION } from '../cli.ts';
 import { type AppConfig, loadConfig } from '../config.ts';
-import { booksMirror, openBooksDb } from '../db.ts';
+import { booksDbFile, openBooksDb } from '../db.ts';
+import type { DbFile } from '../db-file.ts';
 import { syncRealm } from '../sync.ts';
 import {
 	createFileTokenStore,
@@ -65,7 +66,7 @@ type ToolContext = {
 	config: AppConfig;
 	realmId: string;
 	/** The resolved company's mirror: its current artifact is what tools read. */
-	mirror: Mirror;
+	mirror: DbFile;
 	/** A QB client opener for the resolved company; the token loads when called. */
 	openQb: OpenQbClient;
 	/** The realm's token store (built once per server, reloaded on each `get`). */
@@ -304,7 +305,7 @@ export async function runMcpServer(args: ParsedArgs): Promise<number> {
 		const ctx: ToolContext = {
 			config,
 			realmId,
-			mirror: booksMirror(config.dataDir, realmId),
+			mirror: booksDbFile(config.dataDir, realmId),
 			openQb: createQbAccess({ config, realmId, store, now }),
 			store,
 			now,

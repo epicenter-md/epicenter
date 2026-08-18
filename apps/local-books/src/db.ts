@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { type Mirror, mirrorAt } from '@epicenter/sqlite/bun-mirror';
+import { type DbFile, dbFileAt } from './db-file.ts';
 import {
 	type ColumnType,
 	type EntityDef,
@@ -112,10 +112,9 @@ function declareEntityTable(def: EntityDef): TableDeclaration {
  */
 const MIRROR_VERSION = 1;
 
-/** The mirror as materialized for one company: `<dataDir>/companies/<realmId>/`. */
-export function booksMirror(dataDir: string, realmId: string): Mirror {
-	return mirrorAt({
-		name: 'books',
+/** The database as materialized for one company: `<dataDir>/companies/<realmId>/`. */
+export function booksDbFile(dataDir: string, realmId: string): DbFile {
+	return dbFileAt({
 		version: MIRROR_VERSION,
 		directory: companyDir(dataDir, realmId),
 	});
@@ -182,8 +181,8 @@ export type BooksDb = ReturnType<typeof booksDb>;
  * finds: a different corpus contract is a different filename, so an artifact
  * this opens is always one a build of this version wrote (ADR-0197).
  */
-export function openBooksDb(mirror: Mirror): BooksDb {
-	const db = mirror.open();
+export function openBooksDb(file: DbFile): BooksDb {
+	const db = file.open();
 	db.run(createTableSql(META_TABLE));
 	return booksDb(db);
 }
@@ -195,8 +194,8 @@ export function openBooksDb(mirror: Mirror): BooksDb {
  * rejects every write statement, so `ingest` on this handle throws by
  * construction.
  */
-export function openBooksDbReadonly(mirror: Mirror): BooksDb | null {
-	const db = mirror.openReadonly();
+export function openBooksDbReadonly(file: DbFile): BooksDb | null {
+	const db = file.openReadonly();
 	return db === null ? null : booksDb(db);
 }
 

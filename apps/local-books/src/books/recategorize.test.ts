@@ -16,7 +16,7 @@ import {
 	makePurchase,
 	startMockQbServer,
 } from '../../test/mock-qb-server.ts';
-import { booksMirror, openBooksDb } from '../db.ts';
+import { booksDbFile, openBooksDb } from '../db.ts';
 import { entityDef } from '../entities.ts';
 import { createFileTokenStore } from '../token-store.ts';
 import type { TokenSet } from '../tokens.ts';
@@ -62,7 +62,7 @@ async function setup(
 	};
 	await store.set(token);
 
-	const mirror = booksMirror(dir, mock.realmId);
+	const mirror = booksDbFile(dir, mock.realmId);
 	const db = openBooksDb(mirror);
 	db.ingest(
 		[

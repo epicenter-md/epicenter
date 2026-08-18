@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { booksMirror } from '../src/db.ts';
+import { booksDbFile } from '../src/db.ts';
 import { tempRoot } from './helpers.ts';
 import { makeInvoice, startMockQbServer } from './mock-qb-server.ts';
 
@@ -57,7 +57,7 @@ test('CLI: `sync --full` then `sync` runs incremental, advances the cursor, no r
 	};
 	// Opened as a plain SQLite file, the way an agent pointed at the artifact
 	// would: the versioned filename is the only thing that changed for them.
-	const dbFile = booksMirror(tmp.appDir, server.realmId).path;
+	const dbFile = booksDbFile(tmp.appDir, server.realmId).path;
 
 	// The realm cursor is one high-water mark for the company, stored in _meta.
 	const realmCursor = (db: Database): string =>

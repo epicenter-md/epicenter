@@ -10,9 +10,9 @@
  */
 
 import { rmSync } from 'node:fs';
-import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import { queryBooks } from '../books/query.ts';
-import { booksMirror, openBooksDb } from '../db.ts';
+import { booksDbFile, openBooksDb } from '../db.ts';
+import type { DbFile } from '../db-file.ts';
 import { entityDef, type QbObject } from '../entities.ts';
 import { booksDataDir, companyDir } from '../paths.ts';
 
@@ -90,7 +90,7 @@ const purchase = (
 });
 
 /** Print a query's rows as a compact aligned table. */
-function table(mirror: Mirror, sql: string): void {
+function table(mirror: DbFile, sql: string): void {
 	const { data, error } = queryBooks({ mirror, sql });
 	if (error !== null) {
 		console.log(`  (query failed: ${error.message})`);
@@ -125,7 +125,7 @@ export async function runDemo(): Promise<number> {
 	// Fresh each run: the demo is disposable sample data, not a real mirror, so it
 	// clears the whole realm directory rather than reclaiming one artifact.
 	rmSync(companyDir(dataDir, DEMO_REALM), { recursive: true, force: true });
-	const mirror = booksMirror(dataDir, DEMO_REALM);
+	const mirror = booksDbFile(dataDir, DEMO_REALM);
 
 	const acme = { value: '1', name: 'Acme Corp' };
 	const globex = { value: '2', name: 'Globex Inc' };

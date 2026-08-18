@@ -7,7 +7,7 @@
  */
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { booksMirror } from '../src/db.ts';
+import { booksDbFile } from '../src/db.ts';
 import { makeInvoice, startMockQbServer } from './mock-qb-server.ts';
 
 const BIN = join(import.meta.dir, '../src/bin.ts');
@@ -39,7 +39,7 @@ function banner(label: string): void {
 const server = startMockQbServer();
 const realmId = server.realmId;
 const tokenFile = join(APP_DIR, 'credentials.json');
-const dbFile = booksMirror(APP_DIR, realmId).path;
+const dbFile = booksDbFile(APP_DIR, realmId).path;
 
 const env = {
 	EPICENTER_DATA_DIR: ROOT,
