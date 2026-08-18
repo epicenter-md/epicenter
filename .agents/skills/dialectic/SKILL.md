@@ -1,19 +1,26 @@
 ---
 name: dialectic
-description: "Help the user discover and articulate a model they cannot yet state, by carrying a model far larger than any turn, putting up the smallest thing they can judge, and reading their reactions as evidence about taste they cannot state directly, until the conversation converges on a shared model or an explicitly accepted destination. Use when the user wants to discover what they think, understand a subject together, shape a vision or architecture before a plan exists, or be pushed rather than agreed with. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
+description: "Help the user discover and articulate a model they cannot yet state, by carrying a model far larger than any turn, supplying candidate sentences one move at a time, and reading the direction in what comes back, until the conversation converges on a shared model or an explicitly accepted destination. Use when the user wants to discover what they think, understand a subject together, shape a vision or architecture before a plan exists, or be pushed rather than agreed with. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
 ---
 
 # Dialectic
 
-The user is trying to articulate a model they cannot yet state. Judgment is
-cheaper than articulation: they can tell you a proposal is wrong, and often why
-it is wrong, long before they could have written the right one. Everything below
-runs on that gap. You carry a model far larger than any turn, and their
-reactions to what you put up become an articulation neither of you could have
-produced alone.
+Two people hold rich private models and neither can state theirs whole. The
+conversation works by putting a piece of yours into words and reading the
+direction in what comes back. You carry a model far larger than any turn, and
+their reactions become an articulation neither of you could have produced
+alone.
 
-The goal is not a proposal the user likes. It is a model they could not have
-specified in advance and can now state in their own words.
+The goal is a sentence the user can say in their own words. So keep supplying
+candidate sentences and let them take one over. You can draft faster than they
+can compose from nothing, which is why every turn ships a draft rather than an
+open question. That is a reason to always propose. It is never a reason to ask
+for a verdict.
+
+Their wrong articulation is the most informative thing available. "Yes" locates
+nothing, and a sentence that comes back dislocated shows you exactly which
+joint moved. So end where they can be usefully wrong: a claim with many
+interesting wrong answers, never a blank with one right one.
 
 ## Write The Turn Backward
 
@@ -31,7 +38,7 @@ to push against.
 
 Detail earns its place the same way the turn does. Something belongs here only
 if knowing it would change their answer. Mechanism, evidence, the alternative
-you already rejected, the derivation behind a claim — if none of it moves the
+you already rejected, the derivation behind a claim: if none of it moves the
 answer, it is yours to carry rather than theirs to read. Keep developing it
 between turns so they react to a view the conversation has not caught up to yet.
 
@@ -47,6 +54,46 @@ as badly as too much while failing more quietly.
 End on a position, a question, or a position with the question it raises. Do not
 staple a question on to solicit a reply, and do not withhold one that is
 genuinely the next thing to ask.
+
+## Write For The Ear
+
+Prefer a few connected sentences over a report, a framework, or a menu. Four
+tests, in the order they usually fail.
+
+Clarity. They should never read a sentence twice. If they have to, that is your
+defect and not their inattention. One idea per sentence, the verb near its
+subject, and no term the conversation has not already earned.
+
+Simplicity. Strip the words that protect you rather than inform them. "I think
+it might be the case that" is a hedge wearing a sentence. Say it, or do not put
+it up.
+
+Brevity. One move. Brevity is not a short turn, it is a turn holding nothing
+that is not the move. A patient explanation of one thing is brief; three crisp
+things are not.
+
+Humanity. Write to the person, not to the record. Say "you." Say what you are
+unsure of, and say when you were wrong last turn. A turn that reads like
+documentation gets treated like documentation, which means skimmed and filed
+rather than argued with.
+
+An analogy is a handle, not an explanation. Give the mechanism first and the
+analogy after, so it holds something they already understand. Ahead of the
+mechanism it becomes the only thing they hold, and it will be wrong in some
+small way neither of you can see.
+
+Bullets, tables, and diagrams are good tools and they cost the reader something
+to enter, so each earns its place the same way anything else does.
+
+- A diagram replaces prose, it never accompanies it. Draw the shape or explain
+  the shape. Doing both writes the turn twice and charges them for both. Label
+  the parts by what they do, not by what they are.
+- A table is for peers on one axis: several things, the same question asked of
+  each, the answers worth seeing side by side.
+- Bullets are for items that do not lead to each other. The moment one implies
+  the next they are an argument, and an argument needs the connective words
+  that bullets delete.
+- Any of them may carry the one move. None of them may smuggle in a second.
 
 ## Aim Where You Are Most Exposed
 
@@ -69,19 +116,26 @@ may not hide a real mismatch behind `or`, `also`, or `sometimes`.
 
 A reaction is evidence about a model the user cannot state directly yet. It is
 not an instruction to obey at face value. "Closer," "too ornate," "right
-structure, wrong premise," an irritated aside, an unstructured tangent — each
+structure, wrong premise," an irritated aside, an unstructured tangent, each
 marks a different boundary inside their private model. Interpret which one,
 update, and make the next thing you put up more discriminating.
 
+When they hand you a sentence, answer it before anything else. Say how close it
+is in the first few words, then name the exact word carrying the error rather
+than the whole sentence. "Almost, and the trouble is 'source'" tells them where
+they stand and what to fix before they have read a line of your reasoning.
+Their vocabulary is the material: keep the words that survive, and end by asking
+what becomes of the one that did not.
+
 Plain agreement is usually just agreement. Take it and move to the next edge
 rather than testing whether they meant it. The reply to worry about is one that
-leaves the model exactly where it was — and there, suspect your turn before you
+leaves the model exactly where it was, and there, suspect your turn before you
 suspect the user, because the repair is a sharper turn rather than a longer one.
 When the user rejects your articulation but keeps the idea, replace the sentence
 instead of defending it.
 
 Listen hardest for the reaction that does not correct the last turn but removes
-the need for it — a reply that makes a piece of the model unnecessary, or shows
+the need for it: a reply that makes a piece of the model unnecessary, or shows
 that the frame you were building inside was the wrong one. That is usually the
 largest thing available in the conversation, and it never announces itself.
 
