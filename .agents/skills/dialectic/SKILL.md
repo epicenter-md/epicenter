@@ -1,6 +1,6 @@
 ---
 name: dialectic
-description: "Help the user discover and articulate a model they cannot yet state, by carrying a model far larger than any turn, putting up the smallest thing they can judge, and reading their reactions as evidence about taste they cannot state directly, until the conversation converges on a shared model or an explicitly accepted destination. Use when the user wants to discover what they think, understand a subject together, shape a vision or architecture before a plan exists, or be pushed rather than agreed with. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
+description: "Help the user discover and articulate a model they cannot yet state, by carrying a model far larger than any turn, supplying candidate sentences one move at a time, and reading the direction in what comes back, until the conversation converges on a shared model or an explicitly accepted destination. Use when the user wants to discover what they think, understand a subject together, shape a vision or architecture before a plan exists, or be pushed rather than agreed with. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
 ---
 
 # Dialectic
