@@ -26,11 +26,17 @@ accepted ADR, the ADR wins.
 - **Status is one of:** `Proposed`, `Accepted`, `Superseded`.
 - **Decisions are born from specs but do not live there.** When a design pass
   settles something durable, harvest it into an ADR and let the spec be deleted.
-- **`Proposed` is a transient state.** Record a decision as `Proposed` when it
-  crystallizes during design; flip it to `Accepted` when the work lands. A
-  `Proposed` ADR that no in-tree spec references means its spec was deleted (the
-  work landed): flip it, or supersede it if abandoned. `bun
-scripts/check-doc-hygiene.ts` flags orphaned and stale `Proposed` ADRs.
+- **`Proposed` is a transient state.** Record a decision as `Proposed` while it
+  is still being decided; flip it to `Accepted` when the decision is made. A
+  `Proposed` ADR that no in-tree spec references means its spec was deleted:
+  flip it, or supersede it if abandoned. `bun scripts/check-doc-hygiene.ts`
+  flags orphaned and stale `Proposed` ADRs.
+- **Status answers whether a record governs, never whether it shipped.** An
+  accepted decision that nothing implements yet still governs: a later record
+  reasoning from it is obeying real law, and demoting it to `Proposed` would
+  say the opposite. Name what does not exist yet in an `Unbuilt:` line instead,
+  which is more precise than a status because it says *what* is missing rather
+  than only *that* something is. Delivery state belongs to specs.
 
 ## Numbering
 
@@ -58,6 +64,7 @@ merged; only the pre-merge placeholder is negotiable.
 - **Superseded by:** [ADR-PPPP](PPPP-*.md) (added only when this is retired)
 - **Amends:** [ADR-MMMM](MMMM-*.md) with the bounded change (or omit)
 - **Amended by:** [ADR-PPPP](PPPP-*.md) with the bounded change (or omit)
+- **Unbuilt:** what this decides that no code implements yet (or omit)
 
 ## Context
 

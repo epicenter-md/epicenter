@@ -126,7 +126,7 @@ for (const name of adrs) {
 		);
 	} else if (ageDays !== null && ageDays > STALE_DAYS) {
 		flags.push(
-			`ADR PROPOSED, STALE (${ageDays}d)  ${path}\n    -> still Proposed after ${ageDays} days; land it and flip to Accepted, or supersede it.`,
+			`ADR PROPOSED, STALE (${ageDays}d)  ${path}\n    -> still Proposed after ${ageDays} days; flip it to Accepted once the decision is made (add an \`Unbuilt:\` line if nothing implements it yet), or supersede it.`,
 		);
 	}
 }
