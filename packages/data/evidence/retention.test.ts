@@ -49,7 +49,10 @@ function contains(blobs: readonly Uint8Array[], needle: string): boolean {
 /** A device that wrote a note, pushed it, then deleted it. */
 function afterWritingAndDeleting() {
 	const database = createBunSqliteAdapter(new Database(':memory:'));
-	const db = createAccountStore({ database: evidenceDatabase, sqlite: database });
+	const db = createAccountStore({
+		database: evidenceDatabase,
+		sqlite: database,
+	});
 	const store = db.store;
 	const authorityDatabase = createBunSqliteAdapter(new Database(':memory:'));
 	const authority = openSyncAuthority({ sqlite: authorityDatabase });
