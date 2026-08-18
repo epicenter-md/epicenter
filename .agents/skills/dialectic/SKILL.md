@@ -1,167 +1,184 @@
 ---
 name: dialectic
-description: "Help the user discover and articulate a model they cannot yet state, by carrying a model far larger than any turn, supplying candidate sentences one move at a time, and reading the direction in what comes back, until the conversation converges on a shared model or an explicitly accepted destination. Use when the user wants to discover what they think, understand a subject together, shape a vision or architecture before a plan exists, or be pushed rather than agreed with. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
+description: "Bring an agent's and user's partly formed models into contact by presenting one clear rendering at a time and reading the user's natural corrections, extensions, and recognition until the user says 'that's right.' Use when the user wants to discover what they think, learn a model together, shape a vision or architecture before a plan exists, or receive real pushback. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
 ---
 
 # Dialectic
 
-Two people hold rich private models and neither can state theirs whole. The
-conversation works by putting a piece of yours into words and reading the
-direction in what comes back. You carry a model far larger than any turn, and
-their reactions become an articulation neither of you could have produced
-alone.
+A dialectic ends at "that's right." It advances by putting the current model
+into a form the other person can see and react to: a compact paragraph, a
+concrete example, a diagram, a contrast, or a sentence that carries the live
+distinction.
 
-The goal is a sentence the user can say in their own words. So keep supplying
-candidate sentences and let them take one over. You can draft faster than they
-can compose from nothing, which is why every turn ships a draft rather than an
-open question. That is a reason to always propose. It is never a reason to ask
-for a verdict.
+The agent is not interviewing the user and the user is not approving a series
+of proposals. The agent keeps making the model visible. The user's natural
+response shows what is right, wrong, missing, or newly possible. The next
+rendering incorporates that response.
 
-Their wrong articulation is the most informative thing available. "Yes" locates
-nothing, and a sentence that comes back dislocated shows you exactly which
-joint moved. So end where they can be usefully wrong: a claim with many
-interesting wrong answers, never a blank with one right one.
+```text
+      user's partly formed model       agent's partly formed model
+                    \                   /
+                     \                 /
+                      ▼               ▼
+                   ┌─────────────────────┐
+                   │  clear presentation │
+                   │  sentence, example, │
+                   │  diagram, contrast  │
+                   └──────────┬──────────┘
+                              ▼
+                    natural response from
+                 recognition, correction, or use
+                              │
+                              └──► next presentation
+```
 
-## Write The Turn Backward
+## Present, Do Not Interrogate
 
-Decide what you want them to say back. Then write only what they need to say it.
+Every substantial turn should put one current model on the table. Lead with
+the model itself, not with a report of the conversation, the reasoning behind
+it, or a request for approval.
 
-Every turn buys exactly one reaction, however long it is. Length is therefore
-paid for in their input: a turn carrying five things costs four reactions you
-will never get, and their model reaches you only through reactions. Small turns
-are not a courtesy, they are how much of their thinking you get to see.
+Use the form that makes the thought easiest to meet:
 
-Catch yourself writing in the other order: starting from your model, letting
-every part of it claim space, and stapling a question to the end. That produces
-a transmission, and the reply teaches nothing because there was nothing specific
-to push against.
+```text
+paragraph       when the model is causal or conceptual
+example         when the user needs to feel the consequence
+diagram         when the shape or ownership matters
+contrast        when two interpretations are being separated
+sentence        when one exact articulation is the live edge
+```
 
-Detail earns its place the same way the turn does. Something belongs here only
-if knowing it would change their answer. Mechanism, evidence, the alternative
-you already rejected, the derivation behind a claim: if none of it moves the
-answer, it is yours to carry rather than theirs to read. Keep developing it
-between turns so they react to a view the conversation has not caught up to yet.
+Do not end the presentation with "which do you choose?", "does that sound
+right?", "should I proceed?", or "say stop if that's wrong." Do not turn the
+model into a menu of labels before the user understands what those labels mean.
+The user can recognize, correct, extend, or refuse a clear presentation
+without being prompted to select a response format.
 
-The unit is one judgment, not one idea. Two things belong in the same turn when
-neither can be judged without the other, and in separate turns when each
-deserves its own reaction. How much is on screen is never the question.
+Bad:
 
-Give them enough to actually disagree. Could they disagree with this
-specifically, and would the shape of their disagreement teach you something? A
-claim they cannot evaluate is unfinished rather than small, and too thin fails
-as badly as too much while failing more quietly.
+> Gate or receipts? My pick is gate. Say stop if that's wrong.
 
-End on a position, a question, or a position with the question it raises. Do not
-staple a question on to solicit a reply, and do not withhold one that is
-genuinely the next thing to ask.
+Better:
 
-## Write For The Ear
+```text
+run
+ ├─ gate: evaluate the run against standing rules
+ └─ receipts: collect evidence during the run
 
-Prefer a few connected sentences over a report, a framework, or a menu. Four
-tests, in the order they usually fail.
+Keeping both leaves two mechanisms able to claim that the same fact has been
+established. The unresolved issue is where that confidence should live.
+```
 
-Clarity. They should never read a sentence twice. If they have to, that is your
-defect and not their inattention. One idea per sentence, the verb near its
-subject, and no term the conversation has not already earned.
+The better turn gives the user something to correct. It does not ask them to
+approve the agent's framing or silently authorize an implementation.
 
-Simplicity. Strip the words that protect you rather than inform them. "I think
-it might be the case that" is a hedge wearing a sentence. Say it, or do not put
-it up.
+## Two Directions, One Conversation
 
-Brevity. One move. Brevity is not a short turn, it is a turn holding nothing
-that is not the move. A patient explanation of one thing is brief; three crisp
-things are not.
+The dialectic can move in either direction, and it can switch direction in the
+middle of a conversation.
 
-Humanity. Write to the person, not to the record. Say "you." Say what you are
-unsure of, and say when you were wrong last turn. A turn that reads like
-documentation gets treated like documentation, which means skimmed and filed
-rather than argued with.
+When the agent is learning the user's model, the agent makes the user's emerging
+vision visible. The user may say "almost," add a distinction, replace a word,
+or show that the framing is wrong. Those corrections are evidence about the
+model. Keep changing the rendering until the user says "that's right."
 
-An analogy is a handle, not an explanation. Give the mechanism first and the
-analogy after, so it holds something they already understand. Ahead of the
-mechanism it becomes the only thing they hold, and it will be wrong in some
-small way neither of you can see.
+When the user is learning the agent's model, explain the missing connection in
+a presentable form. The user may restate it, apply it to a case, predict a
+consequence, or challenge a premise. Do not treat every restatement as a test
+the user must pass. If the user is actually correcting the agent, stop grading
+their understanding and update the model.
 
-Bullets, tables, and diagrams are good tools and they cost the reader something
-to enter, so each earns its place the same way anything else does.
+```text
+User:    "So this means ..."       possible understanding
+User:    "No, that is wrong ..."   correction of the agent
+User:    "Actually, the issue is ..."  new direction or premise
+Agent:   "That's right."           local confirmation, not automatically closure
+User:    "That's right."           recognition of the complete model; closure
+```
 
-- A diagram replaces prose, it never accompanies it. Draw the shape or explain
-  the shape. Doing both writes the turn twice and charges them for both. Label
-  the parts by what they do, not by what they are.
-- A table is for peers on one axis: several things, the same question asked of
-  each, the answers worth seeing side by side.
-- Bullets are for items that do not lead to each other. The moment one implies
-  the next they are an argument, and an argument needs the connective words
-  that bullets delete.
-- Any of them may carry the one move. None of them may smuggle in a second.
+The same person need not lead the whole conversation. A user can begin by
+learning, discover a flaw in the explanation, and then teach the agent what the
+model must account for. Preserve that change instead of forcing the exchange
+back into a fixed teacher and student role.
 
-## Aim Where You Are Most Exposed
+## Read The Natural Response
 
-Aim at the answer most likely to break your own model. That is usually your
-strongest position, stated at full strength, including the consequence that
-makes it uncomfortable. The easiest answer to get is agreement, and agreement
-moves nothing.
+Interpret what the user's response reveals before deciding what to say next.
 
-The user came for a collaborator with a view, so put up the proposal you
-actually hold rather than a softened one that fits the turn, a compromise you do
-not believe, or a question you have no leaning about. Exposure and size are
-independent: a small turn should carry a large one.
+```text
+"That's right."                  The presented model is complete enough to close.
+"Almost, but ..."                Keep what survived and change the named joint.
+"No, because ..."                The model or premise is wrong; update it.
+"I don't understand ..."          Delivery missed; keep the model and lower the altitude.
+"For example ..."                The user is extending or grounding the model.
+An unexpected tangent              Look for the larger frame that made the current one unnecessary.
+```
 
-Do not average the two models to produce agreement. When you disagree, find the
-premise, value, or consequence that creates the divergence and put pressure
-there. A shared explanation may keep honest uncertainty; a chosen destination
-may not hide a real mismatch behind `or`, `also`, or `sometimes`.
+When the user hands back a sentence, answer its accuracy first. Say how close it
+is, then name the one word or premise carrying the error. "Almost, and the
+trouble is 'source'" is more useful than defending the whole explanation.
 
-## Read What A Reaction Exposes
+When the user asks for an example, give an example. When they ask why, expose
+the missing connection. Do not answer a request for understanding by making the
+user complete a questionnaire about whether they understand.
 
-A reaction is evidence about a model the user cannot state directly yet. It is
-not an instruction to obey at face value. "Closer," "too ornate," "right
-structure, wrong premise," an irritated aside, an unstructured tangent, each
-marks a different boundary inside their private model. Interpret which one,
-update, and make the next thing you put up more discriminating.
+Agreement is evidence, not authorization. A positive reaction to one rendering
+does not authorize a merge, deletion, branch operation, or implementation. Do
+not infer a destination from silence, fatigue, partial approval, or the absence
+of another objection.
 
-When they hand you a sentence, answer it before anything else. Say how close it
-is in the first few words, then name the exact word carrying the error rather
-than the whole sentence. "Almost, and the trouble is 'source'" tells them where
-they stand and what to fix before they have read a line of your reasoning.
-Their vocabulary is the material: keep the words that survive, and end by asking
-what becomes of the one that did not.
+## Keep The Model Legible
 
-Plain agreement is usually just agreement. Take it and move to the next edge
-rather than testing whether they meant it. The reply to worry about is one that
-leaves the model exactly where it was, and there, suspect your turn before you
-suspect the user, because the repair is a sharper turn rather than a longer one.
-When the user rejects your articulation but keeps the idea, replace the sentence
-instead of defending it.
+The agent may carry a much larger private model than it can present in one turn.
+Choose the smallest rendering that makes the live consequence visible. Do not
+dump the whole derivation, pre-answer every objection, or compress several
+unearned abstractions into a dense paragraph.
 
-Listen hardest for the reaction that does not correct the last turn but removes
-the need for it: a reply that makes a piece of the model unnecessary, or shows
-that the frame you were building inside was the wrong one. That is usually the
-largest thing available in the conversation, and it never announces itself.
+Use a diagram instead of prose when the relationship is the point. Use an
+example instead of an explanation when the user needs to see what the model
+does. Use a contrast when the disagreement is about a boundary. Do not repeat
+the same thought in prose and a diagram unless the second form adds a necessary
+new fact.
 
-## Keep The Conversation Moving
+Words such as model, articulation, surface, and altitude describe the method,
+not what the user needs to hear. Say "the row is a note about the audio, not the
+audio itself," not "expose the relevant slice of the model."
 
-After each reaction, choose the unresolved edge where a sharper turn would most
-change what either of you can reason about. Continue from what is already
-shared; do not recap settled ground to demonstrate memory.
+## Convergence And Handoff
 
-A concrete one-sentence model is often the sharpest thing available. Put it up
-as a probe rather than a conclusion, and treat acceptance, revision, or
-rejection as evidence. Reach for
-[one-sentence-test](../one-sentence-test/SKILL.md) when the sentence keeps
-drifting and that incoherence is itself the finding.
+The user's "that's right" is the convergence signal. It means the user
+recognizes the presented model as the complete thing the conversation needed to
+discover or understand. It is not a vote on an option and it is not permission
+to continue executing an unsettled plan.
 
-If the conversation stalls, say what the unresolved divergence is and name the
-one decision or piece of evidence most likely to move it. Reveal your leaning.
+The agent may say "that's right" as local feedback when the user's reasoning is
+sound. That feedback does not close the dialectic. Continue if an important
+part of the model remains unexplored.
 
-Convergence means the shared model is generative: both of you can reason forward
-from it and recognize what would contradict it. Silence is not convergence; the
-difference is whether they said so or simply stopped pushing. When the model
-seems complete, say it in its shortest honest form and ask them to recognize or
-revise it. A real caveat starts another turn.
+Once the user has said "that's right":
 
-Freeze only what the conversation produced. Use
-[greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) when an accepted
-destination must be worked backward into owner changes and deletions, and
-preserve a durable architectural decision in an ADR when the repository workflow
-calls for one.
+- For a thinking-only request, return the accepted model and stop.
+- For a greenfield destination, hand it to
+  [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) to work
+  backward into ownership changes, deletions, and verification.
+- For implementation, implement the accepted destination without turning
+  implementation choices into new product decisions.
+
+If implementation discovers a fact that changes authority, workflow, ownership,
+or what the system allows, name the change and return to dialectic. Do not hide
+a new model choice inside execution.
+
+## Do Not Use Dialectic For A Settled Plan
+
+Dialectic discovers or teaches a model. It is not a wrapper for collecting
+approvals over an existing plan.
+
+If the user asks which existing commits, files, branches, or implementation
+steps should land, evaluate that request directly with the relevant review,
+refactoring, or execution skill. Do not manufacture a dialectic out of a list of
+preselected options.
+
+If the destination itself is still disputed, return to presenting the model and
+let the user correct it. Once the destination is recognized with "that's right,"
+stop discovering and work backward from it. Never use conversational momentum
+to turn an ambiguous reaction into an execution decision.
