@@ -1,113 +1,124 @@
 ---
 name: dialectic
-description: "Help the user discover and articulate a model they cannot yet state, by carrying a model far larger than any turn, putting up the smallest thing they can judge, and reading their reactions as evidence about taste they cannot state directly, until the conversation converges on a shared model or an explicitly accepted destination. Use when the user wants to discover what they think, understand a subject together, shape a vision or architecture before a plan exists, or be pushed rather than agreed with. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
+description: "Talk an idea through with the user until they can honestly say \"that's right.\" Each turn says what you currently understand in plain words and hands the user one thing to agree with, correct, or refuse. Use when the user is discovering a vision, learning a model, shaping an architecture before a plan exists, or wants real pushback. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
 ---
 
 # Dialectic
 
-The user is trying to articulate a model they cannot yet state. Judgment is
-cheaper than articulation: they can tell you a proposal is wrong, and often why
-it is wrong, long before they could have written the right one. Everything below
-runs on that gap. You carry a model far larger than any turn, and their
-reactions to what you put up become an articulation neither of you could have
-produced alone.
+A dialectic ends when the user says "that's right."
 
-The goal is not a proposal the user likes. It is a model they could not have
-specified in advance and can now state in their own words.
+Each turn does two things. It opens with a blockquoted paragraph saying what
+you believe the two of you now understand. It closes with one thing the user
+can answer. Everything else lives between them.
 
-## Write The Turn Backward
+Both ends are fixed by position. The blockquote is the first thing in the turn,
+the answerable thing is the last. Nothing before the first, nothing after the
+last. No summary of what you read, no recap of the conversation, no working
+through the user's points in order before the picture goes up. Position is the
+rule because it stays checkable while you write. Advice about good practice
+fades over a long exchange; "is the blockquote first" does not.
 
-Decide what you want them to say back. Then write only what they need to say it.
+## Write So It Can Be Repeated
 
-Every turn buys exactly one reaction, however long it is. Length is therefore
-paid for in their input: a turn carrying five things costs four reactions you
-will never get, and their model reaches you only through reactions. Small turns
-are not a courtesy, they are how much of their thinking you get to see.
+The blockquote is what a person reads first and what they have to carry. Write
+it so they could repeat it to someone else after reading it once. That test
+does more work than any rule about length.
 
-Catch yourself writing in the other order: starting from your model, letting
-every part of it claim space, and stapling a question to the end. That produces
-a transmission, and the reply teaches nothing because there was nothing specific
-to push against.
+It states the idea, not the conversation. A report of what was already said is
+not a dialectical turn, however accurate it is.
 
-Detail earns its place the same way the turn does. Something belongs here only
-if knowing it would change their answer. Mechanism, evidence, the alternative
-you already rejected, the derivation behind a claim — if none of it moves the
-answer, it is yours to carry rather than theirs to read. Keep developing it
-between turns so they react to a view the conversation has not caught up to yet.
+Use the words the conversation already uses, or plain ones. When you need a
+distinction the user has no name for, reach for something concrete before you
+reach for a definition: a real instance from the conversation instead of the
+category it belongs to, what breaks if the distinction is ignored, or an
+analogy.
 
-The unit is one judgment, not one idea. Two things belong in the same turn when
-neither can be judged without the other, and in separate turns when each
-deserves its own reaction. How much is on screen is never the question.
+Analogy lands hardest and drifts worst. "One half treats the database as a
+warehouse, the other treats it as a language" beats "one half's statement set
+is closed, the other's is open." But a comparison that reads well and fits
+badly is worse than fog, because fog is visibly fog while a good analogy
+becomes the only handle anyone has. Prefer the real instance; use analogy when
+nothing already in the conversation can stand for the distinction.
 
-Give them enough to actually disagree. Could they disagree with this
-specifically, and would the shape of their disagreement teach you something? A
-claim they cannot evaluate is unfinished rather than small, and too thin fails
-as badly as too much while failing more quietly.
+Do not compress. Density reads as depth while you write it and as fog when
+someone else reads it. A paragraph the user has to decode is a paragraph they
+cannot disagree with, and disagreement is the point. When legibility competes
+with precision or concision, legibility wins.
 
-End on a position, a question, or a position with the question it raises. Do not
-staple a question on to solicit a reply, and do not withhold one that is
-genuinely the next thing to ask.
+Keep your working vocabulary out of the turn. Words like model, articulation,
+surface, and consequence are for thinking about the method, not for speaking to
+a person. If a sentence needs a term the conversation has not established,
+define it in the same breath or drop it.
 
-## Aim Where You Are Most Exposed
+## End With Something Answerable
 
-Aim at the answer most likely to break your own model. That is usually your
-strongest position, stated at full strength, including the consequence that
-makes it uncomfortable. The easiest answer to get is agreement, and agreement
-moves nothing.
+The turn ends with one thing the user can respond to: recognize, correct,
+restate, extend, or refuse. Small enough to answer in a sentence, real enough
+that the answer changes what you put up next. A turn with nothing to hand back
+does not need to be a dialectical turn.
 
-The user came for a collaborator with a view, so put up the proposal you
-actually hold rather than a softened one that fits the turn, a compromise you do
-not believe, or a question you have no leaning about. Exposure and size are
-independent: a small turn should carry a large one.
+A fill-in-the-blank is the form, and usually the right one: "The difference
+between X and Y is ___." It lowers the cost of entering the idea without
+handing over the answer.
 
-Do not average the two models to produce agreement. When you disagree, find the
-premise, value, or consequence that creates the divergence and put pressure
-there. A shared explanation may keep honest uncertainty; a chosen destination
-may not hide a real mismatch behind `or`, `also`, or `sometimes`.
+The blank has to be fillable from what is on the page. If filling it in means
+doing the work you were supposed to do, the blank is wrong, not the format.
+Move it to the distinction the user can actually reach.
 
-## Read What A Reaction Exposes
+When the point is the whole picture rather than one distinction, ask them to
+say it back in their own words.
 
-A reaction is evidence about a model the user cannot state directly yet. It is
-not an instruction to obey at face value. "Closer," "too ornate," "right
-structure, wrong premise," an irritated aside, an unstructured tangent — each
-marks a different boundary inside their private model. Interpret which one,
-update, and make the next thing you put up more discriminating.
+Several blanks can belong together when they move one coherent piece; do not
+stack them into a worksheet. Do not end by asking for more information
+when what you already have could be made answerable.
 
-Plain agreement is usually just agreement. Take it and move to the next edge
-rather than testing whether they meant it. The reply to worry about is one that
-leaves the model exactly where it was — and there, suspect your turn before you
-suspect the user, because the repair is a sharper turn rather than a longer one.
-When the user rejects your articulation but keeps the idea, replace the sentence
-instead of defending it.
+## Put Up a Real View
 
-Listen hardest for the reaction that does not correct the last turn but removes
-the need for it — a reply that makes a piece of the model unnecessary, or shows
-that the frame you were building inside was the wrong one. That is usually the
-largest thing available in the conversation, and it never announces itself.
+Say what your view rules out, predicts, or would make wrong. Do not soften it
+into a set of questions. A view with every objection pre-neutralized gives the
+user nothing specific to disagree with.
 
-## Keep The Conversation Moving
+When you are learning how the user thinks, put up the whole of what you have
+and let them correct it. When you are teaching them something, ask them to
+reason from it. One reaction can turn either direction into the other.
 
-After each reaction, choose the unresolved edge where a sharper turn would most
-change what either of you can reason about. Continue from what is already
-shared; do not recap settled ground to demonstrate memory.
+## Let the Answer Change What You Believe
 
-A concrete one-sentence model is often the sharpest thing available. Put it up
-as a probe rather than a conclusion, and treat acceptance, revision, or
-rejection as evidence. Reach for
-[one-sentence-test](../one-sentence-test/SKILL.md) when the sentence keeps
-drifting and that incoherence is itself the finding.
+"Closer," a corrected sentence, a wrong prediction, irritation, a tangent: all
+of it tells you where your understanding and theirs diverge. Name the exact
+divergence and put up the sharpened version. When an answer makes part of your
+framing unnecessary, drop the framing instead of adding a rule to defend it.
 
-If the conversation stalls, say what the unresolved divergence is and name the
-one decision or piece of evidence most likely to move it. Reveal your leaning.
+Move only where the next version would change what either of you can reason
+about. If one unresolved reading would produce two different pictures, put that
+difference up. If the picture is already clear, do not invent options to keep
+the conversation going.
 
-Convergence means the shared model is generative: both of you can reason forward
-from it and recognize what would contradict it. Silence is not convergence; the
-difference is whether they said so or simply stopped pushing. When the model
-seems complete, say it in its shortest honest form and ask them to recognize or
-revise it. A real caveat starts another turn.
+When a user turn carries several questions, take the one that changes the
+picture and say what you are setting aside. Answering each in place turns the
+dialectic into a consultation, and the shared understanding gets buried in the
+middle of your own answers.
 
-Freeze only what the conversation produced. Use
-[greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) when an accepted
-destination must be worked backward into owner changes and deletions, and
-preserve a durable architectural decision in an ADR when the repository workflow
-calls for one.
+## Do Not Settle What They Have Not Settled
+
+Showing what a view entails is dialectic. Settling it is not. While the
+dialectic is live you decide nothing the user has not confirmed: no name
+chosen, no mechanic fixed, no plan worked backward. A consequence decided early
+turns their next answer from shaping the idea into fighting your implementation
+of it.
+
+You can tell a user "that's right" when they have reasoned correctly from what
+is on the table. That is feedback, not the end. The dialectic ends when the
+user says it, in their own words, unprompted. Never ask for it. Never offer to
+freeze anything the moment it arrives. A phrase you fished for locks an
+understanding the user never actually met.
+
+Once they have said it, work backward from what they accepted into owner
+changes and implementation. Freeze only what the conversation produced. Use
+`greenfield-clean-breaks` when getting there means reassigning owners, deleting
+paths, or reopening an inherited design.
+
+Implementation is ordinary work. But if it turns up a fact or a choice that
+would change how someone reasons about authority, workflow, or what the system
+allows, name the difference and go back to dialectic. Do not slip a new
+decision in under cover of implementation.

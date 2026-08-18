@@ -211,9 +211,9 @@ Guide the decisions that matter; leave the route to the agent. Add procedural
 detail when the work's safety or correctness depends on the order, and not
 otherwise.
 
-[dialectic](../dialectic/SKILL.md) is the worked example: 113 lines, no bullets,
-every rule carrying its reason. Read it when a skill you are writing has turned
-into a list.
+[dialectic](../dialectic/SKILL.md) is the worked example: compact prose, no
+bullets, every rule carrying its reason. Read it when a skill you are writing
+has turned into a list.
 
 ## Use Progressive Disclosure
 
