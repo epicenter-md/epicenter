@@ -123,10 +123,10 @@ function openIndexedDb(address: string): Promise<BrowserDurableDatabase> {
 	return new Promise((resolve, reject) => {
 		let blocked = false;
 		void openDB<BrowserDurableSchema>(address, 2, {
-			async upgrade(database, oldVersion, _newVersion, transaction) {
+			async upgrade(sqlite, oldVersion, _newVersion, transaction) {
 				for (const name of DURABLE_STORES) {
-					if (!database.objectStoreNames.contains(name)) {
-						database.createObjectStore(name);
+					if (!sqlite.objectStoreNames.contains(name)) {
+						sqlite.createObjectStore(name);
 					}
 				}
 				// Version 1 held one checkpoint record. Its contents were already
@@ -134,7 +134,7 @@ function openIndexedDb(address: string): Promise<BrowserDurableDatabase> {
 				// at load still decides whether they are trusted (ADR-0231).
 				if (
 					oldVersion === 1 &&
-					(database.objectStoreNames as DOMStringList).contains('state')
+					(sqlite.objectStoreNames as DOMStringList).contains('state')
 				) {
 					const checkpoint = (await transaction
 						.objectStore('state' as never)
@@ -159,7 +159,7 @@ function openIndexedDb(address: string): Promise<BrowserDurableDatabase> {
 							void meta.put(checkpoint.document, 'document');
 						}
 					}
-					database.deleteObjectStore('state' as never);
+					sqlite.deleteObjectStore('state' as never);
 				}
 			},
 			blocked() {
@@ -174,9 +174,9 @@ function openIndexedDb(address: string): Promise<BrowserDurableDatabase> {
 				);
 			},
 		}).then(
-			(database) => {
-				if (blocked) database.close();
-				else resolve(database);
+			(sqlite) => {
+				if (blocked) sqlite.close();
+				else resolve(sqlite);
 			},
 			(cause) => reject(cause),
 		);

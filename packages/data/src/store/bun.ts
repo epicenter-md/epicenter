@@ -144,7 +144,7 @@ async function openBunStore({
 		if (history !== undefined) applyHistorySchema(history);
 
 		const port = createSqliteDurablePort({
-			database: createBunSqliteAdapter(live),
+			sqlite: createBunSqliteAdapter(live),
 			history,
 		});
 		const opened = live;
@@ -217,7 +217,7 @@ export function openMemory<const TDatabase extends DatabaseJson>(
 	applyHistorySchema(history);
 	return createAccountStore({
 		workspace,
-		database: createBunSqliteAdapter(live),
+		sqlite: createBunSqliteAdapter(live),
 		history,
 		dispose: () => live.close(),
 	});

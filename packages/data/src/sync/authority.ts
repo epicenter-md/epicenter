@@ -237,11 +237,11 @@ export type SyncAuthority = {
 	storedBytes(): Result<number, AuthorityError>;
 };
 
-export function applyAuthoritySchema(database: SqliteDatabase): void {
+export function applyAuthoritySchema(sqlite: SqliteDatabase): void {
 	// `(seq, chunk)` and nothing else. There is no `taken_at`, no client id, no
 	// state vector and no baseline flag, because every one of those would be a
 	// fact about the bytes and the authority holds none.
-	database.run(`
+	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS _log (
 			seq   INTEGER NOT NULL,
 			chunk INTEGER NOT NULL,
@@ -256,7 +256,7 @@ export function applyAuthoritySchema(database: SqliteDatabase): void {
 	// More than one position is kept on purpose. A snapshot replaces history, so
 	// unlike a bad log entry it cannot be repaired by neutralising one row; the
 	// previous one is the only way back from a replica that produced a bad one.
-	database.run(`
+	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS _snapshot (
 			position INTEGER NOT NULL,
 			chunk    INTEGER NOT NULL,
@@ -268,7 +268,7 @@ export function applyAuthoritySchema(database: SqliteDatabase): void {
 	// opaque name of the history this log describes (ADR-0231). A key-value
 	// shape rather than a one-column table so a new fact is a row and not a
 	// migration.
-	database.run(`
+	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS _meta (
 			key   TEXT    NOT NULL,
 			value NOT NULL,
@@ -294,14 +294,14 @@ const SNAPSHOTS_KEPT = 2;
 const SNAPSHOT_FLOOR_BYTES = 64 * 1024;
 
 export function openSyncAuthority({
-	database,
+	sqlite,
 	/** Injected so a test can reach the snapshot path without a real vault. */
 	snapshotFloorBytes = SNAPSHOT_FLOOR_BYTES,
 }: {
-	database: SqliteDatabase;
+	sqlite: SqliteDatabase;
 	snapshotFloorBytes?: number;
 }): SyncAuthority {
-	applyAuthoritySchema(database);
+	applyAuthoritySchema(sqlite);
 
 	function read<TValue>(run: () => TValue): Result<TValue, AuthorityError> {
 		return trySync({
@@ -319,7 +319,7 @@ export function openSyncAuthority({
 	 */
 	function headSeq(): number {
 		const newestEntry =
-			database.all<SqliteRow & { seq: number }>(
+			sqlite.all<SqliteRow & { seq: number }>(
 				'SELECT COALESCE(MAX(seq), 0) AS seq FROM _log',
 			)[0]?.seq ?? 0;
 		return Math.max(newestEntry, snapshotPositionOf());
@@ -328,14 +328,14 @@ export function openSyncAuthority({
 	return Object.freeze({
 		append(update: Uint8Array): Result<number, AuthorityError> {
 			return read(() =>
-				database.transaction(() => {
+				sqlite.transaction(() => {
 					const seq = headSeq() + 1;
 					// Chunking happens at the storage boundary rather than on the wire's
 					// terms, so a client that framed its message differently, or an
 					// authority whose cap moves, cannot make the stored form wrong.
 					const chunks = intoChunks(update, CHUNK_BYTES);
 					for (const [index, chunk] of chunks.entries()) {
-						database.run(
+						sqlite.run(
 							'INSERT INTO _log (seq, chunk, bytes) VALUES (?, ?, ?)',
 							[seq, index, new Uint8Array(chunk)],
 						);
@@ -350,14 +350,14 @@ export function openSyncAuthority({
 				// The positions first, so `limit` bounds ENTRIES rather than rows. A
 				// limit on rows would return a fraction of a chunked entry and the
 				// caller would have no way to know it had been cut.
-				const positions = database.all<SqliteRow & { seq: number }>(
+				const positions = sqlite.all<SqliteRow & { seq: number }>(
 					'SELECT DISTINCT seq FROM _log WHERE seq > ? ORDER BY seq LIMIT ?',
 					[cursor, limit],
 				);
 				const newest = positions.at(-1)?.seq;
 				if (newest === undefined) return [];
 
-				const rows = database.all<
+				const rows = sqlite.all<
 					SqliteRow & {
 						seq: number;
 						chunk: number;
@@ -401,7 +401,7 @@ export function openSyncAuthority({
 			return read(() => {
 				const position = snapshotPositionOf();
 				if (position === 0) return undefined;
-				const rows = database.all<
+				const rows = sqlite.all<
 					SqliteRow & { bytes: Uint8Array | ArrayBuffer }
 				>('SELECT bytes FROM _snapshot WHERE position = ? ORDER BY chunk', [
 					position,
@@ -429,10 +429,10 @@ export function openSyncAuthority({
 				});
 			}
 			return read(() =>
-				database.transaction(() => {
+				sqlite.transaction(() => {
 					const chunks = intoChunks(bytes, CHUNK_BYTES);
 					for (const [index, chunk] of chunks.entries()) {
-						database.run(
+						sqlite.run(
 							'INSERT OR REPLACE INTO _snapshot (position, chunk, bytes) VALUES (?, ?, ?)',
 							[position, index, new Uint8Array(chunk)],
 						);
@@ -441,8 +441,8 @@ export function openSyncAuthority({
 					// that makes storage constant instead of growing, and it is also
 					// what makes a deletion real: a snapshot is current state, so it
 					// carries no trace of what was deleted before it.
-					database.run('DELETE FROM _log WHERE seq <= ?', [position]);
-					const kept = database
+					sqlite.run('DELETE FROM _log WHERE seq <= ?', [position]);
+					const kept = sqlite
 						.all<SqliteRow & { position: number }>(
 							'SELECT DISTINCT position FROM _snapshot ORDER BY position DESC LIMIT ?',
 							[SNAPSHOTS_KEPT],
@@ -450,7 +450,7 @@ export function openSyncAuthority({
 						.map((row) => row.position);
 					const oldest = kept.at(-1);
 					if (oldest !== undefined) {
-						database.run('DELETE FROM _snapshot WHERE position < ?', [oldest]);
+						sqlite.run('DELETE FROM _snapshot WHERE position < ?', [oldest]);
 					}
 				}),
 			);
@@ -464,7 +464,7 @@ export function openSyncAuthority({
 				// identity acquires one on its next dial and every replica stamps
 				// the same name from then on.
 				const minted = crypto.randomUUID();
-				database.run(
+				sqlite.run(
 					"INSERT OR IGNORE INTO _meta (key, value) VALUES ('document', ?)",
 					[minted],
 				);
@@ -480,7 +480,7 @@ export function openSyncAuthority({
 			// no-op it looks like.
 			const minted = crypto.randomUUID();
 			const { data: outcome, error } = read(() =>
-				database.transaction((): Result<string, AuthorityError> => {
+				sqlite.transaction((): Result<string, AuthorityError> => {
 					const document = documentOf();
 					if (document !== undefined && document !== fromDocument) {
 						return AuthorityError.DocumentMoved({ fromDocument, document });
@@ -497,20 +497,20 @@ export function openSyncAuthority({
 					// (ADR-0231). Retirement IS this deletion; there is no
 					// registry of retired documents, because admission is an
 					// equality and an unknown id is already unservable.
-					database.run('DELETE FROM _log');
-					database.run('DELETE FROM _snapshot');
+					sqlite.run('DELETE FROM _log');
+					sqlite.run('DELETE FROM _snapshot');
 					// The new document's own log starts over: its state is the
 					// snapshot at position 1.
 					const chunks = intoChunks(bytes, CHUNK_BYTES);
 					for (const [index, chunk] of chunks.entries()) {
-						database.run(
+						sqlite.run(
 							'INSERT INTO _snapshot (position, chunk, bytes) VALUES (?, ?, ?)',
 							[1, index, new Uint8Array(chunk)],
 						);
 					}
 					// The fresh name is what retires every replica of the old
 					// document at its next dial (ADR-0231).
-					database.run(
+					sqlite.run(
 						"INSERT OR REPLACE INTO _meta (key, value) VALUES ('document', ?)",
 						[minted],
 					);
@@ -543,7 +543,7 @@ export function openSyncAuthority({
 
 	function sumBytes(relation: '_log' | '_snapshot'): number {
 		return (
-			database.all<SqliteRow & { bytes: number }>(
+			sqlite.all<SqliteRow & { bytes: number }>(
 				`SELECT COALESCE(SUM(length(bytes)), 0) AS bytes FROM ${relation}`,
 			)[0]?.bytes ?? 0
 		);
@@ -551,14 +551,14 @@ export function openSyncAuthority({
 
 	function snapshotPositionOf(): number {
 		return (
-			database.all<SqliteRow & { position: number }>(
+			sqlite.all<SqliteRow & { position: number }>(
 				'SELECT COALESCE(MAX(position), 0) AS position FROM _snapshot',
 			)[0]?.position ?? 0
 		);
 	}
 
 	function documentOf(): string | undefined {
-		return database.all<SqliteRow & { value: string }>(
+		return sqlite.all<SqliteRow & { value: string }>(
 			"SELECT value FROM _meta WHERE key = 'document'",
 		)[0]?.value;
 	}

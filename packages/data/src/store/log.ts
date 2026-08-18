@@ -52,8 +52,8 @@ type StoredUpdate = SqliteRow & {
  * projection write it implies commit in one transaction. That is what makes
  * `query` always see committed local writes; two files could disagree.
  */
-export function applyStoreSchema(database: SqliteDatabase): void {
-	database.run(`
+export function applyStoreSchema(sqlite: SqliteDatabase): void {
+	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS _updates (
 			document TEXT    NOT NULL,
 			seq      INTEGER NOT NULL CHECK (seq > 0),
@@ -61,14 +61,14 @@ export function applyStoreSchema(database: SqliteDatabase): void {
 			PRIMARY KEY (document, seq)
 		) WITHOUT ROWID, STRICT
 	`);
-	database.run(`
+	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS _outbox (
 			id    INTEGER NOT NULL CHECK (id > 0),
 			bytes BLOB    NOT NULL,
 			PRIMARY KEY (id)
 		) WITHOUT ROWID, STRICT
 	`);
-	database.run(`
+	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS _cursor (
 			document TEXT    NOT NULL,
 			seq      INTEGER NOT NULL CHECK (seq >= 0),
@@ -79,7 +79,7 @@ export function applyStoreSchema(database: SqliteDatabase): void {
 	// authority document this replica's state belongs to (ADR-0231). A
 	// key-value shape, mirroring the authority's own `_meta`, so a second
 	// fact is a row and not a migration.
-	database.run(`
+	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS _meta (
 			key   TEXT NOT NULL,
 			value TEXT NOT NULL,
@@ -103,19 +103,19 @@ export function applyStoreSchema(database: SqliteDatabase): void {
  * log, so re-offering them would grow the log with nothing new in it.
  */
 export function insertOutbox(
-	database: SqliteDatabase,
+	sqlite: SqliteDatabase,
 	id: number,
 	update: Uint8Array,
 ): void {
-	database.run('INSERT INTO _outbox (id, bytes) VALUES (?, ?)', [
+	sqlite.run('INSERT INTO _outbox (id, bytes) VALUES (?, ?)', [
 		id,
 		new Uint8Array(update),
 	]);
 }
 
 /** Every unsent entry, oldest first. */
-export function readOutbox(database: SqliteDatabase): OutboxEntry[] {
-	return database
+export function readOutbox(sqlite: SqliteDatabase): OutboxEntry[] {
+	return sqlite
 		.all<SqliteRow & { id: number; bytes: Uint8Array | ArrayBuffer }>(
 			'SELECT id, bytes FROM _outbox ORDER BY id',
 		)
@@ -124,12 +124,12 @@ export function readOutbox(database: SqliteDatabase): OutboxEntry[] {
 
 /** Replace every entry through `throughId` with one merged entry. */
 export function replaceOutboxThrough(
-	database: SqliteDatabase,
+	sqlite: SqliteDatabase,
 	throughId: number,
 	merged: Uint8Array,
 ): void {
-	database.run('DELETE FROM _outbox WHERE id <= ?', [throughId]);
-	database.run('INSERT INTO _outbox (id, bytes) VALUES (?, ?)', [
+	sqlite.run('DELETE FROM _outbox WHERE id <= ?', [throughId]);
+	sqlite.run('INSERT INTO _outbox (id, bytes) VALUES (?, ?)', [
 		throughId,
 		new Uint8Array(merged),
 	]);
@@ -137,10 +137,10 @@ export function replaceOutboxThrough(
 
 /** Forget every entry the authority has taken responsibility for. */
 export function dropOutboxThrough(
-	database: SqliteDatabase,
+	sqlite: SqliteDatabase,
 	throughId: number,
 ): void {
-	database.run('DELETE FROM _outbox WHERE id <= ?', [throughId]);
+	sqlite.run('DELETE FROM _outbox WHERE id <= ?', [throughId]);
 }
 
 /**
@@ -152,9 +152,9 @@ export function dropOutboxThrough(
  *
  * Zero means nothing has been read, which is also what a fresh replica reports.
  */
-export function readCursor(database: SqliteDatabase, document: string): number {
+export function readCursor(sqlite: SqliteDatabase, document: string): number {
 	return (
-		database.all<SqliteRow & { seq: number }>(
+		sqlite.all<SqliteRow & { seq: number }>(
 			'SELECT seq FROM _cursor WHERE document = ?',
 			[document],
 		)[0]?.seq ?? 0
@@ -173,11 +173,11 @@ export function readCursor(database: SqliteDatabase, document: string): number {
  * entry, and a skipped entry is invisible forever.
  */
 export function writeCursor(
-	database: SqliteDatabase,
+	sqlite: SqliteDatabase,
 	document: string,
 	seq: number,
 ): void {
-	database.run('INSERT OR REPLACE INTO _cursor (document, seq) VALUES (?, ?)', [
+	sqlite.run('INSERT OR REPLACE INTO _cursor (document, seq) VALUES (?, ?)', [
 		document,
 		seq,
 	]);
@@ -204,25 +204,25 @@ export const STORE_FORMAT = '2';
  * format boundary rather than a document boundary: the file that comes out
  * the other side is a NEW file that happens to share a name.
  */
-export function adoptStoreFormat(database: SqliteDatabase): void {
-	database.transaction(() => {
-		const format = database.all<SqliteRow & { value: string }>(
+export function adoptStoreFormat(sqlite: SqliteDatabase): void {
+	sqlite.transaction(() => {
+		const format = sqlite.all<SqliteRow & { value: string }>(
 			"SELECT value FROM _meta WHERE key = 'format'",
 		)[0]?.value;
 		if (format !== undefined) return;
-		database.run('DELETE FROM _updates');
-		database.run('DELETE FROM _outbox');
-		database.run('DELETE FROM _cursor');
-		database.run('DELETE FROM _meta');
-		database.run("INSERT INTO _meta (key, value) VALUES ('format', ?)", [
+		sqlite.run('DELETE FROM _updates');
+		sqlite.run('DELETE FROM _outbox');
+		sqlite.run('DELETE FROM _cursor');
+		sqlite.run('DELETE FROM _meta');
+		sqlite.run("INSERT INTO _meta (key, value) VALUES ('format', ?)", [
 			STORE_FORMAT,
 		]);
 	});
 }
 
 /** The format this file was certified under, if any. */
-export function readFormat(database: SqliteDatabase): string | undefined {
-	return database.all<SqliteRow & { value: string }>(
+export function readFormat(sqlite: SqliteDatabase): string | undefined {
+	return sqlite.all<SqliteRow & { value: string }>(
 		"SELECT value FROM _meta WHERE key = 'format'",
 	)[0]?.value;
 }
@@ -244,9 +244,9 @@ export function readFormat(database: SqliteDatabase): string | undefined {
  * authority bytes.
  */
 export function readDocumentIdentity(
-	database: SqliteDatabase,
+	sqlite: SqliteDatabase,
 ): string | undefined {
-	return database.all<SqliteRow & { value: string }>(
+	return sqlite.all<SqliteRow & { value: string }>(
 		"SELECT value FROM _meta WHERE key = 'document'",
 	)[0]?.value;
 }
@@ -256,10 +256,10 @@ export function readDocumentIdentity(
  * membership never changes in place, only by discarding the file whole.
  */
 export function writeDocumentIdentity(
-	database: SqliteDatabase,
+	sqlite: SqliteDatabase,
 	id: string,
 ): void {
-	database.run(
+	sqlite.run(
 		"INSERT OR IGNORE INTO _meta (key, value) VALUES ('document', ?)",
 		[id],
 	);
@@ -273,11 +273,11 @@ export function writeDocumentIdentity(
  * first. A crash between the copy and the delete duplicates an entry rather
  * than losing one, which is the direction the primary key makes safe.
  */
-export function applyHistorySchema(database: SqliteDatabase): void {
+export function applyHistorySchema(sqlite: SqliteDatabase): void {
 	// Pruning returns disk only with incremental auto-vacuum, and it must be set
 	// before the first table is created to take effect.
-	database.run('PRAGMA auto_vacuum = INCREMENTAL');
-	database.run(`
+	sqlite.run('PRAGMA auto_vacuum = INCREMENTAL');
+	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS _history (
 			document TEXT    NOT NULL,
 			seq      INTEGER NOT NULL,
@@ -289,10 +289,10 @@ export function applyHistorySchema(database: SqliteDatabase): void {
 }
 
 export function readUpdates(
-	database: SqliteDatabase,
+	sqlite: SqliteDatabase,
 	document: string,
 ): StoredUpdate[] {
-	return database.all<StoredUpdate>(
+	return sqlite.all<StoredUpdate>(
 		'SELECT seq, bytes FROM _updates WHERE document = ? ORDER BY seq',
 		[document],
 	);
@@ -328,13 +328,13 @@ export function replay(updates: readonly StoredUpdate[]): Y.Doc {
  * absorbs, while the other order would lose one.
  */
 export function appendUpdate({
-	database,
+	sqlite,
 	history,
 	document,
 	update,
 	takenAt,
 }: {
-	database: SqliteDatabase;
+	sqlite: SqliteDatabase;
 	/** Absent means this store keeps no history; collapse then simply deletes. */
 	history: SqliteDatabase | undefined;
 	document: string;
@@ -342,17 +342,17 @@ export function appendUpdate({
 	takenAt: number;
 }): void {
 	const nextSeq =
-		database.all<SqliteRow & { seq: number }>(
+		sqlite.all<SqliteRow & { seq: number }>(
 			'SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM _updates WHERE document = ?',
 			[document],
 		)[0]?.seq ?? 1;
-	database.run('INSERT INTO _updates (document, seq, bytes) VALUES (?, ?, ?)', [
+	sqlite.run('INSERT INTO _updates (document, seq, bytes) VALUES (?, ?, ?)', [
 		document,
 		nextSeq,
 		new Uint8Array(update),
 	]);
 
-	const updates = readUpdates(database, document);
+	const updates = readUpdates(sqlite, document);
 	if (updates.length < SNAPSHOT_FOLD_THRESHOLD) return;
 
 	if (history !== undefined) {
@@ -370,11 +370,11 @@ export function appendUpdate({
 	const compacted = replay(updates);
 	try {
 		const baseline = new Uint8Array(Y.encodeStateAsUpdateV2(compacted));
-		database.run('DELETE FROM _updates WHERE document = ?', [document]);
-		database.run(
-			'INSERT INTO _updates (document, seq, bytes) VALUES (?, 1, ?)',
-			[document, baseline],
-		);
+		sqlite.run('DELETE FROM _updates WHERE document = ?', [document]);
+		sqlite.run('INSERT INTO _updates (document, seq, bytes) VALUES (?, 1, ?)', [
+			document,
+			baseline,
+		]);
 	} finally {
 		compacted.destroy();
 	}
@@ -386,14 +386,14 @@ export function appendUpdate({
  * The store hydrates its document from `updates`, seeds its durable mirror
  * from the rest, and never reads this file again outside a flush (ADR-0238).
  */
-export function loadDurableSnapshot(database: SqliteDatabase): DurableSnapshot {
+export function loadDurableSnapshot(sqlite: SqliteDatabase): DurableSnapshot {
 	return {
-		updates: readUpdates(database, APP_DOCUMENT).map((stored) =>
+		updates: readUpdates(sqlite, APP_DOCUMENT).map((stored) =>
 			copyBytes(stored.bytes),
 		),
-		outbox: readOutbox(database),
-		cursor: readCursor(database, APP_DOCUMENT),
-		identity: readDocumentIdentity(database),
+		outbox: readOutbox(sqlite),
+		cursor: readCursor(sqlite, APP_DOCUMENT),
+		identity: readDocumentIdentity(sqlite),
 	};
 }
 
@@ -405,45 +405,45 @@ export function loadDurableSnapshot(database: SqliteDatabase): DurableSnapshot {
  * format certificate (ADR-0231's cutover), exactly as every open always has.
  */
 export function createSqliteDurablePort({
-	database,
+	sqlite,
 	history,
 }: {
-	database: SqliteDatabase;
+	sqlite: SqliteDatabase;
 	/** Absent means this store keeps no history; collapse then simply deletes. */
 	history?: SqliteDatabase;
 }): DurablePort & { load(): DurableSnapshot } {
-	applyStoreSchema(database);
-	adoptStoreFormat(database);
+	applyStoreSchema(sqlite);
+	adoptStoreFormat(sqlite);
 	return {
-		load: () => loadDurableSnapshot(database),
+		load: () => loadDurableSnapshot(sqlite),
 		commit(ops: readonly DurableOp[]): void {
-			database.transaction(() => {
+			sqlite.transaction(() => {
 				for (const op of ops) {
 					switch (op.kind) {
 						case 'append': {
 							appendUpdate({
-								database,
+								sqlite,
 								history,
 								document: APP_DOCUMENT,
 								update: op.bytes,
 								takenAt: op.takenAt,
 							});
 							if (op.outboxId !== undefined) {
-								insertOutbox(database, op.outboxId, op.bytes);
+								insertOutbox(sqlite, op.outboxId, op.bytes);
 							}
 							break;
 						}
 						case 'cursor':
-							writeCursor(database, APP_DOCUMENT, op.seq);
+							writeCursor(sqlite, APP_DOCUMENT, op.seq);
 							break;
 						case 'identity':
-							writeDocumentIdentity(database, op.id);
+							writeDocumentIdentity(sqlite, op.id);
 							break;
 						case 'dropOutbox':
-							dropOutboxThrough(database, op.throughId);
+							dropOutboxThrough(sqlite, op.throughId);
 							break;
 						case 'replaceOutbox':
-							replaceOutboxThrough(database, op.throughId, op.merged);
+							replaceOutboxThrough(sqlite, op.throughId, op.merged);
 							break;
 					}
 				}

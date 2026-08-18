@@ -12,7 +12,7 @@
  *   own databases, seeing none of each other's rows
  * - A second open of one address is refused with AlreadyOpen, and another
  *   account's address is not that address
- * - Discarding one account replica deletes only that account's database
+ * - Discarding one account replica deletes only that account's sqlite
  * - Every address survives a close-and-reopen, which is the retention that
  *   makes the account scope necessary
  * - An account replica with no account id is refused, never addressed
@@ -70,7 +70,7 @@ function titles(app: {
 async function databaseNames(): Promise<string[]> {
 	const databases = await indexedDB.databases();
 	return databases
-		.map((database) => database.name)
+		.map((sqlite) => sqlite.name)
 		.filter((name): name is string => name !== undefined)
 		.sort();
 }
@@ -214,11 +214,11 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 				request.result.createObjectStore('state');
 			};
 			request.onsuccess = () => {
-				const database = request.result;
-				const transaction = database.transaction('state', 'readwrite');
+				const sqlite = request.result;
+				const transaction = sqlite.transaction('state', 'readwrite');
 				transaction.objectStore('state').put(checkpoint, 'durable');
 				transaction.oncomplete = () => {
-					database.close();
+					sqlite.close();
 					resolve();
 				};
 				transaction.onerror = () => reject(transaction.error);
@@ -232,11 +232,11 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		return new Promise((resolve, reject) => {
 			const request = indexedDB.open(address);
 			request.onsuccess = () => {
-				const database = request.result;
-				const transaction = database.transaction(storeName, 'readonly');
+				const sqlite = request.result;
+				const transaction = sqlite.transaction(storeName, 'readonly');
 				const count = transaction.objectStore(storeName).count();
 				count.onsuccess = () => {
-					database.close();
+					sqlite.close();
 					resolve(count.result);
 				};
 				count.onerror = () => reject(count.error);
@@ -345,13 +345,13 @@ describe('the clean break: storage from before the account-scoped address', () =
 				request.result.createObjectStore('state');
 			};
 			request.onsuccess = () => {
-				const database = request.result;
-				const transaction = database.transaction('state', 'readwrite');
+				const sqlite = request.result;
+				const transaction = sqlite.transaction('state', 'readwrite');
 				transaction
 					.objectStore('state')
 					.put({ updates: [], outbox: [], cursor: 7 }, 'durable');
 				transaction.oncomplete = () => {
-					database.close();
+					sqlite.close();
 					resolve();
 				};
 				transaction.onerror = () => reject(transaction.error);

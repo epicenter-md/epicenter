@@ -21,11 +21,11 @@
  *
  * ```ts
  * const db = await openAccount(workspace, { principalId });
- * const sql = createSqliteProjection({ data: db, workspace, database });
+ * const sql = createSqliteProjection({ data: db, workspace, sqlite });
  * sql.query`SELECT id, title FROM notes WHERE pinned = 1`;
  * ```
  *
- * The caller supplies `database` and owns closing it; construction is
+ * The caller supplies `sqlite` and owns closing it; construction is
  * therefore synchronous on every runtime, and the one genuinely asynchronous
  * step (initializing WASM SQLite in a browser) stays where it belongs, in the
  * caller's boot path:
@@ -36,7 +36,7 @@
  * const sql = createSqliteProjection({
  *   data: db,
  *   workspace,
- *   database: createBrowserSqliteAdapter(handle),
+ *   sqlite: createBrowserSqliteAdapter(handle),
  * });
  * ```
  */
@@ -145,7 +145,7 @@ export type SqliteProjection = {
 export function createSqliteProjection({
 	data,
 	workspace,
-	database,
+	sqlite,
 }: {
 	/** The opened workspace's data: the tables and KV this projection follows. */
 	data: ProjectableData;
@@ -156,7 +156,7 @@ export function createSqliteProjection({
 	 * projection is a cache rebuilt from the live document, and nothing here
 	 * needs to survive a reload. Owned and closed by the caller.
 	 */
-	database: SqliteDatabase;
+	sqlite: SqliteDatabase;
 }): SqliteProjection {
 	const { data: parsedWorkspace, error: parseError } = parseDatabase(workspace);
 	if (parseError !== null) {
@@ -181,17 +181,17 @@ export function createSqliteProjection({
 	 * and KV, in one transaction. The one writer this database has.
 	 */
 	function rebuild(): void {
-		applyProjectionSchema(database, parsed);
-		database.transaction(() => {
+		applyProjectionSchema(sqlite, parsed);
+		sqlite.transaction(() => {
 			for (const [tableName, table] of parsed.tables) {
 				const handle = data.tables[tableName];
 				if (handle === undefined) continue;
 				const fieldNames = [...table.fields.keys()];
-				clearProjectedTable(database, tableName);
+				clearProjectedTable(sqlite, tableName);
 				const listed = handle.list();
 				for (const row of listed.rows) {
 					insertProjectedRow(
-						database,
+						sqlite,
 						tableName,
 						fieldNames,
 						row.id,
@@ -201,16 +201,16 @@ export function createSqliteProjection({
 				// A row this declaration cannot fully read still exists, so it still
 				// projects: raw, exactly as stored, never repaired and never hidden.
 				for (const bad of listed.nonconforming) {
-					insertProjectedRow(database, tableName, fieldNames, bad.id, bad.raw);
+					insertProjectedRow(sqlite, tableName, fieldNames, bad.id, bad.raw);
 				}
 			}
 			const kv = parsed.kv;
 			if (kv !== undefined) {
 				const fieldNames = [...kv.fields.keys()];
-				clearProjectedTable(database, 'kv');
+				clearProjectedTable(sqlite, 'kv');
 				const { data: values, error } = data.kv.get();
 				const payload = (values ?? error?.conforming ?? {}) as JsonObject;
-				insertProjectedRow(database, 'kv', fieldNames, KV_ROOT, payload);
+				insertProjectedRow(sqlite, 'kv', fieldNames, KV_ROOT, payload);
 			}
 		});
 	}
@@ -229,7 +229,7 @@ export function createSqliteProjection({
 				dirty = false;
 			}
 			return trySync({
-				try: () => database.all(strings.join('?'), values),
+				try: () => sqlite.all(strings.join('?'), values),
 				catch: (cause) => SqliteProjectionError.QueryFailed({ cause }),
 			});
 		},

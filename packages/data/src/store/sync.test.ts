@@ -24,18 +24,18 @@ const workspace = defineDatabase({
 
 function open() {
 	const raw = new Database(':memory:');
-	const database = createBunSqliteAdapter(raw);
-	const db = createAccountStore({ workspace: workspace, database });
+	const sqlite = createBunSqliteAdapter(raw);
+	const db = createAccountStore({ workspace: workspace, sqlite });
 	return {
 		store: db.store,
 		db,
 		logRows: () =>
-			database.all<{ seq: number; len: number }>(
+			sqlite.all<{ seq: number; len: number }>(
 				'SELECT seq, length(bytes) AS len FROM _updates ORDER BY seq',
 			),
 		/** The raw queue, so a test can see what a merge was given to work with. */
 		outbox: () =>
-			database
+			sqlite
 				.all<{ id: number; bytes: Uint8Array | ArrayBuffer }>(
 					'SELECT id, bytes FROM _outbox ORDER BY id',
 				)
@@ -199,14 +199,14 @@ describe('the cursor is a log position, and never a state vector', () => {
 	});
 
 	test('advancing survives a reopen of the same file', () => {
-		const database = createBunSqliteAdapter(new Database(':memory:'));
+		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 		syncEngineOf(
-			createAccountStore({ workspace: workspace, database }).store,
+			createAccountStore({ workspace: workspace, sqlite }).store,
 		).advance(7);
 
 		expect(
 			syncEngineOf(
-				createAccountStore({ workspace: workspace, database }).store,
+				createAccountStore({ workspace: workspace, sqlite }).store,
 			).cursor(),
 		).toBe(7);
 	});

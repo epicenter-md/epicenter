@@ -804,8 +804,8 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 	test('a stored write outlives the runtime that wrote it', async () => {
 		// The upgrade is a close and a reopen (ADR-0240): the same durable
 		// file, a newer declaration, one runtime at a time.
-		const database = createBunSqliteAdapter(new Database(':memory:'));
-		const first = createAccountStore({ workspace: workspace, database });
+		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
+		const first = createAccountStore({ workspace: workspace, sqlite });
 		const written = first.kv.update({ theme: 'dark' });
 		if (written.error !== null) throw written.error;
 		await first[Symbol.asyncDispose]();
@@ -818,7 +818,7 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 					notes: { title: 'string', tags: 'string[]', date: 'string|null' },
 				},
 			}),
-			database,
+			sqlite,
 		});
 		// The stored write survives the upgrade, and the new declaration's
 		// default appears beside it.
@@ -842,23 +842,23 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 	});
 
 	test('the next runtime has no handle; one that re-declares it reads every row back', async () => {
-		const database = createBunSqliteAdapter(new Database(':memory:'));
-		const first = createAccountStore({ workspace: withScratch, database });
+		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
+		const first = createAccountStore({ workspace: withScratch, sqlite });
 		const made = first.tables.scratch.create({ body: 'kept in the CRDT' });
 		if (made.error !== null) throw made.error;
 		const wrote = first.kv.update({ theme: 'dark' });
 		if (wrote.error !== null) throw wrote.error;
 		await first[Symbol.asyncDispose]();
 
-		// The device updates (ADR-0240): same durable database, the next
+		// The device updates (ADR-0240): same durable sqlite, the next
 		// runtime, a declaration that no longer names `scratch` or `kv`.
-		const second = createAccountStore({ workspace: withoutScratch, database });
+		const second = createAccountStore({ workspace: withoutScratch, sqlite });
 		expect((second.tables as Record<string, unknown>).scratch).toBeUndefined();
 		await second[Symbol.asyncDispose]();
 
 		// A later release declares them again: nothing was lost, because the
 		// CRDT is the truth and never dropped a byte.
-		const third = createAccountStore({ workspace: withScratch, database });
+		const third = createAccountStore({ workspace: withScratch, sqlite });
 		expect(third.tables.scratch.list().rows).toEqual([
 			{ id: made.data.id, body: 'kept in the CRDT' },
 		]);
@@ -947,8 +947,8 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 
 describe('a document store owes nobody (ADR-0233)', () => {
 	test('local commits leave the outbox empty and no replica verb exists', async () => {
-		const database = createBunSqliteAdapter(new Database(':memory:'));
-		const device = createDeviceStore({ workspace: workspace, database });
+		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
+		const device = createDeviceStore({ workspace: workspace, sqlite });
 		const store = device.store;
 		try {
 			const made = device.tables.notes.create({
@@ -960,11 +960,11 @@ describe('a document store owes nobody (ADR-0233)', () => {
 
 			// The write is durable, but it is owed to nobody: nothing could ever
 			// acknowledge a device document's outbox, so nothing may join it.
-			expect(database.all('SELECT COUNT(*) AS owed FROM _outbox')).toEqual([
+			expect(sqlite.all('SELECT COUNT(*) AS owed FROM _outbox')).toEqual([
 				{ owed: 0 },
 			]);
 			expect(
-				database.all<{ count: number }>(
+				sqlite.all<{ count: number }>(
 					'SELECT COUNT(*) AS count FROM _updates',
 				)[0]?.count,
 			).toBeGreaterThan(0);
@@ -1000,7 +1000,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 
 		const device = createDeviceStore({
 			workspace: workspace,
-			database: createBunSqliteAdapter(new Database(':memory:')),
+			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const account = openMemory(workspace);
 		try {
@@ -1026,10 +1026,10 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 		// The withdrawn poison (ADR-0238): storage failing is a visible debt,
 		// never the store's death. The live document is the truth while open.
 		const raw = new Database(':memory:');
-		const database = createBunSqliteAdapter(raw);
+		const sqlite = createBunSqliteAdapter(raw);
 		const bound = createAccountStore({
 			workspace: workspace,
-			database,
+			sqlite,
 			// The refused flush is the subject here, not noise worth printing.
 			log: {
 				error: () => undefined,

@@ -33,7 +33,7 @@ beforeEach(() => {
 	sql = createSqliteProjection({
 		data: db,
 		workspace,
-		database: createBunSqliteAdapter(handle),
+		sqlite: createBunSqliteAdapter(handle),
 	});
 });
 
@@ -87,7 +87,7 @@ describe('query always agrees with the live document', () => {
 		lateSql = createSqliteProjection({
 			data: fresh,
 			workspace,
-			database: createBunSqliteAdapter(new Database(':memory:')),
+			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		fresh.tables.notes.create({ title: 'one', tags: [], date: null });
 		fresh.tables.notes.create({ title: 'two', tags: [], date: null });
@@ -152,7 +152,7 @@ describe('failure stays at the read, and heals at the read', () => {
 		const fragile = createSqliteProjection({
 			data: db,
 			workspace,
-			database: failable,
+			sqlite: failable,
 		});
 		note({ title: 'first' });
 		expect(fragile.query`SELECT title FROM notes`.data).toEqual([

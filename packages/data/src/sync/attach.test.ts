@@ -25,7 +25,7 @@ function openStore(): AccountStore {
 	const live = new Database(':memory:');
 	const db = createAccountStore({
 		workspace: workspace,
-		database: createBunSqliteAdapter(live),
+		sqlite: createBunSqliteAdapter(live),
 		dispose: () => live.close(),
 	});
 	return db.store;

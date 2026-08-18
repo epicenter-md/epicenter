@@ -79,11 +79,11 @@ function openReplica(
 	hub: ReturnType<typeof createSyncHub>,
 	wire: Wire,
 	through: DatabaseJson = workspace,
-	database = createBunSqliteAdapter(new Database(':memory:')),
+	sqlite = createBunSqliteAdapter(new Database(':memory:')),
 ) {
 	const db = createAccountStore({
 		workspace: through,
-		database,
+		sqlite,
 	}) as unknown as DataOf<typeof workspace>;
 	const store = db.store;
 	const client = createSyncClient({
@@ -147,8 +147,8 @@ function openReplica(
 
 function setup() {
 	const wire = createWire();
-	const database = createBunSqliteAdapter(new Database(':memory:'));
-	const authority = openSyncAuthority({ database });
+	const sqlite = createBunSqliteAdapter(new Database(':memory:'));
+	const authority = openSyncAuthority({ sqlite });
 	const hub = createSyncHub({ authority, batch: 8 });
 	return { wire, authority, hub };
 }
@@ -230,7 +230,7 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 		{
 			const drawerStore = createAccountStore({
 				workspace: workspace,
-				database: drawerDb,
+				sqlite: drawerDb,
 			}).store;
 			const entry = expectOk(authority.since(0, 10))[0];
 			if (entry === undefined) throw new Error('the log holds no entry');
@@ -278,8 +278,8 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 describe('workspace bootstrap names a document before any workspace write', () => {
 	test('a pristine replica bootstraps, then its first push survives a reopen', () => {
 		const { wire, authority, hub } = setup();
-		const database = createBunSqliteAdapter(new Database(':memory:'));
-		const replica = openReplica('replica', hub, wire, workspace, database);
+		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
+		const replica = openReplica('replica', hub, wire, workspace, sqlite);
 		expect(replica.client.document()).toBeUndefined();
 
 		// The empty store receives the authority name, persists it, and reconnects
@@ -293,7 +293,7 @@ describe('workspace bootstrap names a document before any workspace write', () =
 
 		// Durable, not a session fact: a store reopened from the same file
 		// still knows which document its bytes belong to.
-		const reopened = createAccountStore({ workspace: workspace, database });
+		const reopened = createAccountStore({ workspace: workspace, sqlite });
 		expect(syncEngineOf(reopened.store).documentIdentity()).toBe(
 			expectOk(authority.document()),
 		);
@@ -411,16 +411,16 @@ describe('the cutover: pre-identity local state is reset, never merged', () => {
 		// (which may descend from any document, including a retired one) and
 		// no certificate saying which. Modelled exactly: a certified file with
 		// its `_meta` rows removed is byte-for-byte the old format.
-		const database = createBunSqliteAdapter(new Database(':memory:'));
+		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 		{
-			const old = createAccountStore({ workspace: workspace, database });
+			const old = createAccountStore({ workspace: workspace, sqlite });
 			expectOk(old.tables.notes.create({ title: 'untrusted old note' }));
 		}
-		database.run('DELETE FROM _meta');
+		sqlite.run('DELETE FROM _meta');
 
 		// The open is the cutover: untrusted whole, wiped whole. A missing
 		// identity must never read as a fresh install when state exists.
-		const reopened = openReplica('reopened', hub, wire, workspace, database);
+		const reopened = openReplica('reopened', hub, wire, workspace, sqlite);
 		expect(reopened.titles()).toEqual([]);
 		expect(reopened.client.status().cursor).toBe(0);
 		expect(reopened.client.document()).toBeUndefined();
@@ -434,12 +434,12 @@ describe('the cutover: pre-identity local state is reset, never merged', () => {
 	});
 
 	test('CONTROL: a certified file reopens intact', () => {
-		const database = createBunSqliteAdapter(new Database(':memory:'));
+		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 		{
-			const first = createAccountStore({ workspace: workspace, database });
+			const first = createAccountStore({ workspace: workspace, sqlite });
 			expectOk(first.tables.notes.create({ title: 'kept across reopen' }));
 		}
-		const reopened = createAccountStore({ workspace: workspace, database });
+		const reopened = createAccountStore({ workspace: workspace, sqlite });
 		expect(reopened.tables.notes.list().rows.map((row) => row.title)).toEqual([
 			'kept across reopen',
 		]);

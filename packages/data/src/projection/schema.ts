@@ -32,7 +32,7 @@ import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
  * bare SQL identifier, so quoting is defence rather than permission.
  */
 export function applyProjectionSchema(
-	database: SqliteDatabase,
+	sqlite: SqliteDatabase,
 	workspace: ParsedDatabase,
 ): void {
 	// KV projects as a one-row relation named `kv`, which the parser reserves as
@@ -53,7 +53,7 @@ export function applyProjectionSchema(
 	// with a letter, so underscore-prefixed relations can never be declared
 	// and are never swept.
 	const declared = new Set(relations.map(([tableName]) => tableName));
-	const leftBehind = database
+	const leftBehind = sqlite
 		.all<SqliteRow & { name: string }>(
 			"SELECT name FROM sqlite_master WHERE type = 'table'",
 		)
@@ -65,7 +65,7 @@ export function applyProjectionSchema(
 				!declared.has(name),
 		);
 	for (const name of leftBehind) {
-		database.run(`DROP TABLE IF EXISTS ${quoteIdentifier(name)}`);
+		sqlite.run(`DROP TABLE IF EXISTS ${quoteIdentifier(name)}`);
 	}
 	for (const [tableName, table] of relations) {
 		const fields = [...table.fields.keys()];
@@ -75,11 +75,11 @@ export function applyProjectionSchema(
 		// `CREATE TABLE IF NOT EXISTS` alone was a live bug in the superseded
 		// built-in projection: adding a field left the old relation in place
 		// without the new column, and the rebuild then failed on every open.
-		if (!columnsMatch(database, tableName, fields)) {
-			database.run(`DROP TABLE IF EXISTS ${quoteIdentifier(tableName)}`);
+		if (!columnsMatch(sqlite, tableName, fields)) {
+			sqlite.run(`DROP TABLE IF EXISTS ${quoteIdentifier(tableName)}`);
 		}
 		const columns = fields.map((field) => `${quoteIdentifier(field)} ANY`);
-		database.run(
+		sqlite.run(
 			`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(tableName)} (
 				id TEXT PRIMARY KEY${columns.length === 0 ? '' : `,\n\t\t\t\t${columns.join(',\n\t\t\t\t')}`}
 			) WITHOUT ROWID, STRICT`,
@@ -95,11 +95,11 @@ export function applyProjectionSchema(
  * because the projection addresses columns by name.
  */
 function columnsMatch(
-	database: SqliteDatabase,
+	sqlite: SqliteDatabase,
 	tableName: string,
 	fields: readonly string[],
 ): boolean {
-	const existing = database.all<SqliteRow & { name: string }>(
+	const existing = sqlite.all<SqliteRow & { name: string }>(
 		`PRAGMA table_info(${quoteIdentifier(tableName)})`,
 	);
 	if (existing.length === 0) return true;
@@ -127,15 +127,15 @@ export function projectValue(value: JsonValue | undefined): SqliteValue {
 
 /** Clear one relation, as the first step of its rebuild. */
 export function clearProjectedTable(
-	database: SqliteDatabase,
+	sqlite: SqliteDatabase,
 	tableName: string,
 ): void {
-	database.run(`DELETE FROM ${quoteIdentifier(tableName)}`);
+	sqlite.run(`DELETE FROM ${quoteIdentifier(tableName)}`);
 }
 
 /** Insert one row into a cleared relation. */
 export function insertProjectedRow(
-	database: SqliteDatabase,
+	sqlite: SqliteDatabase,
 	tableName: string,
 	fieldNames: readonly string[],
 	rowId: string,
@@ -146,7 +146,7 @@ export function insertProjectedRow(
 		rowId,
 		...fieldNames.map((field) => projectValue(payload[field])),
 	];
-	database.run(
+	sqlite.run(
 		`INSERT OR REPLACE INTO ${quoteIdentifier(tableName)} (${columns
 			.map(quoteIdentifier)
 			.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,

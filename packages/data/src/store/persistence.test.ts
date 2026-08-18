@@ -57,8 +57,8 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
  */
 function openFailable() {
 	const raw = new Database(':memory:');
-	const database = createBunSqliteAdapter(raw);
-	const inner = createSqliteDurablePort({ database });
+	const sqlite = createBunSqliteAdapter(raw);
+	const inner = createSqliteDurablePort({ sqlite });
 	const gate = { failing: false };
 	/** Every batch the engine accepted, for tests that pin op ordering. */
 	const batches: DurableOp[][] = [];
@@ -77,25 +77,24 @@ function openFailable() {
 	return {
 		store,
 		db: view as unknown as DatabaseView<typeof workspace>,
-		database,
+		sqlite,
 		gate,
 		batches,
 		durableUpdateCount: () =>
-			database.all<{ count: number }>(
-				'SELECT COUNT(*) AS count FROM _updates',
-			)[0]?.count ?? 0,
+			sqlite.all<{ count: number }>('SELECT COUNT(*) AS count FROM _updates')[0]
+				?.count ?? 0,
 		durableOutboxIds: () =>
-			database
+			sqlite
 				.all<{ id: number }>('SELECT id FROM _outbox ORDER BY id')
 				.map((row) => row.id),
 		durableCursor: () =>
-			database.all<{ seq: number }>('SELECT seq FROM _cursor')[0]?.seq ?? 0,
+			sqlite.all<{ seq: number }>('SELECT seq FROM _cursor')[0]?.seq ?? 0,
 	};
 }
 
-/** Reopen over the same durable database: the restart. */
-function reopen(database: ReturnType<typeof createBunSqliteAdapter>) {
-	const port = createSqliteDurablePort({ database });
+/** Reopen over the same durable sqlite: the restart. */
+function reopen(sqlite: ReturnType<typeof createBunSqliteAdapter>) {
+	const port = createSqliteDurablePort({ sqlite });
 	const { store, view } = createAccountStoreOverPort({
 		workspace: parsed(),
 		durable: port,
@@ -143,7 +142,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expect(replica.durableOutboxIds()).toEqual([1, 2, 3]);
 		// The durable log replays to the same three rows: nothing dropped,
 		// nothing duplicated.
-		const restarted = reopen(replica.database);
+		const restarted = reopen(replica.sqlite);
 		expect(titles(restarted.db)).toEqual(['a', 'b', 'c']);
 	});
 
@@ -171,7 +170,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		// a blocked engine.
 		await replica.store[Symbol.asyncDispose]();
 
-		const restarted = reopen(replica.database);
+		const restarted = reopen(replica.sqlite);
 		expect(titles(restarted.db)).toEqual(['durable before']);
 		expect(restarted.store.persistence.get()).toBe('saved');
 	});
@@ -199,7 +198,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		replica.gate.failing = false;
 		expectOk(replica.db.tables.notes.create({ title: 'retry trigger' }));
 		expect(replica.store.persistence.get()).toBe('saved');
-		const restarted = reopen(replica.database);
+		const restarted = reopen(replica.sqlite);
 		expect(restarted.db.kv.get().data?.theme).toBe('dark');
 		const survived = restarted.db.tables.notes.document(made.id);
 		expect(survived?.get('editor', 'text').toString()).toContain(
@@ -227,8 +226,8 @@ describe('acceptance is live, durability is a visible debt', () => {
 		// The browser shape: the port commits on its own schedule, and the
 		// store never waits for it. Reads follow acceptance.
 		const raw = new Database(':memory:');
-		const database = createBunSqliteAdapter(raw);
-		const inner = createSqliteDurablePort({ database });
+		const sqlite = createBunSqliteAdapter(raw);
+		const inner = createSqliteDurablePort({ sqlite });
 		const release: (() => void)[] = [];
 		const { store, view } = createAccountStoreOverPort({
 			workspace: parsed(),
@@ -268,11 +267,11 @@ describe('acceptance is live, durability is a visible debt', () => {
 		// Exactly one durable outbox entry per authored transaction, in order:
 		// nothing dropped, nothing reordered, nothing duplicated.
 		expect(
-			database
+			sqlite
 				.all<{ id: number }>('SELECT id FROM _outbox ORDER BY id')
 				.map((row) => row.id),
 		).toEqual([1, 2, 3]);
-		const restarted = reopen(database);
+		const restarted = reopen(sqlite);
 		expect(titles(restarted.db)).toEqual(['a', 'b', 'c']);
 	});
 });
@@ -329,7 +328,7 @@ describe('sync reads only durable facts', () => {
 		replica.gate.failing = false;
 		await replica.store.persistence.flush();
 		expect(replica.durableCursor()).toBe(7);
-		const restarted = reopen(replica.database);
+		const restarted = reopen(replica.sqlite);
 		expect(titles(restarted.db)).toEqual(['from the authority']);
 		expect(syncEngineOf(restarted.store).cursor()).toBe(7);
 	});
@@ -351,7 +350,7 @@ describe('sync reads only durable facts', () => {
 		await replica.store.persistence.flush();
 
 		expect(syncEngineOf(replica.store).coalesce()?.id).toBe(1);
-		const restarted = reopen(replica.database);
+		const restarted = reopen(replica.sqlite);
 		expect(syncEngineOf(restarted.store).documentIdentity()).toBe('doc-1');
 	});
 
@@ -388,7 +387,7 @@ describe('sync reads only durable facts', () => {
 
 		// The restart honestly recovers only the durable prefix: no row, and a
 		// cursor that never advanced, so the authority re-serves from zero.
-		const restarted = reopen(replica.database);
+		const restarted = reopen(replica.sqlite);
 		expect(titles(restarted.db)).toEqual([]);
 		expect(syncEngineOf(restarted.store).cursor()).toBe(0);
 
@@ -419,7 +418,7 @@ describe('sync reads only durable facts', () => {
 		// One batch carried the retained append and the drop; the drop removed
 		// only the entry the authority confirmed, never the newer work.
 		expect(replica.durableOutboxIds()).toEqual([2]);
-		const restarted = reopen(replica.database);
+		const restarted = reopen(replica.sqlite);
 		expect(titles(restarted.db)).toEqual(['authored while blocked', 'sent']);
 	});
 

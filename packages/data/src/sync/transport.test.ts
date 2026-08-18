@@ -121,9 +121,9 @@ function openReplica(
 	 * next one over the same durable file.
 	 */
 	through: DatabaseJson = workspace,
-	database = createBunSqliteAdapter(new Database(':memory:')),
+	sqlite = createBunSqliteAdapter(new Database(':memory:')),
 ): Replica {
-	const data = createAccountStore({ workspace: through, database });
+	const data = createAccountStore({ workspace: through, sqlite });
 	const store = data.store;
 	// One runtime, two static views of it: the typed view costs nothing and is
 	// honest for every replica running the default workspace; a replica running
@@ -207,7 +207,7 @@ function openReplica(
 			hub.leave(connection);
 			client.detach();
 			await store[Symbol.asyncDispose]();
-			return openReplica(label, hub, wire, next, database);
+			return openReplica(label, hub, wire, next, sqlite);
 		},
 		titles: () =>
 			db.tables.notes
@@ -232,8 +232,8 @@ type Replica = {
 };
 
 function openAuthority(snapshotFloorBytes?: number) {
-	const database = createBunSqliteAdapter(new Database(':memory:'));
-	const authority = openSyncAuthority({ database, snapshotFloorBytes });
+	const sqlite = createBunSqliteAdapter(new Database(':memory:'));
+	const authority = openSyncAuthority({ sqlite, snapshotFloorBytes });
 	return { authority, hub: createSyncHub({ authority, batch: 8 }) };
 }
 

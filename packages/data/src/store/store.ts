@@ -885,7 +885,7 @@ export type CreateStoreOptions<TDatabase extends DatabaseJson> = {
 	/** The application's workspace declaration, a `defineDatabase` literal. */
 	workspace: TDatabase;
 	/** The durable file: the update log, the outbox, the cursor, the metadata. */
-	database: SqliteDatabase;
+	sqlite: SqliteDatabase;
 	history?: SqliteDatabase;
 	now?: () => number;
 	dispose?: () => void | Promise<void>;
@@ -910,11 +910,11 @@ function parsedWorkspaceOrThrow(workspace: DatabaseJson): ParsedDatabase {
 /** Build the engine options for a synchronous SQLite durable engine. */
 function overSqlite<TDatabase extends DatabaseJson>({
 	workspace,
-	database,
+	sqlite,
 	history,
 	...rest
 }: CreateStoreOptions<TDatabase>): StoreEngineOptions {
-	const port = createSqliteDurablePort({ database, history });
+	const port = createSqliteDurablePort({ sqlite, history });
 	return {
 		workspace: parsedWorkspaceOrThrow(workspace),
 		durable: port,

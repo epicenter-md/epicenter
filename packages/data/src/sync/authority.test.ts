@@ -21,9 +21,9 @@ function opaque(seed: number, length = 32): Uint8Array {
 }
 
 function openAuthority() {
-	const database = createBunSqliteAdapter(new Database(':memory:'));
+	const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 	// A floor of one byte so the snapshot policy is reachable from tiny bytes.
-	return openSyncAuthority({ database, snapshotFloorBytes: 1 });
+	return openSyncAuthority({ sqlite, snapshotFloorBytes: 1 });
 }
 
 describe('an authority needs no workspace: every verb moves unread bytes', () => {

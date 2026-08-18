@@ -106,8 +106,8 @@ function createClock() {
 type Clock = ReturnType<typeof createClock>;
 
 function openAuthority() {
-	const database = createBunSqliteAdapter(new Database(':memory:'));
-	const authority = openSyncAuthority({ database });
+	const sqlite = createBunSqliteAdapter(new Database(':memory:'));
+	const authority = openSyncAuthority({ sqlite });
 	return { authority, hub: createSyncHub({ authority, batch: 8 }) };
 }
 
@@ -133,7 +133,7 @@ function openDriven({
 }) {
 	const data = createAccountStore({
 		workspace: workspace,
-		database: createBunSqliteAdapter(new Database(':memory:')),
+		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const store = data.store;
 	const db = data as DatabaseView<typeof workspace>;
@@ -492,7 +492,7 @@ describe('a dial that can never succeed stops the driver for good', () => {
 	}) {
 		const data = createAccountStore({
 			workspace: workspace,
-			database: createBunSqliteAdapter(new Database(':memory:')),
+			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const store = data.store;
 		const db = data as DatabaseView<typeof workspace>;
@@ -603,7 +603,7 @@ describe('a foreign document name supersedes the replica, and nothing else does 
 	}) {
 		const data = createAccountStore({
 			workspace: workspace,
-			database: createBunSqliteAdapter(new Database(':memory:')),
+			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const store = data.store;
 		const db = data as DatabaseView<typeof workspace>;
