@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type MailDb, openMailDb } from './db.ts';
 import { type IntentDb, openIntentDb } from './intent.ts';
+import { overlayOf } from './overlay.ts';
 import type { GmailLabel, GmailMessage } from './schema.ts';
 
 const ASSERTED_AT = '2026-08-01T12:00:00.000Z';
@@ -106,10 +107,14 @@ function seed(db: MailDb) {
 
 describe('listMessages', () => {
 	test('returns rows newest first with parsed labelIds', () => {
-		const { db, cleanup } = openTmp();
+		const { db, intent, cleanup } = openTmp();
 		try {
 			seed(db);
-			const rows = db.listMessages({ limit: 100, offset: 0 });
+			const rows = db.listMessages({
+				overlay: overlayOf(intent.pending()),
+				limit: 100,
+				offset: 0,
+			});
 			expect(rows.map((r) => r.id)).toEqual(['newest', 'middle', 'oldest']);
 			expect(rows[0]?.labelIds).toEqual(['INBOX', 'UNREAD', 'Label_7']);
 		} finally {
@@ -118,16 +123,18 @@ describe('listMessages', () => {
 	});
 
 	test('label filter matches only messages carrying that label', () => {
-		const { db, cleanup } = openTmp();
+		const { db, intent, cleanup } = openTmp();
 		try {
 			seed(db);
 			const inbox = db.listMessages({
+				overlay: overlayOf(intent.pending()),
 				labelId: 'INBOX',
 				limit: 100,
 				offset: 0,
 			});
 			expect(inbox.map((r) => r.id)).toEqual(['newest', 'oldest']);
 			const promos = db.listMessages({
+				overlay: overlayOf(intent.pending()),
 				labelId: 'CATEGORY_PROMOTIONS',
 				limit: 100,
 				offset: 0,
@@ -139,21 +146,36 @@ describe('listMessages', () => {
 	});
 
 	test('search matches subject, sender, or body', () => {
-		const { db, cleanup } = openTmp();
+		const { db, intent, cleanup } = openTmp();
 		try {
 			seed(db);
 			expect(
 				db
-					.listMessages({ search: 'invoice', limit: 100, offset: 0 })
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						search: 'invoice',
+						limit: 100,
+						offset: 0,
+					})
 					.map((r) => r.id),
 			).toEqual(['newest']);
 			expect(
 				db
-					.listMessages({ search: 'billing@acme', limit: 100, offset: 0 })
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						search: 'billing@acme',
+						limit: 100,
+						offset: 0,
+					})
 					.map((r) => r.id),
 			).toEqual(['newest']);
 			expect(
-				db.listMessages({ search: 'nomatchxyz', limit: 100, offset: 0 }),
+				db.listMessages({
+					overlay: overlayOf(intent.pending()),
+					search: 'nomatchxyz',
+					limit: 100,
+					offset: 0,
+				}),
 			).toEqual([]);
 		} finally {
 			cleanup();
@@ -161,7 +183,7 @@ describe('listMessages', () => {
 	});
 
 	test('TRASH-labeled rows are hidden from All mail and every label view', () => {
-		const { db, cleanup } = openTmp();
+		const { db, intent, cleanup } = openTmp();
 		try {
 			db.ingestFullPullPage(
 				[
@@ -177,11 +199,22 @@ describe('listMessages', () => {
 			);
 			// All mail (no filter) and the Inbox view both drop the trashed row.
 			expect(
-				db.listMessages({ limit: 100, offset: 0 }).map((r) => r.id),
+				db
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						limit: 100,
+						offset: 0,
+					})
+					.map((r) => r.id),
 			).toEqual(['live']);
 			expect(
 				db
-					.listMessages({ labelId: 'INBOX', limit: 100, offset: 0 })
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						labelId: 'INBOX',
+						limit: 100,
+						offset: 0,
+					})
 					.map((r) => r.id),
 			).toEqual(['live']);
 		} finally {
@@ -190,7 +223,7 @@ describe('listMessages', () => {
 	});
 
 	test('the TRASH view itself shows trashed rows', () => {
-		const { db, cleanup } = openTmp();
+		const { db, intent, cleanup } = openTmp();
 		try {
 			db.ingestFullPullPage(
 				[
@@ -205,7 +238,12 @@ describe('listMessages', () => {
 			);
 			expect(
 				db
-					.listMessages({ labelId: 'TRASH', limit: 100, offset: 0 })
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						labelId: 'TRASH',
+						limit: 100,
+						offset: 0,
+					})
 					.map((r) => r.id),
 			).toEqual(['trashed']);
 		} finally {
@@ -214,15 +252,27 @@ describe('listMessages', () => {
 	});
 
 	test('limit and offset paginate', () => {
-		const { db, cleanup } = openTmp();
+		const { db, intent, cleanup } = openTmp();
 		try {
 			seed(db);
-			expect(db.listMessages({ limit: 1, offset: 0 }).map((r) => r.id)).toEqual(
-				['newest'],
-			);
-			expect(db.listMessages({ limit: 1, offset: 1 }).map((r) => r.id)).toEqual(
-				['middle'],
-			);
+			expect(
+				db
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						limit: 1,
+						offset: 0,
+					})
+					.map((r) => r.id),
+			).toEqual(['newest']);
+			expect(
+				db
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						limit: 1,
+						offset: 1,
+					})
+					.map((r) => r.id),
+			).toEqual(['middle']);
 		} finally {
 			cleanup();
 		}
@@ -240,12 +290,17 @@ describe('listMessages with undelivered triage', () => {
 			);
 
 			const inbox = db.listMessages({
+				overlay: overlayOf(intent.pending()),
 				labelId: 'INBOX',
 				limit: 100,
 				offset: 0,
 			});
 			expect(inbox.map((r) => r.id)).toEqual(['oldest']);
-			const all = db.listMessages({ limit: 100, offset: 0 });
+			const all = db.listMessages({
+				overlay: overlayOf(intent.pending()),
+				limit: 100,
+				offset: 0,
+			});
 			expect(all.find((r) => r.id === 'newest')?.labelIds).toEqual([
 				'UNREAD',
 				'Label_7',
@@ -265,7 +320,12 @@ describe('listMessages with undelivered triage', () => {
 			);
 			expect(
 				db
-					.listMessages({ labelId: 'Label_7', limit: 100, offset: 0 })
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						labelId: 'Label_7',
+						limit: 100,
+						offset: 0,
+					})
 					.map((r) => r.id),
 			).toEqual(['newest', 'oldest']);
 		} finally {
@@ -283,16 +343,32 @@ describe('listMessages with undelivered triage', () => {
 			);
 
 			expect(
-				db.listMessages({ limit: 100, offset: 0 }).map((r) => r.id),
+				db
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						limit: 100,
+						offset: 0,
+					})
+					.map((r) => r.id),
 			).toEqual(['middle', 'oldest']);
 			expect(
 				db
-					.listMessages({ labelId: 'INBOX', limit: 100, offset: 0 })
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						labelId: 'INBOX',
+						limit: 100,
+						offset: 0,
+					})
 					.map((r) => r.id),
 			).toEqual(['oldest']);
 			expect(
 				db
-					.listMessages({ labelId: 'TRASH', limit: 100, offset: 0 })
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						labelId: 'TRASH',
+						limit: 100,
+						offset: 0,
+					})
 					.map((r) => r.id),
 			).toEqual(['newest']);
 		} finally {
@@ -321,11 +397,21 @@ describe('listMessages with undelivered triage', () => {
 
 			expect(
 				db
-					.listMessages({ labelId: 'INBOX', limit: 100, offset: 0 })
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						labelId: 'INBOX',
+						limit: 100,
+						offset: 0,
+					})
 					.map((r) => r.id),
 			).toEqual(['live', 'trashed']);
 			expect(
-				db.listMessages({ labelId: 'TRASH', limit: 100, offset: 0 }),
+				db.listMessages({
+					overlay: overlayOf(intent.pending()),
+					labelId: 'TRASH',
+					limit: 100,
+					offset: 0,
+				}),
 			).toEqual([]);
 		} finally {
 			cleanup();
@@ -355,7 +441,12 @@ describe('listMessages with undelivered triage', () => {
 				ASSERTED_AT,
 			);
 
-			const page = db.listMessages({ labelId: 'INBOX', limit: 3, offset: 0 });
+			const page = db.listMessages({
+				overlay: overlayOf(intent.pending()),
+				labelId: 'INBOX',
+				limit: 3,
+				offset: 0,
+			});
 			// A projection applied after the query would return one row here (three
 			// fetched, two hidden). Pushed down, the page is full and starts at m2.
 			expect(page.map((r) => r.id)).toEqual(['m2', 'm3', 'm4']);
@@ -392,10 +483,10 @@ describe('listMessages with undelivered triage', () => {
 
 describe('getMessageDetail', () => {
 	test('projects To/Date headers and the extracted body', () => {
-		const { db, cleanup } = openTmp();
+		const { db, intent, cleanup } = openTmp();
 		try {
 			seed(db);
-			const detail = db.getMessageDetail('newest');
+			const detail = db.getMessageDetail('newest', overlayOf(intent.pending()));
 			expect(detail?.subject).toBe('Invoice for June');
 			expect(detail?.to).toBe('you@example.com');
 			expect(detail?.date).toBe('Tue, 1 Jul 2026 08:00:00 -0700');
@@ -409,7 +500,7 @@ describe('getMessageDetail', () => {
 	});
 
 	test('an html message serves unsafeBodyHtml plus a text fallback', () => {
-		const { db, cleanup } = openTmp();
+		const { db, intent, cleanup } = openTmp();
 		try {
 			const html = '<p>Pay <a href="https://acme.test">now</a></p>';
 			db.ingestFullPullPage(
@@ -425,7 +516,7 @@ describe('getMessageDetail', () => {
 				],
 				new Date().toISOString(),
 			);
-			const detail = db.getMessageDetail('rich');
+			const detail = db.getMessageDetail('rich', overlayOf(intent.pending()));
 			// bodyHtml is derived from the stored resource at read time, unsanitized:
 			// the raw markup (including the anchor) crosses the wire verbatim.
 			expect(detail?.unsafeBodyHtml).toBe(html);
@@ -437,10 +528,12 @@ describe('getMessageDetail', () => {
 	});
 
 	test('returns null for an unmirrored id', () => {
-		const { db, cleanup } = openTmp();
+		const { db, intent, cleanup } = openTmp();
 		try {
 			seed(db);
-			expect(db.getMessageDetail('ghost')).toBeNull();
+			expect(
+				db.getMessageDetail('ghost', overlayOf(intent.pending())),
+			).toBeNull();
 		} finally {
 			cleanup();
 		}
@@ -457,11 +550,9 @@ describe('getMessageDetail', () => {
 				],
 				ASSERTED_AT,
 			);
-			expect(db.getMessageDetail('newest')?.labelIds).toEqual([
-				'INBOX',
-				'Label_7',
-				'STARRED',
-			]);
+			expect(
+				db.getMessageDetail('newest', overlayOf(intent.pending()))?.labelIds,
+			).toEqual(['INBOX', 'Label_7', 'STARRED']);
 		} finally {
 			cleanup();
 		}
