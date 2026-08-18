@@ -67,7 +67,10 @@ if (!phrase) {
 
 const skills = await readSkillCatalog(defaultSkillsDir);
 const matches = skills
-	.map((skill) => ({ skill, verdict: classifyClaim(skill.description, phrase) }))
+	.map((skill) => ({
+		skill,
+		verdict: classifyClaim(skill.description, phrase),
+	}))
 	.filter(({ verdict }) => verdict !== 'absent');
 
 for (const { skill, verdict } of matches) {

@@ -88,7 +88,10 @@ test('a phrase every mention routes away is reported as unowned', () => {
 	// one-sentence-test sends this back to the agent and nobody accepts it,
 	// which is the intended routing. The script reports unowned; whether unowned
 	// is correct stays the reader's call.
-	const { code, out, err } = run('--explain', 'plain code-comprehension question');
+	const { code, out, err } = run(
+		'--explain',
+		'plain code-comprehension question',
+	);
 
 	expect(code).toBe(1);
 	expect(out).toContain('one-sentence-test/SKILL.md [disclaims]');

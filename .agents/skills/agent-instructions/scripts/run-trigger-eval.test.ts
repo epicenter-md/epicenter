@@ -142,9 +142,9 @@ describe('runLexicalPass', () => {
 			[skills[2] as { name: string; description: string }],
 		);
 		expect(findings.map((f) => f.kind)).toContain('NO_OWNER');
-		expect(
-			findings.find((f) => f.kind === 'NO_OWNER')?.detail,
-		).toContain('disclaimed by router');
+		expect(findings.find((f) => f.kind === 'NO_OWNER')?.detail).toContain(
+			'disclaimed by router',
+		);
 	});
 
 	test('a near-miss case wants its anchor unowned, so silence is the pass', () => {
