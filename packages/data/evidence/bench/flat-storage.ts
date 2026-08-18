@@ -32,7 +32,7 @@ import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { createAccountStore, syncEngineOf } from '../../src/store/store.js';
 import { openSyncAuthority } from '../../src/sync/authority.js';
 
-const workspace = defineDatabase({
+const evidenceDatabase = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -44,8 +44,8 @@ const OPERATIONS = 6_000;
 
 function openReplica() {
 	const db = createAccountStore({
-		workspace: workspace,
-		database: createBunSqliteAdapter(new Database(':memory:')),
+		database: evidenceDatabase,
+		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	return { store: db.store, db };
 }
@@ -59,7 +59,7 @@ function openReplica() {
  */
 function run({ snapshots }: { snapshots: boolean }) {
 	const authority = openSyncAuthority({
-		database: createBunSqliteAdapter(new Database(':memory:')),
+		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		// Low enough that a bench-sized vault reaches the snapshot path at all.
 		snapshotFloorBytes: 16 * 1024,
 	});

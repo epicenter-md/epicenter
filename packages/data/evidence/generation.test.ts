@@ -20,7 +20,7 @@ import type { Result } from 'wellcrafted/result';
 
 import { createAccountStore, syncEngineOf } from '../src/store/store.js';
 
-const workspace = defineDatabase({
+const evidenceDatabase = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -32,8 +32,8 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
 
 function open() {
 	const db = createAccountStore({
-		workspace: workspace,
-		database: createBunSqliteAdapter(new Database(':memory:')),
+		database: evidenceDatabase,
+		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	return { store: db.store, db };
 }

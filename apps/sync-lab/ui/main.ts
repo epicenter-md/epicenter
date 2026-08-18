@@ -13,7 +13,7 @@ import { defineDatabase } from '@epicenter/database';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
-const workspace = defineDatabase({
+const labDatabase = defineDatabase({
 	id: 'so.epicenter.synclab',
 	tables: { notes: { title: 'string', device: 'string', at: 'string' } },
 });
@@ -28,8 +28,8 @@ const device =
 
 const sqlite3 = await sqlite3InitModule();
 const db = createAccountStore({
-	workspace: workspace,
-	database: createBrowserSqliteAdapter(new sqlite3.oo1.DB(':memory:')),
+	database: labDatabase,
+	sqlite: createBrowserSqliteAdapter(new sqlite3.oo1.DB(':memory:')),
 });
 const store = db.store;
 

@@ -6,7 +6,7 @@
  * inside `workerd` is a Durable Object's own storage. Everything else here is
  * the deployed
  * client: `createAccountStore`,
- * `createSyncConnection` with the real supersession rule, and `rebuildWorkspace`
+ * `createSyncConnection` with the real supersession rule, and `rebuildDatabase`
  * over a real WebSocket and the real routes, so a test can assert on the rows
  * a device actually holds rather than on frames a harness counted.
  *
@@ -22,7 +22,7 @@ import { type AccountStore, defineDatabase } from '@epicenter/data';
 import { createAccountStore } from '@epicenter/data/engine';
 import {
 	createSyncConnection,
-	rebuildWorkspace,
+	rebuildDatabase,
 	type StoreTransport,
 	type SyncConnection,
 } from '@epicenter/data/sync';
@@ -32,15 +32,15 @@ import {
 } from '@epicenter/sqlite/durable-object';
 import { MAIN_SUBPROTOCOL, STORE_SYNC_ROUTE } from '@epicenter/sync';
 
-const workspace = defineDatabase({
+const probeDatabase = defineDatabase({
 	id: 'so.epicenter.storeprobe',
 	tables: { notes: { title: 'string' } },
 });
 
 function openNotes(
-	database: ReturnType<typeof createDurableObjectSqliteAdapter>,
+	sqlite: ReturnType<typeof createDurableObjectSqliteAdapter>,
 ) {
-	return createAccountStore({ workspace: workspace, database });
+	return createAccountStore({ database: probeDatabase, sqlite });
 }
 
 export type ReplicaReport = {
@@ -111,7 +111,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 			},
 			dial: ({ cursor, document, opened, received, closed }) => {
 				const url = STORE_SYNC_ROUTE.url(origin, {
-					databaseId: workspace.id,
+					databaseId: probeDatabase.id,
 					cursor,
 					...(document === undefined ? {} : { document }),
 				});
@@ -166,7 +166,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 		const bearer = this.bearer;
 		return {
 			baseURL: this.origin,
-			databaseId: workspace.id,
+			databaseId: probeDatabase.id,
 			fetch: (input, init) =>
 				this.env.SELF.fetch(
 					new Request(input, {
@@ -212,7 +212,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 	 */
 	async rebuild(): Promise<{ document: string }> {
 		if (this.store === undefined) throw new Error('open first');
-		const published = await rebuildWorkspace({
+		const published = await rebuildDatabase({
 			store: this.store,
 			transport: this.transport(),
 		});

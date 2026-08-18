@@ -42,7 +42,7 @@ import {
 const origin = process.argv[2] ?? 'http://127.0.0.1:8787';
 const application = `probe-${Date.now()}`;
 
-const workspace = defineDatabase({
+const evidenceDatabase = defineDatabase({
 	id: 'so.epicenter.synclab',
 	tables: { notes: { title: 'string', device: 'string', at: 'string' } },
 });
@@ -71,8 +71,8 @@ async function stat(app: string = application): Promise<Stat> {
 
 function openReplica() {
 	const db = createAccountStore({
-		workspace: workspace,
-		database: createBunSqliteAdapter(new Database(':memory:')),
+		database: evidenceDatabase,
+		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	return { store: db.store, db };
 }

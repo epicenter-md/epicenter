@@ -59,10 +59,10 @@ export class StoreAuthority extends DurableObject {
 
 	constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
 		super(ctx, env);
-		const database = createDurableObjectSqliteAdapter(
+		const sqlite = createDurableObjectSqliteAdapter(
 			ctx.storage as unknown as DurableObjectSqliteStorage,
 		);
-		this.authority = openSyncAuthority({ database });
+		this.authority = openSyncAuthority({ sqlite });
 		this.hub = createSyncHub({ authority: this.authority });
 		// A woken object has sockets and nothing else: no map, and a hub that has
 		// never heard of them. Both are rebuilt here, before any message can

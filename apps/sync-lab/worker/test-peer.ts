@@ -30,28 +30,28 @@ import {
 	type DurableObjectSqliteStorage,
 } from '@epicenter/sqlite/durable-object';
 
-const workspace = defineDatabase({
+const labDatabase = defineDatabase({
 	id: 'so.epicenter.synclab',
 	tables: { notes: { title: 'string' } },
 });
 
 /**
- * Open the lab workspace over this Durable Object's own SQLite.
+ * Open the lab database over this Durable Object's own SQLite.
  *
  * A named function rather than an inline call so `ReturnType<typeof openNotes>`
  * carries `notes` and its `title` column into the field type.
  */
 function openNotes(
-	database: ReturnType<typeof createDurableObjectSqliteAdapter>,
+	sqlite: ReturnType<typeof createDurableObjectSqliteAdapter>,
 ) {
-	return createAccountStore({ workspace: workspace, database });
+	return createAccountStore({ database: labDatabase, sqlite });
 }
 
 /**
  * What a test is allowed to see, and all of it crosses RPC as plain data.
  *
  * `titles` is the assertion that matters: it is read out of the peer's own
- * SQLite through the workspace, so it can only be satisfied by bytes that arrived,
+ * SQLite through the database, so it can only be satisfied by bytes that arrived,
  * committed and applied. The two `redelivered` arrays are the opposite kind of
  * fact. They are an observation of the WIRE, kept because "a woken authority
  * re-sends rather than skips" is otherwise invisible from a converged peer:

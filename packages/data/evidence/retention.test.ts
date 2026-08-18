@@ -25,7 +25,7 @@ import type { Result } from 'wellcrafted/result';
 import { createAccountStore, syncEngineOf } from '../src/store/store.js';
 import { openSyncAuthority } from '../src/sync/authority.js';
 
-const workspace = defineDatabase({
+const evidenceDatabase = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -49,10 +49,10 @@ function contains(blobs: readonly Uint8Array[], needle: string): boolean {
 /** A device that wrote a note, pushed it, then deleted it. */
 function afterWritingAndDeleting() {
 	const database = createBunSqliteAdapter(new Database(':memory:'));
-	const db = createAccountStore({ workspace: workspace, database });
+	const db = createAccountStore({ database: evidenceDatabase, sqlite: database });
 	const store = db.store;
 	const authorityDatabase = createBunSqliteAdapter(new Database(':memory:'));
-	const authority = openSyncAuthority({ database: authorityDatabase });
+	const authority = openSyncAuthority({ sqlite: authorityDatabase });
 
 	const note = expectOk(db.tables.notes.create({ title: CANARY }));
 	const created = syncEngineOf(store).coalesce();
@@ -140,8 +140,8 @@ describe('and still in every log, for as long as the log exists', () => {
 		// And the arriving device shows nothing, which is why this is invisible
 		// rather than merely undesirable.
 		const arrivingDb = createAccountStore({
-			workspace: workspace,
-			database: createBunSqliteAdapter(new Database(':memory:')),
+			database: evidenceDatabase,
+			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const arriving = arrivingDb.store;
 		for (const entry of backlog)
@@ -158,7 +158,7 @@ describe('what makes a deletion real', () => {
 		// trace; the old log carries all of it until it is deleted.
 		const world = afterWritingAndDeleting();
 		const rebuilt = openSyncAuthority({
-			database: createBunSqliteAdapter(new Database(':memory:')),
+			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		expectOk(rebuilt.append(world.store.encodeStateSince()));
 

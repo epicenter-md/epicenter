@@ -93,7 +93,7 @@ import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { createAccountStore, syncEngineOf } from '../../src/store/store.js';
 import { openSyncAuthority } from '../../src/sync/authority.js';
 
-const workspace = defineDatabase({
+const benchDatabase = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -196,11 +196,11 @@ function build(
 	payload: Uint8Array[];
 } {
 	const authority = openSyncAuthority({
-		database: createBunSqliteAdapter(new Database(':memory:')),
+		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const db = createAccountStore({
-		workspace: workspace,
-		database: createBunSqliteAdapter(new Database(':memory:')),
+		database: benchDatabase,
+		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const store = db.store;
 
@@ -397,8 +397,8 @@ type Expectation = {
 function apply(packed: Uint8Array, expectation: Expectation): ApplyReport {
 	const updates = unpackPayload(packed);
 	const db = createAccountStore({
-		workspace: workspace,
-		database: createBunSqliteAdapter(new Database(':memory:')),
+		database: benchDatabase,
+		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const store = db.store;
 
