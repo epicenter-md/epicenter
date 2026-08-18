@@ -44,7 +44,7 @@ function tempDir(prefix: string): string {
 }
 
 /**
- * One candidate app output: `<root>/<dir>/index.html` and its `workspace.json`.
+ * One candidate app output: `<root>/<dir>/index.html` and its `database.json`.
  *
  * The directory name means nothing (ADR-0210), so these fixtures name it after
  * the id the declaration declares. That keeps a test readable while leaving the
@@ -75,7 +75,7 @@ function writeApp(
 	writeFileSync(join(root, directory, 'index.html'), page);
 	if (declaration !== null) {
 		writeFileSync(
-			join(root, directory, 'workspace.json'),
+			join(root, directory, 'database.json'),
 			typeof declaration === 'string'
 				? declaration
 				: JSON.stringify(declaration),
@@ -202,7 +202,7 @@ describe('promoteAppCatalogCandidate', () => {
 		mkdirSync(join(noIndex, 'no-index'));
 
 		// A declaration that is not well-formed, and one whose id is a bare
-		// label. Both are the same refusal now: an id is a workspace id (ADR-0210).
+		// label. Both are the same refusal now: an id is a database id (ADR-0210).
 		const notADeclaration = tempDir('epicenter-candidate-');
 		writeApp(notADeclaration, 'so.test.broken', { declaration: '{ not json' });
 
@@ -245,7 +245,7 @@ describe('promoteAppCatalogCandidate', () => {
 		expect(generations).toHaveLength(1);
 	});
 
-	test('an id the host already spent cannot be claimed, because it is not a workspace id', async () => {
+	test('an id the host already spent cannot be claimed, because it is not a database id', async () => {
 		// An app id names a place under the one data root, and every trusted app
 		// has one (ADR-0201). A second claimant on the directory holding Local
 		// Mail's credentials and its undelivered intent used to be refused by a
@@ -271,7 +271,7 @@ describe('promoteAppCatalogCandidate', () => {
 		expect((await load(root)).apps).toEqual([]);
 	});
 
-	test('two folders declaring one workspace id admit neither', async () => {
+	test('two folders declaring one database id admit neither', async () => {
 		// The filesystem used to make this check for us by refusing two
 		// directories with one name. Folder names mean nothing now.
 		const root = tempDir('epicenter-catalog-root-');

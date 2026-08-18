@@ -9,7 +9,7 @@
  *   current                      one line: the selected generation ID
  *   generations/
  *     <generation>/              one complete, never-mutated catalog copy
- *       <any-name>/index.html + workspace.json ...
+ *       <any-name>/index.html + database.json ...
  * ```
  *
  * The lifecycle contract:
@@ -72,8 +72,8 @@ export async function loadActiveAppCatalog(
 /**
  * Validate a candidate directory of built app outputs and promote it to the
  * next-start catalog generation. Every non-dot entry below `candidateRoot`
- * must satisfy the member contract (`index.html` and a valid `workspace.json`
- * declaring a workspace id no sibling already claimed, ADR-0210); one refused
+ * must satisfy the member contract (`index.html` and a valid `database.json`
+ * declaring a database id no sibling already claimed, ADR-0210); one refused
  * entry fails the whole promotion so a typo cannot silently drop an app. The pointer is replaced
  * only after the complete generation exists. Failed copies and validations
  * clean their staging paths; a failure after the generation rename may leave
@@ -116,7 +116,7 @@ export async function promoteAppCatalogCandidate(
 			.filter((name) => !name.startsWith('.'))
 			.sort();
 		const { apps } = await deriveAppCatalog(staging);
-		// By directory, not by id: an id is the declared workspace id now, so the
+		// By directory, not by id: an id is the declared database id now, so the
 		// only way to say which candidate entry was refused is the folder it
 		// arrived in.
 		const admitted = new Set(apps.map((app) => app.directory));

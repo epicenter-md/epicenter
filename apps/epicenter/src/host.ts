@@ -5,7 +5,7 @@
  * may join as local stdio MCP subprocesses (arm B, Local Books today). One
  * agent loop consumes the composed catalog and never learns where a verb lives.
  *
- * Home and its built-in apps use device-owned SQLite workspaces opened by one
+ * Home and its built-in apps use device-owned SQLite databases opened by one
  * desktop owner. Sign-in remains an enhancement.
  */
 

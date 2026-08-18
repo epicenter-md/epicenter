@@ -50,16 +50,16 @@ type ServedSpa = {
 
 /**
  * One derived catalog member: enough to list it and serve its static root. Its
- * `id` comes from the workspace declaration (ADR-0210).
+ * `id` comes from the database declaration (ADR-0210).
  */
 export type CatalogApp = ServedSpa & {
 	/**
-	 * The compiled `workspace.json` is no longer carried past admission.
+	 * The compiled `database.json` is no longer carried past admission.
 	 *
 	 * It used to be, so the host could interpret the member's rows: render them
 	 * to markdown, project them to SQLite, and serve them raw. The host owns no
 	 * application data now (ADR-0226), so what a member declares matters at
-	 * admission (it must be a well-formed workspace declaration) and nowhere
+	 * admission (it must be a well-formed database declaration) and nowhere
 	 * after. A field with no reader is a field
 	 * that goes stale.
 	 */
@@ -74,7 +74,7 @@ export type CatalogApp = ServedSpa & {
  * One compiled application's release build.
  *
  * A compiled application never enters the catalog (ADR-0179), so it declares no
- * workspace declaration and arrives in no candidate directory. Everything the server does with
+ * database declaration and arrives in no candidate directory. Everything the server does with
  * it, it does identically to an admitted member, which is why both are
  * {@link ServedSpa} and one route loop serves them.
  */
@@ -94,7 +94,7 @@ export type AppCatalog = {
  * Derive the trusted app catalog from validated build output: one directory
  * per app below `catalogRoot`. The catalog is generated, never authored. A
  * missing root is an empty catalog; an entry that breaks the output contract
- * (a missing `index.html`, a missing or invalid `workspace.json`, a workspace id a
+ * (a missing `index.html`, a missing or invalid `database.json`, a database id a
  * sibling already claimed, or a root that escapes the catalog directory) is not
  * a catalog member.
  *
@@ -137,10 +137,10 @@ export async function deriveAppCatalog(
 
 		const declaration = await containedFile(
 			appRoot,
-			resolve(appRoot, 'workspace.json'),
+			resolve(appRoot, 'database.json'),
 		);
 		if (declaration.kind !== 'file') continue;
-		// Admission still requires a well-formed workspace declaration. Its id is
+		// Admission still requires a well-formed database declaration. Its id is
 		// what addresses this member everywhere else (ADR-0210).
 		let declared: unknown;
 		try {
@@ -148,24 +148,24 @@ export async function deriveAppCatalog(
 		} catch {
 			continue;
 		}
-		const { data: workspace } = parseDatabase(declared);
-		if (workspace === null) continue;
+		const { data: database } = parseDatabase(declared);
+		if (database === null) continue;
 
 		// The directory this arrived in is not an identity (ADR-0210), so two
-		// directories may declare one workspace id. The
+		// directories may declare one database id. The
 		// filesystem used to refuse that by refusing two directories with one
 		// name; now the first declaration wins and the second is not a member,
 		// which `promoteAppCatalogCandidate` turns into a refused promotion.
-		if (claimed.has(workspace.id)) continue;
-		claimed.add(workspace.id);
+		if (claimed.has(database.id)) continue;
+		claimed.add(database.id);
 
 		apps.push({
-			id: workspace.id,
-			title: workspace.title ?? workspace.id,
+			id: database.id,
+			title: database.title ?? database.id,
 			page: await Bun.file(index.path).text(),
 			directory: name,
 			resolve: createContainedResolver({
-				prefix: `/apps/${workspace.id}/`,
+				prefix: `/apps/${database.id}/`,
 				root: appRoot,
 				index: index.path,
 			}),

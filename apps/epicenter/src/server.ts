@@ -102,7 +102,7 @@ export function createHomeServer({
 	// to this server: a built SPA below `/apps/<id>/` whose document the host
 	// stamps, gates, and hashes. They differ only in where they came from, so
 	// they are served by one loop rather than by two that have to be kept in
-	// agreement. Their ids cannot collide: an admitted app's id is the workspace id
+	// agreement. Their ids cannot collide: an admitted app's id is the database id
 	// it declares and always contains a dot, and every id this host issues
 	// itself is a bare label (ADR-0210).
 	const servedApps = [...staticAssets.applications, ...appCatalog.apps].map(
