@@ -98,6 +98,32 @@ export function readPendingSummary({
 	}
 }
 
+/**
+ * Every undelivered assertion for one account, or nothing when the account has
+ * no durable store yet.
+ *
+ * The absence rule is `readPendingSummary`'s, for the same reason: a read must
+ * never conjure a durable file (or an account directory) for an account that
+ * has none, so a surface that only wants to display effective labels can ask
+ * about any account safely. A missing store means no local opinions, which
+ * folds to Gmail's facts unchanged.
+ *
+ * Callers hand the result to `overlayOf`; nothing outside `overlay.ts`
+ * interprets these rows for reading.
+ */
+export function readPendingIntents({
+	dataDir,
+	accountEmail,
+}: IntentDbLocation): LabelIntent[] {
+	if (!existsSync(intentDbPath(dataDir, accountEmail))) return [];
+	const intent = openIntentDb({ dataDir, accountEmail });
+	try {
+		return intent.pending();
+	} finally {
+		intent.close();
+	}
+}
+
 export type IntentDb = ReturnType<typeof openIntentDb>;
 
 /**
