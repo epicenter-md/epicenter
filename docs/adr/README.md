@@ -322,5 +322,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0243](0243-a-workspaces-id-is-its-applications-reverse-domain-identifier.md) | A workspace's id is its application's reverse-domain identifier | Accepted (provisional number; amends 0204 and 0240 at the public name; `id` is the declaration field and `workspaceId` names it beside other identifiers) |
 | [0244](0244-epicenter-speaks-of-apps-and-windows-not-surfaces.md) | Epicenter speaks of apps and windows, not surfaces | Accepted (provisional number; relates to 0189, 0209 and 0210 at human-facing host vocabulary) |
 | [0245](0245-an-app-declares-its-theme-in-its-html-tag-and-the-pre-paint-script-only-undoes-it.md) | An app declares its theme in its html tag, and the pre-paint script only undoes it | Accepted (provisional number; `ssr = false` makes ModeWatcher's own flash script too late, so each app writes four visible lines instead of sharing a theme package) |
+| [0246](0246-an-app-is-named-by-its-full-reverse-domain-id-everywhere-including-the-ones-epicenter-ships.md) | An app is named by its full reverse-domain id everywhere, including the ones Epicenter ships | Accepted (provisional number; amends 0210 at the built-in id grammar) |
 
 When you add an ADR, add its row here.
