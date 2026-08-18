@@ -9,7 +9,7 @@ import { expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mailMirror, openMailDb } from './db.ts';
+import { mailDbFile, openMailDb } from './db.ts';
 import { accountDir } from './paths.ts';
 import { queryMail } from './query.ts';
 import type { GmailMessage } from './schema.ts';
@@ -43,8 +43,8 @@ test('querying an absent mirror reports it and creates nothing', () => {
 
 	expect(data).toBeNull();
 	expect(error?.name).toBe('NoMirror');
-	expect(error?.message).toContain(mailMirror(tmp.dir, ACCOUNT).path);
-	expect(existsSync(mailMirror(tmp.dir, ACCOUNT).path)).toBe(false);
+	expect(error?.message).toContain(mailDbFile(tmp.dir, ACCOUNT).path);
+	expect(existsSync(mailDbFile(tmp.dir, ACCOUNT).path)).toBe(false);
 	expect(existsSync(accountDir(tmp.dir, ACCOUNT))).toBe(false);
 	tmp.cleanup();
 });

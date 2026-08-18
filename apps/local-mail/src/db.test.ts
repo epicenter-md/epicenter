@@ -27,7 +27,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
 	type MailDb,
-	mailMirror,
+	mailDbFile,
 	openMailDb,
 	openMailDbReadonly,
 } from './db.ts';
@@ -343,7 +343,7 @@ describe('full pull page ingestion', () => {
 		// The mirror primitive does not know the artifact holds someone's mail, so
 		// the app is what applies the permissions to the handle it receives, to the
 		// versioned filename and both SQLite sidecars.
-		const { path } = mailMirror(tmp.dir, 'you@example.com');
+		const { path } = mailDbFile(tmp.dir, 'you@example.com');
 		const db = openMailDb({
 			dataDir: tmp.dir,
 			accountEmail: 'you@example.com',
@@ -541,7 +541,7 @@ describe('the read-only handle', () => {
 		const tmp = tempDir();
 		const dir = accountDir(tmp.dir, 'you@example.com');
 		mkdirSync(dir, { recursive: true });
-		const { path } = mailMirror(tmp.dir, 'you@example.com');
+		const { path } = mailDbFile(tmp.dir, 'you@example.com');
 		new Database(path, { create: true }).close();
 
 		const reader = openMailDbReadonly({
@@ -557,17 +557,17 @@ describe('the read-only handle', () => {
 
 describe('the mirror', () => {
 	test('an account email that is not one path segment cannot name a partition', () => {
-		expect(() => mailMirror('/data', '../evil')).toThrow(
+		expect(() => mailDbFile('/data', '../evil')).toThrow(
 			'cannot name a directory',
 		);
-		expect(() => mailMirror('/data', 'a/b@example.com')).toThrow(
+		expect(() => mailDbFile('/data', 'a/b@example.com')).toThrow(
 			'cannot name a directory',
 		);
-		expect(() => mailMirror('/data', '')).toThrow('cannot name a directory');
+		expect(() => mailDbFile('/data', '')).toThrow('cannot name a directory');
 	});
 
 	test('names the artifact by its corpus version, under the account dir', () => {
-		const { path, version } = mailMirror('/data', 'you@example.com');
+		const { path, version } = mailDbFile('/data', 'you@example.com');
 		expect(path).toBe(
 			join('/data', 'accounts', 'you@example.com', `mail.v${version}.db`),
 		);
@@ -577,7 +577,7 @@ describe('the mirror', () => {
 		// The reader-mirror rewrite that renamed `raw` to `resource` is version 5.
 		// Restarting the count would name a fresh artifact after a corpus that
 		// already existed.
-		expect(mailMirror('/data', 'you@example.com').version).toBeGreaterThan(4);
+		expect(mailDbFile('/data', 'you@example.com').version).toBeGreaterThan(4);
 	});
 });
 
@@ -658,7 +658,7 @@ describe('the artifact lifecycle', () => {
 		).toEqual(
 			[
 				'intent.db',
-				`mail.v${mailMirror(tmp.dir, 'you@example.com').version}.db`,
+				`mail.v${mailDbFile(tmp.dir, 'you@example.com').version}.db`,
 			].sort(),
 		);
 		tmp.cleanup();
@@ -672,7 +672,7 @@ describe('the artifact lifecycle', () => {
 		const tmp = tempDir();
 		const dir = accountDir(tmp.dir, 'you@example.com');
 		mkdirSync(dir, { recursive: true, mode: 0o700 });
-		const previousVersion = mailMirror(tmp.dir, 'you@example.com').version - 1;
+		const previousVersion = mailDbFile(tmp.dir, 'you@example.com').version - 1;
 		const predecessorPath = join(dir, `mail.v${previousVersion}.db`);
 		const predecessor = new Database(predecessorPath, { create: true });
 		predecessor.run(`CREATE TABLE messages (id TEXT PRIMARY KEY);`);
@@ -694,13 +694,13 @@ describe('the artifact lifecycle', () => {
 		});
 		kept.close();
 
-		const mirror = mailMirror(tmp.dir, 'you@example.com');
-		const artifacts = mirror.artifacts();
-		expect(artifacts.length).toBe(2);
-		expect(artifacts.filter((a) => a.current).map((a) => a.version)).toEqual([
-			mirror.version,
+		const file = mailDbFile(tmp.dir, 'you@example.com');
+		const versions = file.versions();
+		expect(versions.length).toBe(2);
+		expect(versions.filter((v) => v.current).map((v) => v.version)).toEqual([
+			file.version,
 		]);
-		expect(artifacts.filter((a) => !a.current).map((a) => a.version)).toEqual([
+		expect(versions.filter((v) => !v.current).map((v) => v.version)).toEqual([
 			previousVersion,
 		]);
 		tmp.cleanup();
@@ -714,8 +714,8 @@ describe('the artifact lifecycle', () => {
 			accountEmail: 'you@example.com',
 		});
 		db.close();
-		const mirror = mailMirror(tmp.dir, 'you@example.com');
-		const predecessorPath = join(dir, `mail.v${mirror.version - 1}.db`);
+		const file = mailDbFile(tmp.dir, 'you@example.com');
+		const predecessorPath = join(dir, `mail.v${file.version - 1}.db`);
 		writeFileSync(predecessorPath, '');
 		writeFileSync(`${predecessorPath}-wal`, '');
 		// Local Mail's siblings: the reconcile-owner lock, the OAuth material, and
@@ -727,8 +727,8 @@ describe('the artifact lifecycle', () => {
 		writeFileSync(join(dir, 'credentials.json'), '{}');
 		writeFileSync(join(dir, 'provider.json'), '{}');
 
-		expect(mirror.reclaimPredecessors().map((a) => a.version)).toEqual([
-			mirror.version - 1,
+		expect(file.deleteOlderVersions().map((v) => v.version)).toEqual([
+			file.version - 1,
 		]);
 
 		expect(existsSync(predecessorPath)).toBe(false);
@@ -745,13 +745,13 @@ describe('the artifact lifecycle', () => {
 				'intent.db',
 				'lock.db',
 				'provider.json',
-				`mail.v${mirror.version}.db`,
+				`mail.v${file.version}.db`,
 			].sort(),
 		);
 		// The current artifact is not a predecessor, so a second call is a no-op
 		// rather than the thing that deletes the mailbox.
-		expect(mirror.reclaimPredecessors()).toEqual([]);
-		expect(existsSync(mirror.path)).toBe(true);
+		expect(file.deleteOlderVersions()).toEqual([]);
+		expect(existsSync(file.path)).toBe(true);
 		tmp.cleanup();
 	});
 });
