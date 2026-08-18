@@ -198,15 +198,12 @@ describe('two devices on one account converge', () => {
 
 	it('a databaseId no workspace could declare is refused', async () => {
 		const response = await SELF.fetch(
-			new Request(
-				`${ORIGIN}/api/store/v1/sync?databaseId=../escape&cursor=0`,
-				{
-					headers: {
-						Upgrade: 'websocket',
-						'sec-websocket-protocol': 'epicenter, bearer.device:someone',
-					},
+			new Request(`${ORIGIN}/api/store/v1/sync?databaseId=../escape&cursor=0`, {
+				headers: {
+					Upgrade: 'websocket',
+					'sec-websocket-protocol': 'epicenter, bearer.device:someone',
 				},
-			),
+			}),
 		);
 		expect(response.status).toBe(400);
 	});

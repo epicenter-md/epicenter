@@ -14,8 +14,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AgentMessage } from '@epicenter/agent';
 import { open } from '@epicenter/data/bun';
-import { InstantString } from '@epicenter/field';
 import { defineDatabase } from '@epicenter/database';
+import { InstantString } from '@epicenter/field';
 import {
 	CONVERSATION_MESSAGES,
 	conversationsTable,

@@ -18,8 +18,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { open } from '@epicenter/data/bun';
-import { InstantString } from '@epicenter/field';
 import { defineDatabase } from '@epicenter/database';
+import { InstantString } from '@epicenter/field';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
 import {

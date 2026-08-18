@@ -24,11 +24,11 @@ import {
 	decodeFrame,
 	type SyncClient,
 } from '@epicenter/data/sync';
+import { defineDatabase } from '@epicenter/database';
 import {
 	createDurableObjectSqliteAdapter,
 	type DurableObjectSqliteStorage,
 } from '@epicenter/sqlite/durable-object';
-import { defineDatabase } from '@epicenter/database';
 
 const workspace = defineDatabase({
 	id: 'so.epicenter.synclab',

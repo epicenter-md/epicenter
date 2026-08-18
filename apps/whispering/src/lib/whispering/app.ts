@@ -11,10 +11,7 @@ import {
 	type SyncConnection,
 	type SyncConnectionStatus,
 } from '@epicenter/data/sync';
-import {
-	type WhisperingSettingValues,
-	whisperingDatabase,
-} from '../workspace';
+import { type WhisperingSettingValues, whisperingDatabase } from '../workspace';
 import {
 	createWhisperingRecipes,
 	type WhisperingRecipes,

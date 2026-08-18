@@ -9,8 +9,8 @@
 
 import { createAccountStore } from '@epicenter/data/engine';
 import { createSyncConnection } from '@epicenter/data/sync';
-import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import { defineDatabase } from '@epicenter/database';
+import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
 const workspace = defineDatabase({
