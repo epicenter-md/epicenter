@@ -34,7 +34,6 @@
 		"hono": "catalog:",
 		"hono-openapi": "catalog:",
 		"jose": "catalog:",
-		"lib0": "catalog:",
 		"nanoid": "catalog:",
 		"pg": "^8.20.0",
 		"wellcrafted": "catalog:"
