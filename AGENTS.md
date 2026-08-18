@@ -16,7 +16,7 @@ Always use bun: Prefer `bun` over npm, yarn, pnpm, and node. Use `bun run`, `bun
 
 Local dev: start apps from the repo root with `bun dev:<app>`; it runs every process the app needs, including the hosted API on `localhost:8787` for apps that talk to it. `bun dev:<app>:ui` is the frontend alone when that split exists; `bun dev:api` is the backend alone. Do not cd into an app to start it. Details in the `monorepo` skill.
 
-Agent instruction files: Treat `AGENTS.md` as the canonical shared instructions file. `CLAUDE.md` files are compatibility shims for Claude Code and should only import a sibling `AGENTS.md` with `@AGENTS.md`, plus rare Claude-specific notes if needed. When adding a nested `AGENTS.md`, add a sibling `CLAUDE.md` shim. Do not create orphan `CLAUDE.md` files.
+Agent instruction files: Treat `AGENTS.md` as the canonical shared instructions file. `CLAUDE.md` files are compatibility shims for Claude Code and should only import a sibling `AGENTS.md` with `@AGENTS.md`, plus rare Claude-specific notes if needed. When adding a nested `AGENTS.md`, add a sibling `CLAUDE.md` shim. Add a nested `AGENTS.md` only for a local constraint that must apply to every edit beneath it; never use one as an index or README substitute, because subsystem orientation belongs in that subsystem's README. Do not create orphan `CLAUDE.md` files.
 
 Destructive actions need approval: Force pushes, hard resets (`--hard`), branch deletions.
 
