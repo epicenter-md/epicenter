@@ -1,4 +1,4 @@
-import { mailMirror, openMailDbReadonly } from './db.ts';
+import { mailDbFile, openMailDbReadonly } from './db.ts';
 import { type PendingSummary, readPendingSummary } from './intent.ts';
 import type { LocalMailRuntime } from './runtime.ts';
 import { isAccessTokenExpired } from './tokens.ts';
@@ -72,16 +72,16 @@ export async function readMailStatus({
 	// exactly the moment it is most easily lost.
 	const pending = readPendingSummary({ dataDir: config.dataDir, accountEmail });
 
-	// Artifact inventory is a directory read, so it answers "which versions exist
+	// The version list is a directory read, so it answers "which versions exist
 	// here" even when the current one has never been built. There is no stored
 	// shape version to compare: the filename is the shape (ADR-0197).
-	const mirror = mailMirror(config.dataDir, accountEmail);
+	const file = mailDbFile(config.dataDir, accountEmail);
 	const shape = {
-		mirrorPath: mirror.path,
-		predecessors: mirror
-			.artifacts()
-			.filter((artifact) => !artifact.current)
-			.map((artifact) => artifact.version),
+		mirrorPath: file.path,
+		predecessors: file
+			.versions()
+			.filter((entry) => !entry.current)
+			.map((entry) => entry.version),
 	};
 
 	// Read-only: a status read must not block on a concurrent sync's write lock,

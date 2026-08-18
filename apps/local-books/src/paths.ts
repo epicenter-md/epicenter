@@ -26,7 +26,7 @@ export function booksDataDir(): string {
 /**
  * One directory per company, named by QuickBooks' `realmId` under
  * `companies/`. It holds the company's mirror artifacts (named by corpus
- * version, see `booksMirror` in `db.ts`) and the `app` verb's `lock.db`. This is
+ * version, see `booksDbFile` in `db.ts`) and the `app` verb's `lock.db`. This is
  * the directory the mirror is opened at, so `realmId` is the only per-tenant
  * naming the mirror sees.
  *

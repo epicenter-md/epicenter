@@ -1,11 +1,11 @@
-import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	type AppConfig,
 	type CliConfigOverrides,
 	loadConfig,
 } from '../config.ts';
-import { booksMirror } from '../db.ts';
+import { booksDbFile } from '../db.ts';
+import type { DbFile } from '../db-file.ts';
 import {
 	createFileTokenStore,
 	resolveRealm,
@@ -33,7 +33,7 @@ export function formatRelative(targetIso: string, now: number): string {
 export type CompanyContext = {
 	config: AppConfig;
 	realmId: string;
-	mirror: Mirror;
+	mirror: DbFile;
 	store: TokenStore;
 };
 
@@ -53,7 +53,7 @@ export async function resolveCompany(
 	return Ok({
 		config,
 		realmId,
-		mirror: booksMirror(config.dataDir, realmId),
+		mirror: booksDbFile(config.dataDir, realmId),
 		store,
 	});
 }

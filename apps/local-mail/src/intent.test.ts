@@ -13,8 +13,8 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mirrorAt } from '@epicenter/sqlite/bun-mirror';
-import { mailMirror, openMailDb } from './db.ts';
+import { mailDbFile, openMailDb } from './db.ts';
+import { dbFileAt } from './db-file.ts';
 import { type IntentDb, openIntentDb } from './intent.ts';
 import { accountDir } from './paths.ts';
 
@@ -241,20 +241,17 @@ describe('durability', () => {
 			);
 			mirror.close();
 
-			// The strongest form of "the mirror went away": reclaim every artifact
+			// The strongest form of "the database went away": delete every version
 			// this account has, the operation a version bump eventually authorizes.
-			// It is pointed at a version above the live one so today's artifact is
-			// a predecessor of it, and it must leave `intent.db` untouched.
+			// It is pointed at a version above the live one so today's file is a
+			// predecessor of it, and it must leave `intent.db` untouched.
 			const account_dir = accountDir(dir, account.accountEmail);
-			const live = mailMirror(dir, account.accountEmail);
-			const reclaimed = mirrorAt({
-				name: 'mail',
+			const live = mailDbFile(dir, account.accountEmail);
+			const deleted = dbFileAt({
 				version: live.version + 1,
 				directory: account_dir,
-			}).reclaimPredecessors();
-			expect(reclaimed.map((artifact) => artifact.version)).toEqual([
-				live.version,
-			]);
+			}).deleteOlderVersions();
+			expect(deleted.map((entry) => entry.version)).toEqual([live.version]);
 			expect(existsSync(live.path)).toBe(false);
 			expect(existsSync(join(account_dir, 'intent.db'))).toBe(true);
 

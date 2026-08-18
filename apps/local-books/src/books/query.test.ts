@@ -8,13 +8,13 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { booksMirror, openBooksDb } from '../db.ts';
+import { booksDbFile, openBooksDb } from '../db.ts';
 import { queryBooks } from './query.ts';
 
 /** Seed one company's mirror with two invoices (one soft-deleted). */
 function fixtureMirror() {
 	const dir = mkdtempSync(join(tmpdir(), 'local-books-'));
-	const mirror = booksMirror(dir, 'realm-1');
+	const mirror = booksDbFile(dir, 'realm-1');
 	const db = openBooksDb(mirror);
 	db.raw.exec(`
 		CREATE TABLE invoices (
@@ -57,7 +57,7 @@ describe('queryBooks', () => {
 
 	test('errors clearly when no mirror exists yet', () => {
 		const { error } = queryBooks({
-			mirror: booksMirror(join(tmpdir(), 'local-books-absent'), 'realm'),
+			mirror: booksDbFile(join(tmpdir(), 'local-books-absent'), 'realm'),
 			sql: 'SELECT 1',
 		});
 		expect(error?.message).toContain('No QuickBooks mirror');

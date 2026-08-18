@@ -4,7 +4,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { mailMirror, openMailDbReadonly } from './db.ts';
+import { mailDbFile, openMailDbReadonly } from './db.ts';
 
 export const MailQueryError = defineErrors({
 	NoMirror: ({ path }: { path: string }) => ({
@@ -39,7 +39,7 @@ export function queryMail({
 	// directory exactly as it was.
 	const db = openMailDbReadonly({ dataDir, accountEmail });
 	if (db === null) {
-		const { path } = mailMirror(dataDir, accountEmail);
+		const { path } = mailDbFile(dataDir, accountEmail);
 		return MailQueryError.NoMirror({ path });
 	}
 	try {

@@ -21,11 +21,12 @@
  * promises is safe to wrap. A future daemon/MCP adapter over this core cannot
  * forget the gate and move money, because `readOnly` is a required argument.
  */
-import type { Mirror } from '@epicenter/sqlite/bun-mirror';
+
 import Type, { type Static } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import { openBooksDb } from '../db.ts';
+import type { DbFile } from '../db-file.ts';
 import { entityDef } from '../entities.ts';
 import type { QbClientError } from '../qb-client.ts';
 import type { OpenQbClient, QbAccessError } from './qb-access.ts';
@@ -156,7 +157,7 @@ export async function recategorizeExpense({
 	readOnly,
 }: {
 	openQb: OpenQbClient;
-	mirror: Mirror;
+	mirror: DbFile;
 	input: RecategorizeInput;
 	/**
 	 * Whether writes are forbidden. Required (no default) so every caller, the

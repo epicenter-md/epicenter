@@ -82,10 +82,10 @@ one is a decision with a record; the full list, with its reasons, is under
 - One SQLite artifact per connected account, under `<app-dir>/accounts/<accountEmail>/`,
   named `mail.v<version>.db` after `MIRROR_VERSION` in `src/db.ts`: the version
   of the corpus contract this build stores, not the app's release version.
-  `mirrorAt` from `@epicenter/sqlite/bun-mirror` owns the naming, the two opening
-  modes, artifact inventory, and grammar-scoped `reclaimPredecessors`; the app
-  owns the version constant, DDL, ingestion, cursors, locking, file permissions,
-  readiness, and reclamation timing. Opening is non-destructive and never falls
+  `src/db-file.ts` owns the naming, the two opening modes, the version listing,
+  and pattern-scoped `deleteOlderVersions`; the rest of the app owns the version
+  constant, DDL, ingestion, cursors, locking, file permissions, readiness, and
+  deletion timing (ADR-0247). Opening is non-destructive and never falls
   back to a lower version: a bump is a new filename, not a migration, so nothing
   is dropped or unlinked on open and the predecessor is retained until something
   reclaims it. There is no schema version stamped in the file. See ADR-0197.

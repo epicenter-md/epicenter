@@ -13,7 +13,7 @@
 
 import { expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { booksMirror, openBooksDb } from '../src/db.ts';
+import { booksDbFile, openBooksDb } from '../src/db.ts';
 import { tempRoot } from './helpers.ts';
 
 const BIN = join(import.meta.dir, '../src/bin.ts');
@@ -21,7 +21,7 @@ const REALM = 'r1';
 
 /** Seed the r1 company's current mirror artifact with two live invoices. */
 function seedMirror(dir: string): void {
-	const db = openBooksDb(booksMirror(dir, REALM));
+	const db = openBooksDb(booksDbFile(dir, REALM));
 	db.raw.exec(`
 		CREATE TABLE invoices (
 			id TEXT PRIMARY KEY, raw TEXT NOT NULL, updated_at TEXT,

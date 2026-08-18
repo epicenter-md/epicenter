@@ -14,7 +14,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	type BooksDb,
-	booksMirror,
+	booksDbFile,
 	openBooksDb,
 	openBooksDbReadonly,
 } from '../src/db.ts';
@@ -42,7 +42,7 @@ function purchase(category: string, updatedAt?: string): QbObject {
 /** Open a throwaway mirror; the caller closes it. */
 function openTmp(): { db: BooksDb; cleanup: () => void } {
 	const tmp = tempDir();
-	const db = openBooksDb(booksMirror(tmp.dir, 'r1'));
+	const db = openBooksDb(booksDbFile(tmp.dir, 'r1'));
 	return { db, cleanup: () => (db.close(), tmp.cleanup()) };
 }
 
@@ -131,7 +131,7 @@ describe('the realm cursor', () => {
 
 	test('reopening a writer preserves the rows and the cursor', () => {
 		const tmp = tempDir();
-		const mirror = booksMirror(tmp.dir, 'r1');
+		const mirror = booksDbFile(tmp.dir, 'r1');
 		let db = openBooksDb(mirror);
 		ingPurchase(db, purchase('60'), 's1');
 		db.ingest([], {
@@ -168,7 +168,7 @@ describe('the realm cursor', () => {
 describe('a read-only handle', () => {
 	test('is null before the mirror is built, and never creates it', () => {
 		const tmp = tempDir();
-		const mirror = booksMirror(tmp.dir, 'r1');
+		const mirror = booksDbFile(tmp.dir, 'r1');
 		expect(openBooksDbReadonly(mirror)).toBeNull();
 		expect(openBooksDbReadonly(mirror)).toBeNull();
 		tmp.cleanup();
@@ -176,7 +176,7 @@ describe('a read-only handle', () => {
 
 	test('reads the mirror and refuses writes by the connection', () => {
 		const tmp = tempDir();
-		const mirror = booksMirror(tmp.dir, 'r1');
+		const mirror = booksDbFile(tmp.dir, 'r1');
 		const db = openBooksDb(mirror);
 		ingPurchase(db, purchase('60'), 's1');
 		db.ingest([], {
