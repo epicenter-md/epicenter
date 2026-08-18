@@ -35,6 +35,7 @@ That id is the whole identifier, with no short form anywhere:
 
 - the route, `/apps/so.epicenter.honeycrisp/`
 - the deep link, `epicenter://app/so.epicenter.honeycrisp` (ADR-0244)
+<!-- doc-path-check: ignore-next-line -->
 - the directory under the one data root, `apps/so.epicenter.honeycrisp` (ADR-0201)
 - the database id it declares (ADR-0243), which is now the same string
 - the Tauri window label, through the existing `.`-to-`_` mangling, which every
