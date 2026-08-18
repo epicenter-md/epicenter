@@ -26,7 +26,7 @@
  * portable root.
  */
 
-import { Database } from 'bun:sqlite';
+import { constants, Database } from 'bun:sqlite';
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -157,6 +157,29 @@ function applyPragmas(db: Database, pragmas: readonly string[]): Database {
  * it for indexes, read-time projections, comments, or shipping a new version of
  * the app: none of those change what is stored.
  */
+/**
+ * Open flags for a writable mirror: create if absent, plus URI filename
+ * parsing.
+ *
+ * `SQLITE_OPEN_URI` is here because SQL has no read-only `ATTACH`. A caller
+ * that wants to read a sibling database without becoming its second writer can
+ * only say so as `file:<path>?mode=ro`, and SQLite parses that form only when
+ * the connection asked for it or the library was built with `SQLITE_USE_URI`.
+ * bun's macOS build has that flag compiled in and its Linux build does not, so
+ * a connection that leaves this to the platform works on one and, on the other,
+ * looks for a file literally named `file:...?mode=ro` and reports that it
+ * cannot open the database. Asking here makes the capability the caller's to
+ * rely on rather than the host's to grant.
+ */
+const WRITABLE_FLAGS =
+	constants.SQLITE_OPEN_READWRITE |
+	constants.SQLITE_OPEN_CREATE |
+	constants.SQLITE_OPEN_URI;
+
+/** The same capability for a reader, which attaches siblings just as a writer does. */
+const READONLY_FLAGS =
+	constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI;
+
 export function mirrorAt({
 	name,
 	version,
@@ -225,7 +248,7 @@ export function mirrorAt({
 			// instead of failing instantly with SQLITE_BUSY; synchronous NORMAL
 			// because a mirror is re-pullable by construction, so a lost last commit
 			// on power loss costs a re-pull and nothing more.
-			return applyPragmas(new Database(path, { create: true }), [
+			return applyPragmas(new Database(path, WRITABLE_FLAGS), [
 				`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS};`,
 				'PRAGMA journal_mode = WAL;',
 				'PRAGMA synchronous = NORMAL;',
@@ -237,7 +260,7 @@ export function mirrorAt({
 			if (!existsSync(path)) return null;
 			// No journal-mode change and no other persistent pragma: a reader touches
 			// nothing. The timeout is per-connection, so it still applies.
-			return applyPragmas(new Database(path, { readonly: true }), [
+			return applyPragmas(new Database(path, READONLY_FLAGS), [
 				`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS};`,
 			]);
 		},
