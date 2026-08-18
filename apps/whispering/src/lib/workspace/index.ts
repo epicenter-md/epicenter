@@ -26,8 +26,8 @@
  * which a read applies and a write never stores.
  */
 
-import type { WorkspaceView } from '@epicenter/data';
-import { defineWorkspace, type KvOf, type RowOf } from '@epicenter/workspace';
+import type { DatabaseView } from '@epicenter/data';
+import { defineDatabase, type KvOf, type RowOf } from '@epicenter/database';
 
 /** Runtime-minted structural row ids. */
 export type RecordingId = string;
@@ -159,7 +159,7 @@ const settingsKv = {
 	shortcutOpenSettingsKeys: 'string[]|null = null',
 } as const;
 
-export const whisperingWorkspace = defineWorkspace({
+export const whisperingDatabase = defineDatabase({
 	id: 'so.epicenter.whispering',
 	title: 'Whispering',
 	kv: settingsKv,
@@ -167,7 +167,7 @@ export const whisperingWorkspace = defineWorkspace({
 });
 
 /** The typed view of one store through Whispering's workspace. */
-export type WhisperingData = WorkspaceView<typeof whisperingWorkspace>;
+export type WhisperingData = DatabaseView<typeof whisperingDatabase>;
 
 export type Recording = RowOf<typeof recordingsTable>;
 export type Recipe = RowOf<typeof recipesTable>;
@@ -178,7 +178,7 @@ export type Recipe = RowOf<typeof recipesTable>;
  * Through `KvOf` rather than `typeof settingsKv`, which was the DECLARATION
  * (a record of arktype expressions in strings) wearing the name of the values.
  */
-export type WhisperingSettingValues = KvOf<typeof whisperingWorkspace>;
+export type WhisperingSettingValues = KvOf<typeof whisperingDatabase>;
 
 /**
  * Default shortcuts, applied by the app rather than declared in the workspace.

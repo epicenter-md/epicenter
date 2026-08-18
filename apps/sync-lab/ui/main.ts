@@ -10,10 +10,10 @@
 import { createAccountStore } from '@epicenter/data/engine';
 import { createSyncConnection } from '@epicenter/data/sync';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
-import { defineWorkspace } from '@epicenter/workspace';
+import { defineDatabase } from '@epicenter/database';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.synclab',
 	tables: { notes: { title: 'string', device: 'string', at: 'string' } },
 });

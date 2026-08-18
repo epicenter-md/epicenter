@@ -13,8 +13,8 @@
  * a later import, and it never becomes record identity.
  */
 
-import type { WorkspaceView } from '@epicenter/data';
-import { defineWorkspace, type RowOf } from '@epicenter/workspace';
+import type { DatabaseView } from '@epicenter/data';
+import { defineDatabase, type RowOf } from '@epicenter/database';
 
 const skillsTable = {
 	sourceId: 'string',
@@ -43,14 +43,14 @@ const referencesTable = {
 	updatedAt: 'string.date.iso',
 } as const;
 
-export const skillsWorkspace = defineWorkspace({
+export const skillsWorkspace = defineDatabase({
 	id: 'so.epicenter.skills',
 	title: 'Skills',
 	tables: { skills: skillsTable, skillReferences: referencesTable },
 });
 
 /** The typed view of one store through the Skills workspace. */
-export type SkillsData = WorkspaceView<typeof skillsWorkspace>;
+export type SkillsData = DatabaseView<typeof skillsWorkspace>;
 
 export type Skill = RowOf<typeof skillsTable>;
 export type Reference = RowOf<typeof referencesTable>;

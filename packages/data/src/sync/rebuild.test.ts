@@ -11,7 +11,7 @@
  * into adoption, which is also why a crash-replay can never publish twice.
  */
 import { describe, expect, test } from 'bun:test';
-import { defineWorkspace } from '@epicenter/workspace';
+import { defineDatabase } from '@epicenter/database';
 import type { Result } from 'wellcrafted/result';
 
 import { openMemory } from '../store/bun.js';
@@ -23,7 +23,7 @@ import {
 	type StoreTransport,
 } from './rebuild.js';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.rebuild',
 	kv: { theme: "'light'|'dark' = 'light'" },
 	tables: { notes: { title: 'string' } },
@@ -152,7 +152,7 @@ function scriptedTransport(script: { replace: (url: URL) => Response }) {
 	const replaces: URL[] = [];
 	const transport: StoreTransport = {
 		baseURL: 'https://api.example.com',
-		workspaceId: workspace.id,
+		databaseId: workspace.id,
 		fetch: async (input, init) => {
 			if (init?.method !== 'POST') throw new Error('unexpected non-POST');
 			const url = new URL(input);
@@ -188,7 +188,7 @@ describe('rebuildWorkspace holds the lease honestly', () => {
 		const url = replaces[0] as URL;
 		expect(url.searchParams.get('fromDocument')).toBe('the-current-document');
 		expect(url.searchParams.get('atHead')).toBe('7');
-		expect(url.searchParams.get('workspaceId')).toBe(workspace.id);
+		expect(url.searchParams.get('databaseId')).toBe(workspace.id);
 	});
 
 	test('an unstamped store is refused before anything is posted', async () => {

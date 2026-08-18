@@ -18,7 +18,7 @@
 	"dependencies": {
 		"@epicenter/agent": "workspace:*",
 		"@epicenter/data": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
+		"@epicenter/database": "workspace:*",
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {

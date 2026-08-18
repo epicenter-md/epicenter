@@ -35,12 +35,13 @@
  * coalesced before it is sent, and the cursor is one row. IndexedDB holds
  * that from the page.
  */
-import type { PrincipalId } from '@epicenter/identity';
+
 import {
-	parseWorkspace,
-	type WorkspaceJson,
-	type WorkspaceParseError,
-} from '@epicenter/workspace';
+	type DatabaseJson,
+	type DatabaseParseError,
+	parseDatabase,
+} from '@epicenter/database';
+import type { PrincipalId } from '@epicenter/identity';
 import * as Y from '@y/y';
 import { type DBSchema, deleteDB, type IDBPDatabase, openDB } from 'idb';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
@@ -57,11 +58,11 @@ import {
 	asData,
 	createAccountStoreOverPort,
 	createDeviceStoreOverPort,
+	type DatabaseView,
 	type DataOf,
 	type DeviceStore,
 	StoreError,
-	type UntypedWorkspaceView,
-	type WorkspaceView,
+	type UntypedDatabaseView,
 } from './store.js';
 
 // Re-exported so a browser caller's one import site names both kinds beside
@@ -368,12 +369,12 @@ async function openIdbBacking(
  * segment after `epicenter/` is always exactly the application, and no address
  * can be read as another one.
  */
-function deviceAddress(workspaceId: string): string {
-	return `epicenter/${workspaceId}/device`;
+function deviceAddress(databaseId: string): string {
+	return `epicenter/${databaseId}/device`;
 }
 
-function accountAddress(workspaceId: string, principalId: PrincipalId): string {
-	return `epicenter/${workspaceId}/account/${principalId}`;
+function accountAddress(databaseId: string, principalId: PrincipalId): string {
+	return `epicenter/${databaseId}/account/${principalId}`;
 }
 
 /**
@@ -394,17 +395,17 @@ function accountAddress(workspaceId: string, principalId: PrincipalId): string {
  * every open makes the deletion certain without anyone waiting on it.
  */
 function deleteSupersededStorage(
-	workspaceId: string,
+	databaseId: string,
 	owner: 'device' | 'account',
 	principalId?: PrincipalId,
 ): Promise<void> {
 	const superseded = [
-		`epicenter-store-${workspaceId}`,
-		`epicenter-store-${workspaceId}#private`,
-		`epicenter-store-${workspaceId}#workspace`,
+		`epicenter-store-${databaseId}`,
+		`epicenter-store-${databaseId}#private`,
+		`epicenter-store-${databaseId}#workspace`,
 		owner === 'device'
-			? `epicenter/${workspaceId}/private`
-			: `epicenter/${workspaceId}/workspace/${principalId}`,
+			? `epicenter/${databaseId}/private`
+			: `epicenter/${databaseId}/workspace/${principalId}`,
 	];
 	return Promise.all(
 		superseded.map(
@@ -427,15 +428,15 @@ function deleteSupersededStorage(
  * replica-only verbs, and no verb that could delete it. It can remain open
  * while an account replica is open too.
  */
-export async function openDevice<const TWorkspace extends WorkspaceJson>(
-	workspace: TWorkspace,
+export async function openDevice<const TDatabase extends DatabaseJson>(
+	workspace: TDatabase,
 ): Promise<
-	Result<DataOf<TWorkspace, DeviceStore>, StoreError | WorkspaceParseError>
+	Result<DataOf<TDatabase, DeviceStore>, StoreError | DatabaseParseError>
 > {
 	// Parsed before anything is claimed or opened: a declaration may arrive as
 	// data, and a refusal here is a boot outcome rather than a programmer
 	// error (ADR-0240).
-	const { data: parsed, error: parseError } = parseWorkspace(workspace);
+	const { data: parsed, error: parseError } = parseDatabase(workspace);
 	if (parseError !== null) return Err(parseError);
 
 	const address = deviceAddress(parsed.id);
@@ -455,7 +456,7 @@ export async function openDevice<const TWorkspace extends WorkspaceJson>(
 	// cannot decode, which is "the store could not read its durable record":
 	// contained so a corrupt record refuses the boot instead of leaking the
 	// claim and the open connections.
-	let parts: { store: DeviceStore; view: UntypedWorkspaceView };
+	let parts: { store: DeviceStore; view: UntypedDatabaseView };
 	try {
 		parts = createDeviceStoreOverPort({
 			workspace: parsed,
@@ -474,29 +475,29 @@ export async function openDevice<const TWorkspace extends WorkspaceJson>(
 	const { store, view } = parts;
 
 	return Ok(
-		asData<TWorkspace, DeviceStore>(
+		asData<TDatabase, DeviceStore>(
 			store,
 			// Through `unknown` deliberately: comparing the untyped view with
-			// `WorkspaceView<TWorkspace>` re-enters the per-field arktype
+			// `DatabaseView<TDatabase>` re-enters the per-field arktype
 			// instantiation and exceeds the depth limit.
-			view as unknown as WorkspaceView<TWorkspace>,
+			view as unknown as DatabaseView<TDatabase>,
 		),
 	);
 }
 
 /** Open this device's retained replica of one account's document. */
-export async function openAccount<const TWorkspace extends WorkspaceJson>(
-	workspace: TWorkspace,
+export async function openAccount<const TDatabase extends DatabaseJson>(
+	workspace: TDatabase,
 	{ principalId }: { principalId: PrincipalId },
 ): Promise<
 	Result<
-		DataOf<TWorkspace, BrowserAccountStore>,
-		StoreError | WorkspaceParseError
+		DataOf<TDatabase, BrowserAccountStore>,
+		StoreError | DatabaseParseError
 	>
 > {
 	if (principalId.trim() === '') return StoreError.Unaddressable();
 
-	const { data: parsed, error: parseError } = parseWorkspace(workspace);
+	const { data: parsed, error: parseError } = parseDatabase(workspace);
 	if (parseError !== null) return Err(parseError);
 
 	const address = accountAddress(parsed.id, principalId);
@@ -514,7 +515,7 @@ export async function openAccount<const TWorkspace extends WorkspaceJson>(
 
 	// Contained for the same reason the device open is: a hydration replay
 	// that throws must refuse the boot, not leak the claim.
-	let parts: { store: AccountStore; view: UntypedWorkspaceView };
+	let parts: { store: AccountStore; view: UntypedDatabaseView };
 	try {
 		parts = createAccountStoreOverPort({
 			workspace: parsed,
@@ -547,9 +548,9 @@ export async function openAccount<const TWorkspace extends WorkspaceJson>(
 	});
 
 	return Ok(
-		asData<TWorkspace, BrowserAccountStore>(
+		asData<TDatabase, BrowserAccountStore>(
 			replicaStore,
-			view as unknown as WorkspaceView<TWorkspace>,
+			view as unknown as DatabaseView<TDatabase>,
 		),
 	);
 }

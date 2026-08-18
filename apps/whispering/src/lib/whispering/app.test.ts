@@ -38,7 +38,7 @@ import type { AuthClient } from '@epicenter/auth';
 import type { BlobStore } from '@epicenter/blobs';
 import { encodeFrame } from '@epicenter/data/sync';
 import { Ok } from 'wellcrafted/result';
-import { whisperingWorkspace } from '../workspace';
+import { whisperingDatabase } from '../workspace';
 import { openWhisperingApp, type WhisperingAppDependencies } from './app';
 
 const local: BlobStore = {
@@ -180,7 +180,7 @@ test('a signed-out boot opens one document and never dials', async () => {
 	expect(app.recipes.count).toBe(0);
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
-	expect(names).toContain(`epicenter/${whisperingWorkspace.id}/device`);
+	expect(names).toContain(`epicenter/${whisperingDatabase.id}/device`);
 	expect(names.some((name) => name?.includes('/account/'))).toBe(false);
 });
 

@@ -85,7 +85,7 @@
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
+		"@epicenter/database": "workspace:*",
 		"@epicenter/recorder": "workspace:*",
 		"@epicenter/skills": "workspace:*",
 		"@epicenter/svelte": "workspace:*",

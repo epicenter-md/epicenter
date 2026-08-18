@@ -22,8 +22,8 @@
  */
 
 import { Database } from 'bun:sqlite';
+import { defineDatabase } from '@epicenter/database';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { defineWorkspace } from '@epicenter/workspace';
 
 import {
 	type AccountStore,
@@ -42,7 +42,7 @@ import {
 const origin = process.argv[2] ?? 'http://127.0.0.1:8787';
 const application = `probe-${Date.now()}`;
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.synclab',
 	tables: { notes: { title: 'string', device: 'string', at: 'string' } },
 });

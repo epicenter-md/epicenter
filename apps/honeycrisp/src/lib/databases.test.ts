@@ -28,7 +28,7 @@ import 'fake-indexeddb/auto';
 import { expect, mock, test } from 'bun:test';
 import type { AuthClient } from '@epicenter/auth';
 import { encodeFrame } from '@epicenter/data/sync';
-import { honeycrispWorkspace } from '@epicenter/honeycrisp';
+import { honeycrispDatabase } from '@epicenter/honeycrisp';
 
 mock.module('$app/navigation', () => ({ goto: mock() }));
 mock.module('$app/state', () => ({
@@ -54,9 +54,9 @@ const { openHoneycrispDatabases } = await import('./databases.js');
 type Databases = Awaited<ReturnType<typeof openHoneycrispDatabases>>;
 
 /** The durable addresses this application can hold (ADR-0233). */
-const DEVICE = `epicenter/${honeycrispWorkspace.id}/device`;
+const DEVICE = `epicenter/${honeycrispDatabase.id}/device`;
 const accountOf = (principalId: string) =>
-	`epicenter/${honeycrispWorkspace.id}/account/${principalId}`;
+	`epicenter/${honeycrispDatabase.id}/account/${principalId}`;
 
 async function until(condition: () => boolean, label: string): Promise<void> {
 	for (let attempt = 0; attempt < 400; attempt += 1) {

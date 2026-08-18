@@ -62,7 +62,7 @@ function requireStoreBearer<E extends Env>(
 }
 
 /** One id check for both routes: a name no workspace could carry is refused. */
-function parseWorkspaceId(value: string | undefined): string | undefined {
+function parseDatabaseId(value: string | undefined): string | undefined {
 	if (value === undefined) return undefined;
 	if (!WORKSPACE_ID.test(value) || value.length > 128) return undefined;
 	return value;
@@ -110,13 +110,13 @@ export function mountStoreSyncApp<E extends Env = Env>(
 					status: 426,
 				});
 			}
-			const workspaceId = parseWorkspaceId(c.req.query('workspaceId'));
-			if (workspaceId === undefined) {
-				return new Response('workspaceId must be a workspace id', {
+			const databaseId = parseDatabaseId(c.req.query('databaseId'));
+			if (databaseId === undefined) {
+				return new Response('databaseId must be a workspace id', {
 					status: 400,
 				});
 			}
-			const name = storeAuthorityName(c.var.principal.id, workspaceId);
+			const name = storeAuthorityName(c.var.principal.id, databaseId);
 			const offered = parseSubprotocols(
 				c.req.header('sec-websocket-protocol') ?? null,
 			);
@@ -148,13 +148,13 @@ export function mountStoreSyncApp<E extends Env = Env>(
 			tags: ['store-sync'],
 		}),
 		async (c) => {
-			const workspaceId = parseWorkspaceId(c.req.query('workspaceId'));
-			if (workspaceId === undefined) {
-				return new Response('workspaceId must be a workspace id', {
+			const databaseId = parseDatabaseId(c.req.query('databaseId'));
+			if (databaseId === undefined) {
+				return new Response('databaseId must be a workspace id', {
 					status: 400,
 				});
 			}
-			const name = storeAuthorityName(c.var.principal.id, workspaceId);
+			const name = storeAuthorityName(c.var.principal.id, databaseId);
 			return opts.resolveAuthority(c.env, name).fetch(c.req.raw);
 		},
 	);

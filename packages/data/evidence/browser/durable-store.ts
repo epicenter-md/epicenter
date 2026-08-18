@@ -111,13 +111,13 @@ try {
 		`${after.pressure?.items} items / ${after.pressure?.liveRows} rows`,
 	);
 
-	console.log('\n2. CONTROL: a different workspaceId is a different file');
+	console.log('\n2. CONTROL: a different databaseId is a different file');
 	await page.reload();
 	await page.waitForFunction('typeof globalThis.open === "function"');
 	await page.evaluate('globalThis.open("somewhere-else")');
 	const elsewhere = (await page.evaluate('globalThis.read()')) as Reading;
 	check(
-		'a store under another workspaceId sees nothing',
+		'a store under another databaseId sees nothing',
 		elsewhere.notes.length === 0,
 		`${elsewhere.notes.length} notes`,
 	);

@@ -8,14 +8,14 @@
  */
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { defineDatabase } from '@epicenter/database';
 import type { SqliteDatabase, SqliteValue } from '@epicenter/sqlite';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { defineWorkspace } from '@epicenter/workspace';
 import { openMemory } from '../store/bun.js';
 import { type DataOf, syncEngineOf } from '../store/store.js';
 import { createSqliteProjection, type SqliteProjection } from './index.js';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.projectionlab',
 	kv: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
 	tables: {
@@ -181,7 +181,7 @@ describe('a nonconforming row projects raw, so SQL can show what failed', () => 
 		// it really happens: a replica on an older declaration writes a shape
 		// this declaration cannot read, and the bytes arrive through sync.
 		const older = openMemory(
-			defineWorkspace({
+			defineDatabase({
 				id: 'so.epicenter.projectionlab',
 				tables: { notes: { title: 'string', tags: 'string' } },
 			}),

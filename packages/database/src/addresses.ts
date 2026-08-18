@@ -111,14 +111,14 @@ const RESERVED_TABLE_NAMES = new Set([
  * their own capacity models.
  */
 export type AddressByteCeilings = {
-	workspaceIdBytes: number;
+	databaseIdBytes: number;
 	tableNameBytes: number;
 	rowIdBytes: number;
 };
 
 /** The address-coordinate ceilings admitted by the public data vocabulary. */
 export const DATA_ADDRESS_CEILINGS: AddressByteCeilings = {
-	workspaceIdBytes: 128,
+	databaseIdBytes: 128,
 	tableNameBytes: 64,
 	rowIdBytes: 128,
 };
@@ -150,7 +150,7 @@ function utf8ByteLength(value: string): number {
 	return bytes;
 }
 
-const workspaceIdSchema = Type.String({
+const databaseIdSchema = Type.String({
 	minLength: 3,
 	pattern: WORKSPACE_ID_PATTERN,
 });
@@ -165,7 +165,7 @@ const rowIdSchema = Type.String({
 
 export const RowAddressSchema = Type.Object(
 	{
-		workspaceId: workspaceIdSchema,
+		databaseId: databaseIdSchema,
 		tableName: tableNameSchema,
 		rowId: rowIdSchema,
 	},
@@ -188,20 +188,20 @@ export function addressKey(address: RowAddress): string {
 /** Structured identity equality: equal exactly when every coordinate matches. */
 export function addressesEqual(left: RowAddress, right: RowAddress): boolean {
 	return (
-		left.workspaceId === right.workspaceId &&
+		left.databaseId === right.databaseId &&
 		left.tableName === right.tableName &&
 		left.rowId === right.rowId
 	);
 }
 
 /** Whether a durable workspace id is well formed and within its ceiling. */
-export function isWorkspaceId(
+export function isDatabaseId(
 	value: string,
 	ceilings: AddressByteCeilings,
 ): boolean {
 	const bytes = utf8ByteLength(value);
 	return (
-		bytes >= 3 && bytes <= ceilings.workspaceIdBytes && WORKSPACE_ID.test(value)
+		bytes >= 3 && bytes <= ceilings.databaseIdBytes && WORKSPACE_ID.test(value)
 	);
 }
 
@@ -251,7 +251,7 @@ export function isAdmissibleAddress(
 	ceilings: AddressByteCeilings,
 ): boolean {
 	return (
-		isWorkspaceId(address.workspaceId, ceilings) &&
+		isDatabaseId(address.databaseId, ceilings) &&
 		isTableName(address.tableName, ceilings) &&
 		isRowId(address.rowId, ceilings)
 	);

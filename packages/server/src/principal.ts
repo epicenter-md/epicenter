@@ -36,7 +36,7 @@ export type BlobPrincipalPrefix = `principals/${string}/blobs/`;
 /**
  * Durable Object name template for one partition's store of one application.
  *
- * One Durable Object per `(principalId, workspaceId)` rather than per principal,
+ * One Durable Object per `(principalId, databaseId)` rather than per principal,
  * because ADR-0215 makes an application ONE document and the authority's log is
  * that document's: two applications sharing a log would interleave positions
  * neither could read past. The `principalId` segment is the partition, so a
@@ -64,7 +64,7 @@ export function blobPrincipalPrefix(
 /** Durable name of one partition's store authority for one application. */
 export function storeAuthorityName(
 	principalId: PrincipalId,
-	workspaceId: string,
+	databaseId: string,
 ): StoreAuthorityDoName {
-	return `principals/${principalId}/stores/${workspaceId}`;
+	return `principals/${principalId}/stores/${databaseId}`;
 }

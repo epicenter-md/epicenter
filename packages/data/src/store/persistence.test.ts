@@ -10,8 +10,8 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { defineDatabase, parseDatabase } from '@epicenter/database';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { defineWorkspace, parseWorkspace } from '@epicenter/workspace';
 import type { Logger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
 
@@ -19,11 +19,11 @@ import { createSqliteDurablePort } from './log.js';
 import { createPersistenceController, type DurableOp } from './persistence.js';
 import {
 	createAccountStoreOverPort,
+	type DatabaseView,
 	syncEngineOf,
-	type WorkspaceView,
 } from './store.js';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: "'light'|'dark' = 'light'" },
 	tables: { notes: { title: 'string' } },
@@ -31,7 +31,7 @@ const workspace = defineWorkspace({
 
 /** The parsed form the over-port constructors take (ADR-0240). */
 function parsed() {
-	const { data, error } = parseWorkspace(workspace);
+	const { data, error } = parseDatabase(workspace);
 	if (error !== null) throw new Error(error.message);
 	return data;
 }
@@ -76,7 +76,7 @@ function openFailable() {
 	});
 	return {
 		store,
-		db: view as unknown as WorkspaceView<typeof workspace>,
+		db: view as unknown as DatabaseView<typeof workspace>,
 		database,
 		gate,
 		batches,
@@ -102,7 +102,7 @@ function reopen(database: ReturnType<typeof createBunSqliteAdapter>) {
 		loaded: port.load(),
 		log: silent,
 	});
-	return { store, db: view as unknown as WorkspaceView<typeof workspace> };
+	return { store, db: view as unknown as DatabaseView<typeof workspace> };
 }
 
 function titles(db: ReturnType<typeof openFailable>['db']): string[] {
@@ -246,7 +246,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 			loaded: inner.load(),
 			log: silent,
 		});
-		const db = view as unknown as WorkspaceView<typeof workspace>;
+		const db = view as unknown as DatabaseView<typeof workspace>;
 
 		expectOk(db.tables.notes.create({ title: 'a' }));
 		expect(store.persistence.get()).toBe('pending');

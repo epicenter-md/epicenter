@@ -4,9 +4,9 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { TableInvalidation } from '@epicenter/database';
+import { defineDatabase } from '@epicenter/database';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import type { TableInvalidation } from '@epicenter/workspace';
-import { defineWorkspace } from '@epicenter/workspace';
 import * as Y from '@y/y';
 import { open, openMemory } from './bun.js';
 import {
@@ -20,7 +20,7 @@ import {
 	syncEngineOf,
 } from './store.js';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
 	tables: {
@@ -164,7 +164,7 @@ describe('deletion', () => {
 });
 
 describe('a nonconforming row is reported, never repaired', () => {
-	const wrongWorkspace = defineWorkspace({
+	const wrongWorkspace = defineDatabase({
 		id: 'so.epicenter.honeycrisp',
 		tables: { notes: { title: 'string', tags: 'string', date: 'string|null' } },
 	});
@@ -288,7 +288,7 @@ describe('two replicas converge', () => {
 });
 
 describe('a workspace names the store it opens', () => {
-	test('one workspaceId opens once per process, and disposing releases it', async () => {
+	test('one databaseId opens once per process, and disposing releases it', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'epicenter-claim-'));
 		try {
 			const first = await open(workspace, { root });
@@ -311,15 +311,15 @@ describe('a workspace names the store it opens', () => {
 		}
 	});
 
-	test('a workspace that will not parse releases the workspaceId it claimed', async () => {
+	test('a workspace that will not parse releases the databaseId it claimed', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'epicenter-refused-'));
 		try {
 			// A table named `kv` collides with the relation KV projects into, which
 			// is the one name a workspace still reserves. The store this half-opened must
-			// be disposed and its workspaceId released, or the workspaceId is claimed for
+			// be disposed and its databaseId released, or the databaseId is claimed for
 			// the life of the process and the application can never start.
 			const refused = {
-				workspaceId: workspace.id,
+				databaseId: workspace.id,
 				tables: { kv: { a: 'string' } },
 			};
 			const attempt = await open(refused as never, { root });
@@ -616,7 +616,7 @@ describe('a subscription names the rows a commit touched', () => {
 		// The control. Without it every assertion above would still pass on an
 		// implementation that invalidated every subscriber on every commit.
 		const other = openMemory(
-			defineWorkspace({
+			defineDatabase({
 				id: 'so.epicenter.honeycrisp',
 				tables: {
 					notes: { title: 'string', tags: 'string[]', date: 'string|null' },
@@ -811,7 +811,7 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 		await first[Symbol.asyncDispose]();
 
 		const second = createAccountStore({
-			workspace: defineWorkspace({
+			workspace: defineDatabase({
 				id: 'so.epicenter.honeycrisp',
 				kv: { theme: "'light'|'dark' = 'light'", added: "string = 'new'" },
 				tables: {
@@ -828,7 +828,7 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 });
 
 describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
-	const withScratch = defineWorkspace({
+	const withScratch = defineDatabase({
 		id: 'so.epicenter.honeycrisp',
 		kv: { theme: "'light'|'dark' = 'light'" },
 		tables: {
@@ -836,7 +836,7 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 			scratch: { body: 'string' },
 		},
 	});
-	const withoutScratch = defineWorkspace({
+	const withoutScratch = defineDatabase({
 		id: 'so.epicenter.honeycrisp',
 		tables: { notes: { title: 'string' } },
 	});

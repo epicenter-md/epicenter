@@ -2,16 +2,16 @@ import { describe, expect, test } from 'bun:test';
 
 import {
 	type CreateInputsOf,
-	clearWorkspaceCache,
+	clearDatabaseCache,
+	defineDatabase,
 	defineKv,
 	defineTable,
-	defineWorkspace,
-	parseWorkspace,
+	parseDatabase,
 	type RowOf,
 	type RowsOf,
-} from './workspace.js';
+} from './database.js';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: {
 		notes: { title: 'string', tags: 'string[]', date: 'string|null' },
@@ -20,7 +20,7 @@ const workspace = defineWorkspace({
 });
 
 function parse() {
-	const { data, error } = parseWorkspace(workspace);
+	const { data, error } = parseDatabase(workspace);
 	if (error !== null) throw error;
 	return data;
 }
@@ -40,15 +40,15 @@ describe('a workspace declaration is arktype JSON', () => {
 
 	test('a declaration loaded from disk compiles, which identity keying prevented', () => {
 		const fromDisk: unknown = JSON.parse(JSON.stringify(workspace));
-		const { data, error } = parseWorkspace(fromDisk);
+		const { data, error } = parseDatabase(fromDisk);
 		expect(error).toBeNull();
 		expect(data?.tables.get('notes')?.fields.size).toBe(3);
 	});
 
 	test('compilation is memoised on content, not on object identity', () => {
-		clearWorkspaceCache();
-		const first = parseWorkspace(structuredClone(workspace));
-		const second = parseWorkspace(structuredClone(workspace));
+		clearDatabaseCache();
+		const first = parseDatabase(structuredClone(workspace));
+		const second = parseDatabase(structuredClone(workspace));
 		expect(first.data).toBe(second.data);
 	});
 });
@@ -220,7 +220,7 @@ describe('the grammar refuses what the records reserve', () => {
 
 	for (const [reason, value] of cases) {
 		test(`refuses ${reason}`, () => {
-			const { data, error } = parseWorkspace(value);
+			const { data, error } = parseDatabase(value);
 			expect(data).toBeNull();
 			expect(error).not.toBeNull();
 		});
@@ -229,7 +229,7 @@ describe('the grammar refuses what the records reserve', () => {
 
 describe('a field is one type through every door', () => {
 	test('a transforming field is refused by name, with the fix in the message', () => {
-		const { data, error } = parseWorkspace({
+		const { data, error } = parseDatabase({
 			id: 'so.epicenter.app',
 			tables: { notes: { when: 'string.date.parse' } },
 		});
@@ -243,14 +243,14 @@ describe('a field is one type through every door', () => {
 		// the WRAPPER for every defaulted field, because filling an absent key is
 		// a transformation; asking the property's value instead is what keeps
 		// defaults legal while still refusing a morph that carries one.
-		const { data, error } = parseWorkspace({
+		const { data, error } = parseDatabase({
 			id: 'so.epicenter.app',
 			tables: { settings: { theme: "'light'|'dark' = 'light'" } },
 		});
 		expect(error).toBeNull();
 		expect(data?.tables.get('settings')?.defaults).toEqual({ theme: 'light' });
 
-		const { error: stillRefused } = parseWorkspace({
+		const { error: stillRefused } = parseDatabase({
 			id: 'so.epicenter.app',
 			tables: { notes: { when: "string.date.parse = '2020-01-01'" } },
 		});
@@ -260,7 +260,7 @@ describe('a field is one type through every door', () => {
 	test('every validation-only rich type still passes', () => {
 		// Nothing expressive is lost by refusing morphs: arktype ships a
 		// validating form of each of these, and each keeps the stored value.
-		const { data, error } = parseWorkspace({
+		const { data, error } = parseDatabase({
 			id: 'so.epicenter.app',
 			tables: {
 				notes: {
@@ -276,7 +276,7 @@ describe('a field is one type through every door', () => {
 	});
 
 	test('a validated date round-trips as the string it was stored as', () => {
-		const { data } = parseWorkspace({
+		const { data } = parseDatabase({
 			id: 'so.epicenter.app',
 			tables: { notes: { when: 'string.date.iso' } },
 		});
@@ -354,15 +354,15 @@ describe('defineTable and defineKv are validation identities', () => {
 		expect(row.date).toBeNull();
 	});
 
-	test('ingredients compose into defineWorkspace unchanged', () => {
+	test('ingredients compose into defineDatabase unchanged', () => {
 		const notes = defineTable({ title: 'string' });
 		const preferences = defineKv({ theme: "'light'|'dark' = 'light'" });
-		const composed = defineWorkspace({
+		const composed = defineDatabase({
 			id: 'so.epicenter.composed',
 			tables: { notes },
 			kv: preferences,
 		});
-		const { data, error } = parseWorkspace(composed);
+		const { data, error } = parseDatabase(composed);
 		expect(error).toBeNull();
 		expect(data?.tables.get('notes')?.fields.size).toBe(1);
 		expect(data?.kv?.defaults).toEqual({ theme: 'light' });

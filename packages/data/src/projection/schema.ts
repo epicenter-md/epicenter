@@ -10,13 +10,13 @@
  * milliseconds, so the rebuild is the only writer.
  */
 
-import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import type {
 	JsonObject,
 	JsonValue,
+	ParsedDatabase,
 	ParsedTable,
-	ParsedWorkspace,
-} from '@epicenter/workspace';
+} from '@epicenter/database';
+import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 
 /**
  * A projection table per declared table: `id` plus one column per declared
@@ -33,7 +33,7 @@ import type {
  */
 export function applyProjectionSchema(
 	database: SqliteDatabase,
-	workspace: ParsedWorkspace,
+	workspace: ParsedDatabase,
 ): void {
 	// KV projects as a one-row relation named `kv`, which the parser reserves as
 	// a table name so nothing can collide with it.
@@ -43,7 +43,7 @@ export function applyProjectionSchema(
 			: ([['kv', workspace.kv]] as [string, ParsedTable][])),
 		...workspace.tables,
 	];
-	// The projection owns this database's whole letter-named workspaceId, so a
+	// The projection owns this database's whole letter-named databaseId, so a
 	// relation the current definition no longer declares is dropped, not just
 	// left behind: a workspace upgrade that REMOVES a table must remove it
 	// from SQL too, or `query` keeps serving rows the runtime cannot see and

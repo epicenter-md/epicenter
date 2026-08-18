@@ -32,7 +32,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { COMPOSED_APP_IDS } from '@epicenter/constants/app-data';
-import { DATA_ADDRESS_CEILINGS, isWorkspaceId } from '@epicenter/workspace';
+import { DATA_ADDRESS_CEILINGS, isDatabaseId } from '@epicenter/database';
 import {
 	loadActiveAppCatalog,
 	promoteAppCatalogCandidate,
@@ -260,7 +260,7 @@ describe('promoteAppCatalogCandidate', () => {
 			'whispering',
 			'honeycrisp',
 		]) {
-			expect(isWorkspaceId(id, DATA_ADDRESS_CEILINGS)).toBe(false);
+			expect(isDatabaseId(id, DATA_ADDRESS_CEILINGS)).toBe(false);
 			await expect(
 				promoteAppCatalogCandidate(
 					root,

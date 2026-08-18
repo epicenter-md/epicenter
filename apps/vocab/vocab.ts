@@ -15,8 +15,8 @@
 import type { AgentMessage } from '@epicenter/agent';
 import { conversationsTable } from '@epicenter/chat';
 import type { ServableModel } from '@epicenter/constants/ai-providers';
-import type { WorkspaceView } from '@epicenter/data';
-import { defineWorkspace, type RowOf } from '@epicenter/workspace';
+import type { DatabaseView } from '@epicenter/data';
+import { defineDatabase, type RowOf } from '@epicenter/database';
 
 /**
  * Vocab runs a single model. It is an app constant, not a per-conversation
@@ -108,7 +108,7 @@ const entriesTable = {
  * (ADR-0213). It is read from the DEVICE document in every generation: how this
  * screen renders is a fact about this screen, not portable work (ADR-0233).
  */
-export const vocabWorkspace = defineWorkspace({
+export const vocabWorkspace = defineDatabase({
 	id: 'so.epicenter.vocab',
 	title: 'Vocab',
 	kv: {
@@ -119,7 +119,7 @@ export const vocabWorkspace = defineWorkspace({
 });
 
 /** The typed view of one store through Vocab's workspace. */
-export type VocabData = WorkspaceView<typeof vocabWorkspace>;
+export type VocabData = DatabaseView<typeof vocabWorkspace>;
 
 /** One entry row. Row ids are runtime-minted, so the runtime owns `id`. */
 export type Entry = RowOf<typeof entriesTable>;

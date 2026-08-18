@@ -50,7 +50,7 @@ export type AttachStoreSyncOptions = {
 	/** The open account replica this connection carries. */
 	store: AccountStore;
 	/** The workspace id being synced, which addresses the authority. */
-	workspaceId: string;
+	databaseId: string;
 	transport: StoreSocketTransport;
 	/**
 	 * This replica's document was replaced (ADR-0231). The driver has already
@@ -90,7 +90,7 @@ export type AttachStoreSyncOptions = {
  */
 export function attachStoreSync({
 	store,
-	workspaceId,
+	databaseId,
 	transport,
 	onSuperseded,
 	onDenied,
@@ -105,7 +105,7 @@ export function attachStoreSync({
 			void transport
 				.openWebSocket(
 					STORE_SYNC_ROUTE.url(transport.baseURL, {
-						workspaceId,
+						databaseId,
 						cursor,
 						...(document === undefined ? {} : { document }),
 					}),

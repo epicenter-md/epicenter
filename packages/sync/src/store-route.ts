@@ -44,11 +44,11 @@ export const STORE_SYNC_ROUTE = {
 	 */
 	url(
 		baseURL: string,
-		params: { workspaceId: string; cursor: number; document?: string },
+		params: { databaseId: string; cursor: number; document?: string },
 	): string {
 		const url = new URL(`${stripTrailing(baseURL)}${STORE_SYNC_ROUTE.pattern}`);
 		url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-		url.searchParams.set('workspaceId', params.workspaceId);
+		url.searchParams.set('databaseId', params.databaseId);
 		url.searchParams.set('cursor', String(params.cursor));
 		if (params.document !== undefined) {
 			url.searchParams.set('document', params.document);
@@ -77,12 +77,12 @@ export const STORE_REPLACE_ROUTE = {
 	pattern: '/api/store/v1/replace',
 	url(
 		baseURL: string,
-		params: { workspaceId: string; fromDocument: string; atHead?: number },
+		params: { databaseId: string; fromDocument: string; atHead?: number },
 	): string {
 		const url = new URL(
 			`${stripTrailing(baseURL)}${STORE_REPLACE_ROUTE.pattern}`,
 		);
-		url.searchParams.set('workspaceId', params.workspaceId);
+		url.searchParams.set('databaseId', params.databaseId);
 		url.searchParams.set('fromDocument', params.fromDocument);
 		if (params.atHead !== undefined) {
 			url.searchParams.set('atHead', String(params.atHead));

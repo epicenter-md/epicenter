@@ -21,7 +21,7 @@
 
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { parseWorkspace } from '@epicenter/workspace';
+import { parseDatabase } from '@epicenter/database';
 import mime from 'mime';
 
 export type StaticAsset = {
@@ -148,7 +148,7 @@ export async function deriveAppCatalog(
 		} catch {
 			continue;
 		}
-		const { data: workspace } = parseWorkspace(declared);
+		const { data: workspace } = parseDatabase(declared);
 		if (workspace === null) continue;
 
 		// The directory this arrived in is not an identity (ADR-0210), so two

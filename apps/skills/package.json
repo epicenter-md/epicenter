@@ -40,7 +40,7 @@
 	"license": "AGPL-3.0-or-later",
 	"dependencies": {
 		"@epicenter/data": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
+		"@epicenter/database": "workspace:*",
 		"mode-watcher": "^1.1.0",
 		"wellcrafted": "catalog:"
 	}

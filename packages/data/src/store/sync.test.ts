@@ -10,14 +10,14 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { defineDatabase } from '@epicenter/database';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { defineWorkspace } from '@epicenter/workspace';
 import type { Result } from 'wellcrafted/result';
 
 import { copyBytes } from './log.js';
 import { createAccountStore, syncEngineOf } from './store.js';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });

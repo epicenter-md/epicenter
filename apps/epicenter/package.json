@@ -32,7 +32,7 @@
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
+		"@epicenter/database": "workspace:*",
 		"@epicenter/matter-core": "workspace:*",
 		"@epicenter/server": "workspace:*",
 		"@epicenter/skills": "workspace:*",

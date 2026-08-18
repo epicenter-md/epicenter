@@ -14,7 +14,7 @@
 	},
 	"dependencies": {
 		"@epicenter/data": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
+		"@epicenter/database": "workspace:*",
 		"@epicenter/sqlite": "workspace:*",
 		"@sqlite.org/sqlite-wasm": "catalog:",
 		"@y/y": "14.0.0-rc.24"

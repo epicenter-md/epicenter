@@ -11,12 +11,12 @@
 
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
+import { defineDatabase } from '@epicenter/database';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { defineWorkspace } from '@epicenter/workspace';
 import { type AccountStore, createAccountStore } from '../store/store.js';
 import { attachStoreSync, type StoreSocketTransport } from './attach.js';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.attach-test',
 	tables: { notes: { title: 'string' } },
 });
@@ -44,14 +44,14 @@ function createTransport(open: (url: string) => Promise<WebSocket>) {
 	return { transport, urls };
 }
 
-test('the first dial names the workspaceId and a cursor of zero', async () => {
+test('the first dial names the databaseId and a cursor of zero', async () => {
 	await using store = openStore();
 	const { transport, urls } = createTransport(
 		() => new Promise<WebSocket>(() => {}),
 	);
 	const connection = attachStoreSync({
 		store,
-		workspaceId: workspace.id,
+		databaseId: workspace.id,
 		transport,
 		onSuperseded: () => {},
 		onTransportError: (cause) => {
@@ -64,7 +64,7 @@ test('the first dial names the workspaceId and a cursor of zero', async () => {
 	const url = new URL(urls[0] as string);
 	expect(url.protocol).toBe('wss:');
 	expect(url.pathname).toBe('/api/store/v1/sync');
-	expect(url.searchParams.get('workspaceId')).toBe(workspace.id);
+	expect(url.searchParams.get('databaseId')).toBe(workspace.id);
 	expect(url.searchParams.get('cursor')).toBe('0');
 	// A replica that has never synced belongs to no document yet, so it must
 	// not claim one (ADR-0231).
@@ -84,7 +84,7 @@ test('a permanent denial stops the driver and is not a transport error', async (
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
-		workspaceId: workspace.id,
+		databaseId: workspace.id,
 		transport,
 		onSuperseded: () => {},
 		onDenied: () => denials++,
@@ -113,7 +113,7 @@ test('a transient denial is reported and left to the backoff', async () => {
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
-		workspaceId: workspace.id,
+		databaseId: workspace.id,
 		transport,
 		onSuperseded: () => {},
 		onDenied: () => denials++,
@@ -135,7 +135,7 @@ test('an unrecognised rejection is a close, never a denial', async () => {
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
-		workspaceId: workspace.id,
+		databaseId: workspace.id,
 		transport,
 		onSuperseded: () => {},
 		onDenied: () => denials++,
@@ -161,7 +161,7 @@ test('abandoning an attempt closes a socket that arrives late', async () => {
 	const { transport } = createTransport(() => arrival.promise);
 	const connection = attachStoreSync({
 		store,
-		workspaceId: workspace.id,
+		databaseId: workspace.id,
 		transport,
 		onSuperseded: () => {},
 		onTransportError: (cause) => {

@@ -94,6 +94,7 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
+        "@epicenter/database": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/matter-core": "workspace:*",
         "@epicenter/server": "workspace:*",
@@ -101,7 +102,6 @@
         "@epicenter/sync": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/whispering": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "@modelcontextprotocol/sdk": "catalog:",
         "@tauri-apps/api": "catalog:",
         "hono": "catalog:",
@@ -131,11 +131,11 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
+        "@epicenter/database": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/sync": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "@sqlite.org/sqlite-wasm": "catalog:",
         "@tauri-apps/api": "catalog:",
         "@tauri-apps/plugin-deep-link": "catalog:",
@@ -384,7 +384,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/data": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
+        "@epicenter/database": "workspace:*",
         "mode-watcher": "^1.1.0",
         "wellcrafted": "catalog:",
       },
@@ -418,8 +418,8 @@
       "version": "0.0.0",
       "dependencies": {
         "@epicenter/data": "workspace:*",
+        "@epicenter/database": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "@sqlite.org/sqlite-wasm": "catalog:",
         "@y/y": "14.0.0-rc.24",
       },
@@ -444,11 +444,11 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
+        "@epicenter/database": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/recorder": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
         "arktype": "catalog:",
         "mode-watcher": "^1.1.0",
@@ -486,12 +486,12 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
+        "@epicenter/database": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/recorder": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/sync": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "@mistralai/mistralai": "^1.9.18",
         "@sqlite.org/sqlite-wasm": "catalog:",
         "@standard-schema/spec": "catalog:",
@@ -670,7 +670,7 @@
       "dependencies": {
         "@epicenter/agent": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
+        "@epicenter/database": "workspace:*",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -716,11 +716,11 @@
       "name": "@epicenter/data",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/database": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "@sqlite.org/sqlite-wasm": "catalog:",
         "@y/y": "14.0.0-rc.24",
         "idb": "^8.0.3",
@@ -734,6 +734,20 @@
         "playwright": "^1.61.1",
         "typescript": "catalog:",
         "vite": "catalog:",
+      },
+    },
+    "packages/database": {
+      "name": "@epicenter/database",
+      "version": "0.4.0",
+      "dependencies": {
+        "@epicenter/field": "workspace:*",
+        "arktype": "catalog:",
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "packages/field": {
@@ -829,8 +843,8 @@
       "version": "0.3.0",
       "dependencies": {
         "@epicenter/data": "workspace:*",
+        "@epicenter/database": "workspace:*",
         "@epicenter/field": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "wellcrafted": "catalog:",
         "yaml": "^2.8.0",
       },
@@ -937,20 +951,6 @@
       },
       "devDependencies": {
         "@types/node": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/workspace": {
-      "name": "@epicenter/workspace",
-      "version": "0.4.0",
-      "dependencies": {
-        "@epicenter/field": "workspace:*",
-        "arktype": "catalog:",
-        "typebox": "catalog:",
-        "wellcrafted": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -1274,6 +1274,8 @@
 
     "@epicenter/data": ["@epicenter/data@workspace:packages/data"],
 
+    "@epicenter/database": ["@epicenter/database@workspace:packages/database"],
+
     "@epicenter/epicenter": ["@epicenter/epicenter@workspace:apps/epicenter"],
 
     "@epicenter/field": ["@epicenter/field@workspace:packages/field"],
@@ -1325,8 +1327,6 @@
     "@epicenter/vocab": ["@epicenter/vocab@workspace:apps/vocab"],
 
     "@epicenter/whispering": ["@epicenter/whispering@workspace:apps/whispering"],
-
-    "@epicenter/workspace": ["@epicenter/workspace@workspace:packages/workspace"],
 
     "@esbuild-kit/core-utils": ["@esbuild-kit/core-utils@3.3.2", "", { "dependencies": { "esbuild": "~0.18.20", "source-map-support": "^0.5.21" } }, "sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ=="],
 

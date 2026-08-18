@@ -24,7 +24,7 @@
 	"dependencies": {
 		"@epicenter/field": "workspace:*",
 		"@epicenter/identity": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
+		"@epicenter/database": "workspace:*",
 		"@epicenter/sqlite": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@sqlite.org/sqlite-wasm": "catalog:",

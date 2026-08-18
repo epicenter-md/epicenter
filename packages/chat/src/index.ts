@@ -20,7 +20,7 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
  *
  * `RowDocument` and `TypedTableHandle` are runtime handles a store constructs,
  * so they come from `@epicenter/data`. `RowOf` is inert contract vocabulary
- * owned by `@epicenter/workspace`; `@epicenter/data` re-exports it, but reaching it
+ * owned by `@epicenter/database`; `@epicenter/data` re-exports it, but reaching it
  * through the runtime would say this module builds its schema out of a SQLite
  * projection, which it never does.
  *
@@ -30,7 +30,7 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
  * is as fatal as a value one.
  */
 import type { RowDocument, TypedTableHandle } from '@epicenter/data';
-import type { RowOf } from '@epicenter/workspace';
+import type { RowOf } from '@epicenter/database';
 import type { Brand } from 'wellcrafted/brand';
 
 export type ConversationId = string & Brand<'ConversationId'>;
@@ -50,7 +50,7 @@ export const asConversationId = (value: string): ConversationId =>
  *
  * @example
  * ```ts
- * export const vocabWorkspace = defineWorkspace({
+ * export const vocabWorkspace = defineDatabase({
  *   id: 'so.epicenter.vocab',
  *   tables: { conversations: conversationsTable, entries: entriesTable },
  * });

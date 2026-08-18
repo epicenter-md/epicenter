@@ -1,5 +1,5 @@
 {
-	"name": "@epicenter/workspace",
+	"name": "@epicenter/database",
 	"version": "0.4.0",
 	"description": "The Epicenter data-contract vocabulary for applications: one immutable workspace declaration per application, inert, compiled, and free of storage, sockets and Yjs.",
 	"type": "module",
@@ -7,7 +7,7 @@
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/EpicenterHQ/epicenter.git",
-		"directory": "packages/workspace"
+		"directory": "packages/database"
 	},
 	"homepage": "https://epicenter.so",
 	"keywords": [

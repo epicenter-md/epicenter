@@ -41,13 +41,13 @@
  * ```
  */
 
-import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import {
+	type DatabaseJson,
 	type JsonObject,
 	KV_ROOT,
-	parseWorkspace,
-	type WorkspaceJson,
-} from '@epicenter/workspace';
+	parseDatabase,
+} from '@epicenter/database';
+import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, type Result, trySync } from 'wellcrafted/result';
 
@@ -139,7 +139,7 @@ export type SqliteProjection = {
  * Project one opened workspace into a SQLite database the caller supplies.
  *
  * Throwing on a declaration that does not parse, because at this call site the
- * declaration is a `defineWorkspace` literal the compiler already validated,
+ * declaration is a `defineDatabase` literal the compiler already validated,
  * so a refusal is a programmer error rather than a boot outcome.
  */
 export function createSqliteProjection({
@@ -150,7 +150,7 @@ export function createSqliteProjection({
 	/** The opened workspace's data: the tables and KV this projection follows. */
 	data: ProjectableData;
 	/** The portable declaration naming the tables and fields to project. */
-	workspace: WorkspaceJson;
+	workspace: DatabaseJson;
 	/**
 	 * Where the projection lives. An in-memory database by convention: the
 	 * projection is a cache rebuilt from the live document, and nothing here
@@ -158,8 +158,7 @@ export function createSqliteProjection({
 	 */
 	database: SqliteDatabase;
 }): SqliteProjection {
-	const { data: parsedWorkspace, error: parseError } =
-		parseWorkspace(workspace);
+	const { data: parsedWorkspace, error: parseError } = parseDatabase(workspace);
 	if (parseError !== null) {
 		throw new Error(parseError.message, { cause: parseError });
 	}

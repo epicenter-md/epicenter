@@ -27,17 +27,17 @@ export type {
 	JsonObject,
 	JsonValue,
 	RowAddress,
-} from '@epicenter/workspace';
+} from '@epicenter/database';
 export {
+	type DatabaseJson,
+	type DatabaseParseError,
+	defineDatabase,
 	defineKv,
 	defineTable,
-	defineWorkspace,
-	parseWorkspace,
+	parseDatabase,
 	type RowOf,
 	RowWriteError,
-	type WorkspaceJson,
-	type WorkspaceParseError,
-} from '@epicenter/workspace';
+} from '@epicenter/database';
 export { SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
 export type {
 	DurableOp,
@@ -50,6 +50,8 @@ export type {
 export {
 	type AccountStore,
 	type ApplyFailedError,
+	type DatabaseStoreBase,
+	type DatabaseView,
 	type DataOf,
 	type DeviceStore,
 	type KvHandle,
@@ -69,6 +71,4 @@ export {
 	type TypedTableHandle,
 	type UnstampableError,
 	type UpdateRowError,
-	type WorkspaceStoreBase,
-	type WorkspaceView,
 } from './store/store.js';

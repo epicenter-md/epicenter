@@ -165,7 +165,7 @@ type Workspace<
 	actions: (ctx: { tables: Tables<TSchema>; providers: TProviderMap }) => TActionMap;
 };
 
-function defineWorkspace<
+function defineDatabase<
 	TSchema extends WorkspaceSchema,
 	TProviderMap extends WorkspaceProviderMap,
 	TActionMap extends WorkspaceActionMap,
@@ -173,7 +173,7 @@ function defineWorkspace<
 	return config;
 }
 
-const _workspace = defineWorkspace({
+const _workspace = defineDatabase({
 	tables: {
 		posts: { id: '', title: '', content: '' },
 	},

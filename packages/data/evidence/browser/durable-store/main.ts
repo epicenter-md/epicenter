@@ -4,24 +4,24 @@
  * It exposes verbs rather than running a script, so the runner decides when a
  * reload happens, which is the only part of this that matters.
  */
-import { defineWorkspace } from '@epicenter/workspace';
+import { defineDatabase } from '@epicenter/database';
 
 import { type DeviceStore, openDevice } from '../../../src/store/browser.js';
 import type { DataOf } from '../../../src/store/store.js';
 
 /**
- * Two namespaces, because a workspaceId is what makes two stores two stores.
+ * Two namespaces, because a databaseId is what makes two stores two stores.
  *
- * The control below used to open one workspaceId under a second NAME and call
+ * The control below used to open one databaseId under a second NAME and call
  * that a different file. A workspace names the store it opens (ADR-0229), so there
- * is no second name left to vary, and the honest control is a second workspaceId.
+ * is no second name left to vary, and the honest control is a second databaseId.
  */
 const workspaces = {
-	vault: defineWorkspace({
+	vault: defineDatabase({
 		id: 'so.epicenter.durableprobe',
 		tables: { notes: { title: 'string' } },
 	}),
-	'somewhere-else': defineWorkspace({
+	'somewhere-else': defineDatabase({
 		id: 'so.epicenter.durableprobe.elsewhere',
 		tables: { notes: { title: 'string' } },
 	}),
@@ -50,7 +50,7 @@ Object.assign(globalThis, {
 		const opened = await openDevice(workspace);
 		if (opened.error !== null) return { error: opened.error.message };
 		db = opened.data;
-		show({ opened: name, workspaceId: workspace.id });
+		show({ opened: name, databaseId: workspace.id });
 		return { ok: true };
 	},
 

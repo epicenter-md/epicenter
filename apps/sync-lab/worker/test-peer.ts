@@ -28,9 +28,9 @@ import {
 	createDurableObjectSqliteAdapter,
 	type DurableObjectSqliteStorage,
 } from '@epicenter/sqlite/durable-object';
-import { defineWorkspace } from '@epicenter/workspace';
+import { defineDatabase } from '@epicenter/database';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.synclab',
 	tables: { notes: { title: 'string' } },
 });

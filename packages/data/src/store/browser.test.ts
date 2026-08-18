@@ -3,8 +3,8 @@
  *
  * A browser application keeps one device document and one retained account
  * replica per account (ADR-0233). These tests pin the addresses that hold them
- * apart: `epicenter/<workspaceId>/device` and
- * `epicenter/<workspaceId>/account/<principal id>`, one IndexedDB database and
+ * apart: `epicenter/<databaseId>/device` and
+ * `epicenter/<databaseId>/account/<principal id>`, one IndexedDB database and
  * one open claim each.
  *
  * Key behaviors:
@@ -24,19 +24,19 @@
  */
 import 'fake-indexeddb/auto';
 import { describe, expect, test } from 'bun:test';
+import { defineDatabase } from '@epicenter/database';
 import { asPrincipalId } from '@epicenter/identity';
-import { defineWorkspace } from '@epicenter/workspace';
 import type { Result } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { openAccount, openDevice } from './browser.js';
 import { openMemory } from './bun.js';
 import { STORE_FORMAT } from './log.js';
-import { type DataOf, syncEngineOf, type WorkspaceStoreBase } from './store.js';
+import { type DatabaseStoreBase, type DataOf, syncEngineOf } from './store.js';
 
-/** One workspaceId per concern, so tests share no IndexedDB state. */
+/** One databaseId per concern, so tests share no IndexedDB state. */
 function workspaceFor(label: string) {
-	return defineWorkspace({
+	return defineDatabase({
 		id: `so.epicenter.browsertest.${label}`,
 		tables: { notes: { title: 'string' } },
 	});
@@ -45,10 +45,9 @@ function workspaceFor(label: string) {
 const ALICE = asPrincipalId('alice');
 const BOB = asPrincipalId('bob');
 
-const deviceAddress = (workspaceId: string) =>
-	`epicenter/${workspaceId}/device`;
-const accountAddress = (workspaceId: string, principalId: string) =>
-	`epicenter/${workspaceId}/account/${principalId}`;
+const deviceAddress = (databaseId: string) => `epicenter/${databaseId}/device`;
+const accountAddress = (databaseId: string, principalId: string) =>
+	`epicenter/${databaseId}/account/${principalId}`;
 
 const openDeviceData = (workspace: ReturnType<typeof workspaceFor>) =>
 	openDevice(workspace);
@@ -124,7 +123,7 @@ describe('one device document and one account replica per account', () => {
 		const owners: [
 			() => Promise<
 				Result<
-					DataOf<ReturnType<typeof workspaceFor>, WorkspaceStoreBase>,
+					DataOf<ReturnType<typeof workspaceFor>, DatabaseStoreBase>,
 					unknown
 				>
 			>,
@@ -361,11 +360,11 @@ describe('the clean break: storage from before the account-scoped address', () =
 		});
 	}
 
-	function supersededNames(workspaceId: string): string[] {
+	function supersededNames(databaseId: string): string[] {
 		return [
-			`epicenter-store-${workspaceId}`,
-			`epicenter-store-${workspaceId}#private`,
-			`epicenter-store-${workspaceId}#workspace`,
+			`epicenter-store-${databaseId}`,
+			`epicenter-store-${databaseId}#private`,
+			`epicenter-store-${databaseId}#workspace`,
 		];
 	}
 

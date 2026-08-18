@@ -13,7 +13,7 @@ function rowId(index: number): string {
 }
 
 function row(tableName: string, index: number): RowAddress {
-	return { workspaceId: WORKSPACE_ID, tableName, rowId: rowId(index) };
+	return { databaseId: WORKSPACE_ID, tableName, rowId: rowId(index) };
 }
 
 test('one batched commit produces one invalidation per logical table', () => {

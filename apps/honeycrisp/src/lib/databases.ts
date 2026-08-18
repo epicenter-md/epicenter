@@ -12,7 +12,7 @@ import {
 	type SyncConnection,
 	type SyncConnectionStatus,
 } from '@epicenter/data/sync';
-import { honeycrispWorkspace } from '@epicenter/honeycrisp';
+import { honeycrispDatabase } from '@epicenter/honeycrisp';
 import type { Result } from 'wellcrafted/result';
 import { reportBackgroundError } from './report.js';
 import { attachHoneycrispSync } from './sync.js';
@@ -64,7 +64,7 @@ export type HoneycrispDatabases = {
 	 * never syncs, survives every sign-in and sign-out, and no verb anywhere
 	 * can delete it.
 	 */
-	readonly device: DataOf<typeof honeycrispWorkspace, DeviceStore>;
+	readonly device: DataOf<typeof honeycrispDatabase, DeviceStore>;
 	/**
 	 * The account database: the boot principal's retained replica, plus what
 	 * this generation composed onto it — sync wiring and the rebuild
@@ -76,7 +76,7 @@ export type HoneycrispDatabases = {
 	 */
 	readonly account?: {
 		/** The account's notes, editable, offline included once bound. */
-		readonly data: DataOf<typeof honeycrispWorkspace, BrowserAccountStore>;
+		readonly data: DataOf<typeof honeycrispDatabase, BrowserAccountStore>;
 		/**
 		 * What sync is doing, or undefined when it is not part of this
 		 * generation anymore: a bound replica whose dials were permanently
@@ -149,7 +149,7 @@ export async function openHoneycrispDatabases({
 			: undefined;
 
 	const { data: device, error: deviceError } =
-		await openDevice(honeycrispWorkspace);
+		await openDevice(honeycrispDatabase);
 	if (deviceError !== null) throw deviceError;
 
 	let account: AccountDatabase | undefined;
@@ -192,7 +192,7 @@ export async function openHoneycrispDatabases({
 
 /** The account database plus the disposal only the databases object may run. */
 type AccountDatabase = {
-	data: DataOf<typeof honeycrispWorkspace, BrowserAccountStore>;
+	data: DataOf<typeof honeycrispDatabase, BrowserAccountStore>;
 	syncStatus(): SyncConnectionStatus | undefined;
 	rebuild(): Promise<Result<{ document: string }, RebuildError>>;
 	dispose(): Promise<void>;
@@ -217,7 +217,7 @@ async function openAccountDatabase({
 	principalId: Parameters<typeof openAccount>[1]['principalId'];
 	signal?: AbortSignal;
 }): Promise<AccountDatabase> {
-	const opened = await openAccount(honeycrispWorkspace, { principalId });
+	const opened = await openAccount(honeycrispDatabase, { principalId });
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
 
@@ -276,7 +276,7 @@ async function openAccountDatabase({
 					transport: {
 						fetch: (input, init) => auth.fetch(input, init),
 						baseURL: auth.deployment.baseURL,
-						workspaceId: honeycrispWorkspace.id,
+						databaseId: honeycrispDatabase.id,
 					},
 				});
 				if (published.error !== null) return published;

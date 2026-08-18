@@ -18,7 +18,7 @@
  * entry mounts it, so nothing deployable grows a class that exists for a test.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { type AccountStore, defineWorkspace } from '@epicenter/data';
+import { type AccountStore, defineDatabase } from '@epicenter/data';
 import { createAccountStore } from '@epicenter/data/engine';
 import {
 	createSyncConnection,
@@ -32,7 +32,7 @@ import {
 } from '@epicenter/sqlite/durable-object';
 import { MAIN_SUBPROTOCOL, STORE_SYNC_ROUTE } from '@epicenter/sync';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.storeprobe',
 	tables: { notes: { title: 'string' } },
 });
@@ -111,7 +111,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 			},
 			dial: ({ cursor, document, opened, received, closed }) => {
 				const url = STORE_SYNC_ROUTE.url(origin, {
-					workspaceId: workspace.id,
+					databaseId: workspace.id,
 					cursor,
 					...(document === undefined ? {} : { document }),
 				});
@@ -166,7 +166,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 		const bearer = this.bearer;
 		return {
 			baseURL: this.origin,
-			workspaceId: workspace.id,
+			databaseId: workspace.id,
 			fetch: (input, init) =>
 				this.env.SELF.fetch(
 					new Request(input, {

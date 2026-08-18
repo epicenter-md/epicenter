@@ -15,21 +15,21 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { defineDatabase } from '@epicenter/database';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { defineWorkspace } from '@epicenter/workspace';
 import type { Result } from 'wellcrafted/result';
 
 import {
 	createAccountStore,
+	type DatabaseView,
 	syncEngineOf,
-	type WorkspaceView,
 } from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
 import { createSyncConnection, type SyncDial } from './connection.js';
 import { encodeFrame } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -136,7 +136,7 @@ function openDriven({
 		database: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const store = data.store;
-	const db = data as WorkspaceView<typeof workspace>;
+	const db = data as DatabaseView<typeof workspace>;
 
 	/** Cursor each dial asked the authority to start after, oldest first. */
 	const dialledFrom: number[] = [];
@@ -495,7 +495,7 @@ describe('a dial that can never succeed stops the driver for good', () => {
 			database: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const store = data.store;
-		const db = data as WorkspaceView<typeof workspace>;
+		const db = data as DatabaseView<typeof workspace>;
 		let dials = 0;
 		const connection = createSyncConnection({
 			store,
@@ -606,7 +606,7 @@ describe('a foreign document name supersedes the replica, and nothing else does 
 			database: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const store = data.store;
-		const db = data as WorkspaceView<typeof workspace>;
+		const db = data as DatabaseView<typeof workspace>;
 		// Stamped before the cursor moves, in the order every real replica
 		// follows: the stamp refuses a store that grew before it.
 		if (document !== undefined) {

@@ -1,20 +1,20 @@
-import type { SqliteDatabase } from '@epicenter/sqlite';
 import {
 	type ConformanceIssue,
 	type CreateInputOf,
 	createInvalidationDispatcher,
+	type DatabaseJson,
 	type JsonObject,
 	type JsonValue,
 	type KvOf,
+	type ParsedDatabase,
 	type ParsedTable,
-	type ParsedWorkspace,
-	parseWorkspace,
+	parseDatabase,
 	type RowAddress,
 	type RowOf,
 	RowWriteError,
 	type TableInvalidationListener,
-	type WorkspaceJson,
-} from '@epicenter/workspace';
+} from '@epicenter/database';
+import type { SqliteDatabase } from '@epicenter/sqlite';
 import * as Y from '@y/y';
 import { customAlphabet } from 'nanoid';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
@@ -248,7 +248,7 @@ export type UpdateRowError = RowAbsentError | RowWriteError;
 export type {
 	TableInvalidation,
 	TableInvalidationListener,
-} from '@epicenter/workspace';
+} from '@epicenter/database';
 
 export type Row = { id: string } & JsonObject;
 
@@ -440,11 +440,11 @@ type TableIo<TFields> = {
  * value `notes` beside a table called `notes`, `query` reserved as a table name
  * (ADR-0213), and a `$store` sigil invented to hold nine more (ADR-0229).
  */
-export type WorkspaceView<TWorkspace> = {
-	readonly tables: TWorkspace extends { tables: infer TTables }
+export type DatabaseView<TDatabase> = {
+	readonly tables: TDatabase extends { tables: infer TTables }
 		? { readonly [K in keyof TTables]: TypedTableHandle<TTables[K]> }
 		: never;
-	readonly kv: KvHandle<KvOf<TWorkspace>>;
+	readonly kv: KvHandle<KvOf<TDatabase>>;
 };
 
 /**
@@ -470,9 +470,9 @@ export type WorkspaceView<TWorkspace> = {
  * durable data by closing this runtime and opening the next one.
  */
 export type DataOf<
-	TWorkspace,
-	TStore extends WorkspaceStoreBase = AccountStore,
-> = WorkspaceView<TWorkspace> & {
+	TDatabase,
+	TStore extends DatabaseStoreBase = AccountStore,
+> = DatabaseView<TDatabase> & {
 	/** This application's file: pressure, the CRDT verbs, and replica sync. */
 	readonly store: TStore;
 	/** Dispose what you opened, so `await using` works on the data. */
@@ -487,10 +487,10 @@ export type DataOf<
  * data they return, and nothing outside this package holds a store and a view
  * apart.
  */
-export function asData<TWorkspace, TStore extends WorkspaceStoreBase>(
+export function asData<TDatabase, TStore extends DatabaseStoreBase>(
 	store: TStore,
-	view: WorkspaceView<TWorkspace>,
-): DataOf<TWorkspace, TStore> {
+	view: DatabaseView<TDatabase>,
+): DataOf<TDatabase, TStore> {
 	return Object.freeze({
 		...view,
 		store,
@@ -562,11 +562,11 @@ export type KvHandle<TValues = JsonObject> = {
  * builds.
  *
  * Internal. It exists because the engine constructs one object and the
- * factories cast it to the caller's `WorkspaceView<TWorkspace>`; comparing the
+ * factories cast it to the caller's `DatabaseView<TDatabase>`; comparing the
  * two structurally re-enters the per-field arktype instantiation and exceeds
  * TypeScript's depth limit.
  */
-export type UntypedWorkspaceView = {
+export type UntypedDatabaseView = {
 	readonly tables: Readonly<Record<string, TableHandle>>;
 	readonly kv: KvHandle;
 };
@@ -671,7 +671,7 @@ export type StorePressure = {
  * document, a `SyncCapability` on a replica. Every store has local
  * persistence; only a replica has a synchronization capability.
  */
-export type WorkspaceStoreBase = {
+export type DatabaseStoreBase = {
 	/**
 	 * How much of this document is dead weight.
 	 *
@@ -733,14 +733,14 @@ export type WorkspaceStoreBase = {
  * either
  * object sees the same shape with one honest difference.
  */
-export type DeviceStore = WorkspaceStoreBase & {
+export type DeviceStore = DatabaseStoreBase & {
 	readonly sync: undefined;
 };
 
 /**
  * A store that is one replica of an authority's current document.
  *
- * The one thing it adds over `WorkspaceStoreBase` is a concrete `sync` capability:
+ * The one thing it adds over `DatabaseStoreBase` is a concrete `sync` capability:
  * the app-facing facts of this replica's entanglement. The delivery
  * machinery underneath (applying peer bytes, the outbox, cursors, the
  * acknowledgement bookkeeping) is deliberately not public: only the
@@ -748,7 +748,7 @@ export type DeviceStore = WorkspaceStoreBase & {
  * package. Handing those verbs to applications is how a device document once
  * grew an outbox nothing could ever drain.
  */
-export type AccountStore = WorkspaceStoreBase & {
+export type AccountStore = DatabaseStoreBase & {
 	readonly sync: SyncCapability;
 };
 
@@ -862,7 +862,7 @@ export type StoreEngineOptions = {
 	 * store's whole life; a newer definition reads the same durable data by
 	 * disposing this store and constructing the next one.
 	 */
-	workspace: ParsedWorkspace;
+	workspace: ParsedDatabase;
 	/** The runtime-native durable engine: one atomic batch per flush. */
 	durable: DurablePort;
 	/** What that engine held at open, materialized once. */
@@ -881,9 +881,9 @@ export type StoreEngineOptions = {
 	log?: Logger;
 };
 
-export type CreateStoreOptions<TWorkspace extends WorkspaceJson> = {
-	/** The application's workspace declaration, a `defineWorkspace` literal. */
-	workspace: TWorkspace;
+export type CreateStoreOptions<TDatabase extends DatabaseJson> = {
+	/** The application's workspace declaration, a `defineDatabase` literal. */
+	workspace: TDatabase;
 	/** The durable file: the update log, the outbox, the cursor, the metadata. */
 	database: SqliteDatabase;
 	history?: SqliteDatabase;
@@ -896,24 +896,24 @@ export type CreateStoreOptions<TWorkspace extends WorkspaceJson> = {
  * Parse a declaration handed to a constructor as a literal.
  *
  * Throwing, not Result-returning, and that is a boundary rather than an
- * accident: at this level the declaration is a `defineWorkspace` literal the
+ * accident: at this level the declaration is a `defineDatabase` literal the
  * compiler already validated, so a parse refusal is a programmer error. The
  * openers, which may be handed a declaration that arrived as data, parse
  * first and return the refusal as a boot outcome instead.
  */
-function parsedWorkspaceOrThrow(workspace: WorkspaceJson): ParsedWorkspace {
-	const { data, error } = parseWorkspace(workspace);
+function parsedWorkspaceOrThrow(workspace: DatabaseJson): ParsedDatabase {
+	const { data, error } = parseDatabase(workspace);
 	if (error !== null) throw new Error(error.message, { cause: error });
 	return data;
 }
 
 /** Build the engine options for a synchronous SQLite durable engine. */
-function overSqlite<TWorkspace extends WorkspaceJson>({
+function overSqlite<TDatabase extends DatabaseJson>({
 	workspace,
 	database,
 	history,
 	...rest
-}: CreateStoreOptions<TWorkspace>): StoreEngineOptions {
+}: CreateStoreOptions<TDatabase>): StoreEngineOptions {
 	const port = createSqliteDurablePort({ database, history });
 	return {
 		workspace: parsedWorkspaceOrThrow(workspace),
@@ -932,15 +932,15 @@ function overSqlite<TWorkspace extends WorkspaceJson>({
  * acknowledgement can drain, so its durable record grew with every write it
  * ever took, forever.
  */
-export function createDeviceStore<const TWorkspace extends WorkspaceJson>(
-	options: CreateStoreOptions<TWorkspace>,
-): DataOf<TWorkspace, DeviceStore> {
+export function createDeviceStore<const TDatabase extends DatabaseJson>(
+	options: CreateStoreOptions<TDatabase>,
+): DataOf<TDatabase, DeviceStore> {
 	const { store, view } = createStoreEngine(overSqlite(options), 'none');
 	// Through `unknown` deliberately: comparing the untyped view with
-	// `WorkspaceView<TWorkspace>` re-enters the per-field arktype instantiation
+	// `DatabaseView<TDatabase>` re-enters the per-field arktype instantiation
 	// and exceeds the depth limit. The runtime value is the same object either
 	// way; only the static view of it differs.
-	return asData(store, view as unknown as WorkspaceView<TWorkspace>);
+	return asData(store, view as unknown as DatabaseView<TDatabase>);
 }
 
 /**
@@ -955,11 +955,11 @@ export function createDeviceStore<const TWorkspace extends WorkspaceJson>(
  * subscribing from outside would commit the obligation in a second batch and
  * break exactly that.
  */
-export function createAccountStore<const TWorkspace extends WorkspaceJson>(
-	options: CreateStoreOptions<TWorkspace>,
-): DataOf<TWorkspace, AccountStore> {
+export function createAccountStore<const TDatabase extends DatabaseJson>(
+	options: CreateStoreOptions<TDatabase>,
+): DataOf<TDatabase, AccountStore> {
 	const { store, view } = createStoreEngine(overSqlite(options), 'remote');
-	return asData(store, view as unknown as WorkspaceView<TWorkspace>);
+	return asData(store, view as unknown as DatabaseView<TDatabase>);
 }
 
 /**
@@ -975,14 +975,14 @@ export function createAccountStore<const TWorkspace extends WorkspaceJson>(
  */
 export function createDeviceStoreOverPort(options: StoreEngineOptions): {
 	store: DeviceStore;
-	view: UntypedWorkspaceView;
+	view: UntypedDatabaseView;
 } {
 	return createStoreEngine(options, 'none');
 }
 
 export function createAccountStoreOverPort(options: StoreEngineOptions): {
 	store: AccountStore;
-	view: UntypedWorkspaceView;
+	view: UntypedDatabaseView;
 } {
 	return createStoreEngine(options, 'remote');
 }
@@ -990,11 +990,11 @@ export function createAccountStoreOverPort(options: StoreEngineOptions): {
 function createStoreEngine(
 	options: StoreEngineOptions,
 	replication: 'none',
-): { store: DeviceStore; view: UntypedWorkspaceView };
+): { store: DeviceStore; view: UntypedDatabaseView };
 function createStoreEngine(
 	options: StoreEngineOptions,
 	replication: 'remote',
-): { store: AccountStore; view: UntypedWorkspaceView };
+): { store: AccountStore; view: UntypedDatabaseView };
 function createStoreEngine(
 	{
 		workspace,
@@ -1005,7 +1005,7 @@ function createStoreEngine(
 		log = createLogger('data/store'),
 	}: StoreEngineOptions,
 	replication: 'none' | 'remote',
-): { store: DeviceStore | AccountStore; view: UntypedWorkspaceView } {
+): { store: DeviceStore | AccountStore; view: UntypedDatabaseView } {
 	const index = createAppDocument();
 	let pending: Uint8Array[] = [];
 	let disposed = false;
@@ -1042,7 +1042,7 @@ function createStoreEngine(
 	/**
 	 * Where a table's `'delta'` event becomes a subscriber's invalidation.
 	 *
-	 * `@epicenter/workspace` owns the grouping, the per-table dedup and the delivery
+	 * `@epicenter/database` owns the grouping, the per-table dedup and the delivery
 	 * laws, and a delta-fed producer needs exactly those. Nothing about them is
 	 * specific to a carrier, which is why they were written once there rather
 	 * than here (ADR-0187).
@@ -1241,7 +1241,7 @@ function createStoreEngine(
 	 * application composes over this surface (`@epicenter/data/projection`),
 	 * not a verb the store owes.
 	 */
-	function buildView(): UntypedWorkspaceView {
+	function buildView(): UntypedDatabaseView {
 		const kv = createKvHandle();
 
 		const tables: Record<string, TableHandle> = {};
@@ -1252,7 +1252,7 @@ function createStoreEngine(
 		return Object.freeze({
 			tables: Object.freeze(tables),
 			kv,
-		}) as UntypedWorkspaceView;
+		}) as UntypedDatabaseView;
 	}
 
 	/**
@@ -1392,7 +1392,7 @@ function createStoreEngine(
 	): TableHandle {
 		const root = tableRoot(index, tableName);
 		const addressOf = (rowId: string) => ({
-			workspaceId: workspace.id,
+			databaseId: workspace.id,
 			tableName,
 			rowId,
 		});
@@ -1640,7 +1640,7 @@ function createStoreEngine(
 	// after hydration.
 	const view = buildView();
 
-	const base: WorkspaceStoreBase = {
+	const base: DatabaseStoreBase = {
 		onCommitted(listener: () => void): () => void {
 			committedListeners.add(listener);
 			return () => committedListeners.delete(listener);

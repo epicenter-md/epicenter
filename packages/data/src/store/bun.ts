@@ -1,13 +1,13 @@
 import { Database } from 'bun:sqlite';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import {
-	type ParsedWorkspace,
-	parseWorkspace,
-	type WorkspaceJson,
-	type WorkspaceParseError,
-} from '@epicenter/workspace';
+	type DatabaseJson,
+	type DatabaseParseError,
+	type ParsedDatabase,
+	parseDatabase,
+} from '@epicenter/database';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { claimDocument, releaseDocument } from './claims.js';
 import { applyHistorySchema, createSqliteDurablePort } from './log.js';
@@ -16,10 +16,10 @@ import {
 	asData,
 	createAccountStore,
 	createAccountStoreOverPort,
+	type DatabaseView,
 	type DataOf,
 	StoreError,
-	type UntypedWorkspaceView,
-	type WorkspaceView,
+	type UntypedDatabaseView,
 } from './store.js';
 
 export type BunAccountStore = AccountStore & {
@@ -52,8 +52,8 @@ export type BunAccountStore = AccountStore & {
  * `store.test.ts` uses. An in-repo caller returning is a decision, not a
  * default.
  */
-export async function open<const TWorkspace extends WorkspaceJson>(
-	workspace: TWorkspace,
+export async function open<const TDatabase extends DatabaseJson>(
+	workspace: TDatabase,
 	{
 		root,
 		keepHistory = true,
@@ -64,12 +64,12 @@ export async function open<const TWorkspace extends WorkspaceJson>(
 		keepHistory?: boolean;
 	},
 ): Promise<
-	Result<DataOf<TWorkspace, BunAccountStore>, StoreError | WorkspaceParseError>
+	Result<DataOf<TDatabase, BunAccountStore>, StoreError | DatabaseParseError>
 > {
 	// Parsed before anything is claimed or opened: a declaration may arrive as
 	// data, and a refusal here is a boot outcome rather than a programmer
 	// error (ADR-0240).
-	const { data: parsed, error: parseError } = parseWorkspace(workspace);
+	const { data: parsed, error: parseError } = parseDatabase(workspace);
 	if (parseError !== null) return Err(parseError);
 
 	const { error: claimError } = claimDocument(parsed.id);
@@ -86,12 +86,12 @@ export async function open<const TWorkspace extends WorkspaceJson>(
 	}
 	const { store, view } = opened.data;
 	return Ok(
-		asData<TWorkspace, BunAccountStore>(
+		asData<TDatabase, BunAccountStore>(
 			store,
 			// Through `unknown` deliberately: comparing the untyped view with
-			// `WorkspaceView<TWorkspace>` re-enters the per-field arktype
+			// `DatabaseView<TDatabase>` re-enters the per-field arktype
 			// instantiation and exceeds the depth limit.
-			view as unknown as WorkspaceView<TWorkspace>,
+			view as unknown as DatabaseView<TDatabase>,
 		),
 	);
 }
@@ -106,7 +106,7 @@ async function openBunStore({
 	keepHistory = true,
 }: {
 	directory: string;
-	workspace: ParsedWorkspace;
+	workspace: ParsedDatabase;
 	/**
 	 * Whether collapse preserves what it supersedes (ADR-0214).
 	 *
@@ -116,7 +116,7 @@ async function openBunStore({
 	 */
 	keepHistory?: boolean;
 }): Promise<
-	Result<{ store: BunAccountStore; view: UntypedWorkspaceView }, StoreError>
+	Result<{ store: BunAccountStore; view: UntypedDatabaseView }, StoreError>
 > {
 	const { error: directoryError } = await tryAsync({
 		try: () => mkdir(directory, { recursive: true }),
@@ -173,9 +173,9 @@ function composeBunStore({
 	directory,
 }: {
 	store: AccountStore;
-	view: UntypedWorkspaceView;
+	view: UntypedDatabaseView;
 	directory: string;
-}): Result<{ store: BunAccountStore; view: UntypedWorkspaceView }, StoreError> {
+}): Result<{ store: BunAccountStore; view: UntypedDatabaseView }, StoreError> {
 	return Ok({
 		store: Object.freeze({
 			...store,
@@ -209,9 +209,9 @@ function composeBunStore({
  * construction, which is the two-devices case rather than the
  * two-handles-on-one-file case the claim exists to refuse.
  */
-export function openMemory<const TWorkspace extends WorkspaceJson>(
-	workspace: TWorkspace,
-): DataOf<TWorkspace, AccountStore> {
+export function openMemory<const TDatabase extends DatabaseJson>(
+	workspace: TDatabase,
+): DataOf<TDatabase, AccountStore> {
 	const live = new Database(':memory:');
 	const history = createBunSqliteAdapter(new Database(':memory:'));
 	applyHistorySchema(history);

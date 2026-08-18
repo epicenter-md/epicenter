@@ -3,7 +3,7 @@
  * bytes it cannot read.
  *
  * The structural half of the claim is the file itself: `authority.ts` imports
- * no Yjs and no `@epicenter/workspace`, and there is no verb that could
+ * no Yjs and no `@epicenter/database`, and there is no verb that could
  * interpret an update. This suite pins the behavioral half by driving every
  * verb with bytes no Yjs decode would survive. If sequencing, catch-up,
  * snapshot replacement, or document replacement ever grew a peek at the

@@ -25,8 +25,8 @@
  */
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { type DatabaseJson, defineDatabase } from '@epicenter/database';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { defineWorkspace, type WorkspaceJson } from '@epicenter/workspace';
 import type { Result } from 'wellcrafted/result';
 
 import {
@@ -40,7 +40,7 @@ import { encodeFrame } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 import { rebuildDocument } from './rebuild.js';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -78,7 +78,7 @@ function openReplica(
 	label: string,
 	hub: ReturnType<typeof createSyncHub>,
 	wire: Wire,
-	through: WorkspaceJson = workspace,
+	through: DatabaseJson = workspace,
 	database = createBunSqliteAdapter(new Database(':memory:')),
 ) {
 	const db = createAccountStore({

@@ -10,8 +10,8 @@
  * `SELECT * FROM notes`, and what the projection's relations are called.
  */
 
-import type { WorkspaceView } from '@epicenter/data';
-import { defineWorkspace, type RowOf } from '@epicenter/workspace';
+import type { DatabaseView } from '@epicenter/data';
+import { defineDatabase, type RowOf } from '@epicenter/database';
 
 /** Runtime-minted structural note row id. */
 export type NoteId = string;
@@ -41,14 +41,14 @@ const notesTable = {
 	deletedAt: 'string.date.iso|null = null',
 } as const;
 
-export const honeycrispWorkspace = defineWorkspace({
+export const honeycrispDatabase = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	title: 'Honeycrisp',
 	tables: { folders: foldersTable, notes: notesTable },
 });
 
 /** The typed view of one store through Honeycrisp's workspace. */
-export type HoneycrispData = WorkspaceView<typeof honeycrispWorkspace>;
+export type HoneycrispData = DatabaseView<typeof honeycrispDatabase>;
 
 export type Folder = RowOf<typeof foldersTable>;
 export type Note = RowOf<typeof notesTable>;

@@ -195,7 +195,7 @@ async function openAccountRuntime({
 		let noticeDenied: (() => void) | undefined;
 		const connection = attachStoreSync({
 			store: data.store,
-			workspaceId: vocabWorkspace.id,
+			databaseId: vocabWorkspace.id,
 			transport: {
 				baseURL: auth.deployment.baseURL,
 				openWebSocket: (url) => auth.openWebSocket(url),

@@ -15,14 +15,14 @@ import { join } from 'node:path';
 import type { AgentMessage } from '@epicenter/agent';
 import { open } from '@epicenter/data/bun';
 import { InstantString } from '@epicenter/field';
-import { defineWorkspace } from '@epicenter/workspace';
+import { defineDatabase } from '@epicenter/database';
 import {
 	CONVERSATION_MESSAGES,
 	conversationsTable,
 	createAgentMessageStore,
 } from './index.js';
 
-const testWorkspace = defineWorkspace({
+const testWorkspace = defineDatabase({
 	id: 'so.epicenter.chat-test',
 	tables: { conversations: conversationsTable },
 });

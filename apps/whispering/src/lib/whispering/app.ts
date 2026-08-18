@@ -13,7 +13,7 @@ import {
 } from '@epicenter/data/sync';
 import {
 	type WhisperingSettingValues,
-	whisperingWorkspace,
+	whisperingDatabase,
 } from '../workspace';
 import {
 	createWhisperingRecipes,
@@ -30,12 +30,12 @@ export type { WhisperingBlobs } from './recording-audio';
 /** The device-owned document: this machine's settings, and its work when
  * signed out. */
 export type WhisperingDeviceData = DataOf<
-	typeof whisperingWorkspace,
+	typeof whisperingDatabase,
 	DeviceStore
 >;
 /** One account's retained replica of the portable work. */
 export type WhisperingAccountData = DataOf<
-	typeof whisperingWorkspace,
+	typeof whisperingDatabase,
 	BrowserAccountStore
 >;
 
@@ -121,7 +121,7 @@ export async function openWhisperingApp(
 			? undefined
 			: { principalId: auth.state.principalId };
 
-	const opened = await openDevice(whisperingWorkspace);
+	const opened = await openDevice(whisperingDatabase);
 	if (opened.error !== null) throw opened.error;
 	const deviceData = opened.data;
 
@@ -196,7 +196,7 @@ async function openAccountRuntime({
 	reportBackgroundError(cause: unknown): void;
 	signal?: AbortSignal;
 }): Promise<AccountRuntime> {
-	const opened = await openAccount(whisperingWorkspace, { principalId });
+	const opened = await openAccount(whisperingDatabase, { principalId });
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
 
@@ -220,7 +220,7 @@ async function openAccountRuntime({
 		let noticeDenied: (() => void) | undefined;
 		const connection = attachStoreSync({
 			store: data.store,
-			workspaceId: whisperingWorkspace.id,
+			databaseId: whisperingDatabase.id,
 			transport: {
 				baseURL: auth.deployment.baseURL,
 				openWebSocket: (url) => auth.openWebSocket(url),

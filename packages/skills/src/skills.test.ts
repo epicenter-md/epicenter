@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { open } from '@epicenter/data/bun';
 import { InstantString } from '@epicenter/field';
-import { defineWorkspace } from '@epicenter/workspace';
+import { defineDatabase } from '@epicenter/database';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
 import {
@@ -29,7 +29,7 @@ import {
 } from './workspace.js';
 
 /** The Skills workspace as an earlier release declared it, before `sourceId`. */
-const historicalSkillsWorkspace = defineWorkspace({
+const historicalSkillsWorkspace = defineDatabase({
 	id: 'so.epicenter.skills',
 	tables: {
 		skills: {

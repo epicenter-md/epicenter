@@ -18,7 +18,7 @@
 import type { AuthClient } from '@epicenter/auth';
 import type { AccountStore } from '@epicenter/data';
 import { attachStoreSync, type SyncConnection } from '@epicenter/data/sync';
-import { honeycrispWorkspace } from '@epicenter/honeycrisp';
+import { honeycrispDatabase } from '@epicenter/honeycrisp';
 import { reportBackgroundError } from './report.js';
 
 /**
@@ -53,7 +53,7 @@ export function attachHoneycrispSync({
 }): SyncConnection {
 	return attachStoreSync({
 		store,
-		workspaceId: honeycrispWorkspace.id,
+		databaseId: honeycrispDatabase.id,
 		transport: {
 			baseURL: auth.deployment.baseURL,
 			openWebSocket: (url) => auth.openWebSocket(url),

@@ -11,17 +11,17 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { type DatabaseJson, defineDatabase } from '@epicenter/database';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { defineWorkspace, type WorkspaceJson } from '@epicenter/workspace';
 import * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
 
 import {
 	createAccountStore,
+	type DatabaseView,
 	syncEngineOf,
 	type TableHandle,
-	type UntypedWorkspaceView,
-	type WorkspaceView,
+	type UntypedDatabaseView,
 } from '../store/store.js';
 import {
 	AuthorityError,
@@ -37,7 +37,7 @@ import {
 } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 
-const workspace = defineWorkspace({
+const workspace = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' } },
 });
@@ -120,7 +120,7 @@ function openReplica(
 	 * updates goes through `upgrade`, which closes this runtime and opens the
 	 * next one over the same durable file.
 	 */
-	through: WorkspaceJson = workspace,
+	through: DatabaseJson = workspace,
 	database = createBunSqliteAdapter(new Database(':memory:')),
 ): Replica {
 	const data = createAccountStore({ workspace: through, database });
@@ -128,8 +128,8 @@ function openReplica(
 	// One runtime, two static views of it: the typed view costs nothing and is
 	// honest for every replica running the default workspace; a replica running
 	// another one reads through `bound`.
-	const bound = data as unknown as UntypedWorkspaceView;
-	const db = data as unknown as WorkspaceView<typeof workspace>;
+	const bound = data as unknown as UntypedDatabaseView;
+	const db = data as unknown as DatabaseView<typeof workspace>;
 	const client = createSyncClient({
 		store,
 		idleMs: 0,
@@ -202,7 +202,7 @@ function openReplica(
 		 * successor is a whole replica; the caller connects it when the test
 		 * needs the wire.
 		 */
-		async upgrade(next: WorkspaceJson): Promise<Replica> {
+		async upgrade(next: DatabaseJson): Promise<Replica> {
 			generation += 1;
 			hub.leave(connection);
 			client.detach();
@@ -220,14 +220,14 @@ function openReplica(
 type Replica = {
 	label: string;
 	store: ReturnType<typeof createAccountStore>['store'];
-	db: WorkspaceView<typeof workspace>;
-	bound: UntypedWorkspaceView;
+	db: DatabaseView<typeof workspace>;
+	bound: UntypedDatabaseView;
 	client: ReturnType<typeof createSyncClient>;
 	connection: HubConnection;
 	socket: { send: (bytes: Uint8Array) => void };
 	connect(): string;
 	disconnect(): void;
-	upgrade(next: WorkspaceJson): Promise<Replica>;
+	upgrade(next: DatabaseJson): Promise<Replica>;
 	titles(): string[];
 };
 
@@ -1475,20 +1475,20 @@ describe('the snapshot path under sustained traffic', () => {
  * that does not declare it, while a missing one is a row a workspace cannot read, and
  * the two directions have to be told apart.
  */
-const newerWorkspace = defineWorkspace({
+const newerWorkspace = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string', pinned: 'boolean' } },
 });
 
 /** The same application again, one release later still: a whole new table. */
-const twoTableWorkspace = defineWorkspace({
+const twoTableWorkspace = defineDatabase({
 	id: 'so.epicenter.honeycrisp',
 	tables: { notes: { title: 'string' }, tasks: { label: 'string' } },
 });
 
 describe('two devices whose workspaces disagree', () => {
 	/** One partition, two devices, each running the release it was given. */
-	function pair(updatedWorkspace: WorkspaceJson) {
+	function pair(updatedWorkspace: DatabaseJson) {
 		const wire = createWire();
 		const { authority, hub } = openAuthority();
 		const updated = openReplica('updated', hub, wire, updatedWorkspace);

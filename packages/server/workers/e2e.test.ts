@@ -187,7 +187,7 @@ describe('two devices on one account converge', () => {
 	it('an upgrade with no bearer is refused', async () => {
 		const response = await SELF.fetch(
 			new Request(
-				`${ORIGIN}/api/store/v1/sync?workspaceId=so.epicenter.storeprobe&cursor=0`,
+				`${ORIGIN}/api/store/v1/sync?databaseId=so.epicenter.storeprobe&cursor=0`,
 				{
 					headers: { Upgrade: 'websocket' },
 				},
@@ -196,10 +196,10 @@ describe('two devices on one account converge', () => {
 		expect(response.status).toBe(401);
 	});
 
-	it('a workspaceId no workspace could declare is refused', async () => {
+	it('a databaseId no workspace could declare is refused', async () => {
 		const response = await SELF.fetch(
 			new Request(
-				`${ORIGIN}/api/store/v1/sync?workspaceId=../escape&cursor=0`,
+				`${ORIGIN}/api/store/v1/sync?databaseId=../escape&cursor=0`,
 				{
 					headers: {
 						Upgrade: 'websocket',
@@ -222,7 +222,7 @@ describe('one verb publishes the next document (ADR-0231)', () => {
 		return SELF.fetch(
 			new Request(
 				STORE_REPLACE_ROUTE.url(ORIGIN, {
-					workspaceId: WORKSPACE_ID,
+					databaseId: WORKSPACE_ID,
 					...params,
 				}),
 				{
@@ -250,7 +250,7 @@ describe('one verb publishes the next document (ADR-0231)', () => {
 			document === undefined ? '' : `&document=${encodeURIComponent(document)}`;
 		return SELF.fetch(
 			new Request(
-				`${ORIGIN}/api/store/v1/sync?workspaceId=${WORKSPACE_ID}&cursor=${cursor}${declared}`,
+				`${ORIGIN}/api/store/v1/sync?databaseId=${WORKSPACE_ID}&cursor=${cursor}${declared}`,
 				{
 					headers: {
 						Upgrade: 'websocket',

@@ -1,5 +1,5 @@
-import type { JsonObject, JsonValue } from '@epicenter/workspace';
-import { RESERVED_ATTRIBUTE_PREFIX } from '@epicenter/workspace';
+import type { JsonObject, JsonValue } from '@epicenter/database';
+import { RESERVED_ATTRIBUTE_PREFIX } from '@epicenter/database';
 import * as Y from '@y/y';
 
 /**
@@ -55,7 +55,7 @@ export function tableRoot(document: Y.Doc, tableName: string): Y.Type {
  * exist.
  *
  * The tag is legibility rather than safety, and it is worth being clear about
- * that. `parseWorkspace` already refuses `kv` as a table name outright, because it
+ * that. `parseDatabase` already refuses `kv` as a table name outright, because it
  * would collide with the `db.kv` handle key, so a table can no more reach the
  * settings root than it can be declared. `tables:kv` is a second guard on a
  * collision the first one already made unreachable.

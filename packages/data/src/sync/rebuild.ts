@@ -112,7 +112,7 @@ export type RebuildError = InferErrors<typeof RebuildError>;
 export type StoreTransport = {
 	fetch(input: string, init?: RequestInit): Promise<Response>;
 	baseURL: string;
-	workspaceId: string;
+	databaseId: string;
 };
 
 /**
@@ -199,7 +199,7 @@ async function postReplace(
 		try: () =>
 			transport.fetch(
 				STORE_REPLACE_ROUTE.url(transport.baseURL, {
-					workspaceId: transport.workspaceId,
+					databaseId: transport.databaseId,
 					fromDocument: params.fromDocument,
 					atHead: params.atHead,
 				}),
@@ -271,9 +271,9 @@ export async function rebuildWorkspace({
 	store: AccountStore;
 	transport: StoreTransport;
 }): Promise<Result<{ document: string }, RebuildError>> {
-	if (!WORKSPACE_ID.test(transport.workspaceId)) {
+	if (!WORKSPACE_ID.test(transport.databaseId)) {
 		return RebuildError.ReplaceFailed({
-			cause: new Error(`'${transport.workspaceId}' is not a workspace id`),
+			cause: new Error(`'${transport.databaseId}' is not a workspace id`),
 		});
 	}
 	const engine = syncEngineOf(store);

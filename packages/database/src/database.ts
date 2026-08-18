@@ -4,8 +4,8 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 import {
 	DATA_ADDRESS_CEILINGS,
+	isDatabaseId,
 	isTableName,
-	isWorkspaceId,
 } from './addresses.js';
 import { canonicalJson, sha256Hex } from './canonical.js';
 import { isJsonValue, type JsonObject, type JsonValue } from './json.js';
@@ -58,7 +58,7 @@ export const KV_ROOT = 'kv';
  * there is no second `key` field to keep in step, and no rename, because a
  * different property name is a different address and therefore different data.
  */
-export type WorkspaceJson = {
+export type DatabaseJson = {
 	id: string;
 	/**
 	 * The values this application keeps exactly one of.
@@ -98,16 +98,16 @@ export type ValidateFields<TFields> = type.validate<TFields>;
 /**
  * Typecheck one authored workspace against arktype's own validator.
  *
- * Homomorphic over `TWorkspace`, which is the whole trick. Mapping over
- * `keyof TWorkspace` keeps every property an inference site and lets
+ * Homomorphic over `TDatabase`, which is the whole trick. Mapping over
+ * `keyof TDatabase` keeps every property an inference site and lets
  * `type.validate` return the definition unchanged when it is valid, so a
  * correct declaration infers exactly the literal it was written as. Measured
  * against three shapes:
  *
  * | shape | infers | a bad expression reports |
  * | --- | --- | --- |
- * | `TWorkspace & Fresh<TWorkspace>` | the literal | `not assignable to 'never'` |
- * | `Fresh<TWorkspace>` alone | `unknown`, and catches nothing | nothing |
+ * | `TDatabase & Fresh<TDatabase>` | the literal | `not assignable to 'never'` |
+ * | `Fresh<TDatabase>` alone | `unknown`, and catches nothing | nothing |
  * | this one | the literal | ``not assignable to `'strng' is unresolvable` `` |
  *
  * The first two were both built and rejected on that table. A freshly
@@ -121,14 +121,14 @@ export type ValidateFields<TFields> = type.validate<TFields>;
  * as a property of an object or tuple. Verified against the installed arktype:
  * `type("'light'|'dark' = 'light'")` throws, `type({ theme: ... })` does not.
  */
-export type ValidateWorkspace<TWorkspace> = {
-	[K in keyof TWorkspace]: K extends 'tables'
+export type ValidateWorkspace<TDatabase> = {
+	[K in keyof TDatabase]: K extends 'tables'
 		? {
-				[TTable in keyof TWorkspace[K]]: type.validate<TWorkspace[K][TTable]>;
+				[TTable in keyof TDatabase[K]]: type.validate<TDatabase[K][TTable]>;
 			}
 		: K extends 'kv'
-			? type.validate<TWorkspace[K]>
-			: TWorkspace[K];
+			? type.validate<TDatabase[K]>
+			: TDatabase[K];
 };
 
 /**
@@ -181,17 +181,17 @@ export type CreateInputOf<TFields> =
 		: never;
 
 /** One application's KV as a read hands it back: no id, and never absent. */
-export type KvOf<TWorkspace> = TWorkspace extends { kv: infer TKv }
+export type KvOf<TDatabase> = TDatabase extends { kv: infer TKv }
 	? FieldsOut<TKv>
 	: Record<string, never>;
 
 /** Every table's row type in one authored workspace, by its declared name. */
-export type RowsOf<TWorkspace> = TWorkspace extends { tables: infer TTables }
+export type RowsOf<TDatabase> = TDatabase extends { tables: infer TTables }
 	? { [K in keyof TTables]: RowOf<TTables[K]> }
 	: never;
 
 /** Every table's create input in one authored workspace, by its declared name. */
-export type CreateInputsOf<TWorkspace> = TWorkspace extends {
+export type CreateInputsOf<TDatabase> = TDatabase extends {
 	tables: infer TTables;
 }
 	? { [K in keyof TTables]: CreateInputOf<TTables[K]> }
@@ -204,7 +204,7 @@ export type CreateInputsOf<TWorkspace> = TWorkspace extends {
  * argument, and the only work is the compile-time `type.validate` per field.
  * It exists so an application that hoists a table to name its row type
  * (`RowOf<typeof notesTable>`) gets arktype's error at the table it wrote,
- * rather than at the `defineWorkspace` call that later composes it, and so the
+ * rather than at the `defineDatabase` call that later composes it, and so the
  * hoisted literal needs no `as const`.
  *
  * @example
@@ -247,8 +247,8 @@ export function defineKv<const TFields extends Record<string, string>>(
  * Declare one application's workspace: its id, its tables, and its KV.
  *
  * Inference and validation, never construction. The returned value is the
- * argument: `TWorkspace` infers from the literal so a table's row type is
- * known, and `ValidateWorkspace<TWorkspace>` applies arktype's own
+ * argument: `TDatabase` infers from the literal so a table's row type is
+ * known, and `ValidateWorkspace<TDatabase>` applies arktype's own
  * `type.validate` per table so a malformed expression is a compile error on
  * the field that is wrong.
  *
@@ -269,7 +269,7 @@ export function defineKv<const TFields extends Record<string, string>>(
  * time: a compilation cache keyed on object identity, which made a declaration
  * loaded from disk uncompilable, and an optionality marker that did not
  * survive a JSON round trip. A declaration that *is* its JSON cannot have
- * either. {@link parseWorkspace} is the one runtime grammar, and it accepts a
+ * either. {@link parseDatabase} is the one runtime grammar, and it accepts a
  * declaration whatever its provenance.
  *
  * @example
@@ -284,17 +284,17 @@ export function defineKv<const TFields extends Record<string, string>>(
  *   theme: "'light'|'dark' = 'light'",
  * });
  *
- * export const honeycrispWorkspace = defineWorkspace({
+ * export const honeycrispDatabase = defineDatabase({
  *   id: 'so.epicenter.honeycrisp',
  *   tables: { notes },
  *   kv: preferences,
  * });
  * ```
  */
-export function defineWorkspace<const TWorkspace extends WorkspaceJson>(
-	workspace: ValidateWorkspace<TWorkspace>,
-): TWorkspace {
-	return workspace as TWorkspace;
+export function defineDatabase<const TDatabase extends DatabaseJson>(
+	workspace: ValidateWorkspace<TDatabase>,
+): TDatabase {
+	return workspace as TDatabase;
 }
 
 export type ConformanceIssue = {
@@ -302,7 +302,7 @@ export type ConformanceIssue = {
 	message: string;
 };
 
-export const WorkspaceParseError = defineErrors({
+export const DatabaseParseError = defineErrors({
 	Malformed: ({ reason }: { reason: string }) => ({
 		message: `This workspace is not a well-formed declaration: ${reason}`,
 		reason,
@@ -353,7 +353,7 @@ export const WorkspaceParseError = defineErrors({
 		expression,
 	}),
 });
-export type WorkspaceParseError = InferErrors<typeof WorkspaceParseError>;
+export type DatabaseParseError = InferErrors<typeof DatabaseParseError>;
 
 export const RowWriteError = defineErrors({
 	/** One or more supplied values fail their field. No other field is touched. */
@@ -423,7 +423,7 @@ export type ParsedTable = {
 	): Result<JsonObject, RowWriteError>;
 };
 
-export type ParsedWorkspace = {
+export type ParsedDatabase = {
 	id: string;
 	title?: string;
 	/**
@@ -447,7 +447,7 @@ export type ParsedWorkspace = {
  * two structurally identical declarations are one workspace, however they
  * arrived.
  */
-const parsed = new Map<string, Result<ParsedWorkspace, WorkspaceParseError>>();
+const parsed = new Map<string, Result<ParsedDatabase, DatabaseParseError>>();
 
 /**
  * Compile one workspace declaration, whatever its provenance: a TypeScript
@@ -457,9 +457,9 @@ const parsed = new Map<string, Result<ParsedWorkspace, WorkspaceParseError>>();
  * Result-returning rather than throwing, because a declaration that arrives as
  * data is a visible broken artifact rather than a programmer error.
  */
-export function parseWorkspace(
+export function parseDatabase(
 	value: unknown,
-): Result<ParsedWorkspace, WorkspaceParseError> {
+): Result<ParsedDatabase, DatabaseParseError> {
 	const canonical = canonicalJson(value);
 	const key = sha256Hex(canonical);
 	const memoised = parsed.get(key);
@@ -472,20 +472,20 @@ export function parseWorkspace(
 function compileWorkspace(
 	value: unknown,
 	canonical: string,
-): Result<ParsedWorkspace, WorkspaceParseError> {
+): Result<ParsedDatabase, DatabaseParseError> {
 	if (!isPlainObject(value)) {
-		return WorkspaceParseError.Malformed({
+		return DatabaseParseError.Malformed({
 			reason: 'it is not a plain object',
 		});
 	}
-	const { id, title, kv, tables } = value as Partial<WorkspaceJson>;
+	const { id, title, kv, tables } = value as Partial<DatabaseJson>;
 	if (typeof id !== 'string') {
-		return WorkspaceParseError.Malformed({
+		return DatabaseParseError.Malformed({
 			reason: 'it declares no id',
 		});
 	}
-	if (!isWorkspaceId(id, DATA_ADDRESS_CEILINGS)) {
-		return WorkspaceParseError.Malformed({
+	if (!isDatabaseId(id, DATA_ADDRESS_CEILINGS)) {
+		return DatabaseParseError.Malformed({
 			reason: `id '${id}' is not two or more lowercase dot-separated labels`,
 		});
 	}
@@ -493,18 +493,18 @@ function compileWorkspace(
 		title !== undefined &&
 		(typeof title !== 'string' || title.trim() === '')
 	) {
-		return WorkspaceParseError.Malformed({
+		return DatabaseParseError.Malformed({
 			reason: 'its title must say something or be absent',
 		});
 	}
 	if (!isPlainObject(tables)) {
-		return WorkspaceParseError.Malformed({ reason: 'it declares no tables' });
+		return DatabaseParseError.Malformed({ reason: 'it declares no tables' });
 	}
 
 	let compiledKv: ParsedTable | undefined;
 	if (kv !== undefined) {
 		if (!isPlainObject(kv)) {
-			return WorkspaceParseError.Malformed({
+			return DatabaseParseError.Malformed({
 				reason: 'its kv section is not a plain object of fields',
 			});
 		}
@@ -517,12 +517,12 @@ function compileWorkspace(
 	const seenTableNames = new Map<string, string>();
 	for (const [tableName, fields] of Object.entries(tables)) {
 		if (!isTableName(tableName, DATA_ADDRESS_CEILINGS)) {
-			return WorkspaceParseError.Malformed({
+			return DatabaseParseError.Malformed({
 				reason: `table name '${tableName}' must start with a letter and use letters, digits, and underscores, because it is mounted as a SQL relation`,
 			});
 		}
 		if (RESERVED_TABLE_NAMES.includes(tableName)) {
-			return WorkspaceParseError.Malformed({
+			return DatabaseParseError.Malformed({
 				reason: `'${tableName}' is reserved, because KV projects as a one-row relation of that name`,
 			});
 		}
@@ -531,7 +531,7 @@ function compileWorkspace(
 		const folded = tableName.toLowerCase();
 		const collision = seenTableNames.get(folded);
 		if (collision !== undefined) {
-			return WorkspaceParseError.Malformed({
+			return DatabaseParseError.Malformed({
 				reason: `table names '${collision}' and '${tableName}' differ only by case`,
 			});
 		}
@@ -555,9 +555,9 @@ function compileWorkspace(
 function compileTable(
 	tableName: string,
 	fields: unknown,
-): Result<ParsedTable, WorkspaceParseError> {
+): Result<ParsedTable, DatabaseParseError> {
 	if (!isPlainObject(fields)) {
-		return WorkspaceParseError.Malformed({
+		return DatabaseParseError.Malformed({
 			reason: `table '${tableName}' does not declare a plain object of fields`,
 		});
 	}
@@ -569,13 +569,13 @@ function compileTable(
 		const folded = fieldName.toLowerCase();
 		const collision = seenFieldNames.get(folded);
 		if (collision !== undefined) {
-			return WorkspaceParseError.Malformed({
+			return DatabaseParseError.Malformed({
 				reason: `fields '${collision}' and '${fieldName}' on table '${tableName}' differ only by case`,
 			});
 		}
 		seenFieldNames.set(folded, fieldName);
 		if (typeof expression !== 'string') {
-			return WorkspaceParseError.UnrecognizedField({
+			return DatabaseParseError.UnrecognizedField({
 				table: tableName,
 				field: fieldName,
 				reason: 'a field is an arktype expression in a string',
@@ -589,7 +589,7 @@ function compileTable(
 		try {
 			fieldType = type({ [fieldName]: expression } as never) as type.Any;
 		} catch (cause) {
-			return WorkspaceParseError.UnrecognizedField({
+			return DatabaseParseError.UnrecognizedField({
 				table: tableName,
 				field: fieldName,
 				reason: cause instanceof Error ? cause.message : String(cause),
@@ -617,7 +617,7 @@ function compileTable(
 			}
 		).props?.[0]?.value;
 		if (valueNode?.includesTransform === true) {
-			return WorkspaceParseError.TransformingField({
+			return DatabaseParseError.TransformingField({
 				table: tableName,
 				field: fieldName,
 				expression,
@@ -631,9 +631,9 @@ function compileTable(
 function fieldNameProblem(
 	tableName: string,
 	fieldName: string,
-): Result<never, WorkspaceParseError> | undefined {
+): Result<never, DatabaseParseError> | undefined {
 	if (fieldName.startsWith(RESERVED_ATTRIBUTE_PREFIX)) {
-		return WorkspaceParseError.Malformed({
+		return DatabaseParseError.Malformed({
 			reason: `field '${tableName}.${fieldName}' begins with the reserved '${RESERVED_ATTRIBUTE_PREFIX}' prefix`,
 		});
 	}
@@ -641,17 +641,17 @@ function fieldNameProblem(
 		// Fields are nullable, never optional (ADR-0213). An optionality marker
 		// lives in the key, and a key marker is exactly what stopped surviving a
 		// JSON round trip in the previous implementation.
-		return WorkspaceParseError.Malformed({
+		return DatabaseParseError.Malformed({
 			reason: `field '${tableName}.${fieldName}' is optional; declare it nullable instead, as 'string|null'`,
 		});
 	}
 	if (fieldName.toLowerCase() === 'id') {
-		return WorkspaceParseError.Malformed({
+		return DatabaseParseError.Malformed({
 			reason: `table '${tableName}' cannot declare the structural 'id' field`,
 		});
 	}
 	if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName)) {
-		return WorkspaceParseError.Malformed({
+		return DatabaseParseError.Malformed({
 			reason: `field name '${tableName}.${fieldName}' must start with a letter and use letters, digits, and underscores`,
 		});
 	}
@@ -731,6 +731,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /** Forget every compiled workspace. Test support; nothing in production calls it. */
-export function clearWorkspaceCache(): void {
+export function clearDatabaseCache(): void {
 	parsed.clear();
 }
