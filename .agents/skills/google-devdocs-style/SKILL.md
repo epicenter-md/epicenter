@@ -27,8 +27,8 @@ Depart from a rule when doing so serves the actual reader. Stay consistent after
 Read this before the style rules, because it constrains all of them. A style fix that changes
 what the document claims is a worse outcome than the defect it removed.
 
-**Preserve source modality.** `may`, `might`, `can`, `should`, and `will` carry the author's
-certainty. "Results may vary" is a hedge about possibility; "Results vary" asserts that they do.
+**Preserve the author's certainty.** `may`, `might`, `can`, `should`, and `will` each carry a
+different level of confidence. "Results may vary" is a hedge about possibility; "Results vary" asserts that they do.
 Never drop or strengthen a modal to tighten a sentence.
 
 **Preserve every qualification.** Scope, sample size, region, version, and "not tested above X"
