@@ -6,11 +6,16 @@
  * implementation. These tests exist so the shared-catalog extraction and the
  * `--explain` flag cannot drift them.
  *
- * The two content-coupled assertions are deliberate. "asymmetric wins" having
- * exactly one owner and "simplify this" being disclaimed by control-flow are
- * the two routing facts the composition audit is built around; if a
- * description edit changes either, a failing test here is the report, not
- * noise.
+ * The content-coupled assertions are deliberate. "asymmetric wins" having
+ * exactly one owner, and "simplify this" being owned by collapse-pass while
+ * control-flow routes it there, are routing facts the composition audit is
+ * built around; if a description edit changes one, a failing test here is the
+ * report, not noise.
+ *
+ * There is no test for two skills claiming one phrase, because no phrase in
+ * the library does and a fixture invented to prove it would only assert
+ * itself. That branch is covered where skills can be injected: see
+ * `runLexicalPass > reports several claimants as ambiguous`.
  */
 
 import { expect, test } from 'bun:test';
@@ -69,17 +74,33 @@ test('--explain annotates without changing the line prefix or exit code', () => 
 	);
 });
 
-test('--explain separates a sole hit that routes the phrase away', () => {
-	// One hit still exits 0, matching the documented verdict. The annotation is
-	// what tells the reader the phrase has no real owner.
+test('one claimant beside a disclaiming mention is clean routing', () => {
+	// The shape every resolved boundary has: an owner, plus the neighbour that
+	// routes the phrase to it. Counting mentions would call this a collision.
 	const { code, out } = run('--explain', 'simplify this');
 
 	expect(code).toBe(0);
+	expect(out).toContain('collapse-pass/SKILL.md [claims]');
 	expect(out).toContain('control-flow/SKILL.md [disclaims]');
 });
 
+test('a phrase every mention routes away is reported as unowned', () => {
+	// one-sentence-test sends this back to the agent and nobody accepts it,
+	// which is the intended routing. The script reports unowned; whether unowned
+	// is correct stays the reader's call.
+	const { code, out, err } = run(
+		'--explain',
+		'plain code-comprehension question',
+	);
+
+	expect(code).toBe(1);
+	expect(out).toContain('one-sentence-test/SKILL.md [disclaims]');
+	expect(err).toContain('No skill description claims');
+	expect(err).toContain('route it elsewhere');
+});
+
 test('an always-on claimant is reported without changing stdout or the exit code', () => {
-	// AGENTS.md:35 routes "clean break" to post-implementation-review while
+	// `AGENTS.md` routes "clean break" to post-implementation-review while
 	// greenfield-clean-breaks claims the phrase in its description, so the
 	// documented verdict says clean routing while two surfaces actually claim
 	// it. Reporting that on stderr is the whole point; changing the exit code
@@ -96,13 +117,4 @@ test('a phrase no always-on file mentions reports no always-on claimant', () => 
 	const { err } = run('asymmetric wins');
 
 	expect(err).not.toContain('AGENTS.md');
-});
-
-test('multiple hits exit 1 and list every claimant', () => {
-	const { code, out, err } = run('delete disproportionate complexity');
-
-	expect(code).toBe(1);
-	expect(out).toContain('asymmetric-wins/SKILL.md');
-	expect(out).toContain('greenfield-clean-breaks/SKILL.md');
-	expect(err).toContain('Routing collision');
 });

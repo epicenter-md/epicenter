@@ -140,7 +140,7 @@ The description is always loaded and drives selection. It must carry the trigger
 
 Do not add body sections like `When to apply this skill`, `When to load`, `Trigger phrases`, or `Use this skill when...`. Put routing in the frontmatter description; use the body for workflow, guardrails, examples, and final checks.
 
-The body is still not routing-neutral. Rewriting `handoff`'s body while leaving its name and description byte-identical flipped `delegation-hand-off-near-miss` from 3/3 not-loading to 3/3 loading under `--live`, reproducible across several runs each way. The mechanism is not established, and the fix is not to move trigger language into the body: re-run the affected `--live` cases after a substantial body rewrite, and treat a routing change as a real result rather than noise.
+The body is still not routing-neutral. Rewriting `handoff`'s body while leaving its name and description byte-identical flipped `enlistment-hand-off-near-miss` from 3/3 not-loading to 3/3 loading under `--live`, reproducible across several runs each way. The mechanism is not established, and the fix is not to move trigger language into the body: re-run the affected `--live` cases after a substantial body rewrite, and treat a routing change as a real result rather than noise.
 
 Include:
 
@@ -163,6 +163,57 @@ description: Helps with workspace stuff.
 ```
 
 For subtle routing, test 2 or 3 should-trigger prompts and 1 or 2 near-miss should-not-trigger prompts. Do not stuff exact keywords unless the keyword represents a real trigger category.
+
+End with what the skill is not for. `Do not use for...` is the only place a near
+miss can be excluded, because the body loads after routing has already failed.
+
+## Guide Without Over-Steering
+
+A skill is read by something that can already reason. Its job is to land that
+judgment on this codebase, not to replace it with a script. Over-steering is the
+failure where an instruction is so specific it stops generalizing: the agent
+applies it correctly to the case you wrote down and wrongly to the next one.
+
+State the premise the skill runs on once, at the top, and derive the rest from
+it. An agent holding the premise can answer a case you never wrote down. An
+agent holding twenty disconnected rules cannot.
+
+Attach the reason to the rule, in the same sentence. "Never flatten a JWKS fetch
+failure into a 401" is a rule the agent can only obey. "Never flatten it, or a
+transient fault makes clients discard a good token" is a rule the agent can
+extend. A rule whose reason you cannot state in a clause is usually taste, and
+belongs in a reference or nowhere.
+
+Give a criterion, not a threshold. "Keep at 4+ callers" makes the agent count
+instead of think, and then needs three later sections to walk itself back. "Does
+this function earn its name" needs none. Reach for a number only when the number
+is the actual constraint, like a token limit or a timeout.
+
+Bound the rule on both sides. Every instruction has an overshoot and the agent
+will find it, so say what too little looks like as well as too much. Rules
+stated one-sided get applied until they break.
+
+Diagnose an anti-pattern where it happens, not in a list at the end. Name the
+move, then the consequence that makes it wrong. A closing `Anti-Patterns` or
+`Best Practices` section is a second copy of rules already stated; the two
+copies drift to different calibrations, and the agent obeys whichever it read
+last.
+
+Match form to the work. Judgment must be prose, because a bullet strips the
+reason and leaves the verdict. Commands, paths, schemas, and file trees must be
+blocks, because prose hides them. Bulleted judgment is the tell that a skill has
+stopped explaining and started listing.
+
+Say what done means as a property, and name its false positive. "Both of you can
+reason forward from it" is checkable. "The review is complete" is not.
+
+Guide the decisions that matter; leave the route to the agent. Add procedural
+detail when the work's safety or correctness depends on the order, and not
+otherwise.
+
+[dialectic](../dialectic/SKILL.md) is the worked example: compact prose, no
+bullets, every rule carrying its reason. Read it when a skill you are writing
+has turned into a list.
 
 ## Use Progressive Disclosure
 
@@ -194,8 +245,6 @@ Every reference link needs a concrete load condition in `SKILL.md`, for example:
 Use `scripts/` only for repeated, deterministic, fragile, or error-prone work. Scripts should be documented in `SKILL.md`, non-interactive, retry-friendly, clear about prerequisites, structured on stdout, diagnostics on stderr, and bounded in output.
 
 Use Bun by default in this repository. Translate upstream Agent Skills CLI examples from `npx skills ...` to `bun x --package skills skills ...`. For other npm package commands, preserve the package and use `bun x` or `bunx`, pinning versions when behavior must be reproducible.
-
-Guide the decisions that matter; leave the route to the agent. State the intended outcome, the boundaries that matter, and the evidence of completion. Add procedural detail when the work's safety or correctness depends on it.
 
 ## Evaluate A Skill
 

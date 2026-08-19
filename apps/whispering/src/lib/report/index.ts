@@ -1,7 +1,7 @@
 import { toast as sonner } from '@epicenter/ui/sonner';
 import { nanoid } from 'nanoid/non-secure';
 import type { AnyTaggedError } from 'wellcrafted/error';
-import { consoleSink, type LogEvent } from 'wellcrafted/logger';
+import { createLogger } from 'wellcrafted/logger';
 import { osNotify } from '#platform/os-notify';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
 import { humanize } from './humanize';
@@ -29,7 +29,7 @@ export type StandingNotice = Notice & { id: string };
 
 type Level = 'error' | 'success' | 'info' | 'warning' | 'loading';
 
-const SOURCE = 'whispering/report';
+const log = createLogger('whispering/report');
 
 const TOAST_DURATION = {
 	error: Number.POSITIVE_INFINITY,
@@ -75,32 +75,6 @@ export const report = {
 	},
 };
 
-/**
- * Diagnostic-only logger. Use for events that should appear in console for
- * debugging but should NEVER surface to the user as a toast or OS notification
- * (e.g. "Recording started", "Invalid device config, using default").
- */
-export const log = {
-	info(message: string, data?: unknown): void {
-		consoleSink({
-			ts: Date.now(),
-			level: 'info',
-			source: SOURCE,
-			message,
-			data,
-		} satisfies LogEvent);
-	},
-	warn(error: Error, data?: unknown): void {
-		consoleSink({
-			ts: Date.now(),
-			level: 'warn',
-			source: SOURCE,
-			message: error.message,
-			data: data ?? error,
-		} satisfies LogEvent);
-	},
-} as const;
-
 // ── Internals ─────────────────────────────────────────────────────────────
 
 /**
@@ -115,14 +89,17 @@ function emit(level: Level, notice: Notice, id?: string): void {
 		(notice.title ?? humanize(notice.cause?.name ?? '')) || 'Notice';
 	const description = notice.description ?? notice.cause?.message;
 
-	if (level !== 'loading') {
-		consoleSink({
-			ts: Date.now(),
-			level: level === 'error' ? 'error' : 'info',
-			source: SOURCE,
-			message: notice.title ?? notice.cause?.message ?? '',
-			data: id !== undefined ? { ...notice, id } : notice,
-		} satisfies LogEvent);
+	// A problem is logged as its tagged cause, so the console event carries the
+	// variant `name` and its captured fields. Everything else is an announcement
+	// with no error to name, which is exactly what `info` is for. `loading` says
+	// nothing: its resolve or reject is the event worth recording.
+	if (level === 'error' && notice.cause) {
+		log.error(notice.cause);
+	} else if (level !== 'loading') {
+		log.info(
+			notice.title ?? notice.cause?.message ?? '',
+			id !== undefined ? { ...notice, id } : notice,
+		);
 	}
 
 	sonner[level](title, {

@@ -1,6 +1,20 @@
+import { defineErrors } from 'wellcrafted/error';
+import { createLogger } from 'wellcrafted/logger';
 import { tauri } from '#platform/tauri';
-import { log } from '$lib/report';
 import type { WhisperingApp } from '$lib/whispering/app';
+
+const log = createLogger('whispering/recording-media');
+
+const RecordingMediaError = defineErrors({
+	PauseFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Failed to pause playback',
+		cause,
+	}),
+	ResumeFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Failed to resume playback',
+		cause,
+	}),
+});
 
 // The one best-effort side effect for recording: pause whatever the system is
 // playing while recording, resume it after. Recording never waits on this and
@@ -32,7 +46,7 @@ async function pausePlayingSessions(): Promise<string[]> {
 	try {
 		return await tauri.media.pause();
 	} catch (error) {
-		log.warn(new Error(`Failed to pause playback: ${String(error)}`));
+		log.warn(RecordingMediaError.PauseFailed({ cause: error }));
 		return [];
 	}
 }
@@ -43,7 +57,7 @@ async function resumeSessions(sessions: string[]): Promise<void> {
 	try {
 		await tauri.media.resume(sessions);
 	} catch (error) {
-		log.warn(new Error(`Failed to resume playback: ${String(error)}`));
+		log.warn(RecordingMediaError.ResumeFailed({ cause: error }));
 	}
 }
 

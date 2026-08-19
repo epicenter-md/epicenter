@@ -55,10 +55,8 @@ Load only the skills that match the touched surface:
 ```txt
 collapse-pass            continuous deletion of unearned indirection
 greenfield-clean-breaks    public API, package boundary, config, lifecycle, naming, ownership, greenfield, or clean-break decision
-fresh-context-review     independent adversarial review of a concrete diff or design
 asymmetric-wins          refuse a feature to collapse a disproportionate code family
 refactoring              caller counts, inlining, dead exports, stale imports, straggler sweep
-first-read-review        too many hops, misleading names, clever types, first-read confusion
 code-audit               recurring repo smells and grep-based checks
 one-sentence-test        new abstraction, wrapper, option, endpoint, command, or module
 testing                  test files or changed behavior that needs coverage
@@ -67,24 +65,21 @@ svelte                   Svelte components, stores, runes, query usage, UI state
 yjs                      CRDT documents, shared types, transactions, conflict behavior
 ```
 
-Use [fresh-context-review](../fresh-context-review/SKILL.md) after the local
-second read when an independent challenge could catch ownership, lifecycle, or
-type-shape mistakes.
-
 ## Review Order
 
 1. Identify every file touched by the implementation.
 2. Re-read each touched file from top to bottom.
 3. List every file read as an ASCII tree before analysis.
-4. Run the mental inlining pass.
-5. Run the ownership and collapse check.
-6. Run the smell and invariant checks.
-7. Review API shape, naming, and file organization.
-8. Run diagnostics and tests appropriate to the changed lane. Reproduce any
+4. Run the first-read pass.
+5. Run the mental inlining pass.
+6. Run the ownership and collapse check.
+7. Run the smell and invariant checks.
+8. Review API shape, naming, and file organization.
+9. Run diagnostics and tests appropriate to the changed lane. Reproduce any
    failure on clean HEAD before blaming the change; separate pre-existing red
    from regressions you introduced.
-9. Report findings before making cleanup edits unless the issue is a direct
-   compile or test failure.
+10. Report findings before making cleanup edits unless the issue is a direct
+    compile or test failure.
 
 The ASCII tree is not decoration. It forces the review to show its evidence.
 
@@ -97,6 +92,37 @@ packages/foo/
 |   `-- index.ts
 `-- package.json
 ```
+
+## First-Read Pass
+
+Read the change as a smart but newly onboarded TypeScript developer would.
+Start from the entrypoint a caller reaches first and trace the minimum path
+needed to understand the behavior, rather than reading in the order the diff
+happens to present.
+
+Count the hops. A new developer's first read of a foreign symbol is
+Go-to-Definition, so pressing it from a call site should land on the real source
+of truth in as few jumps as possible. Each hop has to earn its keep: a layer
+that does not own an invariant, name non-obvious domain behavior, or isolate
+unsafe input costs a jump and returns nothing. What bloats the count, meaning
+re-export chains, destructure-re-exports, no-op adapters, and identity-obscuring
+annotations, is cataloged in [typescript](../typescript/SKILL.md)
+"Go-to-Definition Awareness".
+
+Mark each abstraction as one of: earns its keep, probably inlineable, wrong
+ownership boundary, misleading name, or type-system workaround. The mark decides
+the repair, because a misleading name wants a rename and a wrong owner wants a
+move; collapsing both into "delete it" loses the difference and usually picks
+the wrong one.
+
+Do not fix a real parse boundary at a JSON, file, or network edge, runtime
+validation over unsafe input, a contract that genuinely belongs in one place, or
+repetition that is cheaper than the abstraction replacing it. Those read as
+friction on a first pass and are load-bearing on the second.
+
+The pass is done when a new teammate could say which file owns a concept and
+which type is a real contract rather than library glue, without reverse
+engineering either from naming accidents.
 
 ## Mental Inlining Pass
 

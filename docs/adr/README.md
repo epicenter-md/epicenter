@@ -26,11 +26,17 @@ accepted ADR, the ADR wins.
 - **Status is one of:** `Proposed`, `Accepted`, `Superseded`.
 - **Decisions are born from specs but do not live there.** When a design pass
   settles something durable, harvest it into an ADR and let the spec be deleted.
-- **`Proposed` is a transient state.** Record a decision as `Proposed` when it
-  crystallizes during design; flip it to `Accepted` when the work lands. A
-  `Proposed` ADR that no in-tree spec references means its spec was deleted (the
-  work landed): flip it, or supersede it if abandoned. `bun
-scripts/check-doc-hygiene.ts` flags orphaned and stale `Proposed` ADRs.
+- **`Proposed` is a transient state.** Record a decision as `Proposed` while it
+  is still being decided; flip it to `Accepted` when the decision is made. A
+  `Proposed` ADR that no in-tree spec references means its spec was deleted:
+  flip it, or supersede it if abandoned. `bun scripts/check-doc-hygiene.ts`
+  flags orphaned and stale `Proposed` ADRs.
+- **Status answers whether a record governs, never whether it shipped.** An
+  accepted decision that nothing implements yet still governs: a later record
+  reasoning from it is obeying real law, and demoting it to `Proposed` would
+  say the opposite. Name what does not exist yet in an `Unbuilt:` line instead,
+  which is more precise than a status because it says *what* is missing rather
+  than only *that* something is. Delivery state belongs to specs.
 
 ## Numbering
 
@@ -58,6 +64,7 @@ merged; only the pre-merge placeholder is negotiable.
 - **Superseded by:** [ADR-PPPP](PPPP-*.md) (added only when this is retired)
 - **Amends:** [ADR-MMMM](MMMM-*.md) with the bounded change (or omit)
 - **Amended by:** [ADR-PPPP](PPPP-*.md) with the bounded change (or omit)
+- **Unbuilt:** what this decides that no code implements yet (or omit)
 
 ## Context
 
@@ -226,9 +233,9 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0142](0142-bootstrap-history-gaps-and-lineage-mismatches-have-distinct-recovery.md)                                        | Bootstrap, history gaps, and lineage mismatches have distinct recovery                                                                                                         | Accepted (superseded by 0212) |
 | [0143](0143-account-open-never-consumes-device-data.md)                                                                     | Account open never consumes Device data                                                                                                                                        | Accepted                                                                                                                        |
 | [0144](0144-scalar-rows-and-row-documents-synchronize-through-independent-client-planes.md)                                 | Scalar rows and row documents synchronize through independent client planes                                                                                                    | Superseded by 0171                                                                                                              |
-| [0145](0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md)                             | One account authority owns every workspace and one socket per open row document                                                                                                | Proposed                                                                                                                        |
+| [0145](0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md)                             | One account authority owns every workspace and one socket per open row document                                                                                                | Superseded by 0161 and 0174                                                                                                       |
 | [0146](0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md)                                           | Row documents use one Yjs 14 major and runtime-native update logs                                                                                                              | Proposed (amended by 0212 at the DocumentStore contract) |
-| [0147](0147-cross-plane-transfer-and-recovery-use-logical-coordination-not-atomic-snapshots.md)                             | Cross-plane transfer and recovery use logical coordination, not atomic snapshots                                                                                               | Proposed                                                                                                                        |
+| [0147](0147-cross-plane-transfer-and-recovery-use-logical-coordination-not-atomic-snapshots.md)                             | Cross-plane transfer and recovery use logical coordination, not atomic snapshots                                                                                               | Superseded by 0161, 0167, 0170, and 0171                                                                                          |
 | [0148](0148-blobs-use-opaque-identifiers-rather-than-content-hashes.md)                                                     | Blobs use opaque identifiers rather than content hashes                                                                                                                        | Superseded by 0173                                                                                                              |
 | [0149](0149-local-blob-stores-are-canonical-and-remote-replication-is-explicit.md)                                          | Local blob stores are canonical and remote replication is explicit                                                                                                             | Superseded by 0171                                                                                                              |
 | [0150](0150-whispering-uploads-operator-readable-audio.md)                                                                  | Whispering uploads operator-readable audio                                                                                                                                     | Accepted                                                                                                                        |

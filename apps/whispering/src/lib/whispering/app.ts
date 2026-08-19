@@ -11,6 +11,7 @@ import {
 	type SyncConnection,
 	type SyncConnectionStatus,
 } from '@epicenter/data/sync';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { type WhisperingSettingValues, whisperingDatabase } from '../workspace';
 import {
 	createWhisperingRecipes,
@@ -34,6 +35,22 @@ export type WhisperingDeviceData = DataOf<
 export type WhisperingAccountData = DataOf<
 	typeof whisperingDatabase,
 	BrowserAccountStore
+>;
+
+/**
+ * Failures that reach `reportBackgroundError`: work nobody is awaiting, so the
+ * only honest response is a log line. The `cause` is `unknown` because these
+ * arrive from rejected promises and transport callbacks the app fired and
+ * forgot.
+ */
+export const WhisperingBackgroundError = defineErrors({
+	AppFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Whispering app background work failed',
+		cause,
+	}),
+});
+export type WhisperingBackgroundError = InferErrors<
+	typeof WhisperingBackgroundError
 >;
 
 /** Environment-owned inputs for one fully acquired Whispering app. */

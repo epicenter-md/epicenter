@@ -6,6 +6,7 @@ import {
 } from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { type AnyTaggedError, defineErrors } from 'wellcrafted/error';
+import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { auth } from '#platform/auth';
 import { customFetch } from '#platform/http';
@@ -19,7 +20,7 @@ import {
 	recordTranscriptionOutcome,
 	type TranscriptionSuccess,
 } from '$lib/operations/transcription-history';
-import { log, report } from '$lib/report';
+import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { DeepgramTranscriptionServiceLive } from '$lib/services/transcription/cloud/deepgram';
 import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/cloud/elevenlabs';
@@ -33,6 +34,8 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
 import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
 import type { WhisperingApp } from '$lib/whispering/app';
 import type { RecordingId } from '$lib/workspace';
+
+const log = createLogger('whispering/transcribe');
 
 /**
  * The error any transcription path can surface. Deliberately `AnyTaggedError`
