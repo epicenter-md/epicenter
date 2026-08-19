@@ -1,6 +1,6 @@
 ---
 name: dialectic
-description: "Bring an agent's and user's partly formed models into contact by presenting one clear rendering at a time and reading the user's natural corrections, extensions, and recognition until the user says 'that's right.' Use when the user wants to discover what they think, learn a model together, shape a vision or architecture before a plan exists, or receive real pushback. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
+description: "Bring an agent's and user's partly formed models into contact by presenting one clear rendering at a time and reading the user's natural corrections, extensions, and recognition until the user says 'that's right.' Use when the user wants to discover what they think, learn a model together, shape a vision or architecture before a plan exists, receive real pushback, or quickly decide whether ambiguous work should continue, change, or be archived. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
 ---
 
 # Dialectic
@@ -71,6 +71,47 @@ established. The unresolved issue is where that confidence should live.
 
 The better turn gives the user something to correct. It does not ask them to
 approve the agent's framing or silently authorize an implementation.
+
+When the user explicitly wants to decide whether ambiguous work should continue,
+change, or be archived, this does not forbid questions. First present the
+decision in a compact form. Then use decision compression: ask a small set of
+numbered, cross-cutting questions that the user can answer in one pass. The
+questions should collapse materially different outcomes, not collect
+implementation preferences. Do not ask for approval before the model is
+visible, and do not treat answers as authorization to execute.
+
+## Decision compression
+
+Decision compression is the default dialectic for triage. It externalizes the
+decision tree so the user can skim the whole shape instead of holding an
+unfinished interview in their head.
+
+Start by stating what the investigation has already settled and name the one
+decision that remains. Ask no more than two or three questions unless the user
+explicitly wants a deeper exploration. Make the questions answerable in one
+pass, and make each one distinguish a materially different outcome such as
+adopt, defer, preserve, remove, or archive.
+
+Prefer questions about priority, the outcome that would count as resolution,
+and the disposition of work that is not a current priority. Avoid questions
+about implementation until the direction is known. If one answer settles the
+matter, stop asking questions. If an answer changes the framing of the
+problem, return to an ordinary dialectic and present the revised model before
+asking anything else.
+
+```text
+settled state
+    ↓
+one unresolved decision
+    ↓
+two or three high-information questions
+    ↓
+action, defer, preserve, remove, or archive
+```
+
+Decision compression is a map, not a questionnaire. The agent carries the
+branching logic, while the user supplies the priorities and desired outcome
+that cannot be inferred from the repository or conversation.
 
 ## Two Directions, One Conversation
 
