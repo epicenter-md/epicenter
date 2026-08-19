@@ -1,6 +1,6 @@
 ---
 name: writing-voice
-description: "Guide sentence-level expression while drafting or revising substantial prose so it remains recognizable as the writer: their vocabulary, humor, certainty, emotional emphasis, and allocation of attention. Use for prose that feels generic, corporate, AI-shaped, over-sanitized, or that no longer sounds like me; for tone and ear passes; and for local wording work in pages, journals, UI copy, documentation, or messages. Do not use to decide a document's content, structure, or destination."
+description: "Guide sentence-level expression while drafting or revising substantial prose so it remains recognizable as the writer: their vocabulary, humor, certainty, emotional emphasis, and allocation of attention. Use for prose that feels generic, corporate, AI-shaped, over-sanitized, or that no longer sounds like me; for tone and ear passes; and for local wording work in UI copy, documentation, or messages. Do not use to decide a document's content, structure, or destination."
 ---
 
 # Writing Voice
@@ -16,8 +16,8 @@ order. This skill owns how that chosen material is expressed.
 ## Preserve The Grain
 
 Do not add, remove, reorder, promote, or demote material as a voice choice.
-Return those decisions to the destination. A page and a journal have different
-native movements, so do not impose one house style on both.
+Return those decisions to the destination. Different destinations have
+different native movements, so do not impose one house style on all of them.
 
 Keep the writer's concrete vocabulary, unusual phrasing, proportion of caveat
 to claim, jokes, fragments, repetitions, and detours when they do expressive
@@ -53,19 +53,8 @@ proposed wording, state the job it performs, and wait for the writer's decision.
 
 ## Match The Destination
 
-For a page, help an independently readable thought retain its native grain
-after selection and arrangement. When `page-writing` has identified a spoken
-entrance, make it sound like a line the writer would naturally bring into the
-room: alive with its real contrast, image, judgment, or stake rather than a
-generic version of intrigue. For a journal, help the lived sequence retain its
-scene texture, private reality, and changing attention. In UI copy,
-documentation, and messages, preserve the person while respecting the form;
-clarity never requires corporate scaffolding or false authority.
-
-When a page uses a blockquote, write it as optional visible reading, not
-abbreviated body prose. It may be blunter, more aphoristic, or more directly
-addressed to the reader than the narration, but it must still sound like the
-writer.
+In UI copy, documentation, and messages, preserve the person while respecting
+the form; clarity never requires corporate scaffolding or false authority.
 
 Use punctuation to make movement legible. Prefer periods. Use colons for a real
 explanation, semicolons for closely related independent clauses, and parentheses
