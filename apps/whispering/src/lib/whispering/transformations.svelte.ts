@@ -68,7 +68,9 @@ export function createWhisperingTransformations({
 
 	function getStep(id: TransformationStepId): TransformationStep {
 		for (const transformation of sorted) {
-			const step = transformation.steps.find((candidate) => candidate.id === id);
+			const step = transformation.steps.find(
+				(candidate) => candidate.id === id,
+			);
 			if (step !== undefined) return step;
 		}
 		throw new Error(`Transformation step '${id}' does not exist.`);
@@ -181,7 +183,9 @@ export function createWhisperingTransformations({
 			const transformation = getTransformation(id);
 			if (enabled) {
 				if (transformation.steps.length === 0) {
-					throw new Error('A Transformation needs at least one step before it can be enabled.');
+					throw new Error(
+						'A Transformation needs at least one step before it can be enabled.',
+					);
 				}
 				for (const step of transformation.steps) {
 					assertValidTransformationStep(step);
@@ -233,7 +237,13 @@ export function createWhisperingTransformations({
 			writePositions(stepsTable, reordered);
 		},
 		deleteStep(id: TransformationStepId): void {
-			getStep(id);
+			const step = getStep(id);
+			const parent = getTransformation(step.transformationId);
+			if (parent.enabled && parent.steps.length === 1) {
+				throw new Error(
+					'Disable this Transformation before deleting its final step.',
+				);
+			}
 			stepsTable.delete(id);
 		},
 	};

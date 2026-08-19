@@ -81,9 +81,17 @@ test('validation refuses blank find, invalid regex, and empty enablement', async
 		).toThrow('Invalid regular expression');
 		expect(data.tables.transformationSteps.list().rows).toEqual([]);
 
-		domain.addStep(transformation.id, { kind: 'spoken_urls' });
+		const onlyStep = domain.addStep(transformation.id, {
+			kind: 'spoken_urls',
+		});
 		domain.setEnabled(transformation.id, true);
 		expect(domain.get(transformation.id)?.enabled).toBe(true);
+		expect(() => domain.deleteStep(onlyStep.id)).toThrow(
+			'Disable this Transformation',
+		);
+		domain.setEnabled(transformation.id, false);
+		domain.deleteStep(onlyStep.id);
+		expect(domain.get(transformation.id)?.steps).toEqual([]);
 	} finally {
 		domain[Symbol.dispose]();
 		await data[Symbol.asyncDispose]();
@@ -97,11 +105,13 @@ test('explicit parent and step moves compact positions', async () => {
 		domain.create({ name: 'Second' });
 		const third = domain.create({ name: 'Third' });
 		domain.move(third.id, 'up');
-		expect(domain.sorted.map(({ name, position }) => [name, position])).toEqual([
-			['First', 0],
-			['Third', 1],
-			['Second', 2],
-		]);
+		expect(domain.sorted.map(({ name, position }) => [name, position])).toEqual(
+			[
+				['First', 0],
+				['Third', 1],
+				['Second', 2],
+			],
+		);
 
 		const one = domain.addStep(first.id, {
 			kind: 'find_replace',
@@ -143,7 +153,9 @@ test('equal positions use row id as the deterministic tie-breaker', async () => 
 			find: 'x',
 		});
 		expectOk(data.tables.transformationSteps.update(first.id, { position: 2 }));
-		expectOk(data.tables.transformationSteps.update(second.id, { position: 2 }));
+		expectOk(
+			data.tables.transformationSteps.update(second.id, { position: 2 }),
+		);
 		expect(domain.get(left.id)?.steps.map(({ id }) => id)).toEqual(
 			[first.id, second.id].toSorted((a, b) => a.localeCompare(b)),
 		);
@@ -172,9 +184,9 @@ test('parent deletion cascades and schema-conforming orphans stay ignored', asyn
 
 		domain.delete(parent.id);
 		expect(domain.sorted).toEqual([]);
-		expect(data.tables.transformationSteps.list().rows.map(({ id }) => id)).toEqual([
-			orphan.id,
-		]);
+		expect(
+			data.tables.transformationSteps.list().rows.map(({ id }) => id),
+		).toEqual([orphan.id]);
 	} finally {
 		domain[Symbol.dispose]();
 		await data[Symbol.asyncDispose]();
