@@ -42,7 +42,7 @@ app that injects no romanizer takes.
 - `marked` and `dompurify` drop out of the apps; `marked` moves to `@epicenter/ui`.
 - Safety shifts from "sanitize a string" to "never build one." Injected markup is
   structurally impossible; a real `javascript:`, `data:`, or `vbscript:` link is
-  the remaining vector, blocked by the scheme check.
+  the remaining path, blocked by the scheme check.
 - Raw inline HTML an assistant emits renders as visible text, not live markup.
 - Token coverage is now ours: a marked token type with no branch falls back to its
   raw source rather than throwing. The CJK-adjacency invariant (你好 must not split

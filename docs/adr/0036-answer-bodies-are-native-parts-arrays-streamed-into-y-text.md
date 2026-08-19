@@ -93,7 +93,7 @@ mechanism that already works.
   once. In a local-first synced app, update traffic is sync bandwidth, so native
   wins. Overwrite's only edge was implementation simplicity, and native is a
   generalization of code that already streams this way.
-- **The migration generalizes a schema rather than replacing a paradigm.** The
+- **The migration generalizes a schema rather than replacing the whole model.** The
   `chat-doc.ts` rewrite turns one content `Y.Text` per message into a parts array
   whose text parts are `Y.Text`. zhongwen is the tracer and must stream and reload
   byte-identical through the generalized path before any tool-using consumer arrives.

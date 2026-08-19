@@ -148,7 +148,7 @@ can prove quiescence: Local Mail's sync lock deliberately does not cover the
 read-only handles `status` and `query` hold, and Local Books opens read-only
 handles from the CLI, the loopback API, and the MCP server, none of them under a
 lock. Deleting a predecessor's `-wal` out from under a live reader is a
-corruption vector, and on Windows the unlink fails outright. So reclamation
+corruption path, and on Windows the unlink fails outright. So reclamation
 stays explicit maintenance: `status` reports the retained versions, and removing
 them is a decision a human makes when nothing is reading. Wiring an automatic
 call requires first giving an app a quiescence guarantee it does not have.
