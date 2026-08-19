@@ -16,13 +16,13 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1415 specs ever** (522 still in tree, 893 removed).
-
+**1416 specs ever** (522 still in tree, 894 removed).
 
 ## 2026
 
 | Date | Spec | State | Path |
-|------|------|-------|------|
+| ------ | ------ | ------- | ------ |
+| 2026-08-18 | deterministic-transformations | removed | specs/20260818T233000-deterministic-transformations.md |
 | 2026-08-08 | honeycrisp-two-device-run | removed | specs/20260808T070000-honeycrisp-two-device-run.md |
 | 2026-08-08 | honeycrisp-syncs-across-two-devices | removed | specs/20260808T060000-honeycrisp-syncs-across-two-devices.md |
 | 2026-08-08 | honeycrisp-is-the-first-app-on-the-new-store | removed | specs/20260808T020000-honeycrisp-is-the-first-app-on-the-new-store.md |
@@ -1069,7 +1069,7 @@
 ## 2025
 
 | Date | Spec | State | Path |
-|------|------|-------|------|
+| ------ | ------ | ------- | ------ |
 | 2025-12-31 | json-column-standard-schema | in tree | specs/20251231T160000-json-column-standard-schema.md |
 | 2025-12-31 | introspection-boundary-article | in tree | specs/20251231T173000-introspection-boundary-article.md |
 | 2025-12-31 | static-defaults-constraint | removed | specs/20251231T153000-static-defaults-constraint.md |
