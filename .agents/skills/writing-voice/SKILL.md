@@ -1,139 +1,76 @@
 ---
 name: writing-voice
-description: Guide sentence-level expression while drafting or revising substantial prose so it sounds like the writer on their clearest day, preserving vocabulary, humor, certainty, emotional emphasis, and relative allocation of attention. Use for tone work, rewrites, UI copy, documentation, articles, messages, writing that sounds generic, corporate, or AI-shaped, and human-gated wording workshops or ear passes where each consequential change must be proposed before editing.
+description: "Guide sentence-level expression while drafting or revising substantial prose so it remains recognizable as the writer: their vocabulary, humor, certainty, emotional emphasis, and allocation of attention. Use for prose that feels generic, corporate, AI-shaped, over-sanitized, or that no longer sounds like me; for tone and ear passes; and for local wording work in pages, journals, UI copy, documentation, or messages. Do not use to decide a document's content, structure, or destination."
 ---
 
 # Writing Voice
 
 ## Product Promise
 
-Make the prose recognizable as the writer on their clearest day: clearer, not
-flatter; more deliberate, not less theirs.
+Make the writer easier to hear, not easier to mistake for a good generic writer.
+Voice is not polish applied after meaning and structure. It is evidence of what
+the writer means: their relation to the reader, their certainty, their humor,
+and what they linger on. The destination skill owns what belongs and in what
+order. This skill owns how that chosen material is expressed.
 
-The destination skill decides what belongs in the document and in what order.
-Apply this skill from the first sentence while drafting and revising. It owns
-how those decisions are expressed, not which decisions are made.
+## Preserve The Grain
 
-Do not add, remove, reorder, promote, or demote material as a voice choice. A
-voice edit may clarify what is already there. Return content and structure
-decisions to the destination skill; when the two conflict, the destination
-skill wins.
+Do not add, remove, reorder, promote, or demote material as a voice choice.
+Return those decisions to the destination. A page and a journal have different
+native movements, so do not impose one house style on both.
 
-## Keep Editorial Judgment Human
+Keep the writer's concrete vocabulary, unusual phrasing, proportion of caveat
+to claim, jokes, fragments, repetitions, and detours when they do expressive
+work. A phrase may be grammatical but wrong if it changes the writer from
+curious to authoritative, conversational to formal, or amused to earnest.
+Preserving a few distinctive words is not enough when the draft has changed its
+posture.
 
-Do not silently apply an agent-originated authorship move while drafting or
-revising prose the user owns. Authorship moves include new reactions, imagined
-reader objections, analogies, metaphors, dramatic reversals, aphorisms, and
-takeaways. A direct user-specified replacement, faithful expression of supplied
-material, or purely mechanical correction may proceed.
+Repair roughness when it is merely in the way: a transcription error, a false
+start with no remaining work to do, or spoken order that makes the thought
+unintelligible. Do not repair something merely because smoother prose is
+available. Every substantial edit needs a positive account of the expressive job
+it performs, such as making a turn legible without removing its uncertainty.
+“This sounds better” is not an account.
 
-When the destination carries a temporary `Draft Context`, record worthwhile
-editorial considerations under its `Author Notes` rather than silently
-installing proposed prose. Let those notes accumulate with the work instead of
-forcing them into a fixed up-front checklist. Then handle each selected
-wording, cadence, content, or structural candidate one at a time:
+## Draft, Then Rehear
 
-1. Read the complete piece and carry the larger ear pass privately.
-2. Surface exactly one consequential candidate with the current wording, the
-   proposed wording, and the reason for the change.
-3. Reveal a clear recommendation, then wait for the user's decision.
-4. Apply only the accepted change.
-5. Treat the reaction as evidence about the writer's taste. Preserve wording
-   whose apparent inefficiency performs a job the reaction reveals.
-6. Bring forward the next candidate only after the previous one resolves.
+A first provisional draft may use an earned reveal, contrast, metaphor, or
+closing turn when it makes the supplied material easier to hear. It must not
+invent an event, fact, memory, reaction, certainty, or intention. Do not turn a
+sparse source into a polished generality.
 
-Do not dump a checklist of every possible improvement or make several
-taste-sensitive edits under one approval. Stop when no consequential candidate
-remains.
+After a whole draft exists, read it at speaking speed. Mark generic connective
+tissue, flattened rhythm, and places where the attention moves away from what
+the writer cared about. Remove unsupported polish rather than merely improving
+it. Keep a vivid turn when the source earns it.
 
-## Preserve The Allocation Of Attention
-
-Before or while drafting, identify:
-
-- the strongest claim or emotional turn;
-- the writer's characteristic nouns, verbs, humor, and unusual phrasing;
-- where the writer is certain, tentative, delighted, frustrated, or unresolved;
-- how much attention the source gives its center, context, caveats, and asides.
-
-Preserve those proportions. Do not spend more words on caveats, context, or
-counterarguments than the writer did. Do not smooth away the detail or
-roughness that makes the prose recognizable.
-
-## Write As The Clearest Version Of The Writer
-
-Draft and revise toward:
-
-- directness: say the point instead of announcing that a point is coming;
-- specificity: prefer the writer's concrete nouns and verbs over polished
-  abstractions;
-- mechanism: express what happens when the source or destination supplies it
-  instead of substituting a generic takeaway;
-- compression: remove scaffolding, recap, and repetition only when it carries
-  no voice or meaning;
-- cadence: vary sentence length and let short sentences carry real turns;
-- reader relationship: preserve the relationship established by the
-  destination, assume competence, and write beside the reader rather than above
-  them;
-- tradeoffs: express tradeoffs already present without introducing new ones or
-  turning every choice into a defense;
-- proportional certainty: preserve the certainty and qualifications established
-  by the source or destination; keep a necessary qualifier at the narrowest
-  relevant phrase and do not add precautionary hedges.
-
-Keep intentional fragments, repetition, slang, or awkwardness when they carry
-the writer's rhythm or emotional temperature. The target is not generic smooth
-prose. It is recognizable thought made easier to hear.
+When a reaction reveals a deeper mismatch, reread the complete source and the
+whole draft under that correction. Do not reduce “too solemn,” “too sanitized,”
+or “that is not why I said it” to a line edit. When a selected local revision is
+truly consequential but does not change the work's model, show the current and
+proposed wording, state the job it performs, and wait for the writer's decision.
 
 ## Match The Destination
 
-The same writer sounds different in a journal, technical explanation, UI
-label, pull request, and message to a friend. Preserve the person while matching
-the form. Do not import casual slang into documentation or formal scaffolding
-into a private note.
+For a page, help an independently readable thought retain its native grain
+after selection and arrangement. When `page-writing` has identified a spoken
+entrance, make it sound like a line the writer would naturally bring into the
+room: alive with its real contrast, image, judgment, or stake rather than a
+generic version of intrigue. For a journal, help the lived sequence retain its
+scene texture, private reality, and changing attention. In UI copy,
+documentation, and messages, preserve the person while respecting the form;
+clarity never requires corporate scaffolding or false authority.
 
-## Connect Ideas Without Headers
+When a page uses a blockquote, write it as optional visible reading, not
+abbreviated body prose. It may be blunter, more aphoristic, or more directly
+addressed to the reader than the narration, but it must still sound like the
+writer.
 
-Follow the structure chosen by the destination. When two ideas remain in one
-section, connect them only when the source or structure already supplies the
-relationship. Keep the connection direct and minimal; do not invent an
-objection, contrast, reaction, or claim merely to create a polished bridge.
-When the destination gives the ideas separate sections, use a heading that
-names the real change. Do not create a new section merely to make the prose look
-organized.
+Use punctuation to make movement legible. Prefer periods. Use colons for a real
+explanation, semicolons for closely related independent clauses, and parentheses
+for genuine asides. Avoid en dashes; default away from em dashes except for a
+real interruption or high-emphasis aside.
 
-## Punctuation
-
-Use punctuation to make spoken movement legible. Prefer periods. Use colons
-when the second half names or explains the first, semicolons for closely
-related independent clauses, and parentheses for real asides.
-
-Avoid en dash characters. Default away from em dash characters; keep one only
-for a genuine interruption or high-emphasis aside. In UI strings, headings,
-docs tables, commit messages, comments, and JSDoc, use a period, colon,
-semicolon, comma, or parentheses instead.
-
-## Ear Pass
-
-Use the ear pass to verify the voice already established, not to begin a late
-rewrite. Read the draft at speaking speed. Preserve the beat. Compression is a
-tool, not the goal.
-
-1. Mark where the rhythm catches, the language becomes generic, or attention
-   shifts away from what the writer cared about.
-2. Mark any sentence whose reaction, objection, analogy, or conclusion did not
-   come from the writer.
-3. Remove unsupported connective scaffolding rather than polishing it.
-4. Route worthwhile agent-originated expression edits through the human
-   decision loop above without changing the thought's strength or emotional
-   proportions.
-5. Remove recursive hedges and explanations of why the prose is hedging.
-6. When a problem requires adding, removing, reordering, promoting, or demoting
-   material, return it to the destination skill instead of fixing it here.
-7. Stop when the writing sounds natural and specific, not merely smooth.
-
-When the destination writing skill invokes its final authorship pass, use the
-complete transcript and author notes to catch lost voice before that skill
-removes the entire temporary context bundle.
-
-The final test is simple: did the voice make the intended thought easier to hear
-without changing what survived or how much it mattered?
+The test is: did this expression make the writer easier to hear without
+normalizing the particular thing they were doing?

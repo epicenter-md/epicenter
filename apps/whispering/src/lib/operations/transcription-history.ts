@@ -73,7 +73,7 @@ export function recordTranscriptionOutcome<TError extends AnyTaggedError>(
 			transcriptionError: extractErrorMessage(error),
 		});
 		if (historyError !== null) {
-			log.warn(new Error(historyError.message, { cause: historyError }));
+			log.warn(historyError);
 		}
 		return Err(error);
 	}

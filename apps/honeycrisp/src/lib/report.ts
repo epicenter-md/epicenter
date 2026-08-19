@@ -11,10 +11,27 @@
  * never reached a line which called it. A parameter with one value is not a
  * seam, so the seam is gone and the places that report import this.
  */
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 
 const log = createLogger('honeycrisp');
 
+/**
+ * The failure this module logs. The `cause` is `unknown` because these arrive
+ * from rejected promises and transport callbacks nobody awaited, and a tagged
+ * variant gives the log event a stable `name` to filter on rather than a
+ * message string minted at the call site.
+ */
+export const HoneycrispBackgroundError = defineErrors({
+	BackgroundWorkFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Honeycrisp background work failed',
+		cause,
+	}),
+});
+export type HoneycrispBackgroundError = InferErrors<
+	typeof HoneycrispBackgroundError
+>;
+
 export function reportBackgroundError(cause: unknown): void {
-	log.warn(new Error('Honeycrisp background work failed', { cause }));
+	log.warn(HoneycrispBackgroundError.BackgroundWorkFailed({ cause }));
 }

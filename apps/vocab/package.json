@@ -38,8 +38,7 @@
 		"transliteration": "^2.6.1",
 		"typebox": "catalog:",
 		"wanakana": "^5.3.1",
-		"wellcrafted": "catalog:",
-		"yjs": "catalog:"
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@epicenter/vite-config": "workspace:*",

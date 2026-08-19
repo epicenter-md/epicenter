@@ -45,19 +45,21 @@ import { readFile } from '@tauri-apps/plugin-fs';
 import { openPath as revealPath } from '@tauri-apps/plugin-opener';
 import mime from 'mime';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
+import { createLogger } from 'wellcrafted/logger';
 import {
 	defineKeys,
 	resultMutationOptions,
 	resultQueryOptions,
 } from 'wellcrafted/query';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { log } from '$lib/report';
 import type {
 	DictationCapability,
 	GlobalShortcutRegistration,
 	MicrophonePermission,
 } from '$lib/tauri/commands';
 import { commands, events } from '$lib/tauri/commands';
+
+const log = createLogger('whispering/tauri');
 
 /**
  * A global chord resolved to the accelerator the plugin registers under. The

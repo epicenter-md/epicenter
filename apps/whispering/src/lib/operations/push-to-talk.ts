@@ -1,5 +1,7 @@
 import type { BlobId } from '@epicenter/blobs';
-import { log, report } from '$lib/report';
+import { defineErrors } from 'wellcrafted/error';
+import { createLogger } from 'wellcrafted/logger';
+import { report } from '$lib/report';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import type { WhisperingApp } from '$lib/whispering/app';
 import { startManualRecording, stopManualRecordingById } from './recording';
@@ -29,6 +31,15 @@ import { startManualRecording, stopManualRecordingById } from './recording';
 // from sleep or a lock screen), not the primary stop, so a fixed generous value is
 // enough. Not configurable until real usage asks for it.
 const MAX_HOLD_MS = 5 * 60 * 1000;
+
+const log = createLogger('whispering/push-to-talk');
+
+const PushToTalkError = defineErrors({
+	CapStopFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Push-to-talk cap failed to stop recording',
+		cause,
+	}),
+});
 
 type Session = {
 	/** Scopes every async continuation to the press that began it. */
@@ -124,10 +135,7 @@ function createPushToTalk() {
 			}
 			capTimer = setTimeout(() => {
 				void end(app, id, { capped: true }).catch((cause) =>
-					log.warn(
-						cause instanceof Error ? cause : new Error(String(cause)),
-						'Push-to-talk cap failed to stop recording',
-					),
+					log.warn(PushToTalkError.CapStopFailed({ cause })),
 				);
 			}, MAX_HOLD_MS);
 		} finally {

@@ -3,12 +3,14 @@
 import { spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const POLL_INTERVAL_MS = 30_000;
+const POLL_INTERVAL_MS = Number(
+	process.env.ENLIST_CLAUDE_POLL_INTERVAL_MS ?? 30_000,
+);
 const HEARTBEAT_MS = 60_000;
-const CLAUDE_BIN = process.env.DELEGATE_CLAUDE_BIN ?? 'claude';
+const CLAUDE_BIN = process.env.ENLIST_CLAUDE_BIN ?? 'claude';
 
 /**
- * Publication commands a delegated session can never reach. Deny rules outrank
+ * Publication commands an enlisted session can never reach. Deny rules outrank
  * `auto` permission mode. Cover common direct and option-prefixed forms. This
  * is a command guard, not a shell or network sandbox.
  */
@@ -79,10 +81,10 @@ const EXIT_CODE = {
 
 function usage() {
 	console.error(`Usage:
-  delegate-claude.ts start [--name <name>]
-  delegate-claude.ts status <id>
-  delegate-claude.ts watch <id>
-  delegate-claude.ts continue <id> [--interrupt]
+	  enlist-claude.ts start [--name <name>]
+	  enlist-claude.ts status <id>
+	  enlist-claude.ts watch <id>
+	  enlist-claude.ts continue <id> [--interrupt]
 
 Common direct forms of \`git push\`, \`gh pr create\`, and \`gh pr merge\` are
 denied on every launch and resume, and no flag grants them. This guard is not a
@@ -114,7 +116,7 @@ export function parseStartArgs(args: string[]) {
 		return undefined;
 	}
 
-	return { name: name ?? `codex-delegate-${Date.now().toString(36)}` };
+	return { name: name ?? `codex-enlist-${Date.now().toString(36)}` };
 }
 
 export function parseContinueArgs(args: string[]) {
@@ -130,11 +132,9 @@ export function parseContinueArgs(args: string[]) {
 	return { id, interrupt };
 }
 
-function refuseNestedDelegation() {
+function refuseNestedEnlistment() {
 	if (process.env.CLAUDECODE !== '1') return false;
-	console.error(
-		'[delegate-claude] Refusing reciprocal or nested Claude delegation.',
-	);
+	console.error('[enlist-claude] Refusing reciprocal or nested enlistment.');
 	process.exitCode = EXIT_CODE.usage;
 	return true;
 }
@@ -239,7 +239,7 @@ function getAgent(id: string) {
 
 function printAgent(agent: AgentRecord, outcome: WatchOutcome) {
 	console.error(
-		`[delegate-claude] ${agent.id ?? agent.sessionId}: ${outcome}${
+		`[enlist-claude] ${agent.id ?? agent.sessionId}: ${outcome}${
 			agent.waitingFor ? ` (${agent.waitingFor})` : ''
 		}`,
 	);
@@ -247,7 +247,7 @@ function printAgent(agent: AgentRecord, outcome: WatchOutcome) {
 }
 
 async function start(args: string[]) {
-	if (refuseNestedDelegation()) return;
+	if (refuseNestedEnlistment()) return;
 
 	const options = parseStartArgs(args);
 	if (!options) {
@@ -258,7 +258,7 @@ async function start(args: string[]) {
 
 	const invitation = await readInvitation();
 	if (!invitation.trim()) {
-		console.error('[delegate-claude] Invitation is empty.');
+		console.error('[enlist-claude] Invitation is empty.');
 		process.exitCode = EXIT_CODE.usage;
 		return;
 	}
@@ -276,12 +276,13 @@ async function start(args: string[]) {
 		invitation,
 	]);
 	reportPublicationGuard();
-	reportLaunchedJob(result, options.name, launchedAt);
+	const id = reportLaunchedJob(result, options.name, launchedAt);
+	if (id) await watch(id);
 }
 
 function reportPublicationGuard() {
 	console.error(
-		'[delegate-claude] Direct git push, gh pr create, and gh pr merge commands are denied. Other external writes still require separate user authorization.',
+		'[enlist-claude] Direct git push, gh pr create, and gh pr merge commands are denied. Other external writes still require separate user authorization.',
 	);
 }
 
@@ -295,7 +296,7 @@ function reportLaunchedJob(
 	if (result.error) throw result.error;
 	if (result.status !== 0) {
 		process.exitCode = result.status ?? EXIT_CODE.failed;
-		return;
+		return undefined;
 	}
 
 	// The launch line is research-preview CLI output. When it changes shape,
@@ -307,19 +308,20 @@ function reportLaunchedJob(
 			: undefined);
 	if (!id) {
 		console.error(
-			`[delegate-claude] Claude accepted the launch but no job ID was found; inspect \`claude agents\`${
+			`[enlist-claude] Claude accepted the launch but no job ID was found; inspect \`claude agents\`${
 				fallbackName ? ` for a session named ${fallbackName}` : ''
 			}.`,
 		);
 		process.exitCode = EXIT_CODE.failed;
-		return;
+		return undefined;
 	}
 
-	console.log(`DELEGATE_CLAUDE_JOB_ID=${id}`);
+	console.log(`ENLIST_CLAUDE_JOB_ID=${id}`);
+	return id;
 }
 
 async function continueTask(args: string[]) {
-	if (refuseNestedDelegation()) return;
+	if (refuseNestedEnlistment()) return;
 
 	const options = parseContinueArgs(args);
 	if (!options) {
@@ -331,19 +333,19 @@ async function continueTask(args: string[]) {
 
 	const agent = getAgent(id);
 	if (!agent) {
-		console.error(`[delegate-claude] No Claude job found for ${id}.`);
+		console.error(`[enlist-claude] No Claude job found for ${id}.`);
 		process.exitCode = EXIT_CODE.missing;
 		return;
 	}
 	if (!agent.sessionId) {
-		console.error(`[delegate-claude] ${id} has no session ID to resume.`);
+		console.error(`[enlist-claude] ${id} has no session ID to resume.`);
 		process.exitCode = EXIT_CODE.failed;
 		return;
 	}
 
 	const continuation = await readInvitation();
 	if (!continuation.trim()) {
-		console.error('[delegate-claude] Continuation is empty.');
+		console.error('[enlist-claude] Continuation is empty.');
 		process.exitCode = EXIT_CODE.usage;
 		return;
 	}
@@ -354,7 +356,7 @@ async function continueTask(args: string[]) {
 	const outcome = classifyAgent(agent);
 	if (outcome === 'working' && !options.interrupt) {
 		console.error(
-			`[delegate-claude] ${id} is still working; continuing would discard the turn in flight. Read \`claude logs ${id}\` first, then pass --interrupt to stop it deliberately.`,
+			`[enlist-claude] ${id} is still working; continuing would discard the turn in flight. Read \`claude logs ${id}\` first, then pass --interrupt to stop it deliberately.`,
 		);
 		process.exitCode = EXIT_CODE.usage;
 		return;
@@ -368,7 +370,7 @@ async function continueTask(args: string[]) {
 		) {
 			console.error(
 				stopped.stderr.trim() ||
-					`[delegate-claude] Could not stop ${id} before replying.`,
+					`[enlist-claude] Could not stop ${id} before replying.`,
 			);
 			process.exitCode = EXIT_CODE.failed;
 			return;
@@ -381,18 +383,23 @@ async function continueTask(args: string[]) {
 	const result = runClaude([
 		'--bg',
 		...PUBLICATION_GUARD_ARGS,
+		'--effort',
+		'high',
+		'--permission-mode',
+		'auto',
 		'--resume',
 		agent.sessionId,
 		continuation,
 	]);
 	reportPublicationGuard();
-	reportLaunchedJob(result, agent.name, launchedAt);
+	const resumedId = reportLaunchedJob(result, agent.name, launchedAt);
+	if (resumedId) await watch(resumedId);
 }
 
 function status(id: string) {
 	const agent = getAgent(id);
 	if (!agent) {
-		console.error(`[delegate-claude] No Claude job found for ${id}.`);
+		console.error(`[enlist-claude] No Claude job found for ${id}.`);
 		process.exitCode = EXIT_CODE.missing;
 		return;
 	}
@@ -408,7 +415,7 @@ async function watch(id: string) {
 		try {
 			const agent = getAgent(id);
 			if (!agent) {
-				console.error(`[delegate-claude] No Claude job found for ${id}.`);
+				console.error(`[enlist-claude] No Claude job found for ${id}.`);
 				process.exitCode = EXIT_CODE.missing;
 				return;
 			}
@@ -439,7 +446,7 @@ async function watch(id: string) {
 		} catch (error) {
 			consecutiveFailures += 1;
 			console.error(
-				`[delegate-claude] Status check ${consecutiveFailures} failed: ${
+				`[enlist-claude] Status check ${consecutiveFailures} failed: ${
 					error instanceof Error ? error.message : String(error)
 				}`,
 			);

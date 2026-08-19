@@ -2,7 +2,7 @@
  * Trigger eval tests.
  *
  * Nothing here spawns the Claude CLI. `--live` costs quota and needs an
- * authenticated CLI, so the live path is covered the way `consult-claude`
+ * authenticated CLI, so the live path is covered the way `enlist-claude`
  * covers its runner: pin the arguments and the transcript parser, and leave
  * the call itself to a human who chose to pay for it.
  *
@@ -138,11 +138,31 @@ describe('runLexicalPass', () => {
 
 	test('reports an anchor no description claims', () => {
 		const findings = runLexicalPass(
+			[makeCase({ expect: 'owner' })],
+			[skills[2] as { name: string; description: string }],
+		);
+		expect(findings.map((f) => f.kind)).toContain('NO_OWNER');
+		expect(findings.find((f) => f.kind === 'NO_OWNER')?.detail).toContain(
+			'disclaimed by router',
+		);
+	});
+
+	test('a near-miss case wants its anchor unowned, so silence is the pass', () => {
+		// expect: null means nothing should trigger. Reporting the unclaimed
+		// phrase as a gap would make the passing state look like a defect.
+		const findings = runLexicalPass(
 			[makeCase({ expect: null })],
 			[skills[2] as { name: string; description: string }],
 		);
-		expect(findings.map((f) => f.kind)).toEqual(['NO_OWNER']);
-		expect(findings[0]?.detail).toContain('disclaimed by router');
+		expect(findings).toEqual([]);
+	});
+
+	test('a near-miss case still reports a skill that claims its anchor', () => {
+		const findings = runLexicalPass(
+			[makeCase({ expect: null, forbid: ['owner'] })],
+			[skills[0] as { name: string; description: string }],
+		);
+		expect(findings.map((f) => f.kind)).toEqual(['FORBIDDEN_CLAIM']);
 	});
 
 	test('reports several claimants as ambiguous', () => {
@@ -376,16 +396,17 @@ test('the gate corpus keeps both classes and its controls', async () => {
 	expect(corpus.cases.some((c) => c.expect === null)).toBe(true);
 });
 
-test('only the Codex-actor cases are marked unmeasurable', async () => {
+test('only enlistment cases are marked unmeasurable', async () => {
 	const corpus = JSON.parse(await readFile(corpusPath, 'utf8')) as {
 		cases: EvalCase[];
 	};
 	const { unmeasurable } = partitionByRouter(corpus.cases);
 
-	// These two skills say in their own descriptions that Codex invokes them.
-	expect(unmeasurable.map((c) => c.expect).sort()).toEqual([
-		'consult-claude',
-		'delegate-claude',
+	// This skill says in its own description that Codex invokes it. The two
+	// cases prove that investigation and implementation no longer route apart.
+	expect(unmeasurable.map((c) => c.expect)).toEqual([
+		'enlist-claude',
+		'enlist-claude',
 	]);
 });
 
@@ -509,7 +530,7 @@ test('the shipped corpus covers both boundaries and both directions', async () =
 	};
 
 	const clusters = new Set(corpus.cases.map((c) => c.cluster));
-	expect(clusters).toEqual(new Set(['review', 'delegation']));
+	expect(clusters).toEqual(new Set(['review', 'enlistment']));
 	// A corpus with no near-miss cases only proves a skill can fire, never that
 	// it stays quiet.
 	expect(corpus.cases.some((c) => c.expect === null)).toBe(true);

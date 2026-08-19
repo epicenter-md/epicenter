@@ -37,6 +37,44 @@
   into the other's model.
 - Revisit when: Local Mail next expands beyond Gmail.
 
+## Add TikTok Direct Post
+
+- Desired result: Let a signed-in Epicenter user connect TikTok creator
+  accounts as publishing destinations and make one explicit post consent create
+  at most one TikTok post.
+- Grounding: The unmerged implementation and its review corrections are
+  preserved at
+  [commit 51335f22ec](https://github.com/EpicenterHQ/epicenter/commit/51335f22ec188c8fb1d4903d3d40ef2cd936cf0f)
+  on `codex/tiktok-direct-post`; treat it as implementation evidence to port
+  onto future `main`, not as current product behavior.
+- Revisit when: TikTok publishing becomes a product priority and Epicenter is
+  ready to support TikTok's API access and compliance obligations.
+
+## Complete Whispering's local transcription handoff
+
+- Desired result: When local transcription is unavailable, explain the
+  on-device path, open Epicenter Home to choose or download a model, offer cloud
+  transcription as the secondary path, and show the normal recorder once ready.
+- Grounding: Epicenter Home already owns local model administration under
+  [ADR-0180](docs/adr/0180-epicenter-has-one-host-owned-active-local-transcription-model.md);
+  Whispering already receives derived readiness and a focused Home navigation
+  action under
+  [ADR-0181](docs/adr/0181-every-app-receives-one-portable-epicenter-capability-handle.md).
+- Revisit when: Whispering's first-run or unavailable-transcription surface is
+  next changed.
+
+## Ship a trusted Epicenter macOS application
+
+- Desired result: Publish an Epicenter DMG whose application and bundled Bun
+  sidecar are Developer ID signed, notarized, stapled, and accepted by
+  Gatekeeper.
+- Grounding:
+  [ADR-0118](docs/adr/0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md)
+  says Epicenter ships as one signed Tauri application, while
+  `apps/epicenter/src-tauri/tauri.conf.json` still sets `"signingIdentity": "-"`.
+- Revisit when: Before the first macOS build is distributed outside the
+  development team.
+
 ## Re-earn a headless Epicenter runner
 
 - Desired result: If a person needs Epicenter data to stay live on a machine

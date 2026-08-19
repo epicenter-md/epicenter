@@ -112,8 +112,16 @@ details that serve the chosen direction.
 - `styling` owns CSS, Tailwind, spacing, wrappers, overflow, and scroll traps.
 - `svelte` owns component structure, runes, lifecycle, and state mechanics.
 - `tanstack-table` owns table state, columns, sorting, and row identity.
-- `web-design-guidelines` owns an explicit external standards or accessibility audit.
 - `writing-voice` owns visible interface copy and tone.
+
+For an explicit external standards or accessibility audit, WebFetch the Vercel
+Web Interface Guidelines and apply them directly, reporting findings as
+`file:line`. Fetch them per review rather than caching a copy here, because the
+upstream rules change and a stale copy would be worse than no copy.
+
+```txt
+https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md
+```
 
 The design decision and component-system collapse stay here even when another
 skill owns their implementation mechanics.
