@@ -363,20 +363,25 @@ export function domCodeToKey(code: string): Key | null {
 }
 
 /**
- * Read the live modifier set from a `KeyboardEvent`'s boolean flags rather than
- * its `.code`, so a gesture carries its modifiers no matter which key fired and
- * a stuck modifier-keyup can never strand state (the flags are always current).
- * Fn has no flag (and no `.code`), so a webview capture or the browser matcher
- * can never produce an Fn modifier: that is exactly why an Fn gesture cannot be
- * recorded or fire, and is refused as a global shortcut (ADR-0117). Shared by the
- * chord recorder and the browser matcher so both read modifiers the same way.
+ * Read the live modifier set from a `KeyboardEvent`'s boolean flags. Also read
+ * the current modifier key itself: WebKitGTK exposes Linux Super as
+ * `key === 'Super'` without setting `metaKey`, and the chord recorder needs that
+ * keydown so it can carry Super into the following key. `OS` covers the older
+ * browser spelling of the same key.
+ *
+ * Fn has no reliable browser event, so a webview capture or browser matcher can
+ * never produce an Fn modifier. That is why an Fn gesture cannot be recorded or
+ * fire, and is refused as a global shortcut (ADR-0117). Shared by the chord
+ * recorder and browser matcher so both normalize modifiers the same way.
  */
 export function eventModifiers(e: KeyboardEvent): Modifier[] {
 	const modifiers: Modifier[] = [];
-	if (e.ctrlKey) modifiers.push('ctrl');
-	if (e.altKey) modifiers.push('alt');
-	if (e.shiftKey) modifiers.push('shift');
-	if (e.metaKey) modifiers.push('meta');
+	if (e.ctrlKey || e.key === 'Control') modifiers.push('ctrl');
+	if (e.altKey || e.key === 'Alt') modifiers.push('alt');
+	if (e.shiftKey || e.key === 'Shift') modifiers.push('shift');
+	if (e.metaKey || e.key === 'Meta' || e.key === 'OS' || e.key === 'Super') {
+		modifiers.push('meta');
+	}
 	return modifiers;
 }
 

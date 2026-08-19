@@ -73,8 +73,13 @@ export function createChordRecorder({
 		if (binding.keys.length > 0) onCapture(binding);
 	}
 
-	// Quiet for CAPTURE_WINDOW_MS after the last key change = the gesture is done.
-	const completeAfterWindow = debounce(commit, CAPTURE_WINDOW_MS);
+	// Quiet for CAPTURE_WINDOW_MS after the last key change = the gesture is done,
+	// but only once it contains a non-modifier key. A person may hold a modifier
+	// for as long as they need before adding the key; committing an incomplete
+	// modifier-only partial here would reset it and capture the later key alone.
+	const completeAfterWindow = debounce(() => {
+		if (capturedKey) commit();
+	}, CAPTURE_WINDOW_MS);
 
 	function onKeydown(e: KeyboardEvent) {
 		if (e.repeat) return; // auto-repeat is not a new key

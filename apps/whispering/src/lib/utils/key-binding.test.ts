@@ -2,6 +2,7 @@
 import { expect, test } from 'bun:test';
 import {
 	domCodeToKey,
+	eventModifiers,
 	isRegistrableChord,
 	keyBindingToAccelerator,
 	realizedReach,
@@ -77,6 +78,18 @@ test('domCodeToKey rejects modifier codes and anything off the chord alphabet', 
 	// Outside the alphabet keyBindingToAccelerator can spell.
 	expect(domCodeToKey('Numpad1')).toBeNull();
 	expect(domCodeToKey('Lang1')).toBeNull();
+});
+
+test('eventModifiers treats WebKitGTK Super as the global meta modifier', () => {
+	const event = {
+		ctrlKey: false,
+		altKey: false,
+		shiftKey: false,
+		metaKey: false,
+		key: 'Super',
+	} as KeyboardEvent;
+
+	expect(eventModifiers(event)).toEqual(['meta']);
 });
 
 test('domCodeToKey is the inverse of acceleratorKey for every chord key', () => {
