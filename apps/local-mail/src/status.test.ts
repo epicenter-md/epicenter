@@ -24,7 +24,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AppConfig } from './config.ts';
-import { mailMirror, openMailDb } from './db.ts';
+import { mailDbFile, openMailDb } from './db.ts';
 import { intentDbPath, openIntentDb } from './intent.ts';
 import { accountDir } from './paths.ts';
 import type { GmailMessage } from './schema.ts';
@@ -136,7 +136,7 @@ test('status reporting an absent mirror does not create one', async () => {
 
 	// The path is reported so a human can find the file; reporting it must not
 	// bring it into existence.
-	expect(status.mirrorPath).toBe(mailMirror(tmp.dir, ACCOUNT).path);
+	expect(status.mirrorPath).toBe(mailDbFile(tmp.dir, ACCOUNT).path);
 	expect(existsSync(status.mirrorPath)).toBe(false);
 	expect(existsSync(accountDir(tmp.dir, ACCOUNT))).toBe(false);
 	expect(status.predecessors).toEqual([]);
@@ -150,7 +150,7 @@ test('status lists retained predecessors as inventory, not as a mismatch', async
 	db.finishFullPull('1000', '2026-07-01T00:00:00.000Z');
 	db.close();
 	// What a version bump leaves behind, plus the siblings the app owns.
-	const previousVersion = mailMirror(tmp.dir, ACCOUNT).version - 1;
+	const previousVersion = mailDbFile(tmp.dir, ACCOUNT).version - 1;
 	const dir = accountDir(tmp.dir, ACCOUNT);
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, `mail.v${previousVersion}.db`), '');

@@ -11,8 +11,9 @@
  * name: the registry is the SQL-identifier boundary, so no request string reaches
  * a table name.
  */
-import type { Mirror } from '@epicenter/sqlite/bun-mirror';
+
 import { type EntityStatus, openBooksDbReadonly } from '../db.ts';
+import type { DbFile } from '../db-file.ts';
 import type { EntityDef, GeneratedColumn } from '../entities.ts';
 
 /** One entity in the browse list: its mirror counts plus the columns to render. */
@@ -53,7 +54,7 @@ export function listEntities({
 	mirror,
 	defs,
 }: {
-	mirror: Mirror;
+	mirror: DbFile;
 	defs: EntityDef[];
 }): { mirrorBuilt: boolean; entities: EntitySummary[] } {
 	const db = openBooksDbReadonly(mirror);
@@ -77,7 +78,7 @@ export function pageEntityRows({
 	limit,
 	offset,
 }: {
-	mirror: Mirror;
+	mirror: DbFile;
 	def: EntityDef;
 	limit: number;
 	offset: number;
@@ -114,7 +115,7 @@ export function getEntityRow({
 	def,
 	id,
 }: {
-	mirror: Mirror;
+	mirror: DbFile;
 	def: EntityDef;
 	id: string;
 }): EntityRowDetail | null {

@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
-import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono } from 'hono';
@@ -18,6 +17,7 @@ import {
 import { fetchReport, REPORT_NAMES } from '../books/report.ts';
 import { readBooksStatus } from '../books/status.ts';
 import type { AppConfig } from '../config.ts';
+import type { DbFile } from '../db-file.ts';
 import { entityDef, isKnownEntity } from '../entities.ts';
 import type { SyncOutcome } from '../sync.ts';
 import type { TokenStore } from '../token-store.ts';
@@ -90,7 +90,7 @@ type ApiDeps = {
 	realmId: string;
 	store: TokenStore;
 	/** The company's mirror: the read verbs open its current artifact per call. */
-	mirror: Mirror;
+	mirror: DbFile;
 	readOnly: boolean;
 	/** Reloads the newest token and opens a QB client (report/recategorize). */
 	openQb: OpenQbClient;

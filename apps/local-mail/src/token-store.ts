@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { Value } from 'typebox/value';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AppConfig } from './config.ts';
-import { mailMirror } from './db.ts';
+import { mailDbFile } from './db.ts';
 import { type TokenSet, TokenSetSchema } from './tokens.ts';
 
 /**
@@ -38,7 +38,7 @@ export async function resolveAccount(
 		let hasMirror = false;
 		try {
 			hasMirror =
-				mailMirror(config.dataDir, config.account).artifacts().length > 0;
+				mailDbFile(config.dataDir, config.account).versions().length > 0;
 		} catch {
 			// Not even one path segment; the error below names the real accounts.
 		}

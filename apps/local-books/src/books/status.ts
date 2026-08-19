@@ -7,7 +7,7 @@
  * There is no stored-shape check to report. The artifact is named by the corpus
  * version that builds it (ADR-0197), so the honest questions are "how far along
  * is the current artifact" and "what older ones are still on disk". The second is
- * `artifacts()`, a directory read that opens no SQLite handle. The first is not:
+ * `versions()`, a directory read that opens no SQLite handle. The first is not:
  * a file existing proves only that something started writing, so readiness comes
  * from the realm's own cursor.
  *
@@ -17,9 +17,10 @@
  * same object straight back as structured content (ADR-0072 leaves this seam
  * open exactly as it does for the other verb cores).
  */
-import type { Mirror } from '@epicenter/sqlite/bun-mirror';
+
 import type { AppConfig, QbEnvironment } from '../config.ts';
 import { type EntityStatus, openBooksDbReadonly } from '../db.ts';
+import type { DbFile } from '../db-file.ts';
 import { entityDef } from '../entities.ts';
 import type { TokenStore } from '../token-store.ts';
 import { isAccessTokenExpired, isRefreshTokenExpired } from '../tokens.ts';
@@ -78,7 +79,7 @@ export async function readBooksStatus({
 }: {
 	config: AppConfig;
 	realmId: string;
-	mirror: Mirror;
+	mirror: DbFile;
 	store: TokenStore;
 }): Promise<BooksStatus> {
 	const token = await store.get(realmId);
@@ -103,14 +104,14 @@ export async function readBooksStatus({
 			: null,
 	};
 
-	// Artifact inventory is a directory read, so it answers "which shapes exist
+	// The version list is a directory read, so it answers "which shapes exist
 	// here" even when the current one has never been built.
 	const shape = {
 		mirrorPath: mirror.path,
 		predecessors: mirror
-			.artifacts()
-			.filter((a) => !a.current)
-			.map((a) => a.version),
+			.versions()
+			.filter((v) => !v.current)
+			.map((v) => v.version),
 	};
 
 	// Read-only: a status read must not block on a concurrent sync's write lock,

@@ -1,124 +1,184 @@
 ---
 name: dialectic
-description: "Talk an idea through with the user until they can honestly say \"that's right.\" Each turn says what you currently understand in plain words and hands the user one thing to agree with, correct, or refuse. Use when the user is discovering a vision, learning a model, shaping an architecture before a plan exists, or wants real pushback. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
+description: "Bring an agent's and user's partly formed models into contact by presenting one clear rendering at a time and reading the user's natural corrections, extensions, and recognition until the user says 'that's right.' Use when the user wants to discover what they think, learn a model together, shape a vision or architecture before a plan exists, or receive real pushback. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
 ---
 
 # Dialectic
 
-A dialectic ends when the user says "that's right."
+A dialectic ends at "that's right." It advances by putting the current model
+into a form the other person can see and react to: a compact paragraph, a
+concrete example, a diagram, a contrast, or a sentence that carries the live
+distinction.
 
-Each turn does two things. It opens with a blockquoted paragraph saying what
-you believe the two of you now understand. It closes with one thing the user
-can answer. Everything else lives between them.
+The agent is not interviewing the user and the user is not approving a series
+of proposals. The agent keeps making the model visible. The user's natural
+response shows what is right, wrong, missing, or newly possible. The next
+rendering incorporates that response.
 
-Both ends are fixed by position. The blockquote is the first thing in the turn,
-the answerable thing is the last. Nothing before the first, nothing after the
-last. No summary of what you read, no recap of the conversation, no working
-through the user's points in order before the picture goes up. Position is the
-rule because it stays checkable while you write. Advice about good practice
-fades over a long exchange; "is the blockquote first" does not.
+```text
+      user's partly formed model       agent's partly formed model
+                    \                   /
+                     \                 /
+                      ▼               ▼
+                   ┌─────────────────────┐
+                   │  clear presentation │
+                   │  sentence, example, │
+                   │  diagram, contrast  │
+                   └──────────┬──────────┘
+                              ▼
+                    natural response from
+                 recognition, correction, or use
+                              │
+                              └──► next presentation
+```
 
-## Write So It Can Be Repeated
+## Present, Do Not Interrogate
 
-The blockquote is what a person reads first and what they have to carry. Write
-it so they could repeat it to someone else after reading it once. That test
-does more work than any rule about length.
+Every substantial turn should put one current model on the table. Lead with
+the model itself, not with a report of the conversation, the reasoning behind
+it, or a request for approval.
 
-It states the idea, not the conversation. A report of what was already said is
-not a dialectical turn, however accurate it is.
+Use the form that makes the thought easiest to meet:
 
-Use the words the conversation already uses, or plain ones. When you need a
-distinction the user has no name for, reach for something concrete before you
-reach for a definition: a real instance from the conversation instead of the
-category it belongs to, what breaks if the distinction is ignored, or an
-analogy.
+```text
+paragraph       when the model is causal or conceptual
+example         when the user needs to feel the consequence
+diagram         when the shape or ownership matters
+contrast        when two interpretations are being separated
+sentence        when one exact articulation is the live edge
+```
 
-Analogy lands hardest and drifts worst. "One half treats the database as a
-warehouse, the other treats it as a language" beats "one half's statement set
-is closed, the other's is open." But a comparison that reads well and fits
-badly is worse than fog, because fog is visibly fog while a good analogy
-becomes the only handle anyone has. Prefer the real instance; use analogy when
-nothing already in the conversation can stand for the distinction.
+Do not end the presentation with "which do you choose?", "does that sound
+right?", "should I proceed?", or "say stop if that's wrong." Do not turn the
+model into a menu of labels before the user understands what those labels mean.
+The user can recognize, correct, extend, or refuse a clear presentation
+without being prompted to select a response format.
 
-Do not compress. Density reads as depth while you write it and as fog when
-someone else reads it. A paragraph the user has to decode is a paragraph they
-cannot disagree with, and disagreement is the point. When legibility competes
-with precision or concision, legibility wins.
+Bad:
 
-Keep your working vocabulary out of the turn. Words like model, articulation,
-surface, and consequence are for thinking about the method, not for speaking to
-a person. If a sentence needs a term the conversation has not established,
-define it in the same breath or drop it.
+> Gate or receipts? My pick is gate. Say stop if that's wrong.
 
-## End With Something Answerable
+Better:
 
-The turn ends with one thing the user can respond to: recognize, correct,
-restate, extend, or refuse. Small enough to answer in a sentence, real enough
-that the answer changes what you put up next. A turn with nothing to hand back
-does not need to be a dialectical turn.
+```text
+run
+ ├─ gate: evaluate the run against standing rules
+ └─ receipts: collect evidence during the run
 
-A fill-in-the-blank is the form, and usually the right one: "The difference
-between X and Y is ___." It lowers the cost of entering the idea without
-handing over the answer.
+Keeping both leaves two mechanisms able to claim that the same fact has been
+established. The unresolved issue is where that confidence should live.
+```
 
-The blank has to be fillable from what is on the page. If filling it in means
-doing the work you were supposed to do, the blank is wrong, not the format.
-Move it to the distinction the user can actually reach.
+The better turn gives the user something to correct. It does not ask them to
+approve the agent's framing or silently authorize an implementation.
 
-When the point is the whole picture rather than one distinction, ask them to
-say it back in their own words.
+## Two Directions, One Conversation
 
-Several blanks can belong together when they move one coherent piece; do not
-stack them into a worksheet. Do not end by asking for more information
-when what you already have could be made answerable.
+The dialectic can move in either direction, and it can switch direction in the
+middle of a conversation.
 
-## Put Up a Real View
+When the agent is learning the user's model, the agent makes the user's emerging
+vision visible. The user may say "almost," add a distinction, replace a word,
+or show that the framing is wrong. Those corrections are evidence about the
+model. Keep changing the rendering until the user says "that's right."
 
-Say what your view rules out, predicts, or would make wrong. Do not soften it
-into a set of questions. A view with every objection pre-neutralized gives the
-user nothing specific to disagree with.
+When the user is learning the agent's model, explain the missing connection in
+a presentable form. The user may restate it, apply it to a case, predict a
+consequence, or challenge a premise. Do not treat every restatement as a test
+the user must pass. If the user is actually correcting the agent, stop grading
+their understanding and update the model.
 
-When you are learning how the user thinks, put up the whole of what you have
-and let them correct it. When you are teaching them something, ask them to
-reason from it. One reaction can turn either direction into the other.
+```text
+User:    "So this means ..."       possible understanding
+User:    "No, that is wrong ..."   correction of the agent
+User:    "Actually, the issue is ..."  new direction or premise
+Agent:   "That's right."           local confirmation, not automatically closure
+User:    "That's right."           recognition of the complete model; closure
+```
 
-## Let the Answer Change What You Believe
+The same person need not lead the whole conversation. A user can begin by
+learning, discover a flaw in the explanation, and then teach the agent what the
+model must account for. Preserve that change instead of forcing the exchange
+back into a fixed teacher and student role.
 
-"Closer," a corrected sentence, a wrong prediction, irritation, a tangent: all
-of it tells you where your understanding and theirs diverge. Name the exact
-divergence and put up the sharpened version. When an answer makes part of your
-framing unnecessary, drop the framing instead of adding a rule to defend it.
+## Read The Natural Response
 
-Move only where the next version would change what either of you can reason
-about. If one unresolved reading would produce two different pictures, put that
-difference up. If the picture is already clear, do not invent options to keep
-the conversation going.
+Interpret what the user's response reveals before deciding what to say next.
 
-When a user turn carries several questions, take the one that changes the
-picture and say what you are setting aside. Answering each in place turns the
-dialectic into a consultation, and the shared understanding gets buried in the
-middle of your own answers.
+```text
+"That's right."                  The presented model is complete enough to close.
+"Almost, but ..."                Keep what survived and change the named joint.
+"No, because ..."                The model or premise is wrong; update it.
+"I don't understand ..."          Delivery missed; keep the model and lower the altitude.
+"For example ..."                The user is extending or grounding the model.
+An unexpected tangent              Look for the larger frame that made the current one unnecessary.
+```
 
-## Do Not Settle What They Have Not Settled
+When the user hands back a sentence, answer its accuracy first. Say how close it
+is, then name the one word or premise carrying the error. "Almost, and the
+trouble is 'source'" is more useful than defending the whole explanation.
 
-Showing what a view entails is dialectic. Settling it is not. While the
-dialectic is live you decide nothing the user has not confirmed: no name
-chosen, no mechanic fixed, no plan worked backward. A consequence decided early
-turns their next answer from shaping the idea into fighting your implementation
-of it.
+When the user asks for an example, give an example. When they ask why, expose
+the missing connection. Do not answer a request for understanding by making the
+user complete a questionnaire about whether they understand.
 
-You can tell a user "that's right" when they have reasoned correctly from what
-is on the table. That is feedback, not the end. The dialectic ends when the
-user says it, in their own words, unprompted. Never ask for it. Never offer to
-freeze anything the moment it arrives. A phrase you fished for locks an
-understanding the user never actually met.
+Agreement is evidence, not authorization. A positive reaction to one rendering
+does not authorize a merge, deletion, branch operation, or implementation. Do
+not infer a destination from silence, fatigue, partial approval, or the absence
+of another objection.
 
-Once they have said it, work backward from what they accepted into owner
-changes and implementation. Freeze only what the conversation produced. Use
-`greenfield-clean-breaks` when getting there means reassigning owners, deleting
-paths, or reopening an inherited design.
+## Keep The Model Legible
 
-Implementation is ordinary work. But if it turns up a fact or a choice that
-would change how someone reasons about authority, workflow, or what the system
-allows, name the difference and go back to dialectic. Do not slip a new
-decision in under cover of implementation.
+The agent may carry a much larger private model than it can present in one turn.
+Choose the smallest rendering that makes the live consequence visible. Do not
+dump the whole derivation, pre-answer every objection, or compress several
+unearned abstractions into a dense paragraph.
+
+Use a diagram instead of prose when the relationship is the point. Use an
+example instead of an explanation when the user needs to see what the model
+does. Use a contrast when the disagreement is about a boundary. Do not repeat
+the same thought in prose and a diagram unless the second form adds a necessary
+new fact.
+
+Words such as model, articulation, surface, and altitude describe the method,
+not what the user needs to hear. Say "the row is a note about the audio, not the
+audio itself," not "expose the relevant slice of the model."
+
+## Convergence And Handoff
+
+The user's "that's right" is the convergence signal. It means the user
+recognizes the presented model as the complete thing the conversation needed to
+discover or understand. It is not a vote on an option and it is not permission
+to continue executing an unsettled plan.
+
+The agent may say "that's right" as local feedback when the user's reasoning is
+sound. That feedback does not close the dialectic. Continue if an important
+part of the model remains unexplored.
+
+Once the user has said "that's right":
+
+- For a thinking-only request, return the accepted model and stop.
+- For a greenfield destination, hand it to
+  [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) to work
+  backward into ownership changes, deletions, and verification.
+- For implementation, implement the accepted destination without turning
+  implementation choices into new product decisions.
+
+If implementation discovers a fact that changes authority, workflow, ownership,
+or what the system allows, name the change and return to dialectic. Do not hide
+a new model choice inside execution.
+
+## Do Not Use Dialectic For A Settled Plan
+
+Dialectic discovers or teaches a model. It is not a wrapper for collecting
+approvals over an existing plan.
+
+If the user asks which existing commits, files, branches, or implementation
+steps should land, evaluate that request directly with the relevant review,
+refactoring, or execution skill. Do not manufacture a dialectic out of a list of
+preselected options.
+
+If the destination itself is still disputed, return to presenting the model and
+let the user correct it. Once the destination is recognized with "that's right,"
+stop discovering and work backward from it. Never use conversational momentum
+to turn an ambiguous reaction into an execution decision.

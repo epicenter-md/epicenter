@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { existsSync } from 'node:fs';
-import { type Mirror, mirrorAt } from '@epicenter/sqlite/bun-mirror';
+import { type DbFile, dbFileAt } from './db-file.ts';
 import { intentDbPath, openIntentDb } from './intent.ts';
 import {
 	bodyHtml,
@@ -247,13 +247,13 @@ const MIRROR_TABLES: TableDeclaration[] = [
 const MIRROR_VERSION = 5;
 
 /**
- * The mirror as materialized for one account: `<dataDir>/accounts/<accountEmail>/`. Every
- * surface that needs the artifact's path or its inventory goes through here;
- * nothing outside this file names a mirror file.
+ * The database as materialized for one account:
+ * `<dataDir>/accounts/<accountEmail>/`. Every surface that needs the file's
+ * path or the list of versions beside it goes through here; nothing outside
+ * this file names a database file.
  */
-export function mailMirror(dataDir: string, accountEmail: string): Mirror {
-	return mirrorAt({
-		name: 'mail',
+export function mailDbFile(dataDir: string, accountEmail: string): DbFile {
+	return dbFileAt({
 		version: MIRROR_VERSION,
 		directory: accountDir(dataDir, accountEmail),
 	});
@@ -404,12 +404,12 @@ function attachIntent(
  * construction is the only shape this filename ever holds.
  */
 export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
-	// Resolve the mirror first: an account email that cannot name one path segment
+	// Resolve the file first: an account email that cannot name one path segment
 	// must be refused before anything is created on disk.
-	const mirror = mailMirror(dataDir, accountEmail);
+	const file = mailDbFile(dataDir, accountEmail);
 	ensureAccountDir(dataDir, accountEmail);
-	const db = mirror.open();
-	secureDbFiles(mirror.path);
+	const db = file.open();
+	secureDbFiles(file.path);
 	db.run(CREATE_TABLES);
 	db.run(CREATE_INDEXES);
 	// After the mirror's own DDL, so the view's reference to `messages` resolves.
@@ -811,7 +811,7 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
  * mirror to read": the caller reports it rather than creating one, and a
  * predecessor is never opened here (the moment `MIRROR_VERSION` moved past it,
  * it stopped being authoritative and reading it would be a compatibility layer;
- * `mailMirror(...).artifacts()` is where a deliberate inspector gets its path).
+ * `mailDbFile(...).versions()` is where a deliberate inspector gets its path).
  *
  * The filename is the shape guarantee, so there is no stored version to check.
  * Reads still compile at call time and tolerate absent tables, because a
@@ -828,7 +828,7 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
  * asked about.
  */
 export function openMailDbReadonly({ dataDir, accountEmail }: MailDbLocation) {
-	const db = mailMirror(dataDir, accountEmail).openReadonly();
+	const db = mailDbFile(dataDir, accountEmail).openReadonly();
 	if (db === null) return null;
 	attachIntent(db, { dataDir, accountEmail }, { create: false });
 
