@@ -11,12 +11,6 @@
 			"sourceType": "github",
 			"computedHash": "5717187bba9c22030c7174c74012f01c359f21e2ce87e0eb80e24244d8b8c915"
 		},
-		"caveman": {
-			"source": "mattpocock/skills",
-			"sourceType": "github",
-			"skillPath": "skills/productivity/caveman/SKILL.md",
-			"computedHash": "934433479903febc585bf6deb5f0cebc63137e3f86b7babe0aab1ecb94d6d7a4"
-		},
 		"diagnose": {
 			"source": "mattpocock/skills",
 			"sourceType": "github",
@@ -33,6 +27,18 @@
 			"sourceType": "github",
 			"skillPath": "skills/productivity/handoff/SKILL.md",
 			"computedHash": "d543685cbfb0c64b7bc51a8dc3465975528da9b64f987f863765973b2f3867ab"
+		},
+		"improve-codebase-architecture": {
+			"source": "mattpocock/skills",
+			"sourceType": "github",
+			"skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
+			"computedHash": "4a02bd01030d5ed6a5040c0382b9f56fbf02c7c8b8fd68aa1bcc55628963f760"
+		},
+		"install-anti-slop": {
+			"source": "dmmulroy/anti-slop",
+			"sourceType": "github",
+			"skillPath": "skills/install-anti-slop/SKILL.md",
+			"computedHash": "b903a7ac2c823d473a4b0046834fccbab0bc75ee4fda8be4f81efa895d475b01"
 		},
 		"prototype": {
 			"source": "mattpocock/skills",
