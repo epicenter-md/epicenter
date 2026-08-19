@@ -23,10 +23,15 @@
 		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
 		return new Promise((resolve) => {
-			document.startViewTransition(async () => {
+			const transition = document.startViewTransition(async () => {
 				resolve();
 				await navigation.complete;
 			});
+			// Named snapshots are an enhancement. If a browser cannot capture one
+			// (for example, while old and new route trees briefly overlap), force
+			// the navigation to finish without animation instead of leaving its
+			// rejected readiness promise to blank the WebView.
+			void transition.ready.catch(() => transition.skipTransition());
 		});
 	});
 </script>
