@@ -32,6 +32,8 @@ import { defineDatabase, type KvOf, type RowOf } from '@epicenter/database';
 /** Runtime-minted structural row ids. */
 export type RecordingId = string;
 export type RecipeId = string;
+export type TransformationId = string;
+export type TransformationStepId = string;
 
 const recordingsTable = {
 	/**
@@ -48,6 +50,8 @@ const recordingsTable = {
 	recordedAt: 'string.date.iso',
 	recordedAtZone: 'string',
 	transcript: "string = ''",
+	deliveredTranscript: 'string|null = null',
+	/** @deprecated Migration source for recordings created before deliveredTranscript. */
 	polishedTranscript: 'string|null = null',
 	duration: 'number|null = null',
 	/**
@@ -62,6 +66,22 @@ const recordingsTable = {
 	transcriptionStatus: "'pending'|'completed'|'failed' = 'pending'",
 	transcriptionCompletedAt: 'string.date.iso|null = null',
 	transcriptionError: 'string|null = null',
+} as const;
+
+const transformationsTable = {
+	name: 'string',
+	description: "string = ''",
+	enabled: 'boolean = false',
+	position: 'number',
+} as const;
+
+const transformationStepsTable = {
+	transformationId: 'string',
+	position: 'number',
+	kind: "'find_replace'|'spoken_urls'",
+	find: "string = ''",
+	replace: "string = ''",
+	useRegex: 'boolean = false',
 } as const;
 
 const recipesTable = {
@@ -163,7 +183,12 @@ export const whisperingDatabase = defineDatabase({
 	id: 'so.epicenter.whispering',
 	title: 'Whispering',
 	kv: settingsKv,
-	tables: { recordings: recordingsTable, recipes: recipesTable },
+	tables: {
+		recordings: recordingsTable,
+		recipes: recipesTable,
+		transformations: transformationsTable,
+		transformationSteps: transformationStepsTable,
+	},
 });
 
 /** The typed view of one store through Whispering's workspace. */
@@ -171,6 +196,8 @@ export type WhisperingData = DatabaseView<typeof whisperingDatabase>;
 
 export type Recording = RowOf<typeof recordingsTable>;
 export type Recipe = RowOf<typeof recipesTable>;
+export type Transformation = RowOf<typeof transformationsTable>;
+export type TransformationStep = RowOf<typeof transformationStepsTable>;
 /**
  * The settings values a read hands back: every declared key present, each one
  * defaulted if it was never written.

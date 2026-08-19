@@ -289,10 +289,10 @@ Do not create a second architecture story that leaves ADR-0099 apparently author
 ### Phase 1: Record the reopened decision and declare storage
 
 - [x] Amend ADR-0099 with the deterministic Transformation boundary and runtime order.
-- [ ] Add `transformations` and `transformationSteps` to `apps/whispering/src/lib/workspace/index.ts`.
-- [ ] Add `deliveredTranscript` while retaining deprecated `polishedTranscript` as a migration source.
-- [ ] Export the inferred row and ID types needed by the application domain.
-- [ ] Add declaration and conformance tests for the new tables and recording field.
+- [x] Add `transformations` and `transformationSteps` to `apps/whispering/src/lib/workspace/index.ts`.
+- [x] Add `deliveredTranscript` while retaining deprecated `polishedTranscript` as a migration source.
+- [x] Export the inferred row and ID types needed by the application domain.
+- [x] Add declaration and conformance tests for the new tables and recording field.
 
 ### Phase 2: Build the Transformations domain
 
