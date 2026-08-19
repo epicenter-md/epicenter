@@ -14,7 +14,11 @@ import { InstantString } from '@epicenter/field';
 import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { type RecordingId, whisperingDatabase } from '../workspace';
-import { asStoredBlobId, type NewRecording } from './recording';
+import {
+	asStoredBlobId,
+	getDeliveredTranscript,
+	type NewRecording,
+} from './recording';
 import { createWhisperingRecordings } from './recordings';
 
 function stubLocalStore(overrides: Partial<BlobStore> = {}): BlobStore {
@@ -253,6 +257,62 @@ test('failed row creation cleans up the already committed audio', async () => {
 		// synchronous and deleting a blob is not.
 		await Bun.sleep(1);
 		expect(deleted).toEqual([audioBlobId]);
+	} finally {
+		await context.dispose();
+	}
+});
+
+test('legacy polished text migrates once into delivered text', async () => {
+	const context = await setup({
+		seed: [
+			recording({
+				transcript: 'original',
+				deliveredTranscript: null,
+				polishedTranscript: 'legacy final',
+			}),
+		],
+	});
+	try {
+		const migrated = context.recordings.sorted[0];
+		expect(migrated?.deliveredTranscript).toBe('legacy final');
+		expect(migrated && getDeliveredTranscript(migrated)).toBe('legacy final');
+
+		let writes = 0;
+		const stop = context.table.subscribe(() => {
+			writes += 1;
+		});
+		const reopened = createWhisperingRecordings({
+			table: context.table,
+			blobs: { local: stubLocalStore(), remote: null },
+		});
+		expect(writes).toBe(0);
+		reopened[Symbol.dispose]();
+		stop();
+	} finally {
+		await context.dispose();
+	}
+});
+
+test('a late legacy-only row migrates while the fallback remains readable', async () => {
+	const context = await setup();
+	try {
+		const written = expectOk(
+			context.table.create(
+				storedRow(
+					recording({
+						transcript: 'original',
+						deliveredTranscript: null,
+						polishedTranscript: 'late legacy final',
+					}),
+				),
+			),
+		);
+		const migrated = context.recordings.get(written.id as RecordingId);
+		expect(migrated?.deliveredTranscript).toBe('late legacy final');
+		expect(
+			migrated &&
+				getDeliveredTranscript({ ...migrated, deliveredTranscript: null }),
+		).toBe('late legacy final');
 	} finally {
 		await context.dispose();
 	}

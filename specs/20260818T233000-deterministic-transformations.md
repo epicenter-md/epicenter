@@ -316,9 +316,9 @@ Do not create a second architecture story that leaves ADR-0099 apparently author
 - [ ] Feed transformed text into Polish in `pipeline.ts`.
 - [ ] Persist the final text in `deliveredTranscript` whether it came from Transformations, Polish, both, or neither.
 - [ ] Ensure Polish cancellation/failure falls back to transformed text.
-- [ ] Clear stale delivered and legacy polished values when re-transcription starts.
-- [ ] Add the idempotent `polishedTranscript` to `deliveredTranscript` upgrade and fallback reads.
-- [ ] Update history and latest-recording surfaces to use effective delivered text.
+- [x] Clear stale delivered and legacy polished values when re-transcription starts.
+- [x] Add the idempotent `polishedTranscript` to `deliveredTranscript` upgrade and fallback reads.
+- [x] Update history and latest-recording surfaces to use effective delivered text.
 - [ ] Cover speed mode, Polish success, Polish failure, no enabled Transformations, several enabled Transformations, manual retry, and bulk transcription.
 
 ### Phase 5: Restore the focused editor

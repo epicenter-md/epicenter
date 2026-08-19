@@ -26,6 +26,10 @@
 		getWhisperingApp,
 		getWhisperingQueries,
 	} from '$lib/whispering/context';
+	import {
+		getDeliveredTranscript,
+		hasDeliveredTranscript,
+	} from '$lib/whispering/recording';
 
 	const app = getWhisperingApp();
 	const queries = getWhisperingQueries();
@@ -84,9 +88,8 @@
 		enabled: isDialogOpen,
 	}));
 
-	const deliveredTranscript = $derived(
-		workingCopy.polishedTranscript ?? workingCopy.transcript,
-	);
+	const deliveredTranscript = $derived(getDeliveredTranscript(workingCopy));
+	const hasFinalText = $derived(hasDeliveredTranscript(workingCopy));
 
 	function promptUserConfirmLeave() {
 		if (!isWorkingCopyDirty) {
@@ -124,6 +127,10 @@
 				recordedAt: snapshot.recordedAt,
 				recordedAtZone: snapshot.recordedAtZone,
 				transcript: snapshot.transcript,
+				deliveredTranscript:
+					snapshot.transcript === recording.transcript
+						? recording.deliveredTranscript
+						: null,
 				polishedTranscript:
 					snapshot.transcript === recording.transcript
 						? recording.polishedTranscript
@@ -193,19 +200,19 @@
 				</p>
 			{/if}
 
-			{#if workingCopy.polishedTranscript}
+			{#if hasFinalText}
 				<div class="space-y-2">
 					<div class="flex items-center justify-between gap-2">
 						<Label for="delivered-transcript">Delivered transcript</Label>
 						<CopyButton
-							text={workingCopy.polishedTranscript}
+							text={deliveredTranscript}
 							copyFn={createCopyFn('delivered transcript')}
 							variant="outline"
 						/>
 					</div>
 					<Textarea
 						id="delivered-transcript"
-						value={workingCopy.polishedTranscript}
+						value={deliveredTranscript}
 						readonly
 						rows={6}
 					/>
@@ -214,7 +221,7 @@
 
 			<div class="space-y-2">
 				<Label for="transcript">
-					{workingCopy.polishedTranscript ? 'Original transcript' : 'Transcript'}
+					{hasFinalText ? 'Original transcript' : 'Transcript'}
 				</Label>
 				<Textarea
 					id="transcript"

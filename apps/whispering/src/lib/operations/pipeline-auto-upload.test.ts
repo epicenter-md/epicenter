@@ -23,9 +23,9 @@ const deliverTranscriptionResult = mock(async () => ({
 }));
 const reportInfo = mock();
 let historyError: { name: string; message: string } | null = null;
-let polishedHistoryError: { name: string; message: string } | null = null;
+let deliveredHistoryError: { name: string; message: string } | null = null;
 const saveRecordingHistory = mock(async () =>
-	polishedHistoryError === null ? Ok(undefined) : Err(polishedHistoryError),
+	deliveredHistoryError === null ? Ok(undefined) : Err(deliveredHistoryError),
 );
 
 mock.module('$lib/operations/delivery', () => ({
@@ -88,7 +88,7 @@ afterEach(() => {
 	autoUpload = true;
 	willPolish = false;
 	historyError = null;
-	polishedHistoryError = null;
+	deliveredHistoryError = null;
 });
 
 test('auto-upload attempts once for each new row only when enabled', async () => {
@@ -139,9 +139,9 @@ test('history failure warns after delivering the usable transcription', async ()
 	});
 });
 
-test('polished history failure still delivers polished text and warns', async () => {
+test('delivered history failure still delivers polished text and warns', async () => {
 	willPolish = true;
-	polishedHistoryError = {
+	deliveredHistoryError = {
 		name: 'SaveUnconfirmed',
 		message: 'The transcription may not appear in recording history.',
 	};
@@ -164,11 +164,11 @@ test('polished history failure still delivers polished text and warns', async ()
 	expect(reportInfo).toHaveBeenCalledTimes(noticesBefore + 1);
 	expect(reportInfo).toHaveBeenLastCalledWith({
 		title: 'Transcription delivered, but history may be incomplete',
-		description: polishedHistoryError.message,
+		description: deliveredHistoryError.message,
 	});
 });
 
-test('polished history success does not hide an earlier raw history error', async () => {
+test('delivered history success does not hide an earlier raw history error', async () => {
 	willPolish = true;
 	historyError = {
 		name: 'SaveUnconfirmed',
@@ -183,7 +183,7 @@ test('polished history success does not hide an earlier raw history error', asyn
 	});
 
 	expect(saveRecordingHistory).toHaveBeenLastCalledWith(app, 'recording-1', {
-		polishedTranscript: 'polished transcript',
+		deliveredTranscript: 'polished transcript',
 	});
 	expect(reportInfo).toHaveBeenCalledTimes(noticesBefore + 1);
 	expect(reportInfo).toHaveBeenLastCalledWith({

@@ -39,6 +39,7 @@
 	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import { getWhisperingApp } from '$lib/whispering/context';
+	import { getDeliveredTranscript } from '$lib/whispering/recording';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { tauri } from '#platform/tauri';
 	import CaptureBehaviorPopover from './_components/CaptureBehaviorPopover.svelte';
@@ -311,7 +312,7 @@
 			<RecordingResult
 				recordingId={latestRecording.id}
 				audioBlobId={latestRecording.audioBlobId}
-				transcript={latestRecording.polishedTranscript ?? latestRecording.transcript}
+				transcript={getDeliveredTranscript(latestRecording)}
 				rows={1}
 				onDelete={() => {
 					deleteRecordingsWithConfirmation(app, latestRecording);

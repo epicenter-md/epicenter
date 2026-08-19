@@ -81,6 +81,7 @@ export function recordTranscriptionOutcome<TError extends AnyTaggedError>(
 	const text = transcription.data;
 	const history = saveRecordingHistory(app, recordingId, {
 		transcript: text,
+		deliveredTranscript: null,
 		polishedTranscript: null,
 		transcriptionStatus: 'completed',
 		transcriptionCompletedAt: InstantString.now(),

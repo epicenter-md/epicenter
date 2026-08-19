@@ -7,6 +7,7 @@
  * Key behaviors:
  * - A committed write confirms the history save
  * - A refused write becomes a RecordingHistoryError rather than escaping
+ * - A successful raw outcome clears both current and legacy final text
  * - A failed outcome writes the three flat transcription columns
  */
 import { expect, mock, test } from 'bun:test';
@@ -67,6 +68,7 @@ test('successful transcription carries its history Result', () => {
 	// expression for an inline object (`workspace/index.ts`).
 	expect(patch).toHaveBeenLastCalledWith(recordingId, {
 		transcript: 'usable text',
+		deliveredTranscript: null,
 		polishedTranscript: null,
 		transcriptionStatus: 'completed',
 		transcriptionCompletedAt: expect.any(String),

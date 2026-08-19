@@ -123,6 +123,7 @@ export function createWhisperingRecordings({
 	let rows: Recording[] = [];
 	let sorted: Recording[] = [];
 	let nonconforming: NonconformingRow[] = [];
+	let isUpgradingLegacyTranscripts = false;
 	const listeners = new Set<() => void>();
 	const notify = () => {
 		for (const listener of listeners) listener();
@@ -151,7 +152,27 @@ export function createWhisperingRecordings({
 	 * window to paper over.
 	 */
 	function read(): void {
+		if (isUpgradingLegacyTranscripts) return;
 		const listed = table.list();
+		const legacyRows = listed.rows.filter(
+			(row) =>
+				row.deliveredTranscript === null && row.polishedTranscript !== null,
+		);
+		if (legacyRows.length > 0) {
+			isUpgradingLegacyTranscripts = true;
+			try {
+				for (const row of legacyRows) {
+					const written = table.update(row.id, {
+						deliveredTranscript: row.polishedTranscript,
+					});
+					if (written.error !== null) throw written.error;
+				}
+			} finally {
+				isUpgradingLegacyTranscripts = false;
+			}
+			read();
+			return;
+		}
 		rows = listed.rows.map(asRecording);
 		sorted = sortRows(rows);
 		nonconforming = listed.nonconforming;

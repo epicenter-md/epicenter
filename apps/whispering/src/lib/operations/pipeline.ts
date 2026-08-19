@@ -55,6 +55,7 @@ export async function processRecordingPipeline(
 		recordedAt: now,
 		recordedAtZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 		transcript: '',
+		deliveredTranscript: null,
 		polishedTranscript: null,
 		duration: durationMs,
 		// The three transcription columns are omitted: each declares a default a
@@ -143,17 +144,14 @@ export async function processRecordingPipeline(
 		});
 	}
 
-	// Attempt to persist the polished transcript alongside the raw transcript so
-	// history can show what was actually delivered, with the original one click
-	// away. Only write when a Polish pass actually produced a result: row creation
-	// already left `polishedTranscript` null, so speed mode (no AI call) and a
-	// polish failure (the fallback delivers the raw words) need no second write.
-	if (willPolish && !polishError) {
-		const polishedHistory = await saveRecordingHistory(app, recording.id, {
-			polishedTranscript: polishedText,
-		});
-		if (polishedHistory.error !== null) history = polishedHistory;
-	}
+	// Persist exactly what this path will deliver, regardless of whether Polish ran
+	// or fell back. `deliveredTranscript` names the final-output boundary without
+	// claiming which processing stages produced it; the legacy Polish field is
+	// never written by new code.
+	const deliveredHistory = await saveRecordingHistory(app, recording.id, {
+		deliveredTranscript: deliveredText,
+	});
+	if (deliveredHistory.error !== null) history = deliveredHistory;
 
 	// The transcript is "ready" once it is polished and about to be delivered, so
 	// the completion sound and the resolved loading notice both fire here.
