@@ -206,7 +206,7 @@ findings.
 A description claiming a phrase people say constantly in conversations that
 should not load the skill ("be brief", "what should we do", "simplify this",
 "can you summarize", "what does X do"). Worst when the skill is sticky or
-heavyweight: caveman's persistent persona fired on a one-off "be brief".
+heavyweight: a persistent persona skill fired on a one-off "be brief".
 
 ```bash
 # scan the whole frontmatter: descriptions can be block scalars spanning lines
