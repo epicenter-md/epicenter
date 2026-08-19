@@ -304,11 +304,11 @@ Do not create a second architecture story that leaves ADR-0099 apparently author
 
 ### Phase 3: Restore deterministic execution
 
-- [ ] Create a pure Transformation executor and tests in `apps/whispering/src/lib/operations/`.
-- [ ] Implement ordered literal and regex replacement steps.
-- [ ] Move `normalizeSpokenUrls` behind the `spoken_urls` step and remove its unconditional call from `transcribe.ts`.
-- [ ] Implement multi-Transformation composition, disabled-row skipping, deterministic ties, and atomic per-Transformation failure handling.
-- [ ] Return structured failures without toasts, history writes, or network access.
+- [x] Create a pure Transformation executor and tests in `apps/whispering/src/lib/operations/`.
+- [x] Implement ordered literal and regex replacement steps.
+- [x] Move `normalizeSpokenUrls` behind the `spoken_urls` step and remove its unconditional call from `transcribe.ts`.
+- [x] Implement multi-Transformation composition, disabled-row skipping, deterministic ties, and atomic per-Transformation failure handling.
+- [x] Return structured failures without toasts, history writes, or network access.
 
 ### Phase 4: Integrate processing and recording history
 
@@ -332,7 +332,7 @@ Do not create a second architecture story that leaves ADR-0099 apparently author
 
 ### Phase 6: Remove temporary and stale paths
 
-- [ ] Delete the unconditional URL-normalizer integration from `transcribe.ts`; keep the parser only behind its step executor.
+- [x] Delete the unconditional URL-normalizer integration from `transcribe.ts`; keep the parser only behind its step executor.
 - [ ] Remove stale Transformation view-transition helpers or comments that refer to the deleted selector/picker unless the new UI uses them honestly.
 - [ ] Search for every `polishedTranscript` read and convert it to the migration boundary or effective-delivered helper.
 - [ ] Search for obsolete `selectedId`, prompt-phase, run-history, and picker concepts and ensure none were reintroduced.
