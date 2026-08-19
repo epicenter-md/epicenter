@@ -4,7 +4,9 @@ import { type } from 'arktype';
 import { Hono } from 'hono';
 import { assertMessageLabels } from '../assert.ts';
 import type { MailDb } from '../db.ts';
+import type { IntentDb } from '../intent.ts';
 import { type ReconcileLock, reconcileOwnerBusy } from '../lock.ts';
+import { overlayOf } from '../overlay.ts';
 import {
 	type ReconcileDeps,
 	type ReconcileOutcome,
@@ -171,19 +173,28 @@ export function createApiApp(deps: ApiDeps) {
 		)
 		.get('/messages', sValidator('query', MessageQuery), (c) => {
 			const { label, q, limit, offset } = c.req.valid('query');
-			const db: MailDb = c.var.account.deps.db;
+			const { db, intent }: { db: MailDb; intent: IntentDb } =
+				c.var.account.deps;
 			return c.json({
 				messages: db.listMessages({
 					labelId: label,
 					search: q?.trim() || undefined,
 					limit: Math.min(Number(limit) || 100, 200),
 					offset: Math.max(Number(offset) || 0, 0),
+					// Read per request: a triage act between two page loads has to be
+					// visible on the second, and the set is small enough that holding a
+					// stale one would be the only expensive part.
+					overlay: overlayOf(intent.pending()),
 				}),
 			});
 		})
 		// Hono already URL-decodes path params, so no manual decodeURIComponent.
 		.get('/messages/:id', (c) => {
-			const detail = c.var.account.deps.db.getMessageDetail(c.req.param('id'));
+			const { db, intent } = c.var.account.deps;
+			const detail = db.getMessageDetail(
+				c.req.param('id'),
+				overlayOf(intent.pending()),
+			);
 			if (!detail) {
 				const err = ApiError.MessageNotFound();
 				return c.json(err, err.error.status);

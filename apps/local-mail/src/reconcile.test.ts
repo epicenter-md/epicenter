@@ -28,6 +28,7 @@ import { type MailDb, openMailDb } from './db.ts';
 import { GmailApiError, type GmailClient } from './gmail-client.ts';
 import { type IntentDb, openIntentDb } from './intent.ts';
 import { acquireReconcileLock } from './lock.ts';
+import { overlayOf } from './overlay.ts';
 import { type ReconcileDeps, reconcileAccount } from './reconcile.ts';
 import type { GmailLabel, GmailMessage, HistoryPage } from './schema.ts';
 
@@ -279,7 +280,12 @@ describe('drain', () => {
 			// flickers back into the inbox between the two writes.
 			expect(mirroredLabels(db, 'm1')).toEqual(['UNREAD']);
 			expect(
-				db.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+				db.listMessages({
+					overlay: overlayOf(deps.intent.pending()),
+					labelId: 'INBOX',
+					limit: 10,
+					offset: 0,
+				}),
 			).toEqual([]);
 		} finally {
 			cleanup();
@@ -548,7 +554,12 @@ describe('drain', () => {
 			expect(mirroredLabels(db, 'm1')).toEqual(['UNREAD']);
 			expect(
 				db
-					.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 })
+					.listMessages({
+						overlay: overlayOf(intent.pending()),
+						labelId: 'INBOX',
+						limit: 10,
+						offset: 0,
+					})
 					.map((r) => r.id),
 			).toEqual(['m1']);
 
@@ -835,7 +846,12 @@ describe("folding Gmail's answer", () => {
 			// And with the assertion retired there is no overlay left to hide the row,
 			// so this is the whole of what keeps it out of the inbox.
 			expect(
-				db.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+				db.listMessages({
+					overlay: overlayOf(intent.pending()),
+					labelId: 'INBOX',
+					limit: 10,
+					offset: 0,
+				}),
 			).toEqual([]);
 		} finally {
 			cleanup();
@@ -968,7 +984,12 @@ describe('across a restart', () => {
 		).toBeNull();
 		// The act is already true for every reader, before Gmail has heard.
 		expect(
-			firstDb.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+			firstDb.listMessages({
+				overlay: overlayOf(firstIntent.pending()),
+				labelId: 'INBOX',
+				limit: 10,
+				offset: 0,
+			}),
 		).toEqual([]);
 
 		const offlinePass = await pass(firstDeps);
@@ -1011,7 +1032,12 @@ describe('across a restart', () => {
 		// it any more, so the reader's answer is unchanged by the delivery.
 		expect(mirroredLabels(secondDb, 'm1')).toEqual(['UNREAD']);
 		expect(
-			secondDb.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+			secondDb.listMessages({
+				overlay: overlayOf(secondIntent.pending()),
+				labelId: 'INBOX',
+				limit: 10,
+				offset: 0,
+			}),
 		).toEqual([]);
 
 		secondIntent.close();

@@ -1,13 +1,13 @@
 import type { Database } from 'bun:sqlite';
-import { existsSync } from 'node:fs';
 import { type DbFile, dbFileAt } from './db-file.ts';
-import { intentDbPath, openIntentDb } from './intent.ts';
+import { type LabelIntent, readPendingIntents } from './intent.ts';
 import {
 	bodyHtml,
 	bodyText,
 	hasExternalizedBody,
 	headerValue,
 } from './message-fields.ts';
+import type { LabelOverlay } from './overlay.ts';
 import { accountDir, ensureAccountDir, secureDbFiles } from './paths.ts';
 import type { GmailLabel, GmailMessage } from './schema.ts';
 
@@ -288,111 +288,102 @@ const CREATE_INDEXES = `
 type MailDbLocation = { dataDir: string; accountEmail: string };
 
 /**
- * The effective-label view: Gmail's mirrored facts with the durable intent
- * overlay applied, one row per `(message, label)`. Every read model below and
- * every ad-hoc SQL query see the same definition, so "what the app shows" has
- * exactly one meaning (ADR-0198).
+ * Whether the row a query is currently on effectively carries a label: Gmail
+ * says so and nothing has asserted it off, or something has asserted it on.
  *
- * The shape matters for more than tidiness. Written as a plain join of
- * `messages` against a per-message effective array, SQLite can push a
- * `message_id = ?` constraint from a correlated use straight into the messages
- * primary key. Written as a top-level `UNION ALL` of two branches it cannot, and
- * a filtered page over a large mirror goes from sub-millisecond to hundreds of
- * milliseconds. Keep the union inside the scalar subquery.
+ * Each argument is the name of a bound parameter. `added` and `removed` are
+ * JSON arrays of message ids taken from the overlay, which is why this needs no
+ * second database: the few ids an assertion touches travel into the statement
+ * as values rather than as a table to join against.
  *
- * `overlaid` is false only when there is no intent store to attach, which a
- * read-only opener must not create. The overlay arms simply drop out, which is
- * the honest reading of "nothing is asserted": effective labels are the mirrored
- * ones. It is the same definition with an empty overlay, not a second answer to
- * the same question.
+ * The second branch is the one that makes this a filter rather than a
+ * decoration. A message the user moved INTO this label may not carry it in the
+ * mirror at all, so it would never appear in a page that SQL selected on
+ * Gmail's facts alone, and no amount of post-processing could put it back.
+ * Filtering, ordering and `LIMIT`/`OFFSET` therefore all have to see the
+ * overlay, which is what keeps a page full and correct the instant a user acts
+ * (ADR-0198).
  *
- * The view lives in TEMP, not in the artifact, because it names an attached
- * database: a connection that opened the mirror without `intent` attached must
- * not inherit a view it cannot resolve. TEMP also lets a read-only handle define
- * it, since the temp schema is writable either way. Nothing about this is stored,
- * so it is not a `MIRROR_VERSION` bump.
- */
-function effectiveLabelsView(overlaid: boolean): string {
-	return `
-	CREATE TEMP VIEW IF NOT EXISTS effective_labels AS
-		SELECT m.id AS message_id, j.value AS label_id
-		  FROM messages m,
-		       json_each((
-		         SELECT json_group_array(value) FROM (
-		           SELECT mirrored.value AS value
-		             FROM json_each(m.label_ids) mirrored
-		            ${
-									overlaid
-										? `WHERE NOT EXISTS (
-		                  SELECT 1 FROM intent.label_intents i
-		                   WHERE i.message_id = m.id AND i.label_id = mirrored.value)
-		           UNION ALL
-		           SELECT i.label_id
-		             FROM intent.label_intents i
-		            WHERE i.message_id = m.id AND i.want = 1`
-										: ''
-								}))) j`;
-}
-
-/** The effective label set of the row a query is currently on, as a JSON array
- * string. Correlated, so it is computed only for the rows a page returns. */
-const EFFECTIVE_LABEL_IDS = `(
-	SELECT json_group_array(e.label_id) FROM effective_labels e
-	 WHERE e.message_id = messages.id)`;
-
-/** Whether the row a query is currently on effectively carries `param`'s label.
+ * `coalesce` because a message whose stored resource carries no `labelIds` at
+ * all projects `NULL` here, and "no labels" is the honest reading of that.
+ *
  * Used for both the label filter and Gmail's trash rule, so the two can never
- * disagree about what "has this label" means. */
-function hasEffectiveLabel(param: string): string {
-	return `EXISTS (
-		SELECT 1 FROM effective_labels e
-		 WHERE e.message_id = messages.id AND e.label_id = ${param})`;
+ * disagree about what "has this label" means.
+ */
+function hasEffectiveLabel(
+	label: string,
+	added: string,
+	removed: string,
+): string {
+	return `(
+		( EXISTS (
+			SELECT 1 FROM json_each(coalesce(messages.label_ids, '[]'))
+			 WHERE value = ${label})
+		  AND messages.id NOT IN (SELECT value FROM json_each(${removed})) )
+		OR messages.id IN (SELECT value FROM json_each(${added})))`;
 }
 
 /**
- * The read-only URI form of a path, for `ATTACH`. SQLite treats an attachment
- * argument beginning with `file:` as a URI, and `?mode=ro` is what keeps a
- * writable mirror connection from becoming a second writer to the durable
- * store. Percent-escaping is not cosmetic here: an unescaped `?` or `#` in a
- * data-dir path would be read as the URI's query or fragment, and SQLite would
- * silently attach a DIFFERENT, empty database rather than fail.
- */
-function readOnlyAttachUri(path: string): string {
-	const escaped = encodeURI(path).replaceAll('?', '%3f').replaceAll('#', '%23');
-	return `file:${escaped}?mode=ro`;
-}
-
-/**
- * Attach one account's durable intent store to a mirror connection and define
- * the effective-label view over it.
+ * Define `effective_labels` for the ad-hoc SQL surface, over a temp copy of the
+ * overlay rather than over an attached database.
  *
- * `create` says whether this opener may bring the store into existence. A
- * writable mirror is opened by a path that is about to need it, so it prepares
- * both files. A read-only opener (`query`, `status`) must not: a question about
- * an account should not leave a durable file behind, so when there is no store
- * it attaches nothing and the view degenerates to the mirrored labels.
+ * The app's own read models do not use this. They take the overlay as data and
+ * decorate their rows in TypeScript. It exists for `local-mail query` and the
+ * MCP `query` tool, whose whole point is that an agent can write SQL against
+ * what the app shows, and whose tool description names this view.
  *
- * Attaching read-only is the ownership statement, and it also decouples the two
- * files' locks: a writable attachment would be pulled into every
- * `BEGIN IMMEDIATE` on the mirror, so a full-pull page commit would block a
- * triage act mid-flight. `intent.ts` holds the only handle that may write here.
+ * TEMP is what makes it possible on a read-only handle: the temp schema is a
+ * separate, writable database even when the main one refuses writes, so the
+ * overlay can be materialized without the mirror becoming writable and without
+ * the durable store being attached and exposed to a stray `UPDATE`. Nothing
+ * here is stored, so it is not a `MIRROR_VERSION` bump.
+ *
+ * The union stays inside the scalar subquery. Written as a plain join of
+ * `messages` against a per-message effective array, SQLite pushes a
+ * `message_id = ?` constraint from a correlated use straight into the messages
+ * primary key; written as a top-level `UNION ALL` of two branches it cannot,
+ * and a filtered query over a large mirror goes from sub-millisecond to
+ * hundreds of milliseconds.
+ *
+ * An empty overlay is not a second answer to the same question: the arms simply
+ * match nothing and effective labels are the mirrored ones.
  */
-function attachIntent(
+function defineEffectiveLabelsView(
 	db: Database,
-	{ dataDir, accountEmail }: MailDbLocation,
-	{ create }: { create: boolean },
+	intents: readonly LabelIntent[],
 ): void {
-	const path = intentDbPath(dataDir, accountEmail);
-	if (create) {
-		// Opened and closed by its own owner first: attaching a missing file under
-		// `mode=ro` fails outright, and an empty one has no table for the view.
-		openIntentDb({ dataDir, accountEmail }).close();
-	} else if (!existsSync(path)) {
-		db.run(effectiveLabelsView(false));
-		return;
+	db.run(`
+		CREATE TEMP TABLE label_intents (
+			message_id TEXT    NOT NULL,
+			label_id   TEXT    NOT NULL,
+			want       INTEGER NOT NULL,
+			PRIMARY KEY (message_id, label_id)
+		)`);
+	if (intents.length > 0) {
+		const insert = db.query(
+			`INSERT INTO temp.label_intents (message_id, label_id, want) VALUES (?, ?, ?)`,
+		);
+		db.transaction(() => {
+			for (const intent of intents) {
+				insert.run(intent.messageId, intent.labelId, intent.want ? 1 : 0);
+			}
+		})();
 	}
-	db.run('ATTACH DATABASE ? AS intent', [readOnlyAttachUri(path)]);
-	db.run(effectiveLabelsView(true));
+	db.run(`
+		CREATE TEMP VIEW effective_labels AS
+			SELECT m.id AS message_id, j.value AS label_id
+			  FROM messages m,
+			       json_each((
+			         SELECT json_group_array(value) FROM (
+			           SELECT mirrored.value AS value
+			             FROM json_each(coalesce(m.label_ids, '[]')) mirrored
+			            WHERE NOT EXISTS (
+			                  SELECT 1 FROM temp.label_intents i
+			                   WHERE i.message_id = m.id AND i.label_id = mirrored.value)
+			           UNION ALL
+			           SELECT i.label_id
+			             FROM temp.label_intents i
+			            WHERE i.message_id = m.id AND i.want = 1))) j`);
 }
 
 /**
@@ -412,8 +403,6 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 	secureDbFiles(file.path);
 	db.run(CREATE_TABLES);
 	db.run(CREATE_INDEXES);
-	// After the mirror's own DDL, so the view's reference to `messages` resolves.
-	attachIntent(db, { dataDir, accountEmail }, { create: true });
 
 	const setMetaStmt = db.query(
 		`INSERT INTO _meta (key, value) VALUES (?, ?)
@@ -568,25 +557,32 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 
 		/**
 		 * The triage list read model. Newest first; an optional `labelId` filters
-		 * to messages carrying that label EFFECTIVELY (Gmail's facts with the
-		 * durable intent overlay applied), and an optional `search` matches
-		 * subject/sender/body. Both are pushed into SQL so the process never
-		 * materializes the whole mirror, and so filtering, ordering, and
+		 * to messages carrying that label EFFECTIVELY (Gmail's facts with this
+		 * device's undelivered assertions applied), and an optional `search`
+		 * matches subject/sender/body. Both are pushed into SQL so the process
+		 * never materializes the whole mirror, and so filtering, ordering, and
 		 * `LIMIT`/`OFFSET` are all computed post-overlay: a message the user just
-		 * archived leaves the inbox page immediately, and the page still comes
-		 * back full. Compiled per call (dynamic WHERE), which is fine at mirror
-		 * scale and mirrors the `query` verb's discipline.
+		 * archived leaves the inbox page immediately, one they just un-archived
+		 * joins it, and the page still comes back full.
+		 *
+		 * The overlay arrives as data, not as an attached database. Its
+		 * `addedTo`/`removedFrom` id sets go in as bound JSON arrays for the
+		 * filtering half, and `effectiveLabels` decorates each returned row for
+		 * the display half. Compiled per call (dynamic WHERE), which is fine at
+		 * mirror scale and matches the `query` verb's discipline.
 		 */
 		listMessages({
 			labelId,
 			search,
 			limit,
 			offset,
+			overlay,
 		}: {
 			labelId?: string;
 			search?: string;
 			limit: number;
 			offset: number;
+			overlay: LabelOverlay;
 		}): MessageSummary[] {
 			const where: string[] = [];
 			const params: Record<string, string | number> = {
@@ -594,8 +590,12 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 				$offset: offset,
 			};
 			if (labelId) {
-				where.push(hasEffectiveLabel('$labelId'));
+				where.push(
+					hasEffectiveLabel('$labelId', '$labelAdded', '$labelRemoved'),
+				);
 				params.$labelId = labelId;
+				params.$labelAdded = JSON.stringify(overlay.addedTo(labelId));
+				params.$labelRemoved = JSON.stringify(overlay.removedFrom(labelId));
 			}
 			// Mirror Gmail's own rule: Trash is hidden from every view (Inbox, All
 			// mail, any label) except Trash itself. A trashed row is folded, not
@@ -603,7 +603,11 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 			// view; asserting `TRASH` makes it leave before Gmail has even been
 			// told, because the assertion is part of the effective label set.
 			if (labelId !== 'TRASH') {
-				where.push(`NOT ${hasEffectiveLabel(`'TRASH'`)}`);
+				where.push(
+					`NOT ${hasEffectiveLabel(`'TRASH'`, '$trashAdded', '$trashRemoved')}`,
+				);
+				params.$trashAdded = JSON.stringify(overlay.addedTo('TRASH'));
+				params.$trashRemoved = JSON.stringify(overlay.removedFrom('TRASH'));
 			}
 			if (search) {
 				where.push(`(subject LIKE $q OR sender LIKE $q OR body_text LIKE $q)`);
@@ -623,8 +627,7 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 					},
 					Record<string, string | number>
 				>(
-					`SELECT id, thread_id, subject, sender, snippet, internal_date,
-					        ${EFFECTIVE_LABEL_IDS} AS label_ids
+					`SELECT id, thread_id, subject, sender, snippet, internal_date, label_ids
 					 FROM messages ${clause}
 					 ORDER BY internal_date DESC
 					 LIMIT $limit OFFSET $offset`,
@@ -637,12 +640,16 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 				sender: row.sender,
 				snippet: row.snippet,
 				internalDate: row.internal_date,
-				labelIds: parseLabelIds(row.label_ids),
+				labelIds: overlay.effectiveLabels(row.id, parseLabelIds(row.label_ids)),
 			}));
 		},
 
-		/** One message with its extracted body, for the detail pane. */
-		getMessageDetail(id: string): MessageDetail | null {
+		/**
+		 * One message with its extracted body, for the detail pane. The overlay
+		 * only decorates here: a single row addressed by primary key needs no
+		 * help deciding whether it belongs in a result.
+		 */
+		getMessageDetail(id: string, overlay: LabelOverlay): MessageDetail | null {
 			const row = db
 				.query<
 					{
@@ -659,7 +666,7 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 					[string]
 				>(
 					`SELECT id, thread_id, subject, sender, snippet, internal_date,
-					        ${EFFECTIVE_LABEL_IDS} AS label_ids, body_text, resource
+					        label_ids, body_text, resource
 					 FROM messages WHERE id = ?`,
 				)
 				.get(id);
@@ -691,7 +698,7 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 				sender: row.sender,
 				snippet: row.snippet,
 				internalDate: row.internal_date,
-				labelIds: parseLabelIds(row.label_ids),
+				labelIds: overlay.effectiveLabels(row.id, parseLabelIds(row.label_ids)),
 				to,
 				date,
 				bodyText: row.body_text,
@@ -830,7 +837,7 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 export function openMailDbReadonly({ dataDir, accountEmail }: MailDbLocation) {
 	const db = mailDbFile(dataDir, accountEmail).openReadonly();
 	if (db === null) return null;
-	attachIntent(db, { dataDir, accountEmail }, { create: false });
+	defineEffectiveLabelsView(db, readPendingIntents({ dataDir, accountEmail }));
 
 	const hasTable = (name: string): boolean =>
 		db

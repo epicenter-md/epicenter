@@ -31,7 +31,8 @@ import {
 	openMailDb,
 	openMailDbReadonly,
 } from './db.ts';
-import { openIntentDb } from './intent.ts';
+import { intentDbPath, openIntentDb, readPendingIntents } from './intent.ts';
+import { overlayOf } from './overlay.ts';
 import { accountDir } from './paths.ts';
 import type { GmailMessage } from './schema.ts';
 
@@ -613,7 +614,14 @@ describe('the intent overlay attachment', () => {
 			intent.close();
 
 			expect(
-				db.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+				db.listMessages({
+					labelId: 'INBOX',
+					limit: 10,
+					offset: 0,
+					// Read from disk rather than from the handle just closed: this is
+					// the path every surface uses that did not author the assertion.
+					overlay: overlayOf(readPendingIntents(account)),
+				}),
 			).toEqual([]);
 			db.close();
 
@@ -627,6 +635,45 @@ describe('the intent overlay attachment', () => {
 					.all(),
 			).toEqual([]);
 			readonly?.close();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	// The branch the old attach-based opener spelled out: with nothing asserted
+	// there is no second answer to "what does this message carry", just the same
+	// definition over an empty overlay. And asking must not leave a durable file
+	// behind for an account that never acted.
+	test('the ad-hoc surface answers from Gmail facts when nothing is asserted', () => {
+		const root = mkdtempSync(join(tmpdir(), 'local-mail-nointent-'));
+		const account = { dataDir: root, accountEmail: 'you@example.com' };
+		try {
+			const db = openMailDb(account);
+			db.ingestFullPullPage(
+				[
+					{
+						id: 'm1',
+						threadId: 't1',
+						labelIds: ['INBOX', 'UNREAD'],
+						payload: { headers: [] },
+					},
+				],
+				'2026-08-01T00:00:00.000Z',
+			);
+			db.close();
+
+			const readonly = openMailDbReadonly(account);
+			expect(
+				readonly?.raw
+					.query<{ label_id: string }, []>(
+						`SELECT label_id FROM effective_labels
+						  WHERE message_id = 'm1' ORDER BY label_id`,
+					)
+					.all(),
+			).toEqual([{ label_id: 'INBOX' }, { label_id: 'UNREAD' }]);
+			readonly?.close();
+
+			expect(existsSync(intentDbPath(root, 'you@example.com'))).toBe(false);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -648,19 +695,16 @@ describe('the artifact lifecycle', () => {
 		second.close();
 
 		// One version, one filename: reopening at the same version must not have
-		// produced a second artifact. `intent.db` is beside it and is not one: a
-		// writable open prepares the durable store so the effective-label view has
-		// something to attach (ADR-0198).
+		// produced a second artifact. Opening the mirror also creates nothing
+		// beside it. It used to leave an empty `intent.db` behind, because the
+		// effective-label view needed a database to attach; the overlay is read
+		// in memory now, so a durable file appears only when something actually
+		// records an act (ADR-0198).
 		expect(
 			readdirSync(accountDir(tmp.dir, 'you@example.com'))
 				.filter((name) => name.endsWith('.db'))
 				.sort(),
-		).toEqual(
-			[
-				'intent.db',
-				`mail.v${mailDbFile(tmp.dir, 'you@example.com').version}.db`,
-			].sort(),
-		);
+		).toEqual([`mail.v${mailDbFile(tmp.dir, 'you@example.com').version}.db`]);
 		tmp.cleanup();
 	});
 
@@ -720,9 +764,11 @@ describe('the artifact lifecycle', () => {
 		writeFileSync(`${predecessorPath}-wal`, '');
 		// Local Mail's siblings: the reconcile-owner lock, the OAuth material, and
 		// the durable intent store, which is the one that would be real data loss.
-		// The filename grammar is what puts them out of reclaim's reach (ADR-0197,
-		// ADR-0198); `intent.db` is already present because opening the mirror
-		// created it.
+		// The filename pattern is what puts them out of deletion's reach (ADR-0197,
+		// ADR-0198). The intent store is created explicitly here: opening the
+		// mirror no longer brings one into existence, and this test is about what
+		// deletion may reach, not about who creates what.
+		openIntentDb({ dataDir: tmp.dir, accountEmail: 'you@example.com' }).close();
 		writeFileSync(join(dir, 'lock.db'), '');
 		writeFileSync(join(dir, 'credentials.json'), '{}');
 		writeFileSync(join(dir, 'provider.json'), '{}');
@@ -825,7 +871,7 @@ describe('a body Gmail externalized', () => {
 		const { db, cleanup } = openTmp();
 		db.ingestFullPullPage([externalizedBody()], 's1');
 
-		const detail = db.getMessageDetail('m1');
+		const detail = db.getMessageDetail('m1', overlayOf([]));
 		expect(detail?.bodyText).toBeNull();
 		expect(detail?.unsafeBodyHtml).toBeNull();
 		expect(detail?.bodyExternalized).toBe(true);
@@ -856,7 +902,7 @@ describe('a body Gmail externalized', () => {
 			's1',
 		);
 
-		const detail = db.getMessageDetail('m1');
+		const detail = db.getMessageDetail('m1', overlayOf([]));
 		expect(detail?.bodyText).toBe('Inline body');
 		expect(detail?.bodyExternalized).toBe(false);
 		cleanup();

@@ -138,27 +138,13 @@ function applyPragmas(db: Database, pragmas: readonly string[]): Database {
 }
 
 /**
- * Open flags for a writable handle: create if absent, plus URI filename
- * parsing.
- *
- * `SQLITE_OPEN_URI` is here because SQL has no read-only `ATTACH`. A caller
- * that wants to read a sibling database without becoming its second writer can
- * only say so as `file:<path>?mode=ro`, and SQLite parses that form only when
- * the connection asked for it or the library was built with `SQLITE_USE_URI`.
- * bun's macOS build has that flag compiled in and its Linux build does not, so
- * a connection that leaves this to the platform works on one and, on the other,
- * looks for a file literally named `file:...?mode=ro` and reports that it
- * cannot open the database. Asking here makes the capability the caller's to
- * rely on rather than the host's to grant.
+ * Open flags. Nothing in this app attaches a second database, so no connection
+ * here parses URI filenames: a path is a path.
  */
 const WRITABLE_FLAGS =
-	constants.SQLITE_OPEN_READWRITE |
-	constants.SQLITE_OPEN_CREATE |
-	constants.SQLITE_OPEN_URI;
+	constants.SQLITE_OPEN_READWRITE | constants.SQLITE_OPEN_CREATE;
 
-/** The same capability for a reader, which attaches siblings just as a writer does. */
-const READONLY_FLAGS =
-	constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI;
+const READONLY_FLAGS = constants.SQLITE_OPEN_READONLY;
 
 /**
  * The database in one account's directory, at one version.

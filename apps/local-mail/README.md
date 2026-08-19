@@ -338,11 +338,12 @@ process.
 Tools:
 
 - `query`: read-only SQL over the mirror, capped at 1000 returned rows. The read
-  connection attaches the account's `intent.db` read-only and defines an
-  `effective_labels(message_id, label_id)` view over both, so a query can see
-  Gmail's stored labels and the effective set that overlays this machine's
-  undelivered assertions on them. Join the view; `messages.label_ids` is Gmail's
-  last word, not what the user has already asked for.
+  connection copies this machine's undelivered assertions into a TEMP table and
+  defines an `effective_labels(message_id, label_id)` view over it, so a query
+  can see Gmail's stored labels and the effective set that overlays those
+  assertions on them. Nothing is attached: the two files stay separate on disk
+  and the overlay travels as data. Join the view; `messages.label_ids` is
+  Gmail's last word, not what the user has already asked for.
 - `status`: account, cursor, row counts, and the write ledger: undelivered count
   and the age of the oldest. Aggregate only, by design. The current reconcile
   failure is not here, because only a running reconciler has one and this tool
