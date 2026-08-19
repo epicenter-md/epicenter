@@ -1,5 +1,6 @@
-import { normalizeSpokenUrls } from './normalize-spoken-urls';
 import type { Transformation, TransformationStep } from '../workspace';
+import { normalizeSpokenUrls } from './normalize-spoken-urls';
+import { assertValidTransformationStep } from './transformation-validation';
 
 export type RunnableTransformation = Transformation & {
 	steps: TransformationStep[];
@@ -67,9 +68,7 @@ function executeStep(input: string, step: TransformationStep): string {
 		case 'spoken_urls':
 			return normalizeSpokenUrls(input);
 		case 'find_replace': {
-			if (step.find.trim().length === 0) {
-				throw new Error('Find and replace steps require non-blank find text.');
-			}
+			assertValidTransformationStep(step);
 			return step.useRegex
 				? input.replace(new RegExp(step.find, 'g'), step.replace)
 				: input.replaceAll(step.find, step.replace);

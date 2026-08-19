@@ -1,4 +1,5 @@
 import type { NonconformingRow } from '@epicenter/data';
+import { assertValidTransformationStep } from '../operations/transformation-validation';
 import type {
 	Transformation,
 	TransformationId,
@@ -121,7 +122,7 @@ export function createWhisperingTransformations({
 	): TransformationStep {
 		const transformation = getTransformation(transformationId);
 		const normalized = normalizeStep(fields);
-		validateStep(normalized);
+		assertValidTransformationStep(normalized);
 		const written = stepsTable.create({
 			transformationId,
 			position: nextPosition(transformation.steps),
@@ -182,7 +183,9 @@ export function createWhisperingTransformations({
 				if (transformation.steps.length === 0) {
 					throw new Error('A Transformation needs at least one step before it can be enabled.');
 				}
-				for (const step of transformation.steps) validateStep(step);
+				for (const step of transformation.steps) {
+					assertValidTransformationStep(step);
+				}
 			}
 			const written = transformationsTable.update(id, { enabled });
 			if (written.error !== null) throw written.error;
@@ -205,7 +208,7 @@ export function createWhisperingTransformations({
 		): void {
 			const current = getStep(id);
 			const normalized = normalizeStep({ ...current, ...fields });
-			validateStep(normalized);
+			assertValidTransformationStep(normalized);
 			const written = stepsTable.update(id, normalized);
 			if (written.error !== null) throw written.error;
 		},
@@ -271,19 +274,4 @@ function normalizeStep(
 				replace: step.replace ?? '',
 				useRegex: step.useRegex ?? false,
 			};
-}
-
-function validateStep(
-	step: Pick<TransformationStep, 'kind' | 'find' | 'useRegex'>,
-): void {
-	if (step.kind === 'spoken_urls') return;
-	if (step.find.trim().length === 0) {
-		throw new Error('Find and replace steps require non-blank find text.');
-	}
-	if (!step.useRegex) return;
-	try {
-		new RegExp(step.find, 'g');
-	} catch (cause) {
-		throw new Error(`Invalid regular expression: ${step.find}`, { cause });
-	}
 }

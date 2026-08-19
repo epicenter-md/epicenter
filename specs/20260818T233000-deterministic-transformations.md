@@ -323,19 +323,19 @@ Do not create a second architecture story that leaves ADR-0099 apparently author
 
 ### Phase 5: Restore the focused editor
 
-- [ ] Add Transformations to `apps/whispering/src/routes/(app)/_components/nav-items.ts`.
-- [ ] Create the `/transformations` route and ordered list controls.
-- [ ] Add create, edit, enable/disable, reorder, and delete flows.
-- [ ] Add the ordered step editor for find/replace and Spoken URLs.
-- [ ] Add an unpersisted input/output test surface and inline validation.
-- [ ] Confirm keyboard and screen-reader operation for all reorder and mutation controls.
+- [x] Add Transformations to `apps/whispering/src/routes/(app)/_components/nav-items.ts`.
+- [x] Create the `/transformations` route and ordered list controls.
+- [x] Add create, edit, enable/disable, reorder, and delete flows.
+- [x] Add the ordered step editor for find/replace and Spoken URLs.
+- [x] Add an unpersisted input/output test surface and inline validation.
+- [x] Confirm keyboard and screen-reader operation for all reorder and mutation controls.
 
 ### Phase 6: Remove temporary and stale paths
 
 - [x] Delete the unconditional URL-normalizer integration from `transcribe.ts`; keep the parser only behind its step executor.
-- [ ] Remove stale Transformation view-transition helpers or comments that refer to the deleted selector/picker unless the new UI uses them honestly.
+- [x] Remove stale Transformation view-transition helpers or comments that refer to the deleted selector/picker unless the new UI uses them honestly.
 - [x] Search for every `polishedTranscript` read and convert it to the migration boundary or effective-delivered helper.
-- [ ] Search for obsolete `selectedId`, prompt-phase, run-history, and picker concepts and ensure none were reintroduced.
+- [x] Search for obsolete `selectedId`, prompt-phase, run-history, and picker concepts and ensure none were reintroduced.
 - [ ] Run focused tests, Whispering typecheck, Biome, the desktop build, and a manual dictation smoke test.
 
 ## Test catalog

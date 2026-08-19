@@ -21,7 +21,7 @@
 			)}
 		>
 			<Icon class="size-5" />
-			<span>{item.label}</span>
+			<span class="w-full truncate text-center">{item.label}</span>
 		</a>
 	{/each}
 </nav>
