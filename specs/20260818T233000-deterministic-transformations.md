@@ -312,14 +312,14 @@ Do not create a second architecture story that leaves ADR-0099 apparently author
 
 ### Phase 4: Integrate processing and recording history
 
-- [ ] Add a shared deterministic processing operation used after `transcribeAndPersist` by capture, import, manual retry, and bulk transcription.
-- [ ] Feed transformed text into Polish in `pipeline.ts`.
-- [ ] Persist the final text in `deliveredTranscript` whether it came from Transformations, Polish, both, or neither.
-- [ ] Ensure Polish cancellation/failure falls back to transformed text.
+- [x] Add a shared deterministic processing operation used after `transcribeAndPersist` by capture, import, manual retry, and bulk transcription.
+- [x] Feed transformed text into Polish in `pipeline.ts`.
+- [x] Persist the final text in `deliveredTranscript` whether it came from Transformations, Polish, both, or neither.
+- [x] Ensure Polish cancellation/failure falls back to transformed text.
 - [x] Clear stale delivered and legacy polished values when re-transcription starts.
 - [x] Add the idempotent `polishedTranscript` to `deliveredTranscript` upgrade and fallback reads.
 - [x] Update history and latest-recording surfaces to use effective delivered text.
-- [ ] Cover speed mode, Polish success, Polish failure, no enabled Transformations, several enabled Transformations, manual retry, and bulk transcription.
+- [x] Cover speed mode, Polish success, Polish failure, no enabled Transformations, several enabled Transformations, manual retry, and bulk transcription.
 
 ### Phase 5: Restore the focused editor
 
@@ -334,7 +334,7 @@ Do not create a second architecture story that leaves ADR-0099 apparently author
 
 - [x] Delete the unconditional URL-normalizer integration from `transcribe.ts`; keep the parser only behind its step executor.
 - [ ] Remove stale Transformation view-transition helpers or comments that refer to the deleted selector/picker unless the new UI uses them honestly.
-- [ ] Search for every `polishedTranscript` read and convert it to the migration boundary or effective-delivered helper.
+- [x] Search for every `polishedTranscript` read and convert it to the migration boundary or effective-delivered helper.
 - [ ] Search for obsolete `selectedId`, prompt-phase, run-history, and picker concepts and ensure none were reintroduced.
 - [ ] Run focused tests, Whispering typecheck, Biome, the desktop build, and a manual dictation smoke test.
 

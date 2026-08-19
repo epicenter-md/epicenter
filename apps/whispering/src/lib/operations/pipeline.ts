@@ -4,6 +4,7 @@ import {
 	deliverTranscriptionResult,
 	type TranscriptionSource,
 } from '$lib/operations/delivery';
+import { processTranscript } from '$lib/operations/process-transcript';
 import { polishWillRun, runPolish } from '$lib/operations/run-polish';
 import { playSoundIfEnabled } from '$lib/operations/sound';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
@@ -104,10 +105,15 @@ export async function processRecordingPipeline(
 		}
 		return;
 	}
-	const { text: transcribedText } = transcription;
-	let history = transcription.history;
+	const transformed = processTranscript(app, {
+		recordingId: recording.id,
+		...transcription,
+		final: false,
+	});
+	const transformedText = transformed.text;
+	let history = transformed.history;
 
-	// Run Polish over the raw transcript, then deliver the polished text. When
+	// Run Polish over the transformed transcript, then deliver the polished text. When
 	// history succeeds, the raw stays on `recordings.transcript` so "show
 	// original" is recoverable. We hold delivery until Polish finishes and
 	// deliver once, with the final text: delivering the raw and then the polished
@@ -121,7 +127,7 @@ export async function processRecordingPipeline(
 	// import has no pill to cancel from and keeps its own progress toast. The pill
 	// shows the HUD only when an AI pass actually runs (not in speed mode); begin/end
 	// bracket the call so the controller is dropped on success, failure, or abort.
-	const willPolish = polishWillRun(app, transcribedText);
+	const willPolish = polishWillRun(app, transformedText);
 	const showPolishHud = willPolish && isDictation;
 	let signal: AbortSignal | undefined;
 	if (showPolishHud) {
@@ -129,12 +135,12 @@ export async function processRecordingPipeline(
 		signal = polishHud.begin();
 	}
 	const { data: polishedText, error: polishError } = await runPolish(app, {
-		input: transcribedText,
+		input: transformedText,
 		signal,
 	});
 	if (showPolishHud) polishHud.end();
-	// Polish is best-effort: a failed AI pass carries the raw transcript in
-	// `fallback`, so a transcript is never lost to a polish error. Surface the
+	// Polish is best-effort: a failed AI pass carries the transformed transcript
+	// in `fallback`, so deterministic work is never lost to a polish error. Surface the
 	// failure without blocking delivery.
 	const deliveredText = polishError ? polishError.fallback : polishedText;
 	if (polishError) {
