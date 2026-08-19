@@ -22,6 +22,10 @@ import {
 	createWhisperingRecordings,
 	type WhisperingRecordings,
 } from './recordings';
+import {
+	createWhisperingTransformations,
+	type WhisperingTransformations,
+} from './transformations.svelte';
 
 export type { WhisperingBlobs } from './recording-audio';
 
@@ -96,6 +100,7 @@ export type WhisperingApp = {
 	readonly settings: WhisperingSettings;
 	readonly recordings: WhisperingRecordings;
 	readonly recipes: WhisperingRecipes;
+	readonly transformations: WhisperingTransformations;
 	/**
 	 * What sync is doing, or undefined when this generation has no account or
 	 * its dials were permanently denied. A denied bound replica works offline
@@ -111,10 +116,10 @@ export type WhisperingApp = {
  * The device document opens for every page lifetime and holds this machine's
  * settings. When the boot auth snapshot carries an identity, that principal's
  * retained account replica opens too and sync attaches, and the portable work
- * (recordings, recipes) comes from it; a signed-out generation reads and writes
- * that work on the device document instead. A surface never sees the choice:
- * one `recordings` and one `recipes`, over one document, for the whole
- * generation.
+ * (recordings, recipes, Transformations) comes from it; a signed-out generation
+ * reads and writes that work on the device document instead. A surface never
+ * sees the choice: one domain for each kind of work, over one document, for the
+ * whole generation.
  *
  * The account arm resolves only with a replica that is safe to edit
  * (ADR-0231): a fresh unbound one keeps this promise pending, behind the
@@ -165,16 +170,22 @@ export async function openWhisperingApp(
 	const recipesDomain = createWhisperingRecipes({
 		table: work.tables.recipes,
 	});
+	const transformationsDomain = createWhisperingTransformations({
+		transformationsTable: work.tables.transformations,
+		stepsTable: work.tables.transformationSteps,
+	});
 
 	let disposed = false;
 	return Object.freeze({
 		settings: settingsDomain.settings,
 		recordings: recordingsDomain.recordings,
 		recipes: recipesDomain,
+		transformations: transformationsDomain,
 		syncStatus: () => account?.syncStatus(),
 		async [Symbol.asyncDispose]() {
 			if (disposed) return;
 			disposed = true;
+			transformationsDomain[Symbol.dispose]();
 			recipesDomain[Symbol.dispose]();
 			recordingsDomain[Symbol.dispose]();
 			settingsDomain[Symbol.dispose]();

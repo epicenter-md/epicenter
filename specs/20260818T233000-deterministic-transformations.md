@@ -296,11 +296,11 @@ Do not create a second architecture story that leaves ADR-0099 apparently author
 
 ### Phase 2: Build the Transformations domain
 
-- [ ] Create `apps/whispering/src/lib/whispering/transformations.svelte.ts` over both tables.
-- [ ] Implement reactive joined rows, ordering, validation, mutation methods, and cascading deletion.
-- [ ] Expose and dispose `app.transformations` from `apps/whispering/src/lib/whispering/app.ts`.
-- [ ] Include both tables in signed-in and signed-out app tests, proving they use the active work document and not device settings.
-- [ ] Add both tables' nonconforming counts to the debug surface.
+- [x] Create `apps/whispering/src/lib/whispering/transformations.svelte.ts` over both tables.
+- [x] Implement reactive joined rows, ordering, validation, mutation methods, and cascading deletion.
+- [x] Expose and dispose `app.transformations` from `apps/whispering/src/lib/whispering/app.ts`.
+- [x] Include both tables in signed-in and signed-out app tests, proving they use the active work document and not device settings.
+- [x] Add both tables' nonconforming counts to the debug surface.
 
 ### Phase 3: Restore deterministic execution
 

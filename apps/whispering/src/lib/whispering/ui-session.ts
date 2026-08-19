@@ -17,6 +17,7 @@ function createWhisperingUiSession(core: WhisperingApp) {
 		settings: createSettingsView(core.settings),
 		recordings: createRecordings(core),
 		recipes: core.recipes,
+		transformations: core.transformations,
 	};
 	const queryRuntime = createWhisperingQueryRuntime();
 	const queries = createWhisperingQueries(app, queryRuntime);

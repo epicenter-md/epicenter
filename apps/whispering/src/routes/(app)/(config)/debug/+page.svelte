@@ -16,9 +16,20 @@
 				tables: [
 					{ label: 'Recordings', count: app.recordings.count },
 					{ label: 'Recipes', count: app.recipes.count },
+					{ label: 'Transformations', count: app.transformations.count },
+					{
+						label: 'Transformation steps',
+						count: app.transformations.sorted.reduce(
+							(total, transformation) => total + transformation.steps.length,
+							0,
+						),
+					},
 				],
 				nonconforming:
-					app.recordings.nonconforming.length + app.recipes.nonconforming.length,
+					app.recordings.nonconforming.length +
+					app.recipes.nonconforming.length +
+					app.transformations.nonconforming.transformations.length +
+					app.transformations.nonconforming.steps.length,
 			};
 		}
 

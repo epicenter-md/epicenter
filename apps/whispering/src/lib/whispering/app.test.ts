@@ -11,8 +11,8 @@
  * - Settings read their declared defaults and survive a restart
  * - Settings stay on the DEVICE document across signing in, so they neither
  *   travel to another machine nor disappear when an account opens
- * - Recordings written signed out stay on the device and are not shown to a
- *   signed-in generation, which reads the account replica instead
+ * - Recordings and Transformations written signed out stay on the device and
+ *   are not shown to a signed-in generation, which reads the account replica
  * - An aborted boot rejects with the abort and leaves nothing open
  *
  * `fake-indexeddb` supplies the browser store's storage; the socket is a fake
@@ -178,6 +178,7 @@ test('a signed-out boot opens one document and never dials', async () => {
 	expect(app.syncStatus()).toBeUndefined();
 	expect(app.recordings.count).toBe(0);
 	expect(app.recipes.count).toBe(0);
+	expect(app.transformations.count).toBe(0);
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
 	expect(names).toContain(`epicenter/${whisperingDatabase.id}/device`);
@@ -220,6 +221,12 @@ test('settings stay on the device document when an account opens', async () => {
 		);
 		signedOut.settings.set('recordingAutoUpload', true);
 		signedOut.recordings.create(recordingFields('written on this device'));
+		const deviceTransformation = signedOut.transformations.create({
+			name: 'device Transformation',
+		});
+		signedOut.transformations.addStep(deviceTransformation.id, {
+			kind: 'spoken_urls',
+		});
 		await Bun.sleep(10);
 	}
 
@@ -232,6 +239,7 @@ test('settings stay on the device document when an account opens', async () => {
 	// The work is portable, so a signed-in generation reads the account replica.
 	// The device recording is retained but hidden; nothing copied it across.
 	expect(signedIn.recordings.count).toBe(0);
+	expect(signedIn.transformations.count).toBe(0);
 });
 
 test('device work is still there after signing back out', async () => {
@@ -241,6 +249,12 @@ test('device work is still there after signing back out', async () => {
 			dependencies(createFakeAuth({ status: 'signed-out' })),
 		);
 		signedOut.recordings.create(recordingFields('written on this device'));
+		const deviceTransformation = signedOut.transformations.create({
+			name: 'device Transformation',
+		});
+		signedOut.transformations.addStep(deviceTransformation.id, {
+			kind: 'spoken_urls',
+		});
 		await Bun.sleep(10);
 	}
 	{
@@ -248,6 +262,12 @@ test('device work is still there after signing back out', async () => {
 			dependencies(announcingAuth('alice')),
 		);
 		signedIn.recordings.create(recordingFields('written on the account'));
+		const accountTransformation = signedIn.transformations.create({
+			name: 'account Transformation',
+		});
+		signedIn.transformations.addStep(accountTransformation.id, {
+			kind: 'spoken_urls',
+		});
 		await Bun.sleep(10);
 	}
 
@@ -257,6 +277,10 @@ test('device work is still there after signing back out', async () => {
 	expect(signedOutAgain.recordings.sorted.map(({ title }) => title)).toEqual([
 		'written on this device',
 	]);
+	expect(signedOutAgain.transformations.sorted.map(({ name }) => name)).toEqual(
+		['device Transformation'],
+	);
+	expect(signedOutAgain.transformations.sorted[0]?.steps).toHaveLength(1);
 });
 
 test('an aborted boot rejects with the abort', async () => {
