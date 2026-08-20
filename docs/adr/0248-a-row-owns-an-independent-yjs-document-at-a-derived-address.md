@@ -19,7 +19,7 @@
 - **Relates:** [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md),
   [ADR-0238](0238-the-live-document-is-the-truth-while-open-and-persistence-is-a-visible-debt.md),
   and [ADR-0241](0241-a-store-is-truth-plus-debts-and-sql-is-a-composed-follower.md).
-- **Built:** `documentAddress` in `packages/database/src/addresses.ts`, the
+- **Built:** `documentAddress` in `packages/data/src/definition/addresses.ts`, the
   document manager in `packages/data/src/store/documents.ts`, the composed
   row-deletion path in the table verb, and the multiplexed envelope payload in
   `packages/data/src/store/envelope.ts`. The nested `!doc` container is

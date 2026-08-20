@@ -16,10 +16,7 @@ apps/
 packages/
   server       shared Hono library both deployables consume;
                deployments differ by principal resolver
-  data         the store: one Yjs document per application, one
-               SQLite file as log and projection, and the
-               transport that carries it
-  workspace    the workspace declaration vocabulary
+  data         the store, data definitions, openers, sync, and projection
   ui           shadcn-svelte components
 specs/         planning docs
 docs/          reference materials

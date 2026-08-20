@@ -14,22 +14,23 @@ data.
 
 ## How a surface is put together
 
-An application declares one inert workspace and opens its own store through it:
+An application declares one inert data definition and opens its own store through it:
 
 ```txt
-defineWorkspace({ id, title, kv, tables })
+defineData({ id, title, kv, tables })
   pure JSON: no storage, no network, no framework
 
-openDevice(workspace) / openAccount(workspace, { principalId })
+openDevice(definition) / openAccount(definition, { principalId })
   sqlite-wasm in the page, three durable relations in IndexedDB,
   one database per document (ADR-0233)
 
-db.tables.notes.list()
+data.tables.notes.list()
   synchronous from here on
 ```
 
 Opening the store is the only asynchronous thing the application does.
-`db.notes.list()` returns rows, not a promise, and `db.notes.subscribe(...)`
+`data.tables.notes.list()` returns rows, not a promise, and
+`data.tables.notes.subscribe(...)`
 reports which rows a commit touched, for a local write and for bytes from
 another device alike (ADR-0221). Nothing polls, and there is no generation
 counter to keep.
@@ -45,22 +46,20 @@ The full contract for the store is in
 
 ## Layout
 
-The inert workspace is the package root export, and runtime composition sits
-beside it:
+The inert data definition is exported from the app's definition module, and
+runtime composition sits beside it:
 
 ```txt
 apps/<app>/
-├── src/lib/workspace/index.ts   the workspace and its row types
+├── src/lib/workspace/index.ts   the data definition and its row types
 ├── src/lib/                     the store opener, sync, and app services
 ├── src/                         SvelteKit routes and components
 └── package.json                 "exports": { ".": "./src/lib/workspace/index.ts" }
 ```
 
-`honeycrisp` and `whispering` use that nesting; `vocab` keeps its workspace at
-the package root instead (`apps/vocab/vocab.ts`) and composes in
-`apps/vocab/src/lib/runtime.ts`. Follow the existing package shape. Forking the
-workspace file forks sync compatibility with every peer running the canonical
-one.
+`honeycrisp` uses that nesting. Follow the existing package shape. The
+application document's physical root grammar is documented in
+`../docs/adr/0257-the-application-document-has-named-kv-and-table-roots.md`.
 
 Where a build genuinely differs, put the difference behind a `#platform/*`
 build-time subpath import rather than a runtime branch. Honeycrisp's
@@ -71,15 +70,15 @@ cannot obtain; storage does not, because it does not differ.
 
 ## Adding an app
 
-1. Write the workspace at `apps/<app>/src/lib/workspace/index.ts`: one
-   `defineWorkspace({ id, tables })` value plus its row types. Read the
-   workspace rules first, especially that there are no optional fields and no
-   array defaults.
+1. Write the data definition at `apps/<app>/src/lib/workspace/index.ts`: one
+   `defineData({ id, kv, tables })` value plus its row types. Read the data
+   rules first, especially that there are no optional fields or definition
+   defaults.
 2. Point `package.json` `exports["."]` at that file.
 3. Add the store opener beside it, and a `dial` if the app syncs. The host
    supplies the socket; `@epicenter/data/sync` owns everything done with one
    (ADR-0222).
-4. Open the workspace once where the app is acquired and pass the opened data
+4. Open the definition once where the app is acquired and pass the opened data
    handle to ordinary services. Do not spread it through the UI.
 5. Add the app to `docs/licensing/licensing-strategy.md` and, if it needs the
    hosted API in development, a `dev:<app>` script at the repo root.

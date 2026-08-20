@@ -1,6 +1,8 @@
 # Honeycrisp
 
-Honeycrisp is a local-first notes app. The whole application is one Yjs document: folders and notes are rows in it, and each note's prose is a rich-text type inside the row that merges per character.
+Honeycrisp is a local-first notes app. The scalar application state is one Yjs
+document: folders and notes are rows in it. Each note's prose is a rich-text
+type in an independent row document that merges per character.
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
 
@@ -29,6 +31,8 @@ means and whose it is (ADR-0229 as amended by ADR-0233): one device document
 that never syncs and opens every generation, and one retained replica per
 account that also opens when the boot auth carries that principal. The root
 composes both in `src/lib/databases.ts`, and nothing else opens a store.
+The scalar document shape is the shared `app`/`kv`/`tables:<name>` grammar in
+[ADR-0257](../../docs/adr/0257-the-application-document-has-named-kv-and-table-roots.md).
 
 Every build opens its own store, with no platform seam, and reaches one
 authority per signed-in account (ADR-0225/0226). The desktop host serves
@@ -46,12 +50,12 @@ refresh anywhere.
 
 ### Rich-text editing
 
-A note's prose is a live type at the `body` root inside the note's own document,
-allocated when the row is created (`{ document: ['body'] }`) so two devices
-first-opening one note cannot each mint their own and lose one. `NoteBodyPane.svelte`
-reads it with `data.tables.notes.document.open(noteId)` and hands it straight to
-ProseMirror through `@y/prosemirror`. There is no handle to open, nothing to
-await, and nothing to dispose.
+A note's prose is a live type at the `body` root inside the note's own
+independent document. `NoteBodyPane.svelte` opens that document through
+`data.tables.notes.document.open(noteId)`, receives a fully hydrated handle, and
+hands `handle.get('body')` straight to ProseMirror through `@y/prosemirror`.
+Opening is awaited and the handle is disposed when the editor closes; two
+devices first-opening the same named root converge because it is name-addressed.
 
 User edits extract the title, preview, and word count and write them back to the note row with an explicit `updatedAt`. Binding-origin transactions do not update metadata, so opening or remotely hydrating a note does not make it look newly edited.
 

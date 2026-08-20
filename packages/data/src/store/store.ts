@@ -1363,9 +1363,9 @@ function createStoreEngine(
 	 * at all: `Doc.get` is `setIfUndefined` on `doc.share`, so every device that
 	 * mints `kv` converges on one logical root.
 	 *
-	 * A definition with no `kv` section still gets a handle. It has no read lens,
-	 * so it reads and writes the raw structured value rather than refusing keys
-	 * that a declaration does not know about.
+		 * Every definition has a `kv` section, even when it is `{}`. An empty section
+		 * has no read lens, so the handle reads and writes the raw structured value
+		 * rather than refusing keys that the declaration does not know about.
 	 */
 	function createKvHandle(): KvHandle {
 		const table = definition.kv;

@@ -11,8 +11,9 @@ It is an explanation of intent.
 
 ## The one change everything else follows from
 
-**An application is ONE Yjs document, replayed in full before any handle
-exists, and the surface over it is synchronous.** (ADR-0215)
+**An application has ONE scalar Yjs document, replayed in full before any
+handle exists, and the surface over it is synchronous.** Rich row content lives
+in independently loaded row documents. (ADR-0215, amended by ADR-0248)
 
 The old stack was many documents behind a process boundary: a replica owned by a
 worker or a desktop host, reached over a message port or HTTP. Every read was a
@@ -32,7 +33,7 @@ independent changes.
 | --- | --- | --- |
 | one row | `await table.get(id)` | `data.tables.notes.get(id)` |
 | all rows | `await table.scan()` | `data.tables.notes.list()` |
-| ids | (part of scan) | `db.notes.ids()` |
+| ids | (part of scan) | `data.tables.notes.ids()` |
 | SQL | a separate inspection surface | a composed follower: `createSqliteProjection` (`@epicenter/data/projection`, ADR-0241) |
 
 `list()` returns `{ rows, nonconforming }`, plainly: a row the current declaration
@@ -187,7 +188,7 @@ interval to pull remote changes; an interim shape nested the document inside
 the row and handed it out synchronously.
 
 **New:** each row owns one independent Yjs document at its derived address
-(ADR-0248). `await db.tables.notes.document.open(id)` resolves to a fully
+(ADR-0248). `await data.tables.notes.document.open(id)` resolves to a fully
 hydrated handle; `handle.get('body')` is a live `Y.Type` an editor binds to
 directly, remote edits arrive through the one store connection, and disposing
 the handle lets the store unload the document.
@@ -204,12 +205,12 @@ machine-produced, replaced wholesale, and rendered in a list.
 
 ---
 
-## The workspace declaration
+## The data definition
 
 **Old:** TypeBox, `defineTable({ fields: { title: field.string() } })`.
 
 **New:** pure JSON, closed field descriptors, and application-owned recovery
-values (ADR-0213, ADR-0254).
+values (ADR-0255).
 
 ```ts
 export const definition = defineData({
@@ -234,14 +235,10 @@ Objects have no STRING expression, so `'{ status: ... }'` does not parse and
 `'object|null'` validates nothing. Today that means flattening a
 `{ status, completedAt, error }` shape into columns.
 
-**That is a limitation of `parseWorkspace`, not of arktype or of the projection, and
-it is worth knowing before you flatten anything by hand.** Measured against the
-installed arktype: a nested JSON literal (`{ transcription: { status: "'a'|'b'"
-} }`) parses, accepts a good value and refuses a bad one, and it is still pure
-JSON. And `projectValue` already `JSON.stringify`s any non-scalar into its
-column, which is exactly how array fields work today and why they are queryable
-with `json_each`. The only missing piece is `parseWorkspace` recursing into a nested
-field. Flattening is the shape available now, not the shape that is possible.
+`parseData` is the runtime parser for this closed descriptor vocabulary. It
+accepts storage-valid JSON facts and leaves conformance to reads; it does not
+apply defaults or transform stored values. Flattening a value into several
+fields is an application choice, not a migration requirement.
 
 ---
 

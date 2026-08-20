@@ -22,8 +22,8 @@ shapes, see `docs/adr/`.
   the person's synchronized Epicenter.
 - **Epicenter**: one person's logical body of application data. Each application
   is one document holding its own tables and settings, and applications bind
-  a typed workspace declaration over it; the workspace id is the one lifecycle
-  scope beneath it (ADR-0229, ADR-0240).
+  one data definition over it; the definition id is the one lifecycle scope
+  beneath it (ADR-0229, ADR-0255).
 - **Replica**: one complete local or server copy of an Epicenter. A native
   installation, browser origin, OS profile, or server actor may impose its own
   physical replica, but that adapter boundary is not a product data owner.
@@ -124,15 +124,18 @@ shapes, see `docs/adr/`.
   durable ledgers behind a persistence controller, and a synchronous surface
   over both. Opening one is the only asynchronous operation an application
   has.
-- **Workspace declaration**: one application's complete, pure JSON declaration
-  of its durable data, written in arktype expression strings with
-  `defineWorkspace` (ADR-0240). Release-local in the sense that a newer release
-  ships a newer declaration over the same durable data. It has no optional
-  fields (write `'string|null = null'`) and no array defaults (`'string[] =
-  []'` throws; write `'string[]|null = null'`).
-- **Workspace view**: the synchronous typed surface (`tables`, `kv`, `query`)
-  an opened runtime holds over its one definition. Born with the store; nothing
-  rebinds a live runtime.
+- **Data definition**: one application's inert, pure JSON declaration of its
+  durable data, created with `defineData` and read with `parseData` (ADR-0255).
+  It is release-local: a newer release ships a newer declaration over the same
+  durable data. Definitions have no defaults; initialization and recovery are
+  application decisions.
+- **Opened data**: the synchronous typed surface (`tables`, `kv`, `documents`,
+  `store`, and `transact`) an opened runtime holds over one data definition.
+  Born with the store; nothing rebinds a live runtime.
+- **Application document**: the scalar Yjs document persisted under the log name
+  `app`. Its current top-level roots are the bare named root `kv` and one
+  `tables:<name>` root per declared table (ADR-0257). A row is nested under its
+  table; rich row content is an independent row document (ADR-0248).
 - **Table root**: the `tables:<name>` root holding one table's rows. Every
   top-level root says what kind of thing it is, so a table genuinely named `kv`
   lands at `tables:kv` and cannot reach the settings root.
@@ -149,7 +152,7 @@ shapes, see `docs/adr/`.
 - **Row document**: the independent Yjs document a row owns at its derived
   address, `{databaseId}/{tableName}/{rowId}` (ADR-0248), holding roots the
   application names. Opened with
-  `await db.tables.<table>.document.open(rowId)`, which resolves to a fully
+  `await data.tables.<table>.document.open(rowId)`, which resolves to a fully
   hydrated handle whose `get(name)` returns a `Y.Type` an editor binds to
   directly; dispose the handle when the surface holding it unmounts. Epicenter
   never reads inside one. Roots are minted by name on first use, which
@@ -169,8 +172,9 @@ shapes, see `docs/adr/`.
   release ships stops a future one retyping a field.
 - **Unknown field**: a field this release's declaration does not declare. Ignored on
   read and preserved on write, which is what makes a mixed-version fleet safe.
-- **`kv`**: the root holding one application's settings, as a single value with
-  `get`, `update` and `subscribe`. Its subscriber takes no ids, because kv is one
+- **`kv`**: the bare named root holding one application's settings, as a single
+  value with `get`, `update` and `subscribe`. It is `kv`, not `!kv`, and there is
+  no top-level `tables` container; its subscriber takes no ids because kv is one
   value.
 - **SQL projection**: a composed follower, not a store verb
   (`createSqliteProjection` from `@epicenter/data/projection`, ADR-0241). It
@@ -220,7 +224,7 @@ shapes, see `docs/adr/`.
 
 ## App composition
 
-- **Application factory**: the one function that opens the workspace,
+- **Application factory**: the one function that opens the application's data,
   and returns a ready handle, as `apps/honeycrisp/src/lib/databases.ts` does.
   There is no readiness promise beside it: opening is the only asynchronous
   thing, so wanting a separate `whenReady` means a half-open handle.

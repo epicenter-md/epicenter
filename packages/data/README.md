@@ -1,7 +1,8 @@
 # @epicenter/data
 
-The Epicenter store: one Yjs document per application, a synchronous surface
-over it, and the transport that carries it between a person's devices. MIT.
+The Epicenter store: one scalar Yjs document per application, independently
+loaded row documents for rich content, a synchronous surface over the scalar
+state, and the transport that carries it between a person's devices. MIT.
 
 The package has one definition entrypoint and four runtime entrypoints:
 
@@ -161,28 +162,33 @@ generation counter to keep and no `refresh()` to remember:
 ```ts
 function read() { /* the read above */ }
 read();
-const stop = app.tables.notes.subscribe(read);
+const stop = data.tables.notes.subscribe(read);
 ```
 
-`app.kv.subscribe` takes a listener with no arguments. KV is one value at a
+`data.kv.subscribe` takes a listener with no arguments. KV is one value at a
 name-addressed root, so there are no ids to carry.
 
 ## The shape of the data
 
-One `Y.Doc` per application. Its top-level roots are `tables:<name>` for each
-declared table and `kv` for settings, and nothing else, so dumping `doc.share`
-reads as a description of the application.
+One scalar `Y.Doc` per application is persisted under the application log name
+`app`. Its current top-level roots are the bare named root `kv` and one
+`tables:<name>` root for each declared table. This is the physical storage
+grammar; it is not a promise that an older or unknown writer could not have
+left another root behind. The current model mints no other root kind, so
+dumping `doc.share` reads as a description of the application's current scalar
+state.
 
 ```txt
-Y.Doc
-├── tables:notes
+Y.Doc "app"
+├── get("kv")
+│   ├── <field>        one KV attribute
+│   └── ...
+├── get("tables:notes")
 │   ├── <rowId>        a nested Y.Type: the row
 │   │   ├── title      an attribute: a field
-│   │   ├── folderId
-│   │   └── !doc       the reserved container this row's prose lives in
+│   │   └── folderId
 │   └── <rowId>
-├── tables:folders
-└── kv
+└── get("tables:folders")
 ```
 
 **A row is an attribute on its table root, not a root of its own.** That is a
@@ -199,23 +205,22 @@ converges (ADR-0216).
 
 ### Prose
 
-A row's document container is allocated when the row is created, never lazily
-on first access, and the application names the roots inside it at that moment:
+A row's rich content lives in an independent Yjs document at its derived
+address (ADR-0248), not in a nested `!doc` container on the row. The application
+names roots inside that independent document when it first opens them:
 
 ```ts
-app.tables.notes.create(fields, { document: ['body'] });
+const { data: handle } = await data.tables.notes.document.open(id);
 
-const body = app.tables.notes.document(id)?.get('body'); // a live Y.Type
+const body = handle?.get('body'); // a live Y.Type
+handle?.[Symbol.dispose]();
 ```
 
-`get(name)` creates on miss, and a created nested type is addressed by the
-operation that made it, so two devices first-opening one note would each mint a
-root at that key and lose one along with everything typed into it. Naming it at
-`create` leaves exactly one creator.
-
-What comes back is a `Y.Type` an editor binds to directly. Nothing to open,
-await, dispose, or poll. Epicenter allocates the container with the row,
-collects it with the row, picks no format, and never looks inside.
+Because the row document is independently name-addressed, two devices
+first-opening the same named root converge with both writes retained. What
+comes back is a hydrated handle whose `get(name)` returns a `Y.Type` an editor
+binds to directly. Epicenter picks no rich-content format and never looks
+inside.
 
 ## What merges with what
 
@@ -294,14 +299,14 @@ yet can retype a field, and no default you declare today prevents that.
 What is possible is healing, and the primitives already exist:
 
 ```ts
-for (const issue of app.tables.notes.list().nonconforming) {
+for (const issue of data.tables.notes.list().nonconforming) {
 	issue.id          // the structural row id
 	issue.issues      // [{ field: 'n', message: 'n must be a number (was a string)' }]
 	issue.conforming  // what survived
 	issue.raw         // the stored truth, unmodified
 }
 
-app.tables.notes.update(issue.id, { n: 7 }); // an ordinary write repairs it
+data.tables.notes.update(issue.id, { n: 7 }); // an ordinary write repairs it
 ```
 
 A patch validates only the values it supplies, so it can fix the offending key

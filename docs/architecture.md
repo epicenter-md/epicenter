@@ -43,8 +43,7 @@ refused was a hosted surface that reached a host-owned replica instead.
 +---------------------------------------------------------------------------+
 | CORE                                                                      |
 |                                                                           |
-| @epicenter/data      the store, and the transport that carries it         |
-| @epicenter/workspace      the workspace declaration vocabulary                  |
+| @epicenter/data      the store and its definition, opener, sync, and SQL surfaces |
 | @epicenter/field     release-local field declarations                     |
 | @epicenter/sqlite    one engine seam over bun:sqlite and sqlite-wasm      |
 | @epicenter/sync      route contracts a browser can import                 |
@@ -52,32 +51,32 @@ refused was a hosted surface that reached a host-owned replica instead.
 +---------------------------------------------------------------------------+
 ```
 
-`@epicenter/data` has exactly four entry points: `.` for the store, `./bun` and
-`./browser` for the two openers, and `./sync` for the transport. The openers are
-separate because one imports `bun:sqlite` and the other a WASM build, and
-neither belongs in a barrel the other has to load.
+`@epicenter/data` has one definition entry point and five runtime entry points:
+`.` for the opened data surface, `./definition` for `defineData` and
+`parseData`, `./bun` and `./browser` for the two openers, `./sync` for the
+transport, and `./projection` for the SQL follower. The openers are separate
+because one imports `bun:sqlite` and the other a WASM build, and neither belongs
+in a barrel the other has to load.
 
 `@epicenter/server` is AGPL and the core packages above it are MIT. Moving code
 across that line is a relicensing act; see
 [`licensing strategy`](licensing/licensing-strategy.md).
 
-## An application is one document
+## An application has one scalar document
 
-One `Y.Doc` per application (ADR-0215). Its top-level roots say what kind of
-thing they are: `tables:<name>` for each declared table, `kv` for settings, and
-nothing else.
+One scalar `Y.Doc` per application is persisted under the application log name
+`app` (ADR-0257). Its current top-level roots are the bare named root `kv` and
+one `tables:<name>` root for each declared table.
 
 ```text
-Y.Doc
- |- kv                      one value: this application's settings
- |- tables:notes
+Y.Doc "app"
+ |- get("kv")               one value: this application's settings
+ |- get("tables:notes")
  |   |- <rowId>             a nested Y.Type; holding it IS existing
  |   |   |- title           a field is an attribute on the row
- |   |   |- folderId
- |   |   `- !doc            a container, allocated WITH the row
- |   |       `- body        an application-named root an editor binds to
+ |   |   `- folderId
  |   `- <rowId> ...
- `- tables:folders
+ `- get("tables:folders")
 ```
 
 A row is an attribute on its table root rather than a root of its own. That is
@@ -94,7 +93,7 @@ inside it and Epicenter never looks inside one. Opening is a load, awaited,
 and the handle that comes back is fully hydrated:
 
 ```ts
-const { data: handle } = await db.tables.notes.document.open(noteId);
+const { data: handle } = await data.tables.notes.document.open(noteId);
 const body = handle?.get('body'); // a Y.Type an editor binds to directly
 handle?.[Symbol.dispose]();
 ```
@@ -121,12 +120,12 @@ is that a set several devices append to concurrently loses an addition, and the
 answer is that such a collection wants to be a table, where each element is its
 own row and nothing collides.
 
-## Workspace evolution never migrates user data
+## Data definitions never migrate user data
 
-A workspace declaration is a release-local view over durable JSON (ADR-0125, ADR-0213). A release
-may add a field, remove one, or change validation. Rows that no longer conform
-stay exactly as written and surface as nonconforming for that release. Nothing
-copies a database, runs an upcaster, or reinterprets an old write.
+A data definition is a release-local view over durable JSON (ADR-0255). A
+release may add a field, remove one, or change validation. Rows that no longer
+conform stay exactly as written and surface as nonconforming for that release.
+Nothing copies a database, runs an upcaster, or reinterprets an old write.
 
 Prevention is not available and asking for it is the wrong axis. A declaration is
 release-local and rows arrive from NEWER releases, so no discipline in this
@@ -151,12 +150,12 @@ I/O: a file or an IndexedDB read, and the replay of a durable log. Everything
 after it is a property access on a document already in memory.
 
 ```ts
-const { data: db, error } = await openDevice(honeycrispWorkspace);
+const { data, error } = await openDevice(honeycrispDefinition);
 if (error !== null) throw error;
 
-const listed = db.tables.notes.list();          // { rows, nonconforming }
-db.tables.notes.update(noteId, { title: 'x' }); // a transaction
-db.tables.notes.subscribe((rowIds) => { ... }); // the ids a commit touched
+const listed = data.tables.notes.list();          // { rows, nonconforming }
+data.tables.notes.update(noteId, { title: 'x' }); // a transaction
+data.tables.notes.subscribe((rowIds) => { ... }); // the ids a commit touched
 ```
 
 `subscribe` names the rows a commit touched (ADR-0221), so a view refreshes
@@ -210,5 +209,6 @@ ADR-0227 was executed as a clean break, so the applications that had not moved
 are broken on purpose and their data on the old stack is gone: `apps/whispering`,
 `apps/vocab`, `apps/skills`, `apps/epicenter`, `packages/chat`,
 `packages/skills`, and `packages/app-shell`'s agent chat. Green:
-`packages/data`, `workspace`, `sync`, `sqlite`, `svelte-utils`, `apps/api`,
-`apps/self-host`, `apps/honeycrisp`, `apps/sync-lab`.
+`packages/data`, `packages/field`, `packages/sync`, `packages/sqlite`,
+`packages/svelte-utils`, `apps/api`, `apps/self-host`, `apps/honeycrisp`, and
+`apps/sync-lab`.
