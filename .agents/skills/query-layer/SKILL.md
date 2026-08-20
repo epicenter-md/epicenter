@@ -116,6 +116,19 @@ TaggedError<'Name'>           same error            report.error({ cause: error 
 
 Only define a query-local error when the adapter itself discovers a failure that no lower layer can own, such as a missing recording lookup before calling an operation.
 
+### Result-to-TanStack conversion
+
+The Wellcrafted adapters are the query boundary between two failure
+contracts. Services and operations return `Result`; TanStack receives plain
+data on success and a thrown error on failure. `resultQueryOptions` and
+`resultMutationOptions` perform this conversion internally by unwrapping
+`Ok.data` and throwing `Err.error`.
+
+Do not call `unwrap` before passing a Result-returning function to one of these
+adapters. That would cross the boundary early and leave the adapter with the
+wrong contract. For when to use `unwrap` elsewhere, see the `error-handling`
+skill.
+
 ## Reactive And Imperative Use
 
 Query-layer adapters provide reactive hook usage and explicit imperative usage.

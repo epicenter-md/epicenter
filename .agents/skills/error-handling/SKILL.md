@@ -44,6 +44,31 @@ return Ok(response);
 
 `defineErrors` factories already return `Err(...)`. Pass the raw `cause` into the factory and let the factory compose its message with `extractErrorMessage`. Do not use raw `Err(cause)` at a catch boundary: thrown values may be `null` or `undefined`, and an untyped cause loses the domain failure.
 
+## Cross a deliberate throwing boundary
+
+Keep a `Result` as data while the caller can still choose whether to recover,
+report, retry, or propagate the failure. Use `unwrap` only when the surrounding
+API already uses throwing as its failure channel:
+
+```ts
+import { unwrap } from 'wellcrafted/result';
+
+const document = unwrap(await openDocument(id));
+```
+
+`unwrap` returns `Ok.data` and throws `Err.error`. The throw is intentional at
+that boundary. It does not mean the failure was unexpected. Use an explicit
+`error !== null` guard instead when this function needs to recover, add context,
+perform failure-specific cleanup, or choose another response.
+
+Wellcrafted no longer exports `resolve`. Use `unwrap` on a value known to be a
+`Result`.
+
+`expectOk` and `expectErr` from `wellcrafted/testing` are test assertions, not
+application helpers. `expectOk` extracts success and throws if it receives
+`Err`, while `expectErr` extracts failure and throws if it receives `Ok`. Use
+them in tests to state the expected branch.
+
 ## Consume Every Possible Err Branch
 
 - If a value can be `Result<T, E>`, inspect or deliberately forward its error branch.
