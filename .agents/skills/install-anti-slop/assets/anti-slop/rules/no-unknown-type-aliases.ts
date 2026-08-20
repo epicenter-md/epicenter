@@ -1,10 +1,11 @@
-import { defineRule } from "@oxlint/plugins";
-
-import type { ESTree } from "@oxlint/plugins";
+import type { ESTree } from '@oxlint/plugins';
+import { defineRule } from '@oxlint/plugins';
 
 function referencedAliasName(type: ESTree.TSType): string | null {
-	if (type.type === "TSParenthesizedType") return referencedAliasName(type.typeAnnotation);
-	if (type.type !== "TSTypeReference" || type.typeName.type !== "Identifier") return null;
+	if (type.type === 'TSParenthesizedType')
+		return referencedAliasName(type.typeAnnotation);
+	if (type.type !== 'TSTypeReference' || type.typeName.type !== 'Identifier')
+		return null;
 	return type.typeArguments === null ||
 		type.typeArguments === undefined ||
 		type.typeArguments.params.length === 0
@@ -15,22 +16,25 @@ function referencedAliasName(type: ESTree.TSType): string | null {
 /** Ban named aliases that merely conceal TypeScript's unknown top type. */
 export const noUnknownTypeAliasesRule = defineRule({
 	meta: {
-		type: "problem",
+		type: 'problem',
 		docs: {
 			description:
-				"Disallow type aliases whose resolved type is unknown; unknown must remain visible at an allowed boundary.",
+				'Disallow type aliases whose resolved type is unknown; unknown must remain visible at an allowed boundary.',
 		},
 		messages: {
 			unknownAlias:
-				"Type alias `{{alias}}` hides `unknown`. Keep `unknown` explicit at the parsing boundary or on an allowed `cause` field; otherwise use the parsed owner type.",
+				'Type alias `{{alias}}` hides `unknown`. Keep `unknown` explicit at the parsing boundary or on an allowed `cause` field; otherwise use the parsed owner type.',
 		},
 	},
 	createOnce(context) {
 		const aliases = new Map<string, ESTree.TSTypeAliasDeclaration>();
 
-		const resolvesToUnknown = (type: ESTree.TSType, visited = new Set<string>()): boolean => {
-			if (type.type === "TSUnknownKeyword") return true;
-			if (type.type === "TSParenthesizedType")
+		const resolvesToUnknown = (
+			type: ESTree.TSType,
+			visited = new Set<string>(),
+		): boolean => {
+			if (type.type === 'TSUnknownKeyword') return true;
+			if (type.type === 'TSParenthesizedType')
 				return resolvesToUnknown(type.typeAnnotation, visited);
 			const name = referencedAliasName(type);
 			if (name === null || visited.has(name)) return false;
@@ -51,16 +55,21 @@ export const noUnknownTypeAliasesRule = defineRule({
 				aliases.clear();
 				for (const statement of node.body) {
 					const declaration =
-						statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
-					if (declaration?.type === "TSTypeAliasDeclaration") {
+						statement.type === 'ExportNamedDeclaration'
+							? statement.declaration
+							: statement;
+					if (declaration?.type === 'TSTypeAliasDeclaration') {
 						aliases.set(declaration.id.name, declaration);
 					}
 				}
 				for (const alias of aliases.values()) {
-					if (!resolvesToUnknown(alias.typeAnnotation, new Set([alias.id.name]))) continue;
+					if (
+						!resolvesToUnknown(alias.typeAnnotation, new Set([alias.id.name]))
+					)
+						continue;
 					context.report({
 						node: alias.id,
-						messageId: "unknownAlias",
+						messageId: 'unknownAlias',
 						data: { alias: alias.id.name },
 					});
 				}

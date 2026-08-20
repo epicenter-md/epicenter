@@ -1,13 +1,13 @@
-import type { ESTree } from "@oxlint/plugins";
+import type { ESTree } from '@oxlint/plugins';
 
 type VisitorKeys = Readonly<Record<string, readonly string[]>>;
 
 function isNode(value: unknown): value is ESTree.Node {
 	return (
-		typeof value === "object" &&
+		typeof value === 'object' &&
 		value !== null &&
-		"type" in value &&
-		typeof value.type === "string"
+		'type' in value &&
+		typeof value.type === 'string'
 	);
 }
 
@@ -16,7 +16,7 @@ function collectInferTypeParameterNames(
 	visitorKeys: VisitorKeys,
 	names: Set<string>,
 ): void {
-	if (node.type === "TSInferType") names.add(node.typeParameter.name.name);
+	if (node.type === 'TSInferType') names.add(node.typeParameter.name.name);
 	const record = node as unknown as Readonly<Record<string, unknown>>;
 	for (const key of visitorKeys[node.type] ?? []) {
 		const value = record[key];
@@ -26,7 +26,8 @@ function collectInferTypeParameterNames(
 		}
 		if (!Array.isArray(value)) continue;
 		for (const child of value) {
-			if (isNode(child)) collectInferTypeParameterNames(child, visitorKeys, names);
+			if (isNode(child))
+				collectInferTypeParameterNames(child, visitorKeys, names);
 		}
 	}
 }
@@ -39,19 +40,22 @@ export function lexicalTypeParameterNames(
 	const names = new Set<string>();
 	let descendant: ESTree.Node = node;
 	let current: ESTree.Node | null = node;
-	while (current !== null && current.type !== "Program") {
-		if ("typeParameters" in current) {
+	while (current !== null && current.type !== 'Program') {
+		if ('typeParameters' in current) {
 			for (const parameter of current.typeParameters?.params ?? []) {
 				names.add(parameter.name.name);
 			}
 		}
 		if (
-			current.type === "TSMappedType" &&
+			current.type === 'TSMappedType' &&
 			(descendant === current.nameType || descendant === current.typeAnnotation)
 		) {
 			names.add(current.key.name);
 		}
-		if (current.type === "TSConditionalType" && descendant === current.trueType) {
+		if (
+			current.type === 'TSConditionalType' &&
+			descendant === current.trueType
+		) {
 			collectInferTypeParameterNames(current.extendsType, visitorKeys, names);
 		}
 		descendant = current;
