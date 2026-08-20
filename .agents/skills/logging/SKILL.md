@@ -146,7 +146,10 @@ Exporting a log-only set publishes a name no one can import for a reason and fre
 export type InvalidationErrorReporter = { error(error: unknown): void };
 ```
 
-Anything reaching a reporter like this must be plain readable data, so unwrap at the call site: `log.error(ObservationCarrierError.FrameNotText().error)`. A stranger's `{ error(e) { ... } }` then reads `name`, `message`, and `cause` off the object instead of finding a wrapper.
+Anything reaching a reporter like this must be plain readable data, so extract
+the error payload at the call site: `log.error(ObservationCarrierError.FrameNotText().error)`.
+A stranger's `{ error(e) { ... } }` then reads `name`, `message`, and `cause`
+off the object instead of finding a wrapper.
 
 ## Sinks
 

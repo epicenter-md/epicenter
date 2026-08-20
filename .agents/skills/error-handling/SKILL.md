@@ -28,7 +28,7 @@ Read the scoped references only when needed:
 | Failure has a valid fallback | Return `Ok(fallback)` from `catch` |
 | Failure must propagate as data | Return a typed `defineErrors` factory result from `catch` |
 | Only known external failures should become `Err` | Map known exceptions and rethrow unknown ones |
-| Surrounding API is exception-based | Keep `try-catch`, or unwrap only at that boundary |
+| Surrounding API is exception-based | Keep its throwing contract |
 | Cleanup must run on success, failure, cancellation, or early return | Use `finally` |
 
 Use `trySync` for a synchronous operation and `tryAsync` for an operation returning a Promise.
@@ -46,9 +46,9 @@ return Ok(response);
 
 ## Cross a deliberate throwing boundary
 
-Keep a `Result` as data while the caller can still choose whether to recover,
-report, retry, or propagate the failure. Use `unwrap` only when the surrounding
-API already uses throwing as its failure channel:
+Keep a `Result` as data while the caller can still recover, report, retry, or
+propagate. Use `unwrap` only where the surrounding API already throws as its
+failure channel:
 
 ```ts
 import { unwrap } from 'wellcrafted/result';
@@ -56,18 +56,9 @@ import { unwrap } from 'wellcrafted/result';
 const document = unwrap(await openDocument(id));
 ```
 
-`unwrap` returns `Ok.data` and throws `Err.error`. The throw is intentional at
-that boundary. It does not mean the failure was unexpected. Use an explicit
-`error !== null` guard instead when this function needs to recover, add context,
-perform failure-specific cleanup, or choose another response.
-
-Wellcrafted no longer exports `resolve`. Use `unwrap` on a value known to be a
-`Result`.
-
-`expectOk` and `expectErr` from `wellcrafted/testing` are test assertions, not
-application helpers. `expectOk` extracts success and throws if it receives
-`Err`, while `expectErr` extracts failure and throws if it receives `Ok`. Use
-them in tests to state the expected branch.
+`unwrap` returns `Ok.data` and throws `Err.error`. The throw is the boundary's
+contract, not a sign the failure was unexpected. Guard on `error !== null`
+instead when this function must recover, add context, or clean up.
 
 ## Consume Every Possible Err Branch
 
