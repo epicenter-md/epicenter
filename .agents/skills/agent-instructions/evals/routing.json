@@ -107,7 +107,10 @@
 			"id": "consult-implementation-review",
 			"cluster": "claude-consultation",
 			"prompt": "Review this meaningful implementation diff with Claude. Ask Claude to push back on shallow behavior and tell me what should change before we continue.",
-			"anchors": ["Review this meaningful implementation diff with Claude", "push back"],
+			"anchors": [
+				"Review this meaningful implementation diff with Claude",
+				"push back"
+			],
 			"expect": "consult-claude",
 			"forbid": [],
 			"router": "codex",
