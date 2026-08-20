@@ -4,10 +4,10 @@ export {
 } from './agent-conversation.svelte.js';
 export { default as FlushEditsOnHide } from './flush-edits-on-hide.svelte';
 export {
-	fromDatabase,
-	type ReactiveDatabase,
+	fromData,
+	type ReactiveData,
 	type ReactiveTable,
-} from './from-database.svelte.js';
+} from './from-data.svelte.js';
 export { fromDisposableCache } from './from-disposable-cache.svelte.js';
 export {
 	createPersistedMap,

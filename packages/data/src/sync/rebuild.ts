@@ -32,16 +32,23 @@ import * as Y from '@y/y';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
+import { encodeEnvelope } from '../store/envelope.js';
+import { APP_DOCUMENT } from '../store/log.js';
 import { type AccountStore, syncEngineOf } from '../store/store.js';
 
 declare const rebuilt: unique symbol;
 
 /**
- * Bytes the reclaim walk minted: fresh identities, zero tombstones.
+ * The envelope a rebuild publishes: the application document reborn into
+ * fresh struct identities with zero tombstones, plus every row document's
+ * state carried whole (ADR-0248). Row documents keep their identities: their
+ * tombstone weight is per document and reclaimed by ordinary `gc: true`
+ * folding, and re-minting them would destroy nothing but concurrent editors.
  *
- * A distinct type on purpose (ADR-0231): `encodeStateSince()` preserves
- * struct identities and reclaims nothing, and handing it to a rebuild "works"
- * while silently defeating the verb. Only `rebuildDocument` produces this.
+ * A distinct type on purpose (ADR-0231): an `encodeSnapshot()` preserves the
+ * application document's struct identities and reclaims nothing, and handing
+ * it to a rebuild "works" while silently defeating the verb. Only
+ * `rebuildDocument` produces this.
  */
 export type RebuiltState = Uint8Array & { readonly [rebuilt]: true };
 
@@ -140,19 +147,24 @@ function copyInto(source: Y.Type, target: Y.Type): void {
 
 /**
  * Re-encode this replica's live state into a fresh document: same rows, same
- * ids, same prose and marks, new identities, zero tombstones.
+ * ids, same prose and marks, new application identities, zero application
+ * tombstones. Row documents ride along whole, read from storage (ADR-0248):
+ * a replace deletes the authority's entire log, so a replacement that carried
+ * only the application document would erase every row's rich content from
+ * every replica that adopts it.
  *
- * Reads nothing but the encoded state, so it never touches the live document
- * or its handles. The scratch hydration costs one full decode, which is fine
+ * Reads nothing but encoded state, so it never touches the live documents or
+ * their handles. The scratch hydration costs one full decode, which is fine
  * for a person-initiated verb.
  */
-export function rebuildDocument(
+export async function rebuildDocument(
 	store: AccountStore,
-): Result<RebuiltState, RebuildError> {
-	if (syncEngineOf(store).hasUnresolvedDependencies()) {
+): Promise<Result<RebuiltState, RebuildError>> {
+	const engine = syncEngineOf(store);
+	if (engine.hasUnresolvedDependencies()) {
 		return RebuildError.UnresolvedDependencies();
 	}
-	return trySync({
+	const reborn = trySync({
 		try: () => {
 			const source = new Y.Doc({ gc: true });
 			const target = new Y.Doc({ gc: true });
@@ -174,7 +186,7 @@ export function rebuildDocument(
 						);
 					}
 				});
-				return new Uint8Array(Y.encodeStateAsUpdateV2(target)) as RebuiltState;
+				return new Uint8Array(Y.encodeStateAsUpdateV2(target));
 			} finally {
 				source.destroy();
 				target.destroy();
@@ -182,6 +194,17 @@ export function rebuildDocument(
 		},
 		catch: (cause) => RebuildError.RebuildFailed({ cause }),
 	});
+	if (reborn.error !== null) return Err(reborn.error);
+	const bundled = await tryAsync({
+		try: async () =>
+			encodeEnvelope([
+				{ document: APP_DOCUMENT, bytes: reborn.data },
+				...(await engine.documentStates()),
+			]) as RebuiltState,
+		catch: (cause) => RebuildError.RebuildFailed({ cause }),
+	});
+	if (bundled.error !== null) return Err(bundled.error);
+	return Ok(bundled.data);
 }
 
 /** What one POST of the verb came back as, refusals included. */
@@ -248,7 +271,7 @@ async function postReplace(
 }
 
 /**
- * Rebuild this database: publish its live state, reborn, as the next document.
+ * Rebuild this definition: publish its live state, reborn, as the next document.
  *
  * The lease is this replica's own stamped facts, so there is no bootstrap
  * and no retry loop: `fromDocument` is the identity its state belongs to
@@ -280,7 +303,7 @@ export async function rebuildDatabase({
 	const identity = engine.documentIdentity();
 	if (identity === undefined) return RebuildError.NeverSynced();
 	const cursor = engine.cursor();
-	const bytes = rebuildDocument(store);
+	const bytes = await rebuildDocument(store);
 	if (bytes.error !== null) return Err(bytes.error);
 
 	const answer = await postReplace(

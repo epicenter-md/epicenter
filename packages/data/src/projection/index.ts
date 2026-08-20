@@ -1,5 +1,5 @@
 /**
- * SQL over an opened database, composed outside the store.
+ * SQL over an opened definition, composed outside the store.
  *
  * A store is truth plus debts: the live document and the ledgers that must be
  * written in the same atomic act that incurs them. Everything downstream of
@@ -8,20 +8,20 @@
  *
  * The contract is lazy, and laziness is what makes it honest. Any committed
  * change marks the projection dirty; the next `query` rebuilds the whole
- * database from the live document before the statement runs. There is no
+ * definition from the live document before the statement runs. There is no
  * per-edit patching and no ordering dependency on other subscribers: a read
  * repairs itself first, so `query` can never serve rows the live document has
  * moved past, from any callback, in any order. If a hot surface ever needs
  * per-row patching, it returns as an optimization behind this same contract.
  *
  * Built deliberately on nothing but the opened data's own surface (`list`,
- * `get`, `store.onCommitted`) plus the portable database declaration. That
+ * `get`, `store.onCommitted`) plus the portable definition declaration. That
  * is the proof that the follower seam is complete: an FTS index, a Markdown
  * exporter, or an embedding pipeline composes the same way.
  *
  * ```ts
- * const db = await openAccount(database, { principalId });
- * const sql = createSqliteProjection({ data: db, database, sqlite });
+ * const { data } = await openAccount(definition, { principalId });
+ * const sql = createSqliteProjection({ data, sqlite });
  * sql.query`SELECT id, title FROM notes WHERE pinned = 1`;
  * ```
  *
@@ -34,19 +34,18 @@
  * const sqlite3 = await sqlite3InitModule();
  * const handle = new sqlite3.oo1.DB(':memory:');
  * const sql = createSqliteProjection({
- *   data: db,
- *   database,
+ *   data,
  *   sqlite: createBrowserSqliteAdapter(handle),
  * });
  * ```
  */
 
 import {
-	type DatabaseJson,
+	type DataDefinition,
 	type JsonObject,
 	KV_ROOT,
-	parseDatabase,
-} from '@epicenter/database';
+	parseData,
+} from '@epicenter/data/definition';
 import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, type Result, trySync } from 'wellcrafted/result';
@@ -89,7 +88,7 @@ export type ProjectableTable = {
 };
 
 /**
- * The slice of an opened database's data the projection follows.
+ * The slice of an opened definition's data the projection follows.
  *
  * Dirty-marking rides `store.onCommitted` rather than per-table
  * subscriptions, and that choice is what makes freshness structural. The
@@ -103,6 +102,7 @@ export type ProjectableTable = {
  * from, are always after it.
  */
 export type ProjectableData = {
+	readonly definition: DataDefinition;
 	readonly tables: Readonly<Record<string, ProjectableTable>>;
 	readonly kv: {
 		get(): {
@@ -117,7 +117,7 @@ export type ProjectableData = {
 
 export type SqliteProjection = {
 	/**
-	 * Read-only SQL over the projected database: one relation per declared
+	 * Read-only SQL over the projected definition: one relation per declared
 	 * table, plus `kv` as a one-row relation.
 	 *
 	 * Rebuilds first when dirty, so the answer always agrees with what `list()`
@@ -129,41 +129,40 @@ export type SqliteProjection = {
 		...values: SqliteValue[]
 	): Result<SqliteRow[], SqliteProjectionError>;
 	/**
-	 * Detach from the data's subscriptions. The database is the caller's: it
-	 * was handed in, and closing it stays with whoever opened it.
+	 * Detach from the data's subscriptions. The data and its physical store stay
+	 * owned by the caller.
 	 */
 	[Symbol.dispose](): void;
 };
 
 /**
- * Project one opened database into a SQLite database the caller supplies.
+ * Project one opened definition into a SQLite definition the caller supplies.
  *
  * Throwing on a declaration that does not parse, because at this call site the
- * declaration is a `defineDatabase` literal the compiler already validated,
+ * declaration is a `defineData` literal the compiler already validated,
  * so a refusal is a programmer error rather than a boot outcome.
  */
 export function createSqliteProjection({
 	data,
-	database,
 	sqlite,
 }: {
-	/** The opened database's data: the tables and KV this projection follows. */
+	/** The opened data, including its immutable definition and live surfaces. */
 	data: ProjectableData;
-	/** The portable declaration naming the tables and fields to project. */
-	database: DatabaseJson;
 	/**
-	 * Where the projection lives. An in-memory database by convention: the
+	 * Where the projection lives. An in-memory definition by convention: the
 	 * projection is a cache rebuilt from the live document, and nothing here
 	 * needs to survive a reload. Owned and closed by the caller.
 	 */
 	sqlite: SqliteDatabase;
 }): SqliteProjection {
-	const { data: parsedDatabase, error: parseError } = parseDatabase(database);
+	const { data: parsedDefinition, error: parseError } = parseData(
+		data.definition,
+	);
 	if (parseError !== null) {
 		throw new Error(parseError.message, { cause: parseError });
 	}
 	// Rebound after the guard so the closures below see a non-null binding.
-	const parsed = parsedDatabase;
+	const parsed = parsedDefinition;
 
 	let dirty = true;
 	let disposed = false;
@@ -178,7 +177,7 @@ export function createSqliteProjection({
 
 	/**
 	 * Rebuild everything from the live document: schema, every declared table,
-	 * and KV, in one transaction. The one writer this database has.
+	 * and KV, in one transaction. The one writer this definition has.
 	 */
 	function rebuild(): void {
 		applyProjectionSchema(sqlite, parsed);

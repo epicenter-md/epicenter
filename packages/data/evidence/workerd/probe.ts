@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * What the transport does inside `workerd`, measured rather than assumed.
  *
@@ -22,7 +23,7 @@
  */
 
 import { Database } from 'bun:sqlite';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
 import {
@@ -42,9 +43,10 @@ import {
 const origin = process.argv[2] ?? 'http://127.0.0.1:8787';
 const application = `probe-${Date.now()}`;
 
-const evidenceDatabase = defineDatabase({
+const evidenceDatabase = defineData({
 	id: 'so.epicenter.synclab',
-	tables: { notes: { title: 'string', device: 'string', at: 'string' } },
+	kv: {},
+	tables: { notes: { title: field.string(), device: field.string(), at: field.string() } },
 });
 
 type Stat = {
@@ -71,7 +73,7 @@ async function stat(app: string = application): Promise<Stat> {
 
 function openReplica() {
 	const db = createAccountStore({
-		database: evidenceDatabase,
+		definition: evidenceDatabase,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	return { store: db.store, db };
@@ -100,11 +102,11 @@ async function connect(client: SyncClient): Promise<WebSocket> {
 /** Wait until `check` holds, or give up loudly rather than hanging. */
 async function until(
 	label: string,
-	check: () => boolean,
+	check: () => boolean | Promise<boolean>,
 	timeoutMs = 60_000,
 ): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
-	while (!check()) {
+	while (!(await check())) {
 		if (Date.now() > deadline)
 			throw new Error(`timed out waiting for ${label}`);
 		await Bun.sleep(10);
@@ -184,20 +186,21 @@ console.log('\n2. an update past the cap, through the real socket');
 		device: 'probe',
 		at: new Date().toISOString(),
 	});
-	if (note.error !== null) throw note.error;
-	const text = author.db.tables.notes
-		.document(note.data.id)
-		?.get('editor', 'text');
+	const opened = await author.db.tables.notes.document.open(note.id);
+	if (opened.error !== null) throw opened.error;
+	const text = opened.data?.get('editor', 'text');
 	if (text === undefined) throw new Error('the row has no document');
 	// One transaction, well past the cap. There is no seam here for a coalescing
 	// bound to cut at, which is why the fix has to be framing at storage.
 	text.applyDelta(text.change.insert('x'.repeat(5_000_000)) as never);
 	authorClient.flush();
 
-	await until('the reader to receive the paste', () => {
-		const arrived = reader.db.tables.notes
-			.document(note.data.id)
-			?.get('editor', 'text');
+	let arrived: { length: number } | undefined;
+	await until('the reader to receive the paste', async () => {
+		const received = await reader.db.tables.notes.document.open(note.id);
+		if (received.error !== null) return false;
+		arrived = received.data?.get('editor', 'text');
+		received.data?.[Symbol.dispose]();
 		return (arrived?.length ?? 0) === 5_000_000;
 	});
 
@@ -245,7 +248,7 @@ console.log('\n3. sustained traffic through ONE instance');
 			device: 'probe',
 			at: new Date().toISOString(),
 		});
-		if (written.error !== null) throw written.error;
+		void written;
 		// One send per row, deliberately: this experiment is about the authority
 		// under load, so it is run with coalescing turned off in effect.
 		authorClient.flush();
@@ -516,7 +519,7 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 			device: 'probe',
 			at: new Date().toISOString(),
 		});
-		if (written.error !== null) throw written.error;
+		void written;
 		authorConnection.flush();
 		// Patience well past one watchdog window plus its backoff, so a stall that
 		// the watchdog recovers reads as slow rather than as a failure, and one it

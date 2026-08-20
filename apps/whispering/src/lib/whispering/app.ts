@@ -12,7 +12,7 @@ import {
 	type SyncConnectionStatus,
 } from '@epicenter/data/sync';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { type WhisperingSettingValues, whisperingDatabase } from '../workspace';
+import { type WhisperingSettingValues, whisperingDefinition } from '../workspace';
 import {
 	createWhisperingRecipes,
 	type WhisperingRecipes,
@@ -28,12 +28,12 @@ export type { WhisperingBlobs } from './recording-audio';
 /** The device-owned document: this machine's settings, and its work when
  * signed out. */
 export type WhisperingDeviceData = DataOf<
-	typeof whisperingDatabase,
+	typeof whisperingDefinition,
 	DeviceStore
 >;
 /** One account's retained replica of the portable work. */
 export type WhisperingAccountData = DataOf<
-	typeof whisperingDatabase,
+	typeof whisperingDefinition,
 	BrowserAccountStore
 >;
 
@@ -92,6 +92,55 @@ export type WhisperingSettings = {
 	subscribe(listener: () => void): () => void;
 };
 
+/** Release-local initialization and recovery values for the device KV. */
+const APPLICATION_DEFAULTS: Partial<WhisperingSettingValues> = {
+	soundManualStart: true,
+	soundManualStop: true,
+	soundManualCancel: true,
+	soundVadStart: true,
+	soundVadCapture: true,
+	soundVadStop: true,
+	soundTranscriptionComplete: true,
+	soundRecipeComplete: true,
+	outputTranscriptionClipboard: true,
+	outputTranscriptionCursor: false,
+	outputTranscriptionEnter: false,
+	outputRecipeClipboard: true,
+	outputRecipeCursor: false,
+	outputRecipeEnter: false,
+	recordingTrigger: 'manual',
+	recordingPausePlayback: false,
+	recordingAutoUpload: false,
+	transcriptionService: 'local',
+	transcriptionOpenaiModel: 'whisper-1',
+	transcriptionGroqModel: 'whisper-large-v3-turbo',
+	transcriptionElevenlabsModel: 'scribe_v2',
+	transcriptionDeepgramModel: 'nova-3',
+	transcriptionMistralModel: 'voxtral-mini-latest',
+	transcriptionLanguage: 'auto',
+	transcriptionPrompt: '',
+	completionProvider: 'Google',
+	completionModel: 'gemini-2.5-flash',
+	dictionary: null,
+	polishEnabled: true,
+	polishInstructions: 'Fix grammar and punctuation. Keep my wording.',
+	analyticsEnabled: true,
+	shortcutPushToTalkModifiers: null,
+	shortcutPushToTalkKeys: null,
+	shortcutToggleManualRecordingModifiers: null,
+	shortcutToggleManualRecordingKeys: null,
+	shortcutCancelRecordingModifiers: null,
+	shortcutCancelRecordingKeys: null,
+	shortcutToggleVadRecordingModifiers: null,
+	shortcutToggleVadRecordingKeys: null,
+	shortcutOpenRecipePickerModifiers: null,
+	shortcutOpenRecipePickerKeys: null,
+	shortcutRunRecipeOnClipboardModifiers: null,
+	shortcutRunRecipeOnClipboardKeys: null,
+	shortcutOpenSettingsModifiers: null,
+	shortcutOpenSettingsKeys: null,
+};
+
 export type WhisperingApp = {
 	readonly settings: WhisperingSettings;
 	readonly recordings: WhisperingRecordings;
@@ -135,7 +184,7 @@ export async function openWhisperingApp(
 			? undefined
 			: { principalId: auth.state.principalId };
 
-	const opened = await openDevice(whisperingDatabase);
+	const opened = await openDevice(whisperingDefinition);
 	if (opened.error !== null) throw opened.error;
 	const deviceData = opened.data;
 
@@ -210,7 +259,7 @@ async function openAccountRuntime({
 	reportBackgroundError(cause: unknown): void;
 	signal?: AbortSignal;
 }): Promise<AccountRuntime> {
-	const opened = await openAccount(whisperingDatabase, { principalId });
+	const opened = await openAccount(whisperingDefinition, { principalId });
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
 
@@ -234,7 +283,7 @@ async function openAccountRuntime({
 		let noticeDenied: (() => void) | undefined;
 		const connection = attachStoreSync({
 			store: data.store,
-			databaseId: whisperingDatabase.id,
+			databaseId: whisperingDefinition.id,
 			transport: {
 				baseURL: auth.deployment.baseURL,
 				openWebSocket: (url) => auth.openWebSocket(url),
@@ -344,12 +393,12 @@ type SettingKey = keyof WhisperingSettingValues;
  * ran `structuredClone`.
  *
  * KV is a reserved root, reads are synchronous, and a read hands back a plain
- * object (ADR-0213, ADR-0215, ADR-0216). So a read is a read, a write names its
- * keys, and an unwritten key returns its declared default without anything
- * creating a row to hold it.
+ * object or a conformance diagnostic (ADR-0213, ADR-0215, ADR-0216). So a read
+ * is a read, a write names its keys, and application recovery handles missing
+ * values without creating a row to hold them.
  */
 function createWhisperingSettings({ kv }: { kv: WhisperingDeviceData['kv'] }) {
-	let values = kv.defaults as WhisperingSettingValues;
+	let values = { ...APPLICATION_DEFAULTS } as WhisperingSettingValues;
 	const listeners = new Set<() => void>();
 	const notify = () => {
 		for (const listener of listeners) listener();
@@ -362,7 +411,7 @@ function createWhisperingSettings({ kv }: { kv: WhisperingDeviceData['kv'] }) {
 			// the whole object: the error arm is always the diagnostic, and its
 			// `conforming` carries the ones that did pass.
 			values = {
-				...kv.defaults,
+				...APPLICATION_DEFAULTS,
 				...error.conforming,
 			} as WhisperingSettingValues;
 			notify();
@@ -376,10 +425,7 @@ function createWhisperingSettings({ kv }: { kv: WhisperingDeviceData['kv'] }) {
 	const stop = kv.subscribe(read);
 
 	const write = (patch: Partial<WhisperingSettingValues>): void => {
-		// Thrown so the caller's toast can present the refusal: every key here is
-		// workspace-declared, so a refused write is a bug rather than a state to hold.
-		const { error } = kv.update(patch);
-		if (error !== null) throw error;
+		kv.update(patch);
 		// The subscription above already re-read inside the write; nothing left
 		// to refresh here.
 	};
@@ -395,10 +441,10 @@ function createWhisperingSettings({ kv }: { kv: WhisperingDeviceData['kv'] }) {
 			write({ [key]: value } as Partial<WhisperingSettingValues>);
 		},
 		getDefault<TKey extends SettingKey>(key: TKey) {
-			return (kv.defaults as WhisperingSettingValues)[key];
+			return APPLICATION_DEFAULTS[key] as WhisperingSettingValues[TKey];
 		},
 		reset() {
-			write(kv.defaults as WhisperingSettingValues);
+			write(APPLICATION_DEFAULTS);
 		},
 		subscribe(listener) {
 			listeners.add(listener);

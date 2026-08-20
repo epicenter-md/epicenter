@@ -8,9 +8,8 @@ import { extractErrorMessage } from 'wellcrafted/error';
  * the store either committed or it did not by the time this returns, so there
  * is nothing to await and nothing that can settle after the handler is gone.
  *
- * It exists because a refused write used to arrive as a rejected promise that
- * `void` quietly swallowed. The same refusal now throws where the click
- * happened, which is only an improvement if somebody catches it and says so.
+ * It exists because structural failures such as an absent row still throw at
+ * the mutation boundary, where a caller can catch them and say so.
  */
 export function runSkillsMutation(mutation: () => void, title: string): void {
 	try {

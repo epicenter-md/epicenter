@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * What the shared dial has to get right: the URL it asks for, and how it
  * classifies a rejection.
@@ -11,20 +12,21 @@
 
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { type AccountStore, createAccountStore } from '../store/store.js';
 import { attachStoreSync, type StoreSocketTransport } from './attach.js';
 
-const database = defineDatabase({
+const database = defineData({
 	id: 'so.epicenter.attach-test',
-	tables: { notes: { title: 'string' } },
+	kv: {},
+	tables: { notes: { title: field.string() } },
 });
 
 function openStore(): AccountStore {
 	const live = new Database(':memory:');
 	const db = createAccountStore({
-		database: database,
+		definition: database,
 		sqlite: createBunSqliteAdapter(live),
 		dispose: () => live.close(),
 	});
@@ -45,7 +47,8 @@ function createTransport(open: (url: string) => Promise<WebSocket>) {
 }
 
 test('the first dial names the databaseId and a cursor of zero', async () => {
-	await using store = openStore();
+	const store = openStore();
+	await using _store = store;
 	const { transport, urls } = createTransport(
 		() => new Promise<WebSocket>(() => {}),
 	);
@@ -72,7 +75,8 @@ test('the first dial names the databaseId and a cursor of zero', async () => {
 });
 
 test('a permanent denial stops the driver and is not a transport error', async () => {
-	await using store = openStore();
+	const store = openStore();
+	await using _store = store;
 	const denial = {
 		name: 'OpenWebSocketDenied',
 		message: 'signed out',
@@ -101,7 +105,8 @@ test('a permanent denial stops the driver and is not a transport error', async (
 });
 
 test('a transient denial is reported and left to the backoff', async () => {
-	await using store = openStore();
+	const store = openStore();
+	await using _store = store;
 	const denial = {
 		name: 'OpenWebSocketDenied',
 		message: 'verification unreachable',
@@ -128,7 +133,8 @@ test('a transient denial is reported and left to the backoff', async () => {
 });
 
 test('an unrecognised rejection is a close, never a denial', async () => {
-	await using store = openStore();
+	const store = openStore();
+	await using _store = store;
 	const cause = new TypeError('Failed to fetch');
 	const { transport } = createTransport(() => Promise.reject(cause));
 	let denials = 0;
@@ -150,7 +156,8 @@ test('an unrecognised rejection is a close, never a denial', async () => {
 });
 
 test('abandoning an attempt closes a socket that arrives late', async () => {
-	await using store = openStore();
+	const store = openStore();
+	await using _store = store;
 	let closes = 0;
 	const socket = {
 		binaryType: '',

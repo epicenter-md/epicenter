@@ -61,8 +61,12 @@ export function createWhisperingRecipes({
 			// carried over from another device looks like before it syncs.
 			const isRow =
 				!id.startsWith(BUILTIN_PREFIX) && rows.some((row) => row.id === id);
-			const { error } = isRow ? table.update(id, fields) : table.create(fields);
-			if (error !== null) throw error;
+			if (isRow) {
+				const result = table.update(id, fields);
+				if (result.error !== null) throw result.error;
+			} else {
+				table.create(fields);
+			}
 			read();
 		},
 		delete(id: string): void {

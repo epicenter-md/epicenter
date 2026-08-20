@@ -99,7 +99,14 @@ export async function importSkillsFromDisk({
 				? proposedSourceId
 				: crypto.randomUUID();
 		seenSourceIds.add(sourceId);
-		const input = { ...read.skill, sourceId };
+		const input = {
+			...read.skill,
+			sourceId,
+			license: read.skill.license ?? null,
+			compatibility: read.skill.compatibility ?? null,
+			metadata: read.skill.metadata ?? null,
+			allowedTools: read.skill.allowedTools ?? null,
+		};
 		const existing = skillsBySourceId.get(sourceId);
 		let skill: Skill;
 		if (existing) {
@@ -123,13 +130,7 @@ export async function importSkillsFromDisk({
 			skill = repaired;
 			updated += 1;
 		} else {
-			// The instructions root is named with the row, so there is exactly one
-			// creator for it (ADR-0215).
-			const written = data.tables.skills.create(input, {
-				document: [SKILL_CONTENT],
-			});
-			if (written.error !== null) throw written.error;
-			skill = written.data;
+			skill = data.tables.skills.create(input);
 			skillsBySourceId.set(sourceId, { id: skill.id });
 			created += 1;
 		}
@@ -141,7 +142,7 @@ export async function importSkillsFromDisk({
 				'utf8',
 			);
 		}
-		writeDocumentText(data.tables.skills, skill.id, read.instructions);
+		await writeDocumentText(data.tables.skills, skill.id, read.instructions);
 
 		const referencesPath = join(read.skillPath, 'references');
 		let referenceFiles: string[] = [];
@@ -171,14 +172,10 @@ export async function importSkillsFromDisk({
 					if (written.error !== null) throw written.error;
 					referenceId = existingReference.id;
 				} else {
-					const written = data.tables.skillReferences.create(fields, {
-						document: [SKILL_CONTENT],
-					});
-					if (written.error !== null) throw written.error;
-					referenceId = written.data.id;
+					referenceId = data.tables.skillReferences.create(fields).id;
 				}
 				referencesByOwnerAndPath.set(key, { id: referenceId });
-				writeDocumentText(data.tables.skillReferences, referenceId, content);
+				await writeDocumentText(data.tables.skillReferences, referenceId, content);
 			}),
 		);
 	}
@@ -210,7 +207,10 @@ export async function exportSkillsToDisk({
 			await mkdir(skillDir, { recursive: true });
 			await writeFile(
 				join(skillDir, 'SKILL.md'),
-				serializeSkillMd(skill, readDocumentText(data.tables.skills, skill.id)),
+				serializeSkillMd(
+					skill,
+					await readDocumentText(data.tables.skills, skill.id),
+				),
 				'utf8',
 			);
 			const references = referencesScan.rows.filter(
@@ -220,10 +220,10 @@ export async function exportSkillsToDisk({
 			const referencesDir = join(skillDir, 'references');
 			await mkdir(referencesDir, { recursive: true });
 			await Promise.all(
-				references.map((reference) =>
+				references.map(async (reference) =>
 					writeFile(
 						join(referencesDir, reference.path),
-						readDocumentText(data.tables.skillReferences, reference.id),
+						await readDocumentText(data.tables.skillReferences, reference.id),
 						'utf8',
 					),
 				),
@@ -266,20 +266,29 @@ export async function exportSkillsToDisk({
  * A row that vanished between the read and here writes nothing rather than
  * reviving an address that no longer holds a skill.
  */
-function writeDocumentText(
+async function writeDocumentText(
 	table: SkillsTable,
 	rowId: string,
 	value: string,
-): void {
-	const content = table.document(rowId)?.get(SKILL_CONTENT);
-	if (content === undefined) return;
+): Promise<void> {
+	const opened = await table.document.open(rowId);
+	if (opened.error !== null) throw opened.error;
+	using handle = opened.data;
+	if (handle === undefined) return;
+	const content = handle.get(SKILL_CONTENT);
 	content.applyDelta(
 		content.change.delete(content.length).insert(value) as never,
 	);
 }
 
-function readDocumentText(table: SkillsTable, rowId: string): string {
-	return table.document(rowId)?.get(SKILL_CONTENT).toString() ?? '';
+async function readDocumentText(
+	table: SkillsTable,
+	rowId: string,
+): Promise<string> {
+	const opened = await table.document.open(rowId);
+	if (opened.error !== null) throw opened.error;
+	using handle = opened.data;
+	return handle?.get(SKILL_CONTENT).toString() ?? '';
 }
 
 function referenceKey(skillId: string, path: string): string {

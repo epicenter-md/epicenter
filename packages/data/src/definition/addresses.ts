@@ -88,22 +88,6 @@ export const SQLITE_UNUSABLE_AS_RELATION_NAME: readonly string[] = `add all
 const SQLITE_KEYWORDS = new Set(SQLITE_UNUSABLE_AS_RELATION_NAME);
 
 /**
- * Bare relation names Epicenter storage still occupies.
- *
- * Every scalar relation now sits behind a `_replica_` or `_authority_` prefix,
- * which this grammar already makes unreachable because a table name must begin
- * with a letter. The row document relations have not moved yet, so their two
- * bare names are reserved explicitly until they do. The list is expected to
- * shrink to empty, never to grow: the fix for a future collision is to prefix
- * the relation, not to extend this list.
- */
-const RESERVED_TABLE_NAMES = new Set([
-	'document_updates',
-	'document_publication',
-	'document_versions',
-]);
-
-/**
  * Byte ceilings for the durable coordinates of an address.
  *
  * Kept as plain numbers rather than a limits object so both the live exchange
@@ -185,6 +169,22 @@ export function addressKey(address: RowAddress): string {
 	return canonicalJson(address);
 }
 
+/**
+ * The canonical address of the independent Yjs document a row owns (ADR-0248).
+ *
+ * A fixed-depth derived string, `{databaseId}/{tableName}/{rowId}`, composed
+ * one way only. It does not encode, parse, or revalidate coordinates: every
+ * coordinate is slash-free by the grammar in this file, checked where names
+ * are declared and where addresses are admitted, so the interpolation cannot
+ * be ambiguous. A future coordinate that cannot satisfy a slash-free grammar
+ * must earn a new grammar or be refused, never be silently escaped. There is
+ * no inverse, and nothing may scan or interpret prefixes of the result; the
+ * document manager that consumes it treats it as an opaque string.
+ */
+export function documentAddress(address: RowAddress) {
+	return `${address.databaseId}/${address.tableName}/${address.rowId}`;
+}
+
 /** Structured identity equality: equal exactly when every coordinate matches. */
 export function addressesEqual(left: RowAddress, right: RowAddress): boolean {
 	return (
@@ -210,10 +210,11 @@ export function isDatabaseId(
  *
  * Stricter than the character pattern alone, because the pattern is not the
  * whole promise. The promise is that a trusted host can mount this name and
- * write `SELECT * FROM <name>` with no quoting and no collision, so three more
- * things must hold: the name is not a SQLite keyword (case-insensitively), it
- * does not enter SQLite's reserved `sqlite_` space, and it does not collide with
- * a relation Epicenter storage already occupies.
+ * write `SELECT * FROM <name>` with no quoting and no collision, so two more
+ * things must hold: the name is not a SQLite keyword (case-insensitively), and
+ * it does not enter SQLite's reserved `sqlite_` space. Every relation Epicenter
+ * storage occupies sits behind an underscore prefix, which the leading-letter
+ * rule already makes unreachable.
  *
  * The same rule governs a database declaration and an address arriving on the
  * wire. One grammar, checked in one place: a name a database may not declare is
@@ -227,11 +228,7 @@ export function isTableName(
 	if (bytes < 1 || bytes > ceilings.tableNameBytes) return false;
 	if (!TABLE_NAME.test(value)) return false;
 	const lowercased = value.toLowerCase();
-	return (
-		!SQLITE_KEYWORDS.has(lowercased) &&
-		!lowercased.startsWith('sqlite_') &&
-		!RESERVED_TABLE_NAMES.has(lowercased)
-	);
+	return !SQLITE_KEYWORDS.has(lowercased) && !lowercased.startsWith('sqlite_');
 }
 
 /**

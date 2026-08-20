@@ -1,7 +1,8 @@
+import { field } from '@epicenter/data/definition';
 /**
- * Honeycrisp's inert database declaration.
+ * Honeycrisp's inert data definition.
  *
- * A database declaration is pure JSON: arktype expressions for the fields,
+ * A data definition is pure JSON: closed field descriptors for the fields,
  * and nothing that knows about storage, sync, or documents (ADR-0213,
  * ADR-0240). Runtimes own all of that.
  *
@@ -10,8 +11,8 @@
  * `SELECT * FROM notes`, and what the projection's relations are called.
  */
 
-import type { DatabaseView } from '@epicenter/data';
-import { defineDatabase, type RowOf } from '@epicenter/database';
+import type { DataView } from '@epicenter/data';
+import { defineData, type RowOf } from '@epicenter/data/definition';
 
 /** Runtime-minted structural note row id. */
 export type NoteId = string;
@@ -20,35 +21,37 @@ export type NoteId = string;
 export type FolderId = string;
 
 const foldersTable = {
-	name: 'string',
-	// Nullable with a default rather than optional. A database has no optional
+	name: field.string(),
+	// Nullable rather than optional. A data definition has no optional
 	// fields on purpose: a field has to be one type through the CRDT attribute,
 	// the projection column and the row alike, and "absent" is not a SQL type.
-	// A default is applied at read time and never written (ADR-0213).
-	icon: 'string|null = null',
+	// Application recovery supplies a value at read time and never writes it as
+	// part of the definition (ADR-0255).
+	icon: field.nullable(field.string()),
 } as const;
 
 const notesTable = {
-	folderId: 'string|null = null',
-	title: 'string',
-	preview: 'string',
-	pinned: 'boolean',
+	folderId: field.nullable(field.string()),
+	title: field.string(),
+	preview: field.string(),
+	pinned: field.boolean(),
 	// Validation-only rather than `string.date.parse`: a field has to be one
 	// type through the CRDT attribute, the projection column and the row alike,
 	// and a parsing form would hand back a `Date` that could not round-trip.
-	createdAt: 'string.date.iso',
-	updatedAt: 'string.date.iso',
-	deletedAt: 'string.date.iso|null = null',
+	createdAt: field.instant(),
+	updatedAt: field.instant(),
+	deletedAt: field.nullable(field.instant()),
 } as const;
 
-export const honeycrispDatabase = defineDatabase({
+export const honeycrispDefinition = defineData({
 	id: 'so.epicenter.honeycrisp',
 	title: 'Honeycrisp',
+	kv: {},
 	tables: { folders: foldersTable, notes: notesTable },
 });
 
-/** The typed view of one store through Honeycrisp's database. */
-export type HoneycrispData = DatabaseView<typeof honeycrispDatabase>;
+/** The typed view of one opened Honeycrisp data handle. */
+export type HoneycrispData = DataView<typeof honeycrispDefinition>;
 
 export type Folder = RowOf<typeof foldersTable>;
 export type Note = RowOf<typeof notesTable>;
@@ -56,11 +59,10 @@ export type Note = RowOf<typeof notesTable>;
 /**
  * The root a note's prose lives at, inside the note's own document.
  *
- * Named at `create` rather than felt for on first open, and that is a
- * correctness requirement rather than tidiness. `document(id).get(name)` creates
- * on miss and a created nested type is addressed by the operation that made it,
- * so two devices first-opening one note would each mint a root here and map LWW
- * would discard one along with everything typed into it (ADR-0215).
+ * One spelling, used at every open. Minting on first use is safe in an
+ * independent document: a top-level root is addressed by its name, so two
+ * devices first-opening one note converge with both writes retained
+ * (ADR-0248).
  */
 export const NOTE_BODY = 'body';
 
@@ -85,10 +87,10 @@ export const NOTE_BODY = 'body';
  * otherwise unreadable row is a legal write (ADR-0125).
  */
 export function deleteHoneycrispFolder(
-	db: HoneycrispData,
+	data: HoneycrispData,
 	folderId: FolderId,
 ): void {
-	const listed = db.tables.notes.list();
+	const listed = data.tables.notes.list();
 	const inFolder = [
 		...listed.rows
 			.filter((note) => note.folderId === folderId)
@@ -98,9 +100,9 @@ export function deleteHoneycrispFolder(
 			.map((issue) => issue.id),
 	];
 	for (const noteId of inFolder) {
-		const { error } = db.tables.notes.update(noteId, { folderId: null });
+		const { error } = data.tables.notes.update(noteId, { folderId: null });
 		if (error !== null && error.name !== 'RowAbsent') throw error;
 	}
 	// Deleting an absent folder is a no-op fact, not an error.
-	db.tables.folders.delete(folderId);
+	data.tables.folders.delete(folderId);
 }

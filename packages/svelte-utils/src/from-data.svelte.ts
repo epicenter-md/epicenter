@@ -1,19 +1,20 @@
 /**
- * A Svelte 5 reactivity adapter over one opened database's declared shape.
+ * A Svelte 5 reactivity adapter over one opened data handle's declared shape.
  *
- * `fromDatabase(data)` mirrors the declaration exactly: `tables.<name>` and
- * `kv`, with the names and row types the database declared. It earns its
+ * `fromData(data)` mirrors the declaration exactly: `tables.<name>` and
+ * `kv`, with the names and row types the definition declares. It earns its
  * existence by adding reactivity, not by renaming anything, and the rule is
  * one sentence: every read verb tracks the table's invalidation signal, and
  * every write verb passes through unchanged.
  *
- * Reads track. `list()`, `rows`, `nonconforming`, `get()`, `ids()`, and
- * `document()` read through a `createSubscriber` per table, so a read inside
- * `$derived` or an effect re-runs when a commit touches that table, whoever
- * committed it: a local write, prose typed into a row's document, and bytes
- * that arrived from another device alike (ADR-0221). `document()` is a read
- * on purpose: a surface deriving a row's document for a row that has not
- * synced in yet should re-derive when it arrives.
+ * Reads track. `list()`, `rows`, `nonconforming`, `get()`, and `ids()` read
+ * through a `createSubscriber` per table, so a read inside `$derived` or an
+ * effect re-runs when a commit touches that table, whoever committed it: a
+ * local write and bytes that arrived from another device alike (ADR-0221).
+ * `document.open()` is not a read: it is the store's own asynchronous load of
+ * a row's independent document (ADR-0248), and it passes through untouched.
+ * Prose typed inside an open document is observed on the document's own Yjs
+ * types, never through a table signal.
  *
  * Writes pass through. `create`, `update`, and `delete` are the store's own
  * synchronous verbs, untouched; the commit they make is what fires the
@@ -46,7 +47,7 @@
  * @example
  * ```svelte
  * <script lang="ts">
- *   const honeycrisp = fromDatabase(data);
+ *   const honeycrisp = fromData(data);
  *   const notes = honeycrisp.tables.notes;
  *   const active = $derived(notes.rows.filter((n) => n.deletedAt === null));
  * </script>
@@ -66,7 +67,7 @@ import { createSubscriber } from 'svelte/reactivity';
  * the table's own input type, so it is not assignable to the untyped
  * `TableHandle`; constraining on the shared read surface accepts every typed
  * handle while `ReactiveTable<TTable>` preserves the caller's exact type.
- * Verbs not named here (`defaults`, `create`, `update`, `delete`,
+ * Verbs not named here (`create`, `update`, `delete`, `document`,
  * `subscribe`) pass through the spread untouched; a read verb the store
  * grows later must be added here to become reactive.
  */
@@ -74,7 +75,6 @@ type AdaptableTable = {
 	list(): { rows: unknown[]; nonconforming: unknown[] };
 	get(rowId: string): unknown;
 	ids(): string[];
-	document(rowId: string): unknown;
 	subscribe(listener: () => void): () => void;
 };
 
@@ -84,8 +84,8 @@ type AdaptableKv = {
 	subscribe(listener: () => void): () => void;
 };
 
-/** What `fromDatabase` needs from opened data: the declared view, no store. */
-type AdaptableDatabaseData = {
+/** What `fromData` needs from opened data: the declared view, no store. */
+type AdaptableData = {
 	tables: Record<string, AdaptableTable>;
 	kv: AdaptableKv;
 };
@@ -102,12 +102,12 @@ export type ReactiveTable<TTable extends AdaptableTable> = TTable & {
 };
 
 /**
- * The declared shape of one opened database, made Svelte-reactive.
+ * The declared shape of one opened data handle, made Svelte-reactive.
  *
  * The table names pass through unchanged at both levels: `keyof` at compile
  * time, `Object.entries` at runtime.
  */
-export type ReactiveDatabase<TData extends AdaptableDatabaseData> = {
+export type ReactiveData<TData extends AdaptableData> = {
 	readonly tables: {
 		readonly [TName in keyof TData['tables']]: ReactiveTable<
 			TData['tables'][TName]
@@ -117,10 +117,10 @@ export type ReactiveDatabase<TData extends AdaptableDatabaseData> = {
 	readonly kv: TData['kv'];
 };
 
-/** Adapt one opened database's `tables` and `kv` into Svelte reactivity. */
-export function fromDatabase<TData extends AdaptableDatabaseData>(
+/** Adapt one opened data handle's `tables` and `kv` into Svelte reactivity. */
+export function fromData<TData extends AdaptableData>(
 	data: TData,
-): ReactiveDatabase<TData> {
+): ReactiveData<TData> {
 	return Object.freeze({
 		tables: Object.freeze(
 			Object.fromEntries(
@@ -131,7 +131,7 @@ export function fromDatabase<TData extends AdaptableDatabaseData>(
 			),
 		),
 		kv: reactiveKv(data.kv),
-	}) as ReactiveDatabase<TData>;
+	}) as ReactiveData<TData>;
 }
 
 function reactiveTable<TTable extends AdaptableTable>(
@@ -166,10 +166,6 @@ function reactiveTable<TTable extends AdaptableTable>(
 		ids: () => {
 			subscribe();
 			return table.ids();
-		},
-		document: (rowId: string) => {
-			subscribe();
-			return table.document(rowId);
 		},
 	}) as ReactiveTable<TTable>;
 }

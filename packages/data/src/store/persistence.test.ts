@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * The optimistic persistence boundary (ADR-0238): acceptance is live and
  * cannot fail for storage reasons; durability is an ordered queue flushed
@@ -10,28 +11,34 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineDatabase, parseDatabase } from '@epicenter/database';
+import { defineData, parseData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Logger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
 
-import { createSqliteDurablePort } from './log.js';
+import { encodeEnvelope } from './envelope.js';
+import { APP_DOCUMENT, createSqliteDurablePort } from './log.js';
 import { createPersistenceController, type DurableOp } from './persistence.js';
 import {
 	createAccountStoreOverPort,
-	type DatabaseView,
+	type DataView,
 	syncEngineOf,
 } from './store.js';
 
-const database = defineDatabase({
+/** Wrap one application-document update the way the wire carries it. */
+function asEnvelope(bytes: Uint8Array): Uint8Array {
+	return encodeEnvelope([{ document: APP_DOCUMENT, bytes }]);
+}
+
+const database = defineData({
 	id: 'so.epicenter.honeycrisp',
-	kv: { theme: "'light'|'dark' = 'light'" },
-	tables: { notes: { title: 'string' } },
+	kv: { theme: field.select(['light', 'dark']) },
+	tables: { notes: { title: field.string() } },
 });
 
 /** The parsed form the over-port constructors take (ADR-0240). */
 function parsed() {
-	const { data, error } = parseDatabase(database);
+	const { data, error } = parseData(database);
 	if (error !== null) throw new Error(error.message);
 	return data;
 }
@@ -45,9 +52,20 @@ const silent: Logger = {
 	trace: () => undefined,
 };
 
-function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
-	if (result.error !== null) throw result.error;
-	return result.data as TValue;
+function expectOk<TValue, TError>(
+	result: Result<TValue, TError> | TValue,
+): TValue {
+	if (
+		typeof result === 'object' &&
+		result !== null &&
+		'data' in result &&
+		'error' in result
+	) {
+		const outcome = result as Result<TValue, TError>;
+		if (outcome.error !== null) throw outcome.error;
+		return outcome.data as TValue;
+	}
+	return result as TValue;
 }
 
 /**
@@ -63,20 +81,22 @@ function openFailable() {
 	/** Every batch the engine accepted, for tests that pin op ordering. */
 	const batches: DurableOp[][] = [];
 	const { store, view } = createAccountStoreOverPort({
-		database: parsed(),
+		definition: parsed(),
 		durable: {
 			commit(ops) {
 				if (gate.failing) throw new Error('durable storage refused');
 				inner.commit(ops);
 				batches.push([...ops]);
 			},
+			readDocument: (document) => inner.readDocument(document),
+			listDocuments: () => inner.listDocuments(),
 		},
 		loaded: inner.load(),
 		log: silent,
 	});
 	return {
 		store,
-		db: view as unknown as DatabaseView<typeof database>,
+		db: view as unknown as DataView<typeof database>,
 		sqlite,
 		gate,
 		batches,
@@ -96,12 +116,12 @@ function openFailable() {
 function reopen(sqlite: ReturnType<typeof createBunSqliteAdapter>) {
 	const port = createSqliteDurablePort({ sqlite });
 	const { store, view } = createAccountStoreOverPort({
-		database: parsed(),
+		definition: parsed(),
 		durable: port,
 		loaded: port.load(),
 		log: silent,
 	});
-	return { store, db: view as unknown as DatabaseView<typeof database> };
+	return { store, db: view as unknown as DataView<typeof database> };
 }
 
 function titles(db: ReturnType<typeof openFailable>['db']): string[] {
@@ -175,7 +195,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expect(restarted.store.persistence.get()).toBe('saved');
 	});
 
-	test('kv and row-document edits are accepted while blocked, like table writes', () => {
+	test('kv and row-document edits are accepted while blocked, like table writes', async () => {
 		const replica = openFailable();
 		const made = expectOk(replica.db.tables.notes.create({ title: 'holder' }));
 		replica.gate.failing = true;
@@ -184,10 +204,12 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expectOk(replica.db.kv.update({ theme: 'dark' }));
 		expect(replica.db.kv.get().data?.theme).toBe('dark');
 
-		// A row's document: an editor keeps writing prose while blocked.
-		const container = replica.db.tables.notes.document(made.id);
-		if (container === undefined) throw new Error('no document');
-		const editor = container.get('editor', 'text');
+		// A row's document: an editor keeps writing prose while blocked. The
+		// open hydrates from the (empty) chain plus the retained queue, so a
+		// blocked engine never blocks acceptance.
+		const handle = expectOk(await replica.db.tables.notes.document.open(made.id));
+		if (handle === undefined) throw new Error('no document');
+		const editor = handle.get('editor', 'text');
 		editor.applyDelta(editor.change.insert('typed while blocked') as never);
 		expect(editor.toString()).toContain('typed while blocked');
 
@@ -198,12 +220,16 @@ describe('acceptance is live, durability is a visible debt', () => {
 		replica.gate.failing = false;
 		expectOk(replica.db.tables.notes.create({ title: 'retry trigger' }));
 		expect(replica.store.persistence.get()).toBe('saved');
+		handle[Symbol.dispose]();
 		const restarted = reopen(replica.sqlite);
 		expect(restarted.db.kv.get().data?.theme).toBe('dark');
-		const survived = restarted.db.tables.notes.document(made.id);
+		const survived = expectOk(
+			await restarted.db.tables.notes.document.open(made.id),
+		);
 		expect(survived?.get('editor', 'text').toString()).toContain(
 			'typed while blocked',
 		);
+		survived?.[Symbol.dispose]();
 	});
 
 	test('the status is subscribable, and transitions fire once per change', () => {
@@ -230,7 +256,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		const inner = createSqliteDurablePort({ sqlite });
 		const release: (() => void)[] = [];
 		const { store, view } = createAccountStoreOverPort({
-			database: parsed(),
+			definition: parsed(),
 			durable: {
 				commit(ops) {
 					const batch = [...ops];
@@ -241,11 +267,13 @@ describe('acceptance is live, durability is a visible debt', () => {
 						});
 					});
 				},
+				readDocument: (document) => inner.readDocument(document),
+				listDocuments: () => inner.listDocuments(),
 			},
 			loaded: inner.load(),
 			log: silent,
 		});
-		const db = view as unknown as DatabaseView<typeof database>;
+		const db = view as unknown as DataView<typeof database>;
 
 		expectOk(db.tables.notes.create({ title: 'a' }));
 		expect(store.persistence.get()).toBe('pending');
@@ -311,7 +339,7 @@ describe('sync reads only durable facts', () => {
 	test('a remote update is live at once, and its cursor lands with its bytes', async () => {
 		const author = openFailable();
 		expectOk(author.db.tables.notes.create({ title: 'from the authority' }));
-		const update = author.store.encodeStateSince();
+		const update = asEnvelope(author.store.encodeStateSince());
 
 		const replica = openFailable();
 		replica.gate.failing = true;
@@ -377,7 +405,7 @@ describe('sync reads only durable facts', () => {
 	test('a remote update lost with a blocked close is simply re-received', async () => {
 		const author = openFailable();
 		expectOk(author.db.tables.notes.create({ title: 'from the authority' }));
-		const update = author.store.encodeStateSince();
+		const update = asEnvelope(author.store.encodeStateSince());
 
 		const replica = openFailable();
 		replica.gate.failing = true;
@@ -466,6 +494,8 @@ describe('the controller against an asynchronous engine', () => {
 					waiting.push({ resolve, reject });
 				});
 			},
+			readDocument: (): Uint8Array[] => [],
+			listDocuments: (): string[] => [],
 			settle(outcome: 'ok' | 'fail'): Promise<void> {
 				const next = waiting.shift();
 				if (next === undefined) throw new Error('no batch in flight');
@@ -479,6 +509,7 @@ describe('the controller against an asynchronous engine', () => {
 
 	const append = (id: number): DurableOp => ({
 		kind: 'append',
+		document: 'app',
 		bytes: new Uint8Array([id]),
 		takenAt: id,
 		outboxId: id,
@@ -488,7 +519,13 @@ describe('the controller against an asynchronous engine', () => {
 		const port = createManualPort();
 		const controller = createPersistenceController({
 			port,
-			loaded: { updates: [], outbox: [], cursor: 0, identity: undefined },
+			loaded: {
+				updates: [],
+				outbox: [],
+				cursor: 0,
+				identity: undefined,
+				tombstones: [],
+			},
 			log: silent,
 		});
 
@@ -512,7 +549,13 @@ describe('the controller against an asynchronous engine', () => {
 		const port = createManualPort();
 		const controller = createPersistenceController({
 			port,
-			loaded: { updates: [], outbox: [], cursor: 0, identity: undefined },
+			loaded: {
+				updates: [],
+				outbox: [],
+				cursor: 0,
+				identity: undefined,
+				tombstones: [],
+			},
 			log: silent,
 		});
 

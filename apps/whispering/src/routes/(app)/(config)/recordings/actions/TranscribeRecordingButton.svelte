@@ -44,7 +44,7 @@
 		() => queries.transcription.transcribeRecording.options,
 	);
 
-	// `pending` is the workspace's stored default for a recording nobody has
+	// `pending` is the recording domain's initialization value for a recording nobody has
 	// transcribed yet, which is this button's "unprocessed".
 	const transcriptionState = $derived.by(() => {
 		if (transcribeRecording.isPending)

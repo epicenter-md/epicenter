@@ -11,12 +11,12 @@
 
 import type { DataOf } from '@epicenter/data';
 import { type DeviceStore, openDevice } from '@epicenter/data/browser';
-import { skillsWorkspace } from '@epicenter/skills';
+import { skillsDefinition } from '@epicenter/skills';
 import { createSkillsState } from './state/skills-state.svelte.js';
 
 export type SkillsRuntime = {
 	/** The device-owned document, open for the whole page lifetime. */
-	readonly data: DataOf<typeof skillsWorkspace, DeviceStore>;
+	readonly data: DataOf<typeof skillsDefinition, DeviceStore>;
 	readonly state: ReturnType<typeof createSkillsState>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
@@ -35,7 +35,7 @@ export async function openSkillsRuntime({
 	signal?: AbortSignal;
 } = {}): Promise<SkillsRuntime> {
 	signal?.throwIfAborted();
-	const opened = await openDevice(skillsWorkspace);
+	const opened = await openDevice(skillsDefinition);
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
 

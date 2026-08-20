@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * What a never-compacted log remembers after you delete something.
  *
@@ -18,16 +19,17 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
 import { createAccountStore, syncEngineOf } from '../src/store/store.js';
 import { openSyncAuthority } from '../src/sync/authority.js';
 
-const evidenceDatabase = defineDatabase({
+const evidenceDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
-	tables: { notes: { title: 'string' } },
+	kv: {},
+	tables: { notes: { title: field.string() } },
 });
 
 /** Distinctive enough that finding it in a blob cannot be a coincidence. */
@@ -35,9 +37,20 @@ const CANARY = 'SECRET-CANARY-my-therapist-appointment';
 /** Never written anywhere. The control for every search below. */
 const NEVER_WRITTEN = 'THIS-STRING-WAS-NEVER-WRITTEN-ANYWHERE';
 
-function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
-	if (result.error !== null) throw result.error;
-	return result.data as TValue;
+function expectOk<TValue, TError>(
+	result: Result<TValue, TError> | TValue,
+): TValue {
+	if (
+		typeof result === 'object' &&
+		result !== null &&
+		'data' in result &&
+		'error' in result
+	) {
+		const outcome = result as Result<TValue, TError>;
+		if (outcome.error !== null) throw outcome.error;
+		return outcome.data as TValue;
+	}
+	return result as TValue;
 }
 
 function contains(blobs: readonly Uint8Array[], needle: string): boolean {
@@ -50,7 +63,7 @@ function contains(blobs: readonly Uint8Array[], needle: string): boolean {
 function afterWritingAndDeleting() {
 	const database = createBunSqliteAdapter(new Database(':memory:'));
 	const db = createAccountStore({
-		database: evidenceDatabase,
+		definition: evidenceDatabase,
 		sqlite: database,
 	});
 	const store = db.store;
@@ -143,7 +156,7 @@ describe('and still in every log, for as long as the log exists', () => {
 		// And the arriving device shows nothing, which is why this is invisible
 		// rather than merely undesirable.
 		const arrivingDb = createAccountStore({
-			database: evidenceDatabase,
+			definition: evidenceDatabase,
 			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const arriving = arrivingDb.store;

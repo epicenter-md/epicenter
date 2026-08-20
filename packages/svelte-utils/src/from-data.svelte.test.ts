@@ -34,7 +34,7 @@ mock.module('svelte/reactivity', () => ({
 	},
 }));
 
-import { fromDatabase } from './from-database.svelte.js';
+import { fromData } from './from-data.svelte.js';
 
 /**
  * An in-memory stand-in for one store table handle: the same closure-object
@@ -48,12 +48,11 @@ function createFakeTable<TRow extends { id: string }>(seed: TRow[]) {
 	return {
 		calls,
 		handle: {
-			defaults: Object.freeze({}),
 			create(fields: Omit<TRow, 'id'>) {
 				const row = { id: `row-${rows.size + 1}`, ...fields } as TRow;
 				rows.set(row.id, row);
 				for (const listener of listeners) listener();
-				return { data: row, error: null };
+				return row;
 			},
 			get(rowId: string) {
 				return { data: rows.get(rowId), error: null };
@@ -98,14 +97,12 @@ function createFakeKv<TValues>(initial: TValues) {
 			for (const listener of listeners) listener();
 		},
 		handle: {
-			defaults: Object.freeze({}),
 			get() {
 				return { data: value, error: null };
 			},
 			update(fields: Partial<TValues>) {
 				value = { ...value, ...fields };
 				for (const listener of listeners) listener();
-				return { data: undefined, error: null };
 			},
 			subscribe(listener: () => void) {
 				listeners.add(listener);
@@ -123,7 +120,7 @@ function setup() {
 	const notes = createFakeTable<Note>([{ id: 'n1', title: 'first' }]);
 	const folders = createFakeTable<Folder>([]);
 	const kv = createFakeKv({ theme: 'dark' });
-	const reactive = fromDatabase({
+	const reactive = fromData({
 		tables: { notes: notes.handle, folders: folders.handle },
 		kv: kv.handle,
 	});
@@ -181,13 +178,12 @@ test('an observed table still reads through on every access', () => {
 test('write verbs pass through to the underlying handle', () => {
 	const { notes, reactive } = setup();
 	const table = reactive.tables.notes;
-	const { data: created, error } = table.create({ title: 'made' });
-	expect(error).toBeNull();
-	expect(created?.title).toBe('made');
-	expect(table.update(created!.id, { title: 'renamed' }).error).toBeNull();
-	expect(notes.handle.get(created!.id).data?.title).toBe('renamed');
-	expect(table.delete(created!.id)).toBe(true);
-	expect(table.delete(created!.id)).toBe(false);
+	const created = table.create({ title: 'made' });
+	expect(created.title).toBe('made');
+	expect(table.update(created.id, { title: 'renamed' }).error).toBeNull();
+	expect(notes.handle.get(created.id).data?.title).toBe('renamed');
+	expect(table.delete(created.id)).toBe(true);
+	expect(table.delete(created.id)).toBe(false);
 });
 
 test('point reads pass through and answer from current data', () => {
@@ -205,6 +201,6 @@ test('kv get passes through and reflects writes', () => {
 	expect(reactive.kv.get().data).toEqual({ theme: 'dark' });
 	kv.set({ theme: 'light' });
 	expect(reactive.kv.get().data).toEqual({ theme: 'light' });
-	expect(reactive.kv.update({ theme: 'dark' }).error).toBeNull();
+	reactive.kv.update({ theme: 'dark' });
 	expect(reactive.kv.get().data).toEqual({ theme: 'dark' });
 });

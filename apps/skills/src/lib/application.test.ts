@@ -29,7 +29,7 @@ import { expect, test } from 'bun:test';
 	{ by: <TValue>(derive: () => TValue) => derive() },
 );
 
-import { SKILL_CONTENT, skillsWorkspace } from '@epicenter/skills';
+import { SKILL_CONTENT, skillsDefinition } from '@epicenter/skills';
 import { openSkillsRuntime } from './application.js';
 
 async function resetStorage(): Promise<void> {
@@ -51,7 +51,7 @@ test('the runtime opens the device document and nothing else', async () => {
 	expect(runtime.state.skills).toEqual([]);
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
-	expect(names).toEqual([`epicenter/${skillsWorkspace.id}/device`]);
+	expect(names).toEqual([`epicenter/${skillsDefinition.id}/device`]);
 });
 
 test('a skill and its instructions survive reopening', async () => {
@@ -60,10 +60,11 @@ test('a skill and its instructions survive reopening', async () => {
 	{
 		await using runtime = await openSkillsRuntime();
 		skillId = runtime.state.createSkill('writing-voice');
-		const content = runtime.data.tables.skills
-			.document(skillId)
-			?.get(SKILL_CONTENT);
-		if (content === undefined) throw new Error('the row has no document');
+		const opened = await runtime.data.tables.skills.document.open(skillId);
+		if (opened.error !== null) throw opened.error;
+		using handle = opened.data;
+		if (handle === undefined) throw new Error('the row has no document');
+		const content = handle.get(SKILL_CONTENT);
 		content.applyDelta(content.change.insert('Write directly.') as never);
 		// The durable flush is asynchronous, so a reopen must wait for it.
 		await runtime.data.store.persistence.flush();
@@ -74,12 +75,10 @@ test('a skill and its instructions survive reopening', async () => {
 	expect(reopened.state.skills.map(({ name }) => name)).toEqual([
 		'writing-voice',
 	]);
-	expect(
-		reopened.data.tables.skills
-			.document(skillId)
-			?.get(SKILL_CONTENT)
-			.toString(),
-	).toBe('Write directly.');
+	const opened = await reopened.data.tables.skills.document.open(skillId);
+	if (opened.error !== null) throw opened.error;
+	using handle = opened.data;
+	expect(handle?.get(SKILL_CONTENT).toString()).toBe('Write directly.');
 });
 
 test('an aborted boot rejects with the abort', async () => {

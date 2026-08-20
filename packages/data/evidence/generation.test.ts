@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * What actually happens when an application's log is replaced.
  *
@@ -14,25 +15,44 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
+import { encodeEnvelope } from '../src/store/envelope.js';
+import { APP_DOCUMENT } from '../src/store/log.js';
 import { createAccountStore, syncEngineOf } from '../src/store/store.js';
 
-const evidenceDatabase = defineDatabase({
+/** Wrap one application-document update the way the wire carries it. */
+function asEnvelope(bytes: Uint8Array): Uint8Array {
+	return encodeEnvelope([{ document: APP_DOCUMENT, bytes }]);
+}
+
+const evidenceDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
-	tables: { notes: { title: 'string' } },
+	kv: {},
+	tables: { notes: { title: field.string() } },
 });
 
-function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
-	if (result.error !== null) throw result.error;
-	return result.data as TValue;
+function expectOk<TValue, TError>(
+	result: Result<TValue, TError> | TValue,
+): TValue {
+	if (
+		typeof result === 'object' &&
+		result !== null &&
+		'data' in result &&
+		'error' in result
+	) {
+		const outcome = result as Result<TValue, TError>;
+		if (outcome.error !== null) throw outcome.error;
+		return outcome.data as TValue;
+	}
+	return result as TValue;
 }
 
 function open() {
 	const db = createAccountStore({
-		database: evidenceDatabase,
+		definition: evidenceDatabase,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	return { store: db.store, db };
@@ -52,7 +72,7 @@ function synchronisedPair() {
 	const note = expectOk(laptop.db.tables.notes.create({ title: 'Groceries' }));
 	expectOk(laptop.db.tables.notes.create({ title: 'Reading list' }));
 	expectOk(
-		syncEngineOf(phone.store).applyRemote(laptop.store.encodeStateSince()),
+		syncEngineOf(phone.store).applyRemote(asEnvelope(laptop.store.encodeStateSince())),
 	);
 	return { laptop, phone, noteId: note.id };
 }
@@ -73,14 +93,14 @@ describe('a new generation seeded by SNAPSHOT keeps every identity', () => {
 
 		// A fresh replica reads generation 2 from its first entry.
 		const arriving = open();
-		expectOk(syncEngineOf(arriving.store).applyRemote(seed));
+		expectOk(syncEngineOf(arriving.store).applyRemote(asEnvelope(seed)));
 		expect(titles(arriving)).toEqual(['Groceries', 'Reading list']);
 
 		// The phone arrives at generation 2 holding work generation 1 never saw.
 		// The rollover rule is that its cursor resets to zero AND its whole state
 		// becomes unsent, so it pushes everything it has.
 		expectOk(
-			syncEngineOf(arriving.store).applyRemote(phone.store.encodeStateSince()),
+			syncEngineOf(arriving.store).applyRemote(asEnvelope(phone.store.encodeStateSince())),
 		);
 
 		// The offline edit is not merely present, it landed on the SAME row rather
@@ -114,9 +134,9 @@ describe('a new generation seeded by SNAPSHOT keeps every identity', () => {
 		const seed = rebuilt.store.encodeStateSince();
 
 		const arriving = open();
-		expectOk(syncEngineOf(arriving.store).applyRemote(seed));
+		expectOk(syncEngineOf(arriving.store).applyRemote(asEnvelope(seed)));
 		expectOk(
-			syncEngineOf(arriving.store).applyRemote(phone.store.encodeStateSince()),
+			syncEngineOf(arriving.store).applyRemote(asEnvelope(phone.store.encodeStateSince())),
 		);
 
 		// The phone's row did not merge with anything. It arrived as a THIRD row
@@ -149,10 +169,10 @@ describe('the rollover needs no proof, which is why it is affordable', () => {
 		const both = open();
 		// Deliberately in the wrong order, and with the laggard first.
 		expectOk(
-			syncEngineOf(both.store).applyRemote(phone.store.encodeStateSince()),
+			syncEngineOf(both.store).applyRemote(asEnvelope(phone.store.encodeStateSince())),
 		);
 		expectOk(
-			syncEngineOf(both.store).applyRemote(laptop.store.encodeStateSince()),
+			syncEngineOf(both.store).applyRemote(asEnvelope(laptop.store.encodeStateSince())),
 		);
 
 		expect(titles(both)).toEqual([
@@ -172,7 +192,7 @@ describe('the rollover needs no proof, which is why it is affordable', () => {
 
 		const arriving = open();
 		for (let index = 0; index < 5; index += 1) {
-			expectOk(syncEngineOf(arriving.store).applyRemote(seed));
+			expectOk(syncEngineOf(arriving.store).applyRemote(asEnvelope(seed)));
 		}
 
 		expect(titles(arriving)).toEqual(['Groceries', 'Reading list']);
@@ -202,11 +222,11 @@ describe('choosing the next generation is not a thing a CRDT can do', () => {
 
 		expectOk(
 			syncEngineOf(proposals.store).applyRemote(
-				laptop.store.encodeStateSince(),
+				asEnvelope(laptop.store.encodeStateSince()),
 			),
 		);
 		expectOk(
-			syncEngineOf(proposals.store).applyRemote(phone.store.encodeStateSince()),
+			syncEngineOf(proposals.store).applyRemote(asEnvelope(phone.store.encodeStateSince())),
 		);
 
 		// Perfect convergence, and useless as an answer.

@@ -241,7 +241,7 @@ describe('the snapshot path survives a wake', () => {
 		// authority asks for a snapshot as soon as the tail outgrows the snapshot
 		// it holds, and taking one deletes every entry it covers. Hundreds of
 		// small rows would get there too, at hundreds of round trips.
-		phone.writeLarge('a big paste', 70_000);
+		await phone.writeLarge('a big paste', 70_000);
 		await settle('a snapshot replaces the whole log', async () => {
 			const stat = await lab.authority.stat();
 			return stat.head > 0 && stat.snapshot === stat.head && stat.entries === 0;

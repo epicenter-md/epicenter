@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * THROWAWAY, and test-only: a peer that lives inside `workerd`.
  *
@@ -24,15 +25,16 @@ import {
 	decodeFrame,
 	type SyncClient,
 } from '@epicenter/data/sync';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import {
 	createDurableObjectSqliteAdapter,
 	type DurableObjectSqliteStorage,
 } from '@epicenter/sqlite/durable-object';
 
-const labDatabase = defineDatabase({
+const labDatabase = defineData({
 	id: 'so.epicenter.synclab',
-	tables: { notes: { title: 'string' } },
+	kv: {},
+	tables: { notes: { title: field.string() } },
 });
 
 /**
@@ -44,7 +46,7 @@ const labDatabase = defineDatabase({
 function openNotes(
 	sqlite: ReturnType<typeof createDurableObjectSqliteAdapter>,
 ) {
-	return createAccountStore({ database: labDatabase, sqlite });
+	return createAccountStore({ definition: labDatabase, sqlite });
 }
 
 /**
@@ -189,7 +191,6 @@ export class SyncLabTestPeer extends DurableObject<Env> {
 	/** Write one row and send it now. */
 	write(title: string): void {
 		const written = this.db.tables.notes.create({ title });
-		if (written.error !== null) throw written.error;
 		this.client.flush();
 	}
 
@@ -199,14 +200,15 @@ export class SyncLabTestPeer extends DurableObject<Env> {
 	 * The only affordable way to reach the authority's 64 KB snapshot floor from
 	 * a test: hundreds of small rows would take hundreds of round trips.
 	 */
-	writeLarge(title: string, bytes: number): void {
+	async writeLarge(title: string, bytes: number): Promise<void> {
 		const written = this.db.tables.notes.create({ title });
-		if (written.error !== null) throw written.error;
-		const text = this.db.tables.notes
-			.document(written.data.id)
-			?.get('editor', 'text');
-		if (text === undefined) throw new Error('the row has no document');
+		const opened = await this.db.tables.notes.document.open(written.id);
+		if (opened.error !== null) throw opened.error;
+		const handle = opened.data;
+		if (handle === undefined) throw new Error('the row has no document');
+		const text = handle.get('editor', 'text');
 		text.applyDelta(text.change.insert('x'.repeat(bytes)) as never);
+		handle[Symbol.dispose]();
 		this.client.flush();
 	}
 

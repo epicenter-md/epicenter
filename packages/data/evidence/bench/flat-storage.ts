@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * What the authority's storage actually tracks.
  *
@@ -26,15 +27,16 @@
  */
 
 import { Database } from 'bun:sqlite';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
 import { createAccountStore, syncEngineOf } from '../../src/store/store.js';
 import { openSyncAuthority } from '../../src/sync/authority.js';
 
-const evidenceDatabase = defineDatabase({
+const evidenceDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
-	tables: { notes: { title: 'string' } },
+	kv: {},
+	tables: { notes: { title: field.string() } },
 });
 
 /** Roughly the live size of a working vault. */
@@ -44,7 +46,7 @@ const OPERATIONS = 6_000;
 
 function openReplica() {
 	const db = createAccountStore({
-		database: evidenceDatabase,
+		definition: evidenceDatabase,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	return { store: db.store, db };
@@ -70,8 +72,7 @@ function run({ snapshots }: { snapshots: boolean }) {
 	for (let operation = 1; operation <= OPERATIONS; operation += 1) {
 		if (alive.length < LIVE_ROWS) {
 			const made = db.tables.notes.create({ title: `note ${operation}` });
-			if (made.error !== null) throw made.error;
-			alive.push(made.data.id);
+			alive.push(made.id);
 		} else if (operation % 3 === 0) {
 			// Retire the oldest and make a new one, so the live set stays flat
 			// while the operation count does not.

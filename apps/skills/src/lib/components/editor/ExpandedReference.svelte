@@ -6,15 +6,35 @@
 	let { id }: { id: string } = $props();
 	const skills = getSkills();
 
-	const content = $derived(
-		skills.data.tables.skillReferences.document(id)?.get(SKILL_CONTENT),
-	);
+	// Same open-per-row lifecycle as InstructionsEditor (ADR-0248).
+	type Opened = Awaited<
+		ReturnType<typeof skills.data.tables.skillReferences.document.open>
+	>['data'];
+	let opened = $state.raw<Opened | 'loading'>('loading');
+	$effect(() => {
+		let stale = false;
+		opened = 'loading';
+		void skills.data.tables.skillReferences.document
+			.open(id)
+			.then((result) => {
+				if (result.error !== null) throw result.error;
+				if (stale) {
+					result.data?.[Symbol.dispose]();
+					return;
+				}
+				opened = result.data;
+			});
+		return () => {
+			stale = true;
+			if (opened !== 'loading') opened?.[Symbol.dispose]();
+		};
+	});
 </script>
 
 <div class="h-48 border-t">
-	{#if content !== undefined}
+	{#if opened !== 'loading' && opened !== undefined && opened !== null}
 		{#key id}
-			<CodeMirrorEditor {content} />
+			<CodeMirrorEditor content={opened.get(SKILL_CONTENT)} />
 		{/key}
 	{/if}
 </div>

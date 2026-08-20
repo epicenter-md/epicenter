@@ -1,11 +1,11 @@
 # Honeycrisp App
 
 Local-first notes SPA. Folders and notes are rows in one Yjs document, and each
-note's prose is an application-named root inside that note's own container. The
-one application running on the store today, so it is also the reference for how
-an app is built.
+note's prose lives in that note's own independent Yjs document, opened on
+demand at the row's derived address (ADR-0248). The one application running on
+the store today, so it is also the reference for how an app is built.
 
-Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0215](../../docs/adr/0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md) (an application is one document and a row owns a nested container), [ADR-0233](../../docs/adr/0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) (a device document and one account replica per account, chosen by auth at boot), [ADR-0231](../../docs/adr/0231-rebuilding-replaces-a-workspaces-current-yjs-document.md) (rebuild replaces the workspace's current Yjs document).
+Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0248](../../docs/adr/0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md) (a row owns an independent Yjs document at a derived address), [ADR-0233](../../docs/adr/0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) (a device document and one account replica per account, chosen by auth at boot), [ADR-0231](../../docs/adr/0231-rebuilding-replaces-a-workspaces-current-yjs-document.md) (rebuild replaces the workspace's current Yjs document).
 
 ## Two durable documents, and the root opens them
 
@@ -84,6 +84,7 @@ only the default one is checked by an editor.
   permanently denied before its first bootstrap, is unavailable and says so.
 - Do not add a `#platform/*` seam for storage. Every build opens its own store;
   a seam there is the thing ADR-0226 refused.
-- Do not reach a root inside a note's document lazily. Root names are declared
-  at `create` time, because two devices first-opening one note would otherwise
-  each mint their own and lose one.
+- Do not hold a note's document open past the surface that opened it. The pane
+  owns the handle: dispose on note switch and unmount, so the store can unload
+  the document. Minting the `body` root on first open is safe (a top-level
+  root is addressed by its name, ADR-0248); leaking handles is the hazard now.

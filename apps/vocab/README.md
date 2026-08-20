@@ -8,11 +8,11 @@ Multilingual chat tutor. A learner asks about a word, phrase, or sentence; the t
 
 **Markdown + readings**: Settled assistant messages render through `@epicenter/ui/markdown` via `ReadingMarkdown.svelte`, which resolves the deterministic per-script romanizers whose script appears in the passage (`src/lib/readings/`, ADR-0105) and composes them behind the shared Markdown component. Readings are a client-side derived view over clean text: pure, offline, lazily loaded per script, with no model call and no network, so a reading can only be missing, never wrong. The shared Markdown component owns sanitization, markdown rendering, and `<ruby>` output. Chinese (`pinyin-pro`), Japanese kana (`wanakana`), and Cyrillic (`transliteration`) ship today; adding a language is one provider file plus one registry line.
 
-**Workspace state**: `vocabWorkspace` in `vocab.ts` is the shared isomorphic definition. It defines `epicenter-vocab`, the `conversations` table (the cheap list: title and timestamps), the `conversations.messages` child doc as a per-id LWW message store (`attachRecords<VocabMessage>`), the `settings` table with its `settings` row, the Vocab model constant, and the `VocabMessage` shape. Transcripts are not a table; they are per-conversation child docs opened from the bound conversations table. `openVocabBrowser()` reads auth once at boot: signed out uses bare local IndexedDB storage, signed in uses principal-scoped storage plus relay sync.
+**Workspace state**: `vocabDefinition` in `vocab.ts` is the shared isomorphic definition. It defines `epicenter-vocab`, the `conversations` table (the cheap list: title and timestamps), the `conversations.messages` child doc as a per-id LWW message store (`attachRecords<VocabMessage>`), the `settings` table with its `settings` row, the Vocab model constant, and the `VocabMessage` shape. Transcripts are not a table; they are per-conversation child docs opened from the bound conversations table. `openVocabBrowser()` reads auth once at boot: signed out uses bare local IndexedDB storage, signed in uses principal-scoped storage plus relay sync.
 
 ```txt
 defineWorkspace()
-  -> vocabWorkspace
+  -> vocabDefinition
     -> openVocabBrowser() opens with a browser connection
 ```
 

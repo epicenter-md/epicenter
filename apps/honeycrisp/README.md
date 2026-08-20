@@ -14,17 +14,17 @@ Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note 
 
 ### Data layer
 
-Honeycrisp declares one inert workspace over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and opens it as a store the app owns:
+Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and opens it as a store the app owns:
 
 ```txt
-openDevice(honeycrispWorkspace)                          sqlite-wasm in the page,
-openAccount(honeycrispWorkspace, { principalId })        durable relations in
-                                                    IndexedDB, one database
+openDevice(honeycrispDefinition)                         sqlite-wasm in the page,
+openAccount(honeycrispDefinition, { principalId })       durable relations in
+                                                    IndexedDB, one data handle
                                                     per document
-db.tables.notes.list()                              synchronous from here on
+data.tables.notes.list()                            synchronous from here on
 ```
 
-The workspace names the application and the opener names which durable document it
+The definition names the application and the opener names which durable document it
 means and whose it is (ADR-0229 as amended by ADR-0233): one device document
 that never syncs and opens every generation, and one retained replica per
 account that also opens when the boot auth carries that principal. The root
@@ -36,9 +36,9 @@ Honeycrisp's bundle and brokers its credential; it owns none of its data.
 
 **Reads are synchronous.** Opening the store is the only asynchronous thing
 the application does: it replays a durable log into one `Y.Doc` and everything
-after that is a property access. `db.notes.list()` returns rows, not a promise.
+after that is a property access. `data.tables.notes.list()` returns rows, not a promise.
 
-**Nothing polls and nothing refreshes.** `db.notes.subscribe(...)` reports which
+**Nothing polls and nothing refreshes.** `data.tables.notes.subscribe(...)` reports which
 rows a commit touched, and it fires for a local write, for prose typed into a
 note, and for bytes that arrived from another device alike (ADR-0221). The state
 modules re-read on that signal; there is no generation counter and no manual
@@ -49,7 +49,7 @@ refresh anywhere.
 A note's prose is a live type at the `body` root inside the note's own document,
 allocated when the row is created (`{ document: ['body'] }`) so two devices
 first-opening one note cannot each mint their own and lose one. `NoteBodyPane.svelte`
-reads it with `db.notes.document(noteId).get('body')` and hands it straight to
+reads it with `data.tables.notes.document.open(noteId)` and hands it straight to
 ProseMirror through `@y/prosemirror`. There is no handle to open, nothing to
 await, and nothing to dispose.
 
@@ -102,10 +102,10 @@ transport (ADR-0222).
 | `deletedAt` | `string.date.iso \| null` (soft delete) |
 | `wordCount` | `number \| null` |
 
-A workspace has no optional fields: a field has to be one type through the CRDT
+A data definition has no optional fields: a field has to be one type through the CRDT
 attribute, the projection column and the row alike, and "absent" is not a SQL
-type. So what would have been optional is nullable with a `= null` default,
-which a read applies and a write never stores.
+type. So what would have been optional is nullable, and the application writes
+or recovers `null` explicitly.
 
 Each note's prose lives at the `body` root inside that note's document. The
 application names the root and picks its format; Epicenter allocates the
@@ -164,7 +164,7 @@ storage partition (ADR-0177), so they are one device rather than two.
 - `@y/y` 14: row-owned note body documents
 - [Tailwind CSS](https://tailwindcss.com): styling
 - [Better Auth](https://better-auth.com): authentication
-- `@epicenter/data`: the store, its transport, and the workspace vocabulary
+- `@epicenter/data`: the store, its transport, and the data-definition vocabulary
 - `@epicenter/sync`: the bearer-in-subprotocol handshake the upgrade uses
 - `@epicenter/svelte`: auth and browser lifecycle helpers
 - `@epicenter/ui`: shadcn-svelte component library

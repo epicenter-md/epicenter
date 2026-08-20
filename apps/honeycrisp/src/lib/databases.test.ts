@@ -26,9 +26,10 @@
  */
 import 'fake-indexeddb/auto';
 import { expect, mock, test } from 'bun:test';
+import { InstantString } from '@epicenter/field';
 import type { AuthClient } from '@epicenter/auth';
 import { encodeFrame } from '@epicenter/data/sync';
-import { honeycrispDatabase } from '@epicenter/honeycrisp';
+import { honeycrispDefinition } from '@epicenter/honeycrisp';
 
 mock.module('$app/navigation', () => ({ goto: mock() }));
 mock.module('$app/state', () => ({
@@ -54,9 +55,9 @@ const { openHoneycrispDatabases } = await import('./databases.js');
 type Databases = Awaited<ReturnType<typeof openHoneycrispDatabases>>;
 
 /** The durable addresses this application can hold (ADR-0233). */
-const DEVICE = `epicenter/${honeycrispDatabase.id}/device`;
+const DEVICE = `epicenter/${honeycrispDefinition.id}/device`;
 const accountOf = (principalId: string) =>
-	`epicenter/${honeycrispDatabase.id}/account/${principalId}`;
+	`epicenter/${honeycrispDefinition.id}/account/${principalId}`;
 
 async function until(condition: () => boolean, label: string): Promise<void> {
 	for (let attempt = 0; attempt < 400; attempt += 1) {
@@ -94,8 +95,10 @@ function noteFields(title: string) {
 		title,
 		preview: '',
 		pinned: false,
-		createdAt: '2026-08-10T00:00:00.000Z',
-		updatedAt: '2026-08-10T00:00:00.000Z',
+		createdAt: InstantString.fromDate(new Date('2026-08-10T00:00:00.000Z')),
+		updatedAt: InstantString.fromDate(new Date('2026-08-10T00:00:00.000Z')),
+		folderId: null,
+		deletedAt: null,
 	};
 }
 
@@ -232,8 +235,8 @@ test('device work survives signing in, signing out, and a second account', async
 		const databases = await openHoneycrispDatabases({ auth: signedOut });
 		expect(databases.account).toBeUndefined();
 		expect(
-			databases.device.tables.notes.create(noteFields('anonymous draft')).error,
-		).toBeNull();
+			databases.device.tables.notes.create(noteFields('anonymous draft')).id,
+		).toHaveLength(24);
 		await databases[Symbol.asyncDispose]();
 	}
 
@@ -254,11 +257,11 @@ test('device work survives signing in, signing out, and a second account', async
 		expect(
 			databases.device.tables.notes.create(
 				noteFields('drafted while signed in'),
-			).error,
-		).toBeNull();
+			).id,
+		).toHaveLength(24);
 		expect(
-			account.data.tables.notes.create(noteFields("alice's note")).error,
-		).toBeNull();
+			account.data.tables.notes.create(noteFields("alice's note")).id,
+		).toHaveLength(24);
 		expect(titles(account.data)).toEqual(["alice's note"]);
 		await databases[Symbol.asyncDispose]();
 	}
@@ -286,8 +289,8 @@ test('device work survives signing in, signing out, and a second account', async
 		const account = requireAccount(databases);
 		expect(titles(account.data)).toEqual([]);
 		expect(
-			account.data.tables.notes.create(noteFields("bob's note")).error,
-		).toBeNull();
+			account.data.tables.notes.create(noteFields("bob's note")).id,
+		).toHaveLength(24);
 		await databases[Symbol.asyncDispose]();
 	}
 
@@ -320,8 +323,8 @@ test('returning to an account reopens its retained replica, including offline wo
 		expect(
 			requireAccount(databases).data.tables.notes.create(
 				noteFields('written online'),
-			).error,
-		).toBeNull();
+			).id,
+		).toHaveLength(24);
 		await databases[Symbol.asyncDispose]();
 	}
 
@@ -339,8 +342,8 @@ test('returning to an account reopens its retained replica, including offline wo
 		const account = requireAccount(databases);
 		expect(titles(account.data)).toEqual(['written online']);
 		expect(
-			account.data.tables.notes.create(noteFields('written offline')).error,
-		).toBeNull();
+			account.data.tables.notes.create(noteFields('written offline')).id,
+		).toHaveLength(24);
 		await databases[Symbol.asyncDispose]();
 	}
 
@@ -422,8 +425,8 @@ test('a supersession discards one account replica and cannot touch the others', 
 		});
 		expect(
 			databases.device.tables.notes.create(noteFields('kept device work'))
-				.error,
-		).toBeNull();
+				.id,
+		).toHaveLength(24);
 		await databases[Symbol.asyncDispose]();
 	}
 	{
@@ -435,8 +438,8 @@ test('a supersession discards one account replica and cannot touch the others', 
 		expect(
 			requireAccount(databases).data.tables.notes.create(
 				noteFields("kept bob's"),
-			).error,
-		).toBeNull();
+			).id,
+		).toHaveLength(24);
 		await databases[Symbol.asyncDispose]();
 	}
 
@@ -448,8 +451,8 @@ test('a supersession discards one account replica and cannot touch the others', 
 	expect(
 		requireAccount(databases).data.tables.notes.create(
 			noteFields('doomed replica note'),
-		).error,
-	).toBeNull();
+		).id,
+	).toHaveLength(24);
 
 	// The authority names a different document on this replica's own
 	// connection: the one fact that concludes supersession (ADR-0231).
@@ -489,8 +492,8 @@ test('a rebuild discards one account replica and cannot touch the others', async
 		});
 		expect(
 			databases.device.tables.notes.create(noteFields('kept device work'))
-				.error,
-		).toBeNull();
+				.id,
+		).toHaveLength(24);
 		await databases[Symbol.asyncDispose]();
 	}
 	{
@@ -502,8 +505,8 @@ test('a rebuild discards one account replica and cannot touch the others', async
 		expect(
 			requireAccount(databases).data.tables.notes.create(
 				noteFields("kept bob's"),
-			).error,
-		).toBeNull();
+			).id,
+		).toHaveLength(24);
 		await databases[Symbol.asyncDispose]();
 	}
 
@@ -521,8 +524,8 @@ test('a rebuild discards one account replica and cannot touch the others', async
 	const databases = await openHoneycrispDatabases({ auth });
 	const account = requireAccount(databases);
 	expect(
-		account.data.tables.notes.create(noteFields('rebuilt away')).error,
-	).toBeNull();
+		account.data.tables.notes.create(noteFields('rebuilt away')).id,
+	).toHaveLength(24);
 
 	reloads.mockClear();
 	const published = await account.rebuild();
@@ -555,8 +558,8 @@ test('a refused rebuild keeps the replica and this generation running', async ()
 	const databases = await openHoneycrispDatabases({ auth });
 	const account = requireAccount(databases);
 	expect(
-		account.data.tables.notes.create(noteFields('still here')).error,
-	).toBeNull();
+		account.data.tables.notes.create(noteFields('still here')).id,
+	).toHaveLength(24);
 
 	reloads.mockClear();
 	const refused = await account.rebuild();

@@ -28,15 +28,13 @@ export type { OutboxEntry } from './persistence.js';
 export const SNAPSHOT_FOLD_THRESHOLD = 64;
 
 /**
- * The one document in the log.
+ * The application document's name in the log.
  *
- * An application is one document (ADR-0215), so this column distinguishes
- * nothing today. It is kept because the log's shape survives the browser
- * arriving and a second durable artifact appearing, and dropping a column to
- * save nine bytes a row is the kind of saving that costs a migration later.
- *
- * Named for what it is rather than `index`, which was the name of one half of a
- * split that no longer exists.
+ * The log is per-document (ADR-0248): the application document holds every
+ * scalar row under this reserved name, and each row's rich document holds its
+ * chain under the row's derived address (`{databaseId}/{tableName}/{rowId}`).
+ * The two spellings cannot collide, because a derived address always carries
+ * two slashes and this name carries none.
  */
 export const APP_DOCUMENT = 'app';
 
@@ -63,8 +61,9 @@ export function applyStoreSchema(sqlite: SqliteDatabase): void {
 	`);
 	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS _outbox (
-			id    INTEGER NOT NULL CHECK (id > 0),
-			bytes BLOB    NOT NULL,
+			id       INTEGER NOT NULL CHECK (id > 0),
+			document TEXT    NOT NULL,
+			bytes    BLOB    NOT NULL,
 			PRIMARY KEY (id)
 		) WITHOUT ROWID, STRICT
 	`);
@@ -86,6 +85,16 @@ export function applyStoreSchema(sqlite: SqliteDatabase): void {
 			PRIMARY KEY (key)
 		) WITHOUT ROWID, STRICT
 	`);
+	// A retired document address (ADR-0248): a row deletion records one here,
+	// atomically with removing the scalar row and the document's chain, and
+	// nothing ever removes it. A tombstoned address takes no further bytes, so
+	// a late write cannot resurrect a deleted row's document.
+	sqlite.run(`
+		CREATE TABLE IF NOT EXISTS _tombstones (
+			document TEXT NOT NULL,
+			PRIMARY KEY (document)
+		) WITHOUT ROWID, STRICT
+	`);
 }
 
 /**
@@ -105,10 +114,12 @@ export function applyStoreSchema(sqlite: SqliteDatabase): void {
 export function insertOutbox(
 	sqlite: SqliteDatabase,
 	id: number,
+	document: string,
 	update: Uint8Array,
 ): void {
-	sqlite.run('INSERT INTO _outbox (id, bytes) VALUES (?, ?)', [
+	sqlite.run('INSERT INTO _outbox (id, document, bytes) VALUES (?, ?, ?)', [
 		id,
+		document,
 		new Uint8Array(update),
 	]);
 }
@@ -116,21 +127,40 @@ export function insertOutbox(
 /** Every unsent entry, oldest first. */
 export function readOutbox(sqlite: SqliteDatabase): OutboxEntry[] {
 	return sqlite
-		.all<SqliteRow & { id: number; bytes: Uint8Array | ArrayBuffer }>(
-			'SELECT id, bytes FROM _outbox ORDER BY id',
-		)
-		.map((row) => ({ id: row.id, bytes: copyBytes(row.bytes) }));
+		.all<
+			SqliteRow & {
+				id: number;
+				document: string;
+				bytes: Uint8Array | ArrayBuffer;
+			}
+		>('SELECT id, document, bytes FROM _outbox ORDER BY id')
+		.map((row) => ({
+			id: row.id,
+			document: row.document,
+			bytes: copyBytes(row.bytes),
+		}));
 }
 
-/** Replace every entry through `throughId` with one merged entry. */
+/**
+ * Replace one document's entries through `throughId` with one merged entry.
+ *
+ * Per document, because entries for different documents cannot merge into one
+ * update; each document's covered entries collapse to a merged entry at that
+ * document's own highest covered id, which keeps ids unique and ordered.
+ */
 export function replaceOutboxThrough(
 	sqlite: SqliteDatabase,
+	document: string,
 	throughId: number,
 	merged: Uint8Array,
 ): void {
-	sqlite.run('DELETE FROM _outbox WHERE id <= ?', [throughId]);
-	sqlite.run('INSERT INTO _outbox (id, bytes) VALUES (?, ?)', [
+	sqlite.run('DELETE FROM _outbox WHERE document = ? AND id <= ?', [
+		document,
 		throughId,
+	]);
+	sqlite.run('INSERT INTO _outbox (id, document, bytes) VALUES (?, ?, ?)', [
+		throughId,
+		document,
 		new Uint8Array(merged),
 	]);
 }
@@ -184,19 +214,21 @@ export function writeCursor(
 }
 
 /**
- * The store file format this code writes: the document-identity era.
+ * The store file format this code writes: the independent-row-document era
+ * (ADR-0248), following '2', the document-identity era (ADR-0231).
  *
  * A file's format row is its birth certificate, written in the same
- * transaction that first creates its state. A file holding state WITHOUT it
- * predates the document identity: its bytes may belong to any document and
- * nothing durable can say which, so it is untrusted whole (ADR-0231's
- * deliberate break). There is no migration; the cutover is a wipe.
+ * transaction that first creates its state. A file certified under another
+ * format holds shapes this code no longer reads: '2' kept every row's rich
+ * content nested inside the application document and its outbox rows carry no
+ * document address, so it is untrusted whole. There is no migration; the
+ * cutover is a wipe, and a replica refills from its authority.
  */
-export const STORE_FORMAT = '2';
+export const STORE_FORMAT = '3';
 
 /**
- * Enforce the format at open: certify a fresh file, keep a certified one,
- * and wipe a pre-identity one whole.
+ * Enforce the format at open: certify a fresh file, keep one certified under
+ * this format, and wipe any other whole.
  *
  * One transaction, so at any crash point the file holds what it held or the
  * empty certified state; either way the next open converges. The wipe is the
@@ -209,11 +241,12 @@ export function adoptStoreFormat(sqlite: SqliteDatabase): void {
 		const format = sqlite.all<SqliteRow & { value: string }>(
 			"SELECT value FROM _meta WHERE key = 'format'",
 		)[0]?.value;
-		if (format !== undefined) return;
+		if (format === STORE_FORMAT) return;
 		sqlite.run('DELETE FROM _updates');
 		sqlite.run('DELETE FROM _outbox');
 		sqlite.run('DELETE FROM _cursor');
 		sqlite.run('DELETE FROM _meta');
+		sqlite.run('DELETE FROM _tombstones');
 		sqlite.run("INSERT INTO _meta (key, value) VALUES ('format', ?)", [
 			STORE_FORMAT,
 		]);
@@ -381,10 +414,31 @@ export function appendUpdate({
 }
 
 /**
+ * Retire one document address (ADR-0248): tombstone it durably and delete
+ * its stored chain and unsent entries. Runs inside the caller's transaction,
+ * beside the scalar row removal it composes with.
+ */
+export function retireDocument(sqlite: SqliteDatabase, document: string): void {
+	sqlite.run('INSERT OR IGNORE INTO _tombstones (document) VALUES (?)', [
+		document,
+	]);
+	sqlite.run('DELETE FROM _updates WHERE document = ?', [document]);
+	sqlite.run('DELETE FROM _outbox WHERE document = ?', [document]);
+}
+
+/** Every durably retired document address. */
+export function readTombstones(sqlite: SqliteDatabase): string[] {
+	return sqlite
+		.all<SqliteRow & { document: string }>('SELECT document FROM _tombstones')
+		.map((row) => row.document);
+}
+
+/**
  * Everything this file durably held at open, materialized once.
  *
- * The store hydrates its document from `updates`, seeds its durable mirror
- * from the rest, and never reads this file again outside a flush (ADR-0238).
+ * The store hydrates its application document from `updates`, seeds its
+ * durable mirror from the rest, and never reads this file again outside a
+ * flush or a row document's own open (ADR-0238, ADR-0248).
  */
 export function loadDurableSnapshot(sqlite: SqliteDatabase): DurableSnapshot {
 	return {
@@ -394,6 +448,7 @@ export function loadDurableSnapshot(sqlite: SqliteDatabase): DurableSnapshot {
 		outbox: readOutbox(sqlite),
 		cursor: readCursor(sqlite, APP_DOCUMENT),
 		identity: readDocumentIdentity(sqlite),
+		tombstones: readTombstones(sqlite),
 	};
 }
 
@@ -424,12 +479,12 @@ export function createSqliteDurablePort({
 							appendUpdate({
 								sqlite,
 								history,
-								document: APP_DOCUMENT,
+								document: op.document,
 								update: op.bytes,
 								takenAt: op.takenAt,
 							});
 							if (op.outboxId !== undefined) {
-								insertOutbox(sqlite, op.outboxId, op.bytes);
+								insertOutbox(sqlite, op.outboxId, op.document, op.bytes);
 							}
 							break;
 						}
@@ -443,11 +498,27 @@ export function createSqliteDurablePort({
 							dropOutboxThrough(sqlite, op.throughId);
 							break;
 						case 'replaceOutbox':
-							replaceOutboxThrough(sqlite, op.throughId, op.merged);
+							replaceOutboxThrough(
+								sqlite,
+								op.document,
+								op.throughId,
+								op.merged,
+							);
+							break;
+						case 'retire':
+							retireDocument(sqlite, op.document);
 							break;
 					}
 				}
 			});
 		},
+		readDocument: (document: string) =>
+			readUpdates(sqlite, document).map((stored) => copyBytes(stored.bytes)),
+		listDocuments: () =>
+			sqlite
+				.all<SqliteRow & { document: string }>(
+					'SELECT DISTINCT document FROM _updates ORDER BY document',
+				)
+				.map((row) => row.document),
 	};
 }

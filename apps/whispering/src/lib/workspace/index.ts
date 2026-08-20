@@ -1,7 +1,8 @@
+import { field } from '@epicenter/data/definition';
 /**
- * Whispering's inert workspace declaration.
+ * Whispering's inert data definition.
  *
- * Pure JSON: arktype expressions for the fields and nothing that knows about
+ * Pure JSON: closed field descriptors and nothing that knows about
  * storage, sync or documents (ADR-0213). Runtimes own all of that.
  *
  * Three things about this file are decisions rather than transcription of the
@@ -26,8 +27,8 @@
  * which a read applies and a write never stores.
  */
 
-import type { DatabaseView } from '@epicenter/data';
-import { defineDatabase, type KvOf, type RowOf } from '@epicenter/database';
+import type { DataView } from '@epicenter/data';
+import { defineData, type KvOf, type RowOf } from '@epicenter/data/definition';
 
 /** Runtime-minted structural row ids. */
 export type RecordingId = string;
@@ -41,15 +42,15 @@ const recordingsTable = {
 	 * the field's own type and a brand is a TypeScript fiction the CRDT never
 	 * saw. Re-brand with `parseBlobId` where a row meets the blob store.
 	 */
-	audioBlobId: '/^blob_[a-z0-9]{21}$/',
+	audioBlobId: field.string({ pattern: '^blob_[a-z0-9]{21}$' }),
 	/** Set only after an explicit replica upload succeeds. */
-	uploadedAt: 'string.date.iso|null = null',
-	title: "string = ''",
-	recordedAt: 'string.date.iso',
-	recordedAtZone: 'string',
-	transcript: "string = ''",
-	polishedTranscript: 'string|null = null',
-	duration: 'number|null = null',
+	uploadedAt: field.nullable(field.instant()),
+	title: field.string(),
+	recordedAt: field.instant(),
+	recordedAtZone: field.string(),
+	transcript: field.string(),
+	polishedTranscript: field.nullable(field.string()),
+	duration: field.nullable(field.number()),
 	/**
 	 * The transcription outcome, flattened into three columns.
 	 *
@@ -59,9 +60,9 @@ const recordingsTable = {
 	 * Three columns keep every field checked and let a failure's message merge
 	 * independently of its timestamp.
 	 */
-	transcriptionStatus: "'pending'|'completed'|'failed' = 'pending'",
-	transcriptionCompletedAt: 'string.date.iso|null = null',
-	transcriptionError: 'string|null = null',
+	transcriptionStatus: field.string(),
+	transcriptionCompletedAt: field.nullable(field.instant()),
+	transcriptionError: field.nullable(field.string()),
 } as const;
 
 const recipesTable = {
@@ -71,9 +72,9 @@ const recipesTable = {
 	 * ids by construction (ADR-0206), so a user recipe's identity IS its minted
 	 * row id. Built-in recipes keep their `builtin:` ids and remain non-rows.
 	 */
-	name: 'string',
-	instructions: 'string',
-	icon: 'string|null = null',
+	name: field.string(),
+	instructions: field.string(),
+	icon: field.nullable(field.string()),
 } as const;
 
 /**
@@ -85,43 +86,52 @@ const recipesTable = {
  * canonical single-string encoding would have to be invented and tested. Two
  * arrays need neither.
  *
- * `|null = null` rather than a default array, because a workspace CANNOT express an
- * array default: `'string[] = []'` fails to parse. Every array field in every
- * workspace hits this, so it is worth saying once loudly.
+ * Nullable rather than optional, because missing remains a conformance error and
+ * initialization belongs to the application. Every array field uses this same law.
  */
 const shortcut = {
-	modifiers: "('ctrl'|'alt'|'shift'|'meta'|'fn')[]|null = null",
-	keys: 'string[]|null = null',
+	modifiers: field.nullable(
+		field.multiSelect(['ctrl', 'alt', 'shift', 'meta', 'fn']),
+	),
+	keys: field.nullable(field.tags()),
 } as const;
 
 const settingsKv = {
-	soundManualStart: 'boolean = true',
-	soundManualStop: 'boolean = true',
-	soundManualCancel: 'boolean = true',
-	soundVadStart: 'boolean = true',
-	soundVadCapture: 'boolean = true',
-	soundVadStop: 'boolean = true',
-	soundTranscriptionComplete: 'boolean = true',
-	soundRecipeComplete: 'boolean = true',
+	soundManualStart: field.boolean(),
+	soundManualStop: field.boolean(),
+	soundManualCancel: field.boolean(),
+	soundVadStart: field.boolean(),
+	soundVadCapture: field.boolean(),
+	soundVadStop: field.boolean(),
+	soundTranscriptionComplete: field.boolean(),
+	soundRecipeComplete: field.boolean(),
 
-	outputTranscriptionClipboard: 'boolean = true',
-	outputTranscriptionCursor: 'boolean = false',
-	outputTranscriptionEnter: 'boolean = false',
-	outputRecipeClipboard: 'boolean = true',
-	outputRecipeCursor: 'boolean = false',
-	outputRecipeEnter: 'boolean = false',
+	outputTranscriptionClipboard: field.boolean(),
+	outputTranscriptionCursor: field.boolean(),
+	outputTranscriptionEnter: field.boolean(),
+	outputRecipeClipboard: field.boolean(),
+	outputRecipeCursor: field.boolean(),
+	outputRecipeEnter: field.boolean(),
 
-	recordingTrigger: "'manual'|'vad' = 'manual'",
-	recordingPausePlayback: 'boolean = false',
-	recordingAutoUpload: 'boolean = false',
+	recordingTrigger: field.select(['vad', 'manual']),
+	recordingPausePlayback: field.boolean(),
+	recordingAutoUpload: field.boolean(),
 
-	transcriptionService:
-		"'epicenter'|'OpenAI'|'Groq'|'ElevenLabs'|'Deepgram'|'Mistral'|'local'|'speaches' = 'local'",
-	transcriptionOpenaiModel: "string = 'whisper-1'",
-	transcriptionGroqModel: "string = 'whisper-large-v3-turbo'",
-	transcriptionElevenlabsModel: "string = 'scribe_v2'",
-	transcriptionDeepgramModel: "string = 'nova-3'",
-	transcriptionMistralModel: "string = 'voxtral-mini-latest'",
+	transcriptionService: field.select([
+		'epicenter',
+		'OpenAI',
+		'Groq',
+		'ElevenLabs',
+		'Deepgram',
+		'Mistral',
+		'local',
+		'speaches',
+	]),
+	transcriptionOpenaiModel: field.string(),
+	transcriptionGroqModel: field.string(),
+	transcriptionElevenlabsModel: field.string(),
+	transcriptionDeepgramModel: field.string(),
+	transcriptionMistralModel: field.string(),
 	/**
 	 * A plain string, not a union of the 58 supported languages.
 	 *
@@ -130,36 +140,41 @@ const settingsKv = {
 	 * against the const; the three SMALL selects above are spelled out because
 	 * a two-to-eight-member union is worth checking at the storage boundary.
 	 */
-	transcriptionLanguage: "string = 'auto'",
-	transcriptionPrompt: "string = ''",
+	transcriptionLanguage: field.string(),
+	transcriptionPrompt: field.string(),
 
-	completionProvider:
-		"'OpenAI'|'Groq'|'Anthropic'|'Google'|'OpenRouter'|'Custom' = 'Google'",
-	completionModel: "string = 'gemini-2.5-flash'",
+	completionProvider: field.select([
+		'OpenAI',
+		'Groq',
+		'Anthropic',
+		'Google',
+		'OpenRouter',
+		'Custom',
+	]),
+	completionModel: field.string(),
 
-	dictionary: 'string[]|null = null',
-	polishEnabled: 'boolean = true',
-	polishInstructions:
-		"string = 'Fix grammar and punctuation. Keep my wording.'",
-	analyticsEnabled: 'boolean = true',
+	dictionary: field.nullable(field.tags()),
+	polishEnabled: field.boolean(),
+	polishInstructions: field.string(),
+	analyticsEnabled: field.boolean(),
 
 	shortcutPushToTalkModifiers: shortcut.modifiers,
 	shortcutPushToTalkKeys: shortcut.keys,
 	shortcutToggleManualRecordingModifiers: shortcut.modifiers,
-	shortcutToggleManualRecordingKeys: 'string[]|null = null',
+	shortcutToggleManualRecordingKeys: field.nullable(field.tags()),
 	shortcutCancelRecordingModifiers: shortcut.modifiers,
-	shortcutCancelRecordingKeys: 'string[]|null = null',
+	shortcutCancelRecordingKeys: field.nullable(field.tags()),
 	shortcutToggleVadRecordingModifiers: shortcut.modifiers,
-	shortcutToggleVadRecordingKeys: 'string[]|null = null',
+	shortcutToggleVadRecordingKeys: field.nullable(field.tags()),
 	shortcutOpenRecipePickerModifiers: shortcut.modifiers,
-	shortcutOpenRecipePickerKeys: 'string[]|null = null',
+	shortcutOpenRecipePickerKeys: field.nullable(field.tags()),
 	shortcutRunRecipeOnClipboardModifiers: shortcut.modifiers,
-	shortcutRunRecipeOnClipboardKeys: 'string[]|null = null',
+	shortcutRunRecipeOnClipboardKeys: field.nullable(field.tags()),
 	shortcutOpenSettingsModifiers: shortcut.modifiers,
-	shortcutOpenSettingsKeys: 'string[]|null = null',
+	shortcutOpenSettingsKeys: field.nullable(field.tags()),
 } as const;
 
-export const whisperingDatabase = defineDatabase({
+export const whisperingDefinition = defineData({
 	id: 'so.epicenter.whispering',
 	title: 'Whispering',
 	kv: settingsKv,
@@ -167,24 +182,23 @@ export const whisperingDatabase = defineDatabase({
 });
 
 /** The typed view of one store through Whispering's workspace. */
-export type WhisperingData = DatabaseView<typeof whisperingDatabase>;
+export type WhisperingData = DataView<typeof whisperingDefinition>;
 
 export type Recording = RowOf<typeof recordingsTable>;
 export type Recipe = RowOf<typeof recipesTable>;
 /**
- * The settings values a read hands back: every declared key present, each one
- * defaulted if it was never written.
+ * The settings values an application composes after a read.
  *
  * Through `KvOf` rather than `typeof settingsKv`, which was the DECLARATION
- * (a record of arktype expressions in strings) wearing the name of the values.
+ * (a record of descriptors) wearing the name of the values.
  */
-export type WhisperingSettingValues = KvOf<typeof whisperingDatabase>;
+export type WhisperingSettingValues = KvOf<typeof whisperingDefinition>;
 
 /**
- * Default shortcuts, applied by the app rather than declared in the workspace.
+ * Default shortcuts, applied by the app rather than declared in the definition.
  *
- * A workspace cannot default an array, so `keys` defaults to null and "no shortcut
- * configured" and "the shipped shortcut" would otherwise be the same value.
+ * The definition does not own initialization, so `keys` uses null for "no shortcut
+ * configured" and the app applies shipped shortcuts separately.
  * These are release-local product policy anyway, which is where they were
  * before (`definition.ts`), and they are the only part of that file worth
  * keeping.

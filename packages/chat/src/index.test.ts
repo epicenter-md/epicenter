@@ -14,16 +14,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AgentMessage } from '@epicenter/agent';
 import { open } from '@epicenter/data/bun';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import { InstantString } from '@epicenter/field';
-import {
-	CONVERSATION_MESSAGES,
-	conversationsTable,
-	createAgentMessageStore,
-} from './index.js';
+import { conversationsTable, createAgentMessageStore } from './index.js';
 
-const testWorkspace = defineDatabase({
+const testDefinition = defineData({
 	id: 'so.epicenter.chat-test',
+	kv: {},
 	tables: { conversations: conversationsTable },
 });
 
@@ -39,18 +36,22 @@ test('the agent store observes writes and survives a restart', async () => {
 	let rowId: string;
 	try {
 		{
-			const opened = await open(testWorkspace, { root });
+			const opened = await open(testDefinition, { root });
 			if (opened.error !== null) throw opened.error;
-			await using db = opened.data;
+			const db = opened.data;
+			await using _db = db;
 			const now = InstantString.fromDate(new Date('2026-07-19T00:00:00.000Z'));
-			const created = db.tables.conversations.create(
-				{ title: 'New Chat', model: 'test', createdAt: now, updatedAt: now },
-				{ document: [CONVERSATION_MESSAGES] },
-			);
-			if (created.error !== null) throw created.error;
-			rowId = created.data.id;
+			const created = db.tables.conversations.create({
+				title: 'New Chat',
+				model: 'test',
+				createdAt: now,
+				updatedAt: now,
+			});
+			rowId = created.id;
 
-			const document = db.tables.conversations.document(rowId);
+			const conversation = await db.tables.conversations.document.open(rowId);
+			if (conversation.error !== null) throw conversation.error;
+			using document = conversation.data;
 			if (document === undefined) throw new Error('the row has no document');
 			using store = createAgentMessageStore(document);
 			let observations = 0;
@@ -60,10 +61,13 @@ test('the agent store observes writes and survives a restart', async () => {
 			expect(observations).toBe(1);
 		}
 
-		const reopened = await open(testWorkspace, { root });
+		const reopened = await open(testDefinition, { root });
 		if (reopened.error !== null) throw reopened.error;
-		await using db = reopened.data;
-		const document = db.tables.conversations.document(rowId);
+		const db = reopened.data;
+		await using _db = db;
+		const opened = await db.tables.conversations.document.open(rowId);
+		if (opened.error !== null) throw opened.error;
+		using document = opened.data;
 		if (document === undefined) throw new Error('the row has no document');
 		using store = createAgentMessageStore(document);
 		expect([...store.entries()]).toEqual([{ key: message.id, val: message }]);

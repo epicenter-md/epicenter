@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { whisperingDatabase } from './index';
+import { whisperingDefinition } from './index';
 
 /**
  * The active local transcription model must never synchronize (ADR-0180).
@@ -16,7 +16,7 @@ import { whisperingDatabase } from './index';
  * setting and start replicating.
  */
 describe('the active local model is device-local', () => {
-	const settingKeys = Object.keys(whisperingDatabase.kv);
+	const settingKeys = Object.keys(whisperingDefinition.kv);
 
 	it('is absent from the synced settings contract', () => {
 		const localModelKeys = settingKeys.filter(

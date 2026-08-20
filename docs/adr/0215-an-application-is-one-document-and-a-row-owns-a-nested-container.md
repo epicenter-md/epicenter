@@ -1,7 +1,10 @@
 # 0215. An application is one document, and a row owns a nested container
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-07
+- **Superseded by:** [ADR-0248](0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md)
+  at the index/document split. The nested row container is replaced by an
+  independently loaded Yjs document addressed by the row's coordinates.
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0216 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Relates:** [ADR-0212](0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md)

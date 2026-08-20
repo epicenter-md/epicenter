@@ -13,6 +13,8 @@
 
 import type { VocabRuntime } from '../runtime.js';
 
+const APPLICATION_DEFAULTS = { showReadings: true } as const;
+
 export function createSettingsState({
 	deviceData,
 }: {
@@ -23,10 +25,10 @@ export function createSettingsState({
 		if (data !== null) return data.showReadings;
 		// A declared key is never absent, so the only way here is a stored value
 		// that no longer satisfies the workspace: the error arm is always that
-		// diagnostic. Its surviving half over the declared defaults is a whole
+		// diagnostic. Its surviving half over the application defaults is a whole
 		// settings object, which is the recovery composition the KV handle
 		// documents.
-		const settings = { ...deviceData.kv.defaults, ...error.conforming };
+		const settings = { ...APPLICATION_DEFAULTS, ...error.conforming };
 		return settings.showReadings === true;
 	}
 
@@ -42,10 +44,9 @@ export function createSettingsState({
 		get showReadings() {
 			return showReadings;
 		},
-		/** Flip it, or throw so the caller's toast can present the refusal. */
+		/** Flip it. A schema failure is reported by the next read, not this write. */
 		toggleReadings(): void {
-			const { error } = deviceData.kv.update({ showReadings: !showReadings });
-			if (error !== null) throw error;
+			deviceData.kv.update({ showReadings: !showReadings });
 		},
 		[Symbol.dispose]: stop,
 	};

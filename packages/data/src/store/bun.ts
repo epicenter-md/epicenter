@@ -2,11 +2,11 @@ import { Database } from 'bun:sqlite';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-	type DatabaseJson,
-	type DatabaseParseError,
-	type ParsedDatabase,
-	parseDatabase,
-} from '@epicenter/database';
+	type DataDefinition,
+	type DataDefinitionParseError,
+	type ParsedDataDefinition,
+	parseData,
+} from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { claimDocument, releaseDocument } from './claims.js';
@@ -16,10 +16,10 @@ import {
 	asData,
 	createAccountStore,
 	createAccountStoreOverPort,
-	type DatabaseView,
+	type DataView,
 	type DataOf,
 	StoreError,
-	type UntypedDatabaseView,
+	type UntypedDataView,
 } from './store.js';
 
 export type BunAccountStore = AccountStore & {
@@ -36,10 +36,10 @@ export type BunAccountStore = AccountStore & {
 };
 
 /**
- * Open the application this database names, on Bun.
+ * Open the application this definition names, on Bun.
  *
- * The database names the store (ADR-0229), so the folder is
- * `<root>/<database.id>` rather than a path a caller picks. The root
+ * The definition names the store (ADR-0229), so the folder is
+ * `<root>/<definition.id>` rather than a path a caller picks. The root
  * is where Epicenter lives on this machine (ADR-0201), which is an environment
  * fact rather than a second name for the application.
  *
@@ -52,8 +52,8 @@ export type BunAccountStore = AccountStore & {
  * `store.test.ts` uses. An in-repo caller returning is a decision, not a
  * default.
  */
-export async function open<const TDatabase extends DatabaseJson>(
-	database: TDatabase,
+export async function open<const TDatabase extends DataDefinition>(
+	definition: TDatabase,
 	{
 		root,
 		keepHistory = true,
@@ -64,12 +64,12 @@ export async function open<const TDatabase extends DatabaseJson>(
 		keepHistory?: boolean;
 	},
 ): Promise<
-	Result<DataOf<TDatabase, BunAccountStore>, StoreError | DatabaseParseError>
+	Result<DataOf<TDatabase, BunAccountStore>, StoreError | DataDefinitionParseError>
 > {
 	// Parsed before anything is claimed or opened: a declaration may arrive as
 	// data, and a refusal here is a boot outcome rather than a programmer
 	// error (ADR-0240).
-	const { data: parsed, error: parseError } = parseDatabase(database);
+	const { data: parsed, error: parseError } = parseData(definition);
 	if (parseError !== null) return Err(parseError);
 
 	const { error: claimError } = claimDocument(parsed.id);
@@ -77,21 +77,22 @@ export async function open<const TDatabase extends DatabaseJson>(
 
 	const opened = await openBunStore({
 		directory: join(root, parsed.id),
-		database: parsed,
+		definition: parsed,
 		keepHistory,
 	});
 	if (opened.error !== null) {
 		releaseDocument(parsed.id);
 		return Err(opened.error);
 	}
-	const { store, view } = opened.data;
+	const { store, view, definition: parsedDefinition } = opened.data;
 	return Ok(
 		asData<TDatabase, BunAccountStore>(
 			store,
 			// Through `unknown` deliberately: comparing the untyped view with
-			// `DatabaseView<TDatabase>` re-enters the per-field arktype
+			// `DataView<TDatabase>` re-enters the per-field descriptor
 			// instantiation and exceeds the depth limit.
-			view as unknown as DatabaseView<TDatabase>,
+			view as unknown as DataView<TDatabase>,
+			parsedDefinition.definition,
 		),
 	);
 }
@@ -102,11 +103,11 @@ export async function open<const TDatabase extends DatabaseJson>(
  */
 async function openBunStore({
 	directory,
-	database,
+	definition,
 	keepHistory = true,
 }: {
 	directory: string;
-	database: ParsedDatabase;
+	definition: ParsedDataDefinition;
 	/**
 	 * Whether collapse preserves what it supersedes (ADR-0214).
 	 *
@@ -116,7 +117,7 @@ async function openBunStore({
 	 */
 	keepHistory?: boolean;
 }): Promise<
-	Result<{ store: BunAccountStore; view: UntypedDatabaseView }, StoreError>
+	Result<{ store: BunAccountStore; view: UntypedDataView; definition: ParsedDataDefinition }, StoreError>
 > {
 	const { error: directoryError } = await tryAsync({
 		try: () => mkdir(directory, { recursive: true }),
@@ -149,17 +150,17 @@ async function openBunStore({
 		});
 		const opened = live;
 		const openedHistory = historyDatabase;
-		const { store, view } = createAccountStoreOverPort({
-			database,
+		const { store, view, definition: parsedDefinition } = createAccountStoreOverPort({
+			definition,
 			durable: port,
 			loaded: port.load(),
 			dispose: () => {
 				opened.close();
 				openedHistory?.close();
-				releaseDocument(database.id);
+				releaseDocument(definition.id);
 			},
 		});
-		return composeBunStore({ store, view, directory });
+		return composeBunStore({ store, view, definition: parsedDefinition, directory });
 	} catch (cause) {
 		live?.close();
 		historyDatabase?.close();
@@ -170,12 +171,14 @@ async function openBunStore({
 function composeBunStore({
 	store,
 	view,
+	definition,
 	directory,
 }: {
 	store: AccountStore;
-	view: UntypedDatabaseView;
+	view: UntypedDataView;
+	definition: ParsedDataDefinition;
 	directory: string;
-}): Result<{ store: BunAccountStore; view: UntypedDatabaseView }, StoreError> {
+}): Result<{ store: BunAccountStore; view: UntypedDataView; definition: ParsedDataDefinition }, StoreError> {
 	return Ok({
 		store: Object.freeze({
 			...store,
@@ -197,26 +200,27 @@ function composeBunStore({
 			},
 		}),
 		view,
+		definition,
 	});
 }
 
 /**
  * Open an application that lives only as long as the process. Test support.
  *
- * It takes the database for the same reason `open` does, so one entry point
+ * It takes the definition for the same reason `open` does, so one entry point
  * has one shape. It claims no address, and that is not an oversight: two
- * memory stores of one database id are two independent documents by
+ * memory stores of one definition id are two independent documents by
  * construction, which is the two-devices case rather than the
  * two-handles-on-one-file case the claim exists to refuse.
  */
-export function openMemory<const TDatabase extends DatabaseJson>(
-	database: TDatabase,
+export function openMemory<const TDatabase extends DataDefinition>(
+	definition: TDatabase,
 ): DataOf<TDatabase, AccountStore> {
 	const live = new Database(':memory:');
 	const history = createBunSqliteAdapter(new Database(':memory:'));
 	applyHistorySchema(history);
 	return createAccountStore({
-		database,
+		definition,
 		sqlite: createBunSqliteAdapter(live),
 		history,
 		dispose: () => live.close(),

@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * A cursor is a position, not a membership (ADR-0231).
  *
@@ -25,7 +26,7 @@
  */
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { type DatabaseJson, defineDatabase } from '@epicenter/database';
+import { type DataDefinition, defineData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
@@ -40,14 +41,26 @@ import { encodeFrame } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 import { rebuildDocument } from './rebuild.js';
 
-const database = defineDatabase({
+const database = defineData({
 	id: 'so.epicenter.honeycrisp',
-	tables: { notes: { title: 'string' } },
+	kv: {},
+	tables: { notes: { title: field.string() } },
 });
 
-function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
-	if (result.error !== null) throw result.error;
-	return result.data as TValue;
+function expectOk<TValue, TError>(
+	result: Result<TValue, TError> | TValue,
+): TValue {
+	if (
+		typeof result === 'object' &&
+		result !== null &&
+		'data' in result &&
+		'error' in result
+	) {
+		const outcome = result as Result<TValue, TError>;
+		if (outcome.error !== null) throw outcome.error;
+		return outcome.data as TValue;
+	}
+	return result as TValue;
 }
 
 function createWire() {
@@ -78,11 +91,11 @@ function openReplica(
 	label: string,
 	hub: ReturnType<typeof createSyncHub>,
 	wire: Wire,
-	through: DatabaseJson = database,
+	through: DataDefinition = database,
 	sqlite = createBunSqliteAdapter(new Database(':memory:')),
 ) {
 	const db = createAccountStore({
-		database: through,
+		definition: through,
 		sqlite,
 	}) as unknown as DataOf<typeof database>;
 	const store = db.store;
@@ -215,7 +228,7 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 		expect(syncEngineOf(victim.store).documentIdentity()).toBeUndefined();
 	});
 
-	test('a replica holding old-document bytes is retired at its next dial, never merged across the break', () => {
+	test('a replica holding old-document bytes is retired at its next dial, never merged across the break', async () => {
 		const { wire, authority, hub } = setup();
 		const phone = openReplica('phone', hub, wire);
 		phone.connect();
@@ -229,7 +242,7 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 		const drawerDb = createBunSqliteAdapter(new Database(':memory:'));
 		{
 			const drawerStore = createAccountStore({
-				database: database,
+				definition: database,
 				sqlite: drawerDb,
 			}).store;
 			const entry = expectOk(authority.since(0, 10))[0];
@@ -258,7 +271,7 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 		expectOk(
 			authority.replace({
 				fromDocument: expectOk(authority.document()),
-				bytes: expectOk(rebuildDocument(phone.store)),
+				bytes: expectOk(await rebuildDocument(phone.store)),
 			}),
 		);
 
@@ -293,13 +306,13 @@ describe('database bootstrap names a document before any database write', () => 
 
 		// Durable, not a session fact: a store reopened from the same file
 		// still knows which document its bytes belong to.
-		const reopened = createAccountStore({ database: database, sqlite });
+		const reopened = createAccountStore({ definition: database, sqlite });
 		expect(syncEngineOf(reopened.store).documentIdentity()).toBe(
 			expectOk(authority.document()),
 		);
 	});
 
-	test('a pushed-but-unacked replica is retired at its next dial, and a deleted row stays deleted', () => {
+	test('a pushed-but-unacked replica is retired at its next dial, and a deleted row stays deleted', async () => {
 		const { wire, authority, hub } = setup();
 
 		// The drawer first bootstraps, then authors X, pushes, and the socket dies
@@ -330,7 +343,7 @@ describe('database bootstrap names a document before any database write', () => 
 		expectOk(
 			authority.replace({
 				fromDocument: expectOk(authority.document()),
-				bytes: expectOk(rebuildDocument(phone.store)),
+				bytes: expectOk(await rebuildDocument(phone.store)),
 			}),
 		);
 		phone.disconnect();
@@ -370,7 +383,7 @@ describe('database bootstrap names a document before any database write', () => 
 		expect(expectOk(authority.head())).toBe(0);
 	});
 
-	test('CONTROL: a pristine install adopts before writing', () => {
+	test('CONTROL: a pristine install adopts before writing', async () => {
 		const { wire, authority, hub } = setup();
 		const phone = openReplica('phone', hub, wire);
 		phone.connect();
@@ -380,7 +393,7 @@ describe('database bootstrap names a document before any database write', () => 
 		expectOk(
 			authority.replace({
 				fromDocument: expectOk(authority.document()),
-				bytes: expectOk(rebuildDocument(phone.store)),
+				bytes: expectOk(await rebuildDocument(phone.store)),
 			}),
 		);
 
@@ -413,7 +426,7 @@ describe('the cutover: pre-identity local state is reset, never merged', () => {
 		// its `_meta` rows removed is byte-for-byte the old format.
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 		{
-			const old = createAccountStore({ database: database, sqlite });
+			const old = createAccountStore({ definition: database, sqlite });
 			expectOk(old.tables.notes.create({ title: 'untrusted old note' }));
 		}
 		sqlite.run('DELETE FROM _meta');
@@ -436,10 +449,10 @@ describe('the cutover: pre-identity local state is reset, never merged', () => {
 	test('CONTROL: a certified file reopens intact', () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 		{
-			const first = createAccountStore({ database: database, sqlite });
+			const first = createAccountStore({ definition: database, sqlite });
 			expectOk(first.tables.notes.create({ title: 'kept across reopen' }));
 		}
-		const reopened = createAccountStore({ database: database, sqlite });
+		const reopened = createAccountStore({ definition: database, sqlite });
 		expect(reopened.tables.notes.list().rows.map((row) => row.title)).toEqual([
 			'kept across reopen',
 		]);

@@ -336,7 +336,7 @@ export function prewarmOnDeviceModel(app: WhisperingApp): void {
  */
 function withDictionaryTerms(
 	prompt: string,
-	/** Null when the person has added no terms: a workspace cannot default an array. */
+	/** Null when the person has added no terms: the definition cannot default an array. */
 	dictionary: readonly string[] | null,
 ): string {
 	if (dictionary === null || dictionary.length === 0) return prompt;

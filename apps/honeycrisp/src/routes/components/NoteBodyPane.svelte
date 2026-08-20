@@ -8,16 +8,36 @@
 	let { noteId, focusRequest }: { noteId: NoteId; focusRequest: number } =
 		$props();
 
-	// The note's prose, live. There is no lease to open, nothing to await, and
-	// nothing to poll: the root was allocated with the row (ADR-0215), it lives
-	// in the application's one document, and every device's edits reach it
-	// through the transport like any other change. The editor binds to it
-	// directly, which is what `document-polling.ts` and its one-second interval
-	// existed to fake.
-	const body = $derived(honeycrisp.notes.body(noteId));
+	type Opened = Awaited<ReturnType<typeof honeycrisp.notes.openBody>>;
+
+	// The note's prose, opened per note. The open resolves only after complete
+	// local hydration (ADR-0248), so the editor never binds to a half-hydrated
+	// document and never merges keystrokes at the wrong position; edits from
+	// every device reach the open document live through the one store
+	// connection. The pane owns the handle: switching notes or unmounting
+	// closes the previous document, which is what lets the store unload it.
+	let opened = $state.raw<Opened | 'loading'>('loading');
+	$effect(() => {
+		let stale = false;
+		opened = 'loading';
+		void honeycrisp.notes.openBody(noteId).then((handle) => {
+			if (stale) {
+				handle?.close();
+				return;
+			}
+			opened = handle;
+		});
+		return () => {
+			stale = true;
+			if (opened !== 'loading') opened?.close();
+		};
+	});
 </script>
 
-{#if body === undefined}
+{#if opened === 'loading'}
+	<!-- Hydration is a local read; a blank pane beats a flash of message. -->
+	<div class="h-full"></div>
+{:else if opened === undefined}
 	<div class="flex h-full items-center justify-center p-6 text-center">
 		<p class="text-sm text-muted-foreground">This note is no longer here.</p>
 	</div>
@@ -26,7 +46,7 @@
 		<div class="min-h-0 flex-1">
 			{#key noteId}
 				<HoneycrispEditor
-					yxmlfragment={body}
+					yxmlfragment={opened.body}
 					{focusRequest}
 					onContentChange={(change) =>
 						honeycrisp.notes.updateContent(noteId, change)}

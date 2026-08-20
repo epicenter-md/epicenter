@@ -12,6 +12,9 @@
   poison the store terminally (`StoreUnusableError('storage-failed')`); that
   half is withdrawn, and persistence failure is now an observable, retryable
   status that never invalidates the live document.
+- **Amended by:** [ADR-0253](0253-schema-lenses-interpret-stored-json-on-read-and-writes-admit-storage-valid-facts.md)
+  at write admission: schema mismatches are no longer write errors. Structural
+  row absence and lifecycle outcomes remain explicit.
 - **Relates:** [ADR-0175](0175-table-traversal-is-complete-and-classified-with-paging-kept-private.md)
   (the superseded stack's read surface already drew this line: "classification
   failure is row data, but operational failure is control flow"; this record
@@ -95,24 +98,24 @@ leaked a stray `id: 'kv'` key into recovered settings objects.
 ### Writes report the write
 
 ```ts
-create(fields, opts?): Result<Row, RowWriteError>
-update(rowId, patch): Result<void, RowAbsentError | RowWriteError>
-kv.update(patch): Result<void, RowWriteError>
+create(fields): Row
+update(rowId, patch): Result<void, RowAbsentError>
+kv.update(patch): void
 delete(rowId): boolean
 ```
 
-`create` refuses, before committing, a payload that would not read back whole:
-what it commits is the supplied fields plus declared defaults and nothing
-else, so whole-row conformance is decidable pre-commit. The typed surface
-always required this; the runtime agreeing is what makes an `Err` from
-`create` mean "the row never existed" (Whispering's blob-cleanup logic
-assumed exactly that, and the untyped door made it false).
+`create` mints the row and admits the supplied storage-valid fields. It returns
+the typed write view, including declared defaults, while `get` remains the
+conformance boundary.
 
 `update` does not return the row. A patch may legally land on a row whose
 other fields this declaration cannot read; that is how a nonconforming row is
-repaired. The old shape read the row back through the declaration and returned the
-diagnostic as the write's error, punishing a write that committed. A write
-reports the write; what the row now reads as is `get`'s answer.
+repaired. It reports only `RowAbsent`, because that is a structural fact about
+the addressed row. Unknown fields and values are preserved when they are valid
+stored JSON, and the current lens interprets them on the next read.
+
+`kv.update` has the same write-admission rule and returns `void`; the whole KV
+value's conformance is reported by `kv.get()`.
 
 `delete` returns whether there was a row to take.
 

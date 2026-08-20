@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * Test-only: a replica that lives inside `workerd`, driven by the real driver.
  *
@@ -18,8 +19,8 @@
  * entry mounts it, so nothing deployable grows a class that exists for a test.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { type AccountStore, defineDatabase } from '@epicenter/data';
-import { createAccountStore } from '@epicenter/data/engine';
+import { type AccountStore, defineData } from '@epicenter/data';
+import { createAccountStore, syncEngineOf } from '@epicenter/data/engine';
 import {
 	createSyncConnection,
 	rebuildDatabase,
@@ -32,15 +33,16 @@ import {
 } from '@epicenter/sqlite/durable-object';
 import { MAIN_SUBPROTOCOL, STORE_SYNC_ROUTE } from '@epicenter/sync';
 
-const probeDatabase = defineDatabase({
+const probeDefinition = defineData({
 	id: 'so.epicenter.storeprobe',
-	tables: { notes: { title: 'string' } },
+	kv: {},
+	tables: { notes: { title: field.string() } },
 });
 
 function openNotes(
 	sqlite: ReturnType<typeof createDurableObjectSqliteAdapter>,
 ) {
-	return createAccountStore({ database: probeDatabase, sqlite });
+	return createAccountStore({ definition: probeDefinition, sqlite });
 }
 
 export type ReplicaReport = {
@@ -111,7 +113,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 			},
 			dial: ({ cursor, document, opened, received, closed }) => {
 				const url = STORE_SYNC_ROUTE.url(origin, {
-					databaseId: probeDatabase.id,
+					databaseId: probeDefinition.id,
 					cursor,
 					...(document === undefined ? {} : { document }),
 				});
@@ -166,7 +168,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 		const bearer = this.bearer;
 		return {
 			baseURL: this.origin,
-			databaseId: probeDatabase.id,
+			databaseId: probeDefinition.id,
 			fetch: (input, init) =>
 				this.env.SELF.fetch(
 					new Request(input, {
@@ -224,15 +226,16 @@ export class StoreTestReplica extends DurableObject<Env> {
 	}
 
 	/** Create a note with prose, the way an application does. */
-	write(title: string, prose: string): void {
+	async write(title: string, prose: string): Promise<void> {
 		if (this.db === undefined) throw new Error('open first');
-		const made = this.db.tables.notes.create({ title }, { document: ['body'] });
-		if (made.error !== null) throw made.error;
-		const body = this.db.tables.notes
-			.document(made.data.id)
-			?.get('body', 'text');
-		if (body === undefined) throw new Error('the row has no document');
+		const made = this.db.tables.notes.create({ title });
+		const opened = await this.db.tables.notes.document.open(made.id);
+		if (opened.error !== null) throw opened.error;
+		const handle = opened.data;
+		if (handle === undefined) throw new Error('the row has no document');
+		const body = handle.get('body', 'text');
 		body.applyDelta(body.change.insert(prose) as never);
+		handle[Symbol.dispose]();
 	}
 
 	/** Delete the note holding this title, the way an application does. */
@@ -244,10 +247,10 @@ export class StoreTestReplica extends DurableObject<Env> {
 		this.db.tables.notes.delete(row.id);
 	}
 
-	/** This replica's whole state, re-encoded: the argument a replace posts. */
-	encodeState(): Uint8Array {
+	/** This replica's whole state as one envelope: what a replace posts. */
+	encodeState(): Promise<Uint8Array> {
 		if (this.store === undefined) throw new Error('open first');
-		return this.store.encodeStateSince();
+		return syncEngineOf(this.store).encodeSnapshot();
 	}
 
 	/**
@@ -257,8 +260,10 @@ export class StoreTestReplica extends DurableObject<Env> {
 	 * polls this while an adoption is in flight: the answer is simply "nothing
 	 * yet", and the next poll sees the fresh store.
 	 */
-	report(): ReplicaReport {
-		if (this.db === undefined || this.store === undefined) {
+	async report(): Promise<ReplicaReport> {
+		const db = this.db;
+		const store = this.store;
+		if (db === undefined || store === undefined) {
 			return {
 				cursor: 0,
 				document: undefined,
@@ -270,24 +275,26 @@ export class StoreTestReplica extends DurableObject<Env> {
 				adoptions: this.adoptions,
 			};
 		}
-		const listed = this.db.tables.notes.list();
+		const listed = db.tables.notes.list();
 		const status = this.connection?.status();
-		const pressure = this.store.pressure();
+		const pressure = store.pressure();
 		return {
 			cursor: status?.cursor ?? 0,
-			document: this.store.sync.get().document,
+			document: store.sync.get().document,
 			connected: status?.connected ?? false,
 			titles: listed.rows.map((row) => row.title).sort(),
-			prose: listed.rows
-				.map((row) =>
-					JSON.stringify(
-						this.db?.tables.notes
-							.document(row.id)
-							?.get('body', 'text')
-							?.toJSON() ?? null,
-					),
+			prose: (
+				await Promise.all(
+					listed.rows.map(async (row) => {
+						const opened = await db.tables.notes.document.open(row.id);
+						const text = JSON.stringify(
+							opened?.data?.get('body', 'text')?.toJSON() ?? null,
+						);
+						opened?.data?.[Symbol.dispose]();
+						return text;
+					}),
 				)
-				.sort(),
+			).sort(),
 			lastError: status?.lastError?.name,
 			items: pressure.items,
 			adoptions: this.adoptions,

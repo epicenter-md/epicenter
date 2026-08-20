@@ -146,16 +146,19 @@ shapes, see `docs/adr/`.
   concurrent write replaces all of it and one addition is lost (ADR-0228). This
   is chosen, not missing. A collection several devices append to concurrently
   wants to be a table.
-- **Row document**: the reserved container attribute allocated with a row,
-  holding roots the application names. Reached as
-  `db.<table>.document(rowId)?.get(name)`, which returns a `Y.Type` an editor
-  binds to directly. Epicenter never reads inside one. Root names are declared at
-  create time, because lazy allocation would let two devices each mint their own
-  root and lose one.
-- **Deletion**: removing the row's attribute from its table root. The whole
-  subtree goes with it, including the document container. There is no tombstone,
-  no presence flag and no revive path, so a deleted address is indistinguishable
-  from one never used (ADR-0219).
+- **Row document**: the independent Yjs document a row owns at its derived
+  address, `{databaseId}/{tableName}/{rowId}` (ADR-0248), holding roots the
+  application names. Opened with
+  `await db.tables.<table>.document.open(rowId)`, which resolves to a fully
+  hydrated handle whose `get(name)` returns a `Y.Type` an editor binds to
+  directly; dispose the handle when the surface holding it unmounts. Epicenter
+  never reads inside one. Roots are minted by name on first use, which
+  converges because a top-level root is addressed by its name.
+- **Deletion**: removing the row's attribute from its table root, and durably
+  retiring the row's document address in the same atomic step (ADR-0248). The
+  scalar side has no tombstone and no revive path (ADR-0219); the document
+  side keeps one durable tombstone so a late write cannot resurrect a retired
+  address.
 - **Nonconforming row**: a row this release's declaration cannot read. A view, not
   damage. `list()` returns `{ rows, nonconforming }`, and each failure carries
   its `address`, machine-readable `issues`, the `conforming` survivors, and the

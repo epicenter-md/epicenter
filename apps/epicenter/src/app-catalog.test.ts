@@ -32,7 +32,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { COMPOSED_APP_IDS } from '@epicenter/constants/app-data';
-import { DATA_ADDRESS_CEILINGS, isDatabaseId } from '@epicenter/database';
+import { DATA_ADDRESS_CEILINGS, isDatabaseId } from '@epicenter/data/definition';
 import {
 	loadActiveAppCatalog,
 	promoteAppCatalogCandidate,

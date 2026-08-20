@@ -1,23 +1,12 @@
-import type { JsonObject, JsonValue } from '@epicenter/database';
-import { RESERVED_ATTRIBUTE_PREFIX } from '@epicenter/database';
+import type { JsonObject, JsonValue } from '@epicenter/data/definition';
+import { RESERVED_ATTRIBUTE_PREFIX } from '@epicenter/data/definition';
 import * as Y from '@y/y';
 
 /**
- * The attribute holding the container a row's document lives in (ADR-0130/0215).
- *
- * Allocated when the row is created, never lazily on first access. Lazy
- * allocation is a write at a well-known address, so two devices opening a note
- * for the first time would each mint their own container and map LWW would
- * discard one along with everything written into it. Creating it with the row
- * moves the only race to row creation, which minted ids make unreachable.
- *
- * It is spelled with the reserved prefix so it can never collide with a declared
- * field, and the database parser refuses any field name that begins with that
- * prefix.
+ * The application's document: one per app, holding every table's scalar rows.
+ * A row's rich content lives in its own independent document at the row's
+ * derived address (ADR-0248), never nested in here.
  */
-export const DOCUMENT_ATTRIBUTE = `${RESERVED_ATTRIBUTE_PREFIX}doc`;
-
-/** The application's document: one per app, holding every table (ADR-0215). */
 export function createAppDocument(): Y.Doc {
 	// `gc: true` is what collapses a field edited 5,000 times to two structs. It
 	// is also why history lives outside the CRDT entirely (ADR-0214).
@@ -55,7 +44,7 @@ export function tableRoot(document: Y.Doc, tableName: string): Y.Type {
  * exist.
  *
  * The tag is legibility rather than safety, and it is worth being clear about
- * that. `parseDatabase` already refuses `kv` as a table name outright, because it
+ * that. `parseData` already refuses `kv` as a table name outright, because it
  * would collide with the `db.kv` handle key, so a table can no more reach the
  * settings root than it can be declared. `tables:kv` is a second guard on a
  * collision the first one already made unreachable.
@@ -110,10 +99,10 @@ export function hasRow(root: Y.Type, rowId: string): boolean {
  * One row's declared fields, or undefined when the table holds no row there.
  *
  * Reserved attributes are filtered out, so what comes back is only what a
- * database could have declared: a row's document container is an attribute
- * like any other and is not part of the payload. Nothing is validated here:
- * interpreting the payload is the declaration's job, and a row this release
- * cannot read must still be readable as raw JSON (ADR-0125).
+ * database could have declared: the `!` prefix stays reserved at the parser,
+ * so a reserved attribute is never a field however it got there. Nothing is
+ * validated here: interpreting the payload is the declaration's job, and a
+ * row this release cannot read must still be readable as raw JSON (ADR-0125).
  */
 export function readRow(root: Y.Type, rowId: string): JsonObject | undefined {
 	const row = rowType(root, rowId);
@@ -154,49 +143,31 @@ export function listRowIds(root: Y.Type): string[] {
  * Write fields into one row, minting the row if the table holds none there.
  *
  * Caller-supplied fields only: an absent key is left alone rather than being
- * filled from a declared default, because a default is applied at read time and
- * is never written (ADR-0213). Must run inside a `transact`, so a minted row and
+ * filled from a declaration default. Missing values remain missing until the
+ * application composes recovery. Must run inside a `transact`, so a minted row and
  * the fields it admits commit together.
  *
  * There is no revive path and no address to revive. Deletion takes the row's
  * attribute off the root, so a deleted address is indistinguishable from one
  * never used; `create` mints an id nothing has ever held, and `update` refuses
- * an address holding no row. The mint below therefore happens exactly once in a
- * row's life, which is what lets the document container be allocated with it
- * rather than felt for on every write.
+ * an address holding no row.
  */
 export function writeRow(
 	root: Y.Type,
 	rowId: string,
 	fields: JsonObject,
-	/**
-	 * Roots to allocate inside this row's document, if it is being minted.
-	 *
-	 * Named by the caller and created with the row, for the same reason the
-	 * container itself is: `document(id).get(name)` creates on miss, and a
-	 * created nested type is addressed by the operation that made it, so two
-	 * devices first-opening one note each mint a type at that key and map LWW
-	 * discards one along with everything written into it. Allocating here means
-	 * there is exactly one creator and the race cannot be expressed.
-	 *
-	 * Epicenter learns the NAMES and nothing else. It still never reads inside,
-	 * never learns a format, and the type name stays the application's business:
-	 * a type's name is inert in `@y/y@14.0.0-rc.24` and does not choose its
-	 * behaviour (`evidence/invariants.test.ts`).
-	 */
-	documentRoots: readonly string[] = [],
 ): void {
+	for (const name of Object.keys(fields)) {
+		if (name.startsWith(RESERVED_ATTRIBUTE_PREFIX)) {
+			throw new TypeError(
+				`Field '${name}' is reserved for the row store's internal attributes`,
+			);
+		}
+	}
 	let row = rowType(root, rowId);
 	if (row === undefined) {
 		row = new Y.Type();
 		root.setAttr(rowId as never, row as never);
-		const container = new Y.Type();
-		row.setAttr(DOCUMENT_ATTRIBUTE as never, container as never);
-		// The roots the caller named, allocated in the same transaction as the
-		// row, which is what leaves exactly one creator for each of them.
-		for (const name of documentRoots) {
-			container.setAttr(name as never, new Y.Type() as never);
-		}
 	}
 	for (const [name, value] of Object.entries(fields)) {
 		row.setAttr(name as never, value as never);
@@ -204,29 +175,14 @@ export function writeRow(
 }
 
 /**
- * The container holding one row's application-owned roots, or undefined when
- * the table holds no row at this address.
- *
- * A pure read: the container was allocated with the row. Epicenter never looks
- * inside, and the application names its own roots and picks their formats.
- */
-export function documentContainer(
-	root: Y.Type,
-	rowId: string,
-): Y.Type | undefined {
-	const container = rowType(root, rowId)?.getAttr(
-		DOCUMENT_ATTRIBUTE as never,
-	) as unknown;
-	return container instanceof Y.Type ? container : undefined;
-}
-
-/**
  * Take one row off its table. Returns whether there was a row to take.
  *
- * The whole subtree goes with the attribute: every field, and the container the
- * row's document lives in. Deleting a nested type reclaims what is under it
- * (`evidence/invariants.test.ts`), so what remains is one deleted map key,
- * measured at 2.0 items and 44.5 bytes (`evidence/bench/tombstones.ts`).
+ * The whole subtree goes with the attribute: every field. Deleting a nested
+ * type reclaims what is under it (`evidence/invariants.test.ts`), so what
+ * remains is one deleted map key, measured at 2.0 items and 44.5 bytes
+ * (`evidence/bench/tombstones.ts`). The row's rich document is not in here to
+ * reclaim: it lives at the row's derived address and the table verb retires
+ * it beside this removal (ADR-0248).
  *
  * ADR-0212 chose the other model: clear every field and set a reserved
  * `!presence` attribute to `absent`, leaving the container attached to the root

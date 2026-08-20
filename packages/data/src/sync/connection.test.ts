@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * The driver, over the same hub and authority that get deployed.
  *
@@ -15,13 +16,13 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
 import {
 	createAccountStore,
-	type DatabaseView,
+	type DataView,
 	syncEngineOf,
 } from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
@@ -29,14 +30,26 @@ import { createSyncConnection, type SyncDial } from './connection.js';
 import { encodeFrame } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 
-const database = defineDatabase({
+const database = defineData({
 	id: 'so.epicenter.honeycrisp',
-	tables: { notes: { title: 'string' } },
+	kv: {},
+	tables: { notes: { title: field.string() } },
 });
 
-function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
-	if (result.error !== null) throw result.error;
-	return result.data as TValue;
+function expectOk<TValue, TError>(
+	result: Result<TValue, TError> | TValue,
+): TValue {
+	if (
+		typeof result === 'object' &&
+		result !== null &&
+		'data' in result &&
+		'error' in result
+	) {
+		const outcome = result as Result<TValue, TError>;
+		if (outcome.error !== null) throw outcome.error;
+		return outcome.data as TValue;
+	}
+	return result as TValue;
 }
 
 /** A network that delivers in order, and only when told to. */
@@ -132,11 +145,11 @@ function openDriven({
 	backoff?: (attempts: number) => number;
 }) {
 	const data = createAccountStore({
-		database: database,
+		definition: database,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const store = data.store;
-	const db = data as DatabaseView<typeof database>;
+	const db = data as DataView<typeof database>;
 
 	/** Cursor each dial asked the authority to start after, oldest first. */
 	const dialledFrom: number[] = [];
@@ -285,27 +298,28 @@ describe('a write syncs without anyone remembering to say so', () => {
 		expect(laptop.titles()).toEqual([]);
 	});
 
-	test('prose written into a row document syncs on the same timer', () => {
+	test('prose written into a row document syncs on the same timer', async () => {
 		const { wire, clock, phone, laptop } = setup();
 		phone.connection.start();
 		laptop.connection.start();
 		run(wire, clock, 0);
 
 		const note = expectOk(
-			phone.db.tables.notes.create(
-				{ title: 'Groceries' },
-				{ document: ['body'] },
-			),
+			phone.db.tables.notes.create({ title: 'Groceries' }),
 		);
-		const body = phone.db.tables.notes.document(note.id)?.get('body', 'text');
+		const opened = expectOk(await phone.db.tables.notes.document.open(note.id));
+		const body = opened?.get('body', 'text');
 		if (body === undefined) throw new Error('the row has no document');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
 		run(wire, clock, 1_000);
 
-		const arrived = laptop.db.tables.notes
-			.document(note.id)
-			?.get('body', 'text');
+		const received = expectOk(
+			await laptop.db.tables.notes.document.open(note.id),
+		);
+		const arrived = received?.get('body', 'text');
 		expect(JSON.stringify(arrived?.toJSON())).toContain('milk and eggs');
+		opened?.[Symbol.dispose]();
+		received?.[Symbol.dispose]();
 	});
 });
 
@@ -491,11 +505,11 @@ describe('a dial that can never succeed stops the driver for good', () => {
 		denyEvery: boolean;
 	}) {
 		const data = createAccountStore({
-			database: database,
+			definition: database,
 			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const store = data.store;
-		const db = data as DatabaseView<typeof database>;
+		const db = data as DataView<typeof database>;
 		let dials = 0;
 		const connection = createSyncConnection({
 			store,
@@ -602,11 +616,11 @@ describe('a foreign document name supersedes the replica, and nothing else does 
 		answers: (dial: number) => Uint8Array[];
 	}) {
 		const data = createAccountStore({
-			database: database,
+			definition: database,
 			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const store = data.store;
-		const db = data as DatabaseView<typeof database>;
+		const db = data as DataView<typeof database>;
 		// Stamped before the cursor moves, in the order every real replica
 		// follows: the stamp refuses a store that grew before it.
 		if (document !== undefined) {

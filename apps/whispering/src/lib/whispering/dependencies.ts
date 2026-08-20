@@ -15,7 +15,7 @@ const log = createLogger('whispering/dependencies');
  * owns the acquisition from its first microtask.
  *
  * `defaultTranscriptionService` used to be here and is gone. It had one value,
- * and the workspace declares the default now (`transcriptionService = 'local'`), so
+	 * and the application owns the initialization value (`transcriptionService = 'local'`), so
  * a second declaration of it was only somewhere for the two to disagree.
  */
 export const whisperingDependencies: WhisperingAppDependencies = {

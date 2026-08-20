@@ -88,19 +88,23 @@ it, which leaves one deleted map key rather than a permanent corpse.
 
 ## Prose is a plane beside the row, not a field in it
 
-A row's `!doc` container holds roots the application names, and Epicenter never
-looks inside one. An editor binds to a root directly:
+Each row owns one independent Yjs document at its derived address,
+`{databaseId}/{tableName}/{rowId}` (ADR-0248). The application names roots
+inside it and Epicenter never looks inside one. Opening is a load, awaited,
+and the handle that comes back is fully hydrated:
 
 ```ts
-const body = db.notes.document(noteId)?.get('body');
+const { data: handle } = await db.tables.notes.document.open(noteId);
+const body = handle?.get('body'); // a Y.Type an editor binds to directly
+handle?.[Symbol.dispose]();
 ```
 
-Root names are declared when the row is created,
-`db.notes.create({ ... }, { document: ['body'] })`, and that is what makes them
-safe. Reaching for a root lazily is a write at a well-known address, so two
-devices first-opening one note would each mint their own and map LWW would
-discard one along with everything written into it. Allocating at creation leaves
-exactly one creator, and minted row ids make that moment unraceable.
+Roots are minted by name on first use, which is safe in an independent
+document: a top-level root is addressed by its name, so two devices
+first-opening one note converge with both writes retained. Deleting the row
+durably retires the document address in the same atomic step, so a late write
+cannot resurrect it. Lists and previews read scalar fields and never hydrate
+rich documents.
 
 ## What granularity an edit has
 

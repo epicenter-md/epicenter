@@ -11,6 +11,12 @@ import type { Skill } from './workspace.js';
  * is how "this skill declares no license" is spelled (ADR-0213).
  */
 export function serializeSkillMd(skill: Skill, instructions: string): string {
+	const metadata =
+		skill.metadata !== null &&
+		typeof skill.metadata === 'object' &&
+		!Array.isArray(skill.metadata)
+			? skill.metadata
+			: {};
 	const frontmatter = {
 		name: skill.name,
 		description: skill.description,
@@ -18,7 +24,7 @@ export function serializeSkillMd(skill: Skill, instructions: string): string {
 		...(skill.compatibility !== null && {
 			compatibility: skill.compatibility,
 		}),
-		metadata: { ...skill.metadata, id: skill.sourceId },
+		metadata: { ...metadata, id: skill.sourceId },
 		...(skill.allowedTools !== null && {
 			'allowed-tools': skill.allowedTools,
 		}),

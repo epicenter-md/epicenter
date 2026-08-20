@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * What a brand-new device pays to join a vault that has been lived in.
  *
@@ -87,15 +88,16 @@ import { Database } from 'bun:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
 import { createAccountStore, syncEngineOf } from '../../src/store/store.js';
 import { openSyncAuthority } from '../../src/sync/authority.js';
 
-const benchDatabase = defineDatabase({
+const benchDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
-	tables: { notes: { title: 'string' } },
+	kv: {},
+	tables: { notes: { title: field.string() } },
 });
 
 /** The real vault's shape, the same one the other benches in here model. */
@@ -188,25 +190,25 @@ function bodyText(index: number): string {
 	return `note ${index} `.padEnd(BODY_CHARS, 'x');
 }
 
-function build(
+async function build(
 	days: number,
 	mode: Mode,
-): {
+): Promise<{
 	report: Omit<BuildReport, 'buildMs'>;
 	payload: Uint8Array[];
-} {
+}> {
 	const authority = openSyncAuthority({
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const db = createAccountStore({
-		database: benchDatabase,
+		definition: benchDatabase,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const store = db.store;
 
 	let sinceSend = 0;
 	/** Hand everything unsent to the authority, exactly as the client does. */
-	const send = () => {
+	const send = async () => {
 		const owed = syncEngineOf(store).coalesce();
 		if (owed === undefined) return;
 		const position = authority.append(owed.bytes);
@@ -224,16 +226,36 @@ function build(
 		if (head.error !== null) throw head.error;
 		const replaced = authority.replaceSnapshot(
 			head.data,
-			store.encodeStateSince(),
+			await syncEngineOf(store).encodeSnapshot(),
 		);
 		if (replaced.error !== null) throw replaced.error;
 	};
-	const transaction = (run: () => void) => {
+	const transaction = async (run: () => void) => {
 		run();
 		sinceSend += 1;
 		if (sinceSend < SEND_EVERY) return;
 		sinceSend = 0;
-		send();
+		await send();
+	};
+	/** Open row documents once and keep the handles for the workload's life. */
+	const handles = new Map<
+		string,
+		NonNullable<
+			Awaited<ReturnType<typeof db.tables.notes.document.open>>['data']
+		>
+	>();
+	const bodyOf = async (id: string) => {
+		let handle = handles.get(id);
+		if (handle === undefined) {
+			const opened = await db.tables.notes.document.open(id);
+			if (opened.error !== null) throw opened.error;
+			if (opened.data === null || opened.data === undefined) {
+				throw new Error('the row has no document');
+			}
+			handle = opened.data;
+			handles.set(id, handle);
+		}
+		return handle.get('editor', 'text');
 	};
 
 	const alive: string[] = [];
@@ -242,30 +264,26 @@ function build(
 		// The canary is a note the workload below never touches, so what the
 		// arriving replica must hold is known exactly rather than reconstructed.
 		const canary = index === NOTES - 1;
-		transaction(() => {
-			const made = db.tables.notes.create({
-				title: canary ? 'the canary note' : `note ${index}`,
-			});
-			if (made.error !== null) throw made.error;
-			const text = db.tables.notes
-				.document(made.data.id)
-				?.get('editor', 'text');
-			if (text === undefined) throw new Error('the row has no document');
+		const made = db.tables.notes.create({
+			title: canary ? 'the canary note' : `note ${index}`,
+		});
+		const text = await bodyOf(made.id);
+		await transaction(() => {
 			text.applyDelta(
 				text.change.insert(
 					canary ? `${CANARY_MARKER}${bodyText(index)}` : bodyText(index),
 				) as never,
 			);
-			if (canary) canaryId = made.data.id;
-			else alive.push(made.data.id);
 		});
+		if (canary) canaryId = made.id;
+		else alive.push(made.id);
 	}
 
 	let created = NOTES;
 	for (let day = 0; day < days; day += 1) {
 		for (let edit = 0; edit < DAY.fieldEdits; edit += 1) {
 			const id = alive[(day * 7 + edit) % alive.length] as string;
-			transaction(() => {
+			await transaction(() => {
 				const edited = db.tables.notes.update(id, {
 					title: `edited on day ${day}`,
 				});
@@ -274,30 +292,27 @@ function build(
 		}
 		for (let keystroke = 0; keystroke < DAY.charsTyped; keystroke += 1) {
 			const id = alive[(day * 3 + keystroke) % alive.length] as string;
-			transaction(() => {
-				const text = db.tables.notes.document(id)?.get('editor', 'text');
-				if (text === undefined) throw new Error('the row has no document');
+			const text = await bodyOf(id);
+			await transaction(() => {
 				text.applyDelta(text.change.retain(10).insert('a') as never);
 			});
 		}
 		for (let gone = 0; gone < DAY.notesDeleted; gone += 1) {
 			const victim = alive.shift() as string;
-			transaction(() => {
+			handles.get(victim)?.[Symbol.dispose]();
+			handles.delete(victim);
+			await transaction(() => {
 				db.tables.notes.delete(victim);
 			});
 		}
 		for (let fresh = 0; fresh < DAY.notesCreated; fresh += 1) {
 			const index = created;
 			created += 1;
-			transaction(() => {
-				const made = db.tables.notes.create({ title: `note ${index}` });
-				if (made.error !== null) throw made.error;
-				const text = db.tables.notes
-					.document(made.data.id)
-					?.get('editor', 'text');
-				if (text === undefined) throw new Error('the row has no document');
+			const made = db.tables.notes.create({ title: `note ${index}` });
+			const text = await bodyOf(made.id);
+			await transaction(() => {
 				text.applyDelta(text.change.insert(bodyText(index)) as never);
-				alive.push(made.data.id);
+				alive.push(made.id);
 			});
 		}
 	}
@@ -327,11 +342,7 @@ function build(
 	const ids = db.tables.notes.ids();
 	const canary = db.tables.notes.get(canaryId);
 	if (canary.error !== null) throw canary.error;
-	const canaryProse = db.tables.notes
-		.document(canaryId)
-		?.get('editor', 'text')
-		.toString();
-	if (canaryProse === undefined) throw new Error('the canary has no document');
+	const canaryProse = (await bodyOf(canaryId)).toString();
 
 	return {
 		payload,
@@ -394,10 +405,13 @@ type Expectation = {
 	canaryProse: string;
 };
 
-function apply(packed: Uint8Array, expectation: Expectation): ApplyReport {
+async function apply(
+	packed: Uint8Array,
+	expectation: Expectation,
+): Promise<ApplyReport> {
 	const updates = unpackPayload(packed);
 	const db = createAccountStore({
-		database: benchDatabase,
+		definition: benchDatabase,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const store = db.store;
@@ -416,10 +430,13 @@ function apply(packed: Uint8Array, expectation: Expectation): ApplyReport {
 	// The control. Bytes moving is not the claim; the vault arriving is.
 	const rows = db.tables.notes.list();
 	const canary = rows.rows.find((row) => row.title === expectation.canaryTitle);
-	const prose =
-		canary === undefined
-			? undefined
-			: db.tables.notes.document(canary.id)?.get('editor', 'text').toString();
+	let prose: string | undefined;
+	if (canary !== undefined) {
+		const opened = await db.tables.notes.document.open(canary.id);
+		if (opened.error !== null) throw opened.error;
+		prose = opened.data?.get('editor', 'text').toString();
+		opened.data?.[Symbol.dispose]();
+	}
 	// Guarding the guard: an expectation of an empty string would be satisfied by
 	// a replica that received nothing, which is the exact run this control exists
 	// to catch.
@@ -454,7 +471,7 @@ if (process.argv[2] === '--build') {
 	const mode = process.argv[4] as Mode;
 	const path = process.argv[5] as string;
 	const started = performance.now();
-	const { report, payload } = build(days, mode);
+	const { report, payload } = await build(days, mode);
 	const buildMs = performance.now() - started;
 	await Bun.write(path, packPayload(payload));
 	console.log(JSON.stringify({ ...report, buildMs } satisfies BuildReport));
@@ -465,7 +482,9 @@ if (process.argv[2] === '--apply') {
 	const path = process.argv[3] as string;
 	const expectation = JSON.parse(process.argv[4] as string) as Expectation;
 	const packed = new Uint8Array(await Bun.file(path).arrayBuffer());
-	console.log(JSON.stringify(apply(packed, expectation) satisfies ApplyReport));
+	console.log(
+		JSON.stringify((await apply(packed, expectation)) satisfies ApplyReport),
+	);
 	process.exit(0);
 }
 

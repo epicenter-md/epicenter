@@ -57,9 +57,8 @@ export async function processRecordingPipeline(
 		transcript: '',
 		polishedTranscript: null,
 		duration: durationMs,
-		// The three transcription columns are omitted: each declares a default a
-		// read applies and a write never stores, so a fresh recording is
-		// `pending` with no completion and no error (`workspace/index.ts`).
+		// The recording domain initializes the transcription columns explicitly, so
+		// a fresh recording is `pending` with no completion and no error.
 	});
 
 	if (app.settings.get('recordingAutoUpload')) {

@@ -1,5 +1,5 @@
 /**
- * The SQL shape of a projected database: one relation per declared table,
+ * The SQL shape of a projected definition: one relation per declared table,
  * plus `kv` as a one-row relation.
  *
  * Deliberately whole-rebuild only. The store's superseded built-in projection
@@ -13,17 +13,17 @@
 import type {
 	JsonObject,
 	JsonValue,
-	ParsedDatabase,
+	ParsedDataDefinition,
 	ParsedTable,
-} from '@epicenter/database';
+} from '@epicenter/data/definition';
 import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 
 /**
  * A projection table per declared table: `id` plus one column per declared
  * field.
  *
- * Columns are `ANY` rather than typed from the field's arktype expression. A
- * field is a union as often as not (`'string|null'`), and the projection is a
+ * Columns are `ANY` rather than typed from the field descriptor. A field is a
+ * nullable or compound JSON value as often as not, and the projection is a
  * cache the live document can always rebuild, so deriving a narrow column type
  * would buy nothing and cost a mapping that has to be right for every
  * expression.
@@ -33,15 +33,15 @@ import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
  */
 export function applyProjectionSchema(
 	sqlite: SqliteDatabase,
-	database: ParsedDatabase,
+	definition: ParsedDataDefinition,
 ): void {
 	// KV projects as a one-row relation named `kv`, which the parser reserves as
 	// a table name so nothing can collide with it.
 	const relations: [string, ParsedTable][] = [
-		...(database.kv === undefined
+		...(definition.kv === undefined
 			? []
-			: ([['kv', database.kv]] as [string, ParsedTable][])),
-		...database.tables,
+			: ([['kv', definition.kv]] as [string, ParsedTable][])),
+		...definition.tables,
 	];
 	// The projection owns this database's whole letter-named databaseId, so a
 	// relation the current definition no longer declares is dropped, not just

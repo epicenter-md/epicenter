@@ -62,7 +62,7 @@ function requireStoreBearer<E extends Env>(
 }
 
 /** One id check for both routes: a name no workspace could carry is refused. */
-function parseDatabaseId(value: string | undefined): string | undefined {
+function parseDataId(value: string | undefined): string | undefined {
 	if (value === undefined) return undefined;
 	if (!WORKSPACE_ID.test(value) || value.length > 128) return undefined;
 	return value;
@@ -110,7 +110,7 @@ export function mountStoreSyncApp<E extends Env = Env>(
 					status: 426,
 				});
 			}
-			const databaseId = parseDatabaseId(c.req.query('databaseId'));
+			const databaseId = parseDataId(c.req.query('databaseId'));
 			if (databaseId === undefined) {
 				return new Response('databaseId must be a workspace id', {
 					status: 400,
@@ -148,7 +148,7 @@ export function mountStoreSyncApp<E extends Env = Env>(
 			tags: ['store-sync'],
 		}),
 		async (c) => {
-			const databaseId = parseDatabaseId(c.req.query('databaseId'));
+			const databaseId = parseDataId(c.req.query('databaseId'));
 			if (databaseId === undefined) {
 				return new Response('databaseId must be a workspace id', {
 					status: 400,

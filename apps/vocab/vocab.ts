@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * Vocab's inert workspace declaration: the workspace id it owns, its tables, and its device-local
  * values. Isomorphic: no IndexedDB, WebSockets, Svelte state, or browser APIs.
@@ -15,8 +16,8 @@
 import type { AgentMessage } from '@epicenter/agent';
 import { conversationsTable } from '@epicenter/chat';
 import type { ServableModel } from '@epicenter/constants/ai-providers';
-import type { DatabaseView } from '@epicenter/data';
-import { defineDatabase, type RowOf } from '@epicenter/database';
+import type { DataView } from '@epicenter/data';
+import { defineData, type RowOf } from '@epicenter/data/definition';
 
 /**
  * Vocab runs a single model. It is an app constant, not a per-conversation
@@ -79,12 +80,12 @@ export type VocabMessage = AgentMessage;
  * human-owned: no code path machine-writes it.
  */
 const entriesTable = {
-	text: 'string',
-	note: 'string',
-	stage: "'new'|'understood'|'usable'",
+	text: field.string(),
+	note: field.string(),
+	stage: field.select(['new', 'understood', 'usable']),
 	// Validation-only rather than `string.date.parse`: a parsing form would hand
 	// back a `Date` that could not round-trip through the projection.
-	createdAt: 'string.date.iso',
+	createdAt: field.instant(),
 } as const;
 
 /**
@@ -108,18 +109,18 @@ const entriesTable = {
  * (ADR-0213). It is read from the DEVICE document in every generation: how this
  * screen renders is a fact about this screen, not portable work (ADR-0233).
  */
-export const vocabWorkspace = defineDatabase({
+export const vocabDefinition = defineData({
 	id: 'so.epicenter.vocab',
 	title: 'Vocab',
 	kv: {
 		/** Readings render by default. */
-		showReadings: 'boolean = true',
+		showReadings: field.boolean(),
 	},
 	tables: { conversations: conversationsTable, entries: entriesTable },
 });
 
 /** The typed view of one store through Vocab's workspace. */
-export type VocabData = DatabaseView<typeof vocabWorkspace>;
+export type VocabData = DataView<typeof vocabDefinition>;
 
 /** One entry row. Row ids are runtime-minted, so the runtime owns `id`. */
 export type Entry = RowOf<typeof entriesTable>;

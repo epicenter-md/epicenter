@@ -1,10 +1,11 @@
+import { field } from '@epicenter/data/definition';
 /**
  * The page half of the durability proof. Driven by `../durable-store.ts`.
  *
  * It exposes verbs rather than running a script, so the runner decides when a
  * reload happens, which is the only part of this that matters.
  */
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 
 import { type DeviceStore, openDevice } from '../../../src/store/browser.js';
 import type { DataOf } from '../../../src/store/store.js';
@@ -17,13 +18,15 @@ import type { DataOf } from '../../../src/store/store.js';
  * is no second name left to vary, and the honest control is a second databaseId.
  */
 const workspaces = {
-	vault: defineDatabase({
+	vault: defineData({
 		id: 'so.epicenter.durableprobe',
-		tables: { notes: { title: 'string' } },
+		kv: {},
+		tables: { notes: { title: field.string() } },
 	}),
-	'somewhere-else': defineDatabase({
+	'somewhere-else': defineData({
 		id: 'so.epicenter.durableprobe.elsewhere',
-		tables: { notes: { title: 'string' } },
+		kv: {},
+		tables: { notes: { title: field.string() } },
 	}),
 } as const;
 
@@ -57,29 +60,37 @@ Object.assign(globalThis, {
 	/** Create a note AND write prose into its document, then wait for durability. */
 	async write(title: string, prose: string) {
 		const db = bound();
-		const made = db.tables.notes.create({ title }, { document: ['body'] });
-		if (made.error !== null) return { error: made.error.message };
-		const body = db.tables.notes.document(made.data.id)?.get('body', 'text');
+		const made = db.tables.notes.create({ title });
+		const opened = await db.tables.notes.document.open(made.id);
+		if (opened.error !== null) return { error: opened.error.message };
+		const body = opened.data?.get('body', 'text');
 		if (body === undefined) return { error: 'the row has no document' };
 		body.applyDelta(body.change.insert(prose) as never);
 		await db.store.persistence.flush();
+		opened.data?.[Symbol.dispose]();
 		return {
-			id: made.data.id,
+			id: made.id,
 			durable: db.store.persistence.get() === 'saved',
 		};
 	},
 
-	/** Everything this store can see right now, read synchronously. */
-	read() {
+	/** Everything this store can see right now, prose hydrated per row. */
+	async read() {
 		const db = bound();
 		const listed = db.tables.notes.list();
-		const notes = listed.rows.map((row) => ({
-			title: row.title,
+		const notes: { title: string; prose: string }[] = [];
+		for (const row of listed.rows) {
 			// Through the CRDT, not through a cache the harness keeps.
-			prose: JSON.stringify(
-				db.tables.notes.document(row.id)?.get('body', 'text')?.toJSON() ?? null,
-			),
-		}));
+			const opened = await db.tables.notes.document.open(row.id);
+			if (opened.error !== null) return { error: opened.error.message };
+			notes.push({
+				title: row.title,
+				prose: JSON.stringify(
+					opened.data?.get('body', 'text')?.toJSON() ?? null,
+				),
+			});
+			opened.data?.[Symbol.dispose]();
+		}
 		return {
 			notes: notes.sort((left, right) => left.title.localeCompare(right.title)),
 			durability: { healthy: db.store.persistence.get() !== 'blocked' },

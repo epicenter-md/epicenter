@@ -3,14 +3,16 @@
 The Epicenter store: one Yjs document per application, a synchronous surface
 over it, and the transport that carries it between a person's devices. MIT.
 
-Four entry points, and no more:
+The package has one definition entrypoint and four runtime entrypoints:
 
 | Import | What it gives you |
 | --- | --- |
-| `@epicenter/data` | the store surface, plus the workspace vocabulary re-exported from `@epicenter/workspace` |
-| `@epicenter/data/bun` | `open(workspace, { root })`, and `openMemory(workspace)` for tests |
-| `@epicenter/data/browser` | `openDevice(workspace)`, and `openAccount(workspace, { principalId })` |
+| `@epicenter/data` | the opened data surface |
+| `@epicenter/data/definition` | `defineData`, `parseData`, and the field descriptor vocabulary |
+| `@epicenter/data/bun` | `open(definition, { root })`, and `openMemory(definition)` for tests |
+| `@epicenter/data/browser` | `openDevice(definition)`, and `openAccount(definition, { principalId })` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
+| `@epicenter/data/projection` | `createSqliteProjection`, a read-only SQL follower |
 
 A Bun opener imports `bun:sqlite` and a browser opener imports a WASM build, so
 neither belongs in a barrel the other has to load. That is the whole reason the
@@ -21,19 +23,22 @@ openers live at their own entry points rather than on `@epicenter/data`.
 ```ts
 import { openAccount } from '@epicenter/data/browser';
 
-const { data: app, error } = await openAccount(honeycrispWorkspace, {
+const { data, error } = await openAccount(honeycrispDefinition, {
 	principalId,
 });
 if (error !== null) return handle(error);
 
-const listed = app.tables.notes.list();          // no await
-app.tables.notes.update(id, { title: 'Draft' }); // no await
+await using opened = data;
+opened.definition; // the immutable declaration that opened this data
+
+const listed = opened.tables.notes.list();          // no await
+opened.tables.notes.update(id, { title: 'Draft' }); // no await
 ```
 
-A workspace names the store it opens (ADR-0229), so there is one call and one
-name: the workspaceId is the document, the file, the folder and the authority
+An inert data definition names the store it opens (ADR-0229), so there is one call and one
+name: the definition id is the document, the file, the folder and the authority
 address. Nothing takes a path or a database name. In a browser the durable
-address is derived from that workspaceId and the document named below rather
+address is derived from that definition id and the document named below rather
 than supplied (ADR-0233), so a declaration still cannot open a store it does
 not name. The runtime that comes back holds exactly this one definition for
 its whole life (ADR-0240); a newer declaration reads the same durable data by
@@ -41,14 +46,14 @@ closing it and opening the next one.
 
 In a browser the caller also names which durable document it means and whose it
 is (ADR-0233). An application keeps one device document that never joins
-workspace sync, and one retained replica per account:
+account sync, and one retained replica per account:
 
 ```text
-epicenter/<workspaceId>/device
-epicenter/<workspaceId>/account/<principal id>
+epicenter/<definitionId>/device
+epicenter/<definitionId>/account/<principal id>
 ```
 
-That address is the IndexedDB database name, so a workspace discard,
+That address is the IndexedDB database name, so a data discard,
 supersession, or rebuild can reach exactly one account's replica and never the
 device document or another account's. An account replica cannot be opened
 without an account: the argument is a union with nowhere to omit one, and an
@@ -67,24 +72,29 @@ open at once.
 
 ## The surface
 
-Each table the workspace declares is a key on `app.tables`. The file itself sits
-under `app.store`, so a table can be named anything a person names it:
+Each table the definition declares is a key on `data.tables`. The physical file
+and CRDT capability that `data` owns sits under `data.store`, so a table can be
+named anything a person names it:
 
 ```ts
-app.tables.notes.defaults                        // what a read supplies for unwritten keys
-app.tables.notes.create(fields, options?)        // Result<Row>, at a minted 24-character id
-app.tables.notes.get(id)                         // Result<Row | undefined, NonconformingRow>
-app.tables.notes.update(id, patch)               // Result<void>; merges; refuses an absent address
-app.tables.notes.delete(id)                      // boolean: was there a row to take?
-app.tables.notes.ids()                           // string[], sorted
-app.tables.notes.list()                          // { rows, nonconforming }
-app.tables.notes.document(id)                    // RowDocument | undefined
-app.tables.notes.subscribe(listener)             // returns its own unsubscribe
+data.tables.notes.create(fields)                 // Row, at a minted 24-character id
+data.tables.notes.get(id)                         // Result<Row | undefined, NonconformingRow>
+data.tables.notes.update(id, patch)               // void; merges; refuses an absent address
+data.tables.notes.delete(id)                      // boolean: was there a row to take?
+data.tables.notes.ids()                           // string[], sorted
+data.tables.notes.list()                          // { rows, nonconforming }
+data.tables.notes.document.open(id)               // RowDocument | undefined
+data.tables.notes.subscribe(listener)             // returns its own unsubscribe
 ```
 
-Settings live on `app.kv`, which has `get()`, `update(patch)`, `subscribe`, and
-`defaults`. There is no id and no `create`, because there is exactly one and it
-always exists.
+Settings live on `data.kv`, which has `get()`, `update(patch)`, and `subscribe`.
+There is no id and no `create`, because there is exactly one and it always exists.
+Missing fields remain nonconforming. Applications compose initialization and
+recovery values explicitly from `error.conforming`.
+
+`data.documents` opens row documents through the same lifecycle as the scalar
+surface. `data.transact(() => { ... })` groups direct table and KV operations
+into one accepted and durable transaction.
 
 SQL, when an application wants it, is a follower it composes over this
 surface: `createSqliteProjection` from `@epicenter/data/projection` hydrates
@@ -92,14 +102,14 @@ from `list()`, follows commits through `store.onCommitted`, and rebuilds
 whole at the next `query`, so SQL can never serve rows the live document has
 moved past (ADR-0241).
 
-`app.store` carries the document itself: `pressure()` (how much of it is dead
+`data.store` carries the document itself: `pressure()` (how much of it is dead
 weight), `onCommitted` (anything committed, whoever wrote it),
 `persistence` (whether accepted work has reached durable storage, ADR-0238),
 and `sync`, the value that tells the two store kinds apart (ADR-0239):
 `undefined` on a device document, and `{ get, subscribe }` over
 `{ document }` on an account replica. They live under one key rather than
 beside the tables so that no table name is reserved: `kv` is the only one a
-workspace refuses, and that is because KV projects as a SQL relation of that
+definition refuses, and that is because KV projects as a SQL relation of that
 name.
 The delivery machinery underneath sync (the outbox, cursors,
 acknowledgements) is internal; only the transport drives it.
@@ -110,7 +120,7 @@ acknowledgements) is internal; only the transport drives it.
 side by side, as a plain object:
 
 ```ts
-const { rows, nonconforming } = app.tables.notes.list();
+const { rows, nonconforming } = data.tables.notes.list();
 ```
 
 It is not a `Result`, because nothing in it can fail: reads come from a
@@ -131,8 +141,8 @@ Recover with `??` and never with a destructuring default. An `Err` sets `data`
 to `null`, and `= fallback` fires only on `undefined`:
 
 ```ts
-const { data, error } = app.tables.notes.get(id);
-const note = data ?? { ...app.tables.notes.defaults, ...error?.conforming };
+const { data: noteData, error } = data.tables.notes.get(id);
+const note = noteData ?? { ...applicationRecovery, ...error?.conforming };
 ```
 
 ### Reacting
@@ -235,33 +245,28 @@ new machinery, because the store already has a per-element merge primitive.
 each element is its own row, nothing collides, and deletion is a real operation
 rather than an array splice that races.
 
-## The workspace declaration
+## The data definition
 
-A workspace is one application's complete declaration of its durable data
-domain: pure JSON, arktype expression strings, defaults declared inline
-(ADR-0213, ADR-0240). It creates no storage and no lifecycle, and it never
-migrates user data (ADR-0125). It is still release-local in one honest sense:
-a newer release ships a newer declaration and reads the same durable data
-through it.
+A data definition is one application's complete declaration of its durable data
+domain: closed JSON field descriptors, with no storage or lifecycle
+(ADR-0213, ADR-0240). It never migrates user data (ADR-0125). A newer release
+ships a newer definition and reads the same durable data through it.
 
 ```ts
-const notes = defineTable({
-	title: 'string',
-	folderId: 'string|null = null',
-	createdAt: 'string.date.iso',
-});
+import { defineData, field } from '@epicenter/data/definition';
 
-export const notesWorkspace = defineWorkspace({
+export const notesDefinition = defineData({
 	id: 'com.example.notes',
-	kv: defineKv({ theme: "'light'|'dark' = 'light'" }),
-	tables: { notes },
+	kv: { theme: field.select(['light', 'dark']) },
+	tables: {
+		notes: {
+			title: field.string(),
+			folderId: field.nullable(field.string()),
+			createdAt: field.instant(),
+		},
+	},
 });
 ```
-
-`defineTable` and `defineKv` are validation identities: the returned value is
-the argument, and arktype's compile error lands on the ingredient the app
-wrote, which is also what lets `RowOf<typeof notes>` name a row type without
-`as const`.
 
 Each `tables` property name is that table's durable name forever: it is what a
 row address carries, what the projection's relation is called, and what
@@ -272,16 +277,12 @@ different data.
 Three rules bite immediately:
 
 1. **There are no optional fields.** A field has to be one type through the CRDT
-   attribute, the projection column, and the row alike, and "absent" is not a
-   SQL type. Write `'string|null = null'`, never `'field?'`. The default is
-   applied at read time and never stored.
-2. **A declaration cannot express an array default.** `'string[] = []'` throws, and
-   arktype is right to refuse it: a literal default would hand every row the
-   SAME array. Write `'string[]|null = null'` and materialise a fresh array at
-   the point of use.
-3. **No transforming fields.** `'string.date.iso'`, not `'string.date.parse'`: a
-   parsing form would hand back a `Date` that cannot round-trip, so
-   `update(id, { when: row.when })` would break.
+   attribute, the projection column, and the row alike. `field.nullable(inner)`
+   accepts stored JSON `null`, but a missing field remains nonconforming.
+2. **Definitions do not own defaults.** Initialization and recovery values live
+   in application code. `parseData` rejects a descriptor carrying `default`.
+3. **No transforming fields.** Date, instant, and datetime descriptors preserve
+   their string representation, so values round-trip through storage and SQL.
 
 ### Nonconforming is a view, not damage
 
@@ -340,9 +341,9 @@ Persistence failing never fails a verb and never poisons the store. The debt
 is observable instead:
 
 ```ts
-db.store.persistence.get(); // 'saved' | 'pending' | 'blocked'
-db.store.persistence.subscribe(listener);
-await db.store.persistence.flush();
+data.store.persistence.get(); // 'saved' | 'pending' | 'blocked'
+data.store.persistence.subscribe(listener);
+await data.store.persistence.flush();
 ```
 
 `blocked` means the latest flush failed and a restart would lose the retained
@@ -373,8 +374,8 @@ proved that omitting the resync reconnect wedges a device permanently. The
 store announces its own durable local work to the transport internally, so
 nothing has to remember to nudge it.
 
-The authority is one Cloudflare Durable Object per (principal, workspaceId), named
-`principals/<principalId>/stores/<workspaceId>`, keeping a snapshot plus the
+The authority is one Cloudflare Durable Object per (principal, definitionId), named
+`principals/<principalId>/stores/<definitionId>`, keeping a snapshot plus the
 entries after it (ADR-0220, ADR-0225). It reads nothing and holds opaque bytes.
 `packages/server/src/store-sync/` is the mount; `@epicenter/data/sync` is where
 every merge rule actually lives, so what is deployed and what the transport's

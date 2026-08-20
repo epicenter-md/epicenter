@@ -3,7 +3,7 @@
  * bytes it cannot read.
  *
  * The structural half of the claim is the file itself: `authority.ts` imports
- * no Yjs and no `@epicenter/database`, and there is no verb that could
+ * no Yjs and no `@epicenter/data/definition`, and there is no verb that could
  * interpret an update. This suite pins the behavioral half by driving every
  * verb with bytes no Yjs decode would survive. If sequencing, catch-up,
  * snapshot replacement, or document replacement ever grew a peek at the
@@ -26,7 +26,7 @@ function openAuthority() {
 	return openSyncAuthority({ sqlite, snapshotFloorBytes: 1 });
 }
 
-describe('an authority needs no database: every verb moves unread bytes', () => {
+describe('an authority needs no definition: every verb moves unread bytes', () => {
 	test('append assigns positions and since returns the bytes untouched', () => {
 		const authority = openAuthority();
 		const first = authority.append(opaque(1));

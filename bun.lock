@@ -95,7 +95,6 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/database": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/matter-core": "workspace:*",
         "@epicenter/server": "workspace:*",
@@ -132,7 +131,6 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/database": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -385,7 +383,6 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/data": "workspace:*",
-        "@epicenter/database": "workspace:*",
         "mode-watcher": "^1.1.0",
         "wellcrafted": "catalog:",
       },
@@ -419,7 +416,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@epicenter/data": "workspace:*",
-        "@epicenter/database": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@sqlite.org/sqlite-wasm": "catalog:",
         "@y/y": "14.0.0-rc.24",
@@ -445,7 +441,6 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/database": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/recorder": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -486,7 +481,6 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/database": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/recorder": "workspace:*",
         "@epicenter/skills": "workspace:*",
@@ -670,7 +664,6 @@
       "dependencies": {
         "@epicenter/agent": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/database": "workspace:*",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -716,7 +709,6 @@
       "name": "@epicenter/data",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/database": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
@@ -734,20 +726,6 @@
         "playwright": "^1.61.1",
         "typescript": "catalog:",
         "vite": "catalog:",
-      },
-    },
-    "packages/database": {
-      "name": "@epicenter/database",
-      "version": "0.4.0",
-      "dependencies": {
-        "@epicenter/field": "workspace:*",
-        "arktype": "catalog:",
-        "typebox": "catalog:",
-        "wellcrafted": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
       },
     },
     "packages/field": {
@@ -842,7 +820,6 @@
       "version": "0.3.0",
       "dependencies": {
         "@epicenter/data": "workspace:*",
-        "@epicenter/database": "workspace:*",
         "@epicenter/field": "workspace:*",
         "wellcrafted": "catalog:",
         "yaml": "^2.8.0",
@@ -1269,8 +1246,6 @@
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
 
     "@epicenter/data": ["@epicenter/data@workspace:packages/data"],
-
-    "@epicenter/database": ["@epicenter/database@workspace:packages/database"],
 
     "@epicenter/epicenter": ["@epicenter/epicenter@workspace:apps/epicenter"],
 
@@ -2698,7 +2673,7 @@
 
     "layerchart": ["layerchart@1.0.13", "", { "dependencies": { "@dagrejs/dagre": "^1.1.4", "@layerstack/svelte-actions": "^1.0.1", "@layerstack/svelte-stores": "^1.0.2", "@layerstack/tailwind": "^1.0.1", "@layerstack/utils": "^1.0.1", "d3-array": "^3.2.4", "d3-color": "^3.1.0", "d3-delaunay": "^6.0.4", "d3-dsv": "^3.0.1", "d3-force": "^3.0.0", "d3-geo": "^3.1.1", "d3-geo-voronoi": "^2.1.0", "d3-hierarchy": "^3.1.2", "d3-interpolate": "^3.0.1", "d3-interpolate-path": "^2.3.0", "d3-path": "^3.1.0", "d3-quadtree": "^3.0.1", "d3-random": "^3.0.1", "d3-sankey": "^0.12.3", "d3-scale": "^4.0.2", "d3-scale-chromatic": "^3.1.0", "d3-shape": "^3.2.0", "d3-tile": "^1.0.0", "d3-time": "^3.1.0", "date-fns": "^4.1.0", "layercake": "8.4.3", "lodash-es": "^4.17.21" }, "peerDependencies": { "svelte": "^3.56.0 || ^4.0.0 || ^5.0.0" } }, "sha512-bjcrfyTdHtfYZn7yj26dvA1qUjM+R6+akp2VeBJ4JWKmDGhb5WvT9nMCs52Rb+gSd/omFq5SjZLz49MqlVljZw=="],
 
-    "lib0": ["lib0@0.2.117", "", { "dependencies": { "isomorphic.js": "^0.2.4" }, "bin": { "0serve": "bin/0serve.js", "0gentesthtml": "bin/gentesthtml.js", "0ecdsa-generate-keypair": "bin/0ecdsa-generate-keypair.js" } }, "sha512-DeXj9X5xDCjgKLU/7RR+/HQEVzuuEUiwldwOGsHK/sfAfELGWEyTcf0x+uOvCvK3O2zPmZePXWL85vtia6GyZw=="],
+    "lib0": ["lib0@1.0.0-rc.22", "", { "bin": { "0gentesthtml": "src/bin/gentesthtml.js", "0serve": "src/bin/0serve.js", "0ecdsa-generate-keypair": "src/bin/0ecdsa-generate-keypair.js" } }, "sha512-KNefJloRQIsWncTF2tIcRqQXSQ7bDRYHwVSUhf1lY2P65Rej4WWFnen6L8L+odJQIo1ZNJGVVjK2WzqB9a+B/g=="],
 
     "libsql": ["libsql@0.4.7", "", { "dependencies": { "@neon-rs/load": "^0.0.4", "detect-libc": "2.0.2" }, "optionalDependencies": { "@libsql/darwin-arm64": "0.4.7", "@libsql/darwin-x64": "0.4.7", "@libsql/linux-arm64-gnu": "0.4.7", "@libsql/linux-arm64-musl": "0.4.7", "@libsql/linux-x64-gnu": "0.4.7", "@libsql/linux-x64-musl": "0.4.7", "@libsql/win32-x64-msvc": "0.4.7" }, "os": [ "linux", "win32", "darwin", ], "cpu": [ "x64", "arm64", ] }, "sha512-T9eIRCs6b0J1SHKYIvD8+KCJMcWZ900iZyxdnSCdqxN12Z1ijzT+jY5nrk72Jw4B0HGzms2NgpryArlJqvc3Lw=="],
 
@@ -3702,12 +3677,6 @@
 
     "@vscode/emmet-helper/jsonc-parser": ["jsonc-parser@2.3.1", "", {}, "sha512-H8jvkz1O50L3dMZCsLqiuB2tA7muqbSg1AtGEkN0leAqGjsUzDJir3Zwr02BhqdcITPg3ei3mZ+HjMocAknhhg=="],
 
-    "@y/prosemirror/lib0": ["lib0@1.0.0-rc.22", "", { "bin": { "0gentesthtml": "src/bin/gentesthtml.js", "0serve": "src/bin/0serve.js", "0ecdsa-generate-keypair": "src/bin/0ecdsa-generate-keypair.js" } }, "sha512-KNefJloRQIsWncTF2tIcRqQXSQ7bDRYHwVSUhf1lY2P65Rej4WWFnen6L8L+odJQIo1ZNJGVVjK2WzqB9a+B/g=="],
-
-    "@y/protocols/lib0": ["lib0@1.0.0-rc.22", "", { "bin": { "0gentesthtml": "src/bin/gentesthtml.js", "0serve": "src/bin/0serve.js", "0ecdsa-generate-keypair": "src/bin/0ecdsa-generate-keypair.js" } }, "sha512-KNefJloRQIsWncTF2tIcRqQXSQ7bDRYHwVSUhf1lY2P65Rej4WWFnen6L8L+odJQIo1ZNJGVVjK2WzqB9a+B/g=="],
-
-    "@y/y/lib0": ["lib0@1.0.0-rc.22", "", { "bin": { "0gentesthtml": "src/bin/gentesthtml.js", "0serve": "src/bin/0serve.js", "0ecdsa-generate-keypair": "src/bin/0ecdsa-generate-keypair.js" } }, "sha512-KNefJloRQIsWncTF2tIcRqQXSQ7bDRYHwVSUhf1lY2P65Rej4WWFnen6L8L+odJQIo1ZNJGVVjK2WzqB9a+B/g=="],
-
     "anymatch/picomatch": ["picomatch@2.3.2", "", {}, "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA=="],
 
     "astro/aria-query": ["aria-query@5.3.2", "", {}, "sha512-COROpnaoap1E2F000S62r6A60uHZnmlvomhfyT2DlTcrY1OrBKn2UhH7qn5wTC9zMvD0AY7csdPSNwKP+7WiQw=="],
@@ -3847,6 +3816,8 @@
     "yargs/string-width": ["string-width@4.2.3", "", { "dependencies": { "emoji-regex": "^8.0.0", "is-fullwidth-code-point": "^3.0.0", "strip-ansi": "^6.0.1" } }, "sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g=="],
 
     "yargs/yargs-parser": ["yargs-parser@21.1.1", "", {}, "sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw=="],
+
+    "yjs/lib0": ["lib0@0.2.117", "", { "dependencies": { "isomorphic.js": "^0.2.4" }, "bin": { "0serve": "bin/0serve.js", "0gentesthtml": "bin/gentesthtml.js", "0ecdsa-generate-keypair": "bin/0ecdsa-generate-keypair.js" } }, "sha512-DeXj9X5xDCjgKLU/7RR+/HQEVzuuEUiwldwOGsHK/sfAfELGWEyTcf0x+uOvCvK3O2zPmZePXWL85vtia6GyZw=="],
 
     "@astrojs/internal-helpers/shiki/@shikijs/core": ["@shikijs/core@4.0.2", "", { "dependencies": { "@shikijs/primitive": "4.0.2", "@shikijs/types": "4.0.2", "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.4", "hast-util-to-html": "^9.0.5" } }, "sha512-hxT0YF4ExEqB8G/qFdtJvpmHXBYJ2lWW7qTHDarVkIudPFE6iCIrqdgWxGn5s+ppkGXI0aEGlibI0PAyzP3zlw=="],
 

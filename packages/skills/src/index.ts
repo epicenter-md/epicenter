@@ -5,5 +5,5 @@ export {
 	SKILL_CONTENT,
 	type Skill,
 	type SkillsData,
-	skillsWorkspace,
+	skillsDefinition,
 } from './workspace.js';

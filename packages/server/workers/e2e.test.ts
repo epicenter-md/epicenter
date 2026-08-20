@@ -18,9 +18,9 @@
  * feature.
  */
 import { env, runInDurableObject, SELF } from 'cloudflare:test';
+import { encodeEnvelope } from '@epicenter/data';
 import { decodeFrame, type Frame } from '@epicenter/data/sync';
 import { STORE_REPLACE_ROUTE } from '@epicenter/sync';
-import * as Y from '@y/y';
 import { describe, expect, it } from 'vitest';
 
 import type { ReplicaReport, StoreTestReplica } from './replica.js';
@@ -66,9 +66,9 @@ function openAccount(label: string) {
 					inside((replica) => replica.write(title, prose)),
 				remove: (title: string) => inside((replica) => replica.remove(title)),
 				report: (): Promise<ReplicaReport> =>
-					inside((replica) => replica.report()),
+					inside((replica) => replica.report()).then((made) => made),
 				encodeState: (): Promise<Uint8Array> =>
-					inside((replica) => replica.encodeState()),
+					inside((replica) => replica.encodeState()).then((state) => state),
 			};
 		},
 	};
@@ -233,9 +233,8 @@ describe('one verb publishes the next document (ADR-0231)', () => {
 		);
 	}
 
-	/** An encoded empty document: the argument of `replace(empty)`, a reset. */
-	const emptyState = () =>
-		new Uint8Array(Y.encodeStateAsUpdateV2(new Y.Doc({ gc: true })));
+	/** An encoded empty database: the argument of `replace(empty)`, a reset. */
+	const emptyState = () => encodeEnvelope([]);
 
 	/** Dial the sync route directly, so the refusal is visible as a response. */
 	function dial(

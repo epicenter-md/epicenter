@@ -47,9 +47,6 @@ function writeRow(
 	if (!(row instanceof Y.Type)) {
 		row = new Y.Type();
 		root.setAttr(rowId as never, row as never);
-		const container = new Y.Type();
-		row.setAttr('!doc' as never, container as never);
-		container.setAttr('body' as never, new Y.Type('text') as never);
 	}
 	for (const [name, value] of Object.entries(fields)) {
 		row.setAttr(name as never, value as never);
@@ -84,24 +81,6 @@ describe("a table root's 'delta' names the rows a commit touched", () => {
 		seen.rowIds.length = 0;
 
 		document.transact(() => writeRow(notes, 'note-a', { title: 'Shopping' }));
-
-		expect(seen.rowIds).toEqual([['note-a']]);
-		expect(control.rowIds).toEqual([]);
-	});
-
-	test("prose written deep inside the row's own document", () => {
-		// The case that matters most for an editor binding, and the one an
-		// `observeDeep` observer reports without a row id. The write is three
-		// levels down: root -> row -> `!doc` -> `body`.
-		document.transact(() => writeRow(notes, 'note-a', { title: 'Groceries' }));
-		seen.rowIds.length = 0;
-
-		document.transact(() => {
-			const row = notes.getAttr('note-a' as never) as Y.Type;
-			const container = row.getAttr('!doc' as never) as Y.Type;
-			const body = container.getAttr('body' as never) as Y.Type;
-			body.applyDelta(body.change.insert('milk and eggs') as never);
-		});
 
 		expect(seen.rowIds).toEqual([['note-a']]);
 		expect(control.rowIds).toEqual([]);

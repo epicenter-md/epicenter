@@ -14,21 +14,32 @@
 import { defineErrors } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
 
-/** One unsent entry, at the local position that orders it. */
-export type OutboxEntry = { id: number; bytes: Uint8Array };
+/**
+ * One unsent entry, at the local position that orders it, naming the document
+ * its bytes belong to (the application document or a row's derived address).
+ */
+export type OutboxEntry = { id: number; document: string; bytes: Uint8Array };
 
 /**
  * One durable fact the store owes its storage, in the order it was accepted.
  *
- * `append` carries its outbox id when the bytes are locally authored work a
- * replica owes the authority, and `undefined` for received bytes and for a
- * device document's own work (which is owed to nobody). Ids are assigned by
- * the store, not the port, so the in-memory mirror and the durable engine can
- * never disagree about which entry an acknowledgement names.
+ * `append` names the document its bytes belong to: the application document,
+ * or a row's derived address (ADR-0248). It carries its outbox id when the
+ * bytes are locally authored work a replica owes the authority, and
+ * `undefined` for received bytes and for a device document's own work (which
+ * is owed to nobody). Ids are assigned by the store, not the port, so the
+ * in-memory mirror and the durable engine can never disagree about which
+ * entry an acknowledgement names.
+ *
+ * `retire` is a row deletion's durable half: it records the address as
+ * tombstoned and deletes the document's stored chain and outbox entries, in
+ * the same atomic batch as the scalar row removal, so a late write can never
+ * resurrect the address (ADR-0248).
  */
 export type DurableOp =
 	| {
 			kind: 'append';
+			document: string;
 			bytes: Uint8Array;
 			takenAt: number;
 			outboxId: number | undefined;
@@ -36,14 +47,23 @@ export type DurableOp =
 	| { kind: 'cursor'; seq: number }
 	| { kind: 'identity'; id: string }
 	| { kind: 'dropOutbox'; throughId: number }
-	| { kind: 'replaceOutbox'; throughId: number; merged: Uint8Array };
+	| {
+			kind: 'replaceOutbox';
+			document: string;
+			throughId: number;
+			merged: Uint8Array;
+	  }
+	| { kind: 'retire'; document: string };
 
 /** Everything the durable engine held at open, materialized once. */
 export type DurableSnapshot = {
+	/** The application document's own chain; row documents hydrate on open. */
 	updates: Uint8Array[];
 	outbox: OutboxEntry[];
 	cursor: number;
 	identity: string | undefined;
+	/** Every durably retired document address (ADR-0248). */
+	tombstones: string[];
 };
 
 /**
@@ -55,9 +75,17 @@ export type DurableSnapshot = {
  * a batch that half-commits would let a cursor outrun the bytes it accounts
  * for, which is exactly the corruption ADR-0231 exists to prevent. Ordering
  * within the batch is the queue's order.
+ *
+ * The two readers serve the document manager (ADR-0248): a row document
+ * hydrates from its stored chain at open, and a snapshot bundle enumerates
+ * every chain the store holds. Both treat the address as an opaque string.
  */
 export type DurablePort = {
 	commit(ops: readonly DurableOp[]): void | Promise<void>;
+	/** One document's stored chain, oldest first. Empty when nothing is held. */
+	readDocument(document: string): Uint8Array[] | Promise<Uint8Array[]>;
+	/** Every document address with a stored chain, the application's included. */
+	listDocuments(): string[] | Promise<string[]>;
 };
 
 export type PersistenceStatus = 'saved' | 'pending' | 'blocked';
@@ -123,6 +151,19 @@ export type PersistenceController = {
 	 */
 	durableOutbox(): readonly OutboxEntry[];
 	/**
+	 * Bytes accepted for one document that the durable engine has not
+	 * confirmed: the in-flight batch and the queue, in order.
+	 *
+	 * The document manager's hydration overlay (ADR-0248): a row document
+	 * opened while an asynchronous flush is out must still see everything the
+	 * store accepted. A byte the durable read already covered may appear here
+	 * again during that window; re-applying it is free because an update is
+	 * idempotent.
+	 */
+	pendingAppends(document: string): Uint8Array[];
+	/** Every document named by an unconfirmed append, for state enumeration. */
+	pendingDocuments(): string[];
+	/**
 	 * Whether anything at all is held, durably or queued: updates, outbox
 	 * entries, a moved cursor. The identity stamp's emptiness check.
 	 */
@@ -159,6 +200,9 @@ export function createPersistenceController({
 	let cursor = loaded.cursor;
 	let identity = loaded.identity;
 	let hasUpdates = loaded.updates.length > 0;
+	let hasTombstones = loaded.tombstones.length > 0;
+	/** The batch handed to an asynchronous port and not yet settled. */
+	let flying: readonly DurableOp[] = [];
 
 	const statusListeners = new Set<() => void>();
 	const outboxGrewListeners = new Set<() => void>();
@@ -200,7 +244,11 @@ export function createPersistenceController({
 				case 'append': {
 					hasUpdates = true;
 					if (op.outboxId !== undefined) {
-						outbox.push({ id: op.outboxId, bytes: op.bytes });
+						outbox.push({
+							id: op.outboxId,
+							document: op.document,
+							bytes: op.bytes,
+						});
 						outboxGrew = true;
 					}
 					break;
@@ -215,10 +263,23 @@ export function createPersistenceController({
 					outbox = outbox.filter((entry) => entry.id > op.throughId);
 					break;
 				case 'replaceOutbox': {
-					const kept = outbox.filter((entry) => entry.id > op.throughId);
-					outbox = [{ id: op.throughId, bytes: op.merged }, ...kept];
+					// One document's covered entries collapse to one merged entry at
+					// its own highest id; other documents' entries keep their places.
+					const kept = outbox.filter(
+						(entry) =>
+							entry.document !== op.document || entry.id > op.throughId,
+					);
+					outbox = [
+						...kept.filter((entry) => entry.id < op.throughId),
+						{ id: op.throughId, document: op.document, bytes: op.merged },
+						...kept.filter((entry) => entry.id > op.throughId),
+					];
 					break;
 				}
+				case 'retire':
+					hasTombstones = true;
+					outbox = outbox.filter((entry) => entry.document !== op.document);
+					break;
 			}
 		}
 		return outboxGrew;
@@ -280,6 +341,7 @@ export function createPersistenceController({
 			return;
 		}
 		inFlight = true;
+		flying = batch;
 		notifyStatus();
 		void outcome
 			.then(
@@ -288,6 +350,7 @@ export function createPersistenceController({
 			)
 			.finally(() => {
 				inFlight = false;
+				flying = [];
 				if (again) {
 					again = false;
 					attempt();
@@ -321,8 +384,25 @@ export function createPersistenceController({
 			flush,
 		}),
 		durableOutbox: () => outbox,
+		pendingAppends(document: string): Uint8Array[] {
+			const bytes: Uint8Array[] = [];
+			for (const op of [...flying, ...queue]) {
+				if (op.kind === 'append' && op.document === document) {
+					bytes.push(op.bytes);
+				}
+			}
+			return bytes;
+		},
+		pendingDocuments(): string[] {
+			const documents = new Set<string>();
+			for (const op of [...flying, ...queue]) {
+				if (op.kind === 'append') documents.add(op.document);
+			}
+			return [...documents];
+		},
 		hasAnyState: () =>
 			hasUpdates ||
+			hasTombstones ||
 			outbox.length > 0 ||
 			cursor > 0 ||
 			identity !== undefined ||

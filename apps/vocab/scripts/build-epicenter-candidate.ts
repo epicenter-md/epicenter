@@ -25,13 +25,13 @@
 import { cp, mkdir, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { vocabWorkspace } from '../vocab.ts';
+import { vocabDefinition } from '../vocab.ts';
 
 const app = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const built = join(app, 'build');
 const candidate = join(app, 'dist-epicenter');
-const member = join(candidate, vocabWorkspace.id);
-const base = `/apps/${vocabWorkspace.id}`;
+const member = join(candidate, vocabDefinition.id);
+const base = `/apps/${vocabDefinition.id}`;
 
 const build = Bun.spawnSync(['bun', 'run', 'build'], {
 	cwd: app,
@@ -54,11 +54,11 @@ await cp(built, member, { recursive: true });
 // something a host lists.
 await Bun.write(
 	join(member, 'workspace.json'),
-	`${JSON.stringify({ ...vocabWorkspace, title: 'Vocab' }, null, '\t')}\n`,
+	`${JSON.stringify({ ...vocabDefinition, title: 'Vocab' }, null, '\t')}\n`,
 );
 
 console.log(`Candidate staged at ${candidate}`);
-console.log(`  ${vocabWorkspace.id} (Vocab)`);
+console.log(`  ${vocabDefinition.id} (Vocab)`);
 console.log('\nAdmit it with `bun run install:vocab` from the repo root, or:');
 // An absolute path, because `catalog:publish` runs with `--cwd apps/epicenter`
 // and would resolve a relative one against that directory instead of yours.

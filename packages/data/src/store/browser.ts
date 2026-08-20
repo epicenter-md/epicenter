@@ -37,16 +37,18 @@
  */
 
 import {
-	type DatabaseJson,
-	type DatabaseParseError,
-	parseDatabase,
-} from '@epicenter/database';
+	type DataDefinition,
+	type DataDefinitionParseError,
+	type ParsedDataDefinition,
+	parseData,
+} from '@epicenter/data/definition';
 import type { PrincipalId } from '@epicenter/identity';
 import * as Y from '@y/y';
 import { type DBSchema, deleteDB, type IDBPDatabase, openDB } from 'idb';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { claimDocument, releaseDocument } from './claims.js';
 import {
+	APP_DOCUMENT,
 	copyBytes,
 	replay,
 	SNAPSHOT_FOLD_THRESHOLD,
@@ -58,11 +60,11 @@ import {
 	asData,
 	createAccountStoreOverPort,
 	createDeviceStoreOverPort,
-	type DatabaseView,
+	type DataView,
 	type DataOf,
 	type DeviceStore,
 	StoreError,
-	type UntypedDatabaseView,
+	type UntypedDataView,
 } from './store.js';
 
 // Re-exported so a browser caller's one import site names both kinds beside
@@ -82,83 +84,54 @@ export type BrowserAccountStore = AccountStore & {
 	 * dial is refused again.
 	 *
 	 * Its blast radius is this store's own address and nothing else (ADR-0233),
-	 * so a database discard names one account's replica and can reach neither
+	 * so a definition discard names one account's replica and can reach neither
 	 * the device document nor any other account's.
 	 */
 	discard(): Promise<Result<void, StoreError>>;
 };
 
 /**
- * The durable facts, one object store each (ADR-0238).
+ * The durable facts, one object store each (ADR-0238, ADR-0248).
  *
- * `updates` is the Yjs update log at explicit numeric keys; `outbox` holds
- * locally authored bytes at the ids the store assigned; `meta` holds the
- * format certificate, the cursor, and the document identity. These are
- * persisted names: changing them requires an IndexedDB migration.
+ * `updates` is the per-document Yjs update log at explicit `[document, seq]`
+ * keys, the application document under the reserved `app` name and each row
+ * document under its derived address; `outbox` holds locally authored bytes
+ * at the ids the store assigned, each naming its document; `tombstones`
+ * holds every retired document address; `meta` holds the format certificate,
+ * the cursor, and the document identity. These are persisted names: changing
+ * them requires an IndexedDB migration.
  */
 type BrowserDurableSchema = DBSchema & {
-	updates: { key: number; value: Uint8Array };
-	outbox: { key: number; value: Uint8Array };
+	updates: { key: [string, number]; value: Uint8Array };
+	outbox: { key: number; value: { document: string; bytes: Uint8Array } };
+	tombstones: { key: string; value: 1 };
 	meta: { key: 'format' | 'cursor' | 'document'; value: string | number };
 };
 
 type BrowserDurableDatabase = IDBPDatabase<BrowserDurableSchema>;
 
-const DURABLE_STORES = ['updates', 'outbox', 'meta'] as const;
+const DURABLE_STORES = ['updates', 'outbox', 'tombstones', 'meta'] as const;
 
-/**
- * The superseded version-1 record: the whole in-memory SQLite snapshotted as
- * one value. Read once, during the version-2 upgrade, to migrate what was
- * already durable; never written again.
- */
-type SupersededCheckpoint = {
-	updates: { seq: number; bytes: Uint8Array }[];
-	outbox: { id: number; bytes: Uint8Array }[];
-	cursor: number;
-	format?: string;
-	document?: string;
-};
+/** Every key under one document's chain, in seq order. */
+function documentRange(document: string): IDBKeyRange {
+	return IDBKeyRange.bound([document, 0], [document, Infinity]);
+}
 
 function openIndexedDb(address: string): Promise<BrowserDurableDatabase> {
 	return new Promise((resolve, reject) => {
 		let blocked = false;
-		void openDB<BrowserDurableSchema>(address, 2, {
-			async upgrade(sqlite, oldVersion, _newVersion, transaction) {
+		void openDB<BrowserDurableSchema>(address, 3, {
+			upgrade(sqlite) {
 				for (const name of DURABLE_STORES) {
 					if (!sqlite.objectStoreNames.contains(name)) {
 						sqlite.createObjectStore(name);
 					}
 				}
-				// Version 1 held one checkpoint record. Its contents were already
-				// durable, so they migrate rather than being wiped; the format rule
-				// at load still decides whether they are trusted (ADR-0231).
-				if (
-					oldVersion === 1 &&
-					(sqlite.objectStoreNames as DOMStringList).contains('state')
-				) {
-					const checkpoint = (await transaction
-						.objectStore('state' as never)
-						.get('durable' as never)) as SupersededCheckpoint | undefined;
-					if (checkpoint !== undefined) {
-						const updates = transaction.objectStore('updates');
-						for (const update of checkpoint.updates) {
-							void updates.put(copyBytes(update.bytes), update.seq);
-						}
-						const outbox = transaction.objectStore('outbox');
-						for (const owed of checkpoint.outbox) {
-							void outbox.put(copyBytes(owed.bytes), owed.id);
-						}
-						const meta = transaction.objectStore('meta');
-						if (checkpoint.cursor > 0) {
-							void meta.put(checkpoint.cursor, 'cursor');
-						}
-						if (checkpoint.format !== undefined) {
-							void meta.put(checkpoint.format, 'format');
-						}
-						if (checkpoint.document !== undefined) {
-							void meta.put(checkpoint.document, 'document');
-						}
-					}
+				// Version 1 held one checkpoint record in a `state` store. Nothing
+				// migrates from it: its format certificate predates '3' either way,
+				// so the format rule at load wipes whatever it held (ADR-0231's
+				// cutover, applied again at ADR-0248's).
+				if ((sqlite.objectStoreNames as DOMStringList).contains('state')) {
 					sqlite.deleteObjectStore('state' as never);
 				}
 			},
@@ -183,7 +156,7 @@ function openIndexedDb(address: string): Promise<BrowserDurableDatabase> {
 	});
 }
 
-/** Delete one store's IndexedDB database whole. Our own connection is closed first. */
+/** Delete one store's IndexedDB definition whole. Our own connection is closed first. */
 function deleteIndexedDb(address: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		let blocked = false;
@@ -220,32 +193,30 @@ async function openIdbBacking(
 			const durable = await openIndexedDb(address);
 
 			// The format at open, exactly as the SQLite engine enforces it
-			// (ADR-0231): a record holding state without a certificate predates
-			// the document identity and is untrusted whole, so it is wiped and
-			// the replica rejoins from zero; a fresh record is simply certified.
-			// One transaction, so a crash converges at the next open either way.
+			// (ADR-0231, ADR-0248): a record certified under another format, or
+			// holding state without a certificate, is untrusted whole, so it is
+			// wiped and the replica rejoins from zero; a fresh record is simply
+			// certified. One transaction, so a crash converges at the next open.
 			const enforce = durable.transaction(DURABLE_STORES, 'readwrite');
 			const meta = enforce.objectStore('meta');
 			const format = (await meta.get('format')) as string | undefined;
-			if (format === undefined) {
-				const held =
-					(await enforce.objectStore('updates').count()) +
-					(await enforce.objectStore('outbox').count()) +
-					(await meta.count());
-				if (held > 0) {
-					await enforce.objectStore('updates').clear();
-					await enforce.objectStore('outbox').clear();
-					await meta.clear();
-				}
+			if (format !== STORE_FORMAT) {
+				await enforce.objectStore('updates').clear();
+				await enforce.objectStore('outbox').clear();
+				await enforce.objectStore('tombstones').clear();
+				await meta.clear();
 				void meta.put(STORE_FORMAT, 'format');
 			}
 			await enforce.done;
 
 			const read = durable.transaction(DURABLE_STORES, 'readonly');
-			const updateRows = await read.objectStore('updates').getAll();
+			const appRows = await read
+				.objectStore('updates')
+				.getAll(documentRange(APP_DOCUMENT));
 			const updateKeys = await read.objectStore('updates').getAllKeys();
 			const outboxRows = await read.objectStore('outbox').getAll();
 			const outboxKeys = await read.objectStore('outbox').getAllKeys();
+			const tombstones = await read.objectStore('tombstones').getAllKeys();
 			const cursor = (await read.objectStore('meta').get('cursor')) as
 				| number
 				| undefined;
@@ -256,37 +227,50 @@ async function openIdbBacking(
 
 			const loaded: DurableSnapshot = {
 				// `getAll` returns key order, which is the append order.
-				updates: updateRows.map((bytes) => copyBytes(bytes)),
-				outbox: outboxRows.map((bytes, index) => ({
+				updates: appRows.map((bytes) => copyBytes(bytes)),
+				outbox: outboxRows.map((row, index) => ({
 					id: outboxKeys[index] as number,
-					bytes: copyBytes(bytes),
+					document: row.document,
+					bytes: copyBytes(row.bytes),
 				})),
 				cursor: cursor ?? 0,
 				identity,
+				tombstones: tombstones.map((key) => String(key)),
 			};
 
-			// The port's own bookkeeping, committed only when a batch lands so a
-			// failed transaction never advances it.
-			let nextSeq =
-				updateKeys.reduce<number>((max, key) => Math.max(max, key), 0) + 1;
-			let updateCount = updateRows.length;
+			// The port's own bookkeeping, per document, committed only when a
+			// batch lands so a failed transaction never advances it.
+			const nextSeq = new Map<string, number>();
+			const updateCount = new Map<string, number>();
+			for (const key of updateKeys) {
+				const [document, seq] = key as [string, number];
+				nextSeq.set(document, Math.max(nextSeq.get(document) ?? 1, seq + 1));
+				updateCount.set(document, (updateCount.get(document) ?? 0) + 1);
+			}
 
 			const port: DurablePort = {
 				async commit(ops: readonly DurableOp[]): Promise<void> {
 					const transaction = durable.transaction(DURABLE_STORES, 'readwrite');
 					const updates = transaction.objectStore('updates');
 					const outbox = transaction.objectStore('outbox');
+					const tombstonesStore = transaction.objectStore('tombstones');
 					const metaStore = transaction.objectStore('meta');
-					let seq = nextSeq;
-					let count = updateCount;
+					const seqs = new Map(nextSeq);
+					const counts = new Map(updateCount);
+					const touched = new Set<string>();
 					for (const op of ops) {
 						switch (op.kind) {
 							case 'append': {
-								void updates.put(copyBytes(op.bytes), seq);
-								seq += 1;
-								count += 1;
+								const seq = seqs.get(op.document) ?? 1;
+								void updates.put(copyBytes(op.bytes), [op.document, seq]);
+								seqs.set(op.document, seq + 1);
+								counts.set(op.document, (counts.get(op.document) ?? 0) + 1);
+								touched.add(op.document);
 								if (op.outboxId !== undefined) {
-									void outbox.put(copyBytes(op.bytes), op.outboxId);
+									void outbox.put(
+										{ document: op.document, bytes: copyBytes(op.bytes) },
+										op.outboxId,
+									);
 								}
 								break;
 							}
@@ -300,18 +284,51 @@ async function openIdbBacking(
 								void outbox.delete(IDBKeyRange.upperBound(op.throughId));
 								break;
 							case 'replaceOutbox': {
-								void outbox.delete(IDBKeyRange.upperBound(op.throughId));
-								void outbox.put(copyBytes(op.merged), op.throughId);
+								// One document's covered entries collapse to one merged
+								// entry at its own highest id; other documents' entries
+								// keep their places, so the walk is per entry.
+								let at = await outbox.openCursor(
+									IDBKeyRange.upperBound(op.throughId),
+								);
+								while (at !== null) {
+									if (at.value.document === op.document) {
+										await at.delete();
+									}
+									at = await at.continue();
+								}
+								void outbox.put(
+									{ document: op.document, bytes: copyBytes(op.merged) },
+									op.throughId,
+								);
+								break;
+							}
+							case 'retire': {
+								void tombstonesStore.put(1, op.document);
+								void updates.delete(documentRange(op.document));
+								seqs.delete(op.document);
+								counts.delete(op.document);
+								touched.delete(op.document);
+								let at = await outbox.openCursor();
+								while (at !== null) {
+									if (at.value.document === op.document) {
+										await at.delete();
+									}
+									at = await at.continue();
+								}
 								break;
 							}
 						}
 					}
-					// The same fold the SQLite engine applies, inside the same
-					// transaction as the appends that crossed the threshold: read
-					// the whole chain, replay it into one baseline, rewrite. The
-					// replay is synchronous, so the transaction stays active.
-					if (count >= SNAPSHOT_FOLD_THRESHOLD) {
-						const chain = await updates.getAll();
+					// The same per-document fold the SQLite engine applies, inside
+					// the same transaction as the appends that crossed the
+					// threshold: read the chain, replay it into one baseline,
+					// rewrite. The replay is synchronous, so the transaction stays
+					// active.
+					for (const document of touched) {
+						if ((counts.get(document) ?? 0) < SNAPSHOT_FOLD_THRESHOLD) {
+							continue;
+						}
+						const chain = await updates.getAll(documentRange(document));
 						const folded = replay(
 							chain.map((bytes, index) => ({
 								seq: index + 1,
@@ -324,14 +341,34 @@ async function openIdbBacking(
 						} finally {
 							folded.destroy();
 						}
-						await updates.clear();
-						void updates.put(baseline, 1);
-						seq = 2;
-						count = 1;
+						void updates.delete(documentRange(document));
+						void updates.put(baseline, [document, 1]);
+						seqs.set(document, 2);
+						counts.set(document, 1);
 					}
 					await transaction.done;
-					nextSeq = seq;
-					updateCount = count;
+					for (const [document, seq] of seqs) nextSeq.set(document, seq);
+					for (const document of [...nextSeq.keys()]) {
+						if (!seqs.has(document)) nextSeq.delete(document);
+					}
+					for (const [document, count] of counts) {
+						updateCount.set(document, count);
+					}
+					for (const document of [...updateCount.keys()]) {
+						if (!counts.has(document)) updateCount.delete(document);
+					}
+				},
+				async readDocument(document: string): Promise<Uint8Array[]> {
+					const rows = await durable.getAll('updates', documentRange(document));
+					return rows.map((bytes) => copyBytes(bytes));
+				},
+				async listDocuments(): Promise<string[]> {
+					const keys = await durable.getAllKeys('updates');
+					const documents = new Set<string>();
+					for (const key of keys) {
+						documents.add((key as [string, number])[0]);
+					}
+					return [...documents];
 				},
 			};
 
@@ -346,26 +383,26 @@ async function openIdbBacking(
  * (ADR-0233):
  *
  * ```text
- * epicenter/<database id>/device
- * epicenter/<database id>/account/<principal id>
+ * epicenter/<definition id>/device
+ * epicenter/<definition id>/account/<principal id>
  * ```
  *
  * A browser application keeps one device document and one retained account
  * replica per account, and may hold them open at once. The device document
- * never joins database sync and survives every sign-in and sign-out; an
+ * never joins definition sync and survives every sign-in and sign-out; an
  * account replica is this device's replica of one principal's current
  * authority document (ADR-0231), retained across sign-out too, which is why
  * it is addressed by the account that owns it rather than by the application
  * alone.
  *
- * Three identities, none of them collapsed into another: the database id says
+ * Three identities, none of them collapsed into another: the definition id says
  * which application, the principal says whose replica this is, and the
  * authority document id says which current Yjs document that replica belongs
  * to. Only the first two are in the name. The third lives inside the store
- * because it changes on rebuild, and a rebuilt database has to stay at the
+ * because it changes on rebuild, and a rebuilt definition has to stay at the
  * same address while its contents are discarded.
  *
- * A database id is dot-separated lowercase labels, so it holds no `/`: the
+ * A definition id is dot-separated lowercase labels, so it holds no `/`: the
  * segment after `epicenter/` is always exactly the application, and no address
  * can be read as another one.
  */
@@ -380,10 +417,10 @@ function accountAddress(databaseId: string, principalId: PrincipalId): string {
 /**
  * Delete the browser storage that came before the account-scoped address.
  *
- * Two superseded shapes, neither of them read: `epicenter-store-<database id>`,
- * the single database from before an application had two documents, which held
+ * Two superseded shapes, neither of them read: `epicenter-store-<definition id>`,
+ * the single definition from before an application had two documents, which held
  * anonymous work or an account replica indistinguishably; and
- * `epicenter-store-<database id>#private` / `#database`, the per-application
+	 * `epicenter-store-<definition id>#private` / `#database`, the per-application
  * split that separated the two documents but left an account replica with no
  * owner, so a second account would have opened the first account's bytes.
  * Neither is the final address, so both are deleted rather than renamed,
@@ -421,22 +458,22 @@ function deleteSupersededStorage(
 }
 
 /**
- * Open this browser's device-owned document for the application this database
+ * Open this browser's device-owned document for the application this definition
  * names.
  *
  * This document has no remote authority, so it carries neither an outbox nor
  * replica-only verbs, and no verb that could delete it. It can remain open
  * while an account replica is open too.
  */
-export async function openDevice<const TDatabase extends DatabaseJson>(
-	database: TDatabase,
+export async function openDevice<const TDatabase extends DataDefinition>(
+	definition: TDatabase,
 ): Promise<
-	Result<DataOf<TDatabase, DeviceStore>, StoreError | DatabaseParseError>
+	Result<DataOf<TDatabase, DeviceStore>, StoreError | DataDefinitionParseError>
 > {
 	// Parsed before anything is claimed or opened: a declaration may arrive as
 	// data, and a refusal here is a boot outcome rather than a programmer
 	// error (ADR-0240).
-	const { data: parsed, error: parseError } = parseDatabase(database);
+	const { data: parsed, error: parseError } = parseData(definition);
 	if (parseError !== null) return Err(parseError);
 
 	const address = deviceAddress(parsed.id);
@@ -456,10 +493,10 @@ export async function openDevice<const TDatabase extends DatabaseJson>(
 	// cannot decode, which is "the store could not read its durable record":
 	// contained so a corrupt record refuses the boot instead of leaking the
 	// claim and the open connections.
-	let parts: { store: DeviceStore; view: UntypedDatabaseView };
+	let parts: { store: DeviceStore; view: UntypedDataView; definition: ParsedDataDefinition };
 	try {
 		parts = createDeviceStoreOverPort({
-			database: parsed,
+			definition: parsed,
 			durable: backing.port,
 			loaded: backing.loaded,
 			dispose: () => {
@@ -472,32 +509,33 @@ export async function openDevice<const TDatabase extends DatabaseJson>(
 		releaseDocument(address);
 		return StoreError.StorageFailed({ cause });
 	}
-	const { store, view } = parts;
+	const { store, view, definition: parsedDefinition } = parts;
 
 	return Ok(
 		asData<TDatabase, DeviceStore>(
 			store,
 			// Through `unknown` deliberately: comparing the untyped view with
-			// `DatabaseView<TDatabase>` re-enters the per-field arktype
+			// `DataView<TDatabase>` re-enters the per-field descriptor
 			// instantiation and exceeds the depth limit.
-			view as unknown as DatabaseView<TDatabase>,
+			view as unknown as DataView<TDatabase>,
+			parsedDefinition.definition,
 		),
 	);
 }
 
 /** Open this device's retained replica of one account's document. */
-export async function openAccount<const TDatabase extends DatabaseJson>(
-	database: TDatabase,
+export async function openAccount<const TDatabase extends DataDefinition>(
+	definition: TDatabase,
 	{ principalId }: { principalId: PrincipalId },
 ): Promise<
 	Result<
 		DataOf<TDatabase, BrowserAccountStore>,
-		StoreError | DatabaseParseError
+		StoreError | DataDefinitionParseError
 	>
 > {
 	if (principalId.trim() === '') return StoreError.Unaddressable();
 
-	const { data: parsed, error: parseError } = parseDatabase(database);
+	const { data: parsed, error: parseError } = parseData(definition);
 	if (parseError !== null) return Err(parseError);
 
 	const address = accountAddress(parsed.id, principalId);
@@ -515,10 +553,10 @@ export async function openAccount<const TDatabase extends DatabaseJson>(
 
 	// Contained for the same reason the device open is: a hydration replay
 	// that throws must refuse the boot, not leak the claim.
-	let parts: { store: AccountStore; view: UntypedDatabaseView };
+	let parts: { store: AccountStore; view: UntypedDataView; definition: ParsedDataDefinition };
 	try {
 		parts = createAccountStoreOverPort({
-			database: parsed,
+			definition: parsed,
 			durable: backing.port,
 			loaded: backing.loaded,
 			dispose: () => {
@@ -531,14 +569,14 @@ export async function openAccount<const TDatabase extends DatabaseJson>(
 		releaseDocument(address);
 		return StoreError.StorageFailed({ cause });
 	}
-	const { store, view } = parts;
+	const { store, view, definition: parsedDefinition } = parts;
 
 	const replicaStore: BrowserAccountStore = Object.freeze({
 		...store,
 		async discard(): Promise<Result<void, StoreError>> {
 			// Dispose first: the engine drains its queue and stops, and our own
 			// IndexedDB connection closes, so the delete is not blocked by
-			// ourselves and no flush can re-create the database mid-delete.
+			// ourselves and no flush can re-create the definition mid-delete.
 			await store[Symbol.asyncDispose]();
 			return tryAsync({
 				try: () => deleteIndexedDb(address),
@@ -550,7 +588,8 @@ export async function openAccount<const TDatabase extends DatabaseJson>(
 	return Ok(
 		asData<TDatabase, BrowserAccountStore>(
 			replicaStore,
-			view as unknown as DatabaseView<TDatabase>,
+			view as unknown as DataView<TDatabase>,
+			parsedDefinition.definition,
 		),
 	);
 }

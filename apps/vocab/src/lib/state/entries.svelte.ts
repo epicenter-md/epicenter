@@ -62,13 +62,12 @@ export function createEntriesState({ data }: { data: VocabData }) {
 			const trimmed = text.trim();
 			if (!trimmed) return false;
 			if (entries.some((entry) => entry.text === trimmed)) return false;
-			const { error } = data.tables.entries.create({
+			data.tables.entries.create({
 				text: trimmed,
 				note: '',
 				stage: 'new',
 				createdAt: InstantString.now(),
 			});
-			if (error !== null) throw error;
 			return true;
 		},
 

@@ -340,28 +340,43 @@ export function createSyncClient({
 	}
 
 	/**
-	 * Answer a request for a snapshot with this replica's whole state.
+	 * Answer a request for a snapshot with this replica's whole state: the
+	 * application document and every row document, one envelope (ADR-0248).
 	 *
 	 * Refused unless this replica is exactly at the position asked for, and
 	 * unless it is holding no update whose dependencies never arrived. Both
 	 * would produce a snapshot missing data, and a snapshot replaces history
 	 * rather than adding to it, so what it misses is gone for everybody.
+	 *
+	 * The encode is asynchronous, because closed row documents are read from
+	 * storage. The position is re-checked after it: state that moved meanwhile
+	 * would stamp newer content with an older position, so the offer is
+	 * dropped instead, and the authority simply asks again.
 	 */
 	function offerSnapshot(position: number): Result<void, SyncClientError> {
 		if (socket === undefined || position !== cursor) return Ok(undefined);
 		if (engine.hasUnresolvedDependencies()) return Ok(undefined);
-		const chunks = intoChunks(store.encodeStateSince(), CHUNK_BYTES);
-		for (const [index, chunk] of chunks.entries()) {
-			socket.send(
-				encodeFrame({
-					kind: 'offer',
-					position,
-					chunk: index,
-					chunks: chunks.length,
-					bytes: chunk,
-				}),
-			);
-		}
+		void engine.encodeSnapshot().then(
+			(bytes) => {
+				if (disposed || socket === undefined || position !== cursor) return;
+				const sender = socket;
+				const chunks = intoChunks(bytes, CHUNK_BYTES);
+				for (const [index, chunk] of chunks.entries()) {
+					sender.send(
+						encodeFrame({
+							kind: 'offer',
+							position,
+							chunk: index,
+							chunks: chunks.length,
+							bytes: chunk,
+						}),
+					);
+				}
+			},
+			// Best effort by design: a snapshot that could not be built is not
+			// owed, and the authority re-asks while the tail keeps growing.
+			() => undefined,
+		);
 		return Ok(undefined);
 	}
 

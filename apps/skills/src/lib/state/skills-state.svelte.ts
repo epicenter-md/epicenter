@@ -80,18 +80,16 @@ export function createSkillsState({ data }: { data: SkillsData }) {
 
 		/** Apply a change, or throw so the caller's toast can present it. */
 		createSkill(name: string): string {
-			const { data: skill, error } = data.tables.skills.create(
-				{
-					sourceId: crypto.randomUUID(),
-					name,
-					description: 'TODO: describe when and why to use this skill.',
-					updatedAt: InstantString.now(),
-				},
-				// Named here, once, at the only moment there is exactly one creator
-				// (ADR-0215).
-				{ document: [SKILL_CONTENT] },
-			);
-			if (error !== null) throw error;
+			const skill = data.tables.skills.create({
+				sourceId: crypto.randomUUID(),
+				name,
+				description: 'TODO: describe when and why to use this skill.',
+				license: null,
+				compatibility: null,
+				metadata: null,
+				allowedTools: null,
+				updatedAt: InstantString.now(),
+			});
 			selectedSkillId = skill.id;
 			return skill.id;
 		},
@@ -117,11 +115,11 @@ export function createSkillsState({ data }: { data: SkillsData }) {
 		},
 
 		createReference(skillId: string, path: string): string {
-			const { data: reference, error } = data.tables.skillReferences.create(
-				{ skillId, path, updatedAt: InstantString.now() },
-				{ document: [SKILL_CONTENT] },
-			);
-			if (error !== null) throw error;
+			const reference = data.tables.skillReferences.create({
+				skillId,
+				path,
+				updatedAt: InstantString.now(),
+			});
 			return reference.id;
 		},
 

@@ -268,24 +268,11 @@ export function createWhisperingRecordings({
 				...value,
 				audioBlobId: asStoredBlobId(value.audioBlobId),
 				uploadedAt: null,
+				transcriptionStatus: 'pending',
+				transcriptionCompletedAt: null,
+				transcriptionError: null,
 			});
-			if (written.error !== null) {
-				// The row never existed, so the already-committed audio is orphaned.
-				// Removing it is asynchronous and this verb is not, so the cleanup is
-				// launched and its own failure reported rather than joined: a caller
-				// holding a refused create has nothing to do with a second error, and
-				// leaking the bytes silently is the outcome worth avoiding.
-				void blobs.local.delete(value.audioBlobId).then(({ error }) => {
-					if (error !== null) {
-						throw new AggregateError(
-							[written.error, error],
-							'Could not create the recording row or clean up its stored audio.',
-						);
-					}
-				});
-				throw written.error;
-			}
-			return asRecording(written.data);
+			return asRecording(written);
 		},
 		patch(id, partial) {
 			// Structural typing lets a whole row flow in as the partial, so drop

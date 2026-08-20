@@ -1,7 +1,7 @@
 /**
  * What a developer gets from `@epicenter/data`.
  *
- * The store, the transport that carries it, and the vocabulary a database is
+ * The store, the transport that carries it, and the vocabulary a data definition is
  * declared in. Runtime openers live at their own entry points, because a Bun
  * opener imports `bun:sqlite` and a browser opener imports a WASM build, and
  * neither belongs in a barrel the other has to load.
@@ -13,8 +13,8 @@
  * with its consumers (ADR-0227), so a developer arriving here finds one store
  * rather than a choice between two.
  *
- * Each opener is called `open` and takes the database, because a database
- * names the store it opens (ADR-0229). The subpath already says which adapter,
+ * Each opener is called `open` and takes the definition, because its id names
+ * the store it opens (ADR-0229). The subpath already says which adapter,
  * so the identifier does not repeat it.
  *
  * The transport answers at `./sync` and nowhere else. This barrel used to
@@ -24,20 +24,34 @@
 
 export type {
 	ConformanceIssue,
+	DataDefinition,
+	DataDefinitionJson,
 	JsonObject,
 	JsonValue,
 	RowAddress,
-} from '@epicenter/database';
+	RowOf,
+} from './definition/index.js';
 export {
-	type DatabaseJson,
-	type DatabaseParseError,
-	defineDatabase,
+	DataDefinitionParseError,
+	defineData,
 	defineKv,
 	defineTable,
-	parseDatabase,
-	type RowOf,
-	RowWriteError,
-} from '@epicenter/database';
+	documentAddress,
+	field,
+	parseData,
+} from './definition/index.js';
+export type {
+	DocumentError,
+	DocumentManager,
+	RowDocumentHandle,
+} from './store/documents.js';
+export {
+	decodeEnvelope,
+	encodeEnvelope,
+	type EnvelopeError,
+	type EnvelopeSection,
+} from './store/envelope.js';
+export { APP_DOCUMENT } from './store/log.js';
 export { SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
 export type {
 	DurableOp,
@@ -50,8 +64,8 @@ export type {
 export {
 	type AccountStore,
 	type ApplyFailedError,
-	type DatabaseStoreBase,
-	type DatabaseView,
+	type DataStoreBase,
+	type DataView,
 	type DataOf,
 	type DeviceStore,
 	type KvHandle,
@@ -59,7 +73,6 @@ export {
 	type NonconformingValue,
 	type Row,
 	type RowAbsentError,
-	type RowDocument,
 	StoreError,
 	type StorePressure,
 	StoreUnusableError,

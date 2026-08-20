@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * The reclaim walk and the rebuild client, against real stores and a
  * scripted authority.
@@ -11,10 +12,12 @@
  * into adoption, which is also why a crash-replay can never publish twice.
  */
 import { describe, expect, test } from 'bun:test';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import type { Result } from 'wellcrafted/result';
 
 import { openMemory } from '../store/bun.js';
+import { encodeEnvelope } from '../store/envelope.js';
+import { APP_DOCUMENT } from '../store/log.js';
 import { type DataOf, syncEngineOf } from '../store/store.js';
 import {
 	type RebuiltState,
@@ -23,15 +26,26 @@ import {
 	type StoreTransport,
 } from './rebuild.js';
 
-const database = defineDatabase({
+const database = defineData({
 	id: 'so.epicenter.rebuild',
-	kv: { theme: "'light'|'dark' = 'light'" },
-	tables: { notes: { title: 'string' } },
+	kv: { theme: field.select(['light', 'dark']) },
+	tables: { notes: { title: field.string() } },
 });
 
-function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
-	if (result.error !== null) throw result.error;
-	return result.data as TValue;
+function expectOk<TValue, TError>(
+	result: Result<TValue, TError> | TValue,
+): TValue {
+	if (
+		typeof result === 'object' &&
+		result !== null &&
+		'data' in result &&
+		'error' in result
+	) {
+		const outcome = result as Result<TValue, TError>;
+		if (outcome.error !== null) throw outcome.error;
+		return outcome.data as TValue;
+	}
+	return result as TValue;
 }
 
 /**
@@ -41,22 +55,19 @@ function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
  * while real churn leaves skeletons that cannot merge, which is the dead
  * weight ADR-0219 priced at about two items per deleted row.
  */
-function agedApplication(): DataOf<typeof database> {
+async function agedApplication(): Promise<DataOf<typeof database>> {
 	const app = openMemory(database);
 	const keep: string[] = [];
 	for (let index = 0; index < 100; index += 1) {
-		const row = expectOk(
-			app.tables.notes.create(
-				{ title: `note ${index}` },
-				{ document: ['body'] },
-			),
-		);
-		const body = app.tables.notes.document(row.id)?.get('body', 'text');
-		if (body === undefined) throw new Error('the row has no document');
+		const row = expectOk(app.tables.notes.create({ title: `note ${index}` }));
+		const opened = expectOk(await app.tables.notes.document.open(row.id));
+		if (opened === undefined) throw new Error('the row has no document');
+		const body = opened.get('body', 'text');
 		body.applyDelta(body.change.insert('plain ') as never);
 		body.applyDelta(
 			body.change.retain(6).insert('bold', { bold: true }) as never,
 		);
+		opened[Symbol.dispose]();
 		keep.push(row.id);
 		// Touch an older survivor so clock ranges interleave.
 		const older = keep[Math.max(0, keep.length - 3)] as string;
@@ -69,10 +80,17 @@ function agedApplication(): DataOf<typeof database> {
 	return app;
 }
 
+/** One row's body root, opened for reading. */
+async function bodyOf(app: DataOf<typeof database>, rowId: string) {
+	const opened = expectOk(await app.tables.notes.document.open(rowId));
+	if (opened === undefined) throw new Error('a row lost its document');
+	return opened.get('body', 'text');
+}
+
 describe('rebuildDocument re-encodes live state into new identities (ADR-0231)', () => {
-	test('same rows, same ids, same kv, same prose and marks', () => {
-		const source = agedApplication();
-		const reborn = expectOk(rebuildDocument(source.store));
+	test('same rows, same ids, same kv, same prose and marks', async () => {
+		const source = await agedApplication();
+		const reborn = expectOk(await rebuildDocument(source.store));
 
 		const adopted = openMemory(database);
 		expectOk(syncEngineOf(adopted.store).applyRemote(reborn));
@@ -84,13 +102,8 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 		expect(expectOk(adopted.kv.get())).toEqual(expectOk(source.kv.get()));
 
 		for (const row of before) {
-			const original = source.tables.notes
-				.document(row.id)
-				?.get('body', 'text');
-			const copied = adopted.tables.notes.document(row.id)?.get('body', 'text');
-			if (original === undefined || copied === undefined) {
-				throw new Error('a row lost its document');
-			}
+			const original = await bodyOf(source, row.id);
+			const copied = await bodyOf(adopted, row.id);
 			// Deep deltas rather than toJSON, because a shallow comparison passes
 			// while silently dropping every formatting mark.
 			expect(JSON.stringify(copied.toDeltaDeep())).toBe(
@@ -100,9 +113,9 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 		}
 	});
 
-	test('the tombstones are actually gone: the struct count falls', () => {
-		const source = agedApplication();
-		const reborn = expectOk(rebuildDocument(source.store));
+	test('the tombstones are actually gone: the struct count falls', async () => {
+		const source = await agedApplication();
+		const reborn = expectOk(await rebuildDocument(source.store));
 		const adopted = openMemory(database);
 		expectOk(syncEngineOf(adopted.store).applyRemote(reborn));
 
@@ -115,25 +128,25 @@ describe('rebuildDocument re-encodes live state into new identities (ADR-0231)',
 		expect(rebornItems).toBeLessThan(agedItems / 3);
 	});
 
-	test('a replica holding unresolved dependencies is refused', () => {
-		// Prose whose container never arrived: Yjs buffers it silently (a bare
+	test('a replica holding unresolved dependencies is refused', async () => {
+		// A field edit whose row never arrived: Yjs buffers it silently (a bare
 		// clock gap integrates fine in @y/y 14; a missing PARENT struct is what
 		// pends), and a state built over that hole must not become the baseline.
 		const writer = openMemory(database);
-		const row = expectOk(
-			writer.tables.notes.create({ title: 'base' }, { document: ['body'] }),
-		);
-		const body = writer.tables.notes.document(row.id)?.get('body', 'text');
-		if (body === undefined) throw new Error('the row has no document');
-		const beforeProse = writer.store.stateVector();
-		body.applyDelta(body.change.insert('orphaned prose') as never);
-		const increment = writer.store.encodeStateSince(beforeProse);
+		const row = expectOk(writer.tables.notes.create({ title: 'base' }));
+		const beforeEdit = writer.store.stateVector();
+		expectOk(writer.tables.notes.update(row.id, { title: 'edited' }));
+		const increment = writer.store.encodeStateSince(beforeEdit);
 
 		const receiver = openMemory(database);
-		expectOk(syncEngineOf(receiver.store).applyRemote(increment));
+		expectOk(
+			syncEngineOf(receiver.store).applyRemote(
+				encodeEnvelope([{ document: APP_DOCUMENT, bytes: increment }]),
+			),
+		);
 		expect(syncEngineOf(receiver.store).hasUnresolvedDependencies()).toBe(true);
 
-		expect(rebuildDocument(receiver.store).error?.name).toBe(
+		expect((await rebuildDocument(receiver.store)).error?.name).toBe(
 			'UnresolvedDependencies',
 		);
 	});

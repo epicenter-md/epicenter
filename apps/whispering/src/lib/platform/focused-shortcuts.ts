@@ -105,7 +105,7 @@ export function createFocusedShortcuts({
 
 	/**
 	 * The shipped binding, which is release-local product policy rather than a
-	 * workspace default: a workspace cannot default an array, so `keys` defaults to null
+	 * application policy: the definition stores null when no shortcut is configured,
 	 * and "no shortcut configured" and "the shipped shortcut" would otherwise be
 	 * the same stored value (`workspace/index.ts`).
 	 */

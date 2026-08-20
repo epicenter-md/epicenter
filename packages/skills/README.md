@@ -6,9 +6,9 @@ construct browser or Node runtimes, expose Yjs GUIDs, or register actions.
 
 ```ts
 import { openDevice } from '@epicenter/data/browser';
-import { skillsWorkspace } from '@epicenter/skills';
+import { skillsDefinition } from '@epicenter/skills';
 
-const { data: skills, error } = await openDevice(skillsWorkspace);
+const { data: skills, error } = await openDevice(skillsDefinition);
 if (error !== null) return handle(error);
 const { rows } = skills.tables.skills.list();
 ```

@@ -1,3 +1,4 @@
+import { field, jsonValue } from '@epicenter/data/definition';
 /**
  * Skills data tests, against the real workspace through the Bun store.
  *
@@ -18,38 +19,48 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { open } from '@epicenter/data/bun';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import { InstantString } from '@epicenter/field';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
 import {
 	SKILL_CONTENT,
 	type SkillsData,
-	skillsWorkspace,
+	skillsDefinition,
 } from './workspace.js';
 
 /** The Skills workspace as an earlier release declared it, before `sourceId`. */
-const historicalSkillsWorkspace = defineDatabase({
+const historicalSkillsWorkspace = defineData({
 	id: 'so.epicenter.skills',
+	kv: {},
 	tables: {
 		skills: {
-			name: 'string',
-			description: 'string',
-			updatedAt: 'string.date.iso',
+			name: field.string(),
+			description: field.string(),
+			license: field.nullable(field.string()),
+			compatibility: field.nullable(field.string()),
+			metadata: field.nullable(field.json(jsonValue)),
+			allowedTools: field.nullable(field.string()),
+			updatedAt: field.instant(),
 		},
 	},
 });
 
 async function openSkills(root: string) {
-	const opened = await open(skillsWorkspace, { root });
+	const opened = await open(skillsDefinition, { root });
 	if (opened.error !== null) throw opened.error;
 	return opened.data;
 }
 
-function readInstructions(data: SkillsData, skillId: string): string {
-	const content = data.tables.skills.document(skillId)?.get(SKILL_CONTENT);
-	if (content === undefined) throw new Error(`Skill '${skillId}' has no row`);
-	return content.toString();
+async function readInstructions(
+	data: SkillsData,
+	skillId: string,
+): Promise<string> {
+	const opened = await data.tables.skills.document.open(skillId);
+	if (opened.error !== null) throw opened.error;
+	using handle = opened.data;
+	if (handle === undefined) throw new Error(`Skill '${skillId}' has no row`);
+	return handle.get(SKILL_CONTENT).toString();
 }
 
 test('a stricter Skills workspace exposes nonconformance until an update repairs it', async () => {
@@ -60,16 +71,19 @@ test('a stricter Skills workspace exposes nonconformance until an update repairs
 		// hide it (ADR-0125).
 		const historical = await open(historicalSkillsWorkspace, { root });
 		if (historical.error !== null) throw historical.error;
-		const oldSkill = expectOk(
-			historical.data.tables.skills.create({
-				name: 'writing-voice',
-				description: 'Write directly',
-				updatedAt: InstantString.now(),
-			}),
-		);
+		const oldSkill = historical.data.tables.skills.create({
+			name: 'writing-voice',
+			description: 'Write directly',
+			license: null,
+			compatibility: null,
+			metadata: null,
+			allowedTools: null,
+			updatedAt: InstantString.now(),
+		});
 		await historical.data[Symbol.asyncDispose]();
 
-		await using data = await openSkills(root);
+		const data = await openSkills(root);
+		await using _data = data;
 		expect(expectOk(data.tables.skills.get('aaaaaaaaaaaaaaaaaaaaaaaa'))).toBe(
 			undefined,
 		);
@@ -106,41 +120,44 @@ test("a skill's instructions live under its own row id", async () => {
 	try {
 		let writtenTo: string;
 		{
-			await using data = await openSkills(root);
-			const written = expectOk(
-				data.tables.skills.create(
-					{
-						sourceId: 'agentskills-writing-voice',
-						name: 'writing-voice',
-						description: 'Write directly',
-						updatedAt: InstantString.now(),
-					},
-					{ document: [SKILL_CONTENT] },
-				),
-			);
+			const data = await openSkills(root);
+			await using _data = data;
+			const written = data.tables.skills.create({
+				sourceId: 'agentskills-writing-voice',
+				name: 'writing-voice',
+				description: 'Write directly',
+				license: null,
+				compatibility: null,
+				metadata: null,
+				allowedTools: null,
+				updatedAt: InstantString.now(),
+			});
 			writtenTo = written.id;
-			const content = data.tables.skills
-				.document(writtenTo)
-				?.get(SKILL_CONTENT);
-			if (content === undefined) throw new Error('the row has no document');
+			const opened = await data.tables.skills.document.open(writtenTo);
+			if (opened.error !== null) throw opened.error;
+			using handle = opened.data;
+			if (handle === undefined) throw new Error('the row has no document');
+			const content = handle.get(SKILL_CONTENT);
 			content.applyDelta(content.change.insert('Keep it concise.') as never);
 
-			const other = expectOk(
-				data.tables.skills.create(
-					{
-						sourceId: 'agentskills-other',
-						name: 'other',
-						description: 'Another skill',
-						updatedAt: InstantString.now(),
-					},
-					{ document: [SKILL_CONTENT] },
-				),
-			);
-			expect(readInstructions(data, other.id)).toBe('');
+			const other = data.tables.skills.create({
+				sourceId: 'agentskills-other',
+				name: 'other',
+				description: 'Another skill',
+				license: null,
+				compatibility: null,
+				metadata: null,
+				allowedTools: null,
+				updatedAt: InstantString.now(),
+			});
+			expect(await readInstructions(data, other.id)).toBe('');
 		}
 
-		await using reopened = await openSkills(root);
-		expect(readInstructions(reopened, writtenTo)).toBe('Keep it concise.');
+		const reopened = await openSkills(root);
+		await using _reopened = reopened;
+		expect(await readInstructions(reopened, writtenTo)).toBe(
+			'Keep it concise.',
+		);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -161,7 +178,8 @@ test('filesystem import stores the metadata id as sourceId, not as the row id', 
 		);
 		writeFileSync(join(skillRoot, 'references', 'examples.md'), '# Examples\n');
 
-		await using data = await openSkills(storageRoot);
+		const data = await openSkills(storageRoot);
+		await using _data = data;
 		const imported = await importSkillsFromDisk({ data, dir: inputRoot });
 		expect(imported.created).toBe(1);
 		expect(imported.nonconforming).toEqual([]);

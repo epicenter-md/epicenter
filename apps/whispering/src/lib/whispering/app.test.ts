@@ -8,7 +8,7 @@
  *
  * Key behaviors:
  * - A signed-out boot has one document and never dials
- * - Settings read their declared defaults and survive a restart
+ * - Settings recover application defaults and survive a restart
  * - Settings stay on the DEVICE document across signing in, so they neither
  *   travel to another machine nor disappear when an account opens
  * - Recordings written signed out stay on the device and are not shown to a
@@ -20,6 +20,7 @@
  */
 import 'fake-indexeddb/auto';
 import { expect, test } from 'bun:test';
+import { InstantString } from '@epicenter/field';
 
 // The recipes domain IS reactive state, so the runes are shimmed to their
 // non-reactive meaning (the pattern the other runtime tests use). These
@@ -38,7 +39,7 @@ import type { AuthClient } from '@epicenter/auth';
 import type { BlobStore } from '@epicenter/blobs';
 import { encodeFrame } from '@epicenter/data/sync';
 import { Ok } from 'wellcrafted/result';
-import { whisperingDatabase } from '../workspace';
+import { whisperingDefinition } from '../workspace';
 import { openWhisperingApp, type WhisperingAppDependencies } from './app';
 
 const local: BlobStore = {
@@ -163,8 +164,11 @@ function recordingFields(title: string) {
 	return {
 		audioBlobId: 'blob_aaaaaaaaaaaaaaaaaaaaa' as never,
 		title,
-		recordedAt: '2026-08-10T00:00:00.000Z',
+		recordedAt: InstantString.fromDate(new Date('2026-08-10T00:00:00.000Z')),
 		recordedAtZone: 'UTC',
+		transcript: '',
+		polishedTranscript: null,
+		duration: null,
 	};
 }
 
@@ -180,17 +184,17 @@ test('a signed-out boot opens one document and never dials', async () => {
 	expect(app.recipes.count).toBe(0);
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
-	expect(names).toContain(`epicenter/${whisperingDatabase.id}/device`);
+	expect(names).toContain(`epicenter/${whisperingDefinition.id}/device`);
 	expect(names.some((name) => name?.includes('/account/'))).toBe(false);
 });
 
-test('settings read their declared defaults and survive a restart', async () => {
+test('settings recover application defaults and survive a restart', async () => {
 	await resetStorage();
 	{
 		await using app = await openWhisperingApp(
 			dependencies(createFakeAuth({ status: 'signed-out' })),
 		);
-		// Declared in the workspace, applied by a read, never stored.
+		// Chosen by the application, applied by a read, never stored.
 		expect(app.settings.get('transcriptionService')).toBe('local');
 		expect(app.settings.get('recordingAutoUpload')).toBe(false);
 		expect(app.settings.get('soundManualStart')).toBe(true);

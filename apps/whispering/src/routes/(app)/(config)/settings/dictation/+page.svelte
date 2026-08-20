@@ -14,7 +14,7 @@
 
 	const app = getWhisperingApp();
 
-	// Null when the person has added no terms: a workspace cannot default an array,
+	// Null when the person has added no terms: the definition cannot default an array,
 	// so "never touched" and "emptied" are the same empty list here.
 	const dictionary = $derived(app.settings.get('dictionary') ?? []);
 	// Intent (`polishEnabled`) and capability (a usable provider) are separate

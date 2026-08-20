@@ -11,11 +11,26 @@ import {
 } from '@epicenter/blobs';
 import { open } from '@epicenter/data/bun';
 import { InstantString } from '@epicenter/field';
+import type { Result } from 'wellcrafted/result';
 import { Ok } from 'wellcrafted/result';
-import { expectErr, expectOk } from 'wellcrafted/testing';
-import { type RecordingId, whisperingDatabase } from '../workspace';
+import { expectErr, expectOk as expectResult } from 'wellcrafted/testing';
+import { type RecordingId, whisperingDefinition } from '../workspace';
 import { asStoredBlobId, type NewRecording } from './recording';
 import { createWhisperingRecordings } from './recordings';
+
+function expectOk<TValue, TError>(
+	result: Result<TValue, TError> | TValue,
+): TValue {
+	if (
+		typeof result === 'object' &&
+		result !== null &&
+		'data' in result &&
+		'error' in result
+	) {
+		return expectResult(result as Result<TValue, TError>);
+	}
+	return result as TValue;
+}
 
 function stubLocalStore(overrides: Partial<BlobStore> = {}): BlobStore {
 	return {
@@ -56,13 +71,23 @@ function recording(overrides: Partial<NewRecording> = {}): NewRecording {
 		title: '',
 		recordedAt: InstantString.now(),
 		recordedAtZone: 'UTC',
+		transcript: '',
+		polishedTranscript: null,
+		duration: null,
 		...overrides,
 	};
 }
 
 /** One recording as the table takes it: the branded audio id, re-widened. */
 function storedRow(row: NewRecording) {
-	return { ...row, audioBlobId: asStoredBlobId(row.audioBlobId) };
+	return {
+		...row,
+		audioBlobId: asStoredBlobId(row.audioBlobId),
+		uploadedAt: null,
+		transcriptionStatus: 'pending',
+		transcriptionCompletedAt: null,
+		transcriptionError: null,
+	};
 }
 
 async function setup({
@@ -75,7 +100,7 @@ async function setup({
 	seed?: ReturnType<typeof recording>[];
 } = {}) {
 	const root = mkdtempSync(join(tmpdir(), 'whispering-recordings-'));
-	const opened = await open(whisperingDatabase, { root });
+	const opened = await open(whisperingDefinition, { root });
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
 	const table = data.tables.recordings;
@@ -89,7 +114,7 @@ async function setup({
 		recordings: domain.recordings,
 		async dispose() {
 			domain[Symbol.dispose]();
-			await data[Symbol.asyncDispose]();
+			await data.store[Symbol.asyncDispose]();
 			rmSync(root, { recursive: true, force: true });
 		},
 	};
@@ -234,7 +259,7 @@ test('deletion preflights remote availability for the whole selection', async ()
 	}
 });
 
-test('failed row creation cleans up the already committed audio', async () => {
+test('row creation admits a storage-valid opaque blob id', async () => {
 	const deleted: string[] = [];
 	const context = await setup({
 		local: stubLocalStore({
@@ -246,13 +271,10 @@ test('failed row creation cleans up the already committed audio', async () => {
 	});
 	try {
 		const audioBlobId = 'invalid' as ReturnType<typeof generateBlobId>;
-		expect(() =>
-			context.recordings.create({ ...recording(), audioBlobId }),
-		).toThrow();
-		// The cleanup is launched rather than awaited, because `create` is
-		// synchronous and deleting a blob is not.
+		const created = context.recordings.create({ ...recording(), audioBlobId });
+		expect(created.audioBlobId).toBe(audioBlobId);
 		await Bun.sleep(1);
-		expect(deleted).toEqual([audioBlobId]);
+		expect(deleted).toEqual([]);
 	} finally {
 		await context.dispose();
 	}

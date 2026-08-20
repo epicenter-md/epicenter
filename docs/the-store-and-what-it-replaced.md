@@ -30,8 +30,8 @@ independent changes.
 
 | | old | new |
 | --- | --- | --- |
-| one row | `await table.get(id)` | `db.notes.get(id)` |
-| all rows | `await table.scan()` | `db.notes.list()` |
+| one row | `await table.get(id)` | `data.tables.notes.get(id)` |
+| all rows | `await table.scan()` | `data.tables.notes.list()` |
 | ids | (part of scan) | `db.notes.ids()` |
 | SQL | a separate inspection surface | a composed follower: `createSqliteProjection` (`@epicenter/data/projection`, ADR-0241) |
 
@@ -46,8 +46,8 @@ A point read's one error is the nonconformance diagnostic, plain data with
 `conforming` carried so a caller composes its own recovery:
 
 ```ts
-const { data, error } = db.notes.get(id);
-const note = data ?? { ...db.notes.defaults, ...error?.conforming };
+const { data: noteData, error } = data.tables.notes.get(id);
+const note = noteData ?? { ...applicationRecovery, ...error?.conforming };
 ```
 
 Use `??`, never a destructuring default. An `Err` sets `data` to `null`, and
@@ -173,31 +173,29 @@ every device writes settings on its own boot path, so two devices both creating
 the `'settings'` container lose one of them entirely.
 
 ```ts
-const { data } = db.kv.get();      // every declared key, defaulted if unwritten
-db.kv.update({ theme: 'dark' });   // merges; other keys untouched
+const result = data.kv.get();       // Result: missing fields are nonconforming
+const settings = result.data ?? { ...applicationRecovery, ...result.error?.conforming };
+data.kv.update({ theme: 'dark' });  // merges; other keys untouched
 ```
 
 ---
 
 ## Prose and row documents
 
-**Old:** `await table.openDocument(id)` returned a lease you had to dispose, and
-the app polled it on an interval to pull remote changes.
+**Old:** `await table.openDocument(id)` returned a lease the app polled on an
+interval to pull remote changes; an interim shape nested the document inside
+the row and handed it out synchronously.
 
-**New:** `db.notes.document(id).get('body')` returns a live `Y.Type`. Nothing to
-open, nothing to await, nothing to dispose, nothing to poll. Bind an editor to
-it directly.
+**New:** each row owns one independent Yjs document at its derived address
+(ADR-0248). `await db.tables.notes.document.open(id)` resolves to a fully
+hydrated handle; `handle.get('body')` is a live `Y.Type` an editor binds to
+directly, remote edits arrive through the one store connection, and disposing
+the handle lets the store unload the document.
 
-One rule: **name the roots at `create`.**
-
-```ts
-db.notes.create(fields, { document: ['body'] });
-```
-
-`document(id).get(name)` creates on miss, and a created nested type is addressed
-by the operation that made it — so two devices first-opening one note would each
-mint a root at that key and lose one. Naming it at `create` leaves exactly one
-creator.
+No root is reserved at create: a top-level root is addressed by its name, so
+two devices first-opening one note converge with both writes retained.
+Deleting the row durably retires the document address in the same atomic
+step.
 
 **Whether prose belongs in a document at all is a per-application decision.**
 Honeycrisp's notes do (a person types them a character at a time, so per-
@@ -208,39 +206,28 @@ machine-produced, replaced wholesale, and rendered in a list.
 
 ## The workspace declaration
 
-**Old:** TypeBox, `defineTable({ fields: { title: field.string() } })`, with
-defaults living outside in application code.
+**Old:** TypeBox, `defineTable({ fields: { title: field.string() } })`.
 
-**New:** pure JSON, arktype expression strings, defaults declared inline
-(ADR-0213).
+**New:** pure JSON, closed field descriptors, and application-owned recovery
+values (ADR-0213, ADR-0254).
 
 ```ts
-export const workspace = defineWorkspace({
+export const definition = defineData({
   id: 'so.epicenter.honeycrisp',
-  kv: { theme: "'light'|'dark' = 'light'" },
-  tables: { notes: { title: 'string', folderId: 'string|null = null' } },
+  kv: { theme: field.select(['light', 'dark']) },
+  tables: { notes: { title: field.string(), folderId: field.nullable(field.string()) } },
 });
 ```
 
 Three things bite immediately:
 
 1. **There are no optional fields.** A field must be one type through the CRDT
-   attribute, the projection column and the row alike, and "absent" is not a SQL
-   type. What would have been optional is `'T|null = null'`, applied at read
-   time and never written.
-2. **A declaration cannot express an array default, and arktype is RIGHT to refuse
-   it.** `'string[] = []'` does not parse, and the tuple form
-   `['string[]', '=', []]` is refused too, with "Non-primitive default must be
-   specified as a function". That is not a gap: a literal default would hand
-   every row the SAME array, and a caller that pushed to one would mutate the
-   default for all of them. A function is how you say "a fresh one each time",
-   and a declaration is pure JSON so it cannot carry one.
-
-   So `'string[]|null = null'` is the principled answer rather than a
-   workaround: `null` is a primitive, so it is expressible, and it forces the
-   reader to materialise a fresh array at the point of use.
-3. **No transforming fields.** `'string.date.iso'`, not `'string.date.parse'` —
-   a parsing form would hand back a `Date` that cannot round-trip, so
+   attribute, the projection column and the row alike. `field.nullable(inner)`
+   accepts stored null, while a missing field is nonconforming.
+2. **Definitions do not own defaults.** Initialization and recovery values live
+   in application code, and `parseData` rejects declaration defaults.
+3. **No transforming fields.** Date, instant, and datetime descriptors preserve
+   their string representation, so values round-trip through storage and SQL.
    `update(id, { when: row.when })` would break.
 
 Objects have no STRING expression, so `'{ status: ... }'` does not parse and

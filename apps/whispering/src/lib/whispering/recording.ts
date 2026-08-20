@@ -26,15 +26,18 @@ export type Recording = Omit<RecordingRow, 'audioBlobId'> & {
 /**
  * What creating a recording needs.
  *
- * The workspace's own create input, so a field that declares a default is optional
- * to supply and the three transcription columns start `pending` without anyone
- * writing them. `uploadedAt` is withheld because the audio workflows are its
+ * The application's create input. The recording domain initializes its
+ * transcription columns explicitly. `uploadedAt` is withheld because the audio workflows are its
  * only writer, and `audioBlobId` carries the brand for the same reason
  * {@link Recording} does.
  */
 export type NewRecording = Omit<
 	Parameters<WhisperingData['tables']['recordings']['create']>[0],
-	'audioBlobId' | 'uploadedAt'
+	| 'audioBlobId'
+	| 'uploadedAt'
+	| 'transcriptionStatus'
+	| 'transcriptionCompletedAt'
+	| 'transcriptionError'
 > & { audioBlobId: BlobId };
 
 /** The one boundary where a stored row becomes an app recording. */

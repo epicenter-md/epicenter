@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * The client half of sync: what a replica owes the authority, and what it has
  * read from it.
@@ -10,22 +11,29 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
-import { copyBytes } from './log.js';
+import { encodeEnvelope } from './envelope.js';
+import { APP_DOCUMENT, copyBytes } from './log.js';
 import { createAccountStore, syncEngineOf } from './store.js';
 
-const database = defineDatabase({
+/** Wrap one application-document update the way the wire carries it. */
+function asEnvelope(bytes: Uint8Array): Uint8Array {
+	return encodeEnvelope([{ document: APP_DOCUMENT, bytes }]);
+}
+
+const database = defineData({
 	id: 'so.epicenter.honeycrisp',
-	tables: { notes: { title: 'string' } },
+	kv: {},
+	tables: { notes: { title: field.string() } },
 });
 
 function open() {
 	const raw = new Database(':memory:');
 	const sqlite = createBunSqliteAdapter(raw);
-	const db = createAccountStore({ database: database, sqlite });
+	const db = createAccountStore({ definition: database, sqlite });
 	return {
 		store: db.store,
 		db,
@@ -43,11 +51,20 @@ function open() {
 	};
 }
 
-function expectOk<TValue, TError>(result: Result<TValue, TError>): TValue {
-	if (result.error !== null) throw result.error;
-	// `TError` may itself admit null, so the union does not discriminate on
-	// `error` for a caller that has not fixed it to a concrete type.
-	return result.data as TValue;
+function expectOk<TValue, TError>(
+	result: Result<TValue, TError> | TValue,
+): TValue {
+	if (
+		typeof result === 'object' &&
+		result !== null &&
+		'data' in result &&
+		'error' in result
+	) {
+		const outcome = result as Result<TValue, TError>;
+		if (outcome.error !== null) throw outcome.error;
+		return outcome.data as TValue;
+	}
+	return result as TValue;
 }
 
 function titles(replica: ReturnType<typeof open>): string[] {
@@ -69,7 +86,7 @@ describe('the local log holds each update once', () => {
 		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
 		const update = author.store.encodeStateSince();
 
-		expectOk(syncEngineOf(reader.store).applyRemote(update));
+		expectOk(syncEngineOf(reader.store).applyRemote(asEnvelope(update)));
 
 		const rows = reader.logRows();
 		expect(rows).toHaveLength(1);
@@ -84,28 +101,31 @@ describe('the local log holds each update once', () => {
 		const reader = open();
 		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
 		expectOk(
-			syncEngineOf(reader.store).applyRemote(author.store.encodeStateSince()),
+			syncEngineOf(reader.store).applyRemote(
+				asEnvelope(author.store.encodeStateSince()),
+			),
 		);
 
 		expect(reader.outbox()).toHaveLength(0);
 		expect(syncEngineOf(reader.store).coalesce()).toBeUndefined();
 	});
 
-	test('an application writing inside a row document owes it, like any local work', () => {
-		// Prose reaches storage through the update listener rather than through a
-		// store verb, so it is the one local write that could plausibly be missed.
+	test('an application writing inside a row document owes it, like any local work', async () => {
+		// Prose reaches storage through the manager's update listener rather
+		// than through a store verb, so it is the one local write that could
+		// plausibly be missed.
 		const author = open();
 		const note = expectOk(
 			author.db.tables.notes.create({ title: 'Groceries' }),
 		);
 		const before = author.outbox().length;
-		const text = author.db.tables.notes
-			.document(note.id)
-			?.get('editor', 'text');
+		const opened = await author.db.tables.notes.document.open(note.id);
+		const text = opened.data?.get('editor', 'text');
 		if (text === undefined) throw new Error('the row has no document');
 		text.applyDelta(text.change.insert('buy milk') as never);
 
 		expect(author.outbox().length).toBeGreaterThan(before);
+		opened.data?.[Symbol.dispose]();
 	});
 });
 
@@ -140,7 +160,7 @@ describe('coalesce merges only what this replica authored', () => {
 		const last = author.outbox().at(-1);
 		if (last === undefined) throw new Error('empty outbox');
 
-		expectOk(syncEngineOf(lastOnly.store).applyRemote(last.bytes));
+		expectOk(syncEngineOf(lastOnly.store).applyRemote(asEnvelope(last.bytes)));
 
 		expect(titles(lastOnly)).toEqual(['note 19']);
 		// And the replica cannot even report the shortfall as an error, which is
@@ -201,12 +221,12 @@ describe('the cursor is a log position, and never a state vector', () => {
 	test('advancing survives a reopen of the same file', () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 		syncEngineOf(
-			createAccountStore({ database: database, sqlite }).store,
+			createAccountStore({ definition: database, sqlite }).store,
 		).advance(7);
 
 		expect(
 			syncEngineOf(
-				createAccountStore({ database: database, sqlite }).store,
+				createAccountStore({ definition: database, sqlite }).store,
 			).cursor(),
 		).toBe(7);
 	});
@@ -242,96 +262,52 @@ describe('the stamp lands only on an empty store', () => {
 	});
 });
 
-describe('a row document root is created exactly once', () => {
-	test('two devices first-opening one note both keep their prose', () => {
-		// The window this closes. `document(id).get(name)` creates on miss, and a
-		// created nested type is addressed by the operation that made it, so two
-		// devices opening the same fresh note each minted a type at that key and
-		// map LWW discarded one along with everything typed into it. Naming the
-		// root at `create` leaves exactly one creator.
+describe('a row document root converges however many devices first-open it', () => {
+	test('two devices first-opening one note both keep their prose', async () => {
+		// The race the nested-container design spent a create-time declaration
+		// closing. In an independent document a top-level root is addressed by
+		// its NAME, so two devices minting `editor` concurrently converge with
+		// both writes retained (ADR-0248,
+		// `evidence/independent-document-roots.test.ts`), and no root is
+		// reserved at create.
 		const author = open();
 		const other = open();
-		const note = expectOk(
-			author.db.tables.notes.create(
-				{ title: 'Groceries' },
-				{ document: ['editor'] },
-			),
-		);
+		const note = expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
 		expectOk(
-			syncEngineOf(other.store).applyRemote(author.store.encodeStateSince()),
+			syncEngineOf(other.store).applyRemote(
+				asEnvelope(author.store.encodeStateSince()),
+			),
 		);
 
 		for (const [replica, words] of [
 			[author, 'written on the phone'],
 			[other, 'written on the laptop'],
 		] as const) {
-			const text = replica.db.tables.notes.document(note.id)?.get('editor');
+			const opened = await replica.db.tables.notes.document.open(note.id);
+			const text = opened.data?.get('editor', 'text');
 			if (text === undefined) throw new Error('the row has no editor');
 			text.applyDelta(text.change.insert(words) as never);
 		}
 
-		expectOk(
-			syncEngineOf(author.store).applyRemote(
-				other.store.encodeStateSince(author.store.stateVector()),
-			),
-		);
-		expectOk(
-			syncEngineOf(other.store).applyRemote(
-				author.store.encodeStateSince(other.store.stateVector()),
-			),
-		);
+		// Cross-deliver each device's unsent work through the one connection's
+		// payload; re-delivered sections are idempotent.
+		const fromAuthor = syncEngineOf(author.store).coalesce();
+		const fromOther = syncEngineOf(other.store).coalesce();
+		if (fromAuthor === undefined || fromOther === undefined) {
+			throw new Error('nothing owed');
+		}
+		expectOk(syncEngineOf(author.store).applyRemote(fromOther.bytes));
+		expectOk(syncEngineOf(other.store).applyRemote(fromAuthor.bytes));
 
-		const merged = JSON.stringify(
-			author.db.tables.notes.document(note.id)?.get('editor').toJSON(),
-		);
+		const readBack = async (replica: typeof author) => {
+			const opened = await replica.db.tables.notes.document.open(note.id);
+			const text = JSON.stringify(opened.data?.get('editor').toJSON());
+			opened.data?.[Symbol.dispose]();
+			return text;
+		};
+		const merged = await readBack(author);
 		expect(merged).toContain('phone');
 		expect(merged).toContain('laptop');
-		expect(merged).toBe(
-			JSON.stringify(
-				other.db.tables.notes.document(note.id)?.get('editor').toJSON(),
-			),
-		);
-	});
-
-	test('CONTROL: a root NOT named at create still races, which is why naming it matters', () => {
-		// The same scenario without the declaration. Kept so the fix is measured
-		// against the failure rather than asserted, and so anyone who removes the
-		// `document` option sees what it was buying.
-		const author = open();
-		const other = open();
-		const note = expectOk(
-			author.db.tables.notes.create({ title: 'Groceries' }),
-		);
-		expectOk(
-			syncEngineOf(other.store).applyRemote(author.store.encodeStateSince()),
-		);
-
-		for (const [replica, words] of [
-			[author, 'written on the phone'],
-			[other, 'written on the laptop'],
-		] as const) {
-			const text = replica.db.tables.notes.document(note.id)?.get('editor');
-			if (text === undefined) throw new Error('the row has no editor');
-			text.applyDelta(text.change.insert(words) as never);
-		}
-
-		expectOk(
-			syncEngineOf(author.store).applyRemote(
-				other.store.encodeStateSince(author.store.stateVector()),
-			),
-		);
-		expectOk(
-			syncEngineOf(other.store).applyRemote(
-				author.store.encodeStateSince(other.store.stateVector()),
-			),
-		);
-
-		const merged = JSON.stringify(
-			author.db.tables.notes.document(note.id)?.get('editor').toJSON(),
-		);
-		const survivors = ['phone', 'laptop'].filter((device) =>
-			merged.includes(device),
-		);
-		expect(survivors).toHaveLength(1);
+		expect(merged).toBe(await readBack(other));
 	});
 });

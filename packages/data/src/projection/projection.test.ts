@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * The projection follower, proven on the public surface alone.
  *
@@ -8,18 +9,20 @@
  */
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import type { SqliteDatabase, SqliteValue } from '@epicenter/sqlite';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { openMemory } from '../store/bun.js';
+import { encodeEnvelope } from '../store/envelope.js';
+import { APP_DOCUMENT } from '../store/log.js';
 import { type DataOf, syncEngineOf } from '../store/store.js';
 import { createSqliteProjection, type SqliteProjection } from './index.js';
 
-const database = defineDatabase({
+const database = defineData({
 	id: 'so.epicenter.projectionlab',
-	kv: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
+	kv: { theme: field.select(['light', 'dark']), fontSize: field.number() },
 	tables: {
-		notes: { title: 'string', tags: 'string[]', date: 'string|null' },
+		notes: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) },
 	},
 });
 
@@ -32,7 +35,6 @@ beforeEach(() => {
 	handle = new Database(':memory:');
 	sql = createSqliteProjection({
 		data: db,
-		database,
 		sqlite: createBunSqliteAdapter(handle),
 	});
 });
@@ -40,14 +42,12 @@ beforeEach(() => {
 function note(
 	fields: Partial<Parameters<typeof db.tables.notes.create>[0]> = {},
 ) {
-	const { data, error } = db.tables.notes.create({
+	return db.tables.notes.create({
 		title: 'Groceries',
 		tags: ['food'],
 		date: null,
 		...fields,
 	});
-	if (error !== null) throw error;
-	return data;
 }
 
 describe('query always agrees with the live document', () => {
@@ -86,7 +86,6 @@ describe('query always agrees with the live document', () => {
 		});
 		lateSql = createSqliteProjection({
 			data: fresh,
-			database,
 			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		fresh.tables.notes.create({ title: 'one', tags: [], date: null });
@@ -98,7 +97,9 @@ describe('query always agrees with the live document', () => {
 		const remote = openMemory(database);
 		remote.tables.notes.create({ title: 'from afar', tags: [], date: null });
 		const bytes = remote.store.encodeStateSince(db.store.stateVector());
-		syncEngineOf(db.store).applyRemote(bytes);
+		syncEngineOf(db.store).applyRemote(
+			encodeEnvelope([{ document: APP_DOCUMENT, bytes }]),
+		);
 		expect(sql.query`SELECT title FROM notes`.data).toEqual([
 			{ title: 'from afar' },
 		]);
@@ -116,7 +117,7 @@ describe('query always agrees with the live document', () => {
 describe('kv projects as a one-row relation', () => {
 	test('kv is readable before anything has written to it', () => {
 		const { data: rows } = sql.query`SELECT theme, fontSize FROM kv`;
-		expect(rows).toEqual([{ theme: 'light', fontSize: 14 }]);
+		expect(rows).toEqual([{ theme: null, fontSize: null }]);
 	});
 
 	test('a kv write is visible at the next read', () => {
@@ -151,7 +152,6 @@ describe('failure stays at the read, and heals at the read', () => {
 		};
 		const fragile = createSqliteProjection({
 			data: db,
-			database,
 			sqlite: failable,
 		});
 		note({ title: 'first' });
@@ -177,18 +177,21 @@ describe('failure stays at the read, and heals at the read', () => {
 
 describe('a nonconforming row projects raw, so SQL can show what failed', () => {
 	test('the raw stored value appears where the declaration failed', () => {
-		// The public surface refuses nonconforming writes, so stage one the way
-		// it really happens: a replica on an older declaration writes a shape
-		// this declaration cannot read, and the bytes arrive through sync.
+		// A replica on an older declaration writes a shape this declaration cannot
+		// read, and the bytes arrive through sync. The current lens reports that
+		// fact without preventing the write.
 		const older = openMemory(
-			defineDatabase({
+			defineData({
 				id: 'so.epicenter.projectionlab',
-				tables: { notes: { title: 'string', tags: 'string' } },
+				kv: {},
+				tables: { notes: { title: field.string(), tags: field.string() } },
 			}),
 		);
 		older.tables.notes.create({ title: 'legacy', tags: 'not-a-list' });
 		const bytes = older.store.encodeStateSince(db.store.stateVector());
-		syncEngineOf(db.store).applyRemote(bytes);
+		syncEngineOf(db.store).applyRemote(
+			encodeEnvelope([{ document: APP_DOCUMENT, bytes }]),
+		);
 
 		const rows = sql.query`SELECT title, tags FROM notes`.data;
 		expect(rows).toEqual([{ title: 'legacy', tags: 'not-a-list' }]);

@@ -1,14 +1,17 @@
+import { field } from '@epicenter/data/definition';
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TableInvalidation } from '@epicenter/database';
-import { defineDatabase } from '@epicenter/database';
+import type { TableInvalidation } from '@epicenter/data/definition';
+import { defineData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 import { open, openMemory } from './bun.js';
+import { encodeEnvelope } from './envelope.js';
+import { APP_DOCUMENT } from './log.js';
 import {
 	type AccountStore,
 	createAccountStore,
@@ -20,11 +23,11 @@ import {
 	syncEngineOf,
 } from './store.js';
 
-const database = defineDatabase({
+const database = defineData({
 	id: 'so.epicenter.honeycrisp',
-	kv: { theme: "'light'|'dark' = 'light'", fontSize: 'number = 14' },
+	kv: { theme: field.select(['light', 'dark']), fontSize: field.number() },
 	tables: {
-		notes: { title: 'string', tags: 'string[]', date: 'string|null' },
+		notes: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) },
 	},
 });
 
@@ -38,24 +41,39 @@ beforeEach(() => {
 function note(
 	fields: Partial<Parameters<typeof db.tables.notes.create>[0]> = {},
 ) {
-	const { data, error } = db.tables.notes.create({
+	return db.tables.notes.create({
 		title: 'Groceries',
 		tags: ['food'],
 		date: null,
 		...fields,
 	});
-	if (error !== null) throw error;
-	return data;
+}
+
+/** Wrap one application-document update the way the wire carries it. */
+function asEnvelope(bytes: Uint8Array): Uint8Array {
+	return encodeEnvelope([{ document: APP_DOCUMENT, bytes }]);
 }
 
 function exchange(a: AccountStore, b: AccountStore) {
 	const fromA = a.encodeStateSince(b.stateVector());
 	const fromB = b.encodeStateSince(a.stateVector());
-	syncEngineOf(b).applyRemote(fromA);
-	syncEngineOf(a).applyRemote(fromB);
+	syncEngineOf(b).applyRemote(asEnvelope(fromA));
+	syncEngineOf(a).applyRemote(asEnvelope(fromB));
 }
 
 describe('a read is a property access on a plain object', () => {
+	test('data carries its immutable definition and owns the store lifecycle', async () => {
+		const opened = openMemory(database);
+		await using data = opened;
+
+		expect(data.definition).toEqual(database);
+		expect(data.definition).not.toBe(database);
+		expect(Object.isFrozen(data.definition)).toBe(true);
+		expect(Object.isFrozen(data.definition.kv)).toBe(true);
+		expect(Object.isFrozen(data.definition.tables)).toBe(true);
+		expect(data.store).not.toBe(data);
+	});
+
 	test('create returns the row it made, at a minted id', () => {
 		const made = note();
 		expect(made.id).toBeString();
@@ -70,22 +88,38 @@ describe('a read is a property access on a plain object', () => {
 		expect(data).toBeUndefined();
 	});
 
-	test('nothing in the surface returns a promise', () => {
-		// One in-memory document over a synchronous SQLite boundary, so there is
-		// no I/O to await and no ceremony to pay for one.
+	test('every scalar verb is synchronous; only a document open is a load', () => {
+		// One in-memory application document over a synchronous SQLite boundary,
+		// so no scalar read or write has I/O to await. The one asynchronous verb
+		// is `document.open`, which is a load by decision (ADR-0248).
 		const made = note();
 		for (const value of [
 			db.tables.notes.get(made.id),
 			db.tables.notes.update(made.id, { title: 'x' }),
 			db.tables.notes.list(),
 			db.tables.notes.ids(),
-			db.tables.notes.document(made.id),
 			db.kv.get(),
 			db.kv.update({ theme: 'dark' }),
 			db.tables.notes.delete(made.id),
 		]) {
 			expect(value).not.toBeInstanceOf(Promise);
 		}
+	});
+
+	test('data exposes documents and groups direct operations with transact', () => {
+		expect(db.documents).toBe(db.store.documents);
+		const touched: string[][] = [];
+		db.tables.notes.subscribe((invalidation) => {
+			if (invalidation.scope === 'rows') touched.push([...invalidation.rowIds]);
+		});
+
+		db.transact(() => {
+			note({ title: 'one' });
+			note({ title: 'two' });
+	});
+
+		expect(touched).toHaveLength(1);
+		expect(touched[0]).toHaveLength(2);
 	});
 });
 
@@ -97,26 +131,36 @@ describe('a write that reaches nothing is a failure', () => {
 		expect(error?.name).toBe('RowAbsent');
 	});
 
-	test('create refuses a payload that would not read back whole', () => {
-		// The untyped door could omit a required field; the row then committed
-		// and the same call reported it unreadable, which callers reasonably
-		// read as "the row never existed". Refusing before the commit makes
-		// that reading true: an Err from create touches nothing.
-		const { data, error } = db.tables.notes.create({} as never);
-		expect(data).toBeNull();
-		expect(error?.name).toBe('Nonconforming');
-		expect(db.tables.notes.ids()).toEqual([]);
+	test('create admits a payload and get reports its conformance', () => {
+		const made = db.tables.notes.create({} as never);
+		expect(made.id).toHaveLength(24);
+		const read = db.tables.notes.get(made.id);
+		expect(read.data).toBeNull();
+		expect(read.error?.issues.map((issue) => issue.field)).toEqual([
+			'title',
+			'tags',
+			'date',
+		]);
 	});
 
-	test('an invalid supplied value refuses the call and touches nothing', () => {
+	test('an invalid supplied value is written and reported on read', () => {
 		const made = note();
-		const { error } = db.tables.notes.update(made.id, {
+		const result = db.tables.notes.update(made.id, {
 			tags: 'food' as never,
 		});
-		expect(error?.name).toBe('Nonconforming');
-		const after = db.tables.notes.get(made.id).data;
-		expect(after?.title).toBe('Groceries');
-		expect(after?.tags).toEqual(['food']);
+		expect(result.error).toBeNull();
+		const after = db.tables.notes.get(made.id);
+		expect(after.data).toBeNull();
+		expect(after.error?.conforming.title).toBe('Groceries');
+		expect(after.error?.issues.map((issue) => issue.field)).toEqual(['tags']);
+	});
+
+	test('reserved row attributes remain a structural boundary', () => {
+		const made = note();
+		expect(() =>
+			db.tables.notes.update(made.id, { '!presence': 'absent' } as never),
+		).toThrow(/reserved/);
+		expect(db.tables.notes.get(made.id).data?.title).toBe('Groceries');
 	});
 });
 
@@ -164,9 +208,10 @@ describe('deletion', () => {
 });
 
 describe('a nonconforming row is reported, never repaired', () => {
-	const wrongDatabase = defineDatabase({
+	const wrongDatabase = defineData({
 		id: 'so.epicenter.honeycrisp',
-		tables: { notes: { title: 'string', tags: 'string', date: 'string|null' } },
+		kv: {},
+		tables: { notes: { title: field.string(), tags: field.string(), date: field.nullable(field.string()) } },
 	});
 
 	/**
@@ -183,7 +228,7 @@ describe('a nonconforming row is reported, never repaired', () => {
 		exchange(db.store, peer.store);
 	}
 
-	test('the call site composes recovery from defaults and what survived', () => {
+	test('the call site composes application recovery and what survived', () => {
 		const made = note();
 		corruptTags(made.id);
 
@@ -201,7 +246,7 @@ describe('a nonconforming row is reported, never repaired', () => {
 		});
 
 		const recovered = data ?? {
-			...db.tables.notes.defaults,
+			id: made.id,
 			...error?.conforming,
 		};
 		expect(recovered).toEqual({ id: made.id, title: 'Groceries', date: null });
@@ -301,11 +346,11 @@ describe('a database names the store it opens', () => {
 			// under last-writer-wins rather than seeing each other.
 			expect(second.data).toBeNull();
 
-			await first.data[Symbol.asyncDispose]();
+			await first.data.store[Symbol.asyncDispose]();
 
 			const third = await open(database, { root });
 			expect(third.error).toBeNull();
-			await third.data?.[Symbol.asyncDispose]();
+			await third.data?.store[Symbol.asyncDispose]();
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}
@@ -320,14 +365,14 @@ describe('a database names the store it opens', () => {
 			// the life of the process and the application can never start.
 			const refused = {
 				databaseId: database.id,
-				tables: { kv: { a: 'string' } },
+				tables: { kv: { a: field.string() } },
 			};
 			const attempt = await open(refused as never, { root });
 			expect(attempt.error).not.toBeNull();
 
 			const after = await open(database, { root });
 			expect(after.error).toBeNull();
-			await after.data?.[Symbol.asyncDispose]();
+			await after.data?.store[Symbol.asyncDispose]();
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}
@@ -340,7 +385,7 @@ describe('a database names the store it opens', () => {
 				const { data: first, error } = await open(database, { root });
 				if (error !== null) throw error;
 				expectOkCreate(first);
-				await first[Symbol.asyncDispose]();
+				await first.store[Symbol.asyncDispose]();
 			}
 			// One garbage row in the update log: the hydration replay cannot
 			// decode it, which is "the store could not read its durable record".
@@ -367,15 +412,14 @@ describe('a database names the store it opens', () => {
 
 /** One created note through whichever runtime the disk test holds. */
 function expectOkCreate(data: DataOf<typeof database>): void {
-	const made = data.tables.notes.create({
+	data.tables.notes.create({
 		title: 'to be corrupted',
 		tags: [],
 		date: null,
 	});
-	if (made.error !== null) throw made.error;
 }
 
-describe('the document a row inherently owns', () => {
+describe('the document a row inherently owns (ADR-0248)', () => {
 	test('holds application-named roots and survives a reopen', async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'epicenter-doc-'));
 		try {
@@ -391,76 +435,100 @@ describe('the document a row inherently owns', () => {
 					tags: [],
 					date: null,
 				});
-				if (made.error !== null) throw made.error;
-				id = made.data.id;
-				const container = diskDb.tables.notes.document(id);
-				if (container === undefined) throw new Error('no document');
+				id = made.id;
+				const opened = await diskDb.tables.notes.document.open(id);
+				if (opened.error !== null) throw opened.error;
+				const handle = opened.data;
+				if (handle === undefined) throw new Error('no document');
 				// The application names its root and picks its format. In Yjs 14
 				// `change` hands back a fresh builder and `applyDelta` commits it.
-				const editor = container.get('editor', 'text');
+				const editor = handle.get('editor', 'text');
 				editor.applyDelta(editor.change.insert('buy milk') as never);
-				container.get('meta').setAttr('cursor' as never, 8 as never);
-				await disk[Symbol.asyncDispose]();
+				handle.get('meta').setAttr('cursor' as never, 8 as never);
+				handle[Symbol.dispose]();
+				await disk.store[Symbol.asyncDispose]();
 			}
 			const { data: db2, error } = await open(database, { root: directory });
 			if (error !== null) throw error;
-			const container = db2.tables.notes.document(id);
-			expect(container?.get('editor', 'text').toString()).toContain('buy milk');
-			expect(container?.get('meta').getAttr('cursor' as never)).toBe(8);
-			await db2[Symbol.asyncDispose]();
+			const reopened = await db2.tables.notes.document.open(id);
+			if (reopened.error !== null) throw reopened.error;
+			const handle = reopened.data;
+			expect(handle?.get('editor', 'text').toString()).toContain('buy milk');
+			expect(handle?.get('meta').getAttr('cursor' as never)).toBe(8);
+			handle?.[Symbol.dispose]();
+			await db2.store[Symbol.asyncDispose]();
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
 	});
 
-	test('an absent row has no document, which is a fact not a failure', () => {
+	test('an absent row has no document, which is a fact not a failure', async () => {
 		// The same answer `get` gives an absent row, rather than an Err for one
 		// and an Ok(undefined) for the other.
-		expect(db.tables.notes.document('nope')).toBeUndefined();
+		const { data, error } = await db.tables.notes.document.open('nope');
+		expect(error).toBeNull();
+		expect(data).toBeUndefined();
 	});
 
-	test('deleting the row takes its document with it', () => {
+	test('deleting the row retires its document', async () => {
 		const made = note();
-		db.tables.notes.document(made.id)?.get('editor', 'text');
+		const opened = await db.tables.notes.document.open(made.id);
+		opened.data?.get('editor', 'text');
+		opened.data?.[Symbol.dispose]();
 		db.tables.notes.delete(made.id);
-		expect(db.tables.notes.document(made.id)).toBeUndefined();
+		const after = await db.tables.notes.document.open(made.id);
+		expect(after.error).toBeNull();
+		expect(after.data).toBeUndefined();
 	});
 
-	test('an editor writing into its own container cannot touch the row', () => {
-		// Why the container exists at all. Bound to the row itself, a ProseMirror
+	test('an editor writing into its own document cannot touch the row', async () => {
+		// Why the split exists at all. Bound to the row itself, a ProseMirror
 		// schema whose doc node declares attributes overwrites the row's fields
-		// and syncs that; measured in ADR-0215.
+		// and syncs that; measured in ADR-0215, and structurally unreachable now
+		// that the row and its rich content are two documents.
 		const made = note();
-		const container = db.tables.notes.document(made.id);
-		container
+		const opened = await db.tables.notes.document.open(made.id);
+		opened.data
 			?.get('editor', 'text')
 			.setAttr('title' as never, 'CLOBBER' as never);
 		expect(db.tables.notes.get(made.id).data?.title).toBe('Groceries');
+		opened.data?.[Symbol.dispose]();
 	});
 });
 
 describe('kv is where anything two devices both write belongs', () => {
-	test('an unwritten key reads as its declared default', () => {
+	test('an unwritten key is nonconforming rather than defaulted', () => {
 		const { data, error } = db.kv.get();
-		expect(error).toBeNull();
-		expect(data).toEqual({ theme: 'light', fontSize: 14 });
+		expect(data).toBeNull();
+		expect(error?.conforming).toEqual({});
+		expect(error?.issues.map(({ field }) => field)).toEqual([
+			'theme',
+			'fontSize',
+		]);
 	});
 
 	test('a write touches only the keys it names', () => {
 		db.kv.update({ theme: 'dark' });
-		expect(db.kv.get().data).toEqual({ theme: 'dark', fontSize: 14 });
+		const read = db.kv.get();
+		expect(read.data).toBeNull();
+		expect(read.error?.conforming).toEqual({ theme: 'dark' });
 	});
 
-	test('an undeclared key is refused by name', () => {
-		expect(db.kv.update({ nope: 1 } as never).error?.name).toBe('UnknownField');
+	test('an undeclared key is preserved for a future declaration', () => {
+		db.kv.update({ nope: 1 } as never);
+		const read = db.kv.get();
+		expect(read.data).toBeNull();
+		expect(read.error?.raw).toEqual({ nope: 1 });
+		expect(read.error?.conforming).toEqual({});
 	});
 
-	test('an invalid value is refused and touches nothing', () => {
+	test('an invalid value is written and reported on read', () => {
 		db.kv.update({ fontSize: 20 });
-		expect(db.kv.update({ theme: 'purple' as never }).error?.name).toBe(
-			'Nonconforming',
-		);
-		expect(db.kv.get().data).toEqual({ theme: 'light', fontSize: 20 });
+		db.kv.update({ theme: 'purple' as never });
+		const read = db.kv.get();
+		expect(read.data).toBeNull();
+		expect(read.error?.conforming).toEqual({ fontSize: 20 });
+		expect(read.error?.raw).toEqual({ theme: 'purple', fontSize: 20 });
 	});
 
 	test('TWO DEVICES BOOTING OFFLINE BOTH KEEP THEIR SETTINGS', () => {
@@ -495,10 +563,9 @@ describe('a received update is persisted as the bytes that arrived', () => {
 			tags: [],
 			date: null,
 		});
-		if (made.error !== null) throw made.error;
 		const first = origin.store.encodeStateSince();
 		const afterFirst = origin.store.stateVector();
-		origin.tables.notes.update(made.data.id, { title: 'second' });
+		origin.tables.notes.update(made.id, { title: 'second' });
 		const second = origin.store.encodeStateSince(afterFirst);
 
 		const directory = await mkdtemp(join(tmpdir(), 'epicenter-store-'));
@@ -508,11 +575,13 @@ describe('a received update is persisted as the bytes that arrived', () => {
 					root: directory,
 				});
 				if (openError !== null) throw openError;
-				expect(syncEngineOf(laptop.store).applyRemote(second).error).toBeNull();
+				expect(
+					syncEngineOf(laptop.store).applyRemote(asEnvelope(second)).error,
+				).toBeNull();
 				expect(syncEngineOf(laptop.store).hasUnresolvedDependencies()).toBe(
 					true,
 				);
-				await laptop[Symbol.asyncDispose]();
+				await laptop.store[Symbol.asyncDispose]();
 			}
 			const { data: db2, error: reopenError } = await open(database, {
 				root: directory,
@@ -521,9 +590,9 @@ describe('a received update is persisted as the bytes that arrived', () => {
 			const reopened = syncEngineOf(db2.store);
 			expect(reopened.hasUnresolvedDependencies()).toBe(true);
 
-			expect(reopened.applyRemote(first).error).toBeNull();
+			expect(reopened.applyRemote(asEnvelope(first)).error).toBeNull();
 			expect(reopened.hasUnresolvedDependencies()).toBe(false);
-			expect(db2.tables.notes.get(made.data.id).data?.title).toBe('second');
+			expect(db2.tables.notes.get(made.id).data?.title).toBe('second');
 			await db2.store[Symbol.asyncDispose]();
 		} finally {
 			await rm(directory, { recursive: true, force: true });
@@ -534,7 +603,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		note();
 		const laptop = openMemory(database);
 		syncEngineOf(laptop.store).applyRemote(
-			db.store.encodeStateSince(laptop.store.stateVector()),
+			asEnvelope(db.store.encodeStateSince(laptop.store.stateVector())),
 		);
 		expect(syncEngineOf(laptop.store).hasUnresolvedDependencies()).toBe(false);
 	});
@@ -547,7 +616,7 @@ describe('pressure is the number that decides whether any of this matters', () =
 		const pressure = db.store.pressure();
 
 		expect(pressure.liveRows).toBe(20);
-		// A note here is a container, a document container and three fields, so
+		// A note here is a container and three fields, so
 		// single digits. The absolute number is not the point; the ratio is.
 		expect(pressure.itemsPerLiveRow).toBeLessThan(15);
 	});
@@ -616,11 +685,12 @@ describe('a subscription names the rows a commit touched', () => {
 		// The control. Without it every assertion above would still pass on an
 		// implementation that invalidated every subscriber on every commit.
 		const other = openMemory(
-			defineDatabase({
+			defineData({
 				id: 'so.epicenter.honeycrisp',
+				kv: {},
 				tables: {
-					notes: { title: 'string', tags: 'string[]', date: 'string|null' },
-					folders: { name: 'string' },
+					notes: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) },
+					folders: { name: field.string() },
 				},
 			}),
 		);
@@ -628,9 +698,8 @@ describe('a subscription names the rows a commit touched', () => {
 		const folders = record(other.tables.folders);
 
 		const made = other.tables.folders.create({ name: 'Inbox' });
-		if (made.error !== null) throw made.error;
 
-		expect(folders.seen).toEqual([{ scope: 'rows', rowIds: [made.data.id] }]);
+		expect(folders.seen).toEqual([{ scope: 'rows', rowIds: [made.id] }]);
 		expect(notes.seen).toEqual([]);
 	});
 
@@ -644,12 +713,13 @@ describe('a subscription names the rows a commit touched', () => {
 				tags: [],
 				date: null,
 			});
-			if (made.error !== null) throw made.error;
-			return made.data.id;
+			return made.id;
 		});
 		const { seen } = record(db.tables.notes);
 
-		syncEngineOf(db.store).applyRemote(author.store.encodeStateSince());
+		syncEngineOf(db.store).applyRemote(
+			asEnvelope(author.store.encodeStateSince()),
+		);
 
 		expect(seen).toHaveLength(1);
 		const only = seen[0];
@@ -657,37 +727,24 @@ describe('a subscription names the rows a commit touched', () => {
 		expect([...only.rowIds].sort()).toEqual([...ids].sort());
 	});
 
-	test('minting a document root that create did not name is itself a write', () => {
-		// Worth pinning because it is easy to read `document(id).get(name)` as a
-		// pure read. It creates on miss, and creating is a transaction, so a row
-		// whose roots were not named at `create` invalidates on first open. That
-		// is not a bug in the subscription; it is the write ADR-0215 wants
-		// nobody to be making, showing up where it can be seen.
+	test("prose written inside a row's document is not a table commit", async () => {
+		// The split's contract (ADR-0248): a row's rich document is its own
+		// document, so an editor keystroke never touches the table root and
+		// never invalidates the table. What a list renders from a document is
+		// a preview, and a preview is an ordinary scalar field the application
+		// writes itself, which is the invalidation the list actually needs.
 		const made = note();
 		const { seen } = record(db.tables.notes);
 
-		db.tables.notes.document(made.id)?.get('body', 'text');
-
-		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.id] }]);
-	});
-
-	test("prose written inside a row's document names the row", () => {
-		// The case an `observeDeep` observer reports without an id, and the one
-		// an editor binding produces on every keystroke burst. The write never
-		// goes through a store verb: it is the application writing straight into
-		// the type it was handed.
-		const made = db.tables.notes.create(
-			{ title: 'Groceries', tags: [], date: null },
-			{ document: ['body'] },
-		);
-		if (made.error !== null) throw made.error;
-		const { seen } = record(db.tables.notes);
-
-		const body = db.tables.notes.document(made.data.id)?.get('body', 'text');
+		const opened = await db.tables.notes.document.open(made.id);
+		const body = opened.data?.get('body', 'text');
 		if (body === undefined) throw new Error('the row has no document');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
+		expect(seen).toEqual([]);
 
-		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.data.id] }]);
+		db.tables.notes.update(made.id, { title: 'Groceries, previewed' });
+		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.id] }]);
+		opened.data?.[Symbol.dispose]();
 	});
 
 	test('unsubscribing stops delivery, and doing it twice is harmless', () => {
@@ -753,7 +810,7 @@ describe('a subscription names the rows a commit touched', () => {
 describe('kv reports its own changes', () => {
 	test('a local update notifies, and the listener reads the new value', () => {
 		const seen: unknown[] = [];
-		db.kv.subscribe(() => seen.push(db.kv.get().data?.theme));
+		db.kv.subscribe(() => seen.push(db.kv.get().error?.conforming.theme));
 
 		db.kv.update({ theme: 'dark' });
 
@@ -765,10 +822,12 @@ describe('kv reports its own changes', () => {
 		// preference and this one has to stop showing the old value.
 		const author = openMemory(database);
 		author.kv.update({ fontSize: 22 });
-		const seen: number[] = [];
-		db.kv.subscribe(() => seen.push(db.kv.get().data?.fontSize as number));
+		const seen: unknown[] = [];
+		db.kv.subscribe(() => seen.push(db.kv.get().error?.conforming.fontSize));
 
-		syncEngineOf(db.store).applyRemote(author.store.encodeStateSince());
+		syncEngineOf(db.store).applyRemote(
+			asEnvelope(author.store.encodeStateSince()),
+		);
 
 		expect(seen).toEqual([22]);
 	});
@@ -805,95 +864,106 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 		// The upgrade is a close and a reopen (ADR-0240): the same durable
 		// file, a newer declaration, one runtime at a time.
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const first = createAccountStore({ database: database, sqlite });
-		const written = first.kv.update({ theme: 'dark' });
-		if (written.error !== null) throw written.error;
-		await first[Symbol.asyncDispose]();
+		const first = createAccountStore({ definition: database, sqlite });
+		first.kv.update({ theme: 'dark' });
+		first.kv.update({ future: 'kept' } as never);
+		await first.store[Symbol.asyncDispose]();
 
 		const second = createAccountStore({
-			database: defineDatabase({
+			definition: defineData({
 				id: 'so.epicenter.honeycrisp',
-				kv: { theme: "'light'|'dark' = 'light'", added: "string = 'new'" },
+				kv: {
+					theme: field.select(['light', 'dark']),
+					added: field.string(),
+					future: field.string(),
+				},
 				tables: {
-					notes: { title: 'string', tags: 'string[]', date: 'string|null' },
+					notes: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) },
 				},
 			}),
 			sqlite,
 		});
-		// The stored write survives the upgrade, and the new declaration's
-		// default appears beside it.
-		expect(second.kv.get().data).toEqual({ theme: 'dark', added: 'new' });
-		await second[Symbol.asyncDispose]();
+		// The stored write survives the upgrade. The newly declared field remains
+		// missing, so recovery belongs to the application that opened the data.
+		const read = second.kv.get();
+		expect(read.data).toBeNull();
+		expect(read.error?.conforming).toEqual({
+			theme: 'dark',
+			future: 'kept',
+		});
+		expect(read.error?.issues.map(({ field }) => field)).toEqual(['added']);
+		await second.store[Symbol.asyncDispose]();
 	});
 });
 
 describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
-	const withScratch = defineDatabase({
+	const withScratch = defineData({
 		id: 'so.epicenter.honeycrisp',
-		kv: { theme: "'light'|'dark' = 'light'" },
+		kv: { theme: field.select(['light', 'dark']) },
 		tables: {
-			notes: { title: 'string' },
-			scratch: { body: 'string' },
+			notes: { title: field.string() },
+			scratch: { body: field.string() },
 		},
 	});
-	const withoutScratch = defineDatabase({
+	const withoutScratch = defineData({
 		id: 'so.epicenter.honeycrisp',
-		tables: { notes: { title: 'string' } },
+		kv: {},
+		tables: { notes: { title: field.string() } },
 	});
 
 	test('the next runtime has no handle; one that re-declares it reads every row back', async () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const first = createAccountStore({ database: withScratch, sqlite });
+		const first = createAccountStore({ definition: withScratch, sqlite });
 		const made = first.tables.scratch.create({ body: 'kept in the CRDT' });
-		if (made.error !== null) throw made.error;
-		const wrote = first.kv.update({ theme: 'dark' });
-		if (wrote.error !== null) throw wrote.error;
-		await first[Symbol.asyncDispose]();
+		first.kv.update({ theme: 'dark' });
+		await first.store[Symbol.asyncDispose]();
 
 		// The device updates (ADR-0240): same durable sqlite, the next
 		// runtime, a declaration that no longer names `scratch` or `kv`.
-		const second = createAccountStore({ database: withoutScratch, sqlite });
+		const second = createAccountStore({ definition: withoutScratch, sqlite });
 		expect((second.tables as Record<string, unknown>).scratch).toBeUndefined();
-		await second[Symbol.asyncDispose]();
+		await second.store[Symbol.asyncDispose]();
 
 		// A later release declares them again: nothing was lost, because the
 		// CRDT is the truth and never dropped a byte.
-		const third = createAccountStore({ database: withScratch, sqlite });
+		const third = createAccountStore({ definition: withScratch, sqlite });
 		expect(third.tables.scratch.list().rows).toEqual([
-			{ id: made.data.id, body: 'kept in the CRDT' },
+			{ id: made.id, body: 'kept in the CRDT' },
 		]);
 		expect(third.kv.get().data?.theme).toBe('dark');
-		await third[Symbol.asyncDispose]();
+		await third.store[Symbol.asyncDispose]();
 	});
 });
 
 describe('foreign bytes have exactly one door', () => {
-	// The fourth branch of the updateV2 listener treats any unrecognized origin
-	// as an application writing into a row's document, which is only correct
-	// for a LOCAL transaction. An application can reach the live document (a
-	// row document root exposes `.doc`), so the branch is guarded by
-	// `transaction.local` rather than by convention: `applyUpdateV2` forces it
-	// to false and a local `transact` defaults it to true. This test also pins
-	// `transaction.local` itself: if an rc removed the field, every application
-	// row-document write would take the throw and the suite fails loudly.
-	test('a direct Y.applyUpdateV2 on the live document throws instead of forging authored work', () => {
-		const made = db.tables.notes.create(
-			{ title: 'mine', tags: [], date: null },
-			{ document: ['editor'] },
-		);
-		if (made.error !== null) throw made.error;
-		const container = db.tables.notes.document(made.data.id);
-		if (container === undefined) throw new Error('no document');
-		const live = container.get('editor', 'text').doc;
-		if (live === null) throw new Error('root not attached to a document');
+	// The manager's updateV2 listener treats any unrecognized origin as an
+	// application writing into its own document, which is only correct for a
+	// LOCAL transaction. An application holds the live document (a handle's
+	// root exposes `.doc`), so the branch is guarded by `transaction.local`
+	// rather than by convention: `applyUpdateV2` forces it to false and a
+	// local `transact` defaults it to true. This test also pins
+	// `transaction.local` itself: if an rc removed the field, every
+	// application row-document write would take the throw and the suite fails
+	// loudly.
+	test('a direct Y.applyUpdateV2 on a live row document throws instead of forging authored work', async () => {
+		const made = note({ title: 'mine' });
+		const opened = await db.tables.notes.document.open(made.id);
+		const live = opened.data?.get('editor', 'text').doc;
+		if (live === null || live === undefined) {
+			throw new Error('root not attached to a document');
+		}
 
-		const stranger = openMemory(database);
-		stranger.tables.notes.create({ title: 'theirs', tags: [], date: null });
-		const foreign = stranger.store.encodeStateSince();
+		const stranger = new Y.Doc({ gc: true });
+		const text = stranger.get('editor', 'text' as never);
+		stranger.transact(() =>
+			text.applyDelta(text.change.insert('theirs') as never),
+		);
+		const foreign = new Uint8Array(Y.encodeStateAsUpdateV2(stranger));
+		stranger.destroy();
 
 		expect(() =>
 			Y.applyUpdateV2(live, foreign as Uint8Array<ArrayBuffer>),
-		).toThrow('applyRemote');
+		).toThrow('store connection');
 
 		// The throw fired before anything persisted, so the store is not
 		// poisoned: local work still commits.
@@ -902,7 +972,8 @@ describe('foreign bytes have exactly one door', () => {
 			tags: [],
 			date: null,
 		});
-		expect(after.error).toBeNull();
+		expect(after.id).toHaveLength(24);
+		opened.data?.[Symbol.dispose]();
 	});
 });
 
@@ -913,12 +984,11 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 			const opened = await open(database, { root });
 			if (opened.error !== null) throw opened.error;
 			const app = opened.data;
-			const made = app.tables.notes.create({
+			app.tables.notes.create({
 				title: 'retired document work',
 				tags: [],
 				date: null,
 			});
-			if (made.error !== null) throw made.error;
 			syncEngineOf(app.store).advance(9);
 
 			const discarded = await app.store.discard();
@@ -935,7 +1005,7 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 				expect(reopened.data.tables.notes.list().rows).toEqual([]);
 				expect(syncEngineOf(reopened.data.store).cursor()).toBe(0);
 			} finally {
-				await reopened.data[Symbol.asyncDispose]();
+				await reopened.data.store[Symbol.asyncDispose]();
 			}
 		} finally {
 			await rm(root, { recursive: true, force: true });
@@ -946,7 +1016,7 @@ describe('discard deletes the live file whole, and the shelf survives (ADR-0231)
 describe('a document store owes nobody (ADR-0233)', () => {
 	test('local commits leave the outbox empty and no replica verb exists', async () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const device = createDeviceStore({ database: database, sqlite });
+		const device = createDeviceStore({ definition: database, sqlite });
 		const store = device.store;
 		try {
 			const made = device.tables.notes.create({
@@ -954,7 +1024,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 				tags: [],
 				date: null,
 			});
-			expect(made.error).toBeNull();
+			expect(made.id).toHaveLength(24);
 
 			// The write is durable, but it is owed to nobody: nothing could ever
 			// acknowledge a device document's outbox, so nothing may join it.
@@ -975,7 +1045,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 			// @ts-expect-error a device store has no sync engine
 			expect(() => syncEngineOf(store)).toThrow('not a replica');
 		} finally {
-			await device[Symbol.asyncDispose]();
+			await device.store[Symbol.asyncDispose]();
 		}
 	});
 
@@ -997,7 +1067,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 		}
 
 		const device = createDeviceStore({
-			database: database,
+			definition: database,
 			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const account = openMemory(database);
@@ -1005,8 +1075,8 @@ describe('a document store owes nobody (ADR-0233)', () => {
 			expect(kindOf(device.store)).toBe('device');
 			expect(kindOf(account.store)).toBe('account');
 		} finally {
-			await device[Symbol.asyncDispose]();
-			await account[Symbol.asyncDispose]();
+			await device.store[Symbol.asyncDispose]();
+			await account.store[Symbol.asyncDispose]();
 		}
 	});
 });
@@ -1014,7 +1084,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 describe('an unusable store throws, and never dresses up as a read outcome', () => {
 	test('using a disposed store throws StoreUnusableError', async () => {
 		const app = openMemory(database);
-		await app[Symbol.asyncDispose]();
+		await app.store[Symbol.asyncDispose]();
 		expect(() => app.tables.notes.list()).toThrow(StoreUnusableError);
 		expect(() => app.kv.get()).toThrow(StoreUnusableError);
 		expect(() => app.tables.notes.get('anything')).toThrow(StoreUnusableError);
@@ -1026,7 +1096,7 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 		const raw = new Database(':memory:');
 		const sqlite = createBunSqliteAdapter(raw);
 		const bound = createAccountStore({
-			database: database,
+			definition: database,
 			sqlite,
 			// The refused flush is the subject here, not noise worth printing.
 			log: {
@@ -1046,7 +1116,7 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 			tags: [],
 			date: null,
 		});
-		expect(made.error).toBeNull();
+		expect(made.id).toHaveLength(24);
 		// Reads follow the accepted edit immediately.
 		expect(bound.tables.notes.list().rows.map((row) => row.title)).toEqual([
 			'still accepted',

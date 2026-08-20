@@ -126,7 +126,7 @@
 	},
 	"scripts": {
 		"build": "bun run build:declarations && bun run --filter '*' build",
-		"build:declarations": "bun run --cwd packages/field build && bun run --cwd packages/database build",
+		"build:declarations": "bun run --cwd packages/field build && bun run --cwd packages/data build",
 		"check": "bun run lint:ci && bun run typecheck && bun run test && bun run check:structure && bun run lint:slop",
 		"dev": "bun run dev:honeycrisp",
 		"dev:api": "bun run --cwd apps/api dev",

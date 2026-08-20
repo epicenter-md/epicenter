@@ -1,3 +1,4 @@
+import { field } from '@epicenter/data/definition';
 /**
  * THROWAWAY. One page, two devices, one row crossing between them.
  *
@@ -9,13 +10,14 @@
 
 import { createAccountStore } from '@epicenter/data/engine';
 import { createSyncConnection } from '@epicenter/data/sync';
-import { defineDatabase } from '@epicenter/database';
+import { defineData } from '@epicenter/data/definition';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
-const labDatabase = defineDatabase({
+const labDatabase = defineData({
 	id: 'so.epicenter.synclab',
-	tables: { notes: { title: 'string', device: 'string', at: 'string' } },
+	kv: {},
+	tables: { notes: { title: field.string(), device: field.string(), at: field.string() } },
 });
 
 const device =
@@ -28,7 +30,7 @@ const device =
 
 const sqlite3 = await sqlite3InitModule();
 const db = createAccountStore({
-	database: labDatabase,
+	definition: labDatabase,
 	sqlite: createBrowserSqliteAdapter(new sqlite3.oo1.DB(':memory:')),
 });
 const store = db.store;
@@ -124,10 +126,6 @@ function write(fields: { title: string }): void {
 		device,
 		at: new Date().toISOString(),
 	});
-	if (written.error !== null) {
-		status.textContent = `write failed: ${written.error.message}`;
-		return;
-	}
 	// Nothing nudges. The store announces the work it authored and the driver
 	// starts the idle timer, which is what turns a burst of transactions into
 	// one entry and is the whole reason the log is affordable to never compact.
@@ -146,14 +144,17 @@ title.addEventListener('keydown', (event) => {
 paste.addEventListener('click', () => {
 	// One transaction well past the 2,097,152-byte storage cap, so the chunking
 	// path is exercised by hand on a real device rather than only in a test.
-	const written = db.tables.notes.create(
-		{ title: 'a 3 MB paste', device, at: new Date().toISOString() },
-		{ document: ['editor'] },
-	);
-	if (written.error !== null) return;
-	const text = db.tables.notes.document(written.data.id)?.get('editor', 'text');
-	text?.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
-	render();
+	const written = db.tables.notes.create({
+		title: 'a 3 MB paste',
+		device,
+		at: new Date().toISOString(),
+	});
+	void db.tables.notes.document.open(written.id).then((opened) => {
+		const text = opened.data?.get('editor', 'text');
+		text?.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
+		opened.data?.[Symbol.dispose]();
+		render();
+	});
 });
 
 render();

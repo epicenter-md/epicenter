@@ -1,9 +1,9 @@
 /**
- * Skills' inert workspace declaration: the workspace id it owns and the two
+ * Skills' inert data definition: the definition id it owns and the two
  * tables in it.
  *
- * A workspace declaration is pure JSON (ADR-0213, ADR-0240): arktype
- * expressions for the fields, and nothing that knows about storage, sync, or
+ * A data definition is pure JSON (ADR-0213, ADR-0240): closed field
+ * descriptors, and nothing that knows about storage, sync, or
  * documents. The `skills` and `skillReferences` property names are the durable
  * table names, so they are what row addresses carry and what the projection's
  * relations are called.
@@ -13,44 +13,50 @@
  * a later import, and it never becomes record identity.
  */
 
-import type { DatabaseView } from '@epicenter/data';
-import { defineDatabase, type RowOf } from '@epicenter/database';
+import type { DataView } from '@epicenter/data';
+import {
+	defineData,
+	field,
+	jsonValue,
+	type RowOf,
+} from '@epicenter/data/definition';
 
 const skillsTable = {
-	sourceId: 'string',
-	name: 'string',
-	description: 'string',
-	// Nullable with a default rather than optional. A workspace has no optional
+	sourceId: field.string(),
+	name: field.string(),
+	description: field.string(),
+	// Nullable rather than optional. A data definition has no optional
 	// fields on purpose: a field has to be one type through the CRDT attribute,
 	// the projection column and the row alike, and "absent" is not a SQL type.
-	license: 'string|null = null',
-	compatibility: 'string|null = null',
+	license: field.nullable(field.string()),
+	compatibility: field.nullable(field.string()),
 	// Opaque passthrough: whatever the frontmatter carried besides the fields
 	// above, round-tripped on export. `unknown` values rather than a recursive
 	// JSON type because the store's write gate already refuses anything that is
 	// not finite JSON, and a second declaration of that rule would be the one
 	// that goes stale.
-	metadata: 'Record<string, unknown>|null = null',
-	allowedTools: 'string|null = null',
+	metadata: field.nullable(field.json(jsonValue)),
+	allowedTools: field.nullable(field.string()),
 	// Validation-only rather than `string.date.parse`: a parsing form would hand
 	// back a `Date` that could not round-trip through the projection.
-	updatedAt: 'string.date.iso',
+	updatedAt: field.instant(),
 } as const;
 
 const referencesTable = {
-	skillId: 'string',
-	path: 'string',
-	updatedAt: 'string.date.iso',
+	skillId: field.string(),
+	path: field.string(),
+	updatedAt: field.instant(),
 } as const;
 
-export const skillsWorkspace = defineDatabase({
+export const skillsDefinition = defineData({
 	id: 'so.epicenter.skills',
 	title: 'Skills',
+	kv: {},
 	tables: { skills: skillsTable, skillReferences: referencesTable },
 });
 
 /** The typed view of one store through the Skills workspace. */
-export type SkillsData = DatabaseView<typeof skillsWorkspace>;
+export type SkillsData = DataView<typeof skillsDefinition>;
 
 export type Skill = RowOf<typeof skillsTable>;
 export type Reference = RowOf<typeof referencesTable>;
@@ -63,11 +69,9 @@ export type Reference = RowOf<typeof referencesTable>;
  * person edits, kept out of the row so it merges per character rather than
  * per write (ADR-0207).
  *
- * Named at `create` rather than felt for on first open, and that is a
- * correctness requirement rather than tidiness. `document(id).get(name)`
- * creates on miss, and a created nested type is addressed by the operation that
- * made it, so two devices first-opening one skill would each mint a root here
- * and map LWW would discard one along with everything written into it
- * (ADR-0215).
+ * One spelling, used at every open. Minting on first use is safe in an
+ * independent row document: a top-level root is addressed by its name, so two
+ * devices first-opening one skill converge with both writes retained
+ * (ADR-0248).
  */
 export const SKILL_CONTENT = 'content';

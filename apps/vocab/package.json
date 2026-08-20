@@ -26,7 +26,6 @@
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
-		"@epicenter/database": "workspace:*",
 		"@epicenter/recorder": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/ui": "workspace:*",
