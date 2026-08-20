@@ -26,10 +26,10 @@
 	// at someone whose notes are about to appear. The same gate deliberately
 	// holds a signed-in generation whose fresh account replica has not bound
 	// yet, device data included: a partial-ready surface is refused, and the
-	// way back to device-only use is a new generation (signing out).
-	const boot = new AbortController();
-	const opening = openHoneycrispDatabases({ auth, signal: boot.signal });
-	$effect(() => () => boot.abort());
+	// way back to device-only use is a new generation (signing out). Nothing
+	// aborts or disposes it: this is the root layout, so its death is the
+	// page's, and page death closes every handle.
+	const opening = openHoneycrispDatabases({ auth });
 
 	// A page lifetime is one auth generation. Everything above composed itself
 	// from the boot-time auth snapshot, so an identity change or a repaired
@@ -45,25 +45,29 @@
 {#await opening}
 	<Loading class="h-dvh" />
 {:then databases}
-	<HoneycrispProvider {databases}>
-		<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
-	</HoneycrispProvider>
-{:catch error}
-	<div class="flex h-dvh items-center justify-center p-6 text-center">
-		<div class="max-w-md space-y-2">
-			<h1 class="text-lg font-semibold">Honeycrisp could not start</h1>
-			<p class="text-sm text-muted-foreground">{bootFailureMessage(error)}</p>
-			<!-- The library's own sentence, kept rather than swallowed. It is what
-			     makes a bug report useful, and it is how anyone works out that the
-			     friendlier line above picked the wrong arm.
-			     `extractErrorMessage`, not `String(error)`: a tagged error is a
-			     plain object with a `message`, so stringifying one renders
-			     "[object Object]" and hides the only useful thing it carries. -->
-			<p class="text-muted-foreground/70 text-xs">
-				{extractErrorMessage(error)}
-			</p>
+	{#if databases.data === null}
+		<div class="flex h-dvh items-center justify-center p-6 text-center">
+			<div class="max-w-md space-y-2">
+				<h1 class="text-lg font-semibold">Honeycrisp could not start</h1>
+				<p class="text-sm text-muted-foreground">
+					{bootFailureMessage(databases.error)}
+				</p>
+				<!-- The library's own sentence, kept rather than swallowed. It is what
+				     makes a bug report useful, and it is how anyone works out that the
+				     friendlier line above picked the wrong arm.
+				     `extractErrorMessage`, not `String(error)`: a tagged error is a
+				     plain object with a `message`, so stringifying one renders
+				     "[object Object]" and hides the only useful thing it carries. -->
+				<p class="text-muted-foreground/70 text-xs">
+					{extractErrorMessage(databases.error)}
+				</p>
+			</div>
 		</div>
-	</div>
+	{:else}
+		<HoneycrispProvider databases={databases.data}>
+			<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
+		</HoneycrispProvider>
+	{/if}
 {/await}
 
 <Toaster offset={16} closeButton />
