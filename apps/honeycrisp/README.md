@@ -12,25 +12,25 @@ Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL
 
 ### Layout
 
-Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note list → editor. SSR is disabled; the app runs entirely in the browser as a static site.
+Single-SPA SvelteKit app with `/device` and `/account` destinations. Both use
+the same three-pane layout: sidebar (folders) → note list → editor. SSR is
+disabled; the app runs entirely in the browser as a static site.
 
 ### Data layer
 
 Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and opens it as a store the app owns:
 
 ```txt
-openDevice(honeycrispDefinition)                         sqlite-wasm in the page,
-openAccount(honeycrispDefinition, { principalId })       durable relations in
-                                                    IndexedDB, one data handle
-                                                    per document
-data.tables.notes.list()                            synchronous from here on
+openDeviceDatabase()                                      device database
+openAccountDatabase({ auth })                             account replica
+data.tables.notes.list()                                  synchronous from here on
 ```
 
-The definition names the application and the opener names which durable document it
-means and whose it is (ADR-0229 as amended by ADR-0233): one device document
-that never syncs and opens every generation, and one retained replica per
-account that also opens when the boot auth carries that principal. The root
-composes both in `src/lib/databases.ts`, and nothing else opens a store.
+The definition names the application and the route-owned opener names which
+durable document it means (ADR-0229 as amended by ADR-0233). `/device` opens
+the device database. `/account` gates auth and opens one retained account
+replica. Each route owns one store, and nothing falls back to the other route's
+data.
 The scalar document shape is the shared `app`/`kv`/`tables:<name>` grammar in
 [ADR-0257](../../docs/adr/0257-the-application-document-has-named-kv-and-table-roots.md).
 
@@ -38,9 +38,10 @@ Every build opens its own store, with no platform seam, and reaches one
 authority per signed-in account (ADR-0225/0226). The desktop host serves
 Honeycrisp's bundle and brokers its credential; it owns none of its data.
 
-**Reads are synchronous.** Opening the store is the only asynchronous thing
-the application does: it replays a durable log into one `Y.Doc` and everything
-after that is a property access. `data.tables.notes.list()` returns rows, not a promise.
+**Reads are synchronous after opening.** A route opens its store by replaying a
+durable log into one `Y.Doc`, then `data.tables.notes.list()` returns rows, not
+a promise. An account route may wait for a fresh replica's first binding while
+the device route remains independently usable.
 
 **Nothing polls and nothing refreshes.** `data.tables.notes.subscribe(...)` reports which
 rows a commit touched, and it fires for a local write, for prose typed into a
@@ -65,9 +66,10 @@ Normal deletion is soft deletion: the note row gets a `deletedAt` timestamp and 
 
 ### Auth and sync
 
-Sign-in is optional and never a door: the app opens against local storage and
-works completely signed out. Signing in attaches sync, and that is the whole of
-the sharing model. Every device signed into one account dials one authority
+The device destination works completely signed out. The account destination
+requires sign-in and shows its own gate; it never silently shows device data.
+Signing in opens the account replica and attaches sync, and that is the whole
+of the sharing model. Every device signed into one account dials one authority
 (`principals/<id>/stores/so.epicenter.honeycrisp`) and converges; there is
 nothing to pair, invite, or approve.
 

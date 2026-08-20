@@ -10,16 +10,15 @@ import {
 } from '@epicenter/honeycrisp';
 import { fromData, type ReactiveData } from '@epicenter/svelte';
 import { createContext } from 'svelte';
-import type { HoneycrispDatabases } from './databases.js';
 import { navigation } from './navigation.svelte.js';
 
 /**
  * The reactive Honeycrisp application, for one mounted app generation.
  *
- * The databases are boot's yield: opened documents, attached sync, and the
- * disposal that closes them (ADR-0233). This is the application built on top
- * of them, and the one object the UI consumes. It owns the document-selection
- * policy, the reactive named tables over that document (`fromData`),
+ * The opened database is a route's yield: one document, optional attached
+ * sync, and the disposal that closes it (ADR-0233). This is the application
+ * built on top of that one document, and the one object the UI consumes. It
+ * owns the reactive named tables over that document (`fromData`),
  * Honeycrisp's domain operations (`notes`, `folders`), the one derivation that
  * needs both those tables and where the user is (`visibleNotes`), and the
  * narrow account and store capabilities the UI actually needs.
@@ -36,25 +35,16 @@ import { navigation } from './navigation.svelte.js';
  * document is open, so routing it through this object bought a rename and
  * nothing else.
  *
- * The document choice lives here, visible once: account notes when this
- * generation has an account, device notes otherwise. The databases carry no
- * default, so this line is the whole of the policy, and a Local
- * Drafts feature would build a second object over `databases.device` in
- * the same way. A page lifetime is one auth generation (ADR-0232), so the
- * choice never changes while this object lives.
+ * The route chooses the document before this function is called. There is no
+ * fallback and no account/device decision below this boundary.
  *
- * One instance per mounted app generation, created by the layout's provider
+ * One instance per mounted route generation, created by the route's provider
  * and reached through `getHoneycrisp`, never a module-global singleton.
  * Nothing here needs disposing: the adapter's subscriptions are ref-counted
  * to the effects that read them, so they detach when the consuming
  * components unmount.
  */
-export function createHoneycrisp({
-	databases,
-}: {
-	databases: HoneycrispDatabases;
-}) {
-	const data = databases.account?.data ?? databases.device;
+export function createHoneycrisp({ data }: { data: HoneycrispData }) {
 	const reactiveData = fromData(data);
 	// Asymmetric on purpose: notes are table-local, folders are not. Deleting a
 	// folder re-parents the notes that were in it, so it needs both tables and
@@ -105,17 +95,6 @@ export function createHoneycrisp({
 		createNote(): void {
 			navigation.selectNote(notes.create(navigation.folderId));
 		},
-		/**
-		 * The account's two capabilities, present exactly when this generation
-		 * has one. Its data is not here, because it already is: `notes` and
-		 * `folders` above are the chosen document.
-		 */
-		account:
-			databases.account === undefined
-				? undefined
-					: {
-							syncStatus: databases.account.syncStatus,
-						},
 	};
 }
 
@@ -250,9 +229,7 @@ function createFolders(data: ReactiveData<HoneycrispData>) {
  * as deleted, per-folder counts, where a note's prose is, and the domain
  * commands (soft delete, pinning, re-parenting) with their URL cleanup.
  */
-function createNotes(
-	table: ReactiveData<HoneycrispData>['tables']['notes'],
-) {
+function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	const all = $derived(table.rows.filter((note) => note.deletedAt === null));
 	const deleted = $derived(
 		table.rows.filter((note) => note.deletedAt !== null),

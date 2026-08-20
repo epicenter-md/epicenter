@@ -2,8 +2,8 @@
  * What a person reads when Honeycrisp cannot open their notes.
  *
  * `@epicenter/data` states a failure for whoever is debugging one: an
-	 * unaddressable replica names the account it lacks. That sentence is correct
-	 * and it is not what someone who
+ * unaddressable replica names the account it lacks. That sentence is correct
+ * and it is not what someone who
  * opened a notes app should be handed. The library keeps its words; this picks
  * theirs.
  *
@@ -16,15 +16,22 @@
  * A third arm earns itself when a third failure turns out to reach a person,
  * not before.
  */
-export function bootFailureMessage(error: unknown): string {
+export function bootFailureMessage(
+	error: unknown,
+	workspace: 'device' | 'account' = 'device',
+): string {
 	if (typeof error === 'object' && error !== null && 'name' in error) {
 		switch (error.name) {
 			case 'AlreadyOpen':
 				return 'Another Honeycrisp window already has these notes open. Close it, then try again.';
 			case 'Unaddressable':
 			case 'CredentialRefused':
-				return 'You are signed in, but this device could not load your account. Sign in again.';
+				return workspace === 'account'
+					? 'You are signed in, but Across your devices could not be opened. Sign in again.'
+					: 'Your notes on this device could not be opened. Restarting Honeycrisp usually clears it.';
 		}
 	}
-	return 'Something went wrong opening your notes. They are still on this device; restarting Honeycrisp usually clears it.';
+	return workspace === 'account'
+		? 'Something went wrong opening Across your devices. Your notes on this device are still available.'
+		: 'Something went wrong opening your notes on this device. Restarting Honeycrisp usually clears it.';
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
+	import type { SyncConnectionStatus } from '@epicenter/data/sync';
 	import * as Collapsible from '@epicenter/ui/collapsible';
 	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import * as Sidebar from '@epicenter/ui/sidebar';
@@ -11,19 +12,31 @@
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
+	import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
+
+	let {
+		syncStatus,
+		workspaceLabel,
+		otherWorkspaceLabel,
+		otherWorkspaceHref,
+	}: {
+		syncStatus?: () => SyncConnectionStatus | undefined;
+		workspaceLabel: 'On this device' | 'Across your devices';
+		otherWorkspaceLabel: 'On this device' | 'Across your devices';
+		otherWorkspaceHref: '/device' | '/account';
+	} = $props();
 
 	const honeycrisp = getHoneycrisp();
-
-	const account = honeycrisp.account;
-
-	// Undefined when sync is not part of this app generation, which is not an
-	// error state: a build with no auth, a signed-out replica, and a desktop
-	// window that holds no credential all show nothing here, correctly.
-	let sync = $state.raw(account?.syncStatus());
+	let sync = $state.raw<SyncConnectionStatus | undefined>(undefined);
 
 	$effect(() => {
+		if (syncStatus === undefined) {
+			sync = undefined;
+			return;
+		}
+		sync = syncStatus();
 		const timer = setInterval(() => {
-			sync = account?.syncStatus();
+			sync = syncStatus();
 		}, 1_000);
 		return () => clearInterval(timer);
 	});
@@ -33,7 +46,14 @@
 <Sidebar.Root>
 	<Sidebar.Header>
 		<div class="flex items-center justify-between px-2 py-1">
-			<span class="text-sm font-semibold">Honeycrisp</span>
+			<div class="flex min-w-0 items-center gap-1">
+				<span class="text-sm font-semibold">Honeycrisp</span>
+				<WorkspaceSwitcher
+					label={workspaceLabel}
+					otherLabel={otherWorkspaceLabel}
+					otherHref={otherWorkspaceHref}
+				/>
+			</div>
 			<div class="flex items-center gap-1">
 				<LightSwitch variant="ghost" />
 				<AccountPopover

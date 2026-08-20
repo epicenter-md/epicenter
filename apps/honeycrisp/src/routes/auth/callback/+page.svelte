@@ -12,7 +12,7 @@
 				errorMessage = error.message;
 				return;
 			}
-			await goto('/', { replaceState: true });
+			await goto('/account', { replaceState: true });
 		})();
 	});
 </script>

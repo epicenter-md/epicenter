@@ -114,6 +114,14 @@ test('a sign-in completing on the callback route replaces instead of reloading',
 	expect(location.reload).not.toHaveBeenCalled();
 });
 
+test('the app can choose the callback destination', () => {
+	const auth = createFakeAuth(signedOut);
+	location.pathname = '/auth/callback';
+	reloadOnAuthChange(auth.client, { callbackDestination: '/account' });
+	auth.emit(signedIn('p1'));
+	expect(location.replace).toHaveBeenCalledWith('/account');
+});
+
 test('unsubscribing stops future reloads', () => {
 	const auth = createFakeAuth(signedOut);
 	const unsubscribe = reloadOnAuthChange(auth.client);

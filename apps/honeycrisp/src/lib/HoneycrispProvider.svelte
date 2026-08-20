@@ -1,22 +1,24 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { createHoneycrisp, setHoneycrisp } from './app.svelte.js';
-	import type { HoneycrispDatabases } from './databases.js';
+	import type { OpenedAccountDatabase, OpenedDeviceDatabase } from './databases.js';
 
 	let {
-		databases,
+		data,
 		children,
-	}: { databases: HoneycrispDatabases; children: Snippet } = $props();
+	}: {
+		data: OpenedAccountDatabase['data'] | OpenedDeviceDatabase['data'];
+		children: Snippet;
+	} = $props();
 
-	// The databases stop here. This component turns one generation's opened
-	// databases into the reactive application object and provides that
+	// The opened database stops here. This component turns one route generation's
+	// single data capability into the reactive application object and provides that
 	// instead, so descendants
 	// consume `getHoneycrisp()` and nothing below can reach the raw store or
-	// sync plane. Read once, not `$derived`: the layout mounts this exactly
-	// once per resolved boot, and a page lifetime is one auth generation
-	// (ADR-0232), so the prop never changes while this component lives.
+	// sync plane. Read once, not `$derived`: the route mounts this exactly once
+	// per resolved database, so the prop never changes while this component lives.
 	/* svelte-ignore state_referenced_locally */
-	setHoneycrisp(createHoneycrisp({ databases }));
+	setHoneycrisp(createHoneycrisp({ data }));
 </script>
 
 {@render children()}

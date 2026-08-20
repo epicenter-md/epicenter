@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { AuthClient, InstanceSetting } from '@epicenter/auth';
+	import type { Snippet } from 'svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
@@ -79,6 +80,8 @@
 			/** The shared instance setting handle this app injected. */
 			setting: InstanceSetting;
 		};
+		/** Optional replacement for the compact account icon trigger. */
+		trigger?: Snippet<[{ props: Record<string, unknown> }]>;
 	};
 
 	let {
@@ -87,6 +90,7 @@
 		onForgetDevice,
 		disabledReason,
 		instanceConnect,
+		trigger,
 	}: AccountPopoverProps = $props();
 
 	let popoverOpen = $state(false);
@@ -220,21 +224,25 @@
 <Popover.Root bind:open={popoverOpen}>
 	<Popover.Trigger>
 		{#snippet child({ props })}
-			<Button {...props} variant="ghost" size="icon-sm" {tooltip}>
-				<!-- Identity glyph stays fixed; the sync dot sits at its
-				     bottom-right like a presence badge (top-right would read
-				     as a notification). -->
-				<span class="relative">
-					<CircleUser
-						class="size-4 {isSignedIn ? '' : 'text-muted-foreground'}"
-					/>
-					{#if triggerDot}
-						<span
-							class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full {triggerDot}"
-						></span>
-					{/if}
-				</span>
-			</Button>
+			{#if trigger}
+				{@render trigger({ props })}
+			{:else}
+				<Button {...props} variant="ghost" size="icon-sm" {tooltip}>
+					<!-- Identity glyph stays fixed; the sync dot sits at its
+					     bottom-right like a presence badge (top-right would read
+					     as a notification). -->
+					<span class="relative">
+						<CircleUser
+							class="size-4 {isSignedIn ? '' : 'text-muted-foreground'}"
+						/>
+						{#if triggerDot}
+							<span
+								class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full {triggerDot}"
+							></span>
+						{/if}
+					</span>
+				</Button>
+			{/if}
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content

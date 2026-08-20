@@ -7,38 +7,31 @@ the store today, so it is also the reference for how an app is built.
 
 Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0248](../../docs/adr/0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md) (a row owns an independent Yjs document at a derived address), [ADR-0233](../../docs/adr/0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) (a device document and one account replica per account, chosen by auth at boot), [ADR-0256](../../docs/adr/0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md) (automatic folding is current; manual workspace compaction is deferred).
 
-## Two durable documents, and the root opens them
+## Two durable documents, and routes open one
 
-`src/lib/databases.ts` is the only place that opens a store. Every page
-lifetime eagerly opens the device document, and a generation whose boot auth
-carries a principal (`signed-in` or `reauth-required`) also opens that
-account's retained replica and attaches sync to it alone (ADR-0233):
+`src/lib/databases.ts` is the only place that opens a store. The `/device`
+route opens the device database, while `/account` gates auth and opens the
+account replica. Each route owns exactly one store lifetime (ADR-0233):
 
 ```text
 epicenter/so.epicenter.honeycrisp/device                     never syncs, always open
 epicenter/so.epicenter.honeycrisp/account/<principal id>     one per account
 ```
 
-A generation's opened databases (`HoneycrispDatabases`) have exactly two
-shapes: `{ device }` and
-`{ device, account: { data, syncStatus } }`, and they stop at the
-layout's provider. `createHoneycrisp` (`src/lib/honeycrisp/index.ts`) turns
-one generation's databases into the reactive application object the UI
-consumes: it makes the document choice (`account?.data ?? device`) visible
-once, adapts that document into Svelte-reactive named tables with
-`fromWorkspace` (from `@epicenter/svelte`), layers Honeycrisp's domain
-operations, search, and `view` navigation on top, and exposes only the narrow
-capability the UI needs (`account.syncStatus`). Components reach it through `getHoneycrisp()`; the raw
-databases, store, and sync plane never cross that boundary. A page lifetime is one auth generation (ADR-0232),
-so the composition never changes while the app lives; `reloadOnAuthChange`
-starts the next one.
+`createHoneycrisp` turns the one route-owned data capability into the reactive
+application object the UI consumes. It adapts that document into
+Svelte-reactive named tables with `fromData` (from `@epicenter/svelte`), layers
+Honeycrisp's domain operations, search, and URL navigation on top, and exposes
+no database identity or fallback. Components reach it through
+`getHoneycrisp()`; raw stores never cross that boundary. Account sync status is
+passed separately by the account route for the sidebar's status line.
 
-A signed-in account is unavailable until its first bootstrap binds it to an
-authority document, so the layout's boot gate holds the whole app while it
-waits, device data included; a partial-ready local-drafts state is refused,
-and signing out (a new generation) is the way back to device-only use.
-Signing out closes a replica and keeps it, so signing back in finds the same
-account's work.
+A fresh account replica is unavailable until its first bootstrap binds it to an
+authority document, so `/account` shows its loading gate while it waits. The
+device route is independent and never waits on account binding. A permanent
+credential refusal stays on `/account` and offers reconnection; it never falls
+back to device data. Importing between the two documents is deliberately
+deferred as a future explicit application feature.
 
 ## Three builds, one store shape
 

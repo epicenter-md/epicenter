@@ -51,11 +51,16 @@ function principalKey(state: AuthState) {
  * completing there fires this state change before the page's own redirect can
  * run; a bare reload would land back on the callback URL and replay the
  * already-consumed authorization code, surfacing a spurious error after a
- * real success, so that one location gets `replace('/')` instead.
+ * real success, so that one location gets a replacement navigation instead.
+ * @param options.callbackDestination - Where the app wants a completed
+ * callback to land. The utility does not choose a product route by itself.
  */
 export function reloadOnAuthChange(
 	auth: AuthClient,
-	{ callbackPath = '/auth/callback' }: { callbackPath?: string } = {},
+	{
+		callbackPath = '/auth/callback',
+		callbackDestination = '/',
+	}: { callbackPath?: string; callbackDestination?: string } = {},
 ) {
 	let previous = auth.state;
 	let reloading = false;
@@ -67,7 +72,7 @@ export function reloadOnAuthChange(
 		if (reloading || !(identityChanged || credentialAcquired)) return;
 		reloading = true;
 		if (window.location.pathname === callbackPath) {
-			window.location.replace('/');
+			window.location.replace(callbackDestination);
 			return;
 		}
 		window.location.reload();
