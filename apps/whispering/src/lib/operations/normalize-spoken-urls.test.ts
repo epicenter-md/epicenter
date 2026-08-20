@@ -19,6 +19,14 @@ test('spoken HTTPS punctuation becomes a URL', () => {
 	);
 });
 
+test('natural ASR shorthand becomes a URL without swallowing following prose', () => {
+	expect(
+		normalizeSpokenUrls(
+			'Alright, say http s, slash, food.com slash and it should work.',
+		),
+	).toBe('Alright, say https://food.com/ and it should work.');
+});
+
 test('forward slash, domain hyphens, ports, and paths are normalized', () => {
 	expect(
 		normalizeSpokenUrls(
