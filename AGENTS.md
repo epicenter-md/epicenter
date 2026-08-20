@@ -158,6 +158,16 @@ Load `writing-voice` for substantial prose or explicit tone/rewrite work.
 
 Be direct about flawed assumptions, weak designs, and regressions. Do not agree just to be agreeable.
 
+## Agent collaboration
+
+Codex is the primary continuity, judgment, execution, testing, and integration owner for repository work. It gathers the evidence, makes the final decision, edits the active worktree, and integrates the result.
+
+Claude is an advisory review lane. Do not invoke Claude automatically because a task is complex. Invoke the `consult-claude` skill only when the user explicitly says “consult” or asks to consult Claude. A consult can happen before a high-leverage decision, after a meaningful implementation slice, or at both points.
+
+Consultation is read-only. Claude may inspect the repository, but must not edit, commit, create a worktree, or publish. The `consult-claude` skill owns the brief and review procedure.
+
+Codex decides which feedback is valid, applies any changes, and reruns verification. Enlisted or delegated Claude execution is an explicit exception, not a normal escalation path.
+
 ## Review routing
 
 Keep procedures in skills; keep `AGENTS.md` to routing.
