@@ -1,5 +1,5 @@
 {
-	"about": "Trigger corpus for run-trigger-eval.ts. Two boundaries: the review/simplification cluster, where several skills legitimately overlap, and the Claude enlistment/handoff cluster, where picking the wrong one wastes a whole session. An `anchor` is a phrase the expected owner should carry; a `distractor` is a rival's phrase the prompt keeps on purpose to make the case hard. Both must appear verbatim in the `prompt` and the runner rejects the corpus otherwise, which is what stops a prompt rewrite from quietly draining a case's difficulty. `router` names the agent whose routing a case is about and defaults to `claude`; `--live` drives the Claude CLI, so it reports `codex` cases as not measured rather than failing them.",
+	"about": "Trigger corpus for run-trigger-eval.ts. Two boundaries: the review/simplification cluster, where several skills legitimately overlap, and the Claude consultation/handoff cluster, where picking the wrong one wastes a whole session. An `anchor` is a phrase the expected owner should carry; a `distractor` is a rival's phrase the prompt keeps on purpose to make the case hard. Both must appear verbatim in the `prompt` and the runner rejects the corpus otherwise, which is what stops a prompt rewrite from quietly draining a case's difficulty. `router` names the agent whose routing a case is about and defaults to `claude`; `--live` drives the Claude CLI, so it reports `codex` cases as not measured rather than failing them.",
 	"cases": [
 		{
 			"id": "review-second-pass",
@@ -94,50 +94,50 @@
 			"why": "Near miss for one-sentence-test. 'sounds like me' is writing-voice's hook; 'in one sentence' is the distractor and stays unresolved on the offline pass by design, because one-sentence-test must keep claiming it for review-one-sentence. The object decides the owner: authored prose to writing-voice, a technical surface to one-sentence-test, and only --live can weigh that."
 		},
 		{
-			"id": "enlist-implementation",
-			"cluster": "enlistment",
-			"prompt": "The direction is settled. Have Claude execute the implementation across those four packages while I step out.",
-			"anchors": ["have Claude execute"],
-			"expect": "enlist-claude",
-			"forbid": ["handoff"],
-			"router": "codex",
-			"why": "The user wants Codex to launch a durable Claude collaborator, not produce a copy-paste artifact. The invitation states the outcome and leaves Claude to decide its best contribution."
-		},
-		{
-			"id": "enlist-independent-investigation",
-			"cluster": "enlistment",
-			"prompt": "Before we commit to this ownership boundary, consult Claude for an independent investigation.",
-			"anchors": ["consult Claude", "independent investigation"],
-			"expect": "enlist-claude",
+			"id": "consult-independent-investigation",
+			"cluster": "claude-consultation",
+			"prompt": "Before we commit to this ownership boundary, consult Claude for an independent design investigation.",
+			"anchors": ["consult Claude", "independent design investigation"],
+			"expect": "consult-claude",
 			"forbid": [],
 			"router": "codex",
-			"why": "The user explicitly wants Codex to enlist Claude. The launcher does not pre-classify Claude's contribution as investigation, review, or implementation."
+			"why": "The user wants a context-rich Claude consultation before locking a design. The active agent remains responsible for implementation."
+		},
+		{
+			"id": "consult-implementation-review",
+			"cluster": "claude-consultation",
+			"prompt": "Review this meaningful implementation diff with Claude. Ask Claude to push back on shallow behavior and tell me what should change before we continue.",
+			"anchors": ["Review this meaningful implementation diff with Claude", "push back"],
+			"expect": "consult-claude",
+			"forbid": [],
+			"router": "codex",
+			"why": "The user wants a deep review wave, not a rubber stamp or a Claude-owned worktree."
 		},
 		{
 			"id": "handoff-paste-prompt",
-			"cluster": "enlistment",
+			"cluster": "claude-consultation",
 			"prompt": "Write me something I can copy and paste into a fresh Claude Code session on my laptop to continue this.",
 			"anchors": ["copy and paste into"],
 			"expect": "handoff",
-			"forbid": ["enlist-claude"],
-			"why": "The user wants an artifact, not a launched collaborator. This is the boundary handoff and enlist-claude can otherwise blur."
+			"forbid": ["consult-claude"],
+			"why": "The user wants an artifact, not an in-thread consultation. This is the manual handoff boundary and consult-claude can otherwise blur."
 		},
 		{
 			"id": "enlistment-hand-off-near-miss",
-			"cluster": "enlistment",
+			"cluster": "claude-consultation",
 			"prompt": "Hand off the deploy checklist to the on-call engineer and close the incident.",
 			"anchors": ["hand off"],
 			"expect": null,
-			"forbid": ["enlist-claude", "handoff"],
+			"forbid": ["consult-claude", "handoff"],
 			"why": "Near miss on an everyday phrase. 'hand off' is ordinary English and asks for no Claude session or prompt artifact."
 		},
 		{
 			"id": "agent-goal-line",
-			"cluster": "enlistment",
+			"cluster": "claude-consultation",
 			"prompt": "Write a /goal line for this long-running Codex work with a clear completion condition.",
 			"anchors": ["/goal", "completion condition"],
 			"expect": "agent-goal",
-			"forbid": ["handoff", "enlist-claude"],
+			"forbid": ["handoff", "consult-claude"],
 			"why": "A goal line is a third artifact next to the handoff prompt and the launched session."
 		}
 	]

@@ -124,7 +124,7 @@ ln -s ../../.agents/skills/<skill-name> .claude/skills/<skill-name>
 
 Relative, never absolute: an absolute link pins every checkout to one working
 copy. Skip the link only for a skill written for a Codex session, which is why
-`consult-claude`, `delegate-claude`, and `codex-task-backlog-hygiene` have none.
+`consult-claude` and `codex-task-backlog-hygiene` have none.
 Delete the link in the same change that deletes the skill.
 
 Ground the skill in real source material: completed tasks, diffs, review

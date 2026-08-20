@@ -126,11 +126,11 @@ silent skip.
 
 `--live` drives the Claude CLI, so it can only measure Claude-routed cases. A
 case carrying `"router": "codex"` is reported as `NOT MEASURED` and left out of
-the pass count. `enlist-claude` is written for a Codex session in its own
-description, so a Claude probe answering it picks a neighbour every time; that
-is a category error in the measurement, not a defect in the description.
-Measuring it needs a Codex-side probe that does not exist yet. Do not edit a
-description on the strength of a probe that could not have routed to it.
+the pass count. `consult-claude` is written for a Codex session, so a Claude
+probe answering it picks a neighbour every time; that is a category error in
+the measurement, not a defect in the description. Measuring it needs a
+Codex-side probe that does not exist yet. Do not edit a description on the
+strength of a probe that could not have routed to it.
 
 Routing varies between runs, so re-run rather than trusting one pass, as
 [Prompt Set](#prompt-set) says. `--runs <n>` does that per case and reports a
