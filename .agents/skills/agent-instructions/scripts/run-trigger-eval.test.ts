@@ -396,17 +396,17 @@ test('the gate corpus keeps both classes and its controls', async () => {
 	expect(corpus.cases.some((c) => c.expect === null)).toBe(true);
 });
 
-test('only enlistment cases are marked unmeasurable', async () => {
+test('only Codex-side Claude consultation cases are marked unmeasurable', async () => {
 	const corpus = JSON.parse(await readFile(corpusPath, 'utf8')) as {
 		cases: EvalCase[];
 	};
 	const { unmeasurable } = partitionByRouter(corpus.cases);
 
-	// This skill says in its own description that Codex invokes it. The two
-	// cases prove that investigation and implementation no longer route apart.
+	// This skill says in its own description that the active Codex-side agent
+	// invokes it. The two cases cover direction and review waves.
 	expect(unmeasurable.map((c) => c.expect)).toEqual([
-		'enlist-claude',
-		'enlist-claude',
+		'consult-claude',
+		'consult-claude',
 	]);
 });
 
@@ -530,7 +530,7 @@ test('the shipped corpus covers both boundaries and both directions', async () =
 	};
 
 	const clusters = new Set(corpus.cases.map((c) => c.cluster));
-	expect(clusters).toEqual(new Set(['review', 'enlistment']));
+	expect(clusters).toEqual(new Set(['review', 'claude-consultation']));
 	// A corpus with no near-miss cases only proves a skill can fire, never that
 	// it stays quiet.
 	expect(corpus.cases.some((c) => c.expect === null)).toBe(true);
