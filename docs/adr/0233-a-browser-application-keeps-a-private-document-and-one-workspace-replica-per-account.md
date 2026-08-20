@@ -8,6 +8,8 @@
   it is.
 - **Relates:** [ADR-0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md)
   (which named private local documents and left their storage undecided),
+  [ADR-0256](0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md)
+  (automatic folding is current; workspace compaction is deferred),
   [ADR-0232](0232-a-page-lifetime-is-one-auth-generation-and-a-permanently-denied-sync-stops-for-good.md)
   (a page lifetime is one auth generation, which is what makes a boot-time
   choice complete),
@@ -49,7 +51,7 @@ database leaves three options, and all of them are worse than an address: B
 briefly opens A's bytes; B force-deletes A's retained state, which is the
 retention promise broken by the next sign-in; or the database grows a map of
 principals inside itself, which is account-scoped storage with the ownership
-hidden one level down where no delete, discard, or rebuild can see it.
+hidden one level down where no delete, discard, or maintenance action can see it.
 
 ## Decision
 
@@ -72,8 +74,8 @@ epicenter
   merged with, or deleted because of a workspace action.
 - An **account** replica belongs to one principal. It is this device's copy
   of that principal's current authority document (ADR-0231), it is unavailable
-  until its first bootstrap binds it, and every sync verb (bootstrap,
-  supersession discard, rebuild) operates on that one replica alone.
+  until its first bootstrap binds it, and every sync verb (bootstrap and
+  supersession discard) operates on that one replica alone.
 
 ### Three identities, and none of them stands in for another
 
@@ -83,11 +85,13 @@ epicenter
   authority is addressed by (ADR-0225), so a device's local partition and its
   server partition are one identity rather than two that must agree.
 - The **authority document id** says which current Yjs document that replica
-  belongs to. It changes on rebuild.
+  belongs to. Automatic folding does not change it. A future Compact workspace
+  action may mint a replacement identity as a separate decision.
 
-The first two are the address. The third lives inside the store, because
-rebuild changes it: a rebuilt workspace stays at the same address while its
-contents are discarded and re-downloaded.
+The first two are the address. The third lives inside the store because it is
+private sync admission metadata, not part of the public application address.
+It remains stable for the current document lifetime; a future Compact
+workspace action may replace it while keeping the logical address stable.
 
 ### The browser names each document by its capability
 
@@ -97,7 +101,7 @@ const account = await openAccount(lens, { principalId });
 ```
 
 The names are not cosmetic. A device document has no authority, outbox,
-supersession, rebuild, or discard operation. An account opener returns a
+supersession, or discard operation. An account opener returns a
 replica with exactly those capabilities. `openAccount` has nowhere to omit the
 principal id, and the IndexedDB database is the address derived from it:
 
@@ -197,7 +201,7 @@ defensive assertion at the bootstrap boundary, not product language.
 - A signed-in workspace starts empty and unavailable until bootstrap, and
   cannot read or destroy anonymous work or another account's work while it
   waits.
-- Workspace rebuild and supersession can only ever delete
+- Supersession can only ever delete
   `epicenter/<namespace>/account/<the signed-in principal>`.
 - There is no device-to-account promotion, merge, or copy anywhere in
   sync. A future copy action is an explicit application-level feature.
@@ -227,8 +231,8 @@ Tests must demonstrate that:
   never shown as the device document;
 - an authenticated generation with no stable principal id opens no account
   store;
-- supersession and rebuild delete one account database and leave the device
-  document and every other account's replica intact;
+- supersession deletes one account database and leaves the device document and
+  every other account's replica intact;
 - the device document and two accounts' replicas open concurrently without
   colliding in persistence or claims, and a second open of any of them is
   refused; and

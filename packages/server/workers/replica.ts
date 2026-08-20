@@ -7,9 +7,9 @@ import { field } from '@epicenter/data/definition';
  * inside `workerd` is a Durable Object's own storage. Everything else here is
  * the deployed
  * client: `createAccountStore`,
- * `createSyncConnection` with the real supersession rule, and `rebuildDatabase`
- * over a real WebSocket and the real routes, so a test can assert on the rows
- * a device actually holds rather than on frames a harness counted.
+ * `createSyncConnection` with the real supersession rule over a real WebSocket
+ * and the real routes, so a test can assert on the rows a device actually
+ * holds rather than on frames a harness counted.
  *
  * Adoption is modelled the way a page does it (ADR-0231): on a probe-confirmed
  * supersession the replica discards its local rows whole and boots fresh,
@@ -20,11 +20,9 @@ import { field } from '@epicenter/data/definition';
  */
 import { DurableObject } from 'cloudflare:workers';
 import { type AccountStore, defineData } from '@epicenter/data';
-import { createAccountStore, syncEngineOf } from '@epicenter/data/engine';
+import { createAccountStore } from '@epicenter/data/engine';
 import {
 	createSyncConnection,
-	rebuildDatabase,
-	type StoreTransport,
 	type SyncConnection,
 } from '@epicenter/data/sync';
 import {
@@ -163,22 +161,6 @@ export class StoreTestReplica extends DurableObject<Env> {
 		this.connection = undefined;
 	}
 
-	/** The authenticated door, for the rebuild's replace POST. */
-	private transport(): StoreTransport {
-		const bearer = this.bearer;
-		return {
-			baseURL: this.origin,
-			databaseId: probeDefinition.id,
-			fetch: (input, init) =>
-				this.env.SELF.fetch(
-					new Request(input, {
-						...init,
-						headers: { authorization: `Bearer ${bearer}` },
-					}),
-				),
-		};
-	}
-
 	/**
 	 * The reload, replica-shaped: discard the local file whole, boot fresh.
 	 *
@@ -205,26 +187,6 @@ export class StoreTestReplica extends DurableObject<Env> {
 		this.open(this.bearer, this.origin);
 	}
 
-	/**
-	 * The one product action, end to end: rebuild, publish, adopt.
-	 *
-	 * Returns the published document, or throws the typed refusal's name so a
-	 * test can assert on it. On success this replica adopts through the same
-	 * discard-and-boot every superseded replica runs.
-	 */
-	async rebuild(): Promise<{ document: string }> {
-		if (this.store === undefined) throw new Error('open first');
-		const published = await rebuildDatabase({
-			store: this.store,
-			transport: this.transport(),
-		});
-		if (published.error !== null) {
-			throw new Error(`${published.error.name}: ${published.error.message}`);
-		}
-		await this.adoptFresh();
-		return published.data;
-	}
-
 	/** Create a note with prose, the way an application does. */
 	async write(title: string, prose: string): Promise<void> {
 		if (this.db === undefined) throw new Error('open first');
@@ -245,12 +207,6 @@ export class StoreTestReplica extends DurableObject<Env> {
 		const row = listed.rows.find((candidate) => candidate.title === title);
 		if (row === undefined) throw new Error(`no note titled '${title}'`);
 		this.db.tables.notes.delete(row.id);
-	}
-
-	/** This replica's whole state as one envelope: what a replace posts. */
-	encodeState(): Promise<Uint8Array> {
-		if (this.store === undefined) throw new Error('open first');
-		return syncEngineOf(this.store).encodeSnapshot();
 	}
 
 	/**

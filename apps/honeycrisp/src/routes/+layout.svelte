@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { FlushEditsOnHide } from '@epicenter/svelte';
 	import { reloadOnAuthChange } from '@epicenter/svelte/auth';
-	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
@@ -35,7 +34,7 @@
 	// A page lifetime is one auth generation. Everything above composed itself
 	// from the boot-time auth snapshot, so an identity change or a repaired
 	// credential reloads rather than swapping anything in place; the next boot
-	// rebuilds the right documents and sync from scratch. On the desktop host
+	// opens the right documents and sync from scratch. On the desktop host
 	// this never fires (identity is immutable per process generation,
 	// ADR-0155).
 	$effect(() => reloadOnAuthChange(auth));
@@ -68,6 +67,5 @@
 {/await}
 
 <Toaster offset={16} closeButton />
-<ConfirmationDialog />
 <ModeWatcher defaultMode="dark" track={false} />
 <FlushEditsOnHide />

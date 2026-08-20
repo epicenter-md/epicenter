@@ -12,14 +12,12 @@
  * Cloud a signed-in bearer owns its own data, and there is no second question
  * to ask. Being signed in on two devices IS the sharing model.
  *
- * Two doors, one partition rule. The sync upgrade is routine; the replace
- * POST (ADR-0231) is the person-initiated verb that publishes a workspace's
- * next document, deliberately out of band from the socket.
+ * One door, one partition rule. Store synchronization is a WebSocket upgrade
+ * addressed by the application id and the authenticated principal.
  */
 import {
 	MAIN_SUBPROTOCOL,
 	parseSubprotocols,
-	STORE_REPLACE_ROUTE,
 	STORE_SYNC_ROUTE,
 	WORKSPACE_ID,
 } from '@epicenter/sync';
@@ -87,13 +85,6 @@ export function mountStoreSyncApp<E extends Env = Env>(
 		STORE_SYNC_ROUTE.pattern,
 		requireStoreBearer(opts.resolveBearerPrincipal),
 	);
-	// The replace POST is an ordinary fetch, so `extractUpgradeBearer` finds its
-	// credential in the `Authorization` header it prefers anyway; one guard
-	// serves both doors.
-	app.use(
-		STORE_REPLACE_ROUTE.pattern,
-		requireStoreBearer(opts.resolveBearerPrincipal),
-	);
 	// Route handlers use the portable `Env`; this deployment-facing generic only
 	// adds bindings and variables. Keep the one cast at that boundary rather than
 	// hide the routes in a one-use sub-app.
@@ -138,24 +129,6 @@ export function mountStoreSyncApp<E extends Env = Env>(
 						? { 'sec-websocket-protocol': MAIN_SUBPROTOCOL }
 						: undefined,
 			});
-		},
-	);
-	storeApp.post(
-		STORE_REPLACE_ROUTE.pattern,
-		describeRoute({
-			description:
-				"Publish this workspace's next document: replace its log with the posted state (ADR-0231)",
-			tags: ['store-sync'],
-		}),
-		async (c) => {
-			const databaseId = parseDataId(c.req.query('databaseId'));
-			if (databaseId === undefined) {
-				return new Response('databaseId must be a workspace id', {
-					status: 400,
-				});
-			}
-			const name = storeAuthorityName(c.var.principal.id, databaseId);
-			return opts.resolveAuthority(c.env, name).fetch(c.req.raw);
 		},
 	);
 }

@@ -658,8 +658,8 @@ export type StorePressure = {
  * Every verb here is a fact about the document itself: measure it, encode it,
  * hear it commit, watch its persistence. The data definition is not on
  * this surface, because it is not a verb: the engine closed over it at
- * construction and every table handle, the KV handle, and the whole-index
- * rebuild read the one parsed definition for the store's whole life
+	 * construction and every table handle, the KV handle, and the whole-index
+	 * projection read the one parsed definition for the store's whole life
  * (ADR-0240). What tells the two store kinds apart is `sync`, present on both
  * and carrying the discriminating value: `undefined` on a device-owned
  * document, a `SyncCapability` on a replica. Every store has local
@@ -671,8 +671,8 @@ export type DataStoreBase = {
 	 *
 	 * The one number to watch, and the reason it exists rather than a design.
 	 * Deleting a row leaves a tombstone that every device pays for in memory on
-	 * every load, forever, and only a rebuild reclaims one
-	 * (`evidence/bench/tombstones.ts`). Whether that ever matters is a question
+	 * every load, forever. A future explicit Compact workspace action could
+	 * reclaim one (`evidence/bench/tombstones.ts`). Whether that ever matters is a question
 	 * about how much a real person deletes, and nobody has that number.
 	 *
 	 * The arithmetic it feeds: memory tracks struct count at roughly 1 KB of rss
@@ -836,17 +836,10 @@ export type SyncEngine = ClientLog & {
 	 * This replica's whole state as one envelope: the application document's
 	 * complete state plus every row document's, one section each (ADR-0248).
 	 *
-	 * What a snapshot offer and a replace carry. Asynchronous because closed
+	 * What a snapshot offer carries. Asynchronous because closed
 	 * row documents are read from storage rather than hydrated.
 	 */
 	encodeSnapshot(): Promise<Uint8Array>;
-	/**
-	 * Every row document's complete state, one section per address, retired
-	 * addresses excluded: the document half of `encodeSnapshot`, exposed on
-	 * its own for the rebuild, which pairs it with a REBORN application
-	 * section instead of the live one (ADR-0231, ADR-0248).
-	 */
-	documentStates(): Promise<{ document: string; bytes: Uint8Array }[]>;
 };
 
 /**
@@ -861,8 +854,8 @@ const syncEngines = new WeakMap<SyncCapability, SyncEngine>();
 /**
  * The delivery machinery behind one replica's `sync` capability.
  *
- * Package-internal by convention: exported for the transport, the rebuild
- * verb, and tests, and deliberately absent from the package barrel.
+	 * Package-internal by convention: exported for the transport and tests, and
+	 * deliberately absent from the package barrel.
  */
 export function syncEngineOf(store: AccountStore): SyncEngine {
 	const engine = syncEngines.get(store.sync);
@@ -1046,8 +1039,8 @@ function createStoreEngine(
 
 	// The three durable facts the engine also tracks live. The controller's
 	// mirror says what storage has CONFIRMED; these say what the document has
-	// ACCEPTED, which is what `sync` reports to the client and what the
-	// rebuild lease reads. At open the two agree; a blocked flush is the only
+	// ACCEPTED, which is what `sync` reports to the client. At open the two
+	// agree; a blocked flush is the only
 	// thing that separates them, and a restart then honestly recovers the
 	// mirror's version.
 	let liveCursor = loaded.cursor;
@@ -1736,12 +1729,6 @@ function createStoreEngine(
 							...(await documents.states()),
 						]);
 					},
-					documentStates(): Promise<
-						{ document: string; bytes: Uint8Array }[]
-					> {
-						assertUsable();
-						return documents.states();
-					},
 				};
 
 	// The one view this runtime will ever hold, built over the one definition,
@@ -1877,8 +1864,8 @@ function createStoreEngine(
 			cursor(): number {
 				assertUsable();
 				// The LIVE position: everything this document has applied, whether
-				// or not its durable record has caught up. The rebuild lease reads
-				// this beside `encodeStateSince()`, which is also live, so the two
+				// or not its durable record has caught up. The transport reads this
+				// beside `encodeStateSince()`, which is also live, so the two
 				// always describe the same state. At open, with nothing queued, it
 				// equals the durable cursor, which is what a reconnect dials from.
 				return liveCursor;

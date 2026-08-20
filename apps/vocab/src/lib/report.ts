@@ -2,7 +2,7 @@
  * Where work nobody awaited goes when it fails.
  *
  * A sync dial that could not reach the network, a discard on the way to
- * adopting a replaced document: neither has a caller holding a promise, so a
+ * adopting a superseded document: neither has a caller holding a promise, so a
  * failure has nowhere to be returned to and telling the person is the whole of
  * the handling.
  *

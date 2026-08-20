@@ -6,7 +6,7 @@
  * no Yjs and no `@epicenter/data/definition`, and there is no verb that could
  * interpret an update. This suite pins the behavioral half by driving every
  * verb with bytes no Yjs decode would survive. If sequencing, catch-up,
- * snapshot replacement, or document replacement ever grew a peek at the
+ * snapshot replacement or document identity ever grew a peek at the
  * payload, the garbage here would surface it as a refusal or a throw.
  */
 import { Database } from 'bun:sqlite';
@@ -68,35 +68,4 @@ describe('an authority needs no definition: every verb moves unread bytes', () =
 		expect(held.data?.bytes).toEqual(opaque(9, 128));
 	});
 
-	test('replace publishes caller-supplied state as the next document, unread', () => {
-		const authority = openAuthority();
-		authority.append(opaque(1));
-		const named = authority.document();
-		if (named.error !== null) throw named.error;
-
-		const published = authority.replace({
-			fromDocument: named.data,
-			bytes: opaque(7, 64),
-		});
-		if (published.error !== null) throw published.error;
-		expect(published.data).not.toBe(named.data);
-
-		// The old history went whole; the new document's state is its snapshot
-		// at position 1, byte-identical to what the caller posted.
-		const log = authority.since(0);
-		if (log.error !== null) throw log.error;
-		expect(log.data).toEqual([]);
-		const held = authority.snapshot();
-		if (held.error !== null) throw held.error;
-		expect(held.data?.position).toBe(1);
-		expect(held.data?.bytes).toEqual(opaque(7, 64));
-
-		// And the lease still guards it: a replace built from the retired
-		// document is refused by identity, which is a fact about ids, not bytes.
-		const stale = authority.replace({
-			fromDocument: named.data,
-			bytes: opaque(8),
-		});
-		expect(stale.error?.name).toBe('DocumentMoved');
-	});
 });

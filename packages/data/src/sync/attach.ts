@@ -16,8 +16,7 @@
  *
  * The credential model arrives as a two-member port, not as an `AuthClient`.
  * That keeps this file MIT alongside the rest of the store, and an
- * `AuthClient` satisfies it structurally with no adapter, the same way
- * `rebuildDatabase` takes a `StoreTransport` rather than the client itself.
+ * `AuthClient` satisfies it structurally with no adapter.
  */
 
 import { isOpenWebSocketDenial } from '@epicenter/sync/auth-subprotocol';
@@ -53,9 +52,9 @@ export type AttachStoreSyncOptions = {
 	databaseId: string;
 	transport: StoreSocketTransport;
 	/**
-	 * This replica's document was replaced (ADR-0231). The driver has already
-	 * stopped; the application discards the local store whole and reloads, and
-	 * the fresh boot's ordinary join is the whole of adoption.
+	 * This replica's document is superseded. The driver has already stopped; the
+	 * application discards the local store whole and reloads, and the fresh
+	 * boot's ordinary join is the whole of adoption.
 	 */
 	onSuperseded: () => void;
 	/**

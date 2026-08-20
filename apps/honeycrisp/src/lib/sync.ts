@@ -39,7 +39,7 @@ export function attachHoneycrispSync({
 	store: AccountStore;
 	auth: AuthClient;
 	/**
-	 * This replica's document was replaced (ADR-0231). The driver has already
+	 * This replica's document is superseded (ADR-0231). The driver has already
 	 * stopped; the application discards the local store whole and reloads, and
 	 * the fresh boot's ordinary join is the whole of adoption.
 	 */

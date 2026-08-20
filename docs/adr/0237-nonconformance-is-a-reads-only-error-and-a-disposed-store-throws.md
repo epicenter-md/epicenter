@@ -156,7 +156,6 @@ the method; nothing was ever projected into a different runtime shape.
   open-time and protocol refusals (`StorageFailed` at open, `AlreadyOpen`,
   `Unaddressable`, `Unstampable`, `RowAbsent`, `ApplyFailed`, `QueryFailed`)
   and stops appearing in any read's signature.
-- `rebuildWorkspace` reports only `RebuildError`.
 - What this forecloses: a read error a UI can confuse with nonconformance, a
   second read verb for "forgiving" reads, and any future verb returning
   `StoreError` for a condition the caller cannot act on.

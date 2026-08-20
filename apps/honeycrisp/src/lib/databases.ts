@@ -7,13 +7,10 @@ import {
 	openDevice,
 } from '@epicenter/data/browser';
 import {
-	type RebuildError,
-	rebuildDatabase,
 	type SyncConnection,
 	type SyncConnectionStatus,
 } from '@epicenter/data/sync';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
-import type { Result } from 'wellcrafted/result';
 import { reportBackgroundError } from './report.js';
 import { attachHoneycrispSync } from './sync.js';
 
@@ -67,8 +64,7 @@ export type HoneycrispDatabases = {
 	readonly device: DataOf<typeof honeycrispDefinition, DeviceStore>;
 	/**
 	 * The account database: the boot principal's retained replica, plus what
-	 * this generation composed onto it — sync wiring and the rebuild
-	 * lifecycle. Present exactly
+	 * this generation composed onto it, including sync wiring. Present exactly
 	 * when the boot auth snapshot carried an identity (`signed-in` or
 	 * `reauth-required`), and always past its bound gate: a defined `account`
 	 * is already a replica stamped into the current authority document, which
@@ -83,22 +79,6 @@ export type HoneycrispDatabases = {
 		 * denied works offline and shows nothing, correctly.
 		 */
 		syncStatus(): SyncConnectionStatus | undefined;
-		/**
-		 * Rebuild this database (ADR-0231): the one product action over the
-		 * one wire verb.
-		 *
-		 * On success this device discards its local replica whole and reloads;
-		 * the fresh boot re-downloads the document it just published, through
-		 * the same join every device runs. A refusal returns `Err` and touches
-		 * nothing: the replica, its document and this generation carry on.
-		 *
-		 * Calling it is deliberate, never confirmed here. ADR-0231 requires a
-		 * person to confirm the one warnable loss (unsynced work on another
-		 * device, or written here while this runs), and the surface that can
-		 * show that sentence is the one that owns asking. This layer owns the
-		 * lifecycle: publish, then adopt.
-		 */
-		rebuild(): Promise<Result<{ document: string }, RebuildError>>;
 	};
 	[Symbol.asyncDispose](): Promise<void>;
 };
@@ -177,7 +157,6 @@ export async function openHoneycrispDatabases({
 					account: Object.freeze({
 						data: opened.data,
 						syncStatus: opened.syncStatus,
-						rebuild: opened.rebuild,
 					}),
 				}),
 		async [Symbol.asyncDispose]() {
@@ -194,7 +173,6 @@ export async function openHoneycrispDatabases({
 type AccountDatabase = {
 	data: DataOf<typeof honeycrispDefinition, BrowserAccountStore>;
 	syncStatus(): SyncConnectionStatus | undefined;
-	rebuild(): Promise<Result<{ document: string }, RebuildError>>;
 	dispose(): Promise<void>;
 };
 
@@ -225,10 +203,9 @@ async function openAccountDatabase({
 	try {
 		signal?.throwIfAborted();
 		/**
-		 * The one adoption path (ADR-0231): discard the replica's store whole
-		 * and reload. Runs after a confirmed supersession, and after this
-		 * device's own successful rebuild; the fresh boot's ordinary join
-		 * delivers the current document into an empty replica. What it can
+			 * The one adoption path (ADR-0231): discard the replica's store whole
+			 * and reload after a confirmed supersession. The fresh boot's ordinary
+			 * join delivers the current document into an empty replica. What it can
 		 * reach is one address: this generation's own account replica. The
 		 * device document and every other account's replica are databases this
 		 * generation never opened and cannot name.
@@ -269,22 +246,6 @@ async function openAccountDatabase({
 			syncStatus: () => {
 				const status = connection.status();
 				return status.denied ? undefined : status;
-			},
-			rebuild: async () => {
-				const published = await rebuildDatabase({
-					store: data.store,
-					transport: {
-						fetch: (input, init) => auth.fetch(input, init),
-						baseURL: auth.deployment.baseURL,
-						databaseId: honeycrispDefinition.id,
-					},
-				});
-				if (published.error !== null) return published;
-				// Authority first, then local, then reload: the same order and
-				// the same adoption every superseded replica runs.
-				connection[Symbol.dispose]();
-				await adoptCurrentDocument();
-				return published;
 			},
 			dispose: async () => {
 				connection[Symbol.dispose]();

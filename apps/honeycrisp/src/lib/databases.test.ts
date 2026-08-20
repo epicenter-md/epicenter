@@ -3,8 +3,8 @@
  *
  * The device document opens for every page lifetime, and the boot auth
  * snapshot chooses whether an account replica also opens (ADR-0233). These
- * tests pin the boundaries between the two documents: sync, supersession, and
- * rebuild exist only on the account arm, they can reach only the one
+ * tests pin the boundaries between the two documents: sync and supersession
+ * exist only on the account arm, and they can reach only the one
  * account's replica that opened, and no database event can reach the device
  * document.
  *
@@ -18,8 +18,7 @@
  * - A signed-in state with no account id opens no account store
  * - An unbound replica whose dial is permanently denied is unavailable,
  *   never the device document
- * - Supersession and rebuild discard one account's replica and nothing else
- * - A refused rebuild discards nothing and leaves the generation running
+ * - Supersession discards one account's replica and nothing else
  *
  * `fake-indexeddb` supplies the browser store's storage; the socket is a fake
  * whose frames come from the real sync protocol (`encodeFrame`).
@@ -481,95 +480,4 @@ test('a supersession discards one account replica and cannot touch the others', 
 	const bobs = await openHoneycrispDatabases({ auth: bob });
 	expect(titles(requireAccount(bobs).data)).toEqual(["kept bob's"]);
 	await bobs[Symbol.asyncDispose]();
-});
-
-test('a rebuild discards one account replica and cannot touch the others', async () => {
-	await resetStorage();
-
-	{
-		const databases = await openHoneycrispDatabases({
-			auth: createFakeAuth({ status: 'signed-out' }),
-		});
-		expect(
-			databases.device.tables.notes.create(noteFields('kept device work'))
-				.id,
-		).toHaveLength(24);
-		await databases[Symbol.asyncDispose]();
-	}
-	{
-		const { auth } = announcingAuth({
-			principalId: 'bob',
-			documentId: 'document-bob',
-		});
-		const databases = await openHoneycrispDatabases({ auth });
-		expect(
-			requireAccount(databases).data.tables.notes.create(
-				noteFields("kept bob's"),
-			).id,
-		).toHaveLength(24);
-		await databases[Symbol.asyncDispose]();
-	}
-
-	// Alice rebuilds: the authority publishes her next document, and this
-	// device adopts through the same discard-and-reload a supersession runs.
-	const { auth } = announcingAuth({
-		principalId: 'alice',
-		documentId: 'document-alice',
-		fetch: async () =>
-			new Response(JSON.stringify({ document: 'document-alice-two' }), {
-				status: 200,
-				headers: { 'content-type': 'application/json' },
-			}),
-	});
-	const databases = await openHoneycrispDatabases({ auth });
-	const account = requireAccount(databases);
-	expect(
-		account.data.tables.notes.create(noteFields('rebuilt away')).id,
-	).toHaveLength(24);
-
-	reloads.mockClear();
-	const published = await account.rebuild();
-	expect(published.error).toBeNull();
-	await until(() => reloads.mock.calls.length > 0, 'the adoption reload');
-
-	const names = await databaseNames();
-	expect(names).not.toContain(accountOf('alice'));
-	expect(names).toContain(accountOf('bob'));
-	expect(names).toContain(DEVICE);
-	await databases[Symbol.asyncDispose]();
-});
-
-test('a refused rebuild keeps the replica and this generation running', async () => {
-	await resetStorage();
-
-	// The authority refuses the lease: another replace already published, so
-	// these bytes were built over a retired document (ADR-0231). The surface
-	// turns this into a message; what it needs from here is that nothing
-	// happened, so the person can sync and try again in the same page.
-	const { auth } = announcingAuth({
-		principalId: 'alice',
-		documentId: 'document-alice',
-		fetch: async () =>
-			new Response(
-				JSON.stringify({ refused: 'document', document: 'document-alice-two' }),
-				{ status: 409, headers: { 'content-type': 'application/json' } },
-			),
-	});
-	const databases = await openHoneycrispDatabases({ auth });
-	const account = requireAccount(databases);
-	expect(
-		account.data.tables.notes.create(noteFields('still here')).id,
-	).toHaveLength(24);
-
-	reloads.mockClear();
-	const refused = await account.rebuild();
-	expect((refused.error as { name?: string }).name).toBe('Contested');
-
-	// No adoption, no discard, and sync was never let go of: a refusal is news,
-	// not the end of a generation.
-	expect(reloads.mock.calls.length).toBe(0);
-	expect(titles(account.data)).toEqual(['still here']);
-	expect(await databaseNames()).toContain(accountOf('alice'));
-	expect(account.syncStatus()).toBeDefined();
-	await databases[Symbol.asyncDispose]();
 });

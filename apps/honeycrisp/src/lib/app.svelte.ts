@@ -106,12 +106,6 @@ export function createHoneycrisp({
 			navigation.selectNote(notes.create(navigation.folderId));
 		},
 		/**
-		 * Storage pressure of the document this generation is showing,
-		 * whichever that is. The one store verb the UI reads, exposed narrowly
-		 * so the raw store plane stays behind this boundary.
-		 */
-		pressure: () => data.store.pressure(),
-		/**
 		 * The account's two capabilities, present exactly when this generation
 		 * has one. Its data is not here, because it already is: `notes` and
 		 * `folders` above are the chosen document.
@@ -119,10 +113,9 @@ export function createHoneycrisp({
 		account:
 			databases.account === undefined
 				? undefined
-				: {
-						syncStatus: databases.account.syncStatus,
-						rebuild: databases.account.rebuild,
-					},
+					: {
+							syncStatus: databases.account.syncStatus,
+						},
 	};
 }
 

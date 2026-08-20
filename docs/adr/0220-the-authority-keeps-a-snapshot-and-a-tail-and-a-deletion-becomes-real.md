@@ -10,10 +10,10 @@
   What survives, unchanged, is that the authority holds opaque bytes, that the
   merge belongs to the client, that catch-up and live relay are one path, and
   that there is no state vector in the transport.
-- **Amended by:** [ADR-0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md)
+- **Amended by:** [ADR-0256](0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md)
   at scope only. This record's snapshot and tail are the retained state of one
-  current document. A workspace rebuild creates a different document and
-  deletes this document's snapshot and tail.
+  current document. No product action currently replaces that document; a
+  future Compact workspace action would be a separate decision.
 - **Relates:** [ADR-0218](0218-the-authority-reads-nothing-and-a-poison-entry-is-repaired-rather-than-prevented.md)
   (the authority reads nothing, which this preserves),
   [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md)
@@ -37,9 +37,11 @@ downloads every note anyone has ever deleted** (`evidence/retention.test.ts`).
 It then displays none of them, because the lens reads current state, so nothing
 surfaces it.
 
-The log also grew forever, so first sync grew forever, and the only escape from
-the tombstone ceiling was a rebuild, which needed generations, a pointer,
-compare-and-swap, freezing, migration and reconciliation.
+The log also grew forever, so first sync grew forever. The current escape is
+authority snapshot folding, which removes covered update entries but preserves
+the current document's identity. A future root-document Compact action would
+need its own identity, compare-and-swap, freezing, and loss-boundary decision;
+it is deferred by ADR-0256.
 
 ## Decision
 
@@ -174,8 +176,10 @@ no longer exists, converges and keeps a note nobody had seen.
 - **What ADR-0217 said about no party verifying another's claim is withdrawn.**
   The authority now verifies a precondition. It is a fact about what it sent
   rather than a claim about content, but the sentence is no longer true.
-- **Generations are deleted, not deferred.** They answered "and then what" for a
-  log that grew forever. It does not.
+- **Public generations are deferred.** Snapshot folding answers the current log
+  growth problem. A future root-document Compact action, if measurements earn
+  it, will decide whether a private replacement identity is sufficient or a
+  larger protocol is needed.
 - **Server-side history is gone.** ADR-0214's `history.sqlite3` on each device
   is now the only full history. Relocated, not lost, and a deliberate loss of
   the ability to restore the authority to an arbitrary past point.
@@ -186,8 +190,9 @@ no longer exists, converges and keeps a note nobody had seen.
   authority.** They remain a non-problem at realistic churn, about 14 deletions
   a day for a decade to reach 100 MB of device memory, with `store.pressure()`
   reporting the ratio so it is watched rather than argued about. But the
-  authority no longer escapes them either, and anything that ever reclaims them
-  has to re-mint identities, which is the rebuild ADR-0214 refuses.
+  authority no longer escapes them either. A future Compact action would have
+  to account for the identity and offline-work loss boundary, which ADR-0256
+  deliberately leaves unbuilt.
 - **A headline claim in this record was wrong for a day.** It said storage
   becomes constant, on reasoning rather than on measurement, and the bench
   written to confirm it refuted it instead. Every quantitative claim here now

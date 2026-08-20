@@ -1,10 +1,11 @@
 import { field } from '@epicenter/data/definition';
 /**
- * What a never-compacted log remembers after you delete something.
+ * What an authority tail remembers before snapshot folding after you delete
+ * something.
  *
- * ADR-0217 refuses to compact the authority's log, and prices that refusal in
- * storage: about 4 MB a year against 10 GB. That is the whole cost as the
- * record states it, and it is not the whole cost.
+ * ADR-0220 folds acknowledged history into snapshots. Before that fold, an
+ * authority tail still retains the bytes below, and this test makes that cost
+ * visible rather than pretending current state tells the whole story.
  *
  * An append-only log keeps the update that CREATED a row, so deleting the row
  * removes it from the current state and removes nothing from the log. The
@@ -12,9 +13,8 @@ import { field } from '@epicenter/data/definition';
  * replays the log from position zero, so it downloads everything anyone has
  * ever deleted.
  *
- * That is not an argument against refusing compaction. It is the fact that
- * decides how long a superseded generation may be kept, which is otherwise easy
- * to reason about as though the only cost were disk.
+ * The result is evidence for the pressure instrumentation and any future
+ * Compact workspace decision. It is not a product workflow.
  */
 
 import { Database } from 'bun:sqlite';
@@ -163,30 +163,5 @@ describe('and still in every log, for as long as the log exists', () => {
 		for (const entry of backlog)
 			expectOk(syncEngineOf(arriving).applyRemote(entry.bytes));
 		expect(arrivingDb.tables.notes.list().rows).toEqual([]);
-	});
-});
-
-describe('what makes a deletion real', () => {
-	test('only a rebuild drops it, because only a rebuild writes state instead of history', () => {
-		// The reason a superseded generation cannot be kept forever, and the
-		// reason the retention window is a privacy commitment rather than a
-		// storage decision. A new generation seeded from CURRENT STATE carries no
-		// trace; the old log carries all of it until it is deleted.
-		const world = afterWritingAndDeleting();
-		const rebuilt = openSyncAuthority({
-			sqlite: createBunSqliteAdapter(new Database(':memory:')),
-		});
-		expectOk(rebuilt.append(world.store.encodeStateSince()));
-
-		const fresh = expectOk(rebuilt.since(0, 1_000));
-		expect(
-			contains(
-				fresh.map((entry) => entry.bytes),
-				CANARY,
-			),
-		).toBe(false);
-		// CONTROL: the old generation still has it, so the difference is the
-		// rebuild and not the search.
-		expect(contains(world.authorityLog(), CANARY)).toBe(true);
 	});
 });

@@ -63,7 +63,7 @@ export type WhisperingAppDependencies = {
 	blobs: WhisperingBlobs;
 	/**
 	 * Where work nobody awaited goes when it fails: a sync dial that could not
-	 * reach the network, a discard on the way to adopting a replaced document.
+	 * reach the network, a discard on the way to adopting a superseded document.
 	 */
 	reportBackgroundError(cause: unknown): void;
 };

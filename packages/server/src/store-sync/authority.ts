@@ -9,13 +9,8 @@
  * back in order, and keeps one snapshot plus the entries after it (ADR-0220).
  * Nothing here imports Yjs or a workspace, and there is no verb that could.
  *
- * It also names the current document and answers the replace POST
- * (ADR-0231). Connecting is not admission: every authenticated upgrade is
- * accepted, and `hub.join` decides everything. The announcement opens every
- * connection; a replica of a replaced document is never admitted to the
- * relay membership, so it is sent no history and its pushes land nowhere;
- * this class only relays the verdict to the socket. The person-owned verb
- * that replaces a document is a fetch, out of band from sync.
+ * It also names the current document. Connecting is not admission: every
+ * authenticated upgrade is accepted, and `hub.join` decides everything.
  */
 import { DurableObject } from 'cloudflare:workers';
 import {
@@ -129,7 +124,7 @@ export class StoreAuthority extends DurableObject {
 				admission === 'bootstrap'
 					? 'bootstrap complete: reconnect with document identity'
 					: admission === 'retired'
-						? 'document replaced'
+						? 'document superseded'
 						: 'authority unavailable',
 			);
 			return undefined;
@@ -138,14 +133,8 @@ export class StoreAuthority extends DurableObject {
 		return connection;
 	}
 
-	/**
-	 * Take one authenticated request: a sync upgrade, or the replace POST.
-	 *
-	 * Called by the route AFTER the bearer has resolved to a principal and the
-	 * stub has been addressed by it, so there is nothing left to authorize here.
-	 */
+	/** Take one authenticated store-sync upgrade. */
 	override async fetch(request: Request): Promise<Response> {
-		if (request.method === 'POST') return this.replaceDocument(request);
 		if (request.headers.get('Upgrade') !== 'websocket') {
 			return new Response('The store transport is WebSocket-only', {
 				status: 426,
@@ -194,10 +183,9 @@ export class StoreAuthority extends DurableObject {
 		// socket, so a replica would wait forever on a submission that had already
 		// failed; a refusal has to travel as a frame, and the hub sends one.
 		//
-		// `adopt` re-runs admission for a socket this object no longer holds, so
-		// a push in flight while a replace ran its funeral meets the identity
-		// check at `hub.join` and lands nowhere: the one equality covers
-		// dial-time supersession and this race alike (ADR-0231).
+		// `adopt` re-runs admission for a socket this object no longer holds, so a
+		// push from a superseded connection meets the identity check and lands
+		// nowhere: the one equality covers dial-time supersession and this race.
 		const connection = this.adopt(socket);
 		if (connection === undefined) return;
 		this.hub.receive(connection, new Uint8Array(message));
@@ -215,81 +203,6 @@ export class StoreAuthority extends DurableObject {
 		const connection = this.connections.get(socket);
 		if (connection !== undefined) this.hub.leave(connection);
 		this.connections.delete(socket);
-	}
-
-	/**
-	 * Publish this workspace's next document (ADR-0231).
-	 *
-	 * Authority before sockets, in that order and on purpose: the replacement
-	 * is durable before anything else learns of it, and the closed sockets
-	 * reconnect through the dial, meet a document that is not theirs, and
-	 * that is the whole of notification. The verb itself lives in
-	 * `@epicenter/data/sync`; what this adapter owns is the HTTP shape of the
-	 * lease and the funeral of the sockets.
-	 */
-	private async replaceDocument(request: Request): Promise<Response> {
-		const query = new URL(request.url).searchParams;
-		const fromDocument = query.get('fromDocument');
-		if (
-			fromDocument === null ||
-			fromDocument.length === 0 ||
-			fromDocument.length > 128
-		) {
-			return new Response(
-				'fromDocument must name the document the replacement was built from',
-				{ status: 400 },
-			);
-		}
-		const atHeadRaw = query.get('atHead');
-		const atHead = atHeadRaw === null ? undefined : Number(atHeadRaw);
-		if (atHead !== undefined && (!Number.isInteger(atHead) || atHead < 0)) {
-			return new Response('atHead must be a non-negative integer', {
-				status: 400,
-			});
-		}
-
-		const bytes = new Uint8Array(await request.arrayBuffer());
-		// Framing, not reading: a reset posts an encoded EMPTY DOCUMENT, which is
-		// still bytes. A body of none is a caller that forgot its body, and the
-		// document it would publish is one no replica could ever adopt.
-		if (bytes.length === 0) {
-			return new Response('the replacement state must not be empty', {
-				status: 400,
-			});
-		}
-		const { data: published, error } = this.authority.replace({
-			fromDocument,
-			bytes,
-			...(atHead === undefined ? {} : { atHead }),
-		});
-		if (error !== null) {
-			// A lease miss is a refusal that names what moved, so the caller can
-			// reconsider; anything else is the storage failing.
-			if (error.name === 'DocumentMoved') {
-				return Response.json(
-					{ refused: 'document', document: error.document },
-					{ status: 409 },
-				);
-			}
-			if (error.name === 'HeadMoved') {
-				return Response.json(
-					{ refused: 'head', head: error.head },
-					{ status: 409 },
-				);
-			}
-			return new Response(error.message, { status: 500 });
-		}
-
-		// The old document's sockets are closed only after the swap is durable.
-		// Their replicas reconnect through the dial, meet a document that is
-		// not theirs, and that is how they learn; nothing is pushed to them.
-		// Forgotten as well as closed, so the hub drops them now rather than
-		// when the close event lands.
-		for (const socket of this.ctx.getWebSockets()) {
-			this.forget(socket);
-			socket.close(1000, 'this document was replaced');
-		}
-		return Response.json({ document: published });
 	}
 
 	/**

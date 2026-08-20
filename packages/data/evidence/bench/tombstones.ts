@@ -360,7 +360,7 @@ try {
 		new Uint8Array(Y.encodeStateAsUpdateV2(aged)) as Uint8Array<ArrayBuffer>,
 	);
 
-	// REBUILD: write the values into a fresh document. New structs at new
+	// FUTURE COMPACT: write the values into a fresh document. New structs at new
 	// identities, so an offline edit has nothing to attach to.
 	const genB = new Y.Doc({ gc: true });
 	const source = aged.get('recordings');
@@ -382,12 +382,12 @@ try {
 		);
 	line('aged document', aged);
 	line('rolled over by SNAPSHOT', genA);
-	line('rolled over by REBUILD', genB);
+	line('rolled over by FUTURE COMPACT', genB);
 	console.log(
 		`    ${'reclaimed by snapshot'.padEnd(26)} ${(itemCount(aged) - itemCount(genA)).toLocaleString().padStart(9)} items`,
 	);
 	console.log(
-		`    ${'reclaimed by rebuild'.padEnd(26)} ${(itemCount(aged) - itemCount(genB)).toLocaleString().padStart(9)} items`,
+		`    ${'reclaimed by future Compact'.padEnd(26)} ${(itemCount(aged) - itemCount(genB)).toLocaleString().padStart(9)} items`,
 	);
 
 	const keysOf = (doc: Y.Doc) => [...doc.get('recordings').attrKeys()].length;

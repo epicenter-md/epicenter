@@ -53,8 +53,8 @@ epicenter/<definitionId>/device
 epicenter/<definitionId>/account/<principal id>
 ```
 
-That address is the IndexedDB database name, so a data discard,
-supersession, or rebuild can reach exactly one account's replica and never the
+That address is the IndexedDB database name, so a data discard or
+supersession can reach exactly one account's replica and never the
 device document or another account's. An account replica cannot be opened
 without an account: the argument is a union with nowhere to omit one, and an
 empty id is refused with `StoreError.Unaddressable` rather than addressed.

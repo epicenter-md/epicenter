@@ -17,7 +17,7 @@
  * Since ADR-0231 the log describes exactly one document, and the authority
  * names it as the first frame on every connection. Bytes merge only when
  * they name the same document, so admission is one equality; a replica of a
- * replaced document is never admitted to the relay membership, which is the
+ * superseded document is never admitted to the relay membership, which is the
  * whole guard.
  */
 import { Ok, type Result } from 'wellcrafted/result';
@@ -323,16 +323,16 @@ export function createSyncHub({
 		}
 
 		// And the half the authority checks: that this is also the head.
-		const { error: replaceError } = authority.replaceSnapshot(
+		const { error: snapshotError } = authority.replaceSnapshot(
 			frame.position,
 			whole,
 		);
-		if (replaceError !== null) {
+		if (snapshotError !== null) {
 			connection.send(
 				encodeFrame({
 					kind: 'refuse',
 					submission: frame.position,
-					reason: replaceError.message,
+					reason: snapshotError.message,
 				}),
 			);
 		}

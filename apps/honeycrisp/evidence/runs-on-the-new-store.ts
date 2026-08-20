@@ -44,13 +44,6 @@ try {
 		'the sidebar rendered',
 		await page.getByText('Honeycrisp', { exact: true }).first().isVisible(),
 	);
-	check(
-		'pressure is on screen',
-		/\d+ items · \d+ notes/.test(await page.locator('body').innerText()),
-		(await page.locator('body').innerText()).match(
-			/\d+ items · \d+ notes · [\d.]+ each/,
-		)?.[0] ?? 'not found',
-	);
 
 	console.log('\n2. make a note and type into it');
 	const before = await page.locator('body').innerText();

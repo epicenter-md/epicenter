@@ -10,15 +10,15 @@
   [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md)
   (local persistence),
   [ADR-0212](0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md)
-  (the address carries a generation, and nothing increments it).
+  (the address carries a private document identity, not a public generation).
 - **Amends:** [ADR-0215](0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md)
   at one section, *The authority is not settled*, which is now settled here.
   Everything else in that record stands untouched. Supersedes nothing: the four
   designs that failed there were never accepted.
 - **Amended by:** [ADR-0220](0220-the-authority-keeps-a-snapshot-and-a-tail-and-a-deletion-becomes-real.md)
   at the central refusal. Withdrawn: that the log is never compacted, that no
-  party ever verifies another party's claim about history, and the *generations*
-  section below. The authority now keeps one snapshot and the entries after it,
+  party ever verifies another party's claim about history, and the proposed
+  *generations* plan. The authority now keeps one snapshot and the entries after it,
   because refusing compaction turned out to cost more than storage: a
   never-compacted log holds the update that created a row forever, so a deletion
   never became real and a new device downloaded everything anyone had deleted.
@@ -27,6 +27,10 @@
 - **Amended by:** [ADR-0218](0218-the-authority-reads-nothing-and-a-poison-entry-is-repaired-rather-than-prevented.md),
   which withdraws the `diffUpdateV2` filter and the claim that the authority
   "makes exactly one Yjs call". It now makes none. Everything else here stands.
+- **Amended by:** [ADR-0256](0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md)
+  at root-document maintenance. Automatic snapshot folding remains the
+  authority's bounded log mechanism. Public generations and whole-document
+  replacement are deferred.
 - Evidence: `packages/data/evidence/validation.test.ts`,
   `packages/data/evidence/workerd/results.md`,
   `packages/data/evidence/bench/never-compact.ts`,
@@ -47,11 +51,12 @@ is the tell that the shape was wrong rather than the details.
 
 ## Decision
 
-**The authority is an append-only log of opaque bytes. It never merges, never
-compacts, and never holds a document. Every merge happens on a client, over
-bytes that client authored.**
+**The authority stores opaque bytes, never merges them, and never holds an
+application document. It may fold acknowledged entries into an opaque
+snapshot, but every application merge happens on a client over bytes that
+client authored.**
 
-### Refusing compaction removes the requirement
+### Refusing root-document compaction removes the requirement
 
 The log grows for the life of the application. Measured over the real vault's
 shape, coalescing on a roughly one-second idle timer costs about 4 MB a year
@@ -154,32 +159,22 @@ would be unforgivable, and it is pinned.
   the ack exists: `workerd` swallows a throw in `webSocketMessage` without
   closing.
 
-## When the log eventually fills: generations, designed and not built
+## When root pressure eventually justifies a product action
 
-The answer to "and then what" is not to compact it later under a different name.
-It is to **supersede** it. A generation is immutable; if `<app>/1` approaches
-10 GB, a client writes its complete state as seq 1 of `<app>/2` and devices move
-there. Nothing is rewritten, so there is no coverage to verify.
-
-It is **not ADR-0214's rebase**: seeding with `encodeStateAsUpdateV2` preserves
-struct identities, so a device arriving with unsent work merges normally. It
-self-heals, because every device on a fresh generation has a cursor of zero.
-ADR-0212 already says the address carries a generation and nothing increments
-it; this is what would.
-
-**At 158 measured bytes an entry the ceiling is roughly 68 million entries, and
-at the measured rate the trigger is millennia away.** A recovery path that never
-executes is the one that fails when it finally does, so nothing is built. What
-is instrumented instead is log size per application, which gives years of
-warning. Three costs are recorded for whoever builds it: the redirect must
-resolve before connecting or gen 1 can never be deleted; deleting gen 1 is a
-time policy rather than a device roster; and a generation costs N snapshots
-because each device pushes its full state on arrival.
+The current implementation does not expose generations, rebase, or a
+whole-document replacement route. It keeps the logical application address
+stable and uses the private document identity only as a sync admission fact.
+`pressure()` and authority storage measurements provide the evidence for a
+future decision. If that pressure becomes user-facing, ADR-0256 requires a
+new Compact workspace design with an explicit loss boundary and an atomic
+identity-and-head check; this record does not reserve a generation protocol.
 
 ## Consequences
 
-- **Do not reintroduce compaction, baselines, or coverage proofs.** They are not
-  missing; they were removed, and the requirement went with them.
+- **Do not reintroduce root-document compaction, baselines, or coverage proofs
+  as an automatic sync behavior.** Authority snapshot folding is already the
+  bounded log mechanism; a root-document rewrite remains a future product
+  decision.
 - **The local log still collapses, and that is a different operation.** ADR-0214
   keeps the client's own file small by replaying its own bytes. It is why the
   outbox is a relation of its own rather than a cursor into `_updates`: that

@@ -33,6 +33,35 @@ SQL follows the opened data and reads its definition from `data.definition`:
 `createSqliteProjection({ data, sqlite })`. The projection does not accept a
 second definition argument that could disagree with the opened data.
 
+Definition evolution stays on one lineage by default. A release may change the
+fields under an existing `id`; the store reads the facts that conform and
+reports the rest as nonconforming. An application owns the intended repair:
+the data layer reports `raw`, `conforming`, and `issues`, but it does not guess
+whether a missing or invalid value should become `false`, `null`, a generated
+value, or remain absent. An application that wants a separate migration path
+may choose a new id such as `com.example.notes.v2` and implement that copy or
+migration itself. The data package provides no migration runner.
+
+`defineData` is the authoring boundary. `parseData` is the pure validation and
+compilation boundary: it canonicalizes a serialized declaration, validates the
+closed descriptor vocabulary, and prepares the field checks and storage
+metadata used by the store. It does not open a file, claim an address, or
+hydrate a document. `openDevice` and `openAccount` call it as one step in
+opening live data, while projections and other tooling can use it without
+opening storage.
+
+Automatic authority snapshot folding and local update-log folding remain the
+default maintenance path. If measured root-document pressure ever becomes a
+user-facing problem, a future application-owned **Compact workspace** action
+may rebuild the current logical state into a fresh Yjs document and rotate its
+private physical document identity behind the same stable application address.
+That action is deferred: it is not part of the current API, it does not expose
+generations, and it must not silently discard unsynchronized work on another
+device. Any eventual implementation must make its loss boundary explicit and
+remain a manual escape hatch rather than an automatic migration or compaction
+runner. The current runtime retains no replacement route for that future
+decision; a later design must earn its own authority protocol.
+
 This is a clean break. The public surface does not retain aliases or fallback
 parsers for `defineDatabase`, `parseDatabase`, `@epicenter/database`,
 `DatabaseJson`, `DatabaseView`, or `fromDatabase`.

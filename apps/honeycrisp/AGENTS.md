@@ -5,7 +5,7 @@ note's prose lives in that note's own independent Yjs document, opened on
 demand at the row's derived address (ADR-0248). The one application running on
 the store today, so it is also the reference for how an app is built.
 
-Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0248](../../docs/adr/0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md) (a row owns an independent Yjs document at a derived address), [ADR-0233](../../docs/adr/0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) (a device document and one account replica per account, chosen by auth at boot), [ADR-0231](../../docs/adr/0231-rebuilding-replaces-a-workspaces-current-yjs-document.md) (rebuild replaces the workspace's current Yjs document).
+Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0248](../../docs/adr/0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md) (a row owns an independent Yjs document at a derived address), [ADR-0233](../../docs/adr/0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) (a device document and one account replica per account, chosen by auth at boot), [ADR-0256](../../docs/adr/0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md) (automatic folding is current; manual workspace compaction is deferred).
 
 ## Two durable documents, and the root opens them
 
@@ -21,15 +21,14 @@ epicenter/so.epicenter.honeycrisp/account/<principal id>     one per account
 
 A generation's opened databases (`HoneycrispDatabases`) have exactly two
 shapes: `{ device }` and
-`{ device, account: { data, syncStatus, rebuild } }`, and they stop at the
+`{ device, account: { data, syncStatus } }`, and they stop at the
 layout's provider. `createHoneycrisp` (`src/lib/honeycrisp/index.ts`) turns
 one generation's databases into the reactive application object the UI
 consumes: it makes the document choice (`account?.data ?? device`) visible
 once, adapts that document into Svelte-reactive named tables with
 `fromWorkspace` (from `@epicenter/svelte`), layers Honeycrisp's domain
 operations, search, and `view` navigation on top, and exposes only the narrow
-capabilities the UI needs (`pressure()`, `account.syncStatus`,
-`account.rebuild`). Components reach it through `getHoneycrisp()`; the raw
+capability the UI needs (`account.syncStatus`). Components reach it through `getHoneycrisp()`; the raw
 databases, store, and sync plane never cross that boundary. A page lifetime is one auth generation (ADR-0232),
 so the composition never changes while the app lives; `reloadOnAuthChange`
 starts the next one.

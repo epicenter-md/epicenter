@@ -67,7 +67,7 @@ function asEnvelope(bytes: Uint8Array): Uint8Array {
 	return encodeEnvelope([{ document: APP_DOCUMENT, bytes }]);
 }
 
-/** This replica's whole state as the envelope a snapshot or replace carries. */
+/** This replica's whole state as the envelope a snapshot carries. */
 function snapshotOf(replica: { store: Replica['store'] }): Promise<Uint8Array> {
 	return syncEngineOf(replica.store).encodeSnapshot();
 }
@@ -272,15 +272,15 @@ type Replica = {
 function openAuthority(snapshotFloorBytes?: number) {
 	const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 	const authority = openSyncAuthority({ sqlite, snapshotFloorBytes });
-	return { authority, hub: createSyncHub({ authority, batch: 8 }) };
+	return { sqlite, authority, hub: createSyncHub({ authority, batch: 8 }) };
 }
 
 function setup(snapshotFloorBytes?: number) {
 	const wire = createWire();
-	const { authority, hub } = openAuthority(snapshotFloorBytes);
+	const { sqlite, authority, hub } = openAuthority(snapshotFloorBytes);
 	const phone = openReplica('phone', hub, wire);
 	const laptop = openReplica('laptop', hub, wire);
-	return { wire, authority, hub, phone, laptop };
+	return { wire, sqlite, authority, hub, phone, laptop };
 }
 
 /** A floor low enough that ordinary test traffic reaches the snapshot path. */
@@ -1624,7 +1624,7 @@ describe('two devices whose databases disagree', () => {
 	});
 
 	test('a table the older release does not declare waits in the CRDT for one that does', async () => {
-		// The claim the whole-index rebuild makes in a comment, checked across the
+		// The claim the whole-index projection makes in a comment, checked across the
 		// transport rather than inside one store. The older device relays and stores
 		// rows of a table it has no name for, and they are there the moment it is
 		// updated, without anybody re-sending anything.
@@ -1914,228 +1914,9 @@ describe('random schedules, and everyone still agrees', () => {
 	});
 });
 
-describe('one verb publishes the next document (ADR-0231)', () => {
-	/** Sync `count` notes through `replica`, so the log has a real tail. */
-	function author(
-		wire: Wire,
-		replica: ReturnType<typeof openReplica>,
-		count: number,
-		prefix = 'note',
-	): void {
-		for (let index = 0; index < count; index += 1) {
-			expectOk(replica.db.tables.notes.create({ title: `${prefix} ${index}` }));
-			replica.client.flush();
-			wire.settle();
-		}
-	}
-
-	test('a replace publishes a NEW document: fresh id, and a log that starts over', async () => {
-		const { wire, authority, phone } = setup();
-		phone.connect();
-		author(wire, phone, 5);
-		const before = expectOk(authority.document());
-
-		const published = expectOk(
-			authority.replace({
-				fromDocument: before,
-				bytes: await snapshotOf(phone),
-			}),
-		);
-
-		// The database survives; the document does not. A fresh id names the
-		// new history, and its log is its own: the replacement is the snapshot
-		// at position 1.
-		expect(published).not.toBe(before);
-		expect(expectOk(authority.document())).toBe(published);
-		expect(expectOk(authority.head())).toBe(1);
-		expect(expectOk(authority.snapshotPosition())).toBe(1);
-		// The old document is gone whole: no log entries, no older snapshot.
-		expect(expectOk(authority.since(0, 1_000))).toEqual([]);
-	});
-
-	test('fromDocument is compare-and-swap: a miss changes nothing and answers with the current id', async () => {
-		const { wire, authority, phone } = setup();
-		phone.connect();
-		author(wire, phone, 3);
-		const original = expectOk(authority.document());
-		const first = expectOk(
-			authority.replace({
-				fromDocument: original,
-				bytes: await snapshotOf(phone),
-			}),
-		);
-		const snapshotBefore = expectOk(authority.snapshot());
-
-		// The loser of a concurrent pair, or the crash-replay of a rebuild that
-		// already landed: both arrive naming a document that is no longer
-		// current, and neither may republish stale-built bytes over the winner.
-		const missed = authority.replace({
-			fromDocument: original,
-			bytes: new Uint8Array([1, 2, 3]),
-		});
-
-		expect(missed.error?.name).toBe('DocumentMoved');
-		expect(
-			missed.error?.name === 'DocumentMoved' ? missed.error.document : '',
-		).toBe(first);
-		// Atomicity's observable half: a refused replace left every table alone.
-		expect(expectOk(authority.document())).toBe(first);
-		expect(expectOk(authority.head())).toBe(1);
-		expect(expectOk(authority.snapshot())?.bytes).toEqual(
-			snapshotBefore?.bytes as Uint8Array,
-		);
-	});
-
-	test('atHead is a lease: an entry landing mid-swap refuses a reclaim, and omitting it lets a reset through', async () => {
-		const { wire, authority, phone } = setup();
-		phone.connect();
-		author(wire, phone, 3);
-		const document = expectOk(authority.document());
-		const built = expectOk(authority.head());
-
-		// Another device's entry lands between building the replacement and
-		// posting it. Reclaim promised "same data", so it must be refused.
-		author(wire, phone, 1, 'landed mid-swap');
-		const refused = authority.replace({
-			fromDocument: document,
-			atHead: built,
-			bytes: await snapshotOf(phone),
-		});
-		expect(refused.error?.name).toBe('HeadMoved');
-		expect(refused.error?.name === 'HeadMoved' ? refused.error.head : -1).toBe(
-			built + 1,
-		);
-		expect(expectOk(authority.document())).toBe(document);
-
-		// Reset and restore discard entries on purpose, so they omit the lease
-		// and the same moved head does not stop them.
-		const reset = expectOk(
-			authority.replace({
-				fromDocument: document,
-				bytes: new Uint8Array(Y.encodeStateAsUpdateV2(new Y.Doc({ gc: true }))),
-			}),
-		);
-		expect(reset).not.toBe(document);
-		expect(expectOk(authority.head())).toBe(1);
-	});
-
-	test('a fresh replica joining at cursor 0 receives the new document and nothing retired', async () => {
-		const { wire, authority, phone, laptop } = setup();
-		phone.connect();
-		const secret = 'RETIRED-CANARY-secret';
-		const note = expectOk(phone.db.tables.notes.create({ title: secret }));
-		phone.client.flush();
-		wire.settle();
-		phone.db.tables.notes.delete(note.id);
-		author(wire, phone, 4, 'kept');
-
-		// Reclaim: same live data, re-minted, zero tombstones. The generic
-		// re-encoding walk is future work; a fresh document holding the same rows
-		// is the same shape from the authority's blind point of view.
-		const reborn = openReplica('reborn', createSyncHub({ authority }), wire);
-		for (const title of phone.titles()) {
-			expectOk(reborn.db.tables.notes.create({ title }));
-		}
-		expectOk(
-			authority.replace({
-				fromDocument: expectOk(authority.document()),
-				bytes: await snapshotOf(reborn),
-			}),
-		);
-
-		laptop.connect();
-		wire.settle();
-		expect(laptop.titles()).toEqual(phone.titles());
-		// The new document's log is its own: the snapshot sits at position 1.
-		expect(laptop.client.status().cursor).toBe(1);
-		expect(laptop.client.status().unresolvedDependencies).toBe(false);
-		// And the retired history is not merely unsent: the authority no longer
-		// holds it at all.
-		const stored = [
-			...(expectOk(authority.snapshot()) === undefined
-				? []
-				: [expectOk(authority.snapshot())?.bytes as Uint8Array]),
-			...expectOk(authority.since(0, 1_000)).map((entry) => entry.bytes),
-		];
-		const haystack = Buffer.concat(
-			stored.map((bytes) => Buffer.from(bytes)),
-		).toString('latin1');
-		expect(haystack).not.toContain(secret);
-		expect(haystack).toContain('kept 3');
-	});
-
-	test('ordinary sync continues inside the new document, on its own log', async () => {
-		const { wire, authority, phone } = setup();
-		phone.connect();
-		author(wire, phone, 2);
-		expectOk(
-			authority.replace({
-				fromDocument: expectOk(authority.document()),
-				bytes: await snapshotOf(phone),
-			}),
-		);
-
-		const writer = openReplica('writer', createSyncHub({ authority }), wire);
-		// Boot after the funeral: a wiped file joins at zero and catches up.
-		writer.connect();
-		wire.settle();
-		expectOk(writer.db.tables.notes.create({ title: 'after the break' }));
-		writer.client.flush();
-		wire.settle();
-
-		// Snapshot at 1, the write at 2: the new document counts for itself.
-		expect(expectOk(authority.head())).toBe(2);
-		expect(writer.titles()).toContain('after the break');
-	});
-
-	test("replaceSnapshot keeps its own guard: a document replace does not weaken the in-document recap's refusal", async () => {
-		const { wire, authority, phone } = setup();
-		phone.connect();
-		author(wire, phone, 2);
-		expectOk(
-			authority.replace({
-				fromDocument: expectOk(authority.document()),
-				bytes: await snapshotOf(phone),
-			}),
-		);
-
-		// The recap's invariant is COVERAGE: never past the head, never backwards.
-		const head = expectOk(authority.head());
-		const past = authority.replaceSnapshot(head + 1, new Uint8Array([0]));
-		expect(past.error?.name).toBe('SnapshotRefused');
-		const backwards = authority.replaceSnapshot(head, new Uint8Array([0]));
-		expect(backwards.error?.name).toBe('SnapshotRefused');
-	});
-
-	test('a redelivered adoption is free: a replica that already adopted reconnects and nothing repeats', async () => {
-		const { wire, authority, phone, laptop } = setup();
-		phone.connect();
-		author(wire, phone, 3);
-		expectOk(
-			authority.replace({
-				fromDocument: expectOk(authority.document()),
-				bytes: await snapshotOf(phone),
-			}),
-		);
-		laptop.connect();
-		wire.settle();
-		const adopted = laptop.titles();
-
-		// The crash-shaped path: the socket died right after adoption, and boot
-		// dials again from the durable cursor. The catch-up finds nothing to send.
-		laptop.disconnect();
-		laptop.connect();
-		wire.settle();
-
-		expect(laptop.titles()).toEqual(adopted);
-		expect(laptop.client.status().lastError).toBeUndefined();
-		expect(laptop.client.status().needsResync).toBe(false);
-	});
-});
-
-describe('admission is one equality: a replica of a replaced document gets the announcement and nothing else (ADR-0231)', () => {
-	test('never admitted: the announcement, no history, and its pushes land nowhere', async () => {
-		const { wire, authority, hub, phone } = setup();
+describe('admission is one equality: a stale replica gets the announcement and nothing else', () => {
+	test('never admitted: the announcement, no history, and its pushes land nowhere', () => {
+		const { wire, sqlite, authority, hub, phone } = setup();
 		phone.connect();
 		for (let index = 0; index < 3; index += 1) {
 			expectOk(phone.db.tables.notes.create({ title: `note ${index}` }));
@@ -2143,17 +1924,11 @@ describe('admission is one equality: a replica of a replaced document gets the a
 			wire.settle();
 		}
 		const retired = expectOk(authority.document());
-		expectOk(
-			authority.replace({
-				fromDocument: retired,
-				bytes: await snapshotOf(phone),
-			}),
+		sqlite.run(
+			"UPDATE _meta SET value = ? WHERE key = 'document'",
+			[crypto.randomUUID()],
 		);
 		const membersBefore = hub.attached();
-
-		// A connection from the old document, joined directly so the verdict and
-		// every byte it is ever sent are observable. It declares the identity
-		// it stamped in the old document, which no longer matches.
 		const sent: Uint8Array[] = [];
 		const stale: HubConnection = {
 			cursor: 2,
@@ -2161,17 +1936,10 @@ describe('admission is one equality: a replica of a replaced document gets the a
 			send: (bytes) => sent.push(bytes),
 		};
 		expect(hub.join(stale)).toBe('retired');
-
-		// Membership is the whole guard: not a member, so it was handed no
-		// snapshot and no entries, only the announcement.
 		expect(hub.attached()).toBe(membersBefore);
-		const frames = sent.map((bytes) => expectOk(decodeFrame(bytes)));
-		expect(frames).toEqual([
+		expect(sent.map((bytes) => expectOk(decodeFrame(bytes)))).toEqual([
 			{ kind: 'document', id: expectOk(authority.document()) },
 		]);
-
-		// And the append direction dies at the same absence: its push reaches no
-		// log and earns no answer, not even a refusal.
 		const headBefore = expectOk(authority.head());
 		hub.receive(
 			stale,
@@ -2188,9 +1956,6 @@ describe('admission is one equality: a replica of a replaced document gets the a
 	});
 
 	test('an undeclared nonzero cursor is never admitted: the former protocol has no fallback', () => {
-		// A reading position without a document names bytes nothing durable can
-		// place, and the clean break refuses to guess. No replace is needed for
-		// the refusal: the shape itself is unservable.
 		const { wire, authority, hub, phone } = setup();
 		phone.connect();
 		expectOk(phone.db.tables.notes.create({ title: 'current' }));
@@ -2205,14 +1970,13 @@ describe('admission is one equality: a replica of a replaced document gets the a
 		};
 		expect(hub.join(undeclared)).toBe('retired');
 		expect(hub.attached()).toBe(1);
-		const frames = sent.map((bytes) => expectOk(decodeFrame(bytes)));
-		expect(frames).toEqual([
+		expect(sent.map((bytes) => expectOk(decodeFrame(bytes)))).toEqual([
 			{ kind: 'document', id: expectOk(authority.document()) },
 		]);
 	});
 
-	test('a driven stale replica concludes superseded, and its rows are never soup', async () => {
-		const { wire, authority, phone, laptop } = setup();
+	test('a driven stale replica concludes superseded without merging', () => {
+		const { wire, sqlite, phone, laptop } = setup();
 		phone.connect();
 		laptop.connect();
 		expectOk(phone.db.tables.notes.create({ title: 'old document' }));
@@ -2223,16 +1987,11 @@ describe('admission is one equality: a replica of a replaced document gets the a
 		phone.disconnect();
 		laptop.disconnect();
 
-		expectOk(
-			authority.replace({
-				fromDocument: expectOk(authority.document()),
-				bytes: await snapshotOf(phone),
-			}),
+		sqlite.run(
+			"UPDATE _meta SET value = ? WHERE key = 'document'",
+			[crypto.randomUUID()],
 		);
 
-		// The laptop returns from the old document: it draws the conclusion, and
-		// nothing about its document changed, because nothing was delivered to
-		// merge. Adoption is its host's discard-and-reload, not a code path here.
 		laptop.connect();
 		wire.settle();
 		expect(laptop.client.status().superseded).toBe(true);
@@ -2253,10 +2012,6 @@ describe('admission is one equality: a replica of a replaced document gets the a
 			document: undefined,
 			send: (bytes) => sent.push(bytes),
 		};
-
-		// Admitting unchecked could seat a stale replica; announcing a document
-		// the authority never named could discard a healthy one. Both
-		// directions fail closed: plain refusal, ordinary client backoff.
 		expect(hub.join(connection)).toBe('unavailable');
 		expect(hub.attached()).toBe(0);
 		expect(sent).toHaveLength(0);

@@ -43,10 +43,3 @@ export {
 	type HubConnection,
 	type SyncHub,
 } from './hub.js';
-export {
-	RebuildError,
-	type RebuiltState,
-	rebuildDatabase,
-	rebuildDocument,
-	type StoreTransport,
-} from './rebuild.js';

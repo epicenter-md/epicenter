@@ -28,8 +28,8 @@ describe('bootFailureMessage', () => {
 
 	test('an unrecognized failure admits it rather than inventing a reason', () => {
 		const unknown = bootFailureMessage({
-			name: 'ReplaceRefused',
-			message: 'A replace leased at head 4 was refused: the log now ends at 9',
+			name: 'UnknownFailure',
+			message: 'The store could not be opened',
 		});
 		expect(unknown).toMatch(/something went wrong/i);
 		// It still tells them their notes are safe, which is the one thing
@@ -44,7 +44,7 @@ describe('bootFailureMessage', () => {
 			{ name: 'AlreadyOpen' },
 			{ name: 'Unaddressable' },
 			{ name: 'CredentialRefused' },
-			{ name: 'ReplaceRefused' },
+			{ name: 'UnknownFailure' },
 			new Error('boom'),
 			'not an object',
 			null,

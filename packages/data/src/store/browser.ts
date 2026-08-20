@@ -76,10 +76,8 @@ export type BrowserAccountStore = AccountStore & {
 	/**
 	 * Delete this store's durable record whole, disposing the store first.
 	 *
-	 * ADR-0231's one client-side deletion: a replica whose document was
-	 * replaced discards and rejoins at zero, and the initiating device adopts
-	 * through the same move after a confirmed replace. Terminal for this store; the
-	 * caller reloads (ADR-0232's instrument) and boot opens fresh. Crash-safe
+	 * A superseded replica discards and rejoins at zero. Terminal for this store;
+	 * the caller reloads (ADR-0232's instrument) and boot opens fresh. Crash-safe
 	 * by repetition: a discard that never ran leaves the old file, whose next
 	 * dial is refused again.
 	 *
@@ -399,8 +397,9 @@ async function openIdbBacking(
  * which application, the principal says whose replica this is, and the
  * authority document id says which current Yjs document that replica belongs
  * to. Only the first two are in the name. The third lives inside the store
- * because it changes on rebuild, and a rebuilt definition has to stay at the
- * same address while its contents are discarded.
+ * because a future explicit document replacement may change it while the
+ * logical address stays stable; the current runtime does not expose that
+ * replacement action.
  *
  * A definition id is dot-separated lowercase labels, so it holds no `/`: the
  * segment after `epicenter/` is always exactly the application, and no address

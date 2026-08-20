@@ -120,11 +120,8 @@ export type WantedFrame = { kind: 'wanted'; position: number };
  * The authority naming the document its log describes (ADR-0231).
  *
  * The first frame on every connection, admitted or not. The id is opaque
- * and minted by the authority: once at first open, and again by every
- * replace, because a replace publishes a NEW document (the rebuild re-mints
- * every struct identity; the visible database survives, the Yjs ancestry
- * does not). A replica compares it to the identity its own state belongs
- * to: equal proceeds, absent adopts at first entanglement, different is the
+ * and minted by the authority. A replica compares it to the identity its own
+ * state belongs to: equal proceeds, absent adopts at first entanglement, different is the
  * client's `superseded` conclusion. Fact on the wire, verdict in the
  * client.
  */

@@ -42,7 +42,7 @@
  *   in this driver.
  * - Stopping for good when the client concludes `superseded` (ADR-0231): the
  *   authority named a document that is not the one this replica's state
- *   belongs to, meaning its document was replaced. `onSuperseded` fires
+	 *   belongs to, meaning its document is superseded. `onSuperseded` fires
  *   once, after the driver has let go of everything, and the host discards
  *   the local file whole and reloads. Nothing else can trigger it: a close
  *   without the announcement, garbage, and every failure are ordinary
@@ -139,7 +139,7 @@ export type SyncConnectionStatus = SyncClientStatus & {
 	 */
 	denied: boolean;
 	/**
-	 * Whether this replica's document was confirmed replaced (ADR-0231).
+	 * Whether this replica's document was confirmed superseded (ADR-0231).
 	 *
 	 * Once true it stays true, and `onSuperseded` has fired: the host is
 	 * discarding the local file and reloading, so this status exists only for
@@ -222,7 +222,7 @@ export function createSyncConnection({
 	healthyMs?: number;
 	unacknowledgedMs?: number;
 	/**
-	 * This replica's document was replaced; sync is over for good.
+	 * This replica's document is superseded; sync is over for good.
 	 *
 	 * Fires at most once, after the driver has already shut down, and only
 	 * because the client drew the `superseded` conclusion from a document

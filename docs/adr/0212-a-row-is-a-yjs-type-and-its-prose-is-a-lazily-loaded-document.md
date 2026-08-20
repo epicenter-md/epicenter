@@ -13,10 +13,12 @@
 - **Amended by:** [ADR-0219](0219-a-deleted-row-is-removed-and-the-presence-flag-is-retired.md)
   at deletion only. Withdrawn: clear-and-flag, the `!presence` attribute and its
   grammar, and the reuse story in which writing at an absent address revives it.
-- **Amended by:** [ADR-0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md)
-  at workspace replacement: the workspace is rebuilt as a fresh Yjs document
-  with a new opaque document ID. A cursor is within that document only; it
-  does not name the document or authorize a stale replica.
+- **Amended by:** [ADR-0256](0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md)
+  at workspace replacement: the current product has no whole-document rebuild
+  action. Automatic folding stays within one Yjs document, while a future
+  Compact workspace action may create a fresh document identity as a separate
+  decision. A cursor is within that document only; the private identity names
+  the document and authorizes a replica's admission.
 - **Relates:** [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md)
   (the lens and the application surface),
   [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md)
@@ -326,17 +328,13 @@ and two-stage lifecycles are product decisions and do not belong in the store.
   every corpse. If a table ever gets slow to list, the fix is a second attribute
   on the table root naming only the live rows, which is read in one call rather
   than one per row. Not built; no table is near this.
-- **The address carries a generation, and nothing increments it.** A stale device
-  compares generations and full-resyncs rather than merging. That is one integer
-  and one comparison, and it is what makes a future rebuild possible without
-  corrupting anyone.
-  **The rebuild itself is refused.** Measured: rebuilding the index into a fresh
-  document reclaims up to 97% when corpses dominate, but a device that missed it
-  has its unsynced offline edit **destroyed**, and replaying that device's own
-  operations does not rescue it, because the new generation has new struct
-  identities. The only safe version diffs field values across generations, which
-  is a subsystem rather than a button. At a hundred deletions a year the problem
-  it solves is a thousand years away.
+- **Private document identity gates admission; there is no public generation.**
+  A stale device compares its declared identity with the authority's identity
+  and discards the physical replica rather than merging across documents. That
+  identity is one equality check, not a lineage or migration system. Automatic
+  folding keeps it unchanged. A future Compact workspace action may replace it,
+  but that action is deferred until measured root pressure justifies its loss
+  boundary.
 - **A prose document must never have its type replaced.** Measured: replacing the
   document behind a row reclaims the old content correctly, but a handle still
   held by an editor keeps accepting writes that go nowhere, silently. A row's

@@ -26,11 +26,9 @@ export type BunAccountStore = AccountStore & {
 	/**
 	 * Delete this store's live file whole, disposing the store first.
 	 *
-	 * ADR-0231's one client-side deletion: a replica whose document was replaced
-	 * discards and rejoins at zero. `history.sqlite3` survives on purpose; it
-	 * is the owner's shelf, and the shelf is what makes an undone replace a
-	 * restore rather than a loss. Terminal for this store; the caller reopens
-	 * fresh and the ordinary join is the whole of adoption.
+	 * A superseded replica discards and rejoins at zero. `history.sqlite3`
+	 * survives on purpose as the owner's separate retention shelf. Terminal for
+	 * this store; the caller reopens fresh and the ordinary join is adoption.
 	 */
 	discard(): Promise<Result<void, StoreError>>;
 };

@@ -2,8 +2,8 @@
  * What a person reads when Honeycrisp cannot open their notes.
  *
  * `@epicenter/data` states a failure for whoever is debugging one: an
- * unaddressable replica names the account it lacks, a refused replace names the
- * head it leased. Those sentences are correct and they are not what someone who
+	 * unaddressable replica names the account it lacks. That sentence is correct
+	 * and it is not what someone who
  * opened a notes app should be handed. The library keeps its words; this picks
  * theirs.
  *

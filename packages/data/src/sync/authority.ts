@@ -45,29 +45,28 @@
  * partition has one writer principal, so the only party who can author bytes
  * that brick it is the party that owns it.
  *
- * ## Why it refuses to compact
+ * ## Why it refuses root-document compaction
  *
  * Four authority designs were built and withdrawn, all failing at one joint: a
- * log must be compacted, compaction must prove the replacement covers what it
- * replaces, and that proof needs semantics the authority was defined not to
- * have. Refusing compaction removes the requirement rather than satisfying it,
- * and it costs about 4 MB a year against 10 GB of Durable Object SQLite
- * (`evidence/bench/never-compact.ts`). The merge that could not be verified
- * moves to the client, where it needs no verification because a client
- * indisputably owns its own unsent bytes.
+ * A root-document rewrite must prove the replacement covers what it replaces,
+ * and that proof needs semantics the authority was defined not to have. The
+ * authority therefore does not own that product action. It does perform the
+ * narrower automatic snapshot fold: a client offers its own state, and the
+ * authority verifies only that the connection was sent through the offered
+ * position. The application merge remains on the client, over bytes that
+ * client owns.
  *
- * Do not reintroduce compaction, baselines, or coverage proofs here.
+ * Do not reintroduce root-document compaction or baselines here. Snapshot
+ * coverage is the separate automatic log-folding invariant.
  *
- * The one thing that ever deletes history is not compaction: `replace`
- * (ADR-0231) publishes a caller-supplied state as the database's next
- * DOCUMENT, whole log gone, fresh id minted. It needs no coverage proof
- * because it makes no coverage claim; a person took responsibility, the
- * lease (`fromDocument`, `atHead`) is the whole precondition, and the bytes
- * stay as unread as every other byte here.
+ * A document identity is metadata for sync admission. This authority names
+ * the current identity but does not expose a destructive whole-document
+ * replacement operation; any future Compact workspace feature must own that
+ * product decision explicitly.
  */
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
+import { Err, type Result, trySync } from 'wellcrafted/result';
 
 import { copyBytes } from '../store/log.js';
 import { CHUNK_BYTES, intoChunks } from './frames.js';
@@ -111,38 +110,6 @@ export const AuthorityError = defineErrors({
 		head,
 		current,
 	}),
-	/**
-	 * A replace's compare-and-swap missed: the current document is not the one
-	 * the caller built from.
-	 *
-	 * The answer carries the current document's id, which is the whole of what
-	 * a refused caller needs: a retried replace whose first attempt actually
-	 * landed sees the document it published, and a genuine loser sees the one
-	 * it must adopt (ADR-0231).
-	 */
-	DocumentMoved: ({
-		fromDocument,
-		document,
-	}: {
-		fromDocument: string;
-		document: string;
-	}) => ({
-		message: `A replace of document '${fromDocument}' was refused: the current document is '${document}'`,
-		fromDocument,
-		document,
-	}),
-	/**
-	 * A reclaim's lease expired: the log grew past the head it was built from.
-	 *
-	 * Only a caller that promised "same data" supplies `atHead`, and for that
-	 * caller an entry landing mid-swap would be silently lost, which is exactly
-	 * the loss the lease exists to make loud (ADR-0231).
-	 */
-	HeadMoved: ({ atHead, head }: { atHead: number; head: number }) => ({
-		message: `A replace leased at head ${atHead} was refused: the log now ends at ${head}`,
-		atHead,
-		head,
-	}),
 });
 export type AuthorityError = InferErrors<typeof AuthorityError>;
 
@@ -182,43 +149,8 @@ export type SyncAuthority = {
 		position: number,
 		bytes: Uint8Array,
 	): Result<void, AuthorityError>;
-	/**
-	 * The opaque name of the document this log describes (ADR-0231).
-	 *
-	 * Minted once at first need and re-minted by every replace, because a
-	 * replace publishes a NEW document: the rebuild re-mints every struct
-	 * identity, so the visible database survives and the Yjs ancestry does
-	 * not. Bytes merge only when they name the same document is the
-	 * invariant, and this name is how both sides state which document they
-	 * mean without anyone reading bytes.
-	 */
+	/** The opaque name of the document this log describes (ADR-0231). */
 	document(): Result<string, AuthorityError>;
-	/**
-	 * Publish the supplied state as this database's next DOCUMENT.
-	 *
-	 * A NEW verb, not a reuse of `replaceSnapshot`: a recap replaces history
-	 * within one document and must never stand for entries nobody wrote; a
-	 * replace ends the document itself. It deletes the whole log and every
-	 * snapshot, files the replacement as the new document's snapshot at
-	 * position 1 (each document has its own log, starting over), and mints a
-	 * fresh document id, which is what retires every replica of the old one
-	 * at its next dial.
-	 *
-	 * `fromDocument` is compare-and-swap, always: the replace applies only if
-	 * that is still the current document, and a miss answers with the current
-	 * id. `atHead` is a lease by intent: reclaim supplies the head it built
-	 * from and is refused if the tail moved; reset and restore omit it,
-	 * because discarding entries is the operation. The whole swap is one
-	 * transaction, so a crash leaves either the old document intact or the
-	 * new one published, never a mixture.
-	 *
-	 * Returns the new document's id.
-	 */
-	replace(args: {
-		fromDocument: string;
-		bytes: Uint8Array;
-		atHead?: number;
-	}): Result<string, AuthorityError>;
 	/**
 	 * Whether the tail has outgrown the snapshot, and is worth replacing at all.
 	 *
@@ -472,55 +404,6 @@ export function openSyncAuthority({
 			});
 		},
 
-		replace({ fromDocument, bytes, atHead }): Result<string, AuthorityError> {
-			// Minted before the transaction because it is a pure value; compared
-			// and written INSIDE it, so the compare and the swap are one step
-			// whatever runtime holds this database. A refusal returns before
-			// anything is written, so the commit of an empty transaction is the
-			// no-op it looks like.
-			const minted = crypto.randomUUID();
-			const { data: outcome, error } = read(() =>
-				sqlite.transaction((): Result<string, AuthorityError> => {
-					const document = documentOf();
-					if (document !== undefined && document !== fromDocument) {
-						return AuthorityError.DocumentMoved({ fromDocument, document });
-					}
-					const head = headSeq();
-					if (atHead !== undefined && atHead !== head) {
-						return AuthorityError.HeadMoved({ atHead, head });
-					}
-					// The old document goes whole: every log entry and EVERY
-					// snapshot, including the in-document fallback that
-					// `replaceSnapshot` keeps. The authority holds exactly one
-					// history, ever, and a retired document retrievable even
-					// briefly is the privacy leak ADR-0220's title retired
-					// (ADR-0231). Retirement IS this deletion; there is no
-					// registry of retired documents, because admission is an
-					// equality and an unknown id is already unservable.
-					sqlite.run('DELETE FROM _log');
-					sqlite.run('DELETE FROM _snapshot');
-					// The new document's own log starts over: its state is the
-					// snapshot at position 1.
-					const chunks = intoChunks(bytes, CHUNK_BYTES);
-					for (const [index, chunk] of chunks.entries()) {
-						sqlite.run(
-							'INSERT INTO _snapshot (position, chunk, bytes) VALUES (?, ?, ?)',
-							[1, index, new Uint8Array(chunk)],
-						);
-					}
-					// The fresh name is what retires every replica of the old
-					// document at its next dial (ADR-0231).
-					sqlite.run(
-						"INSERT OR REPLACE INTO _meta (key, value) VALUES ('document', ?)",
-						[minted],
-					);
-					return Ok(minted);
-				}),
-			);
-			if (error !== null) return Err(error);
-			return outcome;
-		},
-
 		shouldSnapshot(): Result<boolean, AuthorityError> {
 			return read(() => {
 				const tail = sumBytes('_log');
@@ -532,11 +415,9 @@ export function openSyncAuthority({
 		/**
 		 * The one number to instrument.
 		 *
-		 * Refusing compaction means the log grows for the life of the application,
-		 * and the answer to "and then what" is a new generation rather than a
-		 * compaction of this one (see the design record). At the measured rate the
-		 * trigger is millennia away, so nothing is built for it; this is how a
-		 * decade of warning arrives if the rate is ever wrong.
+			 * Automatic snapshot folding remains the maintenance path. This number is
+			 * instrumentation for deciding whether a future explicit Compact workspace
+			 * action has earned its place; the authority does not trigger that action.
 		 */
 		storedBytes: () => read(() => sumBytes('_log') + sumBytes('_snapshot')),
 	});

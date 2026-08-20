@@ -5,10 +5,8 @@ import { field } from '@epicenter/data/definition';
  * Admission used to greet cursor zero as "no commitment: this document grew
  * alone, and merging an independent document is the one cross-document merge
  * that is safe". Two states wore that cursor while holding a commitment, and
- * each one, driven through a replace built with the REAL rebuild bytes
- * (`rebuildDocument`: re-minted identities, zero tombstones; a replacement
- * built from `encodeStateSince` masks both holes because its tombstones
- * travel), produced the exact corruption the design promises is structural:
+ * each one, driven through a stale identity, produced the exact corruption
+ * the design promises is structural:
  * silently merging across the break, and resurrecting a deleted row into the
  * replacement document. The fix is the document identity: the authority names
  * the document its log describes, a replica stamps the identity its state
@@ -39,7 +37,6 @@ import { openSyncAuthority } from './authority.js';
 import { createSyncClient } from './client.js';
 import { encodeFrame } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
-import { rebuildDocument } from './rebuild.js';
 
 const database = defineData({
 	id: 'so.epicenter.honeycrisp',
@@ -163,7 +160,7 @@ function setup() {
 	const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 	const authority = openSyncAuthority({ sqlite });
 	const hub = createSyncHub({ authority, batch: 8 });
-	return { wire, authority, hub };
+	return { wire, sqlite, authority, hub };
 }
 
 describe('the receive half: the stamp precedes every foreign byte', () => {
@@ -228,63 +225,25 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 		expect(syncEngineOf(victim.store).documentIdentity()).toBeUndefined();
 	});
 
-	test('a replica holding old-document bytes is retired at its next dial, never merged across the break', async () => {
-		const { wire, authority, hub } = setup();
+	test('a replica holding a stale document is retired at its next dial', () => {
+		const { wire, sqlite, authority, hub } = setup();
 		const phone = openReplica('phone', hub, wire);
 		phone.connect();
-		const x = expectOk(phone.db.tables.notes.create({ title: 'X' }));
+		expectOk(phone.db.tables.notes.create({ title: 'X' }));
 		phone.client.flush();
 		wire.settle();
 
-		// A second device syncs entry 1 in the client's order (stamp, then
-		// bytes with the bookmark) and goes into the drawer: old-document
-		// bytes, cursor 1, stamped.
-		const drawerDb = createBunSqliteAdapter(new Database(':memory:'));
-		{
-			const drawerStore = createAccountStore({
-				definition: database,
-				sqlite: drawerDb,
-			}).store;
-			const entry = expectOk(authority.since(0, 10))[0];
-			if (entry === undefined) throw new Error('the log holds no entry');
-			expectOk(
-				syncEngineOf(drawerStore).adoptDocumentIdentity(
-					expectOk(authority.document()),
-				),
-			);
-			expectOk(
-				syncEngineOf(drawerStore).applyRemote(entry.bytes, {
-					advanceTo: entry.seq,
-				}),
-			);
-		}
-
-		// X is deleted and the person rebuilds. The replace publishes a NEW
-		// document: no X, and no tombstone of X, so a cross-document merge
-		// would resurrect it.
-		phone.db.tables.notes.delete(x.id);
-		phone.client.flush();
-		wire.settle();
-		expectOk(phone.db.tables.notes.create({ title: 'kept' }));
-		phone.client.flush();
-		wire.settle();
-		expectOk(
-			authority.replace({
-				fromDocument: expectOk(authority.document()),
-				bytes: expectOk(await rebuildDocument(phone.store)),
-			}),
+		expectOk(authority.document());
+		sqlite.run(
+			"UPDATE _meta SET value = ? WHERE key = 'document'",
+			[crypto.randomUUID()],
 		);
 
-		// The drawer device reboots from its durable file. Its stamp names the
-		// retired document, so it is answered with the facts and nothing else.
-		const drawer = openReplica('drawer', hub, wire, database, drawerDb);
-		expect(drawer.titles()).toEqual(['X']);
-		expect(drawer.connect()).toBe('retired');
+		phone.disconnect();
+		expect(phone.connect()).toBe('retired');
 		wire.settle();
-		expect(drawer.client.status().superseded).toBe(true);
-		// Nothing merged: its document is exactly what it held, and adoption is
-		// its host's discard-and-reload, not a merge.
-		expect(drawer.titles()).toEqual(['X']);
+		expect(phone.client.status().superseded).toBe(true);
+		expect(phone.titles()).toEqual(['X']);
 	});
 });
 
@@ -312,59 +271,6 @@ describe('database bootstrap names a document before any database write', () => 
 		);
 	});
 
-	test('a pushed-but-unacked replica is retired at its next dial, and a deleted row stays deleted', async () => {
-		const { wire, authority, hub } = setup();
-
-		// The drawer first bootstraps, then authors X, pushes, and the socket dies
-		// before the ack. The push LANDED; the cursor never moved.
-		const drawer = openReplica('drawer', hub, wire);
-		expect(drawer.connect()).toBe('admitted');
-		wire.settle();
-		expectOk(drawer.db.tables.notes.create({ title: 'X' }));
-		drawer.client.flush();
-		// The push lands, then its acknowledgement dies with the socket.
-		wire.step(1);
-		expect(expectOk(authority.head())).toBe(1);
-		drawer.disconnect();
-		wire.settle(); // drain the discarded ack
-		expect(drawer.client.status().cursor).toBe(0);
-		expect(drawer.client.document()).toBe(expectOk(authority.document()));
-
-		// The phone receives X, deletes it, and rebuilds. New document: no X.
-		const phone = openReplica('phone', hub, wire);
-		phone.connect();
-		wire.settle();
-		expect(phone.titles()).toEqual(['X']);
-		const row = phone.db.tables.notes.list().rows[0];
-		if (row === undefined) throw new Error('the phone holds no row');
-		phone.db.tables.notes.delete(row.id);
-		phone.client.flush();
-		wire.settle();
-		expectOk(
-			authority.replace({
-				fromDocument: expectOk(authority.document()),
-				bytes: expectOk(await rebuildDocument(phone.store)),
-			}),
-		);
-		phone.disconnect();
-
-		// The drawer returns declaring the retired document. Before the stamp
-		// existed this dial was greeted as a fresh install, its outbox
-		// republished the retired document's bytes, and deleted X resurrected
-		// on every device.
-		expect(drawer.connect()).toBe('retired');
-		wire.settle();
-		expect(drawer.client.status().superseded).toBe(true);
-		drawer.client.flush();
-		wire.settle();
-
-		// A later device on the new document never sees X: the retired bytes
-		// landed nowhere.
-		const laptop = openReplica('laptop', hub, wire);
-		laptop.connect();
-		wire.settle();
-		expect(laptop.titles()).toEqual([]);
-	});
 
 	test('local database work before bootstrap is discarded, never stamped and sent', () => {
 		const { wire, authority, hub } = setup();
@@ -383,32 +289,7 @@ describe('database bootstrap names a document before any database write', () => 
 		expect(expectOk(authority.head())).toBe(0);
 	});
 
-	test('CONTROL: a pristine install adopts before writing', async () => {
-		const { wire, authority, hub } = setup();
-		const phone = openReplica('phone', hub, wire);
-		phone.connect();
-		expectOk(phone.db.tables.notes.create({ title: 'kept' }));
-		phone.client.flush();
-		wire.settle();
-		expectOk(
-			authority.replace({
-				fromDocument: expectOk(authority.document()),
-				bytes: expectOk(await rebuildDocument(phone.store)),
-			}),
-		);
 
-		// A new database replica has no local document at all. It bootstraps
-		// before it can author database work, so there is no cross-document
-		// merge exception.
-		const fresh = openReplica('fresh', hub, wire);
-		expect(fresh.connect()).toBe('admitted');
-		wire.settle();
-		expectOk(fresh.db.tables.notes.create({ title: 'fresh install note' }));
-		fresh.client.flush();
-		wire.settle();
-		expect(fresh.titles()).toEqual(['fresh install note', 'kept']);
-		expect(fresh.client.status().superseded).toBe(false);
-	});
 });
 
 describe('the cutover: pre-identity local state is reset, never merged', () => {

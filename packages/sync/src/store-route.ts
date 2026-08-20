@@ -58,40 +58,6 @@ export const STORE_SYNC_ROUTE = {
 } as const;
 
 /**
- * The one out-of-band verb on the store mount: publish a workspace's next
- * document (ADR-0231).
- *
- * A person-initiated, authenticated POST, deliberately outside the sync
- * socket: routine sync makes claims and needs provenance, while a replace
- * makes no coverage claim and needs a lease instead. The body is the encoded
- * replacement state, opaque to the server; the lease travels in the query.
- *
- * `fromDocument` is compare-and-swap, always: the id of the document the
- * replacement was built from, which for a rebuild is the identity the
- * initiating replica has durably stamped. The authority applies the replace
- * only if that is still its current document, and answers a miss with the
- * current id. `atHead` is supplied by reclaim, which promises "same data" and
- * must be refused if the tail moved; reset and restore omit it.
- */
-export const STORE_REPLACE_ROUTE = {
-	pattern: '/api/store/v1/replace',
-	url(
-		baseURL: string,
-		params: { databaseId: string; fromDocument: string; atHead?: number },
-	): string {
-		const url = new URL(
-			`${stripTrailing(baseURL)}${STORE_REPLACE_ROUTE.pattern}`,
-		);
-		url.searchParams.set('databaseId', params.databaseId);
-		url.searchParams.set('fromDocument', params.fromDocument);
-		if (params.atHead !== undefined) {
-			url.searchParams.set('atHead', String(params.atHead));
-		}
-		return url.toString();
-	},
-} as const;
-
-/**
  * An id a workspace could actually have declared.
  *
  * Checked on both sides, from one definition. The server checks it because the

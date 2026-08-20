@@ -19,7 +19,6 @@ export {
 	parseSubprotocols,
 } from './auth-subprotocol';
 export {
-	STORE_REPLACE_ROUTE,
 	STORE_SYNC_ROUTE,
 	WORKSPACE_ID,
 } from './store-route.js';

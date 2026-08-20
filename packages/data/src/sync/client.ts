@@ -119,7 +119,7 @@ export type SyncClientStatus = {
 	needsResync: boolean;
 	/**
 	 * The CLIENT's conclusion from the announcement (ADR-0231): this
-	 * replica's document was replaced, and sync is over for good.
+	 * replica's document is superseded, and sync is over for good.
 	 *
 	 * Drawn only when the authority, on this replica's own authenticated
 	 * socket, named a document that is not the one this replica's state
