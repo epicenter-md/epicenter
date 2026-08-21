@@ -37,7 +37,6 @@ export const viewTransition = {
 		} as const;
 	},
 
-
 	/**
 	 * The selected recording trigger's mode glyph: the mic for `manual`, the ear
 	 * for `vad`. The same glyph appears as a tab on the home page and as the
