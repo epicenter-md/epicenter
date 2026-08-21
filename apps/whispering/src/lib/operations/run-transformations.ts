@@ -10,7 +10,7 @@ export type TransformationFailure = {
 	transformationId: string;
 	transformationName: string;
 	stepId: string;
-	stepPosition: number;
+	stepIndex: number;
 	message: string;
 };
 
@@ -30,7 +30,9 @@ export function executeTransformation(
 	transformation: RunnableTransformation,
 ): TransformationExecutionResult {
 	let text = input;
-	for (const step of sortByPosition(transformation.steps)) {
+	for (const [stepIndex, step] of sortByPosition(
+		transformation.steps,
+	).entries()) {
 		try {
 			text = executeStep(text, step);
 		} catch (cause) {
@@ -40,7 +42,7 @@ export function executeTransformation(
 					transformationId: transformation.id,
 					transformationName: transformation.name,
 					stepId: step.id,
-					stepPosition: step.position,
+					stepIndex,
 					message:
 						cause instanceof Error
 							? cause.message

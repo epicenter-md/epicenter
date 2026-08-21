@@ -30,7 +30,7 @@ export function processTranscript(
 	for (const failure of transformed.failures) {
 		report.info({
 			title: `Transformation skipped: ${failure.transformationName}`,
-			description: `Step ${failure.stepPosition + 1}: ${failure.message}`,
+			description: `Step ${failure.stepIndex + 1}: ${failure.message}`,
 		});
 	}
 

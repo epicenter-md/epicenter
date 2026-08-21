@@ -131,8 +131,8 @@ test('a failed Transformation is atomic and later groups continue', () => {
 		name: 'Broken regex',
 		position: 0,
 		steps: [
-			step('partial', { position: 0, find: 'a', replace: 'b' }),
-			step('invalid', { position: 1, find: '[', useRegex: true }),
+			step('partial', { position: 5, find: 'a', replace: 'b' }),
+			step('invalid', { position: 12, find: '[', useRegex: true }),
 		],
 	});
 	const later = transformation('later', {
@@ -146,7 +146,7 @@ test('a failed Transformation is atomic and later groups continue', () => {
 		transformationId: 'broken',
 		transformationName: 'Broken regex',
 		stepId: 'invalid',
-		stepPosition: 1,
+		stepIndex: 1,
 	});
 });
 
