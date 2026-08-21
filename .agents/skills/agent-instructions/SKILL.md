@@ -21,7 +21,12 @@ Read [references/composition-audit.md](references/composition-audit.md) when str
 
 Use other skills for their owned domains:
 
+- `dialectic`: settle what a skill is for before this skill settles what using it
+  should feel like.
 - `writing-voice`: user-facing prose, UI text, errors, docs, and tone.
+- `page-writing` and `journal-writing`: authored Vault prose. Loading one inside
+  a skill run is execution, not skill design; this skill's discovery pass does
+  not apply there.
 - Domain skills such as `yjs`, `svelte`, or `auth`: package conventions the new skill must encode.
 - `git`: staging, commits, branch work, and commit messages.
 - `plugin-creator`: Codex plugins, not agent skills.
@@ -133,6 +138,30 @@ A skill carries what an agent could not have inferred here, so a section you
 could have written without opening the repository is a section to cut. When the
 task, its triggers, or the failure it prevents cannot be recovered from repo
 files, ask before drafting rather than inventing them.
+
+## Design The Skill From The Interaction
+
+This pass happens while a `SKILL.md` is being written or behaviorally revised.
+A skill run follows that skill's body; it never renders candidate interactions
+unless the body asks for them. A typo-only edit or a clearly settled instruction
+skips this pass; act directly.
+
+1. **Diverge.** Show two or three short candidate interactions that differ on
+   the axis in doubt: turn count, where the agent stops, or what it hands back.
+   When the shape is hard to see in dialogue, render the artifact instead, such
+   as a feed, table, or diagram. For a behavioral revision of a skill with an
+   already recognized interaction, render only the changed one.
+2. **Converge.** Revise one rendering at a time from the human's natural
+   reactions. The human's reaction is design evidence, not a vote that ends the
+   pass. Stop when the human recognizes it: “yes, that one,” or no further
+   corrections. “Fine” is not recognition.
+3. **Extract.** Work backward from the recognized interaction into the trigger,
+   turns, reaction points, stopping condition, output, guardrails, and non-goals.
+   The recognized interaction is the first evaluation case: its prompt and
+   turns become the prompt and assertions in `Evaluate A Skill`.
+
+When the goal itself is unsettled, run `dialectic` first; this pass assumes the
+goal is settled and only the interaction's shape is open.
 
 ## Write The Description First
 
