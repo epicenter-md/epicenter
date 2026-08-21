@@ -1,6 +1,7 @@
 import { on } from 'svelte/events';
 import {
 	domCodeToKey,
+	eventKeyModifier,
 	eventModifiers,
 	type Key,
 	type KeyBinding,
@@ -94,9 +95,15 @@ export function createChordRecorder({
 		// Union the modifiers (a combo built up over several presses), and take the
 		// latest physical key. A modifier-only keydown just extends the window so
 		// the user has time to add the key before it times out.
-		for (const modifier of eventModifiers(e)) {
-			if (!capturedModifiers.includes(modifier))
+		const modifiers = eventModifiers(e);
+		const currentModifier = eventKeyModifier(e);
+		if (currentModifier !== null && !modifiers.includes(currentModifier)) {
+			modifiers.push(currentModifier);
+		}
+		for (const modifier of modifiers) {
+			if (!capturedModifiers.includes(modifier)) {
 				capturedModifiers.push(modifier);
+			}
 		}
 		const key = domCodeToKey(e.code);
 		if (key) capturedKey = key;
