@@ -362,8 +362,16 @@ export function domCodeToKey(code: string): Key | null {
 	return null;
 }
 
+type ModifierEvent = {
+	readonly ctrlKey: boolean;
+	readonly altKey: boolean;
+	readonly shiftKey: boolean;
+	readonly metaKey: boolean;
+	readonly key: string;
+};
+
 /**
- * Read the live modifier set from a `KeyboardEvent`'s boolean flags. Also read
+ * Read the live modifier set from a keyboard event's boolean flags. Also read
  * the current modifier key itself: WebKitGTK exposes Linux Super as
  * `key === 'Super'` without setting `metaKey`, and the chord recorder needs that
  * keydown so it can carry Super into the following key. `OS` covers the older
@@ -374,7 +382,7 @@ export function domCodeToKey(code: string): Key | null {
  * fire, and is refused as a global shortcut (ADR-0117). Shared by the chord
  * recorder and browser matcher so both normalize modifiers the same way.
  */
-export function eventModifiers(e: KeyboardEvent): Modifier[] {
+export function eventModifiers(e: ModifierEvent): Modifier[] {
 	const modifiers: Modifier[] = [];
 	if (e.ctrlKey || e.key === 'Control') modifiers.push('ctrl');
 	if (e.altKey || e.key === 'Alt') modifiers.push('alt');

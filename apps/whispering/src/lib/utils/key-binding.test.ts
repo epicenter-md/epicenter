@@ -87,7 +87,7 @@ test('eventModifiers treats WebKitGTK Super as the global meta modifier', () => 
 		shiftKey: false,
 		metaKey: false,
 		key: 'Super',
-	} as KeyboardEvent;
+	};
 
 	expect(eventModifiers(event)).toEqual(['meta']);
 });
