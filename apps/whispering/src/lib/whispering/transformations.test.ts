@@ -11,10 +11,11 @@
  */
 import { expect, test } from 'bun:test';
 
-(globalThis as unknown as { $state: unknown }).$state = Object.assign(
-	<TValue>(value: TValue) => value,
-	{ raw: <TValue>(value: TValue) => value },
-);
+Object.defineProperty(globalThis, '$state', {
+	value: Object.assign(<TValue>(value: TValue) => value, {
+		raw: <TValue>(value: TValue) => value,
+	}),
+});
 
 import { openMemory } from '@epicenter/data/bun';
 import { expectOk } from 'wellcrafted/testing';

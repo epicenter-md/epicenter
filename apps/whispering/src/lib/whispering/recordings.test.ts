@@ -307,6 +307,7 @@ test('a late legacy-only row migrates while the fallback remains readable', asyn
 				),
 			),
 		);
+		// SAFETY: written.id is the branded id returned by the recordings table.
 		const migrated = context.recordings.get(written.id as RecordingId);
 		expect(migrated?.deliveredTranscript).toBe('late legacy final');
 		expect(

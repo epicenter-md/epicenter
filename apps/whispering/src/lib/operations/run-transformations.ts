@@ -14,6 +14,11 @@ export type TransformationFailure = {
 	message: string;
 };
 
+export type TransformationExecutionResult = {
+	text: string;
+	failure: TransformationFailure | null;
+};
+
 export type TransformationPipelineResult = {
 	text: string;
 	failures: TransformationFailure[];
@@ -23,7 +28,7 @@ export type TransformationPipelineResult = {
 export function executeTransformation(
 	input: string,
 	transformation: RunnableTransformation,
-): { text: string; failure: TransformationFailure | null } {
+): TransformationExecutionResult {
 	let text = input;
 	for (const step of sortByPosition(transformation.steps)) {
 		try {

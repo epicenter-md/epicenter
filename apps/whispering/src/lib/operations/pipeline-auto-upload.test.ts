@@ -14,6 +14,11 @@ import { generateBlobId } from '@epicenter/blobs';
 import { Err, Ok } from 'wellcrafted/result';
 import type { RecordingId } from '$lib/workspace';
 
+type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
+type RecordingCreateFields = Parameters<
+	WhisperingApp['recordings']['create']
+>[0];
+
 let autoUpload = true;
 let willPolish = false;
 let polishFails = false;
@@ -40,14 +45,14 @@ mock.module('$lib/operations/delivery', () => ({
 	deliverTranscriptionResult,
 }));
 mock.module('$lib/operations/process-transcript', () => ({
-	processTranscript: (_app: unknown, input: { history: unknown }) => {
+	processTranscript: (_app: WhisperingApp, input: { history: unknown }) => {
 		operationOrder.push('transform');
 		return { text: transformedText, history: input.history };
 	},
 }));
 mock.module('$lib/operations/run-polish', () => ({
 	polishWillRun: () => willPolish,
-	runPolish: async (_app: unknown, { input }: { input: string }) => {
+	runPolish: async (_app: WhisperingApp, { input }: { input: string }) => {
 		polishInput = input;
 		return polishFails
 			? Err({ message: 'Polish failed', fallback: input })
@@ -89,20 +94,21 @@ mock.module('$lib/state/polish-hud.svelte', () => ({
 	polishHud: { begin: mock(), end: mock() },
 }));
 const { processRecordingPipeline } = await import('./pipeline.js');
-type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
 
-const app = {
+// SAFETY: processRecordingPipeline exercises only the domains assigned below.
+const app = Object.assign({} as WhisperingApp, {
 	settings: { get: () => autoUpload },
 	recordings: {
 		// Synchronous, like the domain it stands in for: the store commits before
 		// `create` returns, so there is no promise for the pipeline to await.
-		create(fields: Record<string, unknown>) {
+		create(fields: RecordingCreateFields) {
+			// SAFETY: this stable fixture id represents the row created by the fake domain.
 			return { ...fields, id: 'recording-1' as RecordingId };
 		},
 		uploadAudio,
 		update: mock(async () => Ok(undefined)),
 	},
-} as unknown as WhisperingApp;
+});
 
 afterEach(() => {
 	autoUpload = true;

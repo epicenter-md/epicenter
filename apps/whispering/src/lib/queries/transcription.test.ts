@@ -13,11 +13,18 @@ import { expect, mock, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
 import type { Recording } from '$lib/state/recordings.svelte';
 
+type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
+type WhisperingQueryRuntime =
+	import('$lib/queries/client').WhisperingQueryRuntime;
+type MutationDefinition<TInput, TOutput> = {
+	mutationFn: (input: TInput) => Promise<TOutput>;
+};
+
 const transcribeAndPersist = mock(async () =>
 	Ok({ text: 'raw', history: Ok(undefined) }),
 );
 const processTranscript = mock(
-	(_app: unknown, input: { text: string; final: boolean }) => ({
+	(_app: WhisperingApp, input: { text: string; final: boolean }) => ({
 		text: `${input.text} transformed`,
 		history: Ok(undefined),
 	}),
@@ -28,11 +35,9 @@ mock.module('$lib/operations/process-transcript', () => ({
 }));
 
 const { createTranscriptionQueries } = await import('./transcription.js');
-type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
-type WhisperingQueryRuntime =
-	import('$lib/queries/client').WhisperingQueryRuntime;
 
 function recording(id: string): Recording {
+	// SAFETY: these are the only Recording fields read by the query under test.
 	return {
 		id,
 		audioBlobId: `blob_${'a'.repeat(21)}`,
@@ -40,18 +45,21 @@ function recording(id: string): Recording {
 }
 
 function runtime(): WhisperingQueryRuntime {
-	return {
-		defineMutation(definition: {
-			mutationFn: (input: Recording) => Promise<unknown>;
-		}) {
-			return Object.assign((input: Recording) => definition.mutationFn(input), {
+	// SAFETY: createTranscriptionQueries uses only the runtime members assigned below.
+	const runtime = {} as WhisperingQueryRuntime;
+	return Object.assign(runtime, {
+		defineMutation<TInput, TOutput>(
+			definition: MutationDefinition<TInput, TOutput>,
+		) {
+			return Object.assign((input: TInput) => definition.mutationFn(input), {
 				options: definition,
 			});
 		},
 		queryClient: { isMutating: () => 0 },
-	} as unknown as WhisperingQueryRuntime;
+	});
 }
 
+// SAFETY: the mocked operations do not read domains from this app fixture.
 const app = {} as WhisperingApp;
 
 test('single manual transcription finalizes deterministic output', async () => {

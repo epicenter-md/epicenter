@@ -25,6 +25,7 @@ mock.module('$lib/report', () => ({
 const { processTranscript } = await import('./process-transcript.js');
 type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
 
+// SAFETY: processTranscript reads only the recording id from this fixture.
 const recording = { id: 'recording-1' } as Recording;
 const patch = mock(() => recording);
 
@@ -63,10 +64,12 @@ function transformation(
 }
 
 function appWith(transformations: RunnableTransformation[]): WhisperingApp {
-	return {
+	// SAFETY: processTranscript uses only the domains assigned to this fixture.
+	const app = {} as WhisperingApp;
+	return Object.assign(app, {
 		transformations: { sorted: transformations },
 		recordings: { patch },
-	} as unknown as WhisperingApp;
+	});
 }
 
 test('an empty intermediate pipeline preserves text and existing history', () => {
@@ -86,6 +89,7 @@ test('final processing stores transformed text without replacing an earlier warn
 	const priorHistory: TranscriptionSuccess['history'] = Err({
 		name: 'SaveUnconfirmed',
 		message: 'Raw history was not confirmed.',
+		// SAFETY: this stable fixture id represents the recording used by this test.
 		recordingId: 'recording-1' as RecordingId,
 		cause: new Error('raw write'),
 	});
