@@ -26,6 +26,10 @@
 		getWhisperingApp,
 		getWhisperingQueries,
 	} from '$lib/whispering/context';
+	import {
+		getDeliveredTranscript,
+		hasDeliveredTranscript,
+	} from '$lib/whispering/recording';
 
 	const app = getWhisperingApp();
 	const queries = getWhisperingQueries();
@@ -84,9 +88,8 @@
 		enabled: isDialogOpen,
 	}));
 
-	const deliveredTranscript = $derived(
-		workingCopy.polishedTranscript ?? workingCopy.transcript,
-	);
+	const deliveredTranscript = $derived(getDeliveredTranscript(workingCopy));
+	const hasFinalText = $derived(hasDeliveredTranscript(workingCopy));
 
 	function promptUserConfirmLeave() {
 		if (!isWorkingCopyDirty) {
@@ -123,11 +126,7 @@
 				title: snapshot.title,
 				recordedAt: snapshot.recordedAt,
 				recordedAtZone: snapshot.recordedAtZone,
-				transcript: snapshot.transcript,
-				polishedTranscript:
-					snapshot.transcript === recording.transcript
-						? recording.polishedTranscript
-						: null,
+				deliveredTranscript: snapshot.deliveredTranscript,
 			});
 		} catch (cause) {
 			report.info({
@@ -193,42 +192,40 @@
 				</p>
 			{/if}
 
-			{#if workingCopy.polishedTranscript}
-				<div class="space-y-2">
-					<div class="flex items-center justify-between gap-2">
-						<Label for="delivered-transcript">Delivered transcript</Label>
-						<CopyButton
-							text={workingCopy.polishedTranscript}
-							copyFn={createCopyFn('delivered transcript')}
-							variant="outline"
-						/>
-					</div>
-					<Textarea
-						id="delivered-transcript"
-						value={workingCopy.polishedTranscript}
-						readonly
-						rows={6}
+			<div class="space-y-2">
+				<div class="flex items-center justify-between gap-2">
+					<Label for="transcript">Transcript</Label>
+					<CopyButton
+						text={deliveredTranscript}
+						copyFn={createCopyFn('transcript')}
+						variant="outline"
 					/>
 				</div>
-			{/if}
-
-			<div class="space-y-2">
-				<Label for="transcript">
-					{workingCopy.polishedTranscript ? 'Original transcript' : 'Transcript'}
-				</Label>
 				<Textarea
 					id="transcript"
-					value={workingCopy.transcript}
+					value={deliveredTranscript}
 					oninput={(e) => {
 						workingCopy = {
 							...workingCopy,
-							transcript: e.currentTarget.value,
+							deliveredTranscript: e.currentTarget.value,
 						};
 						isWorkingCopyDirty = true;
 					}}
 					rows={12}
 				/>
 			</div>
+
+			{#if hasFinalText}
+				<div class="space-y-2">
+					<Label for="original-transcript">Original transcript</Label>
+					<Textarea
+						id="original-transcript"
+						value={workingCopy.transcript}
+						readonly
+						rows={6}
+					/>
+				</div>
+			{/if}
 
 			<div class="flex flex-wrap gap-2">
 				<TranscribeRecordingButton

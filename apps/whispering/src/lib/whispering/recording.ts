@@ -37,6 +37,23 @@ export type NewRecording = Omit<
 	'audioBlobId' | 'uploadedAt'
 > & { audioBlobId: BlobId };
 
+/** The final text selected for delivery, including the legacy read horizon. */
+export function getDeliveredTranscript(recording: Recording): string {
+	return (
+		recording.deliveredTranscript ??
+		recording.polishedTranscript ??
+		recording.transcript
+	);
+}
+
+/** Whether history has a distinct final-output layer to reveal beside raw text. */
+export function hasDeliveredTranscript(recording: Recording): boolean {
+	return (
+		recording.deliveredTranscript !== null ||
+		recording.polishedTranscript !== null
+	);
+}
+
 /** The one boundary where a stored row becomes an app recording. */
 export function asRecording(row: RecordingRow): Recording {
 	return row as Recording;

@@ -48,6 +48,29 @@ export const RecordingDeletionError = defineErrors({
 });
 export type RecordingDeletionError = InferErrors<typeof RecordingDeletionError>;
 
+type RecordingEditableChanges = Partial<
+	Pick<
+		Recording,
+		| 'title'
+		| 'recordedAt'
+		| 'recordedAtZone'
+		| 'duration'
+		| 'deliveredTranscript'
+	>
+>;
+
+export type RecordingTranscriptionChanges = Partial<
+	Pick<
+		Recording,
+		| 'transcript'
+		| 'deliveredTranscript'
+		| 'polishedTranscript'
+		| 'transcriptionStatus'
+		| 'transcriptionCompletedAt'
+		| 'transcriptionError'
+	>
+>;
+
 export type WhisperingRecordings = {
 	readonly sorted: Recording[];
 	readonly count: number;
@@ -65,9 +88,10 @@ export type WhisperingRecordings = {
 		>
 	>;
 	create(value: NewRecording): Recording;
-	patch(
+	patch(id: Recording['id'], partial: RecordingEditableChanges): Recording;
+	patchTranscription(
 		id: Recording['id'],
-		partial: Partial<Omit<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>>,
+		partial: RecordingTranscriptionChanges,
 	): Recording;
 	delete(
 		toDelete: Recording['id'] | Recording['id'][],
@@ -160,6 +184,30 @@ export function createWhisperingRecordings({
 
 	function resolve(id: Recording['id']) {
 		return rows.find((recording) => recording.id === id);
+	}
+
+	function write(
+		id: Recording['id'],
+		changes: RecordingEditableChanges | RecordingTranscriptionChanges,
+	): Recording {
+		const written = table.update(id, changes);
+		if (written.error !== null) throw written.error;
+		// The write reports only that it landed; what the row now reads as is
+		// `get`'s answer. Subscriptions fired inside the write, so the cache is
+		// already refreshed by the time this re-read runs.
+		const reread = table.get(id);
+		if (reread.error !== null) {
+			throw new Error(
+				`Recording '${id}' no longer reads whole after this patch`,
+				{
+					cause: reread.error,
+				},
+			);
+		}
+		if (reread.data === undefined) {
+			throw new Error(`Recording '${id}' vanished during this patch`);
+		}
+		return asRecording(reread.data);
 	}
 
 	function sortRows(unsorted: Recording[]): Recording[] {
@@ -288,31 +336,44 @@ export function createWhisperingRecordings({
 			return asRecording(written.data);
 		},
 		patch(id, partial) {
-			// Structural typing lets a whole row flow in as the partial, so drop
-			// the protected keys at runtime: the audio workflows stay the only
-			// writer of uploadedAt and audio identity stays immutable.
-			const {
-				id: _id,
-				audioBlobId: _audioBlobId,
-				uploadedAt: _uploadedAt,
-				...changes
-			} = partial as Partial<Recording>;
-			const written = table.update(id, changes);
-			if (written.error !== null) throw written.error;
-			// The write reports only that it landed; what the row now reads as is
-			// `get`'s answer. Subscriptions fired inside the write, so the cache is
-			// already refreshed by the time this re-read runs.
-			const reread = table.get(id);
-			if (reread.error !== null) {
-				throw new Error(
-					`Recording '${id}' no longer reads whole after this patch`,
-					{ cause: reread.error },
-				);
+			// Allowlist the person-editable fields at runtime. Structural typing lets
+			// a whole row flow in as the partial, but raw provider text and operation
+			// history stay writable only through patchTranscription.
+			const changes: RecordingEditableChanges = {};
+			if (partial.title !== undefined) changes.title = partial.title;
+			if (partial.recordedAt !== undefined) {
+				changes.recordedAt = partial.recordedAt;
 			}
-			if (reread.data === undefined) {
-				throw new Error(`Recording '${id}' vanished during this patch`);
+			if (partial.recordedAtZone !== undefined) {
+				changes.recordedAtZone = partial.recordedAtZone;
 			}
-			return asRecording(reread.data);
+			if (partial.duration !== undefined) changes.duration = partial.duration;
+			if (partial.deliveredTranscript !== undefined) {
+				changes.deliveredTranscript = partial.deliveredTranscript;
+			}
+			return write(id, changes);
+		},
+		patchTranscription(id, partial) {
+			const changes: RecordingTranscriptionChanges = {};
+			if (partial.transcript !== undefined) {
+				changes.transcript = partial.transcript;
+			}
+			if (partial.deliveredTranscript !== undefined) {
+				changes.deliveredTranscript = partial.deliveredTranscript;
+			}
+			if (partial.polishedTranscript !== undefined) {
+				changes.polishedTranscript = partial.polishedTranscript;
+			}
+			if (partial.transcriptionStatus !== undefined) {
+				changes.transcriptionStatus = partial.transcriptionStatus;
+			}
+			if (partial.transcriptionCompletedAt !== undefined) {
+				changes.transcriptionCompletedAt = partial.transcriptionCompletedAt;
+			}
+			if (partial.transcriptionError !== undefined) {
+				changes.transcriptionError = partial.transcriptionError;
+			}
+			return write(id, changes);
 		},
 		async delete(toDelete) {
 			const ids = Array.isArray(toDelete) ? toDelete : [toDelete];

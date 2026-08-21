@@ -4,6 +4,7 @@ import {
 	deliverTranscriptionResult,
 	type TranscriptionSource,
 } from '$lib/operations/delivery';
+import { processTranscript } from '$lib/operations/process-transcript';
 import { polishWillRun, runPolish } from '$lib/operations/run-polish';
 import { playSoundIfEnabled } from '$lib/operations/sound';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
@@ -55,7 +56,7 @@ export async function processRecordingPipeline(
 		recordedAt: now,
 		recordedAtZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 		transcript: '',
-		polishedTranscript: null,
+		deliveredTranscript: null,
 		duration: durationMs,
 		// The three transcription columns are omitted: each declares a default a
 		// read applies and a write never stores, so a fresh recording is
@@ -103,10 +104,15 @@ export async function processRecordingPipeline(
 		}
 		return;
 	}
-	const { text: transcribedText } = transcription;
-	let history = transcription.history;
+	const transformed = processTranscript(app, {
+		recordingId: recording.id,
+		...transcription,
+		final: false,
+	});
+	const transformedText = transformed.text;
+	let history = transformed.history;
 
-	// Run Polish over the raw transcript, then deliver the polished text. When
+	// Run Polish over the transformed transcript, then deliver the polished text. When
 	// history succeeds, the raw stays on `recordings.transcript` so "show
 	// original" is recoverable. We hold delivery until Polish finishes and
 	// deliver once, with the final text: delivering the raw and then the polished
@@ -120,7 +126,7 @@ export async function processRecordingPipeline(
 	// import has no pill to cancel from and keeps its own progress toast. The pill
 	// shows the HUD only when an AI pass actually runs (not in speed mode); begin/end
 	// bracket the call so the controller is dropped on success, failure, or abort.
-	const willPolish = polishWillRun(app, transcribedText);
+	const willPolish = polishWillRun(app, transformedText);
 	const showPolishHud = willPolish && isDictation;
 	let signal: AbortSignal | undefined;
 	if (showPolishHud) {
@@ -128,12 +134,12 @@ export async function processRecordingPipeline(
 		signal = polishHud.begin();
 	}
 	const { data: polishedText, error: polishError } = await runPolish(app, {
-		input: transcribedText,
+		input: transformedText,
 		signal,
 	});
 	if (showPolishHud) polishHud.end();
-	// Polish is best-effort: a failed AI pass carries the raw transcript in
-	// `fallback`, so a transcript is never lost to a polish error. Surface the
+	// Polish is best-effort: a failed AI pass carries the transformed transcript
+	// in `fallback`, so deterministic work is never lost to a polish error. Surface the
 	// failure without blocking delivery.
 	const deliveredText = polishError ? polishError.fallback : polishedText;
 	if (polishError) {
@@ -143,17 +149,14 @@ export async function processRecordingPipeline(
 		});
 	}
 
-	// Attempt to persist the polished transcript alongside the raw transcript so
-	// history can show what was actually delivered, with the original one click
-	// away. Only write when a Polish pass actually produced a result: row creation
-	// already left `polishedTranscript` null, so speed mode (no AI call) and a
-	// polish failure (the fallback delivers the raw words) need no second write.
-	if (willPolish && !polishError) {
-		const polishedHistory = await saveRecordingHistory(app, recording.id, {
-			polishedTranscript: polishedText,
-		});
-		if (polishedHistory.error !== null) history = polishedHistory;
-	}
+	// Persist exactly what this path will deliver, regardless of whether Polish ran
+	// or fell back. `deliveredTranscript` names the final-output boundary without
+	// claiming which processing stages produced it; new code never stores final
+	// text in the legacy Polish field.
+	const deliveredHistory = await saveRecordingHistory(app, recording.id, {
+		deliveredTranscript: deliveredText,
+	});
+	if (deliveredHistory.error !== null) history = deliveredHistory;
 
 	// The transcript is "ready" once it is polished and about to be delivered, so
 	// the completion sound and the resolved loading notice both fire here.

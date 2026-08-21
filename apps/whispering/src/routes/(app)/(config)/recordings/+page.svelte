@@ -60,6 +60,7 @@
 		getWhisperingApp,
 		getWhisperingQueries,
 	} from '$lib/whispering/context';
+	import { getDeliveredTranscript } from '$lib/whispering/recording';
 
 	const app = getWhisperingApp();
 	const queries = getWhisperingQueries();
@@ -106,9 +107,6 @@
 		() => queries.transcription.transcribeRecordings.options,
 	);
 
-	function displayTranscript(recording: Recording): string {
-		return recording.polishedTranscript ?? recording.transcript;
-	}
 
 	const columns = [
 		{
@@ -125,7 +123,7 @@
 			enableHiding: false,
 			filterFn: (row, _columnId, filterValue) => {
 				const title = String(row.getValue('title'));
-				const transcript = displayTranscript(row.original);
+				const transcript = getDeliveredTranscript(row.original);
 				return (
 					title.toLowerCase().includes(filterValue.toLowerCase()) ||
 					transcript.toLowerCase().includes(filterValue.toLowerCase())
@@ -168,7 +166,7 @@
 		},
 		{
 			id: 'transcript',
-			accessorFn: displayTranscript,
+			accessorFn: getDeliveredTranscript,
 			meta: { label: 'Transcript' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
@@ -342,10 +340,10 @@
 	const joinedTranscriptionsText = $derived.by(() => {
 		const transcriptions = selectedRecordingRows
 			.map(({ original }) => original)
-			.filter((recording) => displayTranscript(recording) !== '')
+			.filter((recording) => getDeliveredTranscript(recording) !== '')
 			.map((recording) =>
 				template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
-					if (key === 'transcript') return displayTranscript(recording);
+					if (key === 'transcript') return getDeliveredTranscript(recording);
 					if (key in recording) {
 						const value = recording[key as keyof Recording];
 						return typeof value === 'string' ? value : '';

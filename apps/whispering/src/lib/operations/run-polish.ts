@@ -17,7 +17,7 @@ import type { WhisperingApp } from '$lib/whispering/app';
 
 export const RunPolishError = defineErrors({
 	/**
-	 * The Polish AI pass failed. Non-fatal: `fallback` carries the raw input so
+	 * The Polish AI pass failed. Non-fatal: `fallback` carries its input so
 	 * the pipeline can still deliver a usable transcript instead of losing the
 	 * user's words to a polish error.
 	 */
@@ -84,16 +84,16 @@ export function polishWillRun(app: WhisperingApp, input: string): boolean {
  * Polish: the always-on, meaning-preserving AI base, run once after every
  * transcription. One optional completion whose system prompt is
  * `polishInstructions` plus a Dictionary block (via `buildPolishSystemPrompt`)
- * and whose content is the raw transcript. Skips the call (returns the raw
+ * and whose content is the transformed transcript. Skips the call (returns its
  * input) whenever {@link polishWillRun} is false.
  *
- * `signal` lets the caller cancel the in-flight pass (the HUD's "ship raw"):
- * when it aborts, the raw input is returned as a clean success, not an error,
- * because shipping the raw transcript was the user's explicit intent.
+ * `signal` lets the caller cancel the in-flight pass (the HUD's "ship now"):
+ * when it aborts, the transformed input is returned as a clean success, not an
+ * error, because shipping the current transcript was the user's explicit intent.
  *
  * Pure execution: no workspace writes, no toasts. The pipeline owns delivery and
  * keeps the raw transcript on `recordings.transcript` underneath the polished
- * text. On a genuine AI failure the raw input rides along in the error so
+ * text. On a genuine AI failure the transformed input rides along in the error so
  * delivery can still proceed.
  */
 export async function runPolish(
@@ -117,7 +117,7 @@ export async function runPolish(
 		signal,
 	});
 	if (isErr(result)) {
-		// A user-requested abort is not a failure: ship the raw transcript cleanly.
+		// A user-requested abort is not a failure: ship transformed text cleanly.
 		if (signal?.aborted) return Ok(input);
 		return RunPolishError.PolishFailed({
 			message: extractErrorMessage(result.error),

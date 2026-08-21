@@ -1,5 +1,6 @@
 import { defineKeys } from 'wellcrafted/query';
 import { Ok, partitionResults } from 'wellcrafted/result';
+import { processTranscript } from '$lib/operations/process-transcript';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
 import type { WhisperingQueryRuntime } from '$lib/queries/client';
 import type { Recording } from '$lib/state/recordings.svelte';
@@ -16,6 +17,22 @@ export function createTranscriptionQueries(
 		queryClient,
 	}: Pick<WhisperingQueryRuntime, 'defineMutation' | 'queryClient'>,
 ) {
+	async function transcribeOne(recording: Recording) {
+		const result = await transcribeAndPersist(
+			app,
+			recording.id,
+			recording.audioBlobId,
+		);
+		if (result.error !== null) return result;
+		return Ok(
+			processTranscript(app, {
+				recordingId: recording.id,
+				...result.data,
+				final: true,
+			}),
+		);
+	}
+
 	return {
 		isCurrentlyTranscribing() {
 			return (
@@ -26,18 +43,13 @@ export function createTranscriptionQueries(
 		},
 		transcribeRecording: defineMutation({
 			mutationKey: transcriptionKeys.isTranscribing,
-			mutationFn: (recording: Recording) =>
-				transcribeAndPersist(app, recording.id, recording.audioBlobId),
+			mutationFn: transcribeOne,
 		}),
 
 		transcribeRecordings: defineMutation({
 			mutationKey: transcriptionKeys.isTranscribing,
 			mutationFn: async (recordings: Recording[]) => {
-				const results = await Promise.all(
-					recordings.map((recording) =>
-						transcribeAndPersist(app, recording.id, recording.audioBlobId),
-					),
-				);
+				const results = await Promise.all(recordings.map(transcribeOne));
 				return Ok(partitionResults(results));
 			},
 		}),

@@ -36,6 +36,7 @@ export function createRecordings({
 		storeAudio: recordings.storeAudio,
 		create: recordings.create,
 		patch: recordings.patch,
+		patchTranscription: recordings.patchTranscription,
 		delete: recordings.delete,
 		audioAvailability: recordings.audioAvailability,
 		uploadAudio: recordings.uploadAudio,

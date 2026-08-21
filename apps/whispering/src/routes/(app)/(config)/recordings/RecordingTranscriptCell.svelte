@@ -7,6 +7,10 @@
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import RecordingDetailModal from './RecordingDetailModal.svelte';
 	import { getWhisperingApp } from '$lib/whispering/context';
+	import {
+		getDeliveredTranscript,
+		hasDeliveredTranscript,
+	} from '$lib/whispering/recording';
 
 	const app = getWhisperingApp();
 
@@ -21,11 +25,15 @@
 
 	let showOriginal = $state(false);
 	const recording = $derived(app.recordings.get(recordingId));
-	const hasDeliveredTranscript = $derived(!!recording?.polishedTranscript);
+	const hasFinalText = $derived(
+		recording ? hasDeliveredTranscript(recording) : false,
+	);
 	const transcript = $derived(
-		showOriginal
-			? (recording?.transcript ?? '')
-			: (recording?.polishedTranscript ?? recording?.transcript ?? ''),
+		recording
+			? showOriginal
+				? recording.transcript
+				: getDeliveredTranscript(recording)
+			: '',
 	);
 	const hasTranscript = $derived(!!transcript.trim());
 </script>
@@ -49,7 +57,7 @@
 			{/snippet}
 		</RecordingDetailModal>
 		{#if hasTranscript}
-			{#if hasDeliveredTranscript}
+			{#if hasFinalText}
 				<InputGroup.Addon align="inline-end">
 					<Button
 						variant="ghost"
@@ -62,7 +70,7 @@
 							showOriginal = !showOriginal;
 						}}
 					>
-						{showOriginal ? 'Result' : 'Original'}
+						{showOriginal ? 'Delivered' : 'Original'}
 					</Button>
 				</InputGroup.Addon>
 			{/if}

@@ -14,8 +14,18 @@ import { generateBlobId } from '@epicenter/blobs';
 import { Err, Ok } from 'wellcrafted/result';
 import type { RecordingId } from '$lib/workspace';
 
+type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
+type RecordingCreateFields = Parameters<
+	WhisperingApp['recordings']['create']
+>[0];
+
 let autoUpload = true;
 let willPolish = false;
+let polishFails = false;
+let polishCancels = false;
+let transformedText = 'transcript';
+let polishInput: string | undefined;
+const operationOrder: string[] = [];
 const uploadAudio = mock(async () => Ok(undefined));
 const deliverTranscriptionResult = mock(async () => ({
 	outcome: { reach: 'output' } as const,
@@ -23,28 +33,43 @@ const deliverTranscriptionResult = mock(async () => ({
 }));
 const reportInfo = mock();
 let historyError: { name: string; message: string } | null = null;
-let polishedHistoryError: { name: string; message: string } | null = null;
-const saveRecordingHistory = mock(async () =>
-	polishedHistoryError === null ? Ok(undefined) : Err(polishedHistoryError),
-);
+let deliveredHistoryError: { name: string; message: string } | null = null;
+const saveRecordingHistory = mock(async () => {
+	operationOrder.push('final-history');
+	return deliveredHistoryError === null
+		? Ok(undefined)
+		: Err(deliveredHistoryError);
+});
 
 mock.module('$lib/operations/delivery', () => ({
 	deliverTranscriptionResult,
 }));
+mock.module('$lib/operations/process-transcript', () => ({
+	processTranscript: (_app: WhisperingApp, input: { history: unknown }) => {
+		operationOrder.push('transform');
+		return { text: transformedText, history: input.history };
+	},
+}));
 mock.module('$lib/operations/run-polish', () => ({
 	polishWillRun: () => willPolish,
-	runPolish: async (_app: unknown, { input }: { input: string }) =>
-		Ok(willPolish ? 'polished transcript' : input),
+	runPolish: async (_app: WhisperingApp, { input }: { input: string }) => {
+		polishInput = input;
+		return polishFails
+			? Err({ message: 'Polish failed', fallback: input })
+			: Ok(polishCancels || !willPolish ? input : 'polished transcript');
+	},
 }));
 mock.module('$lib/operations/sound', () => ({
 	playSoundIfEnabled: mock(async () => Ok(undefined)),
 }));
 mock.module('$lib/operations/transcribe', () => ({
-	transcribeAndPersist: async () =>
-		Ok({
+	transcribeAndPersist: async () => {
+		operationOrder.push('raw-history');
+		return Ok({
 			text: 'transcript',
 			history: historyError === null ? Ok(undefined) : Err(historyError),
-		}),
+		});
+	},
 }));
 mock.module('$lib/operations/transcription-history', () => ({
 	saveRecordingHistory,
@@ -69,26 +94,32 @@ mock.module('$lib/state/polish-hud.svelte', () => ({
 	polishHud: { begin: mock(), end: mock() },
 }));
 const { processRecordingPipeline } = await import('./pipeline.js');
-type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
 
-const app = {
+// SAFETY: processRecordingPipeline exercises only the domains assigned below.
+const app = Object.assign({} as WhisperingApp, {
 	settings: { get: () => autoUpload },
 	recordings: {
 		// Synchronous, like the domain it stands in for: the store commits before
 		// `create` returns, so there is no promise for the pipeline to await.
-		create(fields: Record<string, unknown>) {
+		create(fields: RecordingCreateFields) {
+			// SAFETY: this stable fixture id represents the row created by the fake domain.
 			return { ...fields, id: 'recording-1' as RecordingId };
 		},
 		uploadAudio,
 		update: mock(async () => Ok(undefined)),
 	},
-} as unknown as WhisperingApp;
+});
 
 afterEach(() => {
 	autoUpload = true;
 	willPolish = false;
+	polishFails = false;
+	polishCancels = false;
+	transformedText = 'transcript';
+	polishInput = undefined;
 	historyError = null;
-	polishedHistoryError = null;
+	deliveredHistoryError = null;
+	operationOrder.length = 0;
 });
 
 test('auto-upload attempts once for each new row only when enabled', async () => {
@@ -109,6 +140,67 @@ test('auto-upload attempts once for each new row only when enabled', async () =>
 	});
 	await Promise.resolve();
 	expect(uploadAudio).toHaveBeenCalledTimes(1);
+});
+
+test('speed mode stores and delivers transformed text without Polish', async () => {
+	transformedText = 'transformed transcript';
+	const finalWritesBefore = saveRecordingHistory.mock.calls.length;
+	await processRecordingPipeline(app, {
+		audioBlobId: generateBlobId(),
+		durationMs: 100,
+		deliverySource: 'recording',
+	});
+	expect(polishInput).toBe('transformed transcript');
+	expect(operationOrder.slice(0, 3)).toEqual([
+		'raw-history',
+		'transform',
+		'final-history',
+	]);
+	expect(deliverTranscriptionResult).toHaveBeenLastCalledWith(app, {
+		text: 'transformed transcript',
+		source: 'recording',
+	});
+	expect(saveRecordingHistory).toHaveBeenCalledTimes(finalWritesBefore + 1);
+	expect(saveRecordingHistory).toHaveBeenLastCalledWith(app, 'recording-1', {
+		deliveredTranscript: 'transformed transcript',
+	});
+});
+
+test('Polish cancellation stores and delivers transformed text', async () => {
+	willPolish = true;
+	polishCancels = true;
+	transformedText = 'transformed transcript';
+	await processRecordingPipeline(app, {
+		audioBlobId: generateBlobId(),
+		durationMs: 100,
+		deliverySource: 'recording',
+	});
+	expect(deliverTranscriptionResult).toHaveBeenLastCalledWith(app, {
+		text: 'transformed transcript',
+		source: 'recording',
+	});
+	expect(saveRecordingHistory).toHaveBeenLastCalledWith(app, 'recording-1', {
+		deliveredTranscript: 'transformed transcript',
+	});
+});
+
+test('Polish failure stores and delivers transformed fallback', async () => {
+	willPolish = true;
+	polishFails = true;
+	transformedText = 'transformed transcript';
+	await processRecordingPipeline(app, {
+		audioBlobId: generateBlobId(),
+		durationMs: 100,
+		deliverySource: 'recording',
+	});
+	expect(polishInput).toBe('transformed transcript');
+	expect(deliverTranscriptionResult).toHaveBeenLastCalledWith(app, {
+		text: 'transformed transcript',
+		source: 'recording',
+	});
+	expect(saveRecordingHistory).toHaveBeenLastCalledWith(app, 'recording-1', {
+		deliveredTranscript: 'transformed transcript',
+	});
 });
 
 test('history failure warns after delivering the usable transcription', async () => {
@@ -139,9 +231,10 @@ test('history failure warns after delivering the usable transcription', async ()
 	});
 });
 
-test('polished history failure still delivers polished text and warns', async () => {
+test('Polish receives transformed text and its result becomes delivered history', async () => {
 	willPolish = true;
-	polishedHistoryError = {
+	transformedText = 'transformed transcript';
+	deliveredHistoryError = {
 		name: 'SaveUnconfirmed',
 		message: 'The transcription may not appear in recording history.',
 	};
@@ -157,18 +250,22 @@ test('polished history failure still delivers polished text and warns', async ()
 	expect(deliverTranscriptionResult).toHaveBeenCalledTimes(
 		deliveriesBefore + 1,
 	);
+	expect(polishInput).toBe('transformed transcript');
 	expect(deliverTranscriptionResult).toHaveBeenLastCalledWith(app, {
 		text: 'polished transcript',
 		source: 'recording',
 	});
+	expect(saveRecordingHistory).toHaveBeenLastCalledWith(app, 'recording-1', {
+		deliveredTranscript: 'polished transcript',
+	});
 	expect(reportInfo).toHaveBeenCalledTimes(noticesBefore + 1);
 	expect(reportInfo).toHaveBeenLastCalledWith({
 		title: 'Transcription delivered, but history may be incomplete',
-		description: polishedHistoryError.message,
+		description: deliveredHistoryError.message,
 	});
 });
 
-test('polished history success does not hide an earlier raw history error', async () => {
+test('delivered history success does not hide an earlier raw history error', async () => {
 	willPolish = true;
 	historyError = {
 		name: 'SaveUnconfirmed',
@@ -183,7 +280,7 @@ test('polished history success does not hide an earlier raw history error', asyn
 	});
 
 	expect(saveRecordingHistory).toHaveBeenLastCalledWith(app, 'recording-1', {
-		polishedTranscript: 'polished transcript',
+		deliveredTranscript: 'polished transcript',
 	});
 	expect(reportInfo).toHaveBeenCalledTimes(noticesBefore + 1);
 	expect(reportInfo).toHaveBeenLastCalledWith({

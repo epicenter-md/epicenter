@@ -34,21 +34,7 @@ export const viewTransition = {
 			audio: `recording-${id}-audio`,
 			/** The transcript text display */
 			transcript: `recording-${id}-transcript`,
-			/** The transformation output display */
-			transformationOutput: `recording-${id}-transformation-output`,
 		} as const;
-	},
-
-	/**
-	 * Transition name for a transformation card/selector.
-	 *
-	 * @example
-	 * ```svelte
-	 * <div style="view-transition-name: {viewTransition.transformation(id)}" />
-	 * ```
-	 */
-	transformation(id: string | null) {
-		return `transformation-${id ?? 'none'}` as const;
 	},
 
 	/**
@@ -80,8 +66,7 @@ export const viewTransition = {
 	/**
 	 * The capture pipeline's per-stage glyphs. Each stage's control is
 	 * re-expressed in the home pipeline and the config topbar, so its glyph
-	 * morphs between the two on navigation. The transformation stage uses
-	 * `transformation(id)` above; these cover the other two stages.
+	 * morphs between the two on navigation.
 	 *
 	 * Each name renders at most once per document because the home pipeline and
 	 * the topbar never appear on the same page.

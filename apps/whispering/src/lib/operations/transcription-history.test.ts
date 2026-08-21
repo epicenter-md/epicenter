@@ -7,6 +7,7 @@
  * Key behaviors:
  * - A committed write confirms the history save
  * - A refused write becomes a RecordingHistoryError rather than escaping
+ * - A successful raw outcome clears both current and legacy final text
  * - A failed outcome writes the three flat transcription columns
  */
 import { expect, mock, test } from 'bun:test';
@@ -27,7 +28,9 @@ const { recordTranscriptionOutcome, saveRecordingHistory } = await import(
 );
 type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
 
-const app = { recordings: { patch } } as unknown as WhisperingApp;
+const app = {
+	recordings: { patchTranscription: patch },
+} as unknown as WhisperingApp;
 
 test('a committed write confirms the history save', () => {
 	patch.mockImplementationOnce(() => recording);
@@ -67,6 +70,7 @@ test('successful transcription carries its history Result', () => {
 	// expression for an inline object (`workspace/index.ts`).
 	expect(patch).toHaveBeenLastCalledWith(recordingId, {
 		transcript: 'usable text',
+		deliveredTranscript: null,
 		polishedTranscript: null,
 		transcriptionStatus: 'completed',
 		transcriptionCompletedAt: expect.any(String),

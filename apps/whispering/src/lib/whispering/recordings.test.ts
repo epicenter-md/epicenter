@@ -14,7 +14,11 @@ import { InstantString } from '@epicenter/field';
 import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { type RecordingId, whisperingDatabase } from '../workspace';
-import { asStoredBlobId, type NewRecording } from './recording';
+import {
+	asStoredBlobId,
+	getDeliveredTranscript,
+	type NewRecording,
+} from './recording';
 import { createWhisperingRecordings } from './recordings';
 
 function stubLocalStore(overrides: Partial<BlobStore> = {}): BlobStore {
@@ -120,6 +124,46 @@ test('CRUD stays live and recording order is newest first', async () => {
 		expect(context.recordings.get(older.id)?.title).toBe('updated');
 		expectOk(await context.recordings.delete(newer.id));
 		expect(context.recordings.get(newer.id)).toBeUndefined();
+	} finally {
+		await context.dispose();
+	}
+});
+
+test('an editable patch cannot overwrite the raw provider transcript', async () => {
+	const context = await setup();
+	try {
+		const created = context.recordings.create(
+			recording({ transcript: 'exact provider text' }),
+		);
+		const attemptedWholeRowPatch = {
+			...created,
+			title: 'updated',
+			transcript: 'manual replacement',
+		};
+		context.recordings.patch(created.id, attemptedWholeRowPatch);
+		const updated = context.recordings.get(created.id);
+		expect(updated?.title).toBe('updated');
+		expect(updated?.transcript).toBe('exact provider text');
+	} finally {
+		await context.dispose();
+	}
+});
+
+test('a transcription patch cannot overwrite editable metadata', async () => {
+	const context = await setup();
+	try {
+		const created = context.recordings.create(
+			recording({ title: 'kept title', transcript: 'old raw' }),
+		);
+		const attemptedWholeRowPatch = {
+			...created,
+			title: 'discarded title',
+			transcript: 'new raw',
+		};
+		context.recordings.patchTranscription(created.id, attemptedWholeRowPatch);
+		const updated = context.recordings.get(created.id);
+		expect(updated?.title).toBe('kept title');
+		expect(updated?.transcript).toBe('new raw');
 	} finally {
 		await context.dispose();
 	}
@@ -253,6 +297,60 @@ test('failed row creation cleans up the already committed audio', async () => {
 		// synchronous and deleting a blob is not.
 		await Bun.sleep(1);
 		expect(deleted).toEqual([audioBlobId]);
+	} finally {
+		await context.dispose();
+	}
+});
+
+test('legacy polished text stays a fallback without rewriting the row', async () => {
+	const context = await setup({
+		seed: [
+			recording({
+				transcript: 'original',
+				deliveredTranscript: null,
+				polishedTranscript: 'legacy final',
+			}),
+		],
+	});
+	try {
+		const legacy = context.recordings.sorted[0];
+		expect(legacy?.deliveredTranscript).toBeNull();
+		expect(legacy && getDeliveredTranscript(legacy)).toBe('legacy final');
+
+		let writes = 0;
+		const stop = context.table.subscribe(() => {
+			writes += 1;
+		});
+		const reopened = createWhisperingRecordings({
+			table: context.table,
+			blobs: { local: stubLocalStore(), remote: null },
+		});
+		expect(writes).toBe(0);
+		reopened[Symbol.dispose]();
+		stop();
+	} finally {
+		await context.dispose();
+	}
+});
+
+test('a late legacy-only row remains a live fallback', async () => {
+	const context = await setup();
+	try {
+		const written = expectOk(
+			context.table.create(
+				storedRow(
+					recording({
+						transcript: 'original',
+						deliveredTranscript: null,
+						polishedTranscript: 'late legacy final',
+					}),
+				),
+			),
+		);
+		// SAFETY: written.id is the branded id returned by the recordings table.
+		const legacy = context.recordings.get(written.id as RecordingId);
+		expect(legacy?.deliveredTranscript).toBeNull();
+		expect(legacy && getDeliveredTranscript(legacy)).toBe('late legacy final');
 	} finally {
 		await context.dispose();
 	}
