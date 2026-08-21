@@ -84,7 +84,7 @@ data.tables.notes.update(id, patch)               // void; merges; refuses an ab
 data.tables.notes.delete(id)                      // boolean: was there a row to take?
 data.tables.notes.ids()                           // string[], sorted
 data.tables.notes.list()                          // { rows, nonconforming }
-data.tables.notes.document.open(id)               // RowDocument | undefined
+data.tables.notes.openDocument(id)               // RowDocument | undefined
 data.tables.notes.subscribe(listener)             // returns its own unsubscribe
 ```
 
@@ -93,9 +93,9 @@ There is no id and no `create`, because there is exactly one and it always exist
 Missing fields remain nonconforming. Applications compose initialization and
 recovery values explicitly from `error.conforming`.
 
-`data.documents` opens row documents through the same lifecycle as the scalar
-surface. `data.transact(() => { ... })` groups direct table and KV operations
-into one accepted and durable transaction.
+Row document lifecycle is owned by the table that owns the row.
+`data.transact(() => { ... })` groups direct table and KV operations into one
+accepted and durable transaction.
 
 SQL, when an application wants it, is a follower it composes over this
 surface: `createSqliteProjection` from `@epicenter/data/projection` hydrates
@@ -210,7 +210,7 @@ address (ADR-0248), not in a nested `!doc` container on the row. The application
 names roots inside that independent document when it first opens them:
 
 ```ts
-const { data: handle } = await data.tables.notes.document.open(id);
+const { data: handle } = await data.tables.notes.openDocument(id);
 
 const body = handle?.get('body'); // a live Y.Type
 handle?.[Symbol.dispose]();

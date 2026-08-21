@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-20
 - **Amends:** [ADR-0240](0240-an-application-declares-one-workspace-and-an-opened-runtime-holds-exactly-one-definition.md) at the public noun and package boundary; [ADR-0241](0241-a-store-is-truth-plus-debts-and-sql-is-a-composed-follower.md) at the opened handle and SQL follower names; [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md) at the declaration representation and parser names.
+- **Amended by:** [ADR-0258](0258-row-documents-are-opened-through-their-owning-table.md) at the opened data document surface.
 ## Context
 
 The store and its declaration have crossed several historical package and noun
@@ -18,7 +19,8 @@ from the opened data that operates on it.
 inert declaration surface is `@epicenter/data/definition`, where
 `defineData`, `DataDefinition`, and `parseData` are canonical. An opened
 application-facing handle is named `data`, and its live surface is `data.kv`,
-`data.tables`, `data.documents`, and `data.transact`. A composed SQL follower is
+`data.tables`, and `data.transact`. Row documents open through their owning
+typed table. A composed SQL follower is
 named `sql`; `db` and `database` remain available only for physical SQL or
 storage handles.
 

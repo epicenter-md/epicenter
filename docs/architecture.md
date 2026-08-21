@@ -93,7 +93,7 @@ inside it and Epicenter never looks inside one. Opening is a load, awaited,
 and the handle that comes back is fully hydrated:
 
 ```ts
-const { data: handle } = await data.tables.notes.document.open(noteId);
+const { data: handle } = await data.tables.notes.openDocument(noteId);
 const body = handle?.get('body'); // a Y.Type an editor binds to directly
 handle?.[Symbol.dispose]();
 ```

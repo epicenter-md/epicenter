@@ -61,7 +61,7 @@ Object.assign(globalThis, {
 	async write(title: string, prose: string) {
 		const db = bound();
 		const made = db.tables.notes.create({ title });
-		const opened = await db.tables.notes.document.open(made.id);
+		const opened = await db.tables.notes.openDocument(made.id);
 		if (opened.error !== null) return { error: opened.error.message };
 		const body = opened.data?.get('body', 'text');
 		if (body === undefined) return { error: 'the row has no document' };
@@ -81,7 +81,7 @@ Object.assign(globalThis, {
 		const notes: { title: string; prose: string }[] = [];
 		for (const row of listed.rows) {
 			// Through the CRDT, not through a cache the harness keeps.
-			const opened = await db.tables.notes.document.open(row.id);
+			const opened = await db.tables.notes.openDocument(row.id);
 			if (opened.error !== null) return { error: opened.error.message };
 			notes.push({
 				title: row.title,

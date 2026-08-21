@@ -34,7 +34,6 @@ import {
 import {
 	createDocumentEngine,
 	type DocumentError,
-	type DocumentManager,
 	type RowDocumentHandle,
 } from './documents.js';
 import { decodeEnvelope, encodeEnvelope } from './envelope.js';
@@ -321,10 +320,10 @@ export type TableHandle = {
 	 */
 	list(): { rows: Row[]; nonconforming: NonconformingRow[] };
 	/**
-	 * The independent document this row owns, opened at its derived address
+	 * Open the independent document this row owns at its derived address
 	 * (ADR-0248).
 	 *
-	 * `open` is asynchronous and resolves only after complete local hydration:
+	 * `openDocument` is asynchronous and resolves only after complete local hydration:
 	 * it is a load, and a synchronous surface in front of one either forces
 	 * eager loading or hands out a half-hydrated handle an editor merges
 	 * keystrokes into at the wrong position. `Ok(undefined)` means the table
@@ -337,11 +336,9 @@ export type TableHandle = {
 	 * when the surface holding it unmounts; the manager keeps one live
 	 * document per address while any handle holds it.
 	 */
-	readonly document: {
-		open(
-			rowId: string,
-		): Promise<Result<RowDocumentHandle | undefined, DocumentError>>;
-	};
+	openDocument(
+		rowId: string,
+	): Promise<Result<RowDocumentHandle | undefined, DocumentError>>;
 	/**
 	 * Hear when rows in this table change, by id.
 	 *
@@ -393,11 +390,9 @@ export type TypedTableHandle<TFields> =
 				delete(rowId: string): boolean;
 				ids(): string[];
 				list(): { rows: TRow[]; nonconforming: NonconformingRow[] };
-				readonly document: {
-					open(
-						rowId: string,
-					): Promise<Result<RowDocumentHandle | undefined, DocumentError>>;
-				};
+				openDocument(
+					rowId: string,
+				): Promise<Result<RowDocumentHandle | undefined, DocumentError>>;
 				subscribe(listener: TableInvalidationListener): () => void;
 			}
 		: never;
@@ -463,8 +458,6 @@ export type DataOf<
 > = DataView<TDatabase> & {
 	/** The immutable declaration this opened data was built from. */
 	readonly definition: DataDefinition;
-	/** Open and own row documents through the same data lifecycle. */
-	readonly documents: DocumentManager;
 	/** Group direct data operations into one accepted and durable transaction. */
 	transact<TResult>(run: () => TResult): TResult;
 	/** This application's file: pressure, the CRDT verbs, and replica sync. */
@@ -489,7 +482,6 @@ export function asData<TDatabase extends DataDefinition, TStore extends DataStor
 	return Object.freeze({
 		...view,
 		definition,
-		documents: store.documents,
 		transact: store.transact,
 		store,
 		[Symbol.asyncDispose]: () => store[Symbol.asyncDispose](),
@@ -690,15 +682,6 @@ export type DataStoreBase = {
 	stateVector(): Uint8Array;
 	/** Everything the application document has that the state vector does not. */
 	encodeStateSince(stateVector?: Uint8Array): Uint8Array;
-	/**
-	 * The document manager (ADR-0248): one independent Yjs document per opaque
-	 * address, opened fully hydrated and unloaded when the last handle closes.
-	 *
-	 * The address-keyed boundary. A table's `document.open(rowId)` derives the
-	 * address and composes row liveness on top of this; the manager itself
-	 * knows nothing about databases, tables, rows, previews, or schemas.
-	 */
-	readonly documents: DocumentManager;
 	/** Group direct data operations into one accepted and durable transaction. */
 	transact<TResult>(run: () => TResult): TResult;
 	/**
@@ -1582,19 +1565,17 @@ function createStoreEngine(
 				}
 				return { rows, nonconforming };
 			},
-			document: Object.freeze({
-				async open(
-					rowId: string,
-				): Promise<Result<RowDocumentHandle | undefined, DocumentError>> {
-					assertUsable();
-					// Row liveness is the table's own composition over the manager:
-					// an absent row is a fact rather than a failure, answered the
-					// same way `get` answers it, and refusing here is what keeps a
-					// deleted or misspelled id from minting an orphan document.
-					if (!hasRow(root, rowId)) return Ok(undefined);
-					return documents.open(documentAddress(addressOf(rowId)));
-				},
-			}),
+			async openDocument(
+				rowId: string,
+			): Promise<Result<RowDocumentHandle | undefined, DocumentError>> {
+				assertUsable();
+				// Row liveness is the table's own composition over the manager:
+				// an absent row is a fact rather than a failure, answered the
+				// same way `get` answers it, and refusing here is what keeps a
+				// deleted or misspelled id from minting an orphan document.
+				if (!hasRow(root, rowId)) return Ok(undefined);
+				return documents.open(documentAddress(addressOf(rowId)));
+			},
 			subscribe(listener: TableInvalidationListener): () => void {
 				const unsubscribe = invalidations.subscribeTable(
 					definition.id,
@@ -1760,11 +1741,7 @@ function createStoreEngine(
 		stateVector: () => new Uint8Array(Y.encodeStateVector(index)),
 		encodeStateSince: (stateVector?: Uint8Array) =>
 			new Uint8Array(Y.encodeStateAsUpdateV2(index, stateVector)),
-		// The public face is `open` alone; acceptance, retirement, and state
-		// enumeration are the engine's to drive.
-		documents: Object.freeze({
-			open: (address: string) => documents.open(address),
-		}),
+		// Acceptance, retirement, and state enumeration are the engine's to drive.
 		persistence: controller.persistence,
 		async [Symbol.asyncDispose]() {
 			if (disposed) return;

@@ -60,7 +60,7 @@ test('a skill and its instructions survive reopening', async () => {
 	{
 		await using runtime = await openSkillsRuntime();
 		skillId = runtime.state.createSkill('writing-voice');
-		const opened = await runtime.data.tables.skills.document.open(skillId);
+		const opened = await runtime.data.tables.skills.openDocument(skillId);
 		if (opened.error !== null) throw opened.error;
 		using handle = opened.data;
 		if (handle === undefined) throw new Error('the row has no document');
@@ -75,7 +75,7 @@ test('a skill and its instructions survive reopening', async () => {
 	expect(reopened.state.skills.map(({ name }) => name)).toEqual([
 		'writing-voice',
 	]);
-	const opened = await reopened.data.tables.skills.document.open(skillId);
+	const opened = await reopened.data.tables.skills.openDocument(skillId);
 	if (opened.error !== null) throw opened.error;
 	using handle = opened.data;
 	expect(handle?.get(SKILL_CONTENT).toString()).toBe('Write directly.');

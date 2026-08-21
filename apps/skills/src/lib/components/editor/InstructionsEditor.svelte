@@ -11,13 +11,13 @@
 	// half-hydrated document. Undefined means the row is gone, which renders
 	// as nothing rather than as an empty file it could then save over.
 	type Opened = Awaited<
-		ReturnType<typeof skills.data.tables.skills.document.open>
+		ReturnType<typeof skills.data.tables.skills.openDocument>
 	>['data'];
 	let opened = $state.raw<Opened | 'loading'>('loading');
 	$effect(() => {
 		let stale = false;
 		opened = 'loading';
-		void skills.data.tables.skills.document.open(skillId).then((result) => {
+		void skills.data.tables.skills.openDocument(skillId).then((result) => {
 			if (result.error !== null) throw result.error;
 			if (stale) {
 				result.data?.[Symbol.dispose]();

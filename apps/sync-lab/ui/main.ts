@@ -149,7 +149,7 @@ paste.addEventListener('click', () => {
 		device,
 		at: new Date().toISOString(),
 	});
-	void db.tables.notes.document.open(written.id).then((opened) => {
+	void db.tables.notes.openDocument(written.id).then((opened) => {
 		const text = opened.data?.get('editor', 'text');
 		text?.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
 		opened.data?.[Symbol.dispose]();

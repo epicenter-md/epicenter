@@ -91,7 +91,7 @@ describe('a read is a property access on a plain object', () => {
 	test('every scalar verb is synchronous; only a document open is a load', () => {
 		// One in-memory application document over a synchronous SQLite boundary,
 		// so no scalar read or write has I/O to await. The one asynchronous verb
-		// is `document.open`, which is a load by decision (ADR-0248).
+		// is `openDocument`, which is a load by decision (ADR-0248).
 		const made = note();
 		for (const value of [
 			db.tables.notes.get(made.id),
@@ -106,8 +106,9 @@ describe('a read is a property access on a plain object', () => {
 		}
 	});
 
-	test('data exposes documents and groups direct operations with transact', () => {
-		expect(db.documents).toBe(db.store.documents);
+	test('data groups direct operations with transact', () => {
+		expect(Object.hasOwn(db, 'documents')).toBe(false);
+		expect(Object.hasOwn(db.store, 'documents')).toBe(false);
 		const touched: string[][] = [];
 		db.tables.notes.subscribe((invalidation) => {
 			if (invalidation.scope === 'rows') touched.push([...invalidation.rowIds]);
@@ -436,7 +437,7 @@ describe('the document a row inherently owns (ADR-0248)', () => {
 					date: null,
 				});
 				id = made.id;
-				const opened = await diskDb.tables.notes.document.open(id);
+				const opened = await diskDb.tables.notes.openDocument(id);
 				if (opened.error !== null) throw opened.error;
 				const handle = opened.data;
 				if (handle === undefined) throw new Error('no document');
@@ -450,7 +451,7 @@ describe('the document a row inherently owns (ADR-0248)', () => {
 			}
 			const { data: db2, error } = await open(database, { root: directory });
 			if (error !== null) throw error;
-			const reopened = await db2.tables.notes.document.open(id);
+			const reopened = await db2.tables.notes.openDocument(id);
 			if (reopened.error !== null) throw reopened.error;
 			const handle = reopened.data;
 			expect(handle?.get('editor', 'text').toString()).toContain('buy milk');
@@ -465,18 +466,18 @@ describe('the document a row inherently owns (ADR-0248)', () => {
 	test('an absent row has no document, which is a fact not a failure', async () => {
 		// The same answer `get` gives an absent row, rather than an Err for one
 		// and an Ok(undefined) for the other.
-		const { data, error } = await db.tables.notes.document.open('nope');
+		const { data, error } = await db.tables.notes.openDocument('nope');
 		expect(error).toBeNull();
 		expect(data).toBeUndefined();
 	});
 
 	test('deleting the row retires its document', async () => {
 		const made = note();
-		const opened = await db.tables.notes.document.open(made.id);
+		const opened = await db.tables.notes.openDocument(made.id);
 		opened.data?.get('editor', 'text');
 		opened.data?.[Symbol.dispose]();
 		db.tables.notes.delete(made.id);
-		const after = await db.tables.notes.document.open(made.id);
+		const after = await db.tables.notes.openDocument(made.id);
 		expect(after.error).toBeNull();
 		expect(after.data).toBeUndefined();
 	});
@@ -487,7 +488,7 @@ describe('the document a row inherently owns (ADR-0248)', () => {
 		// and syncs that; measured in ADR-0215, and structurally unreachable now
 		// that the row and its rich content are two documents.
 		const made = note();
-		const opened = await db.tables.notes.document.open(made.id);
+		const opened = await db.tables.notes.openDocument(made.id);
 		opened.data
 			?.get('editor', 'text')
 			.setAttr('title' as never, 'CLOBBER' as never);
@@ -736,7 +737,7 @@ describe('a subscription names the rows a commit touched', () => {
 		const made = note();
 		const { seen } = record(db.tables.notes);
 
-		const opened = await db.tables.notes.document.open(made.id);
+		const opened = await db.tables.notes.openDocument(made.id);
 		const body = opened.data?.get('body', 'text');
 		if (body === undefined) throw new Error('the row has no document');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
@@ -947,7 +948,7 @@ describe('foreign bytes have exactly one door', () => {
 	// loudly.
 	test('a direct Y.applyUpdateV2 on a live row document throws instead of forging authored work', async () => {
 		const made = note({ title: 'mine' });
-		const opened = await db.tables.notes.document.open(made.id);
+		const opened = await db.tables.notes.openDocument(made.id);
 		const live = opened.data?.get('editor', 'text').doc;
 		if (live === null || live === undefined) {
 			throw new Error('root not attached to a document');

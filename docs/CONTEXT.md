@@ -152,7 +152,7 @@ shapes, see `docs/adr/`.
 - **Row document**: the independent Yjs document a row owns at its derived
   address, `{databaseId}/{tableName}/{rowId}` (ADR-0248), holding roots the
   application names. Opened with
-  `await data.tables.<table>.document.open(rowId)`, which resolves to a fully
+  `await data.tables.<table>.openDocument(rowId)`, which resolves to a fully
   hydrated handle whose `get(name)` returns a `Y.Type` an editor binds to
   directly; dispose the handle when the surface holding it unmounts. Epicenter
   never reads inside one. Roots are minted by name on first use, which

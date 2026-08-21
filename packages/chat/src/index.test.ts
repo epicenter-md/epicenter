@@ -49,7 +49,7 @@ test('the agent store observes writes and survives a restart', async () => {
 			});
 			rowId = created.id;
 
-			const conversation = await db.tables.conversations.document.open(rowId);
+			const conversation = await db.tables.conversations.openDocument(rowId);
 			if (conversation.error !== null) throw conversation.error;
 			using document = conversation.data;
 			if (document === undefined) throw new Error('the row has no document');
@@ -65,7 +65,7 @@ test('the agent store observes writes and survives a restart', async () => {
 		if (reopened.error !== null) throw reopened.error;
 		const db = reopened.data;
 		await using _db = db;
-		const opened = await db.tables.conversations.document.open(rowId);
+		const opened = await db.tables.conversations.openDocument(rowId);
 		if (opened.error !== null) throw opened.error;
 		using document = opened.data;
 		if (document === undefined) throw new Error('the row has no document');

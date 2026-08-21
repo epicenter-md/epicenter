@@ -307,14 +307,14 @@ describe('a write syncs without anyone remembering to say so', () => {
 		const note = expectOk(
 			phone.db.tables.notes.create({ title: 'Groceries' }),
 		);
-		const opened = expectOk(await phone.db.tables.notes.document.open(note.id));
+		const opened = expectOk(await phone.db.tables.notes.openDocument(note.id));
 		const body = opened?.get('body', 'text');
 		if (body === undefined) throw new Error('the row has no document');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
 		run(wire, clock, 1_000);
 
 		const received = expectOk(
-			await laptop.db.tables.notes.document.open(note.id),
+			await laptop.db.tables.notes.openDocument(note.id),
 		);
 		const arrived = received?.get('body', 'text');
 		expect(JSON.stringify(arrived?.toJSON())).toContain('milk and eggs');

@@ -186,7 +186,7 @@ console.log('\n2. an update past the cap, through the real socket');
 		device: 'probe',
 		at: new Date().toISOString(),
 	});
-	const opened = await author.db.tables.notes.document.open(note.id);
+	const opened = await author.db.tables.notes.openDocument(note.id);
 	if (opened.error !== null) throw opened.error;
 	const text = opened.data?.get('editor', 'text');
 	if (text === undefined) throw new Error('the row has no document');
@@ -197,7 +197,7 @@ console.log('\n2. an update past the cap, through the real socket');
 
 	let arrived: { length: number } | undefined;
 	await until('the reader to receive the paste', async () => {
-		const received = await reader.db.tables.notes.document.open(note.id);
+		const received = await reader.db.tables.notes.openDocument(note.id);
 		if (received.error !== null) return false;
 		arrived = received.data?.get('editor', 'text');
 		received.data?.[Symbol.dispose]();

@@ -53,7 +53,7 @@ refresh anywhere.
 
 A note's prose is a live type at the `body` root inside the note's own
 independent document. `NoteBodyPane.svelte` opens that document through
-`data.tables.notes.document.open(noteId)`, receives a fully hydrated handle, and
+`data.tables.notes.openDocument(noteId)`, receives a fully hydrated handle, and
 hands `handle.get('body')` straight to ProseMirror through `@y/prosemirror`.
 Opening is awaited and the handle is disposed when the editor closes; two
 devices first-opening the same named root converge because it is name-addressed.

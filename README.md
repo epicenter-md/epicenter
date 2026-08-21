@@ -79,7 +79,7 @@ beside the rows it can, with the reason and the raw values intact, and an
 ordinary write repairs it.
 
 Prose merges per character in an independent row document: open it with
-`await data.tables.notes.document.open(note.id)`, then bind a named root such as
+`await data.tables.notes.openDocument(note.id)`, then bind a named root such as
 `body` to the editor. Epicenter never looks inside the row document. The scalar
 application document's exact `app`/`kv`/`tables:<name>` shape is recorded in
 [ADR-0257](docs/adr/0257-the-application-document-has-named-kv-and-table-roots.md).

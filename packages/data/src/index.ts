@@ -42,7 +42,6 @@ export {
 } from './definition/index.js';
 export type {
 	DocumentError,
-	DocumentManager,
 	RowDocumentHandle,
 } from './store/documents.js';
 export {

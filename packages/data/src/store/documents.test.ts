@@ -10,7 +10,7 @@ import { defineData, documentAddress } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
-import { expectErr, expectOk as expectResult } from 'wellcrafted/testing';
+import { expectOk as expectResult } from 'wellcrafted/testing';
 
 import { openMemory } from './bun.js';
 import { decodeEnvelope } from './envelope.js';
@@ -56,14 +56,14 @@ function typeText(
 	text.applyDelta(text.change.insert(words) as never);
 }
 
-describe('table.document.open (ADR-0248)', () => {
+describe('table.openDocument (ADR-0248)', () => {
 	test('opens the derived address, fully hydrated, and round-trips restart', async () => {
 		const file = new Database(':memory:');
 		{
 			const db = overFile(file);
 			await using _db = db;
 			const note = expectOk(db.tables.notes.create({ title: 'groceries' }));
-			const handle = expectOk(await db.tables.notes.document.open(note.id));
+			const handle = expectOk(await db.tables.notes.openDocument(note.id));
 			if (handle === undefined) throw new Error('the row has no document');
 			typeText(handle, 'body', 'buy milk');
 			handle[Symbol.dispose]();
@@ -73,7 +73,7 @@ describe('table.document.open (ADR-0248)', () => {
 			await using _db = db;
 			const [id] = db.tables.notes.ids();
 			if (id === undefined) throw new Error('the row did not survive');
-			const handle = expectOk(await db.tables.notes.document.open(id));
+			const handle = expectOk(await db.tables.notes.openDocument(id));
 			if (handle === undefined) throw new Error('the row has no document');
 			expect(handle.get('body').toString()).toBe('buy milk');
 			handle[Symbol.dispose]();
@@ -83,15 +83,15 @@ describe('table.document.open (ADR-0248)', () => {
 	test('an absent row has no document, which is a fact not a failure', async () => {
 		const db = openMemory(database);
 		await using _db = db;
-		expect(expectOk(await db.tables.notes.document.open('nope'))).toBeUndefined();
+		expect(expectOk(await db.tables.notes.openDocument('nope'))).toBeUndefined();
 	});
 
 	test('two handles for one address share one live document', async () => {
 		const db = openMemory(database);
 		await using _db = db;
 		const note = expectOk(db.tables.notes.create({ title: 'shared' }));
-		const first = expectOk(await db.tables.notes.document.open(note.id));
-		const second = expectOk(await db.tables.notes.document.open(note.id));
+		const first = expectOk(await db.tables.notes.openDocument(note.id));
+		const second = expectOk(await db.tables.notes.openDocument(note.id));
 		if (first === undefined || second === undefined) {
 			throw new Error('the row has no document');
 		}
@@ -110,12 +110,12 @@ describe('table.document.open (ADR-0248)', () => {
 		await using _db = db;
 		const a = expectOk(db.tables.notes.create({ title: 'a' }));
 		const b = expectOk(db.tables.notes.create({ title: 'b' }));
-		const first = expectOk(await db.tables.notes.document.open(a.id));
+		const first = expectOk(await db.tables.notes.openDocument(a.id));
 		if (first === undefined) throw new Error('no document');
 		typeText(first, 'body', 'a alone');
 		first[Symbol.dispose]();
 
-		const second = expectOk(await db.tables.notes.document.open(b.id));
+		const second = expectOk(await db.tables.notes.openDocument(b.id));
 		if (second === undefined) throw new Error('no document');
 		expect(second.get('body').toString()).toBe('');
 		expect([...second.get('body').doc?.share.keys() ?? []]).toEqual(['body']);
@@ -128,7 +128,7 @@ describe('table.document.open (ADR-0248)', () => {
 			const db = overFile(file);
 			await using _db = db;
 			const note = expectOk(db.tables.notes.create({ title: 'unopened' }));
-			const handle = expectOk(await db.tables.notes.document.open(note.id));
+			const handle = expectOk(await db.tables.notes.openDocument(note.id));
 			if (handle === undefined) throw new Error('no document');
 			typeText(handle, 'body', 'heavy prose');
 			handle[Symbol.dispose]();
@@ -149,32 +149,28 @@ describe('row deletion retires the document (ADR-0248)', () => {
 	test('delete removes the row, refuses reopen, and drops the stored chain', async () => {
 		const file = new Database(':memory:');
 		const address = { databaseId: database.id, tableName: 'notes' };
+		let rowId: string;
 		let derived: string;
 		{
 			const db = overFile(file);
 			await using _db = db;
 			const note = expectOk(db.tables.notes.create({ title: 'doomed' }));
+			rowId = note.id;
 			derived = documentAddress({ ...address, rowId: note.id });
-			const handle = expectOk(await db.tables.notes.document.open(note.id));
+			const handle = expectOk(await db.tables.notes.openDocument(note.id));
 			if (handle === undefined) throw new Error('no document');
 			typeText(handle, 'body', 'gone soon');
 			handle[Symbol.dispose]();
 
 			expect(db.tables.notes.delete(note.id)).toBe(true);
 			// The row is gone, so the table answers absence.
-			expect(expectOk(await db.tables.notes.document.open(note.id))).toBeUndefined();
-			// The manager refuses the raw address rather than resurrecting it.
-			expect(expectErr(await db.store.documents.open(derived)).name).toBe(
-				'DocumentRetired',
-			);
+			expect(expectOk(await db.tables.notes.openDocument(note.id))).toBeUndefined();
 		}
 		{
 			// Retirement is durable: a restart still refuses, and the chain is gone.
 			const db = overFile(file);
 			await using _db = db;
-			expect(expectErr(await db.store.documents.open(derived)).name).toBe(
-				'DocumentRetired',
-			);
+			expect(expectOk(await db.tables.notes.openDocument(rowId))).toBeUndefined();
 			const raw = createBunSqliteAdapter(file);
 			expect(
 				raw.all('SELECT seq FROM _updates WHERE document = ?', [derived]),
@@ -200,7 +196,7 @@ describe('row deletion retires the document (ADR-0248)', () => {
 		expectOk(
 			syncEngineOf(peer.store).applyRemote(appState(author)),
 		);
-		const handle = expectOk(await author.tables.notes.document.open(note.id));
+		const handle = expectOk(await author.tables.notes.openDocument(note.id));
 		if (handle === undefined) throw new Error('no document');
 		typeText(handle, 'body', 'late words');
 		handle[Symbol.dispose]();
@@ -211,14 +207,7 @@ describe('row deletion retires the document (ADR-0248)', () => {
 		expect(peer.tables.notes.delete(note.id)).toBe(true);
 		expectOk(syncEngineOf(peer.store).applyRemote(late.bytes));
 
-		const derived = documentAddress({
-			databaseId: database.id,
-			tableName: 'notes',
-			rowId: note.id,
-		});
-		expect(expectErr(await peer.store.documents.open(derived)).name).toBe(
-			'DocumentRetired',
-		);
+		expect(expectOk(await peer.tables.notes.openDocument(note.id))).toBeUndefined();
 	});
 });
 
@@ -230,7 +219,7 @@ describe('row documents ride the one store connection (ADR-0248)', () => {
 		await using _reader = reader;
 
 		const note = expectOk(author.tables.notes.create({ title: 'synced' }));
-		const handle = expectOk(await author.tables.notes.document.open(note.id));
+		const handle = expectOk(await author.tables.notes.openDocument(note.id));
 		if (handle === undefined) throw new Error('no document');
 		typeText(handle, 'body', 'travels once');
 		handle[Symbol.dispose]();
@@ -252,7 +241,7 @@ describe('row documents ride the one store connection (ADR-0248)', () => {
 
 		expectOk(syncEngineOf(reader.store).applyRemote(owed.bytes));
 		expect(reader.tables.notes.ids()).toEqual([note.id]);
-		const received = expectOk(await reader.tables.notes.document.open(note.id));
+		const received = expectOk(await reader.tables.notes.openDocument(note.id));
 		if (received === undefined) throw new Error('no document');
 		expect(received.get('body').toString()).toBe('travels once');
 		received[Symbol.dispose]();
@@ -264,7 +253,7 @@ describe('row documents ride the one store connection (ADR-0248)', () => {
 		const reader = openMemory(database);
 		await using _reader = reader;
 		const note = expectOk(author.tables.notes.create({ title: 'quiet' }));
-		const handle = expectOk(await author.tables.notes.document.open(note.id));
+		const handle = expectOk(await author.tables.notes.openDocument(note.id));
 		if (handle === undefined) throw new Error('no document');
 		typeText(handle, 'body', 'not re-owed');
 		handle[Symbol.dispose]();
@@ -284,11 +273,11 @@ describe('row documents ride the one store connection (ADR-0248)', () => {
 		const note = expectOk(author.tables.notes.create({ title: 'live' }));
 		expectOk(syncEngineOf(reader.store).applyRemote(appState(author)));
 
-		const watching = expectOk(await reader.tables.notes.document.open(note.id));
+		const watching = expectOk(await reader.tables.notes.openDocument(note.id));
 		if (watching === undefined) throw new Error('no document');
 		expect(watching.get('body').toString()).toBe('');
 
-		const handle = expectOk(await author.tables.notes.document.open(note.id));
+		const handle = expectOk(await author.tables.notes.openDocument(note.id));
 		if (handle === undefined) throw new Error('no document');
 		typeText(handle, 'body', 'arrives live');
 		handle[Symbol.dispose]();
@@ -306,7 +295,7 @@ describe('row documents ride the one store connection (ADR-0248)', () => {
 		const fresh = openMemory(database);
 		await using _fresh = fresh;
 		const note = expectOk(author.tables.notes.create({ title: 'bundled' }));
-		const handle = expectOk(await author.tables.notes.document.open(note.id));
+		const handle = expectOk(await author.tables.notes.openDocument(note.id));
 		if (handle === undefined) throw new Error('no document');
 		typeText(handle, 'body', 'whole state');
 		handle[Symbol.dispose]();
@@ -315,7 +304,7 @@ describe('row documents ride the one store connection (ADR-0248)', () => {
 		expectOk(syncEngineOf(fresh.store).applyRemote(snapshot));
 
 		expect(fresh.tables.notes.ids()).toEqual([note.id]);
-		const adopted = expectOk(await fresh.tables.notes.document.open(note.id));
+		const adopted = expectOk(await fresh.tables.notes.openDocument(note.id));
 		if (adopted === undefined) throw new Error('no document');
 		expect(adopted.get('body').toString()).toBe('whole state');
 		adopted[Symbol.dispose]();

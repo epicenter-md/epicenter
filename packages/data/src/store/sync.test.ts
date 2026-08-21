@@ -119,7 +119,7 @@ describe('the local log holds each update once', () => {
 			author.db.tables.notes.create({ title: 'Groceries' }),
 		);
 		const before = author.outbox().length;
-		const opened = await author.db.tables.notes.document.open(note.id);
+		const opened = await author.db.tables.notes.openDocument(note.id);
 		const text = opened.data?.get('editor', 'text');
 		if (text === undefined) throw new Error('the row has no document');
 		text.applyDelta(text.change.insert('buy milk') as never);
@@ -283,7 +283,7 @@ describe('a row document root converges however many devices first-open it', () 
 			[author, 'written on the phone'],
 			[other, 'written on the laptop'],
 		] as const) {
-			const opened = await replica.db.tables.notes.document.open(note.id);
+			const opened = await replica.db.tables.notes.openDocument(note.id);
 			const text = opened.data?.get('editor', 'text');
 			if (text === undefined) throw new Error('the row has no editor');
 			text.applyDelta(text.change.insert(words) as never);
@@ -300,7 +300,7 @@ describe('a row document root converges however many devices first-open it', () 
 		expectOk(syncEngineOf(other.store).applyRemote(fromAuthor.bytes));
 
 		const readBack = async (replica: typeof author) => {
-			const opened = await replica.db.tables.notes.document.open(note.id);
+			const opened = await replica.db.tables.notes.openDocument(note.id);
 			const text = JSON.stringify(opened.data?.get('editor').toJSON());
 			opened.data?.[Symbol.dispose]();
 			return text;

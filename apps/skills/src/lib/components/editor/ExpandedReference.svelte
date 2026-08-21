@@ -8,14 +8,14 @@
 
 	// Same open-per-row lifecycle as InstructionsEditor (ADR-0248).
 	type Opened = Awaited<
-		ReturnType<typeof skills.data.tables.skillReferences.document.open>
+		ReturnType<typeof skills.data.tables.skillReferences.openDocument>
 	>['data'];
 	let opened = $state.raw<Opened | 'loading'>('loading');
 	$effect(() => {
 		let stale = false;
 		opened = 'loading';
-		void skills.data.tables.skillReferences.document
-			.open(id)
+		void skills.data.tables.skillReferences
+			.openDocument(id)
 			.then((result) => {
 				if (result.error !== null) throw result.error;
 				if (stale) {

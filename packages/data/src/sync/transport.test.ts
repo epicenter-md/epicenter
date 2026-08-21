@@ -79,7 +79,7 @@ function pump(): Promise<void> {
 
 /** Open one row's document and hand back its editor root, fully hydrated. */
 async function editorOf(replica: Replica, rowId: string) {
-	const opened = await replica.db.tables.notes.document.open(rowId);
+	const opened = await replica.db.tables.notes.openDocument(rowId);
 	if (opened.error !== null) throw opened.error;
 	if (opened.data === undefined) throw new Error('the row has no document');
 	return opened.data.get('editor', 'text');
@@ -647,7 +647,7 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		expect(laptop.titles()).toEqual([]);
 		// The row itself never arrived, so the laptop has no document to open.
 		expect(
-			expectOk(await laptop.db.tables.notes.document.open(note.id)),
+			expectOk(await laptop.db.tables.notes.openDocument(note.id)),
 		).toBeUndefined();
 		// And the phone still owes it, which is what the reconnect above spends.
 		expect(phone.client.status().owed).toBeGreaterThan(0);

@@ -1,6 +1,6 @@
 # 0250. A database exposes documents as first-class members and applications compose their lifecycles
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-19
 - **Provisional number.** The merge owner reconciles this number against other
   open ADRs before merge.
@@ -18,6 +18,8 @@
 - **Unbuilt:** the public `db.documents` namespace, the transaction-scoped
   document retirement operation, and the application actions that compose page
   deletion with document retirement.
+- **Superseded by:** [ADR-0258](0258-row-documents-are-opened-through-their-owning-table.md)
+  at the public document namespace and lifecycle owner.
 
 ## Context
 

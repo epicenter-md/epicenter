@@ -202,7 +202,7 @@ export class SyncLabTestPeer extends DurableObject<Env> {
 	 */
 	async writeLarge(title: string, bytes: number): Promise<void> {
 		const written = this.db.tables.notes.create({ title });
-		const opened = await this.db.tables.notes.document.open(written.id);
+		const opened = await this.db.tables.notes.openDocument(written.id);
 		if (opened.error !== null) throw opened.error;
 		const handle = opened.data;
 		if (handle === undefined) throw new Error('the row has no document');

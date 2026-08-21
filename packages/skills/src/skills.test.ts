@@ -56,7 +56,7 @@ async function readInstructions(
 	data: SkillsData,
 	skillId: string,
 ): Promise<string> {
-	const opened = await data.tables.skills.document.open(skillId);
+	const opened = await data.tables.skills.openDocument(skillId);
 	if (opened.error !== null) throw opened.error;
 	using handle = opened.data;
 	if (handle === undefined) throw new Error(`Skill '${skillId}' has no row`);
@@ -133,7 +133,7 @@ test("a skill's instructions live under its own row id", async () => {
 				updatedAt: InstantString.now(),
 			});
 			writtenTo = written.id;
-			const opened = await data.tables.skills.document.open(writtenTo);
+			const opened = await data.tables.skills.openDocument(writtenTo);
 			if (opened.error !== null) throw opened.error;
 			using handle = opened.data;
 			if (handle === undefined) throw new Error('the row has no document');

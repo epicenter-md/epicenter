@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-20
 - **Amends:** [ADR-0212](0212-a-database-is-one-index-document-and-one-document-per-row.md) at the scalar application-document grammar; [ADR-0216](0216-a-reserved-kv-root-is-a-map-of-application-settings.md) at the physical KV root; [ADR-0252](0252-kv-is-one-structured-value-with-whole-value-reads-and-conformance-results.md) at the KV root's name and ownership
-- **Relates to:** [ADR-0248](0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md), [ADR-0250](0250-a-database-exposes-documents-as-first-class-members-and-applications-compose-their-lifecycles.md), [ADR-0255](0255-data-definitions-use-one-data-first-public-vocabulary.md)
+- **Relates to:** [ADR-0248](0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md), [ADR-0258](0258-row-documents-are-opened-through-their-owning-table.md), [ADR-0255](0255-data-definitions-use-one-data-first-public-vocabulary.md)
 
 ## Decision
 
@@ -71,10 +71,11 @@ represented by the row attribute on its table root. The root names are stable
 storage addresses, so this grammar is part of the persistence contract rather
 than an implementation detail.
 
-The physical grammar does not describe every public API. `data.kv`,
-`data.tables`, and `data.documents` are the data-first runtime surfaces from
-ADR-0255; this ADR explains what those surfaces persist and how the scalar
-application document is laid out.
+The physical grammar does not describe every public API. `data.kv` and
+`data.tables` are the data-first runtime surfaces from ADR-0255; this ADR
+explains what those surfaces persist and how the scalar application document
+is laid out. Row documents live beside the scalar document at derived addresses
+and open through their owning table, as decided by ADR-0258.
 
 ## Alternatives rejected
 

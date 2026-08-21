@@ -83,7 +83,7 @@ export type ConversationsTable = TypedTableHandle<typeof conversationsTable>;
  *
  * @example
  * ```ts
- * const { data: handle } = await table.document.open(conversationId);
+ * const { data: handle } = await table.openDocument(conversationId);
  * ```
  */
 export const CONVERSATION_MESSAGES = 'messages';
@@ -96,7 +96,7 @@ export const CONVERSATION_MESSAGES = 'messages';
  * long as the loop runs; durability is the store's write-behind and
  * propagation is the ordinary transport.
  *
- * @param document The open handle, from `await table.document.open(conversationId)`.
+ * @param document The open handle, from `await table.openDocument(conversationId)`.
  */
 export function createAgentMessageStore(
 	document: Pick<RowDocumentHandle, 'get'>,

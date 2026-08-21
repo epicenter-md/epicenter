@@ -271,7 +271,7 @@ async function writeDocumentText(
 	rowId: string,
 	value: string,
 ): Promise<void> {
-	const opened = await table.document.open(rowId);
+	const opened = await table.openDocument(rowId);
 	if (opened.error !== null) throw opened.error;
 	using handle = opened.data;
 	if (handle === undefined) return;
@@ -285,7 +285,7 @@ async function readDocumentText(
 	table: SkillsTable,
 	rowId: string,
 ): Promise<string> {
-	const opened = await table.document.open(rowId);
+	const opened = await table.openDocument(rowId);
 	if (opened.error !== null) throw opened.error;
 	using handle = opened.data;
 	return handle?.get(SKILL_CONTENT).toString() ?? '';

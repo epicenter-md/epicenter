@@ -188,7 +188,7 @@ interval to pull remote changes; an interim shape nested the document inside
 the row and handed it out synchronously.
 
 **New:** each row owns one independent Yjs document at its derived address
-(ADR-0248). `await data.tables.notes.document.open(id)` resolves to a fully
+(ADR-0248). `await data.tables.notes.openDocument(id)` resolves to a fully
 hydrated handle; `handle.get('body')` is a live `Y.Type` an editor binds to
 directly, remote edits arrive through the one store connection, and disposing
 the handle lets the store unload the document.

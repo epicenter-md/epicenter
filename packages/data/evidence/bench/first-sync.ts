@@ -241,13 +241,13 @@ async function build(
 	const handles = new Map<
 		string,
 		NonNullable<
-			Awaited<ReturnType<typeof db.tables.notes.document.open>>['data']
+			Awaited<ReturnType<typeof db.tables.notes.openDocument>>['data']
 		>
 	>();
 	const bodyOf = async (id: string) => {
 		let handle = handles.get(id);
 		if (handle === undefined) {
-			const opened = await db.tables.notes.document.open(id);
+			const opened = await db.tables.notes.openDocument(id);
 			if (opened.error !== null) throw opened.error;
 			if (opened.data === null || opened.data === undefined) {
 				throw new Error('the row has no document');
@@ -432,7 +432,7 @@ async function apply(
 	const canary = rows.rows.find((row) => row.title === expectation.canaryTitle);
 	let prose: string | undefined;
 	if (canary !== undefined) {
-		const opened = await db.tables.notes.document.open(canary.id);
+		const opened = await db.tables.notes.openDocument(canary.id);
 		if (opened.error !== null) throw opened.error;
 		prose = opened.data?.get('editor', 'text').toString();
 		opened.data?.[Symbol.dispose]();

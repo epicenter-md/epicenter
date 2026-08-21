@@ -207,7 +207,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		// A row's document: an editor keeps writing prose while blocked. The
 		// open hydrates from the (empty) chain plus the retained queue, so a
 		// blocked engine never blocks acceptance.
-		const handle = expectOk(await replica.db.tables.notes.document.open(made.id));
+		const handle = expectOk(await replica.db.tables.notes.openDocument(made.id));
 		if (handle === undefined) throw new Error('no document');
 		const editor = handle.get('editor', 'text');
 		editor.applyDelta(editor.change.insert('typed while blocked') as never);
@@ -224,7 +224,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		const restarted = reopen(replica.sqlite);
 		expect(restarted.db.kv.get().data?.theme).toBe('dark');
 		const survived = expectOk(
-			await restarted.db.tables.notes.document.open(made.id),
+			await restarted.db.tables.notes.openDocument(made.id),
 		);
 		expect(survived?.get('editor', 'text').toString()).toContain(
 			'typed while blocked',

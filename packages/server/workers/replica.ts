@@ -191,7 +191,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 	async write(title: string, prose: string): Promise<void> {
 		if (this.db === undefined) throw new Error('open first');
 		const made = this.db.tables.notes.create({ title });
-		const opened = await this.db.tables.notes.document.open(made.id);
+		const opened = await this.db.tables.notes.openDocument(made.id);
 		if (opened.error !== null) throw opened.error;
 		const handle = opened.data;
 		if (handle === undefined) throw new Error('the row has no document');
@@ -242,7 +242,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 			prose: (
 				await Promise.all(
 					listed.rows.map(async (row) => {
-						const opened = await db.tables.notes.document.open(row.id);
+						const opened = await db.tables.notes.openDocument(row.id);
 						const text = JSON.stringify(
 							opened?.data?.get('body', 'text')?.toJSON() ?? null,
 						);

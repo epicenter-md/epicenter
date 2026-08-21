@@ -262,7 +262,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	 * The only place `NOTE_BODY` is read: one spelling of the root name.
 	 */
 	async function openBody(id: NoteId) {
-		const { data: handle, error } = await table.document.open(id);
+		const { data: handle, error } = await table.openDocument(id);
 		// Storage that cannot be read is this generation's boot-shaped failure,
 		// not a per-note outcome; it surfaces at the app's error boundary.
 		if (error !== null) throw error;
