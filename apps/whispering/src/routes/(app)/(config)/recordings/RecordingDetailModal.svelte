@@ -126,15 +126,7 @@
 				title: snapshot.title,
 				recordedAt: snapshot.recordedAt,
 				recordedAtZone: snapshot.recordedAtZone,
-				transcript: snapshot.transcript,
-				deliveredTranscript:
-					snapshot.transcript === recording.transcript
-						? recording.deliveredTranscript
-						: null,
-				polishedTranscript:
-					snapshot.transcript === recording.transcript
-						? recording.polishedTranscript
-						: null,
+				deliveredTranscript: snapshot.deliveredTranscript,
 			});
 		} catch (cause) {
 			report.info({
@@ -200,42 +192,40 @@
 				</p>
 			{/if}
 
-			{#if hasFinalText}
-				<div class="space-y-2">
-					<div class="flex items-center justify-between gap-2">
-						<Label for="delivered-transcript">Delivered transcript</Label>
-						<CopyButton
-							text={deliveredTranscript}
-							copyFn={createCopyFn('delivered transcript')}
-							variant="outline"
-						/>
-					</div>
-					<Textarea
-						id="delivered-transcript"
-						value={deliveredTranscript}
-						readonly
-						rows={6}
+			<div class="space-y-2">
+				<div class="flex items-center justify-between gap-2">
+					<Label for="transcript">Transcript</Label>
+					<CopyButton
+						text={deliveredTranscript}
+						copyFn={createCopyFn('transcript')}
+						variant="outline"
 					/>
 				</div>
-			{/if}
-
-			<div class="space-y-2">
-				<Label for="transcript">
-					{hasFinalText ? 'Original transcript' : 'Transcript'}
-				</Label>
 				<Textarea
 					id="transcript"
-					value={workingCopy.transcript}
+					value={deliveredTranscript}
 					oninput={(e) => {
 						workingCopy = {
 							...workingCopy,
-							transcript: e.currentTarget.value,
+							deliveredTranscript: e.currentTarget.value,
 						};
 						isWorkingCopyDirty = true;
 					}}
 					rows={12}
 				/>
 			</div>
+
+			{#if hasFinalText}
+				<div class="space-y-2">
+					<Label for="original-transcript">Original transcript</Label>
+					<Textarea
+						id="original-transcript"
+						value={workingCopy.transcript}
+						readonly
+						rows={6}
+					/>
+				</div>
+			{/if}
 
 			<div class="flex flex-wrap gap-2">
 				<TranscribeRecordingButton

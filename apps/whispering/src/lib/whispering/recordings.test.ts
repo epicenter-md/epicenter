@@ -129,6 +129,46 @@ test('CRUD stays live and recording order is newest first', async () => {
 	}
 });
 
+test('an editable patch cannot overwrite the raw provider transcript', async () => {
+	const context = await setup();
+	try {
+		const created = context.recordings.create(
+			recording({ transcript: 'exact provider text' }),
+		);
+		const attemptedWholeRowPatch = {
+			...created,
+			title: 'updated',
+			transcript: 'manual replacement',
+		};
+		context.recordings.patch(created.id, attemptedWholeRowPatch);
+		const updated = context.recordings.get(created.id);
+		expect(updated?.title).toBe('updated');
+		expect(updated?.transcript).toBe('exact provider text');
+	} finally {
+		await context.dispose();
+	}
+});
+
+test('a transcription patch cannot overwrite editable metadata', async () => {
+	const context = await setup();
+	try {
+		const created = context.recordings.create(
+			recording({ title: 'kept title', transcript: 'old raw' }),
+		);
+		const attemptedWholeRowPatch = {
+			...created,
+			title: 'discarded title',
+			transcript: 'new raw',
+		};
+		context.recordings.patchTranscription(created.id, attemptedWholeRowPatch);
+		const updated = context.recordings.get(created.id);
+		expect(updated?.title).toBe('kept title');
+		expect(updated?.transcript).toBe('new raw');
+	} finally {
+		await context.dispose();
+	}
+});
+
 test('every seeded recording loads, newest first', async () => {
 	const seed = Array.from({ length: 101 }, (_, index) =>
 		recording({
@@ -262,7 +302,7 @@ test('failed row creation cleans up the already committed audio', async () => {
 	}
 });
 
-test('legacy polished text migrates once into delivered text', async () => {
+test('legacy polished text stays a fallback without rewriting the row', async () => {
 	const context = await setup({
 		seed: [
 			recording({
@@ -273,9 +313,9 @@ test('legacy polished text migrates once into delivered text', async () => {
 		],
 	});
 	try {
-		const migrated = context.recordings.sorted[0];
-		expect(migrated?.deliveredTranscript).toBe('legacy final');
-		expect(migrated && getDeliveredTranscript(migrated)).toBe('legacy final');
+		const legacy = context.recordings.sorted[0];
+		expect(legacy?.deliveredTranscript).toBeNull();
+		expect(legacy && getDeliveredTranscript(legacy)).toBe('legacy final');
 
 		let writes = 0;
 		const stop = context.table.subscribe(() => {
@@ -293,7 +333,7 @@ test('legacy polished text migrates once into delivered text', async () => {
 	}
 });
 
-test('a late legacy-only row migrates while the fallback remains readable', async () => {
+test('a late legacy-only row remains a live fallback', async () => {
 	const context = await setup();
 	try {
 		const written = expectOk(
@@ -308,12 +348,9 @@ test('a late legacy-only row migrates while the fallback remains readable', asyn
 			),
 		);
 		// SAFETY: written.id is the branded id returned by the recordings table.
-		const migrated = context.recordings.get(written.id as RecordingId);
-		expect(migrated?.deliveredTranscript).toBe('late legacy final');
-		expect(
-			migrated &&
-				getDeliveredTranscript({ ...migrated, deliveredTranscript: null }),
-		).toBe('late legacy final');
+		const legacy = context.recordings.get(written.id as RecordingId);
+		expect(legacy?.deliveredTranscript).toBeNull();
+		expect(legacy && getDeliveredTranscript(legacy)).toBe('late legacy final');
 	} finally {
 		await context.dispose();
 	}

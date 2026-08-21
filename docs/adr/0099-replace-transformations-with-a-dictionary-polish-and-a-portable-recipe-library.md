@@ -91,8 +91,12 @@ the Dictionary block through the shared helper.
 The recording keeps the exact provider transcript in `transcript` and the text
 selected for delivery in `deliveredTranscript`, regardless of whether that final
 text came from Transformations, Polish, both, or neither. Existing
-`polishedTranscript` values migrate forward and remain a read fallback while
-older replicas may still sync them. New code does not write that legacy field.
+`polishedTranscript` values remain in place as a read fallback while
+older replicas may still sync them. They are not copied into
+`deliveredTranscript`: an older replica can update only the legacy field, and a
+copied value would then win while becoming permanently stale. New code never
+stores final text in the legacy field; retranscription only clears an obsolete
+legacy value before producing the new delivered text.
 History shows the delivered text with the original one click away.
 
 Delivery is **single-write to the cursor** after deterministic processing and

@@ -7,7 +7,7 @@
  * Key behaviors:
  * - New Transformation values default to disabled without provisioning a row
  * - Step kinds and scalar fields are validated at the declaration boundary
- * - Recording final text defaults to null beside the legacy migration source
+ * - Recording final text defaults to null beside the legacy fallback source
  */
 import { describe, expect, test } from 'bun:test';
 import { parseDatabase } from '@epicenter/database';

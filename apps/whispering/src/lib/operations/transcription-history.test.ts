@@ -28,7 +28,9 @@ const { recordTranscriptionOutcome, saveRecordingHistory } = await import(
 );
 type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
 
-const app = { recordings: { patch } } as unknown as WhisperingApp;
+const app = {
+	recordings: { patchTranscription: patch },
+} as unknown as WhisperingApp;
 
 test('a committed write confirms the history save', () => {
 	patch.mockImplementationOnce(() => recording);

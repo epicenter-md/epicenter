@@ -68,7 +68,7 @@ function appWith(transformations: RunnableTransformation[]): WhisperingApp {
 	const app = {} as WhisperingApp;
 	return Object.assign(app, {
 		transformations: { sorted: transformations },
-		recordings: { patch },
+		recordings: { patchTranscription: patch },
 	});
 }
 

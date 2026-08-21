@@ -57,7 +57,6 @@ export async function processRecordingPipeline(
 		recordedAtZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 		transcript: '',
 		deliveredTranscript: null,
-		polishedTranscript: null,
 		duration: durationMs,
 		// The three transcription columns are omitted: each declares a default a
 		// read applies and a write never stores, so a fresh recording is
@@ -152,8 +151,8 @@ export async function processRecordingPipeline(
 
 	// Persist exactly what this path will deliver, regardless of whether Polish ran
 	// or fell back. `deliveredTranscript` names the final-output boundary without
-	// claiming which processing stages produced it; the legacy Polish field is
-	// never written by new code.
+	// claiming which processing stages produced it; new code never stores final
+	// text in the legacy Polish field.
 	const deliveredHistory = await saveRecordingHistory(app, recording.id, {
 		deliveredTranscript: deliveredText,
 	});

@@ -8,7 +8,7 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, isErr, Ok, type Result, trySync } from 'wellcrafted/result';
 import type { WhisperingApp } from '$lib/whispering/app';
-import type { Recording } from '$lib/whispering/recording';
+import type { RecordingTranscriptionChanges } from '$lib/whispering/recordings';
 import type { RecordingId } from '$lib/workspace';
 
 const defaultLog = createLogger('whispering/transcription-history');
@@ -45,10 +45,10 @@ export type TranscriptionSuccess = {
 export function saveRecordingHistory(
 	app: WhisperingApp,
 	recordingId: RecordingId,
-	changes: Partial<Omit<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>>,
+	changes: RecordingTranscriptionChanges,
 ): Result<void, RecordingHistoryError> {
 	const { error } = trySync({
-		try: () => app.recordings.patch(recordingId, changes),
+		try: () => app.recordings.patchTranscription(recordingId, changes),
 		catch: (cause) =>
 			RecordingHistoryError.SaveUnconfirmed({ recordingId, cause }),
 	});
