@@ -12,6 +12,8 @@
 import { expect, test } from 'bun:test';
 
 Object.defineProperty(globalThis, '$state', {
+	configurable: true,
+	writable: true,
 	value: Object.assign(<TValue>(value: TValue) => value, {
 		raw: <TValue>(value: TValue) => value,
 	}),
