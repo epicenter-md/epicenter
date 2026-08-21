@@ -68,7 +68,8 @@ export type RowDocumentHandle = {
 	[Symbol.dispose](): void;
 };
 
-export type DocumentManager = {
+/** The manager's package-internal verbs, driven by the store engine only. */
+type DocumentEngine = {
 	/**
 	 * Open one address, resolving only after complete local hydration.
 	 *
@@ -77,10 +78,6 @@ export type DocumentManager = {
 	 * from is `DocumentRetired`; `HydrationFailed` is storage trouble.
 	 */
 	open(address: string): Promise<Result<RowDocumentHandle, DocumentError>>;
-};
-
-/** The manager's package-internal verbs, driven by the store engine only. */
-export type DocumentEngine = DocumentManager & {
 	/**
 	 * Take one remote section: apply it live when the address is open, and
 	 * hand back the durable append op, or undefined for a retired address.
@@ -94,8 +91,6 @@ export type DocumentEngine = DocumentManager & {
 	 * The caller enqueues it beside the scalar row removal it composes with.
 	 */
 	retire(address: string): DurableOp;
-	/** Whether this address was retired, durably or in this session. */
-	isRetired(address: string): boolean;
 	/**
 	 * Every live or stored document's complete state, one section each: the
 	 * snapshot bundle's document half. Retired addresses are excluded.
@@ -302,8 +297,6 @@ export function createDocumentEngine({
 			}
 			return { kind: 'retire', document: address };
 		},
-
-		isRetired: (address: string) => retired.has(address),
 
 		async states(): Promise<{ document: string; bytes: Uint8Array }[]> {
 			// Every address the store holds bytes for: the durable chains, the
