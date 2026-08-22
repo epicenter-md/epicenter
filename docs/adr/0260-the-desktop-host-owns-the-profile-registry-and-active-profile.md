@@ -1,7 +1,8 @@
 # 0260. The desktop host owns the profile registry and active profile
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-21
+- **Superseded by:** [ADR-0262](0262-the-desktop-host-owns-one-active-connection-and-no-connection-registry.md)
 - **Provisional number.** Reconcile this number at merge time according to [the ADR numbering rule](README.md).
 - **Amends:** [ADR-0155](0155-epicenter-desktop-auth-is-one-credential-free-window-bun-authority.md) at desktop profile selection and retained profile state. The one active runtime, credential-free windows, and host-owned auth authority remain.
 - **Amends:** [ADR-0109](0109-hosted-tauri-auth-keeps-app-owned-keyring-edges-until-three-real-callers-earn-sharing.md) at the decision to defer multi-account storage. Profile-correct storage is now required; remembered credentials remain optional product work.
