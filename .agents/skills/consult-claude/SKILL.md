@@ -1,19 +1,14 @@
 ---
 name: consult-claude
-description: Ask Claude Code for an independent design investigation or context-rich implementation review when the user explicitly says "consult" or asks to consult Claude. Use for architecture, naming, API shape, lifecycle, tradeoffs, meaningful plan or implementation diff review, or when the user asks Claude to push back. Do not use for manual handoff prompts, direct Claude implementation, or plain questions the active agent can answer.
+description: Use when the user asks to consult Claude or asks Claude to review, investigate, or challenge a decision or implementation slice. Not for handoffs or having Claude implement.
 ---
 
 # Consult Claude
 
 The active agent owns conversation continuity, repository changes, testing,
-integration, and the final decision. Claude is an advisory review lane. It
-gives strong recommendations, tests the framing, and pushes back when the
-proposed work is shallow or headed in the wrong direction.
-
-Run this skill only when the user explicitly says “consult” or asks to consult
-Claude. Do not invoke it automatically because a task is complex. Consultation
-is useful before a high-leverage decision, after a meaningful implementation
-slice, or at both points. It is not a second execution path.
+integration, and the final decision. Claude is an advisory review lane, not a
+second execution path. It gives strong recommendations, tests the framing, and
+pushes back when the proposed work is shallow or headed in the wrong direction.
 
 Prepare a compact context packet before consulting. Include the outcome being
 pursued, the current model, settled user preferences, relevant repository

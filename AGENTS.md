@@ -159,7 +159,7 @@ Be direct about flawed assumptions, weak designs, and regressions. Do not agree 
 
 Codex is the primary continuity, judgment, execution, testing, and integration owner for repository work. It gathers the evidence, makes the final decision, edits the active worktree, and integrates the result.
 
-Claude is an advisory review lane. Do not invoke Claude automatically because a task is complex. Invoke the `consult-claude` skill only when the user explicitly says “consult” or asks to consult Claude. A consult can happen before a high-leverage decision, after a meaningful implementation slice, or at both points.
+Claude is an advisory review lane. Do not invoke Claude automatically because a task is complex. Invoke the `consult-claude` skill only when the user explicitly names Claude as the reviewer or asks for a Claude Code review. A review can happen before a high-leverage decision, after a meaningful implementation slice, or at both points.
 
 Consultation is read-only. Claude may inspect the repository, but must not edit, commit, create a worktree, or publish. The `consult-claude` skill owns the brief and review procedure.
 

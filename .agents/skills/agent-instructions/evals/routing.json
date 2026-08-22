@@ -97,7 +97,7 @@
 			"id": "consult-independent-investigation",
 			"cluster": "claude-consultation",
 			"prompt": "Before we commit to this ownership boundary, consult Claude for an independent design investigation.",
-			"anchors": ["consult Claude", "independent design investigation"],
+			"anchors": ["consult Claude"],
 			"expect": "consult-claude",
 			"forbid": [],
 			"router": "codex",
@@ -106,11 +106,8 @@
 		{
 			"id": "consult-implementation-review",
 			"cluster": "claude-consultation",
-			"prompt": "Review this meaningful implementation diff with Claude. Ask Claude to push back on shallow behavior and tell me what should change before we continue.",
-			"anchors": [
-				"Review this meaningful implementation diff with Claude",
-				"push back"
-			],
+			"prompt": "Ask for a Claude review of this meaningful implementation diff. Have Claude push back on shallow behavior and tell me what should change before we continue.",
+			"anchors": ["Claude review"],
 			"expect": "consult-claude",
 			"forbid": [],
 			"router": "codex",

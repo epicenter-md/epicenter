@@ -1,6 +1,6 @@
 ---
 name: simplify
-description: Use this skill automatically when you feel your code is ready for human review, and whenever writing or reviewing code comments. Ready means the code works and achieves a stated goal, verified by your own tests and/or, if you deem it necessary, human testing.
+description: Behavior-preserving simplification pass for code that is ready for human review. Use when a completed code change needs a final pass for redundant structure, wordy names, stale comments, or unnecessary comments, or when writing or reviewing code comments. Do not use for feature implementation, behavior changes, or broad architecture redesign.
 ---
 Review changes in the current branch, or in the scope the user specifies. Apply these criteria without changing behavior. Only touch code in that scope, and run the relevant existing checks after changes.
 
@@ -50,4 +50,3 @@ Code must stand on its own. If a change only makes sense to someone who watched 
 
 - If a name or comment needs the conversation to be understood, rewrite it against the codebase's own vocabulary.
 - **No backwards compatibility with unshipped code.** Supporting an old signature, alias, or data shape that only existed earlier in the same branch is compatibility with something that was never deployed. Delete the old path and update its callers.
-
