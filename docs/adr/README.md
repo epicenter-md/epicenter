@@ -341,5 +341,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0258](0258-row-documents-are-opened-through-their-owning-table.md) | Row documents are opened through their owning table | Accepted (provisional number; supersedes 0250 at the public namespace and lifecycle owner; amends 0255 at the opened data surface) |
 | [0252](0252-kv-is-one-structured-value-with-whole-value-reads-and-conformance-results.md) | KV is one structured value with whole-value reads and conformance results | Accepted (provisional number; whole-value KV surface and nonconformance result) |
 | [0253](0253-schema-lenses-interpret-stored-json-on-read-and-writes-admit-storage-valid-facts.md) | Schema lenses interpret stored JSON on read, and writes admit storage-valid facts | Accepted (provisional number; amends 0120, 0251 and 0252 at write admission and write result channels) |
+| [0259](0259-a-desktop-profile-is-addressed-by-a-server-url-and-principal-pair.md) | A desktop profile is addressed by a server URL and principal pair | Accepted (unbuilt; amends 0233 at the retained replica address) |
+| [0260](0260-the-desktop-host-owns-the-profile-registry-and-active-profile.md) | The desktop host owns the profile registry and active profile | Accepted (unbuilt; amends 0155 and 0109 at profile selection and retained profile state) |
 
 When you add an ADR, add its row here.

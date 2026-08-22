@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-10
+- **Amended by:** [ADR-0259](0259-a-desktop-profile-is-addressed-by-a-server-url-and-principal-pair.md) at the retained account replica address. The replica remains retained across sign-out; its client address is `(baseURL, principalId)`.
 - **Amends:** [ADR-0229](0229-a-lens-names-the-store-it-opens-and-opening-is-one-call.md)
   at "the namespace determines the location": the lens still names the
   application, and the caller now also names which document is meant and whose
