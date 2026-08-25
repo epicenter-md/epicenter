@@ -166,11 +166,12 @@ to continue executing an unsettled plan.
 When several boundaries were open, convergence means no remaining boundary
 would change the accepted model.
 
-Recognition authorizes the model, not automatically the agent's wording. When
-the user says “that's right” to a rendering, preserve the user's language in a
-later authored body unless the user repeats the proposed sentence, edits it, or
-explicitly asks to keep it. That is wording adoption, and it does not require a
-sentence-by-sentence approval ritual.
+The user's own turns during the dialectic are authored capture. Recognition
+authorizes the model, not automatically the agent's wording. Once the
+dialectic hands a thought to page-writing or journal-writing, those skills may
+propose a complete passage; the user's natural reaction can keep the whole
+passage, select parts, or send it back for another round. That is passage-level
+adoption, not sentence-by-sentence approval.
 
 The agent may say "that's right" as local feedback when the user's reasoning is
 sound. That feedback does not close the dialectic. Continue if an important
