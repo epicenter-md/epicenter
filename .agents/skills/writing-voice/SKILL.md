@@ -35,10 +35,15 @@ it performs, such as making a turn legible without removing its uncertainty.
 
 ## Draft, Then Rehear
 
-A first provisional draft may use an earned reveal, contrast, metaphor, or
-closing turn when it makes the supplied material easier to hear. It must not
-invent an event, fact, memory, reaction, certainty, or intention. Do not turn a
-sparse source into a polished generality.
+During an approved ordinary revision, a draft may use an earned reveal,
+contrast, metaphor, or closing turn when it makes the supplied material easier
+to hear. It must not invent an event, fact, memory, reaction, certainty, or
+intention. Do not turn a sparse source into a polished generality.
+
+For a first page or journal made from an authored capture, do not add an earned
+reveal, contrast, metaphor, or closing turn unless the source already contains
+it or the author explicitly adopted it. `faithful-phrasing` owns that boundary;
+this skill owns the ear pass after the source-authorized body exists.
 
 After a whole draft exists, read it at speaking speed. Mark generic connective
 tissue, flattened rhythm, and places where the attention moves away from what
@@ -61,5 +66,6 @@ explanation, semicolons for closely related independent clauses, and parentheses
 for genuine asides. Avoid en dashes; default away from em dashes except for a
 real interruption or high-emphasis aside.
 
-The test is: did this expression make the writer easier to hear without
+For authored prose, the final test is whether the writer recognizes the person
+who said it. Did this expression make the writer easier to hear without
 normalizing the particular thing they were doing?

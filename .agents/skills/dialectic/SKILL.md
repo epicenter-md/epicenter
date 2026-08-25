@@ -166,6 +166,12 @@ to continue executing an unsettled plan.
 When several boundaries were open, convergence means no remaining boundary
 would change the accepted model.
 
+Recognition authorizes the model, not automatically the agent's wording. When
+the user says “that's right” to a rendering, preserve the user's language in a
+later authored body unless the user repeats the proposed sentence, edits it, or
+explicitly asks to keep it. That is wording adoption, and it does not require a
+sentence-by-sentence approval ritual.
+
 The agent may say "that's right" as local feedback when the user's reasoning is
 sound. That feedback does not close the dialectic. Continue if an important
 part of the model remains unexplored.
