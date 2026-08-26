@@ -1,6 +1,11 @@
+import { regex } from 'arkregex';
+
 // Presentation helpers for the triage surface. None of this invents mail state;
 // it only makes Gmail's own bytes (label ids, epoch dates, RFC 5322 senders)
 // scannable for a human.
+
+/** RFC 5322 "Display Name <addr>": the capture is the display name. */
+const SENDER = regex('^\\s*"?([^"<]+?)"?\\s*<[^>]+>\\s*$');
 
 const FRIENDLY_LABELS: Record<string, string> = {
 	INBOX: 'Inbox',
@@ -40,8 +45,8 @@ export function chipLabelIds(labelIds: string[]): string[] {
 /** Strip the address, keep the display name: "Jane Doe <j@x.com>" -> "Jane Doe". */
 export function senderName(sender: string | null): string {
 	if (!sender) return '(unknown sender)';
-	const match = sender.match(/^\s*"?([^"<]+?)"?\s*<[^>]+>\s*$/);
-	if (match) return match[1] as string;
+	const match = SENDER.exec(sender);
+	if (match) return match[1];
 	return sender.replace(/[<>]/g, '').trim() || sender;
 }
 
