@@ -56,7 +56,7 @@ export type PersistFactory = <S extends StandardSchemaV1>(
  * catalog is app-specific (Vocab offers a model the others do not), so the shared
  * registry never reaches into `@epicenter/constants`.
  */
-export type HostedModel = { id: string; label: string; credits: number };
+export type HostedModel = { id: string; label: string };
 
 /**
  * One stored custom connection: the transport identity (`baseUrl` + optional

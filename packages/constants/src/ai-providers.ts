@@ -8,32 +8,37 @@
  * `providerLabel` degrades its historical id to raw text at the render edge
  * rather than throwing. The model id is a free string: the OpenAI-compatible
  * gateway (ADR-0050) owns routing, so a model the backend cannot serve is a
- * runtime gateway error, not a compile error here. This catalog is the single
- * source of which ids we sell and what each costs.
+ * runtime gateway error, not a compile error here.
+ *
+ * This catalog owns the PRODUCT vocabulary only: which ids we sell, the gateway
+ * lane each routes to, and the product label. It carries NO pricing. Per-model
+ * cost is a Cloud-only, token-based concern that lives in
+ * `apps/api/worker/billing/model-pricing.ts` (spec
+ * `specs/20260826T120000-inference-credit-billing.md`), so the billing-agnostic
+ * library route and any self-host instance import this catalog without ever
+ * touching pricing.
  *
  * This is the build-time SEED of a layered catalog (ADR-0104): a typed `as const`
  * so `ServableModel` keeps its literal narrowing, bundled at compile time, offline,
  * present at first paint. Hosted models are authored here, never discovered: unlike
  * a custom endpoint (someone else's box, discovered via `/v1/models`, ADR-0060), we
- * own this list, and `/v1/models` cannot carry the product half (label, credits,
- * default) anyway. A runtime OVERLAY that spreads more entries on top is deliberately
+ * own this list. A runtime OVERLAY that spreads more entries on top is deliberately
  * NOT built: it is deferred until the catalog changes faster than clients ship, and
- * grafts on then with no rework (add a served projection of this const plus a merge,
- * seed-wins-on-price). Keep this a typed const, not a raw `.json` (a JSON import
- * would widen ids to `string` and lose the union).
+ * grafts on then with no rework. Keep this a typed const, not a raw `.json` (a JSON
+ * import would widen ids to `string` and lose the union).
  */
 
 /**
  * One sellable model. `label` is the product role shown in the picker (Fast,
- * Best), not a vendor name. `provider` tags the gateway lane the id routes to;
- * the catalog literal pins `id`, `provider`, and `credits` together, so a model
- * is described in exactly one place.
+ * Best), not a vendor name. `provider` tags the gateway lane the id routes to.
+ * The catalog literal pins `id`, `provider`, and `label` together, so a model is
+ * described in exactly one place. Pricing is intentionally absent: it is
+ * token-based and Cloud-only (see the module comment).
  */
 export type AiModel = {
 	id: string;
 	provider: 'openai' | 'gemini';
 	label: string;
-	credits: number;
 };
 
 /** A provider the live catalog serves. Derived from the model union, so
@@ -54,9 +59,9 @@ const AI_PROVIDERS = {
 
 /**
  * Resolve a persisted provider id to its vendor label for display, falling back
- * to the raw id when this deploy does not recognize it. The live cost guide
- * always passes a known `AiProvider`; the activity feed may pass an arbitrary
- * historical string, so one unrecognized id never fails the whole read.
+ * to the raw id when this deploy does not recognize it. The picker always passes
+ * a known `AiProvider`; the activity feed may pass an arbitrary historical
+ * string, so one unrecognized id never fails the whole read.
  */
 export function providerLabel(id: string): string {
 	return Object.hasOwn(AI_PROVIDERS, id)
@@ -65,15 +70,14 @@ export function providerLabel(id: string): string {
 }
 
 /**
- * The catalog, in display order. One credit = $0.01 at Pro overage
- * ($1 / 100 credits); prices hold margin against provider list prices for an
- * average chat call of 750 input and 1500 output tokens. `gemini-3.5-flash`
- * is the Chinese-tuned default for Vocab and is not offered elsewhere.
+ * The catalog, in display order. `gemini-3.5-flash` is the Chinese-tuned default
+ * for Vocab and is not offered elsewhere. What each model costs is resolved
+ * Cloud-side per request (token-based); nothing here.
  */
 export const AI_MODELS = [
-	{ id: 'gpt-5.4-mini', provider: 'openai', label: 'Fast', credits: 2 },
-	{ id: 'gpt-5.5', provider: 'openai', label: 'Best', credits: 10 },
-	{ id: 'gemini-3.5-flash', provider: 'gemini', label: 'Fast', credits: 2 },
+	{ id: 'gpt-5.4-mini', provider: 'openai', label: 'Fast' },
+	{ id: 'gpt-5.5', provider: 'openai', label: 'Best' },
+	{ id: 'gemini-3.5-flash', provider: 'gemini', label: 'Fast' },
 ] as const satisfies readonly AiModel[];
 
 export type ServableModel = (typeof AI_MODELS)[number]['id'];
@@ -84,23 +88,23 @@ export const SERVABLE_MODELS = AI_MODELS.map((model) => model.id) as [
 	...ServableModel[],
 ];
 
-/** Catalog entry by id, for pickers that render label and credits. */
+/** Catalog entry by id, for pickers that render the label and route by provider. */
 export const MODELS_BY_ID = Object.fromEntries(
 	AI_MODELS.map((model) => [model.id, model]),
 ) as Record<ServableModel, AiModel>;
 
 /**
- * Decorate the model ids an app sells with their hosted label and credits. Every
- * chat app feeds the result to `createInferenceConnections` as its hosted
- * catalog, so the `{ id, label, credits }` mapping lives here once instead of
- * being rewritten per app. The shape matches `@epicenter/app-shell` `HostedModel`.
+ * Decorate the model ids an app sells with their hosted label. Every chat app
+ * feeds the result to `createInferenceConnections` as its hosted catalog, so the
+ * `{ id, label }` mapping lives here once instead of being rewritten per app. The
+ * shape matches `@epicenter/app-shell` `HostedModel`. Per-model cost is not part
+ * of the catalog; a live cost estimate is a Cloud-sourced display concern.
  */
 export function toHostedCatalog(
 	ids: readonly ServableModel[],
-): { id: ServableModel; label: string; credits: number }[] {
+): { id: ServableModel; label: string }[] {
 	return ids.map((id) => ({
 		id,
 		label: MODELS_BY_ID[id].label,
-		credits: MODELS_BY_ID[id].credits,
 	}));
 }

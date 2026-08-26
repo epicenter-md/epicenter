@@ -34,6 +34,7 @@ import type { CloudEnv } from '@epicenter/server';
 import type { Context } from 'hono';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { AiChatError } from './ai-chat-errors.js';
+import { INTERIM_FIXED_CHAT_CREDITS } from './model-pricing.js';
 import { createAutumnClient, isNotFoundError, tryAutumn } from './autumn.js';
 import {
 	type CheckoutPlanId,
@@ -133,15 +134,17 @@ export function createBillingService(
 	async function reserveAiChat(input: {
 		model: string;
 	}): Promise<Result<Reservation, AiChatError | BillingError>> {
-		// One catalog lookup yields both the price and the provider. The catalog
-		// owns the model -> provider mapping, so the provider lands on the usage
-		// event (the dashboard groups spend by it) without the client asserting
-		// it. An unknown id is the only failure mode.
+		// The shared catalog owns the model -> provider mapping (routing + usage
+		// grouping); the credit cost is a Cloud-only concern from the pricing
+		// module. An unknown id, or a served model with no configured price, is
+		// the failure mode. (Interim fixed credit; the settle path replaces it
+		// with token-based `creditsForChat` over real usage, spec phase 3.)
 		const entry = MODELS_BY_ID[input.model as ServableModel];
-		if (!entry) {
+		const credits = INTERIM_FIXED_CHAT_CREDITS[input.model as ServableModel];
+		if (!entry || credits === undefined) {
 			return AiChatError.UnknownModel({ model: input.model });
 		}
-		const { credits, provider } = entry;
+		const { provider } = entry;
 
 		// Resolve the active plan from a single customer fetch. A billing-provider
 		// outage fails closed: entitlement cannot be verified, so deny.

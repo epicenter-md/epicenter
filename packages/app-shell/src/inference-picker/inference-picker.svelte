@@ -274,9 +274,6 @@
 											: 'opacity-0'}"
 									/>
 									<span class="flex-1 truncate">{hostedModel.label}</span>
-									<span class="text-xs text-muted-foreground">
-										{hostedModel.credits} cr
-									</span>
 								</Command.Item>
 							{/each}
 						</Command.Group>
