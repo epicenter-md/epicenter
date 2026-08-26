@@ -1,6 +1,6 @@
 ---
 name: agent-instructions
-description: Create, revise, place, audit, evaluate, and validate repository agent instructions across AGENTS.md, CLAUDE.md, and `.agents/skills`. Use when adding or moving agent rules, deciding whether guidance belongs globally or in a skill or reference, writing or improving a skill, tuning routing descriptions, validating discovery, or reviewing instruction sprawl and composition.
+description: Design, audit, and validate repository guidance across AGENTS.md, CLAUDE.md, and `.agents/skills`. Use when creating skills, tuning descriptions, or reviewing instruction sprawl and routing.
 ---
 
 # Agent Instructions

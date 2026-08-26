@@ -1,6 +1,6 @@
 ---
 name: simplify
-description: Behavior-preserving simplification pass for code that is ready for human review. Use when a completed code change needs a final pass for redundant structure, wordy names, stale comments, or unnecessary comments, or when writing or reviewing code comments. Do not use for feature implementation, behavior changes, or broad architecture redesign.
+description: Simplify completed code or code comments without changing behavior. Use when doing final cleanup before review or writing and reviewing comments.
 ---
 Review changes in the current branch, or in the scope the user specifies. Apply these criteria without changing behavior. Only touch code in that scope, and run the relevant existing checks after changes.
 

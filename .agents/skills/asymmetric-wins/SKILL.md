@@ -1,6 +1,6 @@
 ---
 name: asymmetric-wins
-description: "Find the small promise to refuse when preserving it forces a large implementation family: trade a measured amount of fidelity, compatibility, modes, or reproducibility to delete disproportionate complexity. Use when the user says \"asymmetric wins\", \"asymmetric win\", \"what can we refuse\", \"what collapses the most code\", \"does this UI refactor need to be pixel perfect\", or when a design adds a fast path, fallback parser, provider-specific SDK, second transport, compatibility alias, exact reproduction requirement, or rare mode beside the canonical path."
+description: Identify an asymmetric win by refusing a small promise that would eliminate disproportionate complexity. Use when weighing compatibility, fallbacks, modes, exact fidelity, or duplicate paths.
 ---
 
 # Asymmetric Wins

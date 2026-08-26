@@ -1,6 +1,6 @@
 ---
 name: writing-voice
-description: "Guide sentence-level expression while drafting or revising substantial prose so it remains recognizable as the writer: their vocabulary, humor, certainty, emotional emphasis, and allocation of attention. Use for prose that feels generic, corporate, AI-shaped, over-sanitized, or that no longer sounds like me; for tone and ear passes; and for local wording work in UI copy, documentation, or messages. Do not use to decide a document's content, structure, or destination."
+description: Revise substantial prose so it sounds like Braden while preserving his vocabulary, humor, certainty, and emphasis. Use when making voice, tone, or ear passes in prose, UI copy, documentation, or messages.
 ---
 
 # Writing Voice

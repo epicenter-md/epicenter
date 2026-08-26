@@ -1,6 +1,6 @@
 ---
 name: dialectic
-description: "Bring an agent's and user's partly formed models into contact by presenting one direct, judgeable model at a time and reading the user's natural corrections, extensions, and recognition until the user says 'that's right.' Use when the user wants to discover what they think, learn a model together, shape a vision or architecture before a plan exists, receive real pushback, or compress several live uncertainties into one legible rendering. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
+description: Develop an unsettled idea through one concrete model at a time and user correction. Use when shaping a vision or architecture before the destination is settled.
 ---
 
 # Dialectic

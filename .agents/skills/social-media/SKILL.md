@@ -1,6 +1,6 @@
 ---
 name: social-media
-description: 'Social media post guidelines for LinkedIn, Reddit, Twitter/X. Use when: "post on LinkedIn", "write a tweet", "draft a Reddit post", "share this", drafting announcements.'
+description: Draft social posts for LinkedIn, Reddit, or Twitter/X. Use when asked to write a post, tweet, announcement, or platform-specific version.
 metadata:
   author: epicenter
   version: '1.0'

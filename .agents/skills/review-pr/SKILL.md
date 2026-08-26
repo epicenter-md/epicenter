@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: Review a pull request or local branch diff for correctness, security, lifecycle, error handling, tests, and meaningful performance risks. Use when asked to review PR changes, a branch, a commit range, or the current working tree and return a structured review.
+description: Review a pull request or local diff for correctness, security, lifecycle, errors, tests, and meaningful performance risks. Use when asked to review a PR, branch, commit range, or working tree.
 ---
 
 # Review PR

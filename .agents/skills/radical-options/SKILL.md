@@ -1,6 +1,6 @@
 ---
 name: radical-options
-description: "Use when a task seems trapped inside the current abstraction, an abstraction feels poorly designed, a proposed change looks like a band-aid, a fix keeps spreading across layers, or the user asks to think bigger, reconsider the whole unit, redesign from scratch, mentally inline, go up a level, or consider radical options. Forces a higher-level pass before editing: identify the largest relevant unit, state the current path, invent the cleanest from-scratch option, inline suspicious layers, find asymmetric deletions, and choose the option that makes the system easiest to explain."
+description: Compare a current approach with a cleaner design from first principles before editing. Use when an abstraction feels wrong, a fix becomes a band-aid, or complexity spreads across layers.
 ---
 
 # Radical Options
