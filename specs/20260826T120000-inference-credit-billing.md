@@ -132,7 +132,7 @@ wallet, keeps the pre-spend guard, and keeps pricing sovereignty.
 | Decision | Class | Choice | Rationale |
 |---|---|---|---|
 | Credit unit | 3 taste + 1 evidence | Fixed peg, 1 credit = $0.01, published, never re-rated | Anthropic CCU precedent; re-rating the unit is the top trust failure. Only per-model credit cost changes. |
-| Chat billing shape | 2 coherence | Pre-charge a guaranteed ceiling before the call, no settle | For chat the ceiling is tight (input exact + output capped), so charging it overcharges little; deducting up front is profit-safe, abuse-safe, concurrency-safe, and needs no settle infra. |
+| Chat billing shape | 1 evidence + 2 coherence | Reserve a rough pessimistic hold before the call, settle on the provider's returned usage via `override_value` | Grounding (tokenizer research 2026-08-26) found no workable offline Gemini tokenizer in a Worker and an under-count risk for GPT-with-tools, so exact pre-charge is not feasible. A rough byte-heuristic hold keeps the fail-closed, concurrency-safe guard; settling on the authoritative returned prompt+completion tokens keeps it profit-safe and fair. Supersedes the earlier "pre-charge ceiling, no settle." |
 | STT billing shape | 2 coherence | Pre-gate + hard upload cap, then settle the provider's returned duration | For STT the ceiling is far above the actual (a clip is 3s to 60min), so charging the ceiling would overcharge 20-100x. Provider duration is authoritative and matches what we are billed. |
 | Registry split | 2 coherence | Shared catalog `{id, provider, label, capabilities}`; pricing Cloud-only | Keeps the library route and self-host free of any pricing (ADR-0075, ADR-0076). |
 | Cost source | 1 evidence | Committed models.dev snapshot; daily CI PR that auto-merges when data-validity assertions pass, else blocks | models.dev is MIT with `api.json`; a committed snapshot gives audit history and no hot-path fetch. Bright-line assertions catch corrupt data; markup + git revert are the other two defense layers. No fuzzy magnitude gate. |
@@ -176,21 +176,24 @@ open a PR that auto-merges when data-validity assertions pass, else blocks for r
 committed Cloud pricing registry  ->  read at request time (no live fetch)
 ```
 
-### Chat: pre-charge the guaranteed ceiling
+### Chat: reserve a rough hold, settle on returned usage
 
 ```
-1. count input tokens with the provider's tokenizer, padded so the count >= the provider's billed prompt_tokens
-2. output tokens = the request's max_tokens, clamped to the per-deployment ceiling
-3. ceilingCost = inputTokens * inputRate + outputTokens * outputRate
-4. credits = ceil( ceilingCost * (1 + markup) / 0.01 ), floor 1
-5. deduct `credits` BEFORE forwarding; deny fail-closed if the wallet cannot cover it
-6. forward the call
+1. estimate a PESSIMISTIC input size with a byte/char heuristic (no exact tokenizer);
+   output estimate = the request's max_tokens, clamped to the per-deployment ceiling
+2. holdCredits = ceil( estimatedCost * (1 + markup) / 0.01 ), floor 1
+3. reserve `holdCredits` with a lock BEFORE forwarding; deny fail-closed if the wallet cannot cover it
+4. forward; extract the provider's returned prompt_tokens + completion_tokens
+   (streaming: request usage in the final chunk)
+5. settle: finalize({ action: 'confirm', override_value: creditsForChat(realUsage) }), release the remainder
 ```
 
-No lock-then-settle, no `override_value`, no streaming usage extraction. Apps
-request the `max_tokens` they need; the gateway clamps it to a per-deployment
-ceiling (Cloud enforces one as an abuse bound, self-host may leave it loose) and
-charges the clamped value, so a short-output app is charged less.
+Grounding (tokenizer research) ruled out exact pre-counting: no offline Gemini
+tokenizer fits a Worker, and a local GPT count under-counts once tool schemas are
+present. So the hold is a rough over-estimate (fail-closed, concurrency-safe), and
+the CHARGE is the provider's authoritative returned usage (profit-safe, fair).
+Apps request the `max_tokens` they need; the gateway clamps it to a per-deployment
+ceiling (Cloud enforces one as an abuse bound, self-host may leave it loose).
 
 ### Transcription: cap, gate, settle
 
@@ -273,11 +276,11 @@ safe for STT and not for chat.
 - [ ] **2.2** Resolver: `creditsForCeiling(model, inputTokens, outputCap)` and `creditsForDuration(model, minutes)`, peg `$0.01`, `ceil` + floor 1.
 - [ ] **2.3** Fail closed on a model with no cost.
 
-### Phase 3: chat pre-charge (replace fixed reserve)
+### Phase 3: chat reserve-hold + settle on returned usage
 
-- [ ] **3.1** Count input tokens with the provider's tokenizer (padded so the count >= billed `prompt_tokens`); take the request's `max_tokens` clamped to the per-deployment ceiling as the output term.
-- [ ] **3.2** Deduct the ceiling credits before forwarding; deny fail-closed on insufficient balance.
-- [ ] **3.3** Remove the fixed per-model reserve/lock path for chat.
+- [ ] **3.1** Size a pessimistic hold from a byte/char input heuristic + the clamped `max_tokens`; reserve it with a lock before forwarding; deny fail-closed on insufficient balance.
+- [ ] **3.2** Extract the provider's returned usage; for streaming, request usage in the final chunk (OpenAI `stream_options.include_usage`, Gemini `usageMetadata`).
+- [ ] **3.3** Settle with `finalize({ action: 'confirm', override_value: creditsForChat(realUsage) })`, releasing the remainder; retire `INTERIM_FIXED_CHAT_CREDITS`.
 
 ### Phase 4: transcription cap + settle
 
@@ -322,13 +325,15 @@ Deliberate bounded losses, capped by the grant. A business choice, not a leak.
 
 Items 1 to 4 were resolved in design review; item 5 stays deferred.
 
-1. **Input token counting before the chat call. Decided: per-provider tokenizer, padded.**
-   Tokenize the full payload with the provider's own tokenizer (tiktoken for
-   OpenAI, Gemini's for Gemini) and pad up so the count is >= the provider's
-   billed `prompt_tokens`; undercounting is the only way a tokenizer loses money.
-   Output stays the clamped `max_tokens`, no tokenizer. Evidence item for the
-   implementer: confirm both tokenizers run in a Cloudflare Worker (tiktoken has
-   a WASM build; verify the Gemini one).
+1. **Input token counting. Decided (revised after grounding): no precise tokenizer; rough hold + settle on returned usage.**
+   Tokenizer research (2026-08-26) found no offline Gemini tokenizer that fits a
+   Worker (SentencePiece, ~30MB vocab; only a `countTokens` API round-trip is
+   exact) and an under-count risk for GPT once tool schemas are present. So the
+   pre-call estimate is only a pessimistic hold sized by a byte/char heuristic
+   (over-counts, never throws, both providers), and the charge is the provider's
+   authoritative returned `prompt_tokens`/`completion_tokens`, settled via
+   `override_value`. `gpt-tokenizer` (pure-JS, o200k_base) can tighten the GPT
+   hold later but is not required.
 
 2. **Output cap. Decided: per-request, clamped by a per-deployment ceiling.**
    The app sends `max_tokens` for what it needs; the deployment clamps it to a
@@ -355,8 +360,11 @@ Items 1 to 4 were resolved in design review; item 5 stays deferred.
    revert away. Always-manual is rejected: a daily boring diff degrades into
    rubber-stamping, which is worse than a machine assertion you can trust.
 
-5. **Ever settle chat output down?**
-   - Deferred. Only if the ceiling overcharge is shown to cost real fairness.
+5. **Settle chat on actual usage? Decided (revised): yes, always.**
+   The tokenizer grounding forces settling on the provider's returned usage
+   anyway, so chat is charged on real input + output tokens rather than a fixed
+   held ceiling. This resolves the former "ever settle output down" as yes by
+   construction.
 
 ## Success criteria
 
