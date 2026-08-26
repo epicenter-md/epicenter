@@ -19,10 +19,17 @@
  * `AuthClient` satisfies it structurally with no adapter.
  */
 
+import type { PrincipalId } from '@epicenter/identity';
 import { isOpenWebSocketDenial } from '@epicenter/sync/auth-subprotocol';
 import { STORE_SYNC_ROUTE } from '@epicenter/sync/store-route';
 import type { AccountStore } from '../store/store.js';
 import { createSyncConnection, type SyncConnection } from './connection.js';
+
+/** An account replica with the server identity its socket must reach. */
+type AddressedAccountStore = AccountStore & {
+	readonly baseURL: string;
+	readonly principalId: PrincipalId;
+};
 
 /**
  * How this host reaches its authority over a socket.
@@ -32,8 +39,6 @@ import { createSyncConnection, type SyncConnection } from './connection.js';
  * `Authorization`, and which resolves only with a credentialed socket.
  */
 export type StoreSocketTransport = {
-	/** The deployment this replica's authority lives in. */
-	readonly baseURL: string;
 	/**
 	 * Open a credentialed socket, or reject.
 	 *
@@ -47,7 +52,7 @@ export type StoreSocketTransport = {
 
 export type AttachStoreSyncOptions = {
 	/** The open account replica this connection carries. */
-	store: AccountStore;
+	store: AddressedAccountStore;
 	/** The database id being synced, which addresses the authority. */
 	databaseId: string;
 	transport: StoreSocketTransport;
@@ -103,7 +108,7 @@ export function attachStoreSync({
 			let abandoned = false;
 			void transport
 				.openWebSocket(
-					STORE_SYNC_ROUTE.url(transport.baseURL, {
+					STORE_SYNC_ROUTE.url(store.baseURL, {
 						databaseId,
 						cursor,
 						...(document === undefined ? {} : { document }),

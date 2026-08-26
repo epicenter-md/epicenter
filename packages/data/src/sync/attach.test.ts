@@ -13,6 +13,7 @@ import { field } from '@epicenter/data/definition';
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { defineData } from '@epicenter/data/definition';
+import { asPrincipalId } from '@epicenter/identity';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { type AccountStore, createAccountStore } from '../store/store.js';
 import { attachStoreSync, type StoreSocketTransport } from './attach.js';
@@ -23,21 +24,30 @@ const database = defineData({
 	tables: { notes: { title: field.string() } },
 });
 
-function openStore(): AccountStore {
+type AddressedTestStore = AccountStore & {
+	baseURL: string;
+	principalId: ReturnType<typeof asPrincipalId>;
+};
+
+function openStore(): AddressedTestStore {
 	const live = new Database(':memory:');
 	const db = createAccountStore({
 		definition: database,
 		sqlite: createBunSqliteAdapter(live),
 		dispose: () => live.close(),
 	});
-	return db.store;
+	const addressed = Object.create(db.store) as AddressedTestStore;
+	Object.defineProperties(addressed, {
+		baseURL: { value: 'https://api.epicenter.test' },
+		principalId: { value: asPrincipalId('alice') },
+	});
+	return addressed;
 }
 
 /** Record every dial and settle it however the test says. */
 function createTransport(open: (url: string) => Promise<WebSocket>) {
 	const urls: string[] = [];
 	const transport: StoreSocketTransport = {
-		baseURL: 'https://api.epicenter.test',
 		openWebSocket(url) {
 			urls.push(String(url));
 			return open(String(url));

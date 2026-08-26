@@ -60,8 +60,8 @@ import {
 	asData,
 	createAccountStoreOverPort,
 	createDeviceStoreOverPort,
-	type DataView,
 	type DataOf,
+	type DataView,
 	type DeviceStore,
 	StoreError,
 	type UntypedDataView,
@@ -73,6 +73,10 @@ export type { AccountStore, DeviceStore } from './store.js';
 
 /** One browser document that replicates with an account authority. */
 export type BrowserAccountStore = AccountStore & {
+	/** The canonical server identity this replica belongs to. */
+	readonly baseURL: string;
+	/** The principal asserted by that server for this replica. */
+	readonly principalId: PrincipalId;
 	/**
 	 * Delete this store's durable record whole, disposing the store first.
 	 *
@@ -81,7 +85,7 @@ export type BrowserAccountStore = AccountStore & {
 	 * by repetition: a discard that never ran leaves the old file, whose next
 	 * dial is refused again.
 	 *
-	 * Its blast radius is this store's own address and nothing else (ADR-0233),
+	 * Its blast radius is this store's own address and nothing else (ADR-0261),
 	 * so a definition discard names one account's replica and can reach neither
 	 * the device document nor any other account's.
 	 */
@@ -378,25 +382,26 @@ async function openIdbBacking(
 
 /**
  * Where one of an application's durable documents lives, as ownership
- * (ADR-0233):
+ * (ADR-0261, amending ADR-0233):
  *
  * ```text
  * epicenter/<definition id>/device
- * epicenter/<definition id>/account/<principal id>
+ * epicenter/<definition id>/account/<base URL>/<principal id>
  * ```
  *
  * A browser application keeps one device document and one retained account
- * replica per account, and may hold them open at once. The device document
- * never joins definition sync and survives every sign-in and sign-out; an
- * account replica is this device's replica of one principal's current
- * authority document (ADR-0231), retained across sign-out too, which is why
- * it is addressed by the account that owns it rather than by the application
- * alone.
+ * replica per server identity, and may hold them open at once. The device
+ * document never joins definition sync and survives every sign-in and
+ * sign-out; an account replica is this device's replica of one principal's
+ * current authority document (ADR-0231), retained across sign-out too. The
+ * server URL is part of the address because the same principal identifier can
+ * exist on multiple independent servers.
  *
  * Three identities, none of them collapsed into another: the definition id says
- * which application, the principal says whose replica this is, and the
- * authority document id says which current Yjs document that replica belongs
- * to. Only the first two are in the name. The third lives inside the store
+ * which application, the base URL and principal form the server identity that
+ * owns this replica, and the authority document id says which current Yjs
+ * document that replica belongs to. The first two are in the name. The third
+ * lives inside the store
  * because a future explicit document replacement may change it while the
  * logical address stays stable; the current runtime does not expose that
  * replacement action.
@@ -409,8 +414,39 @@ function deviceAddress(databaseId: string): string {
 	return `epicenter/${databaseId}/device`;
 }
 
-function accountAddress(databaseId: string, principalId: PrincipalId): string {
-	return `epicenter/${databaseId}/account/${principalId}`;
+/**
+ * Normalize the server identity before it becomes durable local state.
+ *
+ * Auth authorities already persist this form, but the data opener is also a
+ * public boundary and must not create two local replicas for equivalent URL
+ * spellings. A path prefix remains part of an Epicenter deployment; query and
+ * fragment are not server identity.
+ */
+function canonicalBaseURL(raw: string): string | undefined {
+	const trimmed = raw.trim();
+	if (trimmed === '') return undefined;
+
+	let url: URL;
+	try {
+		url = new URL(trimmed);
+	} catch {
+		return undefined;
+	}
+	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+		return undefined;
+	}
+	if (url.hostname === '') return undefined;
+	if (url.username !== '' || url.password !== '') return undefined;
+	url.search = '';
+	url.hash = '';
+	return `${url.origin}${url.pathname}`.replace(/\/+$/, '');
+}
+
+function accountAddress(
+	databaseId: string,
+	{ baseURL, principalId }: { baseURL: string; principalId: PrincipalId },
+): string {
+	return `epicenter/${databaseId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}`;
 }
 
 /**
@@ -419,7 +455,7 @@ function accountAddress(databaseId: string, principalId: PrincipalId): string {
  * Two superseded shapes, neither of them read: `epicenter-store-<definition id>`,
  * the single definition from before an application had two documents, which held
  * anonymous work or an account replica indistinguishably; and
-	 * `epicenter-store-<definition id>#private` / `#database`, the per-application
+ * `epicenter-store-<definition id>#private` / `#database`, the per-application
  * split that separated the two documents but left an account replica with no
  * owner, so a second account would have opened the first account's bytes.
  * Neither is the final address, so both are deleted rather than renamed,
@@ -492,7 +528,11 @@ export async function openDevice<const TDatabase extends DataDefinition>(
 	// cannot decode, which is "the store could not read its durable record":
 	// contained so a corrupt record refuses the boot instead of leaking the
 	// claim and the open connections.
-	let parts: { store: DeviceStore; view: UntypedDataView; definition: ParsedDataDefinition };
+	let parts: {
+		store: DeviceStore;
+		view: UntypedDataView;
+		definition: ParsedDataDefinition;
+	};
 	try {
 		parts = createDeviceStoreOverPort({
 			definition: parsed,
@@ -525,19 +565,25 @@ export async function openDevice<const TDatabase extends DataDefinition>(
 /** Open this device's retained replica of one account's document. */
 export async function openAccount<const TDatabase extends DataDefinition>(
 	definition: TDatabase,
-	{ principalId }: { principalId: PrincipalId },
+	{ baseURL, principalId }: { baseURL: string; principalId: PrincipalId },
 ): Promise<
 	Result<
 		DataOf<TDatabase, BrowserAccountStore>,
 		StoreError | DataDefinitionParseError
 	>
 > {
-	if (principalId.trim() === '') return StoreError.Unaddressable();
+	const canonicalURL = canonicalBaseURL(baseURL);
+	if (canonicalURL === undefined || principalId.trim() === '') {
+		return StoreError.Unaddressable();
+	}
 
 	const { data: parsed, error: parseError } = parseData(definition);
 	if (parseError !== null) return Err(parseError);
 
-	const address = accountAddress(parsed.id, principalId);
+	const address = accountAddress(parsed.id, {
+		baseURL: canonicalURL,
+		principalId,
+	});
 	const { error: claimError } = claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
@@ -552,7 +598,11 @@ export async function openAccount<const TDatabase extends DataDefinition>(
 
 	// Contained for the same reason the device open is: a hydration replay
 	// that throws must refuse the boot, not leak the claim.
-	let parts: { store: AccountStore; view: UntypedDataView; definition: ParsedDataDefinition };
+	let parts: {
+		store: AccountStore;
+		view: UntypedDataView;
+		definition: ParsedDataDefinition;
+	};
 	try {
 		parts = createAccountStoreOverPort({
 			definition: parsed,
@@ -572,6 +622,8 @@ export async function openAccount<const TDatabase extends DataDefinition>(
 
 	const replicaStore: BrowserAccountStore = Object.freeze({
 		...store,
+		baseURL: canonicalURL,
+		principalId,
 		async discard(): Promise<Result<void, StoreError>> {
 			// Dispose first: the engine drains its queue and stops, and our own
 			// IndexedDB connection closes, so the delete is not blocked by

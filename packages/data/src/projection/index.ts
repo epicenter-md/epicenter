@@ -20,7 +20,7 @@
  * exporter, or an embedding pipeline composes the same way.
  *
  * ```ts
- * const { data } = await openAccount(definition, { principalId });
+ * const { data } = await openAccount(definition, { baseURL, principalId });
  * const sql = createSqliteProjection({ data, sqlite });
  * sql.query`SELECT id, title FROM notes WHERE pinned = 1`;
  * ```

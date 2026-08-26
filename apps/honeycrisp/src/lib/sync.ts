@@ -16,7 +16,7 @@
  */
 
 import type { AuthClient } from '@epicenter/auth';
-import type { AccountStore } from '@epicenter/data';
+import type { BrowserAccountStore } from '@epicenter/data/browser';
 import { attachStoreSync, type SyncConnection } from '@epicenter/data/sync';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
 import { reportBackgroundError } from './report.js';
@@ -36,7 +36,7 @@ export function attachHoneycrispSync({
 	onSuperseded,
 	onDenied,
 }: {
-	store: AccountStore;
+	store: BrowserAccountStore;
 	auth: AuthClient;
 	/**
 	 * This replica's document is superseded (ADR-0231). The driver has already
@@ -55,7 +55,6 @@ export function attachHoneycrispSync({
 		store,
 		databaseId: honeycrispDefinition.id,
 		transport: {
-			baseURL: auth.deployment.baseURL,
 			openWebSocket: (url) => auth.openWebSocket(url),
 		},
 		onSuperseded,

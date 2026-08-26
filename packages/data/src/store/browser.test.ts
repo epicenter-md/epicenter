@@ -3,10 +3,10 @@ import { field } from '@epicenter/data/definition';
  * Browser Store Address Tests
  *
  * A browser application keeps one device document and one retained account
- * replica per account (ADR-0233). These tests pin the addresses that hold them
- * apart: `epicenter/<databaseId>/device` and
- * `epicenter/<databaseId>/account/<principal id>`, one IndexedDB database and
- * one open claim each.
+ * replica per server identity (ADR-0261). These tests pin the addresses that
+ * hold them apart: `epicenter/<databaseId>/device` and
+ * `epicenter/<databaseId>/account/<base URL>/<principal id>`, one IndexedDB
+ * database and one open claim each.
  *
  * Key behaviors:
  * - The device document and two accounts' replicas open at once, into their
@@ -32,7 +32,7 @@ import { expectErr, expectOk as expectOkResult } from 'wellcrafted/testing';
 
 import { openAccount, openDevice } from './browser.js';
 import { openMemory } from './bun.js';
-import { type DataStoreBase, type DataOf, syncEngineOf } from './store.js';
+import { type DataOf, type DataStoreBase, syncEngineOf } from './store.js';
 
 /** One databaseId per concern, so tests share no IndexedDB state. */
 function databaseFor(label: string) {
@@ -45,6 +45,8 @@ function databaseFor(label: string) {
 
 const ALICE = asPrincipalId('alice');
 const BOB = asPrincipalId('bob');
+const CLOUD = 'https://api.epicenter.so';
+const OTHER_SERVER = 'https://home.example.com';
 
 function expectOk<TValue, TError>(
 	result: Result<TValue, TError> | TValue,
@@ -61,15 +63,20 @@ function expectOk<TValue, TError>(
 }
 
 const deviceAddress = (databaseId: string) => `epicenter/${databaseId}/device`;
-const accountAddress = (databaseId: string, principalId: string) =>
-	`epicenter/${databaseId}/account/${principalId}`;
+const accountAddress = (
+	databaseId: string,
+	baseURL: string,
+	principalId: string,
+) =>
+	`epicenter/${databaseId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}`;
 
 const openDeviceData = (definition: ReturnType<typeof databaseFor>) =>
 	openDevice(definition);
 const openAccountData = (
 	definition: ReturnType<typeof databaseFor>,
-	principalId: typeof ALICE,
-) => openAccount(definition, { principalId });
+	principalId: typeof ALICE | typeof BOB,
+	baseURL = CLOUD,
+) => openAccount(definition, { baseURL, principalId });
 
 function titles(app: {
 	tables: {
@@ -106,8 +113,8 @@ describe('one device document and one account replica per account', () => {
 
 		const names = await databaseNames();
 		expect(names).toContain(deviceAddress(database.id));
-		expect(names).toContain(accountAddress(database.id, ALICE));
-		expect(names).toContain(accountAddress(database.id, BOB));
+		expect(names).toContain(accountAddress(database.id, CLOUD, ALICE));
+		expect(names).toContain(accountAddress(database.id, CLOUD, BOB));
 
 		await device.store[Symbol.asyncDispose]();
 		await alice.store[Symbol.asyncDispose]();
@@ -130,6 +137,44 @@ describe('one device document and one account replica per account', () => {
 		await reopened.store[Symbol.asyncDispose]();
 	});
 
+	test('the same principal on two servers gets two retained replicas', async () => {
+		const database = databaseFor('servers');
+		const cloud = expectOk(await openAccountData(database, ALICE, CLOUD));
+		const selfHosted = expectOk(
+			await openAccountData(database, ALICE, OTHER_SERVER),
+		);
+
+		expectOk(cloud.tables.notes.create({ title: 'cloud work' }));
+		expectOk(selfHosted.tables.notes.create({ title: 'self-hosted work' }));
+		expect(titles(cloud)).toEqual(['cloud work']);
+		expect(titles(selfHosted)).toEqual(['self-hosted work']);
+
+		const names = await databaseNames();
+		expect(names).toContain(accountAddress(database.id, CLOUD, ALICE));
+		expect(names).toContain(accountAddress(database.id, OTHER_SERVER, ALICE));
+
+		await cloud.store[Symbol.asyncDispose]();
+		await selfHosted.store[Symbol.asyncDispose]();
+	});
+
+	test('equivalent server URL spellings reuse one retained replica', async () => {
+		const database = databaseFor('canonical-url');
+		const first = expectOk(
+			await openAccountData(database, ALICE, `${CLOUD}/?ignored=true#ignored`),
+		);
+		expectOk(first.tables.notes.create({ title: 'kept work' }));
+		await first.store[Symbol.asyncDispose]();
+
+		const equivalent = expectOk(
+			await openAccountData(database, ALICE, `${CLOUD}/`),
+		);
+		expect(titles(equivalent)).toEqual(['kept work']);
+		expect(await databaseNames()).toContain(
+			accountAddress(database.id, CLOUD, ALICE),
+		);
+		await equivalent.store[Symbol.asyncDispose]();
+	});
+
 	test('every address survives a close-and-reopen under its own name', async () => {
 		const database = databaseFor('reopen');
 		// Widened to the base store kind: a device document and an account
@@ -137,10 +182,7 @@ describe('one device document and one account replica per account', () => {
 		// touches.
 		const owners: [
 			() => Promise<
-				Result<
-					DataOf<ReturnType<typeof databaseFor>, DataStoreBase>,
-					unknown
-				>
+				Result<DataOf<ReturnType<typeof databaseFor>, DataStoreBase>, unknown>
 			>,
 			string,
 		][] = [
@@ -185,8 +227,8 @@ describe('one device document and one account replica per account', () => {
 		expectOk(await alice.store.discard());
 
 		const names = await databaseNames();
-		expect(names).not.toContain(accountAddress(database.id, ALICE));
-		expect(names).toContain(accountAddress(database.id, BOB));
+		expect(names).not.toContain(accountAddress(database.id, CLOUD, ALICE));
+		expect(names).toContain(accountAddress(database.id, CLOUD, BOB));
 		expect(names).toContain(deviceAddress(database.id));
 
 		// Alice rejoins at zero; nobody else moved.
@@ -201,14 +243,26 @@ describe('one device document and one account replica per account', () => {
 		await device.store[Symbol.asyncDispose]();
 	});
 
-	test('an account replica with no account id is refused, and no database is made for it', async () => {
+	test('an account replica with no identity is refused, and no database is made for it', async () => {
 		const database = databaseFor('unaddressable');
 		const before = await databaseNames();
 
 		const refused = expectErr(
-			await openAccount(database, { principalId: asPrincipalId('   ') }),
+			await openAccount(database, {
+				baseURL: CLOUD,
+				principalId: asPrincipalId('   '),
+			}),
 		);
 		expect(refused.name).toBe('Unaddressable');
+		expect(await databaseNames()).toEqual(before);
+
+		const malformed = expectErr(
+			await openAccount(database, {
+				baseURL: 'not a URL',
+				principalId: ALICE,
+			}),
+		);
+		expect(malformed.name).toBe('Unaddressable');
 		expect(await databaseNames()).toEqual(before);
 
 		// And the refusal held no claim, so a real account still opens.
@@ -271,7 +325,7 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		const bytes = author.store.encodeStateSince();
 		await author.store[Symbol.asyncDispose]();
 
-		await seedVersionOne(accountAddress(database.id, ALICE), {
+		await seedVersionOne(accountAddress(database.id, CLOUD, ALICE), {
 			updates: [{ seq: 1, bytes }],
 			outbox: [{ id: 3, bytes }],
 			cursor: 5,

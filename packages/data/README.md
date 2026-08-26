@@ -11,7 +11,7 @@ The package has one definition entrypoint and four runtime entrypoints:
 | `@epicenter/data` | the opened data surface |
 | `@epicenter/data/definition` | `defineData`, `parseData`, and the field descriptor vocabulary |
 | `@epicenter/data/bun` | `open(definition, { root })`, and `openMemory(definition)` for tests |
-| `@epicenter/data/browser` | `openDevice(definition)`, and `openAccount(definition, { principalId })` |
+| `@epicenter/data/browser` | `openDevice(definition)`, and `openAccount(definition, { baseURL, principalId })` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 | `@epicenter/data/projection` | `createSqliteProjection`, a read-only SQL follower |
 
@@ -25,6 +25,7 @@ openers live at their own entry points rather than on `@epicenter/data`.
 import { openAccount } from '@epicenter/data/browser';
 
 const { data, error } = await openAccount(honeycrispDefinition, {
+	baseURL,
 	principalId,
 });
 if (error !== null) return handle(error);
@@ -40,18 +41,18 @@ An inert data definition names the store it opens (ADR-0229), so there is one ca
 name: the definition id is the document, the file, the folder and the authority
 address. Nothing takes a path or a database name. In a browser the durable
 address is derived from that definition id and the document named below rather
-than supplied (ADR-0233), so a declaration still cannot open a store it does
+than supplied (ADR-0261), so a declaration still cannot open a store it does
 not name. The runtime that comes back holds exactly this one definition for
 its whole life (ADR-0240); a newer declaration reads the same durable data by
 closing it and opening the next one.
 
 In a browser the caller also names which durable document it means and whose it
-is (ADR-0233). An application keeps one device document that never joins
+is (ADR-0261). An application keeps one device document that never joins
 account sync, and one retained replica per account:
 
 ```text
 epicenter/<definitionId>/device
-epicenter/<definitionId>/account/<principal id>
+epicenter/<definitionId>/account/<base URL>/<principal id>
 ```
 
 That address is the IndexedDB database name, so a data discard or

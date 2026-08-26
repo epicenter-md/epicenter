@@ -5,17 +5,17 @@ note's prose lives in that note's own independent Yjs document, opened on
 demand at the row's derived address (ADR-0248). The one application running on
 the store today, so it is also the reference for how an app is built.
 
-Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0248](../../docs/adr/0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md) (a row owns an independent Yjs document at a derived address), [ADR-0233](../../docs/adr/0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) (a device document and one account replica per account, chosen by auth at boot), [ADR-0256](../../docs/adr/0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md) (automatic folding is current; manual workspace compaction is deferred).
+Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0248](../../docs/adr/0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md) (a row owns an independent Yjs document at a derived address), [ADR-0261](../../docs/adr/0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md) (a retained replica is qualified by its application, server URL, and verified principal), [ADR-0256](../../docs/adr/0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md) (automatic folding is current; manual workspace compaction is deferred).
 
 ## Two durable documents, and routes open one
 
 `src/lib/databases.ts` is the only place that opens a store. The `/device`
 route opens the device database, while `/account` gates auth and opens the
-account replica. Each route owns exactly one store lifetime (ADR-0233):
+account replica. Each route owns exactly one store lifetime (ADR-0261):
 
 ```text
 epicenter/so.epicenter.honeycrisp/device                     never syncs, always open
-epicenter/so.epicenter.honeycrisp/account/<principal id>     one per account
+epicenter/so.epicenter.honeycrisp/account/<base URL>/<principal id> one per server identity
 ```
 
 `createHoneycrisp` turns the one route-owned data capability into the reactive
