@@ -114,6 +114,16 @@
 			"why": "The user wants a deep review wave, not a rubber stamp or a Claude-owned worktree."
 		},
 		{
+			"id": "consult-autonomous-research",
+			"cluster": "claude-consultation",
+			"prompt": "Consult Claude on this repository boundary. Let it inspect the codebase and research independently before handing its findings back to Codex, but keep Codex as the only editor.",
+			"anchors": ["Consult Claude", "research independently"],
+			"expect": "consult-claude",
+			"forbid": ["handoff"],
+			"router": "codex",
+			"why": "A Claude research run is still consultation when Codex retains live-checkout authorship and integration."
+		},
+		{
 			"id": "handoff-paste-prompt",
 			"cluster": "claude-consultation",
 			"prompt": "Write me something I can copy and paste into a fresh Claude Code session on my laptop to continue this.",

@@ -403,8 +403,9 @@ test('only Codex-side Claude consultation cases are marked unmeasurable', async 
 	const { unmeasurable } = partitionByRouter(corpus.cases);
 
 	// This skill says in its own description that the active Codex-side agent
-	// invokes it. The two cases cover direction and review waves.
+	// invokes it. The cases cover direction, review, and autonomous research.
 	expect(unmeasurable.map((c) => c.expect)).toEqual([
+		'consult-claude',
 		'consult-claude',
 		'consult-claude',
 	]);

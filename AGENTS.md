@@ -159,11 +159,11 @@ Be direct about flawed assumptions, weak designs, and regressions. Do not agree 
 
 Codex is the primary continuity, judgment, execution, testing, and integration owner for repository work. It gathers the evidence, makes the final decision, edits the active worktree, and integrates the result.
 
-Claude is an advisory review lane. Do not invoke Claude automatically because a task is complex. Invoke the `consult-claude` skill only when the user explicitly names Claude as the reviewer or asks for a Claude Code review. A review can happen before a high-leverage decision, after a meaningful implementation slice, or at both points.
+Claude is an independent laboratory. Do not invoke Claude automatically because a task is complex. Invoke the `consult-claude` skill only when the user explicitly names Claude as the researcher or reviewer, or asks for a Claude Code consultation. A consultation can happen before a high-leverage decision, after a meaningful implementation slice, or at both points.
 
-Consultation is read-only. Claude may inspect the repository, but must not edit, commit, create a worktree, or publish. The `consult-claude` skill owns the brief and review procedure.
+Consultation runs against a sealed snapshot: Claude may research, edit, test, and experiment there, but cannot access or author the living checkout. The `consult-claude` skill owns the isolation, native-session follow-ups, checkpoints, and review procedure.
 
-Codex decides which feedback is valid, applies any changes, and reruns verification. Enlisted or delegated Claude execution is an explicit exception, not a normal escalation path.
+Codex decides which feedback is valid, re-verifies it against live state, applies any changes, and reruns verification. Claude delegation never transfers live-checkout authorship.
 
 ## Review routing
 
