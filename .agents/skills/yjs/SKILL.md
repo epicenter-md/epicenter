@@ -1,6 +1,6 @@
 ---
 name: yjs
-description: 'Yjs 14 CRDT patterns for Epicenter row documents: @y/y shared types, transactions, updateV2 persistence, row-addressed synchronization, awareness, conflict resolution, and document storage. Use when mentioning Yjs, Y.Doc, CRDTs, collaborative editing, awareness, owner-side SQLite document persistence, row documents, or Yjs providers.'
+description: Apply Epicenter’s Yjs 14 patterns for row documents, transactions, persistence, and synchronization. Use when working with `@y/y`, CRDTs, collaborative editing, awareness, or Yjs storage and providers.
 metadata:
   author: epicenter
   version: '1.0'
@@ -52,58 +52,63 @@ converges to unexpected state or grows faster than its content.
 - Large updates are chunked at `CHUNK_BYTES`, set by Cloudflare's documented Durable Object SQLite value cap rather than by anything about Yjs. Do not raise it to the measured wall; the documented limit is the one Cloudflare is entitled to enforce.
 - Presence is deliberately absent until a concrete consumer earns awareness state and disconnect cleanup. If added later, awareness is ephemeral and must never be persisted into the Y.Doc or the SQLite update log as canonical data.
 
-## Owner-Side SQLite Persistence
+## The Application Document And Independent Row Documents
 
-Row documents persist beside scalar facts in the same Data-owned SQLite
-database. `document_updates` stores the Yjs 14 update chain at the exact
-`(namespace, table_name, row_id)` address. `document_publication` stores the
-durable outbound obligation for locally authored document work. The browser
-Worker owns its OPFS SQLite database, the Bun runtime owns its native database,
-and the desktop WebView borrows the Bun owner over the Data desktop protocol.
-Do not add a separate IndexedDB provider or a second document store.
+The application's scalar rows live in one `Y.Doc` per application: roots are
+`tables:<name>` and `kv`, a row is a nested `Y.Type` attribute on its table
+root, and a field is an attribute on the row. Holding the attribute is what it
+means to exist, and removing it is what deletion does. The nesting is not
+stylistic: `Item.write` calls `findRootTypeKey`, a linear scan of `doc.share`,
+so one root per row makes encoding quadratic in rows (5,417 ms for 20,000 rows
+against 13 ms nested).
 
-- `createDocumentRuntime` owns live `Y.Doc` handles, durable append and compaction, explicit pull, capture, publication settlement, and revocation.
-- Attach the `updateV2` listener before hydration. Replay stored updates with a private hydration origin so loading cannot append the same bytes again.
-- A locally authored append stores copied update bytes and advances `document_publication.revision` in the same SQLite transaction. Authority-accepted bytes use `acceptedDocumentOrigin` and create no outbound obligation.
-- Check row liveness inside the append transaction. A late write after scalar deletion must fail rather than resurrect document content.
-- Scalar row deletion removes the update chain and publication obligation in the same replica transaction, then revokes any live handle.
-- Compact a bounded chain by replaying it into a fresh `gc: true` document and replacing the covered updates with one complete V2 state update. Compaction does not remove modeling costs inside the encoded document.
-- Pull and publication are separate operations. Pulling accepted state never marks it as local work; publishing captures current complete state with the revision it covers and settles only that revision.
-- Treat replay corruption or transaction failure as storage failure. Revoke the live handle rather than allowing memory to diverge from durable SQLite state.
-
-## Storage Optimization
-
-### One Document, Nested Roots
-
-An application is one `Y.Doc` (ADR-0215). Its roots are `tables:<name>` and `kv`,
-and nothing else at the top level, so dumping `doc.share` reads as a description
-of the application. SQLite holds the same facts as a query projection, never as a
-second source of truth: every read a person makes comes from the `Y.Doc` already
-in memory.
-
-A row **is** a nested `Y.Type` attribute on its table root, and a field is an
-attribute on the row. Holding one is what it means to exist, and removing it is
-what deletion does; there is no second fact that can disagree.
-
-The nesting is not stylistic. `Item.write` calls `findRootTypeKey`, a linear scan
-of `doc.share`, so one root per row makes encoding quadratic in rows: measured at
-5,417 ms for 20,000 rows against 13 ms nested.
+A row's rich content lives in its own independent top-level `Y.Doc` at the
+row's derived address, `{databaseId}/{tableName}/{rowId}` (ADR-0248). The
+document manager (`packages/data/src/store/documents.ts`) treats the address
+as an opaque string: it opens fully hydrated handles, reuses one live `Y.Doc`
+per address, persists locally authored `updateV2` bytes through the store's
+one durable queue, and unloads a document when its last handle closes.
 
 ```typescript
 // Scalar fields are attributes on the row, written through the table.
-db.notes.update(noteId, { title, pinned: true });
+db.tables.notes.update(noteId, { title, pinned: true });
 db.kv.update({ 'theme.mode': 'dark' });
 
-// Prose never lives in a field. Each row owns a reserved container holding
-// application-named roots, declared at create time so there is one creator.
-db.notes.create({ title: '' }, { document: ['body'] });
-const body = db.notes.document(noteId)?.get('body'); // a Y.Type an editor binds to
+// Prose never lives in a field. Each row owns an independent document,
+// opened on demand and disposed when the surface holding it unmounts.
+const { data: handle } = await db.tables.notes.openDocument(noteId);
+const body = handle?.get('body', 'text'); // a Y.Type an editor binds to
+handle?.[Symbol.dispose]();
 ```
 
-Only `Doc.get` mints. It is `setIfUndefined`, and a root can never be removed, so
-every key reaching it must be a table name the workspace declares. Never pass a row id
-to it: reading an unknown row through `getAttr` costs nothing, while a misspelled
+Roots inside a row document are minted by name on first use, and that is safe
+because a top-level root is addressed by its NAME: two devices first-opening
+one note converge with both writes retained
+(`packages/data/evidence/independent-document-roots.test.ts`). No root is
+reserved at create time. Inside the APPLICATION document, only `Doc.get`
+mints, and every key reaching it must be a table name the database declares:
+reading an unknown row through `getAttr` costs nothing, while a misspelled
 table name costs a permanent root.
+
+Row deletion is one composition point: `table.delete(rowId)` removes the
+scalar row and durably tombstones the derived address in one atomic batch, so
+a late update cannot resurrect a retired document. Lists and previews read
+scalar fields only and never hydrate rich documents.
+
+## Owner-Side Persistence
+
+Every document's update chain persists in the store's one durable record:
+`_updates (document, seq, bytes)` in SQLite, `[document, seq]` keys in the
+browser's IndexedDB, with retired addresses in `_tombstones` and unsent work
+in a per-document `_outbox` (ADR-0238, ADR-0248). Do not add a separate
+IndexedDB provider or a second document store.
+
+- Attach the `updateV2` listener before hydration. Replay stored updates with a private hydration origin so loading cannot append the same bytes again.
+- A locally authored append joins the durable queue with an outbox id on a replica. Authority-accepted bytes use a remote origin and create no outbound obligation.
+- Each document's chain folds at `SNAPSHOT_FOLD_THRESHOLD` by replaying into a fresh `gc: true` document and rewriting the chain as one complete V2 state update.
+- Treat replay corruption as storage failure: a document that cannot hydrate refuses its open rather than handing out a half-hydrated handle.
+
+## Storage Optimization
 
 Use raw `Y.Map` for bounded, rarely changing structures inside a document root.
 `Y.Map` tombstones retain the key forever, and every `ymap.set(key, value)`
@@ -185,10 +190,11 @@ See the article `docs/articles/yjs-abstraction-leaks-cost-more-than-the-abstract
 - [GitHub issue #520](https://github.com/yjs/yjs/issues/520) - Conflict resolution discussion with dmonad
 - [fractional-indexing](https://github.com/rocicorp/fractional-indexing) - Production library
 - [YATA paper](https://www.researchgate.net/publication/310212186_Near_Real-Time_Peer-to-Peer_Shared_Editing_on_Extensible_Data_Types) - Academic foundation
-- `packages/data/src/store/document.ts`: the document grammar (roots, row types, field reads, and the reserved document container)
-- `packages/data/src/store/persistence.ts`: the SQLite relations that durably store the update log and the projection
+- `packages/data/src/store/document.ts`: the application-document grammar (roots, row types, field reads)
+- `packages/data/src/store/documents.ts`: the document manager (independent row documents at derived addresses)
+- `packages/data/src/store/log.ts` and `packages/data/src/store/persistence.ts`: the durable update log, outbox, tombstones, and the persistence queue
 - `packages/data/src/sync/`: the Yjs 14 wire (frames, connection, client, authority)
-- [ADR-0215](../../../docs/adr/0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md): one document per application, and the container a row owns
+- [ADR-0248](../../../docs/adr/0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md): a row owns an independent Yjs document at a derived address
 - [ADR-0221](../../../docs/adr/0221-a-table-names-the-rows-a-commit-touched-and-says-so-after-the-projection-commits.md): what `subscribe` reports and when it fires
 - [ADR-0146](../../../docs/adr/0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md): Yjs 14-only persistence decision
 - [ADR-0159](../../../docs/adr/0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md): one owner-side SQLite update log and shared attachment seam
