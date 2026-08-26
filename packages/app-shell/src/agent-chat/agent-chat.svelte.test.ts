@@ -40,7 +40,7 @@ mock.module('@epicenter/client', () => ({
 
 import type { AgentMessage } from '@epicenter/agent';
 import type { Conversation, ConversationsTable } from '@epicenter/chat';
-import type { RowDocument } from '@epicenter/data';
+import type { RowDocumentHandle } from '@epicenter/data';
 import { Ok } from 'wellcrafted/result';
 import { createAgentChatState } from './agent-chat.svelte.js';
 
@@ -56,7 +56,10 @@ type MessageLog = {
 };
 
 /** A row document that records writes instead of storing a CRDT. */
-function createFakeDocument(): { document: RowDocument; log: MessageLog } {
+function createFakeDocument(): {
+	document: RowDocumentHandle;
+	log: MessageLog;
+} {
 	const messages: AgentMessage[] = [];
 	const handlers = new Set<() => void>();
 	const root = {
@@ -69,7 +72,10 @@ function createFakeDocument(): { document: RowDocument; log: MessageLog } {
 		unobserve: (handler: () => void) => handlers.delete(handler),
 	};
 	return {
-		document: { get: () => root } as unknown as RowDocument,
+		document: {
+			get: () => root,
+			[Symbol.dispose]() {},
+		} as unknown as RowDocumentHandle,
 		log: {
 			messages,
 			texts: () =>
@@ -87,7 +93,7 @@ function createFakeChat() {
 	const listeners = new Set<() => void>();
 	const documents = new Map<
 		string,
-		{ document: RowDocument; log: MessageLog }
+		{ document: RowDocumentHandle; log: MessageLog }
 	>();
 	const creates: Conversation[] = [];
 	const updates: { id: string; patch: Partial<Conversation> }[] = [];
@@ -104,7 +110,7 @@ function createFakeChat() {
 			documents.set(row.id, createFakeDocument());
 			creates.push(row);
 			announce();
-			return Ok(row);
+			return row;
 		},
 		update(id: string, patch: Partial<Conversation>) {
 			updates.push({ id, patch });
@@ -124,7 +130,7 @@ function createFakeChat() {
 		list() {
 			return { rows: [...rows.values()], nonconforming: [] };
 		},
-		document: (id: string) => documents.get(id)?.document,
+		openDocument: async (id: string) => Ok(documents.get(id)?.document),
 		subscribe(listener: () => void) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
@@ -167,6 +173,8 @@ function createFakeChat() {
  */
 async function bootWithActiveTopic() {
 	const fake = createFakeChat();
+	// Boot's conversation lands once its document's open resolves.
+	await settle();
 
 	const topicId = fake.chat.activeConversationId;
 	if (topicId === null) throw new Error('Boot left no active conversation');
@@ -181,7 +189,7 @@ test('a blank conversation is unchanged: placeholder title, no opening turn', as
 	const { chat, creates, document } = await bootWithActiveTopic();
 	const createdBefore = creates.length;
 
-	const id = chat.createConversation();
+	const id = await chat.createConversation();
 
 	expect(creates.slice(createdBefore)).toEqual([
 		{
@@ -199,7 +207,7 @@ test('a blank conversation is unchanged: placeholder title, no opening turn', as
 test('a supplied title is written at creation, not derived from the first turn', async () => {
 	const { chat, creates } = await bootWithActiveTopic();
 
-	const id = chat.createConversation({ title: 'Practice: 你好, 再见' });
+	const id = await chat.createConversation({ title: 'Practice: 你好, 再见' });
 
 	expect(creates.at(-1)?.title).toBe('Practice: 你好, 再见');
 	expect(creates.at(-1)?.id).toBe(id);
@@ -209,7 +217,7 @@ test('a supplied title survives the opening turn', async () => {
 	const { chat, updates, rows } = await bootWithActiveTopic();
 	const opening = 'Using the entries below, write a short passage.';
 
-	const id = chat.createConversation({
+	const id = await chat.createConversation({
 		title: 'Practice: 你好, 再见',
 		opening,
 	});
@@ -230,7 +238,7 @@ test('the opening turn lands in the new conversation, not the active one', async
 	const { chat, document, topicId } = await bootWithActiveTopic();
 	const opening = 'Using the entries below, write a short passage.';
 
-	const practiceId = chat.createConversation({
+	const practiceId = await chat.createConversation({
 		title: 'Practice: 你好',
 		opening,
 	});
@@ -248,7 +256,7 @@ test('the opening turn lands in the new conversation, not the active one', async
 test('a title with no opening opens a named conversation and sends nothing', async () => {
 	const { chat, document } = await bootWithActiveTopic();
 
-	const id = chat.createConversation({ title: 'Practice: 你好' });
+	const id = await chat.createConversation({ title: 'Practice: 你好' });
 	await settle();
 
 	expect(document(id).messages).toEqual([]);
@@ -257,7 +265,7 @@ test('a title with no opening opens a named conversation and sends nothing', asy
 test('a composed conversation carries the model forward like a blank one', async () => {
 	const { chat, creates } = await bootWithActiveTopic();
 
-	chat.createConversation({ title: 'Practice: 你好' });
+	await chat.createConversation({ title: 'Practice: 你好' });
 
 	expect(creates.at(-1)?.model).toBe(DEFAULT_MODEL);
 });

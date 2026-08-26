@@ -55,14 +55,13 @@ import {
 } from '@epicenter/agent';
 import {
 	asConversationId,
-	CONVERSATION_MESSAGES,
 	type Conversation,
 	type ConversationId,
 	type ConversationsTable,
 	createAgentMessageStore,
 } from '@epicenter/chat';
 import { createOpenAiAgentEngine } from '@epicenter/client';
-import type { RowDocument } from '@epicenter/data';
+import type { RowDocumentHandle } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import { bindAgentConversation } from '@epicenter/svelte';
 import { SvelteMap } from 'svelte/reactivity';
@@ -144,7 +143,7 @@ export function createAgentChatState({
 	 * One table, and the registry never asks which document it came from: an app
 	 * with an account replica passes the account's, a signed-out one passes the
 	 * device's, and a surface writes one or the other and never both. It is also
-	 * where a conversation's messages come from, through `table.document(id)`,
+	 * where a conversation's messages come from, through `table.openDocument(id)`,
 	 * which is why there is no separate document opener to inject: the row and
 	 * the prose beside it are one thing in one document.
 	 */
@@ -224,7 +223,7 @@ export function createAgentChatState({
 
 	function createConversationHandle(
 		conversationId: ConversationId,
-		document: RowDocument,
+		document: RowDocumentHandle,
 	) {
 		let inputValue = $state('');
 		let dismissedError = $state<string | null>(null);
@@ -297,6 +296,9 @@ export function createAgentChatState({
 				// Unblock a pending approval so the awaiting loop unwinds, then abort.
 				settleApproval(false);
 				convo[Symbol.dispose]();
+				// Release the conversation's document; the store unloads it once
+				// the last handle closes (ADR-0248).
+				document[Symbol.dispose]();
 			},
 
 			// ── Identity and metadata (from the row) ──
@@ -482,17 +484,36 @@ export function createAgentChatState({
 	 * Mirror the table into the handle registry: open a handle for every row,
 	 * dispose one whose row is gone, and keep a live conversation selected.
 	 */
-	function ensureHandle(conversationId: ConversationId): void {
+	/** Documents whose open is in flight, so a reconcile never double-opens. */
+	const opening = new Set<ConversationId>();
+
+	async function ensureHandle(conversationId: ConversationId): Promise<void> {
 		if (disposed || handles.has(conversationId)) return;
-		// The container was allocated with the row (ADR-0215), so absent here
-		// means the row went away between the read and this line rather than that
-		// a conversation lacks somewhere to keep its messages.
-		const document = table.document(conversationId);
+		if (opening.has(conversationId)) return;
+		opening.add(conversationId);
+		// A load (ADR-0248): the row's document hydrates on demand. Absent means
+		// the row went away between the read and this line rather than that a
+		// conversation lacks somewhere to keep its messages.
+		const { data: document, error } = await table.openDocument(conversationId);
+		opening.delete(conversationId);
+		if (error !== null) {
+			reportBackgroundError(error);
+			return;
+		}
 		if (document === undefined) return;
+		if (disposed || handles.has(conversationId)) {
+			document[Symbol.dispose]();
+			return;
+		}
 		handles.set(
 			conversationId,
 			createConversationHandle(conversationId, document),
 		);
+		// The open resolved after the reconcile that requested it, so re-run the
+		// selection rule now that the handle exists.
+		if (selection.current === null || !handles.has(selection.current)) {
+			selection.select(conversationId);
+		}
 	}
 
 	function reconcileHandles(): void {
@@ -501,7 +522,7 @@ export function createAgentChatState({
 		for (const id of handles.keys()) {
 			if (!liveIds.has(id)) destroyConversation(id);
 		}
-		for (const conversationId of liveIds) ensureHandle(conversationId);
+		for (const conversationId of liveIds) void ensureHandle(conversationId);
 
 		// Keep the selection pointed at a live handle.
 		if (selection.current !== null && handles.has(selection.current)) return;
@@ -514,9 +535,10 @@ export function createAgentChatState({
 	const stopTable = table.subscribe(reconcileHandles);
 
 	// Mirror the table in and guarantee a conversation to land in (a fresh
-	// install has none).
+	// install has none). Judged on the ROWS rather than the handle list,
+	// because handles arrive asynchronously as their documents hydrate.
 	reconcileHandles();
-	if (conversationList.length === 0) createConversation();
+	if (rows.length === 0) void createConversation();
 
 	// ── Conversation CRUD ────────────────────────────────────────────
 
@@ -526,36 +548,31 @@ export function createAgentChatState({
 	 *
 	 * With a {@link ConversationOpener}, the conversation is born titled and its
 	 * first turn is sent through its own handle, so a deliberately opened session
-	 * never writes into whatever conversation happened to be active. It returns
-	 * the id rather than a promise of one: the row, its document and its handle
-	 * all exist by the time this returns, so a caller that cares where its turn
-	 * landed has nothing left to wait for.
+	 * never writes into whatever conversation happened to be active. Awaited,
+	 * because the conversation's document is an independent one that hydrates
+	 * on open (ADR-0248): by the time this resolves, the row, its document and
+	 * its handle all exist.
 	 *
-	 * Throws on a refused write, so a caller's toast can present it. Reaching
-	 * here at all means the app's own workspace declared these fields, so a refusal is
-	 * a bug rather than a condition a chat surface recovers from.
+	 * The row write itself has no schema-error channel. A later read remains the
+	 * conformance boundary, while opening the row's independent document can
+	 * still report lifecycle errors.
 	 */
-	function createConversation(opener: ConversationOpener = {}): ConversationId {
+	async function createConversation(
+		opener: ConversationOpener = {},
+	): Promise<ConversationId> {
 		const nowIso = InstantString.now();
 		const current =
 			selection.current === null ? undefined : handles.get(selection.current);
 
-		const { data: row, error } = table.create(
-			{
-				title: opener.title ?? UNTITLED,
-				model: current?.model ?? defaultModel,
-				createdAt: nowIso,
-				updatedAt: nowIso,
-			},
-			// Named here, at the only moment there is exactly one creator. Reaching
-			// for the root lazily would let two devices first-opening one
-			// conversation each mint their own and lose one (ADR-0215).
-			{ document: [CONVERSATION_MESSAGES] },
-		);
-		if (error !== null) throw error;
+		const row = table.create({
+			title: opener.title ?? UNTITLED,
+			model: current?.model ?? defaultModel,
+			createdAt: nowIso,
+			updatedAt: nowIso,
+		});
 
 		const id = asConversationId(row.id);
-		reconcileHandles();
+		await ensureHandle(id);
 		selection.select(id);
 
 		if (opener.opening !== undefined) {
@@ -583,7 +600,7 @@ export function createAgentChatState({
 		if (selection.current === conversationId) {
 			const next = conversationList[0];
 			if (next) selection.select(next.id);
-			else createConversation();
+			else void createConversation();
 		}
 	}
 
