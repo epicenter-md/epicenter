@@ -40,7 +40,7 @@ metaphor, or closing turn when it makes the supplied material easier to hear. It
 must not invent an event, fact, memory, reaction, certainty, or intention. Do
 not turn a sparse source into a polished generality.
 
-`faithful-phrasing` owns the capture flow. There, voice work may repair or
+`authored-capture` owns the capture flow. There, voice work may repair or
 rearrange source-authorized material. In the editorial flow, this skill helps
 make an adopted proposed passage sound like the writer rather than like generic
 polish.
