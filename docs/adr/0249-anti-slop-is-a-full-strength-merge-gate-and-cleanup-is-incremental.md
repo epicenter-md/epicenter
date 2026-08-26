@@ -1,6 +1,6 @@
 # 0249. Anti-slop is a full-strength merge gate, and cleanup is incremental
 
-- **Status:** Accepted
+- **Status:** Reversed (2026-08-26). The plugin was removed; see the Reversal section.
 - **Date:** 2026-08-19
 - **Provisional number.** The merge owner reconciles this number against other open ADRs before merge.
 
@@ -60,3 +60,25 @@ longer needs an administrator override.
 list and creates a file-level hole: new findings in a listed file can pass
 until that file is cleaned. A full-strength check with an explicit, temporary
 administrator override is simpler and preserves the complete finding list.
+
+## Reversal (2026-08-26)
+
+The plugin was removed and this decision is reversed. Running the gate against
+the repository showed the tradeoff did not hold:
+
+- The rules are AST-only, with no type information, so they cannot tell a real
+  problem from idiomatic code. `no-unknown-parameters` fired on every parser,
+  validator, and formatter, all of which must accept `unknown`;
+  `no-runtime-typeof` fired on built-in unions such as `FormData.get()`'s
+  `File | string`; `no-known-value-widening` flagged exhaustive `Record`
+  annotations. Roughly half of the findings were false positives.
+- Only `no-chained-type-assertions` produced a build-failing signal with
+  acceptable precision, and even its findings were dominated by legitimate
+  Cloudflare and Yjs boundary casts.
+- Everything the plugin flags already typechecks, so it reported style, not
+  bugs. The one genuine hardening it prompted, parsing on-disk blob metadata
+  through an arktype schema in `packages/blobs`, was applied directly and kept.
+
+The removal dropped the vendored rules under `tools/oxlint/anti-slop/`,
+`.oxlintrc.json`, the `lint:slop` script and its place in `bun run check`, the
+`oxlint` and `@oxlint/plugins` dependencies, and the `install-anti-slop` skill.

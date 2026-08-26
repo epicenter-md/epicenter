@@ -127,7 +127,7 @@
 	"scripts": {
 		"build": "bun run build:declarations && bun run --filter '*' build",
 		"build:declarations": "bun run --cwd packages/field build && bun run --cwd packages/data build",
-		"check": "bun run lint:ci && bun run typecheck && bun run test && bun run check:structure && bun run lint:slop",
+		"check": "bun run lint:ci && bun run typecheck && bun run test && bun run check:structure",
 		"dev": "bun run dev:honeycrisp",
 		"dev:api": "bun run --cwd apps/api dev",
 		"dev:api-dashboard": "bun run --filter @epicenter/api --filter @epicenter/api-ui dev",
@@ -152,7 +152,6 @@
 		"lint": "biome lint --write",
 		"lint:check": "biome lint",
 		"lint:ci": "biome lint --diagnostic-level=error --reporter=github",
-		"lint:slop": "oxlint",
 		"postinstall": "bun run build:declarations",
 		"release": "changeset version && bun run scripts/publish-packages.ts",
 		"release:dry-run": "bun run scripts/publish-packages.ts --dry-run",
@@ -178,10 +177,8 @@
 	"devDependencies": {
 		"@biomejs/biome": "catalog:",
 		"@changesets/cli": "^2.31.0",
-		"@oxlint/plugins": "1.79.0",
 		"@types/bun": "catalog:",
 		"jsrepo": "^3.6.2",
-		"oxlint": "1.79.0",
 		"wrangler": "catalog:"
 	},
 	"dependencies": {
