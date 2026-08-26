@@ -1,14 +1,13 @@
 ---
 name: dialectic
-description: "Bring an agent's and user's partly formed models into contact by presenting one clear rendering at a time and reading the user's natural corrections, extensions, and recognition until the user says 'that's right.' Use when the user wants to discover what they think, learn a model together, shape a vision or architecture before a plan exists, receive real pushback, or compress several live uncertainties into one legible rendering. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
+description: "Bring an agent's and user's partly formed models into contact by presenting one direct, judgeable model at a time and reading the user's natural corrections, extensions, and recognition until the user says 'that's right.' Use when the user wants to discover what they think, learn a model together, shape a vision or architecture before a plan exists, receive real pushback, or compress several live uncertainties into one legible rendering. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
 ---
 
 # Dialectic
 
 A dialectic ends at "that's right." It advances by putting the current model
-into a form the other person can see and react to: a compact paragraph, a
-concrete example, a diagram, a contrast, or a sentence that carries the live
-distinction.
+into a direct form the other person can see and challenge: a sentence, a
+diagram, a concrete example, or a contrast that carries the live distinction.
 
 The agent is not interviewing the user and the user is not approving a series
 of proposals. The agent keeps making the model visible. The user's natural
@@ -32,31 +31,35 @@ rendering incorporates that response.
                               └──► next presentation
 ```
 
-## Present, Do Not Interrogate
+## Present A Direct Model
 
 Every substantial turn should put one current model on the table. Lead with
 the model itself, not with a report of the conversation, the reasoning behind
-it, or a request for approval.
+it, or a request for approval. Say what the thing is before saying what it is
+not. A contrast can follow the claim when the contrast carries a necessary
+distinction.
 
-Use the form that makes the thought easiest to meet:
+A rendering is the thing the agent presents. Judgeability is a property of that
+rendering, not a response the user must produce. Make the model judgeable with
+the smallest useful consequence, example, or diagram. Most turns have this
+shape:
 
 ```text
-paragraph       when the model is causal or conceptual
-example         when the user needs to feel the consequence
-diagram         when the shape or ownership matters
-contrast        when two interpretations are being separated
-sentence        when one exact articulation is the live edge
+direct claim
+    ↓
+one consequence, example, or diagram
+    ↓
+one reaction point
 ```
 
-Do not end the presentation with "which do you choose?", "does that sound
-right?", "should I proceed?", or "say stop if that's wrong." Do not turn the
-model into a menu of labels before the user understands what those labels mean.
-The user can recognize, correct, extend, or refuse a clear presentation
-without being prompted to select a response format.
+This is a shape, not a sentence or word target. Each paragraph should make one
+move and should stop when the user can see what to challenge. Add explanation
+only when it makes the claim easier to judge; move relationships, ownership,
+sequence, and state into a diagram when that is clearer than prose.
 
 Bad:
 
-> Gate or receipts? My pick is gate. Say stop if that's wrong.
+> The problem isn't really the gate. It's the receipts. Which do you choose?
 
 Better:
 
@@ -64,25 +67,42 @@ Better:
 run
  ├─ gate: evaluate the run against standing rules
  └─ receipts: collect evidence during the run
+      ? does a receipt outlive the run, or is it the run's own memory?
 
 Keeping both leaves two mechanisms able to claim that the same fact has been
-established. The unresolved issue is where that confidence should live.
+established. If a receipt outlives the run, it is the record and the gate reads
+it. If it does not, the gate is the record.
 ```
 
-The better turn gives the user something to correct. It does not ask them to
-approve the agent's framing or silently authorize an implementation.
+The better turn gives the user a model and a concrete place to correct it. It
+does not ask them to approve the agent's framing or silently authorize an
+implementation.
+
+## Close On A Reaction Point
+
+End where the user can be usefully wrong. A reaction point is an open edge in
+the model whose answer would change the next rendering. Mark it inside the
+drawing when possible: a `?` on a branch, a bracketed gap in a sentence, or a
+missing cell in a contrast. Close with the question that would redraw the
+model, or with a statement that makes the same open edge unmistakable.
+
+Judge the question by what it is about. A question about the model is a
+reaction point: "does a receipt outlive the run, or is it the run's own
+memory?" A question about the turn is a verdict request: "which do you
+choose?", "does that sound right?", "should I proceed?", or "say stop if
+that's wrong?" A verdict request gets a yes that locates nothing and a silence
+that proves nothing. Never end on one, and never present a menu of labels before
+the user knows what the labels mean.
 
 When several boundaries are open, show them together in one rendering so the
 user can see the shape without carrying an unfinished interview. One rendering
-means one drawing of the whole model per turn; that drawing may show several
-open boundaries. Prefer an ASCII tree or compact diagram when ownership or
-hierarchy is the point. Use bullets for separate claims. State what is settled,
-then name what remains open. If one direction is already stronger, show it in
-the rendering instead of turning it into another question. End with one direct
-question or directional handle that identifies the answer that would change the
-next step. The user may answer any part in fragments; map the response yourself
-and redraw the model. Preserve untouched boundaries on the redraw, and move
-settled boundaries out of the open set instead of asking about them again.
+means one drawing of the whole model per turn; that drawing may mark several
+related reaction points, but the closing question aims at one. If one direction
+is already stronger, show it in the rendering and carry the remaining edge as a
+question. The user may answer any part in fragments, answer none of the
+questions and redraw the frame, or extend the model; map the response yourself
+and redraw. Preserve untouched boundaries on the redraw, and move settled
+boundaries out of the open set instead of asking about them again.
 
 ## Two Directions, One Conversation
 
