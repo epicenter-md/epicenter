@@ -1,5 +1,6 @@
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import type { ApiApp } from '@epicenter/local-books/http/api';
+import { regex } from 'arkregex';
 import { hc, type InferRequestType } from 'hono/client';
 
 // The same-origin `/api` client, typed end to end by `hc<ApiApp>`: its request and
@@ -12,6 +13,9 @@ import { hc, type InferRequestType } from 'hono/client';
 // browser.
 
 const BEARER_KEY = 'local-books:session-bearer';
+
+/** The single-use bootstrap token carried in the URL fragment; its capture is the token. */
+const HASH_TOKEN = regex('token=([^&]+)');
 
 function readBearer(): string | null {
 	if (typeof sessionStorage === 'undefined') return null;
@@ -26,9 +30,9 @@ function readBearer(): string | null {
  */
 async function bootstrap(): Promise<void> {
 	if (typeof window === 'undefined' || readBearer()) return;
-	const match = window.location.hash.match(/token=([^&]+)/);
+	const match = HASH_TOKEN.exec(window.location.hash);
 	if (!match) return;
-	const bootstrapToken = decodeURIComponent(match[1] as string);
+	const bootstrapToken = decodeURIComponent(match[1]);
 	window.history.replaceState(
 		null,
 		'',

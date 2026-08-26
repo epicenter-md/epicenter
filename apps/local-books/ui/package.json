@@ -31,6 +31,7 @@
 	"dependencies": {
 		"@epicenter/constants": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
+		"arkregex": "catalog:",
 		"hono": "catalog:"
 	},
 	"license": "AGPL-3.0-or-later"
