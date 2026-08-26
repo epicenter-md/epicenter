@@ -1,13 +1,10 @@
 import type { Database } from 'bun:sqlite';
 import { type DbFile, dbFileAt } from './db-file.ts';
 import {
-	type ColumnType,
 	type EntityDef,
 	isDeleted,
 	lastUpdatedTime,
 	type QbObject,
-	type SqlIdent,
-	sqlIdent,
 } from './entities.ts';
 import { companyDir } from './paths.ts';
 
@@ -31,67 +28,34 @@ import { companyDir } from './paths.ts';
  * inside the file and nothing is ever dropped on open.
  */
 
+/** The key/value table carrying the realm's sync state. */
+const CREATE_META_TABLE = `CREATE TABLE IF NOT EXISTS _meta (
+	key TEXT PRIMARY KEY,
+	value TEXT
+);`;
+
 /**
- * One column of a declared table: the SQLite name and affinity, an optional
- * trailing constraint, and the `json_extract` path when the column is a
- * projection of `raw` rather than a stored value.
+ * One entity's table: the bookkeeping columns every entity carries, plus this
+ * entity's extracted scalars, each a VIRTUAL projection of `raw`, so the blob
+ * stays the single source of truth and a missing field is `json_extract`'s null
+ * for free.
  *
- * `constraint` is a raw SQL fragment, which is safe because this file is the
- * only author of one and the set is closed. `name` is branded by `sqlIdent`, and
- * `generated` is built from path segments the registry already validated, so the
- * whole declaration is interpolable into DDL without re-checking.
+ * The registry validated and branded every identifier and path segment it holds
+ * when it was built (`SqlIdent`, `JsonPathSegment`), so the interpolations here
+ * are safe without re-checking.
  */
-type ColumnDeclaration = {
-	name: SqlIdent;
-	type: ColumnType;
-	constraint: string | null;
-	generated: string | null;
-};
-
-type TableDeclaration = { table: SqlIdent; columns: ColumnDeclaration[] };
-
-/** A stored (non-generated) column. */
-function stored(
-	name: string,
-	type: ColumnType,
-	constraint: string | null = null,
-): ColumnDeclaration {
-	return { name: sqlIdent(name), type, constraint, generated: null };
-}
-
-/** The bookkeeping columns every entity table carries, in DDL order. */
-const ROW_COLUMNS: ColumnDeclaration[] = [
-	stored('id', 'TEXT', 'PRIMARY KEY'),
-	stored('raw', 'TEXT', 'NOT NULL'),
-	stored('updated_at', 'TEXT'),
-	stored('synced_at', 'TEXT', 'NOT NULL'),
-	stored('deleted', 'INTEGER', 'NOT NULL DEFAULT 0'),
-];
-
-/** The key/value table holding the realm's one CDC cursor. */
-const META_TABLE: TableDeclaration = {
-	table: sqlIdent('_meta'),
-	columns: [stored('key', 'TEXT', 'PRIMARY KEY'), stored('value', 'TEXT')],
-};
-
-/**
- * One entity's table: the bookkeeping columns plus this entity's extracted
- * scalars, each a VIRTUAL projection of `raw`, so the blob stays the single
- * source of truth and a missing field is `json_extract`'s null for free.
- */
-function declareEntityTable(def: EntityDef): TableDeclaration {
-	return {
-		table: def.table,
-		columns: [
-			...ROW_COLUMNS,
-			...def.columns.map((c) => ({
-				name: c.name,
-				type: c.type,
-				constraint: null,
-				generated: `$.${c.path.join('.')}`,
-			})),
-		],
-	};
+function createEntityTableSql(def: EntityDef): string {
+	const projected = def.columns.map(
+		(c) =>
+			`,\n\t${c.name} ${c.type} GENERATED ALWAYS AS (json_extract(raw, '$.${c.path.join('.')}')) VIRTUAL`,
+	);
+	return `CREATE TABLE IF NOT EXISTS ${def.table} (
+	id TEXT PRIMARY KEY,
+	raw TEXT NOT NULL,
+	updated_at TEXT,
+	synced_at TEXT NOT NULL,
+	deleted INTEGER NOT NULL DEFAULT 0${projected.join('')}
+);`;
 }
 
 /**
@@ -118,18 +82,6 @@ export function booksDbFile(dataDir: string, realmId: string): DbFile {
 		version: MIRROR_VERSION,
 		directory: companyDir(dataDir, realmId),
 	});
-}
-
-/** `CREATE TABLE IF NOT EXISTS` for one declared table. */
-function createTableSql({ table, columns }: TableDeclaration): string {
-	const defs = columns.map((c) => {
-		const constraint = c.constraint ? ` ${c.constraint}` : '';
-		const generated = c.generated
-			? ` GENERATED ALWAYS AS (json_extract(raw, '${c.generated}')) VIRTUAL`
-			: '';
-		return `${c.name} ${c.type}${constraint}${generated}`;
-	});
-	return `CREATE TABLE IF NOT EXISTS ${table} (\n\t${defs.join(',\n\t')}\n);`;
 }
 
 /**
@@ -183,7 +135,7 @@ export type BooksDb = ReturnType<typeof booksDb>;
  */
 export function openBooksDb(file: DbFile): BooksDb {
 	const db = file.open();
-	db.run(createTableSql(META_TABLE));
+	db.run(CREATE_META_TABLE);
 	return booksDb(db);
 }
 
@@ -223,7 +175,7 @@ function booksDb(db: Database) {
 		// shape the filename does not promise. The index is applied here and
 		// deliberately outside that promise: it holds no mirror facts, so adding one
 		// must not force a re-pull.
-		db.run(createTableSql(declareEntityTable(def)));
+		db.run(createEntityTableSql(def));
 		db.run(
 			`CREATE INDEX IF NOT EXISTS idx_${def.table}_updated_at ON ${def.table}(updated_at);`,
 		);
