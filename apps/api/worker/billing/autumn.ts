@@ -16,7 +16,7 @@
  *                             bugs keep throwing.
  *
  * Provider failures arrive as two sibling class families (verified against
- * autumn-js@1.2.5): `AutumnError` for an HTTP non-2xx response, and the
+ * autumn-js@1.2.34): `AutumnError` for an HTTP non-2xx response, and the
  * `HTTPClientError` family (`ConnectionError`, `RequestTimeoutError`, ...) for a
  * network/transport failure. They share only the JS `Error` base, so a single
  * `instanceof AutumnError` check MISSES every network failure: hence
