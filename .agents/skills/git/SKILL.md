@@ -1,6 +1,6 @@
 ---
 name: git
-description: 'Git commits and branches using Epicenter conventions. Use when staging files, writing commit messages, splitting commits, checking standalone commits, creating branches, or inspecting commit history. For pull request titles and bodies, use the pull-request skill.'
+description: Apply Epicenter Git conventions for commits, branches, and history. Use when staging files, writing or splitting commits, creating branches, or inspecting history, not for pull request text or merge guidance.
 metadata:
   author: epicenter
   version: '2.0'

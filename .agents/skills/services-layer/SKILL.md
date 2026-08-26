@@ -1,6 +1,6 @@
 ---
 name: services-layer
-description: 'Whispering service boundaries: UI-free capabilities, explicit app inputs, Result-typed fallibility, direct Live objects, lifecycle-earned factories, and build-time #platform implementations. Use when creating or refactoring services, service contracts, platform variants, provider dispatch, or the $lib/services barrel.'
+description: Apply Whispering service-boundary patterns for UI-free capabilities, explicit inputs, Result fallibility, Live objects, lifecycle factories, and platform variants. Use when creating or refactoring services, contracts, provider dispatch, or the `$lib/services` barrel.
 metadata:
   author: epicenter
   version: '3.0'
