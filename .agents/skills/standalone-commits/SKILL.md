@@ -1,6 +1,6 @@
 ---
 name: standalone-commits
-description: Make commits reviewable and auditable as self-contained units, and order multi-file changes into atomic dependency-ordered waves. Use when planning commits, 'split this into commits', 'break this up', 'commit strategy', splitting work into waves, staging changes, reviewing branch history, or deciding whether a commit is too broad, too tiny, incomplete, or hard to revert.
+description: Split work into reviewable, auditable commits ordered by dependency. Use when planning commit waves, staging changes, or deciding whether a commit is too broad, tiny, incomplete, or hard to revert.
 metadata:
   author: epicenter
   version: '1.0'

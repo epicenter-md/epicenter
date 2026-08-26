@@ -2,10 +2,13 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-22
+- **Restated by:** [ADR-0263](0263-a-connection-is-one-server-at-a-time-and-a-replica-is-derived-from-it.md) as the reader-facing connection and replica contract
 - **Supersedes:** [ADR-0259](0259-a-desktop-profile-is-addressed-by-a-server-url-and-principal-pair.md)
 - **Amends:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) at the retained account replica address. The device document, retained-replica, and sign-out rules remain.
 - **Relates:** [ADR-0092](0092-identity-is-the-partition.md), [ADR-0225](0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md), [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md), [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md), [ADR-0232](0232-a-page-lifetime-is-one-auth-generation-and-a-permanently-denied-sync-stops-for-good.md)
-- **Unbuilt:** A shared connection type and the desktop host's complete connection snapshot are not implemented yet. Browser storage already follows the derived address `epicenter/<application>/account/<canonical server URL>/<principal>`.
+- **Implemented in part:** The shared connection type and desktop bootstrap
+  snapshot now carry the selected server URL. Browser storage already follows
+  the derived address `epicenter/<application>/account/<canonical server URL>/<principal>`.
 
 ## Context
 

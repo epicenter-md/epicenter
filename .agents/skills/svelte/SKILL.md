@@ -1,6 +1,6 @@
 ---
 name: svelte
-description: Svelte 5 component and state-module patterns for Epicenter apps. Use when editing `.svelte`, `.svelte.ts`, or Svelte UI state code involving runes, `$props`, snippets, keyed lifecycles, `{#await}`, TanStack Query, `SvelteMap`/`SvelteSet`, `createSubscriber`, `$state.raw`, shadcn-svelte, or workspace observers.
+description: Apply Epicenter’s Svelte 5 patterns for runes, components, lifecycles, and workspace-backed state. Use when editing `.svelte`, `.svelte.ts`, or Svelte UI state.
 ---
 
 # Svelte Guidelines

@@ -1,6 +1,6 @@
 ---
 name: agent-goal
-description: Create a slash-command `/goal` for long-running Codex or Claude Code work when the user explicitly asks for a `/goal`, agent goal, or completion condition. Outputs one goal line with the objective, starting context, validation evidence, and stop condition.
+description: Draft a `/goal` line that gives long-running Codex or Claude Code work an objective, validation evidence, and a stop condition. Use when the user explicitly asks for `/goal`, an agent goal, or a completion condition.
 ---
 
 # Agent Goal

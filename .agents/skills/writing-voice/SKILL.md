@@ -1,6 +1,6 @@
 ---
 name: writing-voice
-description: Revise substantial prose so it sounds like Braden while preserving his vocabulary, humor, certainty, and emphasis. Use when making voice, tone, or ear passes in prose, UI copy, documentation, or messages.
+description: Revise substantial prose so it sounds like Braden while preserving his vocabulary, humor, certainty, and emphasis. Use when prose no longer sounds like me or needs a voice, tone, or ear pass in UI copy, documentation, or messages.
 ---
 
 # Writing Voice

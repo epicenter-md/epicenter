@@ -1,6 +1,6 @@
 ---
 name: collapse-pass
-description: "Run a continuous collapse-and-simplify pass that surgically removes indirection failing to earn its boundary. Use when the user says 'collapse pass', 'simplify pass', 'simplify this', 'reduce indirection', 'shrink the surface', 'find what to delete', when asking to audit a package for dead abstractions, when reviewing a pull request, branch, or recent merged change for simplification (isolated in a worktree), or when the goal is a sequence of small refactor commits that delete more than they add. When the target is the branching inside one function rather than a surface spanning files, use control-flow instead."
+description: Remove indirection that does not earn its boundary across a diff or package. Use when the user asks to run a collapse pass, simplify this broadly, audit dead abstractions, or shrink a surface, not when one function’s branching is the target.
 metadata:
   author: epicenter
   version: '1.0'

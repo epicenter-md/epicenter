@@ -1,6 +1,6 @@
 ---
 name: asymmetric-wins
-description: Identify an asymmetric win by refusing a small promise that would eliminate disproportionate complexity. Use when weighing compatibility, fallbacks, modes, exact fidelity, or duplicate paths.
+description: Identify an asymmetric win by refusing a small promise that would eliminate disproportionate complexity. Use when the user asks about asymmetric wins, pixel perfect fidelity, compatibility, fallbacks, modes, duplicate paths, or what would delete disproportionate complexity.
 ---
 
 # Asymmetric Wins

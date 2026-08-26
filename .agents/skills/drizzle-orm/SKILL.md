@@ -1,6 +1,6 @@
 ---
 name: drizzle-orm
-description: 'Drizzle ORM patterns: schema definitions, Drizzle Kit migrations, query builders, type branding, custom types, and the Postgres and D1 driver boundaries. Use when mentioning Drizzle, drizzle-orm, DB schemas, migrations, branded column types, or typed SQL queries. Do not use for the repository''s non-Drizzle SQLite engines or for raw bun:sqlite work.'
+description: Apply Drizzle ORM patterns for schemas, migrations, queries, branded types, and Postgres or D1 boundaries. Use when working with Drizzle or typed SQL, not raw `bun:sqlite` or non-Drizzle engines.
 metadata:
   author: epicenter
   version: '1.0'

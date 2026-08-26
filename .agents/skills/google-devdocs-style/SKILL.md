@@ -1,6 +1,6 @@
 ---
 name: google-devdocs-style
-description: 'Write, revise, and audit developer documentation in Google Developer Documentation Style Guide house style: second person, active voice, present tense, conditions before instructions, sentence-case headings, code font and bold UI conventions, and timeless, globally readable prose. Use when the user asks for Google style, or when drafting or reviewing developer guides, procedures, API reference text, README front doors, or release notes for readers outside this repo. Not for UI strings, commit messages, PR bodies, or code comments, which follow writing-voice.'
+description: Write and review developer documentation in Google Developer Documentation Style. Use when drafting guides, API reference, READMEs, procedures, or release notes, not UI strings, commit messages, PR bodies, or code comments.
 user-invokable: true
 args:
   - name: target

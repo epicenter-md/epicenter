@@ -1,6 +1,6 @@
 ---
 name: consult-claude
-description: Run Claude Code as an independent reviewer or research laboratory while Codex keeps ownership of the live repository. Use when the user asks to consult Claude or investigate a decision or implementation.
+description: Run Claude Code as an independent reviewer or research laboratory while Codex keeps ownership of the live repository. Use when the user asks to consult Claude, requests a Claude review, or asks Claude to investigate or research independently.
 ---
 
 # Consult Claude

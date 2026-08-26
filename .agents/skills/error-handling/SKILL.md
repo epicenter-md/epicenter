@@ -1,6 +1,6 @@
 ---
 name: error-handling
-description: Adapt thrown or rejected operations into wellcrafted Results and consume Result values without swallowing failures. Use when replacing try-catch, adding trySync or tryAsync, choosing fallback versus typed propagation or selective rethrow, forwarding Err, handling fire-and-forget promises, mapping known failures at HTTP boundaries, or surfacing tagged errors with toastOnError.
+description: Apply Wellcrafted Result patterns to fallible operations and preserve failures at boundaries. Use when replacing try/catch, adding trySync or tryAsync, choosing fallback or propagation, or mapping errors.
 metadata:
   author: epicenter
   version: '3.1'

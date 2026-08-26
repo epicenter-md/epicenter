@@ -1,6 +1,6 @@
 ---
 name: code-audit
-description: "Codebase-specific smell catalog with calibrated grep recipes: duck-typing at boundaries, value-discarding promise tails, unstructured or contract-bypassing logging, exhaustive `never` over-broad unions, single-method `Pick` deps, `*Like` boundary shape copies. Use for a periodic audit pass, scoping a cleanup PR, after a major refactor, or reviewing a primitive's consumers. Pairs with refactoring (fix mechanics) and post-implementation-review (second-read hub)."
+description: Find recurring Epicenter code smells and scope the cleanup they require. Use for periodic audits, cleanup PRs, post-refactor reviews, or reviews of a primitive’s consumers.
 metadata:
   author: epicenter
   version: '1.0'

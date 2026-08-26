@@ -1,6 +1,6 @@
 ---
 name: greenfield-clean-breaks
-description: Reconsider a system from a clean-slate target and identify legacy or compatibility paths to delete. Use when evaluating a greenfield redesign, clean break, or removal of old behavior.
+description: Reconsider a system from a clean-slate target and identify legacy or compatibility paths to delete. Use when evaluating a greenfield redesign, clean break, no users, or removal of old behavior.
 ---
 
 # Greenfield Clean Breaks

@@ -1,6 +1,6 @@
 ---
 name: testing
-description: 'Test file conventions: setup functions, factories, Result assertion helpers, organization, type testing, naming, and pruning low-value tests. Use when: "write tests", "add a test", "fix this test", "delete tests", "prune tests", "audit tests", or modifying *.test.ts files.'
+description: Apply Epicenter test-file conventions for setup, factories, Result assertions, type tests, naming, and pruning. Use when writing, reviewing, deleting, or reorganizing tests, especially `*.test.ts` files.
 metadata:
   author: epicenter
   version: '2.0'

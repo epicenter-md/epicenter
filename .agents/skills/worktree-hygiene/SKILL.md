@@ -1,6 +1,6 @@
 ---
 name: worktree-hygiene
-description: Reap merged git worktrees and branches safely across the warp, codex, opencode, and conductor harnesses. Use when worktrees pile up, after a branch merges, when cleaning up `git worktree list`, removing an orphaned or detached worktree, or deciding whether a worktree is safe to delete. Not for creating branches or authoring commits (use the git skill).
+description: Safely reap merged Git worktrees and branches across Epicenter harnesses. Use when cleaning `git worktree list`, removing orphaned or detached worktrees, or deciding whether one is safe to delete, not when creating branches or commits.
 metadata:
   author: epicenter
   version: '1.0'

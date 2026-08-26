@@ -1,6 +1,6 @@
 ---
 name: cohesion-over-testability
-description: "Detect and collapse production code that was split into two pieces (a 'pure' inner function and a thin wrapper/handler/component that calls it) for the single purpose of letting a unit test reach the inner piece. The smell is structure shaped by the test suite, not by the system. Use when reviewing a helper paired with a `.test.ts` of similar or greater size, when an exported function has exactly one production caller next door, when a function takes optional `deps` whose only non-default value lives in the test, when a getter/setter pair injects state the production code already owns, or when the user says \"is this earning its keep\", \"why is this exported\", \"trace the callers\", \"is this split for the test\", \"the test is shaping the API\", \"could this be one function\". Prefer cohesion over unit-testability; pay the regression-coverage cost a different way (integration tests, type safety, deletion)."
+description: Collapse test-shaped production boundaries while preserving behavior and coverage. Use when a helper, wrapper, injected dependency, or export exists mainly to let a unit test reach internals.
 metadata:
   author: epicenter
   version: '1.0'

@@ -1,6 +1,6 @@
 ---
 name: platform-seams
-description: 'The `#platform/*` build-time seam that lets one SPA ship to a browser, a Tauri WebView, and the Epicenter host: declaring a seam in `package.json` "imports", activating a condition in `vite.config.ts`, typechecking every leaf, and the silent fallback that makes a dropped leaf dangerous. Use when adding or changing a `#platform/*` seam, wiring a build condition, or deciding whether something belongs behind a seam at all.'
+description: Apply Epicenter’s `#platform/*` build-time seam across browser, Tauri, and host targets. Use when adding or changing a seam, build condition, typecheck leaf, or deciding whether code belongs behind one.
 metadata:
   author: epicenter
   version: '7.0'

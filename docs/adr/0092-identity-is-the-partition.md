@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-02
+- **Restated by:** [ADR-0263](0263-a-connection-is-one-server-at-a-time-and-a-replica-is-derived-from-it.md) as the reader-facing Cloud/self-host contract
 - **Amends:** [ADR-0067](0067-auth-owns-the-session-endpoint-the-data-client-is-owner-scoped.md), [ADR-0075](0075-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md)
 - **Relates:** [ADR-0066](0066-runtime-portability-is-per-concern-injection-not-a-runtime-object.md), [ADR-0070](0070-self-host-adds-no-new-ownership-or-auth-mode.md), [ADR-0071](0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md), [ADR-0076](0076-the-relational-auth-substrate-is-a-cloud-only-layer-the-instance-composes-neither.md)
 
