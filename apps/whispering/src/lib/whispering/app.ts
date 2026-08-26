@@ -12,7 +12,10 @@ import {
 	type SyncConnectionStatus,
 } from '@epicenter/data/sync';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { type WhisperingSettingValues, whisperingDefinition } from '../workspace';
+import {
+	type WhisperingSettingValues,
+	whisperingDefinition,
+} from '../workspace';
 import {
 	createWhisperingRecipes,
 	type WhisperingRecipes,
@@ -259,7 +262,10 @@ async function openAccountRuntime({
 	reportBackgroundError(cause: unknown): void;
 	signal?: AbortSignal;
 }): Promise<AccountRuntime> {
-	const opened = await openAccount(whisperingDefinition, { principalId });
+	const opened = await openAccount(whisperingDefinition, {
+		baseURL: auth.connection.baseURL,
+		principalId,
+	});
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
 
@@ -285,7 +291,6 @@ async function openAccountRuntime({
 			store: data.store,
 			databaseId: whisperingDefinition.id,
 			transport: {
-				baseURL: auth.deployment.baseURL,
 				openWebSocket: (url) => auth.openWebSocket(url),
 			},
 			onSuperseded: () => void adoptCurrentDocument(),

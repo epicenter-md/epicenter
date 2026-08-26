@@ -4,7 +4,7 @@ import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import type {
 	AuthClient,
 	AuthFetch,
-	InstanceConnectionStatus,
+	ConnectionStatus,
 } from './auth-contract.js';
 import { createInstanceTokenAuth } from './instance-token-auth.js';
 
@@ -28,12 +28,9 @@ function json(value: unknown, status = 200) {
 /** Let the construction-time `/api/session` check settle. */
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-/** Narrow to the self-hosted deployment's connection channel. */
+/** Read the selected server's connection channel. */
 function connection(auth: AuthClient) {
-	if (auth.deployment.kind !== 'self-hosted') {
-		throw new Error('expected a self-hosted deployment');
-	}
-	return auth.deployment.connection;
+	return auth.connection;
 }
 
 describe('createInstanceTokenAuth', () => {
@@ -194,8 +191,8 @@ describe('createInstanceTokenAuth', () => {
 		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
 		await flush();
 		// An unreachable instance leaves the optimistic identity: the self-hoster
-		// keeps their principal-scoped local workspace offline (the deployment's
-		// connection channel, not `state`, carries the "unreachable" signal).
+		// keeps their principal-scoped local workspace offline (the connection
+		// channel, not `state`, carries the "unreachable" signal).
 		expect(auth.state).toEqual({
 			status: 'signed-in',
 			principalId: INSTANCE_PRINCIPAL_ID,
@@ -223,11 +220,10 @@ describe('createInstanceTokenAuth', () => {
 		});
 	});
 
-	test('deployment names the self-hosted instance', async () => {
+	test('connection names the self-hosted instance', async () => {
 		const fetch: AuthFetch = async () => json(sessionBody());
 		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
-		expect(auth.deployment.kind).toBe('self-hosted');
-		expect(auth.deployment.baseURL).toBe(baseURL);
+		expect(auth.connection.baseURL).toBe(baseURL);
 	});
 
 	test('connection reports connecting at boot then connected on a 200', async () => {
@@ -262,7 +258,7 @@ describe('createInstanceTokenAuth', () => {
 			return json(sessionBody());
 		};
 		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
-		const seen: InstanceConnectionStatus[] = [];
+		const seen: ConnectionStatus[] = [];
 		connection(auth).onChange((s) => seen.push(s));
 		await flush();
 		expect(connection(auth).status).toBe('unreachable');

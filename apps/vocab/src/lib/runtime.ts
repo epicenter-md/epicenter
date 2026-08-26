@@ -168,7 +168,10 @@ async function openAccountRuntime({
 	principalId: Parameters<typeof openAccount>[1]['principalId'];
 	signal?: AbortSignal;
 }): Promise<AccountRuntime> {
-	const opened = await openAccount(vocabDefinition, { principalId });
+	const opened = await openAccount(vocabDefinition, {
+		baseURL: auth.connection.baseURL,
+		principalId,
+	});
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
 
@@ -197,7 +200,6 @@ async function openAccountRuntime({
 			store: data.store,
 			databaseId: vocabDefinition.id,
 			transport: {
-				baseURL: auth.deployment.baseURL,
 				openWebSocket: (url) => auth.openWebSocket(url),
 			},
 			onSuperseded: () => void adoptCurrentDocument(),

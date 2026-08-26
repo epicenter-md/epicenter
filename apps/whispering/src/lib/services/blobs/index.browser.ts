@@ -11,7 +11,7 @@ import { auth } from '#platform/auth';
 
 const local = createBrowserBlobStore();
 const epicenterClient = createEpicenterClient({
-	baseURL: auth.deployment.baseURL,
+	baseURL: auth.connection.baseURL,
 	fetch: auth.fetch,
 });
 const remote = createBrowserBlobRemote({ local, client: epicenterClient });

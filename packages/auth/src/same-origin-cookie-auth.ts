@@ -165,9 +165,17 @@ export function createSameOriginCookieAuth({
 		get state() {
 			return state;
 		},
-		// Served same-origin by the deployment it signs into; its one consumer is
-		// the hosted dashboard.
-		deployment: { kind: 'hosted', baseURL },
+		// Served same-origin by the server it signs into; its one consumer is the
+		// hosted dashboard.
+		connection: {
+			baseURL,
+			get status() {
+				return 'connected' as const;
+			},
+			onChange() {
+				return () => undefined;
+			},
+		},
 		onStateChange(fn) {
 			listeners.add(fn);
 			return () => {

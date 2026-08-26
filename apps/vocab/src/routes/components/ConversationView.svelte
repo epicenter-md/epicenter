@@ -202,7 +202,7 @@
 		onSignIn={() => void auth.startSignIn()}
 		onUpgrade={() =>
 			void window.open(
-				new URL('/dashboard', auth.deployment.baseURL).toString(),
+					new URL('/dashboard', auth.connection.baseURL).toString(),
 				'_blank',
 				'noopener',
 			)}

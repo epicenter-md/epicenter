@@ -5,7 +5,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 import type {
 	AuthFetch,
 	AuthState,
-	InstanceConnectionStatus,
+	ConnectionStatus,
 } from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
 import type { BearerAuthorization } from './credential-authority.js';
@@ -30,7 +30,7 @@ export type InstanceCredentialAuthorityOptions = {
 
 export type InstanceCredentialSnapshot = {
 	state: AuthState;
-	connectionStatus: InstanceConnectionStatus;
+	connectionStatus: ConnectionStatus;
 	networkEligible: boolean;
 	tokenGeneration: number;
 };
@@ -54,7 +54,7 @@ export function createInstanceCredentialAuthority(
 		status: 'signed-in',
 		principalId: INSTANCE_PRINCIPAL_ID,
 	};
-	let connectionStatus: InstanceConnectionStatus = 'connecting';
+	let connectionStatus: ConnectionStatus = 'connecting';
 	let tokenGeneration = 1;
 	let verificationFlight:
 		| {
@@ -67,9 +67,7 @@ export function createInstanceCredentialAuthority(
 		(snapshot: InstanceCredentialSnapshot) => void
 	>();
 	const stateListeners = new Set<(state: AuthState) => void>();
-	const connectionListeners = new Set<
-		(status: InstanceConnectionStatus) => void
-	>();
+	const connectionListeners = new Set<(status: ConnectionStatus) => void>();
 
 	function createSnapshot(): InstanceCredentialSnapshot {
 		return {
@@ -220,7 +218,7 @@ export function createInstanceCredentialAuthority(
 				stateListeners.delete(fn);
 			};
 		},
-		onConnectionChange(fn: (status: InstanceConnectionStatus) => void) {
+		onConnectionChange(fn: (status: ConnectionStatus) => void) {
 			connectionListeners.add(fn);
 			return () => {
 				connectionListeners.delete(fn);

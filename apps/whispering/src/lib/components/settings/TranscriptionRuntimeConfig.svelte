@@ -61,7 +61,7 @@
 			getDeviceConfig: deviceConfig.get,
 			// Session locality follows the bonded deployment. Sign-in status decides
 			// usability elsewhere; locality only needs the base URL.
-			sessionBaseUrl: auth.deployment.baseURL,
+			sessionBaseUrl: auth.connection.baseURL,
 		}),
 	);
 

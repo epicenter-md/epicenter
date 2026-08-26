@@ -48,7 +48,7 @@ export function resolveTranscriptionLocalityFromConfig({
 	service: TranscriptionServiceId;
 	getDeviceConfig: (key: TranscriptionEndpointKey) => string;
 	/**
-	 * The bonded deployment origin (`auth.deployment.baseURL`). Read only for the `session`
+	 * The bonded server origin (`auth.connection.baseURL`). Read only for the `session`
 	 * (Epicenter) access: a loopback origin means the bonded deployment is this
 	 * machine (a self-host instance bonded at localhost), so session audio stays
 	 * on-device. The pure module classifies the host itself rather than importing

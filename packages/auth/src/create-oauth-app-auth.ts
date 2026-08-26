@@ -116,7 +116,15 @@ export function createOAuthAppAuth({
 		get state() {
 			return authority.snapshot.state;
 		},
-		deployment: { kind: 'hosted', baseURL },
+		connection: {
+			baseURL,
+			get status() {
+				return 'connected' as const;
+			},
+			onChange() {
+				return () => undefined;
+			},
+		},
 		onStateChange(fn) {
 			return authority.onStateChange(fn);
 		},

@@ -1,5 +1,11 @@
+import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { Ok } from 'wellcrafted/result';
-import type { AuthClient, AuthFetch, AuthState } from './auth-contract.js';
+import type {
+	AuthClient,
+	AuthFetch,
+	AuthState,
+	ConnectionStatus,
+} from './auth-contract.js';
 import { AuthError, OpenWebSocketDenied } from './auth-errors.js';
 import type { Principal } from './auth-types.js';
 import type { InstanceSetting } from './instance-setting.js';
@@ -11,17 +17,10 @@ import type { InstanceSetting } from './instance-setting.js';
  */
 export type DesktopAuthBootstrap = {
 	state: AuthState;
-	deployment:
-		| { kind: 'hosted'; baseURL: string }
-		| {
-				kind: 'self-hosted';
-				baseURL: string;
-				connectionStatus:
-					| 'connecting'
-					| 'connected'
-					| 'unreachable'
-					| 'rejected';
-		  };
+	connection: {
+		baseURL: string;
+		status: ConnectionStatus;
+	};
 	networkEligible: boolean;
 };
 
@@ -94,8 +93,8 @@ function createDesktopBroker({
  * serve-time boot snapshot, account commands (sign-in, sign-out, instance
  * selection) are same-origin broker POSTs the authority acts on before
  * relaunching the process, and the profile email is a same-origin projection
- * the authority reads from the deployment itself. `fetch` attaches nothing:
- * a desktop window has no deployment transport, and the loopback-only CSP
+ * the authority reads from the selected server. `fetch` attaches nothing:
+ * a desktop window has no server transport, and the loopback-only CSP
  * refuses cloud origins exactly as it did before this client existed.
  * `openWebSocket` is denied for the same reason: desktop sync belongs to the
  * host process, not a window.
@@ -109,28 +108,24 @@ export function createDesktopBrokerAuth({
 	brokerBaseURL: string;
 	fetch?: AuthFetch;
 }): AuthClient {
-	const baseURL = bootstrap.deployment.baseURL;
+	const baseURL = bootstrap.connection.baseURL;
 	const broker = createDesktopBroker({ brokerBaseURL, fetch: fetchImpl });
 
 	return {
 		get state() {
 			return bootstrap.state;
 		},
-		deployment:
-			bootstrap.deployment.kind === 'hosted'
-				? bootstrap.deployment
-				: {
-						kind: 'self-hosted',
-						baseURL,
-						connection: {
-							// Identity is immutable per process generation, so the
-							// serve-time status is the projection until relaunch.
-							status: bootstrap.deployment.connectionStatus,
-							onChange() {
-								return () => undefined;
-							},
-						},
-					},
+		connection: {
+			baseURL,
+			// Identity is immutable per process generation, so the serve-time
+			// status is the projection until relaunch.
+			get status() {
+				return bootstrap.connection.status;
+			},
+			onChange() {
+				return () => undefined;
+			},
+		},
 		onStateChange() {
 			return () => undefined;
 		},
@@ -151,7 +146,7 @@ export function createDesktopBrokerAuth({
 			}
 		},
 		// Pass-through on purpose: nothing here may attach a credential. A
-		// deployment-origin request from a window fails under the loopback-only
+		// server-origin request from a window fails under the loopback-only
 		// CSP, which is the boundary this client exists to preserve.
 		fetch: (input, init) => fetchImpl(input, init),
 		async getProfile() {
@@ -172,7 +167,7 @@ export function createDesktopBrokerAuth({
 }
 
 /**
- * Project the immutable desktop deployment into the shared account UI.
+ * Project the immutable desktop server selection into the shared account UI.
  * Reads expose only the selected URL. Writes ask Bun to persist the next
  * process generation, so the self-hosted bearer never enters a WebView boot
  * snapshot or localStorage.
@@ -187,10 +182,10 @@ export function createDesktopInstanceSetting({
 	fetch?: AuthFetch;
 }): InstanceSetting {
 	const broker = createDesktopBroker({ brokerBaseURL, fetch: fetchImpl });
-	const selected = { baseURL: bootstrap.deployment.baseURL };
+	const selected = { baseURL: bootstrap.connection.baseURL };
 	return {
 		read: () => selected,
-		isDefault: () => bootstrap.deployment.kind === 'hosted',
+		isDefault: () => bootstrap.connection.baseURL === EPICENTER_API_URL,
 		write(next) {
 			if (next.token === undefined) {
 				throw new Error('A self-hosted Epicenter instance requires a token.');

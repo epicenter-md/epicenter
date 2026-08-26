@@ -71,6 +71,7 @@ export async function openAccountDatabase({
 	}
 
 	const { data, error } = await openAccount(honeycrispDefinition, {
+		baseURL: auth.connection.baseURL,
 		principalId,
 	});
 	if (error !== null) return Err(error);

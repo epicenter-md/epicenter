@@ -9,7 +9,7 @@
  * Key behaviors:
  * - Window fetch passes requests through without an Authorization header
  * - Account commands post to the same-origin broker routes with cookies
- * - The profile is read from the broker projection, never the deployment
+ * - The profile is read from the broker projection, never the server transport
  * - openWebSocket is denied permanently
  */
 
@@ -24,9 +24,9 @@ import {
 
 const bootstrap = {
 	state: { status: 'signed-in', principalId: asPrincipalId('alice') },
-	deployment: {
-		kind: 'hosted',
+	connection: {
 		baseURL: 'https://api.epicenter.so',
+		status: 'connected',
 	},
 	networkEligible: true,
 } as const;
@@ -98,7 +98,7 @@ test('a failed broker command returns a typed auth error', async () => {
 	expect(error?.name).toBe('StartSignInFailed');
 });
 
-test('getProfile reads the broker projection, never the deployment', async () => {
+test('getProfile reads the broker projection, never the server transport', async () => {
 	const { calls, fetch } = recordingFetch((url) =>
 		url.endsWith('/_epicenter/account/profile')
 			? Response.json({ id: 'alice', email: 'alice@example.com' })
@@ -137,14 +137,13 @@ test('openWebSocket is denied permanently', async () => {
 	});
 });
 
-test('the self-hosted deployment projects its boot connection status', () => {
+test('the self-hosted server projects its boot connection status', () => {
 	const auth = createDesktopBrokerAuth({
 		bootstrap: {
 			state: { status: 'signed-in', principalId: asPrincipalId('instance') },
-			deployment: {
-				kind: 'self-hosted',
+			connection: {
 				baseURL: 'https://epicenter.example.com',
-				connectionStatus: 'connected',
+				status: 'connected',
 			},
 			networkEligible: true,
 		},
@@ -152,10 +151,8 @@ test('the self-hosted deployment projects its boot connection status', () => {
 		fetch: async () => new Response('ok'),
 	});
 
-	expect(auth.deployment.kind).toBe('self-hosted');
-	if (auth.deployment.kind === 'self-hosted') {
-		expect(auth.deployment.connection.status).toBe('connected');
-	}
+	expect(auth.connection.baseURL).toBe('https://epicenter.example.com');
+	expect(auth.connection.status).toBe('connected');
 });
 
 test('instance writes go to the broker and never touch window storage', async () => {

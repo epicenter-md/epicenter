@@ -104,7 +104,7 @@ function createFakeSocket() {
 }
 
 /**
- * The whole of what the app reads from auth: its boot state, the deployment's
+ * The whole of what the app reads from auth: its boot state, the server's
  * base URL, and `openWebSocket`. Everything else throws, so a test fails
  * loudly if the app starts reaching further.
  */
@@ -124,7 +124,11 @@ function createFakeAuth({
 	};
 	return {
 		state: status === 'signed-out' ? { status } : { status, principalId },
-		deployment: { kind: 'hosted', baseURL: 'https://api.test' },
+		connection: {
+			baseURL: 'https://api.test',
+			status: 'connected',
+			onChange: () => () => undefined,
+		},
 		onStateChange: () => () => undefined,
 		startSignIn: unused,
 		signOut: unused,

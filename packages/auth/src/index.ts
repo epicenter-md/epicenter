@@ -6,9 +6,8 @@ export type {
 	AuthClient,
 	AuthFetch,
 	AuthState,
-	Deployment,
-	InstanceConnection,
-	InstanceConnectionStatus,
+	Connection,
+	ConnectionStatus,
 } from './auth-contract.js';
 export * from './auth-errors.js';
 export {

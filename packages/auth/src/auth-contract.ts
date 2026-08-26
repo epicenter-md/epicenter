@@ -18,62 +18,39 @@ export type AuthFetch = (
 ) => Promise<Response>;
 
 /**
- * The one deployment this client talks to (ADR-0069: privacy is which
- * deployment runs the program). Fixed at construction by the factory that
- * built the client, so it is the single runtime owner of the hosted vs
- * self-hosted fact: UI branches on `deployment.kind` instead of re-deriving
- * the mode from the persisted {@link InstanceSetting}.
+ * Whether the selected server is currently usable for network work.
  *
- * `baseURL` is the origin (optionally with a path prefix) of the API this
- * client signs into. Client-side partitioning (local storage keys,
- * BroadcastChannel names) scopes by `(server, principalId)` with it, so two
- * signed-in deployments on the same machine stay distinct.
- *
- * Only the self-hosted arm carries a {@link InstanceConnection}: that client
- * verifies a static bearer against a remote instance at boot, a lifecycle
- * hosted OAuth does not have (its identity resolves through the persisted
- * grant, and `/api/session` verification gates each request instead).
- */
-export type Deployment =
-	| { kind: 'hosted'; baseURL: string }
-	| { kind: 'self-hosted'; baseURL: string; connection: InstanceConnection };
-
-/**
- * Whether the configured self-hosted instance has accepted this client's
- * token in this runtime. Boot identity is optimistic (`signed-in` the moment
- * a token is held, ADR-0075) and most outcomes leave it untouched: an
- * unreachable instance keeps the client signed-in for local-first work, and
- * only a rejected token drops {@link AuthState} to `signed-out`. This status
- * is the separate fact a UI reads to explain the connection.
- *
- * `rejected`: the instance answered and refused the token (401/403).
+ * `rejected`: the server answered and refused the credential (401/403).
  * `unreachable`: no usable answer (offline, wrong origin, or a box that did
- * not respond like an Epicenter server).
+ * not respond like an Epicenter server). Hosted OAuth clients expose the
+ * stable Cloud connection as `connected`; authentication remains a separate
+ * {@link AuthState} fact.
  */
-export type InstanceConnectionStatus =
+export type ConnectionStatus =
 	| 'connecting'
 	| 'connected'
 	| 'unreachable'
 	| 'rejected';
 
 /**
- * Observable {@link InstanceConnectionStatus}. `onChange` does not replay the
- * current value, mirroring {@link AuthClient.onStateChange}; read `status`
- * once before subscribing when the boot value matters (the Svelte reactive
- * wrapper does).
+ * The one server connection an auth client represents. The host may switch
+ * this value only by starting a new auth generation; an app never chooses a
+ * second server while its current replica is open.
  */
-export type InstanceConnection = {
-	get status(): InstanceConnectionStatus;
-	onChange(fn: (status: InstanceConnectionStatus) => void): () => void;
+export type Connection = {
+	baseURL: string;
+	get status(): ConnectionStatus;
+	onChange(fn: (status: ConnectionStatus) => void): () => void;
 };
 
 export type AuthClient = {
 	state: AuthState;
 	/**
-	 * The deployment this client talks to: its kind, its `baseURL`, and (for a
-	 * self-hosted instance) the live connection status. Fixed at construction.
+	 * The one server connection this client represents. Its URL identifies the
+	 * server half of the local replica address; `state.principalId` supplies the
+	 * principal half. Credential strategy stays inside the auth authority.
 	 */
-	deployment: Deployment;
+	connection: Connection;
 	/**
 	 * Subscribe to future state changes.
 	 *

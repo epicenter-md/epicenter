@@ -10,14 +10,16 @@
 	 * The signed-out panel inside the account popover, the app's only auth
 	 * surface (ADR-0088).
 	 *
-	 * Renders entirely from `auth.deployment`: a hosted deployment gets the
-	 * hosted sign-in action, a self-hosted one gets the connect/retry action
-	 * and the live connection copy. All wording lives here; the parent passes
-	 * only what varies per app (the sync noun).
+	 * Renders the one auth action for the selected server. The parent supplies
+	 * whether that server uses the self-host setting; connection status comes
+	 * from the auth client. All wording lives here; the parent passes only what
+	 * varies per app.
 	 */
 	type SignInPanelProps = {
 		/** The app's auth client; its `startSignIn` drives the primary button. */
 		auth: AuthClient;
+		/** Whether the selected server is a configured self-host instance. */
+		isSelfHosted: boolean;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;
 		/**
@@ -37,6 +39,7 @@
 
 	let {
 		auth,
+		isSelfHosted,
 		syncNoun,
 		onConfigure,
 		disabledReason,
@@ -45,22 +48,17 @@
 	let signingIn = $state(false);
 	let signInError = $state<string | null>(null);
 	const accountLocked = $derived(!!disabledReason);
-	// The deployment is the one owner of the hosted vs self-hosted fact: a
-	// self-hosted deployment flips the labels from "sign in / connect" to
-	// "retry / change". Fixed at construction; it only changes across a reload.
-	const selfHosted = $derived(
-		auth.deployment.kind === 'self-hosted' ? auth.deployment : undefined,
-	);
+	const selfHosted = $derived(isSelfHosted);
 	const host = $derived(
-		selfHosted ? new URL(selfHosted.baseURL).host : undefined,
+		selfHosted ? new URL(auth.connection.baseURL).host : undefined,
 	);
 
-	// A self-hosted deployment reports whether the configured instance accepted
-	// its token; hosted OAuth has no such channel and falls back to the generic
-	// startSignIn error rendered below.
+	// The selected server reports whether its credential is usable. Hosted OAuth
+	// keeps the stable Cloud connection as connected; self-host reports its
+	// token verification status here.
 	const connectionNotice = $derived.by(() => {
 		if (!selfHosted) return null;
-		switch (selfHosted.connection.status) {
+		switch (auth.connection.status) {
 			case 'connecting':
 				return {
 					text: `Connecting to ${host}…`,
@@ -86,13 +84,12 @@
 	// "Connecting…" until the browser's own timeout fires. Refused connections
 	// and 401s fail fast, so the common failures self-heal into a retryable state.
 	const busy = $derived(
-		signingIn || selfHosted?.connection.status === 'connecting',
+		signingIn || auth.connection.status === 'connecting',
 	);
 
-	// One sign-in surface: the primary button and the "retry" action are the same
-	// `auth.startSignIn()`, whose meaning (hosted OAuth vs. verifying the saved
-	// token) is fixed by the constructed client, so the label follows the
-	// deployment kind.
+	// One sign-in surface: the primary button and the retry action both call
+	// `auth.startSignIn()`. The client owns whether that means OAuth or token
+	// verification; this surface only chooses the human label.
 	async function startSignIn() {
 		signInError = null;
 		signingIn = true;

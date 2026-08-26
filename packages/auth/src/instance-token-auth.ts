@@ -89,16 +89,13 @@ export function createInstanceTokenAuth({
 		get state() {
 			return authority.snapshot.state;
 		},
-		deployment: {
-			kind: 'self-hosted',
+		connection: {
 			baseURL,
-			connection: {
-				get status() {
-					return authority.snapshot.connectionStatus;
-				},
-				onChange(fn) {
-					return authority.onConnectionChange(fn);
-				},
+			get status() {
+				return authority.snapshot.connectionStatus;
+			},
+			onChange(fn) {
+				return authority.onConnectionChange(fn);
 			},
 		},
 		onStateChange(fn) {

@@ -62,7 +62,7 @@ export function polishDestination(app: WhisperingApp): string {
 		resolveTranscriptionLocalityFromConfig({
 			service: app.settings.get('transcriptionService'),
 			getDeviceConfig: deviceConfig.get,
-			sessionBaseUrl: auth.deployment.baseURL,
+			sessionBaseUrl: auth.connection.baseURL,
 		}),
 		app.settings.get('completionProvider'),
 		resolveCompletionState(app),

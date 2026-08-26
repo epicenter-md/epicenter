@@ -33,26 +33,20 @@ function reactiveAuthClient(auth: AuthClient): AuthClient {
 			return auth.state;
 		},
 	};
-	// A self-hosted deployment carries a live connection status (connecting /
-	// connected / unreachable / rejected) that changes without touching `state`,
-	// so give it its own subscriber. Hosted deployments are plain data and keep
-	// the spread value.
-	if (auth.deployment.kind === 'self-hosted') {
-		const source = auth.deployment.connection;
-		const subscribeConnection = createSubscriber((update) =>
-			source.onChange(update),
-		);
-		reactive.deployment = {
-			...auth.deployment,
-			connection: {
-				get status() {
-					subscribeConnection();
-					return source.status;
-				},
-				onChange: source.onChange,
-			},
-		};
-	}
+	// Connection status can change without touching `state`, so give the one
+	// connection its own subscriber. The selected server itself remains fixed
+	// for this page generation.
+	const source = auth.connection;
+	const subscribeConnection = createSubscriber((update) =>
+		source.onChange(update),
+	);
+	reactive.connection = {
+		...source,
+		get status() {
+			subscribeConnection();
+			return source.status;
+		},
+	};
 	return reactive;
 }
 

@@ -40,9 +40,8 @@
 	 */
 	type AccountPopoverProps = {
 		/**
-		 * The app's auth client (from `createAppAuthClient()`). Its `deployment`
-		 * is the one runtime owner of the hosted vs self-hosted fact; every
-		 * display decision here branches on it, never on the persisted setting.
+		 * The app's auth client (from `createAppAuthClient()`). Its connection
+		 * supplies the selected server and live connection status.
 		 */
 		auth: AuthClient;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
@@ -69,8 +68,8 @@
 		onForgetDevice?: () => void | Promise<void>;
 		/**
 		 * Self-host instance connect: what the settings modal needs to persist a
-		 * different deployment choice. The setting handle is write-path only here;
-		 * everything displayed reads `auth.deployment`. Required: this popover is
+		 * different server choice. The setting handle owns the write path and the
+		 * default-server distinction. Required: this popover is
 		 * the app's only auth surface (ADR-0088), so every app injects its
 		 * instance setting here.
 		 */
@@ -108,12 +107,11 @@
 	const accountCacheKey = $derived(
 		auth.state.status === 'signed-out' ? null : auth.state.principalId,
 	);
-	// Which star this account lives on: a self-hosted deployment names the box,
-	// and the host IS the identity there. The instance principal has no email.
+	// A non-default server names a self-hosted box. The instance principal has no
+	// email, so the box host is the account label there.
+	const selfHosted = $derived(!instanceConnect.setting.isDefault());
 	const selfHostHost = $derived(
-		auth.deployment.kind === 'self-hosted'
-			? new URL(auth.deployment.baseURL).host
-			: undefined,
+		selfHosted ? new URL(auth.connection.baseURL).host : undefined,
 	);
 	// Optimistic boot (ADR-0075) leaves a self-host user signed-in even when the box
 	// is unreachable, so they usually never see the sign-in panel's connection copy.
@@ -124,8 +122,8 @@
 	// signed-out (see `createInstanceTokenAuth`), which reveals the sign-in panel
 	// that owns the rejected-token copy, so this signed-in surface never sees it.
 	const instanceNotice = $derived.by(() => {
-		if (auth.deployment.kind !== 'self-hosted') return null;
-		switch (auth.deployment.connection.status) {
+		if (!selfHosted) return null;
+		switch (auth.connection.status) {
 			case 'unreachable':
 				return `Can't reach ${selfHostHost}. You're working locally; sync resumes when it's back.`;
 			case 'rejected':
@@ -319,10 +317,11 @@
 			</div>
 		{:else}
 			<div class="p-4">
-				<SignInPanel
-					{auth}
-					{syncNoun}
-					{disabledReason}
+					<SignInPanel
+						{auth}
+						{syncNoun}
+						isSelfHosted={selfHosted}
+						{disabledReason}
 					onConfigure={openInstanceModal}
 				/>
 			</div>
