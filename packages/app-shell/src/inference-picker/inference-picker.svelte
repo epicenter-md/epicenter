@@ -260,6 +260,20 @@
 				<Command.List class="max-h-80">
 					<Command.Empty>No models found.</Command.Empty>
 
+					<!-- Nothing is reachable at all: no hosted transport on this device
+					     (a self-host session, ADR-0264) and no connection added yet. The
+					     picker says what to do instead of rendering an empty list whose
+					     only signal is a failed send. -->
+					{#if connections.hostedModels.length === 0 && connections.custom.length === 0}
+						<div class="px-3 py-6 text-center">
+							<p class="text-sm font-medium">No inference connections</p>
+							<p class="text-muted-foreground mt-1 text-xs">
+								Add an OpenAI-compatible endpoint to start: a local Ollama, a
+								Speaches box, an aggregator, or a provider with your own key.
+							</p>
+						</div>
+					{/if}
+
 					{#if connections.hostedModels.length > 0}
 						<Command.Group heading="Epicenter · metered">
 							{#each connections.hostedModels as hostedModel (hostedModel.id)}

@@ -63,13 +63,16 @@ An instance is a data authority, not an inference endpoint. Metering exists exac
 - **1.4** Added the hard constraint to `apps/self-host/AGENTS.md`: no inference or transcription mount, no provider house key.
 - **Evidence:** `@epicenter/self-host` typechecks; `runtime-profile.test.ts` 4/0 with both surfaces asserted absent.
 
-### Phase 2: the hosted entry on a self-host session
+### Phase 2: the hosted entry on a self-host session (DONE)
 
-Independent of the deletion and a pre-existing bug, not one this change introduced: `hosted.baseURL` is hardcoded to Cloud while `hosted.fetch` carries whatever credential the selected instance yields, so a self-host session already sends an instance bearer to Cloud and gets a bare 401. `resolveOrHosted` falls back to `hosted` unconditionally.
+A pre-existing bug, not one the deletion introduced: `hosted.baseURL` is hardcoded to Cloud while `hosted.fetch` carries whatever credential the selected instance yields, so a self-host session sent an instance bearer to Cloud and got a bare 401. `resolveOrHosted` fell back to `hosted` unconditionally.
 
-- **2.1** Make the registry's `hosted` entry optional, so an app can omit it when the instance is not the hosted default.
-- **2.2** Give the picker an empty state that names what to configure instead of rendering blank or failing on send.
-- **Evidence:** a self-host session offers no hosted entry and never emits a bare 401 from the picker.
+- **2.1** `hosted` is optional on `createInferenceConnections`. When omitted the hosted candidate is not in the resolution list and `hostedModels` reads empty, so the picker's Epicenter group does not render. Vocab passes it only when `instanceSetting.isDefault()`.
+- **2.2** `resolveOrHosted` is gone, collapsed into `resolve(model): ResolvedConnection | null`. Two names for one predicate became one, and the fallback that shipped an unservable id to Cloud is replaced by an honest null on a path `canServe` already blocks.
+- **2.3** Added `hostedAlsoServes` for ids the hosted transport serves that nobody picks. Vocab's dictation reached `whisper-1` **through the fallback**, because STT ids are not in the chat picker catalog, so removing the fallback would have silently broken dictation. The dependency is now declared rather than accidental.
+- **2.4** New `TranscribeError.NoConnection({ model })`. A caller that resolves a transport before calling `transcribe()` needs a way to report "nothing serves this" without inventing an HTTP status for a request that never happened.
+- **2.5** The picker renders a named empty state when there is no hosted transport and no custom connection, instead of a blank list whose only signal is a failed send.
+- **Evidence:** app-shell, client, vocab, constants, server, api, api-ui, and self-host all typecheck; app-shell and client suites 46/0; billing and self-host suites 49/0.
 
 ### Phase 3: retire `rateLimit`
 
@@ -84,7 +87,7 @@ With Cloud the only mount site, `mountInferenceApp` and `mountTranscriptionApp` 
 
 - [ ] `apps/self-host` mounts no inference or transcription gateway on either runtime, asserted by `runtime-profile.test.ts`.
 - [ ] `apps/self-host` reads no provider house key and documents none.
-- [ ] A self-host session never offers the Cloud gateway entry and never emits a bare 401 from the picker.
+- [x] A self-host session never offers the Cloud gateway entry and never emits a bare 401 from the picker.
 - [ ] A self-hoster can chat through a device-local connection with no Epicenter server in the inference path.
 - [ ] A self-hoster can transcribe the same way, through the same connection.
 - [ ] `rateLimit` has no consumer and is deleted.

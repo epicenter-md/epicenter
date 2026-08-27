@@ -15,16 +15,18 @@
  * this holds no preferences and reaches for no sync. It pulls only the device
  * connection registry and Vocab's own app-local model constant.
  *
- * The transport comes from `resolveOrHosted(VOCAB_STT_MODEL)`, the same predicate
- * chat uses. `whisper-1` is not in Vocab's hosted *chat* catalog, so nothing
- * "serves" it and the call falls back to the hosted transport: the STT gateway on
- * the same `<origin>/v1` Connection base, zero setup, metered. A user who added
- * their own OpenAI key that serves `whisper-1` dictates through that key instead,
- * off Epicenter credits, exactly like a custom chat model resolves first. So the
- * honest path is the registry's, not a hosted transport rebuilt here.
+ * The transport comes from `resolve(VOCAB_STT_MODEL)`, the same predicate chat
+ * uses. `whisper-1` is not a model anyone picks, so the registry is told the
+ * hosted transport also serves it (`hostedAlsoServes`): one Connection base drives
+ * both `/chat/completions` and `/audio/transcriptions` (ADR-0060). A user who
+ * added their own key or a Speaches box serving `whisper-1` dictates through that
+ * instead, off Epicenter credits, exactly like a custom chat model resolves first.
+ * On a device with no connection that serves it (a self-host session with nothing
+ * configured), `resolve` returns null and the phrase surfaces an actionable
+ * failure instead of being sent to a transport it does not belong to.
  */
 
-import { type TranscribeError, transcribe } from '@epicenter/client';
+import { TranscribeError, transcribe } from '@epicenter/client';
 import {
 	createVadRecorder,
 	type DeviceStreamError,
@@ -107,7 +109,13 @@ function createDictation() {
 					deliveries = deliveries
 						.then(async () => {
 							const transport =
-								inferenceConnections.resolveOrHosted(VOCAB_STT_MODEL);
+								inferenceConnections.resolve(VOCAB_STT_MODEL);
+							if (!transport) {
+								onTranscript(
+									TranscribeError.NoConnection({ model: VOCAB_STT_MODEL }),
+								);
+								return;
+							}
 							onTranscript(
 								// No language hint: a learner may dictate their question in the
 								// language they are studying, so Whisper auto-detects (ADR-0105).

@@ -128,10 +128,20 @@
 			};
 			return;
 		}
+		const connection = inferenceConnections.resolve(model);
+		if (!connection) {
+			entryCandidateAbortController = null;
+			entryCandidateRequest = {
+				messageId,
+				status: 'error',
+				candidates: [],
+				detail: `No connection on this device serves ${model}.`,
+			};
+			return;
+		}
 		const controller = new AbortController();
 		entryCandidateAbortController = controller;
 		entryCandidateRequest = { messageId, status: 'loading', candidates: [] };
-		const connection = inferenceConnections.resolveOrHosted(model);
 		const { data, error } = await complete(connection, {
 			model,
 			systemPrompt: buildEntryCandidatePrompt(),
