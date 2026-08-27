@@ -330,19 +330,5 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 		moveToFolder(noteId: NoteId, folderId: FolderId | null): void {
 			update(noteId, { folderId });
 		},
-
-		/**
-		 * Record the row metadata the editor derived from a note's prose.
-		 *
-		 * Only the row: the prose itself is already durable in the document, which
-		 * is where it merges per character (ADR-0207), so this write is the title
-		 * and preview the list renders, plus the edit time it sorts on.
-		 */
-		updateContent(
-			noteId: NoteId,
-			content: Pick<Note, 'title' | 'preview'>,
-		): void {
-			update(noteId, { ...content, updatedAt: InstantString.now() });
-		},
 	};
 }

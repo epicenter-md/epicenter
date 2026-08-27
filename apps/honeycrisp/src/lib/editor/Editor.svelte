@@ -8,7 +8,6 @@
 		redo,
 		syncPlugin,
 		undo,
-		ySyncPluginKey,
 		yUndoPlugin,
 	} from '@y/prosemirror';
 	import * as Y from '@y/y';
@@ -58,10 +57,6 @@
 	import { EditorState, Plugin, TextSelection } from 'prosemirror-state';
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
-	import {
-		extractNoteMetadata,
-		type NoteMetadata,
-	} from './extract-metadata.js';
 
 	const taskList = {
 		group: 'block',
@@ -220,11 +215,9 @@
 	let {
 		yxmlfragment,
 		focusRequest,
-		onContentChange,
 	}: {
 		yxmlfragment: Y.Type;
 		focusRequest: number;
-		onContentChange: (content: NoteMetadata) => void;
 	} = $props();
 
 	let element: HTMLDivElement | undefined = $state();
@@ -346,16 +339,9 @@
 				const newState = this.state.apply(tr);
 				this.updateState(newState);
 				updateActiveFormats(newState);
-				if (!tr.docChanged) return;
-				// Opening or remotely syncing a document is not a local edit. Skipping
-				// binding-origin changes prevents a mere open from advancing updatedAt;
-				// genuine user transactions, including clearing a note, still persist.
-				const isSyncOrigin =
-					tr.getMeta('y-sync-transaction') ||
-					tr.getMeta(ySyncPluginKey) ||
-					tr.getMeta('y-sync-append');
-				if (isSyncOrigin) return;
-				onContentChange(extractNoteMetadata(newState.doc));
+				// A note's title and preview are no longer pushed from here: the store
+				// derives them from the body document on every local commit, and stamps
+				// `updatedAt` there too (ADR-0264/0265). The editor only edits.
 			},
 		});
 		configureYProsemirror({ ytype: yxmlfragment })(

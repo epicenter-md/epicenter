@@ -45,12 +45,7 @@
 	<div class="flex h-full flex-col">
 		<div class="min-h-0 flex-1">
 			{#key noteId}
-				<HoneycrispEditor
-					yxmlfragment={opened.body}
-					{focusRequest}
-					onContentChange={(change) =>
-						honeycrisp.notes.updateContent(noteId, change)}
-				/>
+				<HoneycrispEditor yxmlfragment={opened.body} {focusRequest} />
 			{/key}
 		</div>
 	</div>

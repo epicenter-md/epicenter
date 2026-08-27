@@ -13,6 +13,10 @@ import { field } from '@epicenter/data/definition';
 
 import type { DataView } from '@epicenter/data';
 import { defineData, type RowOf } from '@epicenter/data/definition';
+import { fragmentToPm } from '@y/prosemirror';
+import { EditorState } from 'prosemirror-state';
+import { extractNoteMetadata } from '../editor/extract-metadata.js';
+import { noteSchema } from '../editor/schema.js';
 
 /** Runtime-minted structural note row id. */
 export type NoteId = string;
@@ -43,13 +47,39 @@ const notesTable = {
 	deletedAt: field.nullable(field.instant()),
 } as const;
 
+/**
+ * The root a note's prose lives at, inside the note's own document.
+ *
+ * One spelling, used at every open and by the store-run derivation. Minting on
+ * first use is safe in an independent document: a top-level root is addressed by
+ * its name, so two devices first-opening one note converge with both writes
+ * retained (ADR-0248).
+ */
+export const NOTE_BODY = 'body';
+
+/**
+ * Read a note's row fields off its body document (ADR-0264).
+ *
+ * Pure and store-run: the store hands it the note's document on every local
+ * edit, and it returns the `title` and `preview` the list renders. It reads the
+ * body headlessly through the same ProseMirror schema the editor binds, so the
+ * derived title matches what a person sees.
+ */
+function deriveNoteMetadata(doc: {
+	get(root: string, typeName?: string | null): unknown;
+}): Pick<Note, 'title' | 'preview'> {
+	const state = EditorState.create({ schema: noteSchema });
+	const node = fragmentToPm(doc.get(NOTE_BODY) as never, state.tr);
+	return extractNoteMetadata(node);
+}
+
 export const honeycrispDefinition = defineData({
 	id: 'so.epicenter.honeycrisp',
 	title: 'Honeycrisp',
 	kv: {},
 	tables: {
 		folders: { fields: foldersTable },
-		notes: { fields: notesTable },
+		notes: { fields: notesTable, document: { derive: deriveNoteMetadata } },
 	},
 });
 
@@ -58,16 +88,6 @@ export type HoneycrispData = DataView<typeof honeycrispDefinition>;
 
 export type Folder = RowOf<typeof foldersTable>;
 export type Note = RowOf<typeof notesTable>;
-
-/**
- * The root a note's prose lives at, inside the note's own document.
- *
- * One spelling, used at every open. Minting on first use is safe in an
- * independent document: a top-level root is addressed by its name, so two
- * devices first-opening one note converge with both writes retained
- * (ADR-0248).
- */
-export const NOTE_BODY = 'body';
 
 /**
  * Delete a folder after re-parenting the notes that were in it.
