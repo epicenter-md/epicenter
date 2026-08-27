@@ -21,6 +21,11 @@ import {
 	type HomeSessionSnapshot,
 	parseHomeCommand,
 } from './host.ts';
+import {
+	mirrorFilePath,
+	removeMirrorFile,
+	writeMirrorFile,
+} from './mirror.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
@@ -32,6 +37,7 @@ import {
 	BUILT_IN_ROUTES,
 	LOCAL_BLOB_REMOTE_ROUTES,
 	LOCAL_BLOB_ROUTE,
+	MIRROR_FILE_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
 } from './routes.ts';
@@ -290,6 +296,47 @@ export function createHomeServer({
 			apps: listApplications(appCatalog),
 		} satisfies ApplicationsResponse),
 	);
+
+	/**
+	 * One file of the `~/Epicenter` mirror (ADR-0271).
+	 *
+	 * The host writes bytes at a path and interprets nothing: no store is
+	 * opened here, no file is read back, and nothing derived from a file ever
+	 * reaches an application. What it does own is the root and the refusal, so
+	 * an application cannot name a path outside its own workspace folder.
+	 */
+	const resolveMirrorPath = (c: Context) =>
+		mirrorFilePath({
+			workspace: c.req.param('workspace') ?? '',
+			definitionId: c.req.param('definitionId') ?? '',
+			path: c.req.param('*') ?? '',
+		});
+
+	app.put(MIRROR_FILE_ROUTE.pattern, async (c) => {
+		const target = resolveMirrorPath(c);
+		if (target === undefined) return c.text('Invalid mirror path', 400);
+		try {
+			await writeMirrorFile(target, await c.req.text());
+		} catch {
+			// The folder is a convenience over a filesystem that may be full,
+			// read-only, or on a drive someone unplugged. The store is unaffected,
+			// so this is the mirror's failure to report and never the application's
+			// to crash on.
+			return c.text('Mirror write failed', 500);
+		}
+		return c.body(null, 204);
+	});
+
+	app.delete(MIRROR_FILE_ROUTE.pattern, async (c) => {
+		const target = resolveMirrorPath(c);
+		if (target === undefined) return c.text('Invalid mirror path', 400);
+		try {
+			await removeMirrorFile(target);
+		} catch {
+			return c.text('Mirror delete failed', 500);
+		}
+		return c.body(null, 204);
+	});
 
 	app.put(LOCAL_BLOB_ROUTE.pattern, async (c) => {
 		const id = parseBlobId(c.req.param('blobId'));

@@ -7,6 +7,7 @@
 		".": "./src/index.ts",
 		"./definition": "./src/definition/index.ts",
 		"./artifact": "./src/artifact/index.ts",
+		"./artifact/webview": "./src/artifact/webview.ts",
 		"./engine": "./src/engine.ts",
 		"./memory": "./src/store/memory.ts",
 		"./browser": "./src/store/browser.ts",

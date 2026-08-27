@@ -10,6 +10,7 @@
  */
 
 import { LOCAL_BLOB_PATH } from '@epicenter/blobs/webview';
+import { MIRROR_PATH } from '@epicenter/data/artifact/webview';
 
 const stripTrailing = (value: string) => value.replace(/\/+$/, '');
 
@@ -55,6 +56,17 @@ export const SESSION_STREAM_ROUTE = route('/api/home/session/stream');
 export const LOCAL_BLOB_ROUTE = {
 	pattern: `${LOCAL_BLOB_PATH}/:blobId`,
 } as const;
+/**
+ * One file of the `~/Epicenter` mirror (ADR-0271).
+ *
+ * The application composes the path; the host prepends the root and refuses
+ * anything that is not a path the render produces. A wildcard tail, because a
+ * row's file is `<table>/<rowId>.md` and Hono needs the slash to reach the
+ * handler rather than 404 on a second segment.
+ */
+export const MIRROR_FILE_ROUTE = route(
+	`${MIRROR_PATH}/:workspace/:definitionId/*`,
+);
 /**
  * Host-owned remote copy operations for one local blob. The id is the only
  * input: no route accepts a destination URL, transfer header, or body, so the
