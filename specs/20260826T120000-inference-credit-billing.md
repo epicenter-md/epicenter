@@ -55,8 +55,9 @@ Problems that remain:
   changes, and only through a reviewed price update.
 - One metering pattern for every metered call: **gate on a positive balance, run,
   settle the provider's actual returned usage.** No lock, no pre-call estimate.
-- Overspend uses `overageBehavior: "overflow"`: the last call at exhaustion may
-  go a bounded negative, netted on the next top-up.
+- Overspend is enabled by feature config (`overageAllowed` on `ai_usage`, bounded
+  by `overageLimit`): the last call at exhaustion may go a bounded negative,
+  netted on the next top-up.
 - The meter is a Cloud-only middleware; self-host mounts the bare gateway and
   imports none of it.
 
@@ -70,10 +71,10 @@ GATE     check({ featureId: ai_usage, requiredBalance: 1 })  -> deny if !allowed
 RUN      proxy to the provider; read the returned usage
          (streaming: request usage in the final chunk, then read it)
 SETTLE   credits = perModelCost(realTokens) * (1 + markup) / 0.01, ceil, floor 1
-         track({ featureId: ai_usage, value: credits, overageBehavior: "overflow",
-                 properties: { model, provider }, async: true })
-BOUND    per-call cost cap (request-size + max_tokens) + rate-limit
-         + a generous Autumn spend-limit as a backstop
+         track({ featureId: ai_usage, value: credits, properties: { model, provider }, async: true })
+BOUND    overage is FEATURE config (overageAllowed on ai_usage lets the balance go
+         negative; overageLimit caps how far), plus the per-call cost cap
+         (request-size + max_tokens) and rate-limit. The track call itself is plain.
 ```
 
 Chat's `credits` come from token counts; transcription's from audio minutes.
@@ -124,11 +125,13 @@ estimating before the call, which also deletes the tokenizer dependency entirely
 
 ### Autumn primitives (grounded)
 
-- **Negative balances:** `track({ overageBehavior: "overflow" })` lets a balance
-  go below zero and stay there (netted against future grants/top-ups); default
-  `"cap"` floors at zero. After overspend, `check({ requiredBalance: 1 })` returns
-  `allowed: false`, so the gate is a normal `check`. A native **spend-limit** still
-  applies under overflow and caps how negative a balance can go.
+- **Negative balances (config, not a per-call flag):** the pinned `autumn-js@1.2.34`
+  `track` has no `overageBehavior` param. Negative balances are enabled by the
+  feature's **`overageAllowed`** control ("usage can exceed balance") and bounded by
+  **`overageLimit`** (the spend limit), set in the plan/feature config. With it on, a
+  plain `track` that exceeds the balance goes negative (netted against future
+  grants/top-ups); off, it floors at zero. After overspend,
+  `check({ requiredBalance: 1 })` returns `allowed: false`, so the gate is a normal `check`.
 - **Variable per-model charge:** `track({ value: N })` deducts an arbitrary N we
   compute; `properties: { model, provider }` tags the event; `events.aggregate({
   group_by: "properties.model", aggregate_on: "deducted" })` gives per-model spend.
@@ -149,7 +152,7 @@ fractures the single credit wallet ADR-0100 established. The self-priced
 |---|---|---|---|
 | Credit unit | 3 taste + 1 evidence | Fixed peg, 1 credit = $0.01, published, never re-rated | Anthropic CCU precedent; re-rating the unit is the top trust failure. Only per-model cost changes. |
 | Metering shape (chat + STT) | 1 evidence + 2 coherence | Gate on positive balance, run, settle the provider's actual returned usage; no lock, no pre-call estimate | Grounding: no offline Gemini tokenizer and GPT under-counts with tools, so pre-call estimation is infeasible and unnecessary; settling on the authoritative returned usage is exact and works for both providers. One uniform pattern. Supersedes pre-charge-ceiling and reserve-hold-settle, both rejected as more machinery for no benefit here. |
-| Overspend | 1 evidence | `overageBehavior: "overflow"`, netted on top-up | Native Autumn; returning users incur zero bad debt; the last call at exhaustion may go a bounded negative. |
+| Overspend | 1 evidence | Feature config `overageAllowed` on `ai_usage`, bounded by `overageLimit`; a plain `track` then goes negative, netted on top-up | The pinned SDK has no per-call `overageBehavior`; overage is a plan/feature control. Returning users incur zero bad debt; the last call at exhaustion may go a bounded negative. |
 | Bounding | 2 coherence | Per-call cost cap (request-size + max_tokens) + rate-limit + a generous Autumn spend-limit backstop | The real protection is the per-call cap + rate-limit + netting; the spend-limit is cheap native insurance for the abandoning-user tail, NOT the primary bound. Measure before tightening; an affordability gate or balance-aware restriction is the later escalation if bad debt proves material. |
 | Registry split | 2 coherence | Shared catalog id/provider/label; pricing Cloud-only | Keeps the library route and self-host free of pricing (ADR-0075/0076). Phase 1, done. |
 | Cost source | 1 evidence | Committed models.dev snapshot; daily CI PR auto-merged when data-validity assertions pass | models.dev is MIT with `api.json`; a committed snapshot gives audit and no hot-path fetch. Assertions (every cost > 0, under an absolute ceiling, model present) catch corrupt data; markup + git revert are the other two layers. No fuzzy magnitude gate. |
@@ -242,15 +245,15 @@ profit $0.011. Settled on the provider's returned duration.
 - [x] Cost table + markup + peg + credit functions in `model-pricing.ts`.
 - [ ] **2.1** Confirm `creditsForChat` handles the >272k tier for `gpt-5.5` (defer if no call can exceed it) and fails closed on a model with no cost.
 
-### Phase 3: chat gate + settle-after (replaces the lock)
+### Phase 3: chat gate + settle-after (replaces the lock) - DONE
 
-- [ ] **3.1** Replace `reserveAiChat`'s lock with the shared gate: `check({ requiredBalance: 1 })`, keeping the free-tier cheap-model restriction.
-- [ ] **3.2** Extract the provider's returned usage; for streaming, request it in the final chunk (OpenAI `stream_options.include_usage`, Gemini `usageMetadata`) and read it as the response passes through.
-- [ ] **3.3** Settle with `track({ value: creditsForChat(realUsage), overageBehavior: "overflow", properties: { model, provider }, async: true })` on the after-response queue; retire `INTERIM_FIXED_CHAT_CREDITS` and the lock/finalize path.
+- [x] **3.1** Replaced `reserveAiChat`'s lock with `gateAiChat` (`check({ requiredBalance: 1 })` + the free-tier restriction, now a per-model `freeEligible` flag) and `settleAiChat`.
+- [x] **3.2** The library gateway requests `stream_options.include_usage` for streams (both providers normalize to `prompt_tokens`/`completion_tokens`); the policy tees the SSE via `meterSSE`, keeps the last non-null usage, and falls back to a nominal charge on abort or a mid-stream error frame.
+- [x] **3.3** Settles with a plain `track({ value: creditsForChat(realUsage), properties, async: true })` on the after-response queue (overflow is enabled via feature config, Phase 6); retired `INTERIM_FIXED_CHAT_CREDITS` and the lock/finalize path.
 
 ### Phase 4: transcription overflow
 
-- [ ] **4.1** Add `overageBehavior: "overflow"` to `trackAiTranscription`; switch its per-minute rate to `transcriptionCredits` from `model-pricing.ts`.
+- [ ] **4.1** Switch `trackAiTranscription`'s per-minute rate to `transcriptionCredits` from `model-pricing.ts`. (Overflow is feature config, Phase 6, not a per-call flag.)
 - [ ] **4.2** Enforce the max duration/size cap before forwarding.
 
 ### Phase 5: models.dev CI sync

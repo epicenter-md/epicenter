@@ -11,34 +11,35 @@
  * markup, then converted through the peg. The credit peg never changes; only the
  * per-model cost does, and only through a reviewed price update.
  *
- * Phase status (see the spec): this module is the pricing HOME. `creditsForChat`
- * and `transcriptionCredits` are the token-based functions the settle path will
- * use once the gateway extracts real usage (spec phase 3/4). Until then,
- * `reserveAiChat` charges `INTERIM_FIXED_CHAT_CREDITS` (the prior hand-set values,
- * relocated here unchanged) so the split lands behavior-preserving.
+ * The chat charge is settled on the provider's ACTUAL returned token counts
+ * (`creditsForChat`); there is no per-call pre-estimate. `nominalChatCredits` is
+ * a representative typical-call figure used only for the "requires a paid plan"
+ * message and as the fallback charge when a stream ends without readable usage.
  */
 
-import type {
-	AiProvider,
-	ServableModel,
+import {
+	type AiProvider,
+	MODELS_BY_ID,
+	type ServableModel,
 } from '@epicenter/constants/ai-providers';
 
 /** The fixed, published credit peg. 1 credit = $0.01. Never re-rated. */
 export const CREDIT_USD = 0.01;
 
 /**
- * Per-model provider cost, USD per 1,000,000 tokens. Seeded from models.dev
- * (`https://models.dev/api.json`, captured 2026-08-26); the daily sync job will
- * own these numbers (spec phase 5). `gpt-5.5` also carries a >272k-token tier at
- * 10/45 that is deferred until a call can exceed it.
+ * Per-model provider cost, USD per 1,000,000 tokens, plus whether the free tier
+ * may use the model. Seeded from models.dev (`https://models.dev/api.json`,
+ * captured 2026-08-26); the daily sync job will own the cost numbers (spec phase
+ * 5). `gpt-5.5` also carries a >272k-token tier at 10/45 that is deferred until a
+ * call can exceed it.
  */
 const MODEL_COST: Record<
 	ServableModel,
-	{ inputPerMTok: number; outputPerMTok: number }
+	{ inputPerMTok: number; outputPerMTok: number; freeEligible: boolean }
 > = {
-	'gpt-5.4-mini': { inputPerMTok: 0.75, outputPerMTok: 4.5 },
-	'gpt-5.5': { inputPerMTok: 5, outputPerMTok: 30 },
-	'gemini-3.5-flash': { inputPerMTok: 1.5, outputPerMTok: 9 },
+	'gpt-5.4-mini': { inputPerMTok: 0.75, outputPerMTok: 4.5, freeEligible: true },
+	'gpt-5.5': { inputPerMTok: 5, outputPerMTok: 30, freeEligible: false },
+	'gemini-3.5-flash': { inputPerMTok: 1.5, outputPerMTok: 9, freeEligible: true },
 };
 
 /**
@@ -59,9 +60,7 @@ const PROVIDER_MARKUP: Partial<Record<AiProvider, number>> = {};
 const MODEL_MARKUP: Partial<Record<ServableModel, number>> = {};
 
 function markupForModel(model: ServableModel, provider: AiProvider): number {
-	return (
-		MODEL_MARKUP[model] ?? PROVIDER_MARKUP[provider] ?? DEFAULT_MARKUP
-	);
+	return MODEL_MARKUP[model] ?? PROVIDER_MARKUP[provider] ?? DEFAULT_MARKUP;
 }
 
 /** Marked-up USD to whole credits: ceil at the peg, floor 1. */
@@ -69,29 +68,52 @@ function usdToCredits(pricedUsd: number): number {
 	return Math.max(1, Math.ceil(pricedUsd / CREDIT_USD));
 }
 
+/** The chat cost entry for a model, or undefined if unpriced (gate fails closed). */
+export function chatModelCost(model: ServableModel) {
+	return MODEL_COST[model];
+}
+
 /**
  * Credits for one settled chat turn from the provider's AUTHORITATIVE returned
- * token counts. This is the charge the settle path commits (spec phase 3); it is
- * profit-safe because it prices the real usage times the markup.
+ * token counts. Profit-safe: it prices the real usage times the markup. The
+ * provider is derived from the catalog, so the caller passes only real tokens.
+ * Throws on a model with no configured cost (a real 500, never a zero charge).
  */
 export function creditsForChat(input: {
 	model: ServableModel;
-	provider: AiProvider;
 	inputTokens: number;
 	outputTokens: number;
 }): number {
 	const cost = MODEL_COST[input.model];
-	if (!cost) {
-		// A served model with no configured cost is a config invariant break, not
-		// a user error: fail closed (a real 500) rather than charge zero.
+	const entry = MODELS_BY_ID[input.model];
+	if (!cost || !entry) {
 		throw new Error(`No cost configured for model ${input.model}`);
 	}
+	const provider = entry.provider;
 	const usd =
 		(input.inputTokens * cost.inputPerMTok +
 			input.outputTokens * cost.outputPerMTok) /
 		1_000_000;
-	const priced = usd * (1 + markupForModel(input.model, input.provider));
+	const priced = usd * (1 + markupForModel(input.model, provider));
 	return usdToCredits(priced);
+}
+
+/** Typical-call tokens for the nominal-credit figure. Not a per-request estimate. */
+const TYPICAL_INPUT_TOKENS = 750;
+const TYPICAL_OUTPUT_TOKENS = 1500;
+
+/**
+ * A representative per-call credit for a model (what a typical call costs). Used
+ * only for the "requires a paid plan" display and as the fallback charge when a
+ * stream ends without readable usage (client abort or a mid-stream error). Never
+ * the real per-call charge, which settles on actual returned tokens.
+ */
+export function nominalChatCredits(model: ServableModel): number {
+	return creditsForChat({
+		model,
+		inputTokens: TYPICAL_INPUT_TOKENS,
+		outputTokens: TYPICAL_OUTPUT_TOKENS,
+	});
 }
 
 /**
@@ -106,15 +128,3 @@ export function transcriptionCredits(input: {
 	const priced = usd * (1 + (PROVIDER_MARKUP[input.provider] ?? DEFAULT_MARKUP));
 	return usdToCredits(priced);
 }
-
-/**
- * Interim per-model chat credit, relocated unchanged from the old shared catalog
- * so the registry split lands behavior-preserving. `reserveAiChat` charges this
- * fixed amount until the settle path (spec phase 3) replaces it with
- * {@link creditsForChat} over real returned usage. DELETE with that phase.
- */
-export const INTERIM_FIXED_CHAT_CREDITS: Record<ServableModel, number> = {
-	'gpt-5.4-mini': 2,
-	'gpt-5.5': 10,
-	'gemini-3.5-flash': 2,
-};

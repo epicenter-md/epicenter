@@ -17,8 +17,9 @@
  * the provider-error mapping run for real here too.)
  *
  * What they pin:
- *   - AI chat reservation: confirm on a 200, release on a >= 400, and a guard
- *     rejection answers in the OpenAI error shape while reserving nothing.
+ *   - AI chat metering: gate on a positive balance, then settle the real charge
+ *     on the stream's returned usage (a nominal fallback when usage is absent);
+ *     nothing charged on a gate rejection, an unknown model, or a non-200.
  *   - STT metering: a usable-wallet gate before the call, then a per-minute
  *     `track({ async: true })` settled off the after-response queue on a 200;
  *     nothing tracked on a denial, a non-200, or a provider outage.
@@ -67,7 +68,6 @@ let checkImpl: (input: CheckInput) => { allowed: boolean; balance: unknown } =
 let trackImpl: (args: TrackArgs) => Promise<unknown> = async () => ({
 	id: 'evt_async',
 });
-const finalizeCalls: Array<'confirm' | 'release'> = [];
 const trackCalls: TrackArgs[] = [];
 const customerCalls: unknown[] = [];
 
@@ -82,9 +82,6 @@ const sampleClient = new Autumn({ secretKey: 'sk_probe' }) as unknown as {
 	balances: object;
 	customers: object;
 };
-const balancesProto = Object.getPrototypeOf(sampleClient.balances) as {
-	finalize: (input: { action: 'confirm' | 'release' }) => Promise<unknown>;
-};
 const customersProto = Object.getPrototypeOf(sampleClient.customers) as {
 	getOrCreate: (...args: unknown[]) => Promise<unknown>;
 };
@@ -93,7 +90,6 @@ beforeEach(() => {
 	customerState = { subscriptions: [] };
 	checkImpl = () => ({ allowed: true, balance: 100 });
 	trackImpl = async () => ({ id: 'evt_async' });
-	finalizeCalls.length = 0;
 	trackCalls.length = 0;
 	customerCalls.length = 0;
 
@@ -103,9 +99,6 @@ beforeEach(() => {
 	spyOn(clientProto, 'track').mockImplementation(async (input) => {
 		trackCalls.push(input);
 		return trackImpl(input);
-	});
-	spyOn(balancesProto, 'finalize').mockImplementation(async ({ action }) => {
-		finalizeCalls.push(action);
 	});
 	spyOn(customersProto, 'getOrCreate').mockImplementation(async (...args) => {
 		customerCalls.push(args[0]);
@@ -117,9 +110,15 @@ afterEach(() => {
 	mock.restore();
 });
 
+/** The after-response queue of the most recent request, so a test can await the
+ *  settle work the policy defers (chat settles after the stream drains). */
+let lastQueue: Promise<unknown>[] = [];
+
 function withContext(app: Hono<CloudEnv>) {
 	app.use('*', async (c, next) => {
-		c.set('afterResponseQueue', []);
+		const queue: Promise<unknown>[] = [];
+		lastQueue = queue;
+		c.set('afterResponseQueue', queue);
 		c.set('principal', {
 			id: 'user_1',
 			email: 'user@example.com',
@@ -177,11 +176,29 @@ test('an unknown active plan leaves storage issuance retryably undecidable', asy
 
 // ----- AI inference policy (the OpenAI-compatible gateway) --------------------
 
-/** Mount the inference policy around a stub completions handler. */
-function makeAiApp(downstreamStatus: 200 | 500) {
+/**
+ * Mount the inference policy around a stub completions handler. On 200 the stub
+ * streams an OpenAI-shaped SSE body whose final chunk carries `usage` (unless
+ * `usage` is omitted, exercising the missing-usage fallback), the shape the policy
+ * tees to settle the real charge.
+ */
+function makeAiApp(downstream: {
+	status: 200 | 500;
+	usage?: { input: number; output: number };
+}) {
 	const app = withContext(new Hono<CloudEnv>());
 	app.use('/v1/chat/completions', chargeOpenAiCreditsWithAutumn);
-	app.post('/v1/chat/completions', (c) => c.body(null, downstreamStatus));
+	app.post('/v1/chat/completions', (c) => {
+		if (downstream.status !== 200) return c.body(null, downstream.status);
+		const u = downstream.usage;
+		const sse =
+			'data: {"choices":[{"delta":{"content":"hi"}}],"usage":null}\n\n' +
+			(u
+				? `data: {"choices":[],"usage":{"prompt_tokens":${u.input},"completion_tokens":${u.output}}}\n\n`
+				: '') +
+			'data: [DONE]\n\n';
+		return c.body(sse, 200, { 'content-type': 'text/event-stream' });
+	});
 	return app;
 }
 
@@ -199,24 +216,61 @@ function aiRequest(app: Hono<CloudEnv>, body: unknown) {
 	);
 }
 
-test('a successful completion (200) confirms the reservation', async () => {
-	const res = await aiRequest(makeAiApp(200), { model: 'gpt-5.4-mini' });
+/** Drain the streamed reply (fires the tee's flush) and run the deferred settle. */
+async function settleAfter(res: Response) {
+	await res.text();
+	await Promise.allSettled(lastQueue);
+}
 
+test('a successful completion settles the real charge on the returned usage', async () => {
+	const res = await aiRequest(
+		makeAiApp({ status: 200, usage: { input: 20_000, output: 2_000 } }),
+		{ model: 'gpt-5.4-mini', stream: true },
+	);
 	expect(res.status).toBe(200);
-	expect(finalizeCalls).toEqual(['confirm']);
+
+	await settleAfter(res);
+	expect(trackCalls).toHaveLength(1);
+	expect(trackCalls[0]).toMatchObject({
+		featureId: 'ai_usage',
+		// (20000 * 0.75 + 2000 * 4.5) / 1e6 * 1.5 / 0.01 = 3.6 -> ceil 4
+		value: 4,
+		async: true,
+		properties: { model: 'gpt-5.4-mini', provider: 'openai' },
+	});
 });
 
-test('a pre-stream failure (>= 400) releases the reservation, never charging', async () => {
-	const res = await aiRequest(makeAiApp(500), { model: 'gpt-5.4-mini' });
+test('a stream ending without usage charges the nominal fallback, never zero', async () => {
+	const res = await aiRequest(makeAiApp({ status: 200 }), {
+		model: 'gpt-5.4-mini',
+		stream: true,
+	});
+	expect(res.status).toBe(200);
 
+	await settleAfter(res);
+	expect(trackCalls).toHaveLength(1);
+	// nominalChatCredits('gpt-5.4-mini'): (750*0.75 + 1500*4.5)/1e6 * 1.5 / 0.01 -> ceil 2
+	expect(trackCalls[0]?.value).toBe(2);
+});
+
+test('a pre-stream failure (non-200) settles nothing (no charge on failure)', async () => {
+	const res = await aiRequest(makeAiApp({ status: 500 }), {
+		model: 'gpt-5.4-mini',
+		stream: true,
+	});
 	expect(res.status).toBe(500);
-	expect(finalizeCalls).toEqual(['release']);
+
+	await settleAfter(res);
+	expect(trackCalls).toHaveLength(0);
 });
 
-test('a guard rejection answers in the OpenAI error shape and reserves nothing', async () => {
+test('a gate rejection answers in the OpenAI error shape and charges nothing', async () => {
 	checkImpl = () => ({ allowed: false, balance: 0 });
 
-	const res = await aiRequest(makeAiApp(200), { model: 'gpt-5.4-mini' });
+	const res = await aiRequest(
+		makeAiApp({ status: 200, usage: { input: 100, output: 100 } }),
+		{ model: 'gpt-5.4-mini', stream: true },
+	);
 
 	expect(res.status).toBe(402);
 	const body = (await res.json()) as {
@@ -224,16 +278,19 @@ test('a guard rejection answers in the OpenAI error shape and reserves nothing',
 	};
 	expect(body.error.code).toBe('InsufficientCredits');
 	expect(body.error.message).toBeString();
-	expect(finalizeCalls).toHaveLength(0);
+	expect(trackCalls).toHaveLength(0);
 });
 
-test('an unknown model is rejected before any reservation', async () => {
-	const res = await aiRequest(makeAiApp(200), { model: 'not-a-real-model' });
+test('an unknown model is rejected before running, charging nothing', async () => {
+	const res = await aiRequest(
+		makeAiApp({ status: 200, usage: { input: 100, output: 100 } }),
+		{ model: 'not-a-real-model', stream: true },
+	);
 
 	expect(res.status).toBe(400);
 	const body = (await res.json()) as { error: { code: string } };
 	expect(body.error.code).toBe('UnknownModel');
-	expect(finalizeCalls).toHaveLength(0);
+	expect(trackCalls).toHaveLength(0);
 });
 
 // ----- AI transcription policy (the OpenAI-compatible STT gateway) ------------

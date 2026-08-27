@@ -5,8 +5,9 @@
  * base URL; pointing it elsewhere (Ollama, OpenRouter, a self-hosted gateway) is
  * configuration, not code.
  *
- * It is a pure passthrough proxy: resolve the provider from the model catalog,
- * inject the deployment's house key, forward the body to the provider's
+ * It is a near-passthrough proxy: resolve the provider from the model catalog,
+ * inject the deployment's house key, request token-usage reporting (streamed
+ * replies omit usage unless asked), forward the body to the provider's
  * OpenAI-compatible endpoint, and stream the reply straight back, bytes
  * untouched. The client owns OpenAI-SSE normalization (ADR-0054): it accumulates
  * Gemini's index-less `tool_calls` deltas itself, because custom mode reaches a
@@ -124,6 +125,25 @@ const inferenceApp = new Hono<Env>().post(
 			);
 		}
 
+		// Ask the provider to report token usage. Streamed replies omit usage
+		// unless requested; a metering deployment settles on it, and it is a
+		// standard OpenAI/Gemini-compat field harmless to any other deployment.
+		// The reply still streams back untouched. Merge so a client that already
+		// set stream_options keeps its other options.
+		const upstreamBody =
+			body.stream === true
+				? {
+						...body,
+						stream_options: {
+							...(typeof body.stream_options === 'object' &&
+							body.stream_options !== null
+								? (body.stream_options as Record<string, unknown>)
+								: {}),
+							include_usage: true,
+						},
+					}
+				: body;
+
 		let upstreamResponse: Response;
 		try {
 			upstreamResponse = await fetch(`${upstream.baseURL}/chat/completions`, {
@@ -132,7 +152,7 @@ const inferenceApp = new Hono<Env>().post(
 					'content-type': 'application/json',
 					authorization: `Bearer ${apiKey}`,
 				},
-				body: JSON.stringify(body),
+				body: JSON.stringify(upstreamBody),
 				signal: c.req.raw.signal,
 			});
 		} catch (error) {
