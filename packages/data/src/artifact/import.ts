@@ -39,6 +39,7 @@ import {
 import { encodeEnvelope, type EnvelopeSection } from '../store/envelope.js';
 import { APP_DOCUMENT } from '../store/log.js';
 import { parseRowFile } from './frontmatter.js';
+import { parseRowPath } from './layout.js';
 
 export const ImportError = defineErrors({
 	/**
@@ -126,7 +127,7 @@ export function readArtifact(
 		}
 
 		for (const [path, text] of files) {
-			const at = rowPath(path);
+			const at = parseRowPath(path);
 			if (at === undefined) continue;
 			const row = parseRowFile(text);
 			if (row === undefined) {
@@ -187,17 +188,6 @@ export function readArtifact(
 	} finally {
 		app.destroy();
 	}
-}
-
-/** `<table>/<rowId>.md`, and nothing else. */
-function rowPath(path: string): { table: string; rowId: string } | undefined {
-	if (!path.endsWith('.md')) return undefined;
-	const parts = path.slice(0, -'.md'.length).split('/');
-	if (parts.length !== 2) return undefined;
-	const [table, rowId] = parts;
-	if (table === undefined || rowId === undefined) return undefined;
-	if (table === '' || rowId === '') return undefined;
-	return { table, rowId };
 }
 
 function parseKv(text: string): JsonObject | undefined {

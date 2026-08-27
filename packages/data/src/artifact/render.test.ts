@@ -3,7 +3,11 @@ import { defineData, field } from '@epicenter/data/definition';
 import { openMemory } from '../store/memory.js';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { parseData } from '@epicenter/data/definition';
-import { renderRow, renderWorkspace } from './render.js';
+import {
+	renderArtifact,
+	renderRow,
+	type RenderedRow,
+} from './render.js';
 
 type TitleRoot = {
 	getAttr(key: string): unknown;
@@ -28,6 +32,19 @@ const workspace = defineData({
 		},
 	},
 });
+
+/** Collect the stream into a map, which is what an assertion wants. */
+async function collect(
+	stream: AsyncIterable<{ data: RenderedRow | null; error: unknown }>,
+): Promise<ReadonlyMap<string, string>> {
+	const files = new Map<string, string>();
+	for await (const rendered of stream) {
+		if (rendered.error !== null) throw rendered.error;
+		const { path, contents } = rendered.data as RenderedRow;
+		if (contents !== undefined) files.set(path, contents);
+	}
+	return files;
+}
 
 /** The parsed definition `renderRow` reads codecs from. */
 function parsed(definition: Parameters<typeof parseData>[0]) {
@@ -125,7 +142,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 	});
 });
 
-describe('renderWorkspace is renderRow in a loop (ADR-0267/0268)', () => {
+describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 	test('exports kv.json and one markdown file per row, fields above the body', async () => {
 		await using data = openMemory(workspace);
 		data.kv.update({ theme: 'dark' });
@@ -138,9 +155,7 @@ describe('renderWorkspace is renderRow in a loop (ADR-0267/0268)', () => {
 		handle.get('meta').setAttr('title' as never, 'buy milk' as never);
 		handle[Symbol.dispose]();
 
-		const exported = await renderWorkspace(data, workspace);
-		if (exported.error !== null) throw exported.error;
-		const files = exported.data;
+		const files = await collect(renderArtifact(data, workspace));
 
 		expect(JSON.parse(files.get('kv.json') ?? 'null')).toEqual({
 			theme: 'dark',
@@ -165,11 +180,55 @@ describe('renderWorkspace is renderRow in a loop (ADR-0267/0268)', () => {
 		// and the artifact must carry it anyway.
 		data.tables.notes.update(made.id, { legacy: 'kept' } as never);
 
-		const exported = await renderWorkspace(data, workspace);
-		if (exported.error !== null) throw exported.error;
-		const file = exported.data.get(`notes/${made.id}.md`) ?? '';
-		expect(file).toContain('legacy: "kept"');
+		const files = await collect(renderArtifact(data, workspace));
+		expect(files.get(`notes/${made.id}.md`) ?? '').toContain('legacy: "kept"');
 		expect(data.tables.notes.list().rows[0]).not.toHaveProperty('legacy');
+	});
+
+	test('one row that cannot render does not cost the others their files', async () => {
+		// The contract flipped when the consumer did. Export fed a destructive
+		// restore, so it abandoned the artifact over one bad row; the mirror
+		// writes files, and refusing to write 999 of them over the 1000th is
+		// worse than a folder missing one file the next commit re-renders.
+		const poisoned = defineData({
+			id: 'so.epicenter.honeycrisp',
+			kv: {},
+			tables: {
+				notes: {
+					fields: { title: field.string() },
+					document: {
+						file: {
+							serialize: (doc) => {
+								const body = String(
+									(doc.get('meta') as TitleRoot).getAttr('title') ?? '',
+								);
+								if (body === 'poison') throw new Error('not my shape');
+								return body;
+							},
+							deserialize: () => undefined,
+						},
+					},
+				},
+			},
+		});
+		await using data = openMemory(poisoned);
+		const bad = data.tables.notes.create({ title: 'broken' });
+		const good = data.tables.notes.create({ title: 'fine' });
+		{
+			const opened = await data.tables.notes.openDocument(bad.id);
+			using handle = expectOk(opened);
+			handle?.get('meta').setAttr('title' as never, 'poison' as never);
+		}
+
+		const seen: { ok: string[]; failed: number } = { ok: [], failed: 0 };
+		for await (const rendered of renderArtifact(data, poisoned)) {
+			if (rendered.error !== null) seen.failed += 1;
+			else seen.ok.push(rendered.data.path);
+		}
+		expect(seen.failed).toBe(1);
+		expect(seen.ok).toContain(`notes/${good.id}.md`);
+		expect(seen.ok).toContain('kv.json');
+		expect(seen.ok).not.toContain(`notes/${bad.id}.md`);
 	});
 
 	test('a table without a document block exports frontmatter-only files', async () => {
@@ -181,9 +240,8 @@ describe('renderWorkspace is renderRow in a loop (ADR-0267/0268)', () => {
 		await using data = openMemory(scalarOnly);
 		const made = data.tables.folders.create({ name: 'Inbox' });
 
-		const exported = await renderWorkspace(data, scalarOnly);
-		if (exported.error !== null) throw exported.error;
-		expect(exported.data.get(`folders/${made.id}.md`)).toBe(
+		const files = await collect(renderArtifact(data, scalarOnly));
+		expect(files.get(`folders/${made.id}.md`)).toBe(
 			['---', 'name: "Inbox"', '---', ''].join('\n'),
 		);
 	});

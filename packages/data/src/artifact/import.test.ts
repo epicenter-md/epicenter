@@ -14,7 +14,7 @@ import { defineData, field } from '@epicenter/data/definition';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { createMemoryRecord, openMemory } from '../store/memory.js';
 import { syncEngineOf } from '../store/store.js';
-import { renderWorkspace } from './render.js';
+import { renderArtifact, type RenderedRow } from './render.js';
 import { readArtifact } from './import.js';
 
 type MetaRoot = {
@@ -74,10 +74,23 @@ async function seeded() {
 	return { data, folder, note };
 }
 
+/** Collect the stream into a map, which is what an assertion wants. */
+async function collect(
+	stream: AsyncIterable<{ data: RenderedRow | null; error: unknown }>,
+): Promise<ReadonlyMap<string, string>> {
+	const files = new Map<string, string>();
+	for await (const rendered of stream) {
+		if (rendered.error !== null) throw rendered.error;
+		const { path, contents } = rendered.data as RenderedRow;
+		if (contents !== undefined) files.set(path, contents);
+	}
+	return files;
+}
+
 describe('readArtifact (ADR-0267/0268)', () => {
 	test('an exported workspace imports back into an identical one', async () => {
 		const { data, note } = await seeded();
-		const exported = expectOk(await renderWorkspace(data, workspace));
+		const exported = await collect(renderArtifact(data, workspace));
 
 		const envelope = expectOk(readArtifact(exported, workspace));
 		await using restored = openMemory(workspace);
@@ -104,7 +117,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 
 	test('a value keeps its type, so a string that looks like a number stays one', async () => {
 		const { data, note } = await seeded();
-		const exported = expectOk(await renderWorkspace(data, workspace));
+		const exported = await collect(renderArtifact(data, workspace));
 		const envelope = expectOk(readArtifact(exported, workspace));
 		await using restored = openMemory(workspace);
 		syncEngineOf(restored.store).applyRemote(envelope);
@@ -135,7 +148,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			folderId: null,
 		});
 		withLegacy.tables.notes.update(made.id, { legacy: 'kept' } as never);
-		const exported = expectOk(await renderWorkspace(withLegacy, workspace));
+		const exported = await collect(renderArtifact(withLegacy, workspace));
 		await withLegacy.store[Symbol.asyncDispose]();
 
 		const envelope = expectOk(readArtifact(exported, workspace));

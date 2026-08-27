@@ -9,10 +9,13 @@
  * ```
  *
  * The unit is one row and one file. `renderRow` is what the mirror calls for
- * every row a commit touched; `renderWorkspace` is that call in a loop, which
- * the mirror runs at boot. `readArtifact` is the other direction, and it is
- * whole-folder by nature because restore replaces a workspace rather than
- * patching one.
+ * every row a commit touched; `renderArtifact` is that call in a loop, yielded
+ * one file at a time, which the mirror runs at boot. `readArtifact` is the
+ * other direction, and it is whole-folder by nature because restore replaces a
+ * workspace rather than patching one.
+ *
+ * Two pure inverse pairs sit underneath both: `rowPath`/`parseRowPath` for
+ * where a row's file lives, and `rowFile`/`parseRowFile` for what is in it.
  *
  * Both directions are composed on the public surface and neither is a store
  * verb. Writing the files out and reading them back in belongs to whoever
@@ -28,11 +31,11 @@ export {
 	rowFile,
 } from './frontmatter.js';
 export { type ImportError, readArtifact } from './import.js';
+export { parseRowPath, rowPath } from './layout.js';
 export {
+	renderArtifact,
 	type RenderableData,
 	type RenderedRow,
 	RenderError,
 	renderRow,
-	renderWorkspace,
-	rowPath,
 } from './render.js';

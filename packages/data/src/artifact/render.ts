@@ -33,6 +33,7 @@ import {
 import type { RowDocumentHandle } from '../store/documents.js';
 import type { StoredData } from '../store/store.js';
 import { rowFile } from './frontmatter.js';
+import { rowPath } from './layout.js';
 
 export const RenderError = defineErrors({
 	/**
@@ -112,11 +113,6 @@ export type RenderedRow = {
 	readonly contents: string | undefined;
 };
 
-/** Where one row's file lives, relative to its workspace's folder. */
-export function rowPath(table: string, rowId: string): string {
-	return `${table}/${rowId}.md`;
-}
-
 /**
  * Render one row to its file.
  *
@@ -165,41 +161,52 @@ export async function renderRow(
 }
 
 /**
- * Every file a workspace renders to, keyed by path.
+ * Every file a workspace renders to, one at a time.
  *
  * The loop over `renderRow`, plus `kv.json`, which is the one file that is not
  * a row: one object, no body, and nothing frontmatter would buy (ADR-0268).
  *
- * The mirror runs this at boot, because a workspace can change while an
+ * The mirror runs this at boot, because a workspace changes while an
  * application is closed: another device syncs, and the folder is stale until
- * something renders it whole. After that the mirror renders only what a
+ * something renders it whole. After that the mirror renders only the rows a
  * commit touched.
  *
+ * Yielded rather than collected, because the one consumer writes each file as
+ * it arrives and never wants the set. A caller that does want the set builds
+ * one from this in a line; the reverse is not true, which is what makes this
+ * the shape rather than a Map. It also means an application's whole prose is
+ * never resident at once, which is more than the store itself promises: row
+ * documents hydrate one at a time and unload again, and this holds one file.
+ *
  * Row ids come from the faithful read, so a table this declaration no longer
- * names is rendered too (ADR-0240). It fails closed: a row whose document
- * cannot be read abandons the whole render rather than writing a folder that
- * quietly lacks a body.
+ * names is rendered too (ADR-0240).
+ *
+ * **It does not fail closed, and the read direction does.** One row whose
+ * codec throws yields one `Err` and the pass continues, because a mirror that
+ * writes nothing over one bad note is worse than a mirror missing one file,
+ * and the next commit re-renders it anyway. `readArtifact` keeps the opposite
+ * contract for the opposite reason: it feeds a restore that replaces a
+ * workspace, so a file it silently skipped is data deleted everywhere.
  */
-export async function renderWorkspace(
+export async function* renderArtifact(
 	data: RenderableData,
 	definition: DataDefinition,
-): Promise<Result<ReadonlyMap<string, string>, RenderError>> {
+): AsyncGenerator<Result<RenderedRow, RenderError>> {
 	const parsed = parseData(definition);
 	if (parsed.error !== null) {
-		return RenderError.MalformedDefinition({ reason: parsed.error.message });
+		yield RenderError.MalformedDefinition({ reason: parsed.error.message });
+		return;
 	}
 	// One faithful read for the whole pass, so every file describes one instant.
 	const state = data.stored();
 
-	const files = new Map<string, string>();
-	files.set('kv.json', JSON.stringify(state.kv, null, 2));
+	yield Ok({
+		path: 'kv.json',
+		contents: JSON.stringify(state.kv, null, 2),
+	});
 	for (const [table, rows] of state.tables) {
 		for (const rowId of rows.keys()) {
-			const rendered = await renderRow(data, parsed.data, table, rowId);
-			if (rendered.error !== null) return rendered;
-			const { path, contents } = rendered.data;
-			if (contents !== undefined) files.set(path, contents);
+			yield await renderRow(data, parsed.data, table, rowId);
 		}
 	}
-	return Ok(files);
 }

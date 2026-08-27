@@ -7,7 +7,7 @@
 - **Amends:** [ADR-0267](0267-a-workspace-exports-and-imports-as-a-legible-folder-structured-artifact.md) and [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) at who produces the artifact and when. The artifact's shape is unchanged; export stops being a verb a person invokes, and "a directory, zipped for download" is refused with it.
 - **Revives:** [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md), the render direction only. Its folder, its one-file-per-row shape, and its "point your agent at `~/Epicenter`" premise return. Its entire write direction does not.
 - **Relates:** [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) (the file shape this renders), [ADR-0270](0270-an-application-has-two-workspaces-and-moving-a-row-between-them-is-the-primitive.md) (the two workspaces this lays out), [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md).
-- **Partly built:** the render. `renderRow` in `packages/data/src/artifact/` turns one row into one file and `renderWorkspace` is that call in a loop, which is the boot pass. The host file sink, the folder root, and the signal that says which rows a commit touched do not exist.
+- **Partly built:** the render. `renderRow` in `packages/data/src/artifact/` turns one row into one file and `renderArtifact` yields that call in a loop, one file at a time, which is the boot pass. The host file sink, the folder root, and the signal that says which rows a commit touched do not exist.
 
 ## Context
 
