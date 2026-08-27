@@ -6,6 +6,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./definition": "./src/definition/index.ts",
+		"./export": "./src/export/workspace.ts",
 		"./projection": "./src/projection/index.ts",
 		"./engine": "./src/engine.ts",
 		"./bun": "./src/store/bun.ts",

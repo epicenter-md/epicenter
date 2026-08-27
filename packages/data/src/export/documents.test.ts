@@ -43,7 +43,9 @@ describe('exportDocuments (ADR-0267)', () => {
 		handle.get('meta').setAttr('title' as never, 'buy milk' as never);
 		handle[Symbol.dispose]();
 
-		const files = await exportDocuments(data, withCodec);
+		const exported = await exportDocuments(data, withCodec);
+		if (exported.error !== null) throw exported.error;
+		const files = exported.data;
 		expect(files).toHaveLength(1);
 		expect(files[0]).toMatchObject({
 			table: 'notes',
@@ -69,6 +71,37 @@ describe('exportDocuments (ADR-0267)', () => {
 		});
 		await using data = openMemory(plain);
 		data.tables.notes.create({ title: 'Groceries' });
-		expect(await exportDocuments(data, plain)).toEqual([]);
+		const exported = await exportDocuments(data, plain);
+		if (exported.error !== null) throw exported.error;
+		expect(exported.data).toEqual([]);
+	});
+
+	test('a document that cannot be read abandons the whole export', async () => {
+		await using data = openMemory(withCodec);
+		const made = data.tables.notes.create({ title: 'Groceries' });
+
+		// An opener that reports storage trouble for this row, standing in for a
+		// chain that cannot be replayed. The export must not skip past it: the
+		// artifact feeds an import that replaces the workspace, so a body missing
+		// here is a body deleted everywhere.
+		const failing = {
+			stored: () => data.store.stored(),
+			tables: {
+				notes: {
+					openDocument: async () => ({
+						data: null,
+						error: { name: 'HydrationFailed', address: `notes/${made.id}` },
+					}),
+				},
+			},
+		};
+
+		const exported = await exportDocuments(failing, withCodec);
+		expect(exported.data).toBeNull();
+		if (exported.error?.name !== 'DocumentUnreadable') {
+			throw new Error(`expected DocumentUnreadable, got ${exported.error?.name}`);
+		}
+		expect(exported.error.table).toBe('notes');
+		expect(exported.error.rowId).toBe(made.id);
 	});
 });

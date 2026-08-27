@@ -32,7 +32,7 @@ const workspace = defineData({
 });
 
 describe('exportWorkspace (ADR-0267)', () => {
-	test('exports kv.json, tables.json, and one file per document', async () => {
+	test('exports kv.json, one file per table, and one file per document', async () => {
 		await using data = openMemory(workspace);
 		data.kv.update({ theme: 'dark' });
 		const made = data.tables.notes.create({ title: 'Groceries' });
@@ -44,16 +44,35 @@ describe('exportWorkspace (ADR-0267)', () => {
 		handle.get('meta').setAttr('title' as never, 'buy milk' as never);
 		handle[Symbol.dispose]();
 
-		const files = await exportWorkspace(data, workspace);
+		const exported = await exportWorkspace(data, workspace);
+		if (exported.error !== null) throw exported.error;
+		const files = exported.data;
 
 		expect(JSON.parse(files.get('kv.json') ?? 'null')).toEqual({ theme: 'dark' });
 
-		const tables = JSON.parse(files.get('tables.json') ?? 'null') as {
-			notes: { id: string; title: string }[];
-		};
-		expect(tables.notes).toHaveLength(1);
-		expect(tables.notes[0]).toMatchObject({ id: made.id, title: 'Groceries' });
+		const notes = JSON.parse(files.get('tables/notes.json') ?? 'null') as Record<
+			string,
+			{ title: string }
+		>;
+		expect(Object.keys(notes)).toEqual([made.id]);
+		expect(notes[made.id]).toMatchObject({ title: 'Groceries' });
 
 		expect(files.get(`documents/notes/${made.id}.txt`)).toBe('buy milk');
+	});
+
+	test('a row the declaration no longer names is still in the artifact', async () => {
+		await using data = openMemory(workspace);
+		const made = data.tables.notes.create({ title: 'Groceries' });
+		// A value written under an older declaration: the lens cannot see it,
+		// and the artifact must carry it anyway.
+		data.tables.notes.update(made.id, { legacy: 'kept' } as never);
+
+		const exported = await exportWorkspace(data, workspace);
+		if (exported.error !== null) throw exported.error;
+		const notes = JSON.parse(
+			exported.data.get('tables/notes.json') ?? 'null',
+		) as Record<string, Record<string, unknown>>;
+		expect(notes[made.id]?.legacy).toBe('kept');
+		expect(data.tables.notes.list().rows[0]).not.toHaveProperty('legacy');
 	});
 });

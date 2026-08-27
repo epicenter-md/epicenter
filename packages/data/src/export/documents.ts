@@ -9,17 +9,54 @@
  * handle into text through the application's own `serialize`, and knows nothing
  * about the format.
  *
+ * It fails closed. A document whose stored chain cannot be read is not a file
+ * this export may omit: an export feeds an import that REPLACES the workspace,
+ * so a quietly missing body is a body destroyed on every device. Enumeration
+ * trouble aborts the whole artifact rather than shipping a partial one.
+ *
  * The codecs are read from `parseData(definition)` rather than the opened
  * `data.definition`, because the latter is the inert snapshot with its behavior
  * functions stripped (ADR-0266). The caller already holds the authored
  * definition it opened the data with, so it passes it here.
  */
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { Ok, type Result } from 'wellcrafted/result';
+
 import {
 	type DataDefinition,
 	type DocumentReader,
 	parseData,
 } from '../definition/index.js';
 import type { RowDocumentHandle } from '../store/documents.js';
+import type { StoredData } from '../store/store.js';
+
+export const ExportError = defineErrors({
+	/**
+	 * The definition handed to the export could not be compiled, so there are
+	 * no codecs to serialize through. A programmer error surfaced as a value,
+	 * because the caller here is a person pressing a button.
+	 */
+	MalformedDefinition: ({ reason }: { reason: string }) => ({
+		message: `The data definition could not be compiled: ${reason}`,
+		reason,
+	}),
+	/**
+	 * A row's document could not be opened, so this export cannot say what that
+	 * body holds. Fatal on purpose: the artifact is the input to a destructive
+	 * import, and one that silently lacks a body deletes it everywhere.
+	 */
+	DocumentUnreadable: ({
+		table,
+		rowId,
+		cause,
+	}: { table: string; rowId: string; cause: unknown }) => ({
+		message: `Document for '${table}/${rowId}' could not be read, so the export was abandoned`,
+		table,
+		rowId,
+		cause,
+	}),
+});
+export type ExportError = InferErrors<typeof ExportError>;
 
 /** One serialized row document, at its export path's coordinates. */
 export type DocumentFile = {
@@ -30,18 +67,22 @@ export type DocumentFile = {
 };
 
 /**
- * The slice of opened data an export walks: each table's ids and its document
- * opener. Structural on purpose, so any typed or untyped view satisfies it.
+ * The slice of opened data an export walks: the faithful read, and each
+ * table's document opener. Structural on purpose, so any typed or untyped
+ * view satisfies it.
  */
 export type ExportableData = {
+	stored(): StoredData;
 	readonly tables: Readonly<
 		Record<
 			string,
 			{
-				ids(): string[];
 				openDocument(
 					rowId: string,
-				): Promise<{ data: RowDocumentHandle | undefined | null }>;
+				): Promise<{
+					data: RowDocumentHandle | undefined | null;
+					error: unknown;
+				}>;
 			}
 		>
 	>;
@@ -52,16 +93,21 @@ export type ExportableData = {
  *
  * The path a caller writes each file to is `documents/{table}/{rowId}.{ext}`
  * (ADR-0267); this returns the coordinates and the text, and leaves assembling
- * the archive to the caller. A row that holds no document yet is skipped: it
- * has nothing to serialize, which is a fact rather than a failure.
+ * the archive to the caller. Row ids come from the faithful read, so a row a
+ * newer declaration no longer names still has its body exported.
+ *
+ * A row whose document was never written serializes as whatever the codec
+ * makes of an empty document, which is the application's own answer to "this
+ * body is empty" rather than a decision taken here.
  */
 export async function exportDocuments(
 	data: ExportableData,
 	definition: DataDefinition,
-): Promise<DocumentFile[]> {
+	state: StoredData = data.stored(),
+): Promise<Result<DocumentFile[], ExportError>> {
 	const parsed = parseData(definition);
 	if (parsed.error !== null) {
-		throw new Error(parsed.error.message, { cause: parsed.error });
+		return ExportError.MalformedDefinition({ reason: parsed.error.message });
 	}
 	const files: DocumentFile[] = [];
 	for (const [table, parsedTable] of parsed.data.tables) {
@@ -69,9 +115,18 @@ export async function exportDocuments(
 		if (file === undefined) continue;
 		const handle = data.tables[table];
 		if (handle === undefined) continue;
-		for (const rowId of handle.ids()) {
+		for (const rowId of state.tables.get(table)?.keys() ?? []) {
 			const opened = await handle.openDocument(rowId);
+			if (opened.error !== null && opened.error !== undefined) {
+				return ExportError.DocumentUnreadable({
+					table,
+					rowId,
+					cause: opened.error,
+				});
+			}
 			const doc = opened.data;
+			// The row was taken between the faithful read and this open. It has no
+			// body to carry, and it is already absent from the rows being written.
 			if (doc === undefined || doc === null) continue;
 			try {
 				files.push({
@@ -85,5 +140,5 @@ export async function exportDocuments(
 			}
 		}
 	}
-	return files;
+	return Ok(files);
 }
