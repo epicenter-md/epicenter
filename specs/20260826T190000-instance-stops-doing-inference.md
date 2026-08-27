@@ -78,10 +78,11 @@ A pre-existing bug, not one the deletion introduced: `hosted.baseURL` is hardcod
 
 Planned as a deletion, since all four call sites were self-host's. Checking the billing spec first inverted it: overspend there is bounded by "the per-call cap times the rate-limit", and Cloud was never mounting one, so that bound was already untrue. Deleting the primitive would have removed the thing the allow-negative design names as one of its three bounds.
 
-- **3.1** Mounted `rateLimit({ requests: 120, windowSeconds: 60 })` on Cloud's inference and transcription gateways, ahead of the Autumn policies. Per principal.
+- **3.1** Mounted `rateLimit({ requests: 10, windowSeconds: 5 })` on Cloud's inference and transcription gateways, ahead of the Autumn policies. Per principal. The window is short on purpose: the failure it bounds is a burst at exhaustion, and a fixed window permits its whole quota at once, so `120/60s` would have allowed a 120-call burst at the same sustained rate that `10/5s` caps at ten.
 - **3.2** Rewrote the middleware doc for its real consumer, and replaced the "sized for a small trusted group" framing with what it now is: a bound on one-time overshoot at exhaustion, approximate on Cloudflare (per-isolate), explicitly not a sustained-abuse defense.
 - **3.3** Corrected ADR-0264's consequence, which had called it deletable.
-- **Open:** 120/60s is a starting value chosen to match what self-host used, and belongs with the other billing dials (markup, output cap, spend limit) as a value to set with real data.
+- **3.4** Scope, stated honestly after reading the plan config rather than the spec's edge-case prose: a paid plan bills overage as revenue (`overage: { priceUsd: 1, billingUnits: 100 }` on Pro), and the free plan sells no overage and is capped to `freeEligible` models, so real bad debt is a free user's burst at exhaustion on a cheap model. Cents. This is cheap insurance, not a designed ceiling.
+- **Open:** 10/5s is a starting value, and belongs with the other billing dials (markup, output cap) as one to set with real data. Watch for 429s on legitimate agent loops.
 - **Evidence:** api typechecks; rate-limit test 2/0.
 
 ### Phase 4 (follow-on, separate change): move the gateways out of the library

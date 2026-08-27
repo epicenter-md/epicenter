@@ -152,16 +152,19 @@ mountStoreSyncApp(app, {
 // `syncBlobStorageWithAutumn` policy and the `policies` seam it needs land on
 // `mountBlobsApp` together.
 mountBlobsApp(app, { auth: cookieOrBearer });
-// The credit balance is the primary spend gate, but chat settles AFTER the call
-// with `overageBehavior: "overflow"` (ADR-0100, the billing spec), so N concurrent
-// calls at exhaustion each run before any settles. The burn-rate cap is what makes
-// that overshoot bounded: bad debt is per-call-cost times this limit, one-time, per
-// principal. Per-isolate on Cloudflare, so approximate, which is fine for bounding
-// a one-time overshoot and is not a sustained-abuse defense.
+// The credit balance is the primary spend gate, but chat settles AFTER the call,
+// so calls fired together at exhaustion each pass the gate before any settles.
+// This bounds that BURST, which is why the window is short rather than the count
+// large: a fixed window permits its whole quota at once, so `120/60s` would allow
+// a 120-call burst while `10/5s` allows ten at the same sustained rate. The
+// exposure it bounds is small by construction (a paid plan bills overage as
+// revenue; the free plan sells none and is capped to cheap models), so read this
+// as cheap insurance, not a designed ceiling. Per-isolate on Cloudflare, so
+// approximate, and not a sustained-abuse defense.
 mountInferenceApp(app, {
 	auth: bearer,
 	policies: [
-		rateLimit({ requests: 120, windowSeconds: 60 }),
+		rateLimit({ requests: 10, windowSeconds: 5 }),
 		chargeOpenAiCreditsWithAutumn,
 	],
 });
@@ -170,7 +173,7 @@ mountInferenceApp(app, {
 mountTranscriptionApp(app, {
 	auth: bearer,
 	policies: [
-		rateLimit({ requests: 120, windowSeconds: 60 }),
+		rateLimit({ requests: 10, windowSeconds: 5 }),
 		chargeOpenAiTranscriptionCredits,
 	],
 });
