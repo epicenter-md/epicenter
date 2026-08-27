@@ -41,8 +41,11 @@ export function meterSSE(
 			controller.enqueue(chunk);
 
 			buffer += decoder.decode(chunk, { stream: true });
-			let newline: number;
-			while ((newline = buffer.indexOf('\n')) !== -1) {
+			for (
+				let newline = buffer.indexOf('\n');
+				newline !== -1;
+				newline = buffer.indexOf('\n')
+			) {
 				const line = buffer.slice(0, newline).trimEnd();
 				buffer = buffer.slice(newline + 1);
 				if (!line.startsWith('data:')) continue;
