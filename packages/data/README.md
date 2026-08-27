@@ -12,6 +12,7 @@ The package has one definition entrypoint and four runtime entrypoints:
 | `@epicenter/data/definition` | `defineData`, `parseData`, and the field descriptor vocabulary |
 | `@epicenter/data/browser` | `openDevice(definition)`, and `openAccount(definition, { baseURL, principalId })` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
+| `@epicenter/data/artifact` | `exportWorkspace(data, definition)` and `readArtifact(files, definition)`, the folder a person keeps |
 | `@epicenter/data/memory` | `openMemory(definition)` and `createMemoryRecord()`, test support |
 
 The browser opener is the only one a person's data lands in. A memory opener

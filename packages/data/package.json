@@ -6,7 +6,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./definition": "./src/definition/index.ts",
-		"./export": "./src/export/workspace.ts",
+		"./artifact": "./src/artifact/index.ts",
 		"./engine": "./src/engine.ts",
 		"./memory": "./src/store/memory.ts",
 		"./browser": "./src/store/browser.ts",

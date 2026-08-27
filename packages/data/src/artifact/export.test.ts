@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { defineData, field } from '@epicenter/data/definition';
 import { openMemory } from '../store/memory.js';
-import { exportWorkspace } from './workspace.js';
+import { exportWorkspace } from './export.js';
 
 type TitleRoot = {
 	getAttr(key: string): unknown;

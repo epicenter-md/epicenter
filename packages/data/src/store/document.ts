@@ -8,8 +8,10 @@ import * as Y from '@y/y';
  * derived address (ADR-0248), never nested in here.
  */
 export function createAppDocument(): Y.Doc {
-	// `gc: true` is what collapses a field edited 5,000 times to two structs. It
-	// is also why history lives outside the CRDT entirely (ADR-0214).
+	// `gc: true` is what collapses a field edited 5,000 times to two structs.
+	// The CRDT keeps no history to lose by it: what a person keeps is the
+	// export (ADR-0268), and collapse supersedes rather than discards
+	// (ADR-0269).
 	return new Y.Doc({ gc: true });
 }
 
