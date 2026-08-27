@@ -41,7 +41,6 @@ export type DurableOp =
 			kind: 'append';
 			document: string;
 			bytes: Uint8Array;
-			takenAt: number;
 			outboxId: number | undefined;
 	  }
 	| { kind: 'cursor'; seq: number }

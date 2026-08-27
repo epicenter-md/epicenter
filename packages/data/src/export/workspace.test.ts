@@ -1,6 +1,6 @@
-import { defineData, field } from '@epicenter/data/definition';
 import { describe, expect, test } from 'bun:test';
-import { openMemory } from '../store/bun.js';
+import { defineData, field } from '@epicenter/data/definition';
+import { openMemory } from '../store/memory.js';
 import { exportWorkspace } from './workspace.js';
 
 type TitleRoot = {
@@ -44,7 +44,9 @@ describe('exportWorkspace (ADR-0267/0268)', () => {
 		if (exported.error !== null) throw exported.error;
 		const files = exported.data;
 
-		expect(JSON.parse(files.get('kv.json') ?? 'null')).toEqual({ theme: 'dark' });
+		expect(JSON.parse(files.get('kv.json') ?? 'null')).toEqual({
+			theme: 'dark',
+		});
 
 		// The row is one file: its id is the path, its fields the frontmatter
 		// (strings always quoted, so every value re-reads as itself), and its
@@ -52,7 +54,10 @@ describe('exportWorkspace (ADR-0267/0268)', () => {
 		expect(files.get(`notes/${made.id}.md`)).toBe(
 			['---', 'title: "Groceries"', '---', '', 'buy milk', ''].join('\n'),
 		);
-		expect([...files.keys()].sort()).toEqual(['kv.json', `notes/${made.id}.md`]);
+		expect([...files.keys()].sort()).toEqual([
+			'kv.json',
+			`notes/${made.id}.md`,
+		]);
 	});
 
 	test('a row the declaration no longer names is still in the artifact', async () => {

@@ -1,17 +1,12 @@
-import { field } from '@epicenter/data/definition';
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { TableInvalidation } from '@epicenter/data/definition';
-import { defineData, InstantString } from '@epicenter/data/definition';
+import { defineData, field, InstantString } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
-import { open, openMemory } from './bun.js';
 import { encodeEnvelope } from './envelope.js';
 import { APP_DOCUMENT } from './log.js';
+import { createMemoryRecord, openMemory } from './memory.js';
 import {
 	type AccountStore,
 	createAccountStore,
@@ -27,7 +22,13 @@ const database = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.select(['light', 'dark']), fontSize: field.number() },
 	tables: {
-		notes: { fields: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) } },
+		notes: {
+			fields: {
+				title: field.string(),
+				tags: field.tags(),
+				date: field.nullable(field.string()),
+			},
+		},
 	},
 });
 
@@ -117,7 +118,7 @@ describe('a read is a property access on a plain object', () => {
 		db.transact(() => {
 			note({ title: 'one' });
 			note({ title: 'two' });
-	});
+		});
 
 		expect(touched).toHaveLength(1);
 		expect(touched[0]).toHaveLength(2);
@@ -217,7 +218,15 @@ describe('a nonconforming row is reported, never repaired', () => {
 	const wrongDatabase = defineData({
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
-		tables: { notes: { fields: { title: field.string(), tags: field.string(), date: field.nullable(field.string()) } } },
+		tables: {
+			notes: {
+				fields: {
+					title: field.string(),
+					tags: field.string(),
+					date: field.nullable(field.string()),
+				},
+			},
+		},
 	});
 
 	/**
@@ -338,136 +347,7 @@ describe('two replicas converge', () => {
 	});
 });
 
-describe('a database names the store it opens', () => {
-	test('one databaseId opens once per process, and disposing releases it', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'epicenter-claim-'));
-		try {
-			const first = await open(database, { root });
-			if (first.error !== null) throw first.error;
-
-			const second = await open(database, { root });
-			expect(second.error?.name).toBe('AlreadyOpen');
-			// The refusal is the whole point: a second open would be a second
-			// `Y.Doc` over one document, and the two converge through storage
-			// under last-writer-wins rather than seeing each other.
-			expect(second.data).toBeNull();
-
-			await first.data.store[Symbol.asyncDispose]();
-
-			const third = await open(database, { root });
-			expect(third.error).toBeNull();
-			await third.data?.store[Symbol.asyncDispose]();
-		} finally {
-			await rm(root, { recursive: true, force: true });
-		}
-	});
-
-	test('a database that will not parse releases the databaseId it claimed', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'epicenter-refused-'));
-		try {
-			// A table named `kv` collides with the relation KV projects into, which
-			// is the one name a database still reserves. The store this half-opened must
-			// be disposed and its databaseId released, or the databaseId is claimed for
-			// the life of the process and the application can never start.
-			const refused = {
-				databaseId: database.id,
-				tables: { kv: { fields: { a: field.string() } } },
-			};
-			const attempt = await open(refused as never, { root });
-			expect(attempt.error).not.toBeNull();
-
-			const after = await open(database, { root });
-			expect(after.error).toBeNull();
-			await after.data?.store[Symbol.asyncDispose]();
-		} finally {
-			await rm(root, { recursive: true, force: true });
-		}
-	});
-
-	test('a corrupt durable record refuses the boot and releases the claim', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'epicenter-corrupt-'));
-		try {
-			{
-				const { data: first, error } = await open(database, { root });
-				if (error !== null) throw error;
-				expectOkCreate(first);
-				await first.store[Symbol.asyncDispose]();
-			}
-			// One garbage row in the update log: the hydration replay cannot
-			// decode it, which is "the store could not read its durable record".
-			const file = new Database(join(root, database.id, 'store.sqlite3'));
-			file.run('UPDATE _updates SET bytes = ?', [
-				new Uint8Array([1, 2, 3, 4, 5]),
-			]);
-			file.close();
-
-			const refused = await open(database, { root });
-			expect(refused.data).toBeNull();
-			expect(refused.error?.name).toBe('StorageFailed');
-
-			// The claim was released with the refusal: a retry reports the same
-			// honest failure rather than `AlreadyOpen` for the life of the
-			// process.
-			const again = await open(database, { root });
-			expect(again.error?.name).toBe('StorageFailed');
-		} finally {
-			await rm(root, { recursive: true, force: true });
-		}
-	});
-});
-
-/** One created note through whichever runtime the disk test holds. */
-function expectOkCreate(data: DataOf<typeof database>): void {
-	data.tables.notes.create({
-		title: 'to be corrupted',
-		tags: [],
-		date: null,
-	});
-}
-
 describe('the document a row inherently owns (ADR-0248)', () => {
-	test('holds application-named roots and survives a reopen', async () => {
-		const directory = await mkdtemp(join(tmpdir(), 'epicenter-doc-'));
-		try {
-			let id!: string;
-			{
-				const { data: diskDb, error } = await open(database, {
-					root: directory,
-				});
-				if (error !== null) throw error;
-				const disk = diskDb;
-				const made = diskDb.tables.notes.create({
-					title: 'x',
-					tags: [],
-					date: null,
-				});
-				id = made.id;
-				const opened = await diskDb.tables.notes.openDocument(id);
-				if (opened.error !== null) throw opened.error;
-				const handle = opened.data;
-				if (handle === undefined) throw new Error('no document');
-				// The application names its root and picks its format. In Yjs 14
-				// `change` hands back a fresh builder and `applyDelta` commits it.
-				const editor = handle.get('editor', 'text');
-				editor.applyDelta(editor.change.insert('buy milk') as never);
-				handle.get('meta').setAttr('cursor' as never, 8 as never);
-				handle[Symbol.dispose]();
-				await disk.store[Symbol.asyncDispose]();
-			}
-			const { data: db2, error } = await open(database, { root: directory });
-			if (error !== null) throw error;
-			const reopened = await db2.tables.notes.openDocument(id);
-			if (reopened.error !== null) throw reopened.error;
-			const handle = reopened.data;
-			expect(handle?.get('editor', 'text').toString()).toContain('buy milk');
-			expect(handle?.get('meta').getAttr('cursor' as never)).toBe(8);
-			handle?.[Symbol.dispose]();
-			await db2.store[Symbol.asyncDispose]();
-		} finally {
-			await rm(directory, { recursive: true, force: true });
-		}
-	});
-
 	test('an absent row has no document, which is a fact not a failure', async () => {
 		// The same answer `get` gives an absent row, rather than an Err for one
 		// and an Ok(undefined) for the other.
@@ -574,35 +454,24 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		origin.tables.notes.update(made.id, { title: 'second' });
 		const second = origin.store.encodeStateSince(afterFirst);
 
-		const directory = await mkdtemp(join(tmpdir(), 'epicenter-store-'));
-		try {
-			{
-				const { data: laptop, error: openError } = await open(database, {
-					root: directory,
-				});
-				if (openError !== null) throw openError;
-				expect(
-					syncEngineOf(laptop.store).applyRemote(asEnvelope(second)).error,
-				).toBeNull();
-				expect(syncEngineOf(laptop.store).hasUnresolvedDependencies()).toBe(
-					true,
-				);
-				await laptop.store[Symbol.asyncDispose]();
-			}
-			const { data: db2, error: reopenError } = await open(database, {
-				root: directory,
-			});
-			if (reopenError !== null) throw reopenError;
-			const reopened = syncEngineOf(db2.store);
-			expect(reopened.hasUnresolvedDependencies()).toBe(true);
+		// A close and a reopen over one durable record: the pending bytes were
+		// stored as they arrived, so the gap is still a gap on the way back up.
+		const record = createMemoryRecord();
+		const laptop = openMemory(database, record);
+		expect(
+			syncEngineOf(laptop.store).applyRemote(asEnvelope(second)).error,
+		).toBeNull();
+		expect(syncEngineOf(laptop.store).hasUnresolvedDependencies()).toBe(true);
+		await laptop.store[Symbol.asyncDispose]();
 
-			expect(reopened.applyRemote(asEnvelope(first)).error).toBeNull();
-			expect(reopened.hasUnresolvedDependencies()).toBe(false);
-			expect(db2.tables.notes.get(made.id).data?.title).toBe('second');
-			await db2.store[Symbol.asyncDispose]();
-		} finally {
-			await rm(directory, { recursive: true, force: true });
-		}
+		const db2 = openMemory(database, record);
+		const reopened = syncEngineOf(db2.store);
+		expect(reopened.hasUnresolvedDependencies()).toBe(true);
+
+		expect(reopened.applyRemote(asEnvelope(first)).error).toBeNull();
+		expect(reopened.hasUnresolvedDependencies()).toBe(false);
+		expect(db2.tables.notes.get(made.id).data?.title).toBe('second');
+		await db2.store[Symbol.asyncDispose]();
 	});
 
 	test('a fully applied replica reports no unresolved dependencies', () => {
@@ -695,7 +564,13 @@ describe('a subscription names the rows a commit touched', () => {
 				id: 'so.epicenter.honeycrisp',
 				kv: {},
 				tables: {
-					notes: { fields: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) } },
+					notes: {
+						fields: {
+							title: field.string(),
+							tags: field.tags(),
+							date: field.nullable(field.string()),
+						},
+					},
 					folders: { fields: { name: field.string() } },
 				},
 			}),
@@ -868,15 +743,15 @@ describe('kv reports its own changes', () => {
 describe('kv survives a declaration upgrade (ADR-0240)', () => {
 	test('a stored write outlives the runtime that wrote it', async () => {
 		// The upgrade is a close and a reopen (ADR-0240): the same durable
-		// file, a newer declaration, one runtime at a time.
-		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const first = createAccountStore({ definition: database, sqlite });
+		// record, a newer declaration, one runtime at a time.
+		const record = createMemoryRecord();
+		const first = openMemory(database, record);
 		first.kv.update({ theme: 'dark' });
 		first.kv.update({ future: 'kept' } as never);
 		await first.store[Symbol.asyncDispose]();
 
-		const second = createAccountStore({
-			definition: defineData({
+		const second = openMemory(
+			defineData({
 				id: 'so.epicenter.honeycrisp',
 				kv: {
 					theme: field.select(['light', 'dark']),
@@ -884,11 +759,17 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 					future: field.string(),
 				},
 				tables: {
-					notes: { fields: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) } },
+					notes: {
+						fields: {
+							title: field.string(),
+							tags: field.tags(),
+							date: field.nullable(field.string()),
+						},
+					},
 				},
 			}),
-			sqlite,
-		});
+			record,
+		);
 		// The stored write survives the upgrade. The newly declared field remains
 		// missing, so recovery belongs to the application that opened the data.
 		const read = second.kv.get();
@@ -918,21 +799,21 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 	});
 
 	test('the next runtime has no handle; one that re-declares it reads every row back', async () => {
-		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const first = createAccountStore({ definition: withScratch, sqlite });
+		const record = createMemoryRecord();
+		const first = openMemory(withScratch, record);
 		const made = first.tables.scratch.create({ body: 'kept in the CRDT' });
 		first.kv.update({ theme: 'dark' });
 		await first.store[Symbol.asyncDispose]();
 
-		// The device updates (ADR-0240): same durable sqlite, the next
+		// The device updates (ADR-0240): the same durable record, the next
 		// runtime, a declaration that no longer names `scratch` or `kv`.
-		const second = createAccountStore({ definition: withoutScratch, sqlite });
+		const second = openMemory(withoutScratch, record);
 		expect((second.tables as Record<string, unknown>).scratch).toBeUndefined();
 		await second.store[Symbol.asyncDispose]();
 
 		// A later release declares them again: nothing was lost, because the
 		// CRDT is the truth and never dropped a byte.
-		const third = createAccountStore({ definition: withScratch, sqlite });
+		const third = openMemory(withScratch, record);
 		expect(third.tables.scratch.list().rows).toEqual([
 			{ id: made.id, body: 'kept in the CRDT' },
 		]);
@@ -941,13 +822,13 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 	});
 
 	test('stored() sees the table and the kv key the declaration dropped', async () => {
-		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const first = createAccountStore({ definition: withScratch, sqlite });
+		const record = createMemoryRecord();
+		const first = openMemory(withScratch, record);
 		const made = first.tables.scratch.create({ body: 'kept in the CRDT' });
 		first.kv.update({ theme: 'dark' });
 		await first.store[Symbol.asyncDispose]();
 
-		const second = createAccountStore({ definition: withoutScratch, sqlite });
+		const second = openMemory(withoutScratch, record);
 		// The lens cannot reach them: there is no handle for `scratch`, and this
 		// declaration names no kv keys at all.
 		expect((second.tables as Record<string, unknown>).scratch).toBeUndefined();
@@ -979,8 +860,8 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 	});
 
 	test('a field the declaration dropped survives here and nowhere else', async () => {
-		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const before = createAccountStore({ definition: withPreview, sqlite });
+		const record = createMemoryRecord();
+		const before = openMemory(withPreview, record);
 		const made = before.tables.notes.create({
 			title: 'Groceries',
 			preview: 'milk, eggs',
@@ -991,7 +872,7 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 		// every field this declaration names reads fine, so it is not reported as
 		// nonconforming either. Through the lens the stored value is unreachable
 		// from both arms, which is exactly the data loss an export must not copy.
-		const after = createAccountStore({ definition: withoutPreview, sqlite });
+		const after = openMemory(withoutPreview, record);
 		const listed = after.tables.notes.list();
 		expect(listed.nonconforming).toEqual([]);
 		expect(listed.rows).toEqual([{ id: made.id, title: 'Groceries' }]);
@@ -1052,45 +933,9 @@ describe('foreign bytes have exactly one door', () => {
 	});
 });
 
-describe('discard deletes the live file whole, and the shelf survives (ADR-0231)', () => {
-	test('a discarded store reopens empty at cursor zero, with history intact', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'epicenter-discard-'));
-		try {
-			const opened = await open(database, { root });
-			if (opened.error !== null) throw opened.error;
-			const app = opened.data;
-			app.tables.notes.create({
-				title: 'retired document work',
-				tags: [],
-				date: null,
-			});
-			syncEngineOf(app.store).advance(9);
-
-			const discarded = await app.store.discard();
-			expect(discarded.error).toBeNull();
-			expect(existsSync(join(root, database.id, 'store.sqlite3'))).toBe(false);
-			// The shelf is the owner's, not the document's.
-			expect(existsSync(join(root, database.id, 'history.sqlite3'))).toBe(true);
-
-			// Boot is the whole of adoption: a wiped store opens empty and asks
-			// the authority for everything, from zero.
-			const reopened = await open(database, { root });
-			if (reopened.error !== null) throw reopened.error;
-			try {
-				expect(reopened.data.tables.notes.list().rows).toEqual([]);
-				expect(syncEngineOf(reopened.data.store).cursor()).toBe(0);
-			} finally {
-				await reopened.data.store[Symbol.asyncDispose]();
-			}
-		} finally {
-			await rm(root, { recursive: true, force: true });
-		}
-	});
-});
-
 describe('a document store owes nobody (ADR-0233)', () => {
 	test('local commits leave the outbox empty and no replica verb exists', async () => {
-		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
+		const { sqlite } = createMemoryRecord();
 		const device = createDeviceStore({ definition: database, sqlite });
 		const store = device.store;
 		try {
@@ -1143,7 +988,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 
 		const device = createDeviceStore({
 			definition: database,
-			sqlite: createBunSqliteAdapter(new Database(':memory:')),
+			sqlite: createMemoryRecord().sqlite,
 		});
 		const account = openMemory(database);
 		try {
@@ -1296,7 +1141,9 @@ describe('the store manages instant createdAt/updatedAt (ADR-0265)', () => {
 		expect(after?.createdAt).toBe(made.createdAt);
 		expect(after?.updatedAt).not.toBe('stale');
 		expect(
-			after !== undefined && after !== null && after.updatedAt >= made.updatedAt,
+			after !== undefined &&
+				after !== null &&
+				after.updatedAt >= made.updatedAt,
 		).toBe(true);
 	});
 

@@ -9,12 +9,9 @@
  */
 
 import { expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { AgentMessage } from '@epicenter/agent';
-import { open } from '@epicenter/data/bun';
 import { defineData } from '@epicenter/data/definition';
+import { createMemoryRecord, openMemory } from '@epicenter/data/memory';
 import { InstantString } from '@epicenter/field';
 import { conversationsTable, createAgentMessageStore } from './index.js';
 
@@ -32,13 +29,12 @@ const message: AgentMessage = {
 };
 
 test('the agent store observes writes and survives a restart', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-chat-'));
+	// One durable record, two runtimes over it: the second is the restart.
+	const record = createMemoryRecord();
 	let rowId: string;
 	try {
 		{
-			const opened = await open(testDefinition, { root });
-			if (opened.error !== null) throw opened.error;
-			const db = opened.data;
+			const db = openMemory(testDefinition, record);
 			await using _db = db;
 			const now = InstantString.fromDate(new Date('2026-07-19T00:00:00.000Z'));
 			const created = db.tables.conversations.create({
@@ -61,9 +57,7 @@ test('the agent store observes writes and survives a restart', async () => {
 			expect(observations).toBe(1);
 		}
 
-		const reopened = await open(testDefinition, { root });
-		if (reopened.error !== null) throw reopened.error;
-		const db = reopened.data;
+		const db = openMemory(testDefinition, record);
 		await using _db = db;
 		const opened = await db.tables.conversations.openDocument(rowId);
 		if (opened.error !== null) throw opened.error;
@@ -72,6 +66,6 @@ test('the agent store observes writes and survives a restart', async () => {
 		using store = createAgentMessageStore(document);
 		expect([...store.entries()]).toEqual([{ key: message.id, val: message }]);
 	} finally {
-		rmSync(root, { recursive: true, force: true });
+		record.close();
 	}
 });

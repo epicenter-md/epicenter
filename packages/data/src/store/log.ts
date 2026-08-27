@@ -21,9 +21,8 @@ export type { OutboxEntry } from './persistence.js';
 /**
  * How many appends the live log holds before it folds into a snapshot (ADR-0159/0214).
  *
- * The file oscillates rather than growing: only the history file grows
- * monotonically, and it is the one with a pruning pragma and no correctness
- * role.
+ * The durable record oscillates rather than growing: a chain that reaches the
+ * threshold collapses into one baseline, so nothing here accumulates.
  */
 export const SNAPSHOT_FOLD_THRESHOLD = 64;
 
@@ -298,29 +297,6 @@ export function writeDocumentIdentity(
 	);
 }
 
-/**
- * The history file: what collapse superseded (ADR-0214).
- *
- * Collapse is what keeps the live log small, and history is what collapse would
- * otherwise destroy, so collapse copies the rows it is about to delete here
- * first. A crash between the copy and the delete duplicates an entry rather
- * than losing one, which is the direction the primary key makes safe.
- */
-export function applyHistorySchema(sqlite: SqliteDatabase): void {
-	// Pruning returns disk only with incremental auto-vacuum, and it must be set
-	// before the first table is created to take effect.
-	sqlite.run('PRAGMA auto_vacuum = INCREMENTAL');
-	sqlite.run(`
-		CREATE TABLE IF NOT EXISTS _history (
-			document TEXT    NOT NULL,
-			seq      INTEGER NOT NULL,
-			taken_at INTEGER NOT NULL,
-			bytes    BLOB    NOT NULL,
-			PRIMARY KEY (document, seq)
-		) WITHOUT ROWID, STRICT
-	`);
-}
-
 export function readUpdates(
 	sqlite: SqliteDatabase,
 	document: string,
@@ -354,25 +330,19 @@ export function replay(updates: readonly StoredUpdate[]): Y.Doc {
 /**
  * Append one update, and collapse the chain when it has grown long enough.
  *
- * Runs inside a transaction the caller owns, so the projection write the caller
- * makes alongside it commits or fails with these bytes. Collapse copies every
- * row it is about to delete into history first, in that order deliberately: a
- * crash after the copy duplicates a history entry, which the primary key
- * absorbs, while the other order would lose one.
+ * Runs inside a transaction the caller owns, so everything the caller writes
+ * alongside it commits or fails with these bytes. Collapse replaces the whole
+ * chain with one baseline that carries the same state, so what it deletes is
+ * superseded rather than lost.
  */
 export function appendUpdate({
 	sqlite,
-	history,
 	document,
 	update,
-	takenAt,
 }: {
 	sqlite: SqliteDatabase;
-	/** Absent means this store keeps no history; collapse then simply deletes. */
-	history: SqliteDatabase | undefined;
 	document: string;
 	update: Uint8Array;
-	takenAt: number;
 }): void {
 	const nextSeq =
 		sqlite.all<SqliteRow & { seq: number }>(
@@ -387,18 +357,6 @@ export function appendUpdate({
 
 	const updates = readUpdates(sqlite, document);
 	if (updates.length < SNAPSHOT_FOLD_THRESHOLD) return;
-
-	if (history !== undefined) {
-		history.transaction(() => {
-			for (const superseded of updates) {
-				history.run(
-					`INSERT OR IGNORE INTO _history (document, seq, taken_at, bytes)
-					 VALUES (?, ?, ?, ?)`,
-					[document, superseded.seq, takenAt, copyBytes(superseded.bytes)],
-				);
-			}
-		});
-	}
 
 	const compacted = replay(updates);
 	try {
@@ -455,17 +413,14 @@ export function loadDurableSnapshot(sqlite: SqliteDatabase): DurableSnapshot {
 /**
  * The SQLite durable engine: one batch, one transaction, in order.
  *
- * Synchronous, which is what lets a verb on Bun or a Durable Object return
- * with its write already durable. Opening applies the schema and enforces the
+ * Synchronous, which is what lets a verb on a Durable Object return with its
+ * write already durable. Opening applies the schema and enforces the
  * format certificate (ADR-0231's cutover), exactly as every open always has.
  */
 export function createSqliteDurablePort({
 	sqlite,
-	history,
 }: {
 	sqlite: SqliteDatabase;
-	/** Absent means this store keeps no history; collapse then simply deletes. */
-	history?: SqliteDatabase;
 }): DurablePort & { load(): DurableSnapshot } {
 	applyStoreSchema(sqlite);
 	adoptStoreFormat(sqlite);
@@ -478,10 +433,8 @@ export function createSqliteDurablePort({
 						case 'append': {
 							appendUpdate({
 								sqlite,
-								history,
 								document: op.document,
 								update: op.bytes,
-								takenAt: op.takenAt,
 							});
 							if (op.outboxId !== undefined) {
 								insertOutbox(sqlite, op.outboxId, op.document, op.bytes);

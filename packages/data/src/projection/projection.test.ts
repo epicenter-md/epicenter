@@ -1,4 +1,3 @@
-import { field } from '@epicenter/data/definition';
 /**
  * The projection follower, proven on the public surface alone.
  *
@@ -9,12 +8,12 @@ import { field } from '@epicenter/data/definition';
  */
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { defineData } from '@epicenter/data/definition';
+import { defineData, field } from '@epicenter/data/definition';
 import type { SqliteDatabase, SqliteValue } from '@epicenter/sqlite';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { openMemory } from '../store/bun.js';
 import { encodeEnvelope } from '../store/envelope.js';
 import { APP_DOCUMENT } from '../store/log.js';
+import { openMemory } from '../store/memory.js';
 import { type DataOf, syncEngineOf } from '../store/store.js';
 import { createSqliteProjection, type SqliteProjection } from './index.js';
 
@@ -22,7 +21,13 @@ const database = defineData({
 	id: 'so.epicenter.projectionlab',
 	kv: { theme: field.select(['light', 'dark']), fontSize: field.number() },
 	tables: {
-		notes: { fields: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) } },
+		notes: {
+			fields: {
+				title: field.string(),
+				tags: field.tags(),
+				date: field.nullable(field.string()),
+			},
+		},
 	},
 });
 
@@ -184,7 +189,9 @@ describe('a nonconforming row projects raw, so SQL can show what failed', () => 
 			defineData({
 				id: 'so.epicenter.projectionlab',
 				kv: {},
-				tables: { notes: { fields: { title: field.string(), tags: field.string() } } },
+				tables: {
+					notes: { fields: { title: field.string(), tags: field.string() } },
+				},
 			}),
 		);
 		older.tables.notes.create({ title: 'legacy', tags: 'not-a-list' });

@@ -43,7 +43,13 @@ export const DocumentError = defineErrors({
 	 * StorageFailed: the caller renders a failure, and nothing half-hydrated
 	 * ever escapes.
 	 */
-	HydrationFailed: ({ address, cause }: { address: string; cause: unknown }) => ({
+	HydrationFailed: ({
+		address,
+		cause,
+	}: {
+		address: string;
+		cause: unknown;
+	}) => ({
 		message: `Document '${address}' could not be hydrated from storage`,
 		address,
 		cause,
@@ -118,7 +124,6 @@ export function createDocumentEngine({
 	controller,
 	mintOutboxId,
 	tombstones,
-	now,
 	assertUsable,
 	onLocalCommit,
 	log,
@@ -138,7 +143,6 @@ export function createDocumentEngine({
 	mintOutboxId(): number | undefined;
 	/** Durably retired addresses, loaded at open. Owned by this engine from here. */
 	tombstones: readonly string[];
-	now(): number;
 	assertUsable(): void;
 	/**
 	 * Called after a LOCAL document commit is queued (ADR-0264). The store runs
@@ -167,7 +171,7 @@ export function createDocumentEngine({
 				// own authored work.
 				if (!transaction.local) {
 					throw new Error(
-						'Foreign bytes must enter through the store connection. A direct Y.applyUpdateV2 on a row document would be republished as this device\'s own work.',
+						"Foreign bytes must enter through the store connection. A direct Y.applyUpdateV2 on a row document would be republished as this device's own work.",
 					);
 				}
 				// An application writing inside its own document. The bytes join the
@@ -177,7 +181,6 @@ export function createDocumentEngine({
 						kind: 'append',
 						document: address,
 						bytes: copyBytes(update),
-						takenAt: now(),
 						outboxId: mintOutboxId(),
 					},
 				]);
@@ -226,8 +229,8 @@ export function createDocumentEngine({
 		return {
 			get(root: string, typeName?: string | null): Y.Type {
 				assertUsable();
-				// SAFETY: `Doc.get`'s rc typing takes `never` for the optional type
-				// name; a string or null is the value it actually accepts.
+				// rc typing spells `Doc.get`'s optional type name as `never`; a string
+				// or null is what it accepts at runtime.
 				return entry.doc.get(root, (typeName ?? null) as never);
 			},
 			[Symbol.dispose]() {
@@ -291,7 +294,6 @@ export function createDocumentEngine({
 				kind: 'append',
 				document: address,
 				bytes: copyBytes(bytes),
-				takenAt: now(),
 				// Never the outbox: these bytes came FROM the authority.
 				outboxId: undefined,
 			};
@@ -335,9 +337,9 @@ export function createDocumentEngine({
 					...controller.pendingAppends(address),
 				];
 				if (chain.length === 0) continue;
-				// SAFETY: the length check above proves the element exists, and
-				// `copyBytes` returns freshly allocated `Uint8Array<ArrayBuffer>`s,
-				// which is the buffer shape `mergeUpdatesV2`'s typing demands.
+				// The length check above proves `chain[0]` exists, and `copyBytes` returns
+				// freshly allocated `Uint8Array<ArrayBuffer>`s, the buffer shape
+				// `mergeUpdatesV2`'s typing demands.
 				sections.push({
 					document: address,
 					bytes:

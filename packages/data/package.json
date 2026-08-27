@@ -9,7 +9,7 @@
 		"./export": "./src/export/workspace.ts",
 		"./projection": "./src/projection/index.ts",
 		"./engine": "./src/engine.ts",
-		"./bun": "./src/store/bun.ts",
+		"./memory": "./src/store/memory.ts",
 		"./browser": "./src/store/browser.ts",
 		"./sync": "./src/sync/index.ts"
 	},

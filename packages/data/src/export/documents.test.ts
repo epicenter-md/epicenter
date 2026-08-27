@@ -1,7 +1,7 @@
-import { defineData, field } from '@epicenter/data/definition';
 import { describe, expect, test } from 'bun:test';
+import { defineData, field } from '@epicenter/data/definition';
 import * as Y from '@y/y';
-import { openMemory } from '../store/bun.js';
+import { openMemory } from '../store/memory.js';
 import { exportDocuments } from './documents.js';
 
 type TitleRoot = {
@@ -100,7 +100,9 @@ describe('exportDocuments (ADR-0267)', () => {
 		const exported = await exportDocuments(failing, withCodec);
 		expect(exported.data).toBeNull();
 		if (exported.error?.name !== 'DocumentUnreadable') {
-			throw new Error(`expected DocumentUnreadable, got ${exported.error?.name}`);
+			throw new Error(
+				`expected DocumentUnreadable, got ${exported.error?.name}`,
+			);
 		}
 		expect(exported.error.table).toBe('notes');
 		expect(exported.error.rowId).toBe(made.id);

@@ -207,7 +207,9 @@ describe('acceptance is live, durability is a visible debt', () => {
 		// A row's document: an editor keeps writing prose while blocked. The
 		// open hydrates from the (empty) chain plus the retained queue, so a
 		// blocked engine never blocks acceptance.
-		const handle = expectOk(await replica.db.tables.notes.openDocument(made.id));
+		const handle = expectOk(
+			await replica.db.tables.notes.openDocument(made.id),
+		);
 		if (handle === undefined) throw new Error('no document');
 		const editor = handle.get('editor', 'text');
 		editor.applyDelta(editor.change.insert('typed while blocked') as never);
@@ -511,7 +513,6 @@ describe('the controller against an asynchronous engine', () => {
 		kind: 'append',
 		document: 'app',
 		bytes: new Uint8Array([id]),
-		takenAt: id,
 		outboxId: id,
 	});
 

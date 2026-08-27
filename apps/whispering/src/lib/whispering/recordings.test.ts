@@ -1,15 +1,12 @@
 /** Recordings domain tests over the real Bun @epicenter/data stack. */
 import { expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import {
 	type BlobRemote,
 	type BlobStore,
 	BlobStoreError,
 	generateBlobId,
 } from '@epicenter/blobs';
-import { open } from '@epicenter/data/bun';
+import { openMemory } from '@epicenter/data/memory';
 import { InstantString } from '@epicenter/field';
 import type { Result } from 'wellcrafted/result';
 import { Ok } from 'wellcrafted/result';
@@ -99,10 +96,7 @@ async function setup({
 	remote?: BlobRemote | null;
 	seed?: ReturnType<typeof recording>[];
 } = {}) {
-	const root = mkdtempSync(join(tmpdir(), 'whispering-recordings-'));
-	const opened = await open(whisperingDefinition, { root });
-	if (opened.error !== null) throw opened.error;
-	const data = opened.data;
+	const data = openMemory(whisperingDefinition);
 	const table = data.tables.recordings;
 	for (const row of seed) expectOk(table.create(storedRow(row)));
 	const domain = createWhisperingRecordings({
@@ -115,7 +109,6 @@ async function setup({
 		async dispose() {
 			domain[Symbol.dispose]();
 			await data.store[Symbol.asyncDispose]();
-			rmSync(root, { recursive: true, force: true });
 		},
 	};
 }

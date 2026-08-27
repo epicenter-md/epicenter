@@ -10,14 +10,15 @@ The package has one definition entrypoint and four runtime entrypoints:
 | --- | --- |
 | `@epicenter/data` | the opened data surface |
 | `@epicenter/data/definition` | `defineData`, `parseData`, and the field descriptor vocabulary |
-| `@epicenter/data/bun` | `open(definition, { root })`, and `openMemory(definition)` for tests |
 | `@epicenter/data/browser` | `openDevice(definition)`, and `openAccount(definition, { baseURL, principalId })` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 | `@epicenter/data/projection` | `createSqliteProjection`, a read-only SQL follower |
+| `@epicenter/data/memory` | `openMemory(definition)` and `createMemoryRecord()`, test support |
 
-A Bun opener imports `bun:sqlite` and a browser opener imports a WASM build, so
-neither belongs in a barrel the other has to load. That is the whole reason the
-openers live at their own entry points rather than on `@epicenter/data`.
+The browser opener is the only one a person's data lands in. A memory opener
+imports `bun:sqlite` and the browser opener imports a WASM build, so neither
+belongs in a barrel the other has to load. That is the whole reason the openers
+live at their own entry points rather than on `@epicenter/data`.
 
 ## Opening is the only asynchronous thing
 
@@ -331,11 +332,11 @@ and one coalesced flush commits the whole queue atomically. Everything
 derived from the document (SQL, search, exports) is a follower composed
 outside the store.
 
-On Bun the durable facts are `store.sqlite3` in the application's directory,
-beside `history.sqlite3` for what collapse superseded, and a flush is a
-synchronous transaction, so a successful write is durable when the verb
-returns. In the browser they live directly in IndexedDB, three object stores
-(`updates`, `outbox`, `meta`) written one atomic transaction per flush.
+In the browser the durable facts live directly in IndexedDB, four object
+stores (`updates`, `outbox`, `tombstones`, `meta`) written one atomic
+transaction per flush. Over a synchronous SQLite (a Durable Object's storage,
+or a memory record in a test) a flush is one transaction, so a successful
+write is durable when the verb returns.
 
 There is no worker and no OPFS. The reasoning is in the module comment titled
 "Why there is no worker" at the top of `packages/data/src/store/browser.ts`, and

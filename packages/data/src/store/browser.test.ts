@@ -31,7 +31,8 @@ import type { Result } from 'wellcrafted/result';
 import { expectErr, expectOk as expectOkResult } from 'wellcrafted/testing';
 
 import { openAccount, openDevice } from './browser.js';
-import { openMemory } from './bun.js';
+import { STORE_FORMAT } from './log.js';
+import { openMemory } from './memory.js';
 import { type DataOf, type DataStoreBase, syncEngineOf } from './store.js';
 
 /** One databaseId per concern, so tests share no IndexedDB state. */
@@ -448,5 +449,95 @@ describe('the clean break: storage from before the account-scoped address', () =
 		}
 		expect(await databaseNames()).not.toContain(oldAlice);
 		await alice.store[Symbol.asyncDispose]();
+	});
+});
+
+describe('a boot that cannot proceed refuses, and holds no claim after it', () => {
+	/**
+	 * Write one undecodable update into a record certified under the current
+	 * format, so the format rule keeps it and the hydration replay meets it.
+	 */
+	function seedCorruptChain(address: string): Promise<void> {
+		return new Promise((resolve, reject) => {
+			const request = indexedDB.open(address, 3);
+			request.onupgradeneeded = () => {
+				for (const name of ['updates', 'outbox', 'tombstones', 'meta']) {
+					request.result.createObjectStore(name);
+				}
+			};
+			request.onsuccess = () => {
+				const sqlite = request.result;
+				const transaction = sqlite.transaction(
+					['updates', 'meta'],
+					'readwrite',
+				);
+				transaction.objectStore('meta').put(STORE_FORMAT, 'format');
+				transaction
+					.objectStore('updates')
+					.put(new Uint8Array([1, 2, 3, 4, 5]), ['app', 1]);
+				transaction.oncomplete = () => {
+					sqlite.close();
+					resolve();
+				};
+				transaction.onerror = () => reject(transaction.error);
+			};
+			request.onerror = () => reject(request.error);
+		});
+	}
+
+	test('a definition that will not parse releases the id it claimed', async () => {
+		const database = databaseFor('unparseable');
+		// A declaration may arrive as data, so a refusal here is a boot outcome
+		// rather than a programmer error. The store this half-opened must
+		// release its address, or the application can never start.
+		const refused = await openDevice({
+			databaseId: database.id,
+			tables: { notes: { fields: {} } },
+		} as never);
+		expect(refused.error).not.toBeNull();
+
+		const after = expectOk(await openDeviceData(database));
+		await after.store[Symbol.asyncDispose]();
+	});
+
+	test('a corrupt durable record refuses the boot and releases the claim', async () => {
+		const database = databaseFor('corrupt');
+		await seedCorruptChain(deviceAddress(database.id));
+
+		const refused = await openDevice(database);
+		expect(refused.data).toBeNull();
+		expect(refused.error?.name).toBe('StorageFailed');
+
+		// The claim went with the refusal: a retry reports the same honest
+		// failure rather than `AlreadyOpen` for the life of the page.
+		const again = await openDevice(database);
+		expect(again.error?.name).toBe('StorageFailed');
+	});
+});
+
+describe('the document a row inherently owns survives a reopen (ADR-0248)', () => {
+	test('application-named roots come back with what was typed into them', async () => {
+		const database = databaseFor('rowdocument');
+		let rowId!: string;
+		{
+			const device = expectOk(await openDeviceData(database));
+			rowId = expectOk(device.tables.notes.create({ title: 'x' })).id;
+			const opened = expectOk(await device.tables.notes.openDocument(rowId));
+			if (opened === undefined) throw new Error('the row has no document');
+			// The application names its root and picks its format. In Yjs 14
+			// `change` hands back a fresh builder and `applyDelta` commits it.
+			const editor = opened.get('editor', 'text');
+			editor.applyDelta(editor.change.insert('buy milk') as never);
+			opened.get('meta').setAttr('cursor' as never, 8 as never);
+			opened[Symbol.dispose]();
+			await device.store[Symbol.asyncDispose]();
+		}
+
+		const reopened = expectOk(await openDeviceData(database));
+		const opened = expectOk(await reopened.tables.notes.openDocument(rowId));
+		expect(opened?.get('editor', 'text').toString()).toContain('buy milk');
+		expect(opened?.get('meta').getAttr('cursor' as never)).toBe(8);
+		opened?.[Symbol.dispose]();
+		await reopened.store[Symbol.asyncDispose]();
 	});
 });

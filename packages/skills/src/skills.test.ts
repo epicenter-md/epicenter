@@ -1,6 +1,6 @@
 import { field, jsonValue } from '@epicenter/data/definition';
 /**
- * Skills data tests, against the real workspace through the Bun store.
+ * Skills data tests, against the real workspace through a memory store.
  *
  * Key behaviors:
  * - a stricter release surfaces old stored payloads until an explicit update repairs one
@@ -18,8 +18,12 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { open } from '@epicenter/data/bun';
 import { defineData } from '@epicenter/data/definition';
+import {
+	createMemoryRecord,
+	type MemoryRecord,
+	openMemory,
+} from '@epicenter/data/memory';
 import { InstantString } from '@epicenter/field';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
@@ -48,10 +52,8 @@ const historicalSkillsWorkspace = defineData({
 	},
 });
 
-async function openSkills(root: string) {
-	const opened = await open(skillsDefinition, { root });
-	if (opened.error !== null) throw opened.error;
-	return opened.data;
+function openSkills(record: MemoryRecord) {
+	return openMemory(skillsDefinition, record);
 }
 
 async function readInstructions(
@@ -66,14 +68,13 @@ async function readInstructions(
 }
 
 test('a stricter Skills workspace exposes nonconformance until an update repairs it', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-skills-'));
+	const record = createMemoryRecord();
 	try {
-		// One file, two interpretations of it: the historical workspace writes a row
-		// this release cannot read, and the current one has to say so rather than
-		// hide it (ADR-0125).
-		const historical = await open(historicalSkillsWorkspace, { root });
-		if (historical.error !== null) throw historical.error;
-		const oldSkill = historical.data.tables.skills.create({
+		// One durable record, two interpretations of it: the historical workspace
+		// writes a row this release cannot read, and the current one has to say so
+		// rather than hide it (ADR-0125).
+		const historical = openMemory(historicalSkillsWorkspace, record);
+		const oldSkill = historical.tables.skills.create({
 			name: 'writing-voice',
 			description: 'Write directly',
 			license: null,
@@ -82,9 +83,9 @@ test('a stricter Skills workspace exposes nonconformance until an update repairs
 			allowedTools: null,
 			updatedAt: InstantString.now(),
 		});
-		await historical.data[Symbol.asyncDispose]();
+		await historical[Symbol.asyncDispose]();
 
-		const data = await openSkills(root);
+		const data = openSkills(record);
 		await using _data = data;
 		expect(expectOk(data.tables.skills.get('aaaaaaaaaaaaaaaaaaaaaaaa'))).toBe(
 			undefined,
@@ -113,16 +114,16 @@ test('a stricter Skills workspace exposes nonconformance until an update repairs
 		expect(repaired?.sourceId).toBe('agentskills-writing-voice');
 		expect(data.tables.skills.list().nonconforming).toEqual([]);
 	} finally {
-		rmSync(root, { recursive: true, force: true });
+		record.close();
 	}
 });
 
 test("a skill's instructions live under its own row id", async () => {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-skills-doc-'));
+	const record = createMemoryRecord();
 	try {
 		let writtenTo: string;
 		{
-			const data = await openSkills(root);
+			const data = openSkills(record);
 			await using _data = data;
 			const written = data.tables.skills.create({
 				sourceId: 'agentskills-writing-voice',
@@ -155,23 +156,22 @@ test("a skill's instructions live under its own row id", async () => {
 			expect(await readInstructions(data, other.id)).toBe('');
 		}
 
-		const reopened = await openSkills(root);
+		const reopened = openSkills(record);
 		await using _reopened = reopened;
 		expect(await readInstructions(reopened, writtenTo)).toBe(
 			'Keep it concise.',
 		);
 	} finally {
-		rmSync(root, { recursive: true, force: true });
+		record.close();
 	}
 });
 
 test('filesystem import stores the metadata id as sourceId, not as the row id', async () => {
+	const record = createMemoryRecord();
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-skills-io-'));
-	const storageRoot = join(root, 'storage');
 	const inputRoot = join(root, 'input');
 	const outputRoot = join(root, 'output');
 	try {
-		mkdirSync(storageRoot, { recursive: true });
 		const skillRoot = join(inputRoot, 'writing-voice');
 		mkdirSync(join(skillRoot, 'references'), { recursive: true });
 		writeFileSync(
@@ -180,7 +180,7 @@ test('filesystem import stores the metadata id as sourceId, not as the row id', 
 		);
 		writeFileSync(join(skillRoot, 'references', 'examples.md'), '# Examples\n');
 
-		const data = await openSkills(storageRoot);
+		const data = openSkills(record);
 		await using _data = data;
 		const imported = await importSkillsFromDisk({ data, dir: inputRoot });
 		expect(imported.created).toBe(1);
@@ -204,6 +204,7 @@ test('filesystem import stores the metadata id as sourceId, not as the row id', 
 			),
 		).toBe('# Examples\n');
 	} finally {
+		record.close();
 		rmSync(root, { recursive: true, force: true });
 	}
 });
