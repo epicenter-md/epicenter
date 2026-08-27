@@ -18,6 +18,7 @@ import {
 	type DataRootSystem,
 	EPICENTER_BUNDLE_IDENTIFIER,
 	epicenterDataRoot,
+	epicenterFolderRoot,
 	isAppId,
 	partitionDir,
 } from './app-data.ts';
@@ -134,6 +135,54 @@ test('the bundle identifier equals the desktop bundle it has to match', () => {
 	expect((conf as { identifier: string }).identifier).toBe(
 		EPICENTER_BUNDLE_IDENTIFIER,
 	);
+});
+
+test('the folder root is the home directory, capitalized, no dot', () => {
+	// The same shape on all three, because `homedir()` is the one input: Bun
+	// resolves it through `uv_os_homedir` on Windows (USERPROFILE) and
+	// HOME-then-getpwuid_r on POSIX, matching Node. Nothing platform-specific
+	// belongs here; a person's home directory is not an ambient guess the way
+	// an application-data directory is.
+	expect(epicenterFolderRoot({ env: {}, homeDir: '/Users/person' })).toBe(
+		'/Users/person/Epicenter',
+	);
+	expect(epicenterFolderRoot({ env: {}, homeDir: '/home/person' })).toBe(
+		'/home/person/Epicenter',
+	);
+	expect(
+		epicenterFolderRoot({ env: {}, homeDir: 'C:\\Users\\person' }),
+	).toContain('Epicenter');
+});
+
+test('the folder root is not the data root, and that is the point', () => {
+	// ADR-0207 refused putting a human surface in the machine-facing root, and
+	// ADR-0010 is the failure it refused: a continuous producer writing into
+	// ~/Library/Application Support, where no person or agent would ever look.
+	const home = '/Users/person';
+	expect(epicenterFolderRoot({ env: {}, homeDir: home })).not.toBe(
+		epicenterDataRoot(system({ platform: 'darwin', homeDir: home })),
+	);
+});
+
+test('EPICENTER_FOLDER_DIR wins, and a relative one is refused', () => {
+	expect(
+		epicenterFolderRoot({
+			env: { EPICENTER_FOLDER_DIR: '/mnt/vault' },
+			homeDir: '/Users/person',
+		}),
+	).toBe('/mnt/vault');
+	expect(
+		epicenterFolderRoot({
+			env: { EPICENTER_FOLDER_DIR: '' },
+			homeDir: '/Users/person',
+		}),
+	).toBe('/Users/person/Epicenter');
+	expect(() =>
+		epicenterFolderRoot({
+			env: { EPICENTER_FOLDER_DIR: 'vault' },
+			homeDir: '/Users/person',
+		}),
+	).toThrow('absolute');
 });
 
 test('an app directory sits under apps/', () => {

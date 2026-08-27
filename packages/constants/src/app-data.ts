@@ -139,7 +139,13 @@ export function epicenterDataRoot(
  *
  * Overridable, because a person may keep it elsewhere. The default has to stay
  * typeable, because "point your agent at `~/Epicenter`" is the whole product
- * (ADR-0207).
+ * (ADR-0207, whose render direction ADR-0271 revives).
+ *
+ * `homedir()` is the one input, and it needs no platform table: Bun resolves it
+ * through `uv_os_homedir` on Windows (which reads `USERPROFILE`) and through
+ * `HOME` with a `getpwuid_r` fallback on POSIX, matching Node. A person's home
+ * directory is a fact the operating system knows, unlike an application-data
+ * directory, which is a convention each platform spells differently.
  */
 export function epicenterFolderRoot(
 	system: Pick<DataRootSystem, 'env' | 'homeDir'> = {
