@@ -43,7 +43,7 @@ import { joinUrl, type ResolvedConnection } from './connection.js';
  * `prompt` (a vocabulary/style hint) are optional, omitted from the form when
  * absent so a server's own defaults apply.
  */
-type TranscribeOptions = {
+export type TranscribeOptions = {
 	model: string;
 	language?: string;
 	prompt?: string;
@@ -94,8 +94,8 @@ export type TranscribeError = InferErrors<typeof TranscribeError>;
  * {@link filenameForAudio}.
  */
 export async function transcribe(
-	audio: Blob,
 	{ fetch, baseURL }: ResolvedConnection,
+	audio: Blob,
 	{ model, language, prompt }: TranscribeOptions,
 ): Promise<Result<string, TranscribeError>> {
 	const form = new FormData();

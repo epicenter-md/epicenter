@@ -25,8 +25,8 @@ describe('transcribe over the OpenAI wire', () => {
 		);
 
 		const { data, error } = await transcribe(
-			new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
 			resolveConnection({ baseUrl: 'http://localhost:8000/v1' }),
+			new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
 			{ model: 'whisper-1' },
 		);
 
@@ -54,11 +54,11 @@ describe('transcribe over the OpenAI wire', () => {
 		// just POSTs through whatever transport it is handed. This proves the
 		// composition callers use (resolve a connection, then transcribe).
 		await transcribe(
-			new Blob([new Uint8Array([1])], { type: 'audio/mp4' }),
 			resolveConnection({
 				baseUrl: 'https://api.groq.com/openai/v1',
 				apiKey: 'sk-test',
 			}),
+			new Blob([new Uint8Array([1])], { type: 'audio/mp4' }),
 			{ model: 'whisper-large-v3', language: 'en', prompt: 'Epicenter' },
 		);
 
@@ -73,11 +73,11 @@ describe('transcribe over the OpenAI wire', () => {
 		captureRequest(new Response('nope', { status: 401 }));
 
 		const { data, error } = await transcribe(
-			new Blob([new Uint8Array([1])], { type: 'audio/wav' }),
 			resolveConnection({
 				baseUrl: 'https://api.openai.com/v1',
 				apiKey: 'bad',
 			}),
+			new Blob([new Uint8Array([1])], { type: 'audio/wav' }),
 			{ model: 'whisper-1' },
 		);
 
@@ -95,8 +95,8 @@ describe('transcribe over the OpenAI wire', () => {
 		);
 
 		const { data, error } = await transcribe(
-			new Blob([new Uint8Array([1])], { type: 'audio/wav' }),
 			resolveConnection({ baseUrl: 'http://localhost:8000/v1' }),
+			new Blob([new Uint8Array([1])], { type: 'audio/wav' }),
 			{ model: 'whisper-1' },
 		);
 
@@ -126,8 +126,8 @@ describe('transcribe over the OpenAI wire', () => {
 			);
 
 			await transcribe(
-				new Blob([new Uint8Array([1])], { type: mime }),
 				resolveConnection({ baseUrl: 'http://localhost:8000/v1' }),
+				new Blob([new Uint8Array([1])], { type: mime }),
 				{ model: 'whisper-1' },
 			);
 

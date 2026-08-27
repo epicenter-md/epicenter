@@ -429,7 +429,7 @@ async function transcribeViaUpload(
 	const entry = uploadDispatch(app)[selectedService];
 	switch (entry.kind) {
 		case 'wire': {
-			const result = await transcribe(audio, entry.resolve(), {
+			const result = await transcribe(entry.resolve(), audio, {
 				model: entry.model(),
 				language: spokenLanguage === 'auto' ? undefined : spokenLanguage,
 				prompt: prompt || undefined,

@@ -29,8 +29,8 @@
 import {
 	type Connection,
 	type ListModelsError,
-	listModels,
 	type ResolvedConnection,
+	createInferenceClient,
 	resolveConnection,
 } from '@epicenter/client';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
@@ -203,9 +203,9 @@ export function createInferenceConnections({
 			baseUrl: string,
 			apiKey?: string,
 		): Promise<Result<string[], ListModelsError>> {
-			return listModels(
+			return createInferenceClient(
 				resolveConnection({ baseUrl, apiKey: apiKey || undefined }),
-			);
+			).listModels();
 		},
 
 		/** Re-discover an already-added connection's models and update its cached
@@ -218,7 +218,9 @@ export function createInferenceConnections({
 		async refresh(baseUrl: string): Promise<void> {
 			const connection = stored.current.find((c) => c.baseUrl === baseUrl);
 			if (!connection) return;
-			const { data, error } = await listModels(resolveConnection(connection));
+			const { data, error } = await createInferenceClient(
+				resolveConnection(connection),
+			).listModels();
 			if (error) return;
 			stored.current = stored.current.map((c) =>
 				c.baseUrl === baseUrl ? { ...c, models: data } : c,

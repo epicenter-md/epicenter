@@ -26,7 +26,7 @@
  * failure instead of being sent to a transport it does not belong to.
  */
 
-import { TranscribeError, transcribe } from '@epicenter/client';
+import { TranscribeError, createInferenceClient } from '@epicenter/client';
 import {
 	createVadRecorder,
 	type DeviceStreamError,
@@ -119,7 +119,7 @@ function createDictation() {
 							onTranscript(
 								// No language hint: a learner may dictate their question in the
 								// language they are studying, so Whisper auto-detects (ADR-0105).
-								await transcribe(blob, transport, {
+								await createInferenceClient(transport).transcribe(blob, {
 									model: VOCAB_STT_MODEL,
 								}),
 							);
