@@ -16,10 +16,16 @@ ADR-0256 and ADR-0255 deferred a Compact-workspace reset until measured storage 
 A workspace exports as a folder-structured artifact and imports by replacing the workspace in place. The artifact is a directory, zipped for download:
 
 ```txt
-tables.sqlite                          scalar rows and fields (the projection)
+tables.json                            scalar rows and fields, by table
 kv.json                                the kv root's final state
-documents/<table>/<row>/<root>.<ext>   each row document through its file codec
+documents/<table>/<row>.<ext>          each row document through its file codec
 ```
+
+`tables.json` rather than `tables.sqlite`: the scalar rows are the truth, and a
+SQLite projection is a disposable query surface rebuilt from them (ADR-0026,
+ADR-0213), so the export carries the legible, editable facts and leaves the
+projection to be regenerated. One file per document, not per root: a `file`
+codec serializes the whole document to one string.
 
 Export serializes each row document through its application-declared `file` codec (ADR-0264) to a legible text file at its derived address (ADR-0248). Import deserializes each file back into a document, rebuilds one envelope, and replaces the workspace's documents in place under a fresh document identity, the replace-not-merge semantics of the reset path: a stale replica supersedes rather than merges. The export is intentionally lossy, carrying current visible state rather than Yjs identity or history, because import re-mints identity. It is a manual, application-owned escape hatch with an explicit loss boundary for unsynchronized work, the shape ADR-0256 required of any Compact workspace.
 
