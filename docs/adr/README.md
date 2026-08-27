@@ -349,6 +349,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0264](0264-a-table-declares-its-row-documents-derivation-and-file-codec.md) | A table declares its row document's derivation and file codec, and the store runs the derivation | Accepted (provisional number; supersedes 0128; amends 0135 and 0207) |
 | [0265](0265-a-row-carries-a-store-owned-updatedat-system-field.md) | A row carries a store-owned `updatedAt` system field, and creation time is not one | Accepted (provisional number) |
 | [0266](0266-definedata-compiles-once-and-holds-behaviors-beside-a-json-field-core.md) | `defineData` compiles once and holds behaviors beside a JSON field-core | Accepted (provisional number; amends 0255) |
-| [0267](0267-a-workspace-exports-and-imports-as-a-legible-folder-structured-artifact.md) | A workspace exports and imports as a legible folder-structured artifact | Accepted (provisional number; supersedes 0167; amends 0256 and 0255) |
+| [0267](0267-a-workspace-exports-and-imports-as-a-legible-folder-structured-artifact.md) | A workspace exports and imports as a legible folder-structured artifact | Accepted (provisional number; supersedes 0167; amends 0256 and 0255; amended by 0268) |
+| [0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) | A row exports as one Markdown file, and its codec is mandatory | Accepted (provisional number; amends 0264 and 0267) |
 
 When you add an ADR, add its row here.
