@@ -1,6 +1,7 @@
 # 0268. A row exports as one Markdown file, and its codec is mandatory
 
 - **Status:** Accepted
+- **Amended by:** [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) at when these files are written: continuously, by the mirror, rather than on demand by an export a person invokes. Every rule about their content holds unchanged.
 - **Date:** 2026-08-26
 - **Amends:** [ADR-0264](0264-a-table-declares-its-row-documents-derivation-and-file-codec.md) at the codec's shape and standing: `file` is mandatory within a `document` block, loses `extension`, and its `deserialize` writes into a fresh document rather than returning one.
 - **Amends:** [ADR-0267](0267-a-workspace-exports-and-imports-as-a-legible-folder-structured-artifact.md) at the artifact layout: `tables/<table>.json` and `documents/<table>/<row>.<ext>` collapse into one Markdown file per row, and export saves before it reads.

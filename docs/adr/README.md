@@ -353,7 +353,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) | A row exports as one Markdown file, and its codec is mandatory | Accepted (provisional number; amends 0264 and 0267) |
 | [0269](0269-the-browser-is-the-runtime-so-the-file-opener-the-history-shelf-and-the-sql-projection-are-deleted.md) | The browser is the runtime, so the file opener, the history shelf, and the SQL projection are deleted | Accepted (provisional number; amends 0214, 0229, and 0241) |
 | [0270](0270-an-application-has-two-workspaces-and-moving-a-row-between-them-is-the-primitive.md) | An application has two workspaces, and moving a row between them is the primitive | Accepted (provisional number; amends 0233) |
-| [0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) | A workspace mirrors continuously to the Epicenter folder, one way | Accepted (provisional number; amends 0226 and 0264; revives 0207's render direction only) |
+| [0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) | A workspace mirrors continuously to the Epicenter folder, one way | Accepted (provisional number; amends 0226, 0264, 0267, and 0268; revives 0207's render direction only; refuses browser-targeted export, so export stops being a verb) |
 | [0272](0272-restore-replaces-a-workspace-from-an-artifact-under-a-new-document-identity.md) | Restore replaces a workspace from an artifact, under a new document identity | Accepted (provisional number; amends 0267) |
 
 When you add an ADR, add its row here.

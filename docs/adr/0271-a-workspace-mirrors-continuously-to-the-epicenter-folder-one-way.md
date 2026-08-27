@@ -3,7 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-08-27
 - **Amends:** [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) at what a host may hold. That record refused a second CONVERGENT plane and said so in its own words ("The refusal is of a second CONVERGENT plane, not of the host holding bytes"), then permitted the host to hold blob bytes on exactly that reasoning. A one-way mirror cannot diverge for the same reason a blob cannot: nothing merges it back.
-- **Amends:** [ADR-0264](0264-a-table-declares-its-row-documents-derivation-and-file-codec.md), which left this open: "where its output goes, an export or a rendered folder, is a later record's decision." ADR-0267 took the export branch. This takes the other one.
+- **Amends:** [ADR-0264](0264-a-table-declares-its-row-documents-derivation-and-file-codec.md), which left this open: "where its output goes, an export or a rendered folder, is a later record's decision." ADR-0267 took the export branch. This takes the other one, and then takes over from it.
+- **Amends:** [ADR-0267](0267-a-workspace-exports-and-imports-as-a-legible-folder-structured-artifact.md) and [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) at who produces the artifact and when. The artifact's shape is unchanged; export stops being a verb a person invokes, and "a directory, zipped for download" is refused with it.
 - **Revives:** [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md), the render direction only. Its folder, its one-file-per-row shape, and its "point your agent at `~/Epicenter`" premise return. Its entire write direction does not.
 - **Relates:** [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) (the file shape this renders), [ADR-0270](0270-an-application-has-two-workspaces-and-moving-a-row-between-them-is-the-primitive.md) (the two workspaces this lays out), [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md).
 - **Unbuilt:** all of it. The per-row render exists inside `exportWorkspace`; the host file sink, the connection to `onCommitted`, and the folder root do not.
@@ -36,13 +37,17 @@ What is different now is that the render no longer needs the host to own anythin
 
 **The folder is build output.** An edit to a mirrored file does not survive the next render. There is no push, no receipt, no base-versus-mine comparison, no scan, no status verb, no watcher, and no conflict concept. To fork your data, copy the folder and restore the copy (ADR-0272).
 
-**The top level says where data lives, and every level means one thing.** `account/` and `this-device/` are places; inside each, a full reverse-DNS definition id names an application; inside that, a table; inside that, a row. Third-party applications are expected to return, so the definition id is spelled in full: `com.acme.notes` and `so.epicenter.notes` are different folders and the vendor prefix is what says so.
+**The top level says where data lives, and every level means one thing.** `account/` and `on-this-device/` are places; inside each, a full reverse-DNS definition id names an application; inside that, a table; inside that, a row. Third-party applications are expected to return, so the definition id is spelled in full: `com.acme.notes` and `so.epicenter.notes` are different folders and the vendor prefix is what says so.
 
 **Only the active connection's account workspace is mirrored.** The desktop holds one connection record (ADR-0262/0263), so at most one account workspace is live. Replicas retained for accounts you are not signed into get no folder. Signing into a different account re-renders `account/`, which is what Dropbox does when you link a different account, and is acceptable precisely because switching accounts is a rare, deliberate, identity-level act rather than a routine one.
 
 **The mirror mirrors.** Deleting a row deletes its file. Deleting a file brings it back at the next render. A row that never conformed still renders, because the artifact reads what is stored rather than what the declaration names (ADR-0267).
 
-**Desktop only.** A WebView cannot write to a filesystem, so a browser build has the export and no folder.
+**The mirror is the only producer, and export stops being a verb.** There is no Export button and no downloaded archive. The files are already on disk and already current, so a backup is `cp -r`, sharing is `zip -r`, and both are things the operating system already does better than an application would. What a person invokes is Reveal in Finder, which is a shortcut rather than a feature.
+
+**Browser-targeted export is refused, not deferred.** ADR-0227 already refused hosted web ("A browser tab is not a target"), so the only browser is the WebView inside Tauri, which always has a host beside it. Keeping a download path for a runtime that was already refused is what forced two artifact producers and, with them, a whole-workspace-in-memory assembly step. With one producer the render streams row by row straight to disk, and nothing ever holds the whole artifact at once.
+
+**Desktop only, and that is now the whole story rather than half of it.** A build with no host beside it (a development server opened in a real browser) has no mirror and no export. That is a development degradation, not a product mode.
 
 ## Consequences
 
@@ -51,10 +56,12 @@ What is different now is that the render no longer needs the host to own anythin
 - `git init ~/Epicenter` makes a restore auditable with tools that already exist, which is a consequence of the files being real rather than a feature anyone builds.
 - `store.onCommitted` gets its first consumer since the SQL projection was deleted (ADR-0269). The phase-order contract it guarantees, followers marked dirty before any table subscriber reads, is what a renderer needs.
 - ADR-0010's warning applies and is accepted with a mitigation owed: "a continuous producer with no consumer, paid on every edit." The consumer exists now (a coding agent with `ls` and `Read`), and the cost is a file write joining every commit, which needs debouncing and an atomic write so an agent cannot read a half-rendered file.
+- One artifact producer instead of two. The zip assembly, the download flow, the save dialog, and the archive-progress model are not built, and `exportWorkspace`'s whole-map return shape becomes a per-row render that streams to disk. The in-memory ceiling on a large vault goes away by there being nowhere to hold one, rather than by optimizing.
 - `apps/epicenter/AGENTS.md` currently says "Do not rebuild any of them here" about the folder renderer. That instruction is superseded for the render direction and stays in force for the write direction.
 
 ## Considered alternatives
 
+- **Keep an Export button beside the mirror.** Refused. It is a second producer of the same bytes, and the second one is the one that has to assemble a whole workspace in memory to hand over an archive. Its only unique consumer was a browser build that ADR-0227 already refused.
 - **Zip the Epicenter folder on demand instead of mirroring.** There is no folder to zip. The store lives in IndexedDB inside the WebView and the host owns no application data (ADR-0226/0227). "Just zip the directory" is not a shortcut past building this; it is this.
 - **A two-way folder, as ADR-0207 built it.** Refused. It is where receipts, three-way merges, conflict semantics, and a scan-and-push pipeline come from, and ADR-0234 retreated from it after building it once. The write direction has a door already: restore.
 - **Let a file you touched stop being re-rendered until you import or discard it.** ADR-0207's "hold back exactly what you could still push." Refused: knowing what you touched is what receipts are for, and this is the seam through which the entire deleted machinery grows back.

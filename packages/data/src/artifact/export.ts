@@ -3,9 +3,15 @@
  * ADR-0268).
  *
  * Composed on the opened data's public surface, so it is a follower and not a
- * store verb. It returns a map from path to content; assembling those into a
- * ZIP or writing them to a directory is the caller's, because where the bytes
- * land differs by host and the shape here does not.
+ * store verb. It returns a map from path to content; writing them somewhere is
+ * the caller's.
+ *
+ * Its destination is the continuous mirror at `~/Epicenter` (ADR-0271), which
+ * is the artifact's only producer: there is no export a person invokes and no
+ * downloaded archive, because the files are already on disk and a backup is
+ * `cp -r`. The whole-map return shape is what a one-shot caller wants and what
+ * a mirror does not; rendering row by row is the same loop with nothing held
+ * at the end of it.
  *
  * ```txt
  * kv.json              the kv root's stored values
