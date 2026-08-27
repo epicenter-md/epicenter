@@ -72,6 +72,17 @@ export const MIRROR_FOLDER_ROUTE = route(
 	`${MIRROR_PATH}/:workspace/:definitionId`,
 );
 /**
+ * Rebuild `tables.sqlite` from the files beside it (ADR-0271).
+ *
+ * A POST because it changes something, and empty because the host reads the
+ * folder rather than being handed anything: the index is derived from the
+ * files, so there is nothing for a caller to send and nothing it could get
+ * wrong.
+ */
+export const MIRROR_INDEX_ROUTE = route(
+	`${MIRROR_PATH}/:workspace/:definitionId/index`,
+);
+/**
  * Host-owned remote copy operations for one local blob. The id is the only
  * input: no route accepts a destination URL, transfer header, or body, so the
  * host's own deployment authority is the only reachable target.

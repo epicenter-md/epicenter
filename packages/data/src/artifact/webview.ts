@@ -72,6 +72,13 @@ export type MirrorSink = {
 	 * growing again. Nothing in this package reads a rendered file.
 	 */
 	list(): Promise<Result<string[], MirrorSinkError>>;
+	/**
+	 * Rebuild the queryable index beside the files (ADR-0271).
+	 *
+	 * Nothing is sent. The index is derived from the folder, so the caller only
+	 * says when the folder settled, and whoever owns the filesystem reads it.
+	 */
+	index(): Promise<Result<void, MirrorSinkError>>;
 };
 
 /**
@@ -116,6 +123,10 @@ export function createMirrorSink({
 				headers: { 'content-type': 'text/plain; charset=utf-8' },
 			}),
 		remove: (path) => send(path, { method: 'DELETE' }),
+		index: () =>
+			send('index', {
+				method: 'POST',
+			}),
 		async list(): Promise<Result<string[], MirrorSinkError>> {
 			const url = mirrorFolderUrl({ workspace, definitionId });
 			const { data: response, error } = await tryAsync({

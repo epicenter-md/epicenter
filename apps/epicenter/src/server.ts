@@ -21,6 +21,7 @@ import {
 	type HomeSessionSnapshot,
 	parseHomeCommand,
 } from './host.ts';
+import { indexMirrorFolder } from './mirror-index.ts';
 import {
 	listMirrorFolder,
 	mirrorFilePath,
@@ -41,6 +42,7 @@ import {
 	LOCAL_BLOB_ROUTE,
 	MIRROR_FILE_ROUTE,
 	MIRROR_FOLDER_ROUTE,
+	MIRROR_INDEX_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
 } from './routes.ts';
@@ -322,6 +324,24 @@ export function createHomeServer({
 		});
 		if (folder === undefined) return c.text('Invalid mirror path', 400);
 		return c.json(await listMirrorFolder(folder));
+	});
+
+	// Declared before the wildcard file route, which would otherwise match
+	// `.../index` as a path and refuse it.
+	app.post(MIRROR_INDEX_ROUTE.pattern, async (c) => {
+		const folder = mirrorFolderPath({
+			workspace: c.req.param('workspace') ?? '',
+			definitionId: c.req.param('definitionId') ?? '',
+		});
+		if (folder === undefined) return c.text('Invalid mirror path', 400);
+		try {
+			await indexMirrorFolder(folder);
+		} catch {
+			// An index that could not be rebuilt leaves the previous one in place,
+			// which is stale rather than wrong, and the next pass tries again.
+			return c.text('Mirror index failed', 500);
+		}
+		return c.body(null, 204);
 	});
 
 	app.put(MIRROR_FILE_ROUTE.pattern, async (c) => {

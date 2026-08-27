@@ -35,3 +35,20 @@ export type HoneycrispBackgroundError = InferErrors<
 export function reportBackgroundError(cause: unknown): void {
 	log.warn(HoneycrispBackgroundError.BackgroundWorkFailed({ cause }));
 }
+
+/**
+ * Where the folder reports its own trouble (ADR-0271).
+ *
+ * A full disk, a read-only volume, an external drive somebody unplugged: the
+ * store is unaffected by every one of them, because the folder is derived and
+ * the next pass rewrites whatever this one could not. So a mirror failure is
+ * a warning about a folder and never an error about data, and it is the same
+ * severity for the same reason background work is.
+ */
+export const mirrorLog = {
+	error: (cause: unknown) => reportBackgroundError(cause),
+	warn: (cause: unknown) => reportBackgroundError(cause),
+	info: () => undefined,
+	debug: () => undefined,
+	trace: () => undefined,
+};

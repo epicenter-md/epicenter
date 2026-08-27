@@ -6,6 +6,7 @@ import {
 	openAccount,
 	openDevice,
 } from '@epicenter/data/browser';
+import { attachMirror } from '@epicenter/data/artifact/webview';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
 import {
@@ -16,7 +17,7 @@ import {
 	tryAsync,
 	trySync,
 } from 'wellcrafted/result';
-import { reportBackgroundError } from './report.js';
+import { mirrorLog, reportBackgroundError } from './report.js';
 import { attachHoneycrispSync } from './sync.js';
 
 export type OpenedDeviceDatabase = {
@@ -39,9 +40,17 @@ export async function openDeviceDatabase(): Promise<
 	const { data, error } = await openDevice(honeycrispDefinition);
 	if (error !== null) return Err(error);
 
+	const mirror = attachMirror({
+		data,
+		definition: honeycrispDefinition,
+		workspace: 'on-this-device',
+		log: mirrorLog,
+	});
+
 	return Ok({
 		data,
 		async [Symbol.asyncDispose]() {
+			await mirror[Symbol.asyncDispose]();
 			await data[Symbol.asyncDispose]();
 		},
 	});
@@ -104,6 +113,15 @@ export async function openAccountDatabase({
 		store: data.store,
 		denied: denial.promise,
 	});
+	// The folder follows the account replica as well as the device document
+	// (ADR-0271). It is attached after sync, so a replica that refills from its
+	// authority renders what arrived rather than the empty state it opened with.
+	const mirror = attachMirror({
+		data,
+		definition: honeycrispDefinition,
+		workspace: 'account',
+		log: mirrorLog,
+	});
 
 	return Ok({
 		data,
@@ -115,6 +133,7 @@ export async function openAccountDatabase({
 		async [Symbol.asyncDispose]() {
 			readiness.cancel();
 			connection[Symbol.dispose]();
+			await mirror[Symbol.asyncDispose]();
 			await data[Symbol.asyncDispose]();
 		},
 	});

@@ -124,6 +124,12 @@ export function attachMirror({
 			}
 		}
 		written = produced;
+
+		// The folder settled, so the index beside it can be rebuilt from it. Last,
+		// and only after the sweep, so it never describes a file that is about to
+		// be removed.
+		const indexed = await sink.index();
+		if (indexed.error !== null) log.error(indexed.error);
 	}
 
 	async function listFolder(): Promise<string[]> {

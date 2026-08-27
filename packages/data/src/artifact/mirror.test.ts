@@ -40,6 +40,7 @@ const workspace = defineData({
 function recordingSink(seed: string[] = []) {
 	const files = new Map<string, string>(seed.map((path) => [path, 'stale']));
 	const removed: string[] = [];
+	const indexed: string[][] = [];
 	const sink: MirrorSink = {
 		async write(path, contents) {
 			files.set(path, contents);
@@ -53,8 +54,15 @@ function recordingSink(seed: string[] = []) {
 		async list() {
 			return { data: [...files.keys()], error: null };
 		},
+		async index() {
+			// Captured as the folder LOOKED when the index was asked for, which is
+			// the fact that matters: the index must never describe a file the
+			// sweep was about to remove.
+			indexed.push([...files.keys()].sort());
+			return { data: undefined, error: null };
+		},
 	};
-	return { files, removed, sink };
+	return { files, removed, indexed, sink };
 }
 
 const silent = {
@@ -306,5 +314,27 @@ describe('attachMirror renders a whole workspace (ADR-0271)', () => {
 		data.tables.notes.create({ title: 'after disposal' });
 		await settle();
 		expect([...files.keys()]).toEqual([]);
+	});
+
+	test('the index is rebuilt after the sweep, never before', async () => {
+		// Order is the whole contract: an index built mid-pass would describe a
+		// file the sweep is about to take away, and an agent would read a path
+		// that is not there.
+		await using data = openMemory(workspace);
+		const { indexed, sink } = recordingSink([
+			'notes/aaaaaaaaaaaaaaaaaaaaaaaa.md',
+		]);
+		await using _mirror = attachMirror({
+			data,
+			definition: workspace,
+			workspace: 'account',
+			sink,
+			log: silent,
+			idleMs: 1,
+		});
+		await settle();
+
+		expect(indexed).toHaveLength(1);
+		expect(indexed[0]).toEqual(['kv.json']);
 	});
 });
