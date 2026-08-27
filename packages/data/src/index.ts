@@ -74,6 +74,7 @@ export {
 	type RowAbsentError,
 	StoreError,
 	type StorePressure,
+	type StoredData,
 	StoreUnusableError,
 	type SyncCapability,
 	type SyncFacts,

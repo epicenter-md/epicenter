@@ -30,6 +30,7 @@ import {
 	kvRoot,
 	listRowIds,
 	readRow,
+	storedTableNames,
 	tableRoot,
 	writeRow,
 } from './document.js';
@@ -457,6 +458,18 @@ export type DataView<TDatabase extends DataDefinition> = {
  * that takes a second view of a live store. A newer definition reads the same
  * durable data by closing this runtime and opening the next one.
  */
+/**
+ * One application's stored state, by root, with no declaration applied.
+ *
+ * Every table root the document actually holds, whether or not this release
+ * declares it, and every kv key the same way. Values are `JsonObject` because
+ * nothing has interpreted them: this is what is there, not what reads.
+ */
+export type StoredData = {
+	readonly tables: ReadonlyMap<string, ReadonlyMap<string, JsonObject>>;
+	readonly kv: JsonObject;
+};
+
 export type DataOf<
 	TDatabase extends DataDefinition,
 	TStore extends DataStoreBase = AccountStore,
@@ -465,6 +478,13 @@ export type DataOf<
 	readonly definition: DataDefinition;
 	/** Group direct data operations into one accepted and durable transaction. */
 	transact<TResult>(run: () => TResult): TResult;
+	/**
+	 * Everything stored, before this declaration reads it (ADR-0267).
+	 *
+	 * A table handle reads through the declaration; this reads what is stored.
+	 * The artifact read, for an export that must not narrow.
+	 */
+	stored(): StoredData;
 	/** This application's file: pressure, the CRDT verbs, and replica sync. */
 	readonly store: TStore;
 	/** Dispose the opened data and the physical store it owns. */
@@ -488,6 +508,7 @@ export function asData<TDatabase extends DataDefinition, TStore extends DataStor
 		...view,
 		definition,
 		transact: store.transact,
+		stored: store.stored,
 		store,
 		[Symbol.asyncDispose]: () => store[Symbol.asyncDispose](),
 	});
@@ -689,6 +710,14 @@ export type DataStoreBase = {
 	encodeStateSince(stateVector?: Uint8Array): Uint8Array;
 	/** Group direct data operations into one accepted and durable transaction. */
 	transact<TResult>(run: () => TResult): TResult;
+	/**
+	 * Everything stored, before this declaration reads it (ADR-0267).
+	 *
+	 * A CRDT read like `stateVector` and `encodeStateSince` are: it answers
+	 * about the document rather than about the application's view of it. What
+	 * an artifact needs and a feature never touches.
+	 */
+	stored(): StoredData;
 	/**
 	 * Hear when anything committed into this document, whoever authored it.
 	 *
@@ -1408,14 +1437,6 @@ function createStoreEngine(
 		const table = definition.kv;
 		const root = kvRoot(index);
 
-		function readStored(): JsonObject {
-			const payload: JsonObject = {};
-			for (const key of root.attrKeys()) {
-				payload[key as string] = root.getAttr(key as never) as JsonValue;
-			}
-			return payload;
-		}
-
 		/**
 		 * How many live subscriptions this handle holds.
 		 *
@@ -1442,7 +1463,7 @@ function createStoreEngine(
 		};
 
 		function readBack(): Result<JsonObject, NonconformingValue> {
-			const raw = readStored();
+			const raw = storedKv();
 			if (table === undefined) return Ok(raw);
 			const { conforming, issues } = table.conformance(raw);
 			// No structural id, because KV has none: the diagnostic's `conforming`
@@ -1490,6 +1511,46 @@ function createStoreEngine(
 			if (payload !== undefined) rows.set(rowId, payload);
 		}
 		return rows;
+	}
+
+	/** The kv root's stored values, unvalidated. */
+	function storedKv(): JsonObject {
+		const root = kvRoot(index);
+		const values: JsonObject = {};
+		for (const key of root.attrKeys()) {
+			values[key as string] = root.getAttr(key as never) as JsonValue;
+		}
+		return values;
+	}
+
+	/**
+	 * Everything this application has stored, before its declaration reads it
+	 * (ADR-0267).
+	 *
+	 * The one faithful read, and it is on the data rather than on a table on
+	 * purpose. A table handle is the application's lens: `get` and `list` answer
+	 * what THIS release can read, and both narrow to the declared fields, so a
+	 * key an older release wrote and this one no longer names is unreachable
+	 * through them. That narrowing is correct for an application and correct for
+	 * the SQL projection, which is a disposable index rebuilt on demand. It is
+	 * wrong for an artifact: an export that drops a field is data loss, and the
+	 * caller that must not lose one is asking about the workspace, not a table.
+	 *
+	 * So it enumerates the roots the document actually holds rather than the
+	 * tables the declaration names, and it hands back stored values untyped.
+	 * Untyped is the point: reaching for this means giving up the lens, and the
+	 * absent row types are what makes that visible at the call site.
+	 *
+	 * Row documents are not here. They are independent Yjs documents at derived
+	 * addresses, not scalars on the index, and an export serializes them through
+	 * the application's own file codec (ADR-0264).
+	 */
+	function stored(): StoredData {
+		const tables = new Map<string, ReadonlyMap<string, JsonObject>>();
+		for (const tableName of storedTableNames(index)) {
+			tables.set(tableName, rowsOf(tableName));
+		}
+		return { tables, kv: storedKv() };
 	}
 
 	function createTableHandle(
@@ -1799,6 +1860,10 @@ function createStoreEngine(
 
 	const base: DataStoreBase = {
 		transact,
+		stored(): StoredData {
+			assertUsable();
+			return stored();
+		},
 		onCommitted(listener: () => void): () => void {
 			committedListeners.add(listener);
 			return () => committedListeners.delete(listener);

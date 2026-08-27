@@ -939,6 +939,75 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		expect(third.kv.get().data?.theme).toBe('dark');
 		await third.store[Symbol.asyncDispose]();
 	});
+
+	test('stored() sees the table and the kv key the declaration dropped', async () => {
+		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
+		const first = createAccountStore({ definition: withScratch, sqlite });
+		const made = first.tables.scratch.create({ body: 'kept in the CRDT' });
+		first.kv.update({ theme: 'dark' });
+		await first.store[Symbol.asyncDispose]();
+
+		const second = createAccountStore({ definition: withoutScratch, sqlite });
+		// The lens cannot reach them: there is no handle for `scratch`, and this
+		// declaration names no kv keys at all.
+		expect((second.tables as Record<string, unknown>).scratch).toBeUndefined();
+
+		// The artifact read does, because it enumerates the roots the document
+		// holds rather than the tables the declaration names.
+		const state = second.stored();
+		expect([...state.tables.keys()]).toEqual(['notes', 'scratch']);
+		expect(state.tables.get('scratch')?.get(made.id)).toEqual({
+			body: 'kept in the CRDT',
+		});
+		expect(state.kv).toEqual({ theme: 'dark' });
+		await second.store[Symbol.asyncDispose]();
+	});
+});
+
+describe('stored() is the faithful read (ADR-0267)', () => {
+	const withPreview = defineData({
+		id: 'so.epicenter.honeycrisp',
+		kv: {},
+		tables: {
+			notes: { fields: { title: field.string(), preview: field.string() } },
+		},
+	});
+	const withoutPreview = defineData({
+		id: 'so.epicenter.honeycrisp',
+		kv: {},
+		tables: { notes: { fields: { title: field.string() } } },
+	});
+
+	test('a field the declaration dropped survives here and nowhere else', async () => {
+		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
+		const before = createAccountStore({ definition: withPreview, sqlite });
+		const made = before.tables.notes.create({
+			title: 'Groceries',
+			preview: 'milk, eggs',
+		});
+		await before.store[Symbol.asyncDispose]();
+
+		// The release stops declaring `preview`. The row still CONFORMS, because
+		// every field this declaration names reads fine, so it is not reported as
+		// nonconforming either. Through the lens the stored value is unreachable
+		// from both arms, which is exactly the data loss an export must not copy.
+		const after = createAccountStore({ definition: withoutPreview, sqlite });
+		const listed = after.tables.notes.list();
+		expect(listed.nonconforming).toEqual([]);
+		expect(listed.rows).toEqual([{ id: made.id, title: 'Groceries' }]);
+
+		expect(after.stored().tables.get('notes')?.get(made.id)).toEqual({
+			title: 'Groceries',
+			preview: 'milk, eggs',
+		});
+		await after.store[Symbol.asyncDispose]();
+	});
+
+	test('a deleted row is absent rather than empty', () => {
+		const made = note();
+		db.tables.notes.delete(made.id);
+		expect(db.stored().tables.get('notes')?.has(made.id)).toBe(false);
+	});
 });
 
 describe('foreign bytes have exactly one door', () => {

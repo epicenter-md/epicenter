@@ -53,6 +53,27 @@ export function tableRootName(tableName: string): string {
 	return `tables:${tableName}`;
 }
 
+const TABLE_ROOT_PREFIX = 'tables:';
+
+/**
+ * Every table this document actually holds a root for, declared or not.
+ *
+ * The one place a root name is read back into a table name, kept here beside
+ * the composition so the tag stays this module's business and no caller learns
+ * to slice the prefix itself. It reads `share` rather than a declaration on
+ * purpose: a table an older release wrote and this one no longer names still
+ * has its rows in the CRDT (ADR-0240), and a faithful read of what is stored
+ * is exactly the caller that must not miss it.
+ */
+export function storedTableNames(document: Y.Doc): string[] {
+	const names: string[] = [];
+	for (const rootName of document.share.keys()) {
+		if (!rootName.startsWith(TABLE_ROOT_PREFIX)) continue;
+		names.push(rootName.slice(TABLE_ROOT_PREFIX.length));
+	}
+	return names.sort();
+}
+
 /** The root every application's settings live at (ADR-0216). */
 export const KV_ROOT_NAME = 'kv';
 
