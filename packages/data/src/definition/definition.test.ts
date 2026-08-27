@@ -70,6 +70,44 @@ describe('data definitions', () => {
 		expect(() => table.validateWrite({ title: undefined })).toThrow();
 	});
 
+	test('a document block without a file codec is refused', () => {
+		// `derive` without `file` is the authored mistake the guard exists for: a
+		// document whose export could never carry its body (ADR-0264/0267).
+		const result = parseData({
+			id: 'so.epicenter.nocodec',
+			kv: {},
+			tables: {
+				notes: {
+					fields: { title: field.string() },
+					document: { derive: () => ({ title: 'x' }) },
+				},
+			},
+		});
+		expect(result.error?.name).toBe('Malformed');
+		expect(result.error?.message).toContain('file codec');
+	});
+
+	test('a serialized document husk compiles as no document block', () => {
+		// Behaviors are code and cannot arrive as data (ADR-0266): a definition
+		// round-tripped through JSON keeps the block's keys and loses its
+		// functions, and that husk must not be refused or carried.
+		const authored = defineData({
+			id: 'so.epicenter.husk',
+			kv: {},
+			tables: {
+				notes: {
+					fields: { title: field.string() },
+					document: {
+						file: { serialize: () => '', deserialize: () => undefined },
+					},
+				},
+			},
+		});
+		const result = parseData(JSON.parse(JSON.stringify(authored)));
+		expect(result.error).toBeNull();
+		expect(result.data?.tables.get('notes')?.document).toBeUndefined();
+	});
+
 	test('declaration defaults are rejected', () => {
 		const result = parseData({
 			id: 'so.epicenter.defaults',

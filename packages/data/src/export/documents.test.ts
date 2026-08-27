@@ -17,13 +17,10 @@ const withCodec = defineData({
 			fields: { title: field.string() },
 			document: {
 				file: {
-					extension: 'txt',
 					serialize: (doc) =>
 						String((doc.get('meta') as TitleRoot).getAttr('title') ?? ''),
-					deserialize: (text) => {
-						const doc = new Y.Doc();
-						(doc.get('meta') as unknown as TitleRoot).setAttr('title', text);
-						return doc;
+					deserialize: (text, doc) => {
+						(doc.get('meta') as TitleRoot).setAttr('title', text);
 					},
 				},
 			},
@@ -50,17 +47,21 @@ describe('exportDocuments (ADR-0267)', () => {
 		expect(files[0]).toMatchObject({
 			table: 'notes',
 			rowId: made.id,
-			extension: 'txt',
 			text: 'buy milk',
 		});
 
-		// The codec's deserialize reconstructs the document from the exported text.
+		// The codec's deserialize fills a fresh document from the exported text.
 		const codec = withCodec.tables.notes.document?.file;
 		if (codec === undefined) throw new Error('the codec should exist');
-		const reborn = codec.deserialize(files[0]!.text) as Y.Doc;
+		const reborn = new Y.Doc();
+		codec.deserialize(
+			files[0]!.text,
+			reborn as unknown as { get(root: string): unknown },
+		);
 		expect((reborn.get('meta') as unknown as TitleRoot).getAttr('title')).toBe(
 			'buy milk',
 		);
+		reborn.destroy();
 	});
 
 	test('a table with no file codec contributes no files', async () => {

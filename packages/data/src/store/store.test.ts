@@ -1216,6 +1216,9 @@ describe('a document commit derives its row fields (ADR-0264)', () => {
 						const meta = doc.get('meta') as { getAttr(key: string): unknown };
 						return { preview: String(meta.getAttr('title') ?? '') };
 					},
+					// A document block owes its codec (ADR-0264/0267); this test only
+					// exercises `derive`, so the codec is inert.
+					file: { serialize: () => '', deserialize: () => undefined },
 				},
 			},
 		},

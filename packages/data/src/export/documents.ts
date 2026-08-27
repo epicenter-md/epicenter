@@ -62,7 +62,6 @@ export type ExportError = InferErrors<typeof ExportError>;
 export type DocumentFile = {
 	readonly table: string;
 	readonly rowId: string;
-	readonly extension: string;
 	readonly text: string;
 };
 
@@ -91,10 +90,10 @@ export type ExportableData = {
 /**
  * Serialize every row document whose table declares a `file` codec.
  *
- * The path a caller writes each file to is `documents/{table}/{rowId}.{ext}`
- * (ADR-0267); this returns the coordinates and the text, and leaves assembling
- * the archive to the caller. Row ids come from the faithful read, so a row a
- * newer declaration no longer names still has its body exported.
+ * This returns the coordinates and the text; the workspace export joins each
+ * body to its row's file as the content under the frontmatter (ADR-0268).
+ * Row ids come from the faithful read, so a row a newer declaration no longer
+ * names still has its body exported.
  *
  * A row whose document was never written serializes as whatever the codec
  * makes of an empty document, which is the application's own answer to "this
@@ -132,7 +131,6 @@ export async function exportDocuments(
 				files.push({
 					table,
 					rowId,
-					extension: file.extension,
 					text: file.serialize(doc as unknown as DocumentReader),
 				});
 			} finally {

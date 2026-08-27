@@ -35,19 +35,35 @@ export type DocumentReader = {
 	get(root: string, typeName?: string | null): unknown;
 };
 
-/** A row document's bidirectional export codec (ADR-0264/0267). */
+/**
+ * A row document's bidirectional file codec (ADR-0264/0267).
+ *
+ * A row exports as one markdown file, so there is no extension to declare:
+ * `serialize` produces the file's body, and the scalar row rides above it as
+ * frontmatter. `deserialize` is the import direction, reading that body back
+ * into a fresh document through the same root surface `serialize` reads from.
+ * Both directions belong to the application; Epicenter never interprets the
+ * document.
+ */
 export type FileCodec = {
-	readonly extension: string;
 	readonly serialize: (doc: DocumentReader) => string;
-	readonly deserialize: (text: string) => unknown;
+	readonly deserialize: (text: string, doc: DocumentReader) => void;
 };
 
-/** A row document's application-owned behaviors, declared beside its fields (ADR-0264). */
+/**
+ * A row document's application-owned behaviors, declared beside its fields
+ * (ADR-0264).
+ *
+ * `file` is mandatory. Only the application can turn its document into text,
+ * so the codec is the one bridge an export has; a document block without it
+ * would produce an artifact whose bodies silently vanish, and the artifact
+ * feeds an import that replaces the workspace (ADR-0267).
+ */
 export type DocumentDeclaration = {
 	/** Derive scalar row fields from the document on every local commit. */
 	readonly derive?: (doc: DocumentReader) => Record<string, unknown>;
-	/** The bidirectional codec between the document and an export file. */
-	readonly file?: FileCodec;
+	/** The bidirectional codec between the document and its export file's body. */
+	readonly file: FileCodec;
 };
 
 /** One table: its scalar fields, and optionally its row document's behaviors. */
@@ -135,7 +151,7 @@ export function defineTable<const TFields extends FieldMap>(
 		fields: TFields & ValidateFields<TFields>;
 		document?: {
 			derive?: (doc: DocumentReader) => Partial<FieldsOut<TFields>>;
-			file?: FileCodec;
+			file: FileCodec;
 		};
 	},
 ): { fields: TFields; document?: DocumentDeclaration } {
@@ -267,9 +283,26 @@ function compileDefinition(
 		const table = declaration as TableDeclaration;
 		const result = compileTable(tableName, table.fields);
 		if (result.error !== null) return result;
+		// A document block is behavior beside the data core (ADR-0266), so a
+		// definition that arrived serialized carries its functions stripped: the
+		// inert husk left behind compiles as no block at all. An authored block,
+		// told apart by any surviving function, must carry its whole codec
+		// (ADR-0264/0267): the codec is the only bridge from the document to an
+		// export file, and refusing where the author declared the block is the
+		// last moment the missing codec is fixable rather than a body missing
+		// from a backup.
+		if (
+			table.document !== undefined &&
+			!isFileCodec(table.document.file) &&
+			declaresDocumentBehavior(table.document)
+		) {
+			return DataDefinitionParseError.Malformed({
+				reason: `table '${tableName}' declares a document without a file codec`,
+			});
+		}
 		compiledTables.set(
 			tableName,
-			table.document === undefined
+			table.document === undefined || !isFileCodec(table.document.file)
 				? result.data
 				: { ...result.data, document: table.document },
 		);
@@ -367,6 +400,24 @@ function fieldNameProblem(tableName: string, fieldName: string): Result<never, D
 		return DataDefinitionParseError.Malformed({ reason: `field name '${tableName}.${fieldName}' is not usable` });
 	}
 	return undefined;
+}
+
+function isFileCodec(value: unknown): value is FileCodec {
+	const codec = value as Partial<FileCodec> | undefined;
+	return (
+		typeof codec?.serialize === 'function' &&
+		typeof codec.deserialize === 'function'
+	);
+}
+
+/** Whether a document block still carries any behavior function at all. */
+function declaresDocumentBehavior(document: DocumentDeclaration): boolean {
+	if (typeof document.derive === 'function') return true;
+	const file: unknown = document.file;
+	return (
+		isPlainObject(file) &&
+		Object.values(file).some((member) => typeof member === 'function')
+	);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -1,6 +1,5 @@
 import { defineData, field } from '@epicenter/data/definition';
 import { describe, expect, test } from 'bun:test';
-import * as Y from '@y/y';
 import { openMemory } from '../store/bun.js';
 import { exportWorkspace } from './workspace.js';
 
@@ -17,13 +16,10 @@ const workspace = defineData({
 			fields: { title: field.string() },
 			document: {
 				file: {
-					extension: 'txt',
 					serialize: (doc) =>
 						String((doc.get('meta') as TitleRoot).getAttr('title') ?? ''),
-					deserialize: (text) => {
-						const doc = new Y.Doc();
-						(doc.get('meta') as unknown as TitleRoot).setAttr('title', text);
-						return doc;
+					deserialize: (text, doc) => {
+						(doc.get('meta') as TitleRoot).setAttr('title', text);
 					},
 				},
 			},
@@ -31,8 +27,8 @@ const workspace = defineData({
 	},
 });
 
-describe('exportWorkspace (ADR-0267)', () => {
-	test('exports kv.json, one file per table, and one file per document', async () => {
+describe('exportWorkspace (ADR-0267/0268)', () => {
+	test('exports kv.json and one markdown file per row, fields above the body', async () => {
 		await using data = openMemory(workspace);
 		data.kv.update({ theme: 'dark' });
 		const made = data.tables.notes.create({ title: 'Groceries' });
@@ -50,14 +46,13 @@ describe('exportWorkspace (ADR-0267)', () => {
 
 		expect(JSON.parse(files.get('kv.json') ?? 'null')).toEqual({ theme: 'dark' });
 
-		const notes = JSON.parse(files.get('tables/notes.json') ?? 'null') as Record<
-			string,
-			{ title: string }
-		>;
-		expect(Object.keys(notes)).toEqual([made.id]);
-		expect(notes[made.id]).toMatchObject({ title: 'Groceries' });
-
-		expect(files.get(`documents/notes/${made.id}.txt`)).toBe('buy milk');
+		// The row is one file: its id is the path, its fields the frontmatter
+		// (strings always quoted, so every value re-reads as itself), and its
+		// document the body (ADR-0268).
+		expect(files.get(`notes/${made.id}.md`)).toBe(
+			['---', 'title: "Groceries"', '---', '', 'buy milk', ''].join('\n'),
+		);
+		expect([...files.keys()].sort()).toEqual(['kv.json', `notes/${made.id}.md`]);
 	});
 
 	test('a row the declaration no longer names is still in the artifact', async () => {
@@ -69,10 +64,24 @@ describe('exportWorkspace (ADR-0267)', () => {
 
 		const exported = await exportWorkspace(data, workspace);
 		if (exported.error !== null) throw exported.error;
-		const notes = JSON.parse(
-			exported.data.get('tables/notes.json') ?? 'null',
-		) as Record<string, Record<string, unknown>>;
-		expect(notes[made.id]?.legacy).toBe('kept');
+		const file = exported.data.get(`notes/${made.id}.md`) ?? '';
+		expect(file).toContain('legacy: "kept"');
 		expect(data.tables.notes.list().rows[0]).not.toHaveProperty('legacy');
+	});
+
+	test('a table without a document block exports frontmatter-only files', async () => {
+		const scalarOnly = defineData({
+			id: 'so.epicenter.honeycrisp',
+			kv: {},
+			tables: { folders: { fields: { name: field.string() } } },
+		});
+		await using data = openMemory(scalarOnly);
+		const made = data.tables.folders.create({ name: 'Inbox' });
+
+		const exported = await exportWorkspace(data, scalarOnly);
+		if (exported.error !== null) throw exported.error;
+		expect(exported.data.get(`folders/${made.id}.md`)).toBe(
+			['---', 'name: "Inbox"', '---', ''].join('\n'),
+		);
 	});
 });

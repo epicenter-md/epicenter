@@ -12,10 +12,15 @@ import { field } from '@epicenter/data/definition';
  */
 
 import type { DataView } from '@epicenter/data';
-import { defineData, type RowOf } from '@epicenter/data/definition';
-import { fragmentToPm } from '@y/prosemirror';
+import {
+	defineData,
+	type DocumentReader,
+	type RowOf,
+} from '@epicenter/data/definition';
+import { fragmentToPm, pmToFragment } from '@y/prosemirror';
 import { EditorState } from 'prosemirror-state';
 import { extractNoteMetadata } from '../editor/extract-metadata.js';
+import { parseNoteBody, serializeNoteBody } from '../editor/markdown.js';
 import { noteSchema } from '../editor/schema.js';
 
 /** Runtime-minted structural note row id. */
@@ -65,13 +70,28 @@ export const NOTE_BODY = 'body';
  * body headlessly through the same ProseMirror schema the editor binds, so the
  * derived title matches what a person sees.
  */
-function deriveNoteMetadata(doc: {
-	get(root: string, typeName?: string | null): unknown;
-}): Pick<Note, 'title' | 'preview'> {
-	const state = EditorState.create({ schema: noteSchema });
-	const node = fragmentToPm(doc.get(NOTE_BODY) as never, state.tr);
-	return extractNoteMetadata(node);
+function deriveNoteMetadata(doc: DocumentReader): Pick<Note, 'title' | 'preview'> {
+	return extractNoteMetadata(bodyOf(doc));
 }
+
+/** The body root as a ProseMirror node, read headlessly. */
+function bodyOf(doc: DocumentReader) {
+	const state = EditorState.create({ schema: noteSchema });
+	return fragmentToPm(doc.get(NOTE_BODY) as never, state.tr);
+}
+
+/**
+ * The note's file codec (ADR-0264/0267): its export file's body is the note's
+ * body as Markdown, and import writes that Markdown back into a fresh
+ * document's `body` root. The row's fields ride outside this codec, as the
+ * file's frontmatter; the codec carries prose and nothing else.
+ */
+const noteFile = {
+	serialize: (doc: DocumentReader) => serializeNoteBody(bodyOf(doc)),
+	deserialize: (text: string, doc: DocumentReader) => {
+		pmToFragment(parseNoteBody(text), doc.get(NOTE_BODY) as never);
+	},
+};
 
 export const honeycrispDefinition = defineData({
 	id: 'so.epicenter.honeycrisp',
@@ -79,7 +99,10 @@ export const honeycrispDefinition = defineData({
 	kv: {},
 	tables: {
 		folders: { fields: foldersTable },
-		notes: { fields: notesTable, document: { derive: deriveNoteMetadata } },
+		notes: {
+			fields: notesTable,
+			document: { derive: deriveNoteMetadata, file: noteFile },
+		},
 	},
 });
 

@@ -1,5 +1,6 @@
 /**
- * A workspace export: the legible folder-structured artifact (ADR-0267).
+ * A workspace export: the legible folder-structured artifact (ADR-0267,
+ * ADR-0268).
  *
  * Composed on the opened data's public surface, so it is a follower and not a
  * store verb. It returns a map from path to content; assembling those into a
@@ -7,15 +8,15 @@
  * land differs by host and the shape here does not.
  *
  * ```txt
- * kv.json                         the kv root's stored values
- * tables/<table>.json             one file per table, rows by id
- * documents/<table>/<row>.<ext>   each row document through its file codec
+ * kv.json              the kv root's stored values
+ * <table>/<rowId>.md   one file per row: raw fields as frontmatter, and the
+ *                      document through the table's codec as the body
  * ```
  *
- * One file per table rather than one `tables.json`, for the same reason there
- * is one file per document: the path is already doing the addressing, and two
- * exports of the same workspace diff per table and per note instead of as one
- * enormous hunk.
+ * One Markdown file per row (ADR-0268): the row's identity is the path, its
+ * fields are the frontmatter, and its prose is the body, so a note is one
+ * file a person reads whole and an import consumes atomically. Two exports of
+ * one workspace diff per row.
  *
  * Everything scalar comes from `data.stored()`, never from `list()`. A table
  * handle reads through the declaration and narrows to the fields it names, so
@@ -31,6 +32,7 @@ import {
 	type ExportError,
 	exportDocuments,
 } from './documents.js';
+import { rowFile } from './frontmatter.js';
 
 /** The slice of opened data an export reads. */
 export type WorkspaceData = ExportableData;
@@ -52,19 +54,22 @@ export async function exportWorkspace(
 
 	const documents = await exportDocuments(data, definition, state);
 	if (documents.error !== null) return documents;
+	// Coordinates join bodies to rows losslessly: neither a table name nor a
+	// row id can hold a `/` (the address grammar), so the joined key is exact.
+	const bodies = new Map<string, string>();
+	for (const file of documents.data) {
+		bodies.set(`${file.table}/${file.rowId}`, file.text);
+	}
 
 	const files = new Map<string, string>();
 	files.set('kv.json', JSON.stringify(state.kv, null, 2));
 	for (const [table, rows] of state.tables) {
-		const byId: Record<string, unknown> = {};
-		for (const [rowId, values] of rows) byId[rowId] = values;
-		files.set(`tables/${table}.json`, JSON.stringify(byId, null, 2));
-	}
-	for (const file of documents.data) {
-		files.set(
-			`documents/${file.table}/${file.rowId}.${file.extension}`,
-			file.text,
-		);
+		for (const [rowId, values] of rows) {
+			files.set(
+				`${table}/${rowId}.md`,
+				rowFile(values, bodies.get(`${table}/${rowId}`)),
+			);
+		}
 	}
 	return Ok(files);
 }
