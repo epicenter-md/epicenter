@@ -1,6 +1,7 @@
 # 0227. One runtime: a desktop SPA in a WebView, over a client-owned store
 
 - **Status:** Accepted
+- **Amended by:** [ADR-0273](0273-an-epicenter-app-is-an-spa-with-a-namespace-and-background-work-is-a-hidden-window.md) at two points: a window may run without being shown, and the client-owned store is what an application may use rather than what makes it one.
 - **Date:** 2026-08-08
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0227 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).

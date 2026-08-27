@@ -355,5 +355,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0270](0270-an-application-has-two-workspaces-and-moving-a-row-between-them-is-the-primitive.md) | An application has two workspaces, and moving a row between them is the primitive | Accepted (provisional number; amends 0233) |
 | [0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) | A workspace mirrors continuously to the Epicenter folder, one way | Accepted (provisional number; amends 0226, 0264, 0267, and 0268; revives 0207's render direction only; refuses browser-targeted export, so export stops being a verb) |
 | [0272](0272-restore-replaces-a-workspace-from-an-artifact-under-a-new-document-identity.md) | Restore replaces a workspace from an artifact, under a new document identity | Accepted (provisional number; amends 0267) |
+| [0273](0273-an-epicenter-app-is-an-spa-with-a-namespace-and-background-work-is-a-hidden-window.md) | An Epicenter app is an SPA with a namespace, and background work is a hidden window | Accepted (provisional number; amends 0226 and 0227; refuses a worker runtime and per-app route registration) |
 
 When you add an ADR, add its row here.
