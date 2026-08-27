@@ -1,7 +1,8 @@
 # 0128. Tables do not declare document-edit touch policy without a runtime owner
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-12
+- **Superseded by:** [ADR-0264](0264-a-table-declares-its-row-documents-derivation-and-file-codec.md) — it establishes the runtime owner this record waited for and reintroduces document-edit derivation as a store-owned pure function.
 - **Amends:** [ADR-0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md) only for its table-level document-edit touch policy
 
 ## Context
