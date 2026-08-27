@@ -112,7 +112,7 @@ export type BillingEvent = {
 	model: string | null;
 	/** Provider that produced the charge, as the stable id persisted on the
 	 *  event; null for refunds without metadata. A best-effort historical id,
-	 *  not constrained to the live `AiProvider` vocabulary: the dashboard
+	 *  not constrained to the live `HostedProvider` vocabulary: the dashboard
 	 *  resolves the vendor label via `providerLabel`, falling back to the raw
 	 *  id for a provider this deploy does not recognize. Parallel to `model`. */
 	provider: string | null;

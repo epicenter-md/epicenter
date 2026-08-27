@@ -37,10 +37,10 @@
  */
 
 import {
-	type AiProvider,
-	MODELS_BY_ID,
-	type ServableModel,
-} from '@epicenter/constants/ai-providers';
+	type HostedProvider,
+	HOSTED_MODELS_BY_ID,
+	type HostedModelId,
+} from '@epicenter/constants/hosted-catalog';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
@@ -51,7 +51,8 @@ import type { Env } from '../types.js';
 /**
  * Per-provider routing facts for the gateway: the OpenAI-compatible base URL and
  * the deployment env var holding the house key. The model catalog
- * (`MODELS_BY_ID`) owns model -> provider; this owns provider -> upstream. Kept
+ * (`HOSTED_MODELS_BY_ID`) owns model -> provider; this owns provider -> upstream.
+ * Kept
  * local to the gateway (ADR-0050: the provider-routing fact lives here, not in a
  * shared SDK-adapter leaf).
  */
@@ -65,7 +66,7 @@ const PROVIDER_UPSTREAM = {
 		houseKeyEnv: 'GEMINI_API_KEY',
 	},
 } as const satisfies Record<
-	AiProvider,
+	HostedProvider,
 	{ baseURL: string; houseKeyEnv: 'OPENAI_API_KEY' | 'GEMINI_API_KEY' }
 >;
 
@@ -100,7 +101,7 @@ const inferenceApp = new Hono<Env>().post(
 		const body = raw as Record<string, unknown>;
 
 		const model = body.model;
-		if (typeof model !== 'string' || !(model in MODELS_BY_ID)) {
+		if (typeof model !== 'string' || !(model in HOSTED_MODELS_BY_ID)) {
 			return c.json(
 				openAiError(`Unknown model: ${String(model)}`, 'UnknownModel'),
 				400,
@@ -113,7 +114,7 @@ const inferenceApp = new Hono<Env>().post(
 			);
 		}
 
-		const { provider } = MODELS_BY_ID[model as ServableModel];
+		const { provider } = HOSTED_MODELS_BY_ID[model as HostedModelId];
 		const upstream = PROVIDER_UPSTREAM[provider];
 		// House-key-only (ADR-0054): the gateway holds the key and never reads one
 		// from the body, so it provably never receives a user's provider key.

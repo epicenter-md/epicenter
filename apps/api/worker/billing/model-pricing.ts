@@ -1,10 +1,10 @@
 /**
  * Cloud-only, token-based model pricing.
  *
- * The shared catalog (`@epicenter/constants/ai-providers`) owns the product
- * vocabulary (id, provider, label) and carries NO cost, so the billing-agnostic
- * library route and self-host import it without any pricing. All per-model cost
- * lives here, Cloud-only (spec `specs/20260826T120000-inference-credit-billing.md`).
+ * Cloud's hosted catalog (`@epicenter/constants/hosted-catalog`) owns the product
+ * vocabulary (id, provider, label) and carries NO cost. All per-model cost lives
+ * here, keyed by catalog id, Cloud-only (spec
+ * `specs/20260826T120000-inference-credit-billing.md`).
  *
  * A credit is a fixed, published $0.01. Per-model credit cost is derived from a
  * provider cost table (USD per 1M tokens, seeded from models.dev) times a layered
@@ -18,10 +18,10 @@
  */
 
 import {
-	type AiProvider,
-	MODELS_BY_ID,
-	type ServableModel,
-} from '@epicenter/constants/ai-providers';
+	type HostedProvider,
+	HOSTED_MODELS_BY_ID,
+	type HostedModelId,
+} from '@epicenter/constants/hosted-catalog';
 
 /** The fixed, published credit peg. 1 credit = $0.01. Never re-rated. */
 export const CREDIT_USD = 0.01;
@@ -34,7 +34,7 @@ export const CREDIT_USD = 0.01;
  * call can exceed it.
  */
 const MODEL_COST: Record<
-	ServableModel,
+	HostedModelId,
 	{ inputPerMTok: number; outputPerMTok: number; freeEligible: boolean }
 > = {
 	'gpt-5.4-mini': { inputPerMTok: 0.75, outputPerMTok: 4.5, freeEligible: true },
@@ -56,10 +56,10 @@ const TRANSCRIPTION_USD_PER_MINUTE = 0.006;
  * and non-token overhead. Raise-averse: start high and discount, never re-rate up.
  */
 const DEFAULT_MARKUP = 0.5;
-const PROVIDER_MARKUP: Partial<Record<AiProvider, number>> = {};
-const MODEL_MARKUP: Partial<Record<ServableModel, number>> = {};
+const PROVIDER_MARKUP: Partial<Record<HostedProvider, number>> = {};
+const MODEL_MARKUP: Partial<Record<HostedModelId, number>> = {};
 
-function markupForModel(model: ServableModel, provider: AiProvider): number {
+function markupForModel(model: HostedModelId, provider: HostedProvider): number {
 	return MODEL_MARKUP[model] ?? PROVIDER_MARKUP[provider] ?? DEFAULT_MARKUP;
 }
 
@@ -69,7 +69,7 @@ function usdToCredits(pricedUsd: number): number {
 }
 
 /** The chat cost entry for a model, or undefined if unpriced (gate fails closed). */
-export function chatModelCost(model: ServableModel) {
+export function chatModelCost(model: HostedModelId) {
 	return MODEL_COST[model];
 }
 
@@ -80,12 +80,12 @@ export function chatModelCost(model: ServableModel) {
  * Throws on a model with no configured cost (a real 500, never a zero charge).
  */
 export function creditsForChat(input: {
-	model: ServableModel;
+	model: HostedModelId;
 	inputTokens: number;
 	outputTokens: number;
 }): number {
 	const cost = MODEL_COST[input.model];
-	const entry = MODELS_BY_ID[input.model];
+	const entry = HOSTED_MODELS_BY_ID[input.model];
 	if (!cost || !entry) {
 		throw new Error(`No cost configured for model ${input.model}`);
 	}
@@ -108,7 +108,7 @@ const TYPICAL_OUTPUT_TOKENS = 1500;
  * stream ends without readable usage (client abort or a mid-stream error). Never
  * the real per-call charge, which settles on actual returned tokens.
  */
-export function nominalChatCredits(model: ServableModel): number {
+export function nominalChatCredits(model: HostedModelId): number {
 	return creditsForChat({
 		model,
 		inputTokens: TYPICAL_INPUT_TOKENS,
@@ -121,7 +121,7 @@ export function nominalChatCredits(model: ServableModel): number {
  * Rounded up per call with a floor of one credit.
  */
 export function transcriptionCredits(input: {
-	provider: AiProvider;
+	provider: HostedProvider;
 	minutes: number;
 }): number {
 	const usd = input.minutes * TRANSCRIPTION_USD_PER_MINUTE;

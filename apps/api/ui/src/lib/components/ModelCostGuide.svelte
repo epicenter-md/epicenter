@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AI_MODELS, providerLabel } from '@epicenter/constants/ai-providers';
+	import { HOSTED_MODELS, providerLabel } from '@epicenter/constants/hosted-catalog';
 	import * as Table from '@epicenter/ui/table';
 
 	// The catalog is a compile-time constant, so the table never pends or errors.
@@ -7,7 +7,7 @@
 	// is no fixed per-call credit to show here; the tier label (Fast/Best) is the
 	// at-a-glance cost signal. A live per-request credit estimate is a
 	// Cloud-sourced follow-up (spec 20260826T120000-inference-credit-billing).
-	const rows = AI_MODELS.map((entry) => ({
+	const rows = HOSTED_MODELS.map((entry) => ({
 		model: entry.id,
 		provider: entry.provider,
 		tier: entry.label,

@@ -9,7 +9,7 @@
  */
 
 import { createInferenceConnections } from '@epicenter/app-shell/inference-picker';
-import { toHostedCatalog } from '@epicenter/constants/ai-providers';
+import { hostedCatalogFor } from '@epicenter/constants/hosted-catalog';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
@@ -18,7 +18,7 @@ import { auth } from '$lib/platform/auth';
 
 export const inferenceConnections = createInferenceConnections({
 	storageKey: 'vocab',
-	hostedModels: toHostedCatalog([VOCAB_MODEL]),
+	hostedModels: hostedCatalogFor([VOCAB_MODEL]),
 	hosted: {
 		fetch: auth.fetch,
 		baseURL: API_ROUTES.ai.baseUrl(APP_URLS.API),

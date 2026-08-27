@@ -26,9 +26,9 @@
  */
 
 import {
-	MODELS_BY_ID,
-	type ServableModel,
-} from '@epicenter/constants/ai-providers';
+	HOSTED_MODELS_BY_ID,
+	type HostedModelId,
+} from '@epicenter/constants/hosted-catalog';
 import type { PrincipalId } from '@epicenter/identity';
 import type { CloudEnv } from '@epicenter/server';
 import type { Context } from 'hono';
@@ -119,7 +119,7 @@ export function createBillingService(
 	async function gateAiChat(input: {
 		model: string;
 	}): Promise<Result<void, AiChatError | BillingError>> {
-		const model = input.model as ServableModel;
+		const model = input.model as HostedModelId;
 		const cost = chatModelCost(model);
 		if (!cost) {
 			return AiChatError.UnknownModel({ model: input.model });
@@ -171,8 +171,8 @@ export function createBillingService(
 		model: string;
 		usage: StreamedUsage | null;
 	}): Promise<Result<void, BillingError>> {
-		const model = input.model as ServableModel;
-		const entry = MODELS_BY_ID[model];
+		const model = input.model as HostedModelId;
+		const entry = HOSTED_MODELS_BY_ID[model];
 		if (!entry || !chatModelCost(model)) {
 			// The gate proved the model is priced; a gap here is a programmer error,
 			// so throw to a real 500 rather than charge zero.
