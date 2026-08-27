@@ -18,9 +18,9 @@
  */
 
 import {
-	type HostedProvider,
 	HOSTED_MODELS_BY_ID,
 	type HostedModelId,
+	type HostedProvider,
 } from '@epicenter/constants/hosted-catalog';
 
 /** The fixed, published credit peg. 1 credit = $0.01. Never re-rated. */
@@ -37,9 +37,17 @@ const MODEL_COST: Record<
 	HostedModelId,
 	{ inputPerMTok: number; outputPerMTok: number; freeEligible: boolean }
 > = {
-	'gpt-5.4-mini': { inputPerMTok: 0.75, outputPerMTok: 4.5, freeEligible: true },
+	'gpt-5.4-mini': {
+		inputPerMTok: 0.75,
+		outputPerMTok: 4.5,
+		freeEligible: true,
+	},
 	'gpt-5.5': { inputPerMTok: 5, outputPerMTok: 30, freeEligible: false },
-	'gemini-3.5-flash': { inputPerMTok: 1.5, outputPerMTok: 9, freeEligible: true },
+	'gemini-3.5-flash': {
+		inputPerMTok: 1.5,
+		outputPerMTok: 9,
+		freeEligible: true,
+	},
 };
 
 /**
@@ -59,7 +67,10 @@ const DEFAULT_MARKUP = 0.5;
 const PROVIDER_MARKUP: Partial<Record<HostedProvider, number>> = {};
 const MODEL_MARKUP: Partial<Record<HostedModelId, number>> = {};
 
-function markupForModel(model: HostedModelId, provider: HostedProvider): number {
+function markupForModel(
+	model: HostedModelId,
+	provider: HostedProvider,
+): number {
 	return MODEL_MARKUP[model] ?? PROVIDER_MARKUP[provider] ?? DEFAULT_MARKUP;
 }
 
@@ -125,6 +136,7 @@ export function transcriptionCredits(input: {
 	minutes: number;
 }): number {
 	const usd = input.minutes * TRANSCRIPTION_USD_PER_MINUTE;
-	const priced = usd * (1 + (PROVIDER_MARKUP[input.provider] ?? DEFAULT_MARKUP));
+	const priced =
+		usd * (1 + (PROVIDER_MARKUP[input.provider] ?? DEFAULT_MARKUP));
 	return usdToCredits(priced);
 }

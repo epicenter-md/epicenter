@@ -415,9 +415,9 @@ export function openSyncAuthority({
 		/**
 		 * The one number to instrument.
 		 *
-			 * Automatic snapshot folding remains the maintenance path. This number is
-			 * instrumentation for deciding whether a future explicit Compact workspace
-			 * action has earned its place; the authority does not trigger that action.
+		 * Automatic snapshot folding remains the maintenance path. This number is
+		 * instrumentation for deciding whether a future explicit Compact workspace
+		 * action has earned its place; the authority does not trigger that action.
 		 */
 		storedBytes: () => read(() => sumBytes('_log') + sumBytes('_snapshot')),
 	});

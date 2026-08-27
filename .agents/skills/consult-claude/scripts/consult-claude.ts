@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { cp, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 
 type RunRecord = {
 	id: string;
@@ -34,10 +34,14 @@ type FollowUpOptions = {
 const pollIntervalSeconds = 5;
 
 function usage() {
-	console.error('Usage: consult-claude.ts start [--name <name>] [--wait] [--dry-run]\n       consult-claude.ts follow-up <run-id> [--wait]\n       consult-claude.ts status <run-id>');
+	console.error(
+		'Usage: consult-claude.ts start [--name <name>] [--wait] [--dry-run]\n       consult-claude.ts follow-up <run-id> [--wait]\n       consult-claude.ts status <run-id>',
+	);
 }
 
-export function parseStartOptions(args: readonly string[]): StartOptions | undefined {
+export function parseStartOptions(
+	args: readonly string[],
+): StartOptions | undefined {
 	let name: string | undefined;
 	let wait = false;
 	let dryRun = false;
@@ -67,46 +71,67 @@ export function parseNativeAgentId(output: string) {
 	return output.match(/^backgrounded\s+·\s+(\S+)$/m)?.[1];
 }
 
-export function parseFollowUpOptions(args: readonly string[]): FollowUpOptions | undefined {
+export function parseFollowUpOptions(
+	args: readonly string[],
+): FollowUpOptions | undefined {
 	const [id, ...options] = args;
 	if (!id) return undefined;
 	if (options.length === 0) return { id, wait: false };
-	if (options.length === 1 && options[0] === '--wait') return { id, wait: true };
+	if (options.length === 1 && options[0] === '--wait')
+		return { id, wait: true };
 	return undefined;
 }
 
 function run(command: string, args: readonly string[], cwd?: string) {
 	const result = spawnSync(command, args, { cwd, encoding: 'utf8' });
 	if (result.error) throw result.error;
-	if (result.status !== 0) throw new Error(result.stderr.trim() || `${command} exited ${result.status}`);
+	if (result.status !== 0)
+		throw new Error(
+			result.stderr.trim() || `${command} exited ${result.status}`,
+		);
 	return result.stdout;
 }
 
 function stateRoot() {
-	return process.env.CLAUDE_RESEARCH_ROOT ?? join(homedir(), '.cache', 'codex-claude-research');
+	return (
+		process.env.CLAUDE_RESEARCH_ROOT ??
+		join(homedir(), '.cache', 'codex-claude-research')
+	);
 }
 
 function safeName(name: string) {
-	const normalized = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+	const normalized = name
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-|-$/g, '');
 	if (!normalized) throw new Error('Run name must contain a letter or number.');
 	return normalized;
 }
 
 async function readMission() {
 	const chunks: Buffer[] = [];
-	for await (const chunk of process.stdin) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+	for await (const chunk of process.stdin)
+		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
 	const mission = Buffer.concat(chunks).toString('utf8').trim();
 	if (!mission) throw new Error('Research brief is empty.');
 	return mission;
 }
 
-async function copyUntracked(sourcePath: string, replicaPath: string, paths: readonly string[]) {
+async function copyUntracked(
+	sourcePath: string,
+	replicaPath: string,
+	paths: readonly string[],
+) {
 	for (const path of paths) {
-		if (path.startsWith('../') || path.startsWith('/')) throw new Error(`Unsafe untracked path from git: ${path}`);
+		if (path.startsWith('../') || path.startsWith('/'))
+			throw new Error(`Unsafe untracked path from git: ${path}`);
 		const source = join(sourcePath, path);
 		const destination = join(replicaPath, path);
 		await mkdir(dirname(destination), { recursive: true });
-		await cp(source, destination, { dereference: false, preserveTimestamps: true });
+		await cp(source, destination, {
+			dereference: false,
+			preserveTimestamps: true,
+		});
 	}
 }
 
@@ -125,8 +150,19 @@ async function untrackedHash(sourcePath: string, paths: readonly string[]) {
 export async function createSnapshot(sourcePath: string, replicaPath: string) {
 	const head = run('git', ['rev-parse', 'HEAD'], sourcePath).trim();
 	const patch = run('git', ['diff', '--binary', 'HEAD'], sourcePath);
-	const untracked = run('git', ['ls-files', '--others', '--exclude-standard', '-z'], sourcePath).split('\0').filter(Boolean);
-	const snapshotId = createHash('sha256').update(head).update(patch).update(await untrackedHash(sourcePath, untracked)).digest('hex').slice(0, 16);
+	const untracked = run(
+		'git',
+		['ls-files', '--others', '--exclude-standard', '-z'],
+		sourcePath,
+	)
+		.split('\0')
+		.filter(Boolean);
+	const snapshotId = createHash('sha256')
+		.update(head)
+		.update(patch)
+		.update(await untrackedHash(sourcePath, untracked))
+		.digest('hex')
+		.slice(0, 16);
 	await mkdir(dirname(replicaPath), { recursive: true });
 	run('git', ['clone', '--no-local', sourcePath, replicaPath]);
 	run('git', ['remote', 'remove', 'origin'], replicaPath);
@@ -206,9 +242,19 @@ export function laboratorySettings() {
 function agentFor(record: RunRecord) {
 	return {
 		'codex-laboratory': {
-			description: 'Autonomous repository laboratory that cannot affect the living checkout.',
+			description:
+				'Autonomous repository laboratory that cannot affect the living checkout.',
 			prompt: laboratoryPrompt(record),
-			tools: ['Bash', 'Read', 'Glob', 'Grep', 'Edit', 'Write', 'NotebookEdit', 'WebSearch'],
+			tools: [
+				'Bash',
+				'Read',
+				'Glob',
+				'Grep',
+				'Edit',
+				'Write',
+				'NotebookEdit',
+				'WebSearch',
+			],
 			disallowedTools: ['Agent', 'AskUserQuestion', 'WebFetch'],
 			permissionMode: 'auto',
 			effort: 'high',
@@ -218,20 +264,31 @@ function agentFor(record: RunRecord) {
 
 async function writeRecord(record: RunRecord) {
 	const runPath = dirname(record.replicaPath);
-	await writeFile(join(runPath, 'run.json'), `${JSON.stringify(record, null, 2)}\n`);
-	await writeFile(join(runPath, 'settings.json'), `${JSON.stringify(laboratorySettings(), null, 2)}\n`);
+	await writeFile(
+		join(runPath, 'run.json'),
+		`${JSON.stringify(record, null, 2)}\n`,
+	);
+	await writeFile(
+		join(runPath, 'settings.json'),
+		`${JSON.stringify(laboratorySettings(), null, 2)}\n`,
+	);
 }
 
 async function readRecord(id: string) {
 	const normalized = safeName(id);
-	if (normalized !== id) throw new Error('Run ID must be the exact ID printed by start.');
-	return JSON.parse(await readFile(join(stateRoot(), normalized, 'run.json'), 'utf8')) as RunRecord;
+	if (normalized !== id)
+		throw new Error('Run ID must be the exact ID printed by start.');
+	return JSON.parse(
+		await readFile(join(stateRoot(), normalized, 'run.json'), 'utf8'),
+	) as RunRecord;
 }
 
 async function assertNewRun(runPath: string, id: string) {
 	try {
 		await lstat(runPath);
-		throw new Error(`Research run "${id}" already exists. Choose a new --name rather than replacing its evidence.`);
+		throw new Error(
+			`Research run "${id}" already exists. Choose a new --name rather than replacing its evidence.`,
+		);
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
 		throw error;
@@ -245,14 +302,20 @@ async function printStatus(id: string) {
 		console.log(await readFile(record.checkpointPath, 'utf8'));
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-		console.error('[consult-claude] No checkpoint yet. Inspect the native session with claude agents.');
+		console.error(
+			'[consult-claude] No checkpoint yet. Inspect the native session with claude agents.',
+		);
 	}
 }
 
 function nativeSessionIdFor(nativeAgentId: string) {
 	try {
-		const agents = JSON.parse(run('claude', ['agents', '--json', '--all'])) as Array<{ id?: unknown; sessionId?: unknown }>;
-		const sessionId = agents.find((agent) => agent.id === nativeAgentId)?.sessionId;
+		const agents = JSON.parse(
+			run('claude', ['agents', '--json', '--all']),
+		) as Array<{ id?: unknown; sessionId?: unknown }>;
+		const sessionId = agents.find(
+			(agent) => agent.id === nativeAgentId,
+		)?.sessionId;
 		return typeof sessionId === 'string' ? sessionId : undefined;
 	} catch {
 		return undefined;
@@ -261,30 +324,52 @@ function nativeSessionIdFor(nativeAgentId: string) {
 
 function recordNativeSession(record: RunRecord, output: string) {
 	record.nativeAgentId = parseNativeAgentId(output);
-	record.nativeSessionId = record.nativeAgentId ? nativeSessionIdFor(record.nativeAgentId) : undefined;
+	record.nativeSessionId = record.nativeAgentId
+		? nativeSessionIdFor(record.nativeAgentId)
+		: undefined;
 }
 
-function launchLaboratory(record: RunRecord, prompt: string, continuation?: string) {
-	const launch = spawnSync('claude', [
-		...(continuation ? ['--resume', continuation] : []),
-		'--agent', 'codex-laboratory',
-		'--agents', JSON.stringify(agentFor(record)),
-		'--settings', join(dirname(record.replicaPath), 'settings.json'),
-		'--strict-mcp-config',
-		'--permission-mode', 'auto',
-		'--bg', prompt,
-	], { cwd: record.replicaPath, encoding: 'utf8' });
+function launchLaboratory(
+	record: RunRecord,
+	prompt: string,
+	continuation?: string,
+) {
+	const launch = spawnSync(
+		'claude',
+		[
+			...(continuation ? ['--resume', continuation] : []),
+			'--agent',
+			'codex-laboratory',
+			'--agents',
+			JSON.stringify(agentFor(record)),
+			'--settings',
+			join(dirname(record.replicaPath), 'settings.json'),
+			'--strict-mcp-config',
+			'--permission-mode',
+			'auto',
+			'--bg',
+			prompt,
+		],
+		{ cwd: record.replicaPath, encoding: 'utf8' },
+	);
 	if (launch.error) throw launch.error;
-	if (launch.status !== 0) throw new Error(launch.stderr.trim() || `claude exited ${launch.status}`);
+	if (launch.status !== 0)
+		throw new Error(launch.stderr.trim() || `claude exited ${launch.status}`);
 	return launch.stdout;
 }
 
 async function archiveTerminalCheckpoint(record: RunRecord) {
 	const checkpoint = await readFile(record.checkpointPath, 'utf8');
 	if (!/^state: (?:needs-decision|complete)$/m.test(checkpoint)) {
-		throw new Error('Claude has not reached a decision checkpoint. Use claude agents to reply while the laboratory is working.');
+		throw new Error(
+			'Claude has not reached a decision checkpoint. Use claude agents to reply while the laboratory is working.',
+		);
 	}
-	const historyPath = join(dirname(record.checkpointPath), 'history', `checkpoint-${Date.now()}.md`);
+	const historyPath = join(
+		dirname(record.checkpointPath),
+		'history',
+		`checkpoint-${Date.now()}.md`,
+	);
 	await mkdir(dirname(historyPath), { recursive: true });
 	await writeFile(historyPath, checkpoint);
 	await rm(record.checkpointPath);
@@ -322,7 +407,9 @@ async function start(options: StartOptions) {
 		startedAt: new Date().toISOString(),
 	};
 	if (options.dryRun) {
-		console.log(JSON.stringify({ ...record, settings: laboratorySettings() }, null, 2));
+		console.log(
+			JSON.stringify({ ...record, settings: laboratorySettings() }, null, 2),
+		);
 		return;
 	}
 	await assertNewRun(runPath, id);
@@ -334,8 +421,10 @@ async function start(options: StartOptions) {
 	await writeRecord(record);
 	process.stdout.write(output);
 	console.log(`CONSULT_CLAUDE_RUN_ID=${record.id}`);
-	if (record.nativeAgentId) console.log(`CONSULT_CLAUDE_NATIVE_AGENT_ID=${record.nativeAgentId}`);
-	if (record.nativeSessionId) console.log(`CONSULT_CLAUDE_NATIVE_SESSION_ID=${record.nativeSessionId}`);
+	if (record.nativeAgentId)
+		console.log(`CONSULT_CLAUDE_NATIVE_AGENT_ID=${record.nativeAgentId}`);
+	if (record.nativeSessionId)
+		console.log(`CONSULT_CLAUDE_NATIVE_SESSION_ID=${record.nativeSessionId}`);
 	console.log(`CONSULT_CLAUDE_CHECKPOINT=${record.checkpointPath}`);
 	if (options.wait) await waitForTerminalCheckpoint(record);
 }
@@ -343,17 +432,30 @@ async function start(options: StartOptions) {
 async function followUp(options: FollowUpOptions) {
 	const record = await readRecord(options.id);
 	const message = await readMission();
-	const sessionId = record.nativeSessionId ?? (record.nativeAgentId ? nativeSessionIdFor(record.nativeAgentId) : undefined);
-	if (!sessionId) throw new Error('The native Claude session is no longer available. Start a new laboratory snapshot.');
+	const sessionId =
+		record.nativeSessionId ??
+		(record.nativeAgentId
+			? nativeSessionIdFor(record.nativeAgentId)
+			: undefined);
+	if (!sessionId)
+		throw new Error(
+			'The native Claude session is no longer available. Start a new laboratory snapshot.',
+		);
 	await archiveTerminalCheckpoint(record);
-	const output = launchLaboratory(record, `Codex follow-up: ${message}\n\nContinue working in the same laboratory. Update the checkpoint when you next need a decision or complete the outcome.`, sessionId);
+	const output = launchLaboratory(
+		record,
+		`Codex follow-up: ${message}\n\nContinue working in the same laboratory. Update the checkpoint when you next need a decision or complete the outcome.`,
+		sessionId,
+	);
 	record.continuedAt = new Date().toISOString();
 	recordNativeSession(record, output);
 	await writeRecord(record);
 	process.stdout.write(output);
 	console.log(`CONSULT_CLAUDE_RUN_ID=${record.id}`);
-	if (record.nativeAgentId) console.log(`CONSULT_CLAUDE_NATIVE_AGENT_ID=${record.nativeAgentId}`);
-	if (record.nativeSessionId) console.log(`CONSULT_CLAUDE_NATIVE_SESSION_ID=${record.nativeSessionId}`);
+	if (record.nativeAgentId)
+		console.log(`CONSULT_CLAUDE_NATIVE_AGENT_ID=${record.nativeAgentId}`);
+	if (record.nativeSessionId)
+		console.log(`CONSULT_CLAUDE_NATIVE_SESSION_ID=${record.nativeSessionId}`);
 	console.log(`CONSULT_CLAUDE_CHECKPOINT=${record.checkpointPath}`);
 	if (options.wait) await waitForTerminalCheckpoint(record);
 }

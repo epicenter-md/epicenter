@@ -11,7 +11,7 @@
  * through a `createSubscriber` per table, so a read inside `$derived` or an
  * effect re-runs when a commit touches that table, whoever committed it: a
  * local write and bytes that arrived from another device alike (ADR-0221).
-	 * `openDocument()` is not a read: it is the store's own asynchronous load of
+ * `openDocument()` is not a read: it is the store's own asynchronous load of
  * a row's independent document (ADR-0248), and it passes through untouched.
  * Prose typed inside an open document is observed on the document's own Yjs
  * types, never through a table signal.

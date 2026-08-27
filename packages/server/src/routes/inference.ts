@@ -36,12 +36,12 @@
  * already in the OpenAI shape; the client surfaces it as a `run-error` chunk.
  */
 
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import {
-	type HostedProvider,
 	HOSTED_MODELS_BY_ID,
 	type HostedModelId,
+	type HostedProvider,
 } from '@epicenter/constants/hosted-catalog';
-import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { describeRoute } from 'hono-openapi';

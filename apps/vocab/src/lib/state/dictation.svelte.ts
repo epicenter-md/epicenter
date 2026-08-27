@@ -26,7 +26,7 @@
  * failure instead of being sent to a transport it does not belong to.
  */
 
-import { TranscribeError, createInferenceClient } from '@epicenter/client';
+import { createInferenceClient, TranscribeError } from '@epicenter/client';
 import {
 	createVadRecorder,
 	type DeviceStreamError,
@@ -108,8 +108,7 @@ function createDictation() {
 					inFlightCount += 1;
 					deliveries = deliveries
 						.then(async () => {
-							const transport =
-								inferenceConnections.resolve(VOCAB_STT_MODEL);
+							const transport = inferenceConnections.resolve(VOCAB_STT_MODEL);
 							if (!transport) {
 								onTranscript(
 									TranscribeError.NoConnection({ model: VOCAB_STT_MODEL }),

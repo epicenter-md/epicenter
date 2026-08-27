@@ -46,7 +46,13 @@ const application = `probe-${Date.now()}`;
 const evidenceDatabase = defineData({
 	id: 'so.epicenter.synclab',
 	kv: {},
-	tables: { notes: { title: field.string(), device: field.string(), at: field.string() } },
+	tables: {
+		notes: {
+			title: field.string(),
+			device: field.string(),
+			at: field.string(),
+		},
+	},
 });
 
 type Stat = {

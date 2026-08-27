@@ -42,10 +42,6 @@ export type {
 } from './agent-engine.js';
 export { CompleteError, type CompleteOptions, complete } from './complete.js';
 export {
-	type InferenceClient,
-	createInferenceClient,
-} from './inference-client.js';
-export {
 	CONNECTION_PRESETS,
 	type Connection,
 	type ConnectionPreset,
@@ -55,6 +51,10 @@ export {
 	type ResolvedConnection,
 	resolveConnection,
 } from './connection.js';
+export {
+	createInferenceClient,
+	type InferenceClient,
+} from './inference-client.js';
 export {
 	createOpenAiAgentEngine,
 	type OpenAiTurnContext,

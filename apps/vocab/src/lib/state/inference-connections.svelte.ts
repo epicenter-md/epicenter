@@ -9,8 +9,8 @@
  */
 
 import { createInferenceConnections } from '@epicenter/app-shell/inference-picker';
-import { hostedCatalogFor } from '@epicenter/constants/hosted-catalog';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
+import { hostedCatalogFor } from '@epicenter/constants/hosted-catalog';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
 import { VOCAB_MODEL, VOCAB_STT_MODEL } from '@epicenter/vocab';

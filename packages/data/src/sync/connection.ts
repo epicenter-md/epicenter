@@ -42,7 +42,7 @@
  *   in this driver.
  * - Stopping for good when the client concludes `superseded` (ADR-0231): the
  *   authority named a document that is not the one this replica's state
-	 *   belongs to, meaning its document is superseded. `onSuperseded` fires
+ *   belongs to, meaning its document is superseded. `onSuperseded` fires
  *   once, after the driver has let go of everything, and the host discards
  *   the local file whole and reloads. Nothing else can trigger it: a close
  *   without the announcement, garbage, and every failure are ordinary

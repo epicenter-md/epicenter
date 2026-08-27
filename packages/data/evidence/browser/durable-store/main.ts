@@ -1,11 +1,10 @@
-import { field } from '@epicenter/data/definition';
 /**
  * The page half of the durability proof. Driven by `../durable-store.ts`.
  *
  * It exposes verbs rather than running a script, so the runner decides when a
  * reload happens, which is the only part of this that matters.
  */
-import { defineData } from '@epicenter/data/definition';
+import { defineData, field } from '@epicenter/data/definition';
 
 import { type DeviceStore, openDevice } from '../../../src/store/browser.js';
 import type { DataOf } from '../../../src/store/store.js';

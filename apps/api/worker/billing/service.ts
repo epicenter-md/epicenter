@@ -34,12 +34,6 @@ import type { CloudEnv } from '@epicenter/server';
 import type { Context } from 'hono';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { AiChatError } from './ai-chat-errors.js';
-import type { StreamedUsage } from './meter-sse.js';
-import {
-	chatModelCost,
-	creditsForChat,
-	nominalChatCredits,
-} from './model-pricing.js';
 import { createAutumnClient, isNotFoundError, tryAutumn } from './autumn.js';
 import {
 	type CheckoutPlanId,
@@ -65,6 +59,12 @@ import type {
 	UsageSeries,
 } from './contracts.js';
 import type { BillingError } from './errors.js';
+import type { StreamedUsage } from './meter-sse.js';
+import {
+	chatModelCost,
+	creditsForChat,
+	nominalChatCredits,
+} from './model-pricing.js';
 
 // ---------------------------------------------------------------------
 // Types

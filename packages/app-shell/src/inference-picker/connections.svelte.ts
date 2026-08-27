@@ -28,9 +28,9 @@
 
 import {
 	type Connection,
+	createInferenceClient,
 	type ListModelsError,
 	type ResolvedConnection,
-	createInferenceClient,
 	resolveConnection,
 } from '@epicenter/client';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
@@ -147,10 +147,7 @@ export function createInferenceConnections({
 				? [
 						{
 							resolve: () => hosted,
-							models: [
-								...hostedModels.map((m) => m.id),
-								...hostedAlsoServes,
-							],
+							models: [...hostedModels.map((m) => m.id), ...hostedAlsoServes],
 						},
 					]
 				: []),

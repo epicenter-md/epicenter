@@ -14,18 +14,22 @@
  * take a client without unwrapping it.
  */
 
-import { type CompleteError, type CompleteOptions, complete } from './complete.js';
+import type { Result } from 'wellcrafted/result';
+import {
+	type CompleteError,
+	type CompleteOptions,
+	complete,
+} from './complete.js';
 import {
 	type ListModelsError,
-	type ResolvedConnection,
 	listModels,
+	type ResolvedConnection,
 } from './connection.js';
 import {
 	type TranscribeError,
 	type TranscribeOptions,
 	transcribe,
 } from './transcribe.js';
-import type { Result } from 'wellcrafted/result';
 
 /** A connection bound to the calls it serves. Superset of {@link ResolvedConnection}. */
 export type InferenceClient = ReturnType<typeof createInferenceClient>;
@@ -47,9 +51,7 @@ export function createInferenceClient(resolved: ResolvedConnection) {
 		baseURL: resolved.baseURL,
 
 		/** `POST {base}/chat/completions`: one non-streamed completion. */
-		complete(
-			options: CompleteOptions,
-		): Promise<Result<string, CompleteError>> {
+		complete(options: CompleteOptions): Promise<Result<string, CompleteError>> {
 			return complete(resolved, options);
 		},
 
