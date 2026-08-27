@@ -31,7 +31,7 @@ import type { Dirent } from 'node:fs';
 import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 import { epicenterFolderRoot, isAppId } from '@epicenter/constants/app-data';
-import { parseRowPath } from '@epicenter/data/artifact';
+import { parseRowPath } from '@epicenter/data/artifact/format';
 import type { MirrorWorkspace } from '@epicenter/data/artifact/webview';
 
 /** Where a workspace's files live, and the only two answers (ADR-0271). */
