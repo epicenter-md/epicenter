@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-22
+- **Amended by:** [ADR-0265](0265-an-in-process-local-engine-is-served-over-a-custom-uri-scheme-not-a-loopback-socket.md) (2026-08-26): this ADR contemplates an engine running in-process (Core ML, embedded whisper.cpp) but leaves it without a base URL, so the in-process case was the one lane reached by `invoke` instead of by the seam. ADR-0265 gives it one: the host serves its in-process engines over a Tauri custom URI scheme, so a local engine is a normal connection. The route list there follows this ADR's three routes, minus `/v1/chat/completions`, which stays delegated to Ollama.
 - **Relates:** [ADR-0050](0050-the-inference-contract-is-openai-compatible.md) (the OpenAI-compatible wire this seam is built on), [ADR-0054](0054-an-inference-backend-is-the-metered-gateway-or-a-custom-server.md) (hosted-vs-custom backend, the seam this generalizes from chat to voice), [ADR-0053](0053-the-epicenter-bearer-is-an-audience-scoped-credential.md) (the audience-scoped bearer that makes a base-URL swap safe), [ADR-0049](0049-inference-is-its-own-box-the-daemon-never-infers.md) (inference is its own swappable box)
 
 ## Context
