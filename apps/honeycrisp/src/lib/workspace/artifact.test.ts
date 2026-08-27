@@ -8,7 +8,7 @@
  * actually be lost.
  */
 import { expect, test } from 'bun:test';
-import { exportWorkspace, readArtifact } from '@epicenter/data/artifact';
+import { renderWorkspace, readArtifact } from '@epicenter/data/artifact';
 import { openMemory } from '@epicenter/data/memory';
 import { syncEngineOf } from '@epicenter/data/engine';
 import { InstantString } from '@epicenter/field';
@@ -53,7 +53,7 @@ test('a workspace exports to Markdown files and imports back whole', async () =>
 		);
 	}
 
-	const files = expectOk(await exportWorkspace(data, honeycrispDefinition));
+	const files = expectOk(await renderWorkspace(data, honeycrispDefinition));
 	// One file per row, and the note's file is prose a person can read.
 	expect([...files.keys()].sort()).toEqual(
 		[`folders/${data.tables.folders.list().rows[0]?.id}.md`, 'kv.json', `notes/${note.id}.md`].sort(),
@@ -81,7 +81,7 @@ test('a workspace exports to Markdown files and imports back whole', async () =>
 
 test('a note with no prose exports as frontmatter alone and still imports', async () => {
 	const { data, note } = seed();
-	const files = expectOk(await exportWorkspace(data, honeycrispDefinition));
+	const files = expectOk(await renderWorkspace(data, honeycrispDefinition));
 	expect(files.get(`notes/${note.id}.md`)).not.toContain('\n\n');
 
 	const envelope = expectOk(readArtifact(files, honeycrispDefinition));

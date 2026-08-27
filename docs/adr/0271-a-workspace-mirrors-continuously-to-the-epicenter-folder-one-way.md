@@ -7,7 +7,7 @@
 - **Amends:** [ADR-0267](0267-a-workspace-exports-and-imports-as-a-legible-folder-structured-artifact.md) and [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) at who produces the artifact and when. The artifact's shape is unchanged; export stops being a verb a person invokes, and "a directory, zipped for download" is refused with it.
 - **Revives:** [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md), the render direction only. Its folder, its one-file-per-row shape, and its "point your agent at `~/Epicenter`" premise return. Its entire write direction does not.
 - **Relates:** [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) (the file shape this renders), [ADR-0270](0270-an-application-has-two-workspaces-and-moving-a-row-between-them-is-the-primitive.md) (the two workspaces this lays out), [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md).
-- **Unbuilt:** all of it. The per-row render exists inside `exportWorkspace`; the host file sink, the connection to `onCommitted`, and the folder root do not.
+- **Partly built:** the render. `renderRow` in `packages/data/src/artifact/` turns one row into one file and `renderWorkspace` is that call in a loop, which is the boot pass. The host file sink, the folder root, and the signal that says which rows a commit touched do not exist.
 
 ## Context
 
@@ -56,7 +56,7 @@ What is different now is that the render no longer needs the host to own anythin
 - `git init ~/Epicenter` makes a restore auditable with tools that already exist, which is a consequence of the files being real rather than a feature anyone builds.
 - `store.onCommitted` gets its first consumer since the SQL projection was deleted (ADR-0269). The phase-order contract it guarantees, followers marked dirty before any table subscriber reads, is what a renderer needs.
 - ADR-0010's warning applies and is accepted with a mitigation owed: "a continuous producer with no consumer, paid on every edit." The consumer exists now (a coding agent with `ls` and `Read`), and the cost is a file write joining every commit, which needs debouncing and an atomic write so an agent cannot read a half-rendered file.
-- One artifact producer instead of two. The zip assembly, the download flow, the save dialog, and the archive-progress model are not built, and `exportWorkspace`'s whole-map return shape becomes a per-row render that streams to disk. The in-memory ceiling on a large vault goes away by there being nowhere to hold one, rather than by optimizing.
+- One artifact producer instead of two. The zip assembly, the download flow, the save dialog, and the archive-progress model are not built, and the whole-map return shape becomes a per-row render that streams to disk. The in-memory ceiling on a large vault goes away by there being nowhere to hold one, rather than by optimizing.
 - `apps/epicenter/AGENTS.md` currently says "Do not rebuild any of them here" about the folder renderer. That instruction is superseded for the render direction and stays in force for the write direction.
 
 ## Considered alternatives

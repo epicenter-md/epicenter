@@ -14,7 +14,7 @@ import { defineData, field } from '@epicenter/data/definition';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { createMemoryRecord, openMemory } from '../store/memory.js';
 import { syncEngineOf } from '../store/store.js';
-import { exportWorkspace } from './export.js';
+import { renderWorkspace } from './render.js';
 import { readArtifact } from './import.js';
 
 type MetaRoot = {
@@ -77,7 +77,7 @@ async function seeded() {
 describe('readArtifact (ADR-0267/0268)', () => {
 	test('an exported workspace imports back into an identical one', async () => {
 		const { data, note } = await seeded();
-		const exported = expectOk(await exportWorkspace(data, workspace));
+		const exported = expectOk(await renderWorkspace(data, workspace));
 
 		const envelope = expectOk(readArtifact(exported, workspace));
 		await using restored = openMemory(workspace);
@@ -104,7 +104,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 
 	test('a value keeps its type, so a string that looks like a number stays one', async () => {
 		const { data, note } = await seeded();
-		const exported = expectOk(await exportWorkspace(data, workspace));
+		const exported = expectOk(await renderWorkspace(data, workspace));
 		const envelope = expectOk(readArtifact(exported, workspace));
 		await using restored = openMemory(workspace);
 		syncEngineOf(restored.store).applyRemote(envelope);
@@ -135,7 +135,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			folderId: null,
 		});
 		withLegacy.tables.notes.update(made.id, { legacy: 'kept' } as never);
-		const exported = expectOk(await exportWorkspace(withLegacy, workspace));
+		const exported = expectOk(await renderWorkspace(withLegacy, workspace));
 		await withLegacy.store[Symbol.asyncDispose]();
 
 		const envelope = expectOk(readArtifact(exported, workspace));

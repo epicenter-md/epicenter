@@ -1,6 +1,6 @@
 /**
  * The workspace artifact: the legible folder a person keeps, in both
- * directions (ADR-0267, ADR-0268).
+ * directions (ADR-0267, ADR-0268, ADR-0271).
  *
  * ```txt
  * kv.json              the kv root's stored values
@@ -8,17 +8,31 @@
  *                      document through the table's codec as the body
  * ```
  *
- * Both directions are composed on the public surface and neither is a store
- * verb: `exportWorkspace` turns an opened workspace into files, and
- * `readArtifact` turns files back into the one envelope that replaces a
- * workspace's contents. Writing the files out and reading them back in is the
- * caller's, because that is a filesystem the host owns and nothing here does.
+ * The unit is one row and one file. `renderRow` is what the mirror calls for
+ * every row a commit touched; `renderWorkspace` is that call in a loop, which
+ * the mirror runs at boot. `readArtifact` is the other direction, and it is
+ * whole-folder by nature because restore replaces a workspace rather than
+ * patching one.
  *
- * The files land in `~/Epicenter`, written continuously by the mirror
- * (ADR-0271). Reading them back is restore, which points at any folder and
- * takes its destination as an argument (ADR-0272).
+ * Both directions are composed on the public surface and neither is a store
+ * verb. Writing the files out and reading them back in belongs to whoever
+ * owns a filesystem, which is the host (ADR-0271): the files land in
+ * `~/Epicenter`, written continuously, and reading them back is restore,
+ * which points at any folder and takes its destination as an argument
+ * (ADR-0272).
  */
-export type { DocumentFile, ExportError } from './documents.js';
-export { exportWorkspace, type WorkspaceData } from './export.js';
-export { frontmatter, parseRowFile, type ParsedRowFile, rowFile } from './frontmatter.js';
+export {
+	frontmatter,
+	type ParsedRowFile,
+	parseRowFile,
+	rowFile,
+} from './frontmatter.js';
 export { type ImportError, readArtifact } from './import.js';
+export {
+	type RenderableData,
+	type RenderedRow,
+	RenderError,
+	renderRow,
+	renderWorkspace,
+	rowPath,
+} from './render.js';

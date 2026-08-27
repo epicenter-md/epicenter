@@ -326,6 +326,26 @@ export type TableHandle = {
 	 */
 	list(): { rows: Row[]; nonconforming: NonconformingRow[] };
 	/**
+	 * One row's stored fields, before this declaration reads them (ADR-0267).
+	 *
+	 * The narrow form of `data.stored()`, for a caller that already knows which
+	 * row it is asking about: a subscriber holding the ids a commit touched,
+	 * rendering one file each (ADR-0271). Reading the whole workspace to answer
+	 * about one row is what that caller would otherwise have to do on every
+	 * keystroke.
+	 *
+	 * It is on the handle and the whole read is on the data, and the asymmetry
+	 * is honest rather than an oversight: `data.stored()` enumerates the roots
+	 * the document holds, so it sees a table this declaration no longer names
+	 * (ADR-0240), and no handle exists to ask that question through. What a
+	 * handle can answer is narrower and that is all this claims.
+	 *
+	 * Untyped, and never a Result. `get` is the lens and conformance is its
+	 * error arm; this is what is stored, so an absent row is `undefined` and
+	 * there is nothing here to fail.
+	 */
+	stored(rowId: string): JsonObject | undefined;
+	/**
 	 * Open the independent document this row owns at its derived address
 	 * (ADR-0248).
 	 *
@@ -395,6 +415,8 @@ export type TypedTableHandle<TFields> =
 				delete(rowId: string): void;
 				ids(): string[];
 				list(): { rows: TRow[]; nonconforming: NonconformingRow[] };
+				/** One row's stored fields, untyped, before the declaration reads them. */
+				stored(rowId: string): JsonObject | undefined;
 				openDocument(
 					rowId: string,
 				): Promise<Result<RowDocumentHandle | undefined, DocumentError>>;
@@ -1712,6 +1734,10 @@ function createStoreEngine(
 					else rows.push(data);
 				}
 				return { rows, nonconforming };
+			},
+			stored(rowId: string): JsonObject | undefined {
+				assertUsable();
+				return readRow(root, rowId);
 			},
 			async openDocument(
 				rowId: string,
