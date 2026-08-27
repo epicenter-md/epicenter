@@ -75,10 +75,20 @@ function deriveNoteMetadata(doc: DocumentReader): Pick<Note, 'title' | 'preview'
 	return extractNoteMetadata(bodyOf(doc));
 }
 
-/** The body root as a ProseMirror node, read headlessly. */
+/**
+ * The body root as a ProseMirror node, read headlessly.
+ *
+ * A note nobody has typed into has an empty body root, and an empty fragment
+ * is not a valid ProseMirror document: `fragmentToPm` refuses it outright.
+ * What that note actually is, is the empty document the schema mints, so an
+ * untouched note derives an empty title and exports an empty body rather than
+ * throwing at whoever reads it.
+ */
 function bodyOf(doc: DocumentReader) {
 	const state = EditorState.create({ schema: noteSchema });
-	return fragmentToPm(doc.get(NOTE_BODY) as never, state.tr);
+	const body = doc.get(NOTE_BODY) as { length: number };
+	if (body.length === 0) return state.doc;
+	return fragmentToPm(body as never, state.tr);
 }
 
 /**

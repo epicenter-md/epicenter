@@ -55,6 +55,22 @@ export const ExportError = defineErrors({
 		rowId,
 		cause,
 	}),
+	/**
+	 * The table's own `serialize` threw on this document. Contained rather
+	 * than allowed to escape: the export's contract is a Result, and a codec
+	 * that throws is exactly the case a person needs told rather than shown a
+	 * stack trace mid-backup.
+	 */
+	BodyUnwritable: ({
+		table,
+		rowId,
+		cause,
+	}: { table: string; rowId: string; cause: unknown }) => ({
+		message: `The document at '${table}/${rowId}' could not be serialized`,
+		table,
+		rowId,
+		cause,
+	}),
 });
 export type ExportError = InferErrors<typeof ExportError>;
 
@@ -127,15 +143,15 @@ export async function exportDocuments(
 			// The row was taken between the faithful read and this open. It has no
 			// body to carry, and it is already absent from the rows being written.
 			if (doc === undefined || doc === null) continue;
+			let text: string;
 			try {
-				files.push({
-					table,
-					rowId,
-					text: file.serialize(doc as unknown as DocumentReader),
-				});
+				text = file.serialize(doc as unknown as DocumentReader);
+			} catch (cause) {
+				return ExportError.BodyUnwritable({ table, rowId, cause });
 			} finally {
 				doc[Symbol.dispose]();
 			}
+			files.push({ table, rowId, text });
 		}
 	}
 	return Ok(files);

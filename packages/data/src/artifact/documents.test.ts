@@ -107,4 +107,32 @@ describe('exportDocuments (ADR-0267)', () => {
 		expect(exported.error.table).toBe('notes');
 		expect(exported.error.rowId).toBe(made.id);
 	});
+
+	test('a codec that throws is a refusal, not an escaping exception', async () => {
+		// The export's contract is a Result. A codec that throws is exactly the
+		// case a person needs told, mid-backup, rather than shown a stack trace.
+		const breaking = defineData({
+			id: 'so.epicenter.honeycrisp',
+			kv: {},
+			tables: {
+				notes: {
+					fields: { title: field.string() },
+					document: {
+						file: {
+							serialize: () => {
+								throw new Error('this document is not my shape');
+							},
+							deserialize: () => undefined,
+						},
+					},
+				},
+			},
+		});
+		await using data = openMemory(breaking);
+		data.tables.notes.create({ title: 'Groceries' });
+
+		const exported = await exportDocuments(data, breaking);
+		expect(exported.data).toBeNull();
+		expect(exported.error?.name).toBe('BodyUnwritable');
+	});
 });
