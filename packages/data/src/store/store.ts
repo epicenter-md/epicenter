@@ -309,10 +309,13 @@ export type TableHandle = {
 	 * One composition point: the scalar row's removal and the durable
 	 * tombstone on its derived document address commit in one atomic batch, so
 	 * a missed notification can never leave a live document behind, and a late
-	 * write cannot resurrect the address. Reports whether there was a row to
-	 * take.
+	 * write cannot resurrect the address.
+	 *
+	 * Returns nothing: deleting an address that holds no row is a no-op fact
+	 * rather than an outcome a caller acts on, and every consumer said so by
+	 * discarding the boolean this used to report.
 	 */
-	delete(rowId: string): boolean;
+	delete(rowId: string): void;
 	/** Every row id, sorted. */
 	ids(): string[];
 	/**
@@ -389,7 +392,7 @@ export type TypedTableHandle<TFields> =
 					rowId: string,
 					fields: Partial<TInput>,
 				): Result<void, UpdateRowError>;
-				delete(rowId: string): boolean;
+				delete(rowId: string): void;
 				ids(): string[];
 				list(): { rows: TRow[]; nonconforming: NonconformingRow[] };
 				openDocument(
@@ -1602,7 +1605,7 @@ function createStoreEngine(
 				commit(() => writeRow(root, rowId, { ...fields, ...stamps('update') }));
 				return Ok(undefined);
 			},
-			delete(rowId: string): boolean {
+			delete(rowId: string): void {
 				assertUsable();
 				let removed = false;
 				// One composition point (ADR-0248): the scalar removal's bytes and
@@ -1619,7 +1622,6 @@ function createStoreEngine(
 					() =>
 						removed ? [documents.retire(documentAddress(addressOf(rowId)))] : [],
 				);
-				return removed;
 			},
 			ids(): string[] {
 				assertUsable();

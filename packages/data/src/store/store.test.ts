@@ -168,15 +168,20 @@ describe('a write that reaches nothing is a failure', () => {
 describe('deletion', () => {
 	test('a deleted row reads as absent', () => {
 		const made = note();
-		expect(db.tables.notes.delete(made.id)).toBe(true);
+		db.tables.notes.delete(made.id);
 		expect(db.tables.notes.get(made.id).data).toBeUndefined();
 		expect(db.tables.notes.ids()).toEqual([]);
 	});
 
-	test('deleting twice reports the second as a no-op', () => {
+	test('deleting twice leaves the table exactly as the first delete did', () => {
 		const made = note();
-		expect(db.tables.notes.delete(made.id)).toBe(true);
-		expect(db.tables.notes.delete(made.id)).toBe(false);
+		db.tables.notes.delete(made.id);
+		// Deleting an absent address reports nothing and changes nothing: the
+		// verb has no outcome to report, so the second call is indistinguishable
+		// from never having made it.
+		db.tables.notes.delete(made.id);
+		expect(db.tables.notes.get(made.id).data).toBeUndefined();
+		expect(db.tables.notes.ids()).toEqual([]);
 	});
 
 	test('CHURN DOES NOT ACCUMULATE A CORPSE PER DELETED ROW', () => {

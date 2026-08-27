@@ -67,7 +67,6 @@ function createFakeTable<TRow extends { id: string }>(seed: TRow[]) {
 			delete(rowId: string) {
 				const removed = rows.delete(rowId);
 				if (removed) for (const listener of listeners) listener();
-				return removed;
 			},
 			ids() {
 				return [...rows.keys()].sort();
@@ -182,8 +181,12 @@ test('write verbs pass through to the underlying handle', () => {
 	expect(created.title).toBe('made');
 	expect(table.update(created.id, { title: 'renamed' }).error).toBeNull();
 	expect(notes.handle.get(created.id).data?.title).toBe('renamed');
-	expect(table.delete(created.id)).toBe(true);
-	expect(table.delete(created.id)).toBe(false);
+	table.delete(created.id);
+	expect(notes.handle.get(created.id).data).toBeUndefined();
+	// Deleting an absent row is a no-op fact, not an outcome: it reports
+	// nothing and leaves the table exactly as it found it.
+	table.delete(created.id);
+	expect(notes.handle.get(created.id).data).toBeUndefined();
 });
 
 test('point reads pass through and answer from current data', () => {

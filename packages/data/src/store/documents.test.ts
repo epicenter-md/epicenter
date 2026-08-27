@@ -162,7 +162,7 @@ describe('row deletion retires the document (ADR-0248)', () => {
 			typeText(handle, 'body', 'gone soon');
 			handle[Symbol.dispose]();
 
-			expect(db.tables.notes.delete(note.id)).toBe(true);
+			db.tables.notes.delete(note.id);
 			// The row is gone, so the table answers absence.
 			expect(expectOk(await db.tables.notes.openDocument(note.id))).toBeUndefined();
 		}
@@ -204,7 +204,7 @@ describe('row deletion retires the document (ADR-0248)', () => {
 		if (late === undefined) throw new Error('nothing to send');
 
 		// The peer deletes the row, then the late document bytes arrive.
-		expect(peer.tables.notes.delete(note.id)).toBe(true);
+		peer.tables.notes.delete(note.id);
 		expectOk(syncEngineOf(peer.store).applyRemote(late.bytes));
 
 		expect(expectOk(await peer.tables.notes.openDocument(note.id))).toBeUndefined();
