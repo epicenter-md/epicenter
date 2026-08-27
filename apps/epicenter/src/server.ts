@@ -22,7 +22,9 @@ import {
 	parseHomeCommand,
 } from './host.ts';
 import {
+	listMirrorFolder,
 	mirrorFilePath,
+	mirrorFolderPath,
 	removeMirrorFile,
 	writeMirrorFile,
 } from './mirror.ts';
@@ -38,6 +40,7 @@ import {
 	LOCAL_BLOB_REMOTE_ROUTES,
 	LOCAL_BLOB_ROUTE,
 	MIRROR_FILE_ROUTE,
+	MIRROR_FOLDER_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
 } from './routes.ts';
@@ -311,6 +314,15 @@ export function createHomeServer({
 			definitionId: c.req.param('definitionId') ?? '',
 			path: c.req.param('*') ?? '',
 		});
+
+	app.get(MIRROR_FOLDER_ROUTE.pattern, async (c) => {
+		const folder = mirrorFolderPath({
+			workspace: c.req.param('workspace') ?? '',
+			definitionId: c.req.param('definitionId') ?? '',
+		});
+		if (folder === undefined) return c.text('Invalid mirror path', 400);
+		return c.json(await listMirrorFolder(folder));
+	});
 
 	app.put(MIRROR_FILE_ROUTE.pattern, async (c) => {
 		const target = resolveMirrorPath(c);

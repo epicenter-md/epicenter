@@ -67,6 +67,10 @@ export const LOCAL_BLOB_ROUTE = {
 export const MIRROR_FILE_ROUTE = route(
 	`${MIRROR_PATH}/:workspace/:definitionId/*`,
 );
+/** Every path one workspace's folder holds. Names only, never contents. */
+export const MIRROR_FOLDER_ROUTE = route(
+	`${MIRROR_PATH}/:workspace/:definitionId`,
+);
 /**
  * Host-owned remote copy operations for one local blob. The id is the only
  * input: no route accepts a destination URL, transfer header, or body, so the

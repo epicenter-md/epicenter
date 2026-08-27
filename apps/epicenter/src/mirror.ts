@@ -27,8 +27,9 @@
  * place, which is atomic within a filesystem.
  */
 
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import type { Dirent } from 'node:fs';
+import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, relative, sep } from 'node:path';
 import { epicenterFolderRoot, isAppId } from '@epicenter/constants/app-data';
 import { parseRowPath } from '@epicenter/data/artifact';
 import type { MirrorWorkspace } from '@epicenter/data/artifact/webview';
@@ -91,6 +92,58 @@ export async function writeMirrorFile(
 		await rm(staged, { force: true }).catch(() => undefined);
 		throw cause;
 	}
+}
+
+/**
+ * The workspace folder itself, for listing. `undefined` when it is not named.
+ */
+export function mirrorFolderPath({
+	workspace,
+	definitionId,
+	root = epicenterFolderRoot(),
+}: {
+	workspace: string;
+	definitionId: string;
+	root?: string;
+}): string | undefined {
+	if (!isMirrorWorkspace(workspace)) return undefined;
+	if (!isAppId(definitionId)) return undefined;
+	return join(root, workspace, definitionId);
+}
+
+/**
+ * Every path this workspace's folder holds, relative to it.
+ *
+ * Names, never contents. A render deletes what it did not produce, and a row
+ * deleted on another device while this one was closed leaves a file nothing in
+ * memory remembers, so the folder is the only place that knowledge lives.
+ * Reading a file back would be a different act entirely and this host does not
+ * do it (ADR-0271).
+ *
+ * A folder that is not there yet lists as empty rather than failing: a
+ * workspace that has never rendered has no stale files by definition.
+ */
+export async function listMirrorFolder(
+	absoluteFolder: string,
+): Promise<string[]> {
+	let entries: Dirent[];
+	try {
+		entries = await readdir(absoluteFolder, {
+			recursive: true,
+			withFileTypes: true,
+		});
+	} catch {
+		return [];
+	}
+	return entries
+		.filter((entry) => entry.isFile())
+		.map((entry) =>
+			relative(absoluteFolder, join(entry.parentPath, entry.name)).split(sep),
+		)
+		.map((segments) => segments.join('/'))
+		// Only files a render produces are the render's to remove. Anything else
+		// a person put in their own folder stays theirs.
+		.filter((path) => path === 'kv.json' || parseRowPath(path) !== undefined);
 }
 
 /**

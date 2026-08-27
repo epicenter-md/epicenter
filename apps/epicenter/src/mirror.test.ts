@@ -8,11 +8,19 @@
  */
 
 import { expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import {
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+	listMirrorFolder,
 	mirrorFilePath,
+	mirrorFolderPath,
 	removeMirrorFile,
 	writeMirrorFile,
 } from './mirror.ts';
@@ -92,6 +100,36 @@ test('removing a file that is not there is success', async () => {
 		await removeMirrorFile(target);
 		await removeMirrorFile(target);
 		expect(readdirSync(join(root, 'account', APP, 'notes'))).toEqual([]);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('a folder lists the files a render produced, and nothing else', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-mirror-'));
+	try {
+		const folder = mirrorFolderPath({
+			workspace: 'account',
+			definitionId: APP,
+			root,
+		});
+		if (folder === undefined) throw new Error('the folder should resolve');
+		expect(await listMirrorFolder(folder)).toEqual([]);
+
+		await writeMirrorFile(join(folder, 'kv.json'), '{}');
+		await writeMirrorFile(join(folder, 'notes', 'abc.md'), 'x');
+		await writeMirrorFile(join(folder, 'folders', 'def.md'), 'y');
+		// A person's own file in their own folder is theirs, so a render never
+		// counts it and never removes it.
+		await writeMirrorFile(join(folder, 'notes', 'ghi.md'), 'z');
+		writeFileSync(join(folder, 'README.md'), 'mine');
+
+		expect((await listMirrorFolder(folder)).sort()).toEqual([
+			'folders/def.md',
+			'kv.json',
+			'notes/abc.md',
+			'notes/ghi.md',
+		]);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

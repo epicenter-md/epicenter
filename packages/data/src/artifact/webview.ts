@@ -63,6 +63,15 @@ export type MirrorSink = {
 	write(path: string, contents: string): Promise<Result<void, MirrorSinkError>>;
 	/** Take one file away, for a row that no longer exists. */
 	remove(path: string): Promise<Result<void, MirrorSinkError>>;
+	/**
+	 * Every path the folder currently holds.
+	 *
+	 * Names, never contents, and the distinction is the seam to guard: knowing
+	 * which files exist is how a render deletes what a row no longer justifies,
+	 * while reading one back is where ADR-0207's whole write direction starts
+	 * growing again. Nothing in this package reads a rendered file.
+	 */
+	list(): Promise<Result<string[], MirrorSinkError>>;
 };
 
 /**
@@ -107,5 +116,40 @@ export function createMirrorSink({
 				headers: { 'content-type': 'text/plain; charset=utf-8' },
 			}),
 		remove: (path) => send(path, { method: 'DELETE' }),
+		async list(): Promise<Result<string[], MirrorSinkError>> {
+			const url = mirrorFolderUrl({ workspace, definitionId });
+			const { data: response, error } = await tryAsync({
+				try: () => httpFetch(url),
+				catch: (cause) =>
+					MirrorSinkError.MirrorWriteFailed({ path: '', cause }),
+			});
+			if (error !== null) return Err(error);
+			if (!response.ok) {
+				return MirrorSinkError.MirrorWriteFailed({
+					path: '',
+					status: response.status,
+				});
+			}
+			const { data: paths, error: bodyError } = await tryAsync({
+				try: () => response.json() as Promise<string[]>,
+				catch: (cause) =>
+					MirrorSinkError.MirrorWriteFailed({ path: '', cause }),
+			});
+			if (bodyError !== null) return Err(bodyError);
+			return Ok(paths);
+		},
 	};
 }
+
+/** The absolute same-origin URL one workspace's folder is listed at. */
+export function mirrorFolderUrl({
+	workspace,
+	definitionId,
+}: {
+	workspace: MirrorWorkspace;
+	definitionId: string;
+}): string {
+	return `${MIRROR_PATH}/${encodeURIComponent(workspace)}/${encodeURIComponent(definitionId)}`;
+}
+
+export { attachMirror, type MirrorableData } from './mirror.js';
