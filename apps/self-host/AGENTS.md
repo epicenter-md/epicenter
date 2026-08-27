@@ -1,6 +1,6 @@
 # apps/self-host
 
-Reference single-partition **instance** (ADR-0075, amended by ADR-0092): one operator-supplied bearer (`INSTANCE_TOKEN`), one literal `instance` principal, one `principals/instance` partition. Composes `@epicenter/server` with `createEnvTokenResolver(token)` and `requireBearerPrincipal`. Two runtimes use one set of library surfaces: an off-Cloudflare Bun entry (`server.ts`, blessed) and a Cloudflare Worker (`worker/index.ts`). They authenticate identically because the operator supplies the secret either way, and `runtime-profile.test.ts` keeps their surfaces in parity. "Solo" vs "shared" is only how many people hold the token, never a mode.
+Reference single-partition **instance** (ADR-0075, amended by ADR-0092): one operator-supplied bearer (`INSTANCE_TOKEN`), one literal `instance` principal, one `principals/instance` partition. Composes `@epicenter/server` with `createEnvTokenResolver(token)` and `requireBearerPrincipal`. It serves session and blobs, and deliberately no inference (ADR-0264). Two runtimes use one set of library surfaces: an off-Cloudflare Bun entry (`server.ts`, blessed) and a Cloudflare Worker (`worker/index.ts`). They authenticate identically because the operator supplies the secret either way, and `runtime-profile.test.ts` keeps their surfaces in parity. "Solo" vs "shared" is only how many people hold the token, never a mode.
 
 Not operated by Epicenter; framed as a community-supported starting point. Keep the worker entry small (~30 lines) so it stays readable as a reference.
 
@@ -8,6 +8,7 @@ Multi-tenancy (many principals, OAuth, billing) is Epicenter Cloud's only (`apps
 
 ## Hard constraints
 
+- Do not mount `mountInferenceApp` or `mountTranscriptionApp`, and do not add a provider house key (`OPENAI_API_KEY`, `GEMINI_API_KEY`, or any successor). An instance does not do inference (ADR-0264): it is identity, sync, and storage. Inference is a device-local client connection, and one connection drives both chat and STT, so mounting a gateway here buys nothing and re-imports Cloud's model catalog.
 - Do not import `@epicenter/billing` (it no longer exists; billing lives inside `apps/api/worker/billing/` and is hosted-only).
 - Do not add `autumn-js`, `AUTUMN_SECRET_KEY`, or `/api/billing/*` routes.
 - Do not add a dashboard SPA or Workers Static Assets binding.

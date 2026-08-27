@@ -67,17 +67,32 @@ The store transport is `mountStoreSyncApp` in
 `packages/server/src/store-sync/`, and only the hosted Worker mounts it today.
 It resolves one authority per (principal, application id) as a Cloudflare
 Durable Object, and no other runtime implements that backend yet. So an instance
-currently serves session, inference, transcription, and blobs. An application
+currently serves session and blobs. An application
 pointed at it keeps its data locally without converging with a second device.
 
-## Inference and your house key
+## Inference is a client setting, not a server key
 
-If you set `OPENAI_API_KEY` or `GEMINI_API_KEY`, the instance offers an OpenAI-compatible inference gateway at `/v1/chat/completions`. That is YOUR key, the "house key", shared by everyone holding `INSTANCE_TOKEN` and unmetered: there is no per-person billing on an instance (that is Cloud's job). Leave both unset and the gateway returns 503 until configured.
+The instance does not do inference (ADR-0264). It holds no `OPENAI_API_KEY`, no
+`GEMINI_API_KEY`, and serves no `/v1/chat/completions` or
+`/v1/audio/transcriptions`. It is identity, sync, and storage.
 
-Two things keep that from becoming a runaway bill:
+Inference is a device-local connection each person configures in their client: a
+base URL and an optional key, pointed wherever you like. A local Ollama or LM
+Studio, a Speaches or whisper.cpp box for speech to text, an aggregator like
+OpenRouter or LiteLLM, or a provider directly with your own key. One connection
+drives both chat and transcription, because the client appends
+`/chat/completions` or `/audio/transcriptions` to the same base.
 
-- **Set a hard spend cap on the provider key itself.** This is your real ceiling. In the OpenAI or Google AI dashboard, give the key a monthly hard limit. If `INSTANCE_TOKEN` ever leaks, that cap is what bounds the damage, regardless of anything in this box. Do this before you hand the token out.
-- **The box also rate-limits the gateway** (`rateLimit({ requests: 120, windowSeconds: 60 })` in `server.ts` / `worker/index.ts`) as an in-process burn-rate floor. It is exact on the single-node Bun box and per-isolate on Cloudflare. Tune it to your group's size, or drop the policy to leave it uncapped. It is a backstop, not a substitute for the provider cap above.
+This is better than a house key on three counts. Nobody redeploys the server to
+change models. The model list is whatever your endpoint serves, not the three
+ids Epicenter happens to sell. And each person can hold their own provider key
+with its own spend limit, which is per-person accounting an instance cannot give
+you (it resolves everyone to one principal by design, ADR-0075).
+
+The tradeoff, stated plainly: a provider key handed to someone works everywhere,
+not just against your box. If you are sharing one key with a group rather than
+issuing per-person keys, set a hard monthly spend cap on that key in the provider
+dashboard. That cap is your real ceiling.
 
 ## Composition
 

@@ -12,7 +12,7 @@ Delete inference and transcription from `apps/self-host` so an instance is ident
 
 The decision and its rationale live in [ADR-0264](../docs/adr/0264-an-instance-does-not-do-inference-billing-lives-where-someone-elses-key-is-spent.md). This is the execution plan only. Where the two disagree, the ADR wins.
 
-Phase 1 is chat and is unblocked. Phase 3 is transcription and is **blocked** on Phase 2, because the client has no STT equivalent of the inference connection registry. Do not run them out of order: deleting self-host STT first leaves a self-hoster with no transcription path on any target that is not the desktop host.
+Phase 1 covers both chat and transcription and is done. An earlier draft gated STT behind building a client-side STT connection; that was wrong. One `Connection` already drives both, so they ship together.
 
 ## Motivation
 
@@ -45,45 +45,38 @@ An instance is a data authority, not an inference endpoint. Metering exists exac
 | A self-host session cannot use the Cloud gateway | ADR-0071: one instance selection yields one credential model; `hosted.fetch` is the instance's `auth.fetch` against a hardcoded Cloud base URL |
 | `rateLimit` has no consumer outside the four self-host mounts | grep across `apps` and `packages` |
 | The desktop host runs transcription locally, on device | `apps/epicenter/src/ui/local-models.svelte.ts` |
-| The client has no custom STT connection | grep found no STT equivalent of the inference registry |
+| One `Connection` drives both chat and STT | `api-routes.ts:76`; `transcribe()` takes the same `ResolvedConnection` and appends `audio/transcriptions`; Vocab uses `inferenceConnections.resolveOrHosted(VOCAB_STT_MODEL)` and Whispering's `wire` kind uses `entry.resolve()` |
 
 ## Accepted losses
 
 1. **Scope containment.** A shared provider key works everywhere; an instance token only worked against the instance. Per-user provider keys recover revocation and accounting but not scope. Deliberate, recorded in the ADR.
-2. **First-run.** A fresh self-host session opens chat with no connections. Phase 1.5 owns the empty state so the picker explains rather than renders blank.
+2. **First-run.** A fresh self-host session opens chat with no connections. Phase 2 owns the empty state so the picker explains rather than renders blank.
 3. **The closed quadrant.** Self-hosted data plus Cloud inference stays impossible until the client can hold two credentials. Not a prerequisite here.
 
 ## Implementation plan
 
-### Phase 1: delete self-host chat inference
+### Phase 1: delete self-host inference and transcription (DONE)
 
-- **1.1** Remove `mountInferenceApp` and its `rateLimit` policy from `apps/self-host/worker/index.ts` and `apps/self-host/server.ts`.
-- **1.2** Invert the `mountInferenceApp` row in `apps/self-host/runtime-profile.test.ts` from "mounted" to "must not be mounted", keeping Bun and Worker parity.
-- **1.3** Delete the "Inference and your house key" section from `apps/self-host/README.md` and the `OPENAI_API_KEY` / `GEMINI_API_KEY` references in self-host config docs. Replace with one paragraph: inference is configured in the client, per device.
-- **1.4** Add the hard constraint to `apps/self-host/AGENTS.md`: an instance does not mount an inference gateway or hold a provider house key.
-- **1.5** Stop offering the hosted entry on a self-host session, and give the picker an empty state that names what to configure. Today the entry renders and fails with a bare 401 because the instance bearer is the wrong audience (ADR-0053).
-- **Evidence:** self-host typechecks on both runtimes; the parity test asserts absence; a self-host session shows no hosted entry and a useful empty state.
+- **1.1** Removed `mountInferenceApp`, `mountTranscriptionApp`, and both `rateLimit` policies from `apps/self-host/worker/index.ts` and `apps/self-host/server.ts`.
+- **1.2** Inverted both rows in `apps/self-host/runtime-profile.test.ts` from `served` to `absent`, each carrying a `why` citing ADR-0264, keeping Bun and Worker parity.
+- **1.3** Replaced the README's "Inference and your house key" section with "Inference is a client setting, not a server key", and removed the house-key comment from `wrangler.jsonc`.
+- **1.4** Added the hard constraint to `apps/self-host/AGENTS.md`: no inference or transcription mount, no provider house key.
+- **Evidence:** `@epicenter/self-host` typechecks; `runtime-profile.test.ts` 4/0 with both surfaces asserted absent.
 
-### Phase 2: a custom STT connection in the client
+### Phase 2: the hosted entry on a self-host session
 
-Blocks Phase 3. Mirror the inference registry rather than inventing a second shape: a device-local `{ baseUrl, apiKey? }` for an OpenAI-compatible `/v1/audio/transcriptions`, never synced, with Cloud's entry injected the same way `hosted` is today.
+Independent of the deletion and a pre-existing bug, not one this change introduced: `hosted.baseURL` is hardcoded to Cloud while `hosted.fetch` carries whatever credential the selected instance yields, so a self-host session already sends an instance bearer to Cloud and gets a bare 401. `resolveOrHosted` falls back to `hosted` unconditionally.
 
-- **Evidence:** a self-host session can transcribe against a user-supplied endpoint with no Epicenter server in the path.
+- **2.1** Make the registry's `hosted` entry optional, so an app can omit it when the instance is not the hosted default.
+- **2.2** Give the picker an empty state that names what to configure instead of rendering blank or failing on send.
+- **Evidence:** a self-host session offers no hosted entry and never emits a bare 401 from the picker.
 
-### Phase 3: delete self-host transcription
+### Phase 3: retire `rateLimit`
 
-Only after Phase 2 ships.
-
-- **3.1** Remove `mountTranscriptionApp` and its `rateLimit` policy from both self-host entries; invert its parity-test row.
-- **3.2** Delete the remaining house-key documentation.
-- **Evidence:** self-host mounts session, blobs, and auth only.
-
-### Phase 4: retire `rateLimit`
-
-- **4.1** With all four call sites gone, delete `packages/server/src/middleware/rate-limit.ts`, its test, and both barrel exports. Note in ADR-0076 that its burn-rate cap is retired because the last unmetered house key is gone.
+- **3.1** With all four call sites gone, delete `packages/server/src/middleware/rate-limit.ts`, its test, and both barrel exports. Note in ADR-0076 that its burn-rate cap is retired because the last unmetered house key is gone.
 - **Evidence:** no consumer; both deployables typecheck.
 
-### Phase 5 (follow-on, separate change): move the gateways out of the library
+### Phase 4 (follow-on, separate change): move the gateways out of the library
 
 With Cloud the only mount site, `mountInferenceApp` and `mountTranscriptionApp` fail the one-sentence test for `packages/server` ("the shared library both deployables consume"). Moving them into `apps/api/worker/` leaves the library with zero model ids and zero vendor URLs, and puts routing next to `model-pricing.ts`, which is the same fact three ways: what we sell, where it routes, what it costs. Sized and decided separately.
 
@@ -93,7 +86,7 @@ With Cloud the only mount site, `mountInferenceApp` and `mountTranscriptionApp` 
 - [ ] `apps/self-host` reads no provider house key and documents none.
 - [ ] A self-host session never offers the Cloud gateway entry and never emits a bare 401 from the picker.
 - [ ] A self-hoster can chat through a device-local connection with no Epicenter server in the inference path.
-- [ ] A self-hoster can transcribe the same way (Phase 3 gate).
+- [ ] A self-hoster can transcribe the same way, through the same connection.
 - [ ] `rateLimit` has no consumer and is deleted.
 - [ ] Cloud behavior is unchanged end to end: same catalog, same metering, same credits.
 
@@ -106,5 +99,5 @@ With Cloud the only mount site, `mountInferenceApp` and `mountTranscriptionApp` 
 - `packages/server/src/routes/inference.ts` and `transcription.ts` - the routes, Cloud-only after this.
 - `apps/self-host/worker/index.ts`, `apps/self-host/server.ts` - the two mount sites to strip.
 - `apps/self-host/runtime-profile.test.ts` - the parity test to invert.
-- `packages/app-shell/src/inference-picker/connections.svelte.ts` - the registry Phase 2 mirrors.
-- `packages/server/src/middleware/rate-limit.ts` - deleted in Phase 4.
+- `packages/app-shell/src/inference-picker/connections.svelte.ts` - the registry that drives both chat and STT; `hosted` becomes optional in Phase 2.
+- `packages/server/src/middleware/rate-limit.ts` - deleted in Phase 3.

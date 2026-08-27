@@ -30,11 +30,9 @@
 	// It is the ONLY required secret: the instance composes no Better Auth, so
 	// there is no `BETTER_AUTH_SECRET` (ADR-0075).
 	//
-	// AI provider house keys (OPENAI_API_KEY, GEMINI_API_KEY) are optional:
-	// `wrangler secret put` one to serve that provider through this gateway, or
-	// omit it and that provider returns 503 ProviderNotConfigured. House-key-only
-	// (ADR-0054): a member who wants their own key points their client at a custom
-	// backend instead.
+	// There are no AI provider house keys. An instance does not do inference
+	// (ADR-0264): each person configures a device-local inference connection in
+	// their client instead, so no provider secret belongs on this box.
 	"secrets": {
 		"required": ["INSTANCE_TOKEN"]
 	}

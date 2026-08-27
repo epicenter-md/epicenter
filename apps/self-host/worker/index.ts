@@ -27,11 +27,8 @@ import {
 	createEnvTokenResolver,
 	createServerApp,
 	mountBlobsApp,
-	mountInferenceApp,
 	mountSessionApp,
-	mountTranscriptionApp,
 	type ResolveBearerPrincipal,
-	rateLimit,
 	requireBearerPrincipal,
 } from '@epicenter/server';
 import { resolveSelfHostTrustedOrigins } from '../trusted-origins.js';
@@ -68,24 +65,13 @@ app.get('/', (c) =>
 // operator bearer (`auth` above) is the only gate, so every surface is
 // bearer-authenticated (ADR-0075).
 mountSessionApp(app, { auth });
-// Cap the inference burn rate so a leaked or overused bearer cannot run the
-// operator's house key up unbounded. Per-isolate on Cloudflare (approximate);
-// the real ceiling is the hard spend limit on the provider key itself (README).
-mountInferenceApp(app, {
-	auth,
-	policies: [rateLimit({ requests: 120, windowSeconds: 60 })],
-});
-// The STT sibling of the inference gateway: same operator house key, same
-// 503-until-configured opt-out, same burn-rate cap, no Autumn. A `star`
-// transcription against this instance is unmetered, which is what makes
-// "transcribe through the star you're connected to" true on self-host too.
-mountTranscriptionApp(app, {
-	auth,
-	policies: [rateLimit({ requests: 120, windowSeconds: 60 })],
-});
+// No inference or transcription gateway (ADR-0264): an instance is identity,
+// sync, and storage, and holds no provider house key. Inference is a device-local
+// connection the client points wherever the operator likes (a local Ollama, a
+// Speaches box, OpenRouter, a provider directly). One Connection drives both
+// chat and STT, so neither capability is lost by not mounting a gateway here.
 // Content-addressed media store over any S3, mounted by default; it answers 503
-// until the operator sets `BLOBS_S3_*` (the same honest opt-out as inference's
-// house key). Storage is the operator's own bucket, so no house key to burn.
+// until the operator sets `BLOBS_S3_*`. Storage is the operator's own bucket.
 mountBlobsApp(app, { auth });
 
 export default app;

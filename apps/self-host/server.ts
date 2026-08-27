@@ -44,10 +44,7 @@ import {
 	createEnvTokenResolver,
 	createServerApp,
 	mountBlobsApp,
-	mountInferenceApp,
 	mountSessionApp,
-	mountTranscriptionApp,
-	rateLimit,
 	requireBearerPrincipal,
 	ServerBindings,
 } from '@epicenter/server/bun';
@@ -143,28 +140,14 @@ export function startSelfHostServer(): void {
 	// operator bearer (`auth` above) is the only gate, so every surface is
 	// bearer-authenticated (ADR-0075).
 	mountSessionApp(app, { auth });
-	// Inference spends the operator's house key on every request. Cap the burn
-	// rate so a leaked or overused bearer cannot run the provider bill up
-	// unbounded between invoices. This is the in-process backstop; the real
-	// ceiling is the hard spend limit you set on the provider key itself (README).
-	// Tune to your group's size, or drop the policy to leave it uncapped.
-	mountInferenceApp(app, {
-		auth,
-		policies: [rateLimit({ requests: 120, windowSeconds: 60 })],
-	});
-	// The STT sibling of the inference gateway: same operator house key, same
-	// 503-until-configured opt-out, same burn-rate cap. Mounted with no Autumn
-	// policy, so a `star` transcription against this instance is unmetered (the
-	// operator's provider bill is the only cost). This is what makes "transcribe
-	// through the star you're connected to" true on self-host, not just hosted.
-	mountTranscriptionApp(app, {
-		auth,
-		policies: [rateLimit({ requests: 120, windowSeconds: 60 })],
-	});
+	// No inference or transcription gateway (ADR-0264): an instance is identity,
+	// sync, and storage, and holds no provider house key. Inference is a
+	// device-local connection the client points wherever the operator likes (a
+	// local Ollama, a Speaches box, OpenRouter, a provider directly). One
+	// Connection drives both chat and STT, so neither capability is lost here.
 	// Content-addressed media store over any S3, mounted by default; it answers 503
-	// until `BLOBS_S3_*` is set (the same honest opt-out as inference's house key).
-	// Storage is the operator's own bucket, so there is no house key to burn and no
-	// rate-limit policy here.
+	// until `BLOBS_S3_*` is set. Storage is the operator's own bucket, so there is
+	// no house key to burn.
 	mountBlobsApp(app, { auth });
 
 	const server = Bun.serve({
