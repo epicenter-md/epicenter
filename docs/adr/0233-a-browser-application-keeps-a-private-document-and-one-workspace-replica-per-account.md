@@ -4,6 +4,7 @@
 - **Date:** 2026-08-10
 - **Amended by:** [ADR-0259](0259-a-desktop-profile-is-addressed-by-a-server-url-and-principal-pair.md) at the retained account replica address. **Superseded by ADR-0261.** The replica remains retained across sign-out; its client address was `(baseURL, principalId)`.
 - **Amended by:** [ADR-0261](0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md) at the derived connection address. The device document, retained-replica, and sign-out rules remain.
+- **Amended by:** [ADR-0270](0270-an-application-has-two-workspaces-and-moving-a-row-between-them-is-the-primitive.md) at one clause. "Never automatically copied into, merged with, or deleted because of a workspace action" still holds; a deliberate per-row move a person performs now exists, and both workspaces must be visible in one surface rather than at two routes.
 - **Amends:** [ADR-0229](0229-a-lens-names-the-store-it-opens-and-opening-is-one-call.md)
   at "the namespace determines the location": the lens still names the
   application, and the caller now also names which document is meant and whose

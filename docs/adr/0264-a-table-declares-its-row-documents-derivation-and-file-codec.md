@@ -1,6 +1,7 @@
 # 0264. A table declares its row document's derivation and file codec, and the store runs the derivation
 
 - **Status:** Accepted
+- **Amended by:** [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md), which takes the branch this record left open: the `file` codec's output goes to a continuously rendered folder as well as to an export.
 - **Date:** 2026-08-26
 - **Supersedes:** [ADR-0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) — it removed the table-level document-edit touch policy "until a production workflow establishes one runtime owner"; this record establishes that owner and reintroduces the policy as a pure derivation.
 - **Amends:** [ADR-0135](0135-row-documents-have-application-owned-roots.md) at "there is no document declaration on `defineTable`" only; roots stay application-owned and Epicenter still never interprets their contents.

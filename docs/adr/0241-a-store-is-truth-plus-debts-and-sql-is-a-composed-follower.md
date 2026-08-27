@@ -1,6 +1,7 @@
 # 0241. A store is truth plus debts, and SQL is a composed follower
 
 - **Status:** Accepted
+- **Amended by:** [ADR-0272](0272-restore-replaces-a-workspace-from-an-artifact-under-a-new-document-identity.md) at the operation this record reserved: the authority gains one destructive whole-document replacement, owned explicitly by restore. Root-document compaction remains refused.
 - **Date:** 2026-08-14
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0241 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).

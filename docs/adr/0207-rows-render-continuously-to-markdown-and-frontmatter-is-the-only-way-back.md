@@ -1,6 +1,7 @@
 # 0207. Rows render continuously to markdown, and frontmatter is the only way back
 
 - **Status:** Accepted
+- **Revived in part by:** [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md). The folder, the one-file-per-row shape, and the "point your agent at `~/Epicenter`" premise return; the entire write direction (`push`, receipts, the scan, `status`, frontmatter-as-the-way-back) does not.
 - **Date:** 2026-08-04
 - **Amended by:** [ADR-0212](0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md) (`Proposed`) at the hole this record named and accepted (`:262-265`, "a table's prose is either in a field or unreachable from the folder"). The hole closes in the render direction only: a lens names which field is the body, so prose reaches the folder. It does not close in the push direction, and that is chosen rather than deferred, so a markdown-to-operations diff stays an optimisation nobody owns. What is required is that the folder stop treating a content field as an ordinary string.
 - **Amended by:** [ADR-0234](0234-the-ark-owns-living-pages-and-markdown-is-an-explicit-checkout.md) at Ark pages only. Withdrawn there: continuous field rendering, the field-only prose restriction, and conflict-free push. Ark materializes a deliberate checkout of its page row and prose document, then imports only a three-way-safe patch.

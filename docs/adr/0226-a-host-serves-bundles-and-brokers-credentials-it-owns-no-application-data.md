@@ -1,6 +1,7 @@
 # 0226. A host serves bundles and brokers credentials; it owns no application data
 
 - **Status:** Accepted
+- **Amended by:** [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) at what a host may hold, on this record's own reasoning: the refusal is of a second convergent plane, and a one-way mirror cannot diverge, so the host may write rendered files exactly as it already holds blob bytes.
 - **Date:** 2026-08-08
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0226 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
