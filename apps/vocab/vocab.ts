@@ -116,7 +116,10 @@ export const vocabDefinition = defineData({
 		/** Readings render by default. */
 		showReadings: field.boolean(),
 	},
-	tables: { conversations: conversationsTable, entries: entriesTable },
+	tables: {
+		conversations: { fields: conversationsTable },
+		entries: { fields: entriesTable },
+	},
 });
 
 /** The typed view of one store through Vocab's workspace. */

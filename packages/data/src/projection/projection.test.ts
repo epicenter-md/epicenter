@@ -22,7 +22,7 @@ const database = defineData({
 	id: 'so.epicenter.projectionlab',
 	kv: { theme: field.select(['light', 'dark']), fontSize: field.number() },
 	tables: {
-		notes: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) },
+		notes: { fields: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) } },
 	},
 });
 
@@ -184,7 +184,7 @@ describe('a nonconforming row projects raw, so SQL can show what failed', () => 
 			defineData({
 				id: 'so.epicenter.projectionlab',
 				kv: {},
-				tables: { notes: { title: field.string(), tags: field.string() } },
+				tables: { notes: { fields: { title: field.string(), tags: field.string() } } },
 			}),
 		);
 		older.tables.notes.create({ title: 'legacy', tags: 'not-a-list' });

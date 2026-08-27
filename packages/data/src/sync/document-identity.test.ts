@@ -41,7 +41,7 @@ import { createSyncHub, type HubConnection } from './hub.js';
 const database = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: { title: field.string() } },
+	tables: { notes: { fields: { title: field.string() } } },
 });
 
 function expectOk<TValue, TError>(

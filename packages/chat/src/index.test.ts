@@ -21,7 +21,7 @@ import { conversationsTable, createAgentMessageStore } from './index.js';
 const testDefinition = defineData({
 	id: 'so.epicenter.chat-test',
 	kv: {},
-	tables: { conversations: conversationsTable },
+	tables: { conversations: { fields: conversationsTable } },
 });
 
 const message: AgentMessage = {

@@ -39,7 +39,7 @@ function databaseFor(label: string) {
 	return defineData({
 		id: `so.epicenter.browsertest.${label}`,
 		kv: {},
-		tables: { notes: { title: field.string() } },
+		tables: { notes: { fields: { title: field.string() } } },
 	});
 }
 

@@ -35,13 +35,15 @@ const historicalSkillsWorkspace = defineData({
 	kv: {},
 	tables: {
 		skills: {
-			name: field.string(),
-			description: field.string(),
-			license: field.nullable(field.string()),
-			compatibility: field.nullable(field.string()),
-			metadata: field.nullable(field.json(jsonValue)),
-			allowedTools: field.nullable(field.string()),
-			updatedAt: field.instant(),
+			fields: {
+				name: field.string(),
+				description: field.string(),
+				license: field.nullable(field.string()),
+				compatibility: field.nullable(field.string()),
+				metadata: field.nullable(field.json(jsonValue)),
+				allowedTools: field.nullable(field.string()),
+				updatedAt: field.instant(),
+			},
 		},
 	},
 });

@@ -36,7 +36,7 @@ import { openSyncAuthority } from '../../src/sync/authority.js';
 const evidenceDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: { title: field.string() } },
+	tables: { notes: { fields: { title: field.string() } } },
 });
 
 /** Roughly the live size of a working vault. */

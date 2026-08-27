@@ -43,7 +43,7 @@ import { createSyncHub, type HubConnection } from './hub.js';
 const database = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: { title: field.string() } },
+	tables: { notes: { fields: { title: field.string() } } },
 });
 
 function expectOk<TValue, TError>(
@@ -1499,14 +1499,14 @@ describe('the snapshot path under sustained traffic', () => {
 const newerDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: { title: field.string(), pinned: field.boolean() } },
+	tables: { notes: { fields: { title: field.string(), pinned: field.boolean() } } },
 });
 
 /** The same application again, one release later still: a whole new table. */
 const twoTableDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: { title: field.string() }, tasks: { label: field.string() } },
+	tables: { notes: { fields: { title: field.string() } }, tasks: { fields: { label: field.string() } } },
 });
 
 describe('two devices whose databases disagree', () => {

@@ -27,7 +27,7 @@ const database = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.select(['light', 'dark']), fontSize: field.number() },
 	tables: {
-		notes: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) },
+		notes: { fields: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) } },
 	},
 });
 
@@ -212,7 +212,7 @@ describe('a nonconforming row is reported, never repaired', () => {
 	const wrongDatabase = defineData({
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
-		tables: { notes: { title: field.string(), tags: field.string(), date: field.nullable(field.string()) } },
+		tables: { notes: { fields: { title: field.string(), tags: field.string(), date: field.nullable(field.string()) } } },
 	});
 
 	/**
@@ -366,7 +366,7 @@ describe('a database names the store it opens', () => {
 			// the life of the process and the application can never start.
 			const refused = {
 				databaseId: database.id,
-				tables: { kv: { a: field.string() } },
+				tables: { kv: { fields: { a: field.string() } } },
 			};
 			const attempt = await open(refused as never, { root });
 			expect(attempt.error).not.toBeNull();
@@ -690,8 +690,8 @@ describe('a subscription names the rows a commit touched', () => {
 				id: 'so.epicenter.honeycrisp',
 				kv: {},
 				tables: {
-					notes: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) },
-					folders: { name: field.string() },
+					notes: { fields: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) } },
+					folders: { fields: { name: field.string() } },
 				},
 			}),
 		);
@@ -879,7 +879,7 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 					future: field.string(),
 				},
 				tables: {
-					notes: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) },
+					notes: { fields: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) } },
 				},
 			}),
 			sqlite,
@@ -902,14 +902,14 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		id: 'so.epicenter.honeycrisp',
 		kv: { theme: field.select(['light', 'dark']) },
 		tables: {
-			notes: { title: field.string() },
-			scratch: { body: field.string() },
+			notes: { fields: { title: field.string() } },
+			scratch: { fields: { body: field.string() } },
 		},
 	});
 	const withoutScratch = defineData({
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
-		tables: { notes: { title: field.string() } },
+		tables: { notes: { fields: { title: field.string() } } },
 	});
 
 	test('the next runtime has no handle; one that re-declares it reads every row back', async () => {
@@ -1125,5 +1125,53 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 		// The debt is visible: a restart would lose this edit, and the status
 		// says so instead of an exception pretending the data is gone now.
 		expect(store.persistence.get()).toBe('blocked');
+	});
+});
+
+describe('a document commit derives its row fields (ADR-0264)', () => {
+	const withDerive = defineData({
+		id: 'so.epicenter.honeycrisp',
+		kv: {},
+		tables: {
+			notes: {
+				fields: { preview: field.string() },
+				document: {
+					// Pure: the row's preview is whatever the document's `meta` root
+					// says its title is. The store runs this on every local commit.
+					derive: (doc) => {
+						const meta = doc.get('meta') as { getAttr(key: string): unknown };
+						return { preview: String(meta.getAttr('title') ?? '') };
+					},
+				},
+			},
+		},
+	});
+
+	test('a local edit to a row document writes the derived field onto the row', async () => {
+		await using data = openMemory(withDerive);
+		const made = data.tables.notes.create({ preview: '' });
+		const opened = await data.tables.notes.openDocument(made.id);
+		const handle = opened.data;
+		if (handle === undefined || handle === null) {
+			throw new Error('the document should open');
+		}
+		handle.get('meta').setAttr('title' as never, 'Groceries' as never);
+		expect(data.tables.notes.get(made.id).data?.preview).toBe('Groceries');
+		handle[Symbol.dispose]();
+	});
+
+	test('a later edit re-derives the field', async () => {
+		await using data = openMemory(withDerive);
+		const made = data.tables.notes.create({ preview: '' });
+		const opened = await data.tables.notes.openDocument(made.id);
+		const handle = opened.data;
+		if (handle === undefined || handle === null) {
+			throw new Error('the document should open');
+		}
+		handle.get('meta').setAttr('title' as never, 'First' as never);
+		expect(data.tables.notes.get(made.id).data?.preview).toBe('First');
+		handle.get('meta').setAttr('title' as never, 'Second' as never);
+		expect(data.tables.notes.get(made.id).data?.preview).toBe('Second');
+		handle[Symbol.dispose]();
 	});
 });

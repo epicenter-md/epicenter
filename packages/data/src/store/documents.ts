@@ -120,6 +120,7 @@ export function createDocumentEngine({
 	tombstones,
 	now,
 	assertUsable,
+	onLocalCommit,
 	log,
 }: {
 	/** The durable port's chain reader, bound by the opener. */
@@ -139,6 +140,12 @@ export function createDocumentEngine({
 	tombstones: readonly string[];
 	now(): number;
 	assertUsable(): void;
+	/**
+	 * Called after a LOCAL document commit is queued (ADR-0264). The store runs
+	 * its declared `derive` here as its own follow-up commit; the engine stays
+	 * schema-blind and never learns what a row or a table is.
+	 */
+	onLocalCommit?: (address: string, doc: Y.Doc) => void;
 	log: Logger;
 }): DocumentEngine {
 	const retired = new Set(tombstones);
@@ -174,6 +181,11 @@ export function createDocumentEngine({
 						outboxId: mintOutboxId(),
 					},
 				]);
+				// A store-driven derivation may follow this local edit (ADR-0264):
+				// its own commit, deliberately not merged with the append above, so
+				// the derived row shadow self-heals across a crash rather than
+				// paying cross-plane atomicity.
+				onLocalCommit?.(address, doc);
 			},
 		);
 	}

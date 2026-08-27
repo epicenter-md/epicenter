@@ -21,12 +21,12 @@ const workspaces = {
 	vault: defineData({
 		id: 'so.epicenter.durableprobe',
 		kv: {},
-		tables: { notes: { title: field.string() } },
+		tables: { notes: { fields: { title: field.string() } } },
 	}),
 	'somewhere-else': defineData({
 		id: 'so.epicenter.durableprobe.elsewhere',
 		kv: {},
-		tables: { notes: { title: field.string() } },
+		tables: { notes: { fields: { title: field.string() } } },
 	}),
 } as const;
 

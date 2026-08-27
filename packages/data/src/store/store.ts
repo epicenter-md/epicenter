@@ -3,6 +3,7 @@ import {
 	type CreateInputOf,
 	createInvalidationDispatcher,
 	type DataDefinition,
+	type DocumentReader,
 	documentAddress,
 	type JsonObject,
 	type JsonValue,
@@ -424,7 +425,7 @@ type TableIo<TFields> = {
 export type DataView<TDatabase extends DataDefinition> = {
 	readonly tables: {
 		readonly [K in keyof TDatabase['tables']]: TypedTableHandle<
-			TDatabase['tables'][K]
+			TDatabase['tables'][K]['fields']
 		>;
 	};
 	readonly kv: KvHandle<KvOf<TDatabase>>;
@@ -1046,6 +1047,43 @@ function createStoreEngine(
 	 * acceptance, and retirement, over the same durable queue every other
 	 * accepted fact joins.
 	 */
+	/**
+	 * Row documents whose table declares a `derive` (ADR-0264), by document
+	 * address. Populated when such a document is opened and consulted when it
+	 * commits locally; the schema-blind engine never sees a table or a row.
+	 */
+	const deriveTargets = new Map<
+		string,
+		{
+			derive: (doc: DocumentReader) => Record<string, unknown>;
+			root: Y.Type;
+			rowId: string;
+		}
+	>();
+
+	/**
+	 * The store's answer to a local document commit (ADR-0264): run the table's
+	 * pure `derive` over the document and, only when the result changes the row,
+	 * write it as its own follow-up commit. Not merged with the body append, so a
+	 * crash leaves a self-healing one-edit-stale shadow rather than paying the
+	 * cross-plane atomicity an inline merge would cost.
+	 */
+	function runDeriveOnCommit(address: string, doc: Y.Doc): void {
+		const target = deriveTargets.get(address);
+		if (target === undefined) return;
+		const derived = target.derive(doc as unknown as DocumentReader);
+		const current = readRow(target.root, target.rowId) ?? {};
+		let changed = false;
+		for (const key of Object.keys(derived)) {
+			if ((current as Record<string, unknown>)[key] !== derived[key]) {
+				changed = true;
+				break;
+			}
+		}
+		if (!changed) return;
+		commit(() => writeRow(target.root, target.rowId, derived as JsonObject));
+	}
+
 	const documents = createDocumentEngine({
 		readDocument: (address) => durable.readDocument(address),
 		listDocuments: () => durable.listDocuments(),
@@ -1055,6 +1093,7 @@ function createStoreEngine(
 		tombstones: loaded.tombstones,
 		now,
 		assertUsable: () => assertUsable(),
+		onLocalCommit: runDeriveOnCommit,
 		log,
 	});
 
@@ -1544,6 +1583,9 @@ function createStoreEngine(
 				commit(
 					() => {
 						removed = deleteRow(root, rowId);
+						if (removed) {
+							deriveTargets.delete(documentAddress(addressOf(rowId)));
+						}
 					},
 					() =>
 						removed ? [documents.retire(documentAddress(addressOf(rowId)))] : [],
@@ -1574,7 +1616,15 @@ function createStoreEngine(
 				// same way `get` answers it, and refusing here is what keeps a
 				// deleted or misspelled id from minting an orphan document.
 				if (!hasRow(root, rowId)) return Ok(undefined);
-				return documents.open(documentAddress(addressOf(rowId)));
+				const address = documentAddress(addressOf(rowId));
+				// Register the derive target while the document is open, so a local
+				// edit to it can find its table's pure derivation without the engine
+				// ever decoding the address back to a row (ADR-0264).
+				const derive = table.document?.derive;
+				if (derive !== undefined) {
+					deriveTargets.set(address, { derive, root, rowId });
+				}
+				return documents.open(address);
 			},
 			subscribe(listener: TableInvalidationListener): () => void {
 				const unsubscribe = invalidations.subscribeTable(

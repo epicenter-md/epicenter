@@ -9,10 +9,12 @@ const authored = defineData({
 	},
 	tables: {
 		notes: {
-			title: field.string(),
-			status: field.select(['draft', 'published']),
-			tags: field.multiSelect(['work', 'personal']),
-			publishedAt: field.nullable(field.instant()),
+			fields: {
+				title: field.string(),
+				status: field.select(['draft', 'published']),
+				tags: field.multiSelect(['work', 'personal']),
+				publishedAt: field.nullable(field.instant()),
+			},
 		},
 	},
 });
@@ -72,7 +74,7 @@ describe('data definitions', () => {
 		const result = parseData({
 			id: 'so.epicenter.defaults',
 			kv: {},
-			tables: { notes: { title: { type: field.string(), default: 'untitled' } } },
+			tables: { notes: { fields: { title: { type: field.string(), default: 'untitled' } } } },
 		});
 		expect(result.error?.name).toBe('DeclarationDefault');
 	});
@@ -81,7 +83,7 @@ describe('data definitions', () => {
 		const data = defineData({
 			id: 'so.epicenter.json',
 			kv: {},
-			tables: { rows: { payload: field.json(field.select(['a', 'b'])) } },
+			tables: { rows: { fields: { payload: field.json(field.select(['a', 'b'])) } } },
 		});
 		const row: RowOf<typeof data.tables.rows> = { id: '1', payload: 'a' };
 		expect(row.payload).toBe('a');

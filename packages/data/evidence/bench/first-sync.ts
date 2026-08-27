@@ -97,7 +97,7 @@ import { openSyncAuthority } from '../../src/sync/authority.js';
 const benchDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: { title: field.string() } },
+	tables: { notes: { fields: { title: field.string() } } },
 });
 
 /** The real vault's shape, the same one the other benches in here model. */

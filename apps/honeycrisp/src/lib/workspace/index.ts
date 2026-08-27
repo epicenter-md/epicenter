@@ -47,7 +47,10 @@ export const honeycrispDefinition = defineData({
 	id: 'so.epicenter.honeycrisp',
 	title: 'Honeycrisp',
 	kv: {},
-	tables: { folders: foldersTable, notes: notesTable },
+	tables: {
+		folders: { fields: foldersTable },
+		notes: { fields: notesTable },
+	},
 });
 
 /** The typed view of one opened Honeycrisp data handle. */

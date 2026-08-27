@@ -16,13 +16,17 @@ export {
 	type DataDefinition,
 	type DataDefinitionJson,
 	type DataField,
+	type DocumentDeclaration,
+	type DocumentReader,
 	type FieldDescriptor,
 	type FieldMap,
+	type FileCodec,
 	type KvOf,
 	type ParsedDataDefinition,
 	type ParsedTable,
 	type RowOf,
 	type RowsOf,
+	type TableDeclaration,
 } from './definition.js';
 export {
 	CalendarDateString,

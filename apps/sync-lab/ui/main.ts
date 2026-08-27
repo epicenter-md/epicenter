@@ -17,7 +17,11 @@ import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 const labDatabase = defineData({
 	id: 'so.epicenter.synclab',
 	kv: {},
-	tables: { notes: { title: field.string(), device: field.string(), at: field.string() } },
+	tables: {
+		notes: {
+			fields: { title: field.string(), device: field.string(), at: field.string() },
+		},
+	},
 });
 
 const device =

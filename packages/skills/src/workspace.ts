@@ -52,7 +52,10 @@ export const skillsDefinition = defineData({
 	id: 'so.epicenter.skills',
 	title: 'Skills',
 	kv: {},
-	tables: { skills: skillsTable, skillReferences: referencesTable },
+	tables: {
+		skills: { fields: skillsTable },
+		skillReferences: { fields: referencesTable },
+	},
 });
 
 /** The typed view of one store through the Skills workspace. */

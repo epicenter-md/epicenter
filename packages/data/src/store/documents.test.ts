@@ -20,7 +20,7 @@ import { createAccountStore, syncEngineOf } from './store.js';
 const database = defineData({
 	id: 'so.epicenter.doctest',
 	kv: {},
-	tables: { notes: { title: field.string() } },
+	tables: { notes: { fields: { title: field.string() } } },
 });
 
 function expectOk<TValue, TError>(

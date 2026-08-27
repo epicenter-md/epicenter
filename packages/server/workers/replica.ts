@@ -34,7 +34,7 @@ import { MAIN_SUBPROTOCOL, STORE_SYNC_ROUTE } from '@epicenter/sync';
 const probeDefinition = defineData({
 	id: 'so.epicenter.storeprobe',
 	kv: {},
-	tables: { notes: { title: field.string() } },
+	tables: { notes: { fields: { title: field.string() } } },
 });
 
 function openNotes(

@@ -53,7 +53,10 @@ export const asConversationId = (value: string): ConversationId =>
  * ```ts
  * export const vocabDefinition = defineData({
  *   id: 'so.epicenter.vocab',
- *   tables: { conversations: conversationsTable, entries: entriesTable },
+ *   tables: {
+ *     conversations: { fields: conversationsTable },
+ *     entries: { fields: entriesTable },
+ *   },
  * });
  * ```
  */

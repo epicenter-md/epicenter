@@ -178,7 +178,10 @@ export const whisperingDefinition = defineData({
 	id: 'so.epicenter.whispering',
 	title: 'Whispering',
 	kv: settingsKv,
-	tables: { recordings: recordingsTable, recipes: recipesTable },
+	tables: {
+		recordings: { fields: recordingsTable },
+		recipes: { fields: recipesTable },
+	},
 });
 
 /** The typed view of one store through Whispering's workspace. */
