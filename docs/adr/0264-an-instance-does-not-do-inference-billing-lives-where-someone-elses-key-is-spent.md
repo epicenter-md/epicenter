@@ -41,6 +41,15 @@ What remains is one thing: an instance gateway lets people spend the operator's 
 - **The closed quadrant stays closed.** Self-hosted data plus Cloud inference would require the client to hold two credentials at once, which [ADR-0071](0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md) deliberately collapsed. It is additive later (a Cloud sign-in granting only the inference audience) and is not a prerequisite for anything here.
 - **Timing.** There are no users on the self-host gateway, which is why this lands as a deletion now rather than a deprecation later.
 
+## When to reopen this
+
+This is a refusal, so it should be revisitable on evidence rather than on argument. Two named triggers, either of which reopens the single-upstream dumb pipe (the strongest rejected alternative below), not the routing seam:
+
+- **Shared instances become real and per-user provider keys prove too costly to provision.** The one thing an instance gateway did that nothing else does is scope containment: a shared provider key works everywhere, an instance token only works against the instance. That loss is priced as acceptable because providers issue per-user keys. If operators of real shared instances report that per-user provisioning is impractical, the tradeoff inverts.
+- **Self-host onboarding measurably stalls at "configure an inference connection."** A fresh instance now has no Epicenter-supplied inference at all, and the closed quadrant (self-hosted data plus Cloud inference, blocked by [ADR-0071](0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md)) means there is no easy default to fall back to. If that first step is where people drop, the cheaper fix is opening that quadrant, not remounting a gateway.
+
+Neither trigger is "someone asks for multi-provider routing." That stays refused permanently: the client's connection registry and aggregators like LiteLLM already serve it.
+
 ## Considered alternatives
 
 - **A deployment-supplied `resolveUpstream` seam** (the library takes `(model) => { baseURL, apiKey } | null`; Cloud passes its table, self-host passes one env-configured upstream). Rejected: it fixes the storefront leak by adding a seam where removing the wrong consumer fixes it by subtraction, and it puts multi-upstream routing on the server that the client's connection registry already provides.
