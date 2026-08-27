@@ -1108,51 +1108,45 @@ function createStoreEngine(
 	 * accepted fact joins.
 	 */
 	/**
-	 * Row documents whose local edits change the row: those with a `derive`
-	 * (ADR-0264) or a store-managed `updatedAt` (ADR-0265), by document address.
-	 * Populated when such a document is opened and consulted when it commits
-	 * locally; the schema-blind engine never sees a table or a row.
-	 */
-	const deriveTargets = new Map<
-		string,
-		{
-			derive?: (doc: DocumentReader) => Record<string, unknown>;
-			managesUpdatedAt: boolean;
-			root: Y.Type;
-			rowId: string;
-		}
-	>();
-
-	/**
 	 * The store's answer to a local document commit (ADR-0264, ADR-0265): run the
 	 * table's pure `derive` over the document, stamp `updatedAt` if the store
 	 * manages it, and, only when the result changes the row, write it as its own
 	 * follow-up commit. Not merged with the body append, so a crash leaves a
 	 * self-healing one-edit-stale shadow rather than paying the cross-plane
 	 * atomicity an inline merge would cost.
+	 *
+	 * Built at open and handed down to the document engine, which holds it on
+	 * the live entry and calls it back with the document. The engine stays
+	 * schema-blind: it never learns what a row or a table is, and the closure
+	 * dies with the entry rather than outliving it in a map of its own.
 	 */
-	function runDeriveOnCommit(address: string, doc: Y.Doc): void {
-		const target = deriveTargets.get(address);
-		if (target === undefined) return;
-		const patch: Record<string, unknown> = target.derive
-			? { ...target.derive(doc as unknown as DocumentReader) }
-			: {};
-		// A body edit is an edit to the row: `updatedAt` moves even when the
-		// derived preview does not, so a fresh instant always makes the patch
-		// non-empty and the write always happens on a local body edit.
-		if (target.managesUpdatedAt) {
-			patch.updatedAt = InstantString.fromDate(new Date(now()));
-		}
-		const current = readRow(target.root, target.rowId) ?? {};
-		let changed = false;
-		for (const key of Object.keys(patch)) {
-			if ((current as Record<string, unknown>)[key] !== patch[key]) {
-				changed = true;
-				break;
+	function deriveOnCommit(target: {
+		derive?: (doc: DocumentReader) => Record<string, unknown>;
+		managesUpdatedAt: boolean;
+		root: Y.Type;
+		rowId: string;
+	}): (doc: Y.Doc) => void {
+		return (doc) => {
+			const patch: Record<string, unknown> = target.derive
+				? { ...target.derive(doc as unknown as DocumentReader) }
+				: {};
+			// A body edit is an edit to the row: `updatedAt` moves even when the
+			// derived preview does not, so a fresh instant always makes the patch
+			// non-empty and the write always happens on a local body edit.
+			if (target.managesUpdatedAt) {
+				patch.updatedAt = InstantString.fromDate(new Date(now()));
 			}
-		}
-		if (!changed) return;
-		commit(() => writeRow(target.root, target.rowId, patch as JsonObject));
+			const current = readRow(target.root, target.rowId) ?? {};
+			let changed = false;
+			for (const key of Object.keys(patch)) {
+				if ((current as Record<string, unknown>)[key] !== patch[key]) {
+					changed = true;
+					break;
+				}
+			}
+			if (!changed) return;
+			commit(() => writeRow(target.root, target.rowId, patch as JsonObject));
+		};
 	}
 
 	const documents = createDocumentEngine({
@@ -1163,7 +1157,6 @@ function createStoreEngine(
 		mintOutboxId,
 		tombstones: loaded.tombstones,
 		assertUsable: () => assertUsable(),
-		onLocalCommit: runDeriveOnCommit,
 		log,
 	});
 
@@ -1698,9 +1691,6 @@ function createStoreEngine(
 				commit(
 					() => {
 						removed = deleteRow(root, rowId);
-						if (removed) {
-							deriveTargets.delete(documentAddress(addressOf(rowId)));
-						}
 					},
 					() =>
 						removed
@@ -1732,15 +1722,16 @@ function createStoreEngine(
 				// same way `get` answers it, and refusing here is what keeps a
 				// deleted or misspelled id from minting an orphan document.
 				if (!hasRow(root, rowId)) return Ok(undefined);
-				const address = documentAddress(addressOf(rowId));
-				// Register the target while the document is open, so a local edit to
-				// it can find its table's derivation and managed `updatedAt` without
-				// the engine ever decoding the address back to a row (ADR-0264/0265).
+				// The follow-up a local edit to this document owes its row, built
+				// here where the table is in scope and handed down as a closure, so
+				// the engine never decodes the address back to a row (ADR-0264/0265).
 				const derive = table.document?.derive;
-				if (derive !== undefined || managesUpdatedAt) {
-					deriveTargets.set(address, { derive, managesUpdatedAt, root, rowId });
-				}
-				return documents.open(address);
+				return documents.open(
+					documentAddress(addressOf(rowId)),
+					derive !== undefined || managesUpdatedAt
+						? deriveOnCommit({ derive, managesUpdatedAt, root, rowId })
+						: undefined,
+				);
 			},
 			subscribe(listener: TableInvalidationListener): () => void {
 				const unsubscribe = invalidations.subscribeTable(

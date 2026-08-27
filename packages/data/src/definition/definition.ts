@@ -4,7 +4,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 import { DATA_ADDRESS_CEILINGS, isDatabaseId, isTableName } from './addresses.js';
 import { canonicalJson } from './canonical.js';
-import { isJsonValue, type JsonObject, type JsonValue } from './json.js';
+import type { JsonObject, JsonValue } from './json.js';
 import {
 	compile as compileField,
 	field as genericField,
@@ -207,7 +207,6 @@ export type ParsedTable = {
 	/** The application-owned document behaviors, carried unread (ADR-0264). */
 	document?: DocumentDeclaration;
 	conformance(payload: JsonObject): Conformance;
-	validateWrite(supplied: Record<string, unknown>): Result<JsonObject, never>;
 };
 
 export type ParsedDataDefinition = {
@@ -363,14 +362,6 @@ function compileTable(tableName: string, fields: unknown): Result<ParsedTable, D
 				}
 			}
 			return { conforming, issues };
-		},
-		validateWrite(supplied) {
-			const values: JsonObject = {};
-			for (const [name, value] of Object.entries(supplied)) {
-				if (!isJsonValue(value)) throw new TypeError(`'${name}' is not finite JSON`);
-				values[name] = value;
-			}
-			return Ok(values);
 		},
 	}));
 }

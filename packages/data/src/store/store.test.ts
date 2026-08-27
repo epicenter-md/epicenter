@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import type { TableInvalidation } from '@epicenter/data/definition';
 import { defineData, field, InstantString } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { expectOk } from 'wellcrafted/testing';
 import * as Y from '@y/y';
 import { encodeEnvelope } from './envelope.js';
 import { APP_DOCUMENT } from './log.js';
@@ -1095,6 +1096,27 @@ describe('a document commit derives its row fields (ADR-0264)', () => {
 		handle.get('meta').setAttr('title' as never, 'Second' as never);
 		expect(data.tables.notes.get(made.id).data?.preview).toBe('Second');
 		handle[Symbol.dispose]();
+	});
+
+	test('the derivation comes back with the document, after it has unloaded', async () => {
+		// The follow-up lives on the live document's entry, so it dies when the
+		// last handle does. What proves that is not a leak: the next open
+		// registers it again, and an edit derives exactly as the first one did.
+		await using data = openMemory(withDerive);
+		const made = data.tables.notes.create({ preview: '' });
+		{
+			const opened = await data.tables.notes.openDocument(made.id);
+			using handle = expectOk(opened);
+			if (handle === undefined) throw new Error('the document should open');
+			handle.get('meta').setAttr('title' as never, 'First' as never);
+		}
+		expect(data.tables.notes.get(made.id).data?.preview).toBe('First');
+
+		const reopened = await data.tables.notes.openDocument(made.id);
+		using handle = expectOk(reopened);
+		if (handle === undefined) throw new Error('the document should reopen');
+		handle.get('meta').setAttr('title' as never, 'Second' as never);
+		expect(data.tables.notes.get(made.id).data?.preview).toBe('Second');
 	});
 });
 

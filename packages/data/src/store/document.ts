@@ -88,11 +88,6 @@ export function kvRoot(document: Y.Doc): Y.Type {
 	return document.get(KV_ROOT_NAME);
 }
 
-/** Whether this document has ever held the named table. Never mints. */
-export function hasTable(document: Y.Doc, tableName: string): boolean {
-	return document.share.has(tableRootName(tableName));
-}
-
 /**
  * One row's nested type, or undefined when the table holds no row there.
  *

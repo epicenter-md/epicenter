@@ -65,11 +65,6 @@ describe('data definitions', () => {
 		expect(result.issues.map((issue) => issue.field)).toEqual(['status', 'tags']);
 	});
 
-	test('undefined is not storage JSON', () => {
-		const table = parsed().tables.get('notes')!;
-		expect(() => table.validateWrite({ title: undefined })).toThrow();
-	});
-
 	test('a document block without a file codec is refused', () => {
 		// `derive` without `file` is the authored mistake the guard exists for: a
 		// document whose export could never carry its body (ADR-0264/0267).

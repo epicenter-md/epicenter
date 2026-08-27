@@ -83,7 +83,17 @@ type DocumentEngine = {
 	 * releases independently. The one refusal a caller concludes something
 	 * from is `DocumentRetired`; `HydrationFailed` is storage trouble.
 	 */
-	open(address: string): Promise<Result<RowDocumentHandle, DocumentError>>;
+	/**
+	 * Open the document at this address, refcounted.
+	 *
+	 * `onLocalCommit` runs after a local commit into it is queued (ADR-0264):
+	 * the store's own follow-up, opaque here, and held on the live entry so it
+	 * dies when the last handle does. A refused open registers nothing.
+	 */
+	open(
+		address: string,
+		onLocalCommit?: (doc: Y.Doc) => void,
+	): Promise<Result<RowDocumentHandle, DocumentError>>;
 	/**
 	 * Take one remote section: apply it live when the address is open, and
 	 * hand back the durable append op, or undefined for a retired address.
@@ -115,6 +125,11 @@ type LiveDocument = {
 	doc: Y.Doc;
 	references: number;
 	hydration: Promise<Result<void, DocumentError>>;
+	/**
+	 * What the store wants run after a local commit into this document, set by
+	 * whoever opened it. Opaque here: the engine never learns what it does.
+	 */
+	onLocalCommit: ((doc: Y.Doc) => void) | undefined;
 };
 
 export function createDocumentEngine({
@@ -125,7 +140,6 @@ export function createDocumentEngine({
 	mintOutboxId,
 	tombstones,
 	assertUsable,
-	onLocalCommit,
 	log,
 }: {
 	/** The durable port's chain reader, bound by the opener. */
@@ -144,12 +158,6 @@ export function createDocumentEngine({
 	/** Durably retired addresses, loaded at open. Owned by this engine from here. */
 	tombstones: readonly string[];
 	assertUsable(): void;
-	/**
-	 * Called after a LOCAL document commit is queued (ADR-0264). The store runs
-	 * its declared `derive` here as its own follow-up commit; the engine stays
-	 * schema-blind and never learns what a row or a table is.
-	 */
-	onLocalCommit?: (address: string, doc: Y.Doc) => void;
 	log: Logger;
 }): DocumentEngine {
 	const retired = new Set(tombstones);
@@ -187,8 +195,9 @@ export function createDocumentEngine({
 				// A store-driven derivation may follow this local edit (ADR-0264):
 				// its own commit, deliberately not merged with the append above, so
 				// the derived row shadow self-heals across a crash rather than
-				// paying cross-plane atomicity.
-				onLocalCommit?.(address, doc);
+				// paying cross-plane atomicity. Read off the entry rather than held
+				// in a second map, so it dies exactly when the document unloads.
+				live.get(address)?.onLocalCommit?.(doc);
 			},
 		);
 	}
@@ -246,6 +255,7 @@ export function createDocumentEngine({
 	return {
 		async open(
 			address: string,
+			onLocalCommit?: (doc: Y.Doc) => void,
 		): Promise<Result<RowDocumentHandle, DocumentError>> {
 			assertUsable();
 			if (retired.has(address)) {
@@ -254,16 +264,20 @@ export function createDocumentEngine({
 			let entry = live.get(address);
 			if (entry === undefined) {
 				const doc = new Y.Doc({ gc: true });
-				// Listener before hydration, replay under an origin it ignores, so
-				// loading cannot append the bytes it just read.
-				attach(address, doc);
 				const created: LiveDocument = {
 					doc,
 					references: 0,
-					hydration: hydrate(address, doc),
+					hydration: Promise.resolve(Ok(undefined)),
+					onLocalCommit,
 				};
 				live.set(address, created);
+				// Listener before hydration, replay under an origin it ignores, so
+				// loading cannot append the bytes it just read.
+				attach(address, doc);
+				created.hydration = hydrate(address, doc);
 				entry = created;
+			} else {
+				entry.onLocalCommit = onLocalCommit;
 			}
 			// Held before the await, so a concurrent close cannot unload the
 			// document this open is hydrating.
