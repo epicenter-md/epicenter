@@ -280,7 +280,7 @@ describe('durability', () => {
 		//
 		// Deliberately sequential rather than racing. What needs proving is that
 		// the sequence is read from and written to the file, which a race would
-		// only obscure; concurrent SAFETY is SQLite's immediate transaction, and
+		// only obscure; concurrent safety is SQLite's immediate transaction, and
 		// there is at most one Gmail writer regardless (the reconcile lock).
 		const dir = mkdtempSync(join(tmpdir(), 'local-mail-intent-'));
 		const account = { dataDir: dir, accountEmail: 'you@example.com' };

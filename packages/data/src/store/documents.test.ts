@@ -49,7 +49,8 @@ function typeText(
 	words: string,
 ) {
 	const text = handle.get(root, 'text');
-	// rc typing spells the delta `change` builds as `never`.
+	// `change` builds the delta shape `applyDelta`'s rc typing spells as
+	// `never`.
 	text.applyDelta(text.change.insert(words) as never);
 }
 

@@ -238,8 +238,8 @@ export function createDocumentEngine({
 		return {
 			get(root: string, typeName?: string | null): Y.Type {
 				assertUsable();
-				// rc typing spells `Doc.get`'s optional type name as `never`; a string
-				// or null is what it accepts at runtime.
+				// `Doc.get`'s rc typing takes `never` for the optional type name; a
+				// string or null is the value it actually accepts.
 				return entry.doc.get(root, (typeName ?? null) as never);
 			},
 			[Symbol.dispose]() {
@@ -351,9 +351,9 @@ export function createDocumentEngine({
 					...controller.pendingAppends(address),
 				];
 				if (chain.length === 0) continue;
-				// The length check above proves `chain[0]` exists, and `copyBytes` returns
-				// freshly allocated `Uint8Array<ArrayBuffer>`s, the buffer shape
-				// `mergeUpdatesV2`'s typing demands.
+				// The length check above proves the element exists, and `copyBytes`
+				// returns freshly allocated `Uint8Array<ArrayBuffer>`s, which is the
+				// buffer shape `mergeUpdatesV2`'s typing demands.
 				sections.push({
 					document: address,
 					bytes:

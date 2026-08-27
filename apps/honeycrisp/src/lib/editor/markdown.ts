@@ -22,9 +22,9 @@ import { Fragment, type Node, type NodeType } from 'prosemirror-model';
 
 import { noteSchema } from './schema.js';
 
-// The node map is typed by its OrderedMap spec, not by name. `noteSchema`
-// declares every one of these nodes, or its constructor would have thrown at
-// module load.
+// `noteSchema` declares every one of these nodes; the schema constructor would
+// have thrown at module load otherwise. Through `unknown` because the schema's
+// node map is typed by its OrderedMap spec, not by name.
 const { bullet_list, list_item, paragraph, taskItem, taskList } =
 	noteSchema.nodes as unknown as Record<
 		'bullet_list' | 'list_item' | 'paragraph' | 'taskItem' | 'taskList',
@@ -122,8 +122,8 @@ function isTaskShaped(item: Node): boolean {
 }
 
 function intoTaskItem(item: Node): Node {
-	// `isTaskShaped` admitted this item, so the first child is a paragraph whose
-	// text opens with the marker.
+	// `isTaskShaped` admitted this item, so the first child is a paragraph
+	// opening with the marker.
 	const first = item.firstChild as Node;
 	const marker = TASK_MARKER.exec(first.textContent) as RegExpExecArray;
 	const content: Node[] = [first.cut(marker[0].length)];

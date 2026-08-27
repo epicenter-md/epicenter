@@ -7,8 +7,8 @@ test('concurrent first creation of one named root in independent docs converges'
 	const b = new Y.Doc({ gc: true });
 
 	// Each mints the root by name and writes into it while partitioned.
-	// SAFETY: `Doc.get`'s rc typing spells the type name as `never`, and
-	// `change` builds the delta shape `applyDelta` spells the same way.
+	// `Doc.get`'s rc typing spells the type name as `never`, and `change`
+	// builds the delta shape `applyDelta` spells the same way.
 	a.transact(() => {
 		const editor = a.get('editor', 'text' as never);
 		editor.applyDelta(editor.change.insert('from A. ') as never);
@@ -31,8 +31,8 @@ test('concurrent first creation of one named root in independent docs converges'
 	expect(textA).toContain('from B. ');
 
 	// Same with attribute (map-style) roots.
-	// SAFETY: attribute keys and values go through the rc typing's `never`
-	// parameters; strings and numbers are what the runtime accepts.
+	// Attribute keys and values go through the rc typing's `never` parameters;
+	// strings and numbers are what the runtime accepts.
 	const c = new Y.Doc({ gc: true });
 	const d = new Y.Doc({ gc: true });
 	c.transact(() => c.get('meta').setAttr('x' as never, 1 as never));
