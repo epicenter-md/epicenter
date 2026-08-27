@@ -6,9 +6,9 @@ import { field } from '@epicenter/data/definition';
  * and nothing that knows about storage, sync, or documents (ADR-0213,
  * ADR-0240). Runtimes own all of that.
  *
- * The `folders` and `notes` property names are the durable table names. They are
- * what the row addresses carry, what a trusted inspection host mounts as
- * `SELECT * FROM notes`, and what the projection's relations are called.
+ * The `folders` and `notes` property names are the durable table names. They
+ * are what the row addresses carry and what the export names its folders
+ * (ADR-0268).
  */
 
 import type { DataView } from '@epicenter/data';
@@ -33,7 +33,7 @@ const foldersTable = {
 	name: field.string(),
 	// Nullable rather than optional. A data definition has no optional
 	// fields on purpose: a field has to be one type through the CRDT attribute,
-	// the projection column and the row alike, and "absent" is not a SQL type.
+	// the exported frontmatter value and the row alike, and "absent" is not one.
 	// Application recovery supplies a value at read time and never writes it as
 	// part of the definition (ADR-0255).
 	icon: field.nullable(field.string()),
@@ -45,8 +45,9 @@ const notesTable = {
 	preview: field.string(),
 	pinned: field.boolean(),
 	// Validation-only rather than `string.date.parse`: a field has to be one
-	// type through the CRDT attribute, the projection column and the row alike,
-	// and a parsing form would hand back a `Date` that could not round-trip.
+	// type through the CRDT attribute, the exported frontmatter value and the
+	// row alike, and a parsing form would hand back a `Date` that could not
+	// round-trip.
 	createdAt: field.instant(),
 	updatedAt: field.instant(),
 	deletedAt: field.nullable(field.instant()),

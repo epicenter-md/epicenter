@@ -2,9 +2,9 @@
  * The CRDT's own durable bytes: the update log, its snapshot folding, the outbox and
  * the cursor.
  *
- * The database's derived SQL used to live here too and now sits in `./projection.js`.
- * The two shared a file and nothing else: this is what the document IS and what
- * `../sync` reads, while a projection is a cache rebuilt from it at open.
+ * Everything here is what the document IS and what `../sync` reads. Anything
+ * derived from it, an index or an export, is a follower an application
+ * composes on the public surface, never a relation kept beside these.
  */
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import * as Y from '@y/y';
@@ -43,11 +43,8 @@ type StoredUpdate = SqliteRow & {
 };
 
 /**
- * The live store file: the Yjs update log and the database projection, together.
- *
- * They share a file rather than merely a directory so that an append and the
- * projection write it implies commit in one transaction. That is what makes
- * `query` always see committed local writes; two files could disagree.
+ * The durable record: the update log, the outbox, the cursor, the metadata,
+ * and the tombstones, in one file so that one flush commits them together.
  */
 export function applyStoreSchema(sqlite: SqliteDatabase): void {
 	sqlite.run(`

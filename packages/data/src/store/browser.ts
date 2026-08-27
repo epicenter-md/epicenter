@@ -7,8 +7,7 @@
  * multi-store transaction per flush (ADR-0238). Every read a person makes
  * (`get`, `list`, `ids`, `document`) comes from the `Y.Doc` already in
  * memory; SQL, when an application wants it, is a follower it composes over
- * this surface (`@epicenter/data/projection`), so opening a store here loads
- * no SQLite at all.
+ * this surface, so opening a store here loads no SQLite at all.
  *
  * ## Why IndexedDB owns the facts directly
  *
@@ -28,10 +27,10 @@
  *
  * ## Why there is no worker
  *
- * There was one, holding an OPFS SQLite fed every statement, justified by the
- * projection "coming back for free"; that was false, because opening rebuilds
- * every projected table unconditionally. What actually has to survive is
- * small: the log folds at `SNAPSHOT_FOLD_THRESHOLD` (64), the outbox is
+ * There was one, holding an OPFS SQLite fed every statement, justified by a
+ * derived index "coming back for free"; that was false, because such an index
+ * rebuilds from the document at open regardless. What actually has to survive
+ * is small: the log folds at `SNAPSHOT_FOLD_THRESHOLD` (64), the outbox is
  * coalesced before it is sent, and the cursor is one row. IndexedDB holds
  * that from the page.
  */

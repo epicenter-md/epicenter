@@ -1,21 +1,21 @@
 /**
  * What a developer gets from `@epicenter/data`.
  *
- * The store, the transport that carries it, and the vocabulary a data definition is
- * declared in. Runtime openers live at their own entry points, because a Bun
- * opener imports `bun:sqlite` and a browser opener imports a WASM build, and
- * neither belongs in a barrel the other has to load.
+ * The store, the transport that carries it, and the vocabulary a data
+ * definition is declared in. Openers live at their own entry points, because
+ * one imports `bun:sqlite` and the other imports a WASM build, and neither
+ * belongs in a barrel the other has to load.
  *
- * The entry points: `.` for the surface, `./bun` and `./browser` for the
- * openers, `./sync` for the transport, `./projection` for the composed SQL
- * follower, and `./engine` for the construction seam test fixtures build on.
- * The superseded stack that used to answer at `./legacy` was deleted along
- * with its consumers (ADR-0227), so a developer arriving here finds one store
- * rather than a choice between two.
+ * The entry points: `.` for the surface, `./browser` for the opener, `./sync`
+ * for the transport, `./export` for the artifact a person keeps, `./engine`
+ * for the construction seam test fixtures build on, and `./memory` for test
+ * support. The superseded stack that used to answer at `./legacy` was deleted
+ * along with its consumers (ADR-0227), so a developer arriving here finds one
+ * store rather than a choice between two.
  *
- * Each opener is called `open` and takes the definition, because its id names
- * the store it opens (ADR-0229). The subpath already says which adapter,
- * so the identifier does not repeat it.
+ * Every opener takes the definition, because its id names the store it opens
+ * (ADR-0229). The subpath already says which runtime, so the identifier does
+ * not repeat it.
  *
  * The transport answers at `./sync` and nowhere else. This barrel used to
  * re-export all of it as well, which no consumer ever used: every one of them

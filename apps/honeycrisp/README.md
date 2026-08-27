@@ -109,7 +109,7 @@ transport (ADR-0222).
 | `wordCount` | `number \| null` |
 
 A data definition has no optional fields: a field has to be one type through the CRDT
-attribute, the projection column and the row alike, and "absent" is not a SQL
+attribute, the exported frontmatter value and the row alike, and "absent" is not a
 type. So what would have been optional is nullable, and the application writes
 or recovers `null` explicitly.
 

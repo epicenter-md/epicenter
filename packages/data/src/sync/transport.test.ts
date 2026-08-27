@@ -1624,7 +1624,7 @@ describe('two devices whose databases disagree', () => {
 	});
 
 	test('a table the older release does not declare waits in the CRDT for one that does', async () => {
-		// The claim the whole-index projection makes in a comment, checked across the
+		// The claim ADR-0240 makes about an undeclared table, checked across the
 		// transport rather than inside one store. The older device relays and stores
 		// rows of a table it has no name for, and they are there the moment it is
 		// updated, without anybody re-sending anything.

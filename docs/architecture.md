@@ -160,17 +160,19 @@ data.tables.notes.subscribe((rowIds) => { ... }); // the ids a commit touched
 
 `subscribe` names the rows a commit touched (ADR-0221), so a view refreshes
 what moved rather than everything. SQL, when an application wants it, is a
-follower it composes: `createSqliteProjection` from
-`@epicenter/data/projection` rebuilds an in-memory database from the live
-document at the next read (ADR-0241).
+follower it composes over this surface, rebuilt from the live document at the
+next read (ADR-0241). The package shipped one and nothing composed it, so it
+was deleted (ADR-0269): a person who wants to read their data outside the app
+reads the export, which is Markdown files (ADR-0268).
 
 ## Where the durable facts live
 
 The store keeps exactly the ledgers a crash cannot reconstruct: the update
-log, the outbox, the cursor, and the document identity (ADR-0241). On Bun
-they live in one SQLite file; in the browser they are small IndexedDB
-relations: `updates`, `outbox`, `meta` (ADR-0223, ADR-0238). There is no
-worker and no OPFS, and nothing derived is ever restored, only rebuilt.
+log, the outbox, the cursor, and the document identity (ADR-0241). In the
+browser, which is the runtime an application opens (ADR-0269), they are small
+IndexedDB relations: `updates`, `outbox`, `tombstones`, `meta` (ADR-0223,
+ADR-0238). There is no worker and no OPFS, and nothing derived is ever
+restored, only rebuilt.
 
 History lives outside the CRDT (ADR-0214). The document runs with garbage
 collection on, which is what collapses a field edited five thousand times to two

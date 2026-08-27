@@ -1,8 +1,8 @@
 /**
  * The document half of a workspace export (ADR-0267).
  *
- * A follower composed on the opened data's public surface, like the SQL
- * projection: it walks every table that declares a `file` codec (ADR-0264),
+ * A follower composed on the opened data's public surface: it walks every
+ * table that declares a `file` codec (ADR-0264),
  * opens each row's document, and serializes it to one legible file per
  * document. The bytes it never reads and the identity it never keeps are the
  * whole point of the codec living in the application: Epicenter turns the

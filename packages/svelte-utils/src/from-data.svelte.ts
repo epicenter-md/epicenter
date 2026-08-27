@@ -140,8 +140,8 @@ function reactiveTable<TTable extends AdaptableTable>(
 	// No snapshot cache, deliberately. The store flushes a commit in phases:
 	// public `onCommitted` listeners run first, table invalidations after, so
 	// a cache invalidated by the table subscription would still serve
-	// pre-commit rows to an `onCommitted` reader (a composed follower like
-	// `@epicenter/data/projection` reads in exactly that phase). The handle's
+	// pre-commit rows to an `onCommitted` reader (a composed follower reads in
+	// exactly that phase). The handle's
 	// `list()` is a walk over a document already in memory and builds fresh
 	// arrays per call either way, so a read-through is the store's own
 	// contract; this adapter adds tracking, never a second copy of the data.

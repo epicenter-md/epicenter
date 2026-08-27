@@ -12,7 +12,6 @@ The package has one definition entrypoint and four runtime entrypoints:
 | `@epicenter/data/definition` | `defineData`, `parseData`, and the field descriptor vocabulary |
 | `@epicenter/data/browser` | `openDevice(definition)`, and `openAccount(definition, { baseURL, principalId })` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
-| `@epicenter/data/projection` | `createSqliteProjection`, a read-only SQL follower |
 | `@epicenter/data/memory` | `openMemory(definition)` and `createMemoryRecord()`, test support |
 
 The browser opener is the only one a person's data lands in. A memory opener
@@ -100,10 +99,11 @@ Row document lifecycle is owned by the table that owns the row.
 accepted and durable transaction.
 
 SQL, when an application wants it, is a follower it composes over this
-surface: `createSqliteProjection` from `@epicenter/data/projection` hydrates
-from `list()`, follows commits through `store.onCommitted`, and rebuilds
-whole at the next `query`, so SQL can never serve rows the live document has
-moved past (ADR-0241).
+surface: hydrate from `list()`, follow commits through `store.onCommitted`,
+and rebuild whole at the next read, so an index can never serve rows the live
+document has moved past (ADR-0241). The package shipped one such follower and
+no application ever composed it, so it was deleted; a person who wants to look
+at their data outside the app reads the export (ADR-0268), which is files.
 
 `data.store` carries the document itself: `pressure()` (how much of it is dead
 weight), `onCommitted` (anything committed, whoever wrote it),
@@ -112,8 +112,8 @@ and `sync`, the value that tells the two store kinds apart (ADR-0239):
 `undefined` on a device document, and `{ get, subscribe }` over
 `{ document }` on an account replica. They live under one key rather than
 beside the tables so that no table name is reserved: `kv` is the only one a
-definition refuses, and that is because KV projects as a SQL relation of that
-name.
+definition refuses, so a follower may project KV as a relation of that name
+without colliding with a table.
 The delivery machinery underneath sync (the outbox, cursors,
 acknowledgements) is internal; only the transport drives it.
 
@@ -153,9 +153,8 @@ const note = noteData ?? { ...applicationRecovery, ...error?.conforming };
 `subscribe` fires once per commit, carrying the row ids that commit touched
 (ADR-0221). It fires for a local write, for prose typed into a row's document,
 and for bytes that arrived from another device alike, and it fires after every
-`onCommitted` listener has run, so a composed follower (like the SQL
-projection) is already marked dirty by the time a subscriber reads through
-it.
+`onCommitted` listener has run, so a composed follower is already marked
+dirty by the time a subscriber reads through it.
 
 Registration is synchronous, does no I/O, and never fires initially, so a
 caller that subscribes and then reads has already seen everything. There is no
@@ -235,7 +234,7 @@ shaped.
 | one scalar field | last write wins, converged |
 | one array or object field | last write wins on the WHOLE value |
 | a row document | per character |
-| the SQL projection | a cache derived from the CRDT |
+| any composed index | a cache derived from the CRDT |
 
 A row is an attribute map and a write sets only the attributes handed to it, so
 two devices editing different fields of one row offline both keep their edit.
@@ -276,15 +275,16 @@ export const notesDefinition = defineData({
 ```
 
 Each `tables` property name is that table's durable name forever: it is what a
-row address carries, what the projection's relation is called, and what
-`SELECT * FROM notes` names. There is no second key to keep in step, and no
+row address carries, what the export names its folder, and what a composed
+SQL follower calls its relation. There is no second key to keep in step, and no
 rename, because a different property name is a different address and therefore
 different data.
 
 Three rules bite immediately:
 
 1. **There are no optional fields.** A field has to be one type through the CRDT
-   attribute, the projection column, and the row alike. `field.nullable(inner)`
+   attribute, the exported frontmatter value, and the row alike.
+   `field.nullable(inner)`
    accepts stored JSON `null`, but a missing field remains nonconforming.
 2. **Definitions do not own defaults.** Initialization and recovery values live
    in application code. `parseData` rejects a descriptor carrying `default`.
@@ -312,9 +312,9 @@ data.tables.notes.update(issue.id, { n: 7 }); // an ordinary write repairs it
 ```
 
 A patch validates only the values it supplies, so it can fix the offending key
-even though the whole payload does not currently pass. A composed SQL
-projection stores nonconforming rows with their raw values, so SQL can show
-them; `list().nonconforming` is the only thing that knows they failed.
+even though the whole payload does not currently pass. `stored()` and the
+export read the raw values regardless, so a broken row is never invisible;
+`list().nonconforming` is the only thing that knows they failed.
 
 Whether an application shows a person the broken row, has an agent propose a
 fix, or ignores it until someone cares is a product decision this layer does not

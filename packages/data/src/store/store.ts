@@ -360,8 +360,7 @@ export type TableHandle = {
 	 * It fires after acceptance completes, and after every `onCommitted`
 	 * listener has run. That phase order is a contract a follower can build
 	 * on: a derived cache that marks itself dirty in `onCommitted` is already
-	 * dirty by the time any table subscriber reads through it
-	 * (`@epicenter/data/projection` is built on exactly this). The ids come
+	 * dirty by the time any table subscriber reads through it. The ids come
 	 * from the type's `'delta'` event, which fires synchronously inside
 	 * `applyUpdateV2` mid-acceptance, so they are held until acceptance
 	 * completes.
@@ -449,9 +448,8 @@ export type DataView<TDatabase extends DataDefinition> = {
  * application does; `store` holds pressure, the CRDT verbs, and, on a
  * replica, sync: what a transport needs and a feature never touches. Merging
  * the two put thirteen names on one object where four are used, and cost a
- * forwarded getter and a cast to build it. SQL is deliberately not here: it
- * is a follower an application composes (`@epicenter/data/projection`), not
- * a verb the store owes.
+ * forwarded getter and a cast to build it. SQL is deliberately not here: an
+ * index is a follower an application composes, not a verb the store owes.
  *
  * The view and the store are born together: an opened runtime holds exactly
  * one data definition for its whole life (ADR-0240), so there is no verb
@@ -679,8 +677,8 @@ export type StorePressure = {
  * Every verb here is a fact about the document itself: measure it, encode it,
  * hear it commit, watch its persistence. The data definition is not on
  * this surface, because it is not a verb: the engine closed over it at
- * construction and every table handle, the KV handle, and the whole-index
- * projection read the one parsed definition for the store's whole life
+ * construction and every table handle and the KV handle read the one parsed
+ * definition for the store's whole life
  * (ADR-0240). What tells the two store kinds apart is `sync`, present on both
  * and carrying the discriminating value: `undefined` on a device-owned
  * document, a `SyncCapability` on a replica. Every store has local
@@ -729,8 +727,8 @@ export type DataStoreBase = {
 	 * its own surface below. Delivered BEFORE table and KV notifications in
 	 * the same flush, and that order is a contract: a composed follower marks
 	 * itself dirty here, so it is already dirty by the time any table
-	 * subscriber reads through it (`@epicenter/data/projection` depends on
-	 * exactly this). Strictly wider than `onLocalWork`, and the two are not
+	 * subscriber reads through it. Strictly wider than `onLocalWork`, and the
+	 * two are not
 	 * interchangeable: the transport wants to know that THIS replica owes the
 	 * authority something, so bytes that arrived from a peer must not nudge
 	 * it, while this fires for those too.
@@ -1429,9 +1427,8 @@ function createStoreEngine(
 	 * The one typed surface this runtime will ever have, built over the one
 	 * definition (ADR-0240).
 	 *
-	 * SQL is deliberately not built here: a projection is a follower an
-	 * application composes over this surface (`@epicenter/data/projection`),
-	 * not a verb the store owes.
+	 * SQL is deliberately not built here: an index is a follower an application
+	 * composes over this surface, not a verb the store owes.
 	 */
 	function buildView(): UntypedDataView {
 		const kv = createKvHandle();
@@ -1557,8 +1554,8 @@ function createStoreEngine(
 	 * what THIS release can read, and both narrow to the declared fields, so a
 	 * key an older release wrote and this one no longer names is unreachable
 	 * through them. That narrowing is correct for an application and correct for
-	 * the SQL projection, which is a disposable index rebuilt on demand. It is
-	 * wrong for an artifact: an export that drops a field is data loss, and the
+	 * any index a follower rebuilds on demand. It is wrong for an artifact: an
+	 * export that drops a field is data loss, and the
 	 * caller that must not lose one is asking about the workspace, not a table.
 	 *
 	 * So it enumerates the roots the document actually holds rather than the

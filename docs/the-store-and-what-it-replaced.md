@@ -34,7 +34,7 @@ independent changes.
 | one row | `await table.get(id)` | `data.tables.notes.get(id)` |
 | all rows | `await table.scan()` | `data.tables.notes.list()` |
 | ids | (part of scan) | `data.tables.notes.ids()` |
-| SQL | a separate inspection surface | a composed follower: `createSqliteProjection` (`@epicenter/data/projection`, ADR-0241) |
+| SQL | a separate inspection surface | a composed follower, and nothing composes one: reading data outside the app is reading the export (ADR-0241, ADR-0268, ADR-0269) |
 
 `list()` returns `{ rows, nonconforming }`, plainly: a row the current declaration
 cannot read is REPORTED, never dropped and never repaired (ADR-0125), and
@@ -273,9 +273,10 @@ approve, and no identifier a client can supply that reaches another partition.
 which is why every read in an application on that stack was awaited.
 
 **New:** the store runs in the page, and the durable facts (`updates`,
-`outbox`, `meta`) live directly in IndexedDB, one atomic transaction per
-flush (ADR-0238). SQL, when an application wants it, is a follower it
-composes (`@epicenter/data/projection`, ADR-0241).
+`outbox`, `tombstones`, `meta`) live directly in IndexedDB, one atomic
+transaction per flush (ADR-0238). The page is the only runtime an application
+opens (ADR-0269). SQL, when an application wants it, is a follower it composes
+over the public surface (ADR-0241).
 
 The measured fact behind it: a page cannot take a synchronous handle to durable
 storage. That decides where the LOG lives, not where the store runs: the store

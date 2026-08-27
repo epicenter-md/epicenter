@@ -29,10 +29,10 @@ shapes, see `docs/adr/`.
   physical replica, but that adapter boundary is not a product data owner.
 - **Epicenter store**: the storage backing one replica: the durable ledgers a
   crash cannot reconstruct (the update log, the outbox, the cursor, the
-  document identity), one SQLite file on Bun and three small IndexedDB
-  relations in the browser, with no worker and no OPFS (ADR-0223, ADR-0241).
-  SQL is not stored here: it is a follower an application composes
-  (`@epicenter/data/projection`).
+  document identity), four small IndexedDB relations in the browser, with no
+  worker and no OPFS (ADR-0223, ADR-0241). SQL is not stored here: it is a
+  follower an application composes, and no application composed one, so the
+  package no longer ships it (ADR-0269).
 - **Sync attachment**: the permanent binding from a local replica to one
   principal. First sign-in adds synchronization to the existing replica;
   signing out pauses it, and another principal requires a fresh replica or
@@ -176,12 +176,11 @@ shapes, see `docs/adr/`.
   value with `get`, `update` and `subscribe`. It is `kv`, not `!kv`, and there is
   no top-level `tables` container; its subscriber takes no ids because kv is one
   value.
-- **SQL projection**: a composed follower, not a store verb
-  (`createSqliteProjection` from `@epicenter/data/projection`, ADR-0241). It
-  rebuilds from the live document at the next read, so its `query` never
-  serves rows the document has moved past. Nonconforming rows project raw, so
-  SQL can show one; it cannot tell you a row is nonconforming, which is what
-  `list()` is for.
+- **SQL projection**: a composed follower, never a store verb (ADR-0241). It
+  rebuilds from the live document at the next read, so it never serves rows
+  the document has moved past. The package shipped one and no application ever
+  composed it; it was deleted, and inspecting data outside the app is reading
+  the export (ADR-0268, ADR-0269).
 - **`subscribe`**: a table's change notification, carrying the row ids a commit
   touched and firing after every `onCommitted` listener has run (ADR-0221,
   ADR-0241). Not a query and not a diff.
