@@ -5,6 +5,7 @@ import {
 	type DataDefinition,
 	type DocumentReader,
 	documentAddress,
+	InstantString,
 	type JsonObject,
 	type JsonValue,
 	type KvOf,
@@ -1048,40 +1049,51 @@ function createStoreEngine(
 	 * accepted fact joins.
 	 */
 	/**
-	 * Row documents whose table declares a `derive` (ADR-0264), by document
-	 * address. Populated when such a document is opened and consulted when it
-	 * commits locally; the schema-blind engine never sees a table or a row.
+	 * Row documents whose local edits change the row: those with a `derive`
+	 * (ADR-0264) or a store-managed `updatedAt` (ADR-0265), by document address.
+	 * Populated when such a document is opened and consulted when it commits
+	 * locally; the schema-blind engine never sees a table or a row.
 	 */
 	const deriveTargets = new Map<
 		string,
 		{
-			derive: (doc: DocumentReader) => Record<string, unknown>;
+			derive?: (doc: DocumentReader) => Record<string, unknown>;
+			managesUpdatedAt: boolean;
 			root: Y.Type;
 			rowId: string;
 		}
 	>();
 
 	/**
-	 * The store's answer to a local document commit (ADR-0264): run the table's
-	 * pure `derive` over the document and, only when the result changes the row,
-	 * write it as its own follow-up commit. Not merged with the body append, so a
-	 * crash leaves a self-healing one-edit-stale shadow rather than paying the
-	 * cross-plane atomicity an inline merge would cost.
+	 * The store's answer to a local document commit (ADR-0264, ADR-0265): run the
+	 * table's pure `derive` over the document, stamp `updatedAt` if the store
+	 * manages it, and, only when the result changes the row, write it as its own
+	 * follow-up commit. Not merged with the body append, so a crash leaves a
+	 * self-healing one-edit-stale shadow rather than paying the cross-plane
+	 * atomicity an inline merge would cost.
 	 */
 	function runDeriveOnCommit(address: string, doc: Y.Doc): void {
 		const target = deriveTargets.get(address);
 		if (target === undefined) return;
-		const derived = target.derive(doc as unknown as DocumentReader);
+		const patch: Record<string, unknown> = target.derive
+			? { ...target.derive(doc as unknown as DocumentReader) }
+			: {};
+		// A body edit is an edit to the row: `updatedAt` moves even when the
+		// derived preview does not, so a fresh instant always makes the patch
+		// non-empty and the write always happens on a local body edit.
+		if (target.managesUpdatedAt) {
+			patch.updatedAt = InstantString.fromDate(new Date(now()));
+		}
 		const current = readRow(target.root, target.rowId) ?? {};
 		let changed = false;
-		for (const key of Object.keys(derived)) {
-			if ((current as Record<string, unknown>)[key] !== derived[key]) {
+		for (const key of Object.keys(patch)) {
+			if ((current as Record<string, unknown>)[key] !== patch[key]) {
 				changed = true;
 				break;
 			}
 		}
 		if (!changed) return;
-		commit(() => writeRow(target.root, target.rowId, derived as JsonObject));
+		commit(() => writeRow(target.root, target.rowId, patch as JsonObject));
 	}
 
 	const documents = createDocumentEngine({
@@ -1488,6 +1500,22 @@ function createStoreEngine(
 			rowId,
 		});
 
+		// Store-managed timestamps (ADR-0265): an instant field named `createdAt`
+		// or `updatedAt` is owned by the store. It stamps `createdAt` once at
+		// create and `updatedAt` on every commit that touches the row, so an
+		// application never writes them by hand. The instant-typed requirement is
+		// what keeps an ordinary field that happens to share the name unmanaged.
+		const managesCreatedAt = table.fields.get('createdAt')?.kind === 'instant';
+		const managesUpdatedAt = table.fields.get('updatedAt')?.kind === 'instant';
+		function stamps(mode: 'create' | 'update'): JsonObject {
+			if (!managesUpdatedAt && !managesCreatedAt) return {};
+			const iso = InstantString.fromDate(new Date(now()));
+			const at: JsonObject = {};
+			if (managesUpdatedAt) at.updatedAt = iso;
+			if (mode === 'create' && managesCreatedAt) at.createdAt = iso;
+			return at;
+		}
+
 		/**
 		 * The rows one committed change touched, named by the type itself.
 		 *
@@ -1556,8 +1584,9 @@ function createStoreEngine(
 			create(fields: JsonObject): Row {
 				assertUsable();
 				const rowId = mintRowId();
-				commit(() => writeRow(root, rowId, fields));
-				return { id: rowId, ...fields };
+				const at = stamps('create');
+				commit(() => writeRow(root, rowId, { ...fields, ...at }));
+				return { id: rowId, ...fields, ...at };
 			},
 			get(rowId: string): Result<Row | undefined, NonconformingRow> {
 				assertUsable();
@@ -1570,7 +1599,7 @@ function createStoreEngine(
 				if (!hasRow(root, rowId)) {
 					return StoreError.RowAbsent({ table: tableName, rowId });
 				}
-				commit(() => writeRow(root, rowId, fields));
+				commit(() => writeRow(root, rowId, { ...fields, ...stamps('update') }));
 				return Ok(undefined);
 			},
 			delete(rowId: string): boolean {
@@ -1617,12 +1646,12 @@ function createStoreEngine(
 				// deleted or misspelled id from minting an orphan document.
 				if (!hasRow(root, rowId)) return Ok(undefined);
 				const address = documentAddress(addressOf(rowId));
-				// Register the derive target while the document is open, so a local
-				// edit to it can find its table's pure derivation without the engine
-				// ever decoding the address back to a row (ADR-0264).
+				// Register the target while the document is open, so a local edit to
+				// it can find its table's derivation and managed `updatedAt` without
+				// the engine ever decoding the address back to a row (ADR-0264/0265).
 				const derive = table.document?.derive;
-				if (derive !== undefined) {
-					deriveTargets.set(address, { derive, root, rowId });
+				if (derive !== undefined || managesUpdatedAt) {
+					deriveTargets.set(address, { derive, managesUpdatedAt, root, rowId });
 				}
 				return documents.open(address);
 			},

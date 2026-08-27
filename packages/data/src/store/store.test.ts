@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TableInvalidation } from '@epicenter/data/definition';
-import { defineData } from '@epicenter/data/definition';
+import { defineData, InstantString } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 import { open, openMemory } from './bun.js';
@@ -1173,5 +1173,64 @@ describe('a document commit derives its row fields (ADR-0264)', () => {
 		handle.get('meta').setAttr('title' as never, 'Second' as never);
 		expect(data.tables.notes.get(made.id).data?.preview).toBe('Second');
 		handle[Symbol.dispose]();
+	});
+});
+
+describe('the store manages instant createdAt/updatedAt (ADR-0265)', () => {
+	const withTimestamps = defineData({
+		id: 'so.epicenter.honeycrisp',
+		kv: {},
+		tables: {
+			notes: {
+				fields: {
+					title: field.string(),
+					createdAt: field.instant(),
+					updatedAt: field.instant(),
+				},
+			},
+		},
+	});
+
+	test('create stamps createdAt and updatedAt over whatever is passed', () => {
+		const data = openMemory(withTimestamps);
+		const made = data.tables.notes.create({
+			title: 'Groceries',
+			createdAt: 'not-an-instant' as never,
+			updatedAt: 'not-an-instant' as never,
+		});
+		expect(made.createdAt).not.toBe('not-an-instant');
+		expect(InstantString.is(made.createdAt)).toBe(true);
+		expect(InstantString.is(made.updatedAt)).toBe(true);
+	});
+
+	test('update moves updatedAt and leaves createdAt', () => {
+		const data = openMemory(withTimestamps);
+		const made = data.tables.notes.create({
+			title: 'Groceries',
+			createdAt: 'x' as never,
+			updatedAt: 'x' as never,
+		});
+		const updated = data.tables.notes.update(made.id, {
+			title: 'Groceries and milk',
+			updatedAt: 'stale' as never,
+		});
+		expect(updated.error).toBeNull();
+		const after = data.tables.notes.get(made.id).data;
+		expect(after?.createdAt).toBe(made.createdAt);
+		expect(after?.updatedAt).not.toBe('stale');
+		expect(
+			after !== undefined && after !== null && after.updatedAt >= made.updatedAt,
+		).toBe(true);
+	});
+
+	test('a table without instant createdAt/updatedAt is left alone', () => {
+		const plain = defineData({
+			id: 'so.epicenter.honeycrisp',
+			kv: {},
+			tables: { notes: { fields: { title: field.string() } } },
+		});
+		const data = openMemory(plain);
+		const made = data.tables.notes.create({ title: 'Groceries' });
+		expect(Object.keys(made).sort()).toEqual(['id', 'title']);
 	});
 });
