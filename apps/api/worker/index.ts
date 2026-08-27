@@ -25,6 +25,7 @@ import {
 	mountSessionApp,
 	mountStoreSyncApp,
 	mountTranscriptionApp,
+	rateLimit,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
 	resolveRequestOAuthPrincipal,
@@ -151,15 +152,27 @@ mountStoreSyncApp(app, {
 // `syncBlobStorageWithAutumn` policy and the `policies` seam it needs land on
 // `mountBlobsApp` together.
 mountBlobsApp(app, { auth: cookieOrBearer });
+// The credit balance is the primary spend gate, but chat settles AFTER the call
+// with `overageBehavior: "overflow"` (ADR-0100, the billing spec), so N concurrent
+// calls at exhaustion each run before any settles. The burn-rate cap is what makes
+// that overshoot bounded: bad debt is per-call-cost times this limit, one-time, per
+// principal. Per-isolate on Cloudflare, so approximate, which is fine for bounding
+// a one-time overshoot and is not a sustained-abuse defense.
 mountInferenceApp(app, {
 	auth: bearer,
-	policies: [chargeOpenAiCreditsWithAutumn],
+	policies: [
+		rateLimit({ requests: 120, windowSeconds: 60 }),
+		chargeOpenAiCreditsWithAutumn,
+	],
 });
 // OpenAI-compatible STT gateway (OpenAI whisper-1, house key). Metered by audio
 // duration, settled after the call (per-minute); see chargeOpenAiTranscriptionCredits.
 mountTranscriptionApp(app, {
 	auth: bearer,
-	policies: [chargeOpenAiTranscriptionCredits],
+	policies: [
+		rateLimit({ requests: 120, windowSeconds: 60 }),
+		chargeOpenAiTranscriptionCredits,
+	],
 });
 
 // Cloud-only billing data plane. Auth is bundled into the mount so the

@@ -274,7 +274,10 @@ profit $0.011. Settled on the provider's returned duration.
 ### Concurrency / bad debt
 No lock, so N concurrent calls at exhaustion can each run before any settles;
 overspend is bounded by the per-call cap times the rate-limit, one-time, and
-capped by the spend-limit. Netted on top-up, so only an abandoning user's single
+capped by the spend-limit. The rate limit is real as of ADR-0264's Phase 3:
+`rateLimit({ requests: 120, windowSeconds: 60 })` is mounted per principal on both
+Cloud gateways. It had been named as a bound here while nothing mounted one.
+Per-isolate on Cloudflare, so approximate. Netted on top-up, so only an abandoning user's single
 overshoot is real bad debt. Revisit only if measured bad debt is material.
 
 ### Stale snapshot vs a provider price rise

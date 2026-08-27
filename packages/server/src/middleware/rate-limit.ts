@@ -2,22 +2,26 @@
  * `rateLimit`: a fixed-window burn-rate cap for the inference policies seam.
  *
  * The OpenAI-compatible gateway (`mountInferenceApp`) proxies to a provider with
- * the deployment's HOUSE key, so every accepted request spends the operator's
- * money. `policies` is where a deployment gates that spend: the cloud passes its
- * Autumn credit charge, and a self-hosted instance can pass this to cap the burn
- * rate so a leaked or overused bearer cannot run the provider bill up unbounded.
- * It is the in-process backstop; the real ceiling is the hard spend limit the
- * operator sets on the provider key itself (see apps/self-host/README.md).
+ * the deployment's HOUSE key, so every accepted request spends Epicenter's money.
+ * `policies` is where a deployment gates that spend, and Cloud passes this
+ * alongside its Autumn credit charge. The credit balance is the primary gate, but
+ * chat settles AFTER the call with `overageBehavior: "overflow"`, so N concurrent
+ * calls at exhaustion each run before any settles. This cap is what makes that
+ * overshoot bounded: bad debt is per-call cost times this limit, one-time, per
+ * principal.
+ *
+ * A self-hosted instance does not use it, because an instance does not do
+ * inference at all (ADR-0264): it holds no house key and mounts no gateway.
  *
  * One counter per principal partition, keyed off `c.var.principal.id` (set by
- * the upstream auth middleware). On the single-partition instance that is one
- * global bucket; on a hosted deployment it is per principal.
+ * the upstream auth middleware), so on Cloud it is per paying principal.
  *
- * The window lives in process memory: EXACT on the blessed single-node Bun
- * instance, and per-isolate (so approximate) on Cloudflare, which is the same
- * single-node accuracy tradeoff the instance accepts everywhere. It is sized for
- * the small trusted group the instance targets, not multi-tenant scale; durable,
- * shared limiting at scale is Cloud's concern (Autumn), not this primitive.
+ * The window lives in process memory, so it is per-isolate and therefore
+ * APPROXIMATE on Cloudflare: a caller spread across isolates gets more than the
+ * nominal limit. That is acceptable for what it is used for, bounding a one-time
+ * overshoot at balance exhaustion, and it is deliberately NOT a sustained-abuse
+ * defense. Durable, shared limiting is a separate problem; do not read this as
+ * solving it.
  *
  * A denied request answers `429` in the gateway's OpenAI error envelope
  * (`{ error: { message, code } }`) with a `Retry-After` header, so the inference

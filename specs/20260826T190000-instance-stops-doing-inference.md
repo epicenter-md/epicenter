@@ -74,10 +74,15 @@ A pre-existing bug, not one the deletion introduced: `hosted.baseURL` is hardcod
 - **2.5** The picker renders a named empty state when there is no hosted transport and no custom connection, instead of a blank list whose only signal is a failed send.
 - **Evidence:** app-shell, client, vocab, constants, server, api, api-ui, and self-host all typecheck; app-shell and client suites 46/0; billing and self-host suites 49/0.
 
-### Phase 3: retire `rateLimit`
+### Phase 3: `rateLimit` moves to Cloud (DONE, inverted)
 
-- **3.1** With all four call sites gone, delete `packages/server/src/middleware/rate-limit.ts`, its test, and both barrel exports. Note in ADR-0076 that its burn-rate cap is retired because the last unmetered house key is gone.
-- **Evidence:** no consumer; both deployables typecheck.
+Planned as a deletion, since all four call sites were self-host's. Checking the billing spec first inverted it: overspend there is bounded by "the per-call cap times the rate-limit", and Cloud was never mounting one, so that bound was already untrue. Deleting the primitive would have removed the thing the allow-negative design names as one of its three bounds.
+
+- **3.1** Mounted `rateLimit({ requests: 120, windowSeconds: 60 })` on Cloud's inference and transcription gateways, ahead of the Autumn policies. Per principal.
+- **3.2** Rewrote the middleware doc for its real consumer, and replaced the "sized for a small trusted group" framing with what it now is: a bound on one-time overshoot at exhaustion, approximate on Cloudflare (per-isolate), explicitly not a sustained-abuse defense.
+- **3.3** Corrected ADR-0264's consequence, which had called it deletable.
+- **Open:** 120/60s is a starting value chosen to match what self-host used, and belongs with the other billing dials (markup, output cap, spend limit) as a value to set with real data.
+- **Evidence:** api typechecks; rate-limit test 2/0.
 
 ### Phase 4 (follow-on, separate change): move the gateways out of the library
 
@@ -90,7 +95,7 @@ With Cloud the only mount site, `mountInferenceApp` and `mountTranscriptionApp` 
 - [x] A self-host session never offers the Cloud gateway entry and never emits a bare 401 from the picker.
 - [ ] A self-hoster can chat through a device-local connection with no Epicenter server in the inference path.
 - [ ] A self-hoster can transcribe the same way, through the same connection.
-- [ ] `rateLimit` has no consumer and is deleted.
+- [x] `rateLimit` bounds Cloud's post-settle overshoot, making the billing spec's stated bound true.
 - [ ] Cloud behavior is unchanged end to end: same catalog, same metering, same credits.
 
 ## Interaction with the billing spec
