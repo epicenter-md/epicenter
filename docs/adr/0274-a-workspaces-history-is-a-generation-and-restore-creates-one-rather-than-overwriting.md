@@ -1,6 +1,7 @@
 # 0274. A workspace's history is a generation, and restore creates one rather than overwriting
 
-- **Status:** Proposed
+- **Status:** Superseded
+- **Superseded by:** [ADR-0276](0276-an-authority-holds-a-numbered-succession-of-generations-and-nothing-is-ever-overwritten.md). The proposal was right that a restore should create rather than overwrite, and wrong about where a generation lives: it becomes its own Durable Object, addressed by a number, which this record explains.
 - **Date:** 2026-08-27
 - **Would amend:** [ADR-0272](0272-restore-replaces-a-workspace-from-an-artifact-under-a-new-document-identity.md) at how the authority replaces a workspace: create and re-point, rather than overwrite and rotate.
 - **Relates:** [ADR-0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md) (the document identity this renames rather than replaces), [ADR-0225](0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (the authority's address), [ADR-0241](0241-a-store-is-truth-plus-debts-and-sql-is-a-composed-follower.md) (which reserved the destructive whole-document operation).

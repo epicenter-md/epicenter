@@ -16,6 +16,7 @@
 - **Amended by:** [ADR-0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md).
   The authority owns the workspace's current opaque document ID. A connection
   declares that ID as well as its cursor and is admitted only on equality.
+- **Amended by:** [ADR-0276](0276-an-authority-holds-a-numbered-succession-of-generations-and-nothing-is-ever-overwritten.md) at the Durable Object name. An authority is a succession of generations, so the name gains a `generations/<n>` segment and the bare name becomes a small object holding which one is current. `stores` becomes `data`.
 - **Amended by:** [ADR-0242](0242-hosted-postgres-registers-store-addresses-before-an-authority-accepts-data.md)
   (**Proposed**) at lifecycle only. An open hosted ecosystem needs an account's
   complete authority address book for hard account deletion; Postgres records
