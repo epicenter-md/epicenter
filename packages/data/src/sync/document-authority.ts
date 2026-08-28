@@ -35,11 +35,32 @@
  *
  * Writing the whole document on every update is O(document) per keystroke's
  * worth of work. A short tail of applied updates makes a write O(update), and
- * folding it into the state amortizes the cost, at the same balance point the
- * old authority used: fold when the tail outgrows the state. What is gone is
- * the DANCE. The old authority could not fold by itself, so it asked a client
- * for a snapshot and checked the offer covered a position it had sent that
- * connection. This one holds the state it is replacing and owes nobody a proof.
+ * folding it into the state amortizes the cost. What is gone is the DANCE. The
+ * old authority could not fold by itself, so it asked a client for a snapshot
+ * and checked the offer covered a position it had sent that connection. This
+ * one holds the state it is replacing and owes nobody a proof.
+ *
+ * ## Folding is asked for, not done on the way past
+ *
+ * `receive` does not fold, and that is the one thing this file learned from a
+ * design it is not otherwise related to. `7452f8d47b` added alarm-based
+ * compaction to the superseded sync rooms and wrote down why inline was wrong:
+ * it spends CPU during a disconnect, it cannot be cancelled, and there is no
+ * pre-hibernation hook to defer it to. Its answer was a Durable Object alarm
+ * thirty seconds after the last client leaves, cancelled if one reconnects,
+ * which is long enough to ride out a refresh and short enough to fire before
+ * the roughly sixty-second eviction window.
+ *
+ * So `fold()` is a verb the host calls and `shouldFold()` is this file's
+ * opinion about whether it is worth calling. The library says what is worth
+ * doing and the host says when, which is the same split ADR-0222 made for
+ * sockets.
+ *
+ * One thing that design deferred is available here for free. It refused an
+ * update-count threshold because "a threshold needs a persistent counter that
+ * resets on hibernation". This threshold is read out of storage rather than
+ * counted in memory, so it survives hibernation, eviction and a cold start
+ * without anyone maintaining it.
  */
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import * as Y from '@y/y';
@@ -87,6 +108,23 @@ export type DocumentAuthority = {
 	 * upstream sent bytes it had no business sending.
 	 */
 	hasUnresolvedDependencies(): boolean;
+	/**
+	 * Whether the tail has outgrown the state, and is worth folding at all.
+	 *
+	 * Read out of storage, so it is true of the record rather than of this
+	 * instance: a freshly woken object answers the same as the one that
+	 * hibernated. The floor is the honest asterisk on "no number to pick" —
+	 * "the tail outgrew the state" is scale-free, so on a small document it is
+	 * true on the very next update.
+	 */
+	shouldFold(): boolean;
+	/**
+	 * Replace the state with the document and forget the tail.
+	 *
+	 * Safe to call at any time and safe to call when `shouldFold()` is false;
+	 * it is only ever wasteful, never wrong.
+	 */
+	fold(): Result<void, DocumentAuthorityError>;
 	/** Total stored bytes, state and tail together. */
 	storedBytes(): number;
 	dispose(): void;
@@ -163,15 +201,32 @@ export function openDocumentAuthority({
 			if (applied.error !== null) return Err(applied.error);
 
 			return trySync({
-				try: () => {
+				try: () =>
 					sqlite.transaction(() => {
 						const seq =
 							(sqlite.all<SqliteRow & { seq: number }>(
 								'SELECT COALESCE(MAX(seq), 0) AS seq FROM _tail',
 							)[0]?.seq ?? 0) + 1;
 						appendToTail(seq, update);
+					}),
+				catch: (cause) => DocumentAuthorityError.StorageFailed({ cause }),
+			});
+		},
+
+		shouldFold() {
+			const tail = sumBytes('_tail');
+			return tail >= foldFloorBytes && tail > sumBytes('_state');
+		},
+
+		fold() {
+			return trySync({
+				try: () => {
+					const folded = new Uint8Array(Y.encodeStateAsUpdateV2(live()));
+					sqlite.transaction(() => {
+						sqlite.run('DELETE FROM _state');
+						writeState(folded);
+						sqlite.run('DELETE FROM _tail');
 					});
-					foldIfWorthIt();
 				},
 				catch: (cause) => DocumentAuthorityError.StorageFailed({ cause }),
 			});
@@ -186,25 +241,6 @@ export function openDocumentAuthority({
 			document = undefined;
 		},
 	});
-
-	/**
-	 * Replace the state with the live document and forget the tail.
-	 *
-	 * One transaction, and the order inside it is the whole safety: the new
-	 * state is written before the tail it covers is deleted, so a failure
-	 * between them leaves a state and a tail that overlap. Overlap is free,
-	 * because applying an update twice is applying it once.
-	 */
-	function foldIfWorthIt(): void {
-		const tail = sumBytes('_tail');
-		if (tail < foldFloorBytes || tail <= sumBytes('_state')) return;
-		const folded = new Uint8Array(Y.encodeStateAsUpdateV2(live()));
-		sqlite.transaction(() => {
-			sqlite.run('DELETE FROM _state');
-			writeState(folded);
-			sqlite.run('DELETE FROM _tail');
-		});
-	}
 
 	function writeState(bytes: Uint8Array): void {
 		for (const [index, chunk] of intoChunks(bytes, CHUNK_BYTES).entries()) {

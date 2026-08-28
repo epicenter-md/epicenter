@@ -167,47 +167,83 @@ describe('what survives being dropped', () => {
 	});
 });
 
-describe('folding, which needs nobody to offer anything', () => {
-	test('the tail collapses into the state once it outgrows it', () => {
-		// A floor of zero so ordinary test traffic reaches the fold. The old
-		// authority had to ASK a client for a snapshot and check the offer
-		// covered a position it had sent that connection; this one holds the
-		// state it is replacing, so it just does it.
-		const folding = open(new Database(':memory:'), 0);
+describe('folding is asked for, not done on the way past', () => {
+	/** Twenty edits, each one a separate update the authority takes. */
+	function fill(target: DocumentAuthority, count: number): Y.Doc {
 		const editor = peer();
-		write(editor, 'key0', 0);
-		expectOk(folding.receive(stepTwo(editor, folding)));
-		const afterOne = folding.storedBytes();
-
-		for (let index = 1; index < 40; index += 1) {
+		for (let index = 0; index < count; index += 1) {
 			write(editor, `key${index}`, index);
-			expectOk(folding.receive(stepTwo(editor, folding)));
+			expectOk(target.receive(stepTwo(editor, target)));
 		}
+		return editor;
+	}
 
-		const fresh = peer();
-		Y.applyUpdateV2(fresh, folding.since(Y.encodeStateVector(fresh)));
-		expect(Object.keys(attrs(fresh))).toHaveLength(40);
-		// The property, rather than only that the data survived: storage tracks
-		// the DOCUMENT, not the number of updates that built it. Forty updates
-		// past the first cost well under forty times its bytes.
-		expect(folding.storedBytes()).toBeLessThan(afterOne * 40);
+	test('receiving never folds, however much arrives', () => {
+		// The decision, asserted where it can be seen. Inline folding spends CPU
+		// while someone is typing and cannot be cancelled; `7452f8d47b` moved the
+		// superseded rooms off it for exactly that reason.
+		const authority = open(new Database(':memory:'), 0);
+		fill(authority, 1);
+		const afterOne = authority.storedBytes();
+		fill(authority, 20);
+		expect(authority.storedBytes()).toBeGreaterThan(afterOne * 10);
 	});
 
-	test('a fold does not lose what it folded, across a reopen', () => {
+	test('the tail outgrowing the state is what shouldFold reports', () => {
+		const authority = open(new Database(':memory:'), 0);
+		expect(authority.shouldFold()).toBe(false);
+		fill(authority, 5);
+		expect(authority.shouldFold()).toBe(true);
+		expectOk(authority.fold());
+		expect(authority.shouldFold()).toBe(false);
+	});
+
+	test('shouldFold is read out of storage, so a reopened authority agrees', () => {
+		// The threshold `7452f8d47b` deferred, because "a threshold needs a
+		// persistent counter that resets on hibernation". This one is derived
+		// from the record, so a woken object answers what the hibernating one
+		// would have.
+		const file2 = new Database(':memory:');
+		const first = open(file2, 0);
+		fill(first, 5);
+		expect(first.shouldFold()).toBe(true);
+		first.dispose();
+		expect(open(file2, 0).shouldFold()).toBe(true);
+	});
+
+	test('folding shrinks the record and keeps every edit', () => {
+		const authority = open(new Database(':memory:'), 0);
+		fill(authority, 30);
+		const before = authority.storedBytes();
+		expectOk(authority.fold());
+
+		expect(authority.storedBytes()).toBeLessThan(before);
+		const fresh = peer();
+		Y.applyUpdateV2(fresh, authority.since(Y.encodeStateVector(fresh)));
+		expect(Object.keys(attrs(fresh))).toHaveLength(30);
+	});
+
+	test('a fold does not lose a deletion, across a reopen', () => {
 		const file2 = new Database(':memory:');
 		const folding = open(file2, 0);
-		const editor = peer();
-		for (let index = 0; index < 20; index += 1) {
-			write(editor, `key${index}`, index);
-			expectOk(folding.receive(stepTwo(editor, folding)));
-		}
+		const editor = fill(folding, 20);
 		editor.transact(() => editor.get('notes').deleteAttr('key3'));
 		expectOk(folding.receive(stepTwo(editor, folding)));
+		expectOk(folding.fold());
 		folding.dispose();
 
 		const fresh = peer();
 		Y.applyUpdateV2(fresh, open(file2, 0).since(Y.encodeStateVector(fresh)));
 		expect(Object.keys(attrs(fresh))).toHaveLength(19);
 		expect(attrs(fresh).key3).toBeUndefined();
+	});
+
+	test('folding when there is nothing to fold is wasteful, never wrong', () => {
+		const authority = open(new Database(':memory:'), 0);
+		expectOk(authority.fold());
+		expectOk(authority.fold());
+		const fresh = peer();
+		Y.applyUpdateV2(fresh, authority.since(Y.encodeStateVector(fresh)));
+		expect(attrs(fresh)).toEqual({});
 	});
 });
