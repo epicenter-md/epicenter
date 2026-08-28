@@ -40,8 +40,33 @@ export type { OutboxEntry } from './persistence.js';
  * thing keeping a chain plural, and a state vector at the last acknowledged
  * push replaces it (`store.ts` exposes both halves already: `stateVector` and
  * `encodeStateSince`).
+ *
+ * ## Why it is not 1 yet, with a number rather than an argument
+ *
+ * It was set to 1 and the whole suite passed, which is a real result: whole
+ * state and a chain are the same mechanism and nothing depends on the chain
+ * being plural. What passing did not say is what it cost. `transport.test.ts`
+ * drives a thousand sends with no idle gap between them, and it is the one
+ * place the price is visible:
+ *
+ * ```txt
+ *   threshold 64   the file's suite passes in  7.5 s
+ *   threshold  1   the same suite takes       20   s, and one case times out
+ * ```
+ *
+ * Folding at 1 re-encodes the whole document on every acknowledgement instead
+ * of every sixty-fourth. That cost is INHERENT to storing a document as one
+ * value, not an artifact of this intermediate: the destination writes O(document)
+ * per persisted commit too. What makes it acceptable in production is the
+ * sender's one-second idle debounce, which this test deliberately does not
+ * have.
+ *
+ * So the number stays at 64 until the swap that pays for it. At 1 today the
+ * chain machinery is all still here and 1 buys none of its deletion; it is
+ * cost with the benefit still one commit away. The measurement is worth more
+ * than the intermediate was.
  */
-export const SNAPSHOT_FOLD_THRESHOLD = 1;
+export const SNAPSHOT_FOLD_THRESHOLD = 64;
 
 /**
  * The application document's name in the log.
