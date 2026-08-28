@@ -4,7 +4,7 @@ Branded types (also called nominal types or tagged types) add type safety to pri
 
 The problem: TypeScript's structural typing means you need type assertions (`as UserId`) to create branded values. These assertions scattered throughout a codebase become maintenance nightmares.
 
-The solution: **declare the arktype validator first, derive the type from it, and (optionally) expose an `as*` helper that is the single place `as UserId` appears in the codebase.**
+The solution: **declare the type first, annotate the arktype validator to it, and (optionally) expose an `as*` helper that is the single place `as UserId` appears in the codebase.**
 
 ## The Canonical Three-Part Pattern
 
@@ -12,16 +12,16 @@ The solution: **declare the arktype validator first, derive the type from it, an
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
-// 1. VALIDATOR: declared first, single source of truth.
-//    Use inside arktype schemas (`id: UserId`) and to validate
-//    `unknown` boundary values.
-export const UserId = type('string').as<string & Brand<'UserId'>>();
-
-// 2. TYPE: derived from the validator via `typeof X.infer`.
+// 1. TYPE: declared first, the single place the brand is written.
 //    TypeScript keeps value space and type space separate, so the
-//    same identifier `UserId` is the validator in value positions
-//    and the inferred branded type in type positions.
-export type UserId = typeof UserId.infer;
+//    same identifier `UserId` is the branded type in type positions
+//    and the validator in value positions.
+export type UserId = string & Brand<'UserId'>;
+
+// 2. VALIDATOR: annotated to the type, so the schema conforms to
+//    the brand. Use inside arktype schemas (`id: UserId`) and to
+//    validate `unknown` boundary values.
+export const UserId = type('string').as<UserId>();
 
 // 3. AS HELPER (optional): syntactic sugar for `value as UserId`.
 //    The constrained `string` parameter is what earns it over a raw
@@ -32,9 +32,11 @@ export const asUserId = (value: string): UserId => value as UserId;
 
 That is it. `UserId` is the validator and the type. `asUserId` is the only spot the `as UserId` assertion lives.
 
-## Why Validator First
+## Why Type First
 
-Declaring the validator first and deriving the type via `typeof UserId.infer` makes the validator the single source of truth. If the brand changes, or the underlying primitive switches from `string` to `Id`, you update one place and the type follows. Declaring the type first and re-passing it into `type('string').as<UserId>()` works but encodes the same shape twice and risks drift.
+The brand is written once, in the declaration a reader looks at, and the name survives into every hover and error message downstream. Deriving with `typeof UserId.infer` resolves through arktype's distillation and prints the expanded intersection instead of the alias. [Same Name for Type and Value](./same-name-for-type-and-value.md) has the measured comparison.
+
+Object schemas are the other case. Their types are genuinely computed, so they keep `typeof X.infer`: you cannot state a twelve-field shape without writing it twice. A branded primitive has nothing to derive.
 
 ## Why an `as*` Helper
 
@@ -83,8 +85,8 @@ The three-part pattern flexes by what kind of value the third part needs to prod
 
 Examples in the repo:
 
-- **Workspace IDs minted fresh** (`SavedTabId`, `ConversationId`, `FileId`): validator + type + `generateSavedTabId`. See [Three Parts, One ID](./three-part-branded-id-pattern.md).
-- **Auth and owner IDs from typed strings** (`UserId`, `OwnerId`): validator + type + `asUserId` or `asOwnerId`. See `packages/auth/src/auth-types.ts` and `packages/identity/src/identity.ts`.
+- **Workspace IDs minted fresh** (`SavedTabId`, `ConversationId`, `FileId`): type + validator + `generateSavedTabId`. See [Three Parts, One ID](./three-part-branded-id-pattern.md).
+- **Auth and owner IDs from typed strings** (`UserId`, `OwnerId`): type + validator + `asUserId` or `asOwnerId`. See `packages/auth/src/auth-types.ts` and `packages/identity/src/identity.ts`.
 - **Path types** (`AbsolutePath`): often just the type alias, because callers resolve through a `path.resolve()` choke point. See [Absolute Path Type Safety](./absolute-path-type-safety.md).
 
 ## Why PascalCase
@@ -102,10 +104,10 @@ The validator is already the place to add runtime checks. If you want `UserId` t
 ```typescript
 export const UserId = type('string > 0').narrow((s, ctx) =>
   s.includes(':') ? ctx.mustBe('a colon-free user id') : true,
-).as<string & Brand<'UserId'>>();
+).as<UserId>();
 ```
 
-Every schema that composes `UserId` and every `UserId.assert(...)` call inherits the check. The `asUserId` helper stays a typed cast because its inputs are already trusted strings.
+Every schema that composes `UserId` and every `UserId.assert(...)` call inherits the check. The `asUserId` helper stays a typed cast because its inputs are already trusted strings, and it must: `as*` means free and unchecked. A helper that grows a runtime check has stopped being an `as*` and needs a different name.
 
 ## When to Use Branded Types
 
@@ -124,8 +126,8 @@ Not worth it for:
 
 ## Summary
 
-1. **Declare the validator first**: `export const UserId = type('string').as<string & Brand<'UserId'>>()`
-2. **Derive the type via `.infer`**: `export type UserId = typeof UserId.infer`
+1. **Declare the type first**: `export type UserId = string & Brand<'UserId'>`
+2. **Annotate the validator to it**: `export const UserId = type('string').as<UserId>()`
 3. **Add an `asXxx` helper if external strings flow in**: `export const asUserId = (value: string): UserId => value as UserId`
 4. **Never write `as UserId` anywhere else**: the helper (or a `generate*` wrapper) is the only place.
 

@@ -27,6 +27,37 @@ Hover over `TabCompositeId` anywhere in the codebase and you'll see that doc com
 
 This matters more than it sounds. In a large codebase, discoverability is everything. When a colleague sees `windowId: WindowCompositeId` in a function signature, they hover it, they understand what it is, and they know what to pass. No grepping, no documentation site, no Slack messages.
 
+## Declaration Order Decides Whether the Name Survives
+
+The JSDoc merges either way. The name does not. Write the same brand both ways and hover them:
+
+```typescript
+// type first
+export type AlphaId = string & Brand<'AlphaId'>;
+export const AlphaId = type('string').as<AlphaId>();
+//           ^ const AlphaId: Type<AlphaId, {}>
+
+// validator first
+export const BetaId = type('string').as<string & Brand<'BetaId'>>();
+export type BetaId = typeof BetaId.infer;
+//           ^ const BetaId: Type<string & Brand<"BetaId">, {}>
+```
+
+In a TypeScript type position both expand to `string & Brand<…>`, so the difference is confined to the value side. That is also the side that composes, which is where it stops being cosmetic:
+
+```typescript
+export const Row = type({ alpha: AlphaId, beta: BetaId });
+
+// const Row: Type<{
+//     alpha: AlphaId;                    ← type first keeps the name
+//     beta: string & Brand<"BetaId">;    ← validator first expands
+// }, {}>
+```
+
+Every schema built from the brand inherits whichever one you chose, and so does every error message about that schema. At one field it is a nit. At a twelve-field row it decides whether the inferred type is readable.
+
+The often-cited argument for the other order, that deriving avoids writing the shape twice, does not hold: both forms spell `string` once in `type('string')` and once in the brand.
+
 ## The Naming Tax
 
 Zod's API nudges you into separate names:
@@ -93,15 +124,15 @@ We use this across the codebase for different purposes.
 
 ### Shadowed type with a validator and an `as*` helper
 
-The default form when the brand flows through an arktype schema. The validator is declared first and is the schema-composition value; the type is derived from it; an `as*` helper provides syntactic sugar for the typed cast at trusted internal call sites:
+The default form when the brand flows through an arktype schema. The type is declared first, the validator is annotated to it and is the schema-composition value, and an `as*` helper provides syntactic sugar for the typed cast at trusted internal call sites:
 
 ```typescript
 /**
  * Signed-in account identifier. Issued by Better Auth, opaque to clients.
  * The brand prevents accidental cross-assignment with other id-shaped strings.
  */
-export const UserId = type('string').as<string & Brand<'UserId'>>();
-export type UserId = typeof UserId.infer;
+export type UserId = string & Brand<'UserId'>;
+export const UserId = type('string').as<UserId>();
 
 /**
  * Syntactic sugar for `value as UserId`. The constrained `string` parameter
@@ -111,7 +142,7 @@ export type UserId = typeof UserId.infer;
 export const asUserId = (value: string): UserId => value as UserId;
 ```
 
-`UserId` (the const) is the arktype validator, used directly inside schemas (`id: UserId`). `UserId` (the type) is the inferred branded string. `asUserId` covers trusted-source branding without scattering raw `as` casts. The same JSDoc on the validator surfaces in every position: schema field, function parameter, import autocomplete.
+`UserId` (the const) is the arktype validator, used directly inside schemas (`id: UserId`). `UserId` (the type) is the branded string. `asUserId` covers trusted-source branding without scattering raw `as` casts. The same JSDoc surfaces in every position: schema field, function parameter, import autocomplete.
 
 This is the preferred shape for any branded primitive that participates in arktype schemas. The two earlier variants below are still appropriate when validation-time composition is not part of the picture.
 
@@ -215,7 +246,7 @@ export const DateTimeString = {
 
 | Variant                  | Type Side                                | Value Side                                         | Third Part                           |
 | ------------------------ | ---------------------------------------- | -------------------------------------------------- | ------------------------------------ |
-| Validator + `as*` helper | `type UserId = typeof UserId.infer`      | `const UserId = type('string').as<…>()`            | `const asUserId = (v: string) => v as UserId` |
+| Validator + `as*` helper | `type UserId = string & Brand<'UserId'>` | `const UserId = type('string').as<UserId>()`       | `const asUserId = (v: string) => v as UserId` |
 | Validator + constructor  | `type TabCompositeId = ... & Brand<...>` | `const TabCompositeId = type('string').as<…>()`    | `function createTabCompositeId(...)` |
 | Validator + generator    | `type SavedTabId = Id & Brand<…>`        | `const SavedTabId = type('string').as<…>()`        | `const generateSavedTabId = () => …` |
 | Constructor function     | `type Id = string & Brand<'Id'>`         | `function Id(s: string): Id`                       | Same as value side (legacy)          |

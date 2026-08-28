@@ -31,7 +31,7 @@
  * deliberately does not exist as an HTTP surface.
  */
 
-import { Principal } from '@epicenter/auth';
+import { asPrincipalId } from '@epicenter/identity';
 import {
 	blobPrincipalPrefix,
 	type CloudEnv,
@@ -100,7 +100,10 @@ const requireFreshCookieSession: MiddlewareHandler<CloudEnv> =
 		if (Date.now() - createdAt >= FRESH_AGE_SECONDS * 1000) {
 			return c.json(AccountDeletionError.SessionNotFresh(), 403);
 		}
-		c.set('principal', Principal.assert(session.user));
+		c.set('principal', {
+			id: asPrincipalId(session.user.id),
+			email: session.user.email,
+		});
 		return next();
 	});
 

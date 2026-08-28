@@ -20,7 +20,8 @@
  * JWKS; an instance closes over its env-token resolver instead).
  */
 
-import { Principal } from '@epicenter/auth';
+import type { Principal } from '@epicenter/auth';
+import { asPrincipalId } from '@epicenter/identity';
 import { verifyJwsAccessToken } from 'better-auth/oauth2';
 import { eq } from 'drizzle-orm';
 import type { Context, MiddlewareHandler, Next } from 'hono';
@@ -104,7 +105,7 @@ export async function resolveRequestOAuthPrincipal(
 	}
 	if (!user) return OAuthError.InvalidToken();
 
-	return Ok(Principal.assert(user));
+	return Ok({ id: asPrincipalId(user.id), email: user.email });
 }
 
 /**
@@ -138,7 +139,10 @@ export function requireCookieOrBearerPrincipal(
 			headers: c.req.raw.headers,
 		});
 		if (session) {
-			c.set('principal', Principal.assert(session.user));
+			c.set('principal', {
+				id: asPrincipalId(session.user.id),
+				email: session.user.email,
+			});
 			return next();
 		}
 		const bearer = parseBearer(c.req.header('authorization') ?? null);
