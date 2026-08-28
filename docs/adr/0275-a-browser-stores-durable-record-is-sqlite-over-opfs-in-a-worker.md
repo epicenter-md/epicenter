@@ -86,31 +86,48 @@ Durability was measured by writing a row, closing the persistent context
 entirely, relaunching it against the same profile, and finding the row still
 there.
 
-## The one fact this record does not have
+## Persistence is denied, and the projection is load-bearing because of it
 
-`persist()` returned false on both engines, in a headless automation profile
-with no engagement history. That is the expected answer there and it says
-nothing about a packaged application, which browsers grant persistence to on
-engagement or installed-app heuristics. It is one line to check in a real Tauri
-window and it has not been checked.
-
-Its consequence is bounded, and both branches are acceptable:
+Measured in a real Tauri window, not by proxy. `so.epicenter.dev`, WKWebView,
+an engaged profile that already held 400 KB at the origin:
 
 ```txt
-  granted   OPFS is exempt from reclamation.
-            `~/Epicenter` stays a pure projection and `rm -rf` on it
-            loses nothing, exactly as ADR-0271 says.
+  origin                        http://127.0.0.1:39131   a compiled constant
+  navigator.storage.persist()   false
+  navigator.storage.persisted() false, before and after the request
+  quota                         20.6 GB
 
-  denied    a record can be reclaimed under storage pressure.
-            the projection is then also the recovery path, through the
-            restore ADR-0272 already defines, and that promotion must be
-            said out loud rather than discovered: a person deleting
-            `~/Epicenter` would be removing a safety net nobody told them
-            about.
+  createSyncAccessHandle        undefined  on the main thread
+                                function   in a dedicated worker
+  OPFS write through the pool   ok
+  survives quit and relaunch    yes, 0 -> 9 bytes read back on the next launch
 ```
 
-Check it before the switch, and if it is denied, record the promotion in
-ADR-0271 rather than leaving the folder quietly load-bearing.
+The relaunch line is the one that matters most and it is the one that was
+easiest to assume rather than check: the app was fully quit, not reloaded, and
+the second launch found the bytes it wrote in the first.
+
+Two things follow.
+
+**The record is durable in practice, but evictable in principle.** Nothing
+observed reclaimed it. `persist()` being refused means the browser has not
+promised it will not, and on WebKit that refusal is the standing answer rather
+than a not-yet: it is not a permission a loopback origin earns with engagement.
+Planning around a later grant would be planning around a heuristic this engine
+does not run.
+
+**So `~/Epicenter` is promoted, and ADR-0271 says so.** The folder is still
+build output and still one-way. What changes is that it is no longer only a
+convenience: it is the copy that survives a reclamation the store cannot
+prevent, restorable through ADR-0272. A person deleting it should be told what
+they are deleting, and a record that left this implicit would have made the
+folder quietly load-bearing.
+
+The origin being a compiled constant, `39_130` in release and `39_131` in
+development, is what makes any of this hold. Storage is keyed by origin, so an
+ephemeral port would have handed every launch a different store. That was
+already true of the IndexedDB record this replaces; it is written down here
+because it is a precondition of the medium rather than an incidental detail.
 
 ## Consequences
 
