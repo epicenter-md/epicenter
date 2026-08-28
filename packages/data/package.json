@@ -9,7 +9,7 @@
 		"./artifact": "./src/artifact/index.ts",
 		"./artifact/format": "./src/artifact/format.ts",
 		"./artifact/protocol": "./src/artifact/protocol.ts",
-		"./artifact/webview": "./src/artifact/webview.ts",
+		"./artifact/mirror": "./src/artifact/mirror.ts",
 		"./engine": "./src/engine.ts",
 		"./memory": "./src/store/memory.ts",
 		"./browser": "./src/store/browser.ts",

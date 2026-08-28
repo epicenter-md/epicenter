@@ -6,7 +6,7 @@ import {
 	openAccount,
 	openDevice,
 } from '@epicenter/data/browser';
-import { attachMirror } from '@epicenter/data/artifact/webview';
+import { attachMirror } from '@epicenter/data/artifact/mirror';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
 import {

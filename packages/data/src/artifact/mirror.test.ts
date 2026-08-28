@@ -14,8 +14,12 @@
 import { describe, expect, test } from 'bun:test';
 import { defineData, field } from '@epicenter/data/definition';
 import { openMemory } from '../store/memory.js';
-import { attachMirror } from './mirror.js';
-import { type MirrorSink, MirrorSinkError } from './webview.js';
+import {
+	attachMirror,
+	type MirrorSink,
+	MirrorSinkError,
+} from './mirror.js';
+
 
 type MetaRoot = {
 	getAttr(key: string): unknown;

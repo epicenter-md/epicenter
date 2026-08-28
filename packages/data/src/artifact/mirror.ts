@@ -30,6 +30,22 @@
  * from the set of things produced; under a manifest, absence of contents means
  * "leave it alone" and only absence from the manifest means "it is gone."
  *
+ * ## How a pass reaches the folder
+ *
+ * A same-origin request on the trusted Epicenter origin, which needs no
+ * capability grant. The host declares its route from `MIRROR_PATH` and this
+ * builds its URL from the same constant, so the two cannot drift, and the
+ * body's shape belongs to `./protocol.js`, which both ends read.
+ *
+ * Batches exist because WebKit, the WebView on macOS, does not support a
+ * streaming request body (`duplex: 'half'`); a bounded batch is the same
+ * design with a ceiling on how much is buffered at once.
+ *
+ * The send is deliberately thin. It does not retry, queue, or remember: the
+ * mirror is derived from a store that already persisted the commit, so a batch
+ * that failed is re-rendered by the next commit or the next boot, and a retry
+ * queue here would be a second durability story competing with the real one.
+ *
  * ## Why it renders everything rather than what changed
  *
  * A per-row renderer is only as correct as its change signal is complete, and
@@ -47,7 +63,9 @@
  * lose a deletion or miss a new row, because the manifest is enumerated from
  * current state and depends on no signal.
  */
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import type { DataDefinition } from '../definition/index.js';
 import { rowPath } from './layout.js';
@@ -56,8 +74,89 @@ import {
 	type RenderError,
 	renderArtifact,
 } from './render.js';
-import { type MirrorPlace, mirrorLine } from './protocol.js';
-import { createMirrorSink, type MirrorSink } from './webview.js';
+import { MIRROR_PATH, type MirrorPlace, mirrorLine } from './protocol.js';
+
+export const MirrorSinkError = defineErrors({
+	/**
+	 * The host refused or could not write. The folder is a convenience over a
+	 * filesystem that may be full, read-only, or on a drive someone unplugged;
+	 * the store is unaffected, so this is reported and never thrown.
+	 */
+	MirrorSendFailed: ({
+		status,
+		cause,
+	}: { status?: number; cause?: unknown }) => ({
+		message:
+			status === undefined
+				? 'The mirror could not reach the host'
+				: `The mirror was refused with ${status}`,
+		status,
+		cause,
+	}),
+});
+export type MirrorSinkError = InferErrors<typeof MirrorSinkError>;
+
+/** The absolute same-origin URL one place's folder is written through. */
+function mirrorFolderUrl({
+	place,
+	databaseId,
+}: {
+	place: MirrorPlace;
+	databaseId: string;
+}): string {
+	return `${MIRROR_PATH}/${encodeURIComponent(place)}/${encodeURIComponent(databaseId)}`;
+}
+
+export type MirrorSink = {
+	/**
+	 * Send one batch of a pass.
+	 *
+	 * The batch containing the manifest line is the last one, and it is what
+	 * tells the host the pass is complete. Nothing else distinguishes batches.
+	 */
+	send(ndjson: string): Promise<Result<void, MirrorSinkError>>;
+};
+
+/**
+ * The sink one place's folder is written through.
+ *
+ * `fetch` is injected so a test drives this without a host and without a
+ * network, which is the whole of what makes the caller testable.
+ */
+export function createMirrorSink({
+	place,
+	databaseId,
+	fetch: httpFetch = globalThis.fetch,
+}: {
+	place: MirrorPlace;
+	databaseId: string;
+	fetch?: typeof globalThis.fetch;
+}): MirrorSink {
+	const url = mirrorFolderUrl({ place, databaseId });
+	return {
+		async send(ndjson) {
+			const { data: response, error } = await tryAsync({
+				try: () =>
+					httpFetch(url, {
+						method: 'PUT',
+						body: ndjson,
+						// Same-origin and refusing a redirect, for the same reason the
+						// blob adapter does: this carries a person's notes to a loopback
+						// origin and must not follow one anywhere else.
+						credentials: 'same-origin',
+						redirect: 'error',
+						headers: { 'content-type': 'application/x-ndjson' },
+					}),
+				catch: (cause) => MirrorSinkError.MirrorSendFailed({ cause }),
+			});
+			if (error !== null) return Err(error);
+			if (!response.ok) {
+				return MirrorSinkError.MirrorSendFailed({ status: response.status });
+			}
+			return Ok(undefined);
+		},
+	};
+}
 
 /** How long the store has to stay quiet before a pass runs. */
 const IDLE_MS = 400;
@@ -204,3 +303,8 @@ export function attachMirror({
 		},
 	};
 }
+
+// An application needs the verb and the word for which folder it is writing.
+// The wire format itself is the host's business and this package's, and both
+// read it from `./protocol.js` directly.
+export type { MirrorPlace } from './protocol.js';
