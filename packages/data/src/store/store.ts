@@ -25,6 +25,7 @@ import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 import {
 	createAppDocument,
+	createRow,
 	deleteRow,
 	hasRow,
 	kvRoot,
@@ -32,7 +33,7 @@ import {
 	readRow,
 	storedTableNames,
 	tableRoot,
-	writeRow,
+	updateRow,
 } from './document.js';
 import {
 	createDocumentEngine,
@@ -983,10 +984,7 @@ function overSqlite<TDatabase extends DataDefinition>(
 export function createLocalStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
 ): DataOf<TDatabase, LocalStore> {
-	const { store, view } = createStoreEngine(
-		overSqlite(options, false),
-		'none',
-	);
+	const { store, view } = createStoreEngine(overSqlite(options, false), 'none');
 	// Through `unknown` deliberately: comparing the untyped view with
 	// `DataView<TDatabase>` re-enters the per-field descriptor instantiation
 	// and exceeds the depth limit. The runtime value is the same object either
@@ -1168,7 +1166,12 @@ function createStoreEngine(
 				}
 			}
 			if (!changed) return;
-			commit(() => writeRow(target.root, target.rowId, patch as JsonObject));
+			// `updateRow`, never `createRow`: a derive fires when a row's DOCUMENT
+			// commits, and on a device whose row was deleted elsewhere a minting
+			// write would bring it back as new data nothing can refuse
+			// (`evidence/invariants.test.ts`). A derive for a row that is gone is
+			// simply dropped.
+			commit(() => updateRow(target.root, target.rowId, patch as JsonObject));
 		};
 	}
 
@@ -1689,7 +1692,7 @@ function createStoreEngine(
 				assertUsable();
 				const rowId = mintRowId();
 				const at = stamps('create');
-				commit(() => writeRow(root, rowId, { ...fields, ...at }));
+				commit(() => createRow(root, rowId, { ...fields, ...at }));
 				return { id: rowId, ...fields, ...at };
 			},
 			get(rowId: string): Result<Row | undefined, NonconformingRow> {
@@ -1700,10 +1703,18 @@ function createStoreEngine(
 			},
 			update(rowId: string, fields: JsonObject): Result<void, UpdateRowError> {
 				assertUsable();
-				if (!hasRow(root, rowId)) {
-					return StoreError.RowAbsent({ table: tableName, rowId });
-				}
-				commit(() => writeRow(root, rowId, { ...fields, ...stamps('update') }));
+				// One lookup, not two. This used to ask `hasRow` and then write
+				// through a function that would have minted the row had the answer
+				// changed in between; `updateRow` answers whether it found one, so
+				// the check and the write are the same read.
+				let written = false;
+				commit(() => {
+					written = updateRow(root, rowId, {
+						...fields,
+						...stamps('update'),
+					});
+				});
+				if (!written) return StoreError.RowAbsent({ table: tableName, rowId });
 				return Ok(undefined);
 			},
 			delete(rowId: string): void {

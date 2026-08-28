@@ -103,10 +103,26 @@ export function kvRoot(document: Y.Doc): Y.Type {
  * attribute keys unchanged. So a misspelled row id costs nothing here, while a
  * misspelled table name would cost a permanent root.
  */
-function rowType(root: Y.Type, rowId: string): Y.Type | undefined {
+function rowType(root: Y.Type, rowId: string): RowType | undefined {
+	// The one cast in this file, and the reason it cannot be typed away. A
+	// `DeltaConf`'s `attrs` values must be `Fingerprintable`, and a nested
+	// `Y.Type` is not one, so the table root's shape — attributes that are
+	// themselves types — is not expressible in the library's attribute typing.
+	// A row's shape IS expressible, which is why `RowType` exists and why
+	// everything downstream of here needs no cast at all.
 	const value = root.getAttr(rowId as never) as unknown;
-	return value instanceof Y.Type ? value : undefined;
+	return value instanceof Y.Type ? (value as RowType) : undefined;
 }
+
+/**
+ * One row's own type: its attributes are the declared fields, which are JSON.
+ *
+ * Declared so that reading and writing a field is typed rather than cast. The
+ * `as never` this replaces was not defensive, it was the default `DConf = any`
+ * collapsing `keyof` to nothing, so every field access had to lie to the
+ * compiler to say anything at all.
+ */
+export type RowType = Y.Type<{ attrs: Record<string, JsonValue> }>;
 
 /** Whether this table holds a row at this address. */
 export function hasRow(root: Y.Type, rowId: string): boolean {
@@ -126,10 +142,10 @@ export function readRow(root: Y.Type, rowId: string): JsonObject | undefined {
 	const row = rowType(root, rowId);
 	if (row === undefined) return undefined;
 	const payload: JsonObject = {};
-	for (const key of row.attrKeys()) {
-		const name = key as string;
+	for (const name of row.attrKeys()) {
 		if (name.startsWith(RESERVED_ATTRIBUTE_PREFIX)) continue;
-		payload[name] = row.getAttr(name as never) as JsonValue;
+		const value = row.getAttr(name);
+		if (value !== undefined) payload[name] = value;
 	}
 	return payload;
 }
@@ -170,25 +186,76 @@ export function listRowIds(root: Y.Type): string[] {
  * never used; `create` mints an id nothing has ever held, and `update` refuses
  * an address holding no row.
  */
-export function writeRow(
+export function createRow(
 	root: Y.Type,
 	rowId: string,
 	fields: JsonObject,
 ): void {
+	refuseReservedFields(fields);
+	const row = rowType(root, rowId) ?? mintRow(root, rowId);
+	fill(row, fields);
+}
+
+/**
+ * Write fields onto a row that already exists. Returns whether one did.
+ *
+ * The counterpart to `createRow`, and the whole reason they are two functions:
+ * this one CANNOT bring a row into existence. Minting on a missing row is
+ * correct for a create and wrong for everything else, and the case that proves
+ * it is a derive. `deriveOnCommit` writes `updatedAt` onto a row whenever its
+ * document commits, so a device editing the body of a note deleted elsewhere
+ * would mint a NEW nested type at the same key — and a new type is new data,
+ * not a revival, so nothing in Yjs can refuse it
+ * (`evidence/invariants.test.ts`, "re-minting the type after the deletion
+ * arrived DOES bring the row back").
+ *
+ * That resurrection is what `DocumentError.DocumentRetired` and the durable
+ * `_tombstones` relation exist to keep unreachable. Splitting the mint out
+ * makes it unreachable by construction instead, which is cheaper than
+ * remembering every address that ever died.
+ */
+export function updateRow(
+	root: Y.Type,
+	rowId: string,
+	fields: JsonObject,
+): boolean {
+	refuseReservedFields(fields);
+	const row = rowType(root, rowId);
+	if (row === undefined) return false;
+	fill(row, fields);
+	return true;
+}
+
+/**
+ * The one place a row comes into existence.
+ *
+ * A nested type at a chosen key is addressed by its struct id, so two devices
+ * minting one at the same key converge by last-writer-wins and one device's
+ * subtree is lost (`evidence/invariants.test.ts`). What makes that unreachable
+ * is not this function: it is that row ids are MINTED rather than chosen
+ * (ADR-0216), so two devices never independently mint the same key. Written
+ * down here because this is the line that would be unsafe if that ever stopped
+ * being true.
+ */
+function mintRow(root: Y.Type, rowId: string): RowType {
+	const row = new Y.Type() as RowType;
+	root.setAttr(rowId as never, row as never);
+	return row;
+}
+
+function fill(row: RowType, fields: JsonObject): void {
+	for (const [name, value] of Object.entries(fields)) {
+		row.setAttr(name, value as JsonValue);
+	}
+}
+
+function refuseReservedFields(fields: JsonObject): void {
 	for (const name of Object.keys(fields)) {
 		if (name.startsWith(RESERVED_ATTRIBUTE_PREFIX)) {
 			throw new TypeError(
 				`Field '${name}' is reserved for the row store's internal attributes`,
 			);
 		}
-	}
-	let row = rowType(root, rowId);
-	if (row === undefined) {
-		row = new Y.Type();
-		root.setAttr(rowId as never, row as never);
-	}
-	for (const [name, value] of Object.entries(fields)) {
-		row.setAttr(name as never, value as never);
 	}
 }
 

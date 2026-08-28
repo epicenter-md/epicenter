@@ -23,13 +23,14 @@ import 'fake-indexeddb/auto';
 import { installTestLocks } from './test-locks.js';
 
 installTestLocks();
+
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 
 import { openIdbBacking } from './browser.js';
-import { readRow, tableRoot, writeRow } from './document.js';
+import { createRow, readRow, tableRoot } from './document.js';
 import { APP_DOCUMENT, createSqliteDurablePort, replay } from './log.js';
 import type { DurableOp, DurablePort, DurableSnapshot } from './persistence.js';
 
@@ -108,7 +109,7 @@ beforeEach(() => {
 function update(text: string): Uint8Array {
 	const doc = new Y.Doc({ gc: true });
 	const before = Y.encodeStateVector(doc);
-	writeRow(tableRoot(doc, 'marks'), 'only', { value: text });
+	createRow(tableRoot(doc, 'marks'), 'only', { value: text });
 	const bytes = Y.encodeStateAsUpdateV2(doc, before);
 	doc.destroy();
 	return new Uint8Array(bytes);
@@ -128,7 +129,7 @@ function chain(count: number): Uint8Array[] {
 	const updates: Uint8Array[] = [];
 	let since = Y.encodeStateVector(doc);
 	for (let index = 0; index < count; index += 1) {
-		writeRow(root, 'only', { value: `v${index}` });
+		createRow(root, 'only', { value: `v${index}` });
 		updates.push(new Uint8Array(Y.encodeStateAsUpdateV2(doc, since)));
 		since = Y.encodeStateVector(doc);
 	}
@@ -227,8 +228,12 @@ for (const engine of ENGINES) {
 			const record = await engine.create(`reack-${counter}`);
 			const only = append(APP_DOCUMENT, 'a');
 			await record.commit([only]);
-			await record.commit([{ kind: 'ack', throughId: only.id, authoritySeq: 3 }]);
-			await record.commit([{ kind: 'ack', throughId: only.id, authoritySeq: 8 }]);
+			await record.commit([
+				{ kind: 'ack', throughId: only.id, authoritySeq: 3 },
+			]);
+			await record.commit([
+				{ kind: 'ack', throughId: only.id, authoritySeq: 8 },
+			]);
 
 			const { loaded } = await record.reopen();
 			expect(loaded.outbox).toEqual([]);

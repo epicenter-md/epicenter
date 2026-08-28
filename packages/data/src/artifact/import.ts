@@ -19,9 +19,10 @@
  * replaces a workspace, so a file it could not read is a refusal rather than a
  * row quietly left out.
  */
+
+import * as Y from '@y/y';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import * as Y from '@y/y';
 
 import {
 	type DataDefinition,
@@ -32,11 +33,11 @@ import {
 } from '../definition/index.js';
 import {
 	createAppDocument,
+	createRow,
 	kvRoot,
 	tableRoot,
-	writeRow,
 } from '../store/document.js';
-import { encodeEnvelope, type EnvelopeSection } from '../store/envelope.js';
+import { type EnvelopeSection, encodeEnvelope } from '../store/envelope.js';
 import { APP_DOCUMENT } from '../store/log.js';
 import { parseRowFile } from './frontmatter.js';
 import { parseRowPath } from './layout.js';
@@ -76,7 +77,11 @@ export const ImportError = defineErrors({
 		table,
 		rowId,
 		cause,
-	}: { table: string; rowId: string; cause: unknown }) => ({
+	}: {
+		table: string;
+		rowId: string;
+		cause: unknown;
+	}) => ({
 		message: `The body of '${table}/${rowId}.md' could not be deserialized`,
 		table,
 		rowId,
@@ -138,7 +143,7 @@ export function readArtifact(
 			}
 			try {
 				app.transact(() => {
-					writeRow(tableRoot(app, at.table), at.rowId, row.fields);
+					createRow(tableRoot(app, at.table), at.rowId, row.fields);
 				});
 			} catch (cause) {
 				return ImportError.MalformedFile({
