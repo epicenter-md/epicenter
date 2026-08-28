@@ -12,13 +12,14 @@ import type { Brand } from 'wellcrafted/brand';
  * The instance constant's bytes are pinned. Changing them changes HKDF labels,
  * R2 prefixes, Durable Object names, and IndexedDB keys.
  *
- * The validator is declared first; the type is derived from it via `.infer`
- * so schema and type stay in lockstep under one PascalCase name. Use
- * {@link PrincipalId} directly inside schemas (`principalId: PrincipalId`); at
- * trusted call sites brand a known `string` via {@link asPrincipalId}.
+ * The type is declared first and the validator is annotated to it, so the brand
+ * is written once and the schema conforms to it rather than the reverse. Both
+ * carry one PascalCase name. Use {@link PrincipalId} directly inside schemas
+ * (`principalId: PrincipalId`); at trusted call sites brand a known `string`
+ * via {@link asPrincipalId}.
  */
-export const PrincipalId = type('string').as<string & Brand<'PrincipalId'>>();
-export type PrincipalId = typeof PrincipalId.infer;
+export type PrincipalId = string & Brand<'PrincipalId'>;
+export const PrincipalId = type('string').as<PrincipalId>();
 /**
  * Syntactic sugar for `value as PrincipalId`. The function body is a single typed
  * cast; the constrained `string` parameter is what earns it over a raw `as`
