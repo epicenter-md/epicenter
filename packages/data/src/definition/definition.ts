@@ -206,6 +206,15 @@ export type ParsedTable = {
 	fields: ReadonlyMap<string, DataField>;
 	/** The application-owned document behaviors, carried unread (ADR-0264). */
 	document?: DocumentDeclaration;
+	/**
+	 * Which timestamps the store owns for this table (ADR-0265).
+	 *
+	 * Resolved here because this is where the field kinds are known. The rule is
+	 * "an instant field named `createdAt` or `updatedAt`", and a store that
+	 * re-derived it from `fields` would be a second place the rule is written
+	 * down, free to disagree with this one.
+	 */
+	manages: { readonly createdAt: boolean; readonly updatedAt: boolean };
 	conformance(payload: JsonObject): Conformance;
 };
 
@@ -349,6 +358,10 @@ function compileTable(tableName: string, fields: unknown): Result<ParsedTable, D
 	return Ok(Object.freeze({
 		name: tableName,
 		fields: compiled,
+		manages: {
+			createdAt: compiled.get('createdAt')?.kind === 'instant',
+			updatedAt: compiled.get('updatedAt')?.kind === 'instant',
+		},
 		conformance(payload) {
 			const conforming: JsonObject = {};
 			const issues: ConformanceIssue[] = [];

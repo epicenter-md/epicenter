@@ -1586,19 +1586,17 @@ function createStoreEngine(
 			rowId,
 		});
 
-		// Store-managed timestamps (ADR-0265): an instant field named `createdAt`
-		// or `updatedAt` is owned by the store. It stamps `createdAt` once at
+		// Store-managed timestamps (ADR-0265). Which ones is the declaration's
+		// answer, resolved at compile: the store stamps `createdAt` once at
 		// create and `updatedAt` on every commit that touches the row, so an
-		// application never writes them by hand. The instant-typed requirement is
-		// what keeps an ordinary field that happens to share the name unmanaged.
-		const managesCreatedAt = table.fields.get('createdAt')?.kind === 'instant';
-		const managesUpdatedAt = table.fields.get('updatedAt')?.kind === 'instant';
+		// application never writes them by hand.
+		const manages = table.manages;
 		function stamps(mode: 'create' | 'update'): JsonObject {
-			if (!managesUpdatedAt && !managesCreatedAt) return {};
+			if (!manages.updatedAt && !manages.createdAt) return {};
 			const iso = InstantString.fromDate(new Date(now()));
 			const at: JsonObject = {};
-			if (managesUpdatedAt) at.updatedAt = iso;
-			if (mode === 'create' && managesCreatedAt) at.createdAt = iso;
+			if (manages.updatedAt) at.updatedAt = iso;
+			if (mode === 'create' && manages.createdAt) at.createdAt = iso;
 			return at;
 		}
 
@@ -1739,8 +1737,13 @@ function createStoreEngine(
 				const derive = table.document?.derive;
 				return documents.open(
 					documentAddress(addressOf(rowId)),
-					derive !== undefined || managesUpdatedAt
-						? deriveOnCommit({ derive, managesUpdatedAt, root, rowId })
+					derive !== undefined || manages.updatedAt
+						? deriveOnCommit({
+								derive,
+								managesUpdatedAt: manages.updatedAt,
+								root,
+								rowId,
+							})
 						: undefined,
 				);
 			},
