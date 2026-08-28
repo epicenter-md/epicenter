@@ -1,6 +1,7 @@
 # 0238. The live document is the truth while open, and persistence is a visible debt
 
 - **Status:** Accepted
+- **Amended by:** [ADR-0277](0277-the-authority-reads-the-bytes-and-sync-becomes-the-yjs-protocol.md) at the outbox. Acceptance and durability still split and durability is still a visible debt; what a replica owes the authority is no longer a durable queue, because it asks rather than remembers.
 - **Date:** 2026-08-12
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0238 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).

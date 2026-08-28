@@ -1,6 +1,7 @@
 # 0217. The authority appends opaque bytes, and the client owns every merge
 
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [ADR-0277](0277-the-authority-reads-the-bytes-and-sync-becomes-the-yjs-protocol.md) at the opaque-append model, the client-owned merge, and the absence of state vectors from the transport. The chunking survives.
 - **Date:** 2026-08-07
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0217 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).

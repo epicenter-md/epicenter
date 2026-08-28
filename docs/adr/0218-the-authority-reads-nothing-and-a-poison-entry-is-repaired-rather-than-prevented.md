@@ -1,6 +1,7 @@
 # 0218. The authority reads nothing, and a poison entry is repaired rather than prevented
 
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [ADR-0277](0277-the-authority-reads-the-bytes-and-sync-becomes-the-yjs-protocol.md). The measurements here stand and so does the conclusion they support: a validation FILTER over bytes is not worth 283 MB. What was never weighed is what blindness costs outside this file, and it is the log position, the cursor, the outbox, gap detection, the resync path and the snapshot-offer dance.
 - **Date:** 2026-08-07
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0219 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
