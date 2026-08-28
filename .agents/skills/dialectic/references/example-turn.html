@@ -1,112 +1,171 @@
-<!doctype html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Turn 01: cookie-first is unconditional</title>
 <style>
   :root {
-    --bg: #fbfbfa; --fg: #1c1c1a; --muted: #6b6b66;
-    --rule: #e2e2dd; --panel: #ffffff;
-    --settled: #2f6f4f; --open: #a8570f;
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --plane:          #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --grid:           #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --track:          rgba(255,255,255,0.07);
+    --settled:        #0ca30c;
+    --open:           #ec835a;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #161614; --fg: #ececea; --muted: #9a9a94;
-      --rule: #302f2b; --panel: #1e1d1a;
-      --settled: #6cc294; --open: #e0a15c;
-    }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --plane:          #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --track:          rgba(11,11,11,0.06);
   }
-  * { box-sizing: border-box }
+
+  * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 3rem 1.5rem 5rem; background: var(--bg); color: var(--fg);
-    font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif;
+    margin: 0;
+    padding: 40px 28px 72px;
+    background: var(--plane);
+    color: var(--text-primary);
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  main { max-width: 46rem; margin: 0 auto }
-  h1 { font-size: 1.5rem; line-height: 1.3; margin: 0 0 .4rem; font-weight: 620 }
-  .turn { color: var(--muted); font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 1.75rem }
-  section { border-top: 1px solid var(--rule); padding-top: 1.1rem; margin-top: 2.25rem }
-  h2 { font-size: .78rem; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 0 0 .9rem }
-  h2 b { color: var(--fg); font-weight: 600 }
-  p { margin: 0 0 .9rem }
-  pre {
-    background: var(--panel); border: 1px solid var(--rule); border-radius: 5px;
-    padding: .85rem 1rem; overflow-x: auto; margin: 0 0 .9rem;
-    font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  h1 { font-size: 26px; font-weight: 640; letter-spacing: -0.02em; line-height: 1.25; margin: 0 0 5px; max-width: 30ch; }
+  .sub { color: var(--text-secondary); font-size: 13px; margin: 0; letter-spacing: 0.04em; text-transform: uppercase; }
+  .toggle {
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary);
+    border-radius: 7px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; flex: none;
   }
-  .path { color: var(--muted) }
-  mark { background: color-mix(in srgb, var(--open) 22%, transparent); color: inherit; padding: 0 .15em }
-  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem }
-  @media (max-width: 34rem) { .pair { grid-template-columns: 1fr } }
-  .card { border: 1px solid var(--rule); border-radius: 5px; padding: .85rem 1rem; background: var(--panel) }
-  .card h3 { margin: 0 0 .45rem; font-size: .95rem; font-weight: 600 }
-  .card p { margin: 0; font-size: .93rem; color: var(--muted) }
-  .tag { display: inline-block; font-size: .68rem; letter-spacing: .07em; text-transform: uppercase; font-weight: 650; padding: .1rem .4rem; border-radius: 3px; vertical-align: .12em; margin-left: .5rem }
-  .tag.settled { color: var(--settled); border: 1px solid color-mix(in srgb, var(--settled) 45%, transparent) }
-  .tag.open { color: var(--open); border: 1px solid color-mix(in srgb, var(--open) 45%, transparent) }
-  .fork { border-left: 3px solid var(--open) }
-  .ask { border-top: 1px solid var(--rule); margin-top: 2.5rem; padding-top: 1.4rem; font-size: 1.05rem }
+  .toggle:hover { color: var(--text-primary); }
+
+  section { margin-top: 34px; }
+  h2 {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--text-muted); font-weight: 600; margin: 0 0 11px;
+    padding-bottom: 9px; border-bottom: 1px solid var(--baseline);
+  }
+  h2 b { color: var(--text-primary); font-weight: 600; font-size: 12.5px; letter-spacing: 0.03em; }
+  .tag { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 650; letter-spacing: 0.04em; color: var(--settled); }
+  .unresolved h2 { border-bottom-color: var(--open); }
+  .unresolved .tag { color: var(--open); }
+
+  p { margin: 0 0 10px; color: var(--text-secondary); font-size: 14px; }
+  p.lead { color: var(--text-primary); }
+  p:last-child { margin-bottom: 0; }
+  code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-muted); }
+
+  .panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
+
+  /* region form 1 — a quoted source panel */
+  .path {
+    padding: 8px 14px; border-bottom: 1px solid var(--grid); background: var(--track);
+    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-muted);
+  }
+  pre { margin: 0; padding: 12px 14px; overflow-x: auto; font: 12.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .hl { display: block; background: color-mix(in srgb, var(--open) 15%, transparent); box-shadow: inset 2px 0 var(--open); margin: 0 -14px; padding: 0 14px; }
+
+  /* region form 2 — a sequence, because the subject is what runs and what does not */
+  .step { padding: 12px 14px; }
+  .step + .step { border-top: 1px solid var(--grid); }
+  .step .cred { font-weight: 570; color: var(--text-primary); margin-bottom: 3px; }
+  .step .pr { font-weight: 400; color: var(--text-muted); margin-left: 7px; font-size: 13px; }
+  .step p { font-size: 13.5px; }
+  .step.dropped .cred, .step.dropped p { color: var(--text-muted); }
+
+  /* region form 3 — the fork, the one place two cards are right */
+  .pair { margin-bottom: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 620px) { .pair { grid-template-columns: 1fr; } }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-left: 3px solid var(--open); border-radius: 10px; padding: 15px 17px; }
+  .card h3 { font-size: 14px; margin: 0 0 6px; font-weight: 600; color: var(--text-primary); }
+  .card p { font-size: 13.5px; }
+
+  .ask { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--baseline); }
+  .ask .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); font-weight: 600; margin-bottom: 9px; }
+  .ask p { font-size: 18px; line-height: 1.45; color: var(--text-primary); max-width: 58ch; }
 </style>
+</head>
+<body>
+<div class="wrap">
 
-<main>
-  <h1>Cookie-first is not a preference in this file. It is unconditional.</h1>
-  <div class="turn">Turn 01 &middot; require-auth credential precedence</div>
-
-  <section>
-    <h2><b>1. What the code does</b><span class="tag settled">established</span></h2>
-    <pre><span class="path">// packages/server/src/middleware/require-auth.ts:138</span>
-const session = await c.var.auth.api.getSession({
-	headers: c.req.raw.headers,
-});
-<mark>if (session) { c.set('principal', ...); return next(); }</mark>
-const bearer = parseBearer(c.req.header('authorization') ?? null);</pre>
-    <p>
-      The early return is the whole mechanism. A request that carries a valid
-      cookie never reaches the line that reads the bearer token.
-    </p>
-  </section>
-
-  <section>
-    <h2><b>2. The request that has both</b><span class="tag settled">established</span></h2>
-    <div class="pair">
-      <div class="card">
-        <h3>Cookie &rarr; principal A</h3>
-        <p>Read first, returns immediately, decides the principal for the whole request.</p>
-      </div>
-      <div class="card">
-        <h3>Bearer &rarr; principal B</h3>
-        <p>Present on the request, parsed by nothing, discarded without a log line.</p>
-      </div>
-    </div>
-    <p style="margin-top:.9rem">
-      Two credentials naming two different principals resolve silently to one.
-      Nothing in the path records that the second one was there.
-    </p>
-  </section>
-
-  <section>
-    <h2><b>3. The fork</b><span class="tag open">unresolved</span></h2>
-    <div class="pair">
-      <div class="card fork">
-        <h3>Precedence is the guarantee</h3>
-        <p>
-          Cookie-first is the intended contract. A browser session should win
-          over a token the page happens to carry, and silence is correct.
-        </p>
-      </div>
-      <div class="card fork">
-        <h3>Ambiguity is the bug</h3>
-        <p>
-          Two principals on one request is a caller error. The boundary should
-          refuse it rather than pick, because picking hides a mistake upstream.
-        </p>
-      </div>
-    </div>
-    <p style="margin-top:.9rem; color: var(--muted)">
-      The code is compatible with both readings. Nothing in the file, the tests,
-      or the surrounding comments distinguishes them.
-    </p>
-  </section>
-
-  <div class="ask">
-    Is preferring the cookie the guarantee, or is a request carrying both a
-    request to refuse?
+<header>
+  <div>
+    <h1>Cookie-first is not a preference in this file. It is unconditional.</h1>
+    <p class="sub">Turn 01 &middot; require-auth credential precedence</p>
   </div>
-</main>
+  <button class="toggle" id="t">Light</button>
+</header>
+
+<section>
+  <h2><b>1. What the code does</b><span class="tag">&#9679; Established</span></h2>
+  <div class="panel">
+    <div class="path">packages/server/src/middleware/require-auth.ts:138</div>
+<pre>const session = await c.var.auth.api.getSession({
+  headers: c.req.raw.headers,
+});
+<span class="hl">if (session) { c.set('principal', ...); return next(); }</span>
+const bearer = parseBearer(c.req.header('authorization') ?? null);</pre>
+  </div>
+  <p class="lead">The early return is the whole mechanism. A request that carries a valid cookie never reaches the line that reads the bearer token.</p>
+</section>
+
+<section>
+  <h2><b>2. The request that has both</b><span class="tag">&#9679; Established</span></h2>
+  <div class="panel">
+    <div class="step">
+      <div class="cred">Session cookie<span class="pr">names principal A</span></div>
+      <p>Read first at line 138. Returns immediately and decides the principal for the whole request.</p>
+    </div>
+    <div class="step dropped">
+      <div class="cred">Bearer token<span class="pr">names principal B</span></div>
+      <p>Never reached. <code>parseBearer</code> does not run, and nothing logs that the header was on the request.</p>
+    </div>
+  </div>
+  <p class="lead">Two credentials naming two different principals resolve silently to one. Nothing in the path records that the second one was there.</p>
+</section>
+
+<section class="unresolved">
+  <h2><b>3. The fork</b><span class="tag">&#9650; Unresolved</span></h2>
+  <div class="pair">
+    <div class="card">
+      <h3>Precedence is the guarantee</h3>
+      <p>Cookie-first is the intended contract. A browser session should win over a token the page happens to carry, and silence is correct.</p>
+    </div>
+    <div class="card">
+      <h3>Ambiguity is the bug</h3>
+      <p>Two principals on one request is a caller error. The boundary should refuse it rather than pick, because picking hides a mistake upstream.</p>
+    </div>
+  </div>
+  <p>The code is compatible with both readings. Nothing in the file, the tests, or the surrounding comments distinguishes them.</p>
+</section>
+
+<div class="ask">
+  <div class="label">The open question</div>
+  <p>Is preferring the cookie the guarantee, or is a request carrying both a request to refuse?</p>
+</div>
+
+</div>
+<script>
+const root = document.documentElement, btn = document.getElementById("t");
+btn.onclick = () => {
+  const light = root.getAttribute("data-theme") === "light";
+  light ? root.removeAttribute("data-theme") : root.setAttribute("data-theme", "light");
+  btn.textContent = light ? "Light" : "Dark";
+};
+</script>
+</body>
+</html>
