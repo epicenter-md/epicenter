@@ -42,13 +42,13 @@ distinction.
 
 A rendering is the thing the agent presents. Judgeability is a property of that
 rendering, not a response the user must produce. Make the model judgeable with
-the smallest useful consequence, example, or diagram. Most turns have this
-shape:
+the smallest useful consequence, example, or quoted excerpt. Most turns have
+this shape:
 
 ```text
 direct claim
     ↓
-one consequence, example, or diagram
+one consequence, example, or quoted excerpt
     ↓
 one reaction point
 ```
@@ -95,15 +95,16 @@ invented names are acceptable. When the thing does not exist yet, write it as
 
 End where the user can be usefully wrong. A reaction point is an open edge in
 the model whose answer would change the next rendering. Mark it inside the
-drawing when possible: a `?` on a branch, a bracketed gap in a sentence, or a
-missing cell in a contrast. Close with the question that would redraw the
-model, or with a statement that makes the same open edge unmistakable.
+rendering when possible: a `?` on the line it concerns, a bracketed gap in a
+sentence, or a missing cell in a contrast. Close with the question that would
+redraw the model, or with a statement that makes the same open edge
+unmistakable.
 
 Judge the question by what it is about. A question about the model is a
-reaction point: "does a receipt outlive the run, or is it the run's own
-memory?" A question about the turn is a verdict request: "which do you
-choose?", "does that sound right?", "should I proceed?", or "say stop if
-that's wrong?" A verdict request gets a yes that locates nothing and a silence
+reaction point: "is preferring the cookie the guarantee, or is a request
+carrying both a request to refuse?" A question about the turn is a verdict
+request: "which do you choose?", "does that sound right?", "should I proceed?",
+or "say stop if that's wrong?" A verdict request gets a yes that locates nothing and a silence
 that proves nothing. Never end on one, and never present a menu of labels before
 the user knows what the labels mean.
 
@@ -148,16 +149,16 @@ back into a fixed teacher and student role.
 
 ## Read The Natural Response
 
-Interpret what the user's response reveals before deciding what to say next.
+Ask what the response reveals about the last rendering, not which phrase the
+user used. A rendering can fail in a small number of ways, and each one has a
+different repair: the claim was wrong, so update the model; the frame was
+wrong, so redraw rather than defend; the altitude was too high, so keep the
+model and lower it; it was unquotable, so go get the file. Nothing failed means
+close.
 
-```text
-"That's right."                  The presented model is complete enough to close.
-"Almost, but ..."                Keep what survived and change the named boundary.
-"No, because ..."                The model or premise is wrong; update it.
-"I don't understand ..."          Delivery missed; keep the model and lower the altitude.
-"For example ..."                The user is extending or grounding the model.
-An unexpected tangent              Look for the larger frame that made the current one unnecessary.
-```
+A request for source is the one most often misread. It is not "I do not
+understand." The model landed and the last turn asked to be believed instead of
+checked.
 
 When the user hands back a sentence, answer its accuracy first. Say how close it
 is, then name the one word or premise carrying the error. "Almost, and the
