@@ -196,8 +196,25 @@ export function createSyncClient({
 	// collector keyed by position outliving its socket is how a partial left by a
 	// dead connection collides with a later frame at the same number.
 	let collector = createChunkCollector({ limitBytes: maxBufferedBytes });
-	let socket: SyncSocket | undefined;
-	let inFlight: { submission: number; throughId: number } | undefined;
+	/**
+	 * The live connection, and the one submission it may have outstanding.
+	 *
+	 * Nested rather than adjacent, because a submission cannot outlive the
+	 * socket that would answer it. As two variables they had one lifetime and
+	 * three sites clearing it, and one of the three cleared only half: `dispose`
+	 * dropped the socket and left the submission behind. That leftover is
+	 * harmless, and it is harmless only because a fourth variable, `disposed`,
+	 * makes the sender unreachable afterwards. A flag standing in for an
+	 * invariant is what produces exactly that kind of remainder, so the
+	 * invariant is in the type instead: there is no way to be holding a
+	 * submission with no socket to answer it.
+	 */
+	let connection:
+		| {
+				socket: SyncSocket;
+				outstanding: { submission: number; throughId: number } | undefined;
+		  }
+		| undefined;
 	let nextSubmission = 1;
 	let cursor = engine.cursor();
 	/** The document this replica's state durably belongs to, if any. */
@@ -218,7 +235,14 @@ export function createSyncClient({
 		// One submission at a time. Two in flight would make an ack ambiguous
 		// about which outbox entries it retires, and the outbox is the only record
 		// that work is still owed.
-		if (socket === undefined || inFlight !== undefined) return Ok(undefined);
+		// Two conditions, and they mean different things. No connection is "this
+		// cannot be sent"; an outstanding submission is "this must not be sent
+		// yet". Both answer Ok, because `send` is called on every state change
+		// that could make a send possible, and "nothing to do" is its ordinary
+		// outcome rather than a failure to report.
+		if (connection === undefined || connection.outstanding !== undefined) {
+			return Ok(undefined);
+		}
 
 		const entry = engine.coalesce();
 		if (entry === undefined) {
@@ -241,10 +265,10 @@ export function createSyncClient({
 
 		const submission = nextSubmission;
 		nextSubmission += 1;
-		inFlight = { submission, throughId: entry.id };
+		connection.outstanding = { submission, throughId: entry.id };
 		const chunks = intoChunks(entry.bytes, CHUNK_BYTES);
 		for (const [index, chunk] of chunks.entries()) {
-			socket.send(
+			connection.socket.send(
 				encodeFrame({
 					kind: 'push',
 					submission,
@@ -354,12 +378,12 @@ export function createSyncClient({
 	 * dropped instead, and the authority simply asks again.
 	 */
 	function offerSnapshot(position: number): Result<void, SyncClientError> {
-		if (socket === undefined || position !== cursor) return Ok(undefined);
+		if (connection === undefined || position !== cursor) return Ok(undefined);
 		if (engine.hasUnresolvedDependencies()) return Ok(undefined);
 		void engine.encodeSnapshot().then(
 			(bytes) => {
-				if (disposed || socket === undefined || position !== cursor) return;
-				const sender = socket;
+				if (disposed || connection === undefined || position !== cursor) return;
+				const sender = connection.socket;
 				const chunks = intoChunks(bytes, CHUNK_BYTES);
 				for (const [index, chunk] of chunks.entries()) {
 					sender.send(
@@ -386,7 +410,12 @@ export function createSyncClient({
 		document: () => identity,
 
 		attach(next: SyncSocket) {
-			socket = next;
+			// Whatever was in flight was never acknowledged, so it is owed again.
+			// The authority may well have stored it; a second copy costs log bytes
+			// and changes nothing, because an update is idempotent. Replacing the
+			// whole connection is what says that, rather than two assignments that
+			// have to agree.
+			connection = { socket: next, outstanding: undefined };
 			// A new socket starts a new reassembly. Whatever the old one left half
 			// delivered is being re-sent from this replica's cursor anyway, and
 			// keeping it could only collide.
@@ -394,16 +423,11 @@ export function createSyncClient({
 			// A fresh socket asks from this replica's own cursor, which is exactly
 			// the repair a gap needs.
 			needsResync = false;
-			// Whatever was in flight was never acknowledged, so it is owed again.
-			// The authority may well have stored it; a second copy costs log bytes
-			// and changes nothing, because an update is idempotent.
-			inFlight = undefined;
 			send();
 		},
 
 		detach() {
-			socket = undefined;
-			inFlight = undefined;
+			connection = undefined;
 			collector = createChunkCollector({ limitBytes: maxBufferedBytes });
 			clearIdle();
 		},
@@ -432,9 +456,10 @@ export function createSyncClient({
 
 			switch (frame.kind) {
 				case 'ack': {
+					const outstanding = connection?.outstanding;
 					if (
-						inFlight === undefined ||
-						frame.submission !== inFlight.submission
+						outstanding === undefined ||
+						frame.submission !== outstanding.submission
 					) {
 						return Ok(undefined);
 					}
@@ -457,8 +482,8 @@ export function createSyncClient({
 					// these bytes reached the log, at this position. The gap check
 					// above stays a check, because a position that skipped entries
 					// must not be recorded as if it had not.
-					engine.acknowledge(inFlight.throughId, frame.seq);
-					inFlight = undefined;
+					engine.acknowledge(outstanding.throughId, frame.seq);
+					if (connection !== undefined) connection.outstanding = undefined;
 					owed = 0;
 					// Work authored while that submission was out is still owed.
 					send();
@@ -471,8 +496,8 @@ export function createSyncClient({
 					// rather than a submission number, was read as a refusal of an
 					// unrelated push and cleared it.
 					if (
-						inFlight === undefined ||
-						frame.submission !== inFlight.submission
+						connection?.outstanding === undefined ||
+						frame.submission !== connection.outstanding.submission
 					) {
 						return Ok(undefined);
 					}
@@ -482,7 +507,7 @@ export function createSyncClient({
 					// responsibility for these bytes, so this replica keeps holding
 					// them, and a refusal that repeats is visible rather than a write
 					// that quietly disappeared.
-					inFlight = undefined;
+					connection.outstanding = undefined;
 					return refused;
 				}
 				case 'entry': {
@@ -560,8 +585,8 @@ export function createSyncClient({
 
 		status: () => ({
 			cursor,
-			inFlight: inFlight !== undefined,
-			inFlightSubmission: inFlight?.submission,
+			inFlight: connection?.outstanding !== undefined,
+			inFlightSubmission: connection?.outstanding?.submission,
 			owed,
 			lastError,
 			unresolvedDependencies: engine.hasUnresolvedDependencies(),
@@ -572,7 +597,7 @@ export function createSyncClient({
 		dispose() {
 			disposed = true;
 			clearIdle();
-			socket = undefined;
+			connection = undefined;
 		},
 	});
 }
