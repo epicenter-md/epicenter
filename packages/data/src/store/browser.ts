@@ -58,17 +58,17 @@ import {
 	type AccountStore,
 	asData,
 	createAccountStoreOverPort,
-	createDeviceStoreOverPort,
+	createLocalStoreOverPort,
 	type DataOf,
 	type DataView,
-	type DeviceStore,
+	type LocalStore,
 	StoreError,
 	type UntypedDataView,
 } from './store.js';
 
 // Re-exported so a browser caller's one import site names both kinds beside
 // the openers that produce them.
-export type { AccountStore, DeviceStore } from './store.js';
+export type { AccountStore, LocalStore } from './store.js';
 
 /** One browser document that replicates with an account authority. */
 export type BrowserAccountStore = AccountStore & {
@@ -197,7 +197,7 @@ export type BrowserBacking = {
  * the identity stamp, and what a duplicate key does.
  *
  * Not an opener. It hands back a port and what was loaded; composing a store
- * over those is `openDevice`'s and `openAccount`'s job.
+ * over those is `openLocal`'s and `openAccount`'s job.
  */
 export async function openIdbBacking(
 	address: string,
@@ -407,7 +407,7 @@ export async function openIdbBacking(
  * (ADR-0261, amending ADR-0233):
  *
  * ```text
- * epicenter/<definition id>/device
+ * epicenter/<definition id>/local
  * epicenter/<definition id>/account/<base URL>/<principal id>
  * ```
  *
@@ -432,8 +432,8 @@ export async function openIdbBacking(
  * segment after `epicenter/` is always exactly the application, and no address
  * can be read as another one.
  */
-function deviceAddress(databaseId: string): string {
-	return `epicenter/${databaseId}/device`;
+function localAddress(databaseId: string): string {
+	return `epicenter/${databaseId}/local`;
 }
 
 /**
@@ -490,14 +490,14 @@ function accountAddress(
  */
 function deleteSupersededStorage(
 	databaseId: string,
-	owner: 'device' | 'account',
+	owner: 'local' | 'account',
 	principalId?: PrincipalId,
 ): Promise<void> {
 	const superseded = [
 		`epicenter-store-${databaseId}`,
 		`epicenter-store-${databaseId}#private`,
 		`epicenter-store-${databaseId}#database`,
-		owner === 'device'
+		owner === 'local'
 			? `epicenter/${databaseId}/private`
 			: `epicenter/${databaseId}/database/${principalId}`,
 	];
@@ -522,10 +522,10 @@ function deleteSupersededStorage(
  * replica-only verbs, and no verb that could delete it. It can remain open
  * while an account replica is open too.
  */
-export async function openDevice<const TDatabase extends DataDefinition>(
+export async function openLocal<const TDatabase extends DataDefinition>(
 	definition: TDatabase,
 ): Promise<
-	Result<DataOf<TDatabase, DeviceStore>, StoreError | DataDefinitionParseError>
+	Result<DataOf<TDatabase, LocalStore>, StoreError | DataDefinitionParseError>
 > {
 	// Parsed before anything is claimed or opened: a declaration may arrive as
 	// data, and a refusal here is a boot outcome rather than a programmer
@@ -533,11 +533,11 @@ export async function openDevice<const TDatabase extends DataDefinition>(
 	const { data: parsed, error: parseError } = parseData(definition);
 	if (parseError !== null) return Err(parseError);
 
-	const address = deviceAddress(parsed.id);
+	const address = localAddress(parsed.id);
 	const { error: claimError } = await claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
-	await deleteSupersededStorage(parsed.id, 'device');
+	await deleteSupersededStorage(parsed.id, 'local');
 
 	const opened = await openIdbBacking(address);
 	if (opened.error !== null) {
@@ -551,12 +551,12 @@ export async function openDevice<const TDatabase extends DataDefinition>(
 	// contained so a corrupt record refuses the boot instead of leaking the
 	// claim and the open connections.
 	let parts: {
-		store: DeviceStore;
+		store: LocalStore;
 		view: UntypedDataView;
 		definition: ParsedDataDefinition;
 	};
 	try {
-		parts = createDeviceStoreOverPort({
+		parts = createLocalStoreOverPort({
 			definition: parsed,
 			durable: backing.port,
 			loaded: backing.loaded,
@@ -573,7 +573,7 @@ export async function openDevice<const TDatabase extends DataDefinition>(
 	const { store, view } = parts;
 
 	return Ok(
-		asData<TDatabase, DeviceStore>(
+		asData<TDatabase, LocalStore>(
 			store,
 			// Through `unknown` deliberately: comparing the untyped view with
 			// `DataView<TDatabase>` re-enters the per-field descriptor

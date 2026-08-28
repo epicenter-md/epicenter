@@ -7,7 +7,7 @@ import { field } from '@epicenter/data/definition';
  */
 import { defineData } from '@epicenter/data/definition';
 
-import { type DeviceStore, openDevice } from '../../../src/store/browser.js';
+import { type LocalStore, openLocal } from '../../../src/store/browser.js';
 import type { DataOf } from '../../../src/store/store.js';
 
 /**
@@ -30,7 +30,7 @@ const workspaces = {
 	}),
 } as const;
 
-type ProbeApplication = DataOf<(typeof workspaces)['vault'], DeviceStore>;
+type ProbeApplication = DataOf<(typeof workspaces)['vault'], LocalStore>;
 
 let db: ProbeApplication | undefined;
 
@@ -48,9 +48,9 @@ Object.assign(globalThis, {
 	async open(name: keyof typeof workspaces) {
 		const workspace = workspaces[name];
 		if (workspace === undefined) return { error: `no workspace named ${name}` };
-		// The device document: this probe proves durability, and a device
+		// The local document: this probe proves durability, and a device
 		// document is the one that never has a sync story to confound it.
-		const opened = await openDevice(workspace);
+		const opened = await openLocal(workspace);
 		if (opened.error !== null) return { error: opened.error.message };
 		db = opened.data;
 		show({ opened: name, databaseId: workspace.id });

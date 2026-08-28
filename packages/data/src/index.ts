@@ -65,7 +65,7 @@ export {
 	type DataStoreBase,
 	type DataView,
 	type DataOf,
-	type DeviceStore,
+	type LocalStore,
 	type KvHandle,
 	type NonconformingRow,
 	type NonconformingValue,

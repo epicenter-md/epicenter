@@ -8,14 +8,14 @@ import { encodeFrame } from '@epicenter/data/sync';
 import { InstantString } from '@epicenter/field';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { openAccountDatabase, openDeviceDatabase } from './databases.js';
+import { openAccountDatabase, openLocalDatabase } from './databases.js';
 
 const reloads = mock();
 (globalThis as unknown as { location: unknown }).location = {
 	reload: reloads,
 };
 
-const DEVICE = `epicenter/${honeycrispDefinition.id}/device`;
+const LOCAL = `epicenter/${honeycrispDefinition.id}/local`;
 
 async function databaseNames(): Promise<string[]> {
 	const databases = await indexedDB.databases();
@@ -138,35 +138,35 @@ async function until(condition: () => boolean): Promise<void> {
 	throw new Error('timed out');
 }
 
-test('the device opener owns only the device database', async () => {
+test('the local opener owns only the local database', async () => {
 	await resetStorage();
 
-	const first = expectOk(await openDeviceDatabase());
-	first.data.tables.notes.create(noteFields('device note'));
+	const first = expectOk(await openLocalDatabase());
+	first.data.tables.notes.create(noteFields('local note'));
 	await first[Symbol.asyncDispose]();
 
-	const second = expectOk(await openDeviceDatabase());
-	expect(titles(second.data)).toEqual(['device note']);
+	const second = expectOk(await openLocalDatabase());
+	expect(titles(second.data)).toEqual(['local note']);
 	await second[Symbol.asyncDispose]();
 
-	expect(await databaseNames()).toEqual([DEVICE]);
+	expect(await databaseNames()).toEqual([LOCAL]);
 });
 
 test('the account opener owns only the account replica', async () => {
 	await resetStorage();
-	const device = expectOk(await openDeviceDatabase());
-	device.data.tables.notes.create(noteFields('device note'));
+	const local = expectOk(await openLocalDatabase());
+	local.data.tables.notes.create(noteFields('local note'));
 
 	const { auth } = announcingAuth('alice', 'document-alice');
 	const account = expectOk(await openAccountDatabase({ auth }));
 	expect((await account.ready).error).toBeNull();
 	account.data.tables.notes.create(noteFields('account note'));
 
-	expect(titles(device.data)).toEqual(['device note']);
+	expect(titles(local.data)).toEqual(['local note']);
 	expect(titles(account.data)).toEqual(['account note']);
 
 	await account[Symbol.asyncDispose]();
-	await device[Symbol.asyncDispose]();
+	await local[Symbol.asyncDispose]();
 });
 
 test('a bound account replica opens from local storage before sync is available', async () => {
@@ -229,12 +229,12 @@ test('an account without a principal is refused without opening a store', async 
 	expect(await databaseNames()).toEqual([]);
 });
 
-test('supersession reloads without touching the device database', async () => {
+test('supersession reloads without touching the local database', async () => {
 	await resetStorage();
 	reloads.mockClear();
 
-	const device = expectOk(await openDeviceDatabase());
-	device.data.tables.notes.create(noteFields('kept device note'));
+	const local = expectOk(await openLocalDatabase());
+	local.data.tables.notes.create(noteFields('kept local note'));
 	const { auth, dials } = announcingAuth('alice', 'document-alice');
 	const account = expectOk(await openAccountDatabase({ auth }));
 	await account.ready;
@@ -245,6 +245,6 @@ test('supersession reloads without touching the device database', async () => {
 	await until(() => reloads.mock.calls.length > 0);
 
 	await account[Symbol.asyncDispose]();
-	expect(titles(device.data)).toEqual(['kept device note']);
-	await device[Symbol.asyncDispose]();
+	expect(titles(local.data)).toEqual(['kept local note']);
+	await local[Symbol.asyncDispose]();
 });

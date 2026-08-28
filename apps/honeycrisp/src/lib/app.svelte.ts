@@ -36,7 +36,7 @@ import { navigation } from './navigation.svelte.js';
  * nothing else.
  *
  * The route chooses the document before this function is called. There is no
- * fallback and no account/device decision below this boundary.
+ * fallback and no account/local decision below this boundary.
  *
  * One instance per mounted route generation, created by the route's provider
  * and reached through `getHoneycrisp`, never a module-global singleton.

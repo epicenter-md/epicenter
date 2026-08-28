@@ -18,7 +18,7 @@
  */
 export function bootFailureMessage(
 	error: unknown,
-	workspace: 'device' | 'account' = 'device',
+	workspace: 'local' | 'account' = 'local',
 ): string {
 	if (typeof error === 'object' && error !== null && 'name' in error) {
 		switch (error.name) {

@@ -2,14 +2,14 @@ import { field } from '@epicenter/data/definition';
 /**
  * Browser Store Address Tests
  *
- * A browser application keeps one device document and one retained account
+ * A browser application keeps one local document and one retained account
  * replica per server identity (ADR-0261). These tests pin the addresses that
- * hold them apart: `epicenter/<databaseId>/device` and
+ * hold them apart: `epicenter/<databaseId>/local` and
  * `epicenter/<databaseId>/account/<base URL>/<principal id>`, one IndexedDB
  * database and one open claim each.
  *
  * Key behaviors:
- * - The device document and two accounts' replicas open at once, into their
+ * - The local document and two accounts' replicas open at once, into their
  *   own databases, seeing none of each other's rows
  * - A second open of one address is refused with AlreadyOpen, and another
  *   account's address is not that address
@@ -33,7 +33,7 @@ import { asPrincipalId } from '@epicenter/identity';
 import type { Result } from 'wellcrafted/result';
 import { expectErr, expectOk as expectOkResult } from 'wellcrafted/testing';
 
-import { openAccount, openDevice } from './browser.js';
+import { openAccount, openLocal } from './browser.js';
 import { STORE_FORMAT } from './log.js';
 import { openMemory } from './memory.js';
 import { type DataOf, type DataStoreBase, syncEngineOf } from './store.js';
@@ -66,7 +66,7 @@ function expectOk<TValue, TError>(
 	return result as TValue;
 }
 
-const deviceAddress = (databaseId: string) => `epicenter/${databaseId}/device`;
+const localAddress = (databaseId: string) => `epicenter/${databaseId}/local`;
 const accountAddress = (
 	databaseId: string,
 	baseURL: string,
@@ -74,8 +74,8 @@ const accountAddress = (
 ) =>
 	`epicenter/${databaseId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}`;
 
-const openDeviceData = (definition: ReturnType<typeof databaseFor>) =>
-	openDevice(definition);
+const openLocalData = (definition: ReturnType<typeof databaseFor>) =>
+	openLocal(definition);
 const openAccountData = (
 	definition: ReturnType<typeof databaseFor>,
 	principalId: typeof ALICE | typeof BOB,
@@ -101,26 +101,26 @@ async function databaseNames(): Promise<string[]> {
 		.sort();
 }
 
-describe('one device document and one account replica per account', () => {
-	test('the device document and two accounts open at once, into their own databases', async () => {
+describe('one local document and one account replica per account', () => {
+	test('the local document and two accounts open at once, into their own databases', async () => {
 		const database = databaseFor('pair');
-		const device = expectOk(await openDeviceData(database));
+		const local = expectOk(await openLocalData(database));
 		const alice = expectOk(await openAccountData(database, ALICE));
 		const bob = expectOk(await openAccountData(database, BOB));
 
-		expectOk(device.tables.notes.create({ title: 'mine alone' }));
+		expectOk(local.tables.notes.create({ title: 'mine alone' }));
 		expectOk(alice.tables.notes.create({ title: "alice's" }));
 		expectOk(bob.tables.notes.create({ title: "bob's" }));
-		expect(titles(device)).toEqual(['mine alone']);
+		expect(titles(local)).toEqual(['mine alone']);
 		expect(titles(alice)).toEqual(["alice's"]);
 		expect(titles(bob)).toEqual(["bob's"]);
 
 		const names = await databaseNames();
-		expect(names).toContain(deviceAddress(database.id));
+		expect(names).toContain(localAddress(database.id));
 		expect(names).toContain(accountAddress(database.id, CLOUD, ALICE));
 		expect(names).toContain(accountAddress(database.id, CLOUD, BOB));
 
-		await device.store[Symbol.asyncDispose]();
+		await local.store[Symbol.asyncDispose]();
 		await alice.store[Symbol.asyncDispose]();
 		await bob.store[Symbol.asyncDispose]();
 	});
@@ -181,7 +181,7 @@ describe('one device document and one account replica per account', () => {
 
 	test('every address survives a close-and-reopen under its own name', async () => {
 		const database = databaseFor('reopen');
-		// Widened to the base store kind: a device document and an account
+		// Widened to the base store kind: a local document and an account
 		// replica differ only in their `sync` value, which this test never
 		// touches.
 		const owners: [
@@ -190,7 +190,7 @@ describe('one device document and one account replica per account', () => {
 			>,
 			string,
 		][] = [
-			[() => openDeviceData(database), 'kept device work'],
+			[() => openLocalData(database), 'kept local work'],
 			[() => openAccountData(database, ALICE), "kept alice's"],
 			[() => openAccountData(database, BOB), "kept bob's"],
 		];
@@ -203,13 +203,13 @@ describe('one device document and one account replica per account', () => {
 		// Retention is the whole reason the account is in the address: coming
 		// back to an account finds that account's replica, not the last one to
 		// have been open.
-		const device = expectOk(await openDeviceData(database));
+		const local = expectOk(await openLocalData(database));
 		const alice = expectOk(await openAccountData(database, ALICE));
 		const bob = expectOk(await openAccountData(database, BOB));
-		expect(titles(device)).toEqual(['kept device work']);
+		expect(titles(local)).toEqual(['kept local work']);
 		expect(titles(alice)).toEqual(["kept alice's"]);
 		expect(titles(bob)).toEqual(["kept bob's"]);
-		await device.store[Symbol.asyncDispose]();
+		await local.store[Symbol.asyncDispose]();
 		await alice.store[Symbol.asyncDispose]();
 		await bob.store[Symbol.asyncDispose]();
 	});
@@ -217,9 +217,9 @@ describe('one device document and one account replica per account', () => {
 	test('discarding one account replica deletes only that account database', async () => {
 		const database = databaseFor('discard');
 		{
-			const device = expectOk(await openDeviceData(database));
-			expectOk(device.tables.notes.create({ title: 'device work' }));
-			await device.store[Symbol.asyncDispose]();
+			const local = expectOk(await openLocalData(database));
+			expectOk(local.tables.notes.create({ title: 'device work' }));
+			await local.store[Symbol.asyncDispose]();
 
 			const bob = expectOk(await openAccountData(database, BOB));
 			expectOk(bob.tables.notes.create({ title: "bob's work" }));
@@ -233,7 +233,7 @@ describe('one device document and one account replica per account', () => {
 		const names = await databaseNames();
 		expect(names).not.toContain(accountAddress(database.id, CLOUD, ALICE));
 		expect(names).toContain(accountAddress(database.id, CLOUD, BOB));
-		expect(names).toContain(deviceAddress(database.id));
+		expect(names).toContain(localAddress(database.id));
 
 		// Alice rejoins at zero; nobody else moved.
 		const rejoined = expectOk(await openAccountData(database, ALICE));
@@ -242,9 +242,9 @@ describe('one device document and one account replica per account', () => {
 		const bob = expectOk(await openAccountData(database, BOB));
 		expect(titles(bob)).toEqual(["bob's work"]);
 		await bob.store[Symbol.asyncDispose]();
-		const device = expectOk(await openDeviceData(database));
-		expect(titles(device)).toEqual(['device work']);
-		await device.store[Symbol.asyncDispose]();
+		const local = expectOk(await openLocalData(database));
+		expect(titles(local)).toEqual(['device work']);
+		await local.store[Symbol.asyncDispose]();
 	});
 
 	test('an account replica with no identity is refused, and no database is made for it', async () => {
@@ -355,32 +355,32 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		const bytes = author.store.encodeStateSince();
 		await author.store[Symbol.asyncDispose]();
 
-		await seedVersionOne(`epicenter/${database.id}/device`, {
+		await seedVersionOne(`epicenter/${database.id}/local`, {
 			updates: [{ seq: 1, bytes }],
 			outbox: [],
 			cursor: 4,
 			// No `format`: the record predates the document identity.
 		});
 
-		const device = expectOk(await openDeviceData(database));
-		expect(titles(device)).toEqual([]);
-		await device.store[Symbol.asyncDispose]();
+		const local = expectOk(await openLocalData(database));
+		expect(titles(local)).toEqual([]);
+		await local.store[Symbol.asyncDispose]();
 	});
 
 	test('the update log folds at the threshold instead of growing forever', async () => {
 		const database = databaseFor('fold');
-		const address = `epicenter/${database.id}/device`;
-		const device = expectOk(await openDeviceData(database));
+		const address = `epicenter/${database.id}/local`;
+		const local = expectOk(await openLocalData(database));
 		for (let index = 0; index < 70; index += 1) {
-			expectOk(device.tables.notes.create({ title: `note ${index}` }));
+			expectOk(local.tables.notes.create({ title: `note ${index}` }));
 		}
-		await device.store.persistence.flush();
-		expect(device.store.persistence.get()).toBe('saved');
-		await device.store[Symbol.asyncDispose]();
+		await local.store.persistence.flush();
+		expect(local.store.persistence.get()).toBe('saved');
+		await local.store[Symbol.asyncDispose]();
 
 		expect(await countRows(address, 'updates')).toBeLessThan(70);
 
-		const reopened = expectOk(await openDeviceData(database));
+		const reopened = expectOk(await openLocalData(database));
 		expect(titles(reopened)).toHaveLength(70);
 		await reopened.store[Symbol.asyncDispose]();
 	});
@@ -429,13 +429,13 @@ describe('the clean break: storage from before the account-scoped address', () =
 			expect.arrayContaining(supersededNames(database.id)),
 		);
 
-		const device = expectOk(await openDeviceData(database));
-		expect(titles(device)).toEqual([]);
+		const local = expectOk(await openLocalData(database));
+		expect(titles(local)).toEqual([]);
 		for (const name of supersededNames(database.id)) {
 			expect(await databaseNames()).not.toContain(name);
 		}
 		expect(await databaseNames()).not.toContain(oldDevice);
-		await device.store[Symbol.asyncDispose]();
+		await local.store[Symbol.asyncDispose]();
 
 		// The deletion repeats at every open, so a superseded database
 		// reappearing (an old tab writing after this one deleted) dies at the
@@ -493,27 +493,27 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 		// A declaration may arrive as data, so a refusal here is a boot outcome
 		// rather than a programmer error. The store this half-opened must
 		// release its address, or the application can never start.
-		const refused = await openDevice({
+		const refused = await openLocal({
 			databaseId: database.id,
 			tables: { notes: { fields: {} } },
 		} as never);
 		expect(refused.error).not.toBeNull();
 
-		const after = expectOk(await openDeviceData(database));
+		const after = expectOk(await openLocalData(database));
 		await after.store[Symbol.asyncDispose]();
 	});
 
 	test('a corrupt durable record refuses the boot and releases the claim', async () => {
 		const database = databaseFor('corrupt');
-		await seedCorruptChain(deviceAddress(database.id));
+		await seedCorruptChain(localAddress(database.id));
 
-		const refused = await openDevice(database);
+		const refused = await openLocal(database);
 		expect(refused.data).toBeNull();
 		expect(refused.error?.name).toBe('StorageFailed');
 
 		// The claim went with the refusal: a retry reports the same honest
 		// failure rather than `AlreadyOpen` for the life of the page.
-		const again = await openDevice(database);
+		const again = await openLocal(database);
 		expect(again.error?.name).toBe('StorageFailed');
 	});
 });
@@ -523,9 +523,9 @@ describe('the document a row inherently owns survives a reopen (ADR-0248)', () =
 		const database = databaseFor('rowdocument');
 		let rowId!: string;
 		{
-			const device = expectOk(await openDeviceData(database));
-			rowId = expectOk(device.tables.notes.create({ title: 'x' })).id;
-			const opened = expectOk(await device.tables.notes.openDocument(rowId));
+			const local = expectOk(await openLocalData(database));
+			rowId = expectOk(local.tables.notes.create({ title: 'x' })).id;
+			const opened = expectOk(await local.tables.notes.openDocument(rowId));
 			if (opened === undefined) throw new Error('the row has no document');
 			// The application names its root and picks its format. In Yjs 14
 			// `change` hands back a fresh builder and `applyDelta` commits it.
@@ -533,10 +533,10 @@ describe('the document a row inherently owns survives a reopen (ADR-0248)', () =
 			editor.applyDelta(editor.change.insert('buy milk') as never);
 			opened.get('meta').setAttr('cursor' as never, 8 as never);
 			opened[Symbol.dispose]();
-			await device.store[Symbol.asyncDispose]();
+			await local.store[Symbol.asyncDispose]();
 		}
 
-		const reopened = expectOk(await openDeviceData(database));
+		const reopened = expectOk(await openLocalData(database));
 		const opened = expectOk(await reopened.tables.notes.openDocument(rowId));
 		expect(opened?.get('editor', 'text').toString()).toContain('buy milk');
 		expect(opened?.get('meta').getAttr('cursor' as never)).toBe(8);

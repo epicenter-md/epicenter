@@ -21,14 +21,14 @@ disabled; the app runs entirely in the browser as a static site.
 Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and opens it as a store the app owns:
 
 ```txt
-openDeviceDatabase()                                      device database
+openLocalDatabase()                                       local database
 openAccountDatabase({ auth })                             account replica
 data.tables.notes.list()                                  synchronous from here on
 ```
 
 The definition names the application and the route-owned opener names which
 durable document it means (ADR-0229 as amended by ADR-0233). `/device` opens
-the device database. `/account` gates auth and opens one retained account
+the local database. `/account` gates auth and opens one retained account
 replica. Each route owns one store, and nothing falls back to the other route's
 data.
 The scalar document shape is the shared `app`/`kv`/`tables:<name>` grammar in

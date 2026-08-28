@@ -2,9 +2,9 @@ import type { AuthClient } from '@epicenter/auth';
 import type { AccountStore, DataOf } from '@epicenter/data';
 import {
 	type BrowserAccountStore,
-	type DeviceStore,
+	type LocalStore,
 	openAccount,
-	openDevice,
+	openLocal,
 } from '@epicenter/data/browser';
 import {
 	attachStoreSync,
@@ -31,16 +31,16 @@ export type OpenVocabRuntimeOptions = {
  * composed onto them. The root owns it, provides it through context, and
  * disposes it.
  *
- * Ready surfaces see exactly two shapes: `{ deviceData }`, and
- * `{ deviceData, account }`. There is no third: an unbound account replica is a
+ * Ready surfaces see exactly two shapes: `{ localData }`, and
+ * `{ localData, account }`. There is no third: an unbound account replica is a
  * transitional state hidden inside this promise, never a value a surface
  * renders. And there is no default document for WORK: a surface that wants "the
  * conversations and entries this generation edits" writes
- * `runtime.account?.data ?? runtime.deviceData` itself, once, where the choice
+ * `runtime.account?.data ?? runtime.localData` itself, once, where the choice
  * is visible.
  *
  * Device-local settings are not part of that choice. `showReadings` is read and
- * written on `deviceData.kv` in every generation, signed in or out, because how
+ * written on `localData.kv` in every generation, signed in or out, because how
  * this screen renders is a fact about this screen rather than portable work.
  * Two documents are open and each owns different state; neither owns the same
  * state twice.
@@ -51,7 +51,7 @@ export type VocabRuntime = {
 	 * never syncs, survives every sign-in and sign-out, and holds this device's
 	 * `kv` settings whether or not an account is present.
 	 */
-	readonly deviceData: DataOf<typeof vocabDefinition, DeviceStore>;
+	readonly localData: DataOf<typeof vocabDefinition, LocalStore>;
 	/**
 	 * The boot principal's retained account replica. Present exactly when the
 	 * boot auth snapshot carried an identity, and always past its bound gate: a
@@ -104,8 +104,8 @@ export async function openVocabRuntime({
 			? undefined
 			: { auth, principalId: auth.state.principalId };
 
-	const { data: deviceData, error: deviceError } =
-		await openDevice(vocabDefinition);
+	const { data: localData, error: deviceError } =
+		await openLocal(vocabDefinition);
 	if (deviceError !== null) throw deviceError;
 
 	let account: AccountRuntime | undefined;
@@ -119,14 +119,14 @@ export async function openVocabRuntime({
 			});
 		}
 	} catch (cause) {
-		await deviceData[Symbol.asyncDispose]().catch(() => undefined);
+		await localData[Symbol.asyncDispose]().catch(() => undefined);
 		throw cause;
 	}
 
 	const opened = account;
 	let disposed = false;
 	return Object.freeze({
-		deviceData,
+		localData,
 		...(opened === undefined
 			? {}
 			: {
@@ -139,7 +139,7 @@ export async function openVocabRuntime({
 			if (disposed) return;
 			disposed = true;
 			await opened?.dispose();
-			await deviceData[Symbol.asyncDispose]();
+			await localData[Symbol.asyncDispose]();
 		},
 	});
 }

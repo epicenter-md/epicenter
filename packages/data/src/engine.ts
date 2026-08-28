@@ -15,6 +15,6 @@
 export {
 	type CreateStoreOptions,
 	createAccountStore,
-	createDeviceStore,
+	createLocalStore,
 	syncEngineOf,
 } from './store/store.js';

@@ -46,7 +46,7 @@ export const MIRROR_PATH = '/api/mirror';
 /**
  * Where a mirrored folder lives, and the only two answers (ADR-0271).
  *
- * `local` is the device document, which has no authority and never syncs, and
+ * `local` is the local document, which has no authority and never syncs, and
  * it is an address: it means this machine, and it will still mean this machine
  * in five years. `account` is the replica of whoever is signed in now, so it
  * is a VIEW rather than an address: sign in as someone else and the same path

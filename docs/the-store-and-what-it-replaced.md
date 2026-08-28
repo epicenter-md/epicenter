@@ -514,7 +514,7 @@ indefinitely without hurting anyone, and `raw` still holds it.
 1. Rewrite the workspace: arktype strings, nullable-with-default, no optionals, no
    objects, defaults inline. Settings to `kv`.
 2. Decide per field whether prose belongs in a row document or the row.
-3. Replace `openEpicenter` with `openDevice(workspace)` (and `openAccount(workspace,
+3. Replace `openEpicenter` with `openLocal(workspace)` (and `openAccount(workspace,
    { principalId })` for a signed-in replica, per ADR-0233).
 4. Replace `scan` + `refresh` + generations with `read()` + `subscribe(read)`.
 5. Drop `await` from every read and every mutation; destructure `{ data, error }`.

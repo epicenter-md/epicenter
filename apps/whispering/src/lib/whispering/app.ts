@@ -2,9 +2,9 @@ import type { AuthClient } from '@epicenter/auth';
 import type { AccountStore, DataOf } from '@epicenter/data';
 import {
 	type BrowserAccountStore,
-	type DeviceStore,
+	type LocalStore,
 	openAccount,
-	openDevice,
+	openLocal,
 } from '@epicenter/data/browser';
 import {
 	attachStoreSync,
@@ -32,7 +32,7 @@ export type { WhisperingBlobs } from './recording-audio';
  * signed out. */
 export type WhisperingDeviceData = DataOf<
 	typeof whisperingDefinition,
-	DeviceStore
+	LocalStore
 >;
 /** One account's retained replica of the portable work. */
 export type WhisperingAccountData = DataOf<
@@ -187,9 +187,9 @@ export async function openWhisperingApp(
 			? undefined
 			: { principalId: auth.state.principalId };
 
-	const opened = await openDevice(whisperingDefinition);
+	const opened = await openLocal(whisperingDefinition);
 	if (opened.error !== null) throw opened.error;
-	const deviceData = opened.data;
+	const localData = opened.data;
 
 	let account: AccountRuntime | undefined;
 	try {
@@ -203,13 +203,13 @@ export async function openWhisperingApp(
 			});
 		}
 	} catch (cause) {
-		await deviceData[Symbol.asyncDispose]().catch(() => undefined);
+		await localData[Symbol.asyncDispose]().catch(() => undefined);
 		throw cause;
 	}
 
 	// The one place the document choice is made (ADR-0233).
-	const work = account?.data ?? deviceData;
-	const settingsDomain = createWhisperingSettings({ kv: deviceData.kv });
+	const work = account?.data ?? localData;
+	const settingsDomain = createWhisperingSettings({ kv: localData.kv });
 	const recordingsDomain = createWhisperingRecordings({
 		table: work.tables.recordings,
 		blobs,
@@ -231,7 +231,7 @@ export async function openWhisperingApp(
 			recordingsDomain[Symbol.dispose]();
 			settingsDomain[Symbol.dispose]();
 			await account?.dispose();
-			await deviceData[Symbol.asyncDispose]();
+			await localData[Symbol.asyncDispose]();
 		},
 	});
 }

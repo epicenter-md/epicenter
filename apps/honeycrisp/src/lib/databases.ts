@@ -2,9 +2,9 @@ import type { AuthClient } from '@epicenter/auth';
 import type { AccountStore, DataOf } from '@epicenter/data';
 import {
 	type BrowserAccountStore,
-	type DeviceStore,
+	type LocalStore,
 	openAccount,
-	openDevice,
+	openLocal,
 } from '@epicenter/data/browser';
 import { attachMirror } from '@epicenter/data/artifact/mirror';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
@@ -21,7 +21,7 @@ import { mirrorLog, reportBackgroundError } from './report.js';
 import { attachHoneycrispSync } from './sync.js';
 
 export type OpenedDeviceDatabase = {
-	readonly data: DataOf<typeof honeycrispDefinition, DeviceStore>;
+	readonly data: DataOf<typeof honeycrispDefinition, LocalStore>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -33,11 +33,11 @@ export type OpenedAccountDatabase = {
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
-/** Open the device database for the `/device` route. */
-export async function openDeviceDatabase(): Promise<
+/** Open the local database for the `/device` route. */
+export async function openLocalDatabase(): Promise<
 	Result<OpenedDeviceDatabase, unknown>
 > {
-	const { data, error } = await openDevice(honeycrispDefinition);
+	const { data, error } = await openLocal(honeycrispDefinition);
 	if (error !== null) return Err(error);
 
 	const mirror = attachMirror({

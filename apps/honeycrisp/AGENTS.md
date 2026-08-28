@@ -10,7 +10,7 @@ Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-broke
 ## Two durable documents, and routes open one
 
 `src/lib/databases.ts` is the only place that opens a store. The `/device`
-route opens the device database, while `/account` gates auth and opens the
+route opens the local database, while `/account` gates auth and opens the
 account replica. Each route owns exactly one store lifetime (ADR-0261):
 
 ```text
@@ -42,7 +42,7 @@ deferred as a future explicit application feature.
 | Epicenter-hosted | `bun run build:epicenter` |
 
 **They differ in nothing that concerns data.** Every build calls
-`openDevice` and `openAccount` from `@epicenter/data/browser` and owns its
+`openLocal` and `openAccount` from `@epicenter/data/browser` and owns its
 documents; the desktop host
 serves the bundle and brokers the credential and owns none of it (ADR-0226).
 There used to be a platform seam where the hosted build reached the host's
@@ -68,10 +68,10 @@ only the default one is checked by an editor.
   standalone bundle and the hosted build are two stores on one machine, and
   nothing moves between them. Two devices converge by signing into the same
   account, not by copying a file.
-- Do not copy, merge, or promote the device document into an account replica,
-  in either direction. Nothing in sync may name the device document; a copy
+- Do not copy, merge, or promote the local document into an account replica,
+  in either direction. Nothing in sync may name the local document; a copy
   action, if the product ever wants one, is an explicit application feature.
-- Do not fall back to the device document when a workspace cannot open.
+- Do not fall back to the local document when a workspace cannot open.
   A signed-in generation with no usable principal, or one whose dial is
   permanently denied before its first bootstrap, is unavailable and says so.
 - Do not add a `#platform/*` seam for storage. Every build opens its own store;

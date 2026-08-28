@@ -11,9 +11,9 @@ import { createMemoryRecord, openMemory } from './memory.js';
 import {
 	type AccountStore,
 	createAccountStore,
-	createDeviceStore,
+	createLocalStore,
 	type DataOf,
-	type DeviceStore,
+	type LocalStore,
 	StoreUnusableError,
 	type SyncCapability,
 	syncEngineOf,
@@ -932,10 +932,10 @@ describe('foreign bytes have exactly one door', () => {
 describe('a document store owes nobody (ADR-0233)', () => {
 	test('local commits leave the outbox empty and no replica verb exists', async () => {
 		const { sqlite } = createMemoryRecord();
-		const device = createDeviceStore({ definition: database, sqlite });
-		const store = device.store;
+		const local = createLocalStore({ definition: database, sqlite });
+		const store = local.store;
 		try {
-			const made = device.tables.notes.create({
+			const made = local.tables.notes.create({
 				title: 'device work',
 				tags: [],
 				date: null,
@@ -943,7 +943,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 			expect(made.id).toHaveLength(24);
 
 			// The write is durable, but it is owed to nobody: nothing could ever
-			// acknowledge a device document's outbox, so nothing may join it.
+			// acknowledge a local document's outbox, so nothing may join it.
 			expect(sqlite.all('SELECT COUNT(*) AS owed FROM _outbox')).toEqual([
 				{ owed: 0 },
 			]);
@@ -961,7 +961,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 			// @ts-expect-error a device store has no sync engine
 			expect(() => syncEngineOf(store)).toThrow('not a replica');
 		} finally {
-			await device.store[Symbol.asyncDispose]();
+			await local.store[Symbol.asyncDispose]();
 		}
 	});
 
@@ -969,7 +969,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 		// Compile-time pins: `sync !== undefined` must narrow the union in both
 		// directions without an `in`-probe or a cast. The annotations are the
 		// assertions; a shape change fails typecheck before it fails a test.
-		function kindOf(store: DeviceStore | AccountStore): 'device' | 'account' {
+		function kindOf(store: LocalStore | AccountStore): 'local' | 'account' {
 			if (store.sync !== undefined) {
 				const capability: SyncCapability = store.sync;
 				void capability;
@@ -977,21 +977,21 @@ describe('a document store owes nobody (ADR-0233)', () => {
 				void account;
 				return 'account';
 			}
-			const device: DeviceStore = store;
+			const device: LocalStore = store;
 			void device;
-			return 'device';
+			return 'local';
 		}
 
-		const device = createDeviceStore({
+		const local = createLocalStore({
 			definition: database,
 			sqlite: createMemoryRecord().sqlite,
 		});
 		const account = openMemory(database);
 		try {
-			expect(kindOf(device.store)).toBe('device');
+			expect(kindOf(local.store)).toBe('local');
 			expect(kindOf(account.store)).toBe('account');
 		} finally {
-			await device.store[Symbol.asyncDispose]();
+			await local.store[Symbol.asyncDispose]();
 			await account.store[Symbol.asyncDispose]();
 		}
 	});

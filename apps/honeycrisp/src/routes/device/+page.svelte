@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { Loading } from '@epicenter/ui/loading';
 	import { isOk } from 'wellcrafted/result';
-	import { openDeviceDatabase } from '$lib/databases.js';
+	import { openLocalDatabase } from '$lib/databases.js';
 	import HoneycrispProvider from '$lib/HoneycrispProvider.svelte';
 	import Workspace from '../components/Workspace.svelte';
 	import WorkspaceFailure from '../components/WorkspaceFailure.svelte';
 
-	const opening = openDeviceDatabase();
+	const opening = openLocalDatabase();
 
 	$effect(() => {
 		return () => {
@@ -29,8 +29,8 @@
 			/>
 		</HoneycrispProvider>
 	{:else}
-		<WorkspaceFailure workspace="device" error={result.error} />
+		<WorkspaceFailure workspace="local" error={result.error} />
 	{/if}
 {:catch error}
-	<WorkspaceFailure workspace="device" {error} />
+	<WorkspaceFailure workspace="local" {error} />
 {/await}

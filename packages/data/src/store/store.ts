@@ -767,11 +767,11 @@ export type DataStoreBase = {
  *
  * `sync` is present and `undefined`, deliberately: the discriminant is the
  * VALUE, not the property's absence, so `store.sync === undefined` narrows a
- * `DeviceStore | AccountStore` without `in`-probing, and a future reader of
+ * `LocalStore | AccountStore` without `in`-probing, and a future reader of
  * either
  * object sees the same shape with one honest difference.
  */
-export type DeviceStore = DataStoreBase & {
+export type LocalStore = DataStoreBase & {
 	readonly sync: undefined;
 };
 
@@ -978,9 +978,9 @@ function overSqlite<TDatabase extends DataDefinition>({
  * acknowledgement can drain, so its durable record grew with every write it
  * ever took, forever.
  */
-export function createDeviceStore<const TDatabase extends DataDefinition>(
+export function createLocalStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
-): DataOf<TDatabase, DeviceStore> {
+): DataOf<TDatabase, LocalStore> {
 	const { store, view } = createStoreEngine(
 		overSqlite(options),
 		'none',
@@ -1025,8 +1025,8 @@ export function createAccountStore<const TDatabase extends DataDefinition>(
  * deletable replica) before composing what an application sees; the store and
  * the view are one runtime either way, born over one definition.
  */
-export function createDeviceStoreOverPort(options: StoreEngineOptions): {
-	store: DeviceStore;
+export function createLocalStoreOverPort(options: StoreEngineOptions): {
+	store: LocalStore;
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 } {
@@ -1045,7 +1045,7 @@ function createStoreEngine(
 	options: StoreEngineOptions,
 	replication: 'none',
 ): {
-	store: DeviceStore;
+	store: LocalStore;
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 };
@@ -1068,7 +1068,7 @@ function createStoreEngine(
 	}: StoreEngineOptions,
 	replication: 'none' | 'remote',
 ): {
-	store: DeviceStore | AccountStore;
+	store: LocalStore | AccountStore;
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 } {

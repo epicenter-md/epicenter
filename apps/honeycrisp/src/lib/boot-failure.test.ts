@@ -21,7 +21,7 @@ describe('bootFailureMessage', () => {
 		expect(
 			bootFailureMessage({
 				name: 'AlreadyOpen',
-				message: 'This process already has epicenter/x/device open',
+				message: 'This process already has epicenter/x/local open',
 			}),
 		).toMatch(/another honeycrisp window/i);
 	});

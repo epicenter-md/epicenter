@@ -10,7 +10,7 @@ The package has one definition entrypoint and four runtime entrypoints:
 | --- | --- |
 | `@epicenter/data` | the opened data surface |
 | `@epicenter/data/definition` | `defineData`, `parseData`, and the field descriptor vocabulary |
-| `@epicenter/data/browser` | `openDevice(definition)`, and `openAccount(definition, { baseURL, principalId })` |
+| `@epicenter/data/browser` | `openLocal(definition)`, and `openAccount(definition, { baseURL, principalId })` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 | `@epicenter/data/artifact` | `renderRow` and `renderArtifact` out, `readArtifact` back in: the folder a person keeps |
 | `@epicenter/data/memory` | `openMemory(definition)` and `createMemoryRecord()`, test support |
@@ -47,7 +47,7 @@ its whole life (ADR-0240); a newer declaration reads the same durable data by
 closing it and opening the next one.
 
 In a browser the caller also names which durable document it means and whose it
-is (ADR-0261). An application keeps one device document that never joins
+is (ADR-0261). An application keeps one local document that never joins
 account sync, and one retained replica per account:
 
 ```text
@@ -57,7 +57,7 @@ epicenter/<definitionId>/account/<base URL>/<principal id>
 
 That address is the IndexedDB database name, so a data discard or
 supersession can reach exactly one account's replica and never the
-device document or another account's. An account replica cannot be opened
+local document or another account's. An account replica cannot be opened
 without an account: the argument is a union with nowhere to omit one, and an
 empty id is refused with `StoreError.Unaddressable` rather than addressed.
 
@@ -68,7 +68,7 @@ promise.
 Opening one address twice in a process is refused with
 `StoreError.AlreadyOpen`. Two opens would be two `Y.Doc`s of one document that
 cannot see each other's writes, so they would converge through storage under
-last-writer-wins and quietly lose one side's work. The device document and
+last-writer-wins and quietly lose one side's work. The local document and
 each account's replica are different documents, so any number of them may be
 open at once.
 
@@ -109,7 +109,7 @@ at their data outside the app reads the export (ADR-0268), which is files.
 weight), `onCommitted` (anything committed, whoever wrote it),
 `persistence` (whether accepted work has reached durable storage, ADR-0238),
 and `sync`, the value that tells the two store kinds apart (ADR-0239):
-`undefined` on a device document, and `{ get, subscribe }` over
+`undefined` on a local document, and `{ get, subscribe }` over
 `{ document }` on an account replica. They live under one key rather than
 beside the tables so that no table name is reserved: `kv` is the only one a
 definition refuses, so a follower may project KV as a relation of that name

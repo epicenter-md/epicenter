@@ -5,7 +5,7 @@
  *
  * This settles where a browser store's DURABLE LOG lives, and nothing else. Be
  * careful with the answer: it was briefly read as meaning a page cannot host the
- * store at all, which is false. `apps/sync-lab/ui/main.ts` is `createDeviceStore` over
+ * store at all, which is false. `apps/sync-lab/ui/main.ts` is `createLocalStore` over
  * sqlite-wasm `:memory:` on a browser main thread, deployed and working. The
  * store needs a synchronous HANDLE, not synchronous DURABILITY, and every read a
  * person makes comes from the `Y.Doc` in memory rather than from SQLite.

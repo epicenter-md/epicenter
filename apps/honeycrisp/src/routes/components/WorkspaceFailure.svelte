@@ -6,7 +6,7 @@
 	let {
 		workspace,
 		error,
-	}: { workspace: 'device' | 'account'; error: unknown } = $props();
+	}: { workspace: 'local' | 'account'; error: unknown } = $props();
 
 	const otherHref = $derived(workspace === 'account' ? '/device' : '/account');
 	const otherLabel = $derived(

@@ -81,14 +81,14 @@ export type AttachStoreSyncOptions = {
  * Attach sync to an open account replica, for this app generation's lifetime,
  * and start it.
  *
- * Only an account generation calls this (ADR-0233): a device document never
+ * Only an account generation calls this (ADR-0233): a local document never
  * syncs, so a signed-out boot has nothing to attach.
  *
  * Whether sync can work is decided by the first dial rather than by inspecting
  * auth here. For a bound replica a permanent denial is not a failure and is not
  * reported as one; the store works offline without this. For an unbound one the
  * application rejects its boot, because a signed-in replica that cannot
- * bootstrap is unavailable, never the device document. A credential arriving
+ * bootstrap is unavailable, never the local document. A credential arriving
  * later never resumes this connection: acquiring one changes auth state, and
  * reloading on that change starts the next generation, which dials fresh.
  */

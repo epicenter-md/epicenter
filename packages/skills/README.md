@@ -5,10 +5,10 @@ services over an already opened handle. The package does not open storage,
 construct browser or Node runtimes, expose Yjs GUIDs, or register actions.
 
 ```ts
-import { openDevice } from '@epicenter/data/browser';
+import { openLocal } from '@epicenter/data/browser';
 import { skillsDefinition } from '@epicenter/skills';
 
-const { data: skills, error } = await openDevice(skillsDefinition);
+const { data: skills, error } = await openLocal(skillsDefinition);
 if (error !== null) return handle(error);
 const { rows } = skills.tables.skills.list();
 ```
