@@ -358,11 +358,19 @@ impl ModelCache {
 }
 
 /// Load a GGUF model through transcribe.cpp, initializing the compute backends
-/// once on first use. The backend (Metal / Vulkan / CPU) is chosen per target.
+/// once on first use.
+///
+/// `Backend::Auto` takes the first GPU device that initializes and falls back to
+/// CPU when none does. ggml registers devices in build-time priority order, so
+/// this still selects Metal on Apple and Vulkan on Windows/Linux without naming
+/// them here. Naming one is a hard requirement, not a preference: a specific
+/// `Backend::Vulkan` request on a machine whose Vulkan runtime is missing returns
+/// `TRANSCRIBE_ERR_BACKEND` and fails the load even though a working CPU backend
+/// is registered.
 fn load_gguf_model(model_path: &Path) -> Result<Model, String> {
     init_transcribe_cpp_backends();
     let options = ModelOptions {
-        backend: default_backend(),
+        backend: Backend::Auto,
         gpu_device: 0,
     };
     Model::load_with(model_path, &options)
@@ -479,31 +487,6 @@ fn init_transcribe_cpp_backends() {
             Err(e) => warn!("Failed to initialize transcribe-cpp backends: {}", e),
         }
     });
-}
-
-/// The GGU compute backend to request per target. transcribe.cpp appends a CPU
-/// fallback, so a GPU-init failure degrades to CPU rather than failing the load.
-fn default_backend() -> Backend {
-    #[cfg(target_os = "macos")]
-    {
-        Backend::Metal
-    }
-    #[cfg(all(windows, target_arch = "x86_64"))]
-    {
-        Backend::Vulkan
-    }
-    #[cfg(target_os = "linux")]
-    {
-        Backend::Vulkan
-    }
-    #[cfg(not(any(
-        target_os = "macos",
-        all(windows, target_arch = "x86_64"),
-        target_os = "linux"
-    )))]
-    {
-        Backend::Cpu
-    }
 }
 
 /// Replace NaN/Inf with 0.0 and cap length so a malformed sample buffer never
