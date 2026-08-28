@@ -30,7 +30,7 @@
  * There was one, holding an OPFS SQLite fed every statement, justified by a
  * derived index "coming back for free"; that was false, because such an index
  * rebuilds from the document at open regardless. What actually has to survive
- * is small: the log folds at `SNAPSHOT_FOLD_THRESHOLD` (64), the outbox is
+ * is small: the log folds at `SNAPSHOT_FOLD_THRESHOLD` (1), the outbox is
  * coalesced before it is sent, and the cursor is one row. IndexedDB holds
  * that from the page.
  */

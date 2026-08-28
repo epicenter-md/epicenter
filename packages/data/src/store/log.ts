@@ -19,12 +19,29 @@ import type {
 export type { OutboxEntry } from './persistence.js';
 
 /**
- * How many appends the live log holds before it folds into a snapshot (ADR-0159/0214).
+ * How many appends a document's chain holds before it folds into one baseline.
  *
- * The durable record oscillates rather than growing: a chain that reaches the
- * threshold collapses into one baseline, so nothing here accumulates.
+ * It is 1, which means a document is one value: every fold-eligible append
+ * collapses immediately and no chain is ever two rows long. That is not a
+ * smaller number of the same kind. It is the setting at which the machinery
+ * around it stops having anything to do, and it is the step before that
+ * machinery is deleted.
+ *
+ * The dial is the same one every Yjs persistence layer has. `y-indexeddb`
+ * appends updates and squashes at `PREFERRED_TRIM_SIZE = 500` by writing
+ * `Y.encodeStateAsUpdate(doc)` and deleting what it replaced, which is exactly
+ * what `fold` below does. It sits at 500 to avoid re-encoding a whole document
+ * often; this sits at 1 because re-encoding one document is cheap when a
+ * document is a row's prose or one application's scalar fields, and because
+ * paying it buys the deletion of ids, ordering, replay and the chain itself.
+ *
+ * A syncing store still folds only the acknowledged prefix, so owed appends
+ * stay individually addressable for their acknowledgement. That is the last
+ * thing keeping a chain plural, and a state vector at the last acknowledged
+ * push replaces it (`store.ts` exposes both halves already: `stateVector` and
+ * `encodeStateSince`).
  */
-export const SNAPSHOT_FOLD_THRESHOLD = 64;
+export const SNAPSHOT_FOLD_THRESHOLD = 1;
 
 /**
  * The application document's name in the log.
