@@ -53,7 +53,7 @@ const sqliteEngine: Engine = {
 		// One database for the record's life, reopened through a new port, which
 		// is the same shape `memory.ts` uses to model a close and a reopen.
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const open = () => createSqliteDurablePort({ sqlite });
+		const open = () => createSqliteDurablePort({ sqlite, syncs: true });
 		return {
 			commit: async (ops) => {
 				await open().commit(ops);
@@ -71,7 +71,7 @@ const indexedDbEngine: Engine = {
 	async create(label: string): Promise<Record> {
 		const address = `conformance/${label}`;
 		const open = async () => {
-			const opened = await openIdbBacking(address);
+			const opened = await openIdbBacking(address, true);
 			if (opened.error !== null) throw opened.error;
 			return opened.data;
 		};

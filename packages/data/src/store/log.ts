@@ -62,14 +62,16 @@ export function applyStoreSchema(sqlite: SqliteDatabase): void {
 		CREATE INDEX IF NOT EXISTS _updates_owed
 			ON _updates (id) WHERE authoritySeq IS NULL
 	`);
-	// One durable fact beyond the log: which authority document this replica's
-	// state belongs to (ADR-0231). A key-value shape, mirroring the authority's
-	// own `_meta`, so a second fact is a row and not a migration.
+	// Which authority document this replica's state belongs to (ADR-0231).
+	// At most one row, ever: the primary key IS the first-write-wins rule, so
+	// membership cannot change in place, only by discarding the record whole.
+	// It used to share a key-value table with the storage format, and the
+	// format left for the address, where a record under another shape is not
+	// detected and wiped but simply not addressed.
 	sqlite.run(`
-		CREATE TABLE IF NOT EXISTS _meta (
-			key   TEXT NOT NULL,
-			value TEXT NOT NULL,
-			PRIMARY KEY (key)
+		CREATE TABLE IF NOT EXISTS _identity (
+			document TEXT NOT NULL,
+			PRIMARY KEY (document)
 		) WITHOUT ROWID, STRICT
 	`);
 	// A retired document address (ADR-0248): a row deletion records one here,
@@ -85,19 +87,23 @@ export function applyStoreSchema(sqlite: SqliteDatabase): void {
 }
 
 /**
- * What `authoritySeq` means, in three values rather than two.
+ * The position before the authority's first, for bytes it will never place.
  *
- * `NULL` is the only one that means OWED, and that precision is why a local
- * store works at all: it has no authority, so its bytes are not owed to
- * anyone, and marking them `NULL` would offer them to a server that does not
- * exist and would stop the chain from ever folding.
+ * Not a sentinel squeezed into a value space. The authority numbers entries
+ * `COALESCE(MAX(seq), 0) + 1`, so its first position is 1 and 0 is unreachable
+ * by construction (`sync/authority.ts`). What 0 means here is exactly what it
+ * reads as: held, and from before anything the authority has.
  *
  * ```txt
- *   NULL          the authority has no position for this. owed.
- *   NO_AUTHORITY  nothing will ever have a position for this. a local
- *                 store's every append, and every fold baseline.
- *   > 0           the position the authority's log gave it.
+ *   NULL          owed. an account replica's edit, waiting for a position.
+ *   NO_AUTHORITY  held, and never owed. received bytes whose position is not
+ *                 known, and a fold baseline on a store that does not sync.
+ *   >= 1          the position the authority's log gave it.
  * ```
+ *
+ * The distinction that matters is NULL against everything else, because that
+ * is the one the sender reads. Re-offering received bytes "would grow the log
+ * with nothing new in it", so bytes that arrived must never read as owed.
  */
 export const NO_AUTHORITY = 0;
 
@@ -110,7 +116,14 @@ export const NO_AUTHORITY = 0;
  * is a property of an append rather than a copy of one, and the same bytes
  * stop being written twice on every local edit.
  */
-export function readOutbox(sqlite: SqliteDatabase): OutboxEntry[] {
+export function readOutbox(
+	sqlite: SqliteDatabase,
+	syncs: boolean,
+): OutboxEntry[] {
+	// A store with no authority owes nobody. Its appends carry no position
+	// because none exists, which would otherwise read as owed, and nothing
+	// would ever read the result: there is no sender.
+	if (!syncs) return [];
 	return sqlite
 		.all<SqliteRow & { document: string; id: number; bytes: Uint8Array }>(
 			'SELECT document, id, bytes FROM _updates WHERE authoritySeq IS NULL ORDER BY id',
@@ -173,62 +186,13 @@ export function acknowledge(
 	);
 }
 
-export const STORE_FORMAT = '4';
-
-/**
- * Enforce the format at open: certify a fresh file, keep one certified under
- * this format, and wipe any other whole.
- *
- * One transaction, so at any crash point the file holds what it held or the
- * empty certified state; either way the next open converges. The wipe is the
- * only in-place deletion in the design, and it exists because this is a
- * format boundary rather than a document boundary: the file that comes out
- * the other side is a NEW file that happens to share a name.
- */
-export function adoptStoreFormat(sqlite: SqliteDatabase): void {
-	sqlite.transaction(() => {
-		const format = sqlite.all<SqliteRow & { value: string }>(
-			"SELECT value FROM _meta WHERE key = 'format'",
-		)[0]?.value;
-		if (format === STORE_FORMAT) return;
-		sqlite.run('DELETE FROM _updates');
-		sqlite.run('DELETE FROM _meta');
-		sqlite.run('DELETE FROM _tombstones');
-		sqlite.run("INSERT INTO _meta (key, value) VALUES ('format', ?)", [
-			STORE_FORMAT,
-		]);
-	});
-}
-
-/** The format this file was certified under, if any. */
-export function readFormat(sqlite: SqliteDatabase): string | undefined {
-	return sqlite.all<SqliteRow & { value: string }>(
-		"SELECT value FROM _meta WHERE key = 'format'",
-	)[0]?.value;
-}
-
-/**
- * Which authority document this replica's state belongs to.
- *
- * The membership fact the cursor cannot carry (ADR-0231). The cursor records
- * how far through a delivery log this replica has read; it says nothing about
- * WHICH document its local bytes are entangled with, and both directions of
- * that gap were reproduced as corruption: a crash between applying foreign
- * bytes and advancing the cursor, and a push that landed while the ack died,
- * each leave a committed replica wearing a fresh install's cursor. The
- * identity is stamped at first entanglement (atomically with the first
- * foreign apply, or durably before the first push leaves), never rewritten,
- * and dies with the file, which is exactly when the membership does.
- * `undefined` means this document has never exchanged a byte with any
- * authority. The sync client stamps an empty replica before it applies
- * authority bytes.
- */
+/** Which authority document this replica's state belongs to (ADR-0231). */
 export function readDocumentIdentity(
 	sqlite: SqliteDatabase,
 ): string | undefined {
-	return sqlite.all<SqliteRow & { value: string }>(
-		"SELECT value FROM _meta WHERE key = 'document'",
-	)[0]?.value;
+	return sqlite.all<SqliteRow & { document: string }>(
+		'SELECT document FROM _identity',
+	)[0]?.document;
 }
 
 /**
@@ -239,10 +203,7 @@ export function writeDocumentIdentity(
 	sqlite: SqliteDatabase,
 	id: string,
 ): void {
-	sqlite.run(
-		"INSERT OR IGNORE INTO _meta (key, value) VALUES ('document', ?)",
-		[id],
-	);
+	sqlite.run('INSERT OR IGNORE INTO _identity (document) VALUES (?)', [id]);
 }
 
 export function readUpdates(
@@ -289,56 +250,79 @@ export function appendUpdate({
 	id,
 	update,
 	authoritySeq,
+	syncs,
 }: {
 	sqlite: SqliteDatabase;
 	document: string;
 	id: number;
 	update: Uint8Array;
 	authoritySeq: number | undefined;
+	/** Whether owed appends have to stay individually addressable. */
+	syncs: boolean;
 }): void {
 	sqlite.run(
 		'INSERT INTO _updates (document, id, bytes, authoritySeq) VALUES (?, ?, ?, ?)',
 		[document, id, new Uint8Array(update), authoritySeq ?? null],
 	);
-	foldSettled(sqlite, document);
+	fold(sqlite, document, syncs);
 }
 
 /**
- * Collapse the part of a document's chain the authority has already taken.
+ * Collapse a document's chain into one baseline.
  *
  * The fold used to replace the WHOLE chain and renumber it from 1, and that
  * renumbering is what forced owed work into a relation of its own: a position
  * recorded against a chain that restarts means a different update afterwards.
+ * Ids are stable now, so what it collapses is a question of what still has to
+ * be addressable.
  *
- * So it folds a PREFIX instead. Acknowledged appends collapse to one baseline
- * carrying their merged state, at the highest id they covered, and owed
- * appends are left exactly where they are. That works because an ack covers
+ * A store that SYNCS folds only the acknowledged prefix. Owed appends stay
+ * exactly where they are, because the sender offers them individually and an
+ * acknowledgement names them by id. That works because an ack covers
  * `id <= throughId` and every later append takes a higher id, so what the
  * authority holds is always a prefix and what is owed is always a suffix.
  *
- * The baseline is stamped `NO_AUTHORITY` rather than left owed. It is a local
- * compaction of bytes the authority already has; offering it back would push a
- * whole document's state to a log that already contains it.
+ * A store that does not sync folds everything, because nothing reads its owed
+ * work: there is no sender to offer it to. Whether a store syncs is a static
+ * fact known when it opens (ADR-0239, "a store's kind is its sync value"), so
+ * it is a constructor argument rather than a value repeated into every row.
+ * It used to be the latter, as a `0` sentinel on the column, which cost every
+ * local append a redundant constant and made `authoritySeq` three-valued in a
+ * way that would have collided the day a log position started at zero.
  */
-function foldSettled(sqlite: SqliteDatabase, document: string): void {
-	const settled = sqlite.all<StoredUpdate>(
-		'SELECT id AS seq, bytes FROM _updates WHERE document = ? AND authoritySeq IS NOT NULL ORDER BY id',
-		[document],
-	);
-	if (settled.length < SNAPSHOT_FOLD_THRESHOLD) return;
+function fold(sqlite: SqliteDatabase, document: string, syncs: boolean): void {
+	const foldable = syncs
+		? sqlite.all<StoredUpdate>(
+				'SELECT id AS seq, bytes FROM _updates WHERE document = ? AND authoritySeq IS NOT NULL ORDER BY id',
+				[document],
+			)
+		: readUpdates(sqlite, document);
+	if (foldable.length < SNAPSHOT_FOLD_THRESHOLD) return;
 
-	const through = settled.at(-1)?.seq;
+	const through = foldable.at(-1)?.seq;
 	if (through === undefined) return;
-	const compacted = replay(settled);
+	// Read before the delete, because the rows carrying it are the rows about
+	// to go. The baseline inherits the highest position it replaced, so on a
+	// syncing store it is not owed and is never offered back; on a store that
+	// does not sync there is no position and none is invented.
+	const position = syncs
+		? (sqlite.all<SqliteRow & { seq: number | null }>(
+				'SELECT MAX(authoritySeq) AS seq FROM _updates WHERE document = ?',
+				[document],
+			)[0]?.seq ?? null)
+		: NO_AUTHORITY;
+	const compacted = replay(foldable);
 	try {
 		const baseline = new Uint8Array(Y.encodeStateAsUpdateV2(compacted));
 		sqlite.run(
-			'DELETE FROM _updates WHERE document = ? AND authoritySeq IS NOT NULL',
+			syncs
+				? 'DELETE FROM _updates WHERE document = ? AND authoritySeq IS NOT NULL'
+				: 'DELETE FROM _updates WHERE document = ?',
 			[document],
 		);
 		sqlite.run(
 			'INSERT INTO _updates (document, id, bytes, authoritySeq) VALUES (?, ?, ?, ?)',
-			[document, through, baseline, NO_AUTHORITY],
+			[document, through, baseline, position],
 		);
 	} finally {
 		compacted.destroy();
@@ -373,12 +357,15 @@ export function readTombstones(sqlite: SqliteDatabase): string[] {
  * durable mirror from the rest, and never reads this file again outside a
  * flush or a row document's own open (ADR-0238, ADR-0248).
  */
-export function loadDurableSnapshot(sqlite: SqliteDatabase): DurableSnapshot {
+export function loadDurableSnapshot(
+	sqlite: SqliteDatabase,
+	syncs: boolean,
+): DurableSnapshot {
 	return {
 		updates: readUpdates(sqlite, APP_DOCUMENT).map((stored) =>
 			copyBytes(stored.bytes),
 		),
-		outbox: readOutbox(sqlite),
+		outbox: readOutbox(sqlite, syncs),
 		cursor: readCursor(sqlite),
 		identity: readDocumentIdentity(sqlite),
 		tombstones: readTombstones(sqlite),
@@ -395,13 +382,20 @@ export function loadDurableSnapshot(sqlite: SqliteDatabase): DurableSnapshot {
  */
 export function createSqliteDurablePort({
 	sqlite,
+	syncs,
 }: {
 	sqlite: SqliteDatabase;
+	/**
+	 * Whether this store has an authority to owe work to.
+	 *
+	 * The fold's only question. A static fact at open (ADR-0239), so it lives
+	 * here rather than being repeated into every append as a sentinel.
+	 */
+	syncs: boolean;
 }): DurablePort & { load(): DurableSnapshot } {
 	applyStoreSchema(sqlite);
-	adoptStoreFormat(sqlite);
 	return {
-		load: () => loadDurableSnapshot(sqlite),
+		load: () => loadDurableSnapshot(sqlite, syncs),
 		commit(ops: readonly DurableOp[]): void {
 			sqlite.transaction(() => {
 				for (const op of ops) {
@@ -413,6 +407,7 @@ export function createSqliteDurablePort({
 								id: op.id,
 								update: op.bytes,
 								authoritySeq: op.authoritySeq,
+								syncs,
 							});
 							break;
 						case 'ack':

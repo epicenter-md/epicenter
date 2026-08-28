@@ -103,7 +103,7 @@ type DocumentEngine = {
 	acceptRemote(
 		address: string,
 		bytes: Uint8Array,
-		authoritySeq: number,
+		authoritySeq: number | undefined,
 	): DurableOp | undefined;
 	/**
 	 * Retire one address: revoke the live document, remember the tombstone,
@@ -306,7 +306,7 @@ export function createDocumentEngine({
 		acceptRemote(
 			address: string,
 			bytes: Uint8Array,
-			authoritySeq: number,
+			authoritySeq: number | undefined,
 		): DurableOp | undefined {
 			// A late update for a retired address is dropped whole: not applied,
 			// not stored. This is what makes retirement durable against the wire.

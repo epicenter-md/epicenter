@@ -15,7 +15,7 @@ const reloads = mock();
 	reload: reloads,
 };
 
-const LOCAL = `epicenter/${honeycrispDefinition.id}/local`;
+const LOCAL = `epicenter/v1/${honeycrispDefinition.id}/local`;
 
 async function databaseNames(): Promise<string[]> {
 	const databases = await indexedDB.databases();

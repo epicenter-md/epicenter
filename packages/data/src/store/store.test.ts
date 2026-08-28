@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import type { TableInvalidation } from '@epicenter/data/definition';
 import { defineData, field, InstantString } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+
+import { createSqliteDurablePort } from './log.js';
 import { expectOk } from 'wellcrafted/testing';
 import * as Y from '@y/y';
 import { encodeEnvelope } from './envelope.js';
@@ -942,15 +944,13 @@ describe('a document store owes nobody (ADR-0233)', () => {
 			});
 			expect(made.id).toHaveLength(24);
 
-			// The write is durable, but it is owed to nobody: nothing could ever
-			// acknowledge a local document's outbox, so nothing may join it.
+			// The write is durable, but it is owed to nobody. The rows carry no
+			// authority position, because no authority will ever give them one,
+			// and the port answers with an empty outbox rather than offering
+			// them: a store that does not sync has no sender to offer them to.
 			expect(
-				sqlite.all(
-					'SELECT COUNT(*) AS owed FROM _updates WHERE authoritySeq IS NULL',
-				),
-			).toEqual([
-				{ owed: 0 },
-			]);
+				createSqliteDurablePort({ sqlite, syncs: false }).load().outbox,
+			).toEqual([]);
 			expect(
 				sqlite.all<{ count: number }>(
 					'SELECT COUNT(*) AS count FROM _updates',

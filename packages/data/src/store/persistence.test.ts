@@ -76,7 +76,7 @@ function expectOk<TValue, TError>(
 function openFailable() {
 	const raw = new Database(':memory:');
 	const sqlite = createBunSqliteAdapter(raw);
-	const inner = createSqliteDurablePort({ sqlite });
+	const inner = createSqliteDurablePort({ sqlite, syncs: true });
 	const gate = { failing: false };
 	/** Every batch the engine accepted, for tests that pin op ordering. */
 	const batches: DurableOp[][] = [];
@@ -116,7 +116,7 @@ function openFailable() {
 
 /** Reopen over the same durable sqlite: the restart. */
 function reopen(sqlite: ReturnType<typeof createBunSqliteAdapter>) {
-	const port = createSqliteDurablePort({ sqlite });
+	const port = createSqliteDurablePort({ sqlite, syncs: true });
 	const { store, view } = createAccountStoreOverPort({
 		definition: parsed(),
 		durable: port,
@@ -257,7 +257,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		// store never waits for it. Reads follow acceptance.
 		const raw = new Database(':memory:');
 		const sqlite = createBunSqliteAdapter(raw);
-		const inner = createSqliteDurablePort({ sqlite });
+		const inner = createSqliteDurablePort({ sqlite, syncs: true });
 		const release: (() => void)[] = [];
 		const { store, view } = createAccountStoreOverPort({
 			definition: parsed(),

@@ -958,12 +958,11 @@ function parsedDatabaseOrThrow(
 }
 
 /** Build the engine options for a synchronous SQLite durable engine. */
-function overSqlite<TDatabase extends DataDefinition>({
-	definition,
-	sqlite,
-	...rest
-}: CreateStoreOptions<TDatabase>): StoreEngineOptions {
-	const port = createSqliteDurablePort({ sqlite });
+function overSqlite<TDatabase extends DataDefinition>(
+	{ definition, sqlite, ...rest }: CreateStoreOptions<TDatabase>,
+	syncs: boolean,
+): StoreEngineOptions {
+	const port = createSqliteDurablePort({ sqlite, syncs });
 	return {
 		definition: parsedDatabaseOrThrow(definition),
 		durable: port,
@@ -985,7 +984,7 @@ export function createLocalStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
 ): DataOf<TDatabase, LocalStore> {
 	const { store, view } = createStoreEngine(
-		overSqlite(options),
+		overSqlite(options, false),
 		'none',
 	);
 	// Through `unknown` deliberately: comparing the untyped view with
@@ -1011,7 +1010,7 @@ export function createAccountStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
 ): DataOf<TDatabase, AccountStore> {
 	const { store, view } = createStoreEngine(
-		overSqlite(options),
+		overSqlite(options, true),
 		'remote',
 	);
 	return asData(store, view as unknown as DataView<TDatabase>);
@@ -1117,15 +1116,14 @@ function createStoreEngine(
 	/** One sequence for every document, application and rows alike. */
 	const mintId = (): number => nextId++;
 	/**
-	 * What an append this device authored owes the authority.
+	 * What an append this device authored owes the authority: nothing yet.
 	 *
-	 * `undefined` means owed: an account replica's local edit, waiting for a
-	 * position. A local store has no authority to owe anything to, so its
-	 * bytes are stamped `NO_AUTHORITY` and are never offered, never folded
-	 * around, and never counted as debt.
+	 * Always `undefined`, on both store kinds, because neither has a position
+	 * for bytes the authority has not seen. On a local store nothing ever
+	 * reads the result, since there is no sender, and the port folds its chain
+	 * whole rather than asking.
 	 */
-	const authoredSeq = (): number | undefined =>
-		replication === 'none' ? NO_AUTHORITY : undefined;
+	const authoredSeq = (): number | undefined => undefined;
 
 	/**
 	 * The row documents' runtime (ADR-0248): live handles, hydration, remote
@@ -1847,6 +1845,8 @@ function createStoreEngine(
 											// this is also what moves the durable cursor: it is
 											// read off the appends rather than written beside them,
 											// so it cannot run ahead of them.
+											// Bytes that arrived are never owed, whether or not
+											// the caller knew the position they arrived at.
 											authoritySeq: opts?.advanceTo ?? NO_AUTHORITY,
 										});
 										continue;

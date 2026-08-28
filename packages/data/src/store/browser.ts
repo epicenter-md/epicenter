@@ -51,7 +51,6 @@ import {
 	copyBytes,
 	replay,
 	SNAPSHOT_FOLD_THRESHOLD,
-	STORE_FORMAT,
 	NO_AUTHORITY,
 } from './log.js';
 import type {
@@ -111,19 +110,20 @@ export type BrowserAccountStore = AccountStore & {
 type StoredUpdateRecord = {
 	document: string;
 	bytes: Uint8Array;
-	/** `null` is owed. See `NO_AUTHORITY` in `log.ts` for the third value. */
+	/** `null` is owed: the authority has no position for these bytes. */
 	authoritySeq: number | null;
 };
 
 type BrowserDurableSchema = DBSchema & {
 	updates: { key: number; value: StoredUpdateRecord };
 	tombstones: { key: string; value: 1 };
-	meta: { key: 'format' | 'document'; value: string };
+	/** One key, ever. The format left for the address. */
+	identity: { key: 'document'; value: string };
 };
 
 type BrowserDurableDatabase = IDBPDatabase<BrowserDurableSchema>;
 
-const DURABLE_STORES = ['updates', 'tombstones', 'meta'] as const;
+const DURABLE_STORES = ['updates', 'tombstones', 'identity'] as const;
 
 /**
  * One append id is the whole key now.
@@ -217,35 +217,18 @@ export type BrowserBacking = {
  */
 export async function openIdbBacking(
 	address: string,
+	syncs: boolean,
 ): Promise<Result<BrowserBacking, StoreError>> {
 	return tryAsync({
 		try: async () => {
 			const durable = await openIndexedDb(address);
-
-			// The format at open, exactly as the SQLite engine enforces it
-			// (ADR-0231, ADR-0248): a record certified under another format, or
-			// holding state without a certificate, is untrusted whole, so it is
-			// wiped and the replica rejoins from zero; a fresh record is simply
-			// certified. One transaction, so a crash converges at the next open.
-			const enforce = durable.transaction(DURABLE_STORES, 'readwrite');
-			const meta = enforce.objectStore('meta');
-			const format = (await meta.get('format')) as string | undefined;
-			if (format !== STORE_FORMAT) {
-				await enforce.objectStore('updates').clear();
-				await enforce.objectStore('tombstones').clear();
-				await meta.clear();
-				void meta.put(STORE_FORMAT, 'format');
-			}
-			await enforce.done;
 
 			const read = durable.transaction(DURABLE_STORES, 'readonly');
 			const updateStore = read.objectStore('updates');
 			const rows = await updateStore.getAll();
 			const ids = (await updateStore.getAllKeys()) as number[];
 			const tombstones = await read.objectStore('tombstones').getAllKeys();
-			const identity = (await read.objectStore('meta').get('document')) as
-				| string
-				| undefined;
+			const identity = await read.objectStore('identity').get('document');
 			await read.done;
 
 			// One pass over the chain answers everything the snapshot holds, which
@@ -262,7 +245,15 @@ export async function openIdbBacking(
 				counts.set(row.document, (counts.get(row.document) ?? 0) + 1);
 				if (row.document === APP_DOCUMENT) appUpdates.push(copyBytes(row.bytes));
 				if (row.authoritySeq === null) {
-					outbox.push({ id, document: row.document, bytes: copyBytes(row.bytes) });
+					// A store with no authority owes nobody, and nothing would read
+					// the result: there is no sender.
+					if (syncs) {
+						outbox.push({
+							id,
+							document: row.document,
+							bytes: copyBytes(row.bytes),
+						});
+					}
 				} else if (row.authoritySeq > cursor) {
 					cursor = row.authoritySeq;
 				}
@@ -283,9 +274,9 @@ export async function openIdbBacking(
 					const transaction = durable.transaction(DURABLE_STORES, 'readwrite');
 					const updates = transaction.objectStore('updates');
 					const tombstonesStore = transaction.objectStore('tombstones');
-					const metaStore = transaction.objectStore('meta');
+					const identityStore = transaction.objectStore('identity');
 					const chain = new Map(counts);
-					const settled = new Set<string>();
+					const touched = new Set<string>();
 					for (const op of ops) {
 						switch (op.kind) {
 							case 'append': {
@@ -298,7 +289,7 @@ export async function openIdbBacking(
 									op.id,
 								);
 								chain.set(op.document, (chain.get(op.document) ?? 0) + 1);
-								if (op.authoritySeq !== undefined) settled.add(op.document);
+								touched.add(op.document);
 								break;
 							}
 							case 'ack': {
@@ -314,7 +305,7 @@ export async function openIdbBacking(
 											...at.value,
 											authoritySeq: op.authoritySeq,
 										});
-										settled.add(at.value.document);
+										touched.add(at.value.document);
 									}
 									at = await at.continue();
 								}
@@ -322,11 +313,13 @@ export async function openIdbBacking(
 							}
 							case 'identity': {
 								// First write wins, which is the rule
-								// `writeDocumentIdentity` states and enforces with
-								// `INSERT OR IGNORE`. Held to the SQL port by
+								// `writeDocumentIdentity` states and enforces with a
+								// primary key. Held to the SQL port by
 								// `port-conformance.test.ts`.
-								const stamped = await metaStore.get('document');
-								if (stamped === undefined) void metaStore.put(op.id, 'document');
+								const stamped = await identityStore.get('document');
+								if (stamped === undefined) {
+									void identityStore.put(op.id, 'document');
+								}
 								break;
 							}
 							case 'retire': {
@@ -337,34 +330,40 @@ export async function openIdbBacking(
 									at = await at.continue();
 								}
 								chain.delete(op.document);
-								settled.delete(op.document);
+								touched.delete(op.document);
 								break;
 							}
 						}
 					}
 
-					// The same prefix fold the SQL engine applies, for the same
-					// reason and at the same threshold: acknowledged appends collapse
-					// to one baseline at the highest id they covered, and owed
-					// appends are left exactly where they are.
-					for (const document of settled) {
+					// The same fold the SQL engine applies, with the same one
+					// question: a store that syncs collapses only the acknowledged
+					// prefix, because the sender offers owed appends individually
+					// and an ack names them by id. A store that does not sync
+					// collapses everything, because nothing reads its owed work.
+					for (const document of touched) {
 						if ((chain.get(document) ?? 0) < SNAPSHOT_FOLD_THRESHOLD) continue;
-						const stored: { id: number; bytes: Uint8Array }[] = [];
+						const foldable: { id: number; bytes: Uint8Array }[] = [];
+						let position: number | null = null;
 						let at = await updates.openCursor();
 						while (at !== null) {
+							const row = at.value;
 							if (
-								at.value.document === document &&
-								at.value.authoritySeq !== null
+								row.document === document &&
+								(!syncs || row.authoritySeq !== null)
 							) {
-								stored.push({ id: at.key as number, bytes: at.value.bytes });
+								foldable.push({ id: at.key as number, bytes: row.bytes });
+								if (row.authoritySeq !== null && row.authoritySeq > (position ?? -1)) {
+									position = row.authoritySeq;
+								}
 							}
 							at = await at.continue();
 						}
-						if (stored.length < SNAPSHOT_FOLD_THRESHOLD) continue;
-						const through = stored.at(-1)?.id;
+						if (foldable.length < SNAPSHOT_FOLD_THRESHOLD) continue;
+						const through = foldable.at(-1)?.id;
 						if (through === undefined) continue;
 						const folded = replay(
-							stored.map((row) => ({ seq: row.id, bytes: row.bytes })),
+							foldable.map((row) => ({ seq: row.id, bytes: row.bytes })),
 						);
 						let baseline: Uint8Array;
 						try {
@@ -372,12 +371,21 @@ export async function openIdbBacking(
 						} finally {
 							folded.destroy();
 						}
-						for (const row of stored) void updates.delete(row.id);
+						for (const row of foldable) void updates.delete(row.id);
+						// The baseline inherits the highest position it replaced, so
+						// on a syncing store it is not owed and is never offered back.
 						void updates.put(
-							{ document, bytes: baseline, authoritySeq: NO_AUTHORITY },
+							{
+								document,
+								bytes: baseline,
+								authoritySeq: syncs ? position : NO_AUTHORITY,
+							},
 							through,
 						);
-						chain.set(document, (chain.get(document) ?? 0) - stored.length + 1);
+						chain.set(
+							document,
+							(chain.get(document) ?? 0) - foldable.length + 1,
+						);
 					}
 
 					await transaction.done;
@@ -440,8 +448,23 @@ export async function openIdbBacking(
  * segment after `epicenter/` is always exactly the application, and no address
  * can be read as another one.
  */
+/**
+ * The storage generation, carried in the address rather than in the record.
+ *
+ * A record written under an older shape sits at a name nothing opens. It is
+ * not detected and wiped: it is not addressed. That deletes the format
+ * certificate, the comparison at every open, and the wipe transaction that
+ * followed it, and it makes a bad migration impossible to write rather than
+ * merely discouraged.
+ *
+ * Bumping this strands every existing record, which is the same thing the
+ * format wipe always did, said out loud in the address instead of buried in
+ * a table.
+ */
+const STORE_GENERATION = 'v1';
+
 function localAddress(databaseId: string): string {
-	return `epicenter/${databaseId}/local`;
+	return `epicenter/${STORE_GENERATION}/${databaseId}/local`;
 }
 
 /**
@@ -476,7 +499,7 @@ function accountAddress(
 	databaseId: string,
 	{ baseURL, principalId }: { baseURL: string; principalId: PrincipalId },
 ): string {
-	return `epicenter/${databaseId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}`;
+	return `epicenter/${STORE_GENERATION}/${databaseId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}`;
 }
 
 /**
@@ -508,6 +531,12 @@ function deleteSupersededStorage(
 		owner === 'local'
 			? `epicenter/${databaseId}/private`
 			: `epicenter/${databaseId}/database/${principalId}`,
+		// Everything written before the generation entered the address. There
+		// is no migration and there never was one: a record under an older
+		// shape was always wiped, and now it is simply somewhere else.
+		owner === 'local'
+			? `epicenter/${databaseId}/local`
+			: `epicenter/${databaseId}/account/${principalId}`,
 	];
 	return Promise.all(
 		superseded.map(
@@ -547,7 +576,7 @@ export async function openLocal<const TDatabase extends DataDefinition>(
 
 	await deleteSupersededStorage(parsed.id, 'local');
 
-	const opened = await openIdbBacking(address);
+	const opened = await openIdbBacking(address, false);
 	if (opened.error !== null) {
 		releaseDocument(address);
 		return Err(opened.error);
@@ -618,7 +647,7 @@ export async function openAccount<const TDatabase extends DataDefinition>(
 
 	await deleteSupersededStorage(parsed.id, 'account', principalId);
 
-	const opened = await openIdbBacking(address);
+	const opened = await openIdbBacking(address, true);
 	if (opened.error !== null) {
 		releaseDocument(address);
 		return Err(opened.error);

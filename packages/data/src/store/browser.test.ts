@@ -4,8 +4,8 @@ import { field } from '@epicenter/data/definition';
  *
  * A browser application keeps one local document and one retained account
  * replica per server identity (ADR-0261). These tests pin the addresses that
- * hold them apart: `epicenter/<databaseId>/local` and
- * `epicenter/<databaseId>/account/<base URL>/<principal id>`, one IndexedDB
+ * hold them apart: `epicenter/v1/<databaseId>/local` and
+ * `epicenter/v1/<databaseId>/account/<base URL>/<principal id>`, one IndexedDB
  * database and one open claim each.
  *
  * Key behaviors:
@@ -34,7 +34,6 @@ import type { Result } from 'wellcrafted/result';
 import { expectErr, expectOk as expectOkResult } from 'wellcrafted/testing';
 
 import { openAccount, openLocal } from './browser.js';
-import { STORE_FORMAT } from './log.js';
 import { openMemory } from './memory.js';
 import { type DataOf, type DataStoreBase, syncEngineOf } from './store.js';
 
@@ -66,13 +65,14 @@ function expectOk<TValue, TError>(
 	return result as TValue;
 }
 
-const localAddress = (databaseId: string) => `epicenter/${databaseId}/local`;
+const localAddress = (databaseId: string) =>
+	`epicenter/v1/${databaseId}/local`;
 const accountAddress = (
 	databaseId: string,
 	baseURL: string,
 	principalId: string,
 ) =>
-	`epicenter/${databaseId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}`;
+	`epicenter/v1/${databaseId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}`;
 
 const openLocalData = (definition: ReturnType<typeof databaseFor>) =>
 	openLocal(definition);
@@ -355,7 +355,7 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		const bytes = author.store.encodeStateSince();
 		await author.store[Symbol.asyncDispose]();
 
-		await seedVersionOne(`epicenter/${database.id}/local`, {
+		await seedVersionOne(`epicenter/v1/${database.id}/local`, {
 			updates: [{ seq: 1, bytes }],
 			outbox: [],
 			cursor: 4,
@@ -369,7 +369,7 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 
 	test('the update log folds at the threshold instead of growing forever', async () => {
 		const database = databaseFor('fold');
-		const address = `epicenter/${database.id}/local`;
+		const address = localAddress(database.id);
 		const local = expectOk(await openLocalData(database));
 		for (let index = 0; index < 70; index += 1) {
 			expectOk(local.tables.notes.create({ title: `note ${index}` }));
@@ -464,17 +464,13 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 		return new Promise((resolve, reject) => {
 			const request = indexedDB.open(address, 4);
 			request.onupgradeneeded = () => {
-				for (const name of ['updates', 'tombstones', 'meta']) {
+				for (const name of ['updates', 'tombstones', 'identity']) {
 					request.result.createObjectStore(name);
 				}
 			};
 			request.onsuccess = () => {
 				const sqlite = request.result;
-				const transaction = sqlite.transaction(
-					['updates', 'meta'],
-					'readwrite',
-				);
-				transaction.objectStore('meta').put(STORE_FORMAT, 'format');
+				const transaction = sqlite.transaction(['updates'], 'readwrite');
 				transaction.objectStore('updates').put(
 					{
 						document: 'app',

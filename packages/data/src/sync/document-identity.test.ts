@@ -292,40 +292,19 @@ describe('database bootstrap names a document before any database write', () => 
 
 });
 
-describe('the cutover: pre-identity local state is reset, never merged', () => {
-	test('a file holding state without the format certificate is wiped at open and rejoins fresh', () => {
-		const { wire, authority, hub } = setup();
-		const phone = openReplica('phone', hub, wire);
-		phone.connect();
-		expectOk(phone.db.tables.notes.create({ title: 'current' }));
-		phone.client.flush();
-		wire.settle();
-
-		// A store file from before the document identity: it holds real state
-		// (which may descend from any document, including a retired one) and
-		// no certificate saying which. Modelled exactly: a certified file with
-		// its `_meta` rows removed is byte-for-byte the old format.
-		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		{
-			const old = createAccountStore({ definition: database, sqlite });
-			expectOk(old.tables.notes.create({ title: 'untrusted old note' }));
-		}
-		sqlite.run('DELETE FROM _meta');
-
-		// The open is the cutover: untrusted whole, wiped whole. A missing
-		// identity must never read as a fresh install when state exists.
-		const reopened = openReplica('reopened', hub, wire, database, sqlite);
-		expect(reopened.titles()).toEqual([]);
-		expect(reopened.client.status().cursor).toBe(0);
-		expect(reopened.client.document()).toBeUndefined();
-
-		// And the reset replica rejoins as what it now is, a fresh install:
-		// admitted from zero, adopting the current document.
-		expect(reopened.connect()).toBe('admitted');
-		wire.settle();
-		expect(reopened.titles()).toEqual(['current']);
-		expect(reopened.client.document()).toBe(expectOk(authority.document()));
-	});
+describe('a record under an older shape is not addressed', () => {
+	/*
+	 * There used to be a test here for a file holding state without a format
+	 * certificate being wiped at open. That behavior is gone, along with the
+	 * certificate: the storage generation is part of the address now
+	 * (`epicenter/v1/...`), so a record written under an older shape is not
+	 * detected and wiped, it is somewhere nothing opens. There is no code path
+	 * left to exercise.
+	 *
+	 * The invariant that test also covered survives and is checked elsewhere:
+	 * a store holding state refuses the identity stamp (`Unstampable`), so a
+	 * missing identity can never read as a fresh install.
+	 */
 
 	test('CONTROL: a certified file reopens intact', () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
