@@ -213,8 +213,7 @@ async function build(
 		if (owed === undefined) return;
 		const position = authority.append(owed.bytes);
 		if (position.error !== null) throw position.error;
-		syncEngineOf(store).acknowledge(owed.id);
-		syncEngineOf(store).advance(position.data);
+		syncEngineOf(store).acknowledge(owed.id, position.data);
 		if (mode === 'log') return;
 		// The snapshot half. The resident replica is at the head by construction,
 		// which is the condition the hub checks on a real connection before it asks

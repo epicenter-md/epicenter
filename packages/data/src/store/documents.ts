@@ -100,7 +100,11 @@ type DocumentEngine = {
 	 * The CALLER enqueues, so a whole envelope and its cursor land in one
 	 * atomic batch.
 	 */
-	acceptRemote(address: string, bytes: Uint8Array): DurableOp | undefined;
+	acceptRemote(
+		address: string,
+		bytes: Uint8Array,
+		authoritySeq: number,
+	): DurableOp | undefined;
 	/**
 	 * Retire one address: revoke the live document, remember the tombstone,
 	 * and hand back the durable op that tombstones it and deletes its chain.
@@ -137,7 +141,8 @@ export function createDocumentEngine({
 	listDocuments,
 	appDocument,
 	controller,
-	mintOutboxId,
+	mintId,
+	authoredSeq,
 	tombstones,
 	assertUsable,
 	log,
@@ -154,7 +159,8 @@ export function createDocumentEngine({
 	appDocument: string;
 	controller: PersistenceController;
 	/** Mints from the store's one outbox sequence; undefined on a device store. */
-	mintOutboxId(): number | undefined;
+	mintId(): number;
+	authoredSeq(): number | undefined;
 	/** Durably retired addresses, loaded at open. Owned by this engine from here. */
 	tombstones: readonly string[];
 	assertUsable(): void;
@@ -188,8 +194,9 @@ export function createDocumentEngine({
 					{
 						kind: 'append',
 						document: address,
+						id: mintId(),
 						bytes: copyBytes(update),
-						outboxId: mintOutboxId(),
+						authoritySeq: authoredSeq(),
 					},
 				]);
 				// A store-driven derivation may follow this local edit (ADR-0264):
@@ -296,7 +303,11 @@ export function createDocumentEngine({
 			return Ok(handleOver(address, entry));
 		},
 
-		acceptRemote(address: string, bytes: Uint8Array): DurableOp | undefined {
+		acceptRemote(
+			address: string,
+			bytes: Uint8Array,
+			authoritySeq: number,
+		): DurableOp | undefined {
 			// A late update for a retired address is dropped whole: not applied,
 			// not stored. This is what makes retirement durable against the wire.
 			if (retired.has(address)) return undefined;
@@ -307,9 +318,11 @@ export function createDocumentEngine({
 			return {
 				kind: 'append',
 				document: address,
+				id: mintId(),
 				bytes: copyBytes(bytes),
-				// Never the outbox: these bytes came FROM the authority.
-				outboxId: undefined,
+				// The position these bytes came FROM. Never owed, and what the
+				// durable cursor is read off.
+				authoritySeq,
 			};
 		},
 

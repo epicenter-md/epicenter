@@ -177,7 +177,7 @@ describe('row deletion retires the document (ADR-0248)', () => {
 			).toBeUndefined();
 			const raw = createBunSqliteAdapter(file);
 			expect(
-				raw.all('SELECT seq FROM _updates WHERE document = ?', [derived]),
+				raw.all('SELECT id FROM _updates WHERE document = ?', [derived]),
 			).toHaveLength(0);
 			expect(
 				raw.all('SELECT document FROM _tombstones WHERE document = ?', [

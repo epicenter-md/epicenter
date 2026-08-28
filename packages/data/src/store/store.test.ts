@@ -944,7 +944,11 @@ describe('a document store owes nobody (ADR-0233)', () => {
 
 			// The write is durable, but it is owed to nobody: nothing could ever
 			// acknowledge a local document's outbox, so nothing may join it.
-			expect(sqlite.all('SELECT COUNT(*) AS owed FROM _outbox')).toEqual([
+			expect(
+				sqlite.all(
+					'SELECT COUNT(*) AS owed FROM _updates WHERE authoritySeq IS NULL',
+				),
+			).toEqual([
 				{ owed: 0 },
 			]);
 			expect(

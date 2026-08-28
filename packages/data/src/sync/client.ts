@@ -444,7 +444,6 @@ export function createSyncClient({
 					// is the point: if it is ever false the ordering assumption is
 					// wrong, and a cursor that advanced anyway would skip real entries.
 					if (frame.seq === cursor + 1) {
-						engine.advance(frame.seq);
 						cursor = frame.seq;
 					} else if (frame.seq > cursor + 1) {
 						lastError = SyncClientError.Gap({
@@ -453,7 +452,12 @@ export function createSyncClient({
 						}).error;
 						needsResync = true;
 					}
-					engine.acknowledge(inFlight.throughId);
+					// One call for what used to be two. Moving the cursor and
+					// retiring the owed appends were the same fact reported twice:
+					// these bytes reached the log, at this position. The gap check
+					// above stays a check, because a position that skipped entries
+					// must not be recorded as if it had not.
+					engine.acknowledge(inFlight.throughId, frame.seq);
 					inFlight = undefined;
 					owed = 0;
 					// Work authored while that submission was out is still owed.

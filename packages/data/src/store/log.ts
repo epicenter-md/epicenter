@@ -49,31 +49,22 @@ type StoredUpdate = SqliteRow & {
 export function applyStoreSchema(sqlite: SqliteDatabase): void {
 	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS _updates (
-			document TEXT    NOT NULL,
-			seq      INTEGER NOT NULL CHECK (seq > 0),
-			bytes    BLOB    NOT NULL,
-			PRIMARY KEY (document, seq)
+			document     TEXT    NOT NULL,
+			id           INTEGER NOT NULL CHECK (id > 0),
+			bytes        BLOB    NOT NULL,
+			authoritySeq INTEGER CHECK (authoritySeq IS NULL OR authoritySeq >= 0),
+			PRIMARY KEY (document, id)
 		) WITHOUT ROWID, STRICT
 	`);
+	// Owed work is read off the chain, so the query that answers "what do I
+	// still owe" has to be an index seek rather than a scan of every update.
 	sqlite.run(`
-		CREATE TABLE IF NOT EXISTS _outbox (
-			id       INTEGER NOT NULL CHECK (id > 0),
-			document TEXT    NOT NULL,
-			bytes    BLOB    NOT NULL,
-			PRIMARY KEY (id)
-		) WITHOUT ROWID, STRICT
+		CREATE INDEX IF NOT EXISTS _updates_owed
+			ON _updates (id) WHERE authoritySeq IS NULL
 	`);
-	sqlite.run(`
-		CREATE TABLE IF NOT EXISTS _cursor (
-			document TEXT    NOT NULL,
-			seq      INTEGER NOT NULL CHECK (seq >= 0),
-			PRIMARY KEY (document)
-		) WITHOUT ROWID, STRICT
-	`);
-	// One durable fact beyond the log, the outbox and the cursor: which
-	// authority document this replica's state belongs to (ADR-0231). A
-	// key-value shape, mirroring the authority's own `_meta`, so a second
-	// fact is a row and not a migration.
+	// One durable fact beyond the log: which authority document this replica's
+	// state belongs to (ADR-0231). A key-value shape, mirroring the authority's
+	// own `_meta`, so a second fact is a row and not a migration.
 	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS _meta (
 			key   TEXT NOT NULL,
@@ -94,42 +85,36 @@ export function applyStoreSchema(sqlite: SqliteDatabase): void {
 }
 
 /**
- * Hold one locally authored update as unsent, at the id the store assigned.
+ * What `authoritySeq` means, in three values rather than two.
  *
- * A separate relation rather than a cursor into `_updates`, and that is a
- * correctness requirement rather than a preference: `appendUpdate` collapses
- * `_updates` and renumbers it from 1, so any position recorded against that
- * relation would silently come to mean a different update.
+ * `NULL` is the only one that means OWED, and that precision is why a local
+ * store works at all: it has no authority, so its bytes are not owed to
+ * anyone, and marking them `NULL` would offer them to a server that does not
+ * exist and would stop the chain from ever folding.
  *
- * The id arrives from the store rather than being minted here, so the
- * in-memory mirror and this relation can never disagree about which entry an
- * acknowledgement names (ADR-0238). Only bytes this device authored are ever
- * enqueued: bytes received from the authority are already in the authority's
- * log, so re-offering them would grow the log with nothing new in it.
+ * ```txt
+ *   NULL          the authority has no position for this. owed.
+ *   NO_AUTHORITY  nothing will ever have a position for this. a local
+ *                 store's every append, and every fold baseline.
+ *   > 0           the position the authority's log gave it.
+ * ```
  */
-export function insertOutbox(
-	sqlite: SqliteDatabase,
-	id: number,
-	document: string,
-	update: Uint8Array,
-): void {
-	sqlite.run('INSERT INTO _outbox (id, document, bytes) VALUES (?, ?, ?)', [
-		id,
-		document,
-		new Uint8Array(update),
-	]);
-}
+export const NO_AUTHORITY = 0;
 
-/** Every unsent entry, oldest first. */
+/**
+ * Every append the authority has no position for, oldest first.
+ *
+ * The outbox, as a query. It used to be a relation, because the fold
+ * renumbered a document's chain from 1 and any position recorded against it
+ * silently came to mean a different update. Ids are stable now, so owed work
+ * is a property of an append rather than a copy of one, and the same bytes
+ * stop being written twice on every local edit.
+ */
 export function readOutbox(sqlite: SqliteDatabase): OutboxEntry[] {
 	return sqlite
-		.all<
-			SqliteRow & {
-				id: number;
-				document: string;
-				bytes: Uint8Array | ArrayBuffer;
-			}
-		>('SELECT id, document, bytes FROM _outbox ORDER BY id')
+		.all<SqliteRow & { document: string; id: number; bytes: Uint8Array }>(
+			'SELECT document, id, bytes FROM _updates WHERE authoritySeq IS NULL ORDER BY id',
+		)
 		.map((row) => ({
 			id: row.id,
 			document: row.document,
@@ -138,89 +123,57 @@ export function readOutbox(sqlite: SqliteDatabase): OutboxEntry[] {
 }
 
 /**
- * Replace one document's entries through `throughId` with one merged entry.
- *
- * Per document, because entries for different documents cannot merge into one
- * update; each document's covered entries collapse to a merged entry at that
- * document's own highest covered id, which keeps ids unique and ordered.
- */
-export function replaceOutboxThrough(
-	sqlite: SqliteDatabase,
-	document: string,
-	throughId: number,
-	merged: Uint8Array,
-): void {
-	sqlite.run('DELETE FROM _outbox WHERE document = ? AND id <= ?', [
-		document,
-		throughId,
-	]);
-	sqlite.run('INSERT INTO _outbox (id, document, bytes) VALUES (?, ?, ?)', [
-		throughId,
-		document,
-		new Uint8Array(merged),
-	]);
-}
-
-/** Forget every entry the authority has taken responsibility for. */
-export function dropOutboxThrough(
-	sqlite: SqliteDatabase,
-	throughId: number,
-): void {
-	sqlite.run('DELETE FROM _outbox WHERE id <= ?', [throughId]);
-}
-
-/**
  * How far through the authority's log this replica has read.
  *
- * A log position, deliberately, and not a state vector. A state vector cannot
- * express deletion, so it can never answer "have I seen everything"; an integer
- * position can, and it is the only thing either side has to agree on.
+ * Derived, and that is the point: a cursor computed from the bytes it accounts
+ * for cannot run ahead of them. The rule that used to need one atomic batch to
+ * enforce ("with the bytes, never after them") is now unrepresentable.
  *
- * Zero means nothing has been read, which is also what a fresh replica reports.
+ * It can lag, when an entry arrived whose sections were all for retired
+ * addresses and nothing was stored. That is the safe direction: the entry is
+ * received again and applying an update twice is free.
+ *
+ * Zero means nothing has been read, which is also what a fresh replica and a
+ * local store both report.
  */
-export function readCursor(sqlite: SqliteDatabase, document: string): number {
+export function readCursor(sqlite: SqliteDatabase): number {
 	return (
-		sqlite.all<SqliteRow & { seq: number }>(
-			'SELECT seq FROM _cursor WHERE document = ?',
-			[document],
+		sqlite.all<SqliteRow & { seq: number | null }>(
+			'SELECT MAX(authoritySeq) AS seq FROM _updates',
 		)[0]?.seq ?? 0
 	);
 }
 
-/**
- * Record that everything through `seq` has been applied.
- *
- * Written WITH the bytes it accounts for, in the same transaction, or after
- * them; never before. `applyRemote` commits both as one step, which is what
- * makes "a durable cursor of zero means no foreign byte was ever applied"
- * true rather than merely likely: a crash between the two halves would
- * otherwise leave a replica holding another document's bytes while presenting
- * the cursor of a fresh install (ADR-0231). The forbidden order would skip an
- * entry, and a skipped entry is invisible forever.
- */
-export function writeCursor(
-	sqlite: SqliteDatabase,
-	document: string,
-	seq: number,
-): void {
-	sqlite.run('INSERT OR REPLACE INTO _cursor (document, seq) VALUES (?, ?)', [
-		document,
-		seq,
-	]);
+/** The highest id any append carries, so the store mints from here. */
+export function readLastId(sqlite: SqliteDatabase): number {
+	return (
+		sqlite.all<SqliteRow & { id: number | null }>(
+			'SELECT MAX(id) AS id FROM _updates',
+		)[0]?.id ?? 0
+	);
 }
 
 /**
- * The store file format this code writes: the independent-row-document era
- * (ADR-0248), following '2', the document-identity era (ADR-0231).
+ * Record that the authority took responsibility through `throughId`, at the
+ * position it put those bytes.
  *
- * A file's format row is its birth certificate, written in the same
- * transaction that first creates its state. A file certified under another
- * format holds shapes this code no longer reads: '2' kept every row's rich
- * content nested inside the application document and its outbox rows carry no
- * document address, so it is untrusted whole. There is no migration; the
- * cutover is a wipe, and a replica refills from its authority.
+ * One statement for what used to be two ops. `dropOutbox` deleted rows from a
+ * relation and `cursor` wrote a number; both were reporting that the same
+ * bytes reached the same log entry. Only rows still owed are stamped, so a
+ * repeated ack is a no-op rather than a rewrite.
  */
-export const STORE_FORMAT = '3';
+export function acknowledge(
+	sqlite: SqliteDatabase,
+	throughId: number,
+	authoritySeq: number,
+): void {
+	sqlite.run(
+		'UPDATE _updates SET authoritySeq = ? WHERE id <= ? AND authoritySeq IS NULL',
+		[authoritySeq, throughId],
+	);
+}
+
+export const STORE_FORMAT = '4';
 
 /**
  * Enforce the format at open: certify a fresh file, keep one certified under
@@ -239,8 +192,6 @@ export function adoptStoreFormat(sqlite: SqliteDatabase): void {
 		)[0]?.value;
 		if (format === STORE_FORMAT) return;
 		sqlite.run('DELETE FROM _updates');
-		sqlite.run('DELETE FROM _outbox');
-		sqlite.run('DELETE FROM _cursor');
 		sqlite.run('DELETE FROM _meta');
 		sqlite.run('DELETE FROM _tombstones');
 		sqlite.run("INSERT INTO _meta (key, value) VALUES ('format', ?)", [
@@ -299,7 +250,7 @@ export function readUpdates(
 	document: string,
 ): StoredUpdate[] {
 	return sqlite.all<StoredUpdate>(
-		'SELECT seq, bytes FROM _updates WHERE document = ? ORDER BY seq',
+		'SELECT id AS seq, bytes FROM _updates WHERE document = ? ORDER BY id',
 		[document],
 	);
 }
@@ -335,34 +286,60 @@ export function replay(updates: readonly StoredUpdate[]): Y.Doc {
 export function appendUpdate({
 	sqlite,
 	document,
+	id,
 	update,
+	authoritySeq,
 }: {
 	sqlite: SqliteDatabase;
 	document: string;
+	id: number;
 	update: Uint8Array;
+	authoritySeq: number | undefined;
 }): void {
-	const nextSeq =
-		sqlite.all<SqliteRow & { seq: number }>(
-			'SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM _updates WHERE document = ?',
-			[document],
-		)[0]?.seq ?? 1;
-	sqlite.run('INSERT INTO _updates (document, seq, bytes) VALUES (?, ?, ?)', [
-		document,
-		nextSeq,
-		new Uint8Array(update),
-	]);
+	sqlite.run(
+		'INSERT INTO _updates (document, id, bytes, authoritySeq) VALUES (?, ?, ?, ?)',
+		[document, id, new Uint8Array(update), authoritySeq ?? null],
+	);
+	foldSettled(sqlite, document);
+}
 
-	const updates = readUpdates(sqlite, document);
-	if (updates.length < SNAPSHOT_FOLD_THRESHOLD) return;
+/**
+ * Collapse the part of a document's chain the authority has already taken.
+ *
+ * The fold used to replace the WHOLE chain and renumber it from 1, and that
+ * renumbering is what forced owed work into a relation of its own: a position
+ * recorded against a chain that restarts means a different update afterwards.
+ *
+ * So it folds a PREFIX instead. Acknowledged appends collapse to one baseline
+ * carrying their merged state, at the highest id they covered, and owed
+ * appends are left exactly where they are. That works because an ack covers
+ * `id <= throughId` and every later append takes a higher id, so what the
+ * authority holds is always a prefix and what is owed is always a suffix.
+ *
+ * The baseline is stamped `NO_AUTHORITY` rather than left owed. It is a local
+ * compaction of bytes the authority already has; offering it back would push a
+ * whole document's state to a log that already contains it.
+ */
+function foldSettled(sqlite: SqliteDatabase, document: string): void {
+	const settled = sqlite.all<StoredUpdate>(
+		'SELECT id AS seq, bytes FROM _updates WHERE document = ? AND authoritySeq IS NOT NULL ORDER BY id',
+		[document],
+	);
+	if (settled.length < SNAPSHOT_FOLD_THRESHOLD) return;
 
-	const compacted = replay(updates);
+	const through = settled.at(-1)?.seq;
+	if (through === undefined) return;
+	const compacted = replay(settled);
 	try {
 		const baseline = new Uint8Array(Y.encodeStateAsUpdateV2(compacted));
-		sqlite.run('DELETE FROM _updates WHERE document = ?', [document]);
-		sqlite.run('INSERT INTO _updates (document, seq, bytes) VALUES (?, 1, ?)', [
-			document,
-			baseline,
-		]);
+		sqlite.run(
+			'DELETE FROM _updates WHERE document = ? AND authoritySeq IS NOT NULL',
+			[document],
+		);
+		sqlite.run(
+			'INSERT INTO _updates (document, id, bytes, authoritySeq) VALUES (?, ?, ?, ?)',
+			[document, through, baseline, NO_AUTHORITY],
+		);
 	} finally {
 		compacted.destroy();
 	}
@@ -377,8 +354,9 @@ export function retireDocument(sqlite: SqliteDatabase, document: string): void {
 	sqlite.run('INSERT OR IGNORE INTO _tombstones (document) VALUES (?)', [
 		document,
 	]);
+	// One statement, because owed work is a column on the chain now rather
+	// than a second relation that had to be swept alongside it.
 	sqlite.run('DELETE FROM _updates WHERE document = ?', [document]);
-	sqlite.run('DELETE FROM _outbox WHERE document = ?', [document]);
 }
 
 /** Every durably retired document address. */
@@ -401,9 +379,10 @@ export function loadDurableSnapshot(sqlite: SqliteDatabase): DurableSnapshot {
 			copyBytes(stored.bytes),
 		),
 		outbox: readOutbox(sqlite),
-		cursor: readCursor(sqlite, APP_DOCUMENT),
+		cursor: readCursor(sqlite),
 		identity: readDocumentIdentity(sqlite),
 		tombstones: readTombstones(sqlite),
+		lastId: readLastId(sqlite),
 	};
 }
 
@@ -411,8 +390,8 @@ export function loadDurableSnapshot(sqlite: SqliteDatabase): DurableSnapshot {
  * The SQLite durable engine: one batch, one transaction, in order.
  *
  * Synchronous, which is what lets a verb on a Durable Object return with its
- * write already durable. Opening applies the schema and enforces the
- * format certificate (ADR-0231's cutover), exactly as every open always has.
+ * write already durable. Opening applies the schema and enforces the format
+ * certificate (ADR-0231's cutover), exactly as every open always has.
  */
 export function createSqliteDurablePort({
 	sqlite,
@@ -427,33 +406,20 @@ export function createSqliteDurablePort({
 			sqlite.transaction(() => {
 				for (const op of ops) {
 					switch (op.kind) {
-						case 'append': {
+						case 'append':
 							appendUpdate({
 								sqlite,
 								document: op.document,
+								id: op.id,
 								update: op.bytes,
+								authoritySeq: op.authoritySeq,
 							});
-							if (op.outboxId !== undefined) {
-								insertOutbox(sqlite, op.outboxId, op.document, op.bytes);
-							}
 							break;
-						}
-						case 'cursor':
-							writeCursor(sqlite, APP_DOCUMENT, op.seq);
+						case 'ack':
+							acknowledge(sqlite, op.throughId, op.authoritySeq);
 							break;
 						case 'identity':
 							writeDocumentIdentity(sqlite, op.id);
-							break;
-						case 'dropOutbox':
-							dropOutboxThrough(sqlite, op.throughId);
-							break;
-						case 'replaceOutbox':
-							replaceOutboxThrough(
-								sqlite,
-								op.document,
-								op.throughId,
-								op.merged,
-							);
 							break;
 						case 'retire':
 							retireDocument(sqlite, op.document);

@@ -36,33 +36,79 @@ export type OutboxEntry = { id: number; document: string; bytes: Uint8Array };
  * the same atomic batch as the scalar row removal, so a late write can never
  * resurrect the address (ADR-0248).
  */
+/**
+ * What the store owes its storage, in acceptance order.
+ *
+ * Four arms, and the shape of the union is the design. What used to be six
+ * collapsed when two facts turned out to be one: "the authority does not have
+ * these bytes" and "the authority gave these bytes no position" say the same
+ * thing, so an append carries a nullable `authoritySeq` and the outbox and the
+ * cursor are both READ OFF IT rather than stored beside it.
+ *
+ * That is what deletes `dropOutbox` (an ack is not a deletion, it is a
+ * position landing), `replaceOutbox` (a compaction that carried no invariant,
+ * and the only one that crossed this boundary while the far larger fold stayed
+ * private to the port), and `cursor` (never a fact of its own).
+ */
 export type DurableOp =
 	| {
 			kind: 'append';
 			document: string;
+			/**
+			 * One monotone sequence across every document, never reused.
+			 *
+			 * Never reused is the load-bearing half. The fold used to renumber a
+			 * document's chain from 1, so a position recorded against it silently
+			 * came to mean a different update, which is why owed work had to live
+			 * in a relation of its own. Stable ids make it a column.
+			 */
+			id: number;
 			bytes: Uint8Array;
-			outboxId: number | undefined;
+			/** The authority's log position, or `undefined` while it has none. */
+			authoritySeq: number | undefined;
 	  }
-	| { kind: 'cursor'; seq: number }
-	| { kind: 'identity'; id: string }
-	| { kind: 'dropOutbox'; throughId: number }
 	| {
-			kind: 'replaceOutbox';
-			document: string;
+			/**
+			 * The authority took responsibility through `throughId` and put those
+			 * bytes at `authoritySeq`.
+			 *
+			 * One submission is one envelope and lands as ONE log entry, so every
+			 * covered append takes the same position. This is both halves of what
+			 * the client used to do in two calls, `advance` and `acknowledge`.
+			 */
+			kind: 'ack';
 			throughId: number;
-			merged: Uint8Array;
+			authoritySeq: number;
 	  }
+	| { kind: 'identity'; id: string }
 	| { kind: 'retire'; document: string };
 
-/** Everything the durable engine held at open, materialized once. */
+/**
+ * Everything the durable engine held at open, materialized once.
+ *
+ * `outbox` and `cursor` are DERIVED here rather than stored: owed work is
+ * every append the authority gave no position, and the cursor is the highest
+ * position any append carries. The port computes both while it has the file
+ * open, so the store never asks storage a second question.
+ */
 export type DurableSnapshot = {
 	/** The application document's own chain; row documents hydrate on open. */
 	updates: Uint8Array[];
+	/** Appends with no authority position, in id order. */
 	outbox: OutboxEntry[];
+	/**
+	 * The highest authority position any append carries, or 0.
+	 *
+	 * A derived cursor cannot outrun the bytes it accounts for, because it is
+	 * computed from them. It can only LAG, which is safe: a re-received entry
+	 * is applied again, and an update is idempotent.
+	 */
 	cursor: number;
 	identity: string | undefined;
 	/** Every durably retired document address (ADR-0248). */
 	tombstones: string[];
+	/** The highest id any append carries, so the store mints from here. */
+	lastId: number;
 };
 
 /**
@@ -242,39 +288,26 @@ export function createPersistenceController({
 			switch (op.kind) {
 				case 'append': {
 					hasUpdates = true;
-					if (op.outboxId !== undefined) {
-						outbox.push({
-							id: op.outboxId,
-							document: op.document,
-							bytes: op.bytes,
-						});
+					// Owed exactly when the authority has no position for it, which
+					// is the same test the port runs against the column.
+					if (op.authoritySeq === undefined) {
+						outbox.push({ id: op.id, document: op.document, bytes: op.bytes });
 						outboxGrew = true;
+					} else if (op.authoritySeq > cursor) {
+						cursor = op.authoritySeq;
 					}
 					break;
 				}
-				case 'cursor':
-					cursor = op.seq;
+				case 'ack':
+					// One op, both halves: the covered work stops being owed, and the
+					// position it landed at becomes the cursor. They were always one
+					// fact reported twice.
+					outbox = outbox.filter((entry) => entry.id > op.throughId);
+					if (op.authoritySeq > cursor) cursor = op.authoritySeq;
 					break;
 				case 'identity':
 					identity ??= op.id;
 					break;
-				case 'dropOutbox':
-					outbox = outbox.filter((entry) => entry.id > op.throughId);
-					break;
-				case 'replaceOutbox': {
-					// One document's covered entries collapse to one merged entry at
-					// its own highest id; other documents' entries keep their places.
-					const kept = outbox.filter(
-						(entry) =>
-							entry.document !== op.document || entry.id > op.throughId,
-					);
-					outbox = [
-						...kept.filter((entry) => entry.id < op.throughId),
-						{ id: op.throughId, document: op.document, bytes: op.merged },
-						...kept.filter((entry) => entry.id > op.throughId),
-					];
-					break;
-				}
 				case 'retire':
 					hasTombstones = true;
 					outbox = outbox.filter((entry) => entry.document !== op.document);

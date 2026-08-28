@@ -626,7 +626,7 @@ describe('a foreign document name supersedes the replica, and nothing else does 
 		if (document !== undefined) {
 			expectOk(syncEngineOf(store).adoptDocumentIdentity(document));
 		}
-		if (cursor > 0) syncEngineOf(store).advance(cursor);
+		if (cursor > 0) syncEngineOf(store).acknowledge(0, cursor);
 		let dials = 0;
 		let discarded = 0;
 		const connection = createSyncConnection({

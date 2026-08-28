@@ -74,7 +74,7 @@ function afterWritingAndDeleting() {
 	const created = syncEngineOf(store).coalesce();
 	if (created === undefined) throw new Error('nothing to send');
 	expectOk(authority.append(created.bytes));
-	syncEngineOf(store).acknowledge(created.id);
+	syncEngineOf(store).acknowledge(created.id, 1);
 
 	db.tables.notes.delete(note.id);
 	const deleted = syncEngineOf(store).coalesce();

@@ -462,9 +462,9 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 	 */
 	function seedCorruptChain(address: string): Promise<void> {
 		return new Promise((resolve, reject) => {
-			const request = indexedDB.open(address, 3);
+			const request = indexedDB.open(address, 4);
 			request.onupgradeneeded = () => {
-				for (const name of ['updates', 'outbox', 'tombstones', 'meta']) {
+				for (const name of ['updates', 'tombstones', 'meta']) {
 					request.result.createObjectStore(name);
 				}
 			};
@@ -475,9 +475,14 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 					'readwrite',
 				);
 				transaction.objectStore('meta').put(STORE_FORMAT, 'format');
-				transaction
-					.objectStore('updates')
-					.put(new Uint8Array([1, 2, 3, 4, 5]), ['app', 1]);
+				transaction.objectStore('updates').put(
+					{
+						document: 'app',
+						bytes: new Uint8Array([1, 2, 3, 4, 5]),
+						authoritySeq: null,
+					},
+					1,
+				);
 				transaction.oncomplete = () => {
 					sqlite.close();
 					resolve();

@@ -52,8 +52,14 @@ import {
 	replay,
 	SNAPSHOT_FOLD_THRESHOLD,
 	STORE_FORMAT,
+	NO_AUTHORITY,
 } from './log.js';
-import type { DurableOp, DurablePort, DurableSnapshot } from './persistence.js';
+import type {
+	DurableOp,
+	DurablePort,
+	DurableSnapshot,
+	OutboxEntry,
+} from './persistence.js';
 import {
 	type AccountStore,
 	asData,
@@ -102,26 +108,36 @@ export type BrowserAccountStore = AccountStore & {
  * the cursor, and the document identity. These are persisted names: changing
  * them requires an IndexedDB migration.
  */
+type StoredUpdateRecord = {
+	document: string;
+	bytes: Uint8Array;
+	/** `null` is owed. See `NO_AUTHORITY` in `log.ts` for the third value. */
+	authoritySeq: number | null;
+};
+
 type BrowserDurableSchema = DBSchema & {
-	updates: { key: [string, number]; value: Uint8Array };
-	outbox: { key: number; value: { document: string; bytes: Uint8Array } };
+	updates: { key: number; value: StoredUpdateRecord };
 	tombstones: { key: string; value: 1 };
-	meta: { key: 'format' | 'cursor' | 'document'; value: string | number };
+	meta: { key: 'format' | 'document'; value: string };
 };
 
 type BrowserDurableDatabase = IDBPDatabase<BrowserDurableSchema>;
 
-const DURABLE_STORES = ['updates', 'outbox', 'tombstones', 'meta'] as const;
+const DURABLE_STORES = ['updates', 'tombstones', 'meta'] as const;
 
-/** Every key under one document's chain, in seq order. */
-function documentRange(document: string): IDBKeyRange {
-	return IDBKeyRange.bound([document, 0], [document, Infinity]);
-}
+/**
+ * One append id is the whole key now.
+ *
+ * It used to be `[document, seq]`, because seq was a per-document position.
+ * Ids are one monotone sequence across every document, so a document's chain
+ * is a filter rather than a range, and an acknowledgement naming ids across
+ * documents is one scan rather than several.
+ */
 
 function openIndexedDb(address: string): Promise<BrowserDurableDatabase> {
 	return new Promise((resolve, reject) => {
 		let blocked = false;
-		void openDB<BrowserDurableSchema>(address, 3, {
+		void openDB<BrowserDurableSchema>(address, 4, {
 			upgrade(sqlite) {
 				for (const name of DURABLE_STORES) {
 					if (!sqlite.objectStoreNames.contains(name)) {
@@ -216,7 +232,6 @@ export async function openIdbBacking(
 			const format = (await meta.get('format')) as string | undefined;
 			if (format !== STORE_FORMAT) {
 				await enforce.objectStore('updates').clear();
-				await enforce.objectStore('outbox').clear();
 				await enforce.objectStore('tombstones').clear();
 				await meta.clear();
 				void meta.put(STORE_FORMAT, 'format');
@@ -224,140 +239,132 @@ export async function openIdbBacking(
 			await enforce.done;
 
 			const read = durable.transaction(DURABLE_STORES, 'readonly');
-			const appRows = await read
-				.objectStore('updates')
-				.getAll(documentRange(APP_DOCUMENT));
-			const updateKeys = await read.objectStore('updates').getAllKeys();
-			const outboxRows = await read.objectStore('outbox').getAll();
-			const outboxKeys = await read.objectStore('outbox').getAllKeys();
+			const updateStore = read.objectStore('updates');
+			const rows = await updateStore.getAll();
+			const ids = (await updateStore.getAllKeys()) as number[];
 			const tombstones = await read.objectStore('tombstones').getAllKeys();
-			const cursor = (await read.objectStore('meta').get('cursor')) as
-				| number
-				| undefined;
 			const identity = (await read.objectStore('meta').get('document')) as
 				| string
 				| undefined;
 			await read.done;
 
+			// One pass over the chain answers everything the snapshot holds, which
+			// is the shape of the collapse: the outbox and the cursor are read off
+			// the appends rather than kept beside them.
+			const appUpdates: Uint8Array[] = [];
+			const outbox: OutboxEntry[] = [];
+			let cursor = 0;
+			let lastId = 0;
+			const counts = new Map<string, number>();
+			for (const [index, row] of rows.entries()) {
+				const id = ids[index] as number;
+				if (id > lastId) lastId = id;
+				counts.set(row.document, (counts.get(row.document) ?? 0) + 1);
+				if (row.document === APP_DOCUMENT) appUpdates.push(copyBytes(row.bytes));
+				if (row.authoritySeq === null) {
+					outbox.push({ id, document: row.document, bytes: copyBytes(row.bytes) });
+				} else if (row.authoritySeq > cursor) {
+					cursor = row.authoritySeq;
+				}
+			}
+			outbox.sort((a, b) => a.id - b.id);
+
 			const loaded: DurableSnapshot = {
-				// `getAll` returns key order, which is the append order.
-				updates: appRows.map((bytes) => copyBytes(bytes)),
-				outbox: outboxRows.map((row, index) => ({
-					id: outboxKeys[index] as number,
-					document: row.document,
-					bytes: copyBytes(row.bytes),
-				})),
-				cursor: cursor ?? 0,
+				updates: appUpdates,
+				outbox,
+				cursor,
 				identity,
 				tombstones: tombstones.map((key) => String(key)),
+				lastId,
 			};
-
-			// The port's own bookkeeping, per document, committed only when a
-			// batch lands so a failed transaction never advances it.
-			const nextSeq = new Map<string, number>();
-			const updateCount = new Map<string, number>();
-			for (const key of updateKeys) {
-				const [document, seq] = key as [string, number];
-				nextSeq.set(document, Math.max(nextSeq.get(document) ?? 1, seq + 1));
-				updateCount.set(document, (updateCount.get(document) ?? 0) + 1);
-			}
 
 			const port: DurablePort = {
 				async commit(ops: readonly DurableOp[]): Promise<void> {
 					const transaction = durable.transaction(DURABLE_STORES, 'readwrite');
 					const updates = transaction.objectStore('updates');
-					const outbox = transaction.objectStore('outbox');
 					const tombstonesStore = transaction.objectStore('tombstones');
 					const metaStore = transaction.objectStore('meta');
-					const seqs = new Map(nextSeq);
-					const counts = new Map(updateCount);
-					const touched = new Set<string>();
+					const chain = new Map(counts);
+					const settled = new Set<string>();
 					for (const op of ops) {
 						switch (op.kind) {
 							case 'append': {
-								const seq = seqs.get(op.document) ?? 1;
-								void updates.put(copyBytes(op.bytes), [op.document, seq]);
-								seqs.set(op.document, seq + 1);
-								counts.set(op.document, (counts.get(op.document) ?? 0) + 1);
-								touched.add(op.document);
-								if (op.outboxId !== undefined) {
-									void outbox.put(
-										{ document: op.document, bytes: copyBytes(op.bytes) },
-										op.outboxId,
-									);
+								void updates.put(
+									{
+										document: op.document,
+										bytes: copyBytes(op.bytes),
+										authoritySeq: op.authoritySeq ?? null,
+									},
+									op.id,
+								);
+								chain.set(op.document, (chain.get(op.document) ?? 0) + 1);
+								if (op.authoritySeq !== undefined) settled.add(op.document);
+								break;
+							}
+							case 'ack': {
+								// One statement's worth of work, spread over a walk because
+								// the store is keyed by id and the predicate is "still
+								// owed". The SQL port writes the same thing as one UPDATE.
+								let at = await updates.openCursor(
+									IDBKeyRange.upperBound(op.throughId),
+								);
+								while (at !== null) {
+									if (at.value.authoritySeq === null) {
+										await at.update({
+											...at.value,
+											authoritySeq: op.authoritySeq,
+										});
+										settled.add(at.value.document);
+									}
+									at = await at.continue();
 								}
 								break;
 							}
-							case 'cursor':
-								void metaStore.put(op.seq, 'cursor');
-								break;
 							case 'identity': {
-								// First write wins, which is the rule `writeDocumentIdentity`
-								// states and enforces with `INSERT OR IGNORE`. A `put` here
-								// silently did the opposite for as long as this port has
-								// existed: membership changing in place is a replica full of
-								// one account's bytes claiming to be another's, and the only
-								// correct way to change it is to discard the record whole
-								// (ADR-0231). Held to the SQL port by
+								// First write wins, which is the rule
+								// `writeDocumentIdentity` states and enforces with
+								// `INSERT OR IGNORE`. Held to the SQL port by
 								// `port-conformance.test.ts`.
 								const stamped = await metaStore.get('document');
 								if (stamped === undefined) void metaStore.put(op.id, 'document');
 								break;
 							}
-							case 'dropOutbox':
-								void outbox.delete(IDBKeyRange.upperBound(op.throughId));
-								break;
-							case 'replaceOutbox': {
-								// One document's covered entries collapse to one merged
-								// entry at its own highest id; other documents' entries
-								// keep their places, so the walk is per entry.
-								let at = await outbox.openCursor(
-									IDBKeyRange.upperBound(op.throughId),
-								);
-								while (at !== null) {
-									if (at.value.document === op.document) {
-										await at.delete();
-									}
-									at = await at.continue();
-								}
-								void outbox.put(
-									{ document: op.document, bytes: copyBytes(op.merged) },
-									op.throughId,
-								);
-								break;
-							}
 							case 'retire': {
 								void tombstonesStore.put(1, op.document);
-								void updates.delete(documentRange(op.document));
-								seqs.delete(op.document);
-								counts.delete(op.document);
-								touched.delete(op.document);
-								let at = await outbox.openCursor();
+								let at = await updates.openCursor();
 								while (at !== null) {
-									if (at.value.document === op.document) {
-										await at.delete();
-									}
+									if (at.value.document === op.document) await at.delete();
 									at = await at.continue();
 								}
+								chain.delete(op.document);
+								settled.delete(op.document);
 								break;
 							}
 						}
 					}
-					// The same per-document fold the SQLite engine applies, inside
-					// the same transaction as the appends that crossed the
-					// threshold: read the chain, replay it into one baseline,
-					// rewrite. The replay is synchronous, so the transaction stays
-					// active.
-					for (const document of touched) {
-						if ((counts.get(document) ?? 0) < SNAPSHOT_FOLD_THRESHOLD) {
-							continue;
+
+					// The same prefix fold the SQL engine applies, for the same
+					// reason and at the same threshold: acknowledged appends collapse
+					// to one baseline at the highest id they covered, and owed
+					// appends are left exactly where they are.
+					for (const document of settled) {
+						if ((chain.get(document) ?? 0) < SNAPSHOT_FOLD_THRESHOLD) continue;
+						const stored: { id: number; bytes: Uint8Array }[] = [];
+						let at = await updates.openCursor();
+						while (at !== null) {
+							if (
+								at.value.document === document &&
+								at.value.authoritySeq !== null
+							) {
+								stored.push({ id: at.key as number, bytes: at.value.bytes });
+							}
+							at = await at.continue();
 						}
-						const chain = await updates.getAll(documentRange(document));
+						if (stored.length < SNAPSHOT_FOLD_THRESHOLD) continue;
+						const through = stored.at(-1)?.id;
+						if (through === undefined) continue;
 						const folded = replay(
-							chain.map((bytes, index) => ({
-								seq: index + 1,
-								bytes: copyBytes(bytes),
-							})),
+							stored.map((row) => ({ seq: row.id, bytes: row.bytes })),
 						);
 						let baseline: Uint8Array;
 						try {
@@ -365,34 +372,35 @@ export async function openIdbBacking(
 						} finally {
 							folded.destroy();
 						}
-						void updates.delete(documentRange(document));
-						void updates.put(baseline, [document, 1]);
-						seqs.set(document, 2);
-						counts.set(document, 1);
+						for (const row of stored) void updates.delete(row.id);
+						void updates.put(
+							{ document, bytes: baseline, authoritySeq: NO_AUTHORITY },
+							through,
+						);
+						chain.set(document, (chain.get(document) ?? 0) - stored.length + 1);
 					}
+
 					await transaction.done;
-					for (const [document, seq] of seqs) nextSeq.set(document, seq);
-					for (const document of [...nextSeq.keys()]) {
-						if (!seqs.has(document)) nextSeq.delete(document);
-					}
-					for (const [document, count] of counts) {
-						updateCount.set(document, count);
-					}
-					for (const document of [...updateCount.keys()]) {
-						if (!counts.has(document)) updateCount.delete(document);
-					}
+					// Advanced only after the batch landed, so a retried batch
+					// recomputes from the same starting point.
+					counts.clear();
+					for (const [document, count] of chain) counts.set(document, count);
 				},
 				async readDocument(document: string): Promise<Uint8Array[]> {
-					const rows = await durable.getAll('updates', documentRange(document));
-					return rows.map((bytes) => copyBytes(bytes));
+					const store = durable
+						.transaction('updates', 'readonly')
+						.objectStore('updates');
+					const rows = await store.getAll();
+					const keys = (await store.getAllKeys()) as number[];
+					return rows
+						.map((row, index) => ({ row, id: keys[index] as number }))
+						.filter(({ row }) => row.document === document)
+						.sort((a, b) => a.id - b.id)
+						.map(({ row }) => copyBytes(row.bytes));
 				},
 				async listDocuments(): Promise<string[]> {
-					const keys = await durable.getAllKeys('updates');
-					const documents = new Set<string>();
-					for (const key of keys) {
-						documents.add((key as [string, number])[0]);
-					}
-					return [...documents];
+					const rows = await durable.getAll('updates');
+					return [...new Set(rows.map((row) => row.document))].sort();
 				},
 			};
 

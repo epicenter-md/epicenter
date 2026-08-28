@@ -40,7 +40,12 @@ import {
 	type RowDocumentHandle,
 } from './documents.js';
 import { decodeEnvelope, encodeEnvelope } from './envelope.js';
-import { APP_DOCUMENT, copyBytes, createSqliteDurablePort } from './log.js';
+import {
+	APP_DOCUMENT,
+	copyBytes,
+	createSqliteDurablePort,
+	NO_AUTHORITY,
+} from './log.js';
 import {
 	createPersistenceController,
 	type DurableOp,
@@ -632,11 +637,9 @@ type ClientLog = {
 	 */
 	coalesce(): { id: number; bytes: Uint8Array } | undefined;
 	/** The authority has taken responsibility through this entry. */
-	acknowledge(throughId: number): void;
+	acknowledge(throughId: number, authoritySeq: number): void;
 	/** How far through the authority's log this replica has read. */
 	cursor(): number;
-	/** Record that everything through `seq` has been applied. */
-	advance(seq: number): void;
 	/**
 	 * Which authority document this replica's state belongs to, or undefined
 	 * for a document that has never exchanged a byte (ADR-0231).
@@ -1102,12 +1105,27 @@ function createStoreEngine(
 	 * `dropOutbox` op is still queued behind a blocked flush.
 	 */
 	let ackedThrough = 0;
-	/** The next outbox id to assign. The store mints ids, never the port. */
-	let nextOutboxId =
-		loaded.outbox.reduce((max, entry) => Math.max(max, entry.id), 0) + 1;
-	/** One outbox sequence for every document, application and rows alike. */
-	const mintOutboxId = (): number | undefined =>
-		replication === 'none' ? undefined : nextOutboxId++;
+	/**
+	 * The next append id. The store mints ids, never the port.
+	 *
+	 * Every append is numbered now, not only owed ones, because the id is what
+	 * an acknowledgement names and what the fold leaves stable. Seeded past
+	 * everything the record already holds so an id is never reused across a
+	 * reopen.
+	 */
+	let nextId = loaded.lastId + 1;
+	/** One sequence for every document, application and rows alike. */
+	const mintId = (): number => nextId++;
+	/**
+	 * What an append this device authored owes the authority.
+	 *
+	 * `undefined` means owed: an account replica's local edit, waiting for a
+	 * position. A local store has no authority to owe anything to, so its
+	 * bytes are stamped `NO_AUTHORITY` and are never offered, never folded
+	 * around, and never counted as debt.
+	 */
+	const authoredSeq = (): number | undefined =>
+		replication === 'none' ? NO_AUTHORITY : undefined;
 
 	/**
 	 * The row documents' runtime (ADR-0248): live handles, hydration, remote
@@ -1161,7 +1179,8 @@ function createStoreEngine(
 		listDocuments: () => durable.listDocuments(),
 		appDocument: APP_DOCUMENT,
 		controller,
-		mintOutboxId,
+		mintId,
+		authoredSeq,
 		tombstones: loaded.tombstones,
 		assertUsable: () => assertUsable(),
 		log,
@@ -1299,8 +1318,9 @@ function createStoreEngine(
 					{
 						kind: 'append',
 						document: APP_DOCUMENT,
+						id: mintId(),
 						bytes: authored,
-						outboxId: mintOutboxId(),
+						authoritySeq: authoredSeq(),
 					},
 				]);
 			} finally {
@@ -1359,8 +1379,9 @@ function createStoreEngine(
 				(update): DurableOp => ({
 					kind: 'append',
 					document: APP_DOCUMENT,
+					id: mintId(),
 					bytes: update,
-					outboxId: mintOutboxId(),
+					authoritySeq: authoredSeq(),
 				}),
 			);
 			ops.push(...(compose?.() ?? []));
@@ -1407,8 +1428,9 @@ function createStoreEngine(
 				(update): DurableOp => ({
 					kind: 'append',
 					document: APP_DOCUMENT,
+					id: mintId(),
 					bytes: update,
-					outboxId: mintOutboxId(),
+					authoritySeq: authoredSeq(),
 				}),
 			);
 			ops.push(...composed);
@@ -1819,9 +1841,13 @@ function createStoreEngine(
 										ops.push({
 											kind: 'append',
 											document: APP_DOCUMENT,
+											id: mintId(),
 											bytes: received,
-											// Never the outbox: these bytes came FROM the authority.
-											outboxId: undefined,
+											// The position these bytes came FROM. Never owed, and
+											// this is also what moves the durable cursor: it is
+											// read off the appends rather than written beside them,
+											// so it cannot run ahead of them.
+											authoritySeq: opts?.advanceTo ?? NO_AUTHORITY,
 										});
 										continue;
 									}
@@ -1831,6 +1857,7 @@ function createStoreEngine(
 									const op = documents.acceptRemote(
 										section.document,
 										section.bytes,
+										opts?.advanceTo ?? NO_AUTHORITY,
 									);
 									if (op !== undefined) ops.push(op);
 								}
@@ -1851,8 +1878,14 @@ function createStoreEngine(
 							// advances now; the durable one advances when the batch lands,
 							// and a crash before then re-receives, which is free because an
 							// update is idempotent.
+							// Only the LIVE cursor is set here. The durable one is
+							// derived from the positions the appends above carry, so
+							// there is nothing to write and nothing that could be
+							// written ahead of them. An entry whose sections were all
+							// dropped stores nothing and leaves the durable cursor
+							// behind, which re-receives on the next boot: free, because
+							// an update is idempotent.
 							if (opts?.advanceTo !== undefined) {
-								ops.push({ kind: 'cursor', seq: opts.advanceTo });
 								liveCursor = opts.advanceTo;
 							}
 							controller.enqueue(ops);
@@ -1993,28 +2026,27 @@ function createStoreEngine(
 					const merged = new Uint8Array(
 						Y.mergeUpdatesV2(group.bytes as Uint8Array<ArrayBuffer>[]),
 					);
-					// The durable outbox collapses to the merged entry too; until
-					// that lands, a repeated coalesce re-merges the same entries,
-					// which is idempotent.
-					controller.enqueue([
-						{
-							kind: 'replaceOutbox',
-							document,
-							throughId: group.throughId,
-							merged,
-						},
-					]);
+					// Merged for the wire and nowhere else. This used to write the
+					// merge back as a durable op, which was the only compaction that
+					// crossed the port boundary while the far larger fold stayed
+					// private to it. It carried no invariant: merging preserves the
+					// highest covered id and is idempotent, so re-merging on the next
+					// pass costs a little work and changes nothing.
 					sections.push({ document, bytes: merged });
 				}
 				return { id: last.id, bytes: encodeEnvelope(sections) };
 			},
-			acknowledge(throughId: number): void {
+			acknowledge(throughId: number, authoritySeq: number): void {
 				assertUsable();
 				ackedThrough = Math.max(ackedThrough, throughId);
-				// If this op never lands and the client restarts, the entries are
-				// re-offered; the authority already holds them and an update is
-				// idempotent, so re-delivery is the safe direction.
-				controller.enqueue([{ kind: 'dropOutbox', throughId }]);
+				liveCursor = Math.max(liveCursor, authoritySeq);
+				// One op for what used to be two. Dropping the outbox and moving
+				// the cursor were the same fact reported twice: these bytes reached
+				// the authority's log, at this position. If it never lands and the
+				// client restarts, the appends are still owed and go out again;
+				// the authority already holds them and an update is idempotent, so
+				// re-delivery is the safe direction.
+				controller.enqueue([{ kind: 'ack', throughId, authoritySeq }]);
 			},
 			cursor(): number {
 				assertUsable();
@@ -2025,11 +2057,7 @@ function createStoreEngine(
 				// equals the durable cursor, which is what a reconnect dials from.
 				return liveCursor;
 			},
-			advance(seq: number): void {
-				assertUsable();
-				liveCursor = seq;
-				controller.enqueue([{ kind: 'cursor', seq }]);
-			},
+
 			documentIdentity(): string | undefined {
 				assertUsable();
 				return liveIdentity;

@@ -90,8 +90,7 @@ function run({ snapshots }: { snapshots: boolean }) {
 		if (owed !== undefined) {
 			const position = authority.append(owed.bytes);
 			if (position.error !== null) throw position.error;
-			syncEngineOf(store).acknowledge(owed.id);
-			syncEngineOf(store).advance(position.data);
+			syncEngineOf(store).acknowledge(owed.id, position.data);
 		}
 
 		if (snapshots) {

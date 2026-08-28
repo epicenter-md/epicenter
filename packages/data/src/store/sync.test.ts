@@ -39,13 +39,13 @@ function open() {
 		db,
 		logRows: () =>
 			sqlite.all<{ seq: number; len: number }>(
-				'SELECT seq, length(bytes) AS len FROM _updates ORDER BY seq',
+				'SELECT id AS seq, length(bytes) AS len FROM _updates ORDER BY id',
 			),
 		/** The raw queue, so a test can see what a merge was given to work with. */
 		outbox: () =>
 			sqlite
 				.all<{ id: number; bytes: Uint8Array | ArrayBuffer }>(
-					'SELECT id, bytes FROM _outbox ORDER BY id',
+					'SELECT id, bytes FROM _updates WHERE authoritySeq IS NULL ORDER BY id',
 				)
 				.map((row) => ({ id: row.id, bytes: copyBytes(row.bytes) })),
 	};
@@ -140,7 +140,13 @@ describe('coalesce merges only what this replica authored', () => {
 
 		const merged = syncEngineOf(author.store).coalesce();
 		if (merged === undefined) throw new Error('nothing to send');
-		expect(author.outbox()).toHaveLength(1);
+		// The merge is for the wire and nowhere else. It used to be written back
+		// as a durable op, which was the only compaction that crossed the port
+		// boundary while the far larger fold stayed private to it, and it carried
+		// no invariant: merging preserves the highest covered id and is
+		// idempotent, so re-merging on the next pass costs a little work and
+		// changes nothing. The record still owes all twenty until an ack lands.
+		expect(author.outbox()).toHaveLength(20);
 
 		expectOk(syncEngineOf(reader.store).applyRemote(merged.bytes));
 		expect(titles(reader)).toHaveLength(20);
@@ -192,7 +198,7 @@ describe('coalesce merges only what this replica authored', () => {
 			author.db.tables.notes.create({ title: 'authored while in flight' }),
 		);
 
-		syncEngineOf(author.store).acknowledge(inFlight.id);
+		syncEngineOf(author.store).acknowledge(inFlight.id, 1);
 
 		const remaining = author.outbox();
 		expect(remaining).toHaveLength(1);
@@ -206,7 +212,7 @@ describe('coalesce merges only what this replica authored', () => {
 		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
 		const sent = syncEngineOf(author.store).coalesce();
 		if (sent === undefined) throw new Error('nothing to send');
-		syncEngineOf(author.store).acknowledge(sent.id);
+		syncEngineOf(author.store).acknowledge(sent.id, 1);
 
 		expect(titles(author)).toEqual(['Groceries']);
 		expect(author.outbox()).toHaveLength(0);
@@ -218,17 +224,38 @@ describe('the cursor is a log position, and never a state vector', () => {
 		expect(syncEngineOf(open().store).cursor()).toBe(0);
 	});
 
-	test('advancing survives a reopen of the same file', () => {
+	test('a position survives a reopen, carried by the bytes that reached it', () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		syncEngineOf(
-			createAccountStore({ definition: database, sqlite }).store,
-		).advance(7);
+		const first = createAccountStore({ definition: database, sqlite });
+		expectOk(first.tables.notes.create({ title: 'owed' }));
+		const sent = syncEngineOf(first.store).coalesce();
+		if (sent === undefined) throw new Error('nothing to send');
+		syncEngineOf(first.store).acknowledge(sent.id, 7);
 
 		expect(
 			syncEngineOf(
 				createAccountStore({ definition: database, sqlite }).store,
 			).cursor(),
 		).toBe(7);
+	});
+
+	test('an acknowledgement that covers nothing owed moves no durable cursor', () => {
+		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
+		syncEngineOf(
+			createAccountStore({ definition: database, sqlite }).store,
+		).acknowledge(0, 7);
+
+		// The honest consequence of deriving the cursor instead of storing it: it
+		// can only report a position some bytes actually carry. It fails in the
+		// safe direction, because a cursor that lags re-receives and applying an
+		// update twice is free, while one that ran ahead would skip entries
+		// forever. Unreachable in the client, which only acknowledges its own
+		// submissions.
+		expect(
+			syncEngineOf(
+				createAccountStore({ definition: database, sqlite }).store,
+			).cursor(),
+		).toBe(0);
 	});
 });
 
@@ -255,7 +282,7 @@ describe('the stamp lands only on an empty store', () => {
 
 	test('read progress alone is a commitment: a moved cursor refuses the stamp', () => {
 		const { store } = open();
-		syncEngineOf(store).advance(3);
+		syncEngineOf(store).acknowledge(0, 3);
 
 		const refused = syncEngineOf(store).adoptDocumentIdentity('doc-1');
 		expect(refused.error?.name).toBe('Unstampable');

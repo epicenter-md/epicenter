@@ -105,10 +105,12 @@ function openFailable() {
 				?.count ?? 0,
 		durableOutboxIds: () =>
 			sqlite
-				.all<{ id: number }>('SELECT id FROM _outbox ORDER BY id')
+				.all<{ id: number }>('SELECT id FROM _updates WHERE authoritySeq IS NULL ORDER BY id')
 				.map((row) => row.id),
 		durableCursor: () =>
-			sqlite.all<{ seq: number }>('SELECT seq FROM _cursor')[0]?.seq ?? 0,
+			sqlite.all<{ seq: number | null }>(
+				'SELECT MAX(authoritySeq) AS seq FROM _updates',
+			)[0]?.seq ?? 0,
 	};
 }
 
@@ -298,7 +300,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		// nothing dropped, nothing reordered, nothing duplicated.
 		expect(
 			sqlite
-				.all<{ id: number }>('SELECT id FROM _outbox ORDER BY id')
+				.all<{ id: number }>('SELECT id FROM _updates WHERE authoritySeq IS NULL ORDER BY id')
 				.map((row) => row.id),
 		).toEqual([1, 2, 3]);
 		const restarted = reopen(sqlite);
@@ -391,7 +393,7 @@ describe('sync reads only durable facts', () => {
 		if (sent === undefined) throw new Error('nothing to send');
 
 		replica.gate.failing = true;
-		syncEngineOf(replica.store).acknowledge(sent.id);
+		syncEngineOf(replica.store).acknowledge(sent.id, 1);
 
 		// The durable outbox still holds the entry (the drop is queued behind a
 		// blocked flush), but the session overlay keeps it from being offered
@@ -440,7 +442,7 @@ describe('sync reads only durable facts', () => {
 		expectOk(
 			replica.db.tables.notes.create({ title: 'authored while blocked' }),
 		);
-		syncEngineOf(replica.store).acknowledge(sent.id);
+		syncEngineOf(replica.store).acknowledge(sent.id, 1);
 
 		replica.gate.failing = false;
 		await replica.store.persistence.flush();
@@ -512,8 +514,9 @@ describe('the controller against an asynchronous engine', () => {
 	const append = (id: number): DurableOp => ({
 		kind: 'append',
 		document: 'app',
+		id,
 		bytes: new Uint8Array([id]),
-		outboxId: id,
+		authoritySeq: undefined,
 	});
 
 	test('ops accepted mid-flight coalesce into the next batch', async () => {
@@ -526,6 +529,7 @@ describe('the controller against an asynchronous engine', () => {
 				cursor: 0,
 				identity: undefined,
 				tombstones: [],
+				lastId: 0,
 			},
 			log: silent,
 		});
@@ -541,7 +545,7 @@ describe('the controller against an asynchronous engine', () => {
 		expect(port.batches).toHaveLength(2);
 		expect(port.batches[0]?.map((op) => op.kind)).toEqual(['append']);
 		expect(
-			port.batches[1]?.map((op) => (op.kind === 'append' ? op.outboxId : 0)),
+			port.batches[1]?.map((op) => (op.kind === 'append' ? op.id : 0)),
 		).toEqual([2, 3]);
 		expect(controller.persistence.get()).toBe('saved');
 	});
@@ -556,6 +560,7 @@ describe('the controller against an asynchronous engine', () => {
 				cursor: 0,
 				identity: undefined,
 				tombstones: [],
+				lastId: 0,
 			},
 			log: silent,
 		});
@@ -569,7 +574,7 @@ describe('the controller against an asynchronous engine', () => {
 		expect(controller.persistence.get()).toBe('saved');
 		// One retry batch carrying everything, in the original order.
 		expect(
-			port.batches[1]?.map((op) => (op.kind === 'append' ? op.outboxId : 0)),
+			port.batches[1]?.map((op) => (op.kind === 'append' ? op.id : 0)),
 		).toEqual([1, 2, 3]);
 	});
 });
