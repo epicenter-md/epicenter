@@ -143,7 +143,9 @@ bun install
 bun dev:honeycrisp
 ```
 
-This starts the desktop app on port 5175 alongside the local API on `localhost:8787`, which auth and sync expect. `bun dev:honeycrisp:ui` runs the browser UI without the API or Tauri shell.
+This starts the browser UI on port 5175 alongside the local API on `localhost:8787`, which auth and sync expect. `bun dev:honeycrisp:ui` runs the UI alone, without the API.
+
+To run Honeycrisp the way it ships, start the host: `bun dev:epicenter`. Honeycrisp has no desktop shell of its own.
 
 ### Checking it actually works
 

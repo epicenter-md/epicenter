@@ -1,9 +1,0 @@
-{
-	// Typechecks the `#platform/*` tauri condition: the standalone desktop
-	// bundle's own credential store and deep-link OAuth seam. `bun run
-	// typecheck` runs this alongside the default and epicenter-host configs.
-	"extends": "./tsconfig.json",
-	"compilerOptions": {
-		"customConditions": ["tauri"]
-	}
-}

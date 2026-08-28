@@ -49,6 +49,6 @@ So each deployment declares a **runtime profile**: a table of surfaces with the 
 
 - The profile lives per deployment, never as a shared registry. Merging the two tables would re-introduce the mode knob ADR-0075/0076 deleted, and their divergences are unlike: the hosted cloud's are binding-shaped (`ASSETS`, `EPICENTER_SYNC`, Autumn), the instance's is transport-shaped (attach is Bun-only because `Bun.serve`'s WebSocket handler and an in-process grant store cannot live in a Worker isolate).
 - The profile checks presence, nothing else. Authorization, metering, and payloads stay each surface's own tests in `packages/server`.
-- The client runtimes (browser, Tauri, `epicenter-host`) need no equivalent: they already have one. Their per-surface implementations resolve through `#platform/*` conditional exports, and each app runs one `svelte-check` program per condition set, so a leaf missing from one runtime is a type error (`apps/whispering` runs two configs, `apps/honeycrisp` three).
+- The client runtimes (browser, Tauri, `epicenter-host`) need no equivalent: they already have one. Their per-surface implementations resolve through `#platform/*` conditional exports, and each app runs one `svelte-check` program per condition set, so a leaf missing from one runtime is a type error (`apps/whispering` runs two configs, `apps/honeycrisp` two).
 - Dev-prod runtime skew stays accepted and fenced. A profile proves a surface is reachable on both runtimes; `wrangler dev` and staging stay the fidelity gate for Durable Object behavior.
 </content>
