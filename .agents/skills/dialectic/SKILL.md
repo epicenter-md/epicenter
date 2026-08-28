@@ -6,8 +6,8 @@ description: Develop an unsettled idea through one concrete model at a time and 
 # Dialectic
 
 A dialectic ends at "that's right." It advances by putting the current model
-into a direct form the other person can see and challenge: a sentence, a
-diagram, a concrete example, or a contrast that carries the live distinction.
+into a direct form the other person can see and challenge: quoted code, a type,
+a sentence, a concrete example, or a contrast that carries the live distinction.
 
 The agent is not interviewing the user and the user is not approving a series
 of proposals. The agent keeps making the model visible. The user's natural
@@ -21,6 +21,7 @@ rendering incorporates that response.
                       ▼               ▼
                    ┌─────────────────────┐
                    │  clear presentation │
+                   │  quoted code, type, │
                    │  sentence, example, │
                    │  diagram, contrast  │
                    └──────────┬──────────┘
@@ -54,29 +55,41 @@ one reaction point
 
 This is a shape, not a sentence or word target. Each paragraph should make one
 move and should stop when the user can see what to challenge. Add explanation
-only when it makes the claim easier to judge; move relationships, ownership,
-sequence, and state into a diagram when that is clearer than prose.
+only when it makes the claim easier to judge; put relationships, ownership,
+sequence, and state into TypeScript, and fence it `ts`. The highlighter colors
+the identifiers and leaves the annotations grey, which is the weighting you
+want. A type when the claim is about what a thing is, quoted source when the
+code exists, a call tree of real symbol names when the question is what calls
+what. Quote the file rather than paraphrasing it: a path and a line number are
+something the user can check, and a paraphrase is a weaker copy they cannot.
 
 Bad:
 
-> The problem isn't really the gate. It's the receipts. Which do you choose?
+> The problem isn't really the cookie path or the bearer path. It's what
+> happens when a request carries both. Which behavior do you want?
 
 Better:
 
-```text
-run
- ├─ gate: evaluate the run against standing rules
- └─ receipts: collect evidence during the run
-      ? does a receipt outlive the run, or is it the run's own memory?
-
-Keeping both leaves two mechanisms able to claim that the same fact has been
-established. If a receipt outlives the run, it is the record and the gate reads
-it. If it does not, the gate is the record.
+```ts
+// packages/server/src/middleware/require-auth.ts:137
+const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
+if (session) {
+	c.set('principal', { id: asPrincipalId(session.user.id) });
+	return next();                 // ← a bearer on this same request is never read
+}
+const bearer = parseBearer(c.req.header('authorization') ?? null);
+//    ? two credentials can name two different principals. cookie-first picks
+//      one and never reports the conflict. is preferring the cookie the
+//      guarantee, or is a request carrying both a request to refuse?
 ```
 
 The better turn gives the user a model and a concrete place to correct it. It
 does not ask them to approve the agent's framing or silently authorize an
 implementation.
+
+Quote real code. An exemplar built from invented names teaches the agent that
+invented names are acceptable. When the thing does not exist yet, write it as
+`// proposed` above the snippet so a design is never mistaken for source.
 
 ## Close On A Reaction Point
 
@@ -163,12 +176,15 @@ of another objection.
 
 The agent may carry a much larger private model than it can present in one turn.
 Choose the smallest rendering that makes the live consequence visible. Do not
-dump the whole derivation, pre-answer every objection, or compress several
-unearned abstractions into a dense paragraph.
+pre-answer every objection or compress several unearned abstractions into a
+dense paragraph. A rendering is too long when it carries a step the user did
+not need in order to judge the claim, not when it passes a length: six quoted
+excerpts can be the smallest rendering that works.
 
-Use a diagram instead of prose when the relationship is the point. Use an
-example instead of an explanation when the user needs to see what the model
-does. Use a contrast when the disagreement is about a boundary. Do not repeat
+Use an example instead of an explanation when the user needs to see what the
+model does. Use a contrast when the disagreement is about a boundary. Reach for
+a diagram only for what a declaration cannot hold: a folder tree, a count, a
+before-and-after measurement. Do not repeat
 the same thought in prose and a diagram unless the second form adds a necessary
 new fact.
 
