@@ -70,7 +70,7 @@ The device destination works completely signed out. The account destination
 requires sign-in and shows its own gate; it never silently shows device data.
 Signing in opens the account replica and attaches sync, and that is the whole
 of the sharing model. Every device signed into one account dials one authority
-(`principals/<id>/stores/so.epicenter.honeycrisp`) and converges; there is
+(`principals/<id>/data/so.epicenter.honeycrisp`) and converges; there is
 nothing to pair, invite, or approve.
 
 `src/lib/sync.ts` is Honeycrisp's entire share of the transport: a URL.

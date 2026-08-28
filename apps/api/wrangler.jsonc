@@ -59,6 +59,14 @@
 	// A fresh Worker begins with the store authority only. Deploy this configuration
 	// only after deleting the old Worker and its Durable Object state, as ADR-0236
 	// requires.
+	//
+	// The class is stable; the NAMES are not, and no migration tag can express
+	// that. Authorities are addressed `principals/<p>/data/<dataId>` as of
+	// ADR-0276, renamed from `stores`, and that record extends the name again
+	// with `/generations/<n>`. A name is derived on both halves from values they
+	// already hold and is never stored, so a rename leaves old objects
+	// unreachable rather than broken: there is nothing to migrate, and nothing
+	// reads them again.
 	"migrations": [
 		{
 			"tag": "v1",

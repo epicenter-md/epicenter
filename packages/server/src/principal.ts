@@ -43,11 +43,22 @@ export type BlobPrincipalPrefix = `principals/${string}/blobs/`;
  * client that names another application's id still lands inside its OWN
  * partition.
  *
- * The application is named by its workspace id, which is the same identifier
- * the replica derives its local storage from, so the two halves of one
- * application cannot come to disagree about which application they are.
+ * The application is named by its `dataId`, which is the same identifier the
+ * replica derives its local storage from, so the two halves of one application
+ * cannot come to disagree about which application they are.
+ *
+ * The resource segment is `data` rather than `stores` (ADR-0276). A store is the
+ * runtime object a client holds; what is addressed here is one data definition,
+ * the value of `defineData({ id })`. It is a sibling of `blobs` under the same
+ * partition, which is the whole job `stores` was doing.
+ *
+ * ADR-0276 extends this name with `/generations/<n>`, at which point the bare
+ * name below stops holding a log and starts holding a pointer. Nothing anywhere
+ * maps an old name to a new one, here or there: the name is derived on both
+ * halves from values they already hold, so a rename strands data rather than
+ * requiring a migration.
  */
-export type StoreAuthorityDoName = `principals/${string}/stores/${string}`;
+export type StoreAuthorityDoName = `principals/${string}/data/${string}`;
 
 /** Durable key of an opaque-id blob's R2 object. */
 export function blobKey(principalId: PrincipalId, blobId: BlobId): BlobR2Key {
@@ -66,5 +77,5 @@ export function storeAuthorityName(
 	principalId: PrincipalId,
 	dataId: string,
 ): StoreAuthorityDoName {
-	return `principals/${principalId}/stores/${dataId}`;
+	return `principals/${principalId}/data/${dataId}`;
 }
