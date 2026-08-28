@@ -24,29 +24,37 @@ They are large. A Yjs peer answers one question — "here is my state vector, wh
 
 `y-protocols/sync.js` is 131 lines and has three messages: a state vector, the updates missing against a state vector, and an update. That is the whole transport.
 
-**The authority is one Durable Object per generation, holding every document that generation contains.** Not one per Yjs document. A Durable Object terminates one WebSocket, so a replica that wants a complete local copy of a thousand row documents would need a thousand sockets; and a generation that spans a thousand objects makes ADR-0276's `create` and `setCurrent` stop being single operations. Messages carry the document address they belong to, which is what ADR-0217's envelope already does.
+**One Durable Object per Yjs document, and bulk transfer is not the socket's job.** The two are the same decision: a socket carries live editing, and HTTP carries getting a copy.
 
-**A document is hydrated when it is being synced and not otherwise.** Hibernation discards in-memory state while keeping sockets open and stops duration billing, so a warm document is a session-lifetime convenience rather than a resident cost. In practice that is the application document plus whatever row documents someone is editing.
+```txt
+  principals/<p>/data/<id>                    the pointer and the generation list
+  principals/<p>/data/<id>/generations/3      the application document
+  principals/<p>/data/<id>/generations/3/notes/<rowId>   one row document each
+```
+
+- **WebSocket, for what is being edited.** A single-page application holds the application document open for its whole life, and opens one row document when a person opens a note. That is one or two sockets, not a thousand, because a person reads one note at a time and `openDocument` is already lazy (ADR-0248).
+- **HTTP, for getting a complete copy.** A device backfills documents it does not have with ordinary `GET`s, which are parallel, resumable, cacheable, and need no protocol. A `GET` with no state vector is the stored bytes verbatim, with no Yjs call on the server at all.
+- **The change feed already exists.** Every edit to a row document writes into the application document: `store.ts`'s `deriveOnCommit` stamps `updatedAt` on the row and notes that "a body edit is an edit to the row&hellip; the write always happens on a local body edit". So the one socket a device always holds already tells it which row documents moved, and it re-fetches those over HTTP. Nothing new is needed to keep an unopened note current.
+- **A generation is still atomic, through the pointer rather than through the object count.** `create` writes N objects and nothing reads a generation before `setCurrent` names it, so a half-written generation is invisible rather than broken. The two verbs stay two verbs.
 
 **Validation becomes possible, so a poison entry is refused rather than repaired.** ADR-0218 is right that a filter over bytes "could not be a proof, only a filter", and right for a server holding no structs. A server holding the document proves it: an update that will not apply is refused at the door. The 13-byte no-op repair, `SyncClientError.Unapplyable`, and the reasoning around them go.
 
 **What the client stops holding:** the cursor, the outbox, `authoritySeq`, gap detection, `needsResync`, and the durable record of what it owes. It sends its state vector and is told. Its durable record becomes the document bytes and nothing else.
 
-**What stays:** the document identity and admission by equality (ADR-0231), which is what generations ride on; one Durable Object per principal and data definition (ADR-0225); the host supplying the socket (ADR-0222) and the blob store; chunking, because a document exceeds the 2 MB value cap.
+**What stays:** the document identity and admission by equality (ADR-0231), which is what generations ride on; the host supplying the socket (ADR-0222) and the blob store; chunking, because a document exceeds the 2 MB value cap. ADR-0225's one object per principal and data definition becomes one object per principal, definition, generation and document address; the partition rule it exists for, that the resolved bearer and not a query selects the partition, is unchanged.
 
 ## Consequences
 
-- Roughly 3,300 lines of source and 2,800 of tests come out: `sync/frames.ts`, `sync/hub.ts`, `sync/authority.ts`, `sync/client.ts`, `sync/connection.ts`, `store/envelope.ts`, `store/log.ts`, `store/persistence.ts` and their suites, against a protocol of about 300.
+- Roughly 3,300 lines of source and 2,800 of tests come out: `sync/frames.ts`, `sync/hub.ts`, `sync/authority.ts`, `sync/client.ts`, `sync/connection.ts`, `store/envelope.ts`, `store/log.ts`, `store/persistence.ts` and their suites, against a protocol of about 300. `envelope.ts` goes rather than survives: it batched several documents into one positional log entry, and one document per object with one socket per open document has nothing to batch.
 - **The client's durable record loses its metadata entirely.** With no cursor there is nothing that must land atomically with the bytes, so the document identity moves into the storage path rather than a table, and `_identity`, `_tombstones` and `_updates` all go. A generation becomes a directory.
 - `owed.ts` is deleted before it was ever wired. It computed what a replica owes from a vector it kept itself, which is the right answer against a server that cannot diff. Against one that can, a replica does not keep a vector.
 - **The authority acquires a Yjs version.** ADR-0218 names this correctly: with no Yjs call, "a Yjs format change cannot make the server refuse a valid client's writes." That protection is spent. Server and client now upgrade together, and Yjs's v2 update format is the compatibility surface to watch.
-- **The authority acquires a memory ceiling.** 128 MB per isolate, shared across the objects in it; exceeding it returns `Error 1102` and moves subsequent requests to a new isolate. `applyUpdateV2` into a document cost 108 MB on a 27.7 MB update, so a hydrated document is roughly four times its bytes. The 9/91 split is what keeps this comfortable: the application document holds scalar fields only and grows with row count rather than row size.
+- **The memory ceiling stops being a design constraint.** It is 128 MB per isolate, shared, and a hydrated document is roughly four times its bytes (`applyUpdateV2` cost 108 MB on a 27.7 MB update). One object per document means the largest thing any object ever hydrates is one document: the application document at a few hundred kilobytes, or one note. This is the whole reason the granularity went this way rather than the other, and it is why the collapse costs nothing that lands on a neighbour.
 - Server-side compaction becomes trivial and stops being a product decision. The authority holds the state it would replace, so it owes nobody a proof that the replacement covers it. That is the joint four withdrawn authority designs failed at.
 - End-to-end encryption is foreclosed, as ADR-0004 already accepted. Privacy remains a property of topology: a self-hosted instance is the answer for a person who needs the operator not to read.
 
 ## Considered alternatives
 
-- **One Durable Object per Yjs document.** Refused. It fits `y-protocols` verbatim and bounds memory per object, and it loses on three counts that matter more: a replica needs one socket per document, a generation stops being one object so create, promote and delete stop being atomic, and per-object request billing multiplies by row count.
-- **A hybrid: the application document in its own object, row documents in theirs.** Refused for the same socket and generation reasons, which apply to the row documents either way.
+- **One Durable Object per generation, holding every document in it.** Refused, and it was this record's first answer. The argument for it was that a replica wanting a complete local copy would otherwise need a socket per document, and that a generation spanning many objects loses atomicity. Both dissolve once bulk transfer is HTTP rather than the socket: a device sockets only what it is editing, and a generation nothing reads until the pointer names it cannot be observed half-written. What is left on that side is one object per person per definition for billing, against a shared memory ceiling that becomes a real blast radius the moment one person's data is large. The ceiling is worth more than the request count.
 - **Keep the byte-blind authority and delete only the client's outbox.** This was the plan until this record, and `owed.ts` is its residue. It works, and it keeps every mechanism that exists because the server cannot answer a question the client could simply ask.
 - **Encrypt client-side and keep both.** Refused by ADR-0004 with its reasoning intact: it taxes collaboration, server-side materialization, search and recovery to buy a property few people asked for.
