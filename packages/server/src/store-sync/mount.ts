@@ -21,7 +21,7 @@ import {
 	STORE_SYNC_ROUTE,
 	WORKSPACE_ID,
 } from '@epicenter/sync';
-import { Hono, type MiddlewareHandler } from 'hono';
+import type { Hono, MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 
