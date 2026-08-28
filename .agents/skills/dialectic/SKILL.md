@@ -1,6 +1,6 @@
 ---
 name: dialectic
-description: Develop an unsettled idea through one concrete model at a time, rendered as a page the user reacts to and corrects. Use when shaping a vision or architecture before the destination is settled.
+description: Develop an unsettled idea as a page you react to and correct. Use when the user asks for a dialectic.
 ---
 
 # Dialectic
