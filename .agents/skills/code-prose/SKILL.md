@@ -1,6 +1,6 @@
 ---
-name: simplify
-description: Simplify completed code or code comments without changing behavior. Use when doing final cleanup before review or writing and reviewing comments.
+name: code-prose
+description: Apply Orwell's rules to the prose inside code — identifiers, comments, and the order of a file — without changing behavior. Use when names, word choice, comments, or a file's structure need an editorial pass.
 ---
 Review changes in the current branch, or in the scope the user specifies. Apply these criteria without changing behavior. Only touch code in that scope, and run the relevant existing checks after changes.
 
