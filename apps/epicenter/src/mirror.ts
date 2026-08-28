@@ -47,18 +47,18 @@ import { indexMirrorFolder } from './mirror-index.ts';
  */
 export function mirrorFolderPath({
 	place,
-	databaseId,
+	dataId,
 	root,
 }: {
 	place: string;
-	databaseId: string;
+	dataId: string;
 	root: string;
 }): string | undefined {
 	if (!isMirrorPlace(place)) return undefined;
 	// The same grammar the data root uses for an app directory: dot-separated,
 	// alphanumeric at both ends, so `.` and `..` are refused by construction.
-	if (!isAppId(databaseId)) return undefined;
-	return join(root, place, databaseId);
+	if (!isAppId(dataId)) return undefined;
+	return join(root, place, dataId);
 }
 
 /**

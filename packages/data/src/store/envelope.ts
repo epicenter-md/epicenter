@@ -14,7 +14,7 @@
  *
  * A section names its document with the store's own vocabulary: the reserved
  * `app` name for the application document, or a row's derived address
- * (`{databaseId}/{tableName}/{rowId}`) for a rich document. The envelope does
+ * (`{dataId}/{tableName}/{rowId}`) for a rich document. The envelope does
  * not interpret either; a name is bytes to it.
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';

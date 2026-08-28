@@ -19,7 +19,7 @@ import {
 	MAIN_SUBPROTOCOL,
 	parseSubprotocols,
 	STORE_SYNC_ROUTE,
-	WORKSPACE_ID,
+	DATA_ID,
 } from '@epicenter/sync';
 import type { Hono, MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
@@ -59,10 +59,10 @@ function requireStoreBearer<E extends Env>(
 	});
 }
 
-/** One id check for both routes: a name no workspace could carry is refused. */
+/** One id check for both routes: a name no data definition could carry is refused. */
 function parseDataId(value: string | undefined): string | undefined {
 	if (value === undefined) return undefined;
-	if (!WORKSPACE_ID.test(value) || value.length > 128) return undefined;
+	if (!DATA_ID.test(value) || value.length > 128) return undefined;
 	return value;
 }
 
@@ -101,13 +101,13 @@ export function mountStoreSyncApp<E extends Env = Env>(
 					status: 426,
 				});
 			}
-			const databaseId = parseDataId(c.req.query('databaseId'));
-			if (databaseId === undefined) {
-				return new Response('databaseId must be a workspace id', {
+			const dataId = parseDataId(c.req.query('dataId'));
+			if (dataId === undefined) {
+				return new Response('dataId must be a data definition id', {
 					status: 400,
 				});
 			}
-			const name = storeAuthorityName(c.var.principal.id, databaseId);
+			const name = storeAuthorityName(c.var.principal.id, dataId);
 			const offered = parseSubprotocols(
 				c.req.header('sec-websocket-protocol') ?? null,
 			);

@@ -10,7 +10,7 @@ Runs on Cloudflare Workers with Durable Objects. Store sync is one WebSocket
 route, `/api/store/v1/sync`, mounted by `mountStoreSyncApp`
 (`packages/server/src/store-sync/`). It resolves one Durable Object per
 (principal, application id), named
-`principals/<principalId>/stores/<workspaceId>`, holding a snapshot plus the
+`principals/<principalId>/stores/<dataId>`, holding a snapshot plus the
 entries after it (ADR-0220, ADR-0225).
 
 The principal is stamped from the resolved bearer and the Durable Object is

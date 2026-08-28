@@ -34,7 +34,7 @@ import { canonicalJson } from './canonical.js';
 const CLOSED = { additionalProperties: false } as const;
 
 /** Reverse-domain database id: two or more lowercase, dot-separated labels. */
-const DATABASE_ID_PATTERN =
+const DATA_ID_PATTERN =
 	'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$';
 /** A durable table name: one bare SQL identifier, so a mount needs no quoting. */
 const TABLE_NAME_PATTERN = '^[A-Za-z][A-Za-z0-9_]*$';
@@ -53,7 +53,7 @@ const TABLE_NAME_PATTERN = '^[A-Za-z][A-Za-z0-9_]*$';
  */
 const ROW_ID_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._-]*$';
 
-const DATABASE_ID = new RegExp(DATABASE_ID_PATTERN);
+const DATA_ID = new RegExp(DATA_ID_PATTERN);
 const TABLE_NAME = new RegExp(TABLE_NAME_PATTERN);
 const ROW_ID = new RegExp(ROW_ID_PATTERN);
 
@@ -95,14 +95,14 @@ const SQLITE_KEYWORDS = new Set(SQLITE_UNUSABLE_AS_RELATION_NAME);
  * their own capacity models.
  */
 export type AddressByteCeilings = {
-	databaseIdBytes: number;
+	dataIdBytes: number;
 	tableNameBytes: number;
 	rowIdBytes: number;
 };
 
 /** The address-coordinate ceilings admitted by the public data vocabulary. */
 export const DATA_ADDRESS_CEILINGS: AddressByteCeilings = {
-	databaseIdBytes: 128,
+	dataIdBytes: 128,
 	tableNameBytes: 64,
 	rowIdBytes: 128,
 };
@@ -134,9 +134,9 @@ function utf8ByteLength(value: string): number {
 	return bytes;
 }
 
-const databaseIdSchema = Type.String({
+const dataIdSchema = Type.String({
 	minLength: 3,
-	pattern: DATABASE_ID_PATTERN,
+	pattern: DATA_ID_PATTERN,
 });
 const tableNameSchema = Type.String({
 	minLength: 1,
@@ -149,7 +149,7 @@ const rowIdSchema = Type.String({
 
 export const RowAddressSchema = Type.Object(
 	{
-		databaseId: databaseIdSchema,
+		dataId: dataIdSchema,
 		tableName: tableNameSchema,
 		rowId: rowIdSchema,
 	},
@@ -172,7 +172,7 @@ export function addressKey(address: RowAddress): string {
 /**
  * The canonical address of the independent Yjs document a row owns (ADR-0248).
  *
- * A fixed-depth derived string, `{databaseId}/{tableName}/{rowId}`, composed
+ * A fixed-depth derived string, `{dataId}/{tableName}/{rowId}`, composed
  * one way only. It does not encode, parse, or revalidate coordinates: every
  * coordinate is slash-free by the grammar in this file, checked where names
  * are declared and where addresses are admitted, so the interpolation cannot
@@ -182,13 +182,13 @@ export function addressKey(address: RowAddress): string {
  * document manager that consumes it treats it as an opaque string.
  */
 export function documentAddress(address: RowAddress) {
-	return `${address.databaseId}/${address.tableName}/${address.rowId}`;
+	return `${address.dataId}/${address.tableName}/${address.rowId}`;
 }
 
 /** Structured identity equality: equal exactly when every coordinate matches. */
 export function addressesEqual(left: RowAddress, right: RowAddress): boolean {
 	return (
-		left.databaseId === right.databaseId &&
+		left.dataId === right.dataId &&
 		left.tableName === right.tableName &&
 		left.rowId === right.rowId
 	);
@@ -201,7 +201,7 @@ export function isDatabaseId(
 ): boolean {
 	const bytes = utf8ByteLength(value);
 	return (
-		bytes >= 3 && bytes <= ceilings.databaseIdBytes && DATABASE_ID.test(value)
+		bytes >= 3 && bytes <= ceilings.dataIdBytes && DATA_ID.test(value)
 	);
 }
 
@@ -248,7 +248,7 @@ export function isAdmissibleAddress(
 	ceilings: AddressByteCeilings,
 ): boolean {
 	return (
-		isDatabaseId(address.databaseId, ceilings) &&
+		isDatabaseId(address.dataId, ceilings) &&
 		isTableName(address.tableName, ceilings) &&
 		isRowId(address.rowId, ceilings)
 	);

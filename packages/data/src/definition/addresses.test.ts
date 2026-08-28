@@ -9,7 +9,7 @@ import {
 describe('documentAddress (ADR-0248)', () => {
 	test('composes the fixed-depth derived string, deterministically', () => {
 		const address = {
-			databaseId: 'so.epicenter.honeycrisp',
+			dataId: 'so.epicenter.honeycrisp',
 			tableName: 'notes',
 			rowId: 'abc123',
 		};
@@ -22,17 +22,17 @@ describe('documentAddress (ADR-0248)', () => {
 		// be unrepresentable. The grammar refuses each coordinate that could
 		// make the interpolation ambiguous.
 		for (const candidate of [
-			{ databaseId: 'a/b.example', tableName: 'notes', rowId: 'r1' },
-			{ databaseId: 'so.example', tableName: 'no/tes', rowId: 'r1' },
-			{ databaseId: 'so.example', tableName: 'notes', rowId: 'r/1' },
-			{ databaseId: 'so.example', tableName: '', rowId: 'r1' },
-			{ databaseId: 'so.example', tableName: 'notes', rowId: '.hidden' },
+			{ dataId: 'a/b.example', tableName: 'notes', rowId: 'r1' },
+			{ dataId: 'so.example', tableName: 'no/tes', rowId: 'r1' },
+			{ dataId: 'so.example', tableName: 'notes', rowId: 'r/1' },
+			{ dataId: 'so.example', tableName: '', rowId: 'r1' },
+			{ dataId: 'so.example', tableName: 'notes', rowId: '.hidden' },
 		]) {
 			expect(isRowAddress(candidate, DATA_ADDRESS_CEILINGS)).toBe(false);
 		}
 		expect(
 			isRowAddress(
-				{ databaseId: 'so.example', tableName: 'notes', rowId: 'r1' },
+				{ dataId: 'so.example', tableName: 'notes', rowId: 'r1' },
 				DATA_ADDRESS_CEILINGS,
 			),
 		).toBe(true);

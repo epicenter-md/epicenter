@@ -71,8 +71,8 @@ const ObservationError = defineErrors({
  * name alone would cross database ids and deliver one app's invalidations to
  * another's handle.
  */
-function tableKey(databaseId: string, tableName: string): string {
-	return `${JSON.stringify(databaseId)}:${JSON.stringify(tableName)}`;
+function tableKey(dataId: string, tableName: string): string {
+	return `${JSON.stringify(dataId)}:${JSON.stringify(tableName)}`;
 }
 
 /**
@@ -130,11 +130,11 @@ export function createInvalidationDispatcher({
 
 	return {
 		subscribeTable(
-			databaseId: string,
+			dataId: string,
 			tableName: string,
 			listener: TableInvalidationListener,
 		): () => void {
-			const key = tableKey(databaseId, tableName);
+			const key = tableKey(dataId, tableName);
 			const listeners = tableListeners.get(key) ?? new Set();
 			listeners.add(listener);
 			tableListeners.set(key, listeners);
@@ -157,7 +157,7 @@ export function createInvalidationDispatcher({
 			if (addresses.length === 0) return;
 			const rowsByTable = new Map<string, Set<string>>();
 			for (const address of addresses) {
-				const key = tableKey(address.databaseId, address.tableName);
+				const key = tableKey(address.dataId, address.tableName);
 				const ids = rowsByTable.get(key) ?? new Set<string>();
 				ids.add(address.rowId);
 				rowsByTable.set(key, ids);

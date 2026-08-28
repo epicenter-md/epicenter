@@ -12,7 +12,7 @@
  * folder recognizes what is in it.
  *
  * This runs the build itself rather than expecting one to be sitting there. A
- * build headed for Epicenter has to carry `/apps/<databaseId>/` in its own asset
+ * build headed for Epicenter has to carry `/apps/<dataId>/` in its own asset
  * URLs, and the workspace id is declared in the workspace, so the one step that knows
  * the workspace id is the one that must set the prefix. Staging a build made
  * without it produces a folder that admits cleanly and then shows a blank

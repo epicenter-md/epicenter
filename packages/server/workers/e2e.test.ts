@@ -180,7 +180,7 @@ describe('two devices on one account converge', () => {
 	it('an upgrade with no bearer is refused', async () => {
 		const response = await SELF.fetch(
 			new Request(
-				`${ORIGIN}/api/store/v1/sync?databaseId=so.epicenter.storeprobe&cursor=0`,
+				`${ORIGIN}/api/store/v1/sync?dataId=so.epicenter.storeprobe&cursor=0`,
 				{
 					headers: { Upgrade: 'websocket' },
 				},
@@ -189,9 +189,9 @@ describe('two devices on one account converge', () => {
 		expect(response.status).toBe(401);
 	});
 
-	it('a databaseId no workspace could declare is refused', async () => {
+	it('a dataId no workspace could declare is refused', async () => {
 		const response = await SELF.fetch(
-			new Request(`${ORIGIN}/api/store/v1/sync?databaseId=../escape&cursor=0`, {
+			new Request(`${ORIGIN}/api/store/v1/sync?dataId=../escape&cursor=0`, {
 				headers: {
 					Upgrade: 'websocket',
 					'sec-websocket-protocol': 'epicenter, bearer.device:someone',

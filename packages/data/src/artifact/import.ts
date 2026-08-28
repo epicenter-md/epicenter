@@ -104,7 +104,7 @@ export function readArtifact(
 	if (parsed.error !== null) {
 		return ImportError.MalformedDefinition({ reason: parsed.error.message });
 	}
-	const databaseId = parsed.data.id;
+	const dataId = parsed.data.id;
 
 	const app = createAppDocument();
 	const sections: EnvelopeSection[] = [];
@@ -157,7 +157,7 @@ export function readArtifact(
 				codec.deserialize(row.body, body as unknown as DocumentReader);
 				sections.push({
 					document: documentAddress({
-						databaseId,
+						dataId,
 						tableName: at.table,
 						rowId: at.rowId,
 					}),

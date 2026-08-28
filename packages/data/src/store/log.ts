@@ -31,7 +31,7 @@ export const SNAPSHOT_FOLD_THRESHOLD = 64;
  *
  * The log is per-document (ADR-0248): the application document holds every
  * scalar row under this reserved name, and each row's rich document holds its
- * chain under the row's derived address (`{databaseId}/{tableName}/{rowId}`).
+ * chain under the row's derived address (`{dataId}/{tableName}/{rowId}`).
  * The two spellings cannot collide, because a derived address always carries
  * two slashes and this name carries none.
  */

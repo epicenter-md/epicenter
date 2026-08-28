@@ -54,7 +54,7 @@ export type AttachStoreSyncOptions = {
 	/** The open account replica this connection carries. */
 	store: AddressedAccountStore;
 	/** The database id being synced, which addresses the authority. */
-	databaseId: string;
+	dataId: string;
 	transport: StoreSocketTransport;
 	/**
 	 * This replica's document is superseded. The driver has already stopped; the
@@ -94,7 +94,7 @@ export type AttachStoreSyncOptions = {
  */
 export function attachStoreSync({
 	store,
-	databaseId,
+	dataId,
 	transport,
 	onSuperseded,
 	onDenied,
@@ -109,7 +109,7 @@ export function attachStoreSync({
 			void transport
 				.openWebSocket(
 					STORE_SYNC_ROUTE.url(store.baseURL, {
-						databaseId,
+						dataId,
 						cursor,
 						...(document === undefined ? {} : { document }),
 					}),

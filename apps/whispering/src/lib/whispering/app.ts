@@ -289,7 +289,7 @@ async function openAccountRuntime({
 		let noticeDenied: (() => void) | undefined;
 		const connection = attachStoreSync({
 			store: data.store,
-			databaseId: whisperingDefinition.id,
+			dataId: whisperingDefinition.id,
 			transport: {
 				openWebSocket: (url) => auth.openWebSocket(url),
 			},

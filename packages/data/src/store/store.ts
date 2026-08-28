@@ -1601,7 +1601,7 @@ function createStoreEngine(
 	): TableHandle {
 		const root = tableRoot(index, tableName);
 		const addressOf = (rowId: string) => ({
-			databaseId: definition.id,
+			dataId: definition.id,
 			tableName,
 			rowId,
 		});

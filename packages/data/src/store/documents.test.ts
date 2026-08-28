@@ -148,7 +148,7 @@ describe('table.openDocument (ADR-0248)', () => {
 describe('row deletion retires the document (ADR-0248)', () => {
 	test('delete removes the row, refuses reopen, and drops the stored chain', async () => {
 		const file = new Database(':memory:');
-		const address = { databaseId: database.id, tableName: 'notes' };
+		const address = { dataId: database.id, tableName: 'notes' };
 		let rowId: string;
 		let derived: string;
 		{
@@ -236,7 +236,7 @@ describe('row documents ride the one store connection (ADR-0248)', () => {
 			[
 				APP_DOCUMENT,
 				documentAddress({
-					databaseId: database.id,
+					dataId: database.id,
 					tableName: 'notes',
 					rowId: note.id,
 				}),

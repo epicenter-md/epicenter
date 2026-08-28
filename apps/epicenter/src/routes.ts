@@ -74,7 +74,7 @@ export const LOCAL_BLOB_ROUTE = {
  * asking and the id leaves the URL entirely, and that is what a genuinely
  * third-party app would buy.
  */
-export const MIRROR_ROUTE = route(`${MIRROR_PATH}/:place/:databaseId`);
+export const MIRROR_ROUTE = route(`${MIRROR_PATH}/:place/:dataId`);
 /**
  * Host-owned remote copy operations for one local blob. The id is the only
  * input: no route accepts a destination URL, transfer header, or body, so the

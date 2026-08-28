@@ -44,11 +44,11 @@ export const STORE_SYNC_ROUTE = {
 	 */
 	url(
 		baseURL: string,
-		params: { databaseId: string; cursor: number; document?: string },
+		params: { dataId: string; cursor: number; document?: string },
 	): string {
 		const url = new URL(`${stripTrailing(baseURL)}${STORE_SYNC_ROUTE.pattern}`);
 		url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-		url.searchParams.set('databaseId', params.databaseId);
+		url.searchParams.set('dataId', params.dataId);
 		url.searchParams.set('cursor', String(params.cursor));
 		if (params.document !== undefined) {
 			url.searchParams.set('document', params.document);
@@ -58,12 +58,17 @@ export const STORE_SYNC_ROUTE = {
 } as const;
 
 /**
- * An id a workspace could actually have declared.
+ * An id a data definition could actually have declared (ADR-0276).
+ *
+ * The value is `defineData({ id })`, so `data` is the noun on both sides. It is
+ * not a database: ADR-0269 deleted the SQL projection the word came from. It is
+ * not a workspace either: ADR-0270 gives an application two of those, local and
+ * account, and this id names the thing that has them.
  *
  * Checked on both sides, from one definition. The server checks it because the
  * value becomes part of a Durable Object name; a client checks nothing, but
- * sharing the grammar means a name the server will refuse is a name no workspace
- * could have carried either.
+ * sharing the grammar means a name the server will refuse is a name no
+ * definition could have carried either.
  */
-export const WORKSPACE_ID =
+export const DATA_ID =
 	/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;

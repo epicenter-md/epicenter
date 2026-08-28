@@ -382,7 +382,7 @@ store announces its own durable local work to the transport internally, so
 nothing has to remember to nudge it.
 
 The authority is one Cloudflare Durable Object per (principal, definitionId), named
-`principals/<principalId>/stores/<definitionId>`, keeping a snapshot plus the
+`principals/<principalId>/stores/<dataId>`, keeping a snapshot plus the
 entries after it (ADR-0220, ADR-0225). It reads nothing and holds opaque bytes.
 `packages/server/src/store-sync/` is the mount; `@epicenter/data/sync` is where
 every merge rule actually lives, so what is deployed and what the transport's

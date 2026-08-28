@@ -111,7 +111,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 			},
 			dial: ({ cursor, document, opened, received, closed }) => {
 				const url = STORE_SYNC_ROUTE.url(origin, {
-					databaseId: probeDefinition.id,
+					dataId: probeDefinition.id,
 					cursor,
 					...(document === undefined ? {} : { document }),
 				});

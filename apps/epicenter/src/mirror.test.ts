@@ -19,8 +19,8 @@ import { MIRROR_INDEX_FILE } from './mirror-index.ts';
 const ROOT = '/Users/person/Epicenter';
 const APP = 'so.epicenter.honeycrisp';
 
-const folder = (place: string, databaseId: string) =>
-	mirrorFolderPath({ place, databaseId, root: ROOT });
+const folder = (place: string, dataId: string) =>
+	mirrorFolderPath({ place, dataId, root: ROOT });
 
 const file = (path: string, contents: string) =>
 	`${JSON.stringify({ path, contents })}\n`;

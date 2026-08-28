@@ -11,8 +11,8 @@ composition to read first.
 ## The store authority
 
 An application's store syncs to one Durable Object per
-`(principalId, workspaceId)`, named
-`principals/<principalId>/stores/<workspaceId>` (ADR-0225). Being signed in
+`(principalId, dataId)`, named
+`principals/<principalId>/stores/<dataId>` (ADR-0225). Being signed in
 on two devices is the whole sharing model: there is nothing to pair, invite, or
 approve, and no identifier a client can supply that reaches another partition.
 

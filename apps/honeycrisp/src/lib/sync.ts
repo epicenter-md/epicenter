@@ -53,7 +53,7 @@ export function attachHoneycrispSync({
 }): SyncConnection {
 	return attachStoreSync({
 		store,
-		databaseId: honeycrispDefinition.id,
+		dataId: honeycrispDefinition.id,
 		transport: {
 			openWebSocket: (url) => auth.openWebSocket(url),
 		},

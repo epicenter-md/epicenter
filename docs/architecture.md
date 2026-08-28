@@ -88,7 +88,7 @@ it, which leaves one deleted map key rather than a permanent corpse.
 ## Prose is a plane beside the row, not a field in it
 
 Each row owns one independent Yjs document at its derived address,
-`{databaseId}/{tableName}/{rowId}` (ADR-0248). The application names roots
+`{dataId}/{tableName}/{rowId}` (ADR-0248). The application names roots
 inside it and Epicenter never looks inside one. Opening is a load, awaited,
 and the handle that comes back is fully hydrated:
 

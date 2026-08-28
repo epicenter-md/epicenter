@@ -56,7 +56,7 @@ function createTransport(open: (url: string) => Promise<WebSocket>) {
 	return { transport, urls };
 }
 
-test('the first dial names the databaseId and a cursor of zero', async () => {
+test('the first dial names the dataId and a cursor of zero', async () => {
 	const store = openStore();
 	await using _store = store;
 	const { transport, urls } = createTransport(
@@ -64,7 +64,7 @@ test('the first dial names the databaseId and a cursor of zero', async () => {
 	);
 	const connection = attachStoreSync({
 		store,
-		databaseId: database.id,
+		dataId: database.id,
 		transport,
 		onSuperseded: () => {},
 		onTransportError: (cause) => {
@@ -77,7 +77,7 @@ test('the first dial names the databaseId and a cursor of zero', async () => {
 	const url = new URL(urls[0] as string);
 	expect(url.protocol).toBe('wss:');
 	expect(url.pathname).toBe('/api/store/v1/sync');
-	expect(url.searchParams.get('databaseId')).toBe(database.id);
+	expect(url.searchParams.get('dataId')).toBe(database.id);
 	expect(url.searchParams.get('cursor')).toBe('0');
 	// A replica that has never synced belongs to no document yet, so it must
 	// not claim one (ADR-0231).
@@ -98,7 +98,7 @@ test('a permanent denial stops the driver and is not a transport error', async (
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
-		databaseId: database.id,
+		dataId: database.id,
 		transport,
 		onSuperseded: () => {},
 		onDenied: () => denials++,
@@ -128,7 +128,7 @@ test('a transient denial is reported and left to the backoff', async () => {
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
-		databaseId: database.id,
+		dataId: database.id,
 		transport,
 		onSuperseded: () => {},
 		onDenied: () => denials++,
@@ -151,7 +151,7 @@ test('an unrecognised rejection is a close, never a denial', async () => {
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
-		databaseId: database.id,
+		dataId: database.id,
 		transport,
 		onSuperseded: () => {},
 		onDenied: () => denials++,
@@ -178,7 +178,7 @@ test('abandoning an attempt closes a socket that arrives late', async () => {
 	const { transport } = createTransport(() => arrival.promise);
 	const connection = attachStoreSync({
 		store,
-		databaseId: database.id,
+		dataId: database.id,
 		transport,
 		onSuperseded: () => {},
 		onTransportError: (cause) => {

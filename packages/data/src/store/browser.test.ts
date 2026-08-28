@@ -4,8 +4,8 @@ import { field } from '@epicenter/data/definition';
  *
  * A browser application keeps one local document and one retained account
  * replica per server identity (ADR-0261). These tests pin the addresses that
- * hold them apart: `epicenter/v1/<databaseId>/local` and
- * `epicenter/v1/<databaseId>/account/<base URL>/<principal id>`, one IndexedDB
+ * hold them apart: `epicenter/v1/<dataId>/local` and
+ * `epicenter/v1/<dataId>/account/<base URL>/<principal id>`, one IndexedDB
  * database and one open claim each.
  *
  * Key behaviors:
@@ -37,7 +37,7 @@ import { openAccount, openLocal } from './browser.js';
 import { openMemory } from './memory.js';
 import { type DataOf, type DataStoreBase, syncEngineOf } from './store.js';
 
-/** One databaseId per concern, so tests share no IndexedDB state. */
+/** One dataId per concern, so tests share no IndexedDB state. */
 function databaseFor(label: string) {
 	return defineData({
 		id: `so.epicenter.browsertest.${label}`,
@@ -65,14 +65,14 @@ function expectOk<TValue, TError>(
 	return result as TValue;
 }
 
-const localAddress = (databaseId: string) =>
-	`epicenter/v1/${databaseId}/local`;
+const localAddress = (dataId: string) =>
+	`epicenter/v1/${dataId}/local`;
 const accountAddress = (
-	databaseId: string,
+	dataId: string,
 	baseURL: string,
 	principalId: string,
 ) =>
-	`epicenter/v1/${databaseId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}`;
+	`epicenter/v1/${dataId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}`;
 
 const openLocalData = (definition: ReturnType<typeof databaseFor>) =>
 	openLocal(definition);
@@ -410,11 +410,11 @@ describe('the clean break: storage from before the account-scoped address', () =
 		});
 	}
 
-	function supersededNames(databaseId: string): string[] {
+	function supersededNames(dataId: string): string[] {
 		return [
-			`epicenter-store-${databaseId}`,
-			`epicenter-store-${databaseId}#private`,
-			`epicenter-store-${databaseId}#database`,
+			`epicenter-store-${dataId}`,
+			`epicenter-store-${dataId}#private`,
+			`epicenter-store-${dataId}#database`,
 		];
 	}
 
@@ -495,7 +495,7 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 		// rather than a programmer error. The store this half-opened must
 		// release its address, or the application can never start.
 		const refused = await openLocal({
-			databaseId: database.id,
+			dataId: database.id,
 			tables: { notes: { fields: {} } },
 		} as never);
 		expect(refused.error).not.toBeNull();

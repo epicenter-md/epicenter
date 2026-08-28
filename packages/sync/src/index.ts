@@ -20,5 +20,5 @@ export {
 } from './auth-subprotocol';
 export {
 	STORE_SYNC_ROUTE,
-	WORKSPACE_ID,
+	DATA_ID,
 } from './store-route.js';

@@ -51,16 +51,16 @@ auth refusal from a transport failure.
 import { STORE_SYNC_ROUTE } from "@epicenter/sync";
 
 new WebSocket(
-  STORE_SYNC_ROUTE.url(baseURL, { workspaceId, cursor }),
+  STORE_SYNC_ROUTE.url(baseURL, { dataId, cursor }),
   STORE_SYNC_ROUTE.subprotocols(token),
 );
 ```
 
 One path (`/api/store/v1/sync`), and the addressing lives in the query: a
-replica says which application workspaceId it is syncing and how far through the
+replica says which application `dataId` it is syncing and how far through the
 log it has read. Whose data that is comes from the resolved bearer,
 server-side, so there is no value a client can put in the query that reaches
-another partition (ADR-0092, ADR-0225). `WORKSPACE_ID` is the workspace id
+another partition (ADR-0092, ADR-0225). `DATA_ID` is the data id
 grammar both halves check against one definition.
 
 ## Scope

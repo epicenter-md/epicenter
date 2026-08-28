@@ -114,12 +114,12 @@ export type MirrorSinkError = InferErrors<typeof MirrorSinkError>;
 /** The absolute same-origin URL one place's folder is written through. */
 function mirrorFolderUrl({
 	place,
-	databaseId,
+	dataId,
 }: {
 	place: MirrorPlace;
-	databaseId: string;
+	dataId: string;
 }): string {
-	return `${MIRROR_PATH}/${encodeURIComponent(place)}/${encodeURIComponent(databaseId)}`;
+	return `${MIRROR_PATH}/${encodeURIComponent(place)}/${encodeURIComponent(dataId)}`;
 }
 
 export type MirrorSink = {
@@ -140,14 +140,14 @@ export type MirrorSink = {
  */
 export function createMirrorSink({
 	place,
-	databaseId,
+	dataId,
 	fetch: httpFetch = globalThis.fetch,
 }: {
 	place: MirrorPlace;
-	databaseId: string;
+	dataId: string;
 	fetch?: typeof globalThis.fetch;
 }): MirrorSink {
-	const url = mirrorFolderUrl({ place, databaseId });
+	const url = mirrorFolderUrl({ place, dataId });
 	return {
 		async send(ndjson) {
 			const { data: response, error } = await tryAsync({
@@ -217,7 +217,7 @@ export function attachMirror({
 	place,
 	sink = createMirrorSink({
 		place,
-		databaseId: definition.id,
+		dataId: definition.id,
 		fetch: globalThis.fetch,
 	}),
 	log,
