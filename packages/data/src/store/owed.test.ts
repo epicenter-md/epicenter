@@ -170,3 +170,65 @@ describe('the direction a mistake is allowed to fall', () => {
 		expect(attrs(skipped)).toEqual({ b: 2 });
 	});
 });
+
+describe('the invariants the wiring has to keep', () => {
+	test('folding is monotone: a clock never moves backwards', () => {
+		const replica = doc();
+		replica.transact(() =>
+			replica.get('notes').setAttr('a' as never, 1 as never),
+		);
+		const ahead = vectorOf(replica);
+		replica.transact(() =>
+			replica.get('notes').setAttr('b' as never, 2 as never),
+		);
+		const further = vectorOf(replica);
+
+		// Whichever order the two arrive in, the answer is the later one. An
+		// acknowledgement and a relayed update can land in either order, and a
+		// vector that moved backwards would re-offer work that was already taken.
+		expect(mergeSentVectors(further, ahead)).toEqual(
+			mergeSentVectors(ahead, further),
+		);
+		expect(mergeSentVectors(further, ahead)).toEqual(further);
+	});
+
+	test('a vector folded from applied bytes never runs ahead of the document', () => {
+		// The mechanical half of "the vector must not lead". Folding in what
+		// ARRIVED is safe precisely because the bytes were applied first: the
+		// document already covers every clock the fold can introduce.
+		const here = doc();
+		const elsewhere = doc();
+		elsewhere.transact(() =>
+			elsewhere.get('notes').setAttr('theirs' as never, 2 as never),
+		);
+		const arrived = owedSince(elsewhere, emptySentVector());
+		Y.applyUpdateV2(here, arrived);
+		const sent = mergeSentVectors(emptySentVector(), vectorOfUpdate(arrived));
+
+		for (const [client, clock] of Y.decodeStateVector(sent)) {
+			expect(
+				Y.decodeStateVector(vectorOf(here)).get(client) ?? 0,
+			).toBeGreaterThanOrEqual(clock);
+		}
+	});
+
+	test('a document is one value: the whole state replayed IS the document', () => {
+		// The claim under the fold threshold of 1, asserted where it can be seen
+		// rather than inferred from a passing suite. Deletions included, because
+		// a chain that is discarded must not take them with it.
+		const live = doc();
+		live.transact(() => {
+			live.get('notes').setAttr('a' as never, 1 as never);
+			live.get('notes').setAttr('b' as never, 2 as never);
+		});
+		live.transact(() => live.get('notes').deleteAttr('b'));
+		live.transact(() => live.get('notes').setAttr('c' as never, 3 as never));
+
+		const stored = owedSince(live, emptySentVector());
+		const reopened = doc();
+		Y.applyUpdateV2(reopened, stored);
+
+		expect(attrs(reopened)).toEqual(attrs(live));
+		expect(attrs(reopened)).toEqual({ a: 1, c: 3 });
+	});
+});
