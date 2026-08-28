@@ -3,7 +3,7 @@
  *
  * This is the unit, and everything else is iteration: the mirror renders the
  * rows a commit touched, and a whole render is the same call in a loop. The
- * artifact used to be assembled the other way around, whole-workspace first,
+ * artifact used to be assembled the other way around, whole-store first,
  * because ADR-0267's layout put a row's fields and its document in two
  * separate trees correlated by coordinates. ADR-0268 collapsed that layout
  * into one file per row; this is the code catching up to it. A row's fields
@@ -161,12 +161,12 @@ export async function renderRow(
 }
 
 /**
- * Every file a workspace renders to, one at a time.
+ * Every file a store renders to, one at a time.
  *
  * The loop over `renderRow`, plus `kv.json`, which is the one file that is not
  * a row: one object, no body, and nothing frontmatter would buy (ADR-0268).
  *
- * The mirror runs this at boot, because a workspace changes while an
+ * The mirror runs this at boot, because a store changes while an
  * application is closed: another device syncs, and the folder is stale until
  * something renders it whole. After that the mirror renders only the rows a
  * commit touched.
@@ -186,7 +186,7 @@ export async function renderRow(
  * writes nothing over one bad note is worse than a mirror missing one file,
  * and the next commit re-renders it anyway. `readArtifact` keeps the opposite
  * contract for the opposite reason: it feeds a restore that replaces a
- * workspace, so a file it silently skipped is data deleted everywhere.
+ * store, so a file it silently skipped is data deleted everywhere.
  */
 export async function* renderArtifact(
 	data: RenderableData,

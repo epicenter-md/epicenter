@@ -1,7 +1,7 @@
 /**
  * The artifact read back: files in, one envelope out (ADR-0267, ADR-0268).
  *
- * The mirror of `exportWorkspace`, and deliberately the same kind of thing: a
+ * The mirror of `exportStore`, and deliberately the same kind of thing: a
  * pure function over the public vocabulary, composed outside the store. It
  * rebuilds the application document from every row file's frontmatter and each
  * row's own document from that file's body through the table's codec, then
@@ -9,14 +9,14 @@
  * produces from a live replica.
  *
  * Producing bytes rather than writing them is what keeps import honest about
- * where the destruction happens. Replacing a workspace means discarding its
+ * where the destruction happens. Replacing a store means discarding its
  * durable record and letting it refill (ADR-0231's supersession), which is an
  * act on an address rather than on a live store, and belongs to whoever owns
  * the address. This function is the half that can be tested by reading its
  * output, and it holds no handle to anything a mistake could destroy.
  *
  * It fails closed, for the same reason the export does: what comes out of here
- * replaces a workspace, so a file it could not read is a refusal rather than a
+ * replaces a store, so a file it could not read is a refusal rather than a
  * row quietly left out.
  */
 
@@ -53,7 +53,7 @@ export const ImportError = defineErrors({
 	}),
 	/**
 	 * A file in the artifact is not the file its path says it is. Fatal: an
-	 * import that skipped it would replace a workspace with less than the
+	 * import that skipped it would replace a store with less than the
 	 * person handed it.
 	 */
 	MalformedFile: ({ path, reason }: { path: string; reason: string }) => ({
@@ -91,7 +91,7 @@ export const ImportError = defineErrors({
 export type ImportError = InferErrors<typeof ImportError>;
 
 /**
- * Read a whole artifact into the one envelope that replaces a workspace.
+ * Read a whole artifact into the one envelope that replaces a store.
  *
  * Paths are the addressing, as they are on the way out: `kv.json` is the kv
  * root, and every `<table>/<rowId>.md` is one row. A table the definition no

@@ -9,7 +9,7 @@
  * type, so `"007"` and `"no"` survive as the strings they are; the artifact
  * is lossy of history, never of a value (ADR-0267/0268).
  *
- * Keys are sorted, so two exports of one workspace diff line by line. A key
+ * Keys are sorted, so two exports of one store diff line by line. A key
  * outside the declared field grammar (a value an older release wrote) is
  * emitted as a JSON-quoted key, which YAML also accepts.
  *

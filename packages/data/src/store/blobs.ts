@@ -1,5 +1,5 @@
 /**
- * Where a workspace's bytes live: four methods, and not one of them knows what
+ * Where a store's bytes live: four methods, and not one of them knows what
  * Yjs is.
  *
  * A document is one value. Reading it is reading a key; writing it is writing

@@ -14,7 +14,7 @@ type TitleRoot = {
 	setAttr(key: string, value: unknown): void;
 };
 
-const workspace = defineData({
+const store = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.string() },
 	tables: {
@@ -53,7 +53,7 @@ function parsed(definition: Parameters<typeof parseData>[0]) {
 
 describe('renderRow is the unit (ADR-0271)', () => {
 	test('one row becomes one file: fields on top, prose underneath', async () => {
-		await using data = openMemory(workspace);
+		await using data = openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		const opened = await data.tables.notes.openDocument(made.id);
 		using handle = expectOk(opened);
@@ -61,7 +61,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 		handle.get('meta').setAttr('title' as never, 'buy milk' as never);
 
 		const rendered = expectOk(
-			await renderRow(data, parsed(workspace), 'notes', made.id),
+			await renderRow(data, parsed(store), 'notes', made.id),
 		);
 		expect(rendered.path).toBe(`notes/${made.id}.md`);
 		expect(rendered.contents).toBe(
@@ -72,12 +72,12 @@ describe('renderRow is the unit (ADR-0271)', () => {
 	test('a row that is gone renders no contents, which is the unlink signal', async () => {
 		// What a subscriber needs for a deletion: the ids a commit touched include
 		// the ones it removed, so the same call answers write-this and unlink-that.
-		await using data = openMemory(workspace);
+		await using data = openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		data.tables.notes.delete(made.id);
 
 		const rendered = expectOk(
-			await renderRow(data, parsed(workspace), 'notes', made.id),
+			await renderRow(data, parsed(store), 'notes', made.id),
 		);
 		expect(rendered.path).toBe(`notes/${made.id}.md`);
 		expect(rendered.contents).toBeUndefined();
@@ -130,12 +130,12 @@ describe('renderRow is the unit (ADR-0271)', () => {
 	});
 
 	test('a field the declaration dropped is in the file, because the read is faithful', async () => {
-		await using data = openMemory(workspace);
+		await using data = openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		data.tables.notes.update(made.id, { legacy: 'kept' } as never);
 
 		const rendered = expectOk(
-			await renderRow(data, parsed(workspace), 'notes', made.id),
+			await renderRow(data, parsed(store), 'notes', made.id),
 		);
 		expect(rendered.contents).toContain('legacy: "kept"');
 		expect(data.tables.notes.list().rows[0]).not.toHaveProperty('legacy');
@@ -144,7 +144,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 
 describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 	test('exports kv.json and one markdown file per row, fields above the body', async () => {
-		await using data = openMemory(workspace);
+		await using data = openMemory(store);
 		data.kv.update({ theme: 'dark' });
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		const opened = await data.tables.notes.openDocument(made.id);
@@ -155,7 +155,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 		handle.get('meta').setAttr('title' as never, 'buy milk' as never);
 		handle[Symbol.dispose]();
 
-		const files = await collect(renderArtifact(data, workspace));
+		const files = await collect(renderArtifact(data, store));
 
 		expect(JSON.parse(files.get('kv.json') ?? 'null')).toEqual({
 			theme: 'dark',
@@ -174,13 +174,13 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 	});
 
 	test('a row the declaration no longer names is still in the artifact', async () => {
-		await using data = openMemory(workspace);
+		await using data = openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		// A value written under an older declaration: the lens cannot see it,
 		// and the artifact must carry it anyway.
 		data.tables.notes.update(made.id, { legacy: 'kept' } as never);
 
-		const files = await collect(renderArtifact(data, workspace));
+		const files = await collect(renderArtifact(data, store));
 		expect(files.get(`notes/${made.id}.md`) ?? '').toContain('legacy: "kept"');
 		expect(data.tables.notes.list().rows[0]).not.toHaveProperty('legacy');
 	});

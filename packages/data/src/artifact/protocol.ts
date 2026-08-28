@@ -9,7 +9,7 @@
  *
  * ## The pass
  *
- * NDJSON, one object per line, so neither side ever holds a whole workspace at
+ * NDJSON, one object per line, so neither side ever holds a whole store at
  * once:
  *
  * ```txt
@@ -18,7 +18,7 @@
  * {"manifest":["kv.json","notes/abc.md"]}
  * ```
  *
- * A pass STATES what the workspace holds. It never says what to do to the
+ * A pass STATES what the store holds. It never says what to do to the
  * folder file by file and never asks what the folder currently contains: the
  * host owns the folder, so the host owns the diff.
  *

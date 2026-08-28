@@ -336,7 +336,7 @@ export type TableHandle = {
 	 *
 	 * The narrow form of `data.stored()`, for a caller that already knows which
 	 * row it is asking about: a subscriber holding the ids a commit touched,
-	 * rendering one file each (ADR-0271). Reading the whole workspace to answer
+	 * rendering one file each (ADR-0271). Reading the whole store to answer
 	 * about one row is what that caller would otherwise have to do on every
 	 * keystroke.
 	 *
@@ -709,8 +709,8 @@ export type DataStoreBase = {
 	 *
 	 * The one number to watch, and the reason it exists rather than a design.
 	 * Deleting a row leaves a tombstone that every device pays for in memory on
-	 * every load, forever. A future explicit Compact workspace action could
-	 * reclaim one (`evidence/bench/tombstones.ts`). Whether that ever matters is a question
+	 * every load, forever. An explicit Rebuild action reclaims one (ADR-0276,
+	 * `evidence/bench/tombstones.ts`). Whether that ever matters is a question
 	 * about how much a real person deletes, and nobody has that number.
 	 *
 	 * The arithmetic it feeds: memory tracks struct count at roughly 1 KB of rss
@@ -1579,7 +1579,7 @@ function createStoreEngine(
 	 * through them. That narrowing is correct for an application and correct for
 	 * any index a follower rebuilds on demand. It is wrong for an artifact: an
 	 * export that drops a field is data loss, and the
-	 * caller that must not lose one is asking about the workspace, not a table.
+	 * caller that must not lose one is asking about the store, not a table.
 	 *
 	 * So it enumerates the roots the document actually holds rather than the
 	 * tables the declaration names, and it hands back stored values untyped.

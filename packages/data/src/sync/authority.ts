@@ -61,8 +61,9 @@
  *
  * A document identity is metadata for sync admission. This authority names
  * the current identity but does not expose a destructive whole-document
- * replacement operation; any future Compact workspace feature must own that
- * product decision explicitly.
+ * replacement operation; any future whole-document rebuild must own that
+ * product decision explicitly. ADR-0276 is that decision and names the action
+ * Rebuild rather than Compact, because it retains what it rebuilt from.
  */
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
@@ -416,7 +417,7 @@ export function openSyncAuthority({
 		 * The one number to instrument.
 		 *
 			 * Automatic snapshot folding remains the maintenance path. This number is
-			 * instrumentation for deciding whether a future explicit Compact workspace
+			 * instrumentation for deciding whether a future explicit Compact store
 			 * action has earned its place; the authority does not trigger that action.
 		 */
 		storedBytes: () => read(() => sumBytes('_log') + sumBytes('_snapshot')),

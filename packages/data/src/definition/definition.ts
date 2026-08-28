@@ -57,7 +57,7 @@ export type FileCodec = {
  * `file` is mandatory. Only the application can turn its document into text,
  * so the codec is the one bridge an export has; a document block without it
  * would produce an artifact whose bodies silently vanish, and the artifact
- * feeds an import that replaces the workspace (ADR-0267).
+ * feeds an import that replaces the store (ADR-0267).
  */
 export type DocumentDeclaration = {
 	/** Derive scalar row fields from the document on every local commit. */

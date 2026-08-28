@@ -3,10 +3,10 @@
  * person exports is what they get when they import it again (ADR-0267/0268).
  *
  * The round trip is proven end to end rather than by inspecting bytes: export a
- * live workspace, read the files back into an envelope, apply that envelope to
+ * live store, read the files back into an envelope, apply that envelope to
  * a fresh store, and compare what the two stores hold. A frontmatter emitter
  * that retyped a value or a codec that lost a body shows up here as a
- * difference between two workspaces, which is the failure a person would
+ * difference between two stores, which is the failure a person would
  * actually suffer.
  */
 import { describe, expect, test } from 'bun:test';
@@ -22,7 +22,7 @@ type MetaRoot = {
 	setAttr(key: string, value: unknown): void;
 };
 
-const workspace = defineData({
+const store = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.string() },
 	tables: {
@@ -50,9 +50,9 @@ const workspace = defineData({
 	},
 });
 
-/** A workspace with one of everything the artifact has to carry. */
+/** A store with one of everything the artifact has to carry. */
 async function seeded() {
-	const data = openMemory(workspace);
+	const data = openMemory(store);
 	data.kv.update({ theme: 'dark' });
 	const folder = data.tables.folders.create({ name: 'Inbox' });
 	const note = data.tables.notes.create({
@@ -88,12 +88,12 @@ async function collect(
 }
 
 describe('readArtifact (ADR-0267/0268)', () => {
-	test('an exported workspace imports back into an identical one', async () => {
+	test('an exported store imports back into an identical one', async () => {
 		const { data, note } = await seeded();
-		const exported = await collect(renderArtifact(data, workspace));
+		const exported = await collect(renderArtifact(data, store));
 
-		const envelope = expectOk(readArtifact(exported, workspace));
-		await using restored = openMemory(workspace);
+		const envelope = expectOk(readArtifact(exported, store));
+		await using restored = openMemory(store);
 		expect(
 			syncEngineOf(restored.store).applyRemote(envelope).error,
 		).toBeNull();
@@ -117,9 +117,9 @@ describe('readArtifact (ADR-0267/0268)', () => {
 
 	test('a value keeps its type, so a string that looks like a number stays one', async () => {
 		const { data, note } = await seeded();
-		const exported = await collect(renderArtifact(data, workspace));
-		const envelope = expectOk(readArtifact(exported, workspace));
-		await using restored = openMemory(workspace);
+		const exported = await collect(renderArtifact(data, store));
+		const envelope = expectOk(readArtifact(exported, store));
+		await using restored = openMemory(store);
 		syncEngineOf(restored.store).applyRemote(envelope);
 
 		const row = expectOk(restored.tables.notes.get(note.id));
@@ -137,7 +137,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		// the import has to put it back, or a release upgrade plus an export and
 		// an import would quietly delete it.
 		const record = createMemoryRecord();
-		const withLegacy = openMemory(workspace, record);
+		const withLegacy = openMemory(store, record);
 		const made = withLegacy.tables.notes.create({
 			title: 'Groceries',
 			code: '1',
@@ -148,11 +148,11 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			folderId: null,
 		});
 		withLegacy.tables.notes.update(made.id, { legacy: 'kept' } as never);
-		const exported = await collect(renderArtifact(withLegacy, workspace));
+		const exported = await collect(renderArtifact(withLegacy, store));
 		await withLegacy.store[Symbol.asyncDispose]();
 
-		const envelope = expectOk(readArtifact(exported, workspace));
-		await using restored = openMemory(workspace);
+		const envelope = expectOk(readArtifact(exported, store));
+		await using restored = openMemory(store);
 		syncEngineOf(restored.store).applyRemote(envelope);
 		expect(restored.stored().tables.get('notes')?.get(made.id)).toEqual({
 			title: 'Groceries',
@@ -171,8 +171,8 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		const files = new Map([
 			['notes/aaaaaaaaaaaaaaaaaaaaaaaa.md', '---\ntitle: Groceries\n---\n'],
 		]);
-		const envelope = expectOk(readArtifact(files, workspace));
-		const restored = openMemory(workspace);
+		const envelope = expectOk(readArtifact(files, store));
+		const restored = openMemory(store);
 		syncEngineOf(restored.store).applyRemote(envelope);
 		expect(
 			restored.stored().tables.get('notes')?.get('aaaaaaaaaaaaaaaaaaaaaaaa'),
@@ -182,13 +182,13 @@ describe('readArtifact (ADR-0267/0268)', () => {
 
 	test('a file that is not a row file refuses the whole import', () => {
 		const files = new Map([['notes/aaaa.md', 'no frontmatter here']]);
-		const refused = expectErr(readArtifact(files, workspace));
+		const refused = expectErr(readArtifact(files, store));
 		expect(refused.name).toBe('MalformedFile');
 	});
 
 	test('a body under a table with no codec refuses, rather than dropping the prose', () => {
 		const files = new Map([['folders/aaaa.md', '---\nname: "Inbox"\n---\n\nprose\n']]);
-		const refused = expectErr(readArtifact(files, workspace));
+		const refused = expectErr(readArtifact(files, store));
 		expect(refused.name).toBe('UncodedBody');
 	});
 
@@ -221,8 +221,8 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			['README.md', '# not a row'],
 			['notes/aaaaaaaaaaaaaaaaaaaaaaaa.md', '---\ntitle: "kept"\n---\n'],
 		]);
-		const envelope = expectOk(readArtifact(files, workspace));
-		const restored = openMemory(workspace);
+		const envelope = expectOk(readArtifact(files, store));
+		const restored = openMemory(store);
 		syncEngineOf(restored.store).applyRemote(envelope);
 		expect([...(restored.stored().tables.get('notes')?.keys() ?? [])]).toEqual([
 			'aaaaaaaaaaaaaaaaaaaaaaaa',

@@ -1,5 +1,5 @@
 /**
- * The mirror: a workspace's files, kept current (ADR-0271).
+ * The mirror: a store's files, kept current (ADR-0271).
  *
  * A follower composed on the opened data's public surface, one direction only.
  * It renders rows to files and sends them to whoever owns a filesystem;
@@ -11,7 +11,7 @@
  *
  * ## It states, it does not ask
  *
- * A pass says what the workspace holds. It never asks what the folder
+ * A pass says what the store holds. It never asks what the folder
  * currently holds, because the folder is the host's and the diff is therefore
  * the host's. That single refusal deletes the listing call, the per-file
  * delete call, the index call, and the set this file used to keep of what the
@@ -203,9 +203,9 @@ function failedPath(error: RenderError): string | undefined {
 }
 
 /**
- * Render this workspace into its folder, and keep it there.
+ * Render this store into its folder, and keep it there.
  *
- * Renders once on attach, because a workspace changes while an application is
+ * Renders once on attach, because a store changes while an application is
  * closed: another device syncs, and the folder is stale until something
  * renders it whole. After that, a commit schedules a pass and further commits
  * push it out, so a burst of typing costs one pass rather than one per
@@ -242,7 +242,7 @@ export function attachMirror({
 	async function render(): Promise<void> {
 		const manifest: string[] = [];
 		/**
-		 * Whether this pass got to say what the workspace holds at all.
+		 * Whether this pass got to say what the store holds at all.
 		 *
 		 * A definition that will not compile enumerates nothing, so the manifest
 		 * would be empty and the host would read that as "every file is gone."

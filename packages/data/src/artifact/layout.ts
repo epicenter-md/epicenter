@@ -13,7 +13,7 @@
  * anything.
  */
 
-/** One row's file, relative to its workspace's folder. */
+/** One row's file, relative to its store's folder. */
 export function rowPath(table: string, rowId: string): string {
 	return `${table}/${rowId}.md`;
 }

@@ -1,5 +1,5 @@
 /**
- * The workspace artifact: the legible folder a person keeps, in both
+ * The store artifact: the legible folder a person keeps, in both
  * directions (ADR-0267, ADR-0268, ADR-0271).
  *
  * ```txt
@@ -12,7 +12,7 @@
  * every row a commit touched; `renderArtifact` is that call in a loop, yielded
  * one file at a time, which the mirror runs at boot. `readArtifact` is the
  * other direction, and it is whole-folder by nature because restore replaces a
- * workspace rather than patching one.
+ * store rather than patching one.
  *
  * Two pure inverse pairs sit underneath both: `rowPath`/`parseRowPath` for
  * where a row's file lives, and `rowFile`/`parseRowFile` for what is in it.
