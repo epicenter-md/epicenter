@@ -1,18 +1,18 @@
 ---
 name: consult-claude
-description: Run Claude Code as an independent reviewer or research laboratory while Codex keeps ownership of the live repository. Use when the user asks to consult Claude, requests a Claude review, or asks Claude to investigate or research independently.
+description: Run Claude Code as an independent reviewer or research laboratory while you keep ownership of the live repository. Use when the user asks to consult Claude, requests a Claude review, or asks Claude to investigate or research independently.
 ---
 
 # Consult Claude
 
-Claude owns a sealed laboratory. Codex owns the living checkout, integration,
-and final decision. A consultation is not a packet-only print call: Claude gets
-an editable snapshot of the current repository and may research, rewrite code,
-run tests, commit experiments, and change its mind there. The living checkout
-is not part of Claude's tool boundary.
+The consulted Claude owns a sealed laboratory. You own the living checkout,
+integration, and final decision. A consultation is not a packet-only print
+call: Claude gets an editable snapshot of the current repository and may
+research, rewrite code, run tests, commit experiments, and change its mind
+there. The living checkout is not part of Claude's tool boundary.
 
 Give Claude one outcome, the settled values it must preserve, and source
-territory worth starting from. Do not give it Codex's working theory, a menu of
+territory worth starting from. Do not give it your working theory, a menu of
 answers, or a prescribed method. Tell it what would make the research complete.
 The runner supplies the snapshot ID, laboratory boundary, checkpoint path, and
 permission profile.
@@ -37,7 +37,7 @@ Read the latest result without waking the worker:
 bun .agents/skills/consult-claude/scripts/consult-claude.ts status <run-id>
 ```
 
-When Claude writes `state: needs-decision` or `state: complete`, Codex may
+When Claude writes `state: needs-decision` or `state: complete`, you may
 continue the same laboratory conversation. The runner archives the prior
 checkpoint and waits for a fresh one when requested:
 
@@ -52,7 +52,7 @@ re-verified against the living checkout as a question, not a fact. When live
 work has materially moved on, start a new laboratory snapshot; never silently
 refresh a worker's replica beneath it.
 
-Use each checkpoint to decide whether Codex should edit, ask Claude a sharper
-question, or stop. Consultation does not transfer authorship: Claude-generated
-patches are evidence, not changes to apply. Return Claude's recommendation,
+Use each checkpoint to decide whether to edit, ask Claude a sharper question,
+or stop. Consultation does not transfer authorship: Claude-generated patches
+are evidence, not changes to apply. Return Claude's recommendation,
 material objections, and any remaining disagreement to the user.
