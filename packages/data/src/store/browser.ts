@@ -180,13 +180,26 @@ function deleteIndexedDb(address: string): Promise<void> {
 }
 
 /** One address's durable engine, loaded and ready to commit batches. */
-type BrowserBacking = {
+export type BrowserBacking = {
 	port: DurablePort;
 	loaded: DurableSnapshot;
 	close(): void;
 };
 
-async function openIdbBacking(
+/**
+ * This address's durable record, as a `DurablePort` over IndexedDB.
+ *
+ * Exported for the same reason `createSqliteDurablePort` is: the port is the
+ * seam, and there are two implementations of it. One conformance suite drives
+ * both through identical batches and holds them to identical results
+ * (`port-conformance.test.ts`). Two suites that each check one implementation
+ * against its own expectations is how the two came to disagree about the fold,
+ * the identity stamp, and what a duplicate key does.
+ *
+ * Not an opener. It hands back a port and what was loaded; composing a store
+ * over those is `openDevice`'s and `openAccount`'s job.
+ */
+export async function openIdbBacking(
 	address: string,
 ): Promise<Result<BrowserBacking, StoreError>> {
 	return tryAsync({
@@ -278,9 +291,19 @@ async function openIdbBacking(
 							case 'cursor':
 								void metaStore.put(op.seq, 'cursor');
 								break;
-							case 'identity':
-								void metaStore.put(op.id, 'document');
+							case 'identity': {
+								// First write wins, which is the rule `writeDocumentIdentity`
+								// states and enforces with `INSERT OR IGNORE`. A `put` here
+								// silently did the opposite for as long as this port has
+								// existed: membership changing in place is a replica full of
+								// one account's bytes claiming to be another's, and the only
+								// correct way to change it is to discard the record whole
+								// (ADR-0231). Held to the SQL port by
+								// `port-conformance.test.ts`.
+								const stamped = await metaStore.get('document');
+								if (stamped === undefined) void metaStore.put(op.id, 'document');
 								break;
+							}
 							case 'dropOutbox':
 								void outbox.delete(IDBKeyRange.upperBound(op.throughId));
 								break;
