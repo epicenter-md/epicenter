@@ -50,8 +50,7 @@ export {
 	type EnvelopeError,
 	type EnvelopeSection,
 } from './store/envelope.js';
-export { APP_DOCUMENT } from './store/log.js';
-export { SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
+export { APP_DOCUMENT, SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
 export type {
 	DurableOp,
 	DurablePort,

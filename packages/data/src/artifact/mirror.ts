@@ -49,19 +49,34 @@
  * ## Why it renders everything rather than what changed
  *
  * A per-row renderer is only as correct as its change signal is complete, and
- * the store does not currently offer one that is: a row's rich document lives
- * in its own Yjs document (ADR-0248), so its commits produce no delta on the
- * application document's table root and reach no table subscriber. A whole
- * render depends on no signal at all: it reads what is there.
+ * the store's two signals are complete in opposite halves.
+ *
+ * `onCommitted`, which this listens to, fires for anything committed into the
+ * application document by anyone, and a remote apply raises it for a row
+ * document's bytes too (`store.ts`, the `applyRemote` arm). It is the complete
+ * one, and it names nothing: a pass knows the folder is stale and never which
+ * file.
+ *
+ * `table.subscribe` names the rows a commit touched, and it is the incomplete
+ * one. A row's prose lives in its own Yjs document (ADR-0248), so a local body
+ * edit reaches a table subscriber only by the derived write the store makes on
+ * its behalf, and only when the table declared a `derive` or an instant
+ * `updatedAt` for that write to carry (ADR-0264, ADR-0265). A table that
+ * declared neither gets no row named on a local body edit at all.
+ *
+ * So a whole render is not waiting on a signal that does not exist; it is
+ * refusing to depend on one whose completeness a third-party declaration
+ * decides. It reads what is there.
  *
  * The cost is honest: every pass hydrates every row's document, measured at
  * roughly 71 ms per thousand rows. Rendering only the rows a signal names
- * costs about 0.1 ms and needs the store to invalidate a row when its document
- * commits, on both the local and the remote-acceptance arm. That is the next
- * change, and the manifest is what makes it safe when it lands: a partial
- * content signal would cost one row's contents being stale, and could never
- * lose a deletion or miss a new row, because the manifest is enumerated from
- * current state and depends on no signal.
+ * costs about 0.1 ms, and what it needs is for the store to name the row on a
+ * document commit unconditionally, on both the local and the remote arm,
+ * rather than as a side effect of a derivation the application opted into.
+ * That is the next change, and the manifest is what makes it safe when it
+ * lands: a partial content signal would cost one row's contents being stale,
+ * and could never lose a deletion or miss a new row, because the manifest is
+ * enumerated from current state and depends on no signal.
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
