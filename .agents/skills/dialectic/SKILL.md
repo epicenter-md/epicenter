@@ -18,8 +18,10 @@ Lead with what you think is true. Not a summary of the conversation, not your
 reasoning, not a request for approval.
 
 Every turn is a page. One self-contained HTML file: inline style and script,
-no CDN, no build step, opens from the filesystem. Number them, so the sequence
-is the record of where the model moved and what moved it.
+no CDN, no build step, opens from the filesystem. Write them where git ignores
+them and number them within the conversation, so an earlier turn can be named
+and reopened. They are scratch and they die with the workspace. Never commit
+one.
 
 The message carrying the page is three things: the claim in one sentence, the
 path to the file, and the question. The page holds the argument, so writing the
