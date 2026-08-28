@@ -14,230 +14,85 @@ of proposals. The agent keeps making the model visible. The user's natural
 response shows what is right, wrong, missing, or newly possible. The next
 rendering incorporates that response.
 
-```text
-      user's partly formed model       agent's partly formed model
-                    \                   /
-                     \                 /
-                      ▼               ▼
-                   ┌─────────────────────┐
-                   │  clear presentation │
-                   │  quoted code, type, │
-                   │  sentence, example, │
-                   │  diagram, contrast  │
-                   └──────────┬──────────┘
-                              ▼
-                    natural response from
-                 recognition, correction, or use
-                              │
-                              └──► next presentation
-```
+## Show the model
 
-## Present A Direct Model
+Lead with what you think is true. Not a summary of the conversation, not your
+reasoning, not a request for approval.
 
-Every substantial turn should put one current model on the table. Lead with
-the model itself, not with a report of the conversation, the reasoning behind
-it, or a request for approval. Say what the thing is before saying what it is
-not. A contrast can follow the claim when the contrast carries a necessary
-distinction.
+Make the claim checkable with the smallest concrete thing that carries it: a
+quoted file with its path and line, a real example, a count, a contrast. Quote
+the file instead of paraphrasing, because a path and a line number are
+something the user can go read. If the thing does not exist yet, write
+`// proposed` above it so a design is never mistaken for source.
 
-A rendering is the thing the agent presents. Judgeability is a property of that
-rendering, not a response the user must produce. Make the model judgeable with
-the smallest useful consequence, example, or quoted excerpt. Most turns have
-this shape:
+Pick the form from the subject. Code claim, quote the code. Everything else,
+write sentences. Never dress a comparison, a history, or a set of tradeoffs as
+TypeScript. A type that is not a program is a costume, and it hides the claim
+inside grey comment text.
 
-```text
-direct claim
-    ↓
-one consequence, example, or quoted excerpt
-    ↓
-one reaction point
-```
+A turn about code looks like this:
 
-This is a shape, not a sentence or word target. Each paragraph should make one
-move and should stop when the user can see what to challenge. Add explanation
-only when it makes the claim easier to judge; put relationships, ownership,
-sequence, and state into TypeScript, and fence it `ts`. The highlighter colors
-the identifiers and leaves the annotations grey, which is the weighting you
-want. A type when the claim is about what a thing is, quoted source when the
-code exists, a call tree of real symbol names when the question is what calls
-what. Quote the file rather than paraphrasing it: a path and a line number are
-something the user can check, and a paraphrase is a weaker copy they cannot.
+> Cookie-first is not a preference in this file, it is unconditional:
+>
+> ```ts
+> // packages/server/src/middleware/require-auth.ts:138
+> const session = await c.var.auth.api.getSession({
+> 	headers: c.req.raw.headers,
+> });
+> if (session) { c.set('principal', ...); return next(); }
+> const bearer = parseBearer(c.req.header('authorization') ?? null);
+> ```
+>
+> A request carrying both credentials never reaches the bearer line, so two
+> credentials naming two different principals resolve silently to one. Is
+> preferring the cookie the guarantee, or is a request carrying both a
+> request to refuse?
 
-Bad:
+The question is prose under the code, in full sentences, as the last line.
+Never bury it in a comment inside the fence.
 
-> The problem isn't really the cookie path or the bearer path. It's what
-> happens when a request carries both. Which behavior do you want?
+## End on the open question
 
-Better:
+Close with the one question whose answer would change what you show next, in
+plain prose, as the last line. Ask about the model, not about the turn.
+"Is preferring the cookie the guarantee, or is a request carrying both a
+request to refuse?" is a question about the model. "Does that sound right?",
+"which do you choose?", and "should I proceed?" ask for a verdict, and they get
+a yes that locates nothing. Do not offer a menu of labels before the user knows
+what the labels mean.
 
-```ts
-// packages/server/src/middleware/require-auth.ts:137
-const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
-if (session) {
-	c.set('principal', { id: asPrincipalId(session.user.id) });
-	return next();                 // ← a bearer on this same request is never read
-}
-const bearer = parseBearer(c.req.header('authorization') ?? null);
-//    ? two credentials can name two different principals. cookie-first picks
-//      one and never reports the conflict. is preferring the cookie the
-//      guarantee, or is a request carrying both a request to refuse?
-```
+Preserve untouched parts of the model when you redraw it, and drop settled ones
+out of the open set instead of asking about them again.
 
-The better turn gives the user a model and a concrete place to correct it. It
-does not ask them to approve the agent's framing or silently authorize an
-implementation.
+## Keep it short and connected
 
-Quote real code. An exemplar built from invented names teaches the agent that
-invented names are acceptable. When the thing does not exist yet, write it as
-`// proposed` above the snippet so a design is never mistaken for source.
+A turn is a few paragraphs that follow from each other. If you are writing a
+third heading, you are writing a report. If a paragraph ends on a punchy
+fragment, cut the fragment and write the connection it replaced.
 
-## Close On A Reaction Point
+You may be holding a much larger model than you can show. Show the part whose
+consequence is live now.
 
-End where the user can be usefully wrong. A reaction point is an open edge in
-the model whose answer would change the next rendering. Mark it inside the
-rendering when possible: a `?` on the line it concerns, a bracketed gap in a
-sentence, or a missing cell in a contrast. Close with the question that would
-redraw the model, or with a statement that makes the same open edge
-unmistakable.
+## Read the reply
 
-Judge the question by what it is about. A question about the model is a
-reaction point: "is preferring the cookie the guarantee, or is a request
-carrying both a request to refuse?" A question about the turn is a verdict
-request: "which do you choose?", "does that sound right?", "should I proceed?",
-or "say stop if that's wrong?" A verdict request gets a yes that locates nothing and a silence
-that proves nothing. Never end on one, and never present a menu of labels before
-the user knows what the labels mean.
+The claim was wrong: change the model. The framing was wrong: redraw it rather
+than defend it. It was too abstract: keep the claim, give the concrete case.
+They asked for source: go get the file, because they are not confused, you
+asked to be believed instead of checked.
 
-When several boundaries are open, show them together in one rendering so the
-user can see the shape without carrying an unfinished interview. One rendering
-means one drawing of the whole model per turn; that drawing may mark several
-related reaction points, but the closing question aims at one. If one direction
-is already stronger, show it in the rendering and carry the remaining edge as a
-question. The user may answer any part in fragments, answer none of the
-questions and redraw the frame, or extend the model; map the response yourself
-and redraw. Preserve untouched boundaries on the redraw, and move settled
-boundaries out of the open set instead of asking about them again.
+When they hand back a sentence, say how close it is and name the one word
+carrying the error. When they ask for an example, give an example.
 
-## Two Directions, One Conversation
+Agreement is evidence, not authorization. It does not license a merge, a
+deletion, or an implementation.
 
-The dialectic can move in either direction, and it can switch direction in the
-middle of a conversation.
+## After "that's right"
 
-When the agent is learning the user's model, the agent makes the user's emerging
-vision visible. The user may say "almost," add a distinction, replace a word,
-or show that the framing is wrong. Those corrections are evidence about the
-model. Keep changing the rendering until the user says "that's right."
+Return the model and stop, hand a greenfield destination to
+[greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md), or implement it
+without turning implementation choices into new product decisions. If
+implementation turns up a fact that changes ownership or what the system
+allows, say so and come back here.
 
-When the user is learning the agent's model, explain the missing connection in
-a presentable form. The user may restate it, apply it to a case, predict a
-consequence, or challenge a premise. Do not treat every restatement as a test
-the user must pass. If the user is actually correcting the agent, stop grading
-their understanding and update the model.
-
-```text
-User:    "So this means ..."       possible understanding
-User:    "No, that is wrong ..."   correction of the agent
-User:    "Actually, the issue is ..."  new direction or premise
-Agent:   "That's right."           local confirmation, not automatically closure
-User:    "That's right."           recognition of the complete model; closure
-```
-
-The same person need not lead the whole conversation. A user can begin by
-learning, discover a flaw in the explanation, and then teach the agent what the
-model must account for. Preserve that change instead of forcing the exchange
-back into a fixed teacher and student role.
-
-## Read The Natural Response
-
-Ask what the response reveals about the last rendering, not which phrase the
-user used. A rendering can fail in a small number of ways, and each one has a
-different repair: the claim was wrong, so update the model; the frame was
-wrong, so redraw rather than defend; the altitude was too high, so keep the
-model and lower it; it was unquotable, so go get the file. Nothing failed means
-close.
-
-A request for source is the one most often misread. It is not "I do not
-understand." The model landed and the last turn asked to be believed instead of
-checked.
-
-When the user hands back a sentence, answer its accuracy first. Say how close it
-is, then name the one word or premise carrying the error. "Almost, and the
-trouble is 'source'" is more useful than defending the whole explanation.
-
-When the user asks for an example, give an example. When they ask why, expose
-the missing connection. Do not answer a request for understanding by making the
-user complete a questionnaire about whether they understand.
-
-Agreement is evidence, not authorization. A positive reaction to one rendering
-does not authorize a merge, deletion, branch operation, or implementation. Do
-not infer a destination from silence, fatigue, partial approval, or the absence
-of another objection.
-
-## Keep The Model Legible
-
-The agent may carry a much larger private model than it can present in one turn.
-Choose the smallest rendering that makes the live consequence visible. Do not
-pre-answer every objection or compress several unearned abstractions into a
-dense paragraph. A rendering is too long when it carries a step the user did
-not need in order to judge the claim, not when it passes a length: six quoted
-excerpts can be the smallest rendering that works.
-
-Use an example instead of an explanation when the user needs to see what the
-model does. Use a contrast when the disagreement is about a boundary. Reach for
-a diagram only for what a declaration cannot hold: a folder tree, a count, a
-before-and-after measurement. Do not repeat
-the same thought in prose and a diagram unless the second form adds a necessary
-new fact.
-
-Words such as model, articulation, surface, and altitude describe the method,
-not what the user needs to hear. Say "the row is a note about the audio, not the
-audio itself," not "expose the relevant slice of the model."
-
-## Convergence And Handoff
-
-The user's "that's right" is the convergence signal. It means the user
-recognizes the presented model as the complete thing the conversation needed to
-discover or understand. It is not a vote on an option and it is not permission
-to continue executing an unsettled plan.
-
-When several boundaries were open, convergence means no remaining boundary
-would change the accepted model.
-
-The user's own turns during the dialectic are authored capture. Recognition
-authorizes the model, not automatically the agent's wording. Once the
-dialectic hands a thought to page-writing or journal-writing, those skills may
-propose a complete passage; the user's natural reaction can keep the whole
-passage, select parts, or send it back for another round. That is passage-level
-adoption, not sentence-by-sentence approval.
-
-The agent may say "that's right" as local feedback when the user's reasoning is
-sound. That feedback does not close the dialectic. Continue if an important
-part of the model remains unexplored.
-
-Once the user has said "that's right":
-
-- For a thinking-only request, return the accepted model and stop.
-- For a greenfield destination, hand it to
-  [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) to work
-  backward into ownership changes, deletions, and verification.
-- For implementation, implement the accepted destination without turning
-  implementation choices into new product decisions.
-
-If implementation discovers a fact that changes authority, workflow, ownership,
-or what the system allows, name the change and return to dialectic. Do not hide
-a new model choice inside execution.
-
-## Do Not Use Dialectic For A Settled Plan
-
-Dialectic discovers or teaches a model. It is not a wrapper for collecting
-approvals over an existing plan.
-
-If the user asks which existing commits, files, branches, or implementation
-steps should land, evaluate that request directly with the relevant review,
-refactoring, or execution skill. Do not manufacture a dialectic out of a list of
-preselected options.
-
-If the destination itself is still disputed, return to presenting the model and
-let the user correct it. Once the destination is recognized with "that's right,"
-stop discovering and work backward from it. Never use conversational momentum
-to turn an ambiguous reaction into an execution decision.
+Do not use this to collect approval for a settled plan. If the question is
+which commits or files should land, use the review or execution skill directly.
