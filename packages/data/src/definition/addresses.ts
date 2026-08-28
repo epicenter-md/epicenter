@@ -34,7 +34,7 @@ import { canonicalJson } from './canonical.js';
 const CLOSED = { additionalProperties: false } as const;
 
 /** Reverse-domain database id: two or more lowercase, dot-separated labels. */
-const WORKSPACE_ID_PATTERN =
+const DATABASE_ID_PATTERN =
 	'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$';
 /** A durable table name: one bare SQL identifier, so a mount needs no quoting. */
 const TABLE_NAME_PATTERN = '^[A-Za-z][A-Za-z0-9_]*$';
@@ -53,7 +53,7 @@ const TABLE_NAME_PATTERN = '^[A-Za-z][A-Za-z0-9_]*$';
  */
 const ROW_ID_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._-]*$';
 
-const WORKSPACE_ID = new RegExp(WORKSPACE_ID_PATTERN);
+const DATABASE_ID = new RegExp(DATABASE_ID_PATTERN);
 const TABLE_NAME = new RegExp(TABLE_NAME_PATTERN);
 const ROW_ID = new RegExp(ROW_ID_PATTERN);
 
@@ -136,7 +136,7 @@ function utf8ByteLength(value: string): number {
 
 const databaseIdSchema = Type.String({
 	minLength: 3,
-	pattern: WORKSPACE_ID_PATTERN,
+	pattern: DATABASE_ID_PATTERN,
 });
 const tableNameSchema = Type.String({
 	minLength: 1,
@@ -201,7 +201,7 @@ export function isDatabaseId(
 ): boolean {
 	const bytes = utf8ByteLength(value);
 	return (
-		bytes >= 3 && bytes <= ceilings.databaseIdBytes && WORKSPACE_ID.test(value)
+		bytes >= 3 && bytes <= ceilings.databaseIdBytes && DATABASE_ID.test(value)
 	);
 }
 
