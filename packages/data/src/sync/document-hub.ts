@@ -25,8 +25,11 @@
  */
 
 import type { DocumentAuthority } from './document-authority.js';
-import { decodeDocumentFrame, encodeDocumentFrame } from './document-frames.js';
-import type { DocumentSocket } from './document-session.js';
+import {
+	type DocumentSocket,
+	decodeDocumentFrame,
+	encodeDocumentFrame,
+} from './document-frames.js';
 
 export type DocumentHub = {
 	/** A socket arrived. Nothing is sent until it says what it has. */

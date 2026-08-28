@@ -74,10 +74,11 @@ export type Blobs = {
 /**
  * Split a key into its path segments, refusing the shapes a store never mints.
  *
- * Exported because every implementation needs the same answer and none of them
- * should be deciding it separately: a key that means one thing in a directory
- * tree and another in a flat map is how two adapters come to disagree, which
- * is the failure this whole seam exists to make unreachable.
+ * The one place a key becomes a path. It is exported because it is the rule
+ * rather than one adapter's reading of it: a key that means one thing in a
+ * directory tree and another in a flat map is how two implementations come to
+ * disagree, and there is one implementation today precisely so that cannot
+ * happen. If a second ever lands, this is what it takes rather than reinvents.
  */
 export function keySegments(key: string): string[] {
 	const segments = key.split('/');

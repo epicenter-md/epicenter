@@ -121,8 +121,13 @@ function rowType(root: Y.Type, rowId: string): RowType | undefined {
  * `as never` this replaces was not defensive, it was the default `DConf = any`
  * collapsing `keyof` to nothing, so every field access had to lie to the
  * compiler to say anything at all.
+ *
+ * Not exported. It was, for one commit, and nothing outside this file wanted
+ * it: a caller reaches a row through `readRow` and `createRow`, which speak
+ * `JsonObject`. Exporting it would publish the CRDT shape a row happens to
+ * have, which is the thing this module exists to keep in here.
  */
-export type RowType = Y.Type<{ attrs: Record<string, JsonValue> }>;
+type RowType = Y.Type<{ attrs: Record<string, JsonValue> }>;
 
 /** Whether this table holds a row at this address. */
 export function hasRow(root: Y.Type, rowId: string): boolean {

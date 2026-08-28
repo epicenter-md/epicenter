@@ -30,6 +30,17 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
+/**
+ * What a host hands over: something frames can be written to.
+ *
+ * Here rather than beside either half, because both halves need it and neither
+ * owns it. It lived in `document-session.ts` for an hour, which had the hub
+ * importing a type from the client and implying a dependency that does not
+ * exist. A host makes the socket (ADR-0222); this is the whole of what the
+ * library assumes about one.
+ */
+export type DocumentSocket = { send(bytes: Uint8Array): void };
+
 export const DocumentFrameError = defineErrors({
 	Malformed: ({ reason }: { reason: string }) => ({
 		message: `This is not a document frame: ${reason}`,

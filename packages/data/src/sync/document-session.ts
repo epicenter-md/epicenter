@@ -25,13 +25,11 @@
  */
 import {
 	type DocumentFrame,
+	type DocumentSocket,
 	decodeDocumentFrame,
 	encodeDocumentFrame,
 } from './document-frames.js';
 import type { DocumentReplica } from './document-replica.js';
-
-/** What a host hands over. The library never makes one (ADR-0222). */
-export type DocumentSocket = { send(bytes: Uint8Array): void };
 
 export type DocumentSession = {
 	/**

@@ -21,11 +21,11 @@ import {
 	type DocumentAuthority,
 	openDocumentAuthority,
 } from './document-authority.js';
+import type { DocumentSocket } from './document-frames.js';
 import { createDocumentHub, type DocumentHub } from './document-hub.js';
 import { openDocumentReplica } from './document-replica.js';
 import {
 	type DocumentSession,
-	type DocumentSocket,
 	openDocumentSession,
 } from './document-session.js';
 
