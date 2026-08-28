@@ -11,10 +11,15 @@
  * benches, and a test that needs two releases over one durable record. If a
  * production runtime ever needs to open a store this way, that is the moment
  * it earns a named opener beside the others, not a reason to reach here.
+ *
+ * Account stores only. A local store declares `replication: 'none'`, and every
+ * runtime that reaches this seam is a sync peer, so there has never been a
+ * caller for one and there is no shape of caller that would want it.
+ * `createLocalStore` stays in `store/store.js` for the tests that construct one
+ * directly.
  */
 export {
 	type CreateStoreOptions,
 	createAccountStore,
-	createLocalStore,
 	syncEngineOf,
 } from './store/store.js';

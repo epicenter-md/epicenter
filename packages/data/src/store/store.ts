@@ -609,7 +609,7 @@ export type UntypedDataView = {
  * update is idempotent (`evidence/invariants.test.ts`); a skip is invisible
  * forever.
  */
-export type ClientLog = {
+type ClientLog = {
 	/**
 	 * Merge every unsent update into one envelope, and return it.
 	 *
@@ -823,7 +823,7 @@ export type SyncFacts = {
  * public store: no application consumer ever needed these, and every one of
  * them can corrupt a replica if driven casually.
  */
-export type SyncEngine = ClientLog & {
+type SyncEngine = ClientLog & {
 	/**
 	 * Apply bytes from a peer. Never republished as local work.
 	 *
@@ -901,7 +901,7 @@ export function syncEngineOf(store: AccountStore): SyncEngine {
 }
 
 /** What every store engine needs: the definition and the durable engine. */
-export type StoreEngineOptions = {
+type StoreEngineOptions = {
 	/**
 	 * The one data definition this runtime holds, already parsed
 	 * (ADR-0240). Every table handle and the KV handle close over it for the

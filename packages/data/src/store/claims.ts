@@ -32,8 +32,12 @@
  * over one invariant, free to disagree, which is the shape this codebase has
  * been paying for elsewhere.
  *
- * It lives beside the openers rather than inside one because both of them need
- * it and neither owns it.
+ * It lives beside the openers rather than inside one for what it holds, not
+ * for who calls it. Both callers are in `browser.ts` now, so the older reason
+ * ("neither opener owns it") stopped being true when the file opener was
+ * deleted (ADR-0269). What earns the file today is that it is the one place
+ * assuming a platform: the Web Locks dance, declared without the DOM library,
+ * paired with the polyfill a test runtime installs (`test-locks.ts`).
  */
 import { Ok, type Result } from 'wellcrafted/result';
 
