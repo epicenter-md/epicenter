@@ -42,9 +42,11 @@ import {
 } from '@epicenter/blobs';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
+import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
 import { Ok } from 'wellcrafted/result';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
+import { MIRROR_INDEX_FILE } from './mirror-index.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
@@ -1693,4 +1695,122 @@ describe('sidecar end-to-end smoke', () => {
 			sidecar.kill();
 		}
 	}, 60_000);
+});
+
+describe('mirror routes (ADR-0271)', () => {
+	/**
+	 * The seam neither side's tests reach. `packages/data`'s mirror test injects
+	 * a sink and asserts what would have crossed the wire; `mirror.test.ts` here
+	 * calls the host's functions directly. Between them sits the routing, and an
+	 * earlier per-file version declared a bare `*` tail that Hono routes but
+	 * does not capture, so every write arrived with an empty path and 400'd.
+	 * Both suites stayed green and the folder was never written once.
+	 *
+	 * A pass carries its files in the body now, so there is no path in the URL
+	 * to capture wrong. This test exists anyway, because "the folder is written"
+	 * is the one fact only a request can establish.
+	 */
+	const pass = (lines: object[]) =>
+		lines.map((line) => `${JSON.stringify(line)}\n`).join('');
+
+	test('a pass writes the folder, sweeps it, and indexes it', async () => {
+		const folderRoot = mkdtempSync(join(tmpdir(), 'mirror-route-test-'));
+		const previousRoot = process.env.EPICENTER_FOLDER_DIR;
+		process.env.EPICENTER_FOLDER_DIR = folderRoot;
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host);
+		const origin = server.url.origin;
+		const url = `${origin}${MIRROR_PATH}/local/so.epicenter.honeycrisp`;
+		const folder = join(folderRoot, 'local/so.epicenter.honeycrisp');
+		try {
+			// Session-gated like every other domain API on this origin: this route
+			// writes and deletes real files under a person's home directory.
+			const unauthenticated = await fetch(url, { method: 'PUT', body: '' });
+			expect(unauthenticated.status).toBe(401);
+
+			const wrote = await fetch(url, {
+				method: 'PUT',
+				body: pass([
+					{ path: 'notes/abc.md', contents: '---\npinned: true\n---\n\n# A note\n' },
+					{ path: 'notes/def.md', contents: '---\npinned: false\n---\n' },
+					{ path: 'kv.json', contents: '{}' },
+					{ manifest: ['notes/abc.md', 'notes/def.md', 'kv.json'] },
+				]),
+				headers: authenticatedHeaders(server),
+			});
+			expect(wrote.status).toBe(204);
+			expect(await Bun.file(join(folder, 'notes/abc.md')).text()).toContain(
+				'# A note',
+			);
+			expect(await Bun.file(join(folder, MIRROR_INDEX_FILE)).exists()).toBe(true);
+
+			// A second pass that no longer names one row takes its file with it.
+			const swept = await fetch(url, {
+				method: 'PUT',
+				body: pass([{ manifest: ['notes/abc.md', 'kv.json'] }]),
+				headers: authenticatedHeaders(server),
+			});
+			expect(swept.status).toBe(204);
+			expect(await Bun.file(join(folder, 'notes/def.md')).exists()).toBe(false);
+			expect(await Bun.file(join(folder, 'notes/abc.md')).exists()).toBe(true);
+		} finally {
+			await server.stop(true);
+			if (previousRoot === undefined) delete process.env.EPICENTER_FOLDER_DIR;
+			else process.env.EPICENTER_FOLDER_DIR = previousRoot;
+			rmSync(folderRoot, { recursive: true, force: true });
+		}
+	});
+
+	test('a place or a database id the render never produces is refused', async () => {
+		const folderRoot = mkdtempSync(join(tmpdir(), 'mirror-route-test-'));
+		const previousRoot = process.env.EPICENTER_FOLDER_DIR;
+		process.env.EPICENTER_FOLDER_DIR = folderRoot;
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host);
+		const origin = server.url.origin;
+		try {
+			const refused = [
+				`${MIRROR_PATH}/elsewhere/so.epicenter.honeycrisp`,
+				`${MIRROR_PATH}/on-this-device/so.epicenter.honeycrisp`,
+				`${MIRROR_PATH}/local/..%2F..%2Fetc`,
+				`${MIRROR_PATH}/local/so.epicenter.honeycrisp/notes/abc.md`,
+			];
+			for (const path of refused) {
+				const response = await fetch(`${origin}${path}`, {
+					method: 'PUT',
+					body: pass([{ path: 'notes/abc.md', contents: 'x' }]),
+					headers: authenticatedHeaders(server),
+				});
+				expect([400, 404]).toContain(response.status);
+			}
+			// A file inside the pass that would climb out is refused by the host
+			// without costing the pass its other files.
+			const mixed = await fetch(
+				`${origin}${MIRROR_PATH}/local/so.epicenter.honeycrisp`,
+				{
+					method: 'PUT',
+					body: pass([
+						{ path: '../escape.md', contents: 'no' },
+						{ path: 'notes/ok.md', contents: 'yes' },
+						{ manifest: ['notes/ok.md'] },
+					]),
+					headers: authenticatedHeaders(server),
+				},
+			);
+			expect(mixed.status).toBe(204);
+			expect(
+				await Bun.file(join(folderRoot, 'local/escape.md')).exists(),
+			).toBe(false);
+			expect(
+				await Bun.file(
+					join(folderRoot, 'local/so.epicenter.honeycrisp/notes/ok.md'),
+				).exists(),
+			).toBe(true);
+		} finally {
+			await server.stop(true);
+			if (previousRoot === undefined) delete process.env.EPICENTER_FOLDER_DIR;
+			else process.env.EPICENTER_FOLDER_DIR = previousRoot;
+			rmSync(folderRoot, { recursive: true, force: true });
+		}
+	});
 });

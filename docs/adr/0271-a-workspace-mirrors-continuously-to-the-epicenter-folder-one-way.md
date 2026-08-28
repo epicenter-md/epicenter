@@ -23,21 +23,27 @@ What is different now is that the render no longer needs the host to own anythin
 
 ```txt
 ~/Epicenter/
-  account/
+  local/
     so.epicenter.honeycrisp/
       kv.json
       notes/<rowId>.md
       folders/<rowId>.md
-  this-device/
+  account/
     so.epicenter.honeycrisp/
       notes/<rowId>.md
 ```
 
-**The application renders and the host writes bytes.** The application owns the rows and the `file` codec, so it decides what each file contains; the host receives "write these bytes at this path under the Epicenter root" and interprets nothing. That is the same category the host already occupies for blobs, and it holds no application data in the sense ADR-0226 refused.
+**The application states, and the host reconciles.** One route takes a pass: the files an application rendered, plus a manifest of every path its workspace holds. The application owns the rows and the `file` codec, so it decides what each file contains; the host owns the folder, so it writes, removes what the manifest does not name, and rebuilds the index from what survived. The application never asks what the folder currently holds, and there is no route that would let it.
+
+The host does read files. Both reads are derived-to-derived: names, to know what a render no longer justifies, and contents, to build `tables.sqlite` beside them. The seam this record guards is narrower than "the host never reads" and is the one that matters: **nothing derived from a file ever reaches a row.**
+
+**A pass that did not finish deletes nothing.** The manifest is last and arrives exactly once, so a dropped connection leaves files written and the folder stale rather than gutted. A path in the manifest with no contents means "leave that file alone", which is how a row whose codec threw keeps the file it already has.
+
+**A file whose bytes already match is not rewritten.** A rename replaces the inode, so rewriting unchanged files would make Time Machine, rclone, and Spotlight see the whole vault as new on every pass, which would contradict the backup story this record sells.
 
 **The folder is build output.** An edit to a mirrored file does not survive the next render. There is no push, no receipt, no base-versus-mine comparison, no scan, no status verb, no watcher, and no conflict concept. To fork your data, copy the folder and restore the copy (ADR-0272).
 
-**The top level says where data lives, and every level means one thing.** `account/` and `on-this-device/` are places; inside each, a full reverse-DNS definition id names an application; inside that, a table; inside that, a row. Third-party applications are expected to return, so the definition id is spelled in full: `com.acme.notes` and `so.epicenter.notes` are different folders and the vendor prefix is what says so.
+**The top level says where data lives, and every level means one thing.** `local/` and `account/` are places; inside each, a full reverse-DNS database id names an application; inside that, a table; inside that, a row. `local/` is an address and will mean this machine forever. `account/` is a VIEW: it holds whoever is signed in now, and signing in as someone else changes what the same path means. Naming the account instead was priced and refused, because it costs a nickname, somewhere to store it, a marker file, a rename verb, a collision rule, and a sweep that must read the marker before deleting anything, all for a person who wants to read one account's files while signed into another. Third-party applications are expected to return, so the definition id is spelled in full: `com.acme.notes` and `so.epicenter.notes` are different folders and the vendor prefix is what says so.
 
 **Only the active connection's account workspace is mirrored.** The desktop holds one connection record (ADR-0262/0263), so at most one account workspace is live. Replicas retained for accounts you are not signed into get no folder. Signing into a different account re-renders `account/`, which is what Dropbox does when you link a different account, and is acceptable precisely because switching accounts is a rare, deliberate, identity-level act rather than a routine one.
 
@@ -65,5 +71,6 @@ What is different now is that the render no longer needs the host to own anythin
 - **Zip the Epicenter folder on demand instead of mirroring.** There is no folder to zip. The store lives in IndexedDB inside the WebView and the host owns no application data (ADR-0226/0227). "Just zip the directory" is not a shortcut past building this; it is this.
 - **A two-way folder, as ADR-0207 built it.** Refused. It is where receipts, three-way merges, conflict semantics, and a scan-and-push pipeline come from, and ADR-0234 retreated from it after building it once. The write direction has a door already: restore.
 - **Let a file you touched stop being re-rendered until you import or discard it.** ADR-0207's "hold back exactly what you could still push." Refused: knowing what you touched is what receipts are for, and this is the seam through which the entire deleted machinery grows back.
-- **One folder whose contents swap as you switch workspaces.** Refused. Every product that mirrors to a filesystem, Dropbox and OneDrive included, gives each account its own folder; only products with no filesystem presence switch in place. An external observer, an agent, Spotlight, Time Machine, or git, has no way to understand a path that changes meaning.
+- **One folder whose contents swap as you switch between the two places.** Refused: `local/` and `account/` are separate folders, so neither ever means the other. `account/` swapping when you sign in as a different person is a different case and is accepted above, for the reason Dropbox accepts it: switching accounts is a rare, deliberate, identity-level act.
+- **A per-file transfer: `PUT` one file, `GET` the listing, `DELETE` the strays, `POST` the index.** Built first and refused. It made the application reconstruct what the folder held in order to drive it, which is a fact the host already had, and every defect the design produced sat on that seam: a wildcard route param Hono does not capture, a `..` that passed a grammar check, and a file deleted because its render failed. One verb that states the target deletes the seam rather than fixing its symptoms.
 - **Path segments that encode the replica address exactly.** Refused: the account address carries a percent-encoded server URL and an opaque auth id, and ADR-0207 set the bar this fails ("the default has to be typeable"). Restore takes a destination as an argument, so a path never has to be parsed back into a store.

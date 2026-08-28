@@ -3,14 +3,19 @@
  *
  * The sink is injected, so the host is not involved and what is asserted is
  * exactly what would have crossed the wire. What matters here is not that one
- * file appears; it is that a pass is WHOLE, so nothing depends on a commit
- * saying which row moved.
+ * file appears; it is that a pass STATES what the workspace holds, so nothing
+ * depends on a commit saying which row moved and nothing asks the folder what
+ * it currently contains.
+ *
+ * The sweep itself is not tested here, deliberately. A pass names what should
+ * exist and the host removes the rest, so "what gets deleted" is the host's
+ * behaviour and belongs to the host's tests.
  */
 import { describe, expect, test } from 'bun:test';
 import { defineData, field } from '@epicenter/data/definition';
 import { openMemory } from '../store/memory.js';
 import { attachMirror } from './mirror.js';
-import type { MirrorSink } from './webview.js';
+import { type MirrorSink, MirrorSinkError } from './webview.js';
 
 type MetaRoot = {
 	getAttr(key: string): unknown;
@@ -36,33 +41,34 @@ const workspace = defineData({
 	},
 });
 
-/** A folder in memory, plus the log of what was done to it. */
-function recordingSink(seed: string[] = []) {
-	const files = new Map<string, string>(seed.map((path) => [path, 'stale']));
-	const removed: string[] = [];
-	const indexed: string[][] = [];
+/**
+ * What crossed the wire, read back as the two things a pass carries.
+ *
+ * It parses rather than storing raw batches, because the assertions are about
+ * the pass and not about where a batch boundary happened to land.
+ */
+function recordingSink(refuse: () => boolean = () => false) {
+	const batches: string[] = [];
+	const files = new Map<string, string>();
+	const manifests: string[][] = [];
 	const sink: MirrorSink = {
-		async write(path, contents) {
-			files.set(path, contents);
-			return { data: undefined, error: null };
-		},
-		async remove(path) {
-			files.delete(path);
-			removed.push(path);
-			return { data: undefined, error: null };
-		},
-		async list() {
-			return { data: [...files.keys()], error: null };
-		},
-		async index() {
-			// Captured as the folder LOOKED when the index was asked for, which is
-			// the fact that matters: the index must never describe a file the
-			// sweep was about to remove.
-			indexed.push([...files.keys()].sort());
+		async send(ndjson) {
+			batches.push(ndjson);
+			if (refuse()) {
+				return { data: null, error: MirrorSinkError.MirrorSendFailed({ status: 500 }) } as never;
+			}
+			for (const line of ndjson.split('\n')) {
+				if (line.trim() === '') continue;
+				const value = JSON.parse(line) as
+					| { path: string; contents: string }
+					| { manifest: string[] };
+				if ('manifest' in value) manifests.push(value.manifest);
+				else files.set(value.path, value.contents);
+			}
 			return { data: undefined, error: null };
 		},
 	};
-	return { files, removed, indexed, sink };
+	return { batches, files, manifests, sink };
 }
 
 const silent = {
@@ -76,96 +82,73 @@ const silent = {
 /** Let a scheduled pass run. Every render is asynchronous by construction. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 40));
 
-describe('attachMirror renders a whole workspace (ADR-0271)', () => {
+/** The manifest of the last completed pass. */
+const latest = (manifests: string[][]) => manifests.at(-1) ?? [];
+
+describe('attachMirror states a whole workspace (ADR-0271)', () => {
 	test('the first pass renders what is already there', async () => {
-		// A workspace changes while an application is closed: another device
-		// syncs, and the folder is stale until something renders it whole.
 		await using data = openMemory(workspace);
-		const made = data.tables.notes.create({ title: 'written before boot' });
-		const { files, sink } = recordingSink();
+		const made = data.tables.notes.create({ title: 'Groceries' });
+		const { files, manifests, sink } = recordingSink();
 
 		await using _mirror = attachMirror({
 			data,
 			definition: workspace,
-			workspace: 'account',
+			place: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
 		});
 		await settle();
 
-		expect(files.get(`notes/${made.id}.md`)).toContain(
-			'title: "written before boot"',
-		);
-		expect(files.has('kv.json')).toBe(true);
+		expect(files.get(`notes/${made.id}.md`)).toContain('title: "Groceries"');
+		expect(latest(manifests)).toEqual(['kv.json', `notes/${made.id}.md`]);
 	});
 
 	test('a commit anywhere renders everything, including kv', async () => {
-		// The bug a per-row renderer had: kv.json was written by the boot pass
-		// and by nothing else, so a kv change never reached the folder until the
-		// next launch. A whole pass has one writer and cannot drift from itself.
 		await using data = openMemory(workspace);
-		const { files, sink } = recordingSink();
+		const made = data.tables.notes.create({ title: 'Groceries' });
+		const { files, manifests, sink } = recordingSink();
 		await using _mirror = attachMirror({
 			data,
 			definition: workspace,
-			workspace: 'account',
+			place: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
 		});
 		await settle();
 
+		// A kv write is not a table commit, and under a per-row renderer it never
+		// reached the folder. A whole pass does not care what changed.
 		data.kv.update({ theme: 'dark' });
 		await settle();
 
-		expect(JSON.parse(files.get('kv.json') ?? 'null')).toEqual({
-			theme: 'dark',
-		});
+		expect(files.get('kv.json')).toContain('dark');
+		expect(latest(manifests)).toContain(`notes/${made.id}.md`);
 	});
 
-	test('a deleted row loses its file', async () => {
+	test('a deleted row leaves the manifest', async () => {
 		await using data = openMemory(workspace);
-		const { files, removed, sink } = recordingSink();
+		const made = data.tables.notes.create({ title: 'Groceries' });
+		const { manifests, sink } = recordingSink();
 		await using _mirror = attachMirror({
 			data,
 			definition: workspace,
-			workspace: 'account',
+			place: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
 		});
-		const made = data.tables.notes.create({ title: 'Groceries' });
 		await settle();
-		expect(files.has(`notes/${made.id}.md`)).toBe(true);
+		expect(latest(manifests)).toContain(`notes/${made.id}.md`);
 
 		data.tables.notes.delete(made.id);
 		await settle();
 
-		expect(files.has(`notes/${made.id}.md`)).toBe(false);
-		expect(removed).toContain(`notes/${made.id}.md`);
-	});
-
-	test('a file left by a row deleted while the app was closed is swept', async () => {
-		// The one thing memory cannot know: another device deleted a row, this
-		// device was not running, and the file it left is remembered by nothing
-		// but the folder. So the first pass asks the folder.
-		await using data = openMemory(workspace);
-		const { files, sink } = recordingSink([
-			'notes/aaaaaaaaaaaaaaaaaaaaaaaa.md',
-		]);
-
-		await using _mirror = attachMirror({
-			data,
-			definition: workspace,
-			workspace: 'account',
-			sink,
-			log: silent,
-			idleMs: 1,
-		});
-		await settle();
-
-		expect(files.has('notes/aaaaaaaaaaaaaaaaaaaaaaaa.md')).toBe(false);
+		// The mirror never says "delete this". It says what is left, and the host
+		// removes what it holds that the manifest does not name.
+		expect(latest(manifests)).toEqual(['kv.json']);
 	});
 
 	test('a body edit reaches the file when the table declares a derivation', async () => {
@@ -180,7 +163,9 @@ describe('attachMirror renders a whole workspace (ADR-0271)', () => {
 						// the row, which IS a table commit, which is what `onCommitted`
 						// hears. That is how a document change reaches the folder today.
 						derive: (doc) => ({
-							title: String((doc.get('meta') as MetaRoot).getAttr('body') ?? ''),
+							title: String(
+								(doc.get('meta') as MetaRoot).getAttr('body') ?? '',
+							),
 						}),
 						file: {
 							serialize: (doc) =>
@@ -198,7 +183,7 @@ describe('attachMirror renders a whole workspace (ADR-0271)', () => {
 		await using _mirror = attachMirror({
 			data,
 			definition: derived,
-			workspace: 'account',
+			place: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
@@ -228,14 +213,13 @@ describe('attachMirror renders a whole workspace (ADR-0271)', () => {
 		//
 		// Whole rendering is what makes this survivable rather than corrupting:
 		// nothing is written WRONG, the folder is only late, and the next commit
-		// anywhere renders the body correctly. A per-row renderer would have left
-		// that one file permanently stale instead.
+		// anywhere renders the body correctly.
 		await using data = openMemory(workspace);
 		const { files, sink } = recordingSink();
 		await using _mirror = attachMirror({
 			data,
 			definition: workspace,
-			workspace: 'account',
+			place: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
@@ -263,78 +247,169 @@ describe('attachMirror renders a whole workspace (ADR-0271)', () => {
 	});
 
 	test('a burst of commits costs one pass, not one per commit', async () => {
-		// Every keystroke commits. The debounce is why this is a folder writer
-		// and not a write amplifier.
 		await using data = openMemory(workspace);
-		let passes = 0;
-		const { sink } = recordingSink();
-		const counting: MirrorSink = {
-			...sink,
-			async write(path, contents) {
-				// Every pass writes `kv.json`, so counting it counts passes.
-				if (path === 'kv.json') passes += 1;
-				return sink.write(path, contents);
-			},
-		};
+		const { manifests, sink } = recordingSink();
 		await using _mirror = attachMirror({
 			data,
 			definition: workspace,
-			workspace: 'account',
-			sink: counting,
+			place: 'account',
+			sink,
 			log: silent,
 			idleMs: 20,
 		});
 		await settle();
-		const afterBoot = passes;
+		const before = manifests.length;
 
 		for (let index = 0; index < 10; index += 1) {
 			data.tables.notes.create({ title: `note ${index}` });
 		}
 		await settle();
 
-		// The boot pass listed the folder; the burst produced exactly one more.
-		expect(passes - afterBoot).toBe(1);
+		expect(manifests.length - before).toBe(1);
 	});
 
 	test('disposing stops the mirror and finishes the pass in flight', async () => {
 		await using data = openMemory(workspace);
-		const { files, sink } = recordingSink();
+		const { manifests, sink } = recordingSink();
 		const mirror = attachMirror({
 			data,
 			definition: workspace,
-			workspace: 'account',
+			place: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
 		});
 		await settle();
 		await mirror[Symbol.asyncDispose]();
-		files.clear();
+		const after = manifests.length;
 
 		data.tables.notes.create({ title: 'after disposal' });
 		await settle();
-		expect([...files.keys()]).toEqual([]);
+
+		expect(manifests.length).toBe(after);
 	});
 
-	test('the index is rebuilt after the sweep, never before', async () => {
-		// Order is the whole contract: an index built mid-pass would describe a
-		// file the sweep is about to take away, and an agent would read a path
-		// that is not there.
-		await using data = openMemory(workspace);
-		const { indexed, sink } = recordingSink([
-			'notes/aaaaaaaaaaaaaaaaaaaaaaaa.md',
-		]);
+	test('a row whose render failed stays in the manifest', async () => {
+		// The host removes what its folder holds and the manifest does not name.
+		// A row whose codec threw produced no contents, and leaving it out of the
+		// manifest would turn one bad note into a note that vanished from the
+		// folder somebody is reading. Stale beats deleted.
+		let explode = false;
+		const throwing = defineData({
+			id: 'so.epicenter.honeycrisp',
+			kv: {},
+			tables: {
+				notes: {
+					fields: { title: field.string() },
+					document: {
+						file: {
+							serialize: () => {
+								if (explode) throw new Error('the codec refused');
+								return '';
+							},
+							deserialize: () => undefined,
+						},
+					},
+				},
+			},
+		});
+		await using data = openMemory(throwing);
+		const made = data.tables.notes.create({ title: 'kept' });
+		const { files, manifests, sink } = recordingSink();
 		await using _mirror = attachMirror({
 			data,
-			definition: workspace,
-			workspace: 'account',
+			definition: throwing,
+			place: 'account',
+			sink,
+			log: silent,
+			idleMs: 1,
+		});
+		await settle();
+		expect(files.has(`notes/${made.id}.md`)).toBe(true);
+
+		explode = true;
+		data.tables.notes.update(made.id, { title: 'edited' });
+		await settle();
+
+		// No contents for it this pass, and still named, so the host keeps the
+		// file it already has.
+		expect(latest(manifests)).toContain(`notes/${made.id}.md`);
+	});
+
+	test('a definition that will not compile sends no manifest at all', async () => {
+		// `renderArtifact` yields one error and stops, so the pass enumerates no
+		// paths. Sending an empty manifest would tell the host every file is
+		// gone, which is every row deleted over a programmer error.
+		await using data = openMemory(workspace);
+		data.tables.notes.create({ title: 'still here' });
+		const { manifests, sink } = recordingSink();
+		const broken = { ...workspace, id: 'Not A Database Id' } as never;
+		await using _mirror = attachMirror({
+			data,
+			definition: broken,
+			place: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
 		});
 		await settle();
 
-		expect(indexed).toHaveLength(1);
-		expect(indexed[0]).toEqual(['kv.json']);
+		expect(manifests).toEqual([]);
+	});
+
+	test('a pass larger than one batch is split, and only the last carries the manifest', async () => {
+		await using data = openMemory(workspace);
+		for (let index = 0; index < 20; index += 1) {
+			data.tables.notes.create({ title: `note ${index}` });
+		}
+		const { batches, manifests, files, sink } = recordingSink();
+		await using _mirror = attachMirror({
+			data,
+			definition: workspace,
+			place: 'account',
+			sink,
+			log: silent,
+			idleMs: 1,
+			batchBytes: 200,
+		});
+		await settle();
+
+		expect(batches.length).toBeGreaterThan(1);
+		expect(manifests.length).toBe(1);
+		// Every file still arrived, and the manifest names all of them.
+		expect(files.size).toBe(21);
+		expect(latest(manifests).length).toBe(21);
+		// The manifest is in the last batch, which is what makes an interrupted
+		// pass leave the folder alone.
+		expect(batches.at(-1)).toContain('"manifest"');
+	});
+
+	test('a batch the host refused costs its files, not the folder', async () => {
+		let refusing = false;
+		await using data = openMemory(workspace);
+		data.tables.notes.create({ title: 'kept' });
+		const { manifests, sink } = recordingSink(() => refusing);
+		await using _mirror = attachMirror({
+			data,
+			definition: workspace,
+			place: 'account',
+			sink,
+			log: silent,
+			idleMs: 1,
+		});
+		await settle();
+		const before = manifests.length;
+
+		refusing = true;
+		data.tables.notes.create({ title: 'lost' });
+		await settle();
+
+		// Nothing new landed, and nothing was retried: the store already
+		// persisted the commit, so the next pass renders it again.
+		expect(manifests.length).toBe(before);
+		refusing = false;
+		data.tables.notes.create({ title: 'recovered' });
+		await settle();
+		expect(latest(manifests).length).toBe(4);
 	});
 });

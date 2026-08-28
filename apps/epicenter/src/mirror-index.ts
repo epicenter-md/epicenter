@@ -49,7 +49,6 @@ import { Database } from 'bun:sqlite';
 import { readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseRowFile, parseRowPath } from '@epicenter/data/artifact/format';
-import { listMirrorFolder } from './mirror.ts';
 
 /** The index's name inside a workspace's folder. */
 export const MIRROR_INDEX_FILE = 'tables.sqlite';
@@ -65,10 +64,17 @@ type IndexedRow = { rowId: string; path: string; fields: Record<string, unknown>
  *
  * Staged and renamed like every other mirror write, so an agent never opens a
  * half-written database.
+ *
+ * Takes the paths rather than listing them, because the only caller has just
+ * finished sweeping and knows exactly what survived. Listing again here would
+ * be a second answer to a question already answered, and the two could differ.
  */
-export async function indexMirrorFolder(absoluteFolder: string): Promise<void> {
+export async function indexMirrorFolder(
+	absoluteFolder: string,
+	paths: readonly string[],
+): Promise<void> {
 	const tables = new Map<string, IndexedRow[]>();
-	for (const path of await listMirrorFolder(absoluteFolder)) {
+	for (const path of paths) {
 		const at = parseRowPath(path);
 		if (at === undefined) continue;
 		let text: string;

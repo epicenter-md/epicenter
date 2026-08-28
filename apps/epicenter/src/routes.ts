@@ -10,7 +10,7 @@
  */
 
 import { LOCAL_BLOB_PATH } from '@epicenter/blobs/webview';
-import { MIRROR_PATH } from '@epicenter/data/artifact/webview';
+import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
 
 const stripTrailing = (value: string) => value.replace(/\/+$/, '');
 
@@ -57,31 +57,15 @@ export const LOCAL_BLOB_ROUTE = {
 	pattern: `${LOCAL_BLOB_PATH}/:blobId`,
 } as const;
 /**
- * One file of the `~/Epicenter` mirror (ADR-0271).
+ * One pass of the `~/Epicenter` mirror (ADR-0271).
  *
- * The application composes the path; the host prepends the root and refuses
- * anything that is not a path the render produces. A wildcard tail, because a
- * row's file is `<table>/<rowId>.md` and Hono needs the slash to reach the
- * handler rather than 404 on a second segment.
+ * A place and a database name a folder, and nothing below that appears in the
+ * URL: a pass carries its files and its manifest in an NDJSON body, so there
+ * is no per-file path to route, capture, or validate. That is what the earlier
+ * per-file design cost, and it cost it silently: Hono routes a bare `*` but
+ * captures nothing under it, so every write arrived with an empty path.
  */
-export const MIRROR_FILE_ROUTE = route(
-	`${MIRROR_PATH}/:workspace/:definitionId/*`,
-);
-/** Every path one workspace's folder holds. Names only, never contents. */
-export const MIRROR_FOLDER_ROUTE = route(
-	`${MIRROR_PATH}/:workspace/:definitionId`,
-);
-/**
- * Rebuild `tables.sqlite` from the files beside it (ADR-0271).
- *
- * A POST because it changes something, and empty because the host reads the
- * folder rather than being handed anything: the index is derived from the
- * files, so there is nothing for a caller to send and nothing it could get
- * wrong.
- */
-export const MIRROR_INDEX_ROUTE = route(
-	`${MIRROR_PATH}/:workspace/:definitionId/index`,
-);
+export const MIRROR_ROUTE = route(`${MIRROR_PATH}/:place/:databaseId`);
 /**
  * Host-owned remote copy operations for one local blob. The id is the only
  * input: no route accepts a destination URL, transfer header, or body, so the

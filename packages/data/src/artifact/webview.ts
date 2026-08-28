@@ -1,26 +1,37 @@
 /**
- * The WebView half of the mirror: where a rendered file is sent (ADR-0271).
+ * The WebView half of the mirror: where a pass is sent (ADR-0271).
  *
- * The application renders and the host writes bytes, so something has to carry
- * one to the other. That is a same-origin request on the trusted Epicenter
- * origin, which needs no capability grant, and this is the one place its shape
- * is written down: the host declares its route from `MIRROR_PATH` and an
- * application builds its URL from the same constant, so the two cannot drift.
+ * The application renders and whoever owns a filesystem writes, so something
+ * has to carry one to the other. That is a same-origin request on the trusted
+ * Epicenter origin, which needs no capability grant, and this is the one place
+ * its shape is written down: the host declares its route from `MIRROR_PATH` and
+ * an application builds its URL from the same constant, so the two cannot
+ * drift.
  *
- * Deliberately thin. It sends a path and bytes and reports whether that
- * worked. It does not batch, retry, queue, or remember: the mirror is derived
- * from a store that already persisted the commit, so a file that failed to
- * write is re-rendered by the next commit or the next boot, and a retry queue
- * here would be a second durability story competing with the real one.
+ * ## One verb, and why
+ *
+ * A pass says what the workspace holds. It does not say what to do to the
+ * folder file by file, and it never asks what the folder currently contains:
+ * the host owns the folder, so the host owns the diff. That is what deletes a
+ * listing route, a delete route, an index route, and the sweep the application
+ * used to run against a set it had to remember.
+ *
+ * The body's shape belongs to `./protocol.js`, which both ends read so neither
+ * composes a line the other cannot parse. Batches exist because WebKit, which
+ * is the WebView on macOS, does not support a streaming request body
+ * (`duplex: 'half'`); a bounded batch is the same design with a ceiling on how
+ * much is buffered at once.
+ *
+ * Deliberately thin. It sends bytes and reports whether that worked. It does
+ * not retry, queue, or remember: the mirror is derived from a store that
+ * already persisted the commit, so a batch that failed is re-rendered by the
+ * next commit or the next boot, and a retry queue here would be a second
+ * durability story competing with the real one.
  */
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 
-/** The host path shared by its server and every WebView that renders. */
-export const MIRROR_PATH = '/api/mirror';
-
-/** Where a workspace's files live, and the only two answers (ADR-0271). */
-export type MirrorWorkspace = 'account' | 'on-this-device';
+import { MIRROR_PATH, type MirrorPlace } from './protocol.js';
 
 export const MirrorSinkError = defineErrors({
 	/**
@@ -28,139 +39,84 @@ export const MirrorSinkError = defineErrors({
 	 * filesystem that may be full, read-only, or on a drive someone unplugged;
 	 * the store is unaffected, so this is reported and never thrown.
 	 */
-	MirrorWriteFailed: ({
-		path,
+	MirrorSendFailed: ({
 		status,
 		cause,
-	}: { path: string; status?: number; cause?: unknown }) => ({
-		message: `The mirror could not write '${path}'`,
-		path,
+	}: { status?: number; cause?: unknown }) => ({
+		message:
+			status === undefined
+				? 'The mirror could not reach the host'
+				: `The mirror was refused with ${status}`,
 		status,
 		cause,
 	}),
 });
 export type MirrorSinkError = InferErrors<typeof MirrorSinkError>;
 
-/** The absolute same-origin URL one rendered file is sent to. */
-export function mirrorFileUrl({
-	workspace,
-	definitionId,
-	path,
+/** The absolute same-origin URL one place's folder is written through. */
+function mirrorFolderUrl({
+	place,
+	databaseId,
 }: {
-	workspace: MirrorWorkspace;
-	definitionId: string;
-	path: string;
+	place: MirrorPlace;
+	databaseId: string;
 }): string {
-	// The path's segments come from the address grammar and are already safe,
-	// but they are encoded anyway: this builds a URL, and a URL builder that
-	// trusts its inputs is the one that stops being true when an input changes.
-	const segments = path.split('/').map(encodeURIComponent).join('/');
-	return `${MIRROR_PATH}/${encodeURIComponent(workspace)}/${encodeURIComponent(definitionId)}/${segments}`;
+	return `${MIRROR_PATH}/${encodeURIComponent(place)}/${encodeURIComponent(databaseId)}`;
 }
 
 export type MirrorSink = {
-	/** Put one rendered file at its path. */
-	write(path: string, contents: string): Promise<Result<void, MirrorSinkError>>;
-	/** Take one file away, for a row that no longer exists. */
-	remove(path: string): Promise<Result<void, MirrorSinkError>>;
 	/**
-	 * Every path the folder currently holds.
+	 * Send one batch of a pass.
 	 *
-	 * Names, never contents, and the distinction is the seam to guard: knowing
-	 * which files exist is how a render deletes what a row no longer justifies,
-	 * while reading one back is where ADR-0207's whole write direction starts
-	 * growing again. Nothing in this package reads a rendered file.
+	 * The batch containing the manifest line is the last one, and it is what
+	 * tells the host the pass is complete. Nothing else distinguishes batches.
 	 */
-	list(): Promise<Result<string[], MirrorSinkError>>;
-	/**
-	 * Rebuild the queryable index beside the files (ADR-0271).
-	 *
-	 * Nothing is sent. The index is derived from the folder, so the caller only
-	 * says when the folder settled, and whoever owns the filesystem reads it.
-	 */
-	index(): Promise<Result<void, MirrorSinkError>>;
+	send(ndjson: string): Promise<Result<void, MirrorSinkError>>;
 };
 
 /**
- * The sink one workspace's files go to.
+ * The sink one place's folder is written through.
  *
  * `fetch` is injected so a test drives this without a host and without a
  * network, which is the whole of what makes the caller testable.
  */
 export function createMirrorSink({
-	workspace,
-	definitionId,
+	place,
+	databaseId,
 	fetch: httpFetch = globalThis.fetch,
 }: {
-	workspace: MirrorWorkspace;
-	definitionId: string;
+	place: MirrorPlace;
+	databaseId: string;
 	fetch?: typeof globalThis.fetch;
 }): MirrorSink {
-	async function send(
-		path: string,
-		init: RequestInit,
-	): Promise<Result<void, MirrorSinkError>> {
-		const url = mirrorFileUrl({ workspace, definitionId, path });
-		const { data: response, error } = await tryAsync({
-			try: () => httpFetch(url, init),
-			catch: (cause) => MirrorSinkError.MirrorWriteFailed({ path, cause }),
-		});
-		if (error !== null) return Err(error);
-		if (!response.ok) {
-			return MirrorSinkError.MirrorWriteFailed({
-				path,
-				status: response.status,
-			});
-		}
-		return Ok(undefined);
-	}
-
+	const url = mirrorFolderUrl({ place, databaseId });
 	return {
-		write: (path, contents) =>
-			send(path, {
-				method: 'PUT',
-				body: contents,
-				headers: { 'content-type': 'text/plain; charset=utf-8' },
-			}),
-		remove: (path) => send(path, { method: 'DELETE' }),
-		index: () =>
-			send('index', {
-				method: 'POST',
-			}),
-		async list(): Promise<Result<string[], MirrorSinkError>> {
-			const url = mirrorFolderUrl({ workspace, definitionId });
+		async send(ndjson) {
 			const { data: response, error } = await tryAsync({
-				try: () => httpFetch(url),
-				catch: (cause) =>
-					MirrorSinkError.MirrorWriteFailed({ path: '', cause }),
+				try: () =>
+					httpFetch(url, {
+						method: 'PUT',
+						body: ndjson,
+						// Same-origin and refusing a redirect, for the same reason the
+						// blob adapter does: this carries a person's notes to a loopback
+						// origin and must not follow one anywhere else.
+						credentials: 'same-origin',
+						redirect: 'error',
+						headers: { 'content-type': 'application/x-ndjson' },
+					}),
+				catch: (cause) => MirrorSinkError.MirrorSendFailed({ cause }),
 			});
 			if (error !== null) return Err(error);
 			if (!response.ok) {
-				return MirrorSinkError.MirrorWriteFailed({
-					path: '',
-					status: response.status,
-				});
+				return MirrorSinkError.MirrorSendFailed({ status: response.status });
 			}
-			const { data: paths, error: bodyError } = await tryAsync({
-				try: () => response.json() as Promise<string[]>,
-				catch: (cause) =>
-					MirrorSinkError.MirrorWriteFailed({ path: '', cause }),
-			});
-			if (bodyError !== null) return Err(bodyError);
-			return Ok(paths);
+			return Ok(undefined);
 		},
 	};
 }
 
-/** The absolute same-origin URL one workspace's folder is listed at. */
-export function mirrorFolderUrl({
-	workspace,
-	definitionId,
-}: {
-	workspace: MirrorWorkspace;
-	definitionId: string;
-}): string {
-	return `${MIRROR_PATH}/${encodeURIComponent(workspace)}/${encodeURIComponent(definitionId)}`;
-}
-
 export { attachMirror, type MirrorableData } from './mirror.js';
+// An application needs the verb and the word for which folder it is writing.
+// The wire format itself is the host's business and this package's, and both
+// read it from `./protocol.js` directly.
+export type { MirrorPlace } from './protocol.js';

@@ -12,15 +12,20 @@ import { expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { indexMirrorFolder, MIRROR_INDEX_FILE } from './mirror-index.ts';
-import { writeMirrorFile } from './mirror.ts';
+import { MIRROR_INDEX_FILE } from './mirror-index.ts';
+import { applyMirrorPass } from './mirror.ts';
 
 async function folderWith(files: Record<string, string>): Promise<string> {
 	const folder = mkdtempSync(join(tmpdir(), 'epicenter-index-'));
-	for (const [path, contents] of Object.entries(files)) {
-		await writeMirrorFile(join(folder, path), contents);
-	}
-	await indexMirrorFolder(folder);
+	// Through the one verb the host offers, because the index is the tail of a
+	// pass rather than a step anyone calls on its own.
+	const lines = Object.entries(files)
+		.map(([path, contents]) => `${JSON.stringify({ path, contents })}\n`)
+		.join('');
+	await applyMirrorPass(
+		folder,
+		`${lines}${JSON.stringify({ manifest: Object.keys(files) })}\n`,
+	);
 	return folder;
 }
 
@@ -121,12 +126,18 @@ test('rebuilding replaces the index whole', async () => {
 		'notes/aaaaaaaaaaaaaaaaaaaaaaaa.md': rowFile({ title: '"before"' }),
 	});
 	try {
-		rmSync(join(folder, 'notes', 'aaaaaaaaaaaaaaaaaaaaaaaa.md'));
-		await writeMirrorFile(
-			join(folder, 'notes', 'bbbbbbbbbbbbbbbbbbbbbbbb.md'),
-			rowFile({ title: '"after"' }),
+		// One pass that names a different row: the first note leaves the
+		// manifest and its file goes with it, and the index is rebuilt from what
+		// is left rather than patched.
+		await applyMirrorPass(
+			folder,
+			`${JSON.stringify({
+				path: 'notes/bbbbbbbbbbbbbbbbbbbbbbbb.md',
+				contents: rowFile({ title: '"after"' }),
+			})}\n${JSON.stringify({
+				manifest: ['notes/bbbbbbbbbbbbbbbbbbbbbbbb.md'],
+			})}\n`,
 		);
-		await indexMirrorFolder(folder);
 
 		const database = new Database(join(folder, MIRROR_INDEX_FILE), {
 			readonly: true,

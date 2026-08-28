@@ -10,6 +10,8 @@ import type { AgentToolDefinition } from '@epicenter/agent';
 import { getProfileVia } from '@epicenter/auth';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
+import { epicenterFolderRoot } from '@epicenter/constants/app-data';
+import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
@@ -21,14 +23,7 @@ import {
 	type HomeSessionSnapshot,
 	parseHomeCommand,
 } from './host.ts';
-import { indexMirrorFolder } from './mirror-index.ts';
-import {
-	listMirrorFolder,
-	mirrorFilePath,
-	mirrorFolderPath,
-	removeMirrorFile,
-	writeMirrorFile,
-} from './mirror.ts';
+import { applyMirrorPass, mirrorFolderPath } from './mirror.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
@@ -40,9 +35,7 @@ import {
 	BUILT_IN_ROUTES,
 	LOCAL_BLOB_REMOTE_ROUTES,
 	LOCAL_BLOB_ROUTE,
-	MIRROR_FILE_ROUTE,
-	MIRROR_FOLDER_ROUTE,
-	MIRROR_INDEX_ROUTE,
+	MIRROR_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
 } from './routes.ts';
@@ -102,6 +95,11 @@ export function createHomeServer({
 	if (launchToken === '') {
 		throw new Error('Epicenter refuses to serve without a launch token.');
 	}
+	// Resolved once, here, rather than per request. `epicenterFolderRoot` reads
+	// the environment and refuses a relative override by throwing, and a
+	// misconfiguration should stop the boot loudly rather than turn every mirror
+	// pass into a 500 (ADR-0271).
+	const folderRoot = epicenterFolderRoot();
 	const activeUrl = validateOrigin(origin);
 	const activeHost = activeUrl.host;
 	const sessionHashes = new Set<string>();
@@ -281,6 +279,12 @@ export function createHomeServer({
 	app.use(APPLICATIONS_ROUTE.pattern, requireBrowserSession);
 	app.use('/api/home/*', requireBrowserSession);
 	app.use('/api/local-blobs/*', requireBrowserSession);
+	// The same gate the blob routes carry, for the same reason: these write and
+	// delete real files and list a workspace's row ids, and the only caller is
+	// a rendering WebView that already holds the session it was bootstrapped
+	// with. Without this they are the one loopback API any local process can
+	// reach (ADR-0271).
+	app.use(`${MIRROR_PATH}/*`, requireBrowserSession);
 	app.use(SESSION_STREAM_ROUTE.pattern, async (c, next) => {
 		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
 		await next();
@@ -303,69 +307,32 @@ export function createHomeServer({
 	);
 
 	/**
-	 * One file of the `~/Epicenter` mirror (ADR-0271).
+	 * One pass of the `~/Epicenter` mirror (ADR-0271).
 	 *
-	 * The host writes bytes at a path and interprets nothing: no store is
-	 * opened here, no file is read back, and nothing derived from a file ever
-	 * reaches an application. What it does own is the root and the refusal, so
-	 * an application cannot name a path outside its own workspace folder.
+	 * The application says what its workspace holds; the host makes the folder
+	 * match. No store is opened here, no CRDT update is decoded, and nothing
+	 * derived from a file ever reaches an application. What the host owns is the
+	 * root, the refusal, and the folder's own reconciliation.
+	 *
+	 * The root is resolved once, at construction, so a misconfigured
+	 * `EPICENTER_FOLDER_DIR` fails the boot loudly instead of throwing inside
+	 * every request.
 	 */
-	const resolveMirrorPath = (c: Context) =>
-		mirrorFilePath({
-			workspace: c.req.param('workspace') ?? '',
-			definitionId: c.req.param('definitionId') ?? '',
-			path: c.req.param('*') ?? '',
-		});
-
-	app.get(MIRROR_FOLDER_ROUTE.pattern, async (c) => {
+	app.put(MIRROR_ROUTE.pattern, async (c) => {
 		const folder = mirrorFolderPath({
-			workspace: c.req.param('workspace') ?? '',
-			definitionId: c.req.param('definitionId') ?? '',
-		});
-		if (folder === undefined) return c.text('Invalid mirror path', 400);
-		return c.json(await listMirrorFolder(folder));
-	});
-
-	// Declared before the wildcard file route, which would otherwise match
-	// `.../index` as a path and refuse it.
-	app.post(MIRROR_INDEX_ROUTE.pattern, async (c) => {
-		const folder = mirrorFolderPath({
-			workspace: c.req.param('workspace') ?? '',
-			definitionId: c.req.param('definitionId') ?? '',
+			place: c.req.param('place') ?? '',
+			databaseId: c.req.param('databaseId') ?? '',
+			root: folderRoot,
 		});
 		if (folder === undefined) return c.text('Invalid mirror path', 400);
 		try {
-			await indexMirrorFolder(folder);
-		} catch {
-			// An index that could not be rebuilt leaves the previous one in place,
-			// which is stale rather than wrong, and the next pass tries again.
-			return c.text('Mirror index failed', 500);
-		}
-		return c.body(null, 204);
-	});
-
-	app.put(MIRROR_FILE_ROUTE.pattern, async (c) => {
-		const target = resolveMirrorPath(c);
-		if (target === undefined) return c.text('Invalid mirror path', 400);
-		try {
-			await writeMirrorFile(target, await c.req.text());
+			await applyMirrorPass(folder, await c.req.text());
 		} catch {
 			// The folder is a convenience over a filesystem that may be full,
 			// read-only, or on a drive someone unplugged. The store is unaffected,
-			// so this is the mirror's failure to report and never the application's
-			// to crash on.
-			return c.text('Mirror write failed', 500);
-		}
-		return c.body(null, 204);
-	});
-
-	app.delete(MIRROR_FILE_ROUTE.pattern, async (c) => {
-		const target = resolveMirrorPath(c);
-		if (target === undefined) return c.text('Invalid mirror path', 400);
-		try {
-			await removeMirrorFile(target);
-		} catch {
-			return c.text('Mirror delete failed', 500);
+			// so this is the mirror's failure to report and never the
+			// application's to crash on.
+			return c.text('Mirror pass failed', 500);
 		}
 		return c.body(null, 204);
 	});

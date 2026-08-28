@@ -43,7 +43,7 @@ export async function openDeviceDatabase(): Promise<
 	const mirror = attachMirror({
 		data,
 		definition: honeycrispDefinition,
-		workspace: 'on-this-device',
+		place: 'local',
 		log: mirrorLog,
 	});
 
@@ -119,7 +119,7 @@ export async function openAccountDatabase({
 	const mirror = attachMirror({
 		data,
 		definition: honeycrispDefinition,
-		workspace: 'account',
+		place: 'account',
 		log: mirrorLog,
 	});
 
