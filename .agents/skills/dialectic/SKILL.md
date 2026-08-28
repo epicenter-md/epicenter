@@ -27,6 +27,9 @@ The message carrying the page is three things: the claim in one sentence, the
 path to the file, and the question. The page holds the argument, so writing the
 argument again in the message is writing the turn twice.
 
+Open it. Run `open <path>` after the first draw and again after every redraw,
+because a redraw that reuses the filename does not reload the tab on its own.
+
 Quoted code does not go away, it moves inside. A path and a line number are
 still what make a claim checkable, so quote the file in the page rather than
 paraphrasing it. If the thing does not exist yet, write `// proposed` above it
@@ -34,7 +37,8 @@ so a design is never mistaken for source.
 
 Pick the form of each region from its subject, and never dress a comparison, a
 history, or a set of tradeoffs as TypeScript. A type that is not a program is a
-costume, and it hides the claim inside grey comment text.
+costume, and it hides the claim inside grey comment text. Three regions in the
+same shape is a template, and a template reads as a report.
 
 ## Build the page as an argument
 
@@ -59,7 +63,10 @@ the fork the evidence does not settle, and make the difference visible at a
 glance instead of confessing it at the bottom. This is what makes a page a turn
 in a dialectic rather than a lecture.
 
-A worked example is in [references/example-turn.html](references/example-turn.html).
+Start from [references/example-turn.html](references/example-turn.html) rather
+than a blank file, and change whatever the argument needs. What should survive
+is that it is dark and readable: panels sit above the page rather than beside
+it, and text has more than one weight of grey.
 
 ## End on the open question
 
