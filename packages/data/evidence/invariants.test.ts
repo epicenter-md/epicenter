@@ -327,6 +327,64 @@ describe('delivery: what the transport must guarantee', () => {
 	});
 });
 
+describe('deletion against a concurrent write, and against a later one', () => {
+	test('a concurrent field write does NOT resurrect the row: the delete wins', () => {
+		// The case that sounds dangerous and is not. One device deletes a row
+		// while another, not knowing, writes a derived field onto it. Yjs
+		// resolves it: the nested type is deleted and the write goes with it.
+		const phone = new Y.Doc({ gc: true });
+		const laptop = new Y.Doc({ gc: true });
+		phone.transact(() => {
+			const row = new Y.Type();
+			phone.get('tables:notes').setAttr('row1' as never, row as never);
+			row.setAttr('title' as never, 'hello' as never);
+		});
+		sync(phone, laptop);
+
+		phone.transact(() => phone.get('tables:notes').deleteAttr('row1'));
+		const held = laptop
+			.get('tables:notes')
+			.getAttr('row1' as never) as unknown as Y.Type;
+		laptop.transact(() =>
+			held.setAttr('updatedAt' as never, '2026-08-28' as never),
+		);
+		sync(phone, laptop);
+
+		expect(Object.keys(attrs(phone.get('tables:notes')))).toEqual([]);
+		expect(Object.keys(attrs(laptop.get('tables:notes')))).toEqual([]);
+	});
+
+	test('re-minting the type after the deletion arrived DOES bring the row back', () => {
+		// The case the tombstone is actually written about, and it is not a merge
+		// artifact: it is `writeRow`'s mint-if-absent path being reached at all.
+		// A device that has already seen the deletion, and then writes a field,
+		// creates a NEW nested type at the same key, and a new type is new data
+		// rather than a revival of old data. Nothing in Yjs can refuse it,
+		// because nothing in Yjs knows the key used to hold something.
+		const phone = new Y.Doc({ gc: true });
+		const laptop = new Y.Doc({ gc: true });
+		phone.transact(() => {
+			const row = new Y.Type();
+			phone.get('tables:notes').setAttr('row2' as never, row as never);
+			row.setAttr('title' as never, 'hi' as never);
+		});
+		sync(phone, laptop);
+		phone.transact(() => phone.get('tables:notes').deleteAttr('row2'));
+		sync(phone, laptop);
+		expect(Object.keys(attrs(laptop.get('tables:notes')))).toEqual([]);
+
+		// Exactly what `writeRow` does when `rowType` answers undefined.
+		laptop.transact(() => {
+			const fresh = new Y.Type();
+			laptop.get('tables:notes').setAttr('row2' as never, fresh as never);
+			fresh.setAttr('updatedAt' as never, 'later' as never);
+		});
+		sync(phone, laptop);
+
+		expect(Object.keys(attrs(phone.get('tables:notes')))).toEqual(['row2']);
+	});
+});
+
 describe('reclamation: what deletion actually returns', () => {
 	test('deleting a root attribute reclaims its value', () => {
 		// Nesting is not required to get a value collected, which is what makes a
