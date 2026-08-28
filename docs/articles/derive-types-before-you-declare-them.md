@@ -67,21 +67,25 @@ export type BearerSession = typeof BearerSession.infer;
 
 The type relationship now matches the domain relationship. A bearer session contains an auth identity; it is not a second hand-written copy of user plus keys.
 
-## Branded Primitives Are the Exception
+## Derive What Is Computed, Declare What You Supply
 
-Deriving is right when the type is computed. A branded primitive is not computed; it is one line you could write identically by hand, so `typeof X.infer` launders a type you already know through the validator and loses the alias in every hover downstream.
+"Derive first" asks who owns the shape, and sometimes the answer is you. A branded primitive is the case where it is:
 
 ```typescript
 // Computed: derive it. Stating this by hand duplicates every field.
 export const AuthUser = type({ id: UserId, email: 'string' });
 export type AuthUser = typeof AuthUser.infer;
 
-// A brand: state it. The validator is annotated to the type, not the reverse.
+// Supplied: state it. The validator is annotated to the type, not the reverse.
 export type UserId = string & Brand<'UserId'>;
 export const UserId = type('string').as<UserId>();
 ```
 
-The rule is derive when the type is computed, declare when it is a brand. See [Same Name for Type and Value](./same-name-for-type-and-value.md).
+`Brand<'UserId'>` is a symbol that appears nowhere in `type('string')`. Arktype cannot compute it; you hand it in through the type argument. Writing `typeof UserId.infer` reads back the exact type you just supplied, and phrases it as though the validator knew something you did not. It also loses the alias in every hover downstream.
+
+So the question is not "is this a brand or a schema." It is **does the type appear as a type argument you typed?** If it does, declare it and annotate the validator to it. If arktype worked it out, from fields or from a morph's return type, derive it.
+
+See [Same Name for Type and Value](./same-name-for-type-and-value.md).
 
 ## Factories Should Own Handles
 

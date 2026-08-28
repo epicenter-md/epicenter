@@ -116,21 +116,34 @@ The exported type is also a constraint you state rather than a consequence of th
 
 Both orders write `string` twice, and `.as<castTo>()` is unconstrained in either (`type('number').as<UserId>()` compiles). Neither is a reason to pick one.
 
-### Derive When the Type Is Computed, Declare When It Is a Brand
+### Derive What Arktype Computes, Declare What You Supply
 
-This section is about branded primitives only. Object schemas keep `typeof X.infer`, because the type is genuinely computed and hand-writing it duplicates every field:
+One question decides the order, and the expression already answers it: **does the type appear as a type argument you typed?**
+
+| You wrote | Who owns the type | Order |
+| --- | --- | --- |
+| `.as<T>()` | you, `T` is your input | declare the type, annotate the validator to it |
+| `type({...})` | arktype, from the fields | derive with `typeof X.infer` |
+| `.pipe(fn)` | arktype, from `fn`'s return type | derive with `typeof X.infer` |
 
 ```typescript
-// Computed: derive it. There is no way to state this without repeating the shape.
+// Supplied: `Brand<'UserId'>` appears nowhere in `type('string')`. Arktype cannot
+// compute it, so you hand it in. Reading it back with `.infer` is a round trip.
+export type UserId = string & Brand<'UserId'>;
+export const UserId = type('string').as<UserId>();
+
+// Computed from fields: you never state the object, arktype assembles it.
 export const AuthUser = type({ id: UserId, email: 'string', 'image?': 'string | null' });
 export type AuthUser = typeof AuthUser.infer;
 
-// A one-line brand: state it. There is nothing to derive.
-export type UserId = string & Brand<'UserId'>;
-export const UserId = type('string').as<UserId>();
+// Computed from a function: the output type comes from the arrow's return type.
+export const PollVote = type({ post_id: 'string' }).pipe((row) => ({ id: row.post_id, ...row }));
+export type PollVote = typeof PollVote.infer;
 ```
 
-See `docs/articles/derive-types-before-you-declare-them.md` for the general rule this carves out of.
+Branded primitives are not an exception to `derive-types-before-you-declare-them.md`; they are the same rule pointing the other way, because `.as<T>()` is an input rather than a derivation. The question also settles cases the repo has not hit yet: `.narrow()` supplies nothing new, so derive.
+
+See `docs/articles/derive-types-before-you-declare-them.md`.
 
 ### Branding a Known-String Value
 
