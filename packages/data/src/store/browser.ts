@@ -534,7 +534,7 @@ export async function openDevice<const TDatabase extends DataDefinition>(
 	if (parseError !== null) return Err(parseError);
 
 	const address = deviceAddress(parsed.id);
-	const { error: claimError } = claimDocument(address);
+	const { error: claimError } = await claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
 	await deleteSupersededStorage(parsed.id, 'device');
@@ -605,7 +605,7 @@ export async function openAccount<const TDatabase extends DataDefinition>(
 		baseURL: canonicalURL,
 		principalId,
 	});
-	const { error: claimError } = claimDocument(address);
+	const { error: claimError } = await claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
 	await deleteSupersededStorage(parsed.id, 'account', principalId);
