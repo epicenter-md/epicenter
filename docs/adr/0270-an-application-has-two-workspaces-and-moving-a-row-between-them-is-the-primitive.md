@@ -1,6 +1,7 @@
 # 0270. An application has two workspaces, and moving a row between them is the primitive
 
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [ADR-0279](0279-an-application-has-two-databases-and-copying-a-row-is-the-verb.md). Two of them stay and both stay visible; the verb changes. A move is a copy and a delete, so the store ships `copy` and an application composes the rest. The id still travels, for a better reason than this record gave.
 - **Date:** 2026-08-27
 - **Amends:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) at one clause: the device document is "never automatically copied into, merged with, or deleted because of a workspace action," and that stays true. What did not exist, and does now, is a deliberate move a person performs on one row.
 - **Relates:** [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) (the codec a move carries a document through), [ADR-0261](0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md) (the replica address, unchanged), [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) (where each workspace lands on disk).
