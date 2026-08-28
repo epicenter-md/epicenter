@@ -24,6 +24,9 @@ import { field } from '@epicenter/data/definition';
  * real Chromium across a real reload.
  */
 import 'fake-indexeddb/auto';
+import { installTestLocks } from './test-locks.js';
+
+installTestLocks();
 import { describe, expect, test } from 'bun:test';
 import { defineData } from '@epicenter/data/definition';
 import { asPrincipalId } from '@epicenter/identity';

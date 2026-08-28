@@ -20,6 +20,9 @@
  * belongs in this file's expectations once it is decided.
  */
 import 'fake-indexeddb/auto';
+import { installTestLocks } from './test-locks.js';
+
+installTestLocks();
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';

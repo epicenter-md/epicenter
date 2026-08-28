@@ -15,6 +15,9 @@
  * runtime tests in this repo use.
  */
 import 'fake-indexeddb/auto';
+import { installTestLocks } from '@epicenter/data/test-locks';
+
+installTestLocks();
 import { expect, test } from 'bun:test';
 
 // The state module IS reactive state, so the runes are shimmed to their

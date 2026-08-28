@@ -19,6 +19,9 @@
  * whose frames come from the real sync protocol (`encodeFrame`).
  */
 import 'fake-indexeddb/auto';
+import { installTestLocks } from '@epicenter/data/test-locks';
+
+installTestLocks();
 import { expect, test } from 'bun:test';
 import { InstantString } from '@epicenter/field';
 
