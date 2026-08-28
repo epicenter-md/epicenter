@@ -230,3 +230,108 @@ describe('durable and live agree', () => {
 		);
 	});
 });
+
+describe('a document neither device had yet', () => {
+	/**
+	 * The offline-first promise, as a test: open the app, start typing, and
+	 * whether anyone had ever created this note's document is not a question you
+	 * were asked.
+	 *
+	 * It works because of one Yjs property, pinned in
+	 * `evidence/invariants.test.ts`: a ROOT is addressed by its name, so
+	 * `doc.get('body')` on two devices is the same address and independent
+	 * minting is not a conflict. The neighbouring test there shows the other
+	 * half, that a NESTED type at a chosen key is addressed by struct and two
+	 * devices minting one lose a subtree to last-writer-wins. Honeycrisp's note
+	 * body is a root (`NOTE_BODY = 'body'`, reached with `doc.get`), which is
+	 * what puts it on the safe side of that line.
+	 */
+	function body(replica: DocumentReplica) {
+		return replica.document.get('body');
+	}
+
+	test('two devices create the same note body offline, and both keep their work', async () => {
+		// Neither has ever synced this document. Neither knows the other exists.
+		const phone = await freshDevice().open();
+		const laptop = await freshDevice().open();
+		phone.document.transact(() =>
+			body(phone).setAttr('fromPhone' as never, 'typed here' as never),
+		);
+		laptop.document.transact(() =>
+			body(laptop).setAttr('fromLaptop' as never, 'and here' as never),
+		);
+
+		sync(phone, authority);
+		sync(laptop, authority);
+		sync(phone, authority);
+
+		const expected = { fromPhone: 'typed here', fromLaptop: 'and here' };
+		expect(body(phone).getAttrs()).toEqual(expected);
+		expect(body(laptop).getAttrs()).toEqual(expected);
+	});
+
+	test('the root is one root afterwards, not two', async () => {
+		// The thing that would be wrong if the address were a struct rather than
+		// a name: two containers, converged, with one device's work inside the
+		// one that lost.
+		const phone = await freshDevice().open();
+		const laptop = await freshDevice().open();
+		phone.document.transact(() =>
+			body(phone).setAttr('a' as never, 1 as never),
+		);
+		laptop.document.transact(() =>
+			body(laptop).setAttr('b' as never, 2 as never),
+		);
+		sync(phone, authority);
+		sync(laptop, authority);
+		sync(phone, authority);
+
+		expect([...phone.document.share.keys()]).toEqual(['body']);
+		expect([...laptop.document.share.keys()]).toEqual(['body']);
+	});
+
+	test('a device that only ever worked offline loses nothing on its first sync', async () => {
+		const early = await freshDevice().open();
+		early.document.transact(() => {
+			body(early).setAttr('first' as never, 1 as never);
+			body(early).setAttr('second' as never, 2 as never);
+		});
+		// Someone else got there first, through the same authority.
+		const other = await freshDevice().open();
+		other.document.transact(() =>
+			body(other).setAttr('theirs' as never, 3 as never),
+		);
+		sync(other, authority);
+
+		sync(early, authority);
+		expect(body(early).getAttrs()).toEqual({
+			first: 1,
+			second: 2,
+			theirs: 3,
+		});
+	});
+
+	test('persisting an offline-created document and reopening keeps it mergeable', async () => {
+		const machine = freshDevice();
+		const first = await machine.open();
+		first.document.transact(() =>
+			body(first).setAttr('written' as never, 'offline' as never),
+		);
+		await first.persist();
+		first.dispose();
+
+		// A different device wrote to the same never-shared document meanwhile.
+		const elsewhere = await freshDevice().open();
+		elsewhere.document.transact(() =>
+			body(elsewhere).setAttr('elsewhere' as never, 'also offline' as never),
+		);
+		sync(elsewhere, authority);
+
+		const reopened = await machine.open();
+		sync(reopened, authority);
+		expect(reopened.document.get('body').getAttrs()).toEqual({
+			written: 'offline',
+			elsewhere: 'also offline',
+		});
+	});
+});
