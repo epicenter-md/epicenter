@@ -2,6 +2,7 @@
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
 	import { Button } from '@epicenter/ui/button';
 	import { Link } from '@epicenter/ui/link';
+	import { resolve } from '$app/paths';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '#platform/auth';
 	import { instanceSetting } from '#platform/instance';
@@ -36,6 +37,6 @@
 			{/snippet}
 		</AccountPopover>
 
-		<Link href="/device">Keep working On this device</Link>
+		<Link href={resolve('/device')}>Keep working On this device</Link>
 	</div>
 </div>
