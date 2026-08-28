@@ -1,12 +1,12 @@
 import type { AuthClient } from '@epicenter/auth';
 import type { AccountStore, DataOf } from '@epicenter/data';
+import { attachMirror } from '@epicenter/data/artifact/mirror';
 import {
 	type BrowserAccountStore,
 	type LocalStore,
 	openAccount,
 	openLocal,
 } from '@epicenter/data/browser';
-import { attachMirror } from '@epicenter/data/artifact/mirror';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
 import {

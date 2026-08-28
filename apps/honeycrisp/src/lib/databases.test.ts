@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { installTestLocks } from '@epicenter/data/test-locks';
 
 installTestLocks();
+
 import { expect, mock, test } from 'bun:test';
 import type { AuthClient } from '@epicenter/auth';
 import { encodeFrame } from '@epicenter/data/sync';

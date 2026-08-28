@@ -10,14 +10,14 @@
 	import HoneycrispSidebar from './Sidebar.svelte';
 
 	let {
-		workspaceLabel,
-		otherWorkspaceLabel,
-		otherWorkspaceHref,
+		storeLabel,
+		otherStoreLabel,
+		otherStoreHref,
 		syncStatus,
 	}: {
-		workspaceLabel: 'On this device' | 'Across your devices';
-		otherWorkspaceLabel: 'On this device' | 'Across your devices';
-		otherWorkspaceHref: '/device' | '/account';
+		storeLabel: 'On this device' | 'Across your devices';
+		otherStoreLabel: 'On this device' | 'Across your devices';
+		otherStoreHref: '/device' | '/account';
 		syncStatus?: () => SyncConnectionStatus | undefined;
 	} = $props();
 
@@ -42,9 +42,9 @@
 <SidebarProvider>
 	<HoneycrispSidebar
 		{syncStatus}
-		{workspaceLabel}
-		{otherWorkspaceLabel}
-		{otherWorkspaceHref}
+		{storeLabel}
+		{otherStoreLabel}
+		{otherStoreHref}
 	/>
 
 	<main class="flex h-screen flex-1 overflow-hidden">

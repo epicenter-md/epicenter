@@ -18,7 +18,7 @@
  */
 export function bootFailureMessage(
 	error: unknown,
-	workspace: 'local' | 'account' = 'local',
+	store: 'local' | 'account' = 'local',
 ): string {
 	if (typeof error === 'object' && error !== null && 'name' in error) {
 		switch (error.name) {
@@ -26,12 +26,12 @@ export function bootFailureMessage(
 				return 'Another Honeycrisp window already has these notes open. Close it, then try again.';
 			case 'Unaddressable':
 			case 'CredentialRefused':
-				return workspace === 'account'
+				return store === 'account'
 					? 'You are signed in, but Across your devices could not be opened. Sign in again.'
 					: 'Your notes on this device could not be opened. Restarting Honeycrisp usually clears it.';
 		}
 	}
-	return workspace === 'account'
+	return store === 'account'
 		? 'Something went wrong opening Across your devices. Your notes on this device are still available.'
 		: 'Something went wrong opening your notes on this device. Restarting Honeycrisp usually clears it.';
 }

@@ -12,18 +12,18 @@
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
-	import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
+	import StoreSwitcher from './StoreSwitcher.svelte';
 
 	let {
 		syncStatus,
-		workspaceLabel,
-		otherWorkspaceLabel,
-		otherWorkspaceHref,
+		storeLabel,
+		otherStoreLabel,
+		otherStoreHref,
 	}: {
 		syncStatus?: () => SyncConnectionStatus | undefined;
-		workspaceLabel: 'On this device' | 'Across your devices';
-		otherWorkspaceLabel: 'On this device' | 'Across your devices';
-		otherWorkspaceHref: '/device' | '/account';
+		storeLabel: 'On this device' | 'Across your devices';
+		otherStoreLabel: 'On this device' | 'Across your devices';
+		otherStoreHref: '/device' | '/account';
 	} = $props();
 
 	const honeycrisp = getHoneycrisp();
@@ -48,10 +48,10 @@
 		<div class="flex items-center justify-between px-2 py-1">
 			<div class="flex min-w-0 items-center gap-1">
 				<span class="text-sm font-semibold">Honeycrisp</span>
-				<WorkspaceSwitcher
-					label={workspaceLabel}
-					otherLabel={otherWorkspaceLabel}
-					otherHref={otherWorkspaceHref}
+				<StoreSwitcher
+					label={storeLabel}
+					otherLabel={otherStoreLabel}
+					otherHref={otherStoreHref}
 				/>
 			</div>
 			<div class="flex items-center gap-1">

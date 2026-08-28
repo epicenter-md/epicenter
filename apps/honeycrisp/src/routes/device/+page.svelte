@@ -3,8 +3,8 @@
 	import { isOk } from 'wellcrafted/result';
 	import { openLocalDatabase } from '$lib/databases.js';
 	import HoneycrispProvider from '$lib/HoneycrispProvider.svelte';
-	import Workspace from '../components/Workspace.svelte';
-	import WorkspaceFailure from '../components/WorkspaceFailure.svelte';
+	import StoreShell from '../components/StoreShell.svelte';
+	import StoreFailure from '../components/StoreFailure.svelte';
 
 	const opening = openLocalDatabase();
 
@@ -22,15 +22,15 @@
 {:then result}
 	{#if isOk(result)}
 		<HoneycrispProvider data={result.data.data}>
-			<Workspace
-				workspaceLabel="On this device"
-				otherWorkspaceLabel="Across your devices"
-				otherWorkspaceHref="/account"
+			<StoreShell
+				storeLabel="On this device"
+				otherStoreLabel="Across your devices"
+				otherStoreHref="/account"
 			/>
 		</HoneycrispProvider>
 	{:else}
-		<WorkspaceFailure workspace="local" error={result.error} />
+		<StoreFailure store="local" error={result.error} />
 	{/if}
 {:catch error}
-	<WorkspaceFailure workspace="local" {error} />
+	<StoreFailure store="local" {error} />
 {/await}

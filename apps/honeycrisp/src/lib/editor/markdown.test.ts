@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from '@y/y';
 
-import { honeycrispDefinition, NOTE_BODY } from '../workspace/index.js';
+import { honeycrispDefinition, NOTE_BODY } from '../data/index.js';
 import { parseNoteBody, serializeNoteBody } from './markdown.js';
 import { noteSchema } from './schema.js';
 
@@ -46,7 +46,8 @@ describe('the note body Markdown codec', () => {
 		const parsed = parseNoteBody(markdown);
 		const items: boolean[] = [];
 		parsed.descendants((node) => {
-			if (node.type.name === 'taskItem') items.push(Boolean(node.attrs.checked));
+			if (node.type.name === 'taskItem')
+				items.push(Boolean(node.attrs.checked));
 		});
 		expect(items).toEqual([true, false]);
 		expect(roundTrip(markdown)).toBe(markdown);
@@ -78,9 +79,13 @@ describe('the note body Markdown codec', () => {
 
 	test('the declared codec round-trips a body through a Yjs document', () => {
 		const codec = honeycrispDefinition.tables.notes.document.file;
-		const markdown = ['# Title', '', 'Body with **bold**.', '', '- [x] done'].join(
-			'\n',
-		);
+		const markdown = [
+			'# Title',
+			'',
+			'Body with **bold**.',
+			'',
+			'- [x] done',
+		].join('\n');
 
 		const written = new Y.Doc();
 		try {

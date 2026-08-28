@@ -5,7 +5,7 @@
 	"version": "0.0.2",
 	"type": "module",
 	"exports": {
-		".": "./src/lib/workspace/index.ts"
+		".": "./src/lib/data/index.ts"
 	},
 	"imports": {
 		"#platform/auth": {
@@ -30,8 +30,8 @@
 		"evidence:runs": "bun run evidence/runs-on-the-new-store.ts"
 	},
 	"devDependencies": {
-		"@epicenter/ui": "workspace:*",
-		"@epicenter/vite-config": "workspace:*",
+		"@epicenter/ui": "store:*",
+		"@epicenter/vite-config": "store:*",
 		"@lucide/svelte": "catalog:",
 		"@sveltejs/adapter-static": "catalog:",
 		"@sveltejs/kit": "catalog:",
@@ -50,14 +50,14 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
-		"@epicenter/app-shell": "workspace:*",
-		"@epicenter/auth": "workspace:*",
-		"@epicenter/constants": "workspace:*",
-		"@epicenter/data": "workspace:*",
-		"@epicenter/field": "workspace:*",
-		"@epicenter/sqlite": "workspace:*",
-		"@epicenter/svelte": "workspace:*",
-		"@epicenter/sync": "workspace:*",
+		"@epicenter/app-shell": "store:*",
+		"@epicenter/auth": "store:*",
+		"@epicenter/constants": "store:*",
+		"@epicenter/data": "store:*",
+		"@epicenter/field": "store:*",
+		"@epicenter/sqlite": "store:*",
+		"@epicenter/svelte": "store:*",
+		"@epicenter/sync": "store:*",
 		"@sqlite.org/sqlite-wasm": "catalog:",
 		"@y/prosemirror": "2.0.0-6",
 		"@y/y": "14.0.0-rc.24",

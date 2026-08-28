@@ -3,7 +3,7 @@
 	import { isOk } from 'wellcrafted/result';
 	import { auth } from '#platform/auth';
 	import AccountGate from '../components/AccountGate.svelte';
-	import Workspace from '../components/Workspace.svelte';
+	import StoreShell from '../components/StoreShell.svelte';
 	import HoneycrispProvider from '$lib/HoneycrispProvider.svelte';
 	import { openAccountDatabase } from '$lib/databases.js';
 
@@ -32,10 +32,10 @@
 			{:then ready}
 				{#if isOk(ready)}
 					<HoneycrispProvider data={result.data.data}>
-						<Workspace
-							workspaceLabel="Across your devices"
-							otherWorkspaceLabel="On this device"
-							otherWorkspaceHref="/device"
+						<StoreShell
+							storeLabel="Across your devices"
+							otherStoreLabel="On this device"
+							otherStoreHref="/device"
 							syncStatus={result.data.syncStatus}
 						/>
 					</HoneycrispProvider>

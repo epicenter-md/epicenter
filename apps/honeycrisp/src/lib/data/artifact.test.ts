@@ -3,14 +3,14 @@
  *
  * The promise this app makes about a person's data: what comes out is a folder
  * of Markdown files they can read in any vault tool, and what goes back in is
- * the workspace they left. Proven against the real definition and the real
+ * the store they left. Proven against the real definition and the real
  * ProseMirror codec, not a stand-in, because the codec is where the prose can
  * actually be lost.
  */
 import { expect, test } from 'bun:test';
 import { readArtifact, renderArtifact } from '@epicenter/data/artifact';
-import { openMemory } from '@epicenter/data/memory';
 import { syncEngineOf } from '@epicenter/data/engine';
+import { openMemory } from '@epicenter/data/memory';
 import { InstantString } from '@epicenter/field';
 import { expectOk } from 'wellcrafted/testing';
 import { honeycrispDefinition, NOTE_BODY } from './index.js';
@@ -19,12 +19,18 @@ const AT = InstantString.fromDate(new Date('2026-08-10T00:00:00.000Z'));
 
 /** Collect the render stream into a map, which is what an assertion wants. */
 async function collect(
-	stream: AsyncIterable<{ data: { path: string; contents?: string } | null; error: unknown }>,
+	stream: AsyncIterable<{
+		data: { path: string; contents?: string } | null;
+		error: unknown;
+	}>,
 ): Promise<Map<string, string>> {
 	const files = new Map<string, string>();
 	for await (const rendered of stream) {
 		if (rendered.error !== null) throw rendered.error;
-		const { path, contents } = rendered.data as { path: string; contents?: string };
+		const { path, contents } = rendered.data as {
+			path: string;
+			contents?: string;
+		};
 		if (contents !== undefined) files.set(path, contents);
 	}
 	return files;
@@ -54,7 +60,7 @@ function seed() {
 	return { data, folder, note };
 }
 
-test('a workspace exports to Markdown files and imports back whole', async () => {
+test('a store exports to Markdown files and imports back whole', async () => {
 	const { data, note } = seed();
 	{
 		const opened = await data.tables.notes.openDocument(note.id);
@@ -69,7 +75,11 @@ test('a workspace exports to Markdown files and imports back whole', async () =>
 	const files = await collect(renderArtifact(data, honeycrispDefinition));
 	// One file per row, and the note's file is prose a person can read.
 	expect([...files.keys()].sort()).toEqual(
-		[`folders/${data.tables.folders.list().rows[0]?.id}.md`, 'kv.json', `notes/${note.id}.md`].sort(),
+		[
+			`folders/${data.tables.folders.list().rows[0]?.id}.md`,
+			'kv.json',
+			`notes/${note.id}.md`,
+		].sort(),
 	);
 	const file = files.get(`notes/${note.id}.md`) ?? '';
 	expect(file).toContain('title: "Groceries"');

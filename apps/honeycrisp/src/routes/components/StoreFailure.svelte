@@ -4,13 +4,13 @@
 	import { bootFailureMessage } from '$lib/boot-failure.js';
 
 	let {
-		workspace,
+		store,
 		error,
-	}: { workspace: 'local' | 'account'; error: unknown } = $props();
+	}: { store: 'local' | 'account'; error: unknown } = $props();
 
-	const otherHref = $derived(workspace === 'account' ? '/device' : '/account');
+	const otherHref = $derived(store === 'account' ? '/device' : '/account');
 	const otherLabel = $derived(
-		workspace === 'account' ? 'On this device' : 'Across your devices',
+		store === 'account' ? 'On this device' : 'Across your devices',
 	);
 </script>
 
@@ -18,7 +18,7 @@
 	<div class="max-w-md space-y-3">
 		<h1 class="text-lg font-semibold">Honeycrisp could not start</h1>
 		<p class="text-sm text-muted-foreground">
-			{bootFailureMessage(error, workspace)}
+			{bootFailureMessage(error, store)}
 		</p>
 		<p class="text-xs text-muted-foreground/70">
 			{extractErrorMessage(error)}

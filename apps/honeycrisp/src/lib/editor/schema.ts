@@ -2,7 +2,7 @@
  * Honeycrisp's ProseMirror schema for a note's body.
  *
  * Shared so both the live editor (`Editor.svelte`) and the store-run `derive`
- * (`../workspace`) convert the same document shape (ADR-0264). The editor binds
+ * (`../data`) convert the same document shape (ADR-0264). The editor binds
  * it to a view; `derive` uses it headlessly to read a note's title and preview
  * off the body document.
  */

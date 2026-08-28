@@ -13,8 +13,8 @@ import { field } from '@epicenter/data/definition';
 
 import type { DataView } from '@epicenter/data';
 import {
-	defineData,
 	type DocumentReader,
+	defineData,
 	type RowOf,
 } from '@epicenter/data/definition';
 import { fragmentToPm, pmToFragment } from '@y/prosemirror';
@@ -71,7 +71,9 @@ export const NOTE_BODY = 'body';
  * body headlessly through the same ProseMirror schema the editor binds, so the
  * derived title matches what a person sees.
  */
-function deriveNoteMetadata(doc: DocumentReader): Pick<Note, 'title' | 'preview'> {
+function deriveNoteMetadata(
+	doc: DocumentReader,
+): Pick<Note, 'title' | 'preview'> {
 	return extractNoteMetadata(bodyOf(doc));
 }
 
