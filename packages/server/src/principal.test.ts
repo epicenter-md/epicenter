@@ -13,7 +13,11 @@
 import { describe, expect, test } from 'bun:test';
 import { generateBlobId } from '@epicenter/blobs';
 import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
-import { blobKey, blobPrincipalPrefix, storeAuthorityName } from './principal.js';
+import {
+	blobKey,
+	blobPrincipalPrefix,
+	storeAuthorityName,
+} from './principal.js';
 
 const userPrincipal = asPrincipalId('abc');
 const instance = INSTANCE_PRINCIPAL_ID;

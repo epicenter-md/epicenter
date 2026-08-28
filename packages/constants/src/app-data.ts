@@ -35,13 +35,13 @@ export const EPICENTER_BUNDLE_IDENTIFIER = 'so.epicenter';
  *
  * An app id names a place, and two issuers name into that one space: admission
  * issues one when it accepts a folder. For an admitted app, that id is the
- * reverse-domain workspace id the folder declares (ADR-0210); the composition
+ * reverse-domain data id the folder declares (ADR-0210); the composition
  * root also issues ids for the engines it composes. The grammar has one
  * definition because those ids share one identifier space; a second copy of this
  * pattern is how they would drift apart.
  *
  * Dots are admitted because an admitted app's id *is* its reverse-domain
- * workspace id, and bare labels stay legal so the composed ids (`local-mail`,
+ * data id, and bare labels stay legal so the composed ids (`local-mail`,
  * `local-books`) keep the directories they already own.
  *
  * The first and last character must be alphanumeric, and that is load-bearing

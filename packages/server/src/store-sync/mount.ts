@@ -16,10 +16,10 @@
  * addressed by the application id and the authenticated principal.
  */
 import {
+	DATA_ID,
 	MAIN_SUBPROTOCOL,
 	parseSubprotocols,
 	STORE_SYNC_ROUTE,
-	DATA_ID,
 } from '@epicenter/sync';
 import type { Hono, MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
@@ -39,7 +39,7 @@ export type StoreAuthorityStub = {
 	fetch(request: Request): Promise<Response>;
 };
 
-/** How this runtime finds the authority for one (principal, workspace id). */
+/** How this runtime finds the authority for one (principal, dataId). */
 export type ResolveStoreAuthority = (
 	env: ServerBindings,
 	name: string,

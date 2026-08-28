@@ -12,7 +12,7 @@
  *                     consent endpoints Better Auth itself owns)
  *
  * Deployments mount this whole sub-app at root; nothing in here depends on
- * the principal partition because authentication is identity, not workspace.
+ * the principal partition because authentication is identity, not data.
  */
 
 import {

@@ -2,7 +2,7 @@
  * `/api/session` sub-app.
  *
  * Returns the authenticated principal. Clients cache the principal id so
- * workspace boot and local-storage keying work offline.
+ * store boot and local-storage keying work offline.
  *
  * {@link mountSessionApp} wires the deployment's auth middleware so
  * `c.var.principal` is populated before the handler runs. Deployment shape is
