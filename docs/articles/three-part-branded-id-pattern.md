@@ -1,11 +1,11 @@
 # Three Parts, One ID, and a Fourth When You Need Both Directions
 
-Every branded ID in the workspace codebase follows the same canonical shape: a validator that lives in the value space, a type derived from it via `typeof X.infer`, and zero, one, or two helpers sized to where the value comes from. Most workspace IDs end up with three exports; the ones that flow in from both directions (minted by the app AND received from URL params or DB rows) end up with four.
+Every branded ID in the workspace codebase follows the same canonical shape: a type that states the brand, a validator annotated to it, and zero, one, or two helpers sized to where the value comes from. Most workspace IDs end up with three exports; the ones that flow in from both directions (minted by the app AND received from URL params or DB rows) end up with four.
 
 ```typescript
-// Validator first; type derived. One PascalCase name in both namespaces.
-export const SavedTabId = type('string').as<Id & Brand<'SavedTabId'>>();
-export type SavedTabId = typeof SavedTabId.infer;
+// Type first; validator annotated to it. One PascalCase name in both namespaces.
+export type SavedTabId = Id & Brand<'SavedTabId'>;
+export const SavedTabId = type('string').as<SavedTabId>();
 
 // generate* for IDs minted fresh by this code.
 export const generateSavedTabId = (): SavedTabId => generateId<SavedTabId>();
@@ -16,9 +16,11 @@ export const asSavedTabId = (value: string): SavedTabId => value as SavedTabId;
 
 `SavedTabId` is the arktype validator in `id: SavedTabId` inside a schema and the inferred branded type in a parameter annotation. There is no `SavedTabIdSchema` alias, no separate constructor function; one name covers both namespaces because TypeScript keeps them separate.
 
-## Validator-first declaration
+## Type-first declaration
 
-Declaring the validator first and deriving the type via `typeof SavedTabId.infer` makes the validator the single source of truth. If the brand changes or the underlying primitive switches from `Id` to plain `string`, you change one place and the type follows. Declaring the type first and re-passing it into `type('string').as<SavedTabId>()` works too, but it encodes the same shape twice. Prefer validator-first for new code.
+Declaring the type first and annotating the validator to it writes the brand once, in the place a reader looks for it. The name also survives: in value position the type-first form is `Type<SavedTabId, {}>`, the derived form `Type<Id & Brand<"SavedTabId">, {}>`, because `typeof SavedTabId.infer` resolves through arktype's distillation and loses the alias. Every `defineTable` schema that composes the id inherits whichever one you picked.
+
+Both orders spell the base primitive twice, so that is not the deciding factor. What decides it is that the exported type stays something you state rather than something the validator chain happens to produce. Prefer type-first for new branded IDs. Object schemas are the other case: their types are genuinely computed, so they keep `typeof X.infer`.
 
 ## Extend the base Id type to simplify the factory generic
 
@@ -40,7 +42,7 @@ Both compile. The generic form is preferred because the only intentional `as <Br
 
 ```typescript
 // Good: zero-cost, concise.
-export const SavedTabId = type('string').as<Id & Brand<'SavedTabId'>>();
+export const SavedTabId = type('string').as<SavedTabId>();
 
 // Bad: pipe ceremony.
 export const SavedTabId = type('string').pipe((s): SavedTabId => s as SavedTabId);
@@ -52,15 +54,15 @@ export const SavedTabId = type('string').pipe((s): SavedTabId => s as SavedTabId
 | ------------------------------------------- | --------------------------------------------------------------- |
 | Minted fresh by this code                   | `generateXxx()`                                                 |
 | Received as a typed `string` (auth, URL, DB column, page param) | `asXxx(value: string)` syntactic-sugar helper       |
-| Both of the above                           | Both helpers, declared next to the validator                    |
+| Both of the above                           | Both helpers, declared next to the type and validator           |
 | Received as `unknown` at a network boundary | None: use the validator's `.assert(unknown)` or schema-level validation |
 | Set from an external source, never minted   | `asXxx` helper                                                  |
 
 The repo's IDs split as follows:
 
-- **Validator + type + `generate*` only** (workspace-internal): `SavedTabId`, `BookmarkId`, `FileId`'s `RowId` and `ColumnId` siblings, etc. They're minted by the app and never received from outside.
-- **Validator + type + `asXxx` only** (purely external): `UserId` from `@epicenter/auth` and `OwnerId` from `@epicenter/identity`. The user id is issued by Better Auth and arrives as a typed string; the owner id is the partition key derived from it. Nothing in the codebase mints them.
-- **Validator + type + both helpers** (minted AND received): `FileId`, `ConversationId`, `ChatMessageId`, `EntryId`, `NoteId`, `FolderId`, `DeviceId`. The app generates them with `generate*` and also brands them with `as*` when reading them back from URL params, DB rows, page params, or external strings.
+- **Type + validator + `generate*` only** (workspace-internal): `SavedTabId`, `BookmarkId`, `FileId`'s `RowId` and `ColumnId` siblings, etc. They're minted by the app and never received from outside.
+- **Type + validator + `asXxx` only** (purely external): `UserId` from `@epicenter/auth` and `OwnerId` from `@epicenter/identity`. The user id is issued by Better Auth and arrives as a typed string; the owner id is the partition key derived from it. Nothing in the codebase mints them.
+- **Type + validator + both helpers** (minted AND received): `FileId`, `ConversationId`, `ChatMessageId`, `EntryId`, `NoteId`, `FolderId`, `DeviceId`. The app generates them with `generate*` and also brands them with `as*` when reading them back from URL params, DB rows, page params, or external strings.
 
 For the third row, the two helpers do unrelated jobs and both earn their keep:
 
@@ -97,6 +99,8 @@ const fileId = searchParams.get('file') as FileId;
 ```
 
 Inside the helper itself the `as` is intentional and unavoidable; that single body is the sanctioned spot. Generators are the other sanctioned spot, and the modern generic form (`generateId<Xxx>()`) removes the cast even there.
+
+The prefix also carries a promise. `as` borrows Rust's `as_` convention: free, unchecked, the same value viewed at a higher abstraction. An `asXxx` helper never validates. When one needs to, it stops being `asXxx` and becomes a parse.
 
 ## Why this matters
 

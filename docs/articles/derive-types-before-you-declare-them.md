@@ -67,6 +67,22 @@ export type BearerSession = typeof BearerSession.infer;
 
 The type relationship now matches the domain relationship. A bearer session contains an auth identity; it is not a second hand-written copy of user plus keys.
 
+## Branded Primitives Are the Exception
+
+Deriving is right when the type is computed. A branded primitive is not computed; it is one line you could write identically by hand, so `typeof X.infer` launders a type you already know through the validator and loses the alias in every hover downstream.
+
+```typescript
+// Computed: derive it. Stating this by hand duplicates every field.
+export const AuthUser = type({ id: UserId, email: 'string' });
+export type AuthUser = typeof AuthUser.infer;
+
+// A brand: state it. The validator is annotated to the type, not the reverse.
+export type UserId = string & Brand<'UserId'>;
+export const UserId = type('string').as<UserId>();
+```
+
+The rule is derive when the type is computed, declare when it is a brand. See [Same Name for Type and Value](./same-name-for-type-and-value.md).
+
 ## Factories Should Own Handles
 
 When a `create*` function returns an object, the returned object is often the best documentation for the public handle.
