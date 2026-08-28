@@ -463,8 +463,8 @@ export async function openIdbBacking(
  */
 const STORE_GENERATION = 'v1';
 
-function localAddress(databaseId: string): string {
-	return `epicenter/${STORE_GENERATION}/${databaseId}/local`;
+function localAddress(dataId: string): string {
+	return `epicenter/${STORE_GENERATION}/${dataId}/local`;
 }
 
 /**
@@ -496,10 +496,10 @@ function canonicalBaseURL(raw: string): string | undefined {
 }
 
 function accountAddress(
-	databaseId: string,
+	dataId: string,
 	{ baseURL, principalId }: { baseURL: string; principalId: PrincipalId },
 ): string {
-	return `epicenter/${STORE_GENERATION}/${databaseId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}`;
+	return `epicenter/${STORE_GENERATION}/${dataId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}`;
 }
 
 /**
@@ -520,23 +520,23 @@ function accountAddress(
  * every open makes the deletion certain without anyone waiting on it.
  */
 function deleteSupersededStorage(
-	databaseId: string,
+	dataId: string,
 	owner: 'local' | 'account',
 	principalId?: PrincipalId,
 ): Promise<void> {
 	const superseded = [
-		`epicenter-store-${databaseId}`,
-		`epicenter-store-${databaseId}#private`,
-		`epicenter-store-${databaseId}#database`,
+		`epicenter-store-${dataId}`,
+		`epicenter-store-${dataId}#private`,
+		`epicenter-store-${dataId}#database`,
 		owner === 'local'
-			? `epicenter/${databaseId}/private`
-			: `epicenter/${databaseId}/database/${principalId}`,
+			? `epicenter/${dataId}/private`
+			: `epicenter/${dataId}/database/${principalId}`,
 		// Everything written before the generation entered the address. There
 		// is no migration and there never was one: a record under an older
 		// shape was always wiped, and now it is simply somewhere else.
 		owner === 'local'
-			? `epicenter/${databaseId}/local`
-			: `epicenter/${databaseId}/account/${principalId}`,
+			? `epicenter/${dataId}/local`
+			: `epicenter/${dataId}/account/${principalId}`,
 	];
 	return Promise.all(
 		superseded.map(
