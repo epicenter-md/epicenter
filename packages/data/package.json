@@ -12,6 +12,7 @@
 		"./artifact/mirror": "./src/artifact/mirror.ts",
 		"./engine": "./src/engine.ts",
 		"./blobs": "./src/store/blobs.ts",
+		"./flush-on-hide": "./src/store/flush-on-hide.ts",
 		"./blobs/opfs": "./src/store/blobs.opfs.ts",
 		"./memory": "./src/store/memory.ts",
 		"./browser": "./src/store/browser.ts",

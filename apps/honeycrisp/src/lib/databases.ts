@@ -7,6 +7,7 @@ import {
 	openAccount,
 	openLocal,
 } from '@epicenter/data/browser';
+import { persistOnHide } from '@epicenter/data/flush-on-hide';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
 import {
@@ -47,9 +48,15 @@ export async function openLocalDatabase(): Promise<
 		log: mirrorLog,
 	});
 
+	// A store accepts work live and pays for it afterwards (ADR-0238). Nothing
+	// closes that window when a tab is torn down, and this is the local
+	// database: what is not on disk is not anywhere.
+	const stopHideFlush = persistOnHide(() => data.store.persistence.flush());
+
 	return Ok({
 		data,
 		async [Symbol.asyncDispose]() {
+			stopHideFlush();
 			await mirror[Symbol.asyncDispose]();
 			await data[Symbol.asyncDispose]();
 		},
@@ -123,6 +130,11 @@ export async function openAccountDatabase({
 		log: mirrorLog,
 	});
 
+	// Same window as the local database, and it matters here too: durable work
+	// is what a reconnect offers the authority, so a flush that never happened
+	// is work the account never hears about either.
+	const stopHideFlush = persistOnHide(() => data.store.persistence.flush());
+
 	return Ok({
 		data,
 		ready: readiness.promise,
@@ -131,6 +143,7 @@ export async function openAccountDatabase({
 			return status.denied ? undefined : status;
 		},
 		async [Symbol.asyncDispose]() {
+			stopHideFlush();
 			readiness.cancel();
 			connection[Symbol.dispose]();
 			await mirror[Symbol.asyncDispose]();
