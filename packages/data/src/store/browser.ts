@@ -547,7 +547,7 @@ export async function openDevice<const TDatabase extends DataDefinition>(
 		releaseDocument(address);
 		return StoreError.StorageFailed({ cause });
 	}
-	const { store, view, definition: parsedDefinition } = parts;
+	const { store, view } = parts;
 
 	return Ok(
 		asData<TDatabase, DeviceStore>(
@@ -556,7 +556,6 @@ export async function openDevice<const TDatabase extends DataDefinition>(
 			// `DataView<TDatabase>` re-enters the per-field descriptor
 			// instantiation and exceeds the depth limit.
 			view as unknown as DataView<TDatabase>,
-			parsedDefinition.definition,
 		),
 	);
 }
@@ -617,7 +616,7 @@ export async function openAccount<const TDatabase extends DataDefinition>(
 		releaseDocument(address);
 		return StoreError.StorageFailed({ cause });
 	}
-	const { store, view, definition: parsedDefinition } = parts;
+	const { store, view } = parts;
 
 	const replicaStore: BrowserAccountStore = Object.freeze({
 		...store,
@@ -639,7 +638,6 @@ export async function openAccount<const TDatabase extends DataDefinition>(
 		asData<TDatabase, BrowserAccountStore>(
 			replicaStore,
 			view as unknown as DataView<TDatabase>,
-			parsedDefinition.definition,
 		),
 	);
 }

@@ -494,8 +494,6 @@ export type DataOf<
 	TDatabase extends DataDefinition,
 	TStore extends DataStoreBase = AccountStore,
 > = DataView<TDatabase> & {
-	/** The immutable declaration this opened data was built from. */
-	readonly definition: DataDefinition;
 	/** Group direct data operations into one accepted and durable transaction. */
 	transact<TResult>(run: () => TResult): TResult;
 	/**
@@ -522,14 +520,9 @@ export type DataOf<
 export function asData<
 	TDatabase extends DataDefinition,
 	TStore extends DataStoreBase,
->(
-	store: TStore,
-	view: DataView<TDatabase>,
-	definition: DataDefinition,
-): DataOf<TDatabase, TStore> {
+>(store: TStore, view: DataView<TDatabase>): DataOf<TDatabase, TStore> {
 	return Object.freeze({
 		...view,
-		definition,
 		transact: store.transact,
 		stored: store.stored,
 		store,
@@ -988,7 +981,7 @@ function overSqlite<TDatabase extends DataDefinition>({
 export function createDeviceStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
 ): DataOf<TDatabase, DeviceStore> {
-	const { store, view, definition } = createStoreEngine(
+	const { store, view } = createStoreEngine(
 		overSqlite(options),
 		'none',
 	);
@@ -996,11 +989,7 @@ export function createDeviceStore<const TDatabase extends DataDefinition>(
 	// `DataView<TDatabase>` re-enters the per-field descriptor instantiation
 	// and exceeds the depth limit. The runtime value is the same object either
 	// way; only the static view of it differs.
-	return asData(
-		store,
-		view as unknown as DataView<TDatabase>,
-		definition.definition,
-	);
+	return asData(store, view as unknown as DataView<TDatabase>);
 }
 
 /**
@@ -1018,15 +1007,11 @@ export function createDeviceStore<const TDatabase extends DataDefinition>(
 export function createAccountStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
 ): DataOf<TDatabase, AccountStore> {
-	const { store, view, definition } = createStoreEngine(
+	const { store, view } = createStoreEngine(
 		overSqlite(options),
 		'remote',
 	);
-	return asData(
-		store,
-		view as unknown as DataView<TDatabase>,
-		definition.definition,
-	);
+	return asData(store, view as unknown as DataView<TDatabase>);
 }
 
 /**

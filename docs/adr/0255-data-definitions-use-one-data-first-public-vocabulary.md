@@ -4,6 +4,7 @@
 - **Date:** 2026-08-20
 - **Amends:** [ADR-0240](0240-an-application-declares-one-workspace-and-an-opened-runtime-holds-exactly-one-definition.md) at the public noun and package boundary; [ADR-0241](0241-a-store-is-truth-plus-debts-and-sql-is-a-composed-follower.md) at the opened handle and SQL follower names; [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md) at the declaration representation and parser names.
 - **Amended by:** [ADR-0258](0258-row-documents-are-opened-through-their-owning-table.md) at the opened data document surface.
+- **Amended by:** [ADR-0269](0269-the-browser-is-the-runtime-so-the-file-opener-the-history-shelf-and-the-sql-projection-are-deleted.md) at `data.definition`, which is deleted. It existed for one reader, `createSqliteProjection({ data, sqlite })`, and that record deleted the projection. The rest of the vocabulary stands: `data`, `data.store`, `kv`, and `await using` are unchanged.
 - **Amended by:** [ADR-0266](0266-definedata-compiles-once-and-holds-behaviors-beside-a-json-field-core.md) at "the data definition uses closed JSON field descriptors" and `parseData`'s content-hash memo; the field descriptors stay closed JSON and behaviors ride alongside.
 ## Context
 

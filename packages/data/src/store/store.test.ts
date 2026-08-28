@@ -64,15 +64,10 @@ function exchange(a: AccountStore, b: AccountStore) {
 }
 
 describe('a read is a property access on a plain object', () => {
-	test('data carries its immutable definition and owns the store lifecycle', async () => {
+	test('data owns the store lifecycle without being it', async () => {
 		const opened = openMemory(database);
 		await using data = opened;
 
-		expect(data.definition).toEqual(database);
-		expect(data.definition).not.toBe(database);
-		expect(Object.isFrozen(data.definition)).toBe(true);
-		expect(Object.isFrozen(data.definition.kv)).toBe(true);
-		expect(Object.isFrozen(data.definition.tables)).toBe(true);
 		expect(data.store).not.toBe(data);
 	});
 

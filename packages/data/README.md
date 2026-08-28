@@ -32,7 +32,6 @@ const { data, error } = await openAccount(honeycrispDefinition, {
 if (error !== null) return handle(error);
 
 await using opened = data;
-opened.definition; // the immutable declaration that opened this data
 
 const listed = opened.tables.notes.list();          // no await
 opened.tables.notes.update(id, { title: 'Draft' }); // no await
