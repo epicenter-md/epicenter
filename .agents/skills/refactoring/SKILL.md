@@ -10,7 +10,7 @@ metadata:
 
 Systematic approach to auditing and improving code. Every change is evidence-based: count callers, show diffs, commit surgically.
 
-> **Related Skills**: See `post-implementation-review` for the full second-read ritual after implementation. See `greenfield-clean-breaks` when the refactor changes public shape, ownership, naming, or lifecycle boundaries. See `control-flow` for linearizing conditionals and guard clauses. See `factory-function-composition` for the four-zone factory anatomy. See `method-shorthand-jsdoc` for when to use `this.method()` vs direct calls.
+> **Related Skills**: See `post-implementation-review` for the full second-read ritual after implementation. See `greenfield-clean-breaks` when the refactor changes public shape, ownership, naming, or lifecycle boundaries. See `control-flow` for linearizing conditionals and guard clauses. See `factory-function-composition` for the four-zone factory anatomy. See `method-shorthand-jsdoc` for when to use `this.method()` vs direct calls. See `code-prose` for the naming and comment pass over whatever the refactor leaves behind.
 
 Use [asymmetric-wins](../asymmetric-wins/SKILL.md) when a refactor is preserving
 a small promise that owns a large code family: legacy aliases, fallback parsers,
@@ -224,7 +224,7 @@ function replaceCurrentText(content, current) {
 
     Inline the known branch at each call site. Keep the branching function only for callers that genuinely don't know (e.g., `restoreFromSnapshot` where the live doc's type is unknown).
 
-## Parameter Objects and Type Derivation
+## Parameter Objects and Derivation
 
 ### Parameter Objects
 
@@ -250,6 +250,32 @@ type SheetEntry = { type: 'sheet'; columns: Y.Map<...>; rows: Y.Map<...>; create
 // AFTER: Intersection
 type SheetEntry = SheetBinding & { type: 'sheet'; createdAt: number };
 ```
+
+### Value Derivation
+
+The same rule one level down: if a value can be computed from values already in scope, don't pass or store it separately.
+
+```typescript
+// BEFORE: isDirty is always editorContent !== baseline
+function save(editorContent: string, baseline: string, isDirty: boolean) { ... }
+
+// AFTER: derive it
+function save(editorContent: string, baseline: string) {
+	const isDirty = editorContent !== baseline;
+	...
+}
+```
+
+Removing derivable state often simplifies signatures, types, and control flow in one move.
+
+## File Shape
+
+Caller counts audit a function. These audit the file it lives in.
+
+1. **Inverted pyramid.** Lead with the exported or significant functions and push helpers below them. Don't bury the lead.
+2. **Related concepts over monoliths.** Break a large file into modules that each own one concept.
+3. **Combine overlapping concepts.** If two types, functions, or constants overlap significantly, merge them. The fewer distinct concepts a reader must hold in their head, the better.
+4. **Use shared code.** A common utility (file path parsing, say) may already exist. Check for it before writing the same thing inline.
 
 ## Presenting Changes
 
@@ -350,6 +376,7 @@ See `typescript` "Go-to-Definition Awareness" for the per-shape mechanics.
 - **Shotgun inlining**: Inlining everything with 1 caller regardless of context. Respect constructor families and complex logic.
 - **Skipping the straggler sweep**: Refactoring without cleaning up dead references. The code compiles, but the next person reads stale JSDoc and wastes 30 minutes confused about an endpoint that no longer exists.
 - **Identity functions**: `function f(x) { return x; }` has callers, but does nothing. It's dead code wearing a disguise. Inline the call.
+- **Compatibility with unshipped code**: Supporting an old signature, alias, or data shape that only existed earlier in the same branch is compatibility with something that was never deployed. Delete the old path and update its callers.
 - **Speculative v2 code**: Commented-out types, tables, or functions "deferred to v2" with zero consumers. Git remembers: delete from the source file.
 - **Secondary key when primary exists**: Matching records by a secondary key (name, slug, path) when a stable primary key (id) is available. The secondary key can collide, change, or diverge across systems. If the primary key exists, use it.
 - **Indirect re-exports from non-barrel files**: `export { Foo } from './types.js'` at the bottom of `create-foo.ts`. The `export { }` re-export syntax belongs in `index.ts` barrels only. Implementation files export directly at the declaration. Same principle in any module system: Python's `from .types import Foo` at EOF, Rust's `pub use` in non-`mod.rs` files.

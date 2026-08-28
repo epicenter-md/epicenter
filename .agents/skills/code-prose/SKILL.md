@@ -1,6 +1,6 @@
 ---
-name: simplify
-description: Simplify completed code or code comments without changing behavior. Use when doing final cleanup before review or writing and reviewing comments.
+name: code-prose
+description: Apply Orwell's rules to the prose inside code — identifiers and comments — without changing behavior. Use when names, word choice, or comments need an editorial pass.
 ---
 Review changes in the current branch, or in the scope the user specifies. Apply these criteria without changing behavior. Only touch code in that scope, and run the relevant existing checks after changes.
 
@@ -36,17 +36,8 @@ State, in plain English, the constraint the code cannot show: why the **non-obvi
 - 🗑️ If a comment narrates change history from the conversation, delete it.
 - 🗑️ If a comment restates code whose behavior is self-evident, delete it.
 
-## Code structure
-
-1. **Inverted pyramid.** Within a file, lead with the exported or significant functions and push helpers below them. Don't bury the lead.
-2. **Related concepts over monoliths.** Break a large file into modules that each own one concept.
-3. **Combine overlapping concepts.** If two types, functions, or constants overlap significantly, merge them. The fewer distinct concepts a reader must hold in their head, the better.
-4. **Use shared code.** Common utilities (ex. file path parsing) may exist in the codebase already. Check for library or utility functions before inlining.
-5. **Derivability.** If a value can be computed from values already in scope, don't pass or store it separately. Removing derivable state often simplifies signatures, types, and control flow in one move. Example: an `isDirty` parameter that is always `editorContent !== baseline` can be dropped.
-
 ## Overfitting
 
-Code must stand on its own. If a change only makes sense to someone who watched it happen (this conversation, this PR), it is overfitted. Write for the reader who arrives with no history.
+Code must stand on its own. If a name or comment only makes sense to someone who watched it happen (this conversation, this PR), it is overfitted. Write for the reader who arrives with no history: rewrite it against the codebase's own vocabulary.
 
-- If a name or comment needs the conversation to be understood, rewrite it against the codebase's own vocabulary.
-- **No backwards compatibility with unshipped code.** Supporting an old signature, alias, or data shape that only existed earlier in the same branch is compatibility with something that was never deployed. Delete the old path and update its callers.
+For the structural half of the same discipline — file shape, derivable state, and compatibility with code that never shipped — use [refactoring](../refactoring/SKILL.md).
