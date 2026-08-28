@@ -52,12 +52,12 @@ function directoryHandle(node: FakeDirectory): unknown {
 		},
 		async getFileHandle(name: string, options?: { create?: boolean }) {
 			const found = node.children.get(name);
-			if (found?.kind === 'file') return fileHandle(node, found);
+			if (found?.kind === 'file') return fileHandle(found);
 			if (found !== undefined) throw missing(name);
 			if (options?.create !== true) throw missing(name);
 			const made: FakeFile = { kind: 'file', name, bytes: new Uint8Array() };
 			node.children.set(name, made);
-			return fileHandle(node, made);
+			return fileHandle(made);
 		},
 		async removeEntry(name: string) {
 			if (!node.children.delete(name)) throw missing(name);
@@ -67,7 +67,7 @@ function directoryHandle(node: FakeDirectory): unknown {
 			return (async function* () {
 				for (const entry of entries) {
 					yield entry.kind === 'file'
-						? fileHandle(node, entry)
+						? fileHandle(entry)
 						: directoryHandle(entry);
 				}
 			})();
@@ -75,7 +75,7 @@ function directoryHandle(node: FakeDirectory): unknown {
 	};
 }
 
-function fileHandle(parent: FakeDirectory, node: FakeFile): unknown {
+function fileHandle(node: FakeFile): unknown {
 	return {
 		kind: 'file',
 		name: node.name,
@@ -106,7 +106,6 @@ function fileHandle(parent: FakeDirectory, node: FakeFile): unknown {
 					// Publication is here and nowhere else: until this line the file
 					// still holds what it held before the stream opened.
 					node.bytes = bytes;
-					parent.children.set(node.name, node);
 				},
 			};
 		},

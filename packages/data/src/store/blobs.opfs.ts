@@ -63,7 +63,18 @@ type StorageManagerSlice = {
 	getDirectory(): Promise<FileSystemDirectoryHandle>;
 };
 
-function storage(): StorageManagerSlice {
+/**
+ * The origin's root directory, fetched once.
+ *
+ * It was fetched on every read, write, remove and list: one platform call per
+ * operation for a handle that cannot change, because the origin root is the
+ * origin root for the life of the page. Nothing BELOW the root is cached, and
+ * that asymmetry is the point: a directory under it can be removed while a
+ * handle to it is held, and the root cannot.
+ */
+let originRoot: Promise<FileSystemDirectoryHandle> | undefined;
+
+function root(): Promise<FileSystemDirectoryHandle> {
 	// Through `unknown`, because a runtime that ships its own DOM types declares
 	// a `FileSystemDirectoryHandle` of its own and the two are compared
 	// structurally. What this file may call is the slice above, and asserting it
@@ -76,7 +87,8 @@ function storage(): StorageManagerSlice {
 	if (found?.getDirectory === undefined) {
 		throw new Error('This runtime has no origin private file system');
 	}
-	return found;
+	originRoot ??= found.getDirectory();
+	return originRoot;
 }
 
 /**
@@ -98,20 +110,37 @@ function isMissing(cause: unknown): boolean {
  * subtree is ever touched, which is what makes a discard's blast radius the
  * address and nothing else.
  */
-export function createOpfsBlobs({ root }: { root: string }): Blobs {
-	const rootSegments = keySegments(root);
+export function createOpfsBlobs({ root: address }: { root: string }): Blobs {
+	const addressSegments = keySegments(address);
 
-	/** Walk to a directory, optionally creating the path on the way. */
-	async function directory(
+	/**
+	 * Walk to a directory, creating the path on the way.
+	 *
+	 * Two functions rather than one with a `create` flag, because their return
+	 * types differ and collapsing them lied about one of the two: a single
+	 * function has to answer `| undefined` always, so the writing path carried a
+	 * branch for a state it could not reach.
+	 */
+	async function makeDirectory(
 		segments: readonly string[],
-		create: boolean,
+	): Promise<FileSystemDirectoryHandle> {
+		let handle = await root();
+		for (const segment of segments) {
+			handle = await handle.getDirectoryHandle(segment, { create: true });
+		}
+		return handle;
+	}
+
+	/** Walk to a directory, or undefined when nothing has been written under it. */
+	async function findDirectory(
+		segments: readonly string[],
 	): Promise<FileSystemDirectoryHandle | undefined> {
-		let handle = await storage().getDirectory();
+		let handle = await root();
 		for (const segment of segments) {
 			try {
-				handle = await handle.getDirectoryHandle(segment, { create });
+				handle = await handle.getDirectoryHandle(segment);
 			} catch (cause) {
-				if (!create && isMissing(cause)) return undefined;
+				if (isMissing(cause)) return undefined;
 				throw cause;
 			}
 		}
@@ -120,7 +149,7 @@ export function createOpfsBlobs({ root }: { root: string }): Blobs {
 
 	/** The directory holding a key's file, and the file's own name. */
 	function place(key: string): { path: string[]; name: string } {
-		const segments = [...rootSegments, ...keySegments(key)];
+		const segments = [...addressSegments, ...keySegments(key)];
 		const name = segments.pop() as string;
 		return { path: segments, name };
 	}
@@ -128,7 +157,7 @@ export function createOpfsBlobs({ root }: { root: string }): Blobs {
 	return Object.freeze({
 		async read(key) {
 			const { path, name } = place(key);
-			const parent = await directory(path, false);
+			const parent = await findDirectory(path);
 			if (parent === undefined) return undefined;
 			try {
 				const file = await (await parent.getFileHandle(name)).getFile();
@@ -141,12 +170,7 @@ export function createOpfsBlobs({ root }: { root: string }): Blobs {
 
 		async write(key, bytes) {
 			const { path, name } = place(key);
-			const parent = await directory(path, true);
-			if (parent === undefined) {
-				// Unreachable with `create: true`; a directory that could not be made
-				// throws rather than answering undefined.
-				throw new Error(`Could not open the directory holding ${key}`);
-			}
+			const parent = await makeDirectory(path);
 			const handle = await parent.getFileHandle(name, { create: true });
 			const stream = await handle.createWritable();
 			// The close is what publishes the swap file, so it is not a formality
@@ -158,9 +182,12 @@ export function createOpfsBlobs({ root }: { root: string }): Blobs {
 
 		async remove(key) {
 			const { path, name } = place(key);
-			const parent = await directory(path, false);
+			const parent = await findDirectory(path);
 			if (parent === undefined) return;
 			try {
+				// Recursive on purpose, and not because of files. A key names
+				// whatever is at it, so removing `notes` removes every document
+				// under it in one call, which is what discarding a table wants.
 				await parent.removeEntry(name, { recursive: true });
 			} catch (cause) {
 				if (isMissing(cause)) return;
@@ -170,7 +197,7 @@ export function createOpfsBlobs({ root }: { root: string }): Blobs {
 
 		async list(prefix) {
 			const relative = prefix === '' ? [] : keySegments(prefix);
-			const start = await directory([...rootSegments, ...relative], false);
+			const start = await findDirectory([...addressSegments, ...relative]);
 			if (start === undefined) return [];
 			const keys: string[] = [];
 			await collect(start, relative);
