@@ -1,18 +1,21 @@
+import {
+	compile as compileField,
+	type Field,
+	field as genericField,
+	recognize,
+	referenceTargetOf,
+	storageOf,
+} from '@epicenter/field';
 import { type Static, type TSchema, Type } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-
-import { DATA_ADDRESS_CEILINGS, isDatabaseId, isTableName } from './addresses.js';
+import {
+	DATA_ADDRESS_CEILINGS,
+	isDatabaseId,
+	isTableName,
+} from './addresses.js';
 import { canonicalJson } from './canonical.js';
 import type { JsonObject, JsonValue } from './json.js';
-import {
-	compile as compileField,
-	field as genericField,
-	referenceTargetOf,
-	recognize,
-	storageOf,
-	type Field,
-} from '@epicenter/field';
 
 export const RESERVED_ATTRIBUTE_PREFIX = '!';
 export const KV_ROOT = 'kv';
@@ -107,12 +110,16 @@ type ValidateDefinition<T> = {
 };
 
 /** Add data-substrate nullability without teaching the generic field package about it. */
-function nullable<S extends TSchema>(inner: S): TSchema & {
+function nullable<S extends TSchema>(
+	inner: S,
+): TSchema & {
 	readonly anyOf: readonly [S, { readonly type: 'null' }];
 } {
 	return Type.Unsafe<Static<S> | null>({
 		anyOf: [inner, { type: 'null' }],
-	}) as unknown as TSchema & { readonly anyOf: readonly [S, { readonly type: 'null' }] };
+	}) as unknown as TSchema & {
+		readonly anyOf: readonly [S, { readonly type: 'null' }];
+	};
 }
 
 /** The data definition's field namespace. */
@@ -143,18 +150,18 @@ export type RowsOf<TDatabase extends DataDefinition> = {
 	[K in keyof TDatabase['tables']]: RowOf<TDatabase['tables'][K]['fields']>;
 };
 export type CreateInputsOf<TDatabase extends DataDefinition> = {
-	[K in keyof TDatabase['tables']]: CreateInputOf<TDatabase['tables'][K]['fields']>;
+	[K in keyof TDatabase['tables']]: CreateInputOf<
+		TDatabase['tables'][K]['fields']
+	>;
 };
 
-export function defineTable<const TFields extends FieldMap>(
-	table: {
-		fields: TFields & ValidateFields<TFields>;
-		document?: {
-			derive?: (doc: DocumentReader) => Partial<FieldsOut<TFields>>;
-			file: FileCodec;
-		};
-	},
-): { fields: TFields; document?: DocumentDeclaration } {
+export function defineTable<const TFields extends FieldMap>(table: {
+	fields: TFields & ValidateFields<TFields>;
+	document?: {
+		derive?: (doc: DocumentReader) => Partial<FieldsOut<TFields>>;
+		file: FileCodec;
+	};
+}): { fields: TFields; document?: DocumentDeclaration } {
 	return table as { fields: TFields; document?: DocumentDeclaration };
 }
 
@@ -185,7 +192,15 @@ export const DataDefinitionParseError = defineErrors({
 		message: `This data definition is not well formed: ${reason}`,
 		reason,
 	}),
-	UnrecognizedField: ({ table, field, reason }: { table: string; field: string; reason: string }) => ({
+	UnrecognizedField: ({
+		table,
+		field,
+		reason,
+	}: {
+		table: string;
+		field: string;
+		reason: string;
+	}) => ({
 		message: `Field '${table}.${field}' is not recognized vocabulary: ${reason}`,
 		table,
 		field,
@@ -197,9 +212,14 @@ export const DataDefinitionParseError = defineErrors({
 		field,
 	}),
 });
-export type DataDefinitionParseError = InferErrors<typeof DataDefinitionParseError>;
+export type DataDefinitionParseError = InferErrors<
+	typeof DataDefinitionParseError
+>;
 
-export type Conformance = { conforming: JsonObject; issues: ConformanceIssue[] };
+export type Conformance = {
+	conforming: JsonObject;
+	issues: ConformanceIssue[];
+};
 
 export type ParsedTable = {
 	name: string;
@@ -228,7 +248,10 @@ export type ParsedDataDefinition = {
 	canonical: string;
 };
 
-let parsed = new WeakMap<object, Result<ParsedDataDefinition, DataDefinitionParseError>>();
+let parsed = new WeakMap<
+	object,
+	Result<ParsedDataDefinition, DataDefinitionParseError>
+>();
 
 /**
  * Parse and compile one definition, held beside the definition object (ADR-0266).
@@ -239,7 +262,9 @@ let parsed = new WeakMap<object, Result<ParsedDataDefinition, DataDefinitionPars
  * arrival and is held until it is collected. A non-object cannot be cached and
  * compiles directly, on its way to the malformed result it earns.
  */
-export function parseData(value: unknown): Result<ParsedDataDefinition, DataDefinitionParseError> {
+export function parseData(
+	value: unknown,
+): Result<ParsedDataDefinition, DataDefinitionParseError> {
 	const cacheable = typeof value === 'object' && value !== null;
 	if (cacheable) {
 		const memoised = parsed.get(value);
@@ -260,16 +285,32 @@ function compileDefinition(
 	value: unknown,
 	canonical: string,
 ): Result<ParsedDataDefinition, DataDefinitionParseError> {
-	if (!isPlainObject(value)) return DataDefinitionParseError.Malformed({ reason: 'it is not a plain object' });
+	if (!isPlainObject(value))
+		return DataDefinitionParseError.Malformed({
+			reason: 'it is not a plain object',
+		});
 	const { id, title, kv, tables } = value as Partial<DataDefinition>;
 	if (typeof id !== 'string' || !isDatabaseId(id, DATA_ADDRESS_CEILINGS)) {
-		return DataDefinitionParseError.Malformed({ reason: 'it declares an invalid id' });
+		return DataDefinitionParseError.Malformed({
+			reason: 'it declares an invalid id',
+		});
 	}
-	if (title !== undefined && (typeof title !== 'string' || title.trim() === '')) {
-		return DataDefinitionParseError.Malformed({ reason: 'its title must say something or be absent' });
+	if (
+		title !== undefined &&
+		(typeof title !== 'string' || title.trim() === '')
+	) {
+		return DataDefinitionParseError.Malformed({
+			reason: 'its title must say something or be absent',
+		});
 	}
-	if (!isPlainObject(kv)) return DataDefinitionParseError.Malformed({ reason: 'it declares no kv section' });
-	if (!isPlainObject(tables)) return DataDefinitionParseError.Malformed({ reason: 'it declares no tables' });
+	if (!isPlainObject(kv))
+		return DataDefinitionParseError.Malformed({
+			reason: 'it declares no kv section',
+		});
+	if (!isPlainObject(tables))
+		return DataDefinitionParseError.Malformed({
+			reason: 'it declares no tables',
+		});
 
 	const compiledKvResult = compileTable('kv', kv);
 	if (compiledKvResult.error !== null) return compiledKvResult;
@@ -277,16 +318,28 @@ function compileDefinition(
 	const compiledTables = new Map<string, ParsedTable>();
 	const foldedNames = new Map<string, string>();
 	for (const [tableName, declaration] of Object.entries(tables)) {
-		if (!isTableName(tableName, DATA_ADDRESS_CEILINGS) || RESERVED_TABLE_NAMES.includes(tableName)) {
-			return DataDefinitionParseError.Malformed({ reason: `table name '${tableName}' is not usable` });
+		if (
+			!isTableName(tableName, DATA_ADDRESS_CEILINGS) ||
+			RESERVED_TABLE_NAMES.includes(tableName)
+		) {
+			return DataDefinitionParseError.Malformed({
+				reason: `table name '${tableName}' is not usable`,
+			});
 		}
 		const folded = tableName.toLowerCase();
 		if (foldedNames.has(folded)) {
-			return DataDefinitionParseError.Malformed({ reason: `table names collide case-insensitively: '${tableName}'` });
+			return DataDefinitionParseError.Malformed({
+				reason: `table names collide case-insensitively: '${tableName}'`,
+			});
 		}
 		foldedNames.set(folded, tableName);
-		if (!isPlainObject(declaration) || !isPlainObject((declaration as TableDeclaration).fields)) {
-			return DataDefinitionParseError.Malformed({ reason: `table '${tableName}' must declare a fields object` });
+		if (
+			!isPlainObject(declaration) ||
+			!isPlainObject((declaration as TableDeclaration).fields)
+		) {
+			return DataDefinitionParseError.Malformed({
+				reason: `table '${tableName}' must declare a fields object`,
+			});
 		}
 		const table = declaration as TableDeclaration;
 		const result = compileTable(tableName, table.fields);
@@ -316,77 +369,122 @@ function compileDefinition(
 		);
 	}
 	const definition = freeze(JSON.parse(canonical) as DataDefinition);
-	return Ok(Object.freeze({
-		definition,
-		id,
-		...(title === undefined ? {} : { title }),
-		kv: compiledKv,
-		tables: compiledTables,
-		canonical,
-	}));
+	return Ok(
+		Object.freeze({
+			definition,
+			id,
+			...(title === undefined ? {} : { title }),
+			kv: compiledKv,
+			tables: compiledTables,
+			canonical,
+		}),
+	);
 }
 
-function compileTable(tableName: string, fields: unknown): Result<ParsedTable, DataDefinitionParseError> {
-	if (!isPlainObject(fields)) return DataDefinitionParseError.Malformed({ reason: `table '${tableName}' does not declare fields` });
+function compileTable(
+	tableName: string,
+	fields: unknown,
+): Result<ParsedTable, DataDefinitionParseError> {
+	if (!isPlainObject(fields))
+		return DataDefinitionParseError.Malformed({
+			reason: `table '${tableName}' does not declare fields`,
+		});
 	const compiled = new Map<string, DataField>();
 	for (const [fieldName, descriptor] of Object.entries(fields)) {
 		const invalid = fieldNameProblem(tableName, fieldName);
 		if (invalid !== undefined) return invalid;
 		if (!isPlainObject(descriptor)) {
-			return DataDefinitionParseError.UnrecognizedField({ table: tableName, field: fieldName, reason: 'a field descriptor must be a JSON object' });
+			return DataDefinitionParseError.UnrecognizedField({
+				table: tableName,
+				field: fieldName,
+				reason: 'a field descriptor must be a JSON object',
+			});
 		}
 		if (containsDefault(descriptor)) {
-			return DataDefinitionParseError.DeclarationDefault({ table: tableName, field: fieldName });
+			return DataDefinitionParseError.DeclarationDefault({
+				table: tableName,
+				field: fieldName,
+			});
 		}
-		const wire = JSON.parse(JSON.stringify(descriptor)) as Record<string, unknown>;
+		const wire = JSON.parse(JSON.stringify(descriptor)) as Record<
+			string,
+			unknown
+		>;
 		const nullableDescriptor = nullableParts(wire);
 		const base = recognize(nullableDescriptor?.inner ?? wire);
 		if (base === null) {
-			return DataDefinitionParseError.UnrecognizedField({ table: tableName, field: fieldName, reason: 'expected a closed @epicenter/field descriptor' });
+			return DataDefinitionParseError.UnrecognizedField({
+				table: tableName,
+				field: fieldName,
+				reason: 'expected a closed @epicenter/field descriptor',
+			});
 		}
 		const check = compileField(base.schema);
 		compiled.set(fieldName, {
 			name: fieldName,
 			kind: base.kind,
 			schema: wire,
-			check: nullableDescriptor === null ? check : (value) => value === null || check(value),
+			check:
+				nullableDescriptor === null
+					? check
+					: (value) => value === null || check(value),
 			nullable: nullableDescriptor !== null,
 			storage: storageOf(base.kind),
-			reference: referenceTargetOf({ ...base, name: fieldName, check } as Field),
+			reference: referenceTargetOf({
+				...base,
+				name: fieldName,
+				check,
+			} as Field),
 		});
 	}
-	return Ok(Object.freeze({
-		name: tableName,
-		fields: compiled,
-		manages: {
-			createdAt: compiled.get('createdAt')?.kind === 'instant',
-			updatedAt: compiled.get('updatedAt')?.kind === 'instant',
-		},
-		conformance(payload) {
-			const conforming: JsonObject = {};
-			const issues: ConformanceIssue[] = [];
-			for (const [fieldName, field] of compiled) {
-				if (!Object.hasOwn(payload, fieldName)) {
-					issues.push({ field: fieldName, message: `${fieldName} is missing` });
-				} else if (!field.check(payload[fieldName])) {
-					issues.push({ field: fieldName, message: `${fieldName} is not a conforming ${field.kind} value` });
-				} else {
-					conforming[fieldName] = payload[fieldName] as JsonValue;
+	return Ok(
+		Object.freeze({
+			name: tableName,
+			fields: compiled,
+			manages: {
+				createdAt: compiled.get('createdAt')?.kind === 'instant',
+				updatedAt: compiled.get('updatedAt')?.kind === 'instant',
+			},
+			conformance(payload) {
+				const conforming: JsonObject = {};
+				const issues: ConformanceIssue[] = [];
+				for (const [fieldName, field] of compiled) {
+					if (!Object.hasOwn(payload, fieldName)) {
+						issues.push({
+							field: fieldName,
+							message: `${fieldName} is missing`,
+						});
+					} else if (!field.check(payload[fieldName])) {
+						issues.push({
+							field: fieldName,
+							message: `${fieldName} is not a conforming ${field.kind} value`,
+						});
+					} else {
+						conforming[fieldName] = payload[fieldName] as JsonValue;
+					}
 				}
-			}
-			return { conforming, issues };
-		},
-	}));
+				return { conforming, issues };
+			},
+		}),
+	);
 }
 
-function nullableParts(value: Record<string, unknown>): { inner: TSchema } | null {
+function nullableParts(
+	value: Record<string, unknown>,
+): { inner: TSchema } | null {
 	if (!Array.isArray(value.anyOf) || value.anyOf.length !== 2) return null;
 	const nonNull = value.anyOf.filter((part) => !isNullSchema(part));
-	return nonNull.length === 1 && isPlainObject(nonNull[0]) ? { inner: nonNull[0] } : null;
+	return nonNull.length === 1 && isPlainObject(nonNull[0])
+		? { inner: nonNull[0] }
+		: null;
 }
 
 function isNullSchema(value: unknown): boolean {
-	return isPlainObject(value) && value.type === 'null' && Object.keys(value).every((key) => key === 'type');
+	return (
+		isPlainObject(value) &&
+		value.type === 'null' &&
+		Object.keys(value).every((key) => key === 'type')
+	);
 }
 
 function containsDefault(value: unknown, seen = new Set<object>()): boolean {
@@ -399,9 +497,18 @@ function containsDefault(value: unknown, seen = new Set<object>()): boolean {
 	return Object.values(value).some((child) => containsDefault(child, seen));
 }
 
-function fieldNameProblem(tableName: string, fieldName: string): Result<never, DataDefinitionParseError> | undefined {
-	if (fieldName.startsWith(RESERVED_ATTRIBUTE_PREFIX) || fieldName.toLowerCase() === 'id' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName)) {
-		return DataDefinitionParseError.Malformed({ reason: `field name '${tableName}.${fieldName}' is not usable` });
+function fieldNameProblem(
+	tableName: string,
+	fieldName: string,
+): Result<never, DataDefinitionParseError> | undefined {
+	if (
+		fieldName.startsWith(RESERVED_ATTRIBUTE_PREFIX) ||
+		fieldName.toLowerCase() === 'id' ||
+		!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName)
+	) {
+		return DataDefinitionParseError.Malformed({
+			reason: `field name '${tableName}.${fieldName}' is not usable`,
+		});
 	}
 	return undefined;
 }
@@ -425,7 +532,8 @@ function declaresDocumentBehavior(document: DocumentDeclaration): boolean {
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+	if (typeof value !== 'object' || value === null || Array.isArray(value))
+		return false;
 	const prototype = Object.getPrototypeOf(value);
 	return prototype === Object.prototype || prototype === null;
 }

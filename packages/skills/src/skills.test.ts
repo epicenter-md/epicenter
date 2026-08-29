@@ -73,7 +73,7 @@ test('a stricter Skills workspace exposes nonconformance until an update repairs
 		// One durable record, two interpretations of it: the historical workspace
 		// writes a row this release cannot read, and the current one has to say so
 		// rather than hide it (ADR-0125).
-		const historical = openMemory(historicalSkillsWorkspace, record);
+		const historical = await openMemory(historicalSkillsWorkspace, record);
 		const oldSkill = historical.tables.skills.create({
 			name: 'writing-voice',
 			description: 'Write directly',
@@ -85,7 +85,7 @@ test('a stricter Skills workspace exposes nonconformance until an update repairs
 		});
 		await historical[Symbol.asyncDispose]();
 
-		const data = openSkills(record);
+		const data = await openSkills(record);
 		await using _data = data;
 		expect(expectOk(data.tables.skills.get('aaaaaaaaaaaaaaaaaaaaaaaa'))).toBe(
 			undefined,
@@ -123,7 +123,7 @@ test("a skill's instructions live under its own row id", async () => {
 	try {
 		let writtenTo: string;
 		{
-			const data = openSkills(record);
+			const data = await openSkills(record);
 			await using _data = data;
 			const written = data.tables.skills.create({
 				sourceId: 'agentskills-writing-voice',
@@ -156,7 +156,7 @@ test("a skill's instructions live under its own row id", async () => {
 			expect(await readInstructions(data, other.id)).toBe('');
 		}
 
-		const reopened = openSkills(record);
+		const reopened = await openSkills(record);
 		await using _reopened = reopened;
 		expect(await readInstructions(reopened, writtenTo)).toBe(
 			'Keep it concise.',
@@ -180,7 +180,7 @@ test('filesystem import stores the metadata id as sourceId, not as the row id', 
 		);
 		writeFileSync(join(skillRoot, 'references', 'examples.md'), '# Examples\n');
 
-		const data = openSkills(record);
+		const data = await openSkills(record);
 		await using _data = data;
 		const imported = await importSkillsFromDisk({ data, dir: inputRoot });
 		expect(imported.created).toBe(1);

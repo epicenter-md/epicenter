@@ -200,9 +200,7 @@ export function isDatabaseId(
 	ceilings: AddressByteCeilings,
 ): boolean {
 	const bytes = utf8ByteLength(value);
-	return (
-		bytes >= 3 && bytes <= ceilings.dataIdBytes && DATA_ID.test(value)
-	);
+	return bytes >= 3 && bytes <= ceilings.dataIdBytes && DATA_ID.test(value);
 }
 
 /**

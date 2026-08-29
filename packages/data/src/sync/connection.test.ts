@@ -304,9 +304,7 @@ describe('a write syncs without anyone remembering to say so', () => {
 		laptop.connection.start();
 		run(wire, clock, 0);
 
-		const note = expectOk(
-			phone.db.tables.notes.create({ title: 'Groceries' }),
-		);
+		const note = expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
 		const opened = expectOk(await phone.db.tables.notes.openDocument(note.id));
 		const body = opened?.get('body', 'text');
 		if (body === undefined) throw new Error('the row has no document');

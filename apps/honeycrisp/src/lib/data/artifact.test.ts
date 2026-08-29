@@ -60,8 +60,8 @@ const MARKDOWN = [
 	'Some **bold** and *italic* prose.',
 ].join('\n');
 
-function seed() {
-	const data = openMemory(honeycrispDefinition);
+async function seed() {
+	const data = await openMemory(honeycrispDefinition);
 	const folder = data.tables.folders.create({ name: 'Inbox', icon: null });
 	const note = data.tables.notes.create({
 		folderId: folder.id,
@@ -76,7 +76,7 @@ function seed() {
 }
 
 test('a store exports to Markdown files and imports back whole', async () => {
-	const { data, note } = seed();
+	const { data, note } = await seed();
 	{
 		const opened = await data.tables.notes.openDocument(note.id);
 		using handle = expectOk(opened);
@@ -103,7 +103,7 @@ test('a store exports to Markdown files and imports back whole', async () => {
 	const envelope = asEnvelope(
 		expectOk(readArtifact(files, honeycrispDefinition)),
 	);
-	await using restored = openMemory(honeycrispDefinition);
+	await using restored = await openMemory(honeycrispDefinition);
 	expect(syncEngineOf(restored.store).applyRemote(envelope).error).toBeNull();
 
 	expect(restored.tables.notes.list()).toEqual(data.tables.notes.list());
@@ -120,14 +120,14 @@ test('a store exports to Markdown files and imports back whole', async () => {
 });
 
 test('a note with no prose exports as frontmatter alone and still imports', async () => {
-	const { data, note } = seed();
+	const { data, note } = await seed();
 	const files = await collect(renderArtifact(data, honeycrispDefinition));
 	expect(files.get(`notes/${note.id}.md`)).not.toContain('\n\n');
 
 	const envelope = asEnvelope(
 		expectOk(readArtifact(files, honeycrispDefinition)),
 	);
-	await using restored = openMemory(honeycrispDefinition);
+	await using restored = await openMemory(honeycrispDefinition);
 	syncEngineOf(restored.store).applyRemote(envelope);
 	expect(expectOk(restored.tables.notes.get(note.id))?.title).toBe('Groceries');
 	const reopened = await restored.tables.notes.openDocument(note.id);

@@ -49,9 +49,9 @@ import { claimDocument, releaseDocument } from './claims.js';
 import {
 	APP_DOCUMENT,
 	copyBytes,
+	NO_AUTHORITY,
 	replay,
 	SNAPSHOT_FOLD_THRESHOLD,
-	NO_AUTHORITY,
 } from './log.js';
 import type {
 	DurableOp,
@@ -243,7 +243,8 @@ export async function openIdbBacking(
 				const id = ids[index] as number;
 				if (id > lastId) lastId = id;
 				counts.set(row.document, (counts.get(row.document) ?? 0) + 1);
-				if (row.document === APP_DOCUMENT) appUpdates.push(copyBytes(row.bytes));
+				if (row.document === APP_DOCUMENT)
+					appUpdates.push(copyBytes(row.bytes));
 				if (row.authoritySeq === null) {
 					// A store with no authority owes nobody, and nothing would read
 					// the result: there is no sender.
@@ -353,7 +354,10 @@ export async function openIdbBacking(
 								(!syncs || row.authoritySeq !== null)
 							) {
 								foldable.push({ id: at.key as number, bytes: row.bytes });
-								if (row.authoritySeq !== null && row.authoritySeq > (position ?? -1)) {
+								if (
+									row.authoritySeq !== null &&
+									row.authoritySeq > (position ?? -1)
+								) {
 									position = row.authoritySeq;
 								}
 							}

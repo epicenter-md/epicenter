@@ -47,10 +47,25 @@ export function createMemoryRecord(): MemoryRecord {
  * record the caller passed in is the caller's to close, which is what makes
  * reopening it meaningful.
  */
-export function openMemory<const TDatabase extends DataDefinition>(
+/**
+ * Asynchronous before it needs to be, on purpose.
+ *
+ * Nothing in this body awaits anything yet. It is async because the store is
+ * about to open its application document through a handle, and opening a
+ * handle is a hydration: `store.ts` already refuses a synchronous surface in
+ * front of one for row documents, because it "either forces eager loading or
+ * hands out a half-hydrated handle an editor merges keystrokes into at the
+ * wrong position", and the same sentence is about to be true of the
+ * application document.
+ *
+ * Moving the eighty-five call sites in a commit that changes no behaviour is
+ * worth a lie that is about to become true: when the rewire goes red, the red
+ * should be about the store.
+ */
+export async function openMemory<const TDatabase extends DataDefinition>(
 	definition: TDatabase,
 	record?: MemoryRecord,
-): DataOf<TDatabase, AccountStore> {
+): Promise<DataOf<TDatabase, AccountStore>> {
 	const durable = record ?? createMemoryRecord();
 	return createAccountStore({
 		definition,

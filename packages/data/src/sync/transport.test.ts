@@ -1325,7 +1325,10 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 
 		// The tail is gone, so this replica can only be served by the snapshot.
 		expectOk(
-			authority.replaceSnapshot(expectOk(authority.head()), await snapshotOf(phone)),
+			authority.replaceSnapshot(
+				expectOk(authority.head()),
+				await snapshotOf(phone),
+			),
 		);
 
 		// This work is offline but not unlabelled: the replica already adopted
@@ -1363,7 +1366,10 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 			wire.settle();
 		}
 		expectOk(
-			authority.replaceSnapshot(expectOk(authority.head()), await snapshotOf(phone)),
+			authority.replaceSnapshot(
+				expectOk(authority.head()),
+				await snapshotOf(phone),
+			),
 		);
 
 		const stored = [
@@ -1499,14 +1505,19 @@ describe('the snapshot path under sustained traffic', () => {
 const newerDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: { fields: { title: field.string(), pinned: field.boolean() } } },
+	tables: {
+		notes: { fields: { title: field.string(), pinned: field.boolean() } },
+	},
 });
 
 /** The same application again, one release later still: a whole new table. */
 const twoTableDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: { fields: { title: field.string() } }, tasks: { fields: { label: field.string() } } },
+	tables: {
+		notes: { fields: { title: field.string() } },
+		tasks: { fields: { label: field.string() } },
+	},
 });
 
 describe('two devices whose databases disagree', () => {
@@ -1924,10 +1935,9 @@ describe('admission is one equality: a stale replica gets the announcement and n
 			wire.settle();
 		}
 		const retired = expectOk(authority.document());
-		sqlite.run(
-			"UPDATE _meta SET value = ? WHERE key = 'document'",
-			[crypto.randomUUID()],
-		);
+		sqlite.run("UPDATE _meta SET value = ? WHERE key = 'document'", [
+			crypto.randomUUID(),
+		]);
 		const membersBefore = hub.attached();
 		const sent: Uint8Array[] = [];
 		const stale: HubConnection = {
@@ -1987,10 +1997,9 @@ describe('admission is one equality: a stale replica gets the announcement and n
 		phone.disconnect();
 		laptop.disconnect();
 
-		sqlite.run(
-			"UPDATE _meta SET value = ? WHERE key = 'document'",
-			[crypto.randomUUID()],
-		);
+		sqlite.run("UPDATE _meta SET value = ? WHERE key = 'document'", [
+			crypto.randomUUID(),
+		]);
 
 		laptop.connect();
 		wire.settle();

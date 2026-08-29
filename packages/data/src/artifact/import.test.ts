@@ -64,7 +64,7 @@ const store = defineData({
 
 /** A store with one of everything the artifact has to carry. */
 async function seeded() {
-	const data = openMemory(store);
+	const data = await openMemory(store);
 	data.kv.update({ theme: 'dark' });
 	const folder = data.tables.folders.create({ name: 'Inbox' });
 	const note = data.tables.notes.create({
@@ -107,7 +107,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		const exported = await collect(renderArtifact(data, store));
 
 		const envelope = asEnvelope(expectOk(readArtifact(exported, store)));
-		await using restored = openMemory(store);
+		await using restored = await openMemory(store);
 		expect(syncEngineOf(restored.store).applyRemote(envelope).error).toBeNull();
 
 		// Every scalar, at the same id, read through the same lens.
@@ -131,7 +131,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		const { data, note } = await seeded();
 		const exported = await collect(renderArtifact(data, store));
 		const envelope = asEnvelope(expectOk(readArtifact(exported, store)));
-		await using restored = openMemory(store);
+		await using restored = await openMemory(store);
 		syncEngineOf(restored.store).applyRemote(envelope);
 
 		const row = expectOk(restored.tables.notes.get(note.id));
@@ -149,7 +149,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		// the import has to put it back, or a release upgrade plus an export and
 		// an import would quietly delete it.
 		const record = createMemoryRecord();
-		const withLegacy = openMemory(store, record);
+		const withLegacy = await openMemory(store, record);
 		const made = withLegacy.tables.notes.create({
 			title: 'Groceries',
 			code: '1',
@@ -164,7 +164,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		await withLegacy.store[Symbol.asyncDispose]();
 
 		const envelope = asEnvelope(expectOk(readArtifact(exported, store)));
-		await using restored = openMemory(store);
+		await using restored = await openMemory(store);
 		syncEngineOf(restored.store).applyRemote(envelope);
 		expect(restored.stored().tables.get('notes')?.get(made.id)).toEqual({
 			title: 'Groceries',
@@ -179,12 +179,12 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		record.close();
 	});
 
-	test('a hand-typed value that was never quoted reads as the string it looks like', () => {
+	test('a hand-typed value that was never quoted reads as the string it looks like', async () => {
 		const files = new Map([
 			['notes/aaaaaaaaaaaaaaaaaaaaaaaa.md', '---\ntitle: Groceries\n---\n'],
 		]);
 		const envelope = asEnvelope(expectOk(readArtifact(files, store)));
-		const restored = openMemory(store);
+		const restored = await openMemory(store);
 		syncEngineOf(restored.store).applyRemote(envelope);
 		expect(
 			restored.stored().tables.get('notes')?.get('aaaaaaaaaaaaaaaaaaaaaaaa'),
@@ -192,13 +192,13 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		void restored.store[Symbol.asyncDispose]();
 	});
 
-	test('a file that is not a row file refuses the whole import', () => {
+	test('a file that is not a row file refuses the whole import', async () => {
 		const files = new Map([['notes/aaaa.md', 'no frontmatter here']]);
 		const refused = expectErr(readArtifact(files, store));
 		expect(refused.name).toBe('MalformedFile');
 	});
 
-	test('a body under a table with no codec refuses, rather than dropping the prose', () => {
+	test('a body under a table with no codec refuses, rather than dropping the prose', async () => {
 		const files = new Map([
 			['folders/aaaa.md', '---\nname: "Inbox"\n---\n\nprose\n'],
 		]);
@@ -206,7 +206,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(refused.name).toBe('UncodedBody');
 	});
 
-	test('a codec that throws on a body refuses the whole import', () => {
+	test('a codec that throws on a body refuses the whole import', async () => {
 		const breaking = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
@@ -231,14 +231,14 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(refused.name).toBe('BodyUnreadable');
 	});
 
-	test('a file that is not part of the artifact is left alone', () => {
+	test('a file that is not part of the artifact is left alone', async () => {
 		const files = new Map([
 			['.DS_Store', 'binary junk'],
 			['README.md', '# not a row'],
 			['notes/aaaaaaaaaaaaaaaaaaaaaaaa.md', '---\ntitle: "kept"\n---\n'],
 		]);
 		const envelope = asEnvelope(expectOk(readArtifact(files, store)));
-		const restored = openMemory(store);
+		const restored = await openMemory(store);
 		syncEngineOf(restored.store).applyRemote(envelope);
 		expect([...(restored.stored().tables.get('notes')?.keys() ?? [])]).toEqual([
 			'aaaaaaaaaaaaaaaaaaaaaaaa',

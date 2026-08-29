@@ -67,5 +67,4 @@ describe('an authority needs no definition: every verb moves unread bytes', () =
 		expect(held.data?.position).toBe(2);
 		expect(held.data?.bytes).toEqual(opaque(9, 128));
 	});
-
 });

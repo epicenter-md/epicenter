@@ -34,7 +34,7 @@ test('the agent store observes writes and survives a restart', async () => {
 	let rowId: string;
 	try {
 		{
-			const db = openMemory(testDefinition, record);
+			const db = await openMemory(testDefinition, record);
 			await using _db = db;
 			const now = InstantString.fromDate(new Date('2026-07-19T00:00:00.000Z'));
 			const created = db.tables.conversations.create({
@@ -57,7 +57,7 @@ test('the agent store observes writes and survives a restart', async () => {
 			expect(observations).toBe(1);
 		}
 
-		const db = openMemory(testDefinition, record);
+		const db = await openMemory(testDefinition, record);
 		await using _db = db;
 		const opened = await db.tables.conversations.openDocument(rowId);
 		if (opened.error !== null) throw opened.error;

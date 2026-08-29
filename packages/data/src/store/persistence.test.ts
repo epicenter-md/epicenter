@@ -105,7 +105,9 @@ function openFailable() {
 				?.count ?? 0,
 		durableOutboxIds: () =>
 			sqlite
-				.all<{ id: number }>('SELECT id FROM _updates WHERE authoritySeq IS NULL ORDER BY id')
+				.all<{ id: number }>(
+					'SELECT id FROM _updates WHERE authoritySeq IS NULL ORDER BY id',
+				)
 				.map((row) => row.id),
 		durableCursor: () =>
 			sqlite.all<{ seq: number | null }>(
@@ -300,7 +302,9 @@ describe('acceptance is live, durability is a visible debt', () => {
 		// nothing dropped, nothing reordered, nothing duplicated.
 		expect(
 			sqlite
-				.all<{ id: number }>('SELECT id FROM _updates WHERE authoritySeq IS NULL ORDER BY id')
+				.all<{ id: number }>(
+					'SELECT id FROM _updates WHERE authoritySeq IS NULL ORDER BY id',
+				)
 				.map((row) => row.id),
 		).toEqual([1, 2, 3]);
 		const restarted = reopen(sqlite);

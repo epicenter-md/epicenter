@@ -34,8 +34,8 @@ const database = defineData({
 
 let db: DataOf<typeof database>;
 
-beforeEach(() => {
-	db = openMemory(database);
+beforeEach(async () => {
+	db = await openMemory(database);
 });
 
 /** A note, and its minted id, for tests that need one to exist. */
@@ -67,7 +67,7 @@ describe('a read is a property access on a plain object', () => {
 		// This asserted `data.store !== data`, which nearly any implementation
 		// satisfies including a broken one. What the sentence actually claims is
 		// ownership, and ownership is only observable at disposal.
-		const opened = openMemory(database);
+		const opened = await openMemory(database);
 		{
 			await using data = opened;
 			expect(data.tables.notes.list().rows).toEqual([]);
@@ -75,7 +75,7 @@ describe('a read is a property access on a plain object', () => {
 		expect(() => opened.tables.notes.list()).toThrow();
 	});
 
-	test('create returns the row it made, at a minted id', () => {
+	test('create returns the row it made, at a minted id', async () => {
 		const made = note();
 		expect(made.id).toBeString();
 		expect(made.id).toHaveLength(24);
@@ -83,13 +83,13 @@ describe('a read is a property access on a plain object', () => {
 		expect(made.tags).toEqual(['food']);
 	});
 
-	test('an absent row reads as Ok(undefined), which is a fact not a failure', () => {
+	test('an absent row reads as Ok(undefined), which is a fact not a failure', async () => {
 		const { data, error } = db.tables.notes.get('nope');
 		expect(error).toBeNull();
 		expect(data).toBeUndefined();
 	});
 
-	test('every scalar verb is synchronous; only a document open is a load', () => {
+	test('every scalar verb is synchronous; only a document open is a load', async () => {
 		// One in-memory application document over a synchronous SQLite boundary,
 		// so no scalar read or write has I/O to await. The one asynchronous verb
 		// is `openDocument`, which is a load by decision (ADR-0248).
@@ -107,7 +107,7 @@ describe('a read is a property access on a plain object', () => {
 		}
 	});
 
-	test('data groups direct operations with transact', () => {
+	test('data groups direct operations with transact', async () => {
 		let notifications = 0;
 		db.tables.notes.subscribe(() => {
 			notifications += 1;
@@ -126,14 +126,14 @@ describe('a read is a property access on a plain object', () => {
 });
 
 describe('a write that reaches nothing is a failure', () => {
-	test('update on an absent row refuses instead of swallowing it', () => {
+	test('update on an absent row refuses instead of swallowing it', async () => {
 		const { data, error } = db.tables.notes.update('nope', { title: 'x' });
 		expect(data).toBeNull();
 		// The verb this replaces returned Ok(undefined) and dropped the write.
 		expect(error?.name).toBe('RowAbsent');
 	});
 
-	test('create admits a payload and get reports its conformance', () => {
+	test('create admits a payload and get reports its conformance', async () => {
 		const made = db.tables.notes.create({} as never);
 		expect(made.id).toHaveLength(24);
 		const read = db.tables.notes.get(made.id);
@@ -145,7 +145,7 @@ describe('a write that reaches nothing is a failure', () => {
 		]);
 	});
 
-	test('an invalid supplied value is written and reported on read', () => {
+	test('an invalid supplied value is written and reported on read', async () => {
 		const made = note();
 		const result = db.tables.notes.update(made.id, {
 			tags: 'food' as never,
@@ -157,7 +157,7 @@ describe('a write that reaches nothing is a failure', () => {
 		expect(after.error?.issues.map((issue) => issue.field)).toEqual(['tags']);
 	});
 
-	test('reserved row attributes remain a structural boundary', () => {
+	test('reserved row attributes remain a structural boundary', async () => {
 		const made = note();
 		expect(() =>
 			db.tables.notes.update(made.id, { '!presence': 'absent' } as never),
@@ -167,14 +167,14 @@ describe('a write that reaches nothing is a failure', () => {
 });
 
 describe('deletion', () => {
-	test('a deleted row reads as absent', () => {
+	test('a deleted row reads as absent', async () => {
 		const made = note();
 		db.tables.notes.delete(made.id);
 		expect(db.tables.notes.get(made.id).data).toBeUndefined();
 		expect(db.tables.notes.ids()).toEqual([]);
 	});
 
-	test('deleting twice leaves the table exactly as the first delete did', () => {
+	test('deleting twice leaves the table exactly as the first delete did', async () => {
 		const made = note();
 		db.tables.notes.delete(made.id);
 		// Deleting an absent address reports nothing and changes nothing: the
@@ -185,7 +185,7 @@ describe('deletion', () => {
 		expect(db.tables.notes.ids()).toEqual([]);
 	});
 
-	test('CHURN DOES NOT ACCUMULATE A CORPSE PER DELETED ROW', () => {
+	test('CHURN DOES NOT ACCUMULATE A CORPSE PER DELETED ROW', async () => {
 		// The reason deletion removes the row's attribute instead of clearing it
 		// and flagging it absent, which is what ADR-0212 chose. A tombstone is
 		// paid by every device, in memory, on every load, forever, and a phone
@@ -201,7 +201,7 @@ describe('deletion', () => {
 		expect(perDeadRow).toBeLessThan(60);
 	});
 
-	test('a deleted address cannot be revived, only refused', () => {
+	test('a deleted address cannot be revived, only refused', async () => {
 		// Deletion takes the row's attribute off the table root, so a deleted id
 		// is indistinguishable from one nothing ever held. There is no reuse path
 		// to get wrong: `update` refuses, and `create` mints an id of its own.
@@ -235,17 +235,17 @@ describe('a nonconforming row is reported, never repaired', () => {
 	 * own declaration accepts, and syncs it back (ADR-0240: two definitions
 	 * are never live in one runtime, but two devices may run two releases).
 	 */
-	function corruptTags(rowId: string): void {
-		const peer = openMemory(wrongDatabase);
+	async function corruptTags(rowId: string): Promise<void> {
+		const peer = await openMemory(wrongDatabase);
 		exchange(db.store, peer.store);
 		const written = peer.tables.notes.update(rowId, { tags: 'food' });
 		if (written.error !== null) throw written.error;
 		exchange(db.store, peer.store);
 	}
 
-	test('the call site composes application recovery and what survived', () => {
+	test('the call site composes application recovery and what survived', async () => {
 		const made = note();
-		corruptTags(made.id);
+		await corruptTags(made.id);
 
 		const { data, error } = db.tables.notes.get(made.id);
 		expect(data).toBeNull();
@@ -267,10 +267,10 @@ describe('a nonconforming row is reported, never repaired', () => {
 		expect(recovered).toEqual({ id: made.id, title: 'Groceries', date: null });
 	});
 
-	test('list separates what it can read from what it cannot', () => {
+	test('list separates what it can read from what it cannot', async () => {
 		const broken = note({ title: 'broken' });
 		const fine = note({ title: 'fine' });
-		corruptTags(broken.id);
+		await corruptTags(broken.id);
 		const listed = db.tables.notes.list();
 		expect(listed.rows.map((row) => row.id)).toEqual([fine.id]);
 		expect(listed.nonconforming.map((issue) => issue.id)).toEqual([broken.id]);
@@ -278,12 +278,12 @@ describe('a nonconforming row is reported, never repaired', () => {
 });
 
 describe('two replicas converge', () => {
-	function pair() {
-		return { laptop: openMemory(database) };
+	async function pair() {
+		return { laptop: await openMemory(database) };
 	}
 
-	test('a row made on one device appears on the other', () => {
-		const { laptop } = pair();
+	test('a row made on one device appears on the other', async () => {
+		const { laptop } = await pair();
 		const made = note({ title: 'Recorded on the phone', tags: ['voice'] });
 		exchange(db.store, laptop.store);
 
@@ -292,8 +292,8 @@ describe('two replicas converge', () => {
 		);
 	});
 
-	test('offline edits to different fields of one row both survive', () => {
-		const { laptop } = pair();
+	test('offline edits to different fields of one row both survive', async () => {
+		const { laptop } = await pair();
 		const made = note({ title: 'first' });
 		exchange(db.store, laptop.store);
 
@@ -311,13 +311,13 @@ describe('two replicas converge', () => {
 		}
 	});
 
-	test('a delete on one device beats an edit on the other', () => {
+	test('a delete on one device beats an edit on the other', async () => {
 		// The case ADR-0212 kept a corpse per deleted row to serve. It converges
 		// without one, and to the same answer: the row is gone on both devices,
 		// and the offline edit is gone with it rather than lingering as a field on
 		// a tombstone that a revived address would hand back
 		// (`evidence/deletion-model.test.ts`).
-		const { laptop } = pair();
+		const { laptop } = await pair();
 		const made = note({ title: 'first' });
 		exchange(db.store, laptop.store);
 
@@ -330,10 +330,10 @@ describe('two replicas converge', () => {
 		expect(laptop.tables.notes.ids()).toEqual([]);
 	});
 
-	test('two devices creating rows concurrently keep both', () => {
+	test('two devices creating rows concurrently keep both', async () => {
 		// Safe by construction rather than by care: a minted 24-character id
 		// cannot collide, so two devices never mint a container at one address.
-		const { laptop } = pair();
+		const { laptop } = await pair();
 		note({ title: 'from the phone' });
 		laptop.tables.notes.create({
 			title: 'from the laptop',
@@ -383,7 +383,7 @@ describe('the document a row inherently owns (ADR-0248)', () => {
 });
 
 describe('kv is where anything two devices both write belongs', () => {
-	test('an unwritten key is nonconforming rather than defaulted', () => {
+	test('an unwritten key is nonconforming rather than defaulted', async () => {
 		const { data, error } = db.kv.get();
 		expect(data).toBeNull();
 		expect(error?.conforming).toEqual({});
@@ -393,14 +393,14 @@ describe('kv is where anything two devices both write belongs', () => {
 		]);
 	});
 
-	test('a write touches only the keys it names', () => {
+	test('a write touches only the keys it names', async () => {
 		db.kv.update({ theme: 'dark' });
 		const read = db.kv.get();
 		expect(read.data).toBeNull();
 		expect(read.error?.conforming).toEqual({ theme: 'dark' });
 	});
 
-	test('an undeclared key is preserved for a future declaration', () => {
+	test('an undeclared key is preserved for a future declaration', async () => {
 		db.kv.update({ nope: 1 } as never);
 		const read = db.kv.get();
 		expect(read.data).toBeNull();
@@ -408,7 +408,7 @@ describe('kv is where anything two devices both write belongs', () => {
 		expect(read.error?.conforming).toEqual({});
 	});
 
-	test('an invalid value is written and reported on read', () => {
+	test('an invalid value is written and reported on read', async () => {
 		db.kv.update({ fontSize: 20 });
 		db.kv.update({ theme: 'purple' as never });
 		const read = db.kv.get();
@@ -417,14 +417,14 @@ describe('kv is where anything two devices both write belongs', () => {
 		expect(read.error?.raw).toEqual({ theme: 'purple', fontSize: 20 });
 	});
 
-	test('TWO DEVICES BOOTING OFFLINE BOTH KEEP THEIR SETTINGS', () => {
+	test('TWO DEVICES BOOTING OFFLINE BOTH KEEP THEIR SETTINGS', async () => {
 		// The case that motivated moving KV to a reserved root. Through a chosen
 		// row id this loses one device's write entirely, because each mints its
 		// own nested container and map LWW keeps one. A root is addressed by its
 		// name, so both survive. `evidence/bench/row-model.ts` keeps the losing
 		// contrast, now that the chosen-id door is gone from the API.
-		const phone = openMemory(database);
-		const laptop = openMemory(database);
+		const phone = await openMemory(database);
+		const laptop = await openMemory(database);
 
 		phone.kv.update({ theme: 'dark' });
 		laptop.kv.update({ fontSize: 22 });
@@ -443,7 +443,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		// bytes writes nothing, so the bytes are lost at restart while every
 		// layer reported success. The restart is the whole test: an in-memory
 		// store keeps the buffered update either way.
-		const origin = openMemory(database);
+		const origin = await openMemory(database);
 		const made = origin.tables.notes.create({
 			title: 'first',
 			tags: [],
@@ -457,14 +457,14 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		// A close and a reopen over one durable record: the pending bytes were
 		// stored as they arrived, so the gap is still a gap on the way back up.
 		const record = createMemoryRecord();
-		const laptop = openMemory(database, record);
+		const laptop = await openMemory(database, record);
 		expect(
 			syncEngineOf(laptop.store).applyRemote(asEnvelope(second)).error,
 		).toBeNull();
 		expect(syncEngineOf(laptop.store).hasUnresolvedDependencies()).toBe(true);
 		await laptop.store[Symbol.asyncDispose]();
 
-		const db2 = openMemory(database, record);
+		const db2 = await openMemory(database, record);
 		const reopened = syncEngineOf(db2.store);
 		expect(reopened.hasUnresolvedDependencies()).toBe(true);
 
@@ -474,9 +474,9 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		await db2.store[Symbol.asyncDispose]();
 	});
 
-	test('a fully applied replica reports no unresolved dependencies', () => {
+	test('a fully applied replica reports no unresolved dependencies', async () => {
 		note();
-		const laptop = openMemory(database);
+		const laptop = await openMemory(database);
 		syncEngineOf(laptop.store).applyRemote(
 			asEnvelope(db.store.encodeStateSince(laptop.store.stateVector())),
 		);
@@ -485,7 +485,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 });
 
 describe('pressure is the number that decides whether any of this matters', () => {
-	test('a healthy document sits near the item cost of one row', () => {
+	test('a healthy document sits near the item cost of one row', async () => {
 		for (let index = 0; index < 20; index += 1)
 			note({ title: `note ${index}` });
 		const pressure = db.store.pressure();
@@ -496,7 +496,7 @@ describe('pressure is the number that decides whether any of this matters', () =
 		expect(pressure.itemsPerLiveRow).toBeLessThan(15);
 	});
 
-	test('churn drives it up, which is the whole signal', () => {
+	test('churn drives it up, which is the whole signal', async () => {
 		// Twenty live rows either way. The only difference is how many died to get
 		// there, and that is exactly what the ratio has to expose, because the two
 		// documents are indistinguishable from every other verb.
@@ -514,7 +514,7 @@ describe('pressure is the number that decides whether any of this matters', () =
 		expect(churned.itemsPerLiveRow).toBeGreaterThan(healthy * 3);
 	});
 
-	test('an empty document reports its items rather than dividing by zero', () => {
+	test('an empty document reports its items rather than dividing by zero', async () => {
 		const pressure = db.store.pressure();
 
 		expect(pressure.liveRows).toBe(0);
@@ -538,7 +538,7 @@ describe('a subscription says a table changed', () => {
 		return { seen, stop };
 	}
 
-	test('registration is synchronous and never fires initially', () => {
+	test('registration is synchronous and never fires initially', async () => {
 		// ADR-0187's law 2. A caller that subscribes and then reads has already
 		// seen everything, so an initial delivery would only ever be a duplicate
 		// that every consumer has to learn to ignore.
@@ -548,7 +548,7 @@ describe('a subscription says a table changed', () => {
 		expect(seen).toEqual([]);
 	});
 
-	test('a created row, an edited row and a deleted row each name themselves', () => {
+	test('a created row, an edited row and a deleted row each name themselves', async () => {
 		const { seen } = record(db.tables.notes);
 
 		const made = note();
@@ -562,10 +562,10 @@ describe('a subscription says a table changed', () => {
 		expect(seen).toHaveLength(3);
 	});
 
-	test("a write to another table is not this table's business", () => {
+	test("a write to another table is not this table's business", async () => {
 		// The control. Without it every assertion above would still pass on an
 		// implementation that invalidated every subscriber on every commit.
-		const other = openMemory(
+		const other = await openMemory(
 			defineData({
 				id: 'so.epicenter.honeycrisp',
 				kv: {},
@@ -590,10 +590,10 @@ describe('a subscription says a table changed', () => {
 		expect(notes.seen).toEqual([]);
 	});
 
-	test('one commit touching many rows is ONE call carrying every id', () => {
+	test('one commit touching many rows is ONE call carrying every id', async () => {
 		// ADR-0187's law 3. A remote update is the only thing in this surface
 		// that commits more than one row at a time, so it is what proves it.
-		const author = openMemory(database);
+		const author = await openMemory(database);
 		const ids = [0, 1, 2].map((index) => {
 			const made = author.tables.notes.create({
 				title: `note ${index}`,
@@ -640,7 +640,7 @@ describe('a subscription says a table changed', () => {
 		opened.data?.[Symbol.dispose]();
 	});
 
-	test('unsubscribing stops delivery, and doing it twice is harmless', () => {
+	test('unsubscribing stops delivery, and doing it twice is harmless', async () => {
 		const { seen, stop } = record(db.tables.notes);
 		note();
 		expect(seen).toHaveLength(1);
@@ -652,7 +652,7 @@ describe('a subscription says a table changed', () => {
 		expect(seen).toHaveLength(1);
 	});
 
-	test('one subscriber leaving does not silence the others', () => {
+	test('one subscriber leaving does not silence the others', async () => {
 		// The reason the teardown is idempotent and counted. A Svelte effect can
 		// run its own teardown more than once, and a second decrement would
 		// detach the delta listener out from under the subscribers still holding
@@ -668,7 +668,7 @@ describe('a subscription says a table changed', () => {
 		expect(second.seen).toHaveLength(1);
 	});
 
-	test('a subscriber that throws does not cost the next one its invalidation', () => {
+	test('a subscriber that throws does not cost the next one its invalidation', async () => {
 		db.tables.notes.subscribe(() => {
 			throw new Error('this subscriber is broken');
 		});
@@ -679,7 +679,7 @@ describe('a subscription says a table changed', () => {
 		expect(seen).toEqual(['changed']);
 	});
 
-	test('a subscriber may write, and its own write is a separate notification', () => {
+	test('a subscriber may write, and its own write is a separate notification', async () => {
 		const { seen } = record(db.tables.notes);
 		let wrote = false;
 		let written: string | undefined;
@@ -704,7 +704,7 @@ describe('a subscription says a table changed', () => {
 });
 
 describe('kv reports its own changes', () => {
-	test('a local update notifies, and the listener reads the new value', () => {
+	test('a local update notifies, and the listener reads the new value', async () => {
 		const seen: unknown[] = [];
 		db.kv.subscribe(() => seen.push(db.kv.get().error?.conforming.theme));
 
@@ -713,10 +713,10 @@ describe('kv reports its own changes', () => {
 		expect(seen).toEqual(['dark']);
 	});
 
-	test('a change that arrived from a peer notifies too', () => {
+	test('a change that arrived from a peer notifies too', async () => {
 		// The case a settings screen exists for: another device changed a
 		// preference and this one has to stop showing the old value.
-		const author = openMemory(database);
+		const author = await openMemory(database);
 		author.kv.update({ fontSize: 22 });
 		const seen: unknown[] = [];
 		db.kv.subscribe(() => seen.push(db.kv.get().error?.conforming.fontSize));
@@ -728,7 +728,7 @@ describe('kv reports its own changes', () => {
 		expect(seen).toEqual([22]);
 	});
 
-	test('CONTROL: a table write does not notify kv', () => {
+	test('CONTROL: a table write does not notify kv', async () => {
 		// Without this, an implementation that notified every subscriber on
 		// every commit would satisfy both tests above.
 		const seen: unknown[] = [];
@@ -739,7 +739,7 @@ describe('kv reports its own changes', () => {
 		expect(seen).toEqual([]);
 	});
 
-	test('registration never fires initially, and unsubscribing is idempotent', () => {
+	test('registration never fires initially, and unsubscribing is idempotent', async () => {
 		const seen: unknown[] = [];
 		const stop = db.kv.subscribe(() => seen.push('kv'));
 		expect(seen).toEqual([]);
@@ -760,12 +760,12 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 		// The upgrade is a close and a reopen (ADR-0240): the same durable
 		// record, a newer declaration, one runtime at a time.
 		const record = createMemoryRecord();
-		const first = openMemory(database, record);
+		const first = await openMemory(database, record);
 		first.kv.update({ theme: 'dark' });
 		first.kv.update({ future: 'kept' } as never);
 		await first.store[Symbol.asyncDispose]();
 
-		const second = openMemory(
+		const second = await openMemory(
 			defineData({
 				id: 'so.epicenter.honeycrisp',
 				kv: {
@@ -815,20 +815,20 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 
 	test('the next runtime has no handle; one that re-declares it reads every row back', async () => {
 		const record = createMemoryRecord();
-		const first = openMemory(withScratch, record);
+		const first = await openMemory(withScratch, record);
 		const made = first.tables.scratch.create({ body: 'kept in the CRDT' });
 		first.kv.update({ theme: 'dark' });
 		await first.store[Symbol.asyncDispose]();
 
 		// The device updates (ADR-0240): the same durable record, the next
 		// runtime, a declaration that no longer names `scratch` or `kv`.
-		const second = openMemory(withoutScratch, record);
+		const second = await openMemory(withoutScratch, record);
 		expect((second.tables as Record<string, unknown>).scratch).toBeUndefined();
 		await second.store[Symbol.asyncDispose]();
 
 		// A later release declares them again: nothing was lost, because the
 		// CRDT is the truth and never dropped a byte.
-		const third = openMemory(withScratch, record);
+		const third = await openMemory(withScratch, record);
 		expect(third.tables.scratch.list().rows).toEqual([
 			{ id: made.id, body: 'kept in the CRDT' },
 		]);
@@ -838,12 +838,12 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 
 	test('stored() sees the table and the kv key the declaration dropped', async () => {
 		const record = createMemoryRecord();
-		const first = openMemory(withScratch, record);
+		const first = await openMemory(withScratch, record);
 		const made = first.tables.scratch.create({ body: 'kept in the CRDT' });
 		first.kv.update({ theme: 'dark' });
 		await first.store[Symbol.asyncDispose]();
 
-		const second = openMemory(withoutScratch, record);
+		const second = await openMemory(withoutScratch, record);
 		// The lens cannot reach them: there is no handle for `scratch`, and this
 		// declaration names no kv keys at all.
 		expect((second.tables as Record<string, unknown>).scratch).toBeUndefined();
@@ -876,7 +876,7 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 
 	test('a field the declaration dropped survives here and nowhere else', async () => {
 		const record = createMemoryRecord();
-		const before = openMemory(withPreview, record);
+		const before = await openMemory(withPreview, record);
 		const made = before.tables.notes.create({
 			title: 'Groceries',
 			preview: 'milk, eggs',
@@ -887,7 +887,7 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 		// every field this declaration names reads fine, so it is not reported as
 		// nonconforming either. Through the lens the stored value is unreachable
 		// from both arms, which is exactly the data loss an export must not copy.
-		const after = openMemory(withoutPreview, record);
+		const after = await openMemory(withoutPreview, record);
 		const listed = after.tables.notes.list();
 		expect(listed.nonconforming).toEqual([]);
 		expect(listed.rows).toEqual([{ id: made.id, title: 'Groceries' }]);
@@ -899,7 +899,7 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 		await after.store[Symbol.asyncDispose]();
 	});
 
-	test('a deleted row is absent rather than empty', () => {
+	test('a deleted row is absent rather than empty', async () => {
 		const made = note();
 		db.tables.notes.delete(made.id);
 		expect(db.stored().tables.get('notes')?.has(made.id)).toBe(false);
@@ -1007,7 +1007,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 			definition: database,
 			sqlite: createMemoryRecord().sqlite,
 		});
-		const account = openMemory(database);
+		const account = await openMemory(database);
 		try {
 			expect(kindOf(local.store)).toBe('local');
 			expect(kindOf(account.store)).toBe('account');
@@ -1020,14 +1020,14 @@ describe('a document store owes nobody (ADR-0233)', () => {
 
 describe('an unusable store throws, and never dresses up as a read outcome', () => {
 	test('using a disposed store throws StoreUnusableError', async () => {
-		const app = openMemory(database);
+		const app = await openMemory(database);
 		await app.store[Symbol.asyncDispose]();
 		expect(() => app.tables.notes.list()).toThrow(StoreUnusableError);
 		expect(() => app.kv.get()).toThrow(StoreUnusableError);
 		expect(() => app.tables.notes.get('anything')).toThrow(StoreUnusableError);
 	});
 
-	test('a refused durable flush leaves the store live and reports blocked', () => {
+	test('a refused durable flush leaves the store live and reports blocked', async () => {
 		// The withdrawn poison (ADR-0238): storage failing is a visible debt,
 		// never the store's death. The live document is the truth while open.
 		const raw = new Database(':memory:');
@@ -1087,7 +1087,7 @@ describe('a document commit derives its row fields (ADR-0264)', () => {
 	});
 
 	test('a local edit to a row document writes the derived field onto the row', async () => {
-		await using data = openMemory(withDerive);
+		await using data = await openMemory(withDerive);
 		const made = data.tables.notes.create({ preview: '' });
 		const opened = await data.tables.notes.openDocument(made.id);
 		const handle = opened.data;
@@ -1100,7 +1100,7 @@ describe('a document commit derives its row fields (ADR-0264)', () => {
 	});
 
 	test('a later edit re-derives the field', async () => {
-		await using data = openMemory(withDerive);
+		await using data = await openMemory(withDerive);
 		const made = data.tables.notes.create({ preview: '' });
 		const opened = await data.tables.notes.openDocument(made.id);
 		const handle = opened.data;
@@ -1118,7 +1118,7 @@ describe('a document commit derives its row fields (ADR-0264)', () => {
 		// The follow-up lives on the live document's entry, so it dies when the
 		// last handle does. What proves that is not a leak: the next open
 		// registers it again, and an edit derives exactly as the first one did.
-		await using data = openMemory(withDerive);
+		await using data = await openMemory(withDerive);
 		const made = data.tables.notes.create({ preview: '' });
 		{
 			const opened = await data.tables.notes.openDocument(made.id);
@@ -1151,8 +1151,8 @@ describe('the store manages instant createdAt/updatedAt (ADR-0265)', () => {
 		},
 	});
 
-	test('create stamps createdAt and updatedAt over whatever is passed', () => {
-		const data = openMemory(withTimestamps);
+	test('create stamps createdAt and updatedAt over whatever is passed', async () => {
+		const data = await openMemory(withTimestamps);
 		const made = data.tables.notes.create({
 			title: 'Groceries',
 			createdAt: 'not-an-instant' as never,
@@ -1163,8 +1163,8 @@ describe('the store manages instant createdAt/updatedAt (ADR-0265)', () => {
 		expect(InstantString.is(made.updatedAt)).toBe(true);
 	});
 
-	test('update moves updatedAt and leaves createdAt', () => {
-		const data = openMemory(withTimestamps);
+	test('update moves updatedAt and leaves createdAt', async () => {
+		const data = await openMemory(withTimestamps);
 		const made = data.tables.notes.create({
 			title: 'Groceries',
 			createdAt: 'x' as never,
@@ -1185,13 +1185,13 @@ describe('the store manages instant createdAt/updatedAt (ADR-0265)', () => {
 		).toBe(true);
 	});
 
-	test('a table without instant createdAt/updatedAt is left alone', () => {
+	test('a table without instant createdAt/updatedAt is left alone', async () => {
 		const plain = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
 			tables: { notes: { fields: { title: field.string() } } },
 		});
-		const data = openMemory(plain);
+		const data = await openMemory(plain);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		expect(Object.keys(made).sort()).toEqual(['id', 'title']);
 	});

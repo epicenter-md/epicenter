@@ -27,6 +27,7 @@ import 'fake-indexeddb/auto';
 import { installTestLocks } from './test-locks.js';
 
 installTestLocks();
+
 import { describe, expect, test } from 'bun:test';
 import { defineData } from '@epicenter/data/definition';
 import { asPrincipalId } from '@epicenter/identity';
@@ -65,13 +66,8 @@ function expectOk<TValue, TError>(
 	return result as TValue;
 }
 
-const localAddress = (dataId: string) =>
-	`epicenter/v1/${dataId}/local`;
-const accountAddress = (
-	dataId: string,
-	baseURL: string,
-	principalId: string,
-) =>
+const localAddress = (dataId: string) => `epicenter/v1/${dataId}/local`;
+const accountAddress = (dataId: string, baseURL: string, principalId: string) =>
 	`epicenter/v1/${dataId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}`;
 
 const openLocalData = (definition: ReturnType<typeof databaseFor>) =>
@@ -324,7 +320,7 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		// so nothing from it is readable under '3'. The wipe is the cutover,
 		// and a replica refills from its authority.
 		const database = databaseFor('formatbreak');
-		const author = openMemory(database);
+		const author = await openMemory(database);
 		expectOk(author.tables.notes.create({ title: 'pre-break note' }));
 		const bytes = author.store.encodeStateSince();
 		await author.store[Symbol.asyncDispose]();
@@ -350,7 +346,7 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 
 	test('an uncertified version-1 checkpoint is wiped whole, never merged (ADR-0231)', async () => {
 		const database = databaseFor('uncertified');
-		const author = openMemory(database);
+		const author = await openMemory(database);
 		expectOk(author.tables.notes.create({ title: 'pre-identity work' }));
 		const bytes = author.store.encodeStateSince();
 		await author.store[Symbol.asyncDispose]();

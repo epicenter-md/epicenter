@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { field, defineData, parseData, type RowOf } from './definition.js';
+import { defineData, field, parseData, type RowOf } from './definition.js';
 
 const authored = defineData({
 	id: 'so.epicenter.data',
@@ -30,9 +30,7 @@ describe('data definitions', () => {
 		const serialized = JSON.parse(JSON.stringify(authored));
 		const result = parseData(serialized);
 		expect(result.error).toBeNull();
-		expect(result.data?.canonical).toBe(
-			parseData(authored).data?.canonical,
-		);
+		expect(result.data?.canonical).toBe(parseData(authored).data?.canonical);
 	});
 
 	test('missing fields are nonconforming, including nullable fields', () => {
@@ -41,28 +39,50 @@ describe('data definitions', () => {
 			status: 'draft',
 			tags: [],
 		});
-		expect(result.conforming).toEqual({ title: 'one', status: 'draft', tags: [] });
+		expect(result.conforming).toEqual({
+			title: 'one',
+			status: 'draft',
+			tags: [],
+		});
 		expect(result.issues.map((issue) => issue.field)).toEqual(['publishedAt']);
 	});
 
 	test('nullable accepts null while non-nullable rejects it', () => {
 		const table = parsed().tables.get('notes')!;
-		expect(table.conformance({
-			title: 'one', status: 'draft', tags: [], publishedAt: null,
-	}).issues).toEqual([]);
+		expect(
+			table.conformance({
+				title: 'one',
+				status: 'draft',
+				tags: [],
+				publishedAt: null,
+			}).issues,
+		).toEqual([]);
 		const invalid = table.conformance({
-			title: null, status: 'draft', tags: [], publishedAt: null,
+			title: null,
+			status: 'draft',
+			tags: [],
+			publishedAt: null,
 		});
-		expect(invalid.conforming).toEqual({ status: 'draft', tags: [], publishedAt: null });
+		expect(invalid.conforming).toEqual({
+			status: 'draft',
+			tags: [],
+			publishedAt: null,
+		});
 		expect(invalid.issues.map((issue) => issue.field)).toEqual(['title']);
 	});
 
 	test('invalid values preserve conforming fields', () => {
 		const result = parsed().tables.get('notes')!.conformance({
-			title: 'one', status: 'broken', tags: 'not-an-array', publishedAt: null,
+			title: 'one',
+			status: 'broken',
+			tags: 'not-an-array',
+			publishedAt: null,
 		});
 		expect(result.conforming).toEqual({ title: 'one', publishedAt: null });
-		expect(result.issues.map((issue) => issue.field)).toEqual(['status', 'tags']);
+		expect(result.issues.map((issue) => issue.field)).toEqual([
+			'status',
+			'tags',
+		]);
 	});
 
 	test('a document block without a file codec is refused', () => {
@@ -107,7 +127,11 @@ describe('data definitions', () => {
 		const result = parseData({
 			id: 'so.epicenter.defaults',
 			kv: {},
-			tables: { notes: { fields: { title: { type: field.string(), default: 'untitled' } } } },
+			tables: {
+				notes: {
+					fields: { title: { type: field.string(), default: 'untitled' } },
+				},
+			},
 		});
 		expect(result.error?.name).toBe('DeclarationDefault');
 	});
@@ -116,7 +140,9 @@ describe('data definitions', () => {
 		const data = defineData({
 			id: 'so.epicenter.json',
 			kv: {},
-			tables: { rows: { fields: { payload: field.json(field.select(['a', 'b'])) } } },
+			tables: {
+				rows: { fields: { payload: field.json(field.select(['a', 'b'])) } },
+			},
 		});
 		const row: RowOf<typeof data.tables.rows> = { id: '1', payload: 'a' };
 		expect(row.payload).toBe('a');

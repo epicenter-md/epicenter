@@ -84,12 +84,12 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import type { DataDefinition } from '../definition/index.js';
 import { rowPath } from './layout.js';
+import { MIRROR_PATH, type MirrorPlace, mirrorLine } from './protocol.js';
 import {
 	type RenderableData,
 	type RenderError,
 	renderArtifact,
 } from './render.js';
-import { MIRROR_PATH, type MirrorPlace, mirrorLine } from './protocol.js';
 
 export const MirrorSinkError = defineErrors({
 	/**
@@ -100,7 +100,10 @@ export const MirrorSinkError = defineErrors({
 	MirrorSendFailed: ({
 		status,
 		cause,
-	}: { status?: number; cause?: unknown }) => ({
+	}: {
+		status?: number;
+		cause?: unknown;
+	}) => ({
 		message:
 			status === undefined
 				? 'The mirror could not reach the host'

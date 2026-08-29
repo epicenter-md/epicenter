@@ -79,7 +79,7 @@ describe('table.openDocument (ADR-0248)', () => {
 	});
 
 	test('an absent row has no document, which is a fact not a failure', async () => {
-		const db = openMemory(database);
+		const db = await openMemory(database);
 		await using _db = db;
 		expect(
 			expectOk(await db.tables.notes.openDocument('nope')),
@@ -87,7 +87,7 @@ describe('table.openDocument (ADR-0248)', () => {
 	});
 
 	test('two handles for one address share one live document', async () => {
-		const db = openMemory(database);
+		const db = await openMemory(database);
 		await using _db = db;
 		const note = expectOk(db.tables.notes.create({ title: 'shared' }));
 		const first = expectOk(await db.tables.notes.openDocument(note.id));
@@ -106,7 +106,7 @@ describe('table.openDocument (ADR-0248)', () => {
 	});
 
 	test('opening one address never hydrates another', async () => {
-		const db = openMemory(database);
+		const db = await openMemory(database);
 		await using _db = db;
 		const a = expectOk(db.tables.notes.create({ title: 'a' }));
 		const b = expectOk(db.tables.notes.create({ title: 'b' }));
@@ -190,9 +190,9 @@ describe('row deletion retires the document (ADR-0248)', () => {
 	test('a late remote update for a retired address is dropped whole', async () => {
 		// Author a document on one store, deliver it to a peer AFTER the peer
 		// deleted the row: nothing may come back.
-		const author = openMemory(database);
+		const author = await openMemory(database);
 		await using _author = author;
-		const peer = openMemory(database);
+		const peer = await openMemory(database);
 		await using _peer = peer;
 		const note = expectOk(author.tables.notes.create({ title: 'raced' }));
 
@@ -217,9 +217,9 @@ describe('row deletion retires the document (ADR-0248)', () => {
 
 describe('row documents ride the one store connection (ADR-0248)', () => {
 	test('local document work coalesces into one envelope and syncs to a peer', async () => {
-		const author = openMemory(database);
+		const author = await openMemory(database);
 		await using _author = author;
-		const reader = openMemory(database);
+		const reader = await openMemory(database);
 		await using _reader = reader;
 
 		const note = expectOk(author.tables.notes.create({ title: 'synced' }));
@@ -252,9 +252,9 @@ describe('row documents ride the one store connection (ADR-0248)', () => {
 	});
 
 	test('accepted remote document bytes create no publication debt', async () => {
-		const author = openMemory(database);
+		const author = await openMemory(database);
 		await using _author = author;
-		const reader = openMemory(database);
+		const reader = await openMemory(database);
 		await using _reader = reader;
 		const note = expectOk(author.tables.notes.create({ title: 'quiet' }));
 		const handle = expectOk(await author.tables.notes.openDocument(note.id));
@@ -270,9 +270,9 @@ describe('row documents ride the one store connection (ADR-0248)', () => {
 	});
 
 	test('a remote update reaches a document that is already open, live', async () => {
-		const author = openMemory(database);
+		const author = await openMemory(database);
 		await using _author = author;
-		const reader = openMemory(database);
+		const reader = await openMemory(database);
 		await using _reader = reader;
 		const note = expectOk(author.tables.notes.create({ title: 'live' }));
 		expectOk(syncEngineOf(reader.store).applyRemote(appState(author)));
@@ -294,9 +294,9 @@ describe('row documents ride the one store connection (ADR-0248)', () => {
 	});
 
 	test('the snapshot bundle carries every document and adopts whole', async () => {
-		const author = openMemory(database);
+		const author = await openMemory(database);
 		await using _author = author;
-		const fresh = openMemory(database);
+		const fresh = await openMemory(database);
 		await using _fresh = fresh;
 		const note = expectOk(author.tables.notes.create({ title: 'bundled' }));
 		const handle = expectOk(await author.tables.notes.openDocument(note.id));

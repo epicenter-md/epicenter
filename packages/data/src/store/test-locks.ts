@@ -57,7 +57,10 @@ export function installTestLocks(): boolean {
 	};
 
 	if (scope.navigator === undefined) {
-		Object.defineProperty(scope, 'navigator', { value: {}, configurable: true });
+		Object.defineProperty(scope, 'navigator', {
+			value: {},
+			configurable: true,
+		});
 	}
 	Object.defineProperty(scope.navigator as object, 'locks', {
 		value: locks,

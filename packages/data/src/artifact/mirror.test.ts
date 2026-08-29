@@ -14,12 +14,7 @@
 import { describe, expect, test } from 'bun:test';
 import { defineData, field } from '@epicenter/data/definition';
 import { openMemory } from '../store/memory.js';
-import {
-	attachMirror,
-	type MirrorSink,
-	MirrorSinkError,
-} from './mirror.js';
-
+import { attachMirror, type MirrorSink, MirrorSinkError } from './mirror.js';
 
 type MetaRoot = {
 	getAttr(key: string): unknown;
@@ -59,7 +54,10 @@ function recordingSink(refuse: () => boolean = () => false) {
 		async send(ndjson) {
 			batches.push(ndjson);
 			if (refuse()) {
-				return { data: null, error: MirrorSinkError.MirrorSendFailed({ status: 500 }) } as never;
+				return {
+					data: null,
+					error: MirrorSinkError.MirrorSendFailed({ status: 500 }),
+				} as never;
 			}
 			for (const line of ndjson.split('\n')) {
 				if (line.trim() === '') continue;
@@ -91,7 +89,7 @@ const latest = (manifests: string[][]) => manifests.at(-1) ?? [];
 
 describe('attachMirror states a whole store (ADR-0271)', () => {
 	test('the first pass renders what is already there', async () => {
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		const { files, manifests, sink } = recordingSink();
 
@@ -110,7 +108,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 	});
 
 	test('a commit anywhere renders everything, including kv', async () => {
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		const { files, manifests, sink } = recordingSink();
 		await using _mirror = attachMirror({
@@ -133,7 +131,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 	});
 
 	test('a deleted row leaves the manifest', async () => {
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		const { manifests, sink } = recordingSink();
 		await using _mirror = attachMirror({
@@ -182,7 +180,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 				},
 			},
 		});
-		await using data = openMemory(derived);
+		await using data = await openMemory(derived);
 		const { files, sink } = recordingSink();
 		await using _mirror = attachMirror({
 			data,
@@ -218,7 +216,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		// Whole rendering is what makes this survivable rather than corrupting:
 		// nothing is written WRONG, the folder is only late, and the next commit
 		// anywhere renders the body correctly.
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		const { files, sink } = recordingSink();
 		await using _mirror = attachMirror({
 			data,
@@ -251,7 +249,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 	});
 
 	test('a burst of commits costs one pass, not one per commit', async () => {
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		const { manifests, sink } = recordingSink();
 		await using _mirror = attachMirror({
 			data,
@@ -273,7 +271,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 	});
 
 	test('disposing stops the mirror and finishes the pass in flight', async () => {
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		const { manifests, sink } = recordingSink();
 		const mirror = attachMirror({
 			data,
@@ -317,7 +315,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 				},
 			},
 		});
-		await using data = openMemory(throwing);
+		await using data = await openMemory(throwing);
 		const made = data.tables.notes.create({ title: 'kept' });
 		const { files, manifests, sink } = recordingSink();
 		await using _mirror = attachMirror({
@@ -344,7 +342,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		// `renderArtifact` yields one error and stops, so the pass enumerates no
 		// paths. Sending an empty manifest would tell the host every file is
 		// gone, which is every row deleted over a programmer error.
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		data.tables.notes.create({ title: 'still here' });
 		const { manifests, sink } = recordingSink();
 		const broken = { ...store, id: 'Not A Database Id' } as never;
@@ -362,7 +360,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 	});
 
 	test('a pass larger than one batch is split, and only the last carries the manifest', async () => {
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		for (let index = 0; index < 20; index += 1) {
 			data.tables.notes.create({ title: `note ${index}` });
 		}
@@ -390,7 +388,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 
 	test('a batch the host refused costs its files, not the folder', async () => {
 		let refusing = false;
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		data.tables.notes.create({ title: 'kept' });
 		const { manifests, sink } = recordingSink(() => refusing);
 		await using _mirror = attachMirror({

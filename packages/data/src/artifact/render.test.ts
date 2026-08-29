@@ -1,13 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { defineData, field } from '@epicenter/data/definition';
-import { openMemory } from '../store/memory.js';
+import { defineData, field, parseData } from '@epicenter/data/definition';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { parseData } from '@epicenter/data/definition';
-import {
-	renderArtifact,
-	renderRow,
-	type RenderedRow,
-} from './render.js';
+import { openMemory } from '../store/memory.js';
+import { type RenderedRow, renderArtifact, renderRow } from './render.js';
 
 type TitleRoot = {
 	getAttr(key: string): unknown;
@@ -53,7 +48,7 @@ function parsed(definition: Parameters<typeof parseData>[0]) {
 
 describe('renderRow is the unit (ADR-0271)', () => {
 	test('one row becomes one file: fields on top, prose underneath', async () => {
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		const opened = await data.tables.notes.openDocument(made.id);
 		using handle = expectOk(opened);
@@ -72,7 +67,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 	test('a row that is gone renders no contents, which is the unlink signal', async () => {
 		// What a subscriber needs for a deletion: the ids a commit touched include
 		// the ones it removed, so the same call answers write-this and unlink-that.
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		data.tables.notes.delete(made.id);
 
@@ -89,7 +84,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 			kv: {},
 			tables: { folders: { fields: { name: field.string() } } },
 		});
-		await using data = openMemory(scalarOnly);
+		await using data = await openMemory(scalarOnly);
 		const made = data.tables.folders.create({ name: 'Inbox' });
 
 		const rendered = expectOk(
@@ -120,7 +115,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 				},
 			},
 		});
-		await using data = openMemory(breaking);
+		await using data = await openMemory(breaking);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 
 		const refused = expectErr(
@@ -130,7 +125,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 	});
 
 	test('a field the declaration dropped is in the file, because the read is faithful', async () => {
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		data.tables.notes.update(made.id, { legacy: 'kept' } as never);
 
@@ -144,7 +139,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 
 describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 	test('exports kv.json and one markdown file per row, fields above the body', async () => {
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		data.kv.update({ theme: 'dark' });
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		const opened = await data.tables.notes.openDocument(made.id);
@@ -174,7 +169,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 	});
 
 	test('a row the declaration no longer names is still in the artifact', async () => {
-		await using data = openMemory(store);
+		await using data = await openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		// A value written under an older declaration: the lens cannot see it,
 		// and the artifact must carry it anyway.
@@ -211,7 +206,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 				},
 			},
 		});
-		await using data = openMemory(poisoned);
+		await using data = await openMemory(poisoned);
 		const bad = data.tables.notes.create({ title: 'broken' });
 		const good = data.tables.notes.create({ title: 'fine' });
 		{
@@ -237,7 +232,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 			kv: {},
 			tables: { folders: { fields: { name: field.string() } } },
 		});
-		await using data = openMemory(scalarOnly);
+		await using data = await openMemory(scalarOnly);
 		const made = data.tables.folders.create({ name: 'Inbox' });
 
 		const files = await collect(renderArtifact(data, scalarOnly));

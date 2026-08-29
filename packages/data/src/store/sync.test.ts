@@ -299,7 +299,9 @@ describe('a row document root converges however many devices first-open it', () 
 		// reserved at create.
 		const author = open();
 		const other = open();
-		const note = expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
+		const note = expectOk(
+			author.db.tables.notes.create({ title: 'Groceries' }),
+		);
 		expectOk(
 			syncEngineOf(other.store).applyRemote(
 				asEnvelope(author.store.encodeStateSince()),

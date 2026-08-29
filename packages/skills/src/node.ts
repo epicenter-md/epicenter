@@ -175,7 +175,11 @@ export async function importSkillsFromDisk({
 					referenceId = data.tables.skillReferences.create(fields).id;
 				}
 				referencesByOwnerAndPath.set(key, { id: referenceId });
-				await writeDocumentText(data.tables.skillReferences, referenceId, content);
+				await writeDocumentText(
+					data.tables.skillReferences,
+					referenceId,
+					content,
+				);
 			}),
 		);
 	}

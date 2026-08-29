@@ -27,8 +27,8 @@ import {
 	type DataDefinition,
 	type DocumentReader,
 	type JsonObject,
-	parseData,
 	type ParsedDataDefinition,
+	parseData,
 } from '../definition/index.js';
 import type { RowDocumentHandle } from '../store/documents.js';
 import type { StoredData } from '../store/store.js';
@@ -54,7 +54,11 @@ export const RenderError = defineErrors({
 		table,
 		rowId,
 		cause,
-	}: { table: string; rowId: string; cause: unknown }) => ({
+	}: {
+		table: string;
+		rowId: string;
+		cause: unknown;
+	}) => ({
 		message: `Document for '${table}/${rowId}' could not be read`,
 		table,
 		rowId,
@@ -69,7 +73,11 @@ export const RenderError = defineErrors({
 		table,
 		rowId,
 		cause,
-	}: { table: string; rowId: string; cause: unknown }) => ({
+	}: {
+		table: string;
+		rowId: string;
+		cause: unknown;
+	}) => ({
 		message: `The document at '${table}/${rowId}' could not be serialized`,
 		table,
 		rowId,
@@ -90,9 +98,7 @@ export type RenderableData = {
 			string,
 			{
 				stored(rowId: string): JsonObject | undefined;
-				openDocument(
-					rowId: string,
-				): Promise<{
+				openDocument(rowId: string): Promise<{
 					data: RowDocumentHandle | undefined | null;
 					error: unknown;
 				}>;
@@ -136,11 +142,16 @@ export async function renderRow(
 	}
 
 	const codec = definition.tables.get(table)?.document?.file;
-	if (codec === undefined) return Ok({ path, contents: rowFile(fields, undefined) });
+	if (codec === undefined)
+		return Ok({ path, contents: rowFile(fields, undefined) });
 
 	const opened = await handle.openDocument(rowId);
 	if (opened.error !== null && opened.error !== undefined) {
-		return RenderError.DocumentUnreadable({ table, rowId, cause: opened.error });
+		return RenderError.DocumentUnreadable({
+			table,
+			rowId,
+			cause: opened.error,
+		});
 	}
 	const doc = opened.data;
 	// Taken between the read and the open. It has no body to carry, and its
@@ -151,7 +162,10 @@ export async function renderRow(
 	try {
 		return Ok({
 			path,
-			contents: rowFile(fields, codec.serialize(doc as unknown as DocumentReader)),
+			contents: rowFile(
+				fields,
+				codec.serialize(doc as unknown as DocumentReader),
+			),
 		});
 	} catch (cause) {
 		return RenderError.BodyUnwritable({ table, rowId, cause });

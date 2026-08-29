@@ -48,7 +48,11 @@ const evidenceDatabase = defineData({
 	kv: {},
 	tables: {
 		notes: {
-			fields: { title: field.string(), device: field.string(), at: field.string() },
+			fields: {
+				title: field.string(),
+				device: field.string(),
+				at: field.string(),
+			},
 		},
 	},
 });
