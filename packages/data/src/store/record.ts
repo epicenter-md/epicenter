@@ -72,6 +72,24 @@ export const DurableRecordError = defineErrors({
 });
 export type DurableRecordError = InferErrors<typeof DurableRecordError>;
 
+/**
+ * The slice of the platform this assumes, declared rather than imported.
+ *
+ * Same move as `claims.ts`, for the same reason: this module compiles in a
+ * program without the DOM library, and `idb` supplies every other type it
+ * needs. Writing down the one global it reaches for keeps the assumption
+ * auditable, and a test runtime satisfies it with `fake-indexeddb`.
+ */
+declare const IDBKeyRange: {
+	bound(
+		lower: unknown,
+		upper: unknown,
+		lowerOpen?: boolean,
+		upperOpen?: boolean,
+	): IDBKeyRange;
+};
+type IDBKeyRange = { readonly __idbKeyRange: unique symbol };
+
 /** The one object store, and the one shape in it. */
 interface RecordSchema extends DBSchema {
 	updates: {

@@ -18,34 +18,35 @@ import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 import { expectOk } from 'wellcrafted/testing';
 
-import { createOpfsBlobs } from '../store/blobs.opfs.js';
-import { installTestOpfs } from '../store/test-opfs.js';
+import 'fake-indexeddb/auto';
+
+import { openDurableRecord } from '../store/record.js';
 import {
 	type DocumentAuthority,
 	openDocumentAuthority,
 } from './document-authority.js';
-import {
-	type DocumentReplica,
-	openDocumentReplica,
-} from './document-replica.js';
-
-installTestOpfs();
+import { type DocumentHandle, openDocumentHandle } from './document-handle.js';
 
 const KEY = 'app';
 let addresses = 0;
 
-/** A device with its own durable storage, reopenable under the same address. */
-function device(address: string) {
-	const blobs = createOpfsBlobs({ root: address });
+/** Nothing here is on a timer: settling is what the tests call by hand. */
+const never = () => () => undefined;
+
+/** A device with its own durable storage, reopenable under the same name. */
+function device(name: string) {
 	return {
-		blobs,
-		open: () => openDocumentReplica({ blobs, key: KEY }),
+		name,
+		open: async () => {
+			const record = await openDurableRecord({ name });
+			return openDocumentHandle({ record, doc: KEY, schedule: never });
+		},
 	};
 }
 
 function freshDevice() {
 	addresses += 1;
-	return device(`epicenter/v1/so.epicenter.test/device${addresses}`);
+	return device(`epicenter/so.epicenter.test/sync-${addresses}/gen/1`);
 }
 
 /**
@@ -54,16 +55,16 @@ function freshDevice() {
  * step 1 from the replica, step 2 and step 1 back from the authority, step 2
  * from the replica. Three messages, and this function is the whole client.
  */
-function sync(replica: DocumentReplica, authority: DocumentAuthority): void {
-	replica.receive(authority.since(replica.stateVector()));
+function sync(replica: DocumentHandle, authority: DocumentAuthority): void {
+	Y.applyUpdateV2(replica.document, authority.since(replica.stateVector()));
 	expectOk(authority.receive(replica.since(authority.stateVector())));
 }
 
-function attrs(replica: DocumentReplica): Record<string, unknown> {
+function attrs(replica: DocumentHandle): Record<string, unknown> {
 	return replica.document.get('notes').getAttrs() as Record<string, unknown>;
 }
 
-function write(replica: DocumentReplica, key: string, value: unknown): void {
+function write(replica: DocumentHandle, key: string, value: unknown): void {
 	replica.document.transact(() =>
 		replica.document.get('notes').setAttr(key as never, value as never),
 	);
@@ -171,36 +172,44 @@ describe('what survives the tab closing', () => {
 		const first = await machine.open();
 		write(first, 'a', 1);
 		write(first, 'b', 2);
-		await first.persist();
-		first.dispose();
+		await first.settle();
+		first.close();
 
 		const second = await machine.open();
 		expect(attrs(second)).toEqual({ a: 1, b: 2 });
 	});
 
-	test('a device that persisted late re-sends, and the authority converges', async () => {
-		// The ordering rule, from the safe side. This device is killed after
-		// syncing but before persisting, so its next open is BEHIND what the
-		// authority already has, and the handshake fills it back in.
+	test('a device killed mid-edit keeps what it typed, with no timer having run', async () => {
+		// This test used to describe the opposite. Under a debounced whole
+		// document write it asserted that work synced but not yet persisted
+		// came BACK from the authority on the next open, which was true and was
+		// the window ADR-0280 closed. Appending eagerly makes the loss
+		// unreachable: nothing here settles, and nothing is lost.
 		const machine = freshDevice();
 		const first = await machine.open();
 		write(first, 'a', 1);
-		await first.persist();
 		write(first, 'b', 2);
-		sync(first, authority);
-		first.dispose(); // no persist: `b` is on the server and not on disk
 
 		const second = await machine.open();
-		expect(attrs(second)).toEqual({ a: 1 });
-		sync(second, authority);
 		expect(attrs(second)).toEqual({ a: 1, b: 2 });
+	});
+
+	test('a device behind the authority is filled in by the handshake', async () => {
+		const phone = await freshDevice().open();
+		write(phone, 'a', 1);
+		sync(phone, authority);
+
+		const laptop = await freshDevice().open();
+		expect(attrs(laptop)).toEqual({});
+		sync(laptop, authority);
+		expect(attrs(laptop)).toEqual({ a: 1 });
 	});
 
 	test('a device with no stored bytes is a fresh device, and needs no flag', async () => {
 		const phone = await freshDevice().open();
 		write(phone, 'a', 1);
 		sync(phone, authority);
-		await phone.persist();
+		await phone.settle();
 
 		const blank = await freshDevice().open();
 		expect(attrs(blank)).toEqual({});
@@ -210,7 +219,7 @@ describe('what survives the tab closing', () => {
 });
 
 describe('durable and live agree', () => {
-	test('what is written to the blob is what a fresh reader reconstructs', async () => {
+	test('what a chain stores is what a fresh reader reconstructs', async () => {
 		const machine = freshDevice();
 		const replica = await machine.open();
 		write(replica, 'a', 1);
@@ -220,13 +229,14 @@ describe('durable and live agree', () => {
 		replica.document.transact(() =>
 			replica.document.get('notes').deleteAttr('a'),
 		);
-		await replica.persist();
+		await replica.settle();
 
-		const bytes = await machine.blobs.read(KEY);
-		const rebuilt = new Y.Doc({ gc: true });
-		Y.applyUpdateV2(rebuilt, bytes as Uint8Array);
-		expect(rebuilt.get('notes').getAttrs()).toEqual(
-			replica.document.get('notes').getAttrs(),
+		// Through the public surface rather than by reading storage: a chain is
+		// several records where a blob was one value, so "what is on disk" is
+		// only answerable by replaying it, which is what opening does.
+		const rebuilt = await machine.open();
+		expect(attrs(rebuilt)).toEqual(
+			replica.document.get('notes').getAttrs() as Record<string, unknown>,
 		);
 	});
 });
@@ -246,7 +256,7 @@ describe('a document neither device had yet', () => {
 	 * body is a root (`NOTE_BODY = 'body'`, reached with `doc.get`), which is
 	 * what puts it on the safe side of that line.
 	 */
-	function body(replica: DocumentReplica) {
+	function body(replica: DocumentHandle) {
 		return replica.document.get('body');
 	}
 
@@ -317,8 +327,8 @@ describe('a document neither device had yet', () => {
 		first.document.transact(() =>
 			body(first).setAttr('written' as never, 'offline' as never),
 		);
-		await first.persist();
-		first.dispose();
+		await first.settle();
+		first.close();
 
 		// A different device wrote to the same never-shared document meanwhile.
 		const elsewhere = await freshDevice().open();

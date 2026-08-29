@@ -15,21 +15,16 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 
-import { createOpfsBlobs } from '../store/blobs.opfs.js';
-import { installTestOpfs } from '../store/test-opfs.js';
+import 'fake-indexeddb/auto';
+
+import { openDurableRecord } from '../store/record.js';
 import {
 	type DocumentAuthority,
 	openDocumentAuthority,
 } from './document-authority.js';
 import type { DocumentSocket } from './document-frames.js';
+import { type DocumentHandle, openDocumentHandle } from './document-handle.js';
 import { createDocumentHub, type DocumentHub } from './document-hub.js';
-import { openDocumentReplica } from './document-replica.js';
-import {
-	type DocumentSession,
-	openDocumentSession,
-} from './document-session.js';
-
-installTestOpfs();
 
 let addresses = 0;
 let authority: DocumentAuthority;
@@ -41,18 +36,21 @@ let hub: DocumentHub;
  * makes a test about convergence readable.
  */
 async function device(): Promise<{
-	session: DocumentSession;
+	session: DocumentHandle;
 	document: Y.Doc;
 	persist: () => Promise<void>;
 	drop(): void;
 	root(): Y.Type;
 }> {
 	addresses += 1;
-	const blobs = createOpfsBlobs({
-		root: `epicenter/v1/so.epicenter.test/device${addresses}`,
+	const record = await openDurableRecord({
+		name: `epicenter/so.epicenter.test/transport-${addresses}/gen/1`,
 	});
-	const replica = await openDocumentReplica({ blobs, key: 'app' });
-	const session = openDocumentSession({ replica });
+	const session = await openDocumentHandle({
+		record,
+		doc: 'app',
+		schedule: () => () => undefined,
+	});
 
 	// The socket the hub holds: whatever it sends reaches the session.
 	const toClient: DocumentSocket = {
@@ -71,13 +69,13 @@ async function device(): Promise<{
 	session.attach(toHub);
 	return {
 		session,
-		document: replica.document,
-		persist: () => replica.persist(),
+		document: session.document,
+		persist: () => session.settle(),
 		drop: () => {
 			hub.leave(toClient);
 			session.detach();
 		},
-		root: () => replica.document.get('notes'),
+		root: () => session.document.get('notes'),
 	};
 }
 
@@ -102,7 +100,7 @@ describe('a live session', () => {
 		const laptop = await device();
 
 		write(phone.document, 'title', 'hello');
-		phone.session.flush();
+		await phone.session.settle();
 
 		expect(attrs(laptop.document)).toEqual({ title: 'hello' });
 	});
@@ -110,7 +108,7 @@ describe('a live session', () => {
 	test('a device that joins later is caught up by its own announcement', async () => {
 		const phone = await device();
 		write(phone.document, 'early', 1);
-		phone.session.flush();
+		await phone.session.settle();
 
 		const laptop = await device();
 		expect(attrs(laptop.document)).toEqual({ early: 1 });
@@ -121,9 +119,9 @@ describe('a live session', () => {
 		const b = await device();
 		const c = await device();
 		write(a.document, 'fromA', 1);
-		a.session.flush();
+		await a.session.settle();
 		write(b.document, 'fromB', 2);
-		b.session.flush();
+		await b.session.settle();
 
 		const expected = { fromA: 1, fromB: 2 };
 		expect(attrs(a.document)).toEqual(expected);
@@ -136,13 +134,13 @@ describe('a live session', () => {
 		const laptop = await device();
 		write(phone.document, 'keep', 1);
 		write(phone.document, 'drop', 2);
-		phone.session.flush();
+		await phone.session.settle();
 		expect(attrs(laptop.document)).toEqual({ keep: 1, drop: 2 });
 
 		phone.document.transact(() =>
 			phone.document.get('notes').deleteAttr('drop'),
 		);
-		phone.session.flush();
+		await phone.session.settle();
 		expect(attrs(laptop.document)).toEqual({ keep: 1 });
 	});
 });
@@ -152,12 +150,12 @@ describe('leaving and coming back', () => {
 		const phone = await device();
 		const laptop = await device();
 		write(phone.document, 'before', 1);
-		phone.session.flush();
+		await phone.session.settle();
 
 		phone.drop();
 		write(phone.document, 'while-away', 2);
 		write(laptop.document, 'meanwhile', 3);
-		laptop.session.flush();
+		await laptop.session.settle();
 		expect(attrs(phone.document)).toEqual({ before: 1, 'while-away': 2 });
 
 		// Reattaching is one announcement, and both directions resolve from it.
@@ -181,11 +179,11 @@ describe('leaving and coming back', () => {
 	test('a device that never attached still has its own work when it does', async () => {
 		const phone = await device();
 		write(phone.document, 'mine', 1);
-		phone.session.flush();
+		await phone.session.settle();
 
 		const late = await device();
 		write(late.document, 'theirs', 2);
-		late.session.flush();
+		await late.session.settle();
 
 		expect(attrs(late.document)).toEqual({ mine: 1, theirs: 2 });
 		expect(attrs(phone.document)).toEqual({ mine: 1, theirs: 2 });
@@ -196,7 +194,7 @@ describe('what the hub refuses', () => {
 	test('bytes that are not a frame change nothing', async () => {
 		const phone = await device();
 		write(phone.document, 'a', 1);
-		phone.session.flush();
+		await phone.session.settle();
 		const before = authority.stateVector();
 
 		const stray: DocumentSocket = { send: () => undefined };
@@ -209,7 +207,7 @@ describe('what the hub refuses', () => {
 		const phone = await device();
 		const laptop = await device();
 		write(phone.document, 'a', 1);
-		phone.session.flush();
+		await phone.session.settle();
 
 		const stray: DocumentSocket = { send: () => undefined };
 		hub.join(stray);
@@ -240,7 +238,7 @@ describe('durability, across the whole stack', () => {
 		const phone = await device();
 		const laptop = await device();
 		write(laptop.document, 'fromLaptop', 1);
-		laptop.session.flush();
+		await laptop.session.settle();
 		await phone.persist();
 
 		// The authority holds it, and so does the phone's own blob.

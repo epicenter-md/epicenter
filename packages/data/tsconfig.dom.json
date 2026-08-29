@@ -7,8 +7,6 @@
 	},
 	"include": [
 		"src/store/browser.ts",
-		"src/store/browser.test.ts",
-		"src/store/record.ts",
-		"src/store/record.test.ts"
+		"src/store/browser.test.ts"
 	]
 }

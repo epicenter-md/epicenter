@@ -10,8 +10,9 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 
-import { createOpfsBlobs } from '../store/blobs.opfs.js';
-import { installTestOpfs } from '../store/test-opfs.js';
+import 'fake-indexeddb/auto';
+
+import { openDurableRecord } from '../store/record.js';
 import {
 	type DocumentAuthority,
 	openDocumentAuthority,
@@ -19,8 +20,6 @@ import {
 import type { DocumentSocket } from './document-frames.js';
 import { openDocumentHandle } from './document-handle.js';
 import { createDocumentHub } from './document-hub.js';
-
-installTestOpfs();
 
 let addresses = 0;
 let authority: DocumentAuthority;
@@ -44,10 +43,12 @@ function manualClock() {
 	};
 }
 
-function blobs() {
+/** A record of its own, so no two handles here share a chain by accident. */
+function record(floorBytes?: number) {
 	addresses += 1;
-	return createOpfsBlobs({
-		root: `epicenter/v1/so.epicenter.test/h${addresses}`,
+	return openDurableRecord({
+		name: `epicenter/so.epicenter.test/handle-${addresses}/gen/1`,
+		floorBytes,
 	});
 }
 
@@ -57,56 +58,82 @@ beforeEach(() => {
 	});
 });
 
-describe('the handle persists on its own timer', () => {
-	test('a local edit arms the timer rather than writing immediately', async () => {
+describe('the handle appends now and folds later', () => {
+	test('a local edit is durable before the timer has fired', async () => {
 		const clock = manualClock();
-		const store = blobs();
+		const store = await record();
 		const handle = await openDocumentHandle({
-			blobs: store,
-			key: 'app',
+			record: store,
+			doc: 'app',
 			schedule: clock.schedule,
 		});
 
 		handle.document.transact(() =>
 			handle.document.get('notes').setAttr('a' as never, 1 as never),
 		);
+		// This test asserted the opposite until ADR-0280. Arming a timer and
+		// writing on it is the window that lost a person's sentence, so the
+		// append happens on the edit and the timer is left holding the fold.
+		await Promise.resolve();
+		expect(await store.read('app')).toHaveLength(1);
 		expect(clock.pending()).toBe(true);
-		expect(await store.read('app')).toBeUndefined();
-
-		clock.fire();
-		await Promise.resolve();
-		await Promise.resolve();
-		expect(await store.read('app')).toBeDefined();
 		await handle.close();
 	});
 
-	test('settle writes now, without waiting for the timer', async () => {
+	test('settling with nothing worth folding leaves the chain alone', async () => {
 		const clock = manualClock();
-		const store = blobs();
+		const store = await record();
 		const handle = await openDocumentHandle({
-			blobs: store,
-			key: 'app',
+			record: store,
+			doc: 'app',
 			schedule: clock.schedule,
 		});
 		handle.document.transact(() =>
 			handle.document.get('notes').setAttr('a' as never, 1 as never),
 		);
+		await Promise.resolve();
 
 		await handle.settle();
-		expect(await store.read('app')).toBeDefined();
+		// One record in, one record out: a fold under the floor buys nothing,
+		// and `settle` is allowed to do nothing at all.
+		expect(await store.read('app')).toHaveLength(1);
 		expect(clock.pending()).toBe(false);
 		await handle.close();
 	});
 
+	test('settling over the floor collapses the chain to one record', async () => {
+		// A floor a handful of small updates can clear, so the fold is reachable
+		// without building a document actually worth folding.
+		const store = await record(1);
+		const handle = await openDocumentHandle({
+			record: store,
+			doc: 'app',
+			schedule: () => () => undefined,
+		});
+		for (let index = 0; index < 6; index += 1) {
+			handle.document.transact(() =>
+				handle.document
+					.get('notes')
+					.setAttr(`k${index}` as never, index as never),
+			);
+		}
+		await Promise.resolve();
+		expect((await store.read('app')).length).toBeGreaterThan(1);
+
+		await handle.settle();
+		expect(await store.read('app')).toHaveLength(1);
+		await handle.close();
+	});
+
 	test('reopening the same key finds what was written', async () => {
-		const store = blobs();
-		const first = await openDocumentHandle({ blobs: store, key: 'app' });
+		const store = await record();
+		const first = await openDocumentHandle({ record: store, doc: 'app' });
 		first.document.transact(() =>
 			first.document.get('notes').setAttr('a' as never, 1 as never),
 		);
 		await first.close();
 
-		const second = await openDocumentHandle({ blobs: store, key: 'app' });
+		const second = await openDocumentHandle({ record: store, doc: 'app' });
 		expect(second.document.get('notes').getAttrs()).toEqual({ a: 1 });
 		await second.close();
 	});
@@ -115,10 +142,10 @@ describe('the handle persists on its own timer', () => {
 describe('closing leaves nothing behind', () => {
 	test('close settles first, so the last edit is not lost', async () => {
 		const clock = manualClock();
-		const store = blobs();
+		const store = await record();
 		const handle = await openDocumentHandle({
-			blobs: store,
-			key: 'app',
+			record: store,
+			doc: 'app',
 			schedule: clock.schedule,
 		});
 		handle.document.transact(() =>
@@ -127,7 +154,7 @@ describe('closing leaves nothing behind', () => {
 		// Closed with the timer still armed, which is what a route change does.
 		await handle.close();
 
-		const reopened = await openDocumentHandle({ blobs: store, key: 'app' });
+		const reopened = await openDocumentHandle({ record: store, doc: 'app' });
 		expect(reopened.document.get('notes').getAttrs()).toEqual({
 			typed: 'last',
 		});
@@ -137,8 +164,8 @@ describe('closing leaves nothing behind', () => {
 	test('a closed handle stops arming its timer', async () => {
 		const clock = manualClock();
 		const handle = await openDocumentHandle({
-			blobs: blobs(),
-			key: 'app',
+			record: await record(),
+			doc: 'app',
 			schedule: clock.schedule,
 		});
 		await handle.close();
@@ -150,7 +177,10 @@ describe('closing leaves nothing behind', () => {
 	});
 
 	test('closing twice is not an error', async () => {
-		const handle = await openDocumentHandle({ blobs: blobs(), key: 'app' });
+		const handle = await openDocumentHandle({
+			record: await record(),
+			doc: 'app',
+		});
 		await handle.close();
 		await handle.close();
 	});
@@ -161,8 +191,8 @@ describe('a handle with a socket', () => {
 		const hub = createDocumentHub({ authority });
 		const clock = manualClock();
 		const handle = await openDocumentHandle({
-			blobs: blobs(),
-			key: 'app',
+			record: await record(),
+			doc: 'app',
 			schedule: clock.schedule,
 		});
 
@@ -196,7 +226,10 @@ describe('a handle with a socket', () => {
 	test('a second handle attaching is caught up by its own announcement', async () => {
 		const hub = createDocumentHub({ authority });
 		const wire = async () => {
-			const handle = await openDocumentHandle({ blobs: blobs(), key: 'app' });
+			const handle = await openDocumentHandle({
+				record: await record(),
+				doc: 'app',
+			});
 			const hubSide: DocumentSocket = {
 				send: (bytes) => {
 					handle.receive(bytes);
