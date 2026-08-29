@@ -33,10 +33,10 @@ judgment; include supporting context when removing it would make that judgment
 impossible.
 
 Match the form to the subject. Quote code when the claim is about code, with a
-real path and line number. Mark proposed code with `// proposed` so a design
-cannot be mistaken for source. Use a comparison for a comparison and a
-timeline for a history. Do not disguise either as TypeScript or as a polished
-status report.
+real path and line number. Mark proposed code as proposed, in the comment
+syntax of its own language, so a design cannot be mistaken for source. Use a
+comparison for a comparison and a timeline for a history. Do not disguise
+either as TypeScript or as a polished status report.
 
 Use an HTML page when spatial relationships, visual hierarchy, or several
 states are materially easier to judge on a page. Keep it self-contained, with
@@ -67,11 +67,6 @@ generic headings, or a second rendering of the same thought unless each one
 helps the user judge the seam. A page that looks finished but gives the user
 nothing specific to correct is a failed turn.
 
-Do not smooth the history of the idea. If earlier models were wrong, reversed,
-or abandoned, preserve that fact when it changes the current judgment. If the
-history does not change the current model, leave it out. A dialectic is not a
-transcript, changelog, or story about inevitable progress.
-
 ## End on the next judgment
 
 End with one question only when its answer would change the next model. Ask
@@ -99,6 +94,11 @@ When the user returns a sentence, answer its accuracy first and name the word
 or premise carrying the error. When they provide an example, use it to update
 the model. Do not defend a weak rendering because it was already written.
 
+Do not smooth the history of the idea. If earlier models were wrong, reversed,
+or abandoned, preserve that fact when it changes the current judgment. If the
+history does not change the current model, leave it out. A dialectic is not a
+transcript, changelog, or story about inevitable progress.
+
 Preserve what the user has recognized and remove settled questions from the
 open set. Do not infer recognition from silence, fatigue, partial agreement, or
 the absence of another objection. Agreement with a claim is evidence about the
@@ -114,7 +114,3 @@ hand it to [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) for
 backward planning. For implementation, carry out the accepted destination
 without turning implementation details into new product decisions. If
 implementation reveals a fact that changes the model, return to this loop.
-
-Do not use this skill to collect approval for a settled plan. Use the review or
-execution skill for files, commits, implementation sequencing, and other
-bounded decisions.
