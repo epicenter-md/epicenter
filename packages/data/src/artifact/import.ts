@@ -37,7 +37,6 @@ import {
 	kvRoot,
 	tableRoot,
 } from '../store/document.js';
-import { type EnvelopeSection, encodeEnvelope } from '../store/envelope.js';
 import { APP_DOCUMENT } from '../store/log.js';
 import { parseRowFile } from './frontmatter.js';
 import { parseRowPath } from './layout.js';
@@ -90,8 +89,22 @@ export const ImportError = defineErrors({
 });
 export type ImportError = InferErrors<typeof ImportError>;
 
+/** One document an artifact carries, ready to be written or uploaded. */
+export type ArtifactDocument = {
+	/** `app`, or a row's derived address. */
+	readonly document: string;
+	/** The document's whole state, as one `updateV2`. */
+	readonly bytes: Uint8Array;
+};
+
 /**
- * Read a whole artifact into the one envelope that replaces a store.
+ * Read a whole artifact into the documents that make up a store.
+ *
+ * Documents rather than one packed value, because there is nothing left to
+ * pack into: a mint uploads them one at a time to their own addresses
+ * (ADR-0286), and a local import writes them one at a time into a chain. The
+ * envelope this used to return existed to batch several documents into one
+ * entry of a positional log, and ADR-0277 deleted the log.
  *
  * Paths are the addressing, as they are on the way out: `kv.json` is the kv
  * root, and every `<table>/<rowId>.md` is one row. A table the definition no
@@ -104,7 +117,7 @@ export type ImportError = InferErrors<typeof ImportError>;
 export function readArtifact(
 	files: ReadonlyMap<string, string>,
 	definition: DataDefinition,
-): Result<Uint8Array, ImportError> {
+): Result<ArtifactDocument[], ImportError> {
 	const parsed = parseData(definition);
 	if (parsed.error !== null) {
 		return ImportError.MalformedDefinition({ reason: parsed.error.message });
@@ -112,7 +125,7 @@ export function readArtifact(
 	const dataId = parsed.data.id;
 
 	const app = createAppDocument();
-	const sections: EnvelopeSection[] = [];
+	const documents: ArtifactDocument[] = [];
 	try {
 		const kv = files.get('kv.json');
 		if (kv !== undefined) {
@@ -160,7 +173,7 @@ export function readArtifact(
 			const body = new Y.Doc({ gc: true });
 			try {
 				codec.deserialize(row.body, body as unknown as DocumentReader);
-				sections.push({
+				documents.push({
 					document: documentAddress({
 						dataId,
 						tableName: at.table,
@@ -179,17 +192,17 @@ export function readArtifact(
 			}
 		}
 
-		// The application document leads, as it does in a snapshot: a row's
-		// document is meaningless without the row it belongs to.
-		return Ok(
-			encodeEnvelope([
-				{
-					document: APP_DOCUMENT,
-					bytes: new Uint8Array(Y.encodeStateAsUpdateV2(app)),
-				},
-				...sections,
-			]),
-		);
+		// The application document leads: a row's document is meaningless
+		// without the row it belongs to, and a mint uploads it LAST for the same
+		// reason read backwards, since it is what makes a generation reachable
+		// (ADR-0286). A consumer that writes in order is safe either way.
+		return Ok([
+			{
+				document: APP_DOCUMENT,
+				bytes: new Uint8Array(Y.encodeStateAsUpdateV2(app)),
+			},
+			...documents,
+		]);
 	} finally {
 		app.destroy();
 	}
