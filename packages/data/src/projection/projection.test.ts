@@ -1,4 +1,3 @@
-import { field } from '@epicenter/data/definition';
 /**
  * The projection follower, proven on the public surface alone.
  *
@@ -9,7 +8,7 @@ import { field } from '@epicenter/data/definition';
  */
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { defineData } from '@epicenter/data/definition';
+import { defineData, field } from '@epicenter/data/definition';
 import type { SqliteDatabase, SqliteValue } from '@epicenter/sqlite';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { openMemory } from '../store/bun.js';
@@ -22,7 +21,11 @@ const database = defineData({
 	id: 'so.epicenter.projectionlab',
 	kv: { theme: field.select(['light', 'dark']), fontSize: field.number() },
 	tables: {
-		notes: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) },
+		notes: {
+			title: field.string(),
+			tags: field.tags(),
+			date: field.nullable(field.string()),
+		},
 	},
 });
 

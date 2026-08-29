@@ -1,4 +1,3 @@
-import { field } from '@epicenter/data/definition';
 /**
  * The independent row document (ADR-0248): derived addresses, asynchronous
  * fully hydrated opens, live reuse, restart round-trips, retirement composed
@@ -6,7 +5,7 @@ import { field } from '@epicenter/data/definition';
  */
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineData, documentAddress } from '@epicenter/data/definition';
+import { defineData, documentAddress, field } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
@@ -83,7 +82,9 @@ describe('table.openDocument (ADR-0248)', () => {
 	test('an absent row has no document, which is a fact not a failure', async () => {
 		const db = openMemory(database);
 		await using _db = db;
-		expect(expectOk(await db.tables.notes.openDocument('nope'))).toBeUndefined();
+		expect(
+			expectOk(await db.tables.notes.openDocument('nope')),
+		).toBeUndefined();
 	});
 
 	test('two handles for one address share one live document', async () => {
@@ -118,7 +119,7 @@ describe('table.openDocument (ADR-0248)', () => {
 		const second = expectOk(await db.tables.notes.openDocument(b.id));
 		if (second === undefined) throw new Error('no document');
 		expect(second.get('body').toString()).toBe('');
-		expect([...second.get('body').doc?.share.keys() ?? []]).toEqual(['body']);
+		expect([...(second.get('body').doc?.share.keys() ?? [])]).toEqual(['body']);
 		second[Symbol.dispose]();
 	});
 
@@ -164,13 +165,17 @@ describe('row deletion retires the document (ADR-0248)', () => {
 
 			expect(db.tables.notes.delete(note.id)).toBe(true);
 			// The row is gone, so the table answers absence.
-			expect(expectOk(await db.tables.notes.openDocument(note.id))).toBeUndefined();
+			expect(
+				expectOk(await db.tables.notes.openDocument(note.id)),
+			).toBeUndefined();
 		}
 		{
 			// Retirement is durable: a restart still refuses, and the chain is gone.
 			const db = overFile(file);
 			await using _db = db;
-			expect(expectOk(await db.tables.notes.openDocument(rowId))).toBeUndefined();
+			expect(
+				expectOk(await db.tables.notes.openDocument(rowId)),
+			).toBeUndefined();
 			const raw = createBunSqliteAdapter(file);
 			expect(
 				raw.all('SELECT seq FROM _updates WHERE document = ?', [derived]),
@@ -193,9 +198,7 @@ describe('row deletion retires the document (ADR-0248)', () => {
 		const note = expectOk(author.tables.notes.create({ title: 'raced' }));
 
 		// The peer converges on the row first.
-		expectOk(
-			syncEngineOf(peer.store).applyRemote(appState(author)),
-		);
+		expectOk(syncEngineOf(peer.store).applyRemote(appState(author)));
 		const handle = expectOk(await author.tables.notes.openDocument(note.id));
 		if (handle === undefined) throw new Error('no document');
 		typeText(handle, 'body', 'late words');
@@ -207,7 +210,9 @@ describe('row deletion retires the document (ADR-0248)', () => {
 		expect(peer.tables.notes.delete(note.id)).toBe(true);
 		expectOk(syncEngineOf(peer.store).applyRemote(late.bytes));
 
-		expect(expectOk(await peer.tables.notes.openDocument(note.id))).toBeUndefined();
+		expect(
+			expectOk(await peer.tables.notes.openDocument(note.id)),
+		).toBeUndefined();
 	});
 });
 

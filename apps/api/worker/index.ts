@@ -25,6 +25,7 @@ import {
 	mountSessionApp,
 	mountStoreSyncApp,
 	mountTranscriptionApp,
+	rateLimit,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
 	resolveRequestOAuthPrincipal,
@@ -151,15 +152,30 @@ mountStoreSyncApp(app, {
 // `syncBlobStorageWithAutumn` policy and the `policies` seam it needs land on
 // `mountBlobsApp` together.
 mountBlobsApp(app, { auth: cookieOrBearer });
+// The credit balance is the primary spend gate, but chat settles AFTER the call,
+// so calls fired together at exhaustion each pass the gate before any settles.
+// This bounds that BURST, which is why the window is short rather than the count
+// large: a fixed window permits its whole quota at once, so `120/60s` would allow
+// a 120-call burst while `10/5s` allows ten at the same sustained rate. The
+// exposure it bounds is small by construction (a paid plan bills overage as
+// revenue; the free plan sells none and is capped to cheap models), so read this
+// as cheap insurance, not a designed ceiling. Per-isolate on Cloudflare, so
+// approximate, and not a sustained-abuse defense.
 mountInferenceApp(app, {
 	auth: bearer,
-	policies: [chargeOpenAiCreditsWithAutumn],
+	policies: [
+		rateLimit({ requests: 10, windowSeconds: 5 }),
+		chargeOpenAiCreditsWithAutumn,
+	],
 });
 // OpenAI-compatible STT gateway (OpenAI whisper-1, house key). Metered by audio
 // duration, settled after the call (per-minute); see chargeOpenAiTranscriptionCredits.
 mountTranscriptionApp(app, {
 	auth: bearer,
-	policies: [chargeOpenAiTranscriptionCredits],
+	policies: [
+		rateLimit({ requests: 10, windowSeconds: 5 }),
+		chargeOpenAiTranscriptionCredits,
+	],
 });
 
 // Cloud-only billing data plane. Auth is bundled into the mount so the

@@ -1,4 +1,3 @@
-import { field } from '@epicenter/data/definition';
 /**
  * THROWAWAY, and test-only: a peer that lives inside `workerd`.
  *
@@ -19,13 +18,13 @@ import { field } from '@epicenter/data/definition';
  * deploys grows a class that exists for a test.
  */
 import { DurableObject } from 'cloudflare:workers';
+import { defineData, field } from '@epicenter/data/definition';
 import { createAccountStore } from '@epicenter/data/engine';
 import {
 	createSyncClient,
 	decodeFrame,
 	type SyncClient,
 } from '@epicenter/data/sync';
-import { defineData } from '@epicenter/data/definition';
 import {
 	createDurableObjectSqliteAdapter,
 	type DurableObjectSqliteStorage,

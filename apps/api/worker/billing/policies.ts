@@ -3,35 +3,31 @@
  * primitives with Autumn-backed billing.
  *
  * Each policy is a thin shell around the billing service. The service owns
- * the Autumn round-trips and the AI reservation lock (the `lockId` never
- * leaves it); policies own only HTTP shape: pulling fields off the request,
- * forwarding the guard's typed error to `c.json`, and pushing after-response
- * settlement/sync work onto the queue from `@epicenter/server`. Those ops
- * return a `Result` (they never reject) and the adapter logs any provider
- * failure at its source, so a failed finalize is recorded
- * rather than silently swallowed by the queue's `Promise.allSettled`, with no
- * separate settlement wrapper needed.
+ * the Autumn round-trips; policies own only HTTP shape: pulling fields off the
+ * request, forwarding the gate's typed error to `c.json`, and pushing
+ * after-response settlement work onto the queue from `@epicenter/server`. Those
+ * ops return a `Result` (they never reject) and the adapter logs any provider
+ * failure at its source, so a failed settle is recorded rather than silently
+ * swallowed by the queue's `Promise.allSettled`.
  *
  *   chargeOpenAiCreditsWithAutumn  Around `/v1/chat/completions` (the
- *                                  OpenAI-compatible gateway). Reserves credits
- *                                  (a lock) before the call, then confirms on
- *                                  success or releases on a pre-stream failure.
- *                                  The gateway is house-key-only, so every call
- *                                  is metered (ADR-0054): no BYOK bypass.
+ *                                  OpenAI-compatible gateway). Gate on a positive
+ *                                  balance, then tee the SSE reply and settle the
+ *                                  real per-token charge on the returned usage.
+ *                                  House-key-only, so every call is metered
+ *                                  (ADR-0054): no BYOK bypass.
  *
  *   chargeOpenAiTranscriptionCredits  Around `/v1/audio/transcriptions` (the STT
  *                                  gateway). Meters by audio duration: a cheap
  *                                  pre-gate denies an empty wallet, then on a 200
  *                                  the per-minute charge is tracked from the
- *                                  returned `duration`. Settle-after, so the cost
- *                                  is known (no reservation lock). House-key-only.
+ *                                  returned `duration`.
  *
- * AI reservations use Autumn's lock + `balances.finalize` rather than
- * deduct-then-refund: if the worker dies before finalizing, Autumn
- * auto-releases the hold at its TTL, so a failed request can never silently
- * overcharge. When the provider is unreachable the guard returns a structured
- * `BillingError` (fail closed), so the surface answers with a billing envelope
- * instead of a naked 500.
+ * Both meter the same way: gate on a positive balance, run, then settle on the
+ * provider's actual usage (chat tokens, STT duration). No lock and no pre-call
+ * estimate; the charge is the real number. When the provider is unreachable the
+ * gate returns a structured `BillingError` (fail closed), so the surface answers
+ * with a billing envelope instead of a naked 500.
  *
  * The opaque-id blob store is unmetered in v1 (no storage policy here):
  * Autumn `check()` denies by default with no plan attached, so deferred quota
@@ -48,38 +44,62 @@ import { createMiddleware } from 'hono/factory';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { AiChatError, AiChatErrorStatus } from './ai-chat-errors.js';
 import type { BillingError } from './errors.js';
+import { meterSSE, type StreamedUsage } from './meter-sse.js';
 import { billingServiceFor } from './service.js';
 
 /**
  * Around `/v1/chat/completions` (the OpenAI-compatible gateway, the only metered
- * inference path). A fixed-per-model reservation: reserve a credit lock before
- * the call, confirm on success or release on a pre-stream failure (>= 400). Once
- * the SSE stream starts the status is already 200, so a mid-stream provider
- * failure commits by design (those provider tokens were consumed and are
- * non-refundable); a failed finalize is logged at the adapter and self-heals via
- * the lock TTL. The model is read from the OpenAI body shape (top-level `model`)
- * and a guard failure answers in the OpenAI error shape
+ * chat path). Gate, run, settle on actual usage: gate on a positive balance
+ * before the call, then tee the SSE reply to read the provider's returned token
+ * usage and settle the real credit charge on the after-response queue. No lock
+ * and no pre-call estimate. The model is read from the OpenAI body shape
+ * (top-level `model`) and a gate failure answers in the OpenAI error shape
  * (`{ error: { message, code } }`) so the client engine keeps its branchable
- * `error.code`. The gateway is house-key-only (ADR-0054), so every call is
- * metered; there is no BYOK bypass.
+ * `error.code`. A non-200 is a provider/gateway failure that is not charged. If
+ * the client aborts before the usage chunk, the settle applies a nominal charge
+ * (see `settleAiChat`) rather than billing zero. The gateway is house-key-only
+ * (ADR-0054), so every call is metered; there is no BYOK bypass.
  */
 export const chargeOpenAiCreditsWithAutumn = createMiddleware<CloudEnv>(
 	async (c, next) => {
 		const body = (await c.req.json().catch(() => ({}))) as {
 			model?: string;
 		};
+		const model = body.model ?? '';
 
 		const billing = billingServiceFor(c);
-		const { data: reservation, error: guardError } =
-			await billing.reserveAiChat({ model: body.model ?? '' });
-		if (guardError) {
-			return c.json(toOpenAiError(guardError), aiGuardStatus(guardError));
+		const { error: gateError } = await billing.gateAiChat({ model });
+		if (gateError) {
+			return c.json(toOpenAiError(gateError), aiGuardStatus(gateError));
 		}
 
 		await next();
 
+		// Only a streaming 200 carries a usage receipt to settle on.
+		const upstream = c.res;
+		if (upstream.status !== 200 || !upstream.body) return;
+
+		// Tee the stream: forward bytes unchanged, resolve the usage on clean end
+		// (`flush`) or null on client abort so the settle still runs.
+		let settled = false;
+		let resolveUsage: (usage: StreamedUsage | null) => void = () => {};
+		const usage = new Promise<StreamedUsage | null>((resolve) => {
+			resolveUsage = (u) => {
+				if (settled) return;
+				settled = true;
+				resolve(u);
+			};
+		});
+		const metered = upstream.body.pipeThrough(meterSSE(resolveUsage));
+		c.req.raw.signal.addEventListener('abort', () => resolveUsage(null));
+		c.res = new Response(metered, {
+			status: upstream.status,
+			statusText: upstream.statusText,
+			headers: upstream.headers,
+		});
+
 		c.var.afterResponseQueue.push(
-			c.res.status >= 400 ? reservation.release() : reservation.confirm(),
+			usage.then((u) => billing.settleAiChat({ model, usage: u })),
 		);
 	},
 );

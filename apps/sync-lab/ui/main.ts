@@ -1,4 +1,5 @@
 import { field } from '@epicenter/data/definition';
+
 /**
  * THROWAWAY. One page, two devices, one row crossing between them.
  *
@@ -8,16 +9,22 @@ import { field } from '@epicenter/data/definition';
  * thing no test in this repository can establish.
  */
 
+import { defineData } from '@epicenter/data/definition';
 import { createAccountStore } from '@epicenter/data/engine';
 import { createSyncConnection } from '@epicenter/data/sync';
-import { defineData } from '@epicenter/data/definition';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
 const labDatabase = defineData({
 	id: 'so.epicenter.synclab',
 	kv: {},
-	tables: { notes: { title: field.string(), device: field.string(), at: field.string() } },
+	tables: {
+		notes: {
+			title: field.string(),
+			device: field.string(),
+			at: field.string(),
+		},
+	},
 });
 
 const device =

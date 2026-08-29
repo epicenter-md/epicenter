@@ -32,7 +32,7 @@ import { joinUrl, type ResolvedConnection } from './connection.js';
  * message. The two prompts are sent as the OpenAI `system` and `user` roles; an
  * empty string is still sent (the wire accepts it), matching the prior behavior.
  */
-type CompleteOptions = {
+export type CompleteOptions = {
 	model: string;
 	systemPrompt: string;
 	userPrompt: string;

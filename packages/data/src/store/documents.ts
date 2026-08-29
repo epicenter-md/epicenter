@@ -43,7 +43,13 @@ export const DocumentError = defineErrors({
 	 * StorageFailed: the caller renders a failure, and nothing half-hydrated
 	 * ever escapes.
 	 */
-	HydrationFailed: ({ address, cause }: { address: string; cause: unknown }) => ({
+	HydrationFailed: ({
+		address,
+		cause,
+	}: {
+		address: string;
+		cause: unknown;
+	}) => ({
 		message: `Document '${address}' could not be hydrated from storage`,
 		address,
 		cause,
@@ -160,7 +166,7 @@ export function createDocumentEngine({
 				// own authored work.
 				if (!transaction.local) {
 					throw new Error(
-						'Foreign bytes must enter through the store connection. A direct Y.applyUpdateV2 on a row document would be republished as this device\'s own work.',
+						"Foreign bytes must enter through the store connection. A direct Y.applyUpdateV2 on a row document would be republished as this device's own work.",
 					);
 				}
 				// An application writing inside its own document. The bytes join the

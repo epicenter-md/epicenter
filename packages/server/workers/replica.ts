@@ -1,4 +1,3 @@
-import { field } from '@epicenter/data/definition';
 /**
  * Test-only: a replica that lives inside `workerd`, driven by the real driver.
  *
@@ -20,6 +19,7 @@ import { field } from '@epicenter/data/definition';
  */
 import { DurableObject } from 'cloudflare:workers';
 import { type AccountStore, defineData } from '@epicenter/data';
+import { field } from '@epicenter/data/definition';
 import { createAccountStore } from '@epicenter/data/engine';
 import {
 	createSyncConnection,

@@ -6,11 +6,11 @@
  * feed reads arbitrary historical provider ids off persisted billing events, so
  * one unrecognized id must degrade to a single literal cell instead of failing
  * the whole read. "Every live provider has a label" is left to the
- * `AI_PROVIDERS satisfies Record<AiProvider>` compile guard, not duplicated here.
+ * `HOSTED_PROVIDERS satisfies Record<HostedProvider>` compile guard, not duplicated here.
  */
 
 import { expect, test } from 'bun:test';
-import { providerLabel } from './ai-providers.ts';
+import { providerLabel } from './hosted-catalog.ts';
 
 test('resolves a known provider id to its vendor label', () => {
 	// gemini -> Google is the non-obvious mapping worth pinning: the vendor

@@ -22,7 +22,7 @@
  *
  * Inference rides the OpenAI-compatible gateway (ADR-0049/0050). The engine is
  * built here, once: per turn it resolves the conversation's model (ADR-0055)
- * against this device's connection registry (ADR-0059, `resolveOrHosted`) and
+ * against this device's connection registry (ADR-0059, `resolve`) and
  * reads the app's system prompts. What the agent can do is grouped into one
  * `agent` bundle ({@link AgentKit}), since every field of it varies with the
  * app's persona; the loop's other collaborators are passed alongside:
@@ -259,11 +259,17 @@ export function createAgentChatState({
 				engine: createOpenAiAgentEngine({
 					// The conversation's model (ADR-0055) is resolved per turn against this
 					// device's connection set (ADR-0059), so a switch lands on the next
-					// turn. `resolveOrHosted` falls back to the hosted gateway for a model no
-					// device connection serves; the UI gates sending in that case, so the
-					// fallback only errors loudly rather than silently substituting a model.
+					// turn. `resolve` returns null when nothing on this device serves the
+					// model; the UI gates sending on `canServe`, so this throws only if a
+					// turn started on an already-blocked path, which is louder and more
+					// honest than shipping the id to a transport it does not belong to.
 					data: () => {
-						const transport = connections.resolveOrHosted(currentModel);
+						const transport = connections.resolve(currentModel);
+						if (!transport) {
+							throw new Error(
+								`No inference connection on this device serves ${currentModel}.`,
+							);
+						}
 						return {
 							...transport,
 							model: currentModel,

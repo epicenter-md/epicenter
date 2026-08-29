@@ -1,4 +1,3 @@
-import { field } from '@epicenter/data/definition';
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
@@ -6,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TableInvalidation } from '@epicenter/data/definition';
-import { defineData } from '@epicenter/data/definition';
+import { defineData, field } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 import { open, openMemory } from './bun.js';
@@ -27,7 +26,11 @@ const database = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.select(['light', 'dark']), fontSize: field.number() },
 	tables: {
-		notes: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) },
+		notes: {
+			title: field.string(),
+			tags: field.tags(),
+			date: field.nullable(field.string()),
+		},
 	},
 });
 
@@ -117,7 +120,7 @@ describe('a read is a property access on a plain object', () => {
 		db.transact(() => {
 			note({ title: 'one' });
 			note({ title: 'two' });
-	});
+		});
 
 		expect(touched).toHaveLength(1);
 		expect(touched[0]).toHaveLength(2);
@@ -212,7 +215,13 @@ describe('a nonconforming row is reported, never repaired', () => {
 	const wrongDatabase = defineData({
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
-		tables: { notes: { title: field.string(), tags: field.string(), date: field.nullable(field.string()) } },
+		tables: {
+			notes: {
+				title: field.string(),
+				tags: field.string(),
+				date: field.nullable(field.string()),
+			},
+		},
 	});
 
 	/**
@@ -690,7 +699,11 @@ describe('a subscription names the rows a commit touched', () => {
 				id: 'so.epicenter.honeycrisp',
 				kv: {},
 				tables: {
-					notes: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) },
+					notes: {
+						title: field.string(),
+						tags: field.tags(),
+						date: field.nullable(field.string()),
+					},
 					folders: { name: field.string() },
 				},
 			}),
@@ -879,7 +892,11 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 					future: field.string(),
 				},
 				tables: {
-					notes: { title: field.string(), tags: field.tags(), date: field.nullable(field.string()) },
+					notes: {
+						title: field.string(),
+						tags: field.tags(),
+						date: field.nullable(field.string()),
+					},
 				},
 			}),
 			sqlite,

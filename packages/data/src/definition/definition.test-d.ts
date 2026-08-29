@@ -1,7 +1,9 @@
+import type {
+	CalendarDateString,
+	DateTimeString,
+	InstantString,
+} from '@epicenter/field';
 import type { Static } from 'typebox';
-import type { CalendarDateString } from '@epicenter/field';
-import type { DateTimeString } from '@epicenter/field';
-import type { InstantString } from '@epicenter/field';
 import { defineData, field, type RowOf } from './index.js';
 
 type Equal<X, Y> =

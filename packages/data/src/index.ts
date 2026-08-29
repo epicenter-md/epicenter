@@ -46,12 +46,11 @@ export type {
 } from './store/documents.js';
 export {
 	decodeEnvelope,
-	encodeEnvelope,
 	type EnvelopeError,
 	type EnvelopeSection,
+	encodeEnvelope,
 } from './store/envelope.js';
-export { APP_DOCUMENT } from './store/log.js';
-export { SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
+export { APP_DOCUMENT, SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
 export type {
 	DurableOp,
 	DurablePort,
@@ -63,9 +62,9 @@ export type {
 export {
 	type AccountStore,
 	type ApplyFailedError,
+	type DataOf,
 	type DataStoreBase,
 	type DataView,
-	type DataOf,
 	type DeviceStore,
 	type KvHandle,
 	type NonconformingRow,

@@ -16,8 +16,8 @@ import {
 	asData,
 	createAccountStore,
 	createAccountStoreOverPort,
-	type DataView,
 	type DataOf,
+	type DataView,
 	StoreError,
 	type UntypedDataView,
 } from './store.js';
@@ -62,7 +62,10 @@ export async function open<const TDatabase extends DataDefinition>(
 		keepHistory?: boolean;
 	},
 ): Promise<
-	Result<DataOf<TDatabase, BunAccountStore>, StoreError | DataDefinitionParseError>
+	Result<
+		DataOf<TDatabase, BunAccountStore>,
+		StoreError | DataDefinitionParseError
+	>
 > {
 	// Parsed before anything is claimed or opened: a declaration may arrive as
 	// data, and a refusal here is a boot outcome rather than a programmer
@@ -115,7 +118,14 @@ async function openBunStore({
 	 */
 	keepHistory?: boolean;
 }): Promise<
-	Result<{ store: BunAccountStore; view: UntypedDataView; definition: ParsedDataDefinition }, StoreError>
+	Result<
+		{
+			store: BunAccountStore;
+			view: UntypedDataView;
+			definition: ParsedDataDefinition;
+		},
+		StoreError
+	>
 > {
 	const { error: directoryError } = await tryAsync({
 		try: () => mkdir(directory, { recursive: true }),
@@ -148,7 +158,11 @@ async function openBunStore({
 		});
 		const opened = live;
 		const openedHistory = historyDatabase;
-		const { store, view, definition: parsedDefinition } = createAccountStoreOverPort({
+		const {
+			store,
+			view,
+			definition: parsedDefinition,
+		} = createAccountStoreOverPort({
 			definition,
 			durable: port,
 			loaded: port.load(),
@@ -158,7 +172,12 @@ async function openBunStore({
 				releaseDocument(definition.id);
 			},
 		});
-		return composeBunStore({ store, view, definition: parsedDefinition, directory });
+		return composeBunStore({
+			store,
+			view,
+			definition: parsedDefinition,
+			directory,
+		});
 	} catch (cause) {
 		live?.close();
 		historyDatabase?.close();
@@ -176,7 +195,14 @@ function composeBunStore({
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 	directory: string;
-}): Result<{ store: BunAccountStore; view: UntypedDataView; definition: ParsedDataDefinition }, StoreError> {
+}): Result<
+	{
+		store: BunAccountStore;
+		view: UntypedDataView;
+		definition: ParsedDataDefinition;
+	},
+	StoreError
+> {
 	return Ok({
 		store: Object.freeze({
 			...store,

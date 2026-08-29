@@ -43,7 +43,7 @@ import { joinUrl, type ResolvedConnection } from './connection.js';
  * `prompt` (a vocabulary/style hint) are optional, omitted from the form when
  * absent so a server's own defaults apply.
  */
-type TranscribeOptions = {
+export type TranscribeOptions = {
 	model: string;
 	language?: string;
 	prompt?: string;
@@ -69,6 +69,17 @@ export const TranscribeError = defineErrors({
 	Malformed: () => ({
 		message: 'The transcription response was not an OpenAI { text } body.',
 	}),
+	/**
+	 * No connection on this device serves the requested model, so nothing was sent.
+	 * Constructed by callers that resolve a transport before calling
+	 * {@link transcribe}, never returned by `transcribe` itself: it is the honest
+	 * alternative to inventing a status for a request that never happened. Carries
+	 * the model so the surface can name what to configure.
+	 */
+	NoConnection: ({ model }: { model: string }) => ({
+		message: `No connection on this device serves ${model}. Add an inference connection that does.`,
+		model,
+	}),
 });
 export type TranscribeError = InferErrors<typeof TranscribeError>;
 
@@ -83,8 +94,8 @@ export type TranscribeError = InferErrors<typeof TranscribeError>;
  * {@link filenameForAudio}.
  */
 export async function transcribe(
-	audio: Blob,
 	{ fetch, baseURL }: ResolvedConnection,
+	audio: Blob,
 	{ model, language, prompt }: TranscribeOptions,
 ): Promise<Result<string, TranscribeError>> {
 	const form = new FormData();

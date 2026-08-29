@@ -13,7 +13,9 @@ describe('documentAddress (ADR-0248)', () => {
 			tableName: 'notes',
 			rowId: 'abc123',
 		};
-		expect(documentAddress(address)).toBe('so.epicenter.honeycrisp/notes/abc123');
+		expect(documentAddress(address)).toBe(
+			'so.epicenter.honeycrisp/notes/abc123',
+		);
 		expect(documentAddress(address)).toBe(documentAddress({ ...address }));
 	});
 

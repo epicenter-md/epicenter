@@ -143,7 +143,7 @@ function createFakeChat() {
 			throw cause;
 		},
 		connections: {
-			resolveOrHosted: () => ({ baseUrl: 'http://test', apiKey: 'test' }),
+			resolve: () => ({ baseUrl: 'http://test', apiKey: 'test' }),
 			canServe: () => true,
 		} as never,
 		agent: {

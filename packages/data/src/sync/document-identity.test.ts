@@ -1,4 +1,3 @@
-import { field } from '@epicenter/data/definition';
 /**
  * A cursor is a position, not a membership (ADR-0231).
  *
@@ -24,7 +23,11 @@ import { field } from '@epicenter/data/definition';
  */
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { type DataDefinition, defineData } from '@epicenter/data/definition';
+import {
+	type DataDefinition,
+	defineData,
+	field,
+} from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
@@ -234,10 +237,9 @@ describe('the receive half: the stamp precedes every foreign byte', () => {
 		wire.settle();
 
 		expectOk(authority.document());
-		sqlite.run(
-			"UPDATE _meta SET value = ? WHERE key = 'document'",
-			[crypto.randomUUID()],
-		);
+		sqlite.run("UPDATE _meta SET value = ? WHERE key = 'document'", [
+			crypto.randomUUID(),
+		]);
 
 		phone.disconnect();
 		expect(phone.connect()).toBe('retired');
@@ -271,7 +273,6 @@ describe('database bootstrap names a document before any database write', () => 
 		);
 	});
 
-
 	test('local database work before bootstrap is discarded, never stamped and sent', () => {
 		const { wire, authority, hub } = setup();
 		const replica = openReplica('replica', hub, wire);
@@ -288,8 +289,6 @@ describe('database bootstrap names a document before any database write', () => 
 		expect(replica.client.status().superseded).toBe(true);
 		expect(expectOk(authority.head())).toBe(0);
 	});
-
-
 });
 
 describe('the cutover: pre-identity local state is reset, never merged', () => {

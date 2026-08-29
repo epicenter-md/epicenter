@@ -84,8 +84,9 @@ shapes, see `docs/adr/`.
   (ADR-0033), so it is _not_ content-blind, unlike the relay, but it owns no loop,
   tool, or transcript. The wire is OpenAI-compatible (ADR-0050), so the box is
   swappable by base URL: Epicenter's metered gateway (house key, billed; it never
-  accepts a provider key), a self-hosted gateway (your key or a local model), or
-  any third-party OpenAI-compatible endpoint. A BYOK key is handed to a custom
+  accepts a provider key), a gateway you run (Ollama, LiteLLM, Speaches, your key
+  or a local model), or any third-party OpenAI-compatible endpoint. An Epicenter
+  *instance* is not one of these: it does not do inference (ADR-0264). A BYOK key is handed to a custom
   inference server (self-hosted or local), never to the Epicenter gateway or a
   daemon (ADR-0054).
 - **Deployable vs library**: one library, `packages/server`, consumed by two

@@ -15,7 +15,7 @@ import { field } from '@epicenter/data/definition';
 
 import type { AgentMessage } from '@epicenter/agent';
 import { conversationsTable } from '@epicenter/chat';
-import type { ServableModel } from '@epicenter/constants/ai-providers';
+import type { HostedModelId } from '@epicenter/constants/hosted-catalog';
 import type { DataView } from '@epicenter/data';
 import { defineData, type RowOf } from '@epicenter/data/definition';
 
@@ -25,7 +25,7 @@ import { defineData, type RowOf } from '@epicenter/data/definition';
  * this constant on every row and never offers a per-conversation pick. The
  * client also reads it when it answers over the OpenAI-compatible stream.
  */
-export const VOCAB_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
+export const VOCAB_MODEL = 'gemini-3.5-flash' satisfies HostedModelId;
 
 /**
  * The multilingual tutor system prompt every Vocab answer is generated under. An

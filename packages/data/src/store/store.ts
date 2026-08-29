@@ -474,7 +474,10 @@ export type DataOf<
  * data they return, and nothing outside this package holds a store and a view
  * apart.
  */
-export function asData<TDatabase extends DataDefinition, TStore extends DataStoreBase>(
+export function asData<
+	TDatabase extends DataDefinition,
+	TStore extends DataStoreBase,
+>(
 	store: TStore,
 	view: DataView<TDatabase>,
 	definition: DataDefinition,
@@ -650,8 +653,8 @@ export type StorePressure = {
  * Every verb here is a fact about the document itself: measure it, encode it,
  * hear it commit, watch its persistence. The data definition is not on
  * this surface, because it is not a verb: the engine closed over it at
-	 * construction and every table handle, the KV handle, and the whole-index
-	 * projection read the one parsed definition for the store's whole life
+ * construction and every table handle, the KV handle, and the whole-index
+ * projection read the one parsed definition for the store's whole life
  * (ADR-0240). What tells the two store kinds apart is `sync`, present on both
  * and carrying the discriminating value: `undefined` on a device-owned
  * document, a `SyncCapability` on a replica. Every store has local
@@ -837,8 +840,8 @@ const syncEngines = new WeakMap<SyncCapability, SyncEngine>();
 /**
  * The delivery machinery behind one replica's `sync` capability.
  *
-	 * Package-internal by convention: exported for the transport and tests, and
-	 * deliberately absent from the package barrel.
+ * Package-internal by convention: exported for the transport and tests, and
+ * deliberately absent from the package barrel.
  */
 export function syncEngineOf(store: AccountStore): SyncEngine {
 	const engine = syncEngines.get(store.sync);
@@ -897,7 +900,9 @@ export type CreateStoreOptions<TDatabase extends DataDefinition> = {
  * openers, which may be handed a declaration that arrived as data, parse
  * first and return the refusal as a boot outcome instead.
  */
-function parsedDatabaseOrThrow(definition: DataDefinition): ParsedDataDefinition {
+function parsedDatabaseOrThrow(
+	definition: DataDefinition,
+): ParsedDataDefinition {
 	const { data, error } = parseData(definition);
 	if (error !== null) throw new Error(error.message, { cause: error });
 	return data;
@@ -931,12 +936,19 @@ function overSqlite<TDatabase extends DataDefinition>({
 export function createDeviceStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
 ): DataOf<TDatabase, DeviceStore> {
-	const { store, view, definition } = createStoreEngine(overSqlite(options), 'none');
+	const { store, view, definition } = createStoreEngine(
+		overSqlite(options),
+		'none',
+	);
 	// Through `unknown` deliberately: comparing the untyped view with
 	// `DataView<TDatabase>` re-enters the per-field descriptor instantiation
 	// and exceeds the depth limit. The runtime value is the same object either
 	// way; only the static view of it differs.
-	return asData(store, view as unknown as DataView<TDatabase>, definition.definition);
+	return asData(
+		store,
+		view as unknown as DataView<TDatabase>,
+		definition.definition,
+	);
 }
 
 /**
@@ -954,8 +966,15 @@ export function createDeviceStore<const TDatabase extends DataDefinition>(
 export function createAccountStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
 ): DataOf<TDatabase, AccountStore> {
-	const { store, view, definition } = createStoreEngine(overSqlite(options), 'remote');
-	return asData(store, view as unknown as DataView<TDatabase>, definition.definition);
+	const { store, view, definition } = createStoreEngine(
+		overSqlite(options),
+		'remote',
+	);
+	return asData(
+		store,
+		view as unknown as DataView<TDatabase>,
+		definition.definition,
+	);
 }
 
 /**
@@ -988,11 +1007,19 @@ export function createAccountStoreOverPort(options: StoreEngineOptions): {
 function createStoreEngine(
 	options: StoreEngineOptions,
 	replication: 'none',
-): { store: DeviceStore; view: UntypedDataView; definition: ParsedDataDefinition };
+): {
+	store: DeviceStore;
+	view: UntypedDataView;
+	definition: ParsedDataDefinition;
+};
 function createStoreEngine(
 	options: StoreEngineOptions,
 	replication: 'remote',
-): { store: AccountStore; view: UntypedDataView; definition: ParsedDataDefinition };
+): {
+	store: AccountStore;
+	view: UntypedDataView;
+	definition: ParsedDataDefinition;
+};
 function createStoreEngine(
 	{
 		definition,
@@ -1003,7 +1030,11 @@ function createStoreEngine(
 		log = createLogger('data/store'),
 	}: StoreEngineOptions,
 	replication: 'none' | 'remote',
-): { store: DeviceStore | AccountStore; view: UntypedDataView; definition: ParsedDataDefinition } {
+): {
+	store: DeviceStore | AccountStore;
+	view: UntypedDataView;
+	definition: ParsedDataDefinition;
+} {
 	const index = createAppDocument();
 	let pending: Uint8Array[] = [];
 	let composedTransaction: DurableOp[] | undefined;
@@ -1346,9 +1377,9 @@ function createStoreEngine(
 	 * at all: `Doc.get` is `setIfUndefined` on `doc.share`, so every device that
 	 * mints `kv` converges on one logical root.
 	 *
-		 * Every definition has a `kv` section, even when it is `{}`. An empty section
-		 * has no read lens, so the handle reads and writes the raw structured value
-		 * rather than refusing keys that the declaration does not know about.
+	 * Every definition has a `kv` section, even when it is `{}`. An empty section
+	 * has no read lens, so the handle reads and writes the raw structured value
+	 * rather than refusing keys that the declaration does not know about.
 	 */
 	function createKvHandle(): KvHandle {
 		const table = definition.kv;
@@ -1546,7 +1577,9 @@ function createStoreEngine(
 						removed = deleteRow(root, rowId);
 					},
 					() =>
-						removed ? [documents.retire(documentAddress(addressOf(rowId)))] : [],
+						removed
+							? [documents.retire(documentAddress(addressOf(rowId)))]
+							: [],
 				);
 				return removed;
 			},
@@ -1760,7 +1793,11 @@ function createStoreEngine(
 	// delivery machinery is registered against the capability so wrappers
 	// that spread the store (a `discard()` opener) keep the door reachable.
 	if (syncEngine === undefined) {
-		return { store: Object.freeze({ ...base, sync: undefined }), view, definition };
+		return {
+			store: Object.freeze({ ...base, sync: undefined }),
+			view,
+			definition,
+		};
 	}
 	const sync: SyncCapability = Object.freeze({
 		get: (): SyncFacts => ({ document: liveIdentity }),

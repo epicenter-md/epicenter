@@ -13,18 +13,23 @@
  *
  * Two axes people conflate. A custom connection here (a base URL + optional key)
  * is device-local and appears the moment it is added; it is unrelated to sign-in
- * or to which Epicenter instance is connected. The injected hosted entry is always
- * present, so its picker group renders regardless of sign-in, but its transport is
- * the audience-scoped `auth.fetch` (ADR-0053) against the Cloud gateway, so it only
- * functions when signed into Cloud (signed out it is shown-but-inert; the chat
- * surface's `onSignIn` catches the send). Instance auth (Cloud OAuth vs self-host
- * token) is a separate decision that never gates this picker.
+ * or to which Epicenter instance is connected.
+ *
+ * The hosted entry is OPTIONAL, and an app must omit it when this device is not
+ * bound to Epicenter Cloud. Its transport is the audience-scoped `auth.fetch`
+ * (ADR-0053) against Cloud's gateway, while its base URL is Cloud's regardless of
+ * the selected instance, so on a self-host session it would send an instance
+ * bearer to Cloud and 401. A self-hosted instance serves no models of its own
+ * either (ADR-0264), so there is nothing to substitute: the group simply does not
+ * render, and every model comes from a device connection. Signed out of Cloud on a
+ * hosted-default device, the entry is still passed and is shown-but-inert (the
+ * chat surface's `onSignIn` catches the send).
  */
 
 import {
 	type Connection,
+	createInferenceClient,
 	type ListModelsError,
-	listModels,
 	type ResolvedConnection,
 	resolveConnection,
 } from '@epicenter/client';
@@ -56,7 +61,7 @@ export type PersistFactory = <S extends StandardSchemaV1>(
  * catalog is app-specific (Vocab offers a model the others do not), so the shared
  * registry never reaches into `@epicenter/constants`.
  */
-export type HostedModel = { id: string; label: string; credits: number };
+export type HostedModel = { id: string; label: string };
 
 /**
  * One stored custom connection: the transport identity (`baseUrl` + optional
@@ -81,15 +86,32 @@ export type InferenceConnections = ReturnType<
 export function createInferenceConnections({
 	storageKey,
 	hostedModels,
+	hostedAlsoServes = [],
 	hosted,
 	persist,
 }: {
 	/** Namespace for the persisted-state keys, e.g. the app name. */
 	storageKey: string;
-	/** The hosted catalog this app sells (app-specific subset). */
+	/** The hosted catalog this app sells (app-specific subset). Ignored when
+	 *  `hosted` is omitted, since those ids would have no transport. */
 	hostedModels: HostedModel[];
-	/** The hosted transport (`auth.fetch` + gateway base URL). */
-	hosted: ResolvedConnection;
+	/**
+	 * Further ids the hosted transport serves that are NOT offered in the picker,
+	 * typically STT models: one Connection base drives both `/chat/completions` and
+	 * `/audio/transcriptions` (ADR-0060), so Cloud serves `whisper-1` on the same
+	 * transport without it being a chat model anyone picks. Declaring it here is
+	 * what lets `resolve('whisper-1')` find the hosted transport; without it the
+	 * id would resolve to nothing.
+	 */
+	hostedAlsoServes?: readonly string[];
+	/**
+	 * The hosted transport (`auth.fetch` + Cloud's gateway base URL). Omit it when
+	 * this device is not bound to Epicenter Cloud (`instanceSetting.isDefault()` is
+	 * false): the credential would be the wrong audience for that URL. With it
+	 * omitted, `hostedModels` reads empty and the picker's Epicenter group does not
+	 * render.
+	 */
+	hosted?: ResolvedConnection;
 	/** The persistence mechanism (web: localStorage; extension: chrome.storage). */
 	persist: PersistFactory;
 }) {
@@ -119,14 +141,23 @@ export function createInferenceConnections({
 				resolve: () => resolveConnection(connection),
 				models: connection.models ?? [],
 			})),
-			{ resolve: () => hosted, models: hostedModels.map((m) => m.id) },
+			// Only when this device has a hosted transport; otherwise Cloud's ids are
+			// not offered at all rather than offered and unreachable.
+			...(hosted
+				? [
+						{
+							resolve: () => hosted,
+							models: [...hostedModels.map((m) => m.id), ...hostedAlsoServes],
+						},
+					]
+				: []),
 		];
 	}
 
 	/** Resolve a conversation's model (ADR-0055) to its transport, or `null` when no
-	 * connection on this device serves it. Internal: the served/unserved predicate
-	 * has one definition here, exposed as `resolveOrHosted` (transport) and
-	 * `canServe` (boolean) so neither the engine nor the UI re-derives it. */
+	 * connection on this device serves it. One definition of the served/unserved
+	 * predicate, exposed as `resolve` (transport) and `canServe` (boolean) so
+	 * neither the engine nor the UI re-derives it. */
 	function resolve(model: string): ResolvedConnection | null {
 		return (
 			candidates()
@@ -136,8 +167,10 @@ export function createInferenceConnections({
 	}
 
 	return {
-		/** The hosted catalog this app sells (for the picker's Epicenter group). */
-		hostedModels,
+		/** The hosted catalog this app sells (for the picker's Epicenter group).
+		 *  Empty when no hosted transport was supplied, which is what removes the
+		 *  group from the picker. */
+		hostedModels: hosted ? hostedModels : [],
 		/**
 		 * The device's custom connections, in display order. Each carries its own
 		 * discovered `models` (see {@link StoredConnection}), so the picker reads one
@@ -167,9 +200,9 @@ export function createInferenceConnections({
 			baseUrl: string,
 			apiKey?: string,
 		): Promise<Result<string[], ListModelsError>> {
-			return listModels(
+			return createInferenceClient(
 				resolveConnection({ baseUrl, apiKey: apiKey || undefined }),
-			);
+			).listModels();
 		},
 
 		/** Re-discover an already-added connection's models and update its cached
@@ -182,7 +215,9 @@ export function createInferenceConnections({
 		async refresh(baseUrl: string): Promise<void> {
 			const connection = stored.current.find((c) => c.baseUrl === baseUrl);
 			if (!connection) return;
-			const { data, error } = await listModels(resolveConnection(connection));
+			const { data, error } = await createInferenceClient(
+				resolveConnection(connection),
+			).listModels();
 			if (error) return;
 			stored.current = stored.current.map((c) =>
 				c.baseUrl === baseUrl ? { ...c, models: data } : c,
@@ -190,15 +225,14 @@ export function createInferenceConnections({
 		},
 
 		/**
-		 * The transport for a conversation's model, falling back to the hosted
-		 * connection when no device connection serves it. The fallback ships the
-		 * unservable model id to the gateway, which errors loudly; callers gate
-		 * sending via {@link canServe}, so this fires only on a path the UI blocks and
-		 * never silently substitutes a different model.
+		 * The transport for a conversation's model, or `null` when nothing on this
+		 * device serves it. It never substitutes a different model and never falls
+		 * back to a transport the model does not belong to: with no hosted entry
+		 * there is nothing to fall back to, and with one, sending an unservable id to
+		 * Cloud only buys a loud error. Callers gate sending via {@link canServe}, so
+		 * `null` is the already-blocked path.
 		 */
-		resolveOrHosted(model: string): ResolvedConnection {
-			return resolve(model) ?? hosted;
-		},
+		resolve,
 		/**
 		 * Whether a connection on this device serves the model. The single predicate
 		 * behind both the cross-device banner and the send gate; never rewrites the

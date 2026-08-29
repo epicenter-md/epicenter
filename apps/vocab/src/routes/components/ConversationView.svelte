@@ -4,7 +4,7 @@
 		AgentChatThread,
 		type ConversationHandle,
 	} from '@epicenter/app-shell/agent-chat';
-	import { complete } from '@epicenter/client';
+	import { createInferenceClient } from '@epicenter/client';
 	import { Button } from '@epicenter/ui/button';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import {
@@ -128,11 +128,21 @@
 			};
 			return;
 		}
+		const connection = inferenceConnections.resolve(model);
+		if (!connection) {
+			entryCandidateAbortController = null;
+			entryCandidateRequest = {
+				messageId,
+				status: 'error',
+				candidates: [],
+				detail: `No connection on this device serves ${model}.`,
+			};
+			return;
+		}
 		const controller = new AbortController();
 		entryCandidateAbortController = controller;
 		entryCandidateRequest = { messageId, status: 'loading', candidates: [] };
-		const connection = inferenceConnections.resolveOrHosted(model);
-		const { data, error } = await complete(connection, {
+		const { data, error } = await createInferenceClient(connection).complete({
 			model,
 			systemPrompt: buildEntryCandidatePrompt(),
 			userPrompt: passage,

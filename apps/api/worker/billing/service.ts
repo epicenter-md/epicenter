@@ -26,9 +26,9 @@
  */
 
 import {
-	MODELS_BY_ID,
-	type ServableModel,
-} from '@epicenter/constants/ai-providers';
+	HOSTED_MODELS_BY_ID,
+	type HostedModelId,
+} from '@epicenter/constants/hosted-catalog';
 import type { PrincipalId } from '@epicenter/identity';
 import type { CloudEnv } from '@epicenter/server';
 import type { Context } from 'hono';
@@ -38,7 +38,6 @@ import { createAutumnClient, isNotFoundError, tryAutumn } from './autumn.js';
 import {
 	type CheckoutPlanId,
 	FEATURE_IDS,
-	FREE_TIER_MAX_CREDITS_PER_CALL,
 	getPlan,
 	PLAN_IDS,
 	PLANS,
@@ -60,6 +59,12 @@ import type {
 	UsageSeries,
 } from './contracts.js';
 import type { BillingError } from './errors.js';
+import type { StreamedUsage } from './meter-sse.js';
+import {
+	chatModelCost,
+	creditsForChat,
+	nominalChatCredits,
+} from './model-pricing.js';
 
 // ---------------------------------------------------------------------
 // Types
@@ -75,28 +80,6 @@ type Identity = {
 // ---------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------
-
-/** How long a reservation lock holds the balance before Autumn auto-releases
- *  it. If the worker dies before finalizing, the hold expires here, so a failed
- *  request never permanently consumes credits or quota. */
-const LOCK_TTL_MS = 15 * 60_000;
-
-/**
- * A held reservation taken by `reserveAiChat`. The `lockId` is captured in the
- * closure and never escapes the service: the policy commits with `confirm()`
- * on success or rolls back with `release()` on failure, so the lock action
- * can't be mispaired.
- */
-type Reservation = {
-	confirm(): Promise<Result<void, BillingError>>;
-	release(): Promise<Result<void, BillingError>>;
-};
-
-type LockedCheck = {
-	allowed: boolean;
-	balance: unknown;
-	reservation: Reservation;
-};
 
 /**
  * Construct a request-scoped billing service from the Hono context. The one
@@ -125,26 +108,25 @@ export function createBillingService(
 	// ----- AI guard -----------------------------------------------------
 
 	/**
-	 * Reserve AI credits for one chat call. On success returns a reservation the
-	 * policy commits or releases around the downstream handler; on failure
-	 * returns a typed reason (unknown model, free-tier ceiling, insufficient
-	 * balance, or a fail-closed provider outage).
+	 * Gate one chat call before it runs: the model must be priced, the plan must
+	 * permit it (the free tier is restricted to free-eligible models), and the
+	 * balance must be positive. No lock and no pre-call estimate; the real charge
+	 * settles on the provider's returned usage in {@link settleAiChat}. A
+	 * billing-provider outage fails closed. A negative balance (from a prior
+	 * overflow settle) reports `allowed: false` here, blocking the next call until
+	 * top-up.
 	 */
-	async function reserveAiChat(input: {
+	async function gateAiChat(input: {
 		model: string;
-	}): Promise<Result<Reservation, AiChatError | BillingError>> {
-		// One catalog lookup yields both the price and the provider. The catalog
-		// owns the model -> provider mapping, so the provider lands on the usage
-		// event (the dashboard groups spend by it) without the client asserting
-		// it. An unknown id is the only failure mode.
-		const entry = MODELS_BY_ID[input.model as ServableModel];
-		if (!entry) {
+	}): Promise<Result<void, AiChatError | BillingError>> {
+		const model = input.model as HostedModelId;
+		const cost = chatModelCost(model);
+		if (!cost) {
 			return AiChatError.UnknownModel({ model: input.model });
 		}
-		const { credits, provider } = entry;
 
-		// Resolve the active plan from a single customer fetch. A billing-provider
-		// outage fails closed: entitlement cannot be verified, so deny.
+		// One customer fetch resolves the active plan. A provider outage fails
+		// closed: entitlement cannot be verified, so deny.
 		const { data: customer, error: customerError } = await tryAutumn(() =>
 			loadCustomer(),
 		);
@@ -153,26 +135,65 @@ export function createBillingService(
 		const mainSub = customer.subscriptions.find((s) => !s.addOn) ?? null;
 		const planId = mainSub?.planId ?? PLAN_IDS.free;
 
-		// Free tier rejects models above the per-call ceiling.
-		if (planId === PLAN_IDS.free && credits > FREE_TIER_MAX_CREDITS_PER_CALL) {
-			return AiChatError.ModelRequiresPaidPlan({ model: input.model, credits });
+		// The free tier is restricted to free-eligible (cheap) models.
+		if (planId === PLAN_IDS.free && !cost.freeEligible) {
+			return AiChatError.ModelRequiresPaidPlan({
+				model: input.model,
+				credits: nominalChatCredits(model),
+			});
 		}
 
-		// Reserve the credits with a lock instead of an immediate deduct: the lock
-		// holds the balance (concurrent calls can't double-spend) and the returned
-		// reservation commits on success or releases on a pre-stream failure. If
-		// the worker dies before finalizing, Autumn auto-releases at `expiresAt`,
-		// so a failed call never permanently consumes credits.
-		const { data: check, error: checkError } = await reserveAiCreditsWithLock({
-			credits,
-			properties: { model: input.model, provider },
-		});
+		const { data: check, error: checkError } = await tryAutumn(() =>
+			autumn.check({
+				customerId: identity.principalId,
+				featureId: FEATURE_IDS.aiUsage,
+				requiredBalance: 1,
+			}),
+		);
 		if (checkError) return Err(checkError);
 		if (!check.allowed) {
 			return AiChatError.InsufficientCredits({ balance: check.balance });
 		}
 
-		return Ok(check.reservation);
+		return Ok(undefined);
+	}
+
+	/**
+	 * Settle one finished chat call on the provider's ACTUAL returned usage, off
+	 * the after-response queue. The plain `track` deducts the real credit cost;
+	 * whether the balance may go negative (and how far) is a plan-config concern
+	 * (`overageAllowed` + `overageLimit` on `ai_usage`), not a per-call flag. When
+	 * the stream ended without readable usage (client abort or a mid-stream error
+	 * frame), a conservative nominal charge is applied instead of billing zero, so
+	 * a read-then-abort cannot get free inference.
+	 */
+	async function settleAiChat(input: {
+		model: string;
+		usage: StreamedUsage | null;
+	}): Promise<Result<void, BillingError>> {
+		const model = input.model as HostedModelId;
+		const entry = HOSTED_MODELS_BY_ID[model];
+		if (!entry || !chatModelCost(model)) {
+			// The gate proved the model is priced; a gap here is a programmer error,
+			// so throw to a real 500 rather than charge zero.
+			throw new Error(`No cost configured for model ${input.model}`);
+		}
+		const credits = input.usage
+			? creditsForChat({
+					model,
+					inputTokens: input.usage.inputTokens,
+					outputTokens: input.usage.outputTokens,
+				})
+			: nominalChatCredits(model);
+		return tryAutumn(async () => {
+			await autumn.track({
+				customerId: identity.principalId,
+				featureId: FEATURE_IDS.aiUsage,
+				value: credits,
+				async: true,
+				properties: { model: input.model, provider: entry.provider },
+			});
+		});
 	}
 
 	/**
@@ -492,49 +513,6 @@ export function createBillingService(
 
 	// ----- Private helpers (closed over `autumn`/`identity`) ------------
 
-	/**
-	 * Reserve held AI credits with Autumn and hide the lock id behind the
-	 * reservation. The caller maps denied access to the AI domain error.
-	 */
-	function reserveAiCreditsWithLock(input: {
-		credits: number;
-		properties: Record<string, unknown>;
-	}): Promise<Result<LockedCheck, BillingError>> {
-		const lockId = crypto.randomUUID();
-		return tryAutumn(async () => {
-			const check = await autumn.check({
-				customerId: identity.principalId,
-				featureId: FEATURE_IDS.aiUsage,
-				requiredBalance: input.credits,
-				lock: {
-					lockId,
-					enabled: true,
-					expiresAt: Date.now() + LOCK_TTL_MS,
-				},
-				properties: input.properties,
-			});
-
-			return {
-				allowed: check.allowed,
-				balance: check.balance,
-				reservation: {
-					confirm: () => finalizeLock(lockId, 'confirm'),
-					release: () => finalizeLock(lockId, 'release'),
-				},
-			};
-		});
-	}
-
-	/** Finalize a held AI credit lock. */
-	function finalizeLock(
-		lockId: string,
-		action: 'confirm' | 'release',
-	): Promise<Result<void, BillingError>> {
-		return tryAutumn(async () => {
-			await autumn.balances.finalize({ lockId, action });
-		});
-	}
-
 	/** Load Autumn customer with subscriptions + balances expanded. */
 	async function loadCustomer() {
 		return autumn.customers.getOrCreate({
@@ -564,7 +542,8 @@ export function createBillingService(
 	}
 
 	return {
-		reserveAiChat,
+		gateAiChat,
+		settleAiChat,
 		checkAiCredits,
 		trackAiTranscription,
 		getStorageIncludedBytes,
