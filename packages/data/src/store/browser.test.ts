@@ -30,7 +30,7 @@ installTestLocks();
 
 import { describe, expect, test } from 'bun:test';
 import { defineData } from '@epicenter/data/definition';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import type { Result } from 'wellcrafted/result';
 import { expectErr, expectOk as expectOkResult } from 'wellcrafted/testing';
 

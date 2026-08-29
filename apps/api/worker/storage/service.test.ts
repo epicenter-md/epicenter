@@ -12,7 +12,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import type { StorageObservation } from '@epicenter/server';
 import {
 	admitRegisteredStorageFirstContact,

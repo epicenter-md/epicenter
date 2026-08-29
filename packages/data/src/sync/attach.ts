@@ -19,7 +19,7 @@
  * `AuthClient` satisfies it structurally with no adapter.
  */
 
-import type { PrincipalId } from '@epicenter/identity';
+import type { PrincipalId } from '@epicenter/principal';
 import { isOpenWebSocketDenial } from '@epicenter/sync/auth-subprotocol';
 import { STORE_SYNC_ROUTE } from '@epicenter/sync/store-route';
 import type { AccountStore } from '../store/store.js';

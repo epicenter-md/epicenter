@@ -7,7 +7,7 @@
  * bytes before its first push creates durable authority state.
  */
 
-import type { PrincipalId } from '@epicenter/identity';
+import type { PrincipalId } from '@epicenter/principal';
 import type { StorageObservation } from '@epicenter/server';
 import { extractErrorMessage } from 'wellcrafted/error';
 

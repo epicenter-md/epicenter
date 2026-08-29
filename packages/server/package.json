@@ -22,7 +22,7 @@
 		"@epicenter/blobs": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/data": "workspace:*",
-		"@epicenter/identity": "workspace:*",
+		"@epicenter/principal": "workspace:*",
 		"@epicenter/sqlite": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@hono/standard-validator": "catalog:",

@@ -7,7 +7,7 @@
  * {@link mountSessionApp} wires the deployment's auth middleware so
  * `c.var.principal` is populated before the handler runs. Deployment shape is
  * not on the wire; it is a property of the server (see `PrincipalId` in
- * `@epicenter/identity`).
+ * `@epicenter/principal`).
  */
 
 import type { ApiSessionResponse } from '@epicenter/auth';

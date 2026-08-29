@@ -18,7 +18,7 @@
  * route answers 204.
  */
 
-import type { PrincipalId } from '@epicenter/identity';
+import type { PrincipalId } from '@epicenter/principal';
 import { extractErrorMessage } from 'wellcrafted/error';
 
 const DELETION_STEPS = [

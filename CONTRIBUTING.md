@@ -185,7 +185,7 @@ This section is for maintainers with npm publish access to the `@epicenter` scop
 
 ### How versioning works
 
-All five public packages (`@epicenter/sync`, `@epicenter/skills`, `@epicenter/field`, `@epicenter/identity`, `@epicenter/ui`) share a single version number. They move together.
+The published packages share a single version number and move together.
 
 **Apps are completely separate from changesets.** Changesets only touches packages that are (a) not marked `"private": true` and (b) listed under `packages/`. Every app in `apps/` is `"private": true` and has its own deploy mechanism. Changesets will never version or publish them. Web apps deploy on push to `main`; native packaging belongs to each Tauri host. See [App deployments](#app-deployments) below.
 

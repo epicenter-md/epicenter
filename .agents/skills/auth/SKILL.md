@@ -60,7 +60,7 @@ fixes forever.
 ## Vocabulary: principal, not owner
 
 Client and server speak one identity word: `principalId` (branded `PrincipalId`
-from `@epicenter/identity`). There is no `ownerId` / `OwnerId` in the codebase.
+from `@epicenter/principal`). There is no `ownerId` / `OwnerId` in the codebase.
 On a self-hosted instance every valid bearer resolves to the literal
 `INSTANCE_PRINCIPAL_ID` (`'instance'`). If you see `owner` anywhere, it is stale
 prose, not a symbol.
@@ -165,12 +165,11 @@ Linking note.
 
 ## Public Surface
 
-`AuthState` is defined in `@epicenter/identity` and re-exported from
-`@epicenter/auth`. The reason it lives there has expired twice over: the
-docstring justified it by a license firewall that no longer exists, and by a
-`packages/workspace` that no longer exists either. Every consumer is
-`@epicenter/auth` or something downstream of it, so it belongs in
-`@epicenter/auth` and should move there.
+`AuthState` lives in `@epicenter/auth`, beside the clients that produce it.
+`PrincipalId` lives in `@epicenter/principal`, a leaf shared by the store and
+the auth client because neither depends on the other. Both were in a package
+called `@epicenter/identity` until 2026-08, held together by a license
+firewall that no longer exists.
 
 ```ts
 export type AuthState =

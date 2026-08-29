@@ -12,7 +12,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import { INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
+import { INSTANCE_PRINCIPAL_ID } from '@epicenter/principal';
 import type { Context } from 'hono';
 import type { Env } from '../types.js';
 import { createEnvTokenResolver } from './instance-token.js';

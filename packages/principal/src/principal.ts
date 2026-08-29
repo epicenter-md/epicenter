@@ -2,12 +2,17 @@ import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
 /**
- * Authenticated principal id and workspace partition key.
+ * The authenticated principal id, and the partition key everything derives from.
+ *
+ * This is the whole package, and it is a package because `@epicenter/data` and
+ * `@epicenter/auth` both need it and neither depends on the other: the store
+ * opens a local database with no auth at all (`openLocal`), and the auth client
+ * runs with no store (the hosted dashboard). A leaf is what two siblings share.
  *
  * On hosted Cloud, this is the principal Better Auth resolved for the request.
  * On a self-hosted instance, this is the literal {@link INSTANCE_PRINCIPAL_ID}.
- * By definition, every server path, R2 key, Durable Object name, local IndexedDB
- * key, and HKDF derivation label uses this value as the partition key.
+ * By definition, every server path, R2 key, Durable Object name, local database
+ * name, and HKDF derivation label uses this value as the partition key.
  *
  * The instance constant's bytes are pinned. Changing them changes HKDF labels,
  * R2 prefixes, Durable Object names, and IndexedDB keys.

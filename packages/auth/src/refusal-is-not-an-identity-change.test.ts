@@ -43,7 +43,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import { Ok } from 'wellcrafted/result';
 import type { AuthClient, AuthFetch, AuthState } from './auth-contract.js';
 import { createOAuthAppAuth } from './create-oauth-app-auth.js';

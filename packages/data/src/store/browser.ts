@@ -41,7 +41,7 @@ import {
 	type ParsedDataDefinition,
 	parseData,
 } from '@epicenter/data/definition';
-import type { PrincipalId } from '@epicenter/identity';
+import type { PrincipalId } from '@epicenter/principal';
 import * as Y from '@y/y';
 import { type DBSchema, deleteDB, type IDBPDatabase, openDB } from 'idb';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';

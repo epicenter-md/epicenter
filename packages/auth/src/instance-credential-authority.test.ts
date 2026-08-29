@@ -11,7 +11,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import { createInstanceCredentialAuthority } from './instance-credential-authority.js';
 
 const baseURL = 'http://localhost:8788';

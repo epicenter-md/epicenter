@@ -32,7 +32,7 @@
 	},
 	"dependencies": {
 		"@epicenter/field": "workspace:*",
-		"@epicenter/identity": "workspace:*",
+		"@epicenter/principal": "workspace:*",
 		"@epicenter/sqlite": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@sqlite.org/sqlite-wasm": "catalog:",

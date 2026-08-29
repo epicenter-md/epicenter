@@ -21,7 +21,7 @@
  */
 
 import type { Principal } from '@epicenter/auth';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import { verifyJwsAccessToken } from 'better-auth/oauth2';
 import { eq } from 'drizzle-orm';
 import type { Context, MiddlewareHandler, Next } from 'hono';

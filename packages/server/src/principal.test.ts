@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { generateBlobId } from '@epicenter/blobs';
-import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
+import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/principal';
 import {
 	blobKey,
 	blobPrincipalPrefix,

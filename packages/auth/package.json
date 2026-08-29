@@ -14,7 +14,7 @@
 	},
 	"dependencies": {
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/identity": "workspace:*",
+		"@epicenter/principal": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",

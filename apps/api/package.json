@@ -34,7 +34,7 @@
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/blobs": "workspace:*",
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/identity": "workspace:*",
+		"@epicenter/principal": "workspace:*",
 		"@epicenter/server": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@hono/standard-validator": "catalog:",

@@ -37,7 +37,7 @@ Other apps validate inputs against these by name and shape. Renaming a field or 
 
 - `PersistedAuth` (`packages/auth/src/auth-types.ts`)
 - `ApiSessionResponse` (`packages/auth/src/auth-types.ts`)
-- `PrincipalId`, `INSTANCE_PRINCIPAL_ID` (`packages/identity/src/identity.ts`)
+- `PrincipalId`, `INSTANCE_PRINCIPAL_ID` (`packages/principal/src/principal.ts`)
 
 Per-user vs instance partitioning is intentionally NOT in this list: there is no
 `OwnershipRule` engine or discriminated union (the old `perUser` / `instance`

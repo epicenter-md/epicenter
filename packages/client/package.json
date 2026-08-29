@@ -16,7 +16,6 @@
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/blobs": "workspace:*",
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/identity": "workspace:*",
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {

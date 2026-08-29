@@ -12,7 +12,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import { Ok } from 'wellcrafted/result';
 import type { OAuthTokenGrant, PersistedAuth } from './auth-types.js';
 import { createOAuthCredentialAuthority } from './oauth-credential-authority.js';

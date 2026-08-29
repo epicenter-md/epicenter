@@ -1,4 +1,4 @@
-import { PrincipalId } from '@epicenter/identity';
+import { PrincipalId } from '@epicenter/principal';
 import { type } from 'arktype';
 
 /**

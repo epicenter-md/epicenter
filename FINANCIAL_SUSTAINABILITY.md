@@ -16,7 +16,7 @@ We have other options if that doesn't work, of course. We could pursue a traditi
 
 ## The split
 
-MIT: `packages/workspace`, `packages/field`, `packages/ui`, and the toolkit-internal contracts they carry (`packages/data`, `packages/sqlite`, `packages/sync`, `packages/identity`, `packages/agent-protocol`, `packages/chat`). The embeddable developer toolkit.
+There is one license: AGPL-3.0-or-later, for everything. An MIT toolkit tier existed until 2026-08 and was dissolved because no external embedder ever arrived; see `docs/licensing/licensing-strategy.md`.
 
 AGPL-3.0-or-later: every app (`apps/api`, `apps/self-host`, `apps/whispering`, `apps/honeycrisp`, `apps/vocab`, `apps/skills`, `apps/reddit`, `apps/landing`, `apps/posthog-reverse-proxy`, `apps/matter`, `apps/local-books`), the shared server library (`packages/server`), and our internal packages (`packages/auth`, `packages/svelte-utils`, `packages/app-shell`, `packages/skills`, `packages/constants`, `packages/client`, `packages/matter-core`, `packages/vite-config`).
 

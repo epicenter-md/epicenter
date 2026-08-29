@@ -16,7 +16,7 @@
  */
 
 import { API_ROUTES } from '@epicenter/constants/api-routes';
-import { INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
+import { INSTANCE_PRINCIPAL_ID } from '@epicenter/principal';
 
 const BASE_URL = (
 	process.argv[2] ??

@@ -1,4 +1,4 @@
-import { INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
+import { INSTANCE_PRINCIPAL_ID } from '@epicenter/principal';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';

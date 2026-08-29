@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
+import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/principal';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import type {
 	AuthClient,

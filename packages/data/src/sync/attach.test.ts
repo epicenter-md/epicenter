@@ -13,7 +13,7 @@ import { field } from '@epicenter/data/definition';
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { defineData } from '@epicenter/data/definition';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { type AccountStore, createAccountStore } from '../store/store.js';
 import { attachStoreSync, type StoreSocketTransport } from './attach.js';

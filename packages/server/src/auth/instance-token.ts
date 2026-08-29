@@ -34,7 +34,7 @@
  */
 
 import { Principal } from '@epicenter/auth';
-import { INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
+import { INSTANCE_PRINCIPAL_ID } from '@epicenter/principal';
 import { Ok } from 'wellcrafted/result';
 import type { ResolveBearerPrincipal } from '../types.js';
 import { OAuthError } from './oauth-errors.js';

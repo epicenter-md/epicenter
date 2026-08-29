@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import { mountSessionApp } from './session.js';

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import type { AuthFetch } from './auth-contract.js';
 import { readApiSession } from './read-api-session.js';
 

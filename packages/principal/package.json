@@ -1,5 +1,5 @@
 {
-	"name": "@epicenter/identity",
+	"name": "@epicenter/principal",
 	"version": "0.3.0",
 	"license": "AGPL-3.0-or-later",
 	"type": "module",
@@ -20,5 +20,6 @@
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit"
-	}
+	},
+	"description": "The branded PrincipalId that keys every storage partition: server paths, R2 prefixes, Durable Object names, local database names, and HKDF labels. Plus the pinned instance constant."
 }

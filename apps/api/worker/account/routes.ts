@@ -31,7 +31,7 @@
  * deliberately does not exist as an HTTP surface.
  */
 
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import {
 	blobPrincipalPrefix,
 	type CloudEnv,

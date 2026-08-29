@@ -10,7 +10,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import { type AccountDeletionStep, runAccountDeletion } from './service.js';
 
 const alice = asPrincipalId('alice');
