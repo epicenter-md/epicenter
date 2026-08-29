@@ -53,9 +53,12 @@ the model's parts have a real appearance, draw each part in its own colours
 and type rather than as a generic chart, and when the judgment is about how
 something renders, embed the artifact itself.
 
-Read [references/example-turn.html](references/example-turn.html) when a page
-is the right surface, then adapt its structure to the argument. The example
-is a form to borrow, not a template to reproduce.
+Before writing a page, read
+[references/example-turn.html](references/example-turn.html) and take its two
+load-bearing properties, not its sections: the model is drawn in the system's
+own materials, and exactly one region is visually unlike the rest, the one
+where the user's judgment is required. The example is a form to borrow, not a
+template to reproduce.
 
 Every surface must make the live seam visible. Show what you believe, what is
 settled, and the unresolved consequence or fork. Label regions when a user
