@@ -299,3 +299,94 @@ describe('a handle with a socket', () => {
 		await laptop.close();
 	});
 });
+
+describe('a deleted chain must not come back', () => {
+	test('discard detaches the document, so a late edit cannot rewrite a swept chain', async () => {
+		const clock = manualClock();
+		const store = await record(1);
+		const handle = await openDocumentHandle({
+			record: store,
+			doc: 'notes/gone',
+			schedule: clock.schedule,
+		});
+
+		handle.document.transact(() =>
+			handle.document.get('body').setAttr('text' as never, 'secret' as never),
+		);
+		await Promise.resolve();
+		expect((await store.read('notes/gone')).length).toBeGreaterThan(0);
+
+		// The row is deleted: the scalar leaves the application document and
+		// this chain is swept.
+		await store.retire('notes/gone');
+		expect(await store.read('notes/gone')).toEqual([]);
+
+		// The document is still live and its `updateV2` listener is still
+		// attached, so anything that touches it appends to the chain that was
+		// just swept. The row is gone, so nothing names the address, and the
+		// bytes sit there until `documents()` enumerates them for an export
+		// (ADR-0286) and a deleted note comes back.
+		//
+		// A late edit is not exotic: an editor pane closes on its own schedule,
+		// and a pending transaction lands after the delete commits.
+		handle.discard();
+		handle.document.transact(() =>
+			handle.document.get('body').setAttr('text' as never, 'more' as never),
+		);
+		await Promise.resolve();
+
+		expect(await store.read('notes/gone')).toEqual([]);
+		store.close();
+	});
+
+	test('discard does not fold, because folding a swept chain rewrites it whole', async () => {
+		const clock = manualClock();
+		const store = await record(1);
+		const handle = await openDocumentHandle({
+			record: store,
+			doc: 'notes/folded',
+			schedule: clock.schedule,
+		});
+		handle.document.transact(() =>
+			handle.document.get('body').setAttr('text' as never, 'secret' as never),
+		);
+		await Promise.resolve();
+		await store.retire('notes/folded');
+
+		// `close()` settles first, and settling folds. Today `retire` zeroes the
+		// byte totals so `shouldFold` says no, which means this is guarded by an
+		// accounting detail rather than by the teardown. `discard` is the
+		// teardown that does not depend on that, and a timer still armed against
+		// the document must not reach a fold either.
+		handle.discard();
+		clock.fire();
+		await Promise.resolve();
+
+		expect(await store.read('notes/folded')).toEqual([]);
+		store.close();
+	});
+
+	test('discard is idempotent, and a close after it does not settle either', async () => {
+		const clock = manualClock();
+		const store = await record(1);
+		const handle = await openDocumentHandle({
+			record: store,
+			doc: 'notes/twice',
+			schedule: clock.schedule,
+		});
+		handle.document.transact(() =>
+			handle.document.get('body').setAttr('text' as never, 'x' as never),
+		);
+		await Promise.resolve();
+		await store.retire('notes/twice');
+
+		// A re-run effect teardown calls what it was handed more than once, and
+		// a manager that both evicts and disposes reaches both verbs.
+		handle.discard();
+		handle.discard();
+		await handle.close();
+
+		expect(await store.read('notes/twice')).toEqual([]);
+		store.close();
+	});
+});

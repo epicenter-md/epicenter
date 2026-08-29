@@ -85,6 +85,22 @@ export type DocumentHandle = {
 	settle(): Promise<void>;
 	/** Settle, then release the socket, the timer, and the document. */
 	close(): Promise<void>;
+	/**
+	 * Let go WITHOUT settling, for a document whose chain is being deleted.
+	 *
+	 * The distinction from `close` is not tidiness, it is the difference
+	 * between a folded chain and a resurrected one. `close` settles first, and
+	 * settling folds: `fold` writes the encoded document above whatever is on
+	 * disk NOW, so folding a chain that a retire has just swept writes the
+	 * whole document back at sequence 1. The row is gone, nothing names the
+	 * address, and the bytes sit there until `documents()` enumerates them for
+	 * an export (ADR-0286) and a deleted note comes back.
+	 *
+	 * The timer reaches the same place on its own: `run` only checks `closed`,
+	 * and a delete does not set it. So this is what a delete calls, and it is
+	 * synchronous, so no append transaction can be created after it.
+	 */
+	discard(): void;
 };
 
 export type OpenDocumentHandleOptions = {
@@ -199,6 +215,23 @@ export async function openDocumentHandle({
 		sendOwed();
 	}
 
+	/**
+	 * Everything `close` and `discard` agree on, which is everything but the
+	 * settle. Idempotent: a discard during a close's in-flight fold, or a
+	 * double close from a re-run effect teardown, must not throw.
+	 */
+	function letGo(): void {
+		if (closed) return;
+		closed = true;
+		release();
+		cancelIdle?.();
+		cancelIdle = undefined;
+		socket = undefined;
+		peerVector = undefined;
+		document.off('updateV2' as never, onUpdate as never);
+		document.destroy();
+	}
+
 	function onUpdate(update: Uint8Array): void {
 		if (closed) return;
 		// Eager, and not awaited: the appends are ordered by the record because
@@ -288,14 +321,14 @@ export async function openDocumentHandle({
 			// A failing fold must not turn a route change into an unhandled
 			// rejection; it has already reported itself.
 			await settle().catch(() => undefined);
-			closed = true;
-			release();
-			cancelIdle?.();
-			cancelIdle = undefined;
-			socket = undefined;
-			peerVector = undefined;
-			document.off('updateV2' as never, onUpdate as never);
-			document.destroy();
+			letGo();
+		},
+
+		discard() {
+			// `closed` first, and synchronously: `run` reads it, so a timer that
+			// has already fired and is awaiting its fold cannot start another,
+			// and no `onUpdate` after this point arms a new one.
+			letGo();
 		},
 	});
 	return handle;
