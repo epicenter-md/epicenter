@@ -3,9 +3,9 @@
  *
  * Runs under bun with `fake-indexeddb` supplying `indexedDB`, the same way
  * `browser.test.ts` does. What these pin is the arithmetic and the ordering:
- * that a fold keeps what arrived while it ran, that a sequence never repeats
- * even across one, and that a rejecting store says so instead of losing work
- * in silence.
+ * that a fold keeps what arrived while it ran, that a write's sequence comes
+ * off disk rather than out of memory, and that a rejecting store says so
+ * instead of losing work in silence.
  */
 import 'fake-indexeddb/auto';
 
@@ -19,11 +19,16 @@ import { openMemoryRecord } from './record-memory.js';
  * `DurablePort` had two hand-written implementations that silently disagreed,
  * and closing that gap cost a 314-line conformance suite beside them. The rules
  * here are the ones three audits found bugs in and none of them are obvious
- * from the interface: a sequence is never reused even across a fold or a
- * retire, the first record of a chain is its state and that is decided
- * synchronously, a fold deletes up to a bound captured before its callback
- * runs, and `read` seeds once and is an accessor after. So the suite runs over
- * both subjects rather than a separate document describing what they owe.
+ * from the interface: a write's sequence is read from the chain rather than
+ * remembered, the first record of a chain is its state, a fold deletes up to a
+ * bound read before its callback runs, and `read` seeds the byte totals once
+ * and is an accessor after. So the suite runs over both subjects rather than a
+ * separate document describing what they owe.
+ *
+ * The suite is only worth as much as the symmetry it enforces. The memory twin
+ * used to push rows with no uniqueness check, so the loud failure `add` gives
+ * the IndexedDB record did not exist in the subject meant to catch its
+ * absence.
  */
 const implementations = [
 	{ label: 'indexeddb', open: openDurableRecord },
@@ -169,17 +174,42 @@ for (const implementation of implementations) {
 		});
 
 		describe('the counters have to agree with disk, synchronously', () => {
+			test('a write does not need a read first, because its key comes off disk', async () => {
+				const name = freshName();
+				const first = await implementation.open({ name });
+				await first.read('app');
+				await first.append('app', bytes(1));
+				await first.append('app', bytes(2));
+				first.close();
+
+				// Refused before the sequence was derived, and correct now. A fresh
+				// process cannot guess a key that will not collide, so it does not
+				// guess: it reads the top of the chain inside the transaction that
+				// extends it. What an unseeded append still costs is accuracy in the
+				// byte totals, which can make a fold late and cannot make one wrong.
+				const second = await implementation.open({ name });
+				await second.append('app', bytes(3));
+				expect(await second.read('app')).toEqual([
+					bytes(1),
+					bytes(2),
+					bytes(3),
+				]);
+				second.close();
+			});
+
 			test('several appends in one tick book one state and the rest as tail', async () => {
 				const record = await implementation.open({
 					name: freshName(),
 					floorBytes: 1,
 				});
 				await record.read('app');
-				// Unawaited, which is how the handle appends: the byte totals are only
-				// updated after each transaction resolves, so "am I the first record"
-				// cannot be answered from them. Answering it with `stateBytes === 0`
+				// Unawaited, which is how the handle appends. "Am I the first record"
+				// cannot be answered from the byte totals, which are only updated
+				// after each transaction resolves: answering it with `stateBytes === 0`
 				// made all six book themselves as the state, the tail stayed at zero,
-				// and the chain could never fold.
+				// and the chain could never fold. It is answered from disk now, and
+				// this passes because IndexedDB runs readwrite transactions over one
+				// store in creation order and never overlaps them.
 				const writes = [1, 2, 3, 4, 5, 6].map((n) =>
 					record.append('app', bytes(n)),
 				);
@@ -267,7 +297,7 @@ for (const implementation of implementations) {
 		});
 
 		describe('the seeded rule, which is the one that loses data quietly', () => {
-			test('a fold before a read is refused, not merely wasteful', async () => {
+			test('a fold before a read is refused, which is the one guard left', async () => {
 				const name = freshName();
 				const first = await implementation.open({ name });
 				await first.read('app');
@@ -275,9 +305,11 @@ for (const implementation of implementations) {
 				await first.append('app', bytes(2));
 				first.close();
 
-				// Unseeded, this fold would start from sequence zero: it would write its
-				// state over the first record of a chain it never read, and sweep
-				// nothing. The chain came back as [9, 2] before the guard existed.
+				// The one thing a derived sequence does not fix. This fold's bound and
+				// key would both be right; what is wrong is `encode`, which runs
+				// against a document that never saw the chain, so the state is empty
+				// and the delete sweeps the real bytes. An append cannot make that
+				// mistake, so only the fold is still asked to prove it did not.
 				const second = await implementation.open({ name });
 				await expect(second.fold('app', () => bytes(9))).rejects.toBeDefined();
 				await second.read('app');
@@ -285,13 +317,15 @@ for (const implementation of implementations) {
 				second.close();
 			});
 
-			test('a second read does not roll the sequence back', async () => {
+			test('a second read does not disturb a chain being written', async () => {
 				const record = await implementation.open({ name: freshName() });
 				await record.read('app');
 				await record.append('app', bytes(1));
-				// A read started here sees only [1], and reseeding from it would set the
-				// sequence back below the append that lands next; the append after that
-				// would then overwrite it. The chain came back as [1, 3] before.
+				// A read started here sees only [1]. Reseeding a remembered sequence
+				// from it set the counter back below the append landing next, and the
+				// append after that overwrote it: the chain came back as [1, 3]. There
+				// is no sequence in memory to roll back now, and this stays as the
+				// regression it was.
 				const reading = record.read('app');
 				await record.append('app', bytes(2));
 				await reading;

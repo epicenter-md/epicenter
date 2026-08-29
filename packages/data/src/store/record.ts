@@ -39,9 +39,30 @@
  *
  * An IndexedDB transaction goes inactive the moment it awaits anything that is
  * not an IDB request, and the failure is intermittent and load-dependent
- * rather than immediate. `fold` calls `encode` SYNCHRONOUSLY, before it opens
- * the transaction. That is true and load-bearing; it is simply not what forces
- * the callback.
+ * rather than immediate. `fold` calls `encode` SYNCHRONOUSLY, outside the
+ * transaction that writes what it returns. That is true and load-bearing; it
+ * is simply not what forces the callback.
+ *
+ * ## No memory state names a key
+ *
+ * Every silent bug this file has had was one number, an in-memory sequence,
+ * disagreeing with disk: a fold that swept a chain it had never read, a second
+ * read that rolled the counter back under an in-flight append, two records on
+ * one database name handing out the same numbers. So the number is gone. A
+ * write reads the top of the chain from disk INSIDE the transaction that
+ * extends it, which is what the server twin has always done
+ * (`document-authority.ts`'s `lastSeq`) and is why that twin never had these
+ * bugs.
+ *
+ * What is left in memory is advisory and says so: the byte totals that decide
+ * whether a fold is worth doing, a `seeded` flag that guards the fold alone,
+ * and the health bit. A counter that has drifted can now make a fold wasteful
+ * or late. It can no longer make one wrong.
+ *
+ * The cost is one reverse key-cursor read per write, inside a transaction
+ * whose commit already dominates it. `add` stays over `put` even though
+ * nothing should be able to produce a duplicate key any more: keeping it is
+ * what makes "should not" audible if it ever does.
  *
  * ## Why appending is eager and folding is not
  *
@@ -54,9 +75,14 @@
  * ## One writer
  *
  * `claims.ts` holds an exclusive Web Lock on the store, so exactly one page
- * appends to a given record. That is what lets the sequence counter live in
- * memory instead of being read back, and it is the assumption to check first
- * if two tabs ever come to share one record.
+ * appends to a given record; `openNames` guards two records over one database
+ * inside a tab; `claim` guards two handles over one document inside a record.
+ * Three scopes, three guards, and none of them can see the others' case.
+ *
+ * None of the three allocates keys any more. They keep two writers from
+ * disagreeing about a DOCUMENT, which is a `fold` encoding a state that never
+ * saw the other writer's edits. They used to also be what made a remembered
+ * sequence safe, and that job is gone.
  *
  * ## What is stored
  *
@@ -67,7 +93,12 @@
  * applies the whole range in key order and never has to know which is which.
  */
 
-import { type DBSchema, type IDBPDatabase, openDB } from 'idb';
+import {
+	type DBSchema,
+	type IDBPDatabase,
+	type IDBPObjectStore,
+	openDB,
+} from 'idb';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
 
@@ -201,7 +232,9 @@ export type DurableRecord = {
 	 * `fold` assumes the document behind its `encode` dominates the chain, and
 	 * two openers of one address break that assumption in the worst way: one
 	 * folds a state encoded from a document that never saw the other's edits,
-	 * and its delete range sweeps them. Nine edits in, one out, no error.
+	 * and its delete range sweeps them. Nine edits in, one out, no error. A
+	 * sequence read from disk does not help here: both openers would read the
+	 * same true bound, and the loss is in what `encode` returned.
 	 *
 	 * `claims.ts` guards two tabs and cannot see two openers inside one. The
 	 * refcounted map in `documents.ts` used to guard that, and this is the
@@ -238,26 +271,30 @@ export type DurableRecord = {
 	close(): void;
 };
 
-/** What this file assumes about a document's chain, kept in memory. */
+/**
+ * What this file assumes about a document's chain, kept in memory.
+ *
+ * The invariant this shape exists to keep: **no memory state names a key or
+ * bounds a delete.** Everything here is advisory, so a counter that has drifted
+ * can make a fold wasteful or late and can never make one wrong. The sequence
+ * used to live here, and every silent bug this file has had was that number
+ * disagreeing with disk; it is read from disk now, inside the transaction that
+ * uses it, which is what the authority always did.
+ */
 type Counters = {
-	/** The last sequence handed out. Never reused, not even after a fold. */
-	seq: number;
 	/** Bytes in the most recent fold, or 0 if this chain has never been folded. */
 	stateBytes: number;
 	/** Bytes appended since that fold. */
 	tailBytes: number;
 	/**
-	 * Whether this chain has any record at all, decided synchronously.
+	 * Whether `read` has seeded the two above from storage.
 	 *
-	 * It answers "is the record I am about to write this chain's state", and it
-	 * has to be answered in the caller's synchronous prefix. `seq === 0` is
-	 * wrong because a retire leaves the sequence climbing on purpose;
-	 * `stateBytes === 0` is wrong because the byte totals are updated after the
-	 * transaction resolves, so six appends issued in one tick would all see
-	 * zero and every one of them would book itself as the state.
+	 * Guards `fold` and nothing else. A fold encodes the live document and
+	 * deletes what it covers, so a fold behind an unhydrated document writes a
+	 * state that never saw the chain and sweeps it. An append cannot make that
+	 * mistake any more: it derives its key from disk, so the worst an unseeded
+	 * append does is leave the byte totals describing less than is there.
 	 */
-	hasRecord: boolean;
-	/** Whether `read` has seeded the two above from storage. */
 	seeded: boolean;
 	/**
 	 * Whether an append for this document was rejected and never landed.
@@ -333,10 +370,8 @@ export async function openDurableRecord({
 		const existing = counters.get(doc);
 		if (existing !== undefined) return existing;
 		const fresh: Counters = {
-			seq: 0,
 			stateBytes: 0,
 			tailBytes: 0,
-			hasRecord: false,
 			seeded: false,
 			lost: false,
 		};
@@ -380,6 +415,36 @@ export async function openDurableRecord({
 	const range = (doc: string, upTo: number): KeyRange =>
 		keyRanges().bound([doc], [doc, upTo]);
 
+	/**
+	 * The highest sequence this document has on disk, or 0 if it has none.
+	 *
+	 * Read inside the caller's transaction, which is the whole point: the number
+	 * that names the next key comes from the same transaction that writes it, so
+	 * there is no window in which memory and disk can disagree about it. The
+	 * server twin has always worked this way (`document-authority.ts`'s
+	 * `lastSeq`), and it is the twin that has never lost a byte.
+	 *
+	 * A reverse key cursor rather than `getAllKeys`, so this is one row read
+	 * rather than the whole chain, and a key cursor rather than a value cursor,
+	 * so it never pulls bytes it does not look at.
+	 *
+	 * This is an IDB request, so awaiting it keeps the transaction alive. That
+	 * is the only reason a derived sequence is affordable at all.
+	 */
+	async function lastSeq(
+		// The mode is left open rather than pinned to the two names: `idb` infers
+		// it as `string` from `transaction.objectStore(...)`, and narrowing here
+		// would only make every call site cast.
+		store: IDBPObjectStore<RecordSchema, ['updates'], 'updates', string>,
+		doc: string,
+	): Promise<number> {
+		const cursor = await store.openKeyCursor(
+			range(doc, Number.POSITIVE_INFINITY) as never,
+			'prev',
+		);
+		return cursor?.key[1] ?? 0;
+	}
+
 	const record: DurableRecord = Object.freeze({
 		durability: {
 			get healthy() {
@@ -399,19 +464,13 @@ export async function openDurableRecord({
 				});
 			const counter = of(doc);
 			// Seeded once, and never again. A second read is a snapshot of disk
-			// that excludes any append whose transaction was created after it,
-			// so assigning from it would roll the sequence back and the next
-			// append would overwrite a live record. Hydration happens once per
-			// open, and this makes a second call harmless rather than
-			// destructive.
+			// that excludes any append whose transaction was created after it, so
+			// seeding from it would describe less of the chain than is there and
+			// push the next fold further away. It can no longer roll a sequence
+			// back, because there is no sequence here to roll back.
 			if (counter.seeded) return rows.map((row) => row.bytes);
 			counter.seeded = true;
 			if (rows.length === 0) return [];
-			counter.hasRecord = true;
-			// Seeding the counters from what was read is why `read` is not
-			// optional before a write: a fresh sequence would collide with a
-			// surviving key, and a fold that ran out of a half-swept range would
-			// name different bytes with the same name.
 			// The first record is the state. Usually a fold put it there; on a
 			// chain that has never been folded it is simply the oldest update,
 			// and calling it the state is still right, because folding a chain
@@ -420,7 +479,6 @@ export async function openDurableRecord({
 				(typeof rows)[number],
 				...(typeof rows)[number][],
 			];
-			counter.seq = rest.at(-1)?.seq ?? first.seq;
 			counter.stateBytes = first.bytes.byteLength;
 			counter.tailBytes = rest.reduce(
 				(total, row) => total + row.bytes.byteLength,
@@ -431,28 +489,43 @@ export async function openDurableRecord({
 
 		async append(doc, bytes) {
 			const counter = of(doc);
-			// Enforced rather than documented, because both things it protects
-			// fail quietly: a fresh sequence would collide with a surviving key,
-			// and the totals below would describe a chain this process has never
-			// seen. The real caller hydrates before it can produce an update, so
-			// this is unreachable outside a test that skipped a step.
-			if (!counter.seeded) {
-				throw new Error(`read('${doc}') must happen before a write to it`);
-			}
-			const empty = !counter.hasRecord;
-			counter.hasRecord = true;
-			counter.seq += 1;
-			// `add`, never `put`. Every defect this file can have is an in-memory
-			// counter disagreeing with disk, and `put` is an upsert: it would
-			// overwrite a live record and say nothing. `add` throws
-			// `ConstraintError` on an existing key, which turns the whole class
-			// from silent loss into a loud failure with the health bit red.
+			const transaction = open().transaction('updates', 'readwrite');
+			const store = transaction.objectStore('updates');
+			let empty: boolean;
 			try {
+				// Only IDB calls between here and `done`. Awaiting anything else
+				// would let the transaction close out from under the write, and
+				// the failure is intermittent and load-dependent rather than
+				// immediate.
+				//
+				// The key comes off disk, in this transaction. IndexedDB runs
+				// readwrite transactions over one object store in the order they
+				// were created and never overlaps them, so six appends issued in
+				// one tick each see the one before it committed. That ordering is
+				// what a remembered sequence was standing in for, and standing in
+				// for it badly.
+				const last = await lastSeq(store, doc);
+				// A chain with nothing on disk is about to get its state, whether
+				// this document is new, was retired, or was swept by a neighbour's
+				// `appendAndRetire`. Derived here rather than remembered, because
+				// the byte totals are only updated after a transaction resolves
+				// and so cannot answer it in a synchronous prefix.
+				empty = last === 0;
+				// `add`, never `put`. `put` is an upsert: handed a key something
+				// already occupies it overwrites a live record and says nothing.
+				// `add` throws `ConstraintError`, which turns anything that could
+				// still produce a duplicate key into a loud failure with the health
+				// bit red. Nothing should be able to now; that is the point of
+				// keeping it.
+				//
 				// `try`, not `.catch`: a value IndexedDB cannot structured-clone
 				// makes `add` throw SYNCHRONOUSLY, before there is a promise to
 				// attach a handler to, so a rejection handler alone would let the
 				// commonest deterministic failure escape with the bit still green.
-				await open().add('updates', { doc, seq: counter.seq, bytes });
+				await Promise.all([
+					store.add({ doc, seq: last + 1, bytes }),
+					transaction.done,
+				]);
 			} catch (cause) {
 				counter.lost = true;
 				return fail(cause);
@@ -475,18 +548,32 @@ export async function openDurableRecord({
 
 		async fold(doc, encode) {
 			const counter = of(doc);
-			// Captured BEFORE encoding, so anything that arrives while this runs
-			// sits above the bound and survives. It may also already be inside
-			// `state`, which costs one redundant apply and nothing else.
+			// The one guard a derived sequence does not retire. A fold behind an
+			// unhydrated document encodes a state that never saw the chain and
+			// then deletes the chain, which is the shape of the first silent bug
+			// this file had. An append cannot make that mistake, so it is no
+			// longer asked to prove it cannot.
 			if (!counter.seeded) {
-				throw new Error(`read('${doc}') must happen before a write to it`);
+				throw new Error(`read('${doc}') must happen before a fold of it`);
 			}
-			const upTo = counter.seq;
+			// The bound is read BEFORE `encode`, so anything that lands while this
+			// is working sits above it and survives. It may also already be inside
+			// `state`, which costs one redundant apply and nothing else.
+			//
+			// Its own transaction rather than the writing one, because `encode`
+			// has to run between the two and a synchronous callback is still not
+			// an IDB request. Holding a transaction across it would be the exact
+			// hazard the rest of this file is written to avoid.
+			let upTo: number;
+			try {
+				const reading = open().transaction('updates', 'readonly');
+				upTo = await lastSeq(reading.objectStore('updates'), doc);
+				await reading.done;
+			} catch (cause) {
+				throw DurableRecordError.ReadFailed({ name, cause });
+			}
 			const foldedTail = counter.tailBytes;
 			const state = encode();
-			counter.hasRecord = true;
-			counter.seq += 1;
-			const seq = counter.seq;
 			const transaction = open().transaction('updates', 'readwrite');
 			const store = transaction.objectStore('updates');
 			try {
@@ -494,6 +581,11 @@ export async function openDurableRecord({
 				// close the transaction out from under the delete. `try` rather
 				// than `.catch` because `add` can throw before the array is even
 				// built (see `append`).
+				//
+				// The state is written above whatever is on disk NOW, not above
+				// the bound: an append that landed while `encode` ran keeps its
+				// key, keeps its bytes, and is not swept.
+				const seq = (await lastSeq(store, doc)) + 1;
 				await Promise.all([
 					store.add({ doc, seq, bytes: state }),
 					store.delete(range(doc, upTo) as never),
@@ -535,20 +627,18 @@ export async function openDurableRecord({
 				throw new Error(`appendAndRetire cannot retire ${doc} into itself`);
 			}
 			const counter = of(doc);
-			if (!counter.seeded) {
-				throw new Error(`read('${doc}') must happen before a write to it`);
-			}
-			const empty = !counter.hasRecord;
-			counter.hasRecord = true;
-			counter.seq += 1;
-			const seq = counter.seq;
 			const transaction = open().transaction('updates', 'readwrite');
 			const store = transaction.objectStore('updates');
+			let empty: boolean;
 			try {
 				// Only IDB calls between here and `done`, the same rule the fold
 				// keeps: awaiting anything else closes the transaction mid-flight.
+				// `lastSeq` is one of them, which is why the key can be derived
+				// without giving up the atomicity this verb exists for.
+				const last = await lastSeq(store, doc);
+				empty = last === 0;
 				await Promise.all([
-					store.add({ doc, seq, bytes }),
+					store.add({ doc, seq: last + 1, bytes }),
 					store.delete(range(retired, Number.POSITIVE_INFINITY) as never),
 					transaction.done,
 				]);
@@ -561,7 +651,6 @@ export async function openDurableRecord({
 			const gone = of(retired);
 			gone.stateBytes = 0;
 			gone.tailBytes = 0;
-			gone.hasRecord = false;
 			gone.seeded = true;
 			setHealthy(true);
 		},
@@ -583,12 +672,13 @@ export async function openDurableRecord({
 			// emptied the chain, so it knows what is there; dropping the counter
 			// would make a recreate at the same address, which ADR-0279's copy
 			// verb reaches, demand a read of a chain there is nothing to read.
-			// The sequence keeps climbing, because never-reused outlives the
-			// document it numbered.
+			//
+			// The sequence restarts, and that is safe now rather than merely
+			// tolerated: a key can only be reused once nothing occupies it, and
+			// the next append reads the empty range and asks for 1.
 			const counter = of(doc);
 			counter.stateBytes = 0;
 			counter.tailBytes = 0;
-			counter.hasRecord = false;
 			counter.seeded = true;
 		},
 

@@ -13,15 +13,22 @@
  * disagreed, which is why `port-conformance.test.ts` had to exist at 314
  * lines. The same hazard is here in miniature: the rules this has to keep are
  * not obvious from the interface, and they are exactly the ones three audits
- * found bugs in. A sequence is never reused, not even across a fold or a
- * retire. The first record of a chain is its state, decided synchronously. A
- * fold deletes up to a bound captured before its callback runs. `read` seeds
- * once and is an accessor after.
+ * found bugs in. A write's sequence comes from the chain rather than from
+ * memory. The first record of a chain is its state. A fold deletes up to a
+ * bound read before its callback runs. `read` seeds the byte totals once and
+ * is an accessor after.
  *
  * So the answer is not a conformance suite beside the implementations: it is
  * that `record.test.ts` runs its whole suite over BOTH of them. One set of
  * assertions, two subjects, and a rule that only one implementation keeps
  * fails on the other.
+ *
+ * That instrument is only as good as the symmetry. This file kept an
+ * in-memory sequence and pushed with no uniqueness check, so the loud failure
+ * the IndexedDB record gets from `add` did not exist here at all: a duplicate
+ * key would have been accepted in silence by the very subject meant to catch
+ * it. `addRow` below is that missing constraint, and deriving the sequence
+ * from the chain is what makes reaching it impossible.
  *
  * ## What it deliberately does not do
  *
@@ -77,26 +84,14 @@ export async function openMemoryRecord({
 
 	const counters = new Map<
 		string,
-		{
-			seq: number;
-			stateBytes: number;
-			tailBytes: number;
-			hasRecord: boolean;
-			seeded: boolean;
-		}
+		{ stateBytes: number; tailBytes: number; seeded: boolean }
 	>();
 	const claimed = new Set<string>();
 
 	function of(doc: string) {
 		const existing = counters.get(doc);
 		if (existing !== undefined) return existing;
-		const fresh = {
-			seq: 0,
-			stateBytes: 0,
-			tailBytes: 0,
-			hasRecord: false,
-			seeded: false,
-		};
+		const fresh = { stateBytes: 0, tailBytes: 0, seeded: false };
 		counters.set(doc, fresh);
 		return fresh;
 	}
@@ -109,9 +104,26 @@ export async function openMemoryRecord({
 		return fresh;
 	}
 
-	function requireSeeded(doc: string, counter: { seeded: boolean }): void {
-		if (counter.seeded) return;
-		throw new Error(`read('${doc}') must happen before a write to it`);
+	/** The IndexedDB record's `lastSeq`, over an array instead of a cursor. */
+	function lastSeq(doc: string): number {
+		return chain(doc).reduce((top, row) => (row.seq > top ? row.seq : top), 0);
+	}
+
+	/**
+	 * `add`, not `push`.
+	 *
+	 * The IndexedDB record gets `ConstraintError` from the platform; this has
+	 * to state it. Nothing should be able to reach it now that the sequence is
+	 * derived, which is exactly why it has to be here: the twin that cannot
+	 * fail loudly is the twin that normalises the pattern the suite exists to
+	 * catch.
+	 */
+	function addRow(doc: string, seq: number, bytes: Uint8Array): void {
+		const rows = chain(doc);
+		if (rows.some((row) => row.seq === seq)) {
+			throw new Error(`${doc} already has a record at ${seq}`);
+		}
+		rows.push({ seq, bytes });
 	}
 
 	const record: DurableRecord = Object.freeze({
@@ -123,12 +135,10 @@ export async function openMemoryRecord({
 			if (counter.seeded) return rows.map((row) => row.bytes);
 			counter.seeded = true;
 			if (rows.length === 0) return [];
-			counter.hasRecord = true;
 			const [first, ...rest] = rows as [
 				(typeof rows)[number],
 				...(typeof rows)[number][],
 			];
-			counter.seq = rest.at(-1)?.seq ?? first.seq;
 			counter.stateBytes = first.bytes.byteLength;
 			counter.tailBytes = rest.reduce(
 				(total, row) => total + row.bytes.byteLength,
@@ -139,12 +149,9 @@ export async function openMemoryRecord({
 
 		async append(doc, bytes) {
 			const counter = of(doc);
-			requireSeeded(doc, counter);
-			const empty = !counter.hasRecord;
-			counter.hasRecord = true;
-			counter.seq += 1;
-			chain(doc).push({ seq: counter.seq, bytes });
-			if (empty) counter.stateBytes = bytes.byteLength;
+			const last = lastSeq(doc);
+			addRow(doc, last + 1, bytes);
+			if (last === 0) counter.stateBytes = bytes.byteLength;
 			else counter.tailBytes += bytes.byteLength;
 		},
 
@@ -155,16 +162,21 @@ export async function openMemoryRecord({
 
 		async fold(doc, encode) {
 			const counter = of(doc);
-			requireSeeded(doc, counter);
-			const upTo = counter.seq;
+			if (!counter.seeded) {
+				throw new Error(`read('${doc}') must happen before a fold of it`);
+			}
+			const upTo = lastSeq(doc);
 			const foldedTail = counter.tailBytes;
 			const state = encode();
-			counter.hasRecord = true;
-			counter.seq += 1;
-			const rows = chain(doc);
-			const kept = rows.filter((row) => row.seq > upTo);
-			kept.push({ seq: counter.seq, bytes: state });
-			held.set(doc, kept);
+			// Read again after `encode`, for the same reason the IndexedDB record
+			// re-reads inside its writing transaction: the state goes above what
+			// is there now, and the delete stops at the bound taken before.
+			const seq = lastSeq(doc) + 1;
+			held.set(
+				doc,
+				chain(doc).filter((row) => row.seq > upTo),
+			);
+			addRow(doc, seq, state);
 			counter.stateBytes = state.byteLength;
 			counter.tailBytes -= foldedTail;
 		},
@@ -174,18 +186,14 @@ export async function openMemoryRecord({
 				throw new Error(`appendAndRetire cannot retire ${doc} into itself`);
 			}
 			const counter = of(doc);
-			requireSeeded(doc, counter);
-			const empty = !counter.hasRecord;
-			counter.hasRecord = true;
-			counter.seq += 1;
-			chain(doc).push({ seq: counter.seq, bytes });
+			const last = lastSeq(doc);
+			addRow(doc, last + 1, bytes);
 			held.set(retired, []);
-			if (empty) counter.stateBytes = bytes.byteLength;
+			if (last === 0) counter.stateBytes = bytes.byteLength;
 			else counter.tailBytes += bytes.byteLength;
 			const gone = of(retired);
 			gone.stateBytes = 0;
 			gone.tailBytes = 0;
-			gone.hasRecord = false;
 			gone.seeded = true;
 		},
 
@@ -194,7 +202,6 @@ export async function openMemoryRecord({
 			const counter = of(doc);
 			counter.stateBytes = 0;
 			counter.tailBytes = 0;
-			counter.hasRecord = false;
 			counter.seeded = true;
 		},
 
