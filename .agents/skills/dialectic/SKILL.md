@@ -42,8 +42,18 @@ Use an HTML page when spatial relationships, visual hierarchy, or several
 states are materially easier to judge on a page. Keep it self-contained, with
 inline CSS and JavaScript, no CDN, and no build step. Write it to an ignored
 scratch path and open it in the available browser or file viewer after writing
-or redrawing it. Read [references/example-turn.html](references/example-turn.html)
-when a page
+or redrawing it.
+
+Every heading, label, and value on the page must name something that exists
+outside this conversation: a file, a field, a measured number, a term the
+user already uses. Coin a term only when adopting it is part of the proposal,
+and present the term as a claim the user can reject. A word you invented to
+organize your own argument goes in the chat message, not on the page. When
+the model's parts have a real appearance, draw each part in its own colours
+and type rather than as a generic chart, and when the judgment is about how
+something renders, embed the artifact itself.
+
+Read [references/example-turn.html](references/example-turn.html) when a page
 is the right surface, then adapt its structure to the argument. The example
 is a form to borrow, not a template to reproduce.
 
