@@ -8,8 +8,23 @@
  * actually be lost.
  */
 import { expect, test } from 'bun:test';
-import { readArtifact, renderArtifact } from '@epicenter/data/artifact';
-import { syncEngineOf } from '@epicenter/data/engine';
+import {
+	type ArtifactDocument,
+	readArtifact,
+	renderArtifact,
+} from '@epicenter/data/artifact';
+import { encodeEnvelope, syncEngineOf } from '@epicenter/data/engine';
+
+/**
+ * Pack what `readArtifact` returns into what today's store still accepts.
+ *
+ * `readArtifact` returns documents, because a mint uploads them one at a time
+ * to their own addresses and a local import writes them one at a time into a
+ * chain (ADR-0286). This packing goes when the positional log does.
+ */
+const asEnvelope = (documents: readonly ArtifactDocument[]) =>
+	encodeEnvelope([...documents]);
+
 import { openMemory } from '@epicenter/data/memory';
 import { InstantString } from '@epicenter/field';
 import { expectOk } from 'wellcrafted/testing';
@@ -85,7 +100,9 @@ test('a store exports to Markdown files and imports back whole', async () => {
 	expect(file).toContain('title: "Groceries"');
 	expect(file).toContain('- [ ] buy milk');
 
-	const envelope = expectOk(readArtifact(files, honeycrispDefinition));
+	const envelope = asEnvelope(
+		expectOk(readArtifact(files, honeycrispDefinition)),
+	);
 	await using restored = openMemory(honeycrispDefinition);
 	expect(syncEngineOf(restored.store).applyRemote(envelope).error).toBeNull();
 
@@ -107,7 +124,9 @@ test('a note with no prose exports as frontmatter alone and still imports', asyn
 	const files = await collect(renderArtifact(data, honeycrispDefinition));
 	expect(files.get(`notes/${note.id}.md`)).not.toContain('\n\n');
 
-	const envelope = expectOk(readArtifact(files, honeycrispDefinition));
+	const envelope = asEnvelope(
+		expectOk(readArtifact(files, honeycrispDefinition)),
+	);
 	await using restored = openMemory(honeycrispDefinition);
 	syncEngineOf(restored.store).applyRemote(envelope);
 	expect(expectOk(restored.tables.notes.get(note.id))?.title).toBe('Groceries');

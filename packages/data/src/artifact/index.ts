@@ -30,12 +30,16 @@ export {
 	parseRowFile,
 	rowFile,
 } from './frontmatter.js';
-export { type ImportError, readArtifact } from './import.js';
+export {
+	type ArtifactDocument,
+	type ImportError,
+	readArtifact,
+} from './import.js';
 export { parseRowPath, rowPath } from './layout.js';
 export {
-	renderArtifact,
 	type RenderableData,
-	type RenderedRow,
 	RenderError,
+	type RenderedRow,
+	renderArtifact,
 	renderRow,
 } from './render.js';
