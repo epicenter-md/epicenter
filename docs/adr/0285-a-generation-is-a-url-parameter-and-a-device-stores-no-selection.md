@@ -16,9 +16,24 @@ An address's natural home in a web application is the URL.
 
 **The generation is an open parameter, carried in the URL, and nothing stores a selection.**
 
+It is a **dynamic path segment**, not a query parameter, and Honeycrisp's
+routes already have the shape it nests into: the realm is a segment today, so
+the generation is the segment under it, and the URL mirrors the storage address
+rather than merely referring to it.
+
 ```txt
-  /notes?gen=3          →  openAccount(definition, { baseURL, principalId, generation: 3 })
+  route                     storage
+  /device/[generation]      epicenter/local/<dataId>/gen/<n>
+  /account/[generation]     epicenter/account/<baseURL>/<principalId>/<dataId>/gen/<n>
+
+  →  openAccount(definition, { baseURL, principalId, generation })
 ```
+
+A path segment rather than `?gen=3` for one reason that decides it: **a missing
+segment is a routing failure and a missing query parameter is silently the
+wrong database.** Every link in the application would have to remember to carry
+a query parameter, and forgetting one would resolve to the latest generation
+and look like nothing at all.
 
 - **Switching generation is a navigation.** The application reloads and opens a different IndexedDB database. There is no in-app switch, no state machine around one, and no live re-pointing of an open store.
 - **Boot resolves the latest once and redirects, so the URL always carries a number.** Online, that is the ledger's browse list, which already exists. Offline, it is enumeration: `indexedDB.databases()`, filtered to this store's prefix, highest first. Firefox shipped `databases()` in 126, so every target browser enumerates.
