@@ -1,167 +1,142 @@
-import { field } from '@epicenter/data/definition';
 /**
- * What an authority tail remembers before snapshot folding after you delete
- * something.
+ * What an authority still holds after you delete something, and for how long.
  *
- * ADR-0220 folds acknowledged history into snapshots. Before that fold, an
- * authority tail still retains the bytes below, and this test makes that cost
- * visible rather than pretending current state tells the whole story.
+ * This file used to prove a different system. Its claim was that "a device
+ * joining for the FIRST time replays the log from position zero, so it
+ * downloads everything anyone has ever deleted", which was true of the
+ * positional log ADR-0277 removed. The new authority answers a state vector
+ * from a document it holds, so a fresh device receives current state and not
+ * history, and the file kept passing while describing a leak the shipped
+ * design no longer has.
  *
- * An append-only log keeps the update that CREATED a row, so deleting the row
- * removes it from the current state and removes nothing from the log. The
- * content is still there, in bytes, and a device joining for the first time
- * replays the log from position zero, so it downloads everything anyone has
- * ever deleted.
+ * What survives is narrower, real, and now the thing being measured: an
+ * authority's CHAIN holds the update that created a row, so between the
+ * deletion and the next fold, the deleted content is still in storage and
+ * still reachable by anyone who asks for everything. Folding is what removes
+ * it, because a fold encodes a garbage-collected document rather than merging
+ * bytes (ADR-0282).
  *
- * The result is evidence for the pressure instrumentation and any future
- * Compact workspace decision. It is not a product workflow.
+ * Evidence for the fold, for `pressure()`, and for ADR-0286's compaction. Not
+ * a product workflow.
  */
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import type { Result } from 'wellcrafted/result';
+import * as Y from '@y/y';
+import { expectOk } from 'wellcrafted/testing';
 
-import { createAccountStore, syncEngineOf } from '../src/store/store.js';
-import { openSyncAuthority } from '../src/sync/authority.js';
+import {
+	type DocumentAuthority,
+	openDocumentAuthority,
+} from '../src/sync/document-authority.js';
 
-const evidenceDatabase = defineData({
-	id: 'so.epicenter.honeycrisp',
-	kv: {},
-	tables: { notes: { fields: { title: field.string() } } },
-});
+const CANARY = 'a sentence somebody deleted on purpose';
 
-/** Distinctive enough that finding it in a blob cannot be a coincidence. */
-const CANARY = 'SECRET-CANARY-my-therapist-appointment';
-/** Never written anywhere. The control for every search below. */
-const NEVER_WRITTEN = 'THIS-STRING-WAS-NEVER-WRITTEN-ANYWHERE';
-
-function expectOk<TValue, TError>(
-	result: Result<TValue, TError> | TValue,
-): TValue {
-	if (
-		typeof result === 'object' &&
-		result !== null &&
-		'data' in result &&
-		'error' in result
-	) {
-		const outcome = result as Result<TValue, TError>;
-		if (outcome.error !== null) throw outcome.error;
-		return outcome.data as TValue;
-	}
-	return result as TValue;
-}
-
-function contains(blobs: readonly Uint8Array[], needle: string): boolean {
-	return Buffer.concat(blobs.map((bytes) => Buffer.from(bytes)))
-		.toString('latin1')
-		.includes(needle);
-}
-
-/** A device that wrote a note, pushed it, then deleted it. */
-function afterWritingAndDeleting() {
-	const database = createBunSqliteAdapter(new Database(':memory:'));
-	const db = createAccountStore({
-		definition: evidenceDatabase,
-		sqlite: database,
-	});
-	const store = db.store;
-	const authorityDatabase = createBunSqliteAdapter(new Database(':memory:'));
-	const authority = openSyncAuthority({ sqlite: authorityDatabase });
-
-	const note = expectOk(db.tables.notes.create({ title: CANARY }));
-	const created = syncEngineOf(store).coalesce();
-	if (created === undefined) throw new Error('nothing to send');
-	expectOk(authority.append(created.bytes));
-	syncEngineOf(store).acknowledge(created.id, 1);
-
-	db.tables.notes.delete(note.id);
-	const deleted = syncEngineOf(store).coalesce();
-	if (deleted !== undefined) expectOk(authority.append(deleted.bytes));
-
+function authority() {
+	const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 	return {
-		store,
-		db,
-		note,
-		authority,
-		localLog: () =>
-			database
-				.all<{ bytes: Uint8Array }>('SELECT bytes FROM _updates')
-				.map((row) => new Uint8Array(row.bytes as never)),
-		authorityLog: () =>
-			authorityDatabase
-				.all<{ bytes: Uint8Array }>('SELECT bytes FROM _log')
-				.map((row) => new Uint8Array(row.bytes as never)),
+		held: openDocumentAuthority({
+			sqlite,
+			// Every fold here is asked for explicitly, so the floor must not
+			// decline one on a document this small.
+			foldFloorBytes: 0,
+		}),
+		/** Everything in the chain, as text. Evidence reaches past the surface. */
+		storage: () =>
+			sqlite
+				.all<{ bytes: Uint8Array | ArrayBuffer }>(
+					'SELECT bytes FROM updates ORDER BY seq, chunk',
+				)
+				.map((row) =>
+					new TextDecoder('utf-8', { fatal: false }).decode(
+						new Uint8Array(row.bytes as ArrayBuffer),
+					),
+				)
+				.join(''),
 	};
 }
 
-describe('a deleted row is gone from the application', () => {
-	test('no verb can reach it', () => {
-		const world = afterWritingAndDeleting();
+/** What a device with nothing would be sent, as text. */
+function everythingSentToANewDevice(held: DocumentAuthority): string {
+	return new TextDecoder('utf-8', { fatal: false }).decode(held.since());
+}
 
-		expect(expectOk(world.db.tables.notes.get(world.note.id))).toBeUndefined();
-		expect(world.db.tables.notes.ids()).toEqual([]);
-		expect(world.db.tables.notes.list().rows).toEqual([]);
+function write(mutate: (root: Y.Type) => void): Uint8Array {
+	const doc = new Y.Doc({ gc: true });
+	doc.transact(() => mutate(doc.get('notes')));
+	const update = new Uint8Array(Y.encodeStateAsUpdateV2(doc));
+	doc.destroy();
+	return update;
+}
+
+describe('what a deletion leaves behind', () => {
+	test('storage carries deleted content until a fold, and the wire never does', () => {
+		const { held, storage } = authority();
+		const doc = new Y.Doc({ gc: true });
+
+		doc.transact(() =>
+			doc.get('notes').setAttr('body' as never, CANARY as never),
+		);
+		expectOk(held.receive(new Uint8Array(Y.encodeStateAsUpdateV2(doc))));
+
+		doc.transact(() => doc.get('notes').deleteAttr('body'));
+		expectOk(
+			held.receive(new Uint8Array(Y.encodeStateAsUpdateV2(doc, undefined))),
+		);
+
+		// The correction this file exists to record. The update that CREATED the
+		// row is still a record in the chain, so the sentence is on the server's
+		// disk after it was deleted.
+		expect(storage()).toContain(CANARY);
+
+		// And it is not on the wire, not even before a fold. `since` encodes
+		// from the hydrated, garbage-collected document rather than from the
+		// stored bytes, so a device joining now is sent current state and never
+		// sees this. That is the difference ADR-0282 measured from the other
+		// side: merging bytes deduplicates and never collects, so a byte-only
+		// authority WOULD have handed this over.
+		expect(everythingSentToANewDevice(held)).not.toContain(CANARY);
+
+		expectOk(held.fold());
+
+		// The fold writes what the wire was already saying, so storage catches
+		// up with it. This is the operation that actually reclaims the bytes.
+		expect(storage()).not.toContain(CANARY);
+		expect(held.storedBytes()).toBeGreaterThan(0);
+		doc.destroy();
+		held.dispose();
 	});
 
-	test('and gone from the current state, which is what gc reclaims', () => {
-		// The half that works. A snapshot of the document today does NOT carry it,
-		// so anything derived from current state is clean.
-		const world = afterWritingAndDeleting();
+	test('a fresh device is sent current state, not the history that reached it', () => {
+		const { held } = authority();
+		// Ten separate updates, so a positional log would have ten entries to
+		// replay and this has one document to describe.
+		for (let index = 0; index < 10; index += 1) {
+			expectOk(
+				held.receive(
+					write((root) => root.setAttr(`k${index}` as never, index as never)),
+				),
+			);
+		}
+		expectOk(held.fold());
 
-		expect(contains([world.store.encodeStateSince()], CANARY)).toBe(false);
-	});
-});
-
-describe('and still in every log, for as long as the log exists', () => {
-	test("the device's own log still holds the text", () => {
-		const world = afterWritingAndDeleting();
-
-		expect(contains(world.localLog(), CANARY)).toBe(true);
-		// CONTROL: a string nobody ever wrote must not be found, or the search is
-		// matching on something other than the content and proves nothing.
-		expect(contains(world.localLog(), NEVER_WRITTEN)).toBe(false);
-	});
-
-	test("the authority's log still holds the text", () => {
-		const world = afterWritingAndDeleting();
-
-		expect(contains(world.authorityLog(), CANARY)).toBe(true);
-		expect(contains(world.authorityLog(), NEVER_WRITTEN)).toBe(false);
+		const fresh = new Y.Doc({ gc: true });
+		Y.applyUpdateV2(fresh, held.since());
+		expect(Object.keys(fresh.get('notes').getAttrs() ?? {})).toHaveLength(10);
+		fresh.destroy();
+		held.dispose();
 	});
 
-	test('and a device joining for the FIRST time downloads it', () => {
-		// The consequence that matters. Catch-up is "everything after your
-		// cursor", and a new device's cursor is zero, so a person who joins a
-		// phone today receives every note anyone has ever deleted. Nothing
-		// surfaces it, because the workspace reads current state; it arrives, is
-		// applied, and is invisible.
-		const world = afterWritingAndDeleting();
-		const backlog = expectOk(world.authority.since(0, 1_000));
+	test('a caught-up device is sent almost nothing', () => {
+		const { held } = authority();
+		expectOk(
+			held.receive(write((root) => root.setAttr('a' as never, 1 as never))),
+		);
 
-		expect(
-			contains(
-				backlog.map((entry) => entry.bytes),
-				CANARY,
-			),
-		).toBe(true);
-		expect(
-			contains(
-				backlog.map((entry) => entry.bytes),
-				NEVER_WRITTEN,
-			),
-		).toBe(false);
-
-		// And the arriving device shows nothing, which is why this is invisible
-		// rather than merely undesirable.
-		const arrivingDb = createAccountStore({
-			definition: evidenceDatabase,
-			sqlite: createBunSqliteAdapter(new Database(':memory:')),
-		});
-		const arriving = arrivingDb.store;
-		for (const entry of backlog)
-			expectOk(syncEngineOf(arriving).applyRemote(entry.bytes));
-		expect(arrivingDb.tables.notes.list().rows).toEqual([]);
+		// The whole of what a replica owes when it owes nothing. There is no
+		// cursor to compare and no position to be at: it says what it has.
+		expect(held.since(held.stateVector()).byteLength).toBeLessThan(20);
+		held.dispose();
 	});
 });
