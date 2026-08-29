@@ -7,9 +7,11 @@ description: "Make an unsettled product, architecture, or design model visible t
 
 A dialectic is the deliberate collision of articulations: the user’s emerging
 account of what should be true and the agent’s competing greenfield accounts.
-Their differences, consequences, and refusals make the real choice visible. A
-dialectic produces an accepted greenfield articulation. It ends when the user
-can recognize that articulation and say, in effect, “that’s right.”
+Their differences, consequences, and refusals expose the cruxes that the next
+articulation must resolve. Through repeated re-articulation and crux-finding,
+the collision either makes the agent’s model intelligible or produces an
+accepted greenfield articulation. In the latter case, it ends when the user can
+recognize that articulation and say, in effect, “that’s right.”
 
 The collision can serve understanding or correction. In a learning dialectic,
 the user wants the agent’s current model made intelligible and does not need to
