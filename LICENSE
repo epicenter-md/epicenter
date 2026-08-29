@@ -1,100 +1,91 @@
 Copyright 2023-2026 Braden Wong
 
-This repository contains software under multiple licenses. Each package
-under packages/ and apps/ contains its own LICENSE file, and each
-package.json declares its applicable license. This file is the index.
+Every package under packages/ and apps/ is licensed under
+AGPL-3.0-or-later. Each declares it in its package.json, and most carry a
+copy of the full text in their own LICENSE file. This file is the index.
 
-For the reasoning behind the split, see docs/licensing/licensing-strategy.md
-and FINANCIAL_SUSTAINABILITY.md.
-
-================================================================================
-1. MIT License
-================================================================================
-
-The following libraries are licensed under the MIT License. The full text
-is in licenses/LICENSE-MIT. These are the local-first-on-Yjs developer
-toolkit: an external developer can `npm install` any of them and embed
-them in a closed-source product. The toolkit's dependency closure is
-entirely MIT; the boundary is enforced by 'bun run check:licenses'.
-
-    - packages/workspace        (@epicenter/workspace)   typed schemas,
-                                                         CRDT tables, sync
-    - packages/ui               (@epicenter/ui)          shadcn-svelte
-                                                         component library
-    - packages/filesystem       (@epicenter/filesystem)  POSIX layer over
-                                                         workspace tables
-    - packages/sync             (@epicenter/sync)        Yjs sync protocol
-    - packages/identity         (@epicenter/identity)    capability + identity
-                                                         vocabulary
-    - packages/agent-protocol   (@epicenter/agent-protocol) agent wire contract
-    - packages/encryption       (@epicenter/encryption)  toolkit-internal
-                                                         HKDF + blob crypto
-    - packages/field            (@epicenter/field)       toolkit-internal
-                                                         field schema kinds
-    - packages/chat             (@epicenter/chat)        toolkit-internal
-                                                         chat primitives
-    - packages/sqlite           (@epicenter/sqlite)      portable embedded
-                                                         SQLite adapter contract
-    - packages/data             (@epicenter/data)        typed local-first
-                                                         Epicenter replica and sync
-    - packages/document-sync    (@epicenter/document-sync) row-document sync plane
-    - packages/agent            (@epicenter/agent)       UI-free agent loop
-    - packages/app              (@epicenter/app)         the public Epicenter
-                                                         client an installed
-                                                         app bundles
+For the reasoning, see docs/licensing/licensing-strategy.md and
+FINANCIAL_SUSTAINABILITY.md.
 
 ================================================================================
-2. GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
+1. GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
 ================================================================================
 
-Everything else Epicenter ships is licensed under AGPL-3.0-or-later. The
-full text is in licenses/LICENSE-AGPL-3.0. This covers all shipped apps and the
-Epicenter-internal packages.
+Everything Epicenter ships. The full text is in licenses/LICENSE-AGPL-3.0.
 
-You're free to run, modify, and self-host any of these. If you distribute
-a modified version, you share the changes back with the community.
+You're free to run, modify, and self-host any of it. If you distribute a
+modified version, you share the changes back with the community.
 
-For hosted infrastructure (apps/api, apps/self-host), AGPL
-§13 extends this to network use: running a modified version as a service
-counts as distribution.
-
-For consumer apps that run locally on a user's machine, §13 does not
-trigger, but the underlying GPL distribution clause still applies: anyone
-who forks and distributes a modified binary shares the changes back.
-
-  Apps:
-    - apps/api                   (@epicenter/api)        hosted personal
-                                                         cloud Worker
-                                                         (worker + ui)
-    - apps/self-host              (@epicenter/self-host)   self-hosted instance
-                                                         reference Worker
-    - apps/whispering            (@epicenter/whispering) desktop transcription
-    - apps/honeycrisp            (@epicenter/honeycrisp) notes app
-    - apps/vocab                 (@epicenter/vocab)      mandarin chat
-    - apps/tab-manager           (@epicenter/tab-manager) browser extension
-    - apps/skills                (skills)                agent skill editor
-    - apps/reddit                (@epicenter/reddit)     reddit importer
-    - apps/landing               (@epicenter/landing)    public site
-    - apps/posthog-reverse-proxy (@epicenter/posthog-reverse-proxy) analytics
-    - apps/matter                (@epicenter/matter)     markdown grid
-    - apps/wiki                  (@epicenter/wiki)       wiki app
-    - apps/local-books           (@epicenter/local-books) quickbooks mirror
+For hosted infrastructure (apps/api, apps/self-host), AGPL section 13 extends
+this to network use: running a modified version as a service counts as
+distribution. For consumer apps that run locally on a user's machine, section
+13 does not trigger, but the underlying distribution clause still applies:
+anyone who forks and distributes a modified binary shares the changes back.
 
   Packages:
-    - packages/auth              (@epicenter/auth)       auth core (private)
-    - packages/svelte-utils      (@epicenter/svelte)     svelte reactive
-                                                         helpers + auth
-                                                         wrapper (private)
-    - packages/app-shell         (@epicenter/app-shell)  shared app shell UI
-                                                         (private)
-    - packages/skills            (@epicenter/skills)     workspace skills
-    - packages/constants         (@epicenter/constants)  shared constants
-    - packages/server            (@epicenter/server)     shared Hono server
-                                                         library (private)
-    - packages/client            (@epicenter/client)     API client (private)
-    - packages/matter-core       (@epicenter/matter-core) markdown to SQLite
-                                                         engine
-    - packages/vite-config       (@epicenter/vite-config) shared vite config
+    packages/agent           @epicenter/agent
+    packages/agent-protocol  @epicenter/agent-protocol
+    packages/app-shell       @epicenter/app-shell
+    packages/auth            @epicenter/auth
+    packages/blobs           @epicenter/blobs
+    packages/chat            @epicenter/chat
+    packages/client          @epicenter/client
+    packages/constants       @epicenter/constants
+    packages/data            @epicenter/data
+    packages/field           @epicenter/field
+    packages/identity        @epicenter/identity
+    packages/matter-core     @epicenter/matter-core
+    packages/recorder        @epicenter/recorder
+    packages/server          @epicenter/server
+    packages/skills          @epicenter/skills
+    packages/sqlite          @epicenter/sqlite
+    packages/svelte-utils    @epicenter/svelte
+    packages/sync            @epicenter/sync
+    packages/ui              @epicenter/ui
+    packages/vite-config     @epicenter/vite-config
+
+  Apps:
+    apps/api                    @epicenter/api
+    apps/epicenter              @epicenter/epicenter
+    apps/honeycrisp             @epicenter/honeycrisp
+    apps/landing                @epicenter/landing
+    apps/local-books            @epicenter/local-books
+    apps/local-mail             @epicenter/local-mail
+    apps/matter                 @epicenter/matter
+    apps/posthog-reverse-proxy  @epicenter/posthog-reverse-proxy
+    apps/reddit                 @epicenter/reddit
+    apps/self-host              @epicenter/self-host
+    apps/skills                 skills
+    apps/sync-lab               @epicenter/sync-lab
+    apps/vocab                  @epicenter/vocab
+    apps/whispering             @epicenter/whispering
+
+================================================================================
+2. MIT (historical, no longer a live tier)
+================================================================================
+
+Until 2026-08, a subset of packages was MIT: an embeddable toolkit tier whose
+dependency closure had to stay MIT. That tier is dissolved. It was maintained
+for an external embedder who never arrived, and it had begun to distort
+placement: code sat in the wrong package to stay on the permissive side of a
+boundary nothing was crossing.
+
+The direction of the change is the recoverable one. AGPL is the restrictive
+default, and carving a package back out to MIT later is a decision that can be
+made once there is a concrete embedder to make it for. The reverse mistake,
+releasing under MIT and changing your mind, cannot be undone for versions
+already published.
+
+Which matters here, because some were: the following versions were published
+to npm under the MIT License and REMAIN MIT for those versions, permanently.
+The text they were released under is preserved at licenses/LICENSE-MIT.
+
+    - @epicenter/field       0.3.0
+    - @epicenter/identity    0.3.0
+    - @epicenter/sync        0.1.0, 0.3.0
+    - @epicenter/ui          0.1.0, 0.3.0
+
+Versions published from this commit forward are AGPL-3.0-or-later.
 
 ================================================================================
 3. Proprietary (deferred tier, currently empty)
@@ -116,6 +107,7 @@ See docs/licensing/licensing-strategy.md for the conventions.
 
 ================================================================================
 
-If a package's per-package LICENSE file or package.json "license" field
-ever conflicts with this index, the per-package files are authoritative.
-This index will be updated to match.
+If a package's per-package LICENSE file or package.json "license" field ever
+conflicts with this index, the per-package files are authoritative. This index
+is generated from them by reading every package.json, so a disagreement means
+this file is stale and should be regenerated rather than hand-edited.

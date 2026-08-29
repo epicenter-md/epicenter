@@ -25,7 +25,7 @@
 		"!src/**/*.test.ts",
 		"!src/**/*.test-support.ts"
 	],
-	"license": "MIT",
+	"license": "AGPL-3.0-or-later",
 	"scripts": {
 		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.dom.json && tsc --noEmit -p evidence/browser/durable-store/tsconfig.json",
 		"test": "bun test"

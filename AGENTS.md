@@ -42,11 +42,22 @@ One library (`packages/server`), two deployables.
 - Multi-tenancy (many principals, OAuth, billing) is Cloud-only. An instance resolves every valid bearer to the literal `instance` principal (ADR-0075, amended by ADR-0092).
 - Billing (catalog, routes, Autumn) lives in `apps/api/worker/billing/` and is hosted-only. Never extract it back to a shared package.
 
-## License boundary
+## License
 
-Apps and `packages/server` are AGPL. The embeddable toolkit packages are MIT.
+Everything under `packages/` and `apps/` is AGPL-3.0-or-later. There is no
+second tier, so nothing you write has to be placed to stay on one side of a
+boundary.
 
-Moving or copying code from an AGPL package into an MIT one is a relicensing act. `bun run check:licenses` guards dependency edges only and cannot see copied source. Decision procedure: `docs/licensing/licensing-strategy.md`.
+An MIT toolkit tier existed until 2026-08 and was dissolved: no external
+embedder ever arrived, five of its nine packages had no MIT consumer, and it
+had started putting code in the wrong package to keep a closure clean. Prior
+published versions stay MIT for those versions, permanently.
+
+`bun run check:licenses` is kept and currently passes trivially with zero
+permissive packages. It exists so that reintroducing one enforces the closure
+rule from the first commit. Do not add an MIT package without reading "If MIT
+returns" in `docs/licensing/licensing-strategy.md`; the bar is a named
+embedder, not an intention to have one.
 
 ## Always use bun
 

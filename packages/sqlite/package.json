@@ -13,7 +13,7 @@
 		"src",
 		"!src/**/*.test.ts"
 	],
-	"license": "MIT",
+	"license": "AGPL-3.0-or-later",
 	"scripts": {
 		"typecheck": "tsc --noEmit",
 		"test": "bun test"

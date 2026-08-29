@@ -165,9 +165,12 @@ Linking note.
 
 ## Public Surface
 
-`AuthState` is defined in `@epicenter/identity` (MIT, so the workspace and the
-AGPL auth client share one definition across the license firewall) and
-re-exported from `@epicenter/auth`:
+`AuthState` is defined in `@epicenter/identity` and re-exported from
+`@epicenter/auth`. The reason it lives there has expired twice over: the
+docstring justified it by a license firewall that no longer exists, and by a
+`packages/workspace` that no longer exists either. Every consumer is
+`@epicenter/auth` or something downstream of it, so it belongs in
+`@epicenter/auth` and should move there.
 
 ```ts
 export type AuthState =

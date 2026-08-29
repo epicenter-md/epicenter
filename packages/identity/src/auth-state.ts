@@ -7,9 +7,11 @@ import type { PrincipalId } from './identity.js';
  * the local partition key. Even when an OAuth grant needs reauth, the cached
  * principal id still picks the right local storage partition.
  *
- * This is capability state, not credential state. It lives in the MIT toolkit
- * so the MIT workspace and the AGPL auth client can share one definition
- * without workspace importing auth across the license firewall.
+ * This is capability state, not credential state. It lives here for a reason
+ * that has expired twice: a license firewall that no longer exists, and a
+ * `packages/workspace` that no longer exists either. Every consumer is
+ * `@epicenter/auth` or downstream of it, so this belongs in that package and
+ * should move when the arms are next touched.
  */
 export type AuthState =
 	| { status: 'signed-out' }

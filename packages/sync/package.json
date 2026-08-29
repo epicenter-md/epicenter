@@ -19,7 +19,7 @@
 		"./auth-subprotocol": "./src/auth-subprotocol.ts",
 		"./store-route": "./src/store-route.ts"
 	},
-	"license": "MIT",
+	"license": "AGPL-3.0-or-later",
 	"scripts": {
 		"test": "bun test",
 		"typecheck": "tsc --noEmit"
