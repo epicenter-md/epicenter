@@ -39,16 +39,8 @@
 		wrappingInputRule,
 	} from 'prosemirror-inputrules';
 	import { keymap } from 'prosemirror-keymap';
+	import { type MarkType, type NodeType } from 'prosemirror-model';
 	import {
-		type MarkSpec,
-		type MarkType,
-		type NodeSpec,
-		type NodeType,
-		Schema,
-	} from 'prosemirror-model';
-	import { schema as basicSchema } from 'prosemirror-schema-basic';
-	import {
-		addListNodes,
 		liftListItem,
 		sinkListItem,
 		splitListItem,
@@ -58,71 +50,11 @@
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
 
-	const taskList = {
-		group: 'block',
-		content: 'taskItem+',
-		parseDOM: [{ tag: 'ul.task-list' }],
-		toDOM: () => ['ul', { class: 'task-list' }, 0],
-	} satisfies NodeSpec;
-
-	const taskItem = {
-		content: 'paragraph block*',
-		attrs: { checked: { default: false } },
-		parseDOM: [
-			{
-				tag: 'li.task-item',
-				getAttrs: (dom) => {
-					if (!(dom instanceof HTMLElement)) return false;
-					return { checked: dom.dataset.checked === 'true' };
-				},
-			},
-		],
-		toDOM: (node) => [
-			'li',
-			{
-				class: 'task-item',
-				'data-checked': node.attrs.checked ? 'true' : 'false',
-			},
-			[
-				'label',
-				{ contenteditable: 'false' },
-				[
-					'input',
-					{
-						type: 'checkbox',
-						checked: node.attrs.checked ? 'checked' : undefined,
-					},
-				],
-			],
-			['div', 0],
-		],
-	} satisfies NodeSpec;
-
-	const underline = {
-		parseDOM: [{ tag: 'u' }, { style: 'text-decoration=underline' }],
-		toDOM: () => ['u', 0],
-	} satisfies MarkSpec;
-
-	const strike = {
-		parseDOM: [
-			{ tag: 's' },
-			{ tag: 'del' },
-			{ tag: 'strike' },
-			{ style: 'text-decoration=line-through' },
-		],
-		toDOM: () => ['s', 0],
-	} satisfies MarkSpec;
-
-	const nodes = addListNodes(
-		basicSchema.spec.nodes.append({ taskList, taskItem }),
-		'paragraph block*',
-		'block',
-	);
-
-	const schema = new Schema({
-		nodes,
-		marks: basicSchema.spec.marks.append({ underline, strike }),
-	});
+	// The same instance the Markdown codec and `derive` read through. This view
+	// used to construct its own copy of the identical spec, which meant a node
+	// added here and not there would render into the artifact as nothing, with
+	// no error and no test able to see it (ADR-0289).
+	import { noteSchema as schema } from './schema.js';
 
 	function markActive(state: EditorState, markType: MarkType): boolean {
 		const { from, $from: resolvedFrom, to, empty } = state.selection;
