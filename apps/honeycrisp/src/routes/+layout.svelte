@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { FlushEditsOnHide } from '@epicenter/svelte';
-	import { reloadOnAuthChange } from '@epicenter/svelte/auth';
+	import { reloadOnAuthChange } from '@epicenter/auth/svelte';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { ModeWatcher } from 'mode-watcher';

@@ -41,7 +41,7 @@
  *   more than this file.
  */
 
-import type { AuthClient, AuthState } from '@epicenter/auth';
+import type { AuthClient, AuthState } from '../index.js';
 
 /**
  * The identity boundary: `null` when signed out, otherwise the principal id.

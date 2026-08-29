@@ -1,6 +1,6 @@
 import { EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createHostedBrowserRedirectAuth } from '@epicenter/svelte/auth';
+import { createHostedBrowserRedirectAuth } from '@epicenter/auth/svelte';
 import { instanceSetting } from '$lib/instance';
 
 export const auth = createHostedBrowserRedirectAuth({

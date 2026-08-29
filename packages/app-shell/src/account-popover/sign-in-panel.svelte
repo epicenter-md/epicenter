@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ReactiveAuthClient } from '@epicenter/svelte/auth';
+	import type { ReactiveAuthClient } from '@epicenter/auth/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import Cloud from '@lucide/svelte/icons/cloud';

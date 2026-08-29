@@ -6,7 +6,8 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./desktop": "./src/desktop-broker-auth.ts",
-		"./oauth-launchers": "./src/oauth-launchers/index.ts"
+		"./oauth-launchers": "./src/oauth-launchers/index.ts",
+		"./svelte": "./src/svelte/auth.svelte.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
@@ -23,7 +24,16 @@
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
-		"typescript": "catalog:"
+		"typescript": "catalog:",
+		"svelte": "catalog:"
 	},
-	"license": "AGPL-3.0-or-later"
+	"license": "AGPL-3.0-or-later",
+	"peerDependencies": {
+		"svelte": "^5"
+	},
+	"peerDependenciesMeta": {
+		"svelte": {
+			"optional": true
+		}
+	}
 }

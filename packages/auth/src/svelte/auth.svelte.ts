@@ -1,3 +1,6 @@
+import { createSubscriber } from 'svelte/reactivity';
+import type { Brand } from 'wellcrafted/brand';
+import { createDesktopBrokerAuth as createCoreDesktopBrokerAuth } from '../desktop-broker-auth.js';
 import {
 	type AuthClient,
 	type CreateAppAuthClientOptions,
@@ -7,11 +10,8 @@ import {
 	createWebStoragePersistedAuthStorage,
 	type Instance,
 	type InstanceSetting,
-} from '@epicenter/auth';
-import { createDesktopBrokerAuth as createCoreDesktopBrokerAuth } from '@epicenter/auth/desktop';
-import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
-import { createSubscriber } from 'svelte/reactivity';
-import type { Brand } from 'wellcrafted/brand';
+} from '../index.js';
+import { createBrowserOAuthLauncher } from '../oauth-launchers/index.js';
 
 // The one composition shape (ADR-0088): the app reads `auth.state` once at
 // boot, and a change of auth generation reloads the page so the next boot

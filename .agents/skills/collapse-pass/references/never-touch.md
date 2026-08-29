@@ -70,7 +70,7 @@ Default collapse-pass targets, narrowest to widest:
 
 1. `packages/auth`
 2. `packages/data`
-3. `packages/svelte-utils`
+3. `packages/svelte`
 4. `apps/api`
 
 Out of scope without an explicit pass declaration:

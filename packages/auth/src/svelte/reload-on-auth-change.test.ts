@@ -8,7 +8,7 @@
  */
 
 import { beforeEach, expect, mock, test } from 'bun:test';
-import type { AuthClient, AuthState } from '@epicenter/auth';
+import type { AuthClient, AuthState } from '../index.js';
 import { reloadOnAuthChange } from './reload-on-auth-change.js';
 
 const signedOut = { status: 'signed-out' } as AuthState;

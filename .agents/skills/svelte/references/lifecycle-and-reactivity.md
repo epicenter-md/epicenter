@@ -327,7 +327,7 @@ declared table nothing reads never subscribes at all. A read inside
 untracked. Do not hand-roll `db.<table>.subscribe(listener)` feeding
 `$state.raw` for table reads; that pattern is what the adapter replaced.
 
-Adapter: `packages/svelte-utils/src/from-workspace.svelte.ts`. Full app
+Adapter: `packages/svelte/src/from-workspace.svelte.ts`. Full app
 exemplar: `apps/honeycrisp/src/lib/honeycrisp/notes.svelte.ts`.
 
 See the `typescript` skill for iterator helpers (`.toArray()`, `.filter()`, `.find()` on `IteratorObject`).

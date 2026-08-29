@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { FlushEditsOnHide } from '@epicenter/svelte';
-	import { reloadOnAuthChange } from '@epicenter/svelte/auth';
+	import { reloadOnAuthChange } from '@epicenter/auth/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Loading } from '@epicenter/ui/loading';

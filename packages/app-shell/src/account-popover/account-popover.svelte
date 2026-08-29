@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { InstanceSetting } from '@epicenter/auth';
-	import type { ReactiveAuthClient } from '@epicenter/svelte/auth';
+	import type { ReactiveAuthClient } from '@epicenter/auth/svelte';
 	import type { Snippet } from 'svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';

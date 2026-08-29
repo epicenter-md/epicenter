@@ -1,4 +1,4 @@
-import { createDesktopBrokerAuth } from '@epicenter/svelte/auth';
+import { createDesktopBrokerAuth } from '@epicenter/auth/svelte';
 import { desktopAuthBootstrap } from './desktop-auth-bootstrap.epicenter-host';
 
 /**
