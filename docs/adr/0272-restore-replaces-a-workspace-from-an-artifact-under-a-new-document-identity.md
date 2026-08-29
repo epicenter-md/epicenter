@@ -9,6 +9,8 @@
 - **Unbuilt:** the authority operation, and everything that calls it.
 - **Amended by:** [ADR-0281](0281-a-generation-is-a-whole-database-and-a-device-chooses-which-one-it-holds.md) at the loss it announced. A restore discards nothing, because the old generation is retained and stays live, so the paragraph naming what a person gives up describes a cost that no longer exists.
 
+- **Amended by:** [ADR-0289](0289-the-folder-is-where-a-generation-is-minted-from-not-a-surface-kept-current-for-its-own-sake.md) at one supporting reason. "There is no pre-restore backup feature. The mirror is already on disk and already current" is no longer true of the folder, which may be stale and which an application need not render at all. The refusal stands on ADR-0281's ground instead: the generation a restore replaces is retained, so it is the backup.
+
 ## Context
 
 ADR-0267 specified export and import together and shipped only export, recording why: "The replace-in-place half needs an authority verb that does not exist." That is still the gap, and it is narrower than it looked. The client half of a fleet-wide replacement already exists and is tested: a replica whose stamped document identity does not equal the identity the authority announces concludes `superseded`, discards its record whole, and refills from zero. Nothing needs building on the client at all.
