@@ -19,11 +19,26 @@
  *   same but this generation already gave up on sync, permanently, when its
  *   dials were denied. Only a fresh generation dials again. This is always a
  *   user action, so the reload lands on a click, never mid-keystroke.
- * - `signed-in` degrading to `reauth-required` does NOT reload: it is the one
- *   transition that can happen spontaneously (a refresh token expiring in the
- *   background), and a reload would interrupt the user to rebuild an app that
- *   works exactly as well degraded. Sync discovers the denial on its own next
- *   dial and stops; nothing else changes.
+ * - `signed-in` degrading to `reauth-required` does NOT reload, and the reason
+ *   is structural rather than a preference about interruption. **A reload
+ *   cannot repair this transition, so reloading on it is a boot loop.** The
+ *   paused flag is runtime-only: `PersistedAuth` carries a grant and a
+ *   principal id and nothing else, and boot is optimistic (ADR-0075), so a
+ *   persisted grant always comes back as `signed-in` with `networkAccess:
+ *   'unverified'`. You can never boot INTO `reauth-required`. A genuinely
+ *   revoked refresh token therefore degrades again within one round trip of
+ *   the token endpoint, and a reload here would spin at that period forever.
+ *
+ *   The UX argument is true as well: this is the one transition that fires
+ *   spontaneously, mid-keystroke, and the degraded app works exactly as well
+ *   locally. But it is the weaker of the two, and stating it alone has already
+ *   invited "why not just reload here too" more than once. Sync discovers the
+ *   denial on its own next dial and stops; nothing else changes.
+ *
+ *   Making this reload would mean persisting the pause (a `PersistedAuth`
+ *   schema change that reaches the desktop keyring storage) or awaiting
+ *   verification before first render (abandoning optimistic boot). Both cost
+ *   more than this file.
  */
 
 import type { AuthClient, AuthState } from '@epicenter/auth';
