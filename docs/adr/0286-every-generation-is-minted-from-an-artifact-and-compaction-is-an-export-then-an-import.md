@@ -21,6 +21,35 @@ The decisive detail is that the in-memory path was never codec-free. It runs the
 - **Row ids are preserved by construction**, because the artifact addresses rows by id (`<table>/<rowId>.md`) and frontmatter round-trips scalars exactly. ADR-0279's reference preservation needs no separate rule.
 - **The lease is withdrawn.** ADR-0276 required Rebuild to hold a lease on `(generation, head)` so it "must still be current when it lands". ADR-0281 deleted `current` and promotion, so a mint is always additive and there is nothing for a lease to protect.
 
+**The invariants a mint holds.** Named here because the shape invites a wrong
+assumption: that `POST /generations` carries the artifact.
+
+1. **`POST` allocates a number and carries no data.** The artifact never
+   reaches the authority, which has no codec and decodes no field (ADR-0283).
+   A client parses the folder and uploads documents.
+2. **The artifact is `kv.json` plus `<table>/<rowId>.md`** (ADR-0268): raw
+   scalar fields as YAML frontmatter, and the codec's serialization as the
+   body. A table with no document block exports frontmatter-only files. Under
+   ADR-0284 both halves of a row's scalars, index and record, share the one
+   frontmatter block, because the key sets are disjoint by parse rule.
+3. **Row ids are preserved**, because the artifact addresses rows by id and
+   frontmatter round-trips scalars exactly. ADR-0279's reference preservation
+   needs no separate rule.
+4. **Row documents are uploaded before the application document**, which is the
+   seal: a generation without one has no entry point and is unreachable rather
+   than hidden. The ordering is a client convention and deliberately
+   unenforced; a bad mint is a visible row a person deletes.
+5. **`PUT` is birth and happens once.** A second `PUT` to a document that
+   exists is `409`, and a `409` during a mint means abandon it.
+6. **A mint iterates the chains that exist, not the rows that do.** A row whose
+   document has no content is never uploaded, so its object is never
+   instantiated and costs nothing: a Durable Object that is never written to
+   ceases to exist. `record.documents()` is the enumeration this needs, and
+   iterating rows instead would mint an empty object per row (ADR-0287).
+7. **The mint paces itself.** Creating tens of thousands of new object stubs in
+   a burst is rate-limited, so the upload backs off and retries rather than
+   discovering the limit in production (ADR-0287).
+
 ## Consequences
 
 - One traversal, one id-preservation rule, one loss boundary, one test surface. The second of each goes.
