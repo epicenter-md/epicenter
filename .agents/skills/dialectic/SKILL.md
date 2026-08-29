@@ -38,6 +38,10 @@ syntax of its own language, so a design cannot be mistaken for source. Use a
 comparison for a comparison and a timeline for a history. Do not disguise
 either as TypeScript or as a polished status report.
 
+A turn is not a lesson. When the material is settled and the user wants to
+understand it rather than judge it, this is the wrong skill: hand it to
+[teaching-page](../teaching-page/SKILL.md) and say so.
+
 Use an HTML page when spatial relationships, visual hierarchy, or several
 states are materially easier to judge on a page. Keep it self-contained, with
 inline CSS and JavaScript, no CDN, and no build step. Write it to an ignored
