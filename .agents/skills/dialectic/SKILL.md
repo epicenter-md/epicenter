@@ -1,107 +1,107 @@
 ---
 name: dialectic
-description: Develop an unsettled idea as a page you react to and correct. Use when the user asks for a dialectic.
+description: Develop an unsettled product, architecture, or design question by making one checkable model visible and revising it from the user's reaction. Use when the destination is not settled and the user wants discovery, synthesis, or pushback before a plan exists. Do not use for interrogating an existing plan, a bounded comparison, or choosing files, commits, or execution steps.
 ---
 
 # Dialectic
 
-A dialectic ends at "that's right." It advances by putting the current model
-into a page the other person can open and challenge. Their reaction shows what
-is right, wrong, missing, or newly possible, and the next page incorporates it.
+A dialectic is a shared-model loop. Put forward the clearest model you can
+defend. The user reacts to it. Treat the reaction as evidence, revise the
+model, and repeat until the user recognizes the whole model. The stop signal is
+explicit recognition, often “that’s right,” not silence or a convenient pause.
 
-The agent is not interviewing the user and the user is not approving a series
-of proposals. The agent keeps making the model visible.
+## Find the live uncertainty
 
-## Show the model
+Before the first turn, identify the uncertainty that makes the next decision
+hard. If it is factual, inspect the source or research it before asking the
+user to decide. If it is a value, product, or life choice, expose the choice and
+give your recommendation. Distinguish observation, inference, proposal, and
+user-owned preference when mixing them would mislead.
 
-Lead with what you think is true. Not a summary of the conversation, not your
-reasoning, not a request for approval.
+Carry the larger context yourself. Start with the current model and the
+consequence that makes it worth discussing. Do not turn the opening into a
+conversation summary, a questionnaire, or a progress report. Do not average
+competing interpretations into a compromise just to make the conversation
+look settled.
 
-Every turn is a page. One self-contained HTML file: inline style and script,
-no CDN, no build step, opens from the filesystem. Write them where git ignores
-them and number them within the conversation, so an earlier turn can be named
-and reopened. They are scratch and they die with the workspace. Never commit
-one.
+## Make one model checkable
 
-The message carrying the page is three things: the claim in one sentence, the
-path to the file, and the question. The page holds the argument, so writing the
-argument again in the message is writing the turn twice.
+Lead with a claim, not a request for approval. Use the smallest form that lets
+the user disagree precisely: a quoted source, concrete example, diagram,
+contrast, timeline, or short explanation. One turn should ask for one main
+judgment; include supporting context when removing it would make that judgment
+impossible.
 
-Open it. Run `open <path>` after the first draw and again after every redraw,
-because a redraw that reuses the filename does not reload the tab on its own.
+Match the form to the subject. Quote code when the claim is about code, with a
+real path and line number. Mark proposed code with `// proposed` so a design
+cannot be mistaken for source. Use a comparison for a comparison and a
+timeline for a history. Do not disguise either as TypeScript or as a polished
+status report.
 
-Quoted code does not go away, it moves inside. A path and a line number are
-still what make a claim checkable, so quote the file in the page rather than
-paraphrasing it. If the thing does not exist yet, write `// proposed` above it
-so a design is never mistaken for source.
+Use an HTML page when spatial relationships, visual hierarchy, or several
+states are materially easier to judge on a page. Keep it self-contained, with
+inline CSS and JavaScript, no CDN, and no build step. Write it to an ignored
+scratch path and open it in the available browser or file viewer after writing
+or redrawing it. Read [references/example-turn.html](references/example-turn.html)
+when a page
+is the right surface, then adapt its structure to the argument. The example
+is a form to borrow, not a template to reproduce.
 
-Pick the form of each region from its subject, and never dress a comparison, a
-history, or a set of tradeoffs as TypeScript. A type that is not a program is a
-costume, and it hides the claim inside grey comment text. Three regions in the
-same shape is a template, and a template reads as a report.
+Every surface must make the live seam visible. Show what you believe, what is
+settled, and the unresolved consequence or fork. Label regions when a user
+needs to point at one. Do not add a dashboard, badges, decorative controls,
+generic headings, or a second rendering of the same thought unless each one
+helps the user judge the seam. A page that looks finished but gives the user
+nothing specific to correct is a failed turn.
 
-## Build the page as an argument
+Do not smooth the history of the idea. If earlier models were wrong, reversed,
+or abandoned, preserve that fact when it changes the current judgment. If the
+history does not change the current model, leave it out. A dialectic is not a
+transcript, changelog, or story about inevitable progress.
 
-A page shows the part of the model whose consequence is live now. You may be
-holding a much larger model than you can show, and a page that renders all of
-it looks settled even when it is not. Three regions is usually enough. If you
-are building a fourth, you are writing a report.
+## End on the next judgment
 
-The styling is the argument rather than decoration. Sequence decides what is
-understood first. Contrast puts the live distinction in a single view.
-Emphasis marks the one thing carrying the weight. A hero section, a gradient,
-and a row of icons assert nothing and spend the top of the page.
+End with one question only when its answer would change the next model. Ask
+about the model, not about the quality of the turn. “Does that sound right?”
+and “should I proceed?” ask for approval and locate nothing. “Which do you
+choose?” is appropriate only when the choice belongs to the user and evidence
+cannot settle it; state what you recommend and the assumption behind it so the
+user can reject the premise, not just the option.
 
-Label the regions. The natural correction is to point, and "the second panel is
-wrong" needs a second panel with a name. Give every region a short heading and
-keep the names stable across redraws, so a correction lands on the thing it
-named.
+Do not append a question as a ritual. If the next move is research or an agent
+decision, make it. If the user owns the unresolved choice, ask the choice
+plainly. The message outside an artifact should contain the claim, the artifact
+path when one exists, and the question when one exists. Do not repeat the
+artifact as a second essay.
 
-Render the seam. A page that only asserts reads as finished, and a finished
-page gives the user's model nothing to catch on. Show what you believe and show
-the fork the evidence does not settle, and make the difference visible at a
-glance instead of confessing it at the bottom. This is what makes a page a turn
-in a dialectic rather than a lecture.
+## Read the response as evidence
 
-Start from [references/example-turn.html](references/example-turn.html) rather
-than a blank file, and change whatever the argument needs. What should survive
-is that it is dark and readable: panels sit above the page rather than beside
-it, and text has more than one weight of grey.
+If the claim is wrong, change the model. If the framing is wrong, change the
+form. If the idea is too abstract, give the concrete case. If the user asks for
+the source, retrieve it. If they point at a region, revise that region and
+preserve the parts they did not challenge. An unexpected tangent may reveal a
+larger frame that makes the current one unnecessary.
 
-## End on the open question
+When the user returns a sentence, answer its accuracy first and name the word
+or premise carrying the error. When they provide an example, use it to update
+the model. Do not defend a weak rendering because it was already written.
 
-Close with the one question whose answer would change what you show next, in
-plain prose, at the end of the page and again in the message. Ask about the
-model, not about the turn. "Is preferring the cookie the guarantee, or is a
-request carrying both a request to refuse?" is a question about the model.
-"Does that sound right?", "which do you choose?", and "should I proceed?" ask
-for a verdict, and they get a yes that locates nothing. Do not offer a menu of
-labels before the user knows what the labels mean.
+Preserve what the user has recognized and remove settled questions from the
+open set. Do not infer recognition from silence, fatigue, partial agreement, or
+the absence of another objection. Agreement with a claim is evidence about the
+model, not authorization for a merge, deletion, implementation, or other
+side-effecting work. A choice about something the user owns authorizes that
+choice only.
 
-Preserve untouched regions when you redraw the page, and drop settled ones out
-of the open set instead of asking about them again.
+## Close or hand off
 
-## Read the reply
+When the user recognizes the complete model, return its shortest honest form
+and stop for a thinking-only request. For an accepted greenfield destination,
+hand it to [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) for
+backward planning. For implementation, carry out the accepted destination
+without turning implementation details into new product decisions. If
+implementation reveals a fact that changes the model, return to this loop.
 
-The claim was wrong: change the model. The framing was wrong: redraw it rather
-than defend it. It was too abstract: keep the claim, give the concrete case.
-They asked for source: go get the file, because they are not confused, you
-asked to be believed instead of checked.
-
-When they point at a region, redraw that region and leave the rest. When they
-hand back a sentence, say how close it is and name the one word carrying the
-error. When they ask for an example, give an example.
-
-Agreement is evidence, not authorization. It does not license a merge, a
-deletion, or an implementation.
-
-## After "that's right"
-
-Return the model and stop, hand a greenfield destination to
-[greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md), or implement it
-without turning implementation choices into new product decisions. If
-implementation turns up a fact that changes ownership or what the system
-allows, say so and come back here.
-
-Do not use this to collect approval for a settled plan. If the question is
-which commits or files should land, use the review or execution skill directly.
+Do not use this skill to collect approval for a settled plan. Use the review or
+execution skill for files, commits, implementation sequencing, and other
+bounded decisions.
