@@ -1,146 +1,119 @@
 ---
 name: dialectic
-description: "Make the agent’s model and the user’s emerging model visible through the deliberate collision of serious articulations, so they can be understood, corrected, or brought to an accepted greenfield articulation. Use only when the user explicitly asks to use a dialectic."
+description: "Make an unsettled product, architecture, or design model visible through the deliberate collision of articulations. Use when the user wants to understand the agent's current model, correct it, or discover an accepted greenfield destination before a plan exists. Do not use for a settled subject that needs a standalone lesson, interrogating an existing plan, a bounded comparison, or choosing files, commits, or execution steps."
 ---
 
 # Dialectic
 
 A dialectic is the deliberate collision of articulations: the user’s emerging
 account of what should be true and the agent’s competing greenfield accounts.
-Their differences, consequences, and refusals make the live disagreement
-visible. When the destination is correction or design, a dialectic produces an
-accepted greenfield articulation. It ends when the user can recognize that
-articulation and say, in effect, “that’s right.”
+Their differences, consequences, and refusals make the real choice visible. A
+dialectic produces an accepted greenfield articulation. It ends when the user
+can recognize that articulation and say, in effect, “that’s right.”
 
-Sometimes the user’s destination is only to understand the model the agent is
-currently using. In that case, make its premises, structure, evidence, and
-consequences visible; the user does not need to articulate or endorse anything
-back. Understanding is enough. Do not force a learning dialectic into design
-convergence.
+The collision can serve understanding or correction. In a learning dialectic,
+the user wants the agent’s current model made intelligible and does not need to
+endorse or restate it. In a corrective or design dialectic, the user and agent
+compare serious articulations until an accepted greenfield account emerges.
 
-Greenfield means describe the desired product, architecture, or design from
-first principles rather than allowing the inherited implementation to define
-what is possible. It does not mean ignoring facts or explicit user constraints;
-those should be made visible and allowed to change the articulation openly,
-never smuggled in as an unspoken compromise. Uncompromising means preserve the
-idea's true shape while it is being settled, even when a softer version would be
-easier to accept.
+## What an articulation is
 
-At every turn, ask what the current model reveals about the articulation and
-what is still missing, false, or softened. Put forward the clearest model you
-can defend. The user reacts to it. Treat the reaction as evidence, revise the
-model, and repeat until the user recognizes the complete articulation. Do not
-stop at a plausible model, partial agreement, silence, or a convenient pause.
+An articulation is a positive account of what should be true: its objects,
+verbs, boundaries, owners, consequences, and refusals. It is not a preference
+label, an implementation option, or a softened summary that hides the point of
+disagreement.
 
-## Find the live uncertainty
+The user’s articulation may arrive as a goal, question, example, analogy,
+refusal, or sentence that is not quite right yet. The agent’s articulation may
+describe the model it is currently using or propose what should exist. Keep
+observation, inference, proposal, and user-owned preference distinct so the
+collision does not confuse what exists with what either side wants.
 
-Before the first turn, identify the uncertainty that makes the next decision
-hard. If it is factual, inspect the source or research it before asking the
-user to decide. If it is a value, product, or life choice, expose the choice and
-give your recommendation. Distinguish observation, inference, proposal, and
-user-owned preference when mixing them would mislead.
+## Establish the collision
 
-Carry the larger context yourself. Start with the current model and the
-consequence that makes it worth discussing. Do not turn the opening into a
-conversation summary, a questionnaire, or a progress report. Do not average
-competing interpretations into a compromise just to make the conversation look
-settled; choose and defend the strongest greenfield interpretation, then let the
-user correct it.
+Before the first turn, identify the live uncertainty that makes the next
+judgment difficult. In a learning dialectic, expose the agent’s current model:
+its premises, structure, evidence, assumptions, and consequences. In a
+corrective or design dialectic, expose the user’s emerging ideal alongside the
+agent’s strongest greenfield account.
 
-## Make one model checkable
+Lead with a claim, not a questionnaire. When a real fork remains, put forward
+several serious articulations whose premises genuinely differ. Make each one
+strong enough to defend, including what it refuses and what follows from it.
+They are objects of comparison, not a menu that gives the synthesis work back
+to the user. Recommend a direction when the evidence and model support one.
 
-Lead with a claim, not a request for approval. Use the smallest form that lets
-the user disagree precisely: a quoted source, concrete example, diagram,
-contrast, timeline, or short explanation. One turn should ask for one main
-judgment; include supporting context when removing it would make that judgment
-impossible.
+Treat inherited implementation, prior plans, and existing design as evidence to
+inspect, not authority to obey. Push against them when they narrow the desired
+system by habit. Push against the user’s framing when it conflicts with the
+outcome they appear to want or with a premise they have already accepted. Make
+the disagreement concrete so the user can correct the premise rather than
+merely defer to the agent. External facts and explicit user constraints remain
+real inputs; surface a conflict with them instead of quietly compromising.
 
-Match the form to the subject. Quote code when the claim is about code, with a
-real path and line number. Mark proposed code as proposed, in the comment
-syntax of its own language, so a design cannot be mistaken for source. Use a
-comparison for a comparison and a timeline for a history. Do not disguise
-either as TypeScript or as a polished status report.
+## Move the model forward
 
-A dialectic is not a standalone lesson. When the material is settled and the
-user wants a self-contained explanation rather than to inspect the agent’s
-model, this is the wrong skill: hand it to
-[teaching-page](../teaching-page/SKILL.md) and say so.
+One turn should make one consequential collision inspectable, even when it puts
+several articulations beside each other. Give enough structure for a precise
+reaction, then leave the unresolved seam visible. The conversation moves like
+this:
 
-Use an HTML page when spatial relationships, visual hierarchy, or several
-states are materially easier to judge on a page. Keep it self-contained, with
-inline CSS and JavaScript, no CDN, and no build step. Write it to an ignored
-scratch path and open it in the available browser or file viewer after writing
-or redrawing it.
+```txt
+articulations
+  -> collision of premises and consequences
+  -> user reaction as directional evidence
+  -> sharper articulation
+  -> understanding or accepted destination
+```
 
-Every heading, label, and value on the page must name something that exists
-outside this conversation: a file, a field, a measured number, a term the
-user already uses. Coin a term only when adopting it is part of the proposal,
-and present the term as a claim the user can reject. A word you invented to
-organize your own argument goes in the chat message, not on the page. When
-the model's parts have a real appearance, draw each part in its own colours
-and type rather than as a generic chart, and when the judgment is about how
-something renders, embed the artifact itself.
+Read the reaction as evidence about the model, not as a command to obey at
+face value. Preserve what the user recognized, replace what they rejected,
+intensify what they cared about more strongly than the last model showed, and
+resolve the tension their reaction exposed. Do not merely paraphrase the latest
+message or defend a weak rendering because it already exists.
 
-Before writing a page, read
-[references/example-turn.html](references/example-turn.html) and take its two
-load-bearing properties, not its sections: the model is drawn in the system's
-own materials, and exactly one region is visually unlike the rest, the one
-where the user's judgment is required. The example is a form to borrow, not a
-template to reproduce.
+When the user returns a sentence, answer its accuracy first and name the word or
+premise carrying the divergence. When they give an example, use it to update
+the model. A wrong articulation is useful because it locates the disagreement;
+plain agreement is useful only when it moves the model forward.
 
-Every surface must make the live seam visible. Show what you believe, what is
-settled, and the unresolved consequence or fork. Label regions when a user
-needs to point at one. Do not add a dashboard, badges, decorative controls,
-generic headings, or a second rendering of the same thought unless each one
-helps the user judge the seam. A page that looks finished but gives the user
-nothing specific to correct is a failed turn.
+## Make the collision checkable
 
-## End on the next judgment
+Use the smallest form that lets the user judge the live seam. Use a concrete
+example when the idea is abstract, a comparison when articulations are peers on
+one axis, a timeline for history, quoted code when the claim is about code, and
+research when a fact could change the model. Use a diagram, HTML page, or
+prototype only when the spatial or behavioral relationship is materially easier
+to judge that way. The surface should show what is believed, what is settled,
+and what remains under pressure; it should not make a finished-looking artifact
+that gives the user nothing specific to correct.
 
-End with one question only when its answer would change the next model. Ask
-about the articulation, not about the quality of the turn. “Does that sound right?”
-and “should I proceed?” ask for approval and locate nothing. “Which do you
-choose?” is appropriate only when the choice belongs to the user and evidence
-cannot settle it; state what you recommend and the assumption behind it so the
-user can reject the premise, not just the option.
+When an HTML page is the right surface, keep it self-contained with inline CSS
+and JavaScript, no CDN, and no build step. Write it to an ignored scratch path
+and open it after writing or redrawing it. Before writing the page, read
+[references/example-turn.html](references/example-turn.html) and borrow its
+load-bearing properties: draw the model in the system’s own materials and make
+the region requiring the user’s judgment visually distinct. The example is a
+form to borrow, not a template to reproduce.
 
-Do not append a question as a ritual. If the next move is research or an agent
-decision, make it. If the user owns the unresolved choice, ask the choice
-plainly. The message outside an artifact should contain the claim, the artifact
-path when one exists, and the question when one exists. Do not repeat the
-artifact as a second essay.
+## End according to the destination
 
-## Read the response as evidence
+In a learning dialectic, stop when the user understands the agent’s model well
+enough to reason about it. Do not manufacture an accepted articulation or ask
+the user to restate one merely to prove comprehension.
 
-If the claim is wrong, change the model. If the framing is wrong, change the
-form. If the idea is too abstract, give the concrete case. If the user asks for
-the source, retrieve it. If they point at a region, revise that region and
-preserve the parts they did not challenge. An unexpected tangent may reveal a
-larger frame that makes the current one unnecessary.
+In a corrective or design dialectic, do not stop at a plausible model, partial
+agreement, silence, exhaustion, or approval of a plan. Stop when the user
+recognizes the complete greenfield articulation and says, in effect, “that’s
+right.” Return its shortest honest form. Recognition is not authorization for a
+merge, deletion, implementation, or other side effect.
 
-When the user returns a sentence, answer its accuracy first and name the word
-or premise carrying the error. When they provide an example, use it to update
-the model. Do not defend a weak rendering because it was already written.
-
-Do not smooth the history of the idea. If earlier models were wrong, reversed,
-or abandoned, preserve that fact when it changes the current judgment. If the
-history does not change the current model, leave it out. A dialectic is not a
-transcript, changelog, or story about inevitable progress.
-
-Preserve what the user has recognized and remove settled questions from the
-open set. Do not infer recognition from silence, fatigue, partial agreement, or
-the absence of another objection. Agreement with a claim is evidence about the
-model, not authorization for a merge, deletion, implementation, or other
-side-effecting work. A choice about something the user owns authorizes that
-choice only.
-
-## Close or hand off
-
-When the user recognizes the complete articulation, return its shortest honest
-form and stop for a thinking-only request. That recognition is not approval of a
-plan or authorization for side effects; it is recognition that the statement
-describes the thing both of you mean. For an accepted articulation, hand it to
+For an accepted greenfield destination, hand it to
 [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) for backward
 planning. For implementation, carry out the accepted destination without
 turning implementation details into new product decisions. If implementation
-reveals a fact that changes the articulation, return to this loop.
+reveals a fact that changes the destination, return to the dialectic.
+
+A dialectic is not a standalone lesson. When the material is settled and the
+user wants a self-contained explanation rather than to inspect the agent’s
+model, hand it to [teaching-page](../teaching-page/SKILL.md).
