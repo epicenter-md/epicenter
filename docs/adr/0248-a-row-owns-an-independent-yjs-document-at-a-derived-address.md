@@ -24,6 +24,7 @@
   row-deletion path in the table verb, and the multiplexed envelope payload in
   `packages/data/src/store/envelope.ts`. The nested `!doc` container is
   deleted.
+- **Amended by:** [ADR-0284](0284-the-application-document-is-an-index-and-a-rows-remaining-fields-live-in-its-own-document.md) at what the document at the derived address holds: a row's non-index scalars as well as its prose.
 
 ## Context
 

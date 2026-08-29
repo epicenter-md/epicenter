@@ -82,6 +82,7 @@
   withdrawn. This record adopts 0130 exactly as written, including its API:
   `using document = await tables.notes.document.open(row.id)`, with the
   application naming roots inside.
+- **Amended by:** [ADR-0284](0284-the-application-document-is-an-index-and-a-rows-remaining-fields-live-in-its-own-document.md) at what the row document holds: scalars declared `record`, beside the prose.
 
 ## Context
 

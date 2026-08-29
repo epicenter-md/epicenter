@@ -16,6 +16,7 @@
   are now guaranteed by one ordered queue flushed whole, rather than by each
   verb owning its own SQLite transaction.
 - **Relates:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md)
+- **Amended by:** [ADR-0280](0280-a-browser-stores-durable-record-is-a-chain-of-updates-in-indexeddb-folded-on-idle.md) at the debt machine. The acceptance-and-durability split stands; the observable queue and the three states are replaced by one health bit, because an eager append has no debt window to report.
   (which documents exist and where), [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md)
   (the client owns the store).
 

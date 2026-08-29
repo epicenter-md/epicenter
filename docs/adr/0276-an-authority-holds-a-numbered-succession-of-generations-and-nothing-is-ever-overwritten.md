@@ -7,6 +7,8 @@
 - **Relates:** [ADR-0241](0241-a-store-is-truth-plus-debts-and-sql-is-a-composed-follower.md) (which reserved a destructive whole-document operation that is now never needed), [ADR-0267](0267-a-workspace-exports-and-imports-as-a-legible-folder-structured-artifact.md) and [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) (the artifact a restore reads), [ADR-0270](0270-an-application-has-two-workspaces-and-moving-a-row-between-them-is-the-primitive.md) (the vocabulary the routes had wrong).
 - **Amended by:** [ADR-0277](0277-the-authority-reads-the-bytes-and-sync-becomes-the-yjs-protocol.md) at what a generation holds: a set of Yjs documents rather than a log and a snapshot. The numbering, the two verbs, the retention rule and the routes are unchanged, and one Durable Object per generation is now load-bearing rather than merely chosen.
 - **Unbuilt:** all of it. `readArtifact` and the client's discard-on-supersession exist; the generation address, the two authority verbs, the HTTP surface, and the actions that call them do not.
+- **Amended by:** [ADR-0281](0281-a-generation-is-a-whole-database-and-a-device-chooses-which-one-it-holds.md) at what a generation does to a device: `current`, `setCurrent`, `PUT /current`, `supersededBy` as a client signal, and "discards and refills" are all withdrawn. Numbering, retention, and person-only deletion are unchanged.
+- **Amended by:** [ADR-0283](0283-a-generations-collection-is-a-ledger-that-allocates-admits-and-sweeps.md) at the route table. The small object holding the list stays and becomes the ledger that allocates, admits, and sweeps.
 
 ## Context
 

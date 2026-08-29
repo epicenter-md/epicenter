@@ -9,6 +9,8 @@
 - **Amends:** [ADR-0276](0276-an-authority-holds-a-numbered-succession-of-generations-and-nothing-is-ever-overwritten.md) at what a generation holds: a set of documents rather than a log and a snapshot. The numbering, the two verbs, the retention rule, and the routes are unchanged.
 - **Returns to:** [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md), which decided this on 2026-06-15 and has never been superseded.
 - **Unbuilt:** all of it.
+- **Amended by:** [ADR-0282](0282-the-authority-hydrates-the-document-and-one-object-per-document-bounds-the-blast-radius.md) at three stated reasons, not at its decision. Withdrawn: refusal at the door, "128 MB per isolate, shared" as the mechanism, and request count as the argument against per-generation. The granularity stands on blast radius, measured.
+- **Amended by:** [ADR-0283](0283-a-generations-collection-is-a-ledger-that-allocates-admits-and-sweeps.md) at the address surface, which moves under `/api` and gains explicit non-existence.
 
 ## Context
 
