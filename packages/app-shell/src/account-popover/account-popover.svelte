@@ -116,12 +116,16 @@
 	);
 	// Optimistic boot (ADR-0075) leaves a self-host user signed-in even when the box
 	// is unreachable, so they usually never see the sign-in panel's connection copy.
-	// Surface the unreachable state here instead. `auth.state` still says signed-in
-	// (local identity is known); this line only explains that the
-	// configured server is offline in this runtime, and local work is unaffected, so
-	// it reads muted. A `rejected` token is not handled here: it drops `state` to
-	// signed-out (see `createInstanceTokenAuth`), which reveals the sign-in panel
-	// that owns the rejected-token copy, so this signed-in surface never sees it.
+	// Surface both refusals here instead. `auth.state` says signed-in either way,
+	// because the instance principal is what addresses the local partition and a
+	// refused token does not change who you are; local work is unaffected, so this
+	// reads muted.
+	//
+	// The `rejected` arm used to be unreachable: a refused token also dropped
+	// `state` to signed-out, which revealed the sign-in panel. That coupling was a
+	// boot loop, because signed-in -> signed-out is a principal change and the
+	// reload gate reloads on it. Rejection is a connection fact now, and this is
+	// the surface that owns its words.
 	const instanceNotice = $derived.by(() => {
 		if (!selfHosted) return null;
 		switch (auth.connection.status) {

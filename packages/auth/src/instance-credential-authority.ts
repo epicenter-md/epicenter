@@ -139,18 +139,29 @@ export function createInstanceCredentialAuthority(
 			});
 			if (tokenGeneration !== startedGeneration) return Ok(undefined);
 			if (error) {
+				// A refused token is a CONNECTION fact and stays on the connection
+				// channel. Writing `signed-out` here was a boot loop: this authority
+				// boots optimistically `signed-in` as the instance principal, so
+				// signed-in -> signed-out is a principal change, `reloadOnAuthChange`
+				// reloads, the next boot is optimistic again, and the page spins at
+				// one `/api/session` round trip forever on any box whose token was
+				// rotated. `authorize` below already refuses on either fact, so the
+				// permanent denial is unchanged.
 				update(() => {
-					if (error.name === 'Rejected') state = { status: 'signed-out' };
 					connectionStatus =
 						error.name === 'Rejected' ? 'rejected' : 'unreachable';
 				});
 				return AuthError.StartSignInFailed({ cause: error });
 			}
 			update(() => {
-				const wasSignedOut = state.status === 'signed-out';
+				// Either refusal counts as the thing being recovered from, so a
+				// generation minted here cannot be acted on by a `reportRejected`
+				// still in flight for the credential that was refused.
+				const wasRefused =
+					state.status === 'signed-out' || connectionStatus === 'rejected';
 				state = { status: 'signed-in', principalId: session.principalId };
 				connectionStatus = 'connected';
-				if (wasSignedOut) tokenGeneration += 1;
+				if (wasRefused) tokenGeneration += 1;
 			});
 			return Ok(undefined);
 		})().finally(() => {
@@ -235,8 +246,10 @@ export function createInstanceCredentialAuthority(
 		authorize,
 		reportRejected(generation: number) {
 			if (generation !== tokenGeneration) return;
+			// Same rule as the verification path: the token was refused, not the
+			// person. `state` stays signed-in as the instance principal so the
+			// local partition keeps its address and the reload gate stays quiet.
 			update(() => {
-				state = { status: 'signed-out' };
 				connectionStatus = 'rejected';
 			});
 		},
