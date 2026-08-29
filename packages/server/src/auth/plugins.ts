@@ -75,6 +75,23 @@ export function authPlugins(apiBaseURL: string) {
 			//   deletes the session row and the refresh row survives with
 			//   `session_id` SET NULL (offline_access semantics). Killing a grant
 			//   takes /oauth2/revoke or deleting its rows.
+			// A rotated-out refresh token replayed within this window returns the
+			// CACHED token pair instead of invalidating the family, and only when
+			// the client, scopes, resources, and sender constraint all match; a
+			// mismatch inside the window is a plain `invalid_grant` with the
+			// family left alone. Default is 0, which means any duplicate refresh
+			// signs the person out of this app on every device. Upstream's own
+			// `mcp()` plugin defaults to 30s for the same reason.
+			//
+			// What this covers: a lost response, a duplicated request, a retry
+			// across a flaky connection. What it does NOT cover, and the reason
+			// this is not the whole fix: a second tab holding a stale grant in
+			// memory refreshes when ITS access token nears expiry, which is up to
+			// `accessTokenExpiresIn` after the first tab rotated. No interval
+			// short enough to be safe reaches that. The fix for the cross-tab race
+			// is the client adopting a rotated grant (`persisted-auth-storage.ts`
+			// reads once and never re-reads), not a longer window here.
+			refreshTokenReuseInterval: 60,
 			cachedTrustedClients: trustedOAuthClientIds,
 			validAudiences: [apiBaseURL],
 			allowDynamicClientRegistration: false,
