@@ -5,6 +5,7 @@
 - **Supersedes:** [ADR-0275](0275-a-browser-stores-durable-record-is-sqlite-over-opfs-in-a-worker.md). SQLite over OPFS in a worker was sized for an update log that a whole-document write was about to delete, and then the whole-document write was itself deleted. Its OPFS half was already reverted in `7cf2e01b`; this record retires the rest, and `claims.ts` survives rather than being replaced by a filesystem fact.
 - **Amends:** [ADR-0238](0238-the-live-document-is-the-truth-while-open-and-persistence-is-a-visible-debt.md) at the debt. Acceptance and durability still split, but the window between them is now one IndexedDB transaction rather than a queue, so the three-state debt machine is replaced by a single health bit.
 - **Unbuilt:** all of it.
+- **Amended by:** [ADR-0285](0285-a-generation-is-a-url-parameter-and-a-device-stores-no-selection.md) at the Web Lock, which moves onto the generation database rather than the name above it.
 
 ## Context
 
