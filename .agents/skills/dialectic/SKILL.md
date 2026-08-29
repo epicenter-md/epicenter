@@ -5,11 +5,12 @@ description: "Develop an unsettled product, architecture, or design question unt
 
 # Dialectic
 
-The output of a dialectic is an accepted greenfield articulation: one statement
-of what the thing should be that the user and agent both actually hold, and that
-neither softened merely to get the other to agree. The articulation is the
-destination. Models, questions, research, examples, diagrams, and revisions are
-tools for reaching it, not alternate outputs.
+A dialectic produces an accepted greenfield articulation. It ends when the user
+can recognize that articulation and say, in effect, “that’s right.” The
+articulation is one statement of what the thing should be that the user and
+agent both actually hold, and that neither softened merely to get the other to
+agree. Models, questions, research, examples, diagrams, and revisions are tools
+for reaching it, not alternate outputs.
 
 Greenfield means describe the desired product, architecture, or design from
 first principles rather than allowing the inherited implementation to define
