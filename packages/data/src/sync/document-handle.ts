@@ -55,6 +55,28 @@ import {
 	encodeDocumentFrame,
 } from './document-frames.js';
 
+/**
+ * The origin a remote frame is applied under, so a stranger is not one.
+ *
+ * A listener on a handle's document has to tell three things apart: this
+ * device's own commit, a frame this handle applied, and somebody calling
+ * `Y.applyUpdateV2` on a document they got hold of. `transaction.local`
+ * separates the first from the other two and cannot separate those, because a
+ * frame applied with no origin looks exactly like a rogue apply.
+ *
+ * That mattered less under the old design and matters more now. The store used
+ * to refuse an unrecognised origin outright, and the reason given was that
+ * foreign bytes would be republished as this device's authored work. Nothing
+ * is "authored" under state-vector sync, so that half expired. The other half
+ * got worse: foreign bytes whose causal dependencies are missing are buffered
+ * by Yjs, never emitted as an update, never appended to the chain, never in a
+ * state vector, and held by no authority. Silently gone.
+ *
+ * So a frame carries this, and a listener asks for it rather than asking
+ * whether the transaction was local.
+ */
+export const REMOTE_ORIGIN = Object.freeze({ kind: 'epicenter-remote' });
+
 export type DocumentHandle = {
 	/** The live document. Truth while open (ADR-0238). */
 	readonly document: Y.Doc;
@@ -275,20 +297,10 @@ export async function openDocumentHandle({
 			if (closed) return false;
 			const { data: frame, error } = decodeDocumentFrame(message);
 			if (error !== null) return false;
-			// Frames below apply with NO origin, so `transaction.local` is
-			// false. That is load-bearing outside this file: a listener on
-			// `document` tells a local commit from a remote one by exactly that
-			// flag, and a derive must run for the first and not the second.
-			//
-			// It is also not enough, and the spec has the open item. A
-			// stranger's direct `Y.applyUpdateV2` on this document looks
-			// identical from here: no origin, `local === false`. The store used
-			// to refuse that at a door it can no longer see, and foreign bytes
-			// with missing dependencies are buffered by Yjs, never appended,
-			// never in a state vector, and held by nobody. The proposal is a
-			// private origin sentinel here with the derive discriminating on it
-			// instead, which keeps both jobs. Do not pass an origin without
-			// moving that discriminator too.
+			// Frames below apply under `REMOTE_ORIGIN`, never bare. A listener
+			// outside this file tells a local commit from a remote one by that
+			// origin rather than by `transaction.local`, which cannot tell a
+			// frame from a stranger's direct `Y.applyUpdateV2`.
 			switch (frame.kind) {
 				case 'step1':
 					// The peer said what it has, so answer with what it lacks and
@@ -306,7 +318,7 @@ export async function openDocumentHandle({
 					// line later: it would come out of the host's socket message
 					// handler, which has nowhere to put it.
 					try {
-						Y.applyUpdateV2(document, frame.update);
+						Y.applyUpdateV2(document, frame.update, REMOTE_ORIGIN);
 					} catch {
 						return false;
 					}

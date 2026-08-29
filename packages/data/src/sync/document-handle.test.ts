@@ -18,7 +18,7 @@ import {
 	openDocumentAuthority,
 } from './document-authority.js';
 import { type DocumentSocket, encodeDocumentFrame } from './document-frames.js';
-import { openDocumentHandle } from './document-handle.js';
+import { openDocumentHandle, REMOTE_ORIGIN } from './document-handle.js';
 import { createDocumentHub } from './document-hub.js';
 
 let addresses = 0;
@@ -388,5 +388,57 @@ describe('a deleted chain must not come back', () => {
 
 		expect(await store.read('notes/twice')).toEqual([]);
 		store.close();
+	});
+});
+
+describe('a stranger is not a peer', () => {
+	test('a remote frame carries an origin, and a rogue apply does not', async () => {
+		const store = await record();
+		const handle = await openDocumentHandle({ record: store, doc: 'app' });
+
+		const seen: unknown[] = [];
+		handle.document.on(
+			'updateV2' as never,
+			((_update: Uint8Array, origin: unknown) => {
+				seen.push(origin);
+			}) as never,
+		);
+
+		// A local commit: no origin, and `transaction.local` is true.
+		handle.document.transact(() =>
+			handle.document.get('notes').setAttr('mine' as never, 1 as never),
+		);
+
+		// A frame through `receive`: `REMOTE_ORIGIN`.
+		const peer = new Y.Doc({ gc: true });
+		peer.transact(() =>
+			peer.get('notes').setAttr('theirs' as never, 2 as never),
+		);
+		handle.receive(
+			encodeDocumentFrame({
+				kind: 'update',
+				update: new Uint8Array(Y.encodeStateAsUpdateV2(peer)),
+			}),
+		);
+
+		// A stranger reaching the document directly: no origin, and
+		// `transaction.local` is false, which is exactly what a frame applied
+		// bare would have looked like. That is the whole reason for the
+		// sentinel: a listener cannot otherwise tell these two apart, and a
+		// stranger's bytes with missing dependencies are buffered by Yjs and
+		// held by nobody.
+		const rogue = new Y.Doc({ gc: true });
+		rogue.transact(() =>
+			rogue.get('notes').setAttr('forged' as never, 3 as never),
+		);
+		Y.applyUpdateV2(
+			handle.document,
+			new Uint8Array(Y.encodeStateAsUpdateV2(rogue)),
+		);
+
+		expect(seen).toEqual([null, REMOTE_ORIGIN, null]);
+		peer.destroy();
+		rogue.destroy();
+		await handle.close();
 	});
 });
