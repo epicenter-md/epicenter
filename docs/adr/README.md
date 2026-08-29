@@ -317,7 +317,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md) | Rebuilding replaces a workspace's current Yjs document | Superseded by 0256 |
 | [0232](0232-a-page-lifetime-is-one-auth-generation-and-a-permanently-denied-sync-stops-for-good.md) | A page lifetime is one auth generation, and a permanently denied sync stops for good | Accepted (supersedes 0094; amends 0230: the dial contract gains `denied`, and there is no parked state because resuming is a reload) |
 | [0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) | A browser application keeps a private document and one workspace replica per account, and auth chooses which opens | Accepted (amended by 0259 and 0261 at the retained replica address; the device document and sign-out rules remain) |
-| [0234](0234-the-ark-owns-living-pages-and-markdown-is-an-explicit-checkout.md) | The Ark owns living pages, and Markdown is an explicit checkout | Proposed |
+| [0234](0234-the-ark-owns-living-pages-and-markdown-is-an-explicit-checkout.md) | The Ark owns living pages, and Markdown is an explicit checkout | Proposed; amended by [0264](0264-the-ark-is-the-public-home-of-an-epicenter.md) at the product boundary |
 | [0235](0235-ark-collections-are-ordered-predicates-over-pages.md) | Ark collections are ordered predicates over pages | Proposed |
 | [0236](0236-remote-super-chat-attach-is-deferred-until-the-complete-product-exists.md) | Remote Super Chat attach is deferred until the complete product exists | Accepted (supersedes 0115; deleted implementation recorded at `19b9ee6a73`) |
 | [0237](0237-nonconformance-is-a-reads-only-error-and-a-disposed-store-throws.md) | Nonconformance is a read's only error, and a disposed store throws | Accepted (amends 0229; amended by 0238 at the storage arm and 0253 at write admission) |
@@ -346,5 +346,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0261](0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md) | A local account replica is addressed by its application, server URL, and verified principal | Accepted (supersedes 0259; refuses minted profile ids; amends 0233 at the retained replica address) |
 | [0262](0262-the-desktop-host-owns-one-active-connection-and-no-connection-registry.md) | The desktop host owns one active connection and no connection registry | Accepted (supersedes 0260; amends 0155 at the selected connection) |
 | [0263](0263-a-connection-is-one-server-at-a-time-and-a-replica-is-derived-from-it.md) | A connection is one server at a time and a replica is derived from it | Accepted (restates 0075, 0092, 0261, and 0262 as one reader-facing contract) |
+| [0264](0264-the-ark-is-the-public-home-of-an-epicenter.md) | The Ark is the public home of an Epicenter | Proposed |
 
 When you add an ADR, add its row here.
