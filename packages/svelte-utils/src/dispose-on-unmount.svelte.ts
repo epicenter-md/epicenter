@@ -23,8 +23,9 @@
  * opening, and the other two stop being the caller's problem.
  *
  * Called during component initialisation, like every rune-backed helper in
- * this package. This is not `fromDisposableCache` beside it, which re-opens
- * when its id changes: a resource whose subject can change wants that one.
+ * this package. It disposes once, on unmount; a resource whose SUBJECT can
+ * change wants a different helper, and there isn't one, because in this
+ * application changing the subject is a navigation (ADR-0285).
  */
 export function disposeOnUnmount(resource: AsyncDisposable): void {
 	$effect(() => () => void resource[Symbol.asyncDispose]());

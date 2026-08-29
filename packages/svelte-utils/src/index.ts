@@ -9,7 +9,6 @@ export {
 	type ReactiveData,
 	type ReactiveTable,
 } from './from-data.svelte.js';
-export { fromDisposableCache } from './from-disposable-cache.svelte.js';
 export {
 	createPersistedMap,
 	defineEntry,
