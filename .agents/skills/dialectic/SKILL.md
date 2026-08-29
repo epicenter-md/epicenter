@@ -13,23 +13,27 @@ the collision either makes the agent’s model intelligible or produces an
 accepted greenfield articulation. In the latter case, it ends when the user can
 recognize that articulation and say, in effect, “that’s right.”
 
-The collision can serve understanding or correction. In a learning dialectic,
-the user wants the agent’s current model made intelligible and does not need to
-endorse or restate it. In a corrective or design dialectic, the user and agent
-compare serious articulations until an accepted greenfield account emerges.
-
 ## What an articulation is
 
-An articulation is a positive account of what should be true: its objects,
-verbs, boundaries, owners, consequences, and refusals. It is not a preference
-label, an implementation option, or a softened summary that hides the point of
-disagreement.
+An articulation is a complete account of a model: its objects, verbs,
+boundaries, owners, consequences, and refusals. It may explain a model
+currently in use or propose a greenfield model. The dialectic’s destination
+determines whether that account is being made intelligible or accepted as what
+should exist. It is not a preference label, an implementation option, or a
+softened summary that hides the point of disagreement.
 
 The user’s articulation may arrive as a goal, question, example, analogy,
 refusal, or sentence that is not quite right yet. The agent’s articulation may
 describe the model it is currently using or propose what should exist. Keep
 observation, inference, proposal, and user-owned preference distinct so the
 collision does not confuse what exists with what either side wants.
+
+## Destinations
+
+The collision can serve understanding or correction. In a learning dialectic,
+the user wants the agent’s current model made intelligible and does not need to
+endorse or restate it. In a corrective or design dialectic, the user and agent
+compare serious articulations until an accepted greenfield account emerges.
 
 ## Establish the collision
 
@@ -39,11 +43,12 @@ its premises, structure, evidence, assumptions, and consequences. In a
 corrective or design dialectic, expose the user’s emerging ideal alongside the
 agent’s strongest greenfield account.
 
-Lead with a claim, not a questionnaire. When a real fork remains, put forward
-several serious articulations whose premises genuinely differ. Make each one
-strong enough to defend, including what it refuses and what follows from it.
-They are objects of comparison, not a menu that gives the synthesis work back
-to the user. Recommend a direction when the evidence and model support one.
+Lead with a claim, not a questionnaire. In a corrective or design dialectic,
+when a real fork remains, put forward several serious articulations whose
+premises genuinely differ. Make each one strong enough to defend, including
+what it refuses and what follows from it. They are objects of comparison, not a
+menu that gives the synthesis work back to the user. Recommend the strongest
+articulation when the evidence and model support one.
 
 Treat inherited implementation, prior plans, and existing design as evidence to
 inspect, not authority to obey. Push against them when they narrow the desired
@@ -63,32 +68,35 @@ this:
 ```txt
 articulations
   -> collision of premises and consequences
-  -> user reaction as directional evidence
-  -> sharper articulation
+  -> exposed crux
+  -> targeted question, consequence, or refusal
+  -> re-articulation
   -> understanding or accepted destination
 ```
 
-Read the reaction as evidence about the model, not as a command to obey at
-face value. Preserve what the user recognized, replace what they rejected,
-intensify what they cared about more strongly than the last model showed, and
-resolve the tension their reaction exposed. Do not merely paraphrase the latest
-message or defend a weak rendering because it already exists.
+Read the reaction as evidence about the crux, not as a command to obey at face
+value. Preserve what the user recognized, replace what they rejected, intensify
+what they cared about more strongly than the last model showed, and
+re-articulate the model to resolve the tension their reaction exposed. Do not
+merely paraphrase the latest message or defend a weak rendering because it
+already exists.
 
 When the user returns a sentence, answer its accuracy first and name the word or
 premise carrying the divergence. When they give an example, use it to update
-the model. A wrong articulation is useful because it locates the disagreement;
-plain agreement is useful only when it moves the model forward.
+the model. A wrong articulation is useful because it locates the crux; plain
+agreement is useful only when it moves the model forward.
 
 ## Make the collision checkable
 
-Use the smallest form that lets the user judge the live seam. Use a concrete
-example when the idea is abstract, a comparison when articulations are peers on
-one axis, a timeline for history, quoted code when the claim is about code, and
-research when a fact could change the model. Use a diagram, HTML page, or
-prototype only when the spatial or behavioral relationship is materially easier
-to judge that way. The surface should show what is believed, what is settled,
-and what remains under pressure; it should not make a finished-looking artifact
-that gives the user nothing specific to correct.
+Use the smallest form that lets the user judge the current articulations and
+the live crux. Use a concrete example when the idea is abstract, a comparison
+when articulations are peers on one axis, a timeline for history, quoted code
+when the claim is about code, and research when a fact could change the model.
+Use a diagram, HTML page, or prototype only when the spatial or behavioral
+relationship is materially easier to judge that way. The surface should show
+which articulations are on the table, which crux separates them, what follows
+from each, and what the next re-articulation must resolve; it should not make a
+finished-looking artifact that gives the user nothing specific to correct.
 
 When an HTML page is the right surface, keep it self-contained with inline CSS
 and JavaScript, no CDN, and no build step. Write it to an ignored scratch path
