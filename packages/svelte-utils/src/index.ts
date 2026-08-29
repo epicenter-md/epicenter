@@ -2,6 +2,7 @@ export {
 	type BoundAgentConversation,
 	bindAgentConversation,
 } from './agent-conversation.svelte.js';
+export { disposeOnUnmount } from './dispose-on-unmount.svelte.js';
 export { default as FlushEditsOnHide } from './flush-edits-on-hide.svelte';
 export {
 	fromData,

@@ -1,13 +1,13 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { createHoneycrisp, setHoneycrisp } from './app.svelte.js';
-	import type { OpenedAccountDatabase, OpenedDeviceDatabase } from './databases.js';
+	import type { AccountDatabase, DeviceDatabase } from './databases.js';
 
 	let {
 		data,
 		children,
 	}: {
-		data: OpenedAccountDatabase['data'] | OpenedDeviceDatabase['data'];
+		data: AccountDatabase['data'] | DeviceDatabase['data'];
 		children: Snippet;
 	} = $props();
 

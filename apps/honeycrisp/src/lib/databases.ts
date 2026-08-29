@@ -21,25 +21,77 @@ import {
 import { mirrorLog, reportBackgroundError } from './report.js';
 import { attachHoneycrispSync } from './sync.js';
 
-export type OpenedDeviceDatabase = {
+/**
+ * A database being opened: one promise to render, and a disposal that waits.
+ *
+ * Returned synchronously, which is what makes it disposable before it is open.
+ * A route registers `disposeOnUnmount(db)` on the first line and awaits
+ * `db.ready` in the markup, and navigating away mid-open disposes what
+ * finishes opening afterwards without anyone reaching into a promise to do it.
+ *
+ * `ready` settles at the only moment a route renders differently, and it
+ * REJECTS rather than resolving a `Result`. `packages/data` returns `Result`
+ * everywhere and should: that type is for a caller that branches on the error
+ * or composes it onward. A route does neither. Every failure here is terminal
+ * and renders one component, and `{#await}` already has a failure channel, so
+ * carrying `Result` past this file bought a second one. The account route
+ * rendered its gate from four places, two `isOk` arms and two `:catch` arms,
+ * and not one of them looked at the error.
+ */
+export type OpeningDatabase<TDatabase> = AsyncDisposable & {
+	readonly ready: Promise<TDatabase>;
+};
+
+/**
+ * One handle over two promises: what a route renders, and what disposal owes.
+ *
+ * They are not the same promise for the account, where a store that opened and
+ * never became ready still has to be closed, and the split lives here rather
+ * than in a route because it is bookkeeping rather than a rendering decision.
+ * Neither promise can go unhandled: `ready` is derived from `opening`, so a
+ * failed open is reported through the surface waiting on it, and disposal
+ * attaches its own arm only if it is ever called.
+ */
+function opening<TDatabase>(
+	opened: Promise<AsyncDisposable>,
+	ready: Promise<TDatabase>,
+): OpeningDatabase<TDatabase> {
+	return {
+		ready,
+		async [Symbol.asyncDispose]() {
+			const resource = await opened.catch(() => undefined);
+			if (resource !== undefined) await resource[Symbol.asyncDispose]();
+		},
+	};
+}
+
+/** What the `/device` route renders once its database is open. */
+export type DeviceDatabase = {
 	readonly data: DataOf<typeof honeycrispDefinition, LocalStore>;
-	[Symbol.asyncDispose](): Promise<void>;
 };
 
-export type OpenedAccountDatabase = {
+/** What the `/account` route renders once its replica is safe to edit. */
+export type AccountDatabase = {
 	readonly data: DataOf<typeof honeycrispDefinition, BrowserAccountStore>;
-	/** Resolves when the replica is safe to edit, or when its credential is refused. */
-	readonly ready: Promise<Result<void, unknown>>;
 	syncStatus(): SyncConnectionStatus | undefined;
-	[Symbol.asyncDispose](): Promise<void>;
 };
 
-/** Open the local database for the `/device` route. */
-export async function openLocalDatabase(): Promise<
-	Result<OpenedDeviceDatabase, unknown>
-> {
+type Opened<TDatabase> = TDatabase & AsyncDisposable;
+
+/**
+ * Open the local database for the `/device` route.
+ *
+ * The handle is disposable immediately; a route hands it to
+ * `disposeOnUnmount` and never touches the lifetime again.
+ */
+export function openLocalDatabase(): OpeningDatabase<DeviceDatabase> {
+	const opened = openLocalReplica();
+	return opening(opened, opened);
+}
+
+async function openLocalReplica(): Promise<Opened<DeviceDatabase>> {
 	const { data, error } = await openLocal(honeycrispDefinition);
-	if (error !== null) return Err(error);
+	if (error !== null) throw error;
 
 	const mirror = attachMirror({
 		data,
@@ -53,25 +105,45 @@ export async function openLocalDatabase(): Promise<
 	// database: what is not on disk is not anywhere.
 	const stopHideFlush = persistOnHide(() => data.store.persistence.flush());
 
-	return Ok({
+	return {
 		data,
 		async [Symbol.asyncDispose]() {
 			stopHideFlush();
 			await mirror[Symbol.asyncDispose]();
 			await data[Symbol.asyncDispose]();
 		},
-	});
+	};
 }
 
 /**
  * Open one account's retained replica for the `/account` route.
  *
- * Opening the local replica and making it safe to edit are separate moments.
- * The route owns both: it can show the local replica's loading gate while the
- * first bootstrap binds a fresh replica, and it can dispose the opened store
- * if navigation leaves the route before that gate settles.
+ * Opening the local replica and making it safe to edit are two real moments in
+ * the library: a previously bound replica is ready the instant it opens, and a
+ * fresh one waits for its first bootstrap or a denial. They are not two moments
+ * for a ROUTE, which renders the same loading state across both and nothing at
+ * all in between, so they are one promise here.
+ *
+ * The handle is disposable immediately, which matters more here than for the
+ * local database: navigation can leave while the first bootstrap is still
+ * binding, and that store is open and must be closed.
  */
-export async function openAccountDatabase({
+export function openAccountDatabase(options: {
+	auth: AuthClient;
+	principalId?: Parameters<typeof openAccount>[1]['principalId'];
+}): OpeningDatabase<AccountDatabase> {
+	const opened = openAccountReplica(options);
+	return opening(
+		opened,
+		opened.then(async (replica) => {
+			const bound = await replica.ready;
+			if (bound.error !== null) throw bound.error;
+			return replica;
+		}),
+	);
+}
+
+async function openAccountReplica({
 	auth,
 	principalId = auth.state.status === 'signed-out'
 		? undefined
@@ -79,18 +151,20 @@ export async function openAccountDatabase({
 }: {
 	auth: AuthClient;
 	principalId?: Parameters<typeof openAccount>[1]['principalId'];
-}): Promise<Result<OpenedAccountDatabase, unknown>> {
+}): Promise<
+	Opened<AccountDatabase> & { ready: Promise<Result<void, unknown>> }
+> {
 	if (principalId === undefined) {
 		const error = new Error('Account access requires a signed-in principal');
 		error.name = 'Unaddressable';
-		return Err(error);
+		throw error;
 	}
 
 	const { data, error } = await openAccount(honeycrispDefinition, {
 		baseURL: auth.connection.baseURL,
 		principalId,
 	});
-	if (error !== null) return Err(error);
+	if (error !== null) throw error;
 
 	/** Discard and reload after the authority says this replica is superseded. */
 	const adoptCurrentDocument = async (): Promise<void> => {
@@ -112,7 +186,7 @@ export async function openAccountDatabase({
 	});
 	if (!isOk(connectionResult)) {
 		await disposeQuietly(data);
-		return Err(connectionResult.error);
+		throw connectionResult.error;
 	}
 
 	const connection = connectionResult.data;
@@ -135,8 +209,11 @@ export async function openAccountDatabase({
 	// is work the account never hears about either.
 	const stopHideFlush = persistOnHide(() => data.store.persistence.flush());
 
-	return Ok({
+	return {
 		data,
+		// Internal, and the reason this file has a second function: the OPENED
+		// store must be disposable even if it never becomes ready, so the two
+		// cannot be one promise here. They are one promise for the route.
 		ready: readiness.promise,
 		syncStatus: () => {
 			const status = connection.status();
@@ -149,10 +226,20 @@ export async function openAccountDatabase({
 			await mirror[Symbol.asyncDispose]();
 			await data[Symbol.asyncDispose]();
 		},
-	});
+	};
 }
 
-/** Resolve once a fresh replica is bound, or a credential is permanently denied. */
+/**
+ * Resolve once a fresh replica is bound, or a credential is permanently denied.
+ *
+ * A fossil with a shelf life. Its whole predicate is `store.sync.get().document
+ * !== undefined`, which asks whether the authority has stamped this replica
+ * with the document it belongs to. Under ADR-0285 the generation is the
+ * address and arrives as a route parameter before the store is constructed,
+ * and the switch deletes `SyncCapability`, `documentIdentity`, and
+ * `adoptDocumentIdentity` outright. When that lands there is nothing to wait
+ * to be told, and `openAccountDatabase` collapses to the local opener's shape.
+ */
 function waitUntilReplicaIsBound({
 	store,
 	denied,

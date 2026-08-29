@@ -8,7 +8,6 @@ import type { AuthClient } from '@epicenter/auth';
 import { encodeFrame } from '@epicenter/data/sync';
 import { InstantString } from '@epicenter/field';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
-import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openAccountDatabase, openLocalDatabase } from './databases.js';
 
 const reloads = mock();
@@ -142,12 +141,12 @@ async function until(condition: () => boolean): Promise<void> {
 test('the local opener owns only the local database', async () => {
 	await resetStorage();
 
-	const first = expectOk(await openLocalDatabase());
-	first.data.tables.notes.create(noteFields('local note'));
+	const first = openLocalDatabase();
+	(await first.ready).data.tables.notes.create(noteFields('local note'));
 	await first[Symbol.asyncDispose]();
 
-	const second = expectOk(await openLocalDatabase());
-	expect(titles(second.data)).toEqual(['local note']);
+	const second = openLocalDatabase();
+	expect(titles((await second.ready).data)).toEqual(['local note']);
 	await second[Symbol.asyncDispose]();
 
 	expect(await databaseNames()).toEqual([LOCAL]);
@@ -155,16 +154,17 @@ test('the local opener owns only the local database', async () => {
 
 test('the account opener owns only the account replica', async () => {
 	await resetStorage();
-	const local = expectOk(await openLocalDatabase());
-	local.data.tables.notes.create(noteFields('local note'));
+	const local = openLocalDatabase();
+	const localData = (await local.ready).data;
+	localData.tables.notes.create(noteFields('local note'));
 
 	const { auth } = announcingAuth('alice', 'document-alice');
-	const account = expectOk(await openAccountDatabase({ auth }));
-	expect((await account.ready).error).toBeNull();
-	account.data.tables.notes.create(noteFields('account note'));
+	const account = openAccountDatabase({ auth });
+	const accountData = (await account.ready).data;
+	accountData.tables.notes.create(noteFields('account note'));
 
-	expect(titles(local.data)).toEqual(['local note']);
-	expect(titles(account.data)).toEqual(['account note']);
+	expect(titles(localData)).toEqual(['local note']);
+	expect(titles(accountData)).toEqual(['account note']);
 
 	await account[Symbol.asyncDispose]();
 	await local[Symbol.asyncDispose]();
@@ -175,69 +175,73 @@ test('a bound account replica opens from local storage before sync is available'
 
 	{
 		const { auth } = announcingAuth('alice', 'document-alice');
-		const account = expectOk(await openAccountDatabase({ auth }));
-		await account.ready;
-		account.data.tables.notes.create(noteFields('offline account note'));
+		const account = openAccountDatabase({ auth });
+		(await account.ready).data.tables.notes.create(
+			noteFields('offline account note'),
+		);
 		await account[Symbol.asyncDispose]();
 	}
 
-	const account = expectOk(
-		await openAccountDatabase({
-			auth: createFakeAuth({
-				status: 'signed-in',
-				principalId: 'alice',
-				openWebSocket: () => Promise.reject(new Error('offline')),
-			}),
+	const account = openAccountDatabase({
+		auth: createFakeAuth({
+			status: 'signed-in',
+			principalId: 'alice',
+			openWebSocket: () => Promise.reject(new Error('offline')),
 		}),
-	);
-	expect((await account.ready).error).toBeNull();
-	expect(titles(account.data)).toEqual(['offline account note']);
+	});
+	expect(titles((await account.ready).data)).toEqual(['offline account note']);
 	await account[Symbol.asyncDispose]();
 });
 
 test('a fresh account reports credential refusal through readiness', async () => {
 	await resetStorage();
 
-	const account = expectOk(
-		await openAccountDatabase({
-			auth: createFakeAuth({
-				status: 'reauth-required',
-				principalId: 'alice',
-				openWebSocket: () =>
-					Promise.reject({
-						name: 'OpenWebSocketDenied',
-						permanence: 'permanent',
-						code: 'reauth-required',
-					}),
-			}),
+	const account = openAccountDatabase({
+		auth: createFakeAuth({
+			status: 'reauth-required',
+			principalId: 'alice',
+			openWebSocket: () =>
+				Promise.reject({
+					name: 'OpenWebSocketDenied',
+					permanence: 'permanent',
+					code: 'reauth-required',
+				}),
 		}),
-	);
+	});
 
-	const failure = expectErr(await account.ready);
-	expect(failure).toMatchObject({ name: 'CredentialRefused' });
+	// A refused credential and a store that would not open reach a route through
+	// one channel, which is what lets the account page render one gate from one
+	// `:catch` instead of four arms that never looked at the error.
+	await expect(account.ready).rejects.toMatchObject({
+		name: 'CredentialRefused',
+	});
+	// The store opened and never became ready, so disposal still owes it a
+	// close. That is why the handle is disposable before it is open.
 	await account[Symbol.asyncDispose]();
 });
 
 test('an account without a principal is refused without opening a store', async () => {
 	await resetStorage();
 
-	const failure = expectErr(
-		await openAccountDatabase({
-			auth: createFakeAuth({ status: 'signed-out' }),
-		}),
-	);
-	expect(failure).toMatchObject({ name: 'Unaddressable' });
+	const account = openAccountDatabase({
+		auth: createFakeAuth({ status: 'signed-out' }),
+	});
+	await expect(account.ready).rejects.toMatchObject({ name: 'Unaddressable' });
 	expect(await databaseNames()).toEqual([]);
+	// Disposing something that never opened is a no-op rather than a throw: a
+	// route registers the teardown before it knows which way the open went.
+	await account[Symbol.asyncDispose]();
 });
 
 test('supersession reloads without touching the local database', async () => {
 	await resetStorage();
 	reloads.mockClear();
 
-	const local = expectOk(await openLocalDatabase());
-	local.data.tables.notes.create(noteFields('kept local note'));
+	const local = openLocalDatabase();
+	const localData = (await local.ready).data;
+	localData.tables.notes.create(noteFields('kept local note'));
 	const { auth, dials } = announcingAuth('alice', 'document-alice');
-	const account = expectOk(await openAccountDatabase({ auth }));
+	const account = openAccountDatabase({ auth });
 	await account.ready;
 
 	const socket = dials.at(-1);
@@ -246,6 +250,6 @@ test('supersession reloads without touching the local database', async () => {
 	await until(() => reloads.mock.calls.length > 0);
 
 	await account[Symbol.asyncDispose]();
-	expect(titles(local.data)).toEqual(['kept local note']);
+	expect(titles(localData)).toEqual(['kept local note']);
 	await local[Symbol.asyncDispose]();
 });
