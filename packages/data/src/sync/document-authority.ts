@@ -165,6 +165,21 @@ export function openDocumentAuthority({
 	applyDocumentAuthoritySchema(sqlite);
 
 	let document: Y.Doc | undefined;
+	/**
+	 * Whether an update was applied to the live document but not stored.
+	 *
+	 * `receive` applies before it writes, because applying is what decides
+	 * whether the bytes are storable. If the write then fails, the document in
+	 * memory holds an update the record does not, and every downstream fact
+	 * goes wrong at once: `shouldFold` reads storage sums that no longer
+	 * describe the document, so the one operation that would repair the
+	 * divergence is exactly the one the divergence suppresses, and a
+	 * hibernation wake silently reverts the update.
+	 *
+	 * So a failed write forces a fold, which rewrites the whole document from
+	 * memory and is therefore the repair.
+	 */
+	let unstored = false;
 
 	/** The document, hydrated from storage on first use. */
 	function live(): Y.Doc {
@@ -192,7 +207,7 @@ export function openDocumentAuthority({
 			});
 			if (applied.error !== null) return Err(applied.error);
 
-			return trySync({
+			const stored = trySync({
 				try: () =>
 					sqlite.transaction(() => {
 						const seq =
@@ -203,9 +218,16 @@ export function openDocumentAuthority({
 					}),
 				catch: (cause) => DocumentAuthorityError.StorageFailed({ cause }),
 			});
+			// The bytes are in the live document either way, so a failed write
+			// is divergence rather than a refusal, and the caller's `Err` does
+			// not undo it. Marking it is what gets it written: the next fold
+			// encodes the whole document, including this.
+			if (stored.error !== null) unstored = true;
+			return stored;
 		},
 
 		shouldFold() {
+			if (unstored) return true;
 			return shouldFold(sumBytes('_state'), sumBytes('_tail'), foldFloorBytes);
 		},
 
@@ -213,6 +235,7 @@ export function openDocumentAuthority({
 			return trySync({
 				try: () => {
 					const folded = new Uint8Array(Y.encodeStateAsUpdateV2(live()));
+					unstored = false;
 					sqlite.transaction(() => {
 						sqlite.run('DELETE FROM _state');
 						writeState(folded);

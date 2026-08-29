@@ -36,6 +36,7 @@ let hub: DocumentHub;
  * makes a test about convergence readable.
  */
 async function device(): Promise<{
+	record: Awaited<ReturnType<typeof openDurableRecord>>;
 	session: DocumentHandle;
 	document: Y.Doc;
 	persist: () => Promise<void>;
@@ -68,6 +69,7 @@ async function device(): Promise<{
 	hub.join(toClient);
 	session.attach(toHub);
 	return {
+		record,
 		session,
 		document: session.document,
 		persist: () => session.settle(),
@@ -241,10 +243,19 @@ describe('durability, across the whole stack', () => {
 		await laptop.session.settle();
 		await phone.persist();
 
-		// The authority holds it, and so does the phone's own blob.
+		// The authority holds it.
 		const fresh = new Y.Doc({ gc: true });
 		Y.applyUpdateV2(fresh, authority.since(Y.encodeStateVector(fresh)));
 		expect(fresh.get('notes').getAttrs()).toEqual({ fromLaptop: 1 });
-		expect(attrs(phone.document)).toEqual({ fromLaptop: 1 });
+
+		// And so does the phone's chain, which is the half this test was named
+		// for and did not check: asserting the in-memory document passes
+		// unchanged if `record.append` does nothing at all. Replaying what is
+		// on disk is the only version that can fail.
+		const stored = new Y.Doc({ gc: true });
+		for (const update of await phone.record.read('app')) {
+			Y.applyUpdateV2(stored, update);
+		}
+		expect(stored.get('notes').getAttrs()).toEqual({ fromLaptop: 1 });
 	});
 });

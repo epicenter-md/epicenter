@@ -119,10 +119,19 @@ export async function openDocumentHandle({
 	const release = record.claim(doc);
 	const document = new Y.Doc({ gc: true });
 
-	// Hydrate before the listener exists, or every replayed update would be
-	// appended straight back onto the chain it came from.
-	for (const update of await record.read(doc)) {
-		Y.applyUpdateV2(document, update);
+	try {
+		// Hydrate before the listener exists, or every replayed update would be
+		// appended straight back onto the chain it came from.
+		for (const update of await record.read(doc)) {
+			Y.applyUpdateV2(document, update);
+		}
+	} catch (cause) {
+		// A transient read failure must not brick the address: without this the
+		// claim outlives the failed open, and the retry is refused with "already
+		// open in this record", which is both wrong and misleading.
+		release();
+		document.destroy();
+		throw cause;
 	}
 
 	let socket: DocumentSocket | undefined;
@@ -249,9 +258,19 @@ export async function openDocumentHandle({
 					sendOwed();
 					return true;
 				case 'step2':
-				case 'update':
-					Y.applyUpdateV2(document, frame.update);
+				case 'update': {
+					// The frame decoded and its payload still may not be an update.
+					// `decodeDocumentFrame` returns a `Result` because a peer is not
+					// a caller, and applying bare here threw that reasoning away one
+					// line later: it would come out of the host's socket message
+					// handler, which has nowhere to put it.
+					try {
+						Y.applyUpdateV2(document, frame.update);
+					} catch {
+						return false;
+					}
 					return true;
+				}
 			}
 		},
 

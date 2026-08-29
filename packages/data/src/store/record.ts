@@ -75,31 +75,45 @@ export type DurableRecordError = InferErrors<typeof DurableRecordError>;
 /**
  * The slice of the platform this assumes, declared rather than imported.
  *
- * Same move as `claims.ts`, and the same reason: this module compiles under
- * `types: ["bun"]`, where the DOM library does not exist. What is different is
- * that the name matters here, because `idb`'s own types refer to the global
- * `IDBKeyRange`. Declaring a local type of that name would shadow the real
- * interface the moment anything drags this file into the DOM program, so the
- * TYPE is contributed by an empty interface that merges with the real one when
- * it is present, and the VALUE is reached through `globalThis` rather than
- * declared, which would collide with it.
+ * Same move as `claims.ts`: this module compiles under `types: ["bun"]`, where
+ * the DOM library does not exist, and naming what it reaches for keeps the
+ * assumption auditable.
+ *
+ * The range is OPAQUE and the bounds are not. An earlier version contributed
+ * an empty `interface IDBKeyRange {}` to the global scope, which in a program
+ * without the DOM library makes every non-nullish value a range:
+ * `store.delete('a plain string')` typechecked, and `delete` is the only call
+ * in this file that can destroy data. Typing `bound` precisely and casting
+ * once per `idb` call confines the escape hatch to three sites rather than
+ * leaking `{}` through the file.
  */
-declare global {
-	// biome-ignore lint/suspicious/noEmptyInterface: merges with DOM's when present
-	interface IDBKeyRange {}
-}
+declare const keyRange: unique symbol;
+type KeyRange = { readonly [keyRange]: true };
 
 type KeyRanges = {
-	bound(lower: unknown, upper: unknown): IDBKeyRange;
+	bound(lower: readonly [string], upper: readonly [string, number]): KeyRange;
 };
 
 function keyRanges(): KeyRanges {
 	const ranges = (globalThis as { IDBKeyRange?: KeyRanges }).IDBKeyRange;
-	if (ranges === undefined) {
-		throw new Error('this runtime has no IndexedDB');
-	}
+	if (ranges === undefined) throw new Error('this runtime has no IndexedDB');
 	return ranges;
 }
+
+/**
+ * Which database names are open in this realm, so two records cannot share one.
+ *
+ * `claim` guards two handles inside one record; this guards two records over
+ * one database, which is the level the collision actually happens at. Two
+ * `openDurableRecord` calls on one name each seed their sequence from the same
+ * disk and then hand out the same numbers, and before `add` replaced `put`
+ * that overwrote live records in silence.
+ *
+ * Per realm, like the `Set` `claims.ts` replaced with a Web Lock, and for the
+ * same reason it is not enough on its own: `claims.ts` holds the cross-tab
+ * lock, and this catches the case inside one tab that a lock cannot see.
+ */
+const openNames = new Set<string>();
 
 /** The one object store, and the one shape in it. */
 interface RecordSchema extends DBSchema {
@@ -204,8 +218,29 @@ type Counters = {
 	stateBytes: number;
 	/** Bytes appended since that fold. */
 	tailBytes: number;
+	/**
+	 * Whether this chain has any record at all, decided synchronously.
+	 *
+	 * It answers "is the record I am about to write this chain's state", and it
+	 * has to be answered in the caller's synchronous prefix. `seq === 0` is
+	 * wrong because a retire leaves the sequence climbing on purpose;
+	 * `stateBytes === 0` is wrong because the byte totals are updated after the
+	 * transaction resolves, so six appends issued in one tick would all see
+	 * zero and every one of them would book itself as the state.
+	 */
+	hasRecord: boolean;
 	/** Whether `read` has seeded the two above from storage. */
 	seeded: boolean;
+	/**
+	 * Whether an append for this document was rejected and never landed.
+	 *
+	 * The repair, not just the record of it. A failed append does not increment
+	 * `tailBytes`, so it makes a fold LESS likely, and a fold is the only thing
+	 * that rewrites the whole document and puts the missing bytes back. So this
+	 * forces one: the next idle settle encodes the live document, which still
+	 * holds what the failed append carried, and the chain catches up.
+	 */
+	lost: boolean;
 };
 
 export async function openDurableRecord({
@@ -219,6 +254,11 @@ export async function openDurableRecord({
 	/** Injected so a test can reach a fold without a large document. */
 	floorBytes?: number;
 }): Promise<DurableRecord> {
+	if (openNames.has(name)) {
+		throw new Error(`${name} is already open in this realm`);
+	}
+	openNames.add(name);
+
 	// Declared before `openDB` rather than closed over from its own
 	// initialiser. `blocking` cannot fire before the connection exists, but a
 	// `let` says so, where the optional chain it replaces looked like a guard
@@ -268,7 +308,9 @@ export async function openDurableRecord({
 			seq: 0,
 			stateBytes: 0,
 			tailBytes: 0,
+			hasRecord: false,
 			seeded: false,
+			lost: false,
 		};
 		counters.set(doc, fresh);
 		return fresh;
@@ -281,6 +323,11 @@ export async function openDurableRecord({
 	}
 
 	function setHealthy(next: boolean): void {
+		// Green means every document this record was asked to keep is kept, not
+		// that the last write happened to work. Without this, one transient
+		// rejection flips back to healthy on the very next keystroke while the
+		// bytes it dropped stay dropped.
+		if (next && [...counters.values()].some((counter) => counter.lost)) return;
 		if (healthy === next) return;
 		healthy = next;
 		for (const listener of listeners) listener(next);
@@ -302,7 +349,7 @@ export async function openDurableRecord({
 	 * bleed is impossible for the same reason, because `app` and `apple` are
 	 * different first elements rather than a shared string prefix.
 	 */
-	const range = (doc: string, upTo: number): IDBKeyRange =>
+	const range = (doc: string, upTo: number): KeyRange =>
 		keyRanges().bound([doc], [doc, upTo]);
 
 	const record: DurableRecord = Object.freeze({
@@ -318,7 +365,7 @@ export async function openDurableRecord({
 
 		async read(doc) {
 			const rows = await open()
-				.getAll('updates', range(doc, Number.POSITIVE_INFINITY))
+				.getAll('updates', range(doc, Number.POSITIVE_INFINITY) as never)
 				.catch((cause: unknown) => {
 					throw DurableRecordError.ReadFailed({ name, cause });
 				});
@@ -332,6 +379,7 @@ export async function openDurableRecord({
 			if (counter.seeded) return rows.map((row) => row.bytes);
 			counter.seeded = true;
 			if (rows.length === 0) return [];
+			counter.hasRecord = true;
 			// Seeding the counters from what was read is why `read` is not
 			// optional before a write: a fresh sequence would collide with a
 			// surviving key, and a fold that ran out of a half-swept range would
@@ -363,9 +411,20 @@ export async function openDurableRecord({
 			if (!counter.seeded) {
 				throw new Error(`read('${doc}') must happen before a write to it`);
 			}
-			const empty = counter.seq === 0;
+			const empty = !counter.hasRecord;
+			counter.hasRecord = true;
 			counter.seq += 1;
-			await open().put('updates', { doc, seq: counter.seq, bytes }).catch(fail);
+			// `add`, never `put`. Every defect this file can have is an in-memory
+			// counter disagreeing with disk, and `put` is an upsert: it would
+			// overwrite a live record and say nothing. `add` throws
+			// `ConstraintError` on an existing key, which turns the whole class
+			// from silent loss into a loud failure with the health bit red.
+			await open()
+				.add('updates', { doc, seq: counter.seq, bytes })
+				.catch((cause: unknown) => {
+					counter.lost = true;
+					return fail(cause);
+				});
 			// The first record of a chain is its state, whether or not a fold put
 			// it there. Keeping that true here is what makes `shouldFold` give the
 			// same answer before and after a reopen, since `read` cannot tell a
@@ -377,6 +436,8 @@ export async function openDurableRecord({
 
 		shouldFold(doc) {
 			const counter = of(doc);
+			// A dropped append forces one, because folding is the repair.
+			if (counter.lost) return true;
 			return shouldFold(counter.stateBytes, counter.tailBytes, floorBytes);
 		},
 
@@ -391,6 +452,7 @@ export async function openDurableRecord({
 			const upTo = counter.seq;
 			const foldedTail = counter.tailBytes;
 			const state = encode();
+			counter.hasRecord = true;
 			counter.seq += 1;
 			const seq = counter.seq;
 			const transaction = open().transaction('updates', 'readwrite');
@@ -398,8 +460,8 @@ export async function openDurableRecord({
 			// Only IDB calls from here to `done`. Awaiting anything else would
 			// close the transaction out from under the delete.
 			await Promise.all([
-				store.put({ doc, seq, bytes: state }),
-				store.delete(range(doc, upTo)),
+				store.add({ doc, seq, bytes: state }),
+				store.delete(range(doc, upTo) as never),
 				transaction.done,
 			]).catch(fail);
 			counter.stateBytes = state.byteLength;
@@ -408,6 +470,9 @@ export async function openDurableRecord({
 			// its bytes are still tail, and zeroing would drop them from the
 			// totals that decide the next fold.
 			counter.tailBytes -= foldedTail;
+			// The state just written came from the live document, so whatever a
+			// failed append dropped is on disk again.
+			counter.lost = false;
 			setHealthy(true);
 		},
 
@@ -422,11 +487,18 @@ export async function openDurableRecord({
 		},
 
 		async appendAndRetire(doc, bytes, retired) {
+			if (doc === retired) {
+				// The delete range would cover the `add` issued moments earlier in
+				// the same transaction, and the counters would end up agreeing
+				// with a disk that had quietly lost the append.
+				throw new Error(`appendAndRetire cannot retire ${doc} into itself`);
+			}
 			const counter = of(doc);
 			if (!counter.seeded) {
 				throw new Error(`read('${doc}') must happen before a write to it`);
 			}
-			const empty = counter.seq === 0;
+			const empty = !counter.hasRecord;
+			counter.hasRecord = true;
 			counter.seq += 1;
 			const seq = counter.seq;
 			const transaction = open().transaction('updates', 'readwrite');
@@ -434,8 +506,8 @@ export async function openDurableRecord({
 			// Only IDB calls between here and `done`, the same rule the fold
 			// keeps: awaiting anything else closes the transaction mid-flight.
 			await Promise.all([
-				store.put({ doc, seq, bytes }),
-				store.delete(range(retired, Number.POSITIVE_INFINITY)),
+				store.add({ doc, seq, bytes }),
+				store.delete(range(retired, Number.POSITIVE_INFINITY) as never),
 				transaction.done,
 			]).catch(fail);
 			if (empty) counter.stateBytes = bytes.byteLength;
@@ -443,6 +515,7 @@ export async function openDurableRecord({
 			const gone = of(retired);
 			gone.stateBytes = 0;
 			gone.tailBytes = 0;
+			gone.hasRecord = false;
 			gone.seeded = true;
 			setHealthy(true);
 		},
@@ -458,7 +531,7 @@ export async function openDurableRecord({
 
 		async retire(doc) {
 			await open()
-				.delete('updates', range(doc, Number.POSITIVE_INFINITY))
+				.delete('updates', range(doc, Number.POSITIVE_INFINITY) as never)
 				.catch(fail);
 			// Zeroed and left SEEDED rather than dropped. This process just
 			// emptied the chain, so it knows what is there; dropping the counter
@@ -469,10 +542,12 @@ export async function openDurableRecord({
 			const counter = of(doc);
 			counter.stateBytes = 0;
 			counter.tailBytes = 0;
+			counter.hasRecord = false;
 			counter.seeded = true;
 		},
 
 		close() {
+			openNames.delete(name);
 			// Listeners are kept. A write attempted against a closed record still
 			// has to be able to say it failed, and the caller drops this object
 			// anyway; clearing here would silence the one report that matters.

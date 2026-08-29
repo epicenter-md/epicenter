@@ -33,13 +33,23 @@ let addresses = 0;
 /** Nothing here is on a timer: settling is what the tests call by hand. */
 const never = () => () => undefined;
 
-/** A device with its own durable storage, reopenable under the same name. */
+/**
+ * A device with its own durable storage, reopenable under the same name.
+ *
+ * Reopening closes the previous record first, which is what a machine coming
+ * back does: one process, one connection. These tests used to leave both open
+ * and pass anyway, and an audit reproduced what that hides &mdash; two records on
+ * one database seed their sequences from the same disk and hand out the same
+ * numbers. `openDurableRecord` refuses it now, so the shape has to be honest.
+ */
 function device(name: string) {
+	let live: Awaited<ReturnType<typeof openDurableRecord>> | undefined;
 	return {
 		name,
 		open: async () => {
-			const record = await openDurableRecord({ name });
-			return openDocumentHandle({ record, doc: KEY, schedule: never });
+			live?.close();
+			live = await openDurableRecord({ name });
+			return openDocumentHandle({ record: live, doc: KEY, schedule: never });
 		},
 	};
 }

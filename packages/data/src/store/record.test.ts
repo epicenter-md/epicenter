@@ -138,6 +138,52 @@ describe('folding', () => {
 	});
 });
 
+describe('the counters have to agree with disk, synchronously', () => {
+	test('several appends in one tick book one state and the rest as tail', async () => {
+		const record = await openDurableRecord({
+			name: freshName(),
+			floorBytes: 1,
+		});
+		await record.read('app');
+		// Unawaited, which is how the handle appends: the byte totals are only
+		// updated after each transaction resolves, so "am I the first record"
+		// cannot be answered from them. Answering it with `stateBytes === 0`
+		// made all six book themselves as the state, the tail stayed at zero,
+		// and the chain could never fold.
+		const writes = [1, 2, 3, 4, 5, 6].map((n) =>
+			record.append('app', bytes(n)),
+		);
+		await Promise.all(writes);
+		expect(record.shouldFold('app')).toBe(true);
+		record.close();
+	});
+
+	test('a second record on one database is refused', async () => {
+		const name = freshName();
+		const first = await openDurableRecord({ name });
+		// Two records seed their sequence from the same disk and then hand out
+		// the same numbers. `add` makes the collision loud; this makes it
+		// unreachable. `claims.ts` holds the cross-tab lock; this is the case
+		// inside one tab that a lock cannot see.
+		await expect(openDurableRecord({ name })).rejects.toBeDefined();
+		first.close();
+		const second = await openDurableRecord({ name });
+		second.close();
+	});
+
+	test('appendAndRetire refuses to retire the document it is appending to', async () => {
+		const record = await openDurableRecord({ name: freshName() });
+		await record.read('app');
+		// The delete range would cover the record written moments earlier in
+		// the same transaction, and the counters would agree with a disk that
+		// had quietly lost it.
+		await expect(
+			record.appendAndRetire('app', bytes(1), 'app'),
+		).rejects.toBeDefined();
+		record.close();
+	});
+});
+
 describe('the two verbs nothing needed until wave 1b did', () => {
 	test('appendAndRetire lands both halves or neither', async () => {
 		const record = await openDurableRecord({ name: freshName() });
@@ -277,14 +323,24 @@ describe('shouldFold', () => {
 		// The same chain, so the same answer. `read` cannot tell a fold from an
 		// update by looking, and neither can `append`; they agree because both
 		// call the first record the state.
+		//
+		// True of a chain whose fold was not raced. An append that lands while
+		// a fold is encoding gets a LOWER sequence than the state that fold
+		// writes, so on disk the state sorts second and a reopen calls the late
+		// append the state instead. That costs one wasted fold and loses
+		// nothing, and the alternative is reserving the fold's sequence before
+		// encoding, which is a different design.
 		expect(second.shouldFold('app')).toBe(true);
 		second.close();
 	});
 });
 
 describe('durability', () => {
-	test('starts healthy and says so when a write stops landing', async () => {
-		const record = await openDurableRecord({ name: freshName() });
+	test('a dropped append keeps the record red until a fold puts it back', async () => {
+		const record = await openDurableRecord({
+			name: freshName(),
+			floorBytes: 1,
+		});
 		await record.read('app');
 		const seen: boolean[] = [];
 		record.durability.subscribe((healthy) => seen.push(healthy));
@@ -295,11 +351,20 @@ describe('durability', () => {
 		// store the browser has taken away.
 		const unstorable = (() => undefined) as unknown as Uint8Array;
 		await expect(record.append('app', unstorable)).rejects.toBeDefined();
-
 		expect(record.durability.healthy).toBe(false);
-		expect(seen).toEqual([false]);
 
+		// This test asserted the opposite until an audit reproduced the loss.
+		// A later success used to flip the bit back to green while the bytes
+		// the failure dropped stayed dropped, so one transient rejection ate
+		// one update forever and every surface said it was fine.
 		await record.append('app', bytes(1));
+		expect(record.durability.healthy).toBe(false);
+
+		// The failure also suppressed the repair: a dropped append never
+		// incremented the tail, so it made a fold LESS likely, and a fold is
+		// the only thing that rewrites the whole document.
+		expect(record.shouldFold('app')).toBe(true);
+		await record.fold('app', () => bytes(9));
 		expect(record.durability.healthy).toBe(true);
 		expect(seen).toEqual([false, true]);
 		record.close();
