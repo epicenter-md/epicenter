@@ -191,8 +191,26 @@ export class StoreAuthority extends DurableObject {
 		this.hub.receive(connection, new Uint8Array(message));
 	}
 
-	override webSocketClose(socket: WebSocket): void {
+	/**
+	 * The peer went away, so complete the handshake and let it go.
+	 *
+	 * `close()` is not optional here. Cloudflare's
+	 * `web_socket_auto_reply_to_close` flag would send the closing frame back
+	 * for us, and it is off at this worker's compatibility date, so without
+	 * this call the peer never receives one and observes a `1006` abnormal
+	 * closure instead of the clean shutdown it asked for. A reconnect backoff
+	 * that treats `1006` as a fault therefore treats every ordinary tab close
+	 * as an error.
+	 */
+	override webSocketClose(
+		socket: WebSocket,
+		code: number,
+		reason: string,
+	): void {
 		this.forget(socket);
+		// 1005 means "no status received", which is not a code a close frame may
+		// carry back; 1006 is never sendable at all.
+		socket.close(code === 1005 || code === 1006 ? 1000 : code, reason);
 	}
 
 	override webSocketError(socket: WebSocket): void {
