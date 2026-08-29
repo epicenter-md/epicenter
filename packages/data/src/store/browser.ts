@@ -53,6 +53,7 @@ import {
 	replay,
 	SNAPSHOT_FOLD_THRESHOLD,
 } from './log.js';
+import { requestPersistentStorage } from './persist.js';
 import type {
 	DurableOp,
 	DurablePort,
@@ -574,6 +575,12 @@ export async function openLocal<const TDatabase extends DataDefinition>(
 	const { data: parsed, error: parseError } = parseData(definition);
 	if (parseError !== null) return Err(parseError);
 
+	// Asked here rather than by an application, because this is the one place
+	// that knows durable storage is about to matter, and because an eviction
+	// has no event: an origin's data goes wholesale and the next boot simply
+	// finds nothing. Not awaited, and a refusal is ordinary.
+	void requestPersistentStorage();
+
 	const address = localAddress(parsed.id);
 	const { error: claimError } = await claimDocument(address);
 	if (claimError !== null) return Err(claimError);
@@ -641,6 +648,10 @@ export async function openAccount<const TDatabase extends DataDefinition>(
 
 	const { data: parsed, error: parseError } = parseData(definition);
 	if (parseError !== null) return Err(parseError);
+
+	// Same request as the local opener makes, and idempotent: a granted origin
+	// is never asked twice.
+	void requestPersistentStorage();
 
 	const address = accountAddress(parsed.id, {
 		baseURL: canonicalURL,

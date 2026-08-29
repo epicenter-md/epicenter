@@ -1,19 +1,47 @@
 /**
  * What a document is on this device: a chain of updates, folded when it grows.
  *
- * There are no Yjs imports in this file, and that is the design. A chain is
- * opaque bytes in an order; what they mean is the caller's business, and the
- * one place this file would have needed Yjs, encoding a fold, is a callback
- * the caller supplies instead. That keeps the rule below enforceable rather
- * than merely documented.
+ * ## Why there are no Yjs imports here
  *
- * ## The rule this shape exists to enforce
+ * Not because Yjs would break anything. An earlier version of this paragraph
+ * said the `encode` callback exists to keep the transaction rule below
+ * enforceable, and that argument does not survive contact:
+ * `encodeStateAsUpdateV2` is synchronous, so the rule holds identically if
+ * this file calls it itself. The callback defends against a promise nobody
+ * proposed passing.
+ *
+ * The real reasons are three, and they are about shape rather than safety.
+ *
+ * **Two implementations run one suite.** `record-memory.ts` exists because
+ * `openMemory` has consumers with no browser, and the rules both must keep are
+ * counter arithmetic that `record.test.ts` states in one-byte payloads. Put a
+ * `Y.Doc` in the interface and the memory twin becomes a second CRDT
+ * integration, which is more drift surface, not less.
+ *
+ * **This is store-wide and a document's lifetime is not.** One record serves
+ * every document in a generation; a handle owns one. `documents()`, `claim()`,
+ * `retire()` and `appendAndRetire`, which spans two documents in one
+ * transaction, are all addressing operations with no document to talk about.
+ *
+ * **A bytes-shaped `read` is the only place the fold is observable.** ADR-0280
+ * turns on nothing being able to tell a fold from an update by looking, which
+ * means a folded chain and an unfolded one are the same document. Reading
+ * `[bytes(9)]` where three records used to be is how a test sees the fold
+ * happen at all.
+ *
+ * The ecosystem splits the same way and for the same reason: `y-indexeddb` and
+ * `y-leveldb` hold the document, because each is a provider with one backend;
+ * hocuspocus's Database extension and y-sweet's `Store` are bytes-only,
+ * because each has many. Two implementations is the condition under which the
+ * seam is worth keeping.
+ *
+ * ## The rule this shape does enforce
  *
  * An IndexedDB transaction goes inactive the moment it awaits anything that is
  * not an IDB request, and the failure is intermittent and load-dependent
- * rather than immediate. `fold` therefore takes an `encode` callback it calls
- * SYNCHRONOUSLY, before it opens the transaction. A caller cannot hand this
- * file a promise to wait on inside one, because there is nowhere to put it.
+ * rather than immediate. `fold` calls `encode` SYNCHRONOUSLY, before it opens
+ * the transaction. That is true and load-bearing; it is simply not what forces
+ * the callback.
  *
  * ## Why appending is eager and folding is not
  *
