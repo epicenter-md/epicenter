@@ -1,16 +1,22 @@
 ---
 name: dialectic
-description: "Develop an unsettled product, architecture, or design question until the user and agent can state one accepted greenfield articulation: a shared, uncompromised statement of what the thing should be. Use when the destination is not settled and the user wants discovery, synthesis, or pushback before a plan exists. Do not use for interrogating an existing plan, a bounded comparison, or choosing files, commits, or execution steps."
+description: "Make the agent’s model and the user’s emerging model visible through the deliberate collision of serious articulations, so they can be understood, corrected, or brought to an accepted greenfield articulation. Use only when the user explicitly asks to use a dialectic."
 ---
 
 # Dialectic
 
-A dialectic produces an accepted greenfield articulation. It ends when the user
-can recognize that articulation and say, in effect, “that’s right.” The
-articulation is one statement of what the thing should be that the user and
-agent both actually hold, and that neither softened merely to get the other to
-agree. Models, questions, research, examples, diagrams, and revisions are tools
-for reaching it, not alternate outputs.
+A dialectic is the deliberate collision of articulations: the user’s emerging
+account of what should be true and the agent’s competing greenfield accounts.
+Their differences, consequences, and refusals make the live disagreement
+visible. When the destination is correction or design, a dialectic produces an
+accepted greenfield articulation. It ends when the user can recognize that
+articulation and say, in effect, “that’s right.”
+
+Sometimes the user’s destination is only to understand the model the agent is
+currently using. In that case, make its premises, structure, evidence, and
+consequences visible; the user does not need to articulate or endorse anything
+back. Understanding is enough. Do not force a learning dialectic into design
+convergence.
 
 Greenfield means describe the desired product, architecture, or design from
 first principles rather than allowing the inherited implementation to define
@@ -55,8 +61,9 @@ syntax of its own language, so a design cannot be mistaken for source. Use a
 comparison for a comparison and a timeline for a history. Do not disguise
 either as TypeScript or as a polished status report.
 
-A turn is not a lesson. When the material is settled and the user wants to
-understand it rather than judge it, this is the wrong skill: hand it to
+A dialectic is not a standalone lesson. When the material is settled and the
+user wants a self-contained explanation rather than to inspect the agent’s
+model, this is the wrong skill: hand it to
 [teaching-page](../teaching-page/SKILL.md) and say so.
 
 Use an HTML page when spatial relationships, visual hierarchy, or several
