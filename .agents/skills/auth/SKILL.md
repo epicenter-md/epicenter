@@ -1,9 +1,9 @@
 ---
 name: auth
-description: 'Epicenter auth packages: `@epicenter/auth` and the Svelte wrapper at `@epicenter/svelte/auth`, OAuth sessions, identity state, auth-owned fetch/WebSocket, and workspace boot selection. Use when editing Epicenter auth clients, session state, hosted sign-in, or auth/workspace integration.'
+description: 'Epicenter auth packages: `@epicenter/auth` and the Svelte wrapper at `@epicenter/svelte/auth`, OAuth sessions, identity state, auth-owned fetch/WebSocket, and the reload gate that makes a page lifetime one auth generation. Use when editing Epicenter auth clients, session state, hosted sign-in, or how a route boots from auth.'
 metadata:
   author: epicenter
-  version: '7.0'
+  version: '8.0'
 ---
 
 # Epicenter Auth
@@ -77,11 +77,13 @@ App clients pick a credential model through one dispatcher,
 - `createInstanceTokenAuth(...)` — a self-hosted star (static `instance.token`).
   No OAuth flow, launcher, refresh, or persisted grant; boots optimistically
   `signed-in` as `INSTANCE_PRINCIPAL_ID` and verifies `/api/session` in the
-  background (surfacing the result on `deployment.connection`). Carries the
-  bearer subprotocol, so it is a drop-in `SyncAuthClient`.
+  background (surfacing the result on `connection.status`, which is the only
+  client whose status is a live machine). Carries the bearer subprotocol, so it
+  can open the sync socket.
 - `createSameOriginCookieAuth(...)` — the same-origin dashboard SPA
-  (`apps/api/ui`). Uses the first-party Better Auth cookie directly; a plain
-  `AuthClient` with no `openWebSocket`.
+  (`apps/api/ui`). Uses the first-party Better Auth cookie directly. It has
+  `openWebSocket` like every client and denies permanently, because a cookie
+  cannot carry the subprotocol the rooms route requires.
 
 These are three credential models, not mode flags on one client. The old
 `createCookieAuth` / `createBearerAuth` split (and `BearerSession` /
@@ -115,13 +117,14 @@ The public surface lives in one package plus a Svelte subpath:
   refresh, refresh-token revocation, `/api/session` verification, the network
   gate, authenticated fetch, and WebSocket opening. There is no headless or
   terminal surface: every credential model here is driven by an app.
-- `@epicenter/svelte/auth`: Svelte 5 wrapper (in the `@epicenter/svelte`
-  package, which also exports `toConnection`, `reloadOnPrincipalChange`,
-  `createSession`, and `SignedIn`). Mirrors `auth.state` through
-  `createSubscriber` so templates and `$derived` reads are reactive.
-- `toConnection` from `@epicenter/svelte/auth`: the boot-time projection a
-  workspace `connect()` call consumes (`ConnectionConfig` signed in, `null`
-  signed out).
+- `@epicenter/svelte/auth`: Svelte 5 wrapper. Mirrors `auth.state` and
+  `connection.status` through `createSubscriber` so templates and `$derived`
+  reads are reactive, and re-exports `reloadOnAuthChange`. Its factories
+  return `ReactiveAuthClient`, which is `AuthClient` plus a wellcrafted
+  `Brand`: a component whose reads must track asks for the branded type, and a
+  boot-time reader keeps accepting plain `AuthClient`, since the brand is a
+  subtype. Handing a raw core client to a component that tracks is a type
+  error rather than a silently frozen surface.
 
 The API server composes Better Auth like this:
 
@@ -172,41 +175,47 @@ export type AuthState =
 	| { status: 'signed-in'; principalId: PrincipalId }
 	| { status: 'reauth-required'; principalId: PrincipalId };
 
-export type Deployment =
-	| { kind: 'hosted'; baseURL: string }
-	| { kind: 'self-hosted'; baseURL: string; connection: InstanceConnection };
-
-export type InstanceConnectionStatus =
+export type ConnectionStatus =
 	| 'connecting'
 	| 'connected'
 	| 'unreachable'
 	| 'rejected';
 
-export type InstanceConnection = {
-	get status(): InstanceConnectionStatus;
-	onChange(fn: (status: InstanceConnectionStatus) => void): () => void;
+/** The ONE server this client represents. Switching it starts a new auth generation. */
+export type Connection = {
+	baseURL: string;
+	get status(): ConnectionStatus;
+	onChange(fn: (status: ConnectionStatus) => void): () => void;
 };
 ```
+
+Only the self-host token client drives `status` through a real machine
+(`instance-credential-authority.ts`). The hosted OAuth client and the
+same-origin cookie client report a constant `connected` and an `onChange` that
+never fires, because the hosted star's reachability is not a fact those models
+track. Do not read a live connection status as though every client had one.
 
 The client contract (`packages/auth/src/auth-contract.ts`), trimmed of JSDoc:
 
 ```ts
 export type AuthClient = {
 	state: AuthState;
-	deployment: Deployment;
+	connection: Connection;
 	onStateChange(fn: (state: AuthState) => void): () => void;
 	startSignIn(): Promise<Result<undefined, AuthError>>;
 	signOut(): Promise<Result<undefined, AuthError>>;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
 	getProfile(): Promise<Result<Principal, AuthError>>;
+	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
 	[Symbol.dispose](): void;
 };
-
-// A bearer-carrying client that can also open authenticated WebSockets for sync.
-export type SyncAuthClient = AuthClient & {
-	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
-};
 ```
+
+There is no `SyncAuthClient` subtype. `openWebSocket` is on every client, and
+a client that can never open one rejects with a permanent `OpenWebSocketDenial`
+instead. The reasoning is in `auth-contract.ts`: a caller has to handle the
+denial either way, so the models that can never sync are the permanent arm of
+a channel every caller already needs, not a type to demand.
 
 `AuthState` arms carry `principalId` directly. There is no nested identity
 object and no `user` field in state: profile (the email) is fetched on demand
@@ -215,15 +224,19 @@ via `getProfile()` by the surface that displays it, never held in state.
 local partition key: even when the OAuth grant needs reauth, the cached
 principal id picks the right local storage partition.
 
-`deployment` is the one runtime owner of the hosted vs self-hosted fact,
-fixed by the factory that built the client. UI branches on `deployment.kind`
-instead of re-deriving the mode from the persisted `InstanceSetting`; only a
-self-hosted deployment carries a live `connection` status (the boot bearer
-check against the instance).
+`connection` is the one server this client represents, fixed for the client's
+whole life: switching it starts a new auth generation. There is no `kind`
+discriminator on it, because the credential model is recomputed from the
+`Instance` at construction rather than stored as a tag. A surface that needs
+to know it is self-hosted asks the `InstanceSetting`
+(`!instanceConnect.setting.isDefault()`, as `account-popover.svelte` does), not
+the client. Only a self-hosted instance carries a live `connection.status` (the
+boot bearer check against the box); the other two report a constant
+`connected` and an `onChange` that never fires.
 
-`SyncAuthClient` (adds `openWebSocket`) is the type workspace sync requires. The
-same-origin cookie client is a plain `AuthClient`, so passing it where sync is
-needed is a compile error, not a runtime throw.
+Whether a client can sync is answered at runtime by `openWebSocket`'s denial,
+not by a type. A caller must handle the denial anyway, so a sync-capable
+subtype would buy a compile error on top of a branch that still has to exist.
 
 Read `auth.state` synchronously. Use `auth.onStateChange(fn)` for future changes
 only; it does not replay. Consumers that need bootstrap behavior must read
@@ -440,44 +453,48 @@ stateless JWT access token  ->  cannot revoke before exp
    Never flatten a JWKS-fetch failure into a 401, or a transient server fault
    makes clients discard and refresh a good token and pause network auth.
 
-## Workspace Boot Selection
+## Boot selection: a page lifetime is one auth generation
 
-Workspace apps read identity once at boot with one call.
-`toConnection(auth, nodeId)` projects the auth snapshot: signed out returns
-`null` (bare local IndexedDB storage), signed in returns the principal's
-`ConnectionConfig` (principal-scoped storage plus relay sync).
-`reloadOnPrincipalChange(auth)` reloads the page when the principal changes, so
-the next boot re-projects. `AccountPopover` is the account surface; do not gate
-the app shell on sign-in.
-
-Use it in the browser opener:
+ADR-0088. An app reads `auth.state` ONCE at boot, builds everything downstream
+of it, and mounts `reloadOnAuthChange` so a change of auth generation reloads
+the document. There is no in-place swap of a store or a sync connection.
 
 ```ts
-import type { SyncAuthClient } from '@epicenter/auth';
-import { toConnection } from '@epicenter/svelte/auth';
-import type { NodeId } from '@epicenter/workspace';
-
-export function openMyAppBrowser({
-	auth,
-	nodeId,
-}: {
-	auth: SyncAuthClient;
-	nodeId: NodeId;
-}) {
-	return myAppWorkspace.connect(toConnection(auth, nodeId));
-}
+// apps/<app>/src/routes/+layout.svelte
+$effect(() => reloadOnAuthChange(auth, { callbackDestination: '/account' }));
 ```
 
-Inside the connection, `server` is the API host alone (local-storage
-partition names); `baseURL` is the full origin (`roomWsUrl` wants the scheme
-for the `wss://` upgrade).
+```ts
+// the route, reading once
+const db =
+	auth.state.status === 'signed-out'
+		? null
+		: openAccountDatabase({ auth, generation: page.params.generation });
+```
 
-`createSession` no longer owns workspace lifecycle in workspace apps. It
-survives only for auxiliary signed-in-only resources whose whole existence is
-tied to identity.
+The gate reloads on exactly two conditions (`reload-on-auth-change.ts`): the
+principal identity changed, or a credential was acquired (`reauth-required` to
+`signed-in`). **`signed-in` degrading to `reauth-required` deliberately does
+NOT reload**: it is the one transition that fires spontaneously, and a reload
+would interrupt someone mid-keystroke to rebuild an app that works exactly as
+well degraded. Sync discovers the denial on its next dial and stops.
 
-Local workspace data must not be wiped just because network auth failed. Wiping
-Yjs or local storage is a separate destructive user action.
+So in a gated app, the only transition a reactive read will ever see outlive
+its paint is that one. Every other transition repaints into a dying document.
+That is why boot reads are deliberately not reactive and say so at the call
+site, and why a component that renders the reconnect affordance is.
+
+**`apps/api/ui` is exempt and mounts no gate**: it has no store, sign-in is its
+product, and its dashboard layout live-flips on the full `AuthState` union.
+Reactive `auth.state` is a general adapter, not gate machinery.
+
+Signed-out is a state of a place, not a different place. Do not gate a route
+with a `load` redirect: sign-in is an enhancement, never a door, and a deep
+link opened while signed out must stay on its URL so the post-sign-in reload
+lands where the link pointed.
+
+Local data must never be wiped because network auth failed. Wiping local
+storage is a separate destructive user action.
 
 ## Server Routes and Deployment Seam
 
@@ -560,7 +577,19 @@ mode flag on it.
   the refreshed cell, the failure must propagate, not silently look saved.
 - Do not write `ownerId` / `OwnerId`. The identity word is `principalId` /
   `PrincipalId`; the instance principal is `INSTANCE_PRINCIPAL_ID`.
-- Do not import `requireSignedIn`, `InferSignedIn`, `openFuji`,
-  `encryptionKeys`, `EncryptionKeys`, `keyring`, or `Keyring`. They do not
-  exist in Epicenter workspace auth. Workspace boot selection goes through
-  one call: `connect(toConnection(auth, nodeId))`.
+- Do not write `workspace`, `node`, or `NodeId`. That vocabulary was retired
+  with ADR-0227; the store is opened by `openLocal` / `openAccount` and the
+  address facts are `baseURL`, `principalId`, and the generation.
+- Do not reach for `toConnection`, `reloadOnPrincipalChange`, `createSession`,
+  `SignedIn`, `SyncAuthClient`, `Deployment`, or `InstanceConnection`. None of
+  them exist. The current names are `reloadOnAuthChange` and `Connection`, and
+  `openWebSocket` is on every client.
+- Do not make a boot read reactive. A route that reads `auth.state` at init is
+  correct under the reload gate and says so in a comment; turning it into a
+  `$derived` builds a second answer to auth underneath the gate, dead for the
+  transitions that reload and wrong for the one that deliberately does not.
+- Do not replace `createSubscriber` with a `$state.raw` shadow plus an
+  `$effect`. `createSubscriber` is lazy: it subscribes only while something is
+  actively reading and tears down when the last reader is destroyed. A shadow
+  subscribes eagerly, once per component instance, for the component's whole
+  lifetime.
