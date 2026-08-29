@@ -44,6 +44,7 @@ and look like nothing at all.
 
 ## Consequences
 
+- **A generation link must force a full document load.** SvelteKit reuses a `+page.svelte` instance across a param-only navigation, updating props rather than recreating the component, so a client-side navigation from `/account/2` to `/account/3` would leave a page holding an open database for the generation it is no longer showing. `data-sveltekit-reload` on the link is what makes "switching is a navigation" true rather than merely intended. This is the one attribute the whole read-once route shape depends on.
 - The local ledger database, the stored selection, and the switch path all go. The pill keeps its inputs and loses its machinery: `selected` is the URL and `max(live)` is the browse list or the enumeration.
 - **A deep link means the same thing everywhere.** Generation numbers are server-allocated and global, so a shared URL names one history rather than depending on what the receiving device happened to have selected.
 - **What is refused, and it should be said out loud: "I live on generation 2" stops being durable.** A fresh launch resolves to the latest and redirects. An old generation is a place a person visits, not a home they configure. Somebody who wants to stay on one bookmarks it.
