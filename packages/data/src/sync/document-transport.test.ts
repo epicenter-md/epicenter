@@ -259,3 +259,32 @@ describe('durability, across the whole stack', () => {
 		expect(stored.get('notes').getAttrs()).toEqual({ fromLaptop: 1 });
 	});
 });
+
+describe('a peer that goes away mid-relay', () => {
+	test('a throwing socket does not starve the peers after it', async () => {
+		// A closing WebSocket throws from `send`, and the relay runs over every
+		// peer in turn. Without a guard the first socket to go takes the rest of
+		// the loop with it, and the peers after it silently miss an update the
+		// authority has already applied. Iteration order is insertion order, so
+		// the broken one is joined first on purpose.
+		const broken: DocumentSocket = {
+			send: () => {
+				throw new Error('this socket is closing');
+			},
+		};
+		hub.join(broken);
+
+		const witness: Uint8Array[] = [];
+		const listening: DocumentSocket = { send: (bytes) => witness.push(bytes) };
+		hub.join(listening);
+
+		const writer = await device();
+		write(writer.document, 'survives', 1);
+		await writer.session.settle();
+
+		expect(witness.length).toBeGreaterThan(0);
+		// And the hub has forgotten the socket that threw, rather than trying it
+		// again on every subsequent update.
+		expect(hub.attached()).toBe(2);
+	});
+});

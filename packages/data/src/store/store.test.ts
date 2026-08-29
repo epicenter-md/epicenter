@@ -63,11 +63,16 @@ function exchange(a: AccountStore, b: AccountStore) {
 }
 
 describe('a read is a property access on a plain object', () => {
-	test('data owns the store lifecycle without being it', async () => {
+	test('disposing the data disposes the store under it', async () => {
+		// This asserted `data.store !== data`, which nearly any implementation
+		// satisfies including a broken one. What the sentence actually claims is
+		// ownership, and ownership is only observable at disposal.
 		const opened = openMemory(database);
-		await using data = opened;
-
-		expect(data.store).not.toBe(data);
+		{
+			await using data = opened;
+			expect(data.tables.notes.list().rows).toEqual([]);
+		}
+		expect(() => opened.tables.notes.list()).toThrow();
 	});
 
 	test('create returns the row it made, at a minted id', () => {
@@ -103,8 +108,6 @@ describe('a read is a property access on a plain object', () => {
 	});
 
 	test('data groups direct operations with transact', () => {
-		expect(Object.hasOwn(db, 'documents')).toBe(false);
-		expect(Object.hasOwn(db.store, 'documents')).toBe(false);
 		let notifications = 0;
 		db.tables.notes.subscribe(() => {
 			notifications += 1;

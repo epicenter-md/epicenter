@@ -419,12 +419,16 @@ export async function openDurableRecord({
 			// overwrite a live record and say nothing. `add` throws
 			// `ConstraintError` on an existing key, which turns the whole class
 			// from silent loss into a loud failure with the health bit red.
-			await open()
-				.add('updates', { doc, seq: counter.seq, bytes })
-				.catch((cause: unknown) => {
-					counter.lost = true;
-					return fail(cause);
-				});
+			try {
+				// `try`, not `.catch`: a value IndexedDB cannot structured-clone
+				// makes `add` throw SYNCHRONOUSLY, before there is a promise to
+				// attach a handler to, so a rejection handler alone would let the
+				// commonest deterministic failure escape with the bit still green.
+				await open().add('updates', { doc, seq: counter.seq, bytes });
+			} catch (cause) {
+				counter.lost = true;
+				return fail(cause);
+			}
 			// The first record of a chain is its state, whether or not a fold put
 			// it there. Keeping that true here is what makes `shouldFold` give the
 			// same answer before and after a reopen, since `read` cannot tell a
@@ -457,13 +461,22 @@ export async function openDurableRecord({
 			const seq = counter.seq;
 			const transaction = open().transaction('updates', 'readwrite');
 			const store = transaction.objectStore('updates');
-			// Only IDB calls from here to `done`. Awaiting anything else would
-			// close the transaction out from under the delete.
-			await Promise.all([
-				store.add({ doc, seq, bytes: state }),
-				store.delete(range(doc, upTo) as never),
-				transaction.done,
-			]).catch(fail);
+			try {
+				// Only IDB calls from here to `done`. Awaiting anything else would
+				// close the transaction out from under the delete. `try` rather
+				// than `.catch` because `add` can throw before the array is even
+				// built (see `append`).
+				await Promise.all([
+					store.add({ doc, seq, bytes: state }),
+					store.delete(range(doc, upTo) as never),
+					transaction.done,
+				]);
+			} catch (cause) {
+				// The chain is untouched: the transaction aborts whole, so the
+				// state was not written and nothing was deleted. `lost` stays set
+				// if it was, which keeps `shouldFold` asking for the retry.
+				return fail(cause);
+			}
 			counter.stateBytes = state.byteLength;
 			// Subtracted rather than zeroed. An append that landed while the
 			// transaction was open sits above the bound and is still on disk, so
@@ -503,13 +516,18 @@ export async function openDurableRecord({
 			const seq = counter.seq;
 			const transaction = open().transaction('updates', 'readwrite');
 			const store = transaction.objectStore('updates');
-			// Only IDB calls between here and `done`, the same rule the fold
-			// keeps: awaiting anything else closes the transaction mid-flight.
-			await Promise.all([
-				store.add({ doc, seq, bytes }),
-				store.delete(range(retired, Number.POSITIVE_INFINITY) as never),
-				transaction.done,
-			]).catch(fail);
+			try {
+				// Only IDB calls between here and `done`, the same rule the fold
+				// keeps: awaiting anything else closes the transaction mid-flight.
+				await Promise.all([
+					store.add({ doc, seq, bytes }),
+					store.delete(range(retired, Number.POSITIVE_INFINITY) as never),
+					transaction.done,
+				]);
+			} catch (cause) {
+				counter.lost = true;
+				return fail(cause);
+			}
 			if (empty) counter.stateBytes = bytes.byteLength;
 			else counter.tailBytes += bytes.byteLength;
 			const gone = of(retired);

@@ -26,6 +26,7 @@
 
 import type { DocumentAuthority } from './document-authority.js';
 import {
+	type DocumentFrame,
 	type DocumentSocket,
 	decodeDocumentFrame,
 	encodeDocumentFrame,
@@ -35,7 +36,18 @@ export type DocumentHub = {
 	/** A socket arrived. Nothing is sent until it says what it has. */
 	join(socket: DocumentSocket): void;
 	leave(socket: DocumentSocket): void;
-	/** Bytes arrived from one socket. Returns whether they were a frame. */
+	/**
+	 * Bytes arrived from one socket.
+	 *
+	 * `true` when they were a frame this authority took. `false` means the host
+	 * should CLOSE that socket rather than log and carry on: under this
+	 * protocol a peer only ever sends what the authority told it was missing,
+	 * so bytes that will not decode or will not apply mean the peer is out of
+	 * step, and a reconnect's handshake is the repair. Returning `false` and
+	 * leaving the socket open is how a client comes to believe its work is
+	 * pushed while the authority never took it, which is silent divergence with
+	 * every surface reading green.
+	 */
 	receive(socket: DocumentSocket, message: Uint8Array): boolean;
 	attached(): number;
 };
@@ -46,6 +58,22 @@ export function createDocumentHub({
 	authority: DocumentAuthority;
 }): DocumentHub {
 	const sockets = new Set<DocumentSocket>();
+
+	/**
+	 * Send, and treat a throwing socket as one that has left.
+	 *
+	 * A closing WebSocket throws from `send`, and the relay below runs over
+	 * every peer: without this, the first socket to go takes the rest of the
+	 * loop with it, and every peer after it in iteration order silently misses
+	 * an update the authority has already applied.
+	 */
+	function send(socket: DocumentSocket, frame: DocumentFrame): void {
+		try {
+			socket.send(encodeDocumentFrame(frame));
+		} catch {
+			sockets.delete(socket);
+		}
+	}
 
 	return Object.freeze({
 		join(socket) {
@@ -72,18 +100,14 @@ export function createDocumentHub({
 					// client can answer in turn. Two frames, one round trip, and the
 					// order matters only in that the client can apply before it
 					// computes.
-					socket.send(
-						encodeDocumentFrame({
-							kind: 'step2',
-							update: authority.since(frame.stateVector),
-						}),
-					);
-					socket.send(
-						encodeDocumentFrame({
-							kind: 'step1',
-							stateVector: authority.stateVector(),
-						}),
-					);
+					send(socket, {
+						kind: 'step2',
+						update: authority.since(frame.stateVector),
+					});
+					send(socket, {
+						kind: 'step1',
+						stateVector: authority.stateVector(),
+					});
 					return true;
 				}
 				case 'step2':
@@ -93,11 +117,9 @@ export function createDocumentHub({
 					// relay and nothing to undo. The refusal is the door ADR-0218 said
 					// a byte-blind server could not have.
 					if (refused !== null) return false;
-					for (const other of sockets) {
+					for (const other of [...sockets]) {
 						if (other === socket) continue;
-						other.send(
-							encodeDocumentFrame({ kind: 'update', update: frame.update }),
-						);
+						send(other, { kind: 'update', update: frame.update });
 					}
 					return true;
 				}

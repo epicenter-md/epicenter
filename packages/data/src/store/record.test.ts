@@ -370,3 +370,49 @@ describe('durability', () => {
 		record.close();
 	});
 });
+
+describe('the two loss windows nothing was watching', () => {
+	test('appends in flight when close is called still land', async () => {
+		const name = freshName();
+		const record = await openDurableRecord({ name });
+		await record.read('app');
+		// Unawaited, which is how the handle appends. `close()` calls
+		// `IDBDatabase.close()`, which waits for pending transactions rather
+		// than aborting them, and the whole of ADR-0280 is that an edit is
+		// durable before any timer runs. Nothing proved the two meet.
+		const writes = [1, 2, 3].map((n) => record.append('app', bytes(n)));
+		record.close();
+		await Promise.all(writes);
+
+		const reopened = await openDurableRecord({ name });
+		expect(await reopened.read('app')).toEqual([bytes(1), bytes(2), bytes(3)]);
+		reopened.close();
+	});
+
+	test('a fold that fails leaves the chain intact and keeps asking to retry', async () => {
+		const record = await openDurableRecord({
+			name: freshName(),
+			floorBytes: 1,
+		});
+		await record.read('app');
+		await record.append('app', bytes(1));
+		await record.append('app', bytes(2));
+		await record.append('app', bytes(3));
+		expect(record.shouldFold('app')).toBe(true);
+
+		// A state IndexedDB cannot store. The fold is the repair path for a lost
+		// append, so a fold that fails silently would be the repair failing
+		// silently.
+		const unstorable = (() => undefined) as unknown as Uint8Array;
+		await expect(record.fold('app', () => unstorable)).rejects.toBeDefined();
+
+		expect(record.durability.healthy).toBe(false);
+		expect(await record.read('app')).toEqual([bytes(1), bytes(2), bytes(3)]);
+		expect(record.shouldFold('app')).toBe(true);
+
+		await record.fold('app', () => bytes(9));
+		expect(await record.read('app')).toEqual([bytes(9)]);
+		expect(record.durability.healthy).toBe(true);
+		record.close();
+	});
+});

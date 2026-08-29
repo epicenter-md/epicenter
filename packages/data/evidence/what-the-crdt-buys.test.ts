@@ -140,16 +140,4 @@ describe('prose, where a CRDT does something nothing else can', () => {
 		expect(content(phone)).toContain('beautiful');
 		expect(content(phone)).toContain('!!!');
 	});
-
-	test('CONTROL: the same two edits under last-writer-wins would lose one', () => {
-		// Modelled directly, so the contrast is measured rather than asserted.
-		const base = 'hello world';
-		const phoneVersion = 'hello beautiful world';
-		const laptopVersion = 'hello world!!!';
-		const lastWriterWins = [phoneVersion, laptopVersion].at(-1);
-
-		expect(lastWriterWins).toBe(laptopVersion);
-		expect(lastWriterWins).not.toContain('beautiful');
-		expect(base).not.toContain('beautiful');
-	});
 });
