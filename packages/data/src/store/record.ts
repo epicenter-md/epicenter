@@ -75,20 +75,31 @@ export type DurableRecordError = InferErrors<typeof DurableRecordError>;
 /**
  * The slice of the platform this assumes, declared rather than imported.
  *
- * Same move as `claims.ts`, for the same reason: this module compiles in a
- * program without the DOM library, and `idb` supplies every other type it
- * needs. Writing down the one global it reaches for keeps the assumption
- * auditable, and a test runtime satisfies it with `fake-indexeddb`.
+ * Same move as `claims.ts`, and the same reason: this module compiles under
+ * `types: ["bun"]`, where the DOM library does not exist. What is different is
+ * that the name matters here, because `idb`'s own types refer to the global
+ * `IDBKeyRange`. Declaring a local type of that name would shadow the real
+ * interface the moment anything drags this file into the DOM program, so the
+ * TYPE is contributed by an empty interface that merges with the real one when
+ * it is present, and the VALUE is reached through `globalThis` rather than
+ * declared, which would collide with it.
  */
-declare const IDBKeyRange: {
-	bound(
-		lower: unknown,
-		upper: unknown,
-		lowerOpen?: boolean,
-		upperOpen?: boolean,
-	): IDBKeyRange;
+declare global {
+	// biome-ignore lint/suspicious/noEmptyInterface: merges with DOM's when present
+	interface IDBKeyRange {}
+}
+
+type KeyRanges = {
+	bound(lower: unknown, upper: unknown): IDBKeyRange;
 };
-type IDBKeyRange = { readonly __idbKeyRange: unique symbol };
+
+function keyRanges(): KeyRanges {
+	const ranges = (globalThis as { IDBKeyRange?: KeyRanges }).IDBKeyRange;
+	if (ranges === undefined) {
+		throw new Error('this runtime has no IndexedDB');
+	}
+	return ranges;
+}
 
 /** The one object store, and the one shape in it. */
 interface RecordSchema extends DBSchema {
@@ -142,6 +153,21 @@ export type DurableRecord = {
 	 * document has been read, never wrong.
 	 */
 	fold(doc: string, encode: () => Uint8Array): Promise<void>;
+	/**
+	 * Take this document, exclusively, until the returned release is called.
+	 *
+	 * `fold` assumes the document behind its `encode` dominates the chain, and
+	 * two openers of one address break that assumption in the worst way: one
+	 * folds a state encoded from a document that never saw the other's edits,
+	 * and its delete range sweeps them. Nine edits in, one out, no error.
+	 *
+	 * `claims.ts` guards two tabs and cannot see two openers inside one. The
+	 * refcounted map in `documents.ts` used to guard that, and this is the
+	 * tripwire under it rather than a replacement for it: a manager should
+	 * still hand out one handle per address, and this makes forgetting to
+	 * throw rather than corrupt.
+	 */
+	claim(doc: string): () => void;
 	/** Forget a document. Idempotent. */
 	retire(doc: string): Promise<void>;
 	readonly durability: Durability;
@@ -209,6 +235,7 @@ export async function openDurableRecord({
 	});
 
 	const counters = new Map<string, Counters>();
+	const claimed = new Set<string>();
 	let healthy = true;
 	const listeners = new Set<(healthy: boolean) => void>();
 
@@ -254,7 +281,7 @@ export async function openDurableRecord({
 	 * different first elements rather than a shared string prefix.
 	 */
 	const range = (doc: string, upTo: number): IDBKeyRange =>
-		IDBKeyRange.bound([doc], [doc, upTo]);
+		keyRanges().bound([doc], [doc, upTo]);
 
 	const record: DurableRecord = Object.freeze({
 		durability: {
@@ -360,6 +387,16 @@ export async function openDurableRecord({
 			// totals that decide the next fold.
 			counter.tailBytes -= foldedTail;
 			setHealthy(true);
+		},
+
+		claim(doc) {
+			if (claimed.has(doc)) {
+				throw new Error(`${doc} is already open in this record`);
+			}
+			claimed.add(doc);
+			return () => {
+				claimed.delete(doc);
+			};
 		},
 
 		async retire(doc) {

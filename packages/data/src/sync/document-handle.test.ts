@@ -17,7 +17,7 @@ import {
 	type DocumentAuthority,
 	openDocumentAuthority,
 } from './document-authority.js';
-import type { DocumentSocket } from './document-frames.js';
+import { type DocumentSocket, encodeDocumentFrame } from './document-frames.js';
 import { openDocumentHandle } from './document-handle.js';
 import { createDocumentHub } from './document-hub.js';
 
@@ -140,7 +140,7 @@ describe('the handle appends now and folds later', () => {
 });
 
 describe('closing leaves nothing behind', () => {
-	test('close settles first, so the last edit is not lost', async () => {
+	test('close settles first, so the last edit reaches the peer', async () => {
 		const clock = manualClock();
 		const store = await record();
 		const handle = await openDocumentHandle({
@@ -148,11 +148,29 @@ describe('closing leaves nothing behind', () => {
 			doc: 'app',
 			schedule: clock.schedule,
 		});
+		const sent: Uint8Array[] = [];
+		handle.attach({ send: (bytes) => sent.push(bytes) });
+		// A peer that says what it has, because a replica cannot push until it
+		// has something to diff against. Without this the assertion below would
+		// pass for the wrong reason.
+		handle.receive(
+			encodeDocumentFrame({
+				kind: 'step1',
+				stateVector: new Uint8Array(Y.encodeStateVector(new Y.Doc())),
+			}),
+		);
+		const afterHandshake = sent.length;
+
 		handle.document.transact(() =>
 			handle.document.get('notes').setAttr('typed' as never, 'last' as never),
 		);
-		// Closed with the timer still armed, which is what a route change does.
+		// Durability is not what this tests: the append already landed, so an
+		// assertion about storage here would pass whether or not `close`
+		// settled. What close-settles-first still buys is the push, and a route
+		// change closes with the timer armed and the peer not yet told.
+		expect(sent.length).toBe(afterHandshake);
 		await handle.close();
+		expect(sent.length).toBeGreaterThan(afterHandshake);
 
 		const reopened = await openDocumentHandle({ record: store, doc: 'app' });
 		expect(reopened.document.get('notes').getAttrs()).toEqual({
@@ -161,19 +179,44 @@ describe('closing leaves nothing behind', () => {
 		await reopened.close();
 	});
 
-	test('a closed handle stops arming its timer', async () => {
+	test('closing disarms a timer that was already running', async () => {
 		const clock = manualClock();
 		const handle = await openDocumentHandle({
 			record: await record(),
 			doc: 'app',
 			schedule: clock.schedule,
 		});
-		await handle.close();
-
 		handle.document.transact(() =>
-			handle.document.get('notes').setAttr('after' as never, 1 as never),
+			handle.document.get('notes').setAttr('a' as never, 1 as never),
 		);
+		expect(clock.pending()).toBe(true);
+
+		// The leak this names: a timer left armed after close fires into a
+		// destroyed document. Asserting it from the armed state is the only
+		// version of this test that can fail.
+		await handle.close();
 		expect(clock.pending()).toBe(false);
+	});
+
+	test('a second handle on one address is refused, not tolerated', async () => {
+		const store = await record();
+		const first = await openDocumentHandle({ record: store, doc: 'app' });
+
+		// Two openers each fold a state encoded from a document that never saw
+		// the other's edits, and the delete range sweeps them: nine edits in,
+		// one out, no error. The map that used to prevent this lived in the
+		// manager; this is the tripwire under it.
+		await expect(
+			openDocumentHandle({ record: store, doc: 'app' }),
+		).rejects.toBeDefined();
+
+		// A different document in the same record is not the same address.
+		const other = await openDocumentHandle({ record: store, doc: 'notes/a' });
+		await other.close();
+
+		await first.close();
+		const reopened = await openDocumentHandle({ record: store, doc: 'app' });
+		await reopened.close();
 	});
 
 	test('closing twice is not an error', async () => {

@@ -8,9 +8,11 @@
  * carried on a single socket. Under one object per document (ADR-0277) none of
  * them is, and what is left for a manager to do is hold a map.
  *
- * So a handle owns its own lifetime instead: its document, its chain, its
- * socket, and its timer. Closing it ends all four. Nothing has to enumerate
- * open documents to persist them, because nothing has to persist them.
+ * So a handle owns its own lifetime instead: its document, its claim on one
+ * chain, its socket, and its timer. Closing it ends all four. It does not own
+ * the record, which serves every document in the store and outlives any one
+ * handle. Nothing has to enumerate open documents to persist them, because
+ * nothing has to persist them.
  *
  * ## The root document is one of these
  *
@@ -111,6 +113,10 @@ export async function openDocumentHandle({
 	idleMs = DEFAULT_IDLE_MS,
 	schedule = timeout,
 }: OpenDocumentHandleOptions): Promise<DocumentHandle> {
+	// Taken before anything is read. Two handles on one address would each fold
+	// a state encoded from a document that never saw the other's edits, and the
+	// delete range would sweep them: the record refuses rather than corrupts.
+	const release = record.claim(doc);
 	const document = new Y.Doc({ gc: true });
 
 	// Hydrate before the listener exists, or every replayed update would be
@@ -150,7 +156,28 @@ export async function openDocumentHandle({
 		peerVector = stateVector();
 	}
 
+	/**
+	 * The settle in flight, so two never overlap.
+	 *
+	 * A timer-fired settle and a `close()` can otherwise both fold: the second
+	 * sweeps the first's state record and subtracts a tail that is already
+	 * gone, which drives the accounting negative and suppresses folds until it
+	 * recovers. Nothing is lost either way, because the second state is a
+	 * superset, but two folds is one fold of waste.
+	 */
+	let settling: Promise<void> | undefined;
+
 	async function settle(): Promise<void> {
+		if (settling !== undefined) return settling;
+		settling = run();
+		try {
+			await settling;
+		} finally {
+			settling = undefined;
+		}
+	}
+
+	async function run(): Promise<void> {
 		cancelIdle?.();
 		cancelIdle = undefined;
 		if (closed) return;
@@ -173,7 +200,10 @@ export async function openDocumentHandle({
 		cancelIdle?.();
 		cancelIdle = schedule(() => {
 			cancelIdle = undefined;
-			void settle();
+			// Swallowed for the same reason the append above is: a failing fold
+			// has already reported itself through `record.durability`, and a
+			// timer callback has nowhere to put a rejection.
+			void settle().catch(() => undefined);
 		}, idleMs);
 	}
 
@@ -203,6 +233,12 @@ export async function openDocumentHandle({
 			if (closed) return false;
 			const { data: frame, error } = decodeDocumentFrame(message);
 			if (error !== null) return false;
+			// Frames below apply with NO origin, so `transaction.local` is
+			// false. That is load-bearing outside this file: a listener on
+			// `document` tells a local commit from a remote one by exactly that
+			// flag, and a derive must run for the first and not the second. A
+			// later refactor that passes an origin here breaks the
+			// discrimination silently.
 			switch (frame.kind) {
 				case 'step1':
 					// The peer said what it has, so answer with what it lacks and
@@ -222,8 +258,11 @@ export async function openDocumentHandle({
 		settle,
 
 		async close() {
-			await settle();
+			// A failing fold must not turn a route change into an unhandled
+			// rejection; it has already reported itself.
+			await settle().catch(() => undefined);
 			closed = true;
+			release();
 			cancelIdle?.();
 			cancelIdle = undefined;
 			socket = undefined;
