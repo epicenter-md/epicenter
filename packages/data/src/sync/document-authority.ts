@@ -31,14 +31,20 @@
  * Durable Object that hibernates discards it and rebuilds it on the next
  * message, which is one `applyUpdateV2` over the stored state.
  *
- * ## Why the storage still has a tail
+ * ## Why the storage is a chain
  *
  * Writing the whole document on every update is O(document) per keystroke's
- * worth of work. A short tail of applied updates makes a write O(update), and
- * folding it into the state amortizes the cost. What is gone is the DANCE. The
- * old authority could not fold by itself, so it asked a client for a snapshot
- * and checked the offer covered a position it had sent that connection. This
- * one holds the state it is replacing and owes nobody a proof.
+ * worth of work. Appending makes a write O(update), and folding amortizes the
+ * cost. What is gone is the DANCE. The old authority could not fold by itself,
+ * so it asked a client for a snapshot and checked the offer covered a position
+ * it had sent that connection. This one holds the state it is replacing and
+ * owes nobody a proof.
+ *
+ * One relation, not two, and the folded state is an ordinary row in it. That
+ * is the client's shape (ADR-0280) arriving here: two tables meant a
+ * `writeState`, a `storedState`, a two-relation byte sum, and a
+ * delete-then-write choreography, all to say that one row is special. Nothing
+ * that reads needs to know, because Yjs updates are commutative.
  *
  * ## Folding is asked for, not done on the way past
  *
@@ -132,20 +138,20 @@ export type DocumentAuthority = {
 };
 
 export function applyDocumentAuthoritySchema(sqlite: SqliteDatabase): void {
-	// The folded document. Chunked because a document is the largest single
-	// value stored here and the only one guaranteed to exceed the 2 MB cap.
+	// One relation, and the folded state is an ordinary row in it. This was two
+	// tables, `_state` and `_tail`, until the client's record proved the same
+	// chain needs one: a fold writes a new row and deletes the rows it covers,
+	// and nothing that reads can tell a fold from an update, because Yjs
+	// updates are commutative and a reader applies the whole range in order.
+	// Two tables meant `writeState`, `storedState`, a two-relation `sumBytes`,
+	// and a delete-then-write choreography, all to say "this row is special".
+	//
+	// Chunked because a document is the largest single value stored here and
+	// the only one guaranteed to exceed the Durable Object's 2 MB value cap.
+	// The sequence orders reassembly and nothing else: there is no position in
+	// the protocol any more, and nobody is ever told this number.
 	sqlite.run(`
-		CREATE TABLE IF NOT EXISTS _state (
-			chunk INTEGER NOT NULL,
-			bytes BLOB    NOT NULL,
-			PRIMARY KEY (chunk)
-		)
-	`);
-	// Updates applied since the last fold. There is no seq in the protocol any
-	// more; this one orders reassembly at open and nothing else, which is why it
-	// is an autoincrementing detail rather than a position anybody is told.
-	sqlite.run(`
-		CREATE TABLE IF NOT EXISTS _tail (
+		CREATE TABLE IF NOT EXISTS updates (
 			seq   INTEGER NOT NULL,
 			chunk INTEGER NOT NULL,
 			bytes BLOB    NOT NULL,
@@ -185,9 +191,7 @@ export function openDocumentAuthority({
 	function live(): Y.Doc {
 		if (document !== undefined) return document;
 		const hydrated = new Y.Doc({ gc: true });
-		const state = storedState();
-		if (state.length > 0) Y.applyUpdateV2(hydrated, state);
-		for (const update of tailUpdates()) Y.applyUpdateV2(hydrated, update);
+		for (const update of storedUpdates()) Y.applyUpdateV2(hydrated, update);
 		document = hydrated;
 		return hydrated;
 	}
@@ -210,11 +214,7 @@ export function openDocumentAuthority({
 			const stored = trySync({
 				try: () =>
 					sqlite.transaction(() => {
-						const seq =
-							(sqlite.all<SqliteRow & { seq: number }>(
-								'SELECT COALESCE(MAX(seq), 0) AS seq FROM _tail',
-							)[0]?.seq ?? 0) + 1;
-						appendToTail(seq, update);
+						append(lastSeq() + 1, update);
 					}),
 				catch: (cause) => DocumentAuthorityError.StorageFailed({ cause }),
 			});
@@ -228,18 +228,27 @@ export function openDocumentAuthority({
 
 		shouldFold() {
 			if (unstored) return true;
-			return shouldFold(sumBytes('_state'), sumBytes('_tail'), foldFloorBytes);
+			const [state = 0, ...tail] = sequenceBytes();
+			return shouldFold(
+				state,
+				tail.reduce((total, bytes) => total + bytes, 0),
+				foldFloorBytes,
+			);
 		},
 
 		fold() {
 			return trySync({
 				try: () => {
+					// The bound comes before the encode, exactly as it does on the
+					// client: anything written while this runs sits above it and
+					// survives, and may also already be inside the state, which
+					// costs one redundant apply and nothing else.
+					const upTo = lastSeq();
 					const folded = new Uint8Array(Y.encodeStateAsUpdateV2(live()));
 					unstored = false;
 					sqlite.transaction(() => {
-						sqlite.run('DELETE FROM _state');
-						writeState(folded);
-						sqlite.run('DELETE FROM _tail');
+						append(upTo + 1, folded);
+						sqlite.run('DELETE FROM updates WHERE seq <= ?', [upTo]);
 					});
 				},
 				catch: (cause) => DocumentAuthorityError.StorageFailed({ cause }),
@@ -248,7 +257,8 @@ export function openDocumentAuthority({
 
 		hasUnresolvedDependencies: () => hasPendingStructs(live()),
 
-		storedBytes: () => sumBytes('_state') + sumBytes('_tail'),
+		storedBytes: () =>
+			sequenceBytes().reduce((total, bytes) => total + bytes, 0),
 
 		dispose() {
 			document?.destroy();
@@ -256,18 +266,9 @@ export function openDocumentAuthority({
 		},
 	});
 
-	function writeState(bytes: Uint8Array): void {
+	function append(seq: number, bytes: Uint8Array): void {
 		for (const [index, chunk] of intoChunks(bytes, CHUNK_BYTES).entries()) {
-			sqlite.run('INSERT INTO _state (chunk, bytes) VALUES (?, ?)', [
-				index,
-				new Uint8Array(chunk),
-			]);
-		}
-	}
-
-	function appendToTail(seq: number, bytes: Uint8Array): void {
-		for (const [index, chunk] of intoChunks(bytes, CHUNK_BYTES).entries()) {
-			sqlite.run('INSERT INTO _tail (seq, chunk, bytes) VALUES (?, ?, ?)', [
+			sqlite.run('INSERT INTO updates (seq, chunk, bytes) VALUES (?, ?, ?)', [
 				seq,
 				index,
 				new Uint8Array(chunk),
@@ -275,20 +276,19 @@ export function openDocumentAuthority({
 		}
 	}
 
-	function storedState(): Uint8Array {
-		return join(
-			sqlite
-				.all<SqliteRow & { bytes: Uint8Array | ArrayBuffer }>(
-					'SELECT bytes FROM _state ORDER BY chunk',
-				)
-				.map((row) => copyBytes(row.bytes)),
+	function lastSeq(): number {
+		return (
+			sqlite.all<SqliteRow & { seq: number }>(
+				'SELECT COALESCE(MAX(seq), 0) AS seq FROM updates',
+			)[0]?.seq ?? 0
 		);
 	}
 
-	function tailUpdates(): Uint8Array[] {
+	/** The chain, reassembled from its chunks, in the order it must apply. */
+	function storedUpdates(): Uint8Array[] {
 		const rows = sqlite.all<
 			SqliteRow & { seq: number; bytes: Uint8Array | ArrayBuffer }
-		>('SELECT seq, bytes FROM _tail ORDER BY seq, chunk');
+		>('SELECT seq, bytes FROM updates ORDER BY seq, chunk');
 		const updates: Uint8Array[] = [];
 		let holding: { seq: number; chunks: Uint8Array[] } | undefined;
 		for (const row of rows) {
@@ -302,12 +302,21 @@ export function openDocumentAuthority({
 		return updates;
 	}
 
-	function sumBytes(relation: '_state' | '_tail'): number {
-		return (
-			sqlite.all<SqliteRow & { bytes: number }>(
-				`SELECT COALESCE(SUM(length(bytes)), 0) AS bytes FROM ${relation}`,
-			)[0]?.bytes ?? 0
-		);
+	/**
+	 * Each stored update's size, oldest first.
+	 *
+	 * The first is the state and the rest are the tail, which is the same rule
+	 * the client's record uses and the same reason: usually a fold put the
+	 * first one there, and on a chain that has never been folded it is simply
+	 * the oldest update, where calling it the state is still right because
+	 * folding a chain whose first record already dominates it buys nothing.
+	 */
+	function sequenceBytes(): number[] {
+		return sqlite
+			.all<SqliteRow & { bytes: number }>(
+				'SELECT COALESCE(SUM(length(bytes)), 0) AS bytes FROM updates GROUP BY seq ORDER BY seq',
+			)
+			.map((row) => row.bytes);
 	}
 }
 
