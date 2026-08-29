@@ -68,6 +68,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, type Result, trySync } from 'wellcrafted/result';
 
 import { copyBytes } from '../store/log.js';
+import { FOLD_FLOOR_BYTES, shouldFold } from './fold.js';
 import { CHUNK_BYTES, intoChunks } from './frames.js';
 
 export const DocumentAuthorityError = defineErrors({
@@ -153,15 +154,6 @@ export function applyDocumentAuthoritySchema(sqlite: SqliteDatabase): void {
 	`);
 }
 
-/**
- * Below this the whole tail is trivial and folding it buys nothing.
- *
- * The same floor and the same reason as the authority it replaces: "the tail
- * outgrew the state" is scale-free, so on a small document it is true on the
- * very next update and a live run folds on nearly every message.
- */
-const FOLD_FLOOR_BYTES = 64 * 1024;
-
 export function openDocumentAuthority({
 	sqlite,
 	/** Injected so a test can reach the fold without a large document. */
@@ -214,8 +206,7 @@ export function openDocumentAuthority({
 		},
 
 		shouldFold() {
-			const tail = sumBytes('_tail');
-			return tail >= foldFloorBytes && tail > sumBytes('_state');
+			return shouldFold(sumBytes('_state'), sumBytes('_tail'), foldFloorBytes);
 		},
 
 		fold() {
