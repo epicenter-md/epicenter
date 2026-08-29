@@ -9,6 +9,8 @@
 - **Unbuilt:** all of it. `readArtifact` and the client's discard-on-supersession exist; the generation address, the two authority verbs, the HTTP surface, and the actions that call them do not.
 - **Amended by:** [ADR-0281](0281-a-generation-is-a-whole-database-and-a-device-chooses-which-one-it-holds.md) at what a generation does to a device: `current`, `setCurrent`, `PUT /current`, `supersededBy` as a client signal, and "discards and refills" are all withdrawn. Numbering, retention, and person-only deletion are unchanged.
 - **Amended by:** [ADR-0283](0283-a-generations-collection-is-a-ledger-that-allocates-admits-and-sweeps.md) at the route table. The small object holding the list stays and becomes the ledger that allocates, admits, and sweeps.
+- **Amended by:** [ADR-0286](0286-every-generation-is-minted-from-an-artifact-and-compaction-is-an-export-then-an-import.md) by withdrawing the Restore/Rebuild split and the lease Rebuild required: a mint is always additive, so there is nothing to compare and swap.
+- **Amended by:** [ADR-0287](0287-the-authority-does-not-delete-a-generation-and-erasure-is-an-account-operation.md) at the route table, which loses `DELETE`. "Nothing is ever deleted except by a person" becomes true of the authority without exception, and erasure moves to the account.
 
 ## Context
 

@@ -5,8 +5,5 @@
 		"noUnusedLocals": true,
 		"noUnusedParameters": true
 	},
-	"include": [
-		"src/store/browser.ts",
-		"src/store/browser.test.ts"
-	]
+	"include": ["src/store/browser.ts", "src/store/browser.test.ts"]
 }
