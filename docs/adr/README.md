@@ -317,7 +317,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md) | Rebuilding replaces a workspace's current Yjs document | Superseded by 0256 |
 | [0232](0232-a-page-lifetime-is-one-auth-generation-and-a-permanently-denied-sync-stops-for-good.md) | A page lifetime is one auth generation, and a permanently denied sync stops for good | Accepted (supersedes 0094; amends 0230: the dial contract gains `denied`, and there is no parked state because resuming is a reload) |
 | [0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) | A browser application keeps a private document and one workspace replica per account, and auth chooses which opens | Accepted (amended by 0259 and 0261 at the retained replica address; the device document and sign-out rules remain) |
-| [0234](0234-the-ark-owns-living-pages-and-markdown-is-an-explicit-checkout.md) | The Ark owns living pages, and Markdown is an explicit checkout | Proposed |
+| [0234](0234-the-ark-owns-living-pages-and-markdown-is-an-explicit-checkout.md) | The Ark owns living pages, and Markdown is an explicit checkout | Proposed; amended by [0264](0264-the-ark-is-the-public-home-of-an-epicenter.md) at the product boundary |
 | [0235](0235-ark-collections-are-ordered-predicates-over-pages.md) | Ark collections are ordered predicates over pages | Proposed |
 | [0236](0236-remote-super-chat-attach-is-deferred-until-the-complete-product-exists.md) | Remote Super Chat attach is deferred until the complete product exists | Accepted (supersedes 0115; deleted implementation recorded at `19b9ee6a73`) |
 | [0237](0237-nonconformance-is-a-reads-only-error-and-a-disposed-store-throws.md) | Nonconformance is a read's only error, and a disposed store throws | Accepted (amends 0229; amended by 0238 at the storage arm and 0253 at write admission) |
@@ -373,5 +373,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0288](0288-one-license-and-a-shared-leaf-is-what-two-independent-packages-need.md) | One license, and a shared leaf is what two independent packages need | Accepted (provisional number; supersedes the MIT tier in the licensing strategy; prior published versions stay MIT permanently) |
 | [0289](0289-the-folder-is-where-a-generation-is-minted-from-not-a-surface-kept-current-for-its-own-sake.md) | The folder is where a generation is minted from, not a surface kept current for its own sake | Accepted (provisional number; amends 0271 at why the render runs continuously, and 0272 at one supporting reason; the folder's freshness stops being a correctness property) |
 | [0290](0290-a-mint-is-a-foreground-job-the-client-owns-and-it-cannot-outlive-a-page.md) | A mint is a foreground job the client owns, and it cannot outlive a page | Accepted (provisional number; amends 0286 and 0283; unbuilt; no resume, no duration ceiling, and a completeness precondition the authority answers) |
+| [0291](0291-the-ark-is-the-public-home-of-an-epicenter.md) | The Ark is the public home of an Epicenter | Proposed |
 
 When you add an ADR, add its row here.

@@ -1,5 +1,7 @@
 # 0234. The Ark owns living pages, and Markdown is an explicit checkout
 
+> **2026-08-29 — Amended by [ADR-0291](0291-the-ark-is-the-public-home-of-an-epicenter.md) at the product boundary.** The Ark is now the public home of an Epicenter rather than a second authored universe. The page and checkout mechanics below remain provisional until their ownership boundary is reconciled with that decision.
+
 - **Status:** Proposed
 - **Date:** 2026-08-10
 - **Amends:** [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md) at the Ark page checkout: it replaces continuous field rendering, field-only prose, and conflict-free push with an explicit checkout of a page row and its prose document; [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md) at the application model: `so.theark` is a Lens whose page rows own the authored page attributes and prose document.

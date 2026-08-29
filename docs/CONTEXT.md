@@ -24,6 +24,9 @@ shapes, see `docs/adr/`.
   is one document holding its own tables and settings, and applications bind
   one data definition over it; the definition id is the one lifecycle scope
   beneath it (ADR-0229, ADR-0255).
+- **The Ark**: the public home of an Epicenter. It makes selected authored work
+  publicly inhabitable as living pages whose text, audio, and video are
+  alternate expressions of the same idea (ADR-0291).
 - **Replica**: one complete local or server copy of an Epicenter. A native
   installation, browser origin, OS profile, or server actor may impose its own
   physical replica, but that adapter boundary is not a product data owner.
