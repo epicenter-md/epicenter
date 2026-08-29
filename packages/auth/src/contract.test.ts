@@ -839,12 +839,13 @@ test('openWebSocket rejects with a permanent denial after /api/session rejects t
 	auth[Symbol.dispose]();
 });
 
-test('openWebSocket rejects with a permanent denial when a stale grant cannot refresh', async () => {
-	// Pins current auth-core behavior: refreshGrant pauses network auth on ANY
-	// thrown refresh failure, including a transport outage, so a stale grant
-	// with an unreachable token endpoint lands in reauth-required and denies
-	// permanently. If the gate ever distinguishes refresh outage from refresh
-	// rejection, this case should flip to a transient denial.
+test('a stale grant that cannot REACH the token endpoint denies transiently and stays signed in', async () => {
+	// This test used to assert the opposite, and said so: refreshGrant paused
+	// network auth on ANY thrown refresh failure, so a tunnel looked exactly
+	// like a revoked token and a signed-in person was told to sign in again.
+	// Its own comment predicted this change ("if the gate ever distinguishes
+	// refresh outage from refresh rejection, this case should flip to a
+	// transient denial"), so this is that flip.
 	const setup = createStorage(
 		cell({ grant: grant({ accessTokenExpiresAt: now - 1 }) }),
 	);
@@ -865,11 +866,41 @@ test('openWebSocket rejects with a permanent denial when a stale grant cannot re
 		auth.openWebSocket('ws://localhost:8787/sync'),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
-		permanence: 'permanent',
-		code: 'reauth-required',
+		permanence: 'transient',
 	});
-	expect(auth.state.status).toBe('reauth-required');
+	// The grant on disk is still the best one there is, and the next attempt
+	// with a network can use it.
+	expect(auth.state.status).toBe('signed-in');
 	expect(openings).toEqual([]);
+	auth[Symbol.dispose]();
+});
+
+test('a token endpoint having a bad minute does not sign anyone out', async () => {
+	// The third arm, and the one with no coverage before: the server answered,
+	// so it is not `Unreachable`, and what it said was not a refusal, so it is
+	// not `Rejected`. A 502 from a proxy in front of the token endpoint used to
+	// read as "your credential is dead" and it is not.
+	const setup = createStorage(
+		cell({ grant: grant({ accessTokenExpiresAt: now - 1 }) }),
+	);
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => launched() },
+		fetch: async (input) => {
+			if (String(input).endsWith('/auth/oauth2/token')) {
+				return new Response('<html>bad gateway</html>', { status: 502 });
+			}
+			return json(apiSessionBody('user-1'));
+		},
+	});
+
+	await auth.fetch('http://localhost:8787/resource');
+	expect(auth.state.status).toBe('signed-in');
+	// And the grant is still on disk, unreplaced, for the next attempt.
+	expect(setup.current).not.toBeNull();
 	auth[Symbol.dispose]();
 });
 
@@ -947,7 +978,11 @@ test('signOut clears cell and network pause even when revoke fails', async () =>
 			if (String(input).endsWith('/api/session'))
 				return json(apiSessionBody('user-1'));
 			if (String(input).endsWith('/auth/oauth2/token')) {
-				return new Response(null, { status: 503 });
+				// A real refusal, not a 503. The refresh token is what is dead
+				// here, which is the only thing that reaches `reauth-required`
+				// now: a 503 is the server having a bad minute and the next
+				// attempt survives it.
+				return json({ error: 'invalid_grant' }, { status: 400 });
 			}
 			if (String(input).endsWith('/auth/oauth2/revoke')) {
 				const body = new URLSearchParams(String(init?.body ?? ''));

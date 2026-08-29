@@ -143,13 +143,30 @@ export function createOAuthCredentialAuthority(
 
 		const promise = (async () => {
 			try {
-				const grant = await refreshOAuthTokenWithEndpoint({
+				const { data: grant, error } = await refreshOAuthTokenWithEndpoint({
 					baseURL,
 					clientId,
 					grant: startedFrom.grant,
 					fetch: fetchImpl,
 					now,
 				});
+				if (error !== null) {
+					if (authSession.persistedAuth !== startedFrom) return false;
+					// ONLY a refusal pauses. This used to be a bare `catch` that
+					// paused on anything the endpoint threw, so a tunnel, a DNS
+					// hiccup, or a 502 dropped a signed-in person to
+					// `reauth-required` and told them to sign in again. Everything
+					// but `Rejected` is a condition the next attempt can survive,
+					// and the grant on disk is still the best one we have.
+					//
+					// The sibling read got this right first: `readApiSession`
+					// pauses on `Rejected` alone and has since it was written.
+					// This is that rule, arriving at the second of the two places
+					// that needed it.
+					if (error.name === 'Rejected') authSession.pauseNetworkAuth();
+					log.error(AuthError.RefreshGrantFailed({ cause: error }));
+					return false;
+				}
 				if (authSession.persistedAuth !== startedFrom) return false;
 				const next = {
 					grant,
@@ -160,8 +177,9 @@ export function createOAuthCredentialAuthority(
 				authSession.replaceUnverified(next);
 				return true;
 			} catch (cause) {
+				// `authSession.write` is the only thing left that can throw here,
+				// and a storage failure is not a credential failure either.
 				if (authSession.persistedAuth === startedFrom) {
-					authSession.pauseNetworkAuth();
 					log.error(AuthError.RefreshGrantFailed({ cause }));
 				}
 				return false;
