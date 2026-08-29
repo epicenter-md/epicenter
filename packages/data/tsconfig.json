@@ -1,7 +1,9 @@
 {
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
-		"types": ["bun"],
+		"types": [
+			"bun"
+		],
 		"noUnusedLocals": true,
 		"noUnusedParameters": true
 	},
@@ -9,6 +11,8 @@
 		"evidence/browser/durable-store",
 		"src/store/browser.ts",
 		"src/store/browser.test.ts",
-		"src/store/port-conformance.test.ts"
+		"src/store/port-conformance.test.ts",
+		"src/store/record.ts",
+		"src/store/record.test.ts"
 	]
 }
