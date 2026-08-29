@@ -39,7 +39,7 @@
  * applies the whole range in key order and never has to know which is which.
  */
 
-import { type DBSchema, openDB } from 'idb';
+import { type DBSchema, type IDBPDatabase, openDB } from 'idb';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
 
@@ -55,6 +55,18 @@ export const DurableRecordError = defineErrors({
 	 */
 	WriteFailed: ({ name, cause }: { name: string; cause: unknown }) => ({
 		message: `The durable record at ${name} rejected a write`,
+		cause,
+	}),
+	/**
+	 * Storage could not be read, which is a boot failure rather than a debt.
+	 *
+	 * Separate from `WriteFailed` because the two mean opposite things to a
+	 * person: one says the edits you already made are not safe, the other says
+	 * this store cannot be opened at all. The durability bit is about the
+	 * first, so a read failure does not touch it.
+	 */
+	ReadFailed: ({ name, cause }: { name: string; cause: unknown }) => ({
+		message: `The durable record at ${name} could not be read`,
 		cause,
 	}),
 });
@@ -92,7 +104,14 @@ export type DurableRecord = {
 	 * are the same replica.
 	 */
 	read(doc: string): Promise<Uint8Array[]>;
-	/** One update, durably, now. Resolves when it is on disk. */
+	/**
+	 * One update, durably, now. Resolves when the transaction has committed.
+	 *
+	 * Committed is not `fsync`. IndexedDB's default durability is relaxed, so a
+	 * power cut can still take a committed append. What this covers completely
+	 * is the threat that motivated it: a tab that goes away between an edit and
+	 * the next timer.
+	 */
 	append(doc: string, bytes: Uint8Array): Promise<void>;
 	/** Whether this document's tail has outgrown its folded state. */
 	shouldFold(doc: string): boolean;
@@ -101,7 +120,8 @@ export type DurableRecord = {
 	 *
 	 * `encode` is called synchronously and must be synchronous. Everything it
 	 * does not cover, because it arrived while this was running, is kept.
-	 * Calling this when `shouldFold` is false is wasteful and never wrong.
+	 * Calling this when `shouldFold` is false is wasteful and, once the
+	 * document has been read, never wrong.
 	 */
 	fold(doc: string, encode: () => Uint8Array): Promise<void>;
 	/** Forget a document. Idempotent. */
@@ -133,7 +153,12 @@ export async function openDurableRecord({
 	/** Injected so a test can reach a fold without a large document. */
 	floorBytes?: number;
 }): Promise<DurableRecord> {
-	const database = await openDB<RecordSchema>(name, 1, {
+	// Declared before `openDB` rather than closed over from its own
+	// initialiser. `blocking` cannot fire before the connection exists, but a
+	// `let` says so, where the optional chain it replaces looked like a guard
+	// and would not have caught the hazard it appeared to guard.
+	let database: IDBPDatabase<RecordSchema> | undefined;
+	database = await openDB<RecordSchema>(name, 1, {
 		upgrade(db, oldVersion) {
 			// Unreachable while the version is pinned at 1, which is the point:
 			// the refusal is the invariant rather than a handler (ADR-0280). A
@@ -151,9 +176,17 @@ export async function openDurableRecord({
 			database?.close();
 		},
 		terminated() {
-			// Safari drops IndexedDB connections. Saying so beats appending into a
-			// closed database forever and calling it healthy.
-			fail(new Error(`${name} was terminated by the browser`));
+			// Safari drops IndexedDB connections. Saying so beats appending into
+			// a closed database forever and calling it healthy. Reported rather
+			// than thrown: this is an event callback, and `fail`'s throw would
+			// surface as an unhandled error having already done the useful half.
+			setHealthy(false);
+			logger?.error(
+				DurableRecordError.WriteFailed({
+					name,
+					cause: new Error('the browser terminated this connection'),
+				}),
+			);
 		},
 	});
 
@@ -174,6 +207,12 @@ export async function openDurableRecord({
 		return fresh;
 	}
 
+	/** The connection, which exists by the time any method below can run. */
+	function open(): IDBPDatabase<RecordSchema> {
+		if (database === undefined) throw new Error('the record is not open');
+		return database;
+	}
+
 	function setHealthy(next: boolean): void {
 		if (healthy === next) return;
 		healthy = next;
@@ -187,9 +226,17 @@ export async function openDurableRecord({
 		throw error;
 	}
 
-	/** Every key in one document's range, which is what a fold deletes. */
+	/**
+	 * One document's keys, up to and including `upTo`.
+	 *
+	 * The lower bound is the one-element array rather than a sentinel number:
+	 * IndexedDB compares array keys element by element and then by length, so
+	 * `[doc]` sorts below every `[doc, seq]` and below nothing else. Prefix
+	 * bleed is impossible for the same reason, because `app` and `apple` are
+	 * different first elements rather than a shared string prefix.
+	 */
 	const range = (doc: string, upTo: number): IDBKeyRange =>
-		IDBKeyRange.bound([doc, Number.NEGATIVE_INFINITY], [doc, upTo]);
+		IDBKeyRange.bound([doc], [doc, upTo]);
 
 	const record: DurableRecord = Object.freeze({
 		durability: {
@@ -203,23 +250,35 @@ export async function openDurableRecord({
 		},
 
 		async read(doc) {
-			const rows = await database
+			const rows = await open()
 				.getAll('updates', range(doc, Number.POSITIVE_INFINITY))
-				.catch(fail);
+				.catch((cause: unknown) => {
+					throw DurableRecordError.ReadFailed({ name, cause });
+				});
 			const counter = of(doc);
+			// Seeded once, and never again. A second read is a snapshot of disk
+			// that excludes any append whose transaction was created after it,
+			// so assigning from it would roll the sequence back and the next
+			// append would overwrite a live record. Hydration happens once per
+			// open, and this makes a second call harmless rather than
+			// destructive.
+			if (counter.seeded) return rows.map((row) => row.bytes);
 			counter.seeded = true;
 			if (rows.length === 0) return [];
 			// Seeding the counters from what was read is why `read` is not
 			// optional before a write: a fresh sequence would collide with a
 			// surviving key, and a fold that ran out of a half-swept range would
 			// name different bytes with the same name.
-			counter.seq = rows[rows.length - 1]?.seq ?? 0;
 			// The first record is the state. Usually a fold put it there; on a
 			// chain that has never been folded it is simply the oldest update,
 			// and calling it the state is still right, because folding a chain
 			// whose first record already dominates it buys nothing.
-			const [first, ...rest] = rows;
-			counter.stateBytes = first?.bytes.byteLength ?? 0;
+			const [first, ...rest] = rows as [
+				(typeof rows)[number],
+				...(typeof rows)[number][],
+			];
+			counter.seq = rest.at(-1)?.seq ?? first.seq;
+			counter.stateBytes = first.bytes.byteLength;
 			counter.tailBytes = rest.reduce(
 				(total, row) => total + row.bytes.byteLength,
 				0,
@@ -239,9 +298,7 @@ export async function openDurableRecord({
 			}
 			const empty = counter.seq === 0;
 			counter.seq += 1;
-			await database
-				.put('updates', { doc, seq: counter.seq, bytes })
-				.catch(fail);
+			await open().put('updates', { doc, seq: counter.seq, bytes }).catch(fail);
 			// The first record of a chain is its state, whether or not a fold put
 			// it there. Keeping that true here is what makes `shouldFold` give the
 			// same answer before and after a reopen, since `read` cannot tell a
@@ -261,11 +318,15 @@ export async function openDurableRecord({
 			// Captured BEFORE encoding, so anything that arrives while this runs
 			// sits above the bound and survives. It may also already be inside
 			// `state`, which costs one redundant apply and nothing else.
+			if (!counter.seeded) {
+				throw new Error(`read('${doc}') must happen before a write to it`);
+			}
 			const upTo = counter.seq;
+			const foldedTail = counter.tailBytes;
 			const state = encode();
 			counter.seq += 1;
 			const seq = counter.seq;
-			const transaction = database.transaction('updates', 'readwrite');
+			const transaction = open().transaction('updates', 'readwrite');
 			const store = transaction.objectStore('updates');
 			// Only IDB calls from here to `done`. Awaiting anything else would
 			// close the transaction out from under the delete.
@@ -275,24 +336,35 @@ export async function openDurableRecord({
 				transaction.done,
 			]).catch(fail);
 			counter.stateBytes = state.byteLength;
-			counter.tailBytes = 0;
+			// Subtracted rather than zeroed. An append that landed while the
+			// transaction was open sits above the bound and is still on disk, so
+			// its bytes are still tail, and zeroing would drop them from the
+			// totals that decide the next fold.
+			counter.tailBytes -= foldedTail;
 			setHealthy(true);
 		},
 
 		async retire(doc) {
-			await database
+			await open()
 				.delete('updates', range(doc, Number.POSITIVE_INFINITY))
 				.catch(fail);
-			// The counter is dropped rather than zeroed. A later write to this
-			// address opens a fresh chain, and `read` seeds it from nothing.
-			counters.delete(doc);
+			// Zeroed and left SEEDED rather than dropped. This process just
+			// emptied the chain, so it knows what is there; dropping the counter
+			// would make a recreate at the same address, which ADR-0279's copy
+			// verb reaches, demand a read of a chain there is nothing to read.
+			// The sequence keeps climbing, because never-reused outlives the
+			// document it numbered.
+			const counter = of(doc);
+			counter.stateBytes = 0;
+			counter.tailBytes = 0;
+			counter.seeded = true;
 		},
 
 		close() {
 			// Listeners are kept. A write attempted against a closed record still
 			// has to be able to say it failed, and the caller drops this object
 			// anyway; clearing here would silence the one report that matters.
-			database.close();
+			open().close();
 		},
 	});
 	return record;

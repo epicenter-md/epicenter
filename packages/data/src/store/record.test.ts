@@ -114,12 +114,74 @@ describe('folding', () => {
 		record.close();
 	});
 
+	test('touches only its own document', async () => {
+		const record = await openDurableRecord({ name: freshName() });
+		await record.read('app');
+		await record.read('notes/abc');
+		await record.append('app', bytes(1));
+		await record.append('notes/abc', bytes(2));
+		await record.append('notes/abc', bytes(3));
+		// The range delete is the one line in this file that can reach a
+		// neighbour, and nothing else in the suite exercises it.
+		await record.fold('app', () => bytes(9));
+		expect(await record.read('notes/abc')).toEqual([bytes(2), bytes(3)]);
+		record.close();
+	});
+
 	test('is safe when nothing has been folded yet, and idempotent after', async () => {
 		const record = await openDurableRecord({ name: freshName() });
 		await record.read('app');
 		await record.fold('app', () => bytes(9));
 		await record.fold('app', () => bytes(9));
 		expect(await record.read('app')).toEqual([bytes(9)]);
+		record.close();
+	});
+});
+
+describe('the seeded rule, which is the one that loses data quietly', () => {
+	test('a fold before a read is refused, not merely wasteful', async () => {
+		const name = freshName();
+		const first = await openDurableRecord({ name });
+		await first.read('app');
+		await first.append('app', bytes(1));
+		await first.append('app', bytes(2));
+		first.close();
+
+		// Unseeded, this fold would start from sequence zero: it would write its
+		// state over the first record of a chain it never read, and sweep
+		// nothing. The chain came back as [9, 2] before the guard existed.
+		const second = await openDurableRecord({ name });
+		await expect(second.fold('app', () => bytes(9))).rejects.toBeDefined();
+		await second.read('app');
+		expect(await second.read('app')).toEqual([bytes(1), bytes(2)]);
+		second.close();
+	});
+
+	test('a second read does not roll the sequence back', async () => {
+		const record = await openDurableRecord({ name: freshName() });
+		await record.read('app');
+		await record.append('app', bytes(1));
+		// A read started here sees only [1], and reseeding from it would set the
+		// sequence back below the append that lands next; the append after that
+		// would then overwrite it. The chain came back as [1, 3] before.
+		const reading = record.read('app');
+		await record.append('app', bytes(2));
+		await reading;
+		await record.append('app', bytes(3));
+		expect(await record.read('app')).toEqual([bytes(1), bytes(2), bytes(3)]);
+		record.close();
+	});
+
+	test('a retired document can be written again without rehydrating', async () => {
+		const record = await openDurableRecord({ name: freshName() });
+		await record.read('notes/abc');
+		await record.append('notes/abc', bytes(1));
+		await record.retire('notes/abc');
+		// Reachable through ADR-0279's copy verb: a row deleted here and copied
+		// back arrives at the same address. This process emptied the chain, so
+		// it knows what is there and does not have to be told again.
+		await record.append('notes/abc', bytes(2));
+		expect(await record.read('notes/abc')).toEqual([bytes(2)]);
 		record.close();
 	});
 });
