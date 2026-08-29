@@ -245,9 +245,17 @@ export async function openDocumentHandle({
 			// Frames below apply with NO origin, so `transaction.local` is
 			// false. That is load-bearing outside this file: a listener on
 			// `document` tells a local commit from a remote one by exactly that
-			// flag, and a derive must run for the first and not the second. A
-			// later refactor that passes an origin here breaks the
-			// discrimination silently.
+			// flag, and a derive must run for the first and not the second.
+			//
+			// It is also not enough, and the spec has the open item. A
+			// stranger's direct `Y.applyUpdateV2` on this document looks
+			// identical from here: no origin, `local === false`. The store used
+			// to refuse that at a door it can no longer see, and foreign bytes
+			// with missing dependencies are buffered by Yjs, never appended,
+			// never in a state vector, and held by nobody. The proposal is a
+			// private origin sentinel here with the derive discriminating on it
+			// instead, which keeps both jobs. Do not pass an origin without
+			// moving that discriminator too.
 			switch (frame.kind) {
 				case 'step1':
 					// The peer said what it has, so answer with what it lacks and
