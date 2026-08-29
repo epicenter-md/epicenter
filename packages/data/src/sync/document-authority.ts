@@ -74,8 +74,8 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, type Result, trySync } from 'wellcrafted/result';
 
 import { copyBytes } from '../store/log.js';
+import { CHUNK_BYTES, intoChunks, joinChunks } from './chunks.js';
 import { FOLD_FLOOR_BYTES, shouldFold } from './fold.js';
-import { CHUNK_BYTES, intoChunks } from './frames.js';
 
 export const DocumentAuthorityError = defineErrors({
 	/**
@@ -293,12 +293,12 @@ export function openDocumentAuthority({
 		let holding: { seq: number; chunks: Uint8Array[] } | undefined;
 		for (const row of rows) {
 			if (holding === undefined || holding.seq !== row.seq) {
-				if (holding !== undefined) updates.push(join(holding.chunks));
+				if (holding !== undefined) updates.push(joinChunks(holding.chunks));
 				holding = { seq: row.seq, chunks: [] };
 			}
 			holding.chunks.push(copyBytes(row.bytes));
 		}
-		if (holding !== undefined) updates.push(join(holding.chunks));
+		if (holding !== undefined) updates.push(joinChunks(holding.chunks));
 		return updates;
 	}
 
@@ -339,18 +339,4 @@ function hasPendingStructs(document: Y.Doc): boolean {
 		(store?.pendingStructs ?? null) !== null ||
 		(store?.pendingDs ?? null) !== null
 	);
-}
-
-function join(chunks: readonly Uint8Array[]): Uint8Array {
-	if (chunks.length === 0) return new Uint8Array();
-	if (chunks.length === 1) return chunks[0] as Uint8Array;
-	let total = 0;
-	for (const chunk of chunks) total += chunk.length;
-	const bytes = new Uint8Array(total);
-	let at = 0;
-	for (const chunk of chunks) {
-		bytes.set(chunk, at);
-		at += chunk.length;
-	}
-	return bytes;
 }
