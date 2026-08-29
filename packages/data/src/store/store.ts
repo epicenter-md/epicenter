@@ -1,7 +1,6 @@
 import {
 	type ConformanceIssue,
 	type CreateInputOf,
-	createInvalidationDispatcher,
 	type DataDefinition,
 	type DocumentReader,
 	documentAddress,
@@ -12,9 +11,7 @@ import {
 	type ParsedDataDefinition,
 	type ParsedTable,
 	parseData,
-	type RowAddress,
 	type RowOf,
-	type TableInvalidationListener,
 } from '@epicenter/data/definition';
 import type { SqliteDatabase } from '@epicenter/sqlite';
 import * as Y from '@y/y';
@@ -257,10 +254,7 @@ export type UnstampableError = Extract<StoreError, { name: 'Unstampable' }>;
 /** What a row update can refuse with: only an address holding no row. */
 export type UpdateRowError = RowAbsentError;
 
-export type {
-	TableInvalidation,
-	TableInvalidationListener,
-} from '@epicenter/data/definition';
+export type {} from '@epicenter/data/definition';
 
 export type Row = { id: string } & JsonObject;
 
@@ -372,30 +366,22 @@ export type TableHandle = {
 		rowId: string,
 	): Promise<Result<RowDocumentHandle | undefined, DocumentError>>;
 	/**
-	 * Hear when rows in this table change, by id.
+	 * Hear when anything in this table changes, whoever changed it.
 	 *
-	 * Registration is synchronous, does no I/O, and never fires initially, so a
-	 * caller that subscribes and then reads has already seen everything
-	 * (ADR-0187). One call per commit per table, carrying every id that commit
-	 * touched, and it fires for local writes and for bytes that arrived from a
-	 * peer alike. Writes inside a row's rich document are not table commits
-	 * (ADR-0248): they are observed on the open document's own Yjs types, and
-	 * what a list renders from one is a preview, an ordinary scalar field the
-	 * application writes itself.
+	 * A ping, not a payload. It carried the ids a commit touched until nothing
+	 * turned out to read them: the one live subscriber discards the argument,
+	 * the mirror refuses the signal and renders everything (ADR-0271), and the
+	 * consumer the ids were kept for reads `updatedAt` off the index through
+	 * the change feed instead (ADR-0278). A caller re-reads with `list()`,
+	 * which walks a document already in memory.
 	 *
-	 * It fires after acceptance completes, and after every `onCommitted`
-	 * listener has run. That phase order is a contract a follower can build
-	 * on: a derived cache that marks itself dirty in `onCommitted` is already
-	 * dirty by the time any table subscriber reads through it. The ids come
-	 * from the type's `'delta'` event, which fires synchronously inside
-	 * `applyUpdateV2` mid-acceptance, so they are held until acceptance
-	 * completes.
-	 *
-	 * Nothing emits `{scope:'table'}`. The arm exists because ADR-0187's
-	 * consumers already handle it and a future out-of-process proxy will need
-	 * it, but an in-process store has no carrier and therefore no carrier gap.
+	 * Fires after the commit is accepted, on the same flush as KV's and after
+	 * `onCommitted`, so a composed follower is dirty before any subscriber
+	 * reads. Naming the rows again is one listener away if something ever
+	 * wants them: the delta that produces them is still there, and
+	 * `evidence/delta-names-the-row.test.ts` still proves it.
 	 */
-	subscribe(listener: TableInvalidationListener): () => void;
+	subscribe(listener: () => void): () => void;
 };
 
 /**
@@ -426,7 +412,7 @@ export type TypedTableHandle<TFields> =
 				openDocument(
 					rowId: string,
 				): Promise<Result<RowDocumentHandle | undefined, DocumentError>>;
-				subscribe(listener: TableInvalidationListener): () => void;
+				subscribe(listener: () => void): () => void;
 			}
 		: never;
 
@@ -571,11 +557,9 @@ export type KvHandle<TValues = JsonObject> = {
 	/**
 	 * Hear when any declared key changes, whoever changed it.
 	 *
-	 * A void listener rather than a `TableInvalidation`, and that is the whole
-	 * difference from a table's. KV is ONE value at a name-addressed root: there
-	 * are no ids to carry, so "something here moved, re-read" is the complete
-	 * message. A caller re-reads with `get()`, which is a property access on a
-	 * document already in memory.
+	 * The same shape a table's has: a ping, and "something here moved, re-read"
+	 * is the complete message. A caller re-reads with `get()`, which is a
+	 * property access on a document already in memory.
 	 *
 	 * Fires after the commit is durable, on the same flush as a table's, so a
 	 * listener observes one settled commit, and a composed follower that marks
@@ -1195,23 +1179,26 @@ function createStoreEngine(
 	 * specific to a carrier, which is why they were written once there rather
 	 * than here (ADR-0187).
 	 */
-	const invalidations = createInvalidationDispatcher({ log });
 	/**
-	 * Addresses the transaction in progress touched, held until it is durable.
+	 * Tables the transaction in progress changed, held until the commit lands.
 	 *
 	 * The one reason this buffer exists. A table root's `'delta'` fires
 	 * SYNCHRONOUSLY inside `applyUpdateV2`, mid-acceptance (measured against
 	 * `@y/y@14.0.0-rc.24`). Delivering there would hand a subscriber a commit
 	 * still being accepted, and would run its listener ahead of the
 	 * `onCommitted` phase a composed follower marks itself dirty in, so the
-	 * ids wait for
-	 * `persist` and go out afterwards.
+	 * notification waits and goes out afterwards.
+	 *
+	 * It holds table names rather than row addresses because nothing has ever
+	 * read a row id off this path: `subscribe` is a ping.
 	 */
-	let touched: RowAddress[] = [];
+	let touched = new Set<string>();
 	/** Whether the commit in progress changed anything at all. */
 	let committedSomething = false;
 	/** Whether the commit in progress touched the KV root. */
 	let kvTouched = false;
+	/** Who is watching each table, by name. A ping, not a payload. */
+	const tableListeners = new Map<string, Set<() => void>>();
 	const kvFlushers = new Set<() => void>();
 	const localWorkListeners = new Set<() => void>();
 	const committedListeners = new Set<() => void>();
@@ -1244,10 +1231,20 @@ function createStoreEngine(
 			kvTouched = false;
 			for (const flush of [...kvFlushers]) flush();
 		}
-		if (touched.length === 0) return;
+		if (touched.size === 0) return;
 		const batch = touched;
-		touched = [];
-		invalidations.deliver(batch);
+		touched = new Set();
+		for (const tableName of batch) {
+			for (const listener of [...(tableListeners.get(tableName) ?? [])]) {
+				// Contained for the same reason every other listener here is: one
+				// broken subscriber must not cost the others their notification.
+				const { error } = trySync({
+					try: listener,
+					catch: (cause) => StoreError.SubscriberThrew({ cause }),
+				});
+				if (error !== null) log.error(error);
+			}
+		}
 	}
 
 	// The transport's nudge fires when a flush durably grows the outbox, not
@@ -1624,25 +1621,26 @@ function createStoreEngine(
 		}
 
 		/**
-		 * The rows one committed change touched, named by the type itself.
+		 * That this table changed, noted for the flush to deliver.
 		 *
-		 * `observeDeep` cannot do this and the comment in `applyRemote` says so
-		 * correctly: it reports a nested row's field edit as an event on the TABLE
-		 * ROOT with `keysChanged` empty. The conclusion once drawn from that, that
-		 * nothing can name the row, does not follow. The same type also emits
-		 * `'delta'`, whose `attrs` is keyed by the attribute that changed, and a
-		 * row IS an attribute on the table root, so every arm of the change names
-		 * it: `insert` for a created row, `modify` for a field edit, `delete`
-		 * for a removed one. Verified against `@y/y@14.0.0-rc.24`, with a
-		 * control that a write to a different table fires nothing here
+		 * `'delta'` rather than `observeDeep` because `observeDeep` reports a
+		 * nested row's field edit as an event on the TABLE ROOT with
+		 * `keysChanged` empty, so it cannot even tell that a row moved. Delta
+		 * can, and once could name which row: its `attrs` is keyed by the
+		 * attribute that changed, and a row IS an attribute on the table root
 		 * (`evidence/delta-names-the-row.test.ts`).
+		 *
+		 * Nothing ever read that name. The one live subscriber, `from-data`'s
+		 * `createSubscriber`, discards the argument, the mirror refuses the
+		 * signal and renders everything, and the future consumer the payload
+		 * was kept for reads `updatedAt` off the index instead (ADR-0278). So
+		 * this notes the table and drops the ids, and the delta test keeps
+		 * standing as evidence that they were there to be had.
 		 */
 		function collectTouched(delta: unknown): void {
 			const { attrs } = delta as { attrs?: Record<string, unknown> };
 			if (attrs === undefined) return;
-			for (const rowId of Object.keys(attrs)) {
-				touched.push(addressOf(rowId));
-			}
+			touched.add(tableName);
 		}
 
 		/**
@@ -1778,12 +1776,14 @@ function createStoreEngine(
 						: undefined,
 				);
 			},
-			subscribe(listener: TableInvalidationListener): () => void {
-				const unsubscribe = invalidations.subscribeTable(
-					definition.id,
-					tableName,
-					listener,
-				);
+			subscribe(listener: () => void): () => void {
+				let listeners = tableListeners.get(tableName);
+				if (listeners === undefined) {
+					listeners = new Set();
+					tableListeners.set(tableName, listeners);
+				}
+				listeners.add(listener);
+				const unsubscribe = () => listeners.delete(listener);
 				subscriptions += 1;
 				if (subscriptions === 1) root.on('delta', collectTouched);
 				let stopped = false;

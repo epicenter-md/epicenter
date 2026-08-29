@@ -46,9 +46,9 @@ export type {
 } from './store/documents.js';
 export {
 	decodeEnvelope,
-	encodeEnvelope,
 	type EnvelopeError,
 	type EnvelopeSection,
+	encodeEnvelope,
 } from './store/envelope.js';
 export { APP_DOCUMENT, SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
 export type {
@@ -62,24 +62,22 @@ export type {
 export {
 	type AccountStore,
 	type ApplyFailedError,
+	type DataOf,
 	type DataStoreBase,
 	type DataView,
-	type DataOf,
-	type LocalStore,
 	type KvHandle,
+	type LocalStore,
 	type NonconformingRow,
 	type NonconformingValue,
 	type Row,
 	type RowAbsentError,
+	type StoredData,
 	StoreError,
 	type StorePressure,
-	type StoredData,
 	StoreUnusableError,
 	type SyncCapability,
 	type SyncFacts,
 	type TableHandle,
-	type TableInvalidation,
-	type TableInvalidationListener,
 	type TypedTableHandle,
 	type UnstampableError,
 	type UpdateRowError,

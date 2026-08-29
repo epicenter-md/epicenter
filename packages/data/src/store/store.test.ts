@@ -1,14 +1,11 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
-import type { TableInvalidation } from '@epicenter/data/definition';
 import { defineData, field, InstantString } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-
-import { createSqliteDurablePort } from './log.js';
-import { expectOk } from 'wellcrafted/testing';
 import * as Y from '@y/y';
+import { expectOk } from 'wellcrafted/testing';
 import { encodeEnvelope } from './envelope.js';
-import { APP_DOCUMENT } from './log.js';
+import { APP_DOCUMENT, createSqliteDurablePort } from './log.js';
 import { createMemoryRecord, openMemory } from './memory.js';
 import {
 	type AccountStore,
@@ -108,9 +105,9 @@ describe('a read is a property access on a plain object', () => {
 	test('data groups direct operations with transact', () => {
 		expect(Object.hasOwn(db, 'documents')).toBe(false);
 		expect(Object.hasOwn(db.store, 'documents')).toBe(false);
-		const touched: string[][] = [];
-		db.tables.notes.subscribe((invalidation) => {
-			if (invalidation.scope === 'rows') touched.push([...invalidation.rowIds]);
+		let notifications = 0;
+		db.tables.notes.subscribe(() => {
+			notifications += 1;
 		});
 
 		db.transact(() => {
@@ -118,8 +115,10 @@ describe('a read is a property access on a plain object', () => {
 			note({ title: 'two' });
 		});
 
-		expect(touched).toHaveLength(1);
-		expect(touched[0]).toHaveLength(2);
+		// One notification for two rows, which is the point of grouping: a
+		// transaction is one commit, so it is one thing to re-read after.
+		expect(notifications).toBe(1);
+		expect(db.tables.notes.list().rows).toHaveLength(2);
 	});
 });
 
@@ -520,13 +519,19 @@ describe('pressure is the number that decides whether any of this matters', () =
 	});
 });
 
-describe('a subscription names the rows a commit touched', () => {
+describe('a subscription says a table changed', () => {
 	/** Every invalidation one table handed a listener, in order. */
-	function record(table: {
-		subscribe(listener: (i: TableInvalidation) => void): () => void;
-	}) {
-		const seen: TableInvalidation[] = [];
-		const stop = table.subscribe((invalidation) => seen.push(invalidation));
+	/**
+	 * Counts notifications rather than collecting payloads.
+	 *
+	 * `subscribe` is a ping now, so what these tests assert is how MANY times
+	 * a table said something and for which table, which is everything a
+	 * subscriber can act on. Which rows moved is proved separately, and still
+	 * is, by `evidence/delta-names-the-row.test.ts`.
+	 */
+	function record(table: { subscribe(listener: () => void): () => void }) {
+		const seen: 'changed'[] = [];
+		const stop = table.subscribe(() => seen.push('changed'));
 		return { seen, stop };
 	}
 
@@ -544,13 +549,13 @@ describe('a subscription names the rows a commit touched', () => {
 		const { seen } = record(db.tables.notes);
 
 		const made = note();
-		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.id] }]);
+		expect(seen).toEqual(['changed']);
 
 		db.tables.notes.update(made.id, { title: 'Shopping' });
-		expect(seen.at(-1)).toEqual({ scope: 'rows', rowIds: [made.id] });
+		expect(seen.at(-1)).toBe('changed');
 
 		db.tables.notes.delete(made.id);
-		expect(seen.at(-1)).toEqual({ scope: 'rows', rowIds: [made.id] });
+		expect(seen.at(-1)).toBe('changed');
 		expect(seen).toHaveLength(3);
 	});
 
@@ -576,9 +581,9 @@ describe('a subscription names the rows a commit touched', () => {
 		const notes = record(other.tables.notes);
 		const folders = record(other.tables.folders);
 
-		const made = other.tables.folders.create({ name: 'Inbox' });
+		other.tables.folders.create({ name: 'Inbox' });
 
-		expect(folders.seen).toEqual([{ scope: 'rows', rowIds: [made.id] }]);
+		expect(folders.seen).toEqual(['changed']);
 		expect(notes.seen).toEqual([]);
 	});
 
@@ -600,10 +605,16 @@ describe('a subscription names the rows a commit touched', () => {
 			asEnvelope(author.store.encodeStateSince()),
 		);
 
-		expect(seen).toHaveLength(1);
-		const only = seen[0];
-		if (only?.scope !== 'rows') throw new Error('expected row scope');
-		expect([...only.rowIds].sort()).toEqual([...ids].sort());
+		// One notification for the whole remote batch, however many rows it
+		// carried: a subscriber re-reads, so telling it twice would only cost it
+		// a second walk of the same document.
+		expect(seen).toEqual(['changed']);
+		expect(
+			db.tables.notes
+				.list()
+				.rows.map((row) => row.id)
+				.sort(),
+		).toEqual([...ids].sort());
 	});
 
 	test("prose written inside a row's document is not a table commit", async () => {
@@ -622,7 +633,7 @@ describe('a subscription names the rows a commit touched', () => {
 		expect(seen).toEqual([]);
 
 		db.tables.notes.update(made.id, { title: 'Groceries, previewed' });
-		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.id] }]);
+		expect(seen).toEqual(['changed']);
 		opened.data?.[Symbol.dispose]();
 	});
 
@@ -660,29 +671,32 @@ describe('a subscription names the rows a commit touched', () => {
 		});
 		const { seen } = record(db.tables.notes);
 
-		const made = note();
+		note();
 
-		expect(seen).toEqual([{ scope: 'rows', rowIds: [made.id] }]);
+		expect(seen).toEqual(['changed']);
 	});
 
-	test('a subscriber may write, and its own write is a separate invalidation', () => {
+	test('a subscriber may write, and its own write is a separate notification', () => {
 		const { seen } = record(db.tables.notes);
 		let wrote = false;
-		db.tables.notes.subscribe((invalidation) => {
-			if (wrote || invalidation.scope !== 'rows') return;
+		let written: string | undefined;
+		db.tables.notes.subscribe(() => {
+			if (wrote) return;
 			wrote = true;
-			db.tables.notes.update(invalidation.rowIds[0] as string, {
-				title: 'renamed',
-			});
+			// A subscriber re-reads to find out what moved, which is the whole
+			// contract now, and writing from inside its own notification is the
+			// case the swap-before-deliver buffer exists for.
+			written = db.tables.notes.list().rows.at(0)?.id;
+			if (written !== undefined) {
+				db.tables.notes.update(written, { title: 'renamed' });
+			}
 		});
 
 		const made = note();
 
+		expect(written).toBe(made.id);
 		expect(db.tables.notes.get(made.id).data?.title).toBe('renamed');
-		expect(seen).toEqual([
-			{ scope: 'rows', rowIds: [made.id] },
-			{ scope: 'rows', rowIds: [made.id] },
-		]);
+		expect(seen).toEqual(['changed', 'changed']);
 	});
 });
 
