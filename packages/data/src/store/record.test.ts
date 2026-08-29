@@ -138,6 +138,58 @@ describe('folding', () => {
 	});
 });
 
+describe('the two verbs nothing needed until wave 1b did', () => {
+	test('appendAndRetire lands both halves or neither', async () => {
+		const record = await openDurableRecord({ name: freshName() });
+		await record.read('app');
+		await record.read('notes/abc');
+		await record.append('app', bytes(1));
+		await record.append('notes/abc', bytes(2));
+
+		// Deleting a row is two facts: the scalar leaves the application
+		// document and the row's chain stops existing. Two transactions leave a
+		// window where a crash strands a document no row names.
+		await record.appendAndRetire('app', bytes(3), 'notes/abc');
+		expect(await record.read('app')).toEqual([bytes(1), bytes(3)]);
+		expect(await record.read('notes/abc')).toEqual([]);
+		record.close();
+	});
+
+	test('a retired row can be recreated at the same address afterwards', async () => {
+		const record = await openDurableRecord({ name: freshName() });
+		await record.read('app');
+		await record.read('notes/abc');
+		await record.append('notes/abc', bytes(1));
+		await record.appendAndRetire('app', bytes(2), 'notes/abc');
+		// Seeded by the retire, so ADR-0279's copy verb does not have to
+		// rehydrate a chain there is nothing to read.
+		await record.append('notes/abc', bytes(3));
+		expect(await record.read('notes/abc')).toEqual([bytes(3)]);
+		record.close();
+	});
+
+	test('documents lists what has bytes, and forgets what was retired', async () => {
+		const record = await openDurableRecord({ name: freshName() });
+		await record.read('app');
+		await record.read('notes/abc');
+		await record.read('notes/xyz');
+		expect(await record.documents()).toEqual([]);
+
+		await record.append('app', bytes(1));
+		await record.append('notes/abc', bytes(2));
+		await record.append('notes/xyz', bytes(3));
+		expect((await record.documents()).sort()).toEqual([
+			'app',
+			'notes/abc',
+			'notes/xyz',
+		]);
+
+		await record.retire('notes/abc');
+		expect((await record.documents()).sort()).toEqual(['app', 'notes/xyz']);
+		record.close();
+	});
+});
+
 describe('the seeded rule, which is the one that loses data quietly', () => {
 	test('a fold before a read is refused, not merely wasteful', async () => {
 		const name = freshName();

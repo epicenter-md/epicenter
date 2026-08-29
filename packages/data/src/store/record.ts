@@ -168,8 +168,30 @@ export type DurableRecord = {
 	 * throw rather than corrupt.
 	 */
 	claim(doc: string): () => void;
+	/**
+	 * Append to one document and forget another, atomically.
+	 *
+	 * The one composed verb, and it exists because deleting a row is two
+	 * facts: the scalar row leaves the application document, and the row's own
+	 * chain stops existing. Two transactions leave a window where a crash
+	 * strands a document no row names, which is debris rather than divergence
+	 * but is avoidable for free now that both live in one object store.
+	 */
+	appendAndRetire(
+		doc: string,
+		bytes: Uint8Array,
+		retire: string,
+	): Promise<void>;
 	/** Forget a document. Idempotent. */
 	retire(doc: string): Promise<void>;
+	/**
+	 * Every document with anything stored, in no particular order.
+	 *
+	 * Nothing needed this until export did, and every mint reads one now
+	 * (ADR-0286). It cannot be faked from the application document, which
+	 * names the rows that exist and not the chains that do.
+	 */
+	documents(): Promise<string[]>;
 	readonly durability: Durability;
 	close(): void;
 };
@@ -397,6 +419,41 @@ export async function openDurableRecord({
 			return () => {
 				claimed.delete(doc);
 			};
+		},
+
+		async appendAndRetire(doc, bytes, retired) {
+			const counter = of(doc);
+			if (!counter.seeded) {
+				throw new Error(`read('${doc}') must happen before a write to it`);
+			}
+			const empty = counter.seq === 0;
+			counter.seq += 1;
+			const seq = counter.seq;
+			const transaction = open().transaction('updates', 'readwrite');
+			const store = transaction.objectStore('updates');
+			// Only IDB calls between here and `done`, the same rule the fold
+			// keeps: awaiting anything else closes the transaction mid-flight.
+			await Promise.all([
+				store.put({ doc, seq, bytes }),
+				store.delete(range(retired, Number.POSITIVE_INFINITY)),
+				transaction.done,
+			]).catch(fail);
+			if (empty) counter.stateBytes = bytes.byteLength;
+			else counter.tailBytes += bytes.byteLength;
+			const gone = of(retired);
+			gone.stateBytes = 0;
+			gone.tailBytes = 0;
+			gone.seeded = true;
+			setHealthy(true);
+		},
+
+		async documents() {
+			const keys = await open()
+				.getAllKeys('updates')
+				.catch((cause: unknown) => {
+					throw DurableRecordError.ReadFailed({ name, cause });
+				});
+			return [...new Set(keys.map(([doc]) => doc))];
 		},
 
 		async retire(doc) {
