@@ -8,8 +8,10 @@ import {
 	type Instance,
 	type InstanceSetting,
 } from '@epicenter/auth';
+import { createDesktopBrokerAuth as createCoreDesktopBrokerAuth } from '@epicenter/auth/desktop';
 import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { createSubscriber } from 'svelte/reactivity';
+import type { Brand } from 'wellcrafted/brand';
 
 // The one composition shape (ADR-0088): the app reads `auth.state` once at
 // boot, and a change of auth generation reloads the page so the next boot
@@ -17,37 +19,64 @@ import { createSubscriber } from 'svelte/reactivity';
 export { reloadOnAuthChange } from './reload-on-auth-change.js';
 
 /**
- * Make an auth client's `state` Svelte-reactive: spread the closure-bound
- * client and override `state` with a getter that calls `subscribe()` so reads
- * inside `$derived` / `$effect` track changes. The same transform applies to
- * every credential model; only the underlying client differs.
+ * An auth client whose `state` and `connection.status` track in Svelte.
+ *
+ * The brand exists because the same reads are correct two opposite ways and
+ * the unbranded type cannot tell you which you are holding. A route reads
+ * `auth.state` once at boot and must NOT track (ADR-0088: a page lifetime is
+ * one auth generation, and `reloadOnAuthChange` replaces the document rather
+ * than swapping state under it). A component that renders the reconnect
+ * affordance must track, because `signed-in` degrading to `reauth-required` is
+ * the one transition the gate deliberately refuses to reload.
+ *
+ * So a component that tracks asks for `ReactiveAuthClient`, and a boot reader
+ * keeps asking for `AuthClient`: the brand is a subtype, so nothing that reads
+ * once has to change, and handing a raw core client to a surface that tracks
+ * is a type error rather than a silently frozen popover.
  */
-function reactiveAuthClient(auth: AuthClient): AuthClient {
+export type ReactiveAuthClient = AuthClient & Brand<'ReactiveAuthClient'>;
+
+/**
+ * Bridge an auth client's two external facts into Svelte's graph.
+ *
+ * `createSubscriber` rather than a `$state.raw` shadow, and the difference is
+ * not style. It is lazy: the subscription starts only while something is
+ * actively reading inside a tracking context, and stops when the last reader
+ * is destroyed. That is what lets one wrapped client serve both contracts at
+ * once, because a boot-time read outside any effect subscribes to nothing and
+ * simply falls through to the live getter. A shadow would subscribe eagerly,
+ * once per component instance, for that component's whole life.
+ *
+ * Both facts are wrapped uniformly even though not every client can change
+ * either one. The hosted OAuth and same-origin cookie clients report a
+ * constant `connected` with an `onChange` that never fires, and the desktop
+ * broker's identity is immutable for its process generation, so their
+ * subscribers simply never invalidate. Uniformity is the point: the brand
+ * promises that reads track IF the underlying client ever changes, which is a
+ * promise every client can keep.
+ */
+function reactiveAuthClient(auth: AuthClient): ReactiveAuthClient {
 	const subscribeState = createSubscriber((update) =>
 		auth.onStateChange(update),
 	);
-	const reactive: AuthClient = {
+	const connection = auth.connection;
+	const subscribeConnection = createSubscriber((update) =>
+		connection.onChange(update),
+	);
+	return {
 		...auth,
 		get state() {
 			subscribeState();
 			return auth.state;
 		},
-	};
-	// Connection status can change without touching `state`, so give the one
-	// connection its own subscriber. The selected server itself remains fixed
-	// for this page generation.
-	const source = auth.connection;
-	const subscribeConnection = createSubscriber((update) =>
-		source.onChange(update),
-	);
-	reactive.connection = {
-		...source,
-		get status() {
-			subscribeConnection();
-			return source.status;
+		connection: {
+			...connection,
+			get status() {
+				subscribeConnection();
+				return connection.status;
+			},
 		},
-	};
-	return reactive;
+	} as ReactiveAuthClient;
 }
 
 /**
@@ -60,7 +89,7 @@ function reactiveAuthClient(auth: AuthClient): AuthClient {
 export function createAppAuthClient(
 	instance: Instance,
 	options: CreateAppAuthClientOptions,
-): AuthClient {
+): ReactiveAuthClient {
 	return reactiveAuthClient(createCoreAppAuthClient(instance, options));
 }
 
@@ -72,7 +101,7 @@ export function createAppAuthClient(
  */
 export function createSameOriginCookieAuth(
 	config: CreateSameOriginCookieAuthConfig,
-): AuthClient {
+): ReactiveAuthClient {
 	return reactiveAuthClient(createCoreSameOriginCookieAuth(config));
 }
 
@@ -126,7 +155,7 @@ export function createHostedBrowserRedirectAuth({
 	api,
 	basePath = '',
 	persistedStorage = window.localStorage,
-}: CreateHostedBrowserRedirectAuthOptions): AuthClient {
+}: CreateHostedBrowserRedirectAuthOptions): ReactiveAuthClient {
 	return createAppAuthClient(instanceSetting.read(), {
 		clientId,
 		persistedAuthStorage: createWebStoragePersistedAuthStorage({
@@ -141,4 +170,25 @@ export function createHostedBrowserRedirectAuth({
 			storage: window.sessionStorage,
 		}),
 	});
+}
+
+/**
+ * The desktop host's window-local client, wrapped like every other.
+ *
+ * It exists because the Epicenter-host platform leaf was importing
+ * `@epicenter/auth/desktop` directly and handing the raw core client to
+ * `AccountPopover`, which tracks. That was correct only by accident: the
+ * broker client's identity is immutable for its process generation, so its
+ * `onStateChange` is a no-op and there was nothing to miss. Give the desktop
+ * broker a live state channel later and the popover would have frozen with no
+ * error anywhere.
+ *
+ * Re-exported here rather than fixed at the leaf so the rule has no exception
+ * to remember: every client an app hands to a component comes from this
+ * module.
+ */
+export function createDesktopBrokerAuth(
+	...args: Parameters<typeof createCoreDesktopBrokerAuth>
+): ReactiveAuthClient {
+	return reactiveAuthClient(createCoreDesktopBrokerAuth(...args));
 }

@@ -31,7 +31,6 @@ export {
 export {
 	createInstanceSetting,
 	type InstanceSetting,
-	loadInstanceSetting,
 } from './instance-setting.js';
 // The pure pieces of the single-partition instance bearer (self-host; ADR-0075):
 // `generateInstanceToken` mints a strong token (`gen-token`), `assertStrongToken`

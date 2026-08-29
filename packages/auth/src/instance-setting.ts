@@ -151,32 +151,3 @@ export function createInstanceSetting({
 		},
 	});
 }
-
-/**
- * Pre-load an async-backed instance setting into a synchronous
- * {@link InstanceSetting} (an extension's `chrome.storage`).
- *
- * Await this before constructing the auth client (the extension already gates
- * on a storage-readiness promise; resolve this in the same gate). `read`/`write`
- * traffic only in opaque strings; this handle owns the JSON framing and the
- * hosted-default invariant, exactly as {@link loadPersistedAuthStorage} does for
- * the auth cell.
- */
-export async function loadInstanceSetting({
-	defaultBaseURL,
-	read,
-	write,
-	log = createLogger('auth/instance-setting'),
-}: {
-	defaultBaseURL: string;
-	read: () => Promise<string | null>;
-	write: (serialized: string | null) => Promise<void>;
-	/** Library logger for corrupt stored records. */
-	log?: Logger;
-}): Promise<InstanceSetting> {
-	return makeInstanceSetting({
-		initial: decodeInstance(await read(), defaultBaseURL, log),
-		defaultBaseURL,
-		persist: write,
-	});
-}
