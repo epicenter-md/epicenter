@@ -1,14 +1,29 @@
 ---
 name: dialectic
-description: Develop an unsettled product, architecture, or design question by making one checkable model visible and revising it from the user's reaction. Use when the destination is not settled and the user wants discovery, synthesis, or pushback before a plan exists. Do not use for interrogating an existing plan, a bounded comparison, or choosing files, commits, or execution steps.
+description: "Develop an unsettled product, architecture, or design question until the user and agent can state one accepted greenfield articulation: a shared, uncompromised statement of what the thing should be. Use when the destination is not settled and the user wants discovery, synthesis, or pushback before a plan exists. Do not use for interrogating an existing plan, a bounded comparison, or choosing files, commits, or execution steps."
 ---
 
 # Dialectic
 
-A dialectic is a shared-model loop. Put forward the clearest model you can
-defend. The user reacts to it. Treat the reaction as evidence, revise the
-model, and repeat until the user recognizes the whole model. The stop signal is
-explicit recognition, often “that’s right,” not silence or a convenient pause.
+The output of a dialectic is an accepted greenfield articulation: one statement
+of what the thing should be that the user and agent both actually hold, and that
+neither softened merely to get the other to agree. The articulation is the
+destination. Models, questions, research, examples, diagrams, and revisions are
+tools for reaching it, not alternate outputs.
+
+Greenfield means describe the desired product, architecture, or design from
+first principles rather than allowing the inherited implementation to define
+what is possible. It does not mean ignoring facts or explicit user constraints;
+those should be made visible and allowed to change the articulation openly,
+never smuggled in as an unspoken compromise. Uncompromising means preserve the
+idea's true shape while it is being settled, even when a softer version would be
+easier to accept.
+
+At every turn, ask what the current model reveals about the articulation and
+what is still missing, false, or softened. Put forward the clearest model you
+can defend. The user reacts to it. Treat the reaction as evidence, revise the
+model, and repeat until the user recognizes the complete articulation. Do not
+stop at a plausible model, partial agreement, silence, or a convenient pause.
 
 ## Find the live uncertainty
 
@@ -21,8 +36,9 @@ user-owned preference when mixing them would mislead.
 Carry the larger context yourself. Start with the current model and the
 consequence that makes it worth discussing. Do not turn the opening into a
 conversation summary, a questionnaire, or a progress report. Do not average
-competing interpretations into a compromise just to make the conversation
-look settled.
+competing interpretations into a compromise just to make the conversation look
+settled; choose and defend the strongest greenfield interpretation, then let the
+user correct it.
 
 ## Make one model checkable
 
@@ -74,7 +90,7 @@ nothing specific to correct is a failed turn.
 ## End on the next judgment
 
 End with one question only when its answer would change the next model. Ask
-about the model, not about the quality of the turn. “Does that sound right?”
+about the articulation, not about the quality of the turn. “Does that sound right?”
 and “should I proceed?” ask for approval and locate nothing. “Which do you
 choose?” is appropriate only when the choice belongs to the user and evidence
 cannot settle it; state what you recommend and the assumption behind it so the
@@ -112,9 +128,11 @@ choice only.
 
 ## Close or hand off
 
-When the user recognizes the complete model, return its shortest honest form
-and stop for a thinking-only request. For an accepted greenfield destination,
-hand it to [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) for
-backward planning. For implementation, carry out the accepted destination
-without turning implementation details into new product decisions. If
-implementation reveals a fact that changes the model, return to this loop.
+When the user recognizes the complete articulation, return its shortest honest
+form and stop for a thinking-only request. That recognition is not approval of a
+plan or authorization for side effects; it is recognition that the statement
+describes the thing both of you mean. For an accepted articulation, hand it to
+[greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) for backward
+planning. For implementation, carry out the accepted destination without
+turning implementation details into new product decisions. If implementation
+reveals a fact that changes the articulation, return to this loop.
