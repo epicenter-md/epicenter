@@ -68,23 +68,26 @@ this:
 ```txt
 articulations
   -> collision of premises and consequences
-  -> exposed crux
+  -> user reaction as directional evidence
+  -> crux and required movement identified
   -> targeted question, consequence, or refusal
-  -> re-articulation
+  -> sharper re-articulation
   -> understanding or accepted destination
 ```
 
-Read the reaction as evidence about the crux, not as a command to obey at face
-value. Preserve what the user recognized, replace what they rejected, intensify
-what they cared about more strongly than the last model showed, and
-re-articulate the model to resolve the tension their reaction exposed. Do not
-merely paraphrase the latest message or defend a weak rendering because it
-already exists.
+Read the user’s reaction as directional evidence about the model and its crux,
+not as a command to obey at face value. Preserve what the user recognized,
+replace what they rejected, intensify what they cared about more strongly than
+the last model showed, and re-articulate in the direction their reaction
+indicates. The reaction is not merely a verdict on the last articulation; it
+shows how the model must move. Do not merely paraphrase the latest message or
+defend a weak rendering because it already exists.
 
 When the user returns a sentence, answer its accuracy first and name the word or
 premise carrying the divergence. When they give an example, use it to update
-the model. A wrong articulation is useful because it locates the crux; plain
-agreement is useful only when it moves the model forward.
+the model. A wrong articulation is useful because the user’s reaction to it
+shows what the next articulation must change. Plain agreement is useful only
+when it moves the model forward.
 
 ## Make the collision checkable
 
