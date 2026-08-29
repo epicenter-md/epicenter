@@ -97,6 +97,18 @@ tauri-plugin-single-instance = { version = "2.4", features = ["deep-link"] }
 [profile.dev]
 incremental = true
 
+# Build the vendored Opus as a release C library even in a debug build.
+#
+# `audiopus_sys` compiles Opus through the `cmake` crate, which picks
+# CMAKE_BUILD_TYPE from this package's OPT_LEVEL and DEBUG. A Debug build on
+# Windows links the debug CRT, while rustc always links the release one, so the
+# final link fails on unresolved `__imp__CrtDbgReportW`. Optimizing this one
+# C dependency is also the behavior anyone would want: nobody steps through
+# Opus in a debugger.
+[profile.dev.package.audiopus_sys]
+opt-level = 2
+debug = false
+
 [profile.release]
 panic = "abort"
 strip = true
