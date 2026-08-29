@@ -1,6 +1,7 @@
 {
 	"name": "@epicenter/sqlite",
 	"version": "0.0.1",
+	"private": true,
 	"description": "Portable synchronous SQLite driver contracts for Epicenter's embedded runtimes.",
 	"type": "module",
 	"exports": {

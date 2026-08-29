@@ -1,6 +1,7 @@
 {
 	"name": "@epicenter/sync",
 	"version": "0.3.0",
+	"private": true,
 	"description": "WebSocket subprotocol auth for Epicenter: the bearer-in-subprotocol handshake shared by client and server.",
 	"keywords": [
 		"epicenter",

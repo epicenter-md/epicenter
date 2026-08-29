@@ -1,6 +1,7 @@
 {
 	"name": "@epicenter/principal",
 	"version": "0.3.0",
+	"private": true,
 	"license": "AGPL-3.0-or-later",
 	"type": "module",
 	"exports": {

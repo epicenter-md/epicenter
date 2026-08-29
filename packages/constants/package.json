@@ -2,6 +2,7 @@
 	"name": "@epicenter/constants",
 	"description": "Shared Epicenter platform contracts: app origins and ports, API and OAuth route surfaces, first-party OAuth clients and their seed projection, Vite build URLs, the model catalog, and the application-data root apps partition below",
 	"version": "0.1.1",
+	"private": true,
 	"type": "module",
 	"imports": {
 		"#*": [

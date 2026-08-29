@@ -2,6 +2,7 @@
 	"name": "@epicenter/chat",
 	"description": "The canonical conversation shape every chat surface shares: the conversations table an application splices into its own workspace, its messages root, and the ConversationId vocabulary.",
 	"version": "0.1.0",
+	"private": true,
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts"

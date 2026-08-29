@@ -53,11 +53,13 @@ embedder ever arrived, five of its nine packages had no MIT consumer, and it
 had started putting code in the wrong package to keep a closure clean. Prior
 published versions stay MIT for those versions, permanently.
 
-`bun run check:licenses` is kept and currently passes trivially with zero
-permissive packages. It exists so that reintroducing one enforces the closure
-rule from the first commit. Do not add an MIT package without reading "If MIT
-returns" in `docs/licensing/licensing-strategy.md`; the bar is a named
-embedder, not an intention to have one.
+Nothing here is published. Every package is `private: true`, so the release
+path cannot ship internal glue by accident.
+
+Do not add an MIT package without reading "If MIT returns" in
+`docs/licensing/licensing-strategy.md`; the bar is a named embedder, not an
+intention to have one, and the closure rule has to be re-enforced by hand
+because the guard that used to do it was deleted with the tier.
 
 ## Always use bun
 

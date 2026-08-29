@@ -42,9 +42,22 @@ had begun to cost something real.
   index cannot disagree with the packages by hand-editing drift. The
   hand-maintained per-package table in the strategy document is deleted for the
   same reason.
-- `bun run check:licenses` is **kept**. It reports zero permissive packages and
-  passes trivially, and it re-arms the moment one is reintroduced. Verified by
-  marking `packages/data` MIT again: it fails on `data -> sync`, correctly.
+- `bun run check:licenses` is **deleted**, along with the script it ran. This
+  reverses a decision made in the first draft of this record, and the reason is
+  worth keeping: every other member of `check:structure` reports a real
+  denominator (464 docs, 63 catalog entries, 723 files), while this one had come
+  to report "0 MIT-compatible packages" and could no longer fail. A green check
+  that scans nothing reads as "licensing verified" and verifies nothing. It also
+  never saw `apps/*/ui`, ignored `devDependencies`, and skipped any package with
+  no `license` field, so the version that would have re-armed was the broken one.
+  Reintroducing MIT means writing the guard again, better; the procedure in the
+  strategy document says so.
+- **Every package is `private: true`.** Twelve were not, so `bun run release`
+  would have published internal glue the strategy document explicitly describes
+  as "never offered for third-party embedding" (`auth`, `constants`,
+  `matter-core`, `skills`) now relicensed to AGPL. Nothing here is offered for
+  embedding, so nothing here is publishable, and that is one field rather than a
+  pipeline to remember.
 - **Versions already published under MIT remain MIT for those versions,
   permanently.** `@epicenter/field@0.3.0`, `@epicenter/identity@0.3.0`,
   `@epicenter/sync@0.1.0`/`0.3.0`, and `@epicenter/ui@0.1.0`/`0.3.0`. The root

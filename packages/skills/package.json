@@ -1,6 +1,7 @@
 {
 	"name": "@epicenter/skills",
 	"version": "0.3.0",
+	"private": true,
 	"description": "Agent skill definitions and services for Epicenter workspaces.",
 	"keywords": [
 		"local-first",

@@ -2,6 +2,7 @@
 	"name": "@epicenter/field",
 	"description": "The closed field-type vocabulary: field.* builders and recognize(), inverses over one JSON Schema wire-form.",
 	"version": "0.3.0",
+	"private": true,
 	"type": "module",
 	"exports": {
 		".": {

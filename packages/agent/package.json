@@ -1,6 +1,7 @@
 {
 	"name": "@epicenter/agent",
 	"version": "0.0.1",
+	"private": true,
 	"description": "UI-free agent loop over injected inference, persistence, and tool interfaces.",
 	"type": "module",
 	"exports": {

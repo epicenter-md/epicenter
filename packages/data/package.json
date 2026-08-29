@@ -1,6 +1,7 @@
 {
 	"name": "@epicenter/data",
 	"version": "0.0.1",
+	"private": true,
 	"description": "The Epicenter store: one document per application, a synchronous surface, and the transport that carries it.",
 	"type": "module",
 	"exports": {

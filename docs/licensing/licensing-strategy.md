@@ -105,10 +105,11 @@ versions already published, which is why `@epicenter/field@0.3.0`,
 
 ### If MIT returns
 
-`bun run check:licenses` is kept for exactly this. It currently reports zero
-permissive packages and passes trivially, and the moment one is reintroduced it
-resumes enforcing the closure rule: an MIT package must not reach an AGPL one
-through `dependencies` or `peerDependencies`.
+The dependency-closure guard was deleted with the tier, and reintroducing MIT
+means writing it again. Write it better than the one that was here: it globbed `{packages,apps}/*/package.json`, so it never saw
+`apps/api/ui`, `apps/local-books/ui`, or `apps/local-mail/ui`; it ignored
+`devDependencies` entirely; and a package with no `license` field was silently
+skipped as both source and target.
 
 The procedure, in order:
 
