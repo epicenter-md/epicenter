@@ -102,6 +102,9 @@ export type TableHandle = {
 	 * one variant nobody read, so every call site paid an unwrap for it;
 	 * Honeycrisp had written `table.rows.find(...)` by hand rather than use
 	 * this verb.
+	 *
+	 * A READ, not a value: see {@link Row}. Comparing what this returns is the
+	 * one thing it does not support, and `store.stored()` is where that goes.
 	 */
 	get(rowId: string): Row | undefined;
 	/**
