@@ -35,6 +35,35 @@ const definition = defineData({
 type Item = RowOf<typeof definition.tables.items>;
 type Values = typeof definition.kv;
 
+/**
+ * A declared default is refused where it is authored, not at first open.
+ *
+ * `parseData` refuses one at runtime too (`DeclarationDefault`), and this is
+ * the compile-time half of that rule, for both buckets a definition has.
+ *
+ * Pinned because the rule is carried by a conditional type keyed on the
+ * literal string `scalars`. Rename the key and the check does not fail, it
+ * stops applying, silently: that is exactly what happened to the table half
+ * when the declaration went from one `fields` bag to two buckets.
+ *
+ * The default has to be spread in rather than passed to the builder. Every
+ * builder returns a fixed schema type (`field.string(opts)` is `TString`
+ * whatever `opts` says), so an annotation handed to one is erased before this
+ * check can see it. Only a schema whose OWN type carries `default` is caught
+ * here; the rest is `parseData`'s to refuse.
+ */
+defineData({
+	id: 'so.epicenter.declaration-default',
+	kv: {
+		// @ts-expect-error a default belongs to the application, not the schema
+		theme: { ...field.string(), default: 'light' },
+	},
+	tables: {
+		// @ts-expect-error a default belongs to the application, not the schema
+		items: { scalars: { title: { ...field.string(), default: 'untitled' } } },
+	},
+});
+
 export type _SelectStatic = Expect<
 	Equal<Static<Values['status']>, 'draft' | 'published'>
 >;

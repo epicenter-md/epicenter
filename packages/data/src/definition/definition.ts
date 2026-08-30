@@ -127,7 +127,7 @@ type ValidateFields<T> = {
 	[K in keyof T]: T[K] extends TSchema ? RejectDefault<T[K]> : never;
 };
 type ValidateTable<T> = {
-	[K in keyof T]: K extends 'fields'
+	[K in keyof T]: K extends 'scalars'
 		? T[K] extends FieldMap
 			? ValidateFields<T[K]>
 			: never
