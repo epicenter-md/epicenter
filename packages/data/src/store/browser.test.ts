@@ -41,7 +41,7 @@ import {
 	openDatabase,
 } from './browser.js';
 import { openMemory } from './memory.js';
-import { type DataView, type DataDocument, syncEngineOf } from './store.js';
+import { type DataDocument, type DataView, syncEngineOf } from './store.js';
 
 /** One dataId per concern, so tests share no IndexedDB state. */
 function databaseFor(label: string) {

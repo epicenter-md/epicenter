@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
 import { parseData } from './compile.js';
-import { field, type RowOf } from './declaration.js';
+import { type DeclaredTable, field, type RowOf } from './declaration.js';
 import { defineData, defineTable } from './define.js';
 
 const authored = defineData({
@@ -12,14 +12,14 @@ const authored = defineData({
 		color: field.nullable(field.string()),
 	},
 	tables: {
-		notes: {
+		notes: defineTable({
 			scalars: {
 				title: field.string(),
 				status: field.select(['draft', 'published']),
 				tags: field.multiSelect(['work', 'personal']),
 				publishedAt: field.nullable(field.instant()),
 			},
-		},
+		}),
 	},
 });
 
@@ -137,7 +137,13 @@ describe('data definitions', () => {
 				id: 'so.epicenter.nocodec',
 				kv: {},
 				tables: {
-					notes: { scalars: { title: field.string() }, types: ['body'] },
+					// Cast past `defineTable`, which refuses this at compile time now.
+					// The runtime throw is the backstop for exactly that cast, and for
+					// a definition assembled some other way.
+					notes: {
+						scalars: { title: field.string() },
+						types: ['body'],
+					} as unknown as DeclaredTable,
 				},
 			}),
 		).toThrow('file codec');
@@ -187,7 +193,9 @@ describe('data definitions', () => {
 			id: 'so.epicenter.json',
 			kv: {},
 			tables: {
-				rows: { scalars: { payload: field.json(field.select(['a', 'b'])) } },
+				rows: defineTable({
+					scalars: { payload: field.json(field.select(['a', 'b'])) },
+				}),
 			},
 		});
 		const row: RowOf<typeof data.tables.rows> = { id: '1', payload: 'a' };

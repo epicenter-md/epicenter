@@ -1,4 +1,4 @@
-import { field } from '@epicenter/data/definition';
+import { defineTable, field } from '@epicenter/data/definition';
 /**
  * What the shared dial has to get right: the URL it asks for, and how it
  * classifies a rejection.
@@ -21,7 +21,7 @@ import { attachStoreSync, type StoreSocketTransport } from './attach.js';
 const database = defineData({
 	id: 'so.epicenter.attach-test',
 	kv: {},
-	tables: { notes: { scalars: { title: field.string() } } },
+	tables: { notes: defineTable({ scalars: { title: field.string() } }) },
 });
 
 type AddressedTestStore = AccountDocument & {

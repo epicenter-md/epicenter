@@ -1,55 +1,44 @@
 /**
- * The three authoring calls, and the refusals that shape their parameters.
+ * The two authoring calls, and the refusals that shape their parameters.
  *
  * A declaration is checked twice: here, while it is being written, and again
- * in `compile.ts` when it is parsed. Both halves state the same rules, and the
- * runtime half is the one that catches a definition this file never saw.
+ * in `compile.ts` when it is parsed. The runtime half is the one that catches a
+ * definition this file never saw, which is the only reason both exist.
  *
- * The refusals sit above the calls that apply them, and together rather than
- * one beside each rule, because the one that drifted did so alone:
- * `ValidateTable` dispatched on the key `fields` for a day after the
- * declaration renamed it to `scalars`. A conditional type answering "no" is a
- * legal answer, so nothing failed and nothing said anything. A stale key is
- * visible next to four siblings that are not.
+ * ONE DOOR. `defineTable` brands its return and `DataDefinition` requires the
+ * brand, so every table is checked here and nowhere else. There used to be a
+ * second path: a bare literal handed to `defineData`, re-checked by
+ * `ValidateTable` and `ValidateDefinition`, which restated the same rules
+ * through a different mechanism and could not report them as well. Both are
+ * deleted. What is left validates `kv`, which is the one field map an
+ * application still writes inline.
+ *
+ * That duplication is also what drifted: `ValidateTable` dispatched on the key
+ * `fields` for a day after the declaration renamed it to `scalars`, and because
+ * a conditional type answering "no" is a legal answer, nothing failed and
+ * nothing said anything. A rule enforced in one place cannot go stale in the
+ * other one.
  */
-import type { TSchema } from 'typebox';
-
 import { parseData } from './compile.js';
 import type {
-	DataDefinition,
+	DeclaredMark,
+	DeclaredTable,
 	FieldMap,
 	RowFileCodec,
 	RowFileCodecOf,
 } from './declaration.js';
 
 type RejectDefault<T> = T extends { default: unknown } ? never : T;
-type ValidateFields<T> = {
-	[K in keyof T]: T[K] extends TSchema ? RejectDefault<T[K]> : never;
-};
-type ValidateTable<T> = {
-	[K in keyof T]: K extends 'scalars'
-		? T[K] extends FieldMap
-			? ValidateFields<T[K]>
-			: never
-		: K extends 'types'
-			? T[K] extends readonly string[]
-				? // Not a shrug: a literal with no `scalars` key has nothing for a
-					// type field to collide WITH, so passing it through is the answer
-					// rather than the absence of one.
-					T extends { scalars: infer TScalars extends FieldMap }
-					? RejectScalarCollision<TScalars, T[K]>
-					: T[K]
-				: never
-			: T[K];
-};
-type ValidateDefinition<T> = {
-	[K in keyof T]: K extends 'tables'
-		? { [N in keyof T[K]]: ValidateTable<T[K][N]> }
-		: K extends 'kv'
-			? T[K] extends FieldMap
-				? ValidateFields<T[K]>
-				: never
-			: T[K];
+/**
+ * The scalars of one bucket, with a declared default refused at the field.
+ *
+ * `defineTable` applies this to a table's `scalars` and `defineData` applies it
+ * to `kv`, which are the two places a field map is authored. Nothing applies it
+ * to a TABLE any more: a table reaches `defineData` already branded, so it has
+ * been through `defineTable` and been checked there.
+ */
+type ValidateFields<T extends FieldMap> = {
+	[K in keyof T]: RejectDefault<T[K]>;
 };
 
 /**
@@ -92,16 +81,40 @@ export function defineTable<
 	} & ([TTypes[number]] extends [never]
 		? { file?: RowFileCodecOf<{ scalars: TScalars; types: TTypes }> }
 		: { file: RowFileCodecOf<{ scalars: TScalars; types: TTypes }> }),
-): { scalars: TScalars; types: TTypes; file?: RowFileCodec } {
-	return table as unknown as {
+): DeclaredMark & { scalars: TScalars; types: TTypes; file?: RowFileCodec } {
+	// The brand is a phantom: declared, never assigned, and asserted here. The
+	// cast that carries it is the same one that already erased `RowFileCodecOf`
+	// down to `RowFileCodec`, so this adds an assertion rather than a hop.
+	return table as unknown as DeclaredMark & {
 		scalars: TScalars;
 		types: TTypes;
 		file?: RowFileCodec;
 	};
 }
 
-export function defineData<const TData extends DataDefinition>(
-	data: TData & ValidateDefinition<TData>,
+export function defineData<
+	const TData extends {
+		readonly id: string;
+		readonly title?: string;
+		readonly kv: FieldMap;
+		readonly tables: { readonly [table: string]: unknown };
+	},
+>(
+	data: TData & {
+		kv: ValidateFields<TData['kv']>;
+		// Deferred on purpose. Naming `DeclaredTable` directly here would
+		// contextually type every table literal with `types?: readonly string[]`,
+		// and that context reaches INTO `defineTable`'s inference: a table with no
+		// `types` would resolve `TTypes` to the constraint instead of the empty
+		// default, and the codec rule would then demand a `file` for a table that
+		// declares no type field. A conditional defers, so the brand is checked
+		// without the shape being pushed inward.
+		tables: {
+			[N in keyof TData['tables']]: TData['tables'][N] extends DeclaredTable
+				? TData['tables'][N]
+				: DeclaredTable;
+		};
+	},
 ): TData {
 	// Compile eagerly at the authoring call (ADR-0266): a malformed definition
 	// fails here, as the programmer error it is, rather than at first open. The

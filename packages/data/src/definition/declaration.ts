@@ -128,13 +128,42 @@ export type TableDeclaration = {
 	readonly file?: RowFileCodec;
 };
 
+/**
+ * The mark `defineTable` leaves, and the only way to get one.
+ *
+ * A table declaration is a plain object, so any literal of the right shape used
+ * to satisfy `DataDefinition`. That made two authoring paths for one thing:
+ * `defineTable`, which checks its parameter, and a bare literal handed to
+ * `defineData`, which needed a second set of conditional types to re-check the
+ * same rules and could not report them as well. Every rule was written twice
+ * and one of the copies silently stopped applying for a day.
+ *
+ * Nominal, so there is one door. Nothing constructs this value: the brand is
+ * declared and never assigned, and `defineTable`'s return asserts it.
+ */
+declare const DECLARED: unique symbol;
+
+/**
+ * The mark alone, without the shape.
+ *
+ * `defineTable` returns this intersected with the LITERAL types it inferred,
+ * never with `TableDeclaration`. Intersecting the wide form in would drag its
+ * index signature along, and `ScalarsOf` mapping over
+ * `keyof (FieldMap & { title: TString })` reads the index member too and
+ * resolves every row field to `unknown`.
+ */
+export type DeclaredMark = { readonly [DECLARED]: true };
+
+/** A table declaration that went through `defineTable`. */
+export type DeclaredTable = TableDeclaration & DeclaredMark;
+
 /** One application's complete, inert data definition. */
 export type DataDefinition = {
 	readonly id: string;
 	readonly title?: string;
 	readonly kv: FieldMap;
 	readonly tables: {
-		readonly [table: string]: TableDeclaration;
+		readonly [table: string]: DeclaredTable;
 	};
 };
 

@@ -12,10 +12,10 @@ import { Ok } from 'wellcrafted/result';
 import { createSqliteDurablePort } from './log.js';
 import { createMemoryRecord, openMemory } from './memory.js';
 import {
+	type AccountData,
 	type AccountDocument,
 	createAccountStore,
 	createLocalStore,
-	type AccountData,
 	type LocalDocument,
 	StoreUnusableError,
 	type SyncCapability,
@@ -251,13 +251,13 @@ describe('a nonconforming row is reported, never repaired', () => {
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
 		tables: {
-			notes: {
+			notes: defineTable({
 				scalars: {
 					title: field.string(),
 					tags: field.string(),
 					date: field.nullable(field.string()),
 				},
-			},
+			}),
 		},
 	});
 
@@ -530,9 +530,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 	test('a fully applied replica reports no unresolved dependencies', async () => {
 		note();
 		const laptop = await openMemory(database);
-		syncEngineOf(laptop).applyRemote(
-			db.encodeStateSince(laptop.stateVector()),
-		);
+		syncEngineOf(laptop).applyRemote(db.encodeStateSince(laptop.stateVector()));
 		expect(syncEngineOf(laptop).hasUnresolvedDependencies()).toBe(false);
 	});
 });
@@ -623,14 +621,14 @@ describe('a subscription says a table changed', () => {
 				id: 'so.epicenter.honeycrisp',
 				kv: {},
 				tables: {
-					notes: {
+					notes: defineTable({
 						scalars: {
 							title: field.string(),
 							tags: field.tags(),
 							date: field.nullable(field.string()),
 						},
-					},
-					folders: { scalars: { name: field.string() } },
+					}),
+					folders: defineTable({ scalars: { name: field.string() } }),
 				},
 			}),
 		);
@@ -831,13 +829,13 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 					future: field.string(),
 				},
 				tables: {
-					notes: {
+					notes: defineTable({
 						scalars: {
 							title: field.string(),
 							tags: field.tags(),
 							date: field.nullable(field.string()),
 						},
-					},
+					}),
 				},
 			}),
 			record,
@@ -859,14 +857,14 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		id: 'so.epicenter.honeycrisp',
 		kv: { theme: field.select(['light', 'dark']) },
 		tables: {
-			notes: { scalars: { title: field.string() } },
-			scratch: { scalars: { body: field.string() } },
+			notes: defineTable({ scalars: { title: field.string() } }),
+			scratch: defineTable({ scalars: { body: field.string() } }),
 		},
 	});
 	const withoutScratch = defineData({
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
-		tables: { notes: { scalars: { title: field.string() } } },
+		tables: { notes: defineTable({ scalars: { title: field.string() } }) },
 	});
 
 	test('the next runtime has no handle; one that re-declares it reads every row back', async () => {
@@ -921,13 +919,15 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
 		tables: {
-			notes: { scalars: { title: field.string(), preview: field.string() } },
+			notes: defineTable({
+				scalars: { title: field.string(), preview: field.string() },
+			}),
 		},
 	});
 	const withoutPreview = defineData({
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
-		tables: { notes: { scalars: { title: field.string() } } },
+		tables: { notes: defineTable({ scalars: { title: field.string() } }) },
 	});
 
 	test('a field the declaration dropped survives here and nowhere else', async () => {
@@ -1043,7 +1043,9 @@ describe('a document store owes nobody (ADR-0233)', () => {
 		// Compile-time pins: `sync !== undefined` must narrow the union in both
 		// directions without an `in`-probe or a cast. The annotations are the
 		// assertions; a shape change fails typecheck before it fails a test.
-		function kindOf(store: LocalDocument | AccountDocument): 'local' | 'account' {
+		function kindOf(
+			store: LocalDocument | AccountDocument,
+		): 'local' | 'account' {
 			if (store.sync !== undefined) {
 				const capability: SyncCapability = store.sync;
 				void capability;
@@ -1219,12 +1221,12 @@ describe('the store manages no timestamps (ADR-0297)', () => {
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
 			tables: {
-				notes: {
+				notes: defineTable({
 					scalars: {
 						title: field.string(),
 						updatedAt: field.instant(),
 					},
-				},
+				}),
 			},
 		});
 		const data = await openMemory(timed);
@@ -1242,7 +1244,7 @@ describe('the store manages no timestamps (ADR-0297)', () => {
 		const plain = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
-			tables: { notes: { scalars: { title: field.string() } } },
+			tables: { notes: defineTable({ scalars: { title: field.string() } }) },
 		});
 		const data = await openMemory(plain);
 		const made = data.tables.notes.create({ title: 'Groceries' });

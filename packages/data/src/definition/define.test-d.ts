@@ -1,11 +1,13 @@
 /**
  * Compile-time pins for the refusals in `define.ts`.
  *
- * Each rule here is also enforced at runtime by `parseData`, and each is
- * carried by a conditional type keyed on a literal string. That is why they
- * are pinned: rename a key and the rule does not fail, it stops applying, in
- * silence. `ValidateTable` dispatched on ``fields`` for a day after the
- * declaration grew two buckets, and nothing said so.
+ * Each rule here is also enforced at runtime by `parseData`. They are pinned
+ * because a rule carried by a type can stop applying instead of failing:
+ * `ValidateTable` dispatched on the key `fields` for a day after the
+ * declaration renamed it to `scalars`, and nothing said so. That whole type is
+ * gone now — a table reaches `defineData` branded, so `defineTable` is the one
+ * place a table is checked — and these pins are what would notice if the one
+ * remaining door stopped checking.
  *
  * Nothing runs. `tsc` is the runner, and a `@ts-expect-error` that stops
  * erroring is itself an error.
@@ -54,26 +56,25 @@ defineTable({
  * here; the rest is `parseData`'s to refuse.
  */
 /**
- * The same refusal on the other authoring path.
+ * A table has one door, and a bare literal is not it.
  *
- * A table that does not go through `defineTable` skips `RejectScalarCollision`,
- * so `ValidateTable` is what has to catch the collision. That is not a rare
- * shape: Honeycrisp declares `folders` as a bare const and passes it straight
- * to `defineData`, `packages/chat` exports `conversationsTable` the same way,
- * and roughly two thirds of the table literals in this repository are written
- * without `defineTable` at all. Both paths have to carry every rule.
+ * `defineTable` brands its return and `DataDefinition` requires the brand, so a
+ * structurally-correct literal handed straight to `defineData` is refused. That
+ * is what lets every table rule live on `defineTable`'s parameter alone: there
+ * is no second authoring path left to re-check, which is what `ValidateTable`
+ * and `ValidateDefinition` used to be for.
  *
- * The message does not survive this path. `defineData` takes
- * `TData & ValidateDefinition<TData>`, and the intersection collapses the
- * offending element to `never`, taking the sentence with it. The error still
- * lands on the name, and says only that a string is not assignable to `never`.
+ * It also fixed the message. On the old `defineData` path the refusal was
+ * carried through `TData & ValidateDefinition<TData>`, and the intersection
+ * collapsed the offending element to `never`, taking the explanation with it.
+ * A collision now reports the same sentence wherever it is written.
  */
 defineData({
-	id: 'so.epicenter.collision-inline',
+	id: 'so.epicenter.bare-literal',
 	kv: {},
 	tables: {
-		// @ts-expect-error 'title' is already a scalar of this table
-		notes: { scalars: { title: field.string() }, types: ['title'] },
+		// @ts-expect-error a table is authored with `defineTable`
+		notes: { scalars: { title: field.string() } },
 	},
 });
 

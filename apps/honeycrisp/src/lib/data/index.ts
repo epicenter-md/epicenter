@@ -123,7 +123,7 @@ export const honeycrispDefinition = defineData({
 	title: 'Honeycrisp',
 	kv: {},
 	tables: {
-		folders: foldersTable,
+		folders: defineTable(foldersTable),
 		notes: defineTable({ ...notesTable, file: noteFile }),
 	},
 });

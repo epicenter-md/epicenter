@@ -101,7 +101,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 		const scalarOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
-			tables: { folders: { scalars: { name: field.string() } } },
+			tables: { folders: defineTable({ scalars: { name: field.string() } }) },
 		});
 		await using data = await openMemory(scalarOnly);
 		const made = data.tables.folders.create({ name: 'Inbox' });
@@ -235,7 +235,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 		const scalarOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
-			tables: { folders: { scalars: { name: field.string() } } },
+			tables: { folders: defineTable({ scalars: { name: field.string() } }) },
 		});
 		await using data = await openMemory(scalarOnly);
 		const made = data.tables.folders.create({ name: 'Inbox' });

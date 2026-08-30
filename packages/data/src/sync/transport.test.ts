@@ -1479,7 +1479,9 @@ const newerDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
 	tables: {
-		notes: { scalars: { title: field.string(), pinned: field.boolean() } },
+		notes: defineTable({
+			scalars: { title: field.string(), pinned: field.boolean() },
+		}),
 	},
 });
 
@@ -1488,8 +1490,8 @@ const twoTableDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
 	tables: {
-		notes: { scalars: { title: field.string() } },
-		tasks: { scalars: { label: field.string() } },
+		notes: defineTable({ scalars: { title: field.string() } }),
+		tasks: defineTable({ scalars: { label: field.string() } }),
 	},
 });
 

@@ -4,7 +4,7 @@ import type {
 	InstantString,
 } from '@epicenter/field';
 import type { Static } from 'typebox';
-import { defineData, field, type RowOf } from './index.js';
+import { defineData, defineTable, field, type RowOf } from './index.js';
 
 /**
  * A failed assertion carries both sides, so the error names what moved.
@@ -40,11 +40,11 @@ const definition = defineData({
 		optional: field.nullable(field.string()),
 	},
 	tables: {
-		items: {
+		items: defineTable({
 			scalars: {
 				status: field.select(['draft', 'published']),
 			},
-		},
+		}),
 	},
 });
 

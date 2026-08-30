@@ -18,7 +18,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defineData } from '@epicenter/data/definition';
+import { defineData, defineTable } from '@epicenter/data/definition';
 import {
 	createMemoryRecord,
 	type MemoryRecord,
@@ -34,7 +34,7 @@ const historicalSkillsWorkspace = defineData({
 	id: 'so.epicenter.skills',
 	kv: {},
 	tables: {
-		skills: {
+		skills: defineTable({
 			scalars: {
 				name: field.string(),
 				description: field.string(),
@@ -44,7 +44,7 @@ const historicalSkillsWorkspace = defineData({
 				allowedTools: field.nullable(field.string()),
 				updatedAt: field.instant(),
 			},
-		},
+		}),
 	},
 });
 

@@ -29,7 +29,7 @@ const store = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.string() },
 	tables: {
-		folders: { scalars: { name: field.string() } },
+		folders: defineTable({ scalars: { name: field.string() } }),
 		notes: defineTable({
 			scalars: {
 				title: field.string(),
