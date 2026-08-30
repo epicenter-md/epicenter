@@ -53,7 +53,11 @@ import type { PersistenceCapability } from './persistence.js';
  */
 export type Row = { id: string } & Record<string, JsonValue | Y.Type>;
 
-export type TableHandle = {
+export type TableHandle<
+	TRow = Row,
+	TInput = RowInput,
+	TPatch = JsonObject,
+> = {
 	/**
 	 * Bring one row into being, at a minted id.
 	 *
@@ -82,7 +86,7 @@ export type TableHandle = {
 	 * values or field names. The returned object is the typed write view, while
 	 * a later `get` reports how the current lens interprets the stored payload.
 	 */
-	create(fields: RowInput): Row;
+	create(fields: TInput): TRow;
 	/**
 	 * One row, whole, or nothing.
 	 *
@@ -102,7 +106,7 @@ export type TableHandle = {
 	 * A READ, not a value: see {@link Row}. Comparing what this returns is the
 	 * one thing it does not support, and `store.stored()` is where that goes.
 	 */
-	get(rowId: string): Row | undefined;
+	get(rowId: string): TRow | undefined;
 	/**
 	 * Merge fields into an existing row. Refuses an absent address.
 	 *
@@ -113,7 +117,7 @@ export type TableHandle = {
 	 * how a nonconforming row is repaired, ADR-0125), and a write verb that
 	 * reported that read as its own failure punished a write that committed.
 	 */
-	update(rowId: string, fields: JsonObject): Result<void, RowAbsentError>;
+	update(rowId: string, fields: TPatch): Result<void, RowAbsentError>;
 	/**
 	 * Take one row off the table, type content and all (ADR-0295).
 	 *
@@ -142,7 +146,7 @@ export type TableHandle = {
 	 * that tuple and three applications then re-exposed each half as its own
 	 * getter. This is the shape they were all rebuilding.
 	 */
-	readonly rows: Row[];
+	readonly rows: TRow[];
 	/**
 	 * Every row stored here that this declaration cannot read, with its raw
 	 * values (ADR-0125).
@@ -192,19 +196,7 @@ export type TypedTableHandle<TFields> =
 		row: infer TRow;
 		input: infer TInput;
 	}
-		? {
-				create(fields: TInput): TRow;
-				get(rowId: string): TRow | undefined;
-				update(
-					rowId: string,
-					fields: Partial<ScalarsOf<TFields>>,
-				): Result<void, RowAbsentError>;
-				delete(rowId: string): void;
-				ids(): string[];
-				readonly rows: TRow[];
-				readonly nonconforming: NonconformingRow[];
-				subscribe(listener: () => void): () => void;
-			}
+		? TableHandle<TRow, TInput, Partial<ScalarsOf<TFields>>>
 		: never;
 
 /**
