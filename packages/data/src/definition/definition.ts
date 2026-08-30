@@ -291,13 +291,43 @@ export type RowFileCodecOf<TFields extends TableDeclaration> = {
  * typing that matters happens here, at the authoring call, and the store reads
  * the erased form.
  */
+/**
+ * Refuse a type field that is already a scalar, at the name that collides.
+ *
+ * `RowOf` is `{ id } & ScalarsOf<T> & TypesOf<T>`, so one name in both buckets
+ * intersects a `Static<>` with a `Y.Type` and the field reads as an impossible
+ * type rather than as a mistake. `parseData` refuses it at runtime; this is the
+ * compile-time half, and it belongs here because this is the authoring call.
+ *
+ * The bad element's expected type BECOMES the sentence, rather than the whole
+ * declaration failing. That is what puts the error under `'title'` in `types`
+ * and prints the reason, instead of reporting a mismatched object three lines
+ * up. Intersecting with `TTypes` would collapse the element to `never` and take
+ * the sentence with it.
+ *
+ * A homomorphic mapped type over `keyof TTypes`, so it stays an inference site:
+ * `types: ['body']` still infers `readonly ['body']` rather than widening.
+ *
+ * A name declared twice WITHIN `types` is not caught here. Finding it means
+ * accumulating what has been seen across the tuple, which is a search rather
+ * than a lookup; `parseData` refuses that one, and it stays runtime.
+ */
+type RejectScalarCollision<
+	TScalars extends FieldMap,
+	TTypes extends readonly string[],
+> = {
+	[I in keyof TTypes]: TTypes[I] extends keyof TScalars
+		? `'${TTypes[I] & string}' is already a scalar of this table, and one name cannot be both`
+		: TTypes[I];
+};
+
 export function defineTable<
 	const TScalars extends FieldMap,
 	const TTypes extends readonly string[] = readonly [],
 >(
 	table: {
 		scalars: TScalars & ValidateFields<TScalars>;
-		types?: TTypes;
+		types?: RejectScalarCollision<TScalars, TTypes>;
 	} & ([TTypes[number]] extends [never]
 		? { file?: RowFileCodecOf<{ scalars: TScalars; types: TTypes }> }
 		: { file: RowFileCodecOf<{ scalars: TScalars; types: TTypes }> }),

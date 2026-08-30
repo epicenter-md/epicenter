@@ -4,7 +4,8 @@ import type {
 	InstantString,
 } from '@epicenter/field';
 import type { Static } from 'typebox';
-import { defineData, field, type RowOf } from './index.js';
+import { Ok } from 'wellcrafted/result';
+import { defineData, defineTable, field, type RowOf } from './index.js';
 
 type Equal<X, Y> =
 	(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
@@ -34,6 +35,27 @@ const definition = defineData({
 
 type Item = RowOf<typeof definition.tables.items>;
 type Values = typeof definition.kv;
+
+/**
+ * A name is a scalar or a type field, never both.
+ *
+ * `RowOf` intersects the two buckets, so a collision reads as a `Static<>`
+ * intersected with a `Y.Type`: an impossible field rather than a reported
+ * mistake. `parseData` refuses it too; this pins the half that fires while the
+ * declaration is being written.
+ *
+ * The expected type at the offending element IS the explanation, which is what
+ * makes the error land on `'title'` instead of on the object around it.
+ */
+defineTable({
+	scalars: { title: field.string() },
+	// @ts-expect-error 'title' is already a scalar of this table
+	types: ['title'],
+	file: {
+		serialize: () => ({ data: {}, content: '' }),
+		deserialize: () => Ok({}) as never,
+	},
+});
 
 /**
  * A declared default is refused where it is authored, not at first open.
