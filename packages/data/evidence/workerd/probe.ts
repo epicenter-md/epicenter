@@ -208,7 +208,7 @@ console.log('\n2. an update past the cap, through the real socket');
 		device: 'probe',
 		at: new Date().toISOString(),
 	});
-	const text = author.db.tables.notes.content(note.id)?.types.editor;
+	const text = author.db.tables.notes.get(note.id)?.editor;
 	if (text === undefined) throw new Error('the row has no editor');
 	// One transaction, well past the cap. There is no seam here for a coalescing
 	// bound to cut at, which is why the fix has to be framing at storage.
@@ -217,7 +217,7 @@ console.log('\n2. an update past the cap, through the real socket');
 
 	let arrived: { length: number } | undefined;
 	await until('the reader to receive the paste', async () => {
-		arrived = reader.db.tables.notes.content(note.id)?.types.editor;
+		arrived = reader.db.tables.notes.get(note.id)?.editor;
 		return (arrived?.length ?? 0) === 5_000_000;
 	});
 

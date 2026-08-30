@@ -90,9 +90,9 @@ function pump(): Promise<void> {
 
 /** One row's rich `editor` field, live on the database document (ADR-0295). */
 function editorOf(replica: Replica, rowId: string) {
-	const content = replica.db.tables.notes.content(rowId);
+	const content = replica.db.tables.notes.get(rowId);
 	if (content === undefined) throw new Error('the table holds no such row');
-	return content.types.editor;
+	return content.editor;
 }
 
 /**
@@ -242,11 +242,7 @@ function openReplica(
 			await store[Symbol.asyncDispose]();
 			return openReplica(label, hub, wire, next, sqlite);
 		},
-		titles: () =>
-			db.tables.notes
-				.list()
-				.rows.map((row) => row.title)
-				.sort(),
+		titles: () => db.tables.notes.rows.map((row) => row.title).sort(),
 	};
 }
 
@@ -643,7 +639,7 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		expect(expectOk(authority.head())).toBe(0);
 		expect(laptop.titles()).toEqual([]);
 		// The row itself never arrived, so the laptop holds no content for it.
-		expect(laptop.db.tables.notes.content(note.id)).toBeUndefined();
+		expect(laptop.db.tables.notes.get(note.id)).toBeUndefined();
 		// And the phone still owes it, which is what the reconnect above spends.
 		expect(phone.client.status().owed).toBeGreaterThan(0);
 	});
@@ -1530,7 +1526,7 @@ describe('two devices whose databases disagree', () => {
 
 		// The older release sees the row, minus the one field it cannot name, and
 		// reports no trouble: an undeclared key is not a conformance failure.
-		const seen = olderNotes.list();
+		const seen = olderNotes;
 		expect(seen.nonconforming).toEqual([]);
 		expect(seen.rows).toEqual([{ id: made.id, title: 'Groceries' }]);
 
@@ -1541,7 +1537,7 @@ describe('two devices whose databases disagree', () => {
 		// Both halves in one assertion, and each is the other's control. The new
 		// title proves the round trip actually happened; `pinned` proves it did not
 		// cost the updated device a field the older one had never heard of.
-		expect(expectOk(updatedNotes.get(made.id))).toEqual({
+		expect(updatedNotes.get(made.id)).toEqual({
 			id: made.id,
 			title: 'Groceries and milk',
 			pinned: true,
@@ -1564,7 +1560,7 @@ describe('two devices whose databases disagree', () => {
 		older.client.flush();
 		wire.settle();
 
-		expect(expectOk(updatedNotes.get(made.id))).toBeUndefined();
+		expect(updatedNotes.get(made.id)).toBeUndefined();
 		expect(updatedNotes.ids()).toEqual([]);
 	});
 
@@ -1578,7 +1574,7 @@ describe('two devices whose databases disagree', () => {
 		older.client.flush();
 		wire.settle();
 
-		const seen = updatedNotes.list();
+		const seen = updatedNotes;
 		expect(seen.rows).toEqual([]);
 		expect(seen.nonconforming).toHaveLength(1);
 		const failure = seen.nonconforming[0];
@@ -1602,7 +1598,7 @@ describe('two devices whose databases disagree', () => {
 		wire.settle();
 		expect(older.titles()).toEqual(['Groceries']);
 
-		const seen = updatedNotes.list();
+		const seen = updatedNotes;
 		expect(seen.nonconforming).toEqual([]);
 		expect(seen.rows).toEqual([
 			{ id: made.id, title: 'Groceries', pinned: false },
@@ -1629,7 +1625,7 @@ describe('two devices whose databases disagree', () => {
 		// The device is updated: same durable file, the next runtime, a
 		// declaration that now names the table (ADR-0240).
 		const upgraded = await older.upgrade(twoTableDatabase);
-		expect(tableOf(upgraded.bound, 'tasks').list().rows).toEqual([
+		expect(tableOf(upgraded.bound, 'tasks').rows).toEqual([
 			{ id: task.id, label: 'buy milk' },
 		]);
 	});
@@ -1660,7 +1656,7 @@ describe('two devices whose databases disagree', () => {
 		// `pinned` is declared without a default and that row predates it
 		// (ADR-0213). It is still in the CRDT, and `conforming` carries what could
 		// be read, which is the whole recovery composition.
-		const listed = upgradedNotes.list();
+		const listed = upgradedNotes;
 		expect(listed.rows).toHaveLength(0);
 		expect(listed.nonconforming).toHaveLength(1);
 		expect(listed.nonconforming[0]?.conforming).toMatchObject({
@@ -1699,7 +1695,7 @@ describe('two devices whose databases disagree', () => {
 		const upgraded = await updating.upgrade(twoTableDatabase);
 		upgraded.connect();
 
-		expect(tableOf(upgraded.bound, 'tasks').list().rows).toEqual([]);
+		expect(tableOf(upgraded.bound, 'tasks').rows).toEqual([]);
 		expectOk(otherNotes.create({ title: 'Bread' }));
 		other.client.flush();
 		wire.settle();
@@ -1716,7 +1712,7 @@ describe('two devices whose databases disagree', () => {
 
 		const upgraded = await absent.upgrade(twoTableDatabase);
 
-		expect(tableOf(upgraded.bound, 'tasks').list().rows).toEqual([]);
+		expect(tableOf(upgraded.bound, 'tasks').rows).toEqual([]);
 	});
 });
 

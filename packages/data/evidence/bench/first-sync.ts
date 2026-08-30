@@ -255,9 +255,9 @@ async function build(
 	};
 	/** One row's rich field, live on the one document (ADR-0295). */
 	const bodyOf = (id: string) => {
-		const content = db.tables.notes.content(id);
-		if (content === undefined) throw new Error('the row has no content');
-		return content.types.editor;
+		const editor = db.tables.notes.get(id)?.editor;
+		if (editor === undefined) throw new Error('the row has no content');
+		return editor;
 	};
 
 	const alive: string[] = [];
@@ -341,7 +341,7 @@ async function build(
 
 	const ids = db.tables.notes.ids();
 	const canary = db.tables.notes.get(canaryId);
-	if (canary.error !== null) throw canary.error;
+	if (canary === undefined) throw new Error('the canary row is gone');
 	const canaryProse = bodyOf(canaryId).toString();
 
 	return {
@@ -358,7 +358,7 @@ async function build(
 			head: head.data,
 			snapshotPosition: snapshot.data?.position ?? 0,
 			liveRows: ids.length,
-			canaryTitle: canary.data?.title ?? '',
+			canaryTitle: canary.title ?? '',
 			canaryProse,
 		},
 	};
@@ -428,11 +428,11 @@ async function apply(
 	const applyMs = performance.now() - started;
 
 	// The control. Bytes moving is not the claim; the vault arriving is.
-	const rows = db.tables.notes.list();
+	const rows = db.tables.notes;
 	const canary = rows.rows.find((row) => row.title === expectation.canaryTitle);
 	let prose: string | undefined;
 	if (canary !== undefined) {
-		prose = db.tables.notes.content(canary.id)?.types.editor.toString();
+		prose = db.tables.notes.get(canary.id)?.editor.toString();
 	}
 	// Guarding the guard: an expectation of an empty string would be satisfied by
 	// a replica that received nothing, which is the exact run this control exists

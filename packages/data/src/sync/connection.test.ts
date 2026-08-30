@@ -224,11 +224,7 @@ function openDriven({
 			swallow = count;
 		},
 		breakSocket: () => breakSocket?.(),
-		titles: () =>
-			db.tables.notes
-				.list()
-				.rows.map((row) => row.title)
-				.sort(),
+		titles: () => db.tables.notes.rows.map((row) => row.title).sort(),
 	};
 }
 
@@ -305,12 +301,12 @@ describe('a write syncs without anyone remembering to say so', () => {
 		run(wire, clock, 0);
 
 		const note = expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
-		const body = phone.db.tables.notes.content(note.id)?.types.editor;
+		const body = phone.db.tables.notes.get(note.id)?.editor;
 		if (body === undefined) throw new Error('the row has no editor');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
 		run(wire, clock, 1_000);
 
-		const arrived = laptop.db.tables.notes.content(note.id)?.types.editor;
+		const arrived = laptop.db.tables.notes.get(note.id)?.editor;
 		expect(JSON.stringify(arrived?.toJSON())).toContain('milk and eggs');
 	});
 });

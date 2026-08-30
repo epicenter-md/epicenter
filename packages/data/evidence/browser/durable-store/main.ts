@@ -115,7 +115,7 @@ Object.assign(globalThis, {
 	async write(title: string, prose: string) {
 		const db = bound();
 		const made = db.tables.notes.create({ title });
-		const body = db.tables.notes.content(made.id)?.types.body;
+		const body = db.tables.notes.get(made.id)?.body;
 		if (body === undefined) return { error: 'the row has no body' };
 		body.applyDelta(body.change.insert(prose) as never);
 		await db.store.persistence.flush();
@@ -128,14 +128,14 @@ Object.assign(globalThis, {
 	/** Everything this store can see right now, prose and all. */
 	async read() {
 		const db = bound();
-		const listed = db.tables.notes.list();
+		const listed = db.tables.notes;
 		const notes: { title: string; prose: string }[] = [];
 		for (const row of listed.rows) {
 			// Through the CRDT, not through a cache the harness keeps.
 			notes.push({
 				title: row.title,
 				prose: JSON.stringify(
-					db.tables.notes.content(row.id)?.types.body.toJSON() ?? null,
+					db.tables.notes.get(row.id)?.body.toJSON() ?? null,
 				),
 			});
 		}
