@@ -29,7 +29,6 @@ import {
 import { copyBytes, createSqliteDurablePort, NO_AUTHORITY } from './log.js';
 import {
 	createPersistenceController,
-	type DurableOp,
 	type DurablePort,
 	type DurableSnapshot,
 	type OutboxEntry,
@@ -426,8 +425,6 @@ function createStoreEngine(
 	definition: ParsedDataDefinition;
 } {
 	const database = createDatabaseDocument();
-	let pending: Uint8Array[] = [];
-	let composedTransaction: DurableOp[] | undefined;
 	let disposed = false;
 
 	/**
@@ -589,13 +586,9 @@ function createStoreEngine(
 			// true: without it, a remote update landed in the log twice, once emitted
 			// and once received, and the log grew at double the rate it reported.
 			if (origin === remoteOrigin) return;
-			if (origin === localOrigin) {
-				// A store verb is mid-flight; `commit` queues these when the
-				// transaction returns.
-				pending.push(copyBytes(update));
-				return;
-			}
-			// What remains below must be a LOCAL transaction. `applyUpdateV2` forces
+			// What remains must be a LOCAL transaction, whether a store verb ran
+			// it under `localOrigin` or an application wrote through a live type
+			// it holds. `applyUpdateV2` forces
 			// `transaction.local` to false and a local `transact` defaults it to
 			// true, so this check makes the branch below provably an application
 			// writing through this document's own types rather than by convention.
@@ -653,107 +646,35 @@ function createStoreEngine(
 	}
 
 	/**
-	 * Run one mutation and queue its bytes for durable storage.
+	 * Run one mutation under the origin that marks it as this device's work.
 	 *
-	 * `updateV2` fires inside `transact`, after the observers and after
-	 * `afterTransaction` (verified against `@y/y@14.0.0-rc.24`), so by the time
-	 * `transact` returns the bytes are already buffered. Acceptance is the
-	 * synchronous half, and cannot fail for storage reasons. Durability is the
-	 * queued half: the bytes and, on a replica, their outbox claim join the
-	 * controller's queue as adjacent ops in one atomic batch, so durable state
-	 * can never hold a write locally and unowed (ADR-0238). On a synchronous
-	 * engine the flush completes before this returns.
+	 * Everything durable happens in the `updateV2` listener, which fires inside
+	 * `transact` after the observers, after `afterTransaction`, and after
+	 * cleanup (verified against `@y/y@14.0.0-rc.24`). That is the only moment
+	 * the change is settled AND its bytes exist, so it is the only moment both
+	 * halves of a commit can be done at once. Acceptance is the synchronous
+	 * half and cannot fail for storage reasons; durability is the queued half
+	 * (ADR-0238). On a synchronous engine the flush completes before this
+	 * returns.
 	 */
-	function commit(
-		mutate: () => void,
-		/**
-		 * Ops composed with this commit's appends into ONE atomic batch, built
-		 * after the mutation so they can depend on what it did.
-		 *
-		 * Nothing passes it today. Row deletion used to: the scalar removal and
-		 * the row document's durable tombstone had to land together, and a
-		 * database is one document now, so a deletion is bytes like any other
-		 * write (ADR-0295). Kept because `transact` composes through the same
-		 * seam and the next fact that needs one atomic batch will want it.
-		 */
-		compose?: () => DurableOp[],
-	): void {
-		if (composedTransaction !== undefined) {
-			database.transact(mutate, localOrigin);
-			composedTransaction.push(...(compose?.() ?? []));
-			return;
-		}
-		pending = [];
+	function commit(mutate: () => void): void {
 		database.transact(mutate, localOrigin);
-		const authored = pending;
-		pending = [];
-		try {
-			const ops: DurableOp[] = authored.map(
-				(update): DurableOp => ({
-					kind: 'append',
-					id: mintId(),
-					bytes: update,
-					authoritySeq: authoredSeq(),
-				}),
-			);
-			ops.push(...(compose?.() ?? []));
-			if (ops.length > 0) {
-				committedSomething = true;
-				controller.enqueue(ops);
-			}
-		} finally {
-			// Either way the buffers drain, so stale ids never ride along with the
-			// next commit's.
-			flushCommitted();
-		}
 	}
 
 	/**
 	 * Run several direct data operations as one Yjs transaction and one durable
-	 * batch. Nested store verbs join this coordinator instead of opening their
-	 * own durable boundary.
+	 * batch.
+	 *
+	 * Nesting needs no bookkeeping here. A `transact` opened inside an open one
+	 * reuses the transaction already running and ignores the origin it was
+	 * handed, so nested store verbs join this coordinator by construction and
+	 * `updateV2` fires once, for the outermost. A throw from `run` still leaves
+	 * through Yjs's own `finally`, so a partial mutation is queued and
+	 * delivered before the error propagates.
 	 */
 	function transact<TResult>(run: () => TResult): TResult {
 		assertUsable();
-		if (composedTransaction !== undefined) return run();
-
-		composedTransaction = [];
-		pending = [];
-		let result!: TResult;
-		let failed = false;
-		let cause: unknown;
-		try {
-			database.transact(() => {
-				result = run();
-			}, localOrigin);
-		} catch (error) {
-			failed = true;
-			cause = error;
-		}
-
-		const authored = pending;
-		pending = [];
-		const composed = composedTransaction;
-		composedTransaction = undefined;
-		try {
-			const ops: DurableOp[] = authored.map(
-				(update): DurableOp => ({
-					kind: 'append',
-					id: mintId(),
-					bytes: update,
-					authoritySeq: authoredSeq(),
-				}),
-			);
-			ops.push(...composed);
-			if (ops.length > 0) {
-				committedSomething = true;
-				controller.enqueue(ops);
-			}
-		} finally {
-			flushCommitted();
-		}
-		if (failed) throw cause;
-		return result;
+		return database.transact(run, localOrigin);
 	}
 
 	/**
@@ -1184,7 +1105,6 @@ function createStoreEngine(
 						// `updateV2` event at all. Persisting emitted bytes therefore
 						// writes nothing, while the caller advances its cursor and the
 						// data is lost permanently with every layer reporting success.
-						pending = [];
 						const received = copyBytes(update);
 						// A refusal is a property of the bytes: nothing already applied is
 						// rolled back (an update is idempotent, so a re-receive after the
@@ -1195,9 +1115,9 @@ function createStoreEngine(
 							catch: (cause) => StoreError.ApplyFailed({ cause }),
 						});
 						if (error !== null) return Err(error);
-						// Whatever the document emitted in response is dropped: it
-						// describes the same change the received bytes already carry.
-						pending = [];
+						// Whatever the document emitted in response is dropped by the
+						// listener's `remoteOrigin` return: it describes the same change
+						// the received bytes already carry.
 						try {
 							committedSomething = true;
 							// With the bytes, never after them: the bookmark and what it
