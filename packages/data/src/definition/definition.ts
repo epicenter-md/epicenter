@@ -385,7 +385,7 @@ export type ParsedDataDefinition = {
 	canonical: string;
 };
 
-let parsed = new WeakMap<
+const parsed = new WeakMap<
 	object,
 	Result<ParsedDataDefinition, DataDefinitionParseError>
 >();
@@ -393,11 +393,22 @@ let parsed = new WeakMap<
 /**
  * Parse and compile one definition, held beside the definition object (ADR-0266).
  *
- * Keyed on object identity, not a content hash: `defineData` compiles once at
- * authoring and warms this cache, so an opener that later passes the same object
- * is a hit. A definition arriving as raw data, an object nobody kept, compiles on
- * arrival and is held until it is collected. A non-object cannot be cached and
- * compiles directly, on its way to the malformed result it earns.
+ * Keyed on object identity, not a content hash. The memo is what makes eager
+ * validation free: `defineData` compiles at the authoring call so a malformed
+ * definition fails there rather than at first open (ADR-0266), and without this
+ * every opener would redo that work. It is not here for the milliseconds; it is
+ * here so "validate early" does not mean "validate twice".
+ *
+ * A definition arriving as raw data, an object nobody kept, compiles on arrival
+ * and is held until it is collected. A non-object cannot be cached and compiles
+ * directly, on its way to the malformed result it earns.
+ *
+ * Identity keying means a definition MUTATED IN PLACE would read back its old
+ * parse. There used to be a `clearDataDefinitionCache` for that, exported and
+ * called by nothing, including the tests it named. Nothing mutates a
+ * definition: they are module-level constants built from `field.*`, and the
+ * parse freezes its own canonical copy. An escape hatch for an unreachable
+ * hazard mostly advertises that the hazard is reachable.
  */
 export function parseData(
 	value: unknown,
@@ -673,9 +684,4 @@ function freeze<T>(value: T): T {
 	if (Object.isFrozen(value)) return value;
 	for (const child of Object.values(value)) freeze(child);
 	return Object.freeze(value);
-}
-
-/** Test support for a new parse after a definition has changed in-place. */
-export function clearDataDefinitionCache(): void {
-	parsed = new WeakMap();
 }

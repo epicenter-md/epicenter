@@ -18,7 +18,6 @@ export * from './canonical.js';
 export {
 	type Conformance,
 	type ConformanceIssue,
-	clearDataDefinitionCache,
 	type DataDefinition,
 	DataDefinitionParseError,
 	type DataField,
