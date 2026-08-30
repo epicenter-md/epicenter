@@ -128,10 +128,27 @@ const mintRowId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 24);
 
 /** Bytes this process authored, which is what has to reach the authority. */
 const localOrigin = Object.freeze({ kind: 'epicenter-local' });
-/** Bytes replayed from SQLite, which must not be appended back to SQLite. */
-const hydrationOrigin = Object.freeze({ kind: 'epicenter-hydration' });
-/** Bytes that arrived from a peer: durable, but not local work. */
-const remoteOrigin = Object.freeze({ kind: 'epicenter-remote' });
+
+/**
+ * One `applyRemote` call, carried on the transaction that applies it.
+ *
+ * Bytes that arrived from a peer are durable but are not local work, so the
+ * listener must not append them: `applyRemote` persists what it RECEIVED,
+ * never what the document emitted in response. The listener parks the
+ * transaction here on its way past, and `applyRemote` delivers from it once
+ * the append is enqueued, so the notification still lands after acceptance
+ * without anything having to be remembered between two calls.
+ *
+ * `transaction` stays undefined when the update had missing causal
+ * dependencies. Yjs buffers those into `store.pendingStructs`, returns
+ * normally, and emits NO event, and delivering nothing is then exactly right:
+ * the document did not change.
+ */
+type RemoteApply = { kind: 'epicenter-remote'; transaction?: Y.Transaction };
+
+function isRemoteApply(origin: unknown): origin is RemoteApply {
+	return (origin as RemoteApply | null)?.kind === 'epicenter-remote';
+}
 
 /**
  * The client half of sync, which is two facts the store already owns.
@@ -445,38 +462,27 @@ function createStoreEngine(
 	 */
 	let nextId = loaded.lastId + 1;
 	const mintId = (): number => nextId++;
-	/**
-	 * Tables the transaction in progress changed, held until the commit lands.
-	 *
-	 * The one reason this buffer exists. A table root's `'delta'` fires
-	 * SYNCHRONOUSLY inside `applyUpdateV2`, mid-acceptance (measured against
-	 * `@y/y@14.0.0-rc.24`). Delivering there would hand a subscriber a commit
-	 * still being accepted, and would run its listener ahead of the
-	 * `onCommitted` phase a composed follower marks itself dirty in, so the
-	 * notification waits and goes out afterwards.
-	 *
-	 * It holds table names rather than row addresses because nothing has ever
-	 * read a row id off this path: `subscribe` is a ping.
-	 */
-	let touched = new Set<string>();
-	/** Whether the commit in progress changed anything at all. */
-	let committedSomething = false;
-	/** Whether the commit in progress touched the KV root. */
-	let kvTouched = false;
 	/** Who is watching each table, by name. A ping, not a payload. */
 	const tableListeners = new Map<string, Set<() => void>>();
 	/**
-	 * Type-field listeners whose type changed in the commit being accepted.
+	 * Which table each root type belongs to, so a commit's changed types can be
+	 * routed back to the tables they belong to.
 	 *
-	 * Buffered for the same reason a table's invalidation is: a nested type's
-	 * `'delta'` fires SYNCHRONOUSLY inside `applyUpdateV2`, mid-acceptance, so
-	 * delivering there would hand a subscriber a commit still being accepted
-	 * and would run its listener ahead of the `onCommitted` phase a composed
-	 * follower marks itself dirty in.
+	 * Filled by `createTableHandle`, which is the one place a root is taken.
 	 */
-	let typeTouched = new Set<() => void>();
+	const tableNameByRoot = new Map<Y.Type, string>();
 	/** Who is watching the one KV root. Beside the tables', for the one reason. */
 	const kvListeners = new Set<() => void>();
+	/** The one KV root, taken once so a commit can be checked against it. */
+	const kvRootType = kvRoot(database);
+	/**
+	 * Who is watching each type field, by the type itself.
+	 *
+	 * Keyed by the live type rather than by a row and field name, because that
+	 * is what a commit names: `changedParentTypes` holds types, and a lookup
+	 * beats reconstructing an address for each one.
+	 */
+	const typeListeners = new Map<Y.Type, Set<() => void>>();
 	const localWorkListeners = new Set<() => void>();
 	const committedListeners = new Set<() => void>();
 
@@ -489,7 +495,8 @@ function createStoreEngine(
 	 * so a broken subscriber is that subscriber's bug and must not read as a
 	 * store that stopped notifying.
 	 */
-	function notify(listeners: Iterable<() => void>): void {
+	function notify(listeners: ReadonlySet<() => void> | undefined): void {
+		if (listeners === undefined || listeners.size === 0) return;
 		for (const listener of [...listeners]) {
 			const { error } = trySync({
 				try: listener,
@@ -500,45 +507,90 @@ function createStoreEngine(
 	}
 
 	/**
-	 * Hand a committed change to whoever is waiting for it, and reset the buffers.
+	 * Hand a settled commit to whoever is waiting for it.
 	 *
-	 * Runs at ACCEPTANCE, whatever the durable engine does later (ADR-0238).
-	 * Phase order inside one flush is a contract: `onCommitted` listeners
-	 * first, then KV, then table invalidations, so a follower that marks
-	 * itself dirty in the first phase is dirty before any subscriber reads.
-	 * Each buffer is swapped before delivery rather than cleared
-	 * after, because a subscriber is allowed to write, and a nested write's
-	 * addresses belong to its own flush.
+	 * Runs at ACCEPTANCE, whatever the durable engine does later (ADR-0238),
+	 * and reads the transaction rather than a buffer. Yjs maintains both maps
+	 * for every transaction whether or not anything observes them, so what a
+	 * subscriber needs is already assembled by the time `updateV2` fires; the
+	 * buffers this replaced existed only to carry the same facts forward from
+	 * the type-level `'delta'` events, which fire mid-acceptance and cannot be
+	 * delivered from.
+	 *
+	 * Phase order is a contract: `onCommitted` listeners first, then KV, then
+	 * tables, then type fields, so a follower that marks itself dirty in the
+	 * first phase is dirty before any subscriber reads.
 	 */
-	function flushCommitted(): void {
-		if (committedSomething) {
-			committedSomething = false;
-			notify(committedListeners);
-		}
-		if (kvTouched) {
-			kvTouched = false;
-			notify(kvListeners);
-		}
-		if (touched.size > 0) {
-			const batch = touched;
-			touched = new Set();
-			for (const tableName of batch) {
-				notify(tableListeners.get(tableName) ?? []);
+	function deliver(transaction: Y.Transaction): void {
+		notify(committedListeners);
+		if (transaction.changed.has(kvRootType)) notify(kvListeners);
+		// A table's signal means its SHAPE changed, which is two depths and not
+		// three (ADR-0187's superset, drawn as tightly as the document allows):
+		//
+		//   the table root    a row was added or removed
+		//   a row             one of its scalars changed
+		//   deeper            a type field's own content. NOT a table event.
+		//
+		// The third line is the whole point. A row's type field is nested on the
+		// row (ADR-0295), so before this every prose keystroke bubbled to the
+		// table root and woke every list in the application. `changed` holds only
+		// what a transaction modified DIRECTLY, so the bubble never happens and
+		// the depth test is a parent lookup rather than a walk.
+		//
+		// Skipped outright when nothing is subscribed, which is what the
+		// per-table `'delta'` attach used to buy: a commit of 2,000 rows in an
+		// application that watches no table should walk nothing and allocate
+		// nothing. `subscribe` prunes its own entry so this stays true.
+		if (tableListeners.size === 0) return deliverTypes(transaction);
+		const tables = new Set<string>();
+		for (const type of transaction.changed.keys()) {
+			const asRoot = tableNameByRoot.get(type);
+			if (asRoot !== undefined) {
+				tables.add(asRoot);
+				continue;
 			}
+			const parent = type.parent;
+			if (parent === null) continue;
+			const asRow = tableNameByRoot.get(parent);
+			if (asRow !== undefined) tables.add(asRow);
 		}
-		// Last, and finest-grained. A type-field subscriber is where an
-		// application hangs its own derived write (ADR-0297), so it runs after
-		// every coarser reader has already seen the commit that caused it.
-		if (typeTouched.size === 0) return;
-		const fields = typeTouched;
-		typeTouched = new Set();
-		notify(fields);
+		for (const tableName of tables) {
+			notify(tableListeners.get(tableName));
+		}
+		deliverTypes(transaction);
+	}
+
+	/**
+	 * The last and finest phase: type-field watchers.
+	 *
+	 * A type-field subscriber is where an application hangs its own derived
+	 * write (ADR-0297), so it runs after every coarser reader has already seen
+	 * the commit that caused it.
+	 *
+	 * `changedParentTypes` rather than `changed`, because this is the one
+	 * signal that SHOULD bubble: a watcher on a field wants an edit anywhere
+	 * inside it, which is what the type-level `'delta'` it replaced reported.
+	 */
+	function deliverTypes(transaction: Y.Transaction): void {
+		if (typeListeners.size === 0) return;
+		for (const type of transaction.changedParentTypes.keys()) {
+			notify(typeListeners.get(type));
+		}
 	}
 
 	// The transport's nudge fires when a flush durably grows the outbox, not
 	// when a commit is accepted: the sender reads only the durable outbox, so
 	// nudging earlier would wake it to find nothing sendable (ADR-0238).
 	controller.onOutboxGrew(() => notify(localWorkListeners));
+
+	// Hydrate BEFORE the listener exists, so replaying the record cannot append
+	// what it just read. Ordering rather than an origin to ignore, and the
+	// ordering is backstopped: a replay that reached the listener would carry
+	// `transaction.local === false` with no remote origin, and the throw below
+	// would fail the open loudly on the first stored update.
+	for (const stored of loaded.updates) {
+		Y.applyUpdateV2(database, copyBytes(stored), null);
+	}
 
 	database.on(
 		'updateV2',
@@ -548,49 +600,38 @@ function createStoreEngine(
 			_document: Y.Doc,
 			transaction: Y.Transaction,
 		) => {
-			if (origin === hydrationOrigin) return;
-			// `applyRemote` persists the bytes it RECEIVED, in its own transaction, so
-			// the bytes the document emits in response describe a change that is
-			// already on its way to storage. Returning here is what makes that comment
-			// true: without it, a remote update landed in the log twice, once emitted
-			// and once received, and the log grew at double the rate it reported.
-			if (origin === remoteOrigin) return;
+			if (isRemoteApply(origin)) {
+				// `applyRemote` owns both halves for its own bytes. It hears about
+				// this transaction through the origin it minted.
+				origin.transaction = transaction;
+				return;
+			}
 			// What remains must be a LOCAL transaction, whether a store verb ran
 			// it under `localOrigin` or an application wrote through a live type
-			// it holds. `applyUpdateV2` forces
-			// `transaction.local` to false and a local `transact` defaults it to
-			// true, so this check makes the branch below provably an application
-			// writing through this document's own types rather than by convention.
-			// Decoded foreign bytes reaching it would be persisted as the EMITTED
-			// update rather than the received one (nothing at all when causal
-			// dependencies are missing; see `applyRemote`), and would join the
-			// outbox as this device's authored work and be republished to the
-			// authority. The
-			// throw surfaces synchronously at the rogue `Y.applyUpdateV2` call site,
-			// before anything is accepted, so the store is untouched.
+			// it holds. `applyUpdateV2` forces `transaction.local` to false and a
+			// local `transact` defaults it to true, so this check makes the branch
+			// below provably an application writing through this document's own
+			// types rather than by convention. Decoded foreign bytes reaching it
+			// would be persisted as the EMITTED update rather than the received
+			// one (nothing at all when causal dependencies are missing; see
+			// `applyRemote`), and would join the outbox as this device's authored
+			// work and be republished to the authority. The throw surfaces
+			// synchronously at the rogue `Y.applyUpdateV2` call site, before
+			// anything is accepted, so the store is untouched.
 			if (!transaction.local) {
 				throw new Error(
 					"Foreign bytes must enter through applyRemote. A direct Y.applyUpdateV2 on this document would be republished as this device's own work, and is lost entirely when its causal dependencies have not arrived.",
 				);
 			}
-			// An application writing through a live type it holds: an editor bound
-			// to a type field, which is the ordinary path since a row's type
-			// content came back into this document (ADR-0295). Authored bytes join
-			// the durable queue and the outbox on their own, because no store verb
-			// is going to flush them.
-			//
-			// The notification flush runs in a finally, deliberately: the live
-			// document already holds the change, so the ids are true whatever the
-			// durable engine later does with the bytes, and leaving them buffered
-			// would attach them to whichever commit ran next.
-			const authored = copyBytes(update);
+			// The delivery runs in a finally, deliberately: the live document
+			// already holds the change, so what a subscriber would read is true
+			// whatever the durable engine later does with the bytes.
 			try {
-				committedSomething = true;
 				controller.enqueue([
 					{
 						kind: 'append',
 						id: mintId(),
-						bytes: authored,
+						bytes: copyBytes(update),
 						// What an append this device authored owes the authority:
 						// nothing yet, on either store kind, because neither has a
 						// position for bytes the authority has not seen. On a local
@@ -600,16 +641,10 @@ function createStoreEngine(
 					},
 				]);
 			} finally {
-				flushCommitted();
+				deliver(transaction);
 			}
 		},
 	);
-
-	// Attach the listener before hydrating, then replay under an origin the
-	// listener ignores, so loading cannot append the same bytes it just read.
-	for (const stored of loaded.updates) {
-		Y.applyUpdateV2(database, copyBytes(stored), hydrationOrigin);
-	}
 
 	/**
 	 * The one gate every verb passes: a disposed store throws, it never
@@ -686,21 +721,6 @@ function createStoreEngine(
 		const root = kvRoot(database);
 
 		/**
-		 * How many live subscriptions this handle holds.
-		 *
-		 * Attached on the first and detached on the last, for the same reason a
-		 * table's is: a `'delta'` listener is what makes the type build and emit
-		 * its delta, and an application that never watches its settings should
-		 * not pay for one.
-		 */
-		let subscriptions = 0;
-		const onKvDelta = (): void => {
-			// Buffered onto the same flush the tables use, so a settings listener
-			// and a row listener observe one consistent commit rather than two.
-			kvTouched = true;
-		};
-
-		/**
 		 * The declared keys this release can read, and the ones it cannot.
 		 *
 		 * Conformance runs over the whole stored object because that is what the
@@ -732,15 +752,13 @@ function createStoreEngine(
 			},
 			subscribe(listener: () => void): () => void {
 				kvListeners.add(listener);
-				subscriptions += 1;
-				if (subscriptions === 1) root.on('delta', onKvDelta);
 				let stopped = false;
 				return () => {
+					// Idempotent, because a Svelte effect that reruns can call the
+					// teardown it was handed more than once.
 					if (stopped) return;
 					stopped = true;
 					kvListeners.delete(listener);
-					subscriptions -= 1;
-					if (subscriptions === 0) root.off('delta', onKvDelta);
 				};
 			},
 			update(values: JsonObject): void {
@@ -779,58 +797,12 @@ function createStoreEngine(
 		table: ParsedTable,
 	): TableHandle {
 		const root = tableRoot(database, tableName);
+		// How a commit's changed types find their way back to this table. The
+		// root is taken here and nowhere else, so this is where the mapping
+		// belongs.
+		tableNameByRoot.set(root, tableName);
 		/** The type fields this table declares, minted with every row it creates. */
 		const typeFields = table.types;
-
-		/**
-		 * That this table changed, noted for the flush to deliver.
-		 *
-		 * `'delta'` rather than `observeDeep` because `observeDeep` reports a
-		 * nested row's field edit as an event on the TABLE ROOT with
-		 * `keysChanged` empty, so it cannot even tell that a row moved. Delta
-		 * can, and once could name which row: its `attrs` is keyed by the
-		 * attribute that changed, and a row IS an attribute on the table root
-		 * (`evidence/delta-names-the-row.test.ts`).
-		 *
-		 * Nothing ever read that name. The one live subscriber, `from-data`'s
-		 * `createSubscriber`, discards the argument, and the mirror refuses the
-		 * signal and renders everything. So this notes the table and drops the
-		 * ids, and the delta test keeps standing as evidence that they were
-		 * there to be had.
-		 *
-		 * It also fires for a type field's edit, because a nested edit bubbles
-		 * through `changedParentTypes` to the table root (ADR-0295). A list that
-		 * re-renders off this signal therefore re-renders at typing frequency;
-		 * a listener that wants only one field's edits uses `content`'s own
-		 * per-field signal instead.
-		 */
-		function collectTouched(delta: unknown): void {
-			const { attrs } = delta as { attrs?: Record<string, unknown> };
-			if (attrs === undefined) return;
-			touched.add(tableName);
-		}
-
-		/**
-		 * How many live subscriptions this handle holds.
-		 *
-		 * The listener is attached on the first and detached on the last, rather
-		 * than for the life of the handle, because attaching one is what makes the
-		 * type build and emit its delta, and that cost lands on every commit.
-		 *
-		 * Measured (`evidence/bench/subscription.ts`), and the size is worth
-		 * knowing because it is much smaller than it was assumed to be. On 20,000
-		 * rows a commit editing one row costs about 0.003 ms more with a
-		 * subscriber, which is at the noise floor; the cost only becomes visible
-		 * at 2,000 rows in one commit, where it is about 0.7 ms on top of 2.0 ms.
-		 * So it scales with the CHANGE and not with the table, which is the shape
-		 * ADR-0187 needed to be true and the reason row ids are affordable at all.
-		 *
-		 * Given numbers that small, this is not really a performance guard. It is
-		 * what keeps `touched` empty for an application that subscribes to
-		 * nothing, so a write in that application allocates no addresses and
-		 * flushes no batch.
-		 */
-		let subscriptions = 0;
 
 		/** One stored payload, read through the declaration the way every read reads. */
 		function conformRow(
@@ -929,30 +901,39 @@ function createStoreEngine(
 				assertUsable();
 				const type = readRowTypes(root, rowId, typeFields)?.[field];
 				if (type === undefined) return () => undefined;
-				// Straight onto the field's own type, so what a listener hears is an
-				// edit to THAT content and nothing else (ADR-0297). A nested edit
-				// does also bubble to the table root, which is what `subscribe`
-				// reports; this one does not widen to it. That scope is the whole
-				// point: a note list that re-rendered off the table signal would
-				// re-read every visible note's prose on every keystroke.
+				// Keyed by the field's own type, so what a listener hears is an edit
+				// to THAT content and nothing else (ADR-0297). `deliver` reads
+				// `changedParentTypes` for this phase, so an edit anywhere inside
+				// the field reaches it while an edit to a sibling row does not.
 				//
-				// Noted rather than delivered: the delta fires inside acceptance,
-				// and the notification goes out on the same flush every other
-				// subscriber's does, so a listener that writes is writing against a
-				// settled commit.
-				const onDelta = () => typeTouched.add(listener);
-				type.on('delta', onDelta);
+				// It no longer widens to the table either, and that is the point of
+				// the depth rule in `deliver`: before it, a note list rendering off
+				// the table signal re-read every visible note's prose on every
+				// keystroke.
+				let listeners = typeListeners.get(type);
+				if (listeners === undefined) {
+					listeners = new Set();
+					typeListeners.set(type, listeners);
+				}
+				listeners.add(listener);
 				let stopped = false;
 				return () => {
 					// Idempotent, for the same reason a table subscription is: a
 					// Svelte effect that reruns can call its teardown twice.
 					if (stopped) return;
 					stopped = true;
-					type.off('delta', onDelta);
-					// A stop between the delta and the flush must not deliver.
-					typeTouched.delete(listener);
+					listeners.delete(listener);
+					if (listeners.size === 0) typeListeners.delete(type);
 				};
 			},
+			/**
+			 * Hear that this table's SHAPE changed: a row added, a row removed, or
+			 * a row's scalars edited. Not an edit inside a type field.
+			 *
+			 * A ping, not a payload. `deliver` decides what counts, by depth
+			 * against the table root, so nothing is registered on the document
+			 * here and there is no listener lifecycle to keep in step.
+			 */
 			subscribe(listener: () => void): () => void {
 				let listeners = tableListeners.get(tableName);
 				if (listeners === undefined) {
@@ -960,20 +941,15 @@ function createStoreEngine(
 					tableListeners.set(tableName, listeners);
 				}
 				listeners.add(listener);
-				const unsubscribe = () => listeners.delete(listener);
-				subscriptions += 1;
-				if (subscriptions === 1) root.on('delta', collectTouched);
 				let stopped = false;
 				return () => {
 					// Idempotent, because a Svelte effect that reruns can call the
-					// teardown it was handed more than once, and a second call that
-					// decremented the count would detach the listener out from under
-					// the subscribers still holding one.
+					// teardown it was handed more than once.
 					if (stopped) return;
 					stopped = true;
-					unsubscribe();
-					subscriptions -= 1;
-					if (subscriptions === 0) root.off('delta', collectTouched);
+					listeners.delete(listener);
+					// Pruned, so `deliver` can skip its whole walk on `size === 0`.
+					if (listeners.size === 0) tableListeners.delete(tableName);
 				};
 			},
 		}) as TableHandle;
@@ -1009,20 +985,20 @@ function createStoreEngine(
 						// writes nothing, while the caller advances its cursor and the
 						// data is lost permanently with every layer reporting success.
 						const received = copyBytes(update);
+						// The origin the listener hands this transaction back through.
+						// Minted per call, so nothing about one apply has to be
+						// remembered beside the store.
+						const applying: RemoteApply = { kind: 'epicenter-remote' };
 						// A refusal is a property of the bytes: nothing already applied is
 						// rolled back (an update is idempotent, so a re-receive after the
 						// refusal re-applies harmlessly), the cursor does not advance, and
 						// the store stays usable.
 						const { error } = trySync({
-							try: () => Y.applyUpdateV2(database, received, remoteOrigin),
+							try: () => Y.applyUpdateV2(database, received, applying),
 							catch: (cause) => StoreError.ApplyFailed({ cause }),
 						});
 						if (error !== null) return Err(error);
-						// Whatever the document emitted in response is dropped by the
-						// listener's `remoteOrigin` return: it describes the same change
-						// the received bytes already carry.
 						try {
-							committedSomething = true;
 							// With the bytes, never after them: the bookmark and what it
 							// accounts for are adjacent ops in one atomic flush batch, so
 							// durable state can never hold a cursor ahead of the bytes, and
@@ -1043,12 +1019,13 @@ function createStoreEngine(
 								},
 							]);
 						} finally {
-							// After the enqueue, which is what the touched tables were
-							// buffered for: the `'delta'` naming them fired inside
-							// `applyUpdateV2` above, mid-acceptance, and delivery waits
-							// until acceptance completes so every listener phase observes
-							// one settled commit.
-							flushCommitted();
+							// After the enqueue, so every listener phase observes one
+							// settled commit. Undefined when the update had missing
+							// dependencies: Yjs buffered it and emitted nothing, so the
+							// document did not change and there is nothing to deliver.
+							if (applying.transaction !== undefined) {
+								deliver(applying.transaction);
+							}
 						}
 						return Ok(undefined);
 					},

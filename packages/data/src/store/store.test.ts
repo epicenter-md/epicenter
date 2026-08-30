@@ -661,19 +661,34 @@ describe('a subscription says a table changed', () => {
 		);
 	});
 
-	test("prose written into a row's type field IS a table commit", () => {
-		// The collapse's cost, asserted rather than discovered (ADR-0295). A
-		// nested edit bubbles through `changedParentTypes`, so a keystroke
-		// reaches the table root's delta path and every table subscriber fires
-		// at typing frequency. A list that re-renders off this signal is paying
-		// for it; what the ADR says about that is that the signal is coarse, and
-		// a field-scoped one is `content(id).subscribe`.
+	test("prose written into a row's type field is NOT a table commit", () => {
+		// The refusal a table signal is drawn around. A row's type field is
+		// nested on the row (ADR-0295), so a keystroke modifies the field and
+		// nothing shallower. `deliver` reads what a transaction changed
+		// DIRECTLY, and counts only the table root (a row added or removed) and
+		// a row (its scalars), so the bubble that used to wake every list in the
+		// application at typing frequency does not happen.
+		//
+		// What a listener that wants prose uses instead is `watch`, which is
+		// scoped to the one field.
 		const made = note();
 		const { seen } = record(db.tables.notes);
 
 		const body = db.tables.notes.get(made.id)?.editor;
 		if (body === undefined) throw new Error('the row has no editor');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
+		expect(seen).toEqual([]);
+	});
+
+	test('editing a row scalar IS a table commit', () => {
+		// The other side of the depth rule, and the reason it is two levels
+		// rather than one: a scalar lives on the ROW, not on the table root, so
+		// a rule that counted only the root would leave a renamed note showing
+		// its old title in every list.
+		const made = note();
+		const { seen } = record(db.tables.notes);
+
+		db.tables.notes.update(made.id, { title: 'renamed' });
 		expect(seen).toEqual(['changed']);
 	});
 
@@ -1152,6 +1167,15 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 		db.transact(() => {
 			editor.applyDelta(editor.change.insert('a') as never);
 			editor.applyDelta(editor.change.insert('b') as never);
+		});
+		// No 'table': prose is not a table event. The phase ORDER is still the
+		// contract, which is what a commit touching both halves shows.
+		expect(order).toEqual(['committed', 'field']);
+
+		order.length = 0;
+		db.transact(() => {
+			db.tables.notes.update(made.id, { title: 'renamed' });
+			editor.applyDelta(editor.change.insert('c') as never);
 		});
 		expect(order).toEqual(['committed', 'table', 'field']);
 	});

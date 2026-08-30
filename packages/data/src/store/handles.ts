@@ -160,9 +160,11 @@ export type TableHandle = {
 	 * the row. Scoped to the field rather than the row or the table, and that
 	 * scope is the whole reason it exists: the store writes no derived fields
 	 * (ADR-0297), so an application hangs its own write on an edit, and a
-	 * row-scoped signal would fire on the write it caused. A note list that
-	 * re-rendered off `subscribe` below would re-read every visible note's
-	 * prose on every keystroke.
+	 * row-scoped signal would fire on the write it caused.
+	 *
+	 * This is also the ONLY way to hear prose. `subscribe` below reports a
+	 * table's shape and deliberately not an edit inside a field, so a list does
+	 * not wake at typing frequency.
 	 *
 	 * Fires once per commit, on the same flush every other subscriber's
 	 * notification goes out on and after all of them, so a listener that writes
@@ -174,7 +176,15 @@ export type TableHandle = {
 	 */
 	watch(rowId: string, field: string, listener: () => void): () => void;
 	/**
-	 * Hear when anything in this table changes, whoever changed it.
+	 * Hear when this table's SHAPE changes: a row added, a row removed, or a
+	 * row's scalars edited.
+	 *
+	 * NOT an edit inside a row's type field. A type field is nested on its row
+	 * (ADR-0295), so counting it here would wake every list in the application
+	 * on every keystroke; `watch` above is the signal for that, scoped to the
+	 * one field. The store decides by depth against the table root, so the
+	 * invalidation stays a superset of what changed (ADR-0187) without being
+	 * the whole document.
 	 *
 	 * A ping, not a payload. It carried the ids a commit touched until nothing
 	 * turned out to read them: the one live subscriber discards the argument,
@@ -185,9 +195,9 @@ export type TableHandle = {
 	 *
 	 * Fires after the commit is accepted, on the same flush as KV's and after
 	 * `onCommitted`, so a composed follower is dirty before any subscriber
-	 * reads. Naming the rows again is one listener away if something ever
-	 * wants them: the delta that produces them is still there, and
-	 * `evidence/delta-names-the-row.test.ts` still proves it.
+	 * reads. Naming the rows again is one lookup away if something ever wants
+	 * them: a commit's changed types ARE the rows, and
+	 * `evidence/delta-names-the-row.test.ts` still proves the ids are there.
 	 */
 	subscribe(listener: () => void): () => void;
 };

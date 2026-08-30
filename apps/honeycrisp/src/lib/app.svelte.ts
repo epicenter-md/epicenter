@@ -305,9 +305,10 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	 * hundred characters rather than walking the note (`prose-text.ts`). The
 	 * subscription is the row's OWN field signal, so a card re-renders when its
 	 * note's body changes and not when any other note's does. That is what the
-	 * per-field signal is for, and it is why this does not ride the table
-	 * subscription the list already has: a keystroke in one note would re-read
-	 * every visible note's prose.
+	 * per-field signal is for, and it is the ONLY signal that carries prose:
+	 * the table subscription the list already has reports the table's shape and
+	 * deliberately not an edit inside a field, so riding it would never
+	 * re-render this at all.
 	 *
 	 * `createSubscriber` ref-counts, so a card that is scrolled out of view
 	 * detaches and a note nobody is looking at costs nothing.
