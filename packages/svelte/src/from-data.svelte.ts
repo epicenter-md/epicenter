@@ -71,16 +71,20 @@ import { createSubscriber } from 'svelte/reactivity';
  * the table's own input type, so it is not assignable to the untyped
  * `TableHandle`; constraining on the shared read surface accepts every typed
  * handle while `ReactiveTable<TTable>` preserves the caller's exact type.
- * Verbs not named here (`create`, `update`, `delete`, `content`, `stored`,
- * `subscribe`) pass through the spread untouched. A read verb the store grows
- * later must either be added here or be given a line in the module doc above
- * saying why it is better off untracked; silence is how `content` and `stored`
- * both arrived without anyone deciding.
+ *
+ * **Every read verb is here, and that is now a rule the handle can keep.**
+ * `create`, `update`, `delete`, `watch` and `subscribe` pass through the spread
+ * untouched; they are writes or their own feeds. Nothing else is left. The
+ * store used to carry `content`, `stored` and `ids` beside these, none of which
+ * this adapter tracked and two of which an application could reach — which is
+ * how two Skills editors came to wrap a non-reactive `content()` in `$derived`
+ * and render nothing when a row arrived late. Those verbs are off the public
+ * handle now, so "on the handle" and "reactive" mean the same thing.
  */
 type AdaptableTable = {
-	list(): { rows: unknown[]; nonconforming: unknown[] };
+	readonly rows: unknown[];
+	readonly nonconforming: unknown[];
 	get(rowId: string): unknown;
-	ids(): string[];
 	subscribe(listener: () => void): () => void;
 };
 
@@ -97,15 +101,14 @@ type AdaptableData = {
 };
 
 /**
- * One table, same verbs and types, reads reactive, plus `rows` and
- * `nonconforming` so a template does not destructure `list()` to iterate.
+ * One table, same verbs and types, reads reactive.
+ *
+ * Nothing is added any more. `rows` and `nonconforming` used to be this
+ * adapter's own inventions over `list()`, because a template should not
+ * destructure a tuple to iterate; the store grew them, so this wraps rather
+ * than extends.
  */
-export type ReactiveTable<TTable extends AdaptableTable> = TTable & {
-	/** Reactive `list().rows`: every row this declaration reads whole. */
-	readonly rows: ReturnType<TTable['list']>['rows'];
-	/** Reactive `list().nonconforming`: rows stored here that this declaration cannot read. */
-	readonly nonconforming: ReturnType<TTable['list']>['nonconforming'];
-};
+export type ReactiveTable<TTable extends AdaptableTable> = TTable;
 
 /**
  * The declared shape of one opened data handle, made Svelte-reactive.
@@ -147,33 +150,45 @@ function reactiveTable<TTable extends AdaptableTable>(
 	// public `onCommitted` listeners run first, table invalidations after, so
 	// a cache invalidated by the table subscription would still serve
 	// pre-commit rows to an `onCommitted` reader (a composed follower reads in
-	// exactly that phase). The handle's
-	// `list()` is a walk over a document already in memory and builds fresh
-	// arrays per call either way, so a read-through is the store's own
-	// contract; this adapter adds tracking, never a second copy of the data.
+	// exactly that phase). The handle's `rows` is a walk over a document already
+	// in memory and builds a fresh array per access either way, so a
+	// read-through is the store's own contract; this adapter adds tracking,
+	// never a second copy of the data.
 	const subscribe = createSubscriber((update) => table.subscribe(update));
-	function list(): ReturnType<TTable['list']> {
-		subscribe();
-		return table.list() as ReturnType<TTable['list']>;
-	}
-	return Object.freeze({
-		...table,
-		list,
-		get rows() {
-			return list().rows;
-		},
-		get nonconforming() {
-			return list().nonconforming;
-		},
-		get: (rowId: string) => {
-			subscribe();
-			return table.get(rowId);
-		},
-		ids: () => {
-			subscribe();
-			return table.ids();
-		},
-	}) as ReactiveTable<TTable>;
+	// Descriptors, not a spread. `rows` and `nonconforming` are GETTERS on the
+	// handle, and `{ ...table }` would invoke them: wrapping a table would walk
+	// every row once, before anything had read anything. `from-data.svelte.test`
+	// caught exactly that, which is what "wrapping subscribes to nothing and
+	// reads nothing" is there to hold.
+	return Object.freeze(
+		Object.defineProperties(
+			{},
+			{
+				...Object.getOwnPropertyDescriptors(table),
+				rows: {
+					enumerable: true,
+					get() {
+						subscribe();
+						return table.rows;
+					},
+				},
+				nonconforming: {
+					enumerable: true,
+					get() {
+						subscribe();
+						return table.nonconforming;
+					},
+				},
+				get: {
+					enumerable: true,
+					value: (rowId: string) => {
+						subscribe();
+						return table.get(rowId);
+					},
+				},
+			},
+		),
+	) as ReactiveTable<TTable>;
 }
 
 function reactiveKv<TKv extends AdaptableKv>(kv: TKv): TKv {

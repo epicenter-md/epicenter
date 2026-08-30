@@ -44,7 +44,7 @@ import { fromData } from './from-data.svelte.js';
 function createFakeTable<TRow extends { id: string }>(seed: TRow[]) {
 	const rows = new Map<string, TRow>(seed.map((row) => [row.id, row]));
 	const listeners = new Set<() => void>();
-	const calls = { list: 0, subscribe: 0 };
+	const calls = { rows: 0, subscribe: 0 };
 	return {
 		calls,
 		handle: {
@@ -55,7 +55,7 @@ function createFakeTable<TRow extends { id: string }>(seed: TRow[]) {
 				return row;
 			},
 			get(rowId: string) {
-				return { data: rows.get(rowId), error: null };
+				return rows.get(rowId);
 			},
 			update(rowId: string, fields: Partial<TRow>) {
 				const row = rows.get(rowId);
@@ -71,12 +71,15 @@ function createFakeTable<TRow extends { id: string }>(seed: TRow[]) {
 			ids() {
 				return [...rows.keys()].sort();
 			},
-			list() {
-				calls.list += 1;
-				return { rows: [...rows.values()], nonconforming: [] };
+			get rows() {
+				calls.rows += 1;
+				return [...rows.values()];
 			},
-			document(rowId: string) {
-				return rows.has(rowId) ? { get: () => rowId } : undefined;
+			get nonconforming() {
+				return [];
+			},
+			watch() {
+				return () => undefined;
 			},
 			subscribe(listener: () => void) {
 				calls.subscribe += 1;
@@ -144,7 +147,7 @@ test('wrapping subscribes to nothing and reads nothing', () => {
 	const { notes, folders } = setup();
 	expect(notes.calls.subscribe).toBe(0);
 	expect(folders.calls.subscribe).toBe(0);
-	expect(notes.calls.list).toBe(0);
+	expect(notes.calls.rows).toBe(0);
 });
 
 test('every read is a fresh walk, never a cached copy', () => {
@@ -152,7 +155,7 @@ test('every read is a fresh walk, never a cached copy', () => {
 	expect(reactive.tables.notes.rows).toHaveLength(1);
 	notes.handle.create({ title: 'second' });
 	expect(reactive.tables.notes.rows).toHaveLength(2);
-	expect(notes.calls.list).toBe(2);
+	expect(notes.calls.rows).toBe(2);
 	expect(notes.calls.subscribe).toBe(0);
 });
 
@@ -167,11 +170,11 @@ test('an observed table still reads through on every access', () => {
 	expect(reactive.tables.notes.rows).toHaveLength(1);
 	notes.handle.create({ title: 'second' });
 	expect(reactive.tables.notes.rows).toHaveLength(2);
-	expect(notes.calls.list).toBe(2);
+	expect(notes.calls.rows).toBe(2);
 
 	notesControl.deactivate();
 	expect(reactive.tables.notes.rows).toHaveLength(2);
-	expect(notes.calls.list).toBe(3);
+	expect(notes.calls.rows).toBe(3);
 });
 
 test('write verbs pass through to the underlying handle', () => {
@@ -180,23 +183,21 @@ test('write verbs pass through to the underlying handle', () => {
 	const created = table.create({ title: 'made' });
 	expect(created.title).toBe('made');
 	expect(table.update(created.id, { title: 'renamed' }).error).toBeNull();
-	expect(notes.handle.get(created.id).data?.title).toBe('renamed');
+	expect(notes.handle.get(created.id)?.title).toBe('renamed');
 	table.delete(created.id);
-	expect(notes.handle.get(created.id).data).toBeUndefined();
+	expect(notes.handle.get(created.id)).toBeUndefined();
 	// Deleting an absent row is a no-op fact, not an outcome: it reports
 	// nothing and leaves the table exactly as it found it.
 	table.delete(created.id);
-	expect(notes.handle.get(created.id).data).toBeUndefined();
+	expect(notes.handle.get(created.id)).toBeUndefined();
 });
 
 test('point reads pass through and answer from current data', () => {
 	const { reactive } = setup();
 	const table = reactive.tables.notes;
-	expect(table.get('n1').data?.title).toBe('first');
-	expect(table.get('absent').data).toBeUndefined();
+	expect(table.get('n1')?.title).toBe('first');
+	expect(table.get('absent')).toBeUndefined();
 	expect(table.ids()).toEqual(['n1']);
-	expect(table.document('n1')).toBeDefined();
-	expect(table.document('absent')).toBeUndefined();
 });
 
 test('kv get passes through and reflects writes', () => {
