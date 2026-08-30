@@ -5,11 +5,12 @@
  * in `compile.ts` when it is parsed. Both halves state the same rules, and the
  * runtime half is the one that catches a definition this file never saw.
  *
- * The refusals sit above the calls that apply them because the one that
- * drifted did so alone. `ValidateTable` dispatched on `K extends `fields``
- * for a day after the key became `scalars`, and a conditional type answering
- * "no" is a legal answer, so nothing failed and nothing said anything. A stale
- * key is visible next to four siblings that are not.
+ * The refusals sit above the calls that apply them, and together rather than
+ * one beside each rule, because the one that drifted did so alone:
+ * `ValidateTable` dispatched on the key `fields` for a day after the
+ * declaration renamed it to `scalars`. A conditional type answering "no" is a
+ * legal answer, so nothing failed and nothing said anything. A stale key is
+ * visible next to four siblings that are not.
  */
 import type { TSchema } from 'typebox';
 
@@ -20,17 +21,6 @@ import type {
 	RowFileCodec,
 	RowFileCodecOf,
 } from './declaration.js';
-
-/**
- * The refusals: what a declaration may not say, checked where it is written.
- *
- * Each of these carries a rule `parseData` also enforces at runtime. They are
- * the compile-time half, and they are together because the one that drifted
- * did so alone: `ValidateTable` dispatched on `K extends 'fields'` for a day
- * after the key became `scalars`, and a conditional type answering "no" is a
- * legal answer, so nothing failed. Keeping the set in one place is what makes
- * a stale key visible next to four siblings that are not.
- */
 
 type RejectDefault<T> = T extends { default: unknown } ? never : T;
 type ValidateFields<T> = {
