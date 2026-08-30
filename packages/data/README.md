@@ -36,7 +36,7 @@ if (error !== null) return handle(error);
 
 await using opened = data;
 
-const listed = opened.tables.notes.list();          // no await
+const notes = opened.tables.notes.rows;             // no await
 opened.tables.notes.update(id, { title: 'Draft' }); // no await
 ```
 
@@ -82,14 +82,16 @@ and CRDT capability that `data` owns sits under `data.store`, so a table can be
 named anything a person names it:
 
 ```ts
-data.tables.notes.create(fields)                 // Row, at a minted 24-character id
-data.tables.notes.get(id)                         // Result<Row | undefined, NonconformingRow>
-data.tables.notes.update(id, patch)               // void; merges; refuses an absent address
-data.tables.notes.delete(id)                      // boolean: was there a row to take?
-data.tables.notes.ids()                           // string[], sorted
-data.tables.notes.list()                          // { rows, nonconforming }
-data.tables.notes.content(id)                     // RowContent | undefined
-data.tables.notes.subscribe(listener)             // returns its own unsubscribe
+data.tables.notes.create(fields)                  // Row, at a minted 24-character id
+data.tables.notes.get(id)                         // Row | undefined
+data.tables.notes.update(id, patch)               // Result<void, RowAbsentError>; merges
+data.tables.notes.delete(id)                      // void; deleting nothing is a no-op fact
+data.tables.notes.rows                            // Row[], read through the declaration
+data.tables.notes.nonconforming                   // rows this release cannot read
+data.tables.notes.ids()                           // string[], sorted, unconformed
+data.tables.notes.subscribe(listener)             // this table's SHAPE changed
+data.watch(type, listener)                        // one live type's content changed
+data.transact(() => { ... })                      // several writes, one commit
 ```
 
 Settings live on `data.kv`, which has `get()`, `update(patch)`, and `subscribe`.
@@ -102,18 +104,19 @@ Row document lifecycle is owned by the table that owns the row.
 accepted and durable transaction.
 
 SQL, when an application wants it, is a follower it composes over this
-surface: hydrate from `list()`, follow commits through `store.onCommitted`,
+surface: hydrate from `rows`, follow commits through `store.onCommitted`,
 and rebuild whole at the next read, so an index can never serve rows the live
 document has moved past (ADR-0241). The package shipped one such follower and
 no application ever composed it, so it was deleted; a person who wants to look
 at their data outside the app reads the export (ADR-0268), which is files.
 
 `data.store` carries the document itself: `pressure()` (how much of it is dead
-weight), `onCommitted` (anything committed, whoever wrote it),
-`persistence` (whether accepted work has reached durable storage, ADR-0238),
-and `sync`, the value that tells the two store kinds apart (ADR-0239):
-`undefined` on a local document, and `{ get, subscribe }` over
-`{ document }` on an account replica. They live under one key rather than
+weight), `stored()` and `rowFile()` (what is there, before the declaration reads
+it, which is the export's read and not an application's), `onCommitted`
+(anything committed, whoever wrote it), `persistence` (whether accepted work has
+reached durable storage, ADR-0238), and `sync`, the value that tells the two
+store kinds apart (ADR-0239): `undefined` on a local document and
+`{ replicates: true }` on an account replica. They live under one key rather than
 beside the tables so that no table name is reserved: `kv` is the only one a
 definition refuses, so a follower may project KV as a relation of that name
 without colliding with a table.
@@ -122,14 +125,15 @@ acknowledgements) is internal; only the transport drives it.
 
 ### Reading
 
-`list()` returns the rows this release could read and the ones it could not,
-side by side, as a plain object:
+`rows` and `nonconforming` are two getters, not one call: the rows this
+release could read, and the ones it could not.
 
 ```ts
-const { rows, nonconforming } = data.tables.notes.list();
+const rows = data.tables.notes.rows;
+const unreadable = data.tables.notes.nonconforming;
 ```
 
-It is not a `Result`, because nothing in it can fail: reads come from a
+Neither is a `Result`, because nothing in it can fail: reads come from a
 document already in memory. A disposed store throws `StoreUnusableError`
 instead of dressing that up as a read outcome (ADR-0237). The old shape
 returned a `Result` here, and `.data?.rows ?? []` quietly rendered an
@@ -140,24 +144,29 @@ store keeps serving the live document and reports through
 it always was: rows a person wrote are simply missing from the screen with
 nothing to explain why.
 
-A point read's one error is a live row this declaration cannot fully read, as plain
-diagnostic data: `{ id, raw, conforming, issues }`, no `name` and no
-`message`, because there is nothing else in the arm to tell it apart from.
-Recover with `??` and never with a destructuring default. An `Err` sets `data`
-to `null`, and `= fallback` fires only on `undefined`:
+`get(id)` returns the row or `undefined`. A row this declaration cannot fully
+read is not returned as an error arm here: it is absent from `rows` and present
+in `nonconforming`, as plain diagnostic data (`{ id, raw, conforming, issues }`)
+with no `name` and no `message`, because there is nothing else in the arm to
+tell it apart from.
 
 ```ts
-const { data: noteData, error } = data.tables.notes.get(id);
-const note = noteData ?? { ...applicationRecovery, ...error?.conforming };
+const note = data.tables.notes.get(id);
 ```
 
 ### Reacting
 
-`subscribe` fires once per commit, carrying the row ids that commit touched
-(ADR-0221). It fires for a local write, for prose typed into a row's document,
-and for bytes that arrived from another device alike, and it fires after every
-`onCommitted` listener has run, so a composed follower is already marked
-dirty by the time a subscriber reads through it.
+`subscribe` is a ping, once per commit, and it means this table's SHAPE
+changed: a row added, a row removed, or a row's scalars edited. It fires for a
+local write and for bytes from another device alike, and after every
+`onCommitted` listener has run, so a composed follower is already marked dirty
+by the time a subscriber reads through it.
+
+It deliberately does NOT fire for prose typed inside a row's type field. A type
+field is nested on its row, so counting it here would wake every list in the
+application at typing frequency. `data.watch(type, listener)` is the signal for
+that, scoped to the one type, and it is delivered last so a listener that writes
+is writing against a settled commit.
 
 Registration is synchronous, does no I/O, and never fires initially, so a
 caller that subscribes and then reads has already seen everything. There is no
@@ -214,11 +223,13 @@ field (ADR-0295, ADR-0296). It is in the same document as the scalars, so there
 is nothing to open, nothing to await, and nothing to dispose:
 
 ```ts
-const content = data.tables.notes.content(id);
-
-const body = content?.types.body;            // a live Y.Type
-const stop = content?.subscribe('body', onEdit);
+const note = data.tables.notes.get(id);
+const body = note?.body;                     // a live Y.Type, read off the row
+const stop = body && data.watch(body, onEdit);
 ```
+
+`watch` takes the type rather than an address, because a caller holding one has
+already done that lookup: rendering the field needs the type anyway.
 
 A rich field is minted in the transaction that mints its row and never again.
 That is what makes it safe: a nested type is addressed by the struct that
@@ -308,7 +319,7 @@ yet can retype a field, and no default you declare today prevents that.
 What is possible is healing, and the primitives already exist:
 
 ```ts
-for (const issue of data.tables.notes.list().nonconforming) {
+for (const issue of data.tables.notes.nonconforming) {
 	issue.id          // the structural row id
 	issue.issues      // [{ field: 'n', message: 'n must be a number (was a string)' }]
 	issue.conforming  // what survived
@@ -321,7 +332,7 @@ data.tables.notes.update(issue.id, { n: 7 }); // an ordinary write repairs it
 A patch validates only the values it supplies, so it can fix the offending key
 even though the whole payload does not currently pass. `stored()` and the
 export read the raw values regardless, so a broken row is never invisible;
-`list().nonconforming` is the only thing that knows they failed.
+`nonconforming` is the only thing that knows they failed.
 
 Whether an application shows a person the broken row, has an agent propose a
 fix, or ignores it until someone cares is a product decision this layer does not
