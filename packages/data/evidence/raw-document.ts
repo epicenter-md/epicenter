@@ -43,11 +43,6 @@ export function asScalars(type: Y.Type): ScalarType {
 	return type as ScalarType;
 }
 
-/** One named root of a document, read as a bag of scalars. */
-export function scalarRoot(document: Y.Doc, name: string): ScalarType {
-	return asScalars(document.get(name));
-}
-
 /**
  * The row at this address, or `undefined`.
  *

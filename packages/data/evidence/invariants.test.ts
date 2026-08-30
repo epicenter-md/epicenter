@@ -21,13 +21,7 @@ import {
 	tableRoot,
 	tableRootName,
 } from '../src/store/document.js';
-import {
-	asScalars,
-	putRow,
-	rowAt,
-	type ScalarType,
-	scalarRoot,
-} from './raw-document.js';
+import { asScalars, putRow, rowAt, type ScalarType } from './raw-document.js';
 
 /** Exchange everything each side is missing, both directions. */
 function sync(a: Y.Doc, b: Y.Doc): void {
@@ -87,8 +81,8 @@ describe('identity: a root is addressed by name, a nested type by struct', () =>
 		const laptop = new Y.Doc({ gc: true });
 		phone.get('kv');
 		laptop.get('kv');
-		phone.transact(() => scalarRoot(phone, 'kv').setAttr('theme', 'dark'));
-		laptop.transact(() => scalarRoot(laptop, 'kv').setAttr('fontSize', 22));
+		phone.transact(() => asScalars(phone.get('kv')).setAttr('theme', 'dark'));
+		laptop.transact(() => asScalars(laptop.get('kv')).setAttr('fontSize', 22));
 		sync(phone, laptop);
 
 		expect(attrs(phone.get('kv'))).toEqual({ theme: 'dark', fontSize: 22 });
@@ -154,8 +148,8 @@ describe('a state vector cannot express deletion', () => {
 		// "have I caught up" is a question a state vector cannot answer.
 		const kept = new Y.Doc({ gc: true });
 		kept.transact(() => {
-			scalarRoot(kept, 'notes').setAttr('x', 1);
-			scalarRoot(kept, 'notes').setAttr('y', 2);
+			asScalars(kept.get('notes')).setAttr('x', 1);
+			asScalars(kept.get('notes')).setAttr('y', 2);
 		});
 		const removed = new Y.Doc({ gc: true });
 		Y.applyUpdateV2(removed, Y.encodeStateAsUpdateV2(kept));
@@ -177,8 +171,8 @@ describe('a state vector cannot express deletion', () => {
 		// against. What is unavailable is the INFERENCE, not the data.
 		const kept = new Y.Doc({ gc: true });
 		kept.transact(() => {
-			scalarRoot(kept, 'notes').setAttr('x', 1);
-			scalarRoot(kept, 'notes').setAttr('y', 2);
+			asScalars(kept.get('notes')).setAttr('x', 1);
+			asScalars(kept.get('notes')).setAttr('y', 2);
 		});
 		const removed = new Y.Doc({ gc: true });
 		Y.applyUpdateV2(removed, Y.encodeStateAsUpdateV2(kept));
