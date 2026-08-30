@@ -19,7 +19,7 @@ export function createEntriesState({ data }: { data: VocabData }) {
 	let rows = $state.raw<Entry[]>([]);
 
 	function read(): void {
-		rows = data.tables.entries.list().rows;
+		rows = data.tables.entries.rows;
 	}
 
 	read();

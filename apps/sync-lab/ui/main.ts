@@ -96,7 +96,7 @@ function pressureLine(): string {
 }
 
 function render(): void {
-	const listed = db.tables.notes.list();
+	const listed = db.tables.notes;
 	rows.replaceChildren(
 		...listed.rows
 			.sort((left, right) => left.at.localeCompare(right.at))

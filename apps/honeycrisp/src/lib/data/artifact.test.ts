@@ -67,15 +67,15 @@ async function seed() {
 
 test('a store exports to Markdown files and imports back whole', async () => {
 	const { data, note } = await seed();
-	const content = data.tables.notes.content(note.id);
+	const content = data.tables.notes.get(note.id);
 	if (content === undefined) throw new Error('the note has no content');
-	pmToFragment(parseNoteBody(MARKDOWN), content.types.body as never);
+	pmToFragment(parseNoteBody(MARKDOWN), content.body as never);
 
 	const files = await collect(renderArtifact(data, honeycrispDefinition));
 	// One file per row, and the note's file is prose a person can read.
 	expect([...files.keys()].sort()).toEqual(
 		[
-			`folders/${data.tables.folders.list().rows[0]?.id}.md`,
+			`folders/${data.tables.folders.rows[0]?.id}.md`,
 			'kv.json',
 			`notes/${note.id}.md`,
 		].sort(),
@@ -88,15 +88,15 @@ test('a store exports to Markdown files and imports back whole', async () => {
 	await using restored = await openMemory(honeycrispDefinition);
 	expect(syncEngineOf(restored.store).applyRemote(state).error).toBeNull();
 
-	expect(restored.tables.notes.list()).toEqual(data.tables.notes.list());
-	expect(restored.tables.folders.list()).toEqual(data.tables.folders.list());
+	// Through the faithful read: a row carries its live rich types now, and two
+	// documents' types are never equal objects. The claim is about the record.
+	expect(restored.store.stored().tables).toEqual(data.store.stored().tables);
 
-	// And the prose came back as the same Markdown, through the real codec.
-	const back = restored.tables.notes.content(note.id);
-	if (back === undefined) throw new Error('the note lost its content');
-	const row = expectOk(restored.tables.notes.get(note.id));
+	// And the prose came back as the same Markdown, through the real codec. One
+	// row goes in, not a row spliced together with a bag of types.
+	const row = restored.tables.notes.get(note.id);
 	if (row === undefined) throw new Error('the note lost its row');
-	expect(noteFile.serialize({ ...row, ...back.types }).content).toBe(MARKDOWN);
+	expect(noteFile.serialize(row).content).toBe(MARKDOWN);
 	await data.store[Symbol.asyncDispose]();
 });
 
@@ -108,8 +108,8 @@ test('a note with no prose exports as frontmatter alone and still imports', asyn
 	const state = expectOk(readArtifact(files, honeycrispDefinition));
 	await using restored = await openMemory(honeycrispDefinition);
 	syncEngineOf(restored.store).applyRemote(state);
-	expect(expectOk(restored.tables.notes.get(note.id))?.title).toBe('Groceries');
+	expect(restored.tables.notes.get(note.id)?.title).toBe('Groceries');
 	// The body is minted with the row, so an empty note still has one.
-	expect(restored.tables.notes.content(note.id)?.types.body).toBeDefined();
+	expect(restored.tables.notes.get(note.id)?.body).toBeDefined();
 	await data.store[Symbol.asyncDispose]();
 });

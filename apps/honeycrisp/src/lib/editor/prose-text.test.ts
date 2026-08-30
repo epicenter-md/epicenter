@@ -27,12 +27,12 @@ async function noteWith(markdown: string) {
 		updatedAt: AT,
 		deletedAt: null,
 	});
-	const content = data.tables.notes.content(note.id);
+	const content = data.tables.notes.get(note.id);
 	if (content === undefined) throw new Error('the note has no content');
 	if (markdown !== '') {
-		pmToFragment(parseNoteBody(markdown), content.types.body as never);
+		pmToFragment(parseNoteBody(markdown), content.body as never);
 	}
-	return content.types.body;
+	return content.body;
 }
 
 test('the title is the first block', async () => {

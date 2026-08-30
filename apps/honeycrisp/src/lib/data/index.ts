@@ -15,7 +15,6 @@ import type { DataView } from '@epicenter/data';
 import {
 	defineData,
 	defineTable,
-	type FileRowOf,
 	type RowOf,
 	type ScalarsOf,
 } from '@epicenter/data/definition';
@@ -95,7 +94,7 @@ export function noteBodyAsPm(body: Y.Type) {
  * requirement was measured against the wrong thing (ADR-0296, amended).
  */
 const noteFile = {
-	serialize: ({ id: _id, body, ...fields }: FileRowOf<typeof notesTable>) => ({
+	serialize: ({ id: _id, body, ...fields }: RowOf<typeof notesTable>) => ({
 		data: fields,
 		content: serializeNoteBody(noteBodyAsPm(body)),
 	}),
@@ -155,12 +154,12 @@ export function deleteHoneycrispFolder(
 	data: HoneycrispData,
 	folderId: FolderId,
 ): void {
-	const listed = data.tables.notes.list();
+	const notes = data.tables.notes;
 	const inFolder = [
-		...listed.rows
+		...notes.rows
 			.filter((note) => note.folderId === folderId)
 			.map((note) => note.id),
-		...listed.nonconforming
+		...notes.nonconforming
 			.filter((issue) => issue.raw.folderId === folderId)
 			.map((issue) => issue.id),
 	];

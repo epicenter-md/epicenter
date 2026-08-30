@@ -143,9 +143,9 @@ export function createAgentChatState({
 	 * One table, and the registry never asks which document it came from: an app
 	 * with an account replica passes the account's, a signed-out one passes the
 	 * device's, and a surface writes one or the other and never both. It is also
-	 * where a conversation's messages come from, through `table.content(id)`,
-	 * which is why there is no separate document opener to inject: the row and
-	 * the log beside it are one thing in one document.
+	 * where a conversation's messages come from: `get(id)` hands back the row with
+	 * its log on it, which is why there is no separate document opener to
+	 * inject. The row and the log beside it are one thing in one document.
 	 */
 	table: ConversationsTable;
 	/** Report failures from subscription-driven refreshes and metadata writes. */
@@ -172,7 +172,7 @@ export function createAgentChatState({
 	function readRows(): void {
 		// Only the conforming rows; the doc comment on `rows` says why the
 		// nonconforming ones are skipped rather than surfaced.
-		rows = table.list().rows;
+		rows = table.rows;
 	}
 
 	const rowById = (id: ConversationId): Conversation | undefined =>
@@ -490,11 +490,11 @@ export function createAgentChatState({
 		// the document this store already holds. Absent means the row went away
 		// between the read and this line rather than that a conversation lacks
 		// somewhere to keep its messages.
-		const content = table.content(conversationId);
-		if (content === undefined) return;
+		const messages = table.get(conversationId)?.messages;
+		if (messages === undefined) return;
 		handles.set(
 			conversationId,
-			createConversationHandle(conversationId, content.types.messages),
+			createConversationHandle(conversationId, messages),
 		);
 		// The open resolved after the reconcile that requested it, so re-run the
 		// selection rule now that the handle exists.

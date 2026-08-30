@@ -186,7 +186,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 	write(title: string, prose: string): void {
 		if (this.db === undefined) throw new Error('open first');
 		const made = this.db.tables.notes.create({ title });
-		const body = this.db.tables.notes.content(made.id)?.types.body;
+		const body = this.db.tables.notes.get(made.id)?.body;
 		if (body === undefined) throw new Error('the row has no body');
 		body.applyDelta(body.change.insert(prose) as never);
 	}
@@ -194,7 +194,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 	/** Delete the note holding this title, the way an application does. */
 	remove(title: string): void {
 		if (this.db === undefined) throw new Error('open first');
-		const listed = this.db.tables.notes.list();
+		const listed = this.db.tables.notes;
 		const row = listed.rows.find((candidate) => candidate.title === title);
 		if (row === undefined) throw new Error(`no note titled '${title}'`);
 		this.db.tables.notes.delete(row.id);
@@ -220,7 +220,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 				items: 0,
 			};
 		}
-		const listed = db.tables.notes.list();
+		const listed = db.tables.notes;
 		const status = this.connection?.status();
 		const pressure = store.pressure();
 		return {
@@ -229,9 +229,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 			titles: listed.rows.map((row) => row.title).sort(),
 			prose: listed.rows
 				.map((row) =>
-					JSON.stringify(
-						db.tables.notes.content(row.id)?.types.body.toJSON() ?? null,
-					),
+					JSON.stringify(db.tables.notes.get(row.id)?.body.toJSON() ?? null),
 				)
 				.sort(),
 			lastError: status?.lastError?.name,

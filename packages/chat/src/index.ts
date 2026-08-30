@@ -34,7 +34,6 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
  */
 import type { TypedTableHandle } from '@epicenter/data';
 import {
-	type FileRowOf,
 	RowFileError,
 	type RowOf,
 	type ScalarsOf,
@@ -106,7 +105,7 @@ export const conversationsFile = {
 		id: _id,
 		messages,
 		...fields
-	}: FileRowOf<typeof conversationsTable>) => ({
+	}: RowOf<typeof conversationsTable>) => ({
 		data: fields,
 		content: JSON.stringify(
 			[...messages.attrEntries()].map(([key, val]) => ({
@@ -176,7 +175,7 @@ export type ConversationsTable = TypedTableHandle<typeof conversationsTable>;
  * row's; durability is the store's write-behind and propagation is the
  * ordinary transport.
  *
- * @param messages The row's `messages` field, from `table.content(id)?.types`.
+ * @param messages The row's `messages` field, from `table.get(id)?.messages`.
  */
 export function createAgentMessageStore(messages: Y.Type): AgentMessageStore {
 	return {

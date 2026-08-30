@@ -30,7 +30,7 @@ export function createWhisperingRecipes({
 	let nonconforming = $state.raw<NonconformingRow[]>([]);
 
 	function read(): void {
-		const listed = table.list();
+		const listed = table;
 		rows = listed.rows;
 		nonconforming = listed.nonconforming;
 	}

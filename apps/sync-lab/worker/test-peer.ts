@@ -176,7 +176,7 @@ export class SyncLabTestPeer extends DurableObject<Env> {
 
 	report(): TestPeerReport {
 		const status = this.client.status();
-		const listed = this.db.tables.notes.list();
+		const listed = this.db.tables.notes;
 		return {
 			cursor: status.cursor,
 			inFlight: status.inFlight,

@@ -57,11 +57,10 @@ function noteFields(title: string) {
 }
 
 function titles(data: {
-	tables: { notes: { list(): { rows: unknown[] } } };
+	tables: { notes: { readonly rows: readonly unknown[] } };
 }): string[] {
-	return data.tables.notes
-		.list()
-		.rows.map((row) => (row as { title: string }).title)
+	return data.tables.notes.rows
+		.map((row) => (row as { title: string }).title)
 		.sort();
 }
 

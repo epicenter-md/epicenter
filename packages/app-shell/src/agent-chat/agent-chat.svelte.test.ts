@@ -98,13 +98,14 @@ function createFakeChat() {
 	};
 
 	const table = {
-		// Returns the SCALARS, like the real store: a rich field is a nested
-		// type minted with the row and reached through `content`, never handed
-		// back as a value (ADR-0295). A fake that returned it here would be
-		// more generous than the store it stands in for.
-		create(fields: Omit<Conversation, 'id'>) {
+		// Returns the row WITH its live rich field, like the real store: `create`
+		// integrates the type in the transaction that mints the row and hands
+		// back what `get` would (ADR-0296, amended). This fake has now followed
+		// that shape in both directions; when it drifts, the tests pass and a
+		// browser does not.
+		create(fields: Omit<Conversation, 'id' | 'messages'>) {
 			const held = createFakeMessages();
-			const row = { id: `c${++nextId}`, ...fields };
+			const row = { id: `c${++nextId}`, ...fields, messages: held.messages };
 			rows.set(row.id, row);
 			contents.set(row.id, held);
 			creates.push(row);
@@ -124,17 +125,15 @@ function createFakeChat() {
 			return existed;
 		},
 		get(id: string) {
-			return Ok(rows.get(id));
+			return rows.get(id);
 		},
-		list() {
-			return { rows: [...rows.values()], nonconforming: [] };
+		get rows() {
+			return [...rows.values()];
 		},
-		content: (id: string) => {
-			const held = contents.get(id);
-			return held === undefined
-				? undefined
-				: { types: { messages: held.messages }, subscribe: () => () => {} };
+		get nonconforming() {
+			return [];
 		},
+		watch: () => () => undefined,
 		subscribe(listener: () => void) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
@@ -202,6 +201,7 @@ test('a blank conversation is unchanged: placeholder title, no opening turn', as
 			model: DEFAULT_MODEL,
 			createdAt: expect.any(String),
 			updatedAt: expect.any(String),
+			messages: expect.anything(),
 		},
 	]);
 	expect(document(id).messages).toEqual([]);

@@ -54,9 +54,9 @@ test('the agent store observes writes and survives a restart', async () => {
 			});
 			rowId = created.id;
 
-			const content = db.tables.conversations.content(rowId);
+			const content = db.tables.conversations.get(rowId);
 			if (content === undefined) throw new Error('the row has no content');
-			using store = createAgentMessageStore(content.types.messages);
+			using store = createAgentMessageStore(content.messages);
 			let observations = 0;
 			const unobserve = store.observe(() => observations++);
 			store.set(message.id, message);
@@ -66,9 +66,9 @@ test('the agent store observes writes and survives a restart', async () => {
 
 		const db = await openMemory(testDefinition, record);
 		await using _db = db;
-		const content = db.tables.conversations.content(rowId);
+		const content = db.tables.conversations.get(rowId);
 		if (content === undefined) throw new Error('the row has no content');
-		using store = createAgentMessageStore(content.types.messages);
+		using store = createAgentMessageStore(content.messages);
 		expect([...store.entries()]).toEqual([{ key: message.id, val: message }]);
 	} finally {
 		record.close();

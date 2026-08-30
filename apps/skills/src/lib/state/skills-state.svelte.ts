@@ -24,8 +24,8 @@ export function createSkillsState({ data }: { data: SkillsData }) {
 	let selectedSkillId = $state<string | null>(null);
 
 	function read(): void {
-		const skills = data.tables.skills.list();
-		const references = data.tables.skillReferences.list();
+		const skills = data.tables.skills;
+		const references = data.tables.skillReferences;
 		skillRows = skills.rows;
 		referenceRows = references.rows;
 		nonconforming = [...skills.nonconforming, ...references.nonconforming];

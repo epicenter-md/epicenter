@@ -151,7 +151,7 @@ export function createWhisperingRecordings({
 	 * window to paper over.
 	 */
 	function read(): void {
-		const listed = table.list();
+		const listed = table;
 		rows = listed.rows.map(asRecording);
 		sorted = sortRows(rows);
 		nonconforming = listed.nonconforming;
@@ -289,17 +289,16 @@ export function createWhisperingRecordings({
 			// The write reports only that it landed; what the row now reads as is
 			// `get`'s answer. Subscriptions fired inside the write, so the cache is
 			// already refreshed by the time this re-read runs.
+			// `get` answers `undefined` for both a vanished row and one this
+			// declaration can no longer read; after a write we just made, either is
+			// the same bug and deserves the same throw.
 			const reread = table.get(id);
-			if (reread.error !== null) {
+			if (reread === undefined) {
 				throw new Error(
 					`Recording '${id}' no longer reads whole after this patch`,
-					{ cause: reread.error },
 				);
 			}
-			if (reread.data === undefined) {
-				throw new Error(`Recording '${id}' vanished during this patch`);
-			}
-			return asRecording(reread.data);
+			return asRecording(reread);
 		},
 		async delete(toDelete) {
 			const ids = Array.isArray(toDelete) ? toDelete : [toDelete];

@@ -265,9 +265,8 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	 * type itself outlives it either way.
 	 */
 	function openBody(id: NoteId) {
-		const content = table.content(id);
-		if (content === undefined) return undefined;
-		const body = content.types.body;
+		const body = table.get(id)?.body;
+		if (body === undefined) return undefined;
 		// Coalesced to one write per animation-frame-ish burst, because a
 		// keystroke is a commit and writing the row on each one would write a row
 		// per character. Reading the title itself is cheap now (`noteTitle` slices
@@ -277,7 +276,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 		// writes during sustained typing, and a person who stops typing and
 		// closes the tab should not lose their title to a pending timer.
 		let queued: ReturnType<typeof setTimeout> | undefined;
-		const stop = content.subscribe('body', () => {
+		const stop = table.watch(id, 'body', () => {
 			if (queued !== undefined) return;
 			queued = setTimeout(() => {
 				queued = undefined;
@@ -314,15 +313,15 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	 * detaches and a note nobody is looking at costs nothing.
 	 */
 	function previewOf(id: NoteId): { readonly text: string } {
-		const content = table.content(id);
-		if (content === undefined) return { text: '' };
+		const body = table.get(id)?.body;
+		if (body === undefined) return { text: '' };
 		const subscribe = createSubscriber((update) =>
-			content.subscribe('body', update),
+			table.watch(id, 'body', update),
 		);
 		return {
 			get text() {
 				subscribe();
-				return notePreview(content.types.body);
+				return notePreview(body);
 			},
 		};
 	}

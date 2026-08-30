@@ -57,8 +57,8 @@ export async function importSkillsFromDisk({
 				}
 			}),
 	);
-	const skillsScan = data.tables.skills.list();
-	const referencesScan = data.tables.skillReferences.list();
+	const skillsScan = data.tables.skills;
+	const referencesScan = data.tables.skillReferences;
 	const skillsBySourceId = new Map<string, { id: string }>(
 		skillsScan.rows.map((skill) => [skill.sourceId, { id: skill.id }]),
 	);
@@ -113,19 +113,15 @@ export async function importSkillsFromDisk({
 			const written = data.tables.skills.update(existing.id, input);
 			if (written.error !== null) throw written.error;
 			// The write reports only that it landed; the repaired row is `get`'s
-			// answer. The import wrote every declared field, so a read that still
-			// fails means the repair did not take, which is worth failing loudly.
-			const { data: repaired, error: readError } = data.tables.skills.get(
-				existing.id,
-			);
-			if (readError !== null) {
+			// answer. The import wrote every declared field, so a row that still
+			// does not read means the repair did not take, which is worth failing
+			// loudly. `get` answers `undefined` for both absent and nonconforming,
+			// and either one here is the same bug.
+			const repaired = data.tables.skills.get(existing.id);
+			if (repaired === undefined) {
 				throw new Error(
 					`Skill '${existing.id}' still does not read whole after import repaired it`,
-					{ cause: readError },
 				);
-			}
-			if (repaired === undefined) {
-				throw new Error(`Skill '${existing.id}' vanished during import`);
 			}
 			skill = repaired;
 			updated += 1;
@@ -198,8 +194,8 @@ export async function exportSkillsToDisk({
 	data: SkillsData;
 	dir: string;
 }) {
-	const skillsScan = data.tables.skills.list();
-	const referencesScan = data.tables.skillReferences.list();
+	const skillsScan = data.tables.skills;
+	const referencesScan = data.tables.skillReferences;
 	const skillNames = new Set(skillsScan.rows.map((skill) => skill.name));
 	await Promise.all(
 		skillsScan.rows.map(async (skill) => {
@@ -264,7 +260,7 @@ export async function exportSkillsToDisk({
  * reviving an address that no longer holds a skill.
  */
 function writeContent(table: SkillsTable, rowId: string, value: string): void {
-	const content = table.content(rowId)?.types.body;
+	const content = table.get(rowId)?.body;
 	if (content === undefined) return;
 	content.applyDelta(
 		content.change.delete(content.length).insert(value) as never,
@@ -272,7 +268,7 @@ function writeContent(table: SkillsTable, rowId: string, value: string): void {
 }
 
 function readContent(table: SkillsTable, rowId: string): string {
-	return table.content(rowId)?.types.body.toString() ?? '';
+	return table.get(rowId)?.body.toString() ?? '';
 }
 
 function referenceKey(skillId: string, path: string): string {

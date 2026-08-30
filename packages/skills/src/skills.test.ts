@@ -25,7 +25,7 @@ import {
 	openMemory,
 } from '@epicenter/data/memory';
 import { InstantString } from '@epicenter/field';
-import { expectErr, expectOk } from 'wellcrafted/testing';
+import { expectOk } from 'wellcrafted/testing';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
 import { type SkillsData, skillsDefinition } from './workspace.js';
 
@@ -53,9 +53,9 @@ function openSkills(record: MemoryRecord) {
 }
 
 function readInstructions(data: SkillsData, skillId: string): string {
-	const content = data.tables.skills.content(skillId);
+	const content = data.tables.skills.get(skillId);
 	if (content === undefined) throw new Error(`Skill '${skillId}' has no row`);
-	return content.types.body.toString();
+	return content.body.toString();
 }
 
 test('a stricter Skills workspace exposes nonconformance until an update repairs it', async () => {
@@ -78,17 +78,19 @@ test('a stricter Skills workspace exposes nonconformance until an update repairs
 
 		const data = await openSkills(record);
 		await using _data = data;
-		expect(expectOk(data.tables.skills.get('aaaaaaaaaaaaaaaaaaaaaaaa'))).toBe(
-			undefined,
+		expect(data.tables.skills.get('aaaaaaaaaaaaaaaaaaaaaaaa')).toBe(undefined);
+
+		// A row this declaration cannot read does not arrive through `get`; it is
+		// on `nonconforming`, and the conforming half survives there, which is
+		// what recovery is composed from.
+		expect(data.tables.skills.get(oldSkill.id)).toBeUndefined();
+		const reported = data.tables.skills.nonconforming.find(
+			({ id }) => id === oldSkill.id,
 		);
+		expect(reported?.issues.map(({ field }) => field)).toContain('sourceId');
+		expect(reported?.conforming.name).toBe('writing-voice');
 
-		const error = expectErr(data.tables.skills.get(oldSkill.id));
-		expect(error.issues.map(({ field }) => field)).toContain('sourceId');
-		// The conforming half survives the failed read, which is what recovery is
-		// composed from.
-		expect(error.conforming.name).toBe('writing-voice');
-
-		const beforeRepair = data.tables.skills.list();
+		const beforeRepair = data.tables.skills;
 		expect(beforeRepair.rows).toEqual([]);
 		expect(beforeRepair.nonconforming.map(({ id }) => id)).toEqual([
 			oldSkill.id,
@@ -101,9 +103,9 @@ test('a stricter Skills workspace exposes nonconformance until an update repairs
 		);
 		// The write reports only that it landed; the repaired row is `get`'s
 		// answer, at the same structural id.
-		const repaired = expectOk(data.tables.skills.get(oldSkill.id));
+		const repaired = data.tables.skills.get(oldSkill.id);
 		expect(repaired?.sourceId).toBe('agentskills-writing-voice');
-		expect(data.tables.skills.list().nonconforming).toEqual([]);
+		expect(data.tables.skills.nonconforming).toEqual([]);
 	} finally {
 		record.close();
 	}
@@ -127,9 +129,9 @@ test("a skill's instructions live under its own row id", async () => {
 				updatedAt: InstantString.now(),
 			});
 			writtenTo = written.id;
-			const held = data.tables.skills.content(writtenTo);
+			const held = data.tables.skills.get(writtenTo);
 			if (held === undefined) throw new Error('the row has no content');
-			const content = held.types.body;
+			const content = held.body;
 			content.applyDelta(content.change.insert('Keep it concise.') as never);
 
 			const other = data.tables.skills.create({
@@ -172,7 +174,7 @@ test('filesystem import stores the metadata id as sourceId, not as the row id', 
 		const imported = await importSkillsFromDisk({ data, dir: inputRoot });
 		expect(imported.created).toBe(1);
 		expect(imported.nonconforming).toEqual([]);
-		const [skill] = data.tables.skills.list().rows;
+		const [skill] = data.tables.skills.rows;
 		expect(skill?.sourceId).toBe('portable-writing-voice');
 		expect(skill?.id).not.toBe('portable-writing-voice');
 

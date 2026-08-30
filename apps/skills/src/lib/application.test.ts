@@ -64,9 +64,9 @@ test('a skill and its instructions survive reopening', async () => {
 	{
 		await using runtime = await openSkillsRuntime();
 		skillId = runtime.state.createSkill('writing-voice');
-		const held = runtime.data.tables.skills.content(skillId);
+		const held = runtime.data.tables.skills.get(skillId);
 		if (held === undefined) throw new Error('the row has no content');
-		const content = held.types.body;
+		const content = held.body;
 		content.applyDelta(content.change.insert('Write directly.') as never);
 		// The durable flush is asynchronous, so a reopen must wait for it.
 		await runtime.data.store.persistence.flush();
@@ -77,9 +77,9 @@ test('a skill and its instructions survive reopening', async () => {
 	expect(reopened.state.skills.map(({ name }) => name)).toEqual([
 		'writing-voice',
 	]);
-	expect(
-		reopened.data.tables.skills.content(skillId)?.types.body.toString(),
-	).toBe('Write directly.');
+	expect(reopened.data.tables.skills.get(skillId)?.body.toString()).toBe(
+		'Write directly.',
+	);
 });
 
 test('an aborted boot rejects with the abort', async () => {
