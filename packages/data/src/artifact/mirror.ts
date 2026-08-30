@@ -55,15 +55,18 @@
  * database document by anyone. It is the complete one, and it names nothing: a
  * pass knows the folder is stale and never which file.
  *
- * `table.subscribe` names the table a commit touched but not the rows, so it
- * is the narrower one. It is complete for type content now that a type field
- * is nested on its row (ADR-0295): a body edit bubbles to the table root and
- * reaches a subscriber whether or not the application derives anything from
- * it, which it did not before the collapse.
+ * `table.subscribe` names the table a commit touched but not the rows, and it
+ * is INCOMPLETE for a mirror: it reports a change to the table's shape and not
+ * an edit inside a type field. That is deliberate, and `store.ts` says so at
+ * the verb. Delivery routes off `transaction.changed`, which Yjs fills with
+ * the types a transaction modified DIRECTLY, so a keystroke in a body puts the
+ * body's own type there; its parent is the row, not the table root, and the
+ * table phase never matches. Watching a table would export a folder that never
+ * saw a word anybody typed.
  *
  * So a whole render is not waiting on a signal that does not exist; it is
- * refusing to depend on one that names a table rather than a row. It reads
- * what is there.
+ * refusing to depend on one that names a table rather than a row, and could
+ * not name the edit that matters most here anyway.
  *
  * The cost is honest: every pass re-serializes every row, measured at roughly
  * 71 ms per thousand rows back when each one also had to hydrate its own
