@@ -64,8 +64,9 @@ quietly compromising.
 
 ## Move the model forward
 
-One turn should make one consequential collision inspectable, even when it puts
-several articulations beside each other. Give enough structure for a precise
+Each turn should advance the highest-order unresolved crux. Related local
+collisions may appear within that movement; when they recur, zoom out to the
+shared premise and re-articulate it. Give enough structure for a precise
 reaction, then leave the unresolved seam visible. The conversation moves like
 this:
 
@@ -120,7 +121,7 @@ enough to reason about it. Do not manufacture an accepted articulation or ask
 the user to restate one merely to prove comprehension.
 
 In a corrective or design dialectic, do not stop at a plausible model, partial
-agreement, silence, exhaustion, or approval of a plan. Stop when the user
+agreement, silence, fatigue, or approval of a plan. Stop when the user
 recognizes the complete greenfield articulation and says, in effect, “that’s
 right.” Return its shortest honest form. Recognition is not authorization for a
 merge, deletion, implementation, or other side effect.
