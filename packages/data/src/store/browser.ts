@@ -65,7 +65,6 @@ import type {
 } from './persistence.js';
 import {
 	type AccountStore,
-	asData,
 	createAccountStoreOverPort,
 	createLocalStoreOverPort,
 	type DataOf,
@@ -746,24 +745,22 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 
 	if (account === undefined || canonicalURL === undefined) {
 		return Ok(
-			asData<TDatabase, LocalStore>(
-				parts.store as LocalStore,
+			Object.freeze({
 				// Through `unknown` deliberately: comparing the untyped view with
 				// `DataView<TDatabase>` re-enters the per-field descriptor
 				// instantiation and exceeds the depth limit.
-				parts.view as unknown as DataView<TDatabase>,
-			),
+				...(parts.view as unknown as DataView<TDatabase>),
+				...(parts.store as LocalStore),
+			}),
 		);
 	}
 	return Ok(
-		asData<TDatabase, BrowserAccountStore>(
-			Object.freeze({
-				...(parts.store as AccountStore),
-				baseURL: canonicalURL,
-				principalId: account.principalId,
-			}),
-			parts.view as unknown as DataView<TDatabase>,
-		),
+		Object.freeze({
+			...(parts.view as unknown as DataView<TDatabase>),
+			...(parts.store as AccountStore),
+			baseURL: canonicalURL,
+			principalId: account.principalId,
+		}),
 	);
 }
 

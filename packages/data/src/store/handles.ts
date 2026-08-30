@@ -336,7 +336,11 @@ export type StoredData = {
  *
  * Structural typing does the rest. `DataView<T> & AccountStore` IS an
  * `AccountStore`, so `syncEngineOf` and `attachStoreSync` take this object
- * unchanged. The `store` key survives on the OVER-PORT parts
+ * unchanged.
+ *
+ * An opener composes one by spreading the two halves together. Object spread
+ * copies own enumerable SYMBOL keys, which is what carries `asyncDispose`
+ * across without anyone forwarding it by hand. The `store` key survives on the OVER-PORT parts
  * (`createAccountStoreOverPort`), which is a construction seam and not a
  * handle: an opener still has a bare store to wrap before it composes one.
  */
@@ -345,23 +349,6 @@ export type DataOf<
 	TStore extends DataStoreBase,
 > = DataView<TDatabase> & TStore;
 
-/**
- * Compose one file's verbs with its definition's view of it.
- *
- * Every opener ends here, so the shape an application sees is decided once
- * rather than per runtime. Internal: the openers and factories compose the
- * data they return, and nothing outside this package holds a store and a view
- * apart.
- */
-export function asData<
-	TDatabase extends DataDefinition,
-	TStore extends DataStoreBase,
->(store: TStore, view: DataView<TDatabase>): DataOf<TDatabase, TStore> {
-	// One object. `asyncDispose` is a symbol key and object spread copies own
-	// enumerable symbol properties, so the store's own disposal comes across
-	// with everything else rather than being forwarded by hand.
-	return Object.freeze({ ...view, ...store });
-}
 
 /**
  * One application's KV: the values it keeps exactly one of.

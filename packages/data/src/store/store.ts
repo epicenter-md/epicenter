@@ -85,7 +85,6 @@ import type {
 	TableHandle,
 	UntypedDataView,
 } from './handles.js';
-import { asData } from './handles.js';
 
 export { StoreError, StoreUnusableError } from './errors.js';
 export type {
@@ -103,7 +102,6 @@ export type {
 	TypedTableHandle,
 	UntypedDataView,
 } from './handles.js';
-export { asData } from './handles.js';
 
 /**
  * Structs the engine is holding.
@@ -356,7 +354,10 @@ export function createLocalStore<const TDatabase extends DataDefinition>(
 	// `DataView<TDatabase>` re-enters the per-field descriptor instantiation
 	// and exceeds the depth limit. The runtime value is the same object either
 	// way; only the static view of it differs.
-	return asData(store, view as unknown as DataView<TDatabase>);
+	return Object.freeze({
+		...(view as unknown as DataView<TDatabase>),
+		...store,
+	});
 }
 
 /**
@@ -378,7 +379,10 @@ export function createAccountStore<const TDatabase extends DataDefinition>(
 		overSqlite(options, true),
 		'remote',
 	);
-	return asData(store, view as unknown as DataView<TDatabase>);
+	return Object.freeze({
+		...(view as unknown as DataView<TDatabase>),
+		...store,
+	});
 }
 
 /**
