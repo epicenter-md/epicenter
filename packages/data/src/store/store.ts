@@ -441,19 +441,6 @@ function createStoreEngine(
 		log,
 	});
 
-	// The three durable facts the engine also tracks live. The controller's
-	// mirror says what storage has CONFIRMED; these say what the document has
-	// ACCEPTED, which is what `sync` reports to the client. At open the two
-	// agree; a blocked flush is the only
-	// thing that separates them, and a restart then honestly recovers the
-	// mirror's version.
-	let liveCursor = loaded.cursor;
-	/**
-	 * The highest outbox id acknowledged this session. An overlay over the
-	 * durable mirror, so an acknowledged entry is never re-offered while its
-	 * `dropOutbox` op is still queued behind a blocked flush.
-	 */
-	let ackedThrough = 0;
 	/**
 	 * The next append id. The store mints ids, never the port.
 	 *
@@ -1217,14 +1204,10 @@ function createStoreEngine(
 							// accounts for are adjacent ops in one atomic flush batch, so
 							// durable state can never hold a cursor ahead of the bytes, and
 							// never bytes wearing a fresh install's cursor (ADR-0231,
-							// carried by ADR-0238's whole-queue flush). The LIVE cursor
-							// advances now; the durable one is derived from the position
-							// the append carries, so it cannot run ahead of it, and a crash
-							// before the batch lands re-receives, which is free because an
-							// update is idempotent.
-							if (opts?.advanceTo !== undefined) {
-								liveCursor = opts.advanceTo;
-							}
+							// carried by ADR-0238's whole-queue flush). The cursor is
+							// derived from the position the append carries, so it cannot
+							// run ahead of it, and a crash before the batch lands
+							// re-receives, which is free because an update is idempotent.
 							controller.enqueue([
 								{
 									kind: 'append',
@@ -1326,15 +1309,18 @@ function createStoreEngine(
 		return Object.freeze({
 			coalesce(): { id: number; bytes: Uint8Array } | undefined {
 				assertUsable();
-				// The DURABLE outbox, filtered through this session's
-				// acknowledgements. A local edit is offered to the authority only
-				// once it is durable (ADR-0238): the queue's contents are not
-				// here, so a blocked flush simply leaves nothing new to send. The
-				// ack overlay keeps a taken entry from being re-offered while its
-				// own `dropOutbox` op waits behind a blocked flush.
-				const entries = controller
-					.durableOutbox()
-					.filter((entry) => entry.id > ackedThrough);
+				// The DURABLE outbox, and nothing on top of it. A local edit is
+				// offered to the authority only once it is durable (ADR-0238): the
+				// queue's contents are not here, so a blocked flush simply leaves
+				// nothing new to send.
+				//
+				// There is no session overlay of what was acknowledged. While an
+				// `ack` op waits behind a blocked flush its entries are still owed
+				// on disk and go out again, which is redundant upload and nothing
+				// worse: the authority already holds them and an update is
+				// idempotent, so re-delivery is the safe direction. One truth about
+				// what is owed, and it is the one that survives a restart.
+				const entries = controller.durableOutbox();
 				const last = entries.at(-1);
 				if (last === undefined) return undefined;
 				// One document, so one merge (ADR-0295). Every unsent entry belongs
@@ -1361,8 +1347,6 @@ function createStoreEngine(
 			},
 			acknowledge(throughId: number, authoritySeq: number): void {
 				assertUsable();
-				ackedThrough = Math.max(ackedThrough, throughId);
-				liveCursor = Math.max(liveCursor, authoritySeq);
 				// One op for what used to be two. Dropping the outbox and moving
 				// the cursor were the same fact reported twice: these bytes reached
 				// the authority's log, at this position. If it never lands and the
@@ -1373,12 +1357,12 @@ function createStoreEngine(
 			},
 			cursor(): number {
 				assertUsable();
-				// The LIVE position: everything this document has applied, whether
-				// or not its durable record has caught up. The transport reads this
-				// beside `encodeStateSince()`, which is also live, so the two
-				// always describe the same state. At open, with nothing queued, it
-				// equals the durable cursor, which is what a reconnect dials from.
-				return liveCursor;
+				// The DURABLE position, which is the only one there is. It can lag
+				// the document behind a blocked flush, and a reconnect then dials
+				// from behind and re-receives entries this document already holds.
+				// That costs a bounded re-download and changes nothing, because an
+				// update is idempotent.
+				return controller.durableCursor();
 			},
 		});
 	}

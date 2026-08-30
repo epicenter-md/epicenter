@@ -35,7 +35,7 @@ const historicalSkillsWorkspace = defineData({
 	kv: {},
 	tables: {
 		skills: {
-			fields: {
+			scalars: {
 				name: field.string(),
 				description: field.string(),
 				license: field.nullable(field.string()),

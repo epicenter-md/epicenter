@@ -25,7 +25,7 @@ const definition = defineData({
 	},
 	tables: {
 		items: {
-			fields: {
+			scalars: {
 				status: field.select(['draft', 'published']),
 			},
 		},

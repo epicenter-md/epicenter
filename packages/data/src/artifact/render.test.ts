@@ -12,14 +12,15 @@ import { openMemory } from '../store/memory.js';
 import type { TypedTableHandle } from '../store/store.js';
 import { type RenderedRow, renderArtifact, renderRow } from './render.js';
 
-type NoteFields = (typeof store)['tables']['notes']['fields'];
+type NoteFields = (typeof store)['tables']['notes'];
 
 const store = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.string() },
 	tables: {
 		notes: defineTable({
-			fields: { title: field.string(), body: field.type() },
+			scalars: { title: field.string() },
+			types: ['body'],
 			file: {
 				// The whole row, mapped: the scalars above the fence and the type
 				// field below it. The codec spreads what it was handed, so a value
@@ -100,7 +101,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 		const scalarOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
-			tables: { folders: { fields: { name: field.string() } } },
+			tables: { folders: { scalars: { name: field.string() } } },
 		});
 		await using data = await openMemory(scalarOnly);
 		const made = data.tables.folders.create({ name: 'Inbox' });
@@ -121,7 +122,8 @@ describe('renderRow is the unit (ADR-0271)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					fields: { title: field.string(), body: field.type() },
+					scalars: { title: field.string() },
+					types: ['body'],
 					file: {
 						serialize: () => {
 							throw new Error('this row is not my shape');
@@ -200,7 +202,8 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					fields: { title: field.string(), body: field.type() },
+					scalars: { title: field.string() },
+					types: ['body'],
 					file: {
 						serialize: (row) => {
 							const content = row.body.toString();
@@ -232,7 +235,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 		const scalarOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
-			tables: { folders: { fields: { name: field.string() } } },
+			tables: { folders: { scalars: { name: field.string() } } },
 		});
 		await using data = await openMemory(scalarOnly);
 		const made = data.tables.folders.create({ name: 'Inbox' });

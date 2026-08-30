@@ -29,7 +29,8 @@ const database = defineData({
 	kv: {},
 	tables: {
 		notes: defineTable({
-			fields: { title: field.string(), body: field.type() },
+			scalars: { title: field.string() },
+			types: ['body'],
 			file: {
 				serialize: ({ id: _id, body, ...rest }) => ({
 					data: rest,

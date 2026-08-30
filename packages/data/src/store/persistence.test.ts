@@ -32,7 +32,8 @@ const database = defineData({
 	kv: { theme: field.select(['light', 'dark']) },
 	tables: {
 		notes: defineTable({
-			fields: { title: field.string(), editor: field.type() },
+			scalars: { title: field.string() },
+			types: ['editor'],
 			file: {
 				serialize: (row) => ({
 					data: { title: row.title },
@@ -340,7 +341,7 @@ describe('sync reads only durable facts', () => {
 		expect(nudges).toBe(1);
 	});
 
-	test('a remote update is live at once, and its cursor lands with its bytes', async () => {
+	test('a remote update is live at once, and its cursor waits for the bytes', async () => {
 		const author = openFailable();
 		expectOk(author.db.tables.notes.create({ title: 'from the authority' }));
 		const update = author.store.encodeStateSince();
@@ -349,9 +350,15 @@ describe('sync reads only durable facts', () => {
 		replica.gate.failing = true;
 		expectOk(syncEngineOf(replica.store).applyRemote(update, { advanceTo: 7 }));
 
-		// Live: the rows and the LIVE cursor both advanced.
+		// Live: the rows are readable immediately, because acceptance does not
+		// wait on storage (ADR-0238).
 		expect(titles(replica.db)).toEqual(['from the authority']);
-		expect(syncEngineOf(replica.store).cursor()).toBe(7);
+		// The cursor is the DURABLE one and there is no other. It stays behind
+		// the document while the flush is blocked, so a reconnect dials from
+		// behind and re-receives what this document already holds. That is a
+		// bounded re-download and nothing worse, because an update is
+		// idempotent.
+		expect(syncEngineOf(replica.store).cursor()).toBe(0);
 		// Durable: neither the bytes nor the bookmark, because they commit
 		// together or not at all (ADR-0231 via ADR-0238's whole-queue flush).
 		expect(replica.durableUpdateCount()).toBe(0);
@@ -365,7 +372,7 @@ describe('sync reads only durable facts', () => {
 		expect(syncEngineOf(restarted.store).cursor()).toBe(7);
 	});
 
-	test('an acknowledged entry is not re-offered while its drop is retained', async () => {
+	test('an acknowledged entry is re-offered while its drop is retained', async () => {
 		const replica = openFailable();
 		expectOk(replica.db.tables.notes.create({ title: 'sent' }));
 		const sent = syncEngineOf(replica.store).coalesce();
@@ -374,15 +381,19 @@ describe('sync reads only durable facts', () => {
 		replica.gate.failing = true;
 		syncEngineOf(replica.store).acknowledge(sent.id, 1);
 
-		// The durable outbox still holds the entry (the drop is queued behind a
-		// blocked flush), but the session overlay keeps it from being offered
-		// twice.
-		expect(syncEngineOf(replica.store).coalesce()).toBeUndefined();
+		// What is owed is read off the durable record and nothing else. The ack
+		// is queued behind the blocked flush, so on disk the entry is still
+		// owed and it goes out again. Redundant upload during a storage
+		// failure, and nothing worse: the authority already holds these bytes
+		// and an update is idempotent.
+		expect(syncEngineOf(replica.store).coalesce()?.id).toBe(sent.id);
 		expect(replica.durableOutboxIds()).toEqual([sent.id]);
 
+		// Once the flush lands, the ack does too and the entry stops being owed.
 		replica.gate.failing = false;
 		await replica.store.persistence.flush();
 		expect(replica.durableOutboxIds()).toEqual([]);
+		expect(syncEngineOf(replica.store).coalesce()).toBeUndefined();
 	});
 
 	test('a remote update lost with a blocked close is simply re-received', async () => {

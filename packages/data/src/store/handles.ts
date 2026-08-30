@@ -252,7 +252,7 @@ type TableIo<TFields> = {
 export type DataView<TDatabase extends DataDefinition> = {
 	readonly tables: {
 		readonly [K in keyof TDatabase['tables']]: TypedTableHandle<
-			TDatabase['tables'][K]['fields']
+			TDatabase['tables'][K]
 		>;
 	};
 	readonly kv: KvHandle<KvOf<TDatabase>>;

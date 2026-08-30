@@ -27,12 +27,12 @@ const database = defineData({
 	kv: { theme: field.select(['light', 'dark']), fontSize: field.number() },
 	tables: {
 		notes: defineTable({
-			fields: {
+			scalars: {
 				title: field.string(),
 				tags: field.tags(),
 				date: field.nullable(field.string()),
-				editor: field.type(),
 			},
+			types: ['editor'],
 			file: {
 				serialize: (row) => ({
 					data: { title: row.title, tags: row.tags, date: row.date },
@@ -245,7 +245,7 @@ describe('a nonconforming row is reported, never repaired', () => {
 		kv: {},
 		tables: {
 			notes: {
-				fields: {
+				scalars: {
 					title: field.string(),
 					tags: field.string(),
 					date: field.nullable(field.string()),
@@ -617,13 +617,13 @@ describe('a subscription says a table changed', () => {
 				kv: {},
 				tables: {
 					notes: {
-						fields: {
+						scalars: {
 							title: field.string(),
 							tags: field.tags(),
 							date: field.nullable(field.string()),
 						},
 					},
-					folders: { fields: { name: field.string() } },
+					folders: { scalars: { name: field.string() } },
 				},
 			}),
 		);
@@ -810,7 +810,7 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 				},
 				tables: {
 					notes: {
-						fields: {
+						scalars: {
 							title: field.string(),
 							tags: field.tags(),
 							date: field.nullable(field.string()),
@@ -837,14 +837,14 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		id: 'so.epicenter.honeycrisp',
 		kv: { theme: field.select(['light', 'dark']) },
 		tables: {
-			notes: { fields: { title: field.string() } },
-			scratch: { fields: { body: field.string() } },
+			notes: { scalars: { title: field.string() } },
+			scratch: { scalars: { body: field.string() } },
 		},
 	});
 	const withoutScratch = defineData({
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
-		tables: { notes: { fields: { title: field.string() } } },
+		tables: { notes: { scalars: { title: field.string() } } },
 	});
 
 	test('the next runtime has no handle; one that re-declares it reads every row back', async () => {
@@ -899,13 +899,13 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
 		tables: {
-			notes: { fields: { title: field.string(), preview: field.string() } },
+			notes: { scalars: { title: field.string(), preview: field.string() } },
 		},
 	});
 	const withoutPreview = defineData({
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
-		tables: { notes: { fields: { title: field.string() } } },
+		tables: { notes: { scalars: { title: field.string() } } },
 	});
 
 	test('a field the declaration dropped survives here and nowhere else', async () => {
@@ -1189,7 +1189,7 @@ describe('the store manages no timestamps (ADR-0297)', () => {
 			kv: {},
 			tables: {
 				notes: {
-					fields: {
+					scalars: {
 						title: field.string(),
 						updatedAt: field.instant(),
 					},
@@ -1211,7 +1211,7 @@ describe('the store manages no timestamps (ADR-0297)', () => {
 		const plain = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
-			tables: { notes: { fields: { title: field.string() } } },
+			tables: { notes: { scalars: { title: field.string() } } },
 		});
 		const data = await openMemory(plain);
 		const made = data.tables.notes.create({ title: 'Groceries' });

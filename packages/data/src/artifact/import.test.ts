@@ -29,9 +29,9 @@ const store = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.string() },
 	tables: {
-		folders: { fields: { name: field.string() } },
+		folders: { scalars: { name: field.string() } },
 		notes: defineTable({
-			fields: {
+			scalars: {
 				title: field.string(),
 				code: field.string(),
 				flag: field.string(),
@@ -39,8 +39,8 @@ const store = defineData({
 				count: field.number(),
 				tags: field.tags(),
 				folderId: field.nullable(field.string()),
-				body: field.type(),
 			},
+			types: ['body'],
 			// The faithful codec: everything the store holds goes above the fence
 			// and comes back off it, so a key an older release wrote survives the
 			// round trip. The `id` is the path, not a field.
@@ -208,7 +208,8 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					fields: { title: field.string(), body: field.type() },
+					scalars: { title: field.string() },
+					types: ['body'],
 					file: {
 						serialize: () => ({ data: {}, content: '' }),
 						deserialize: () => {
@@ -233,7 +234,8 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					fields: { title: field.string(), body: field.type() },
+					scalars: { title: field.string() },
+					types: ['body'],
 					file: {
 						serialize: () => ({ data: {}, content: '' }),
 						deserialize: () =>
@@ -262,7 +264,8 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					fields: { title: field.string(), body: field.type() },
+					scalars: { title: field.string() },
+					types: ['body'],
 					file: {
 						serialize: () => ({ data: {}, content: '' }),
 						deserialize: () => Ok({ title: 'x', body: shared }),

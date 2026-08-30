@@ -7,7 +7,7 @@ import {
 	storageOf,
 } from '@epicenter/field';
 import type * as Y from '@y/y';
-import { type Static, type TSchema, type TUnsafe, Type } from 'typebox';
+import { type Static, type TSchema, Type } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
@@ -27,48 +27,6 @@ export type FieldDescriptor = object;
 export type FieldMap = {
 	readonly [field: string]: FieldDescriptor;
 };
-
-/**
- * The marker a type field's descriptor carries (ADR-0296).
- *
- * Substrate policy, like `nullable`, so it lives here rather than in the
- * closed `@epicenter/field` palette: that palette answers what a JSON value
- * is, and a type field holds no JSON value at all. A descriptor carrying this
- * marker matches no palette meta, which is why recognition is short-circuited
- * before `recognize` ever sees it.
- */
-export const YJS_TYPE_KEYWORD = 'x-yjs-type';
-
-/** A type field's descriptor: `Static<>` is the nested type it holds. */
-export type TYjsType = TUnsafe<Y.Type> & {
-	readonly [YJS_TYPE_KEYWORD]: true;
-};
-
-/**
- * A type field: the attribute holds a nested `Y.Type` rather than a JSON value
- * (ADR-0296).
- *
- * It names what is true of storage and nothing more. Yjs 14 has one `YType`
- * that is simultaneously map, list, and rich text, so "prose" is a fact about
- * a codec and an editor binding, not about the declaration. An application
- * that wants prose, an outline, or a table writes the same `field.type()` and
- * differs only in its file codec and its editor binding.
- *
- * The vocabulary around it used to disagree with that. These were "rich
- * fields", ninety-six times, and "rich" is the prose connotation this comment
- * spends a paragraph refusing: `packages/chat` keeps a message MAP in one.
- * Worse, the code glossed it as "a nested `Y.Type`" fifty-one times, and a
- * name that needs its own explanation attached is not the name. They are type
- * fields, after the verb that declares them.
- *
- * The marker is the RUNTIME's, and only the runtime's. The engine reads it to
- * learn which attribute keys to mint when it creates a row; nothing at the type
- * level asks, because `ScalarsOf` and `TypesOf` ask the value whether its
- * `Static` is a `Y.Type`.
- */
-function yjsType(): TYjsType {
-	return Type.Unsafe<Y.Type>({ [YJS_TYPE_KEYWORD]: true }) as TYjsType;
-}
 
 /** One row's export file, split at the fence (ADR-0296). */
 export type RowFile = {
@@ -130,9 +88,27 @@ export type RowValues = {
 	readonly id: string;
 } & Readonly<Record<string, JsonValue | Y.Type>>;
 
-/** One table: its fields, and optionally the codec for its export file. */
+/**
+ * One table's declaration, as the inert definition carries it.
+ *
+ * TWO BUCKETS. A scalar holds a JSON value: replaced whole on write, last write
+ * wins. A type field holds a live `Y.Type`: edited in place, merging
+ * internally. They are different in every operation, so the declaration says
+ * so rather than hiding it in a marker for the type system to rediscover.
+ */
 export type TableDeclaration = {
-	readonly fields: FieldMap;
+	/** The fields holding a JSON value. */
+	readonly scalars: FieldMap;
+	/**
+	 * The fields holding a live `Y.Type`, by name.
+	 *
+	 * Names and nothing else, because there is nothing to configure: a type
+	 * field has no schema, no nullability and no format. It used to be declared
+	 * with `field.type()`, a descriptor whose entire content was a marker
+	 * saying "I am not a descriptor", and what that marker smuggled through the
+	 * scalars was this list.
+	 */
+	readonly types?: readonly string[];
 	readonly file?: RowFileCodec;
 };
 
@@ -197,7 +173,6 @@ function nullable<S extends TSchema>(inner: S) {
 export const field = Object.freeze({
 	...genericField,
 	nullable,
-	type: yjsType,
 });
 
 export type DataField = {
@@ -215,51 +190,55 @@ type FieldsOut<TFields> = {
 };
 
 /**
- * Whether one declared field's value is a `Y.Type` rather than a JSON value.
+ * One table declaration: its scalars, its type fields, and its file codec.
  *
- * The predicate both halves of the partition below share, asked of the VALUE
- * rather than of a marker keyword. `x-yjs-type` still exists and the runtime
- * still reads it, because the engine has to know which attribute keys to mint
- * when it creates a row; nothing at the type level needs to, because the
- * `Static` already says so.
- */
-type IsType<TField> = TField extends TSchema
-	? Static<TField> extends Y.Type
-		? true
-		: false
-	: false;
-
-/**
- * One table's type fields: the ones whose value is a live `Y.Type`.
+ * TWO BUCKETS, and the split is the declaration saying what is true rather than
+ * encoding it for the type system to rediscover. A scalar holds a JSON value,
+ * is replaced whole on write, and merges last-write-wins. A type field holds a
+ * live `Y.Type`, is edited in place, and merges internally. They are different
+ * in every operation: `update` takes only scalars, `watch` takes only types,
+ * `create` requires the first and mints the second, and a table with any type
+ * field must declare a codec.
  *
- * The mirror of `ScalarsOf`, and the symmetry is the point. One declaration
- * holds both kinds, in the order a person wrote them, and these two partition
- * it. There used to be a third type, `RichKeys`, whose only job was to compute
- * the key set that `Omit` then removed; asking the value directly makes the two
- * halves one line each and answers the question in the same breath as posing
- * it.
+ * They used to share one bag, and three types existed to pull them apart again
+ * off an `x-yjs-type` marker: `RichKeys` computed a key union, `TypesOf` mapped
+ * it, `ScalarsOf` `Omit`ed it. `field.type()` was the marker's carrier, and it
+ * was a descriptor that described nothing: no schema, no check, no
+ * nullability. What it smuggled through the bag was a list of names, which is
+ * what the runtime holds and what `types` now is.
  */
-export type TypesOf<TFields> = {
-	[K in keyof TFields as IsType<TFields[K]> extends true ? K : never]: Y.Type;
+export type TableDeclarationOf<
+	TScalars extends FieldMap = FieldMap,
+	TTypes extends readonly string[] = readonly string[],
+> = {
+	readonly scalars: TScalars;
+	readonly types?: TTypes;
+	readonly file?: RowFileCodec;
 };
 
-/**
- * One table's scalar fields: everything whose value is an ordinary JSON value.
- *
- * What `update` may patch, what `deserialize` returns beside the types it
- * built, and what a file codec writes to frontmatter. A type field is absent
- * because a type is not assignable: writing one over a row's attribute deletes
- * the old subtree, so a peer that edited it concurrently loses every keystroke
- * to map LWW. That rule is the reason this type exists, and stating it as a
- * signature is what keeps it from being a comment somebody has to obey.
- */
-export type ScalarsOf<TFields> = {
-	[K in keyof TFields as IsType<TFields[K]> extends true
-		? never
-		: K]: TFields[K] extends TSchema ? Static<TFields[K]> : never;
-};
+type ScalarsIn<T> = T extends { scalars: infer S } ? S : T;
+type TypeNamesIn<T> = T extends { types: infer N extends readonly string[] }
+	? N[number]
+	: never;
 
-type FieldsOfArg<T> = T extends { fields: infer TFields } ? TFields : T;
+/**
+ * One table's type fields: the live `Y.Type` at each declared name.
+ *
+ * A lookup, not a filter. The declaration already lists them.
+ */
+export type TypesOf<T> = { [K in TypeNamesIn<T>]: Y.Type };
+
+/**
+ * One table's scalar fields: what `update` may patch, what `deserialize`
+ * returns beside the types it built, and what a codec writes to frontmatter.
+ *
+ * A type field is absent because a type is not assignable: writing one over a
+ * row's attribute deletes the old subtree, so a peer that edited it
+ * concurrently loses every keystroke to map LWW. That rule is why this type
+ * exists, and stating it as a signature is what keeps it from being a comment
+ * somebody has to obey.
+ */
+export type ScalarsOf<T> = FieldsOut<ScalarsIn<T>>;
 
 /**
  * One table's read shape: the id, the scalars, and the live types.
@@ -272,7 +251,7 @@ type FieldsOfArg<T> = T extends { fields: infer TFields } ? TFields : T;
  * `NewRowOf` is this minus the id and with the types optional. That sentence is
  * the whole relationship between the two shapes an application ever names.
  */
-export type RowOf<T> = { id: string } & FieldsOut<FieldsOfArg<T>>;
+export type RowOf<T> = { id: string } & ScalarsOf<T> & TypesOf<T>;
 /**
  * A row that does not have an id yet: the scalars, and the type types the
  * caller built (ADR-0295, ADR-0296).
@@ -297,8 +276,7 @@ export type RowOf<T> = { id: string } & FieldsOut<FieldsOfArg<T>>;
  * from having to build an empty body it does not care about: an omitted one is
  * minted empty. A codec that means to leave a body empty says so the same way.
  */
-export type NewRowOf<T> = ScalarsOf<FieldsOfArg<T>> &
-	Partial<TypesOf<FieldsOfArg<T>>>;
+export type NewRowOf<T> = ScalarsOf<T> & Partial<TypesOf<T>>;
 export type KvOf<TDatabase extends DataDefinition> = FieldsOut<TDatabase['kv']>;
 
 /** The codec as its own table declares it, read through that table's fields. */
@@ -326,14 +304,22 @@ export type RowFileCodecOf<TFields> = {
  * typing that matters happens here, at the authoring call, and the store reads
  * the erased form.
  */
-export function defineTable<const TFields extends FieldMap>(
+export function defineTable<
+	const TScalars extends FieldMap,
+	const TTypes extends readonly string[] = readonly [],
+>(
 	table: {
-		fields: TFields & ValidateFields<TFields>;
-	} & ([keyof TypesOf<TFields>] extends [never]
-		? { file?: RowFileCodecOf<TFields> }
-		: { file: RowFileCodecOf<TFields> }),
-): { fields: TFields; file?: RowFileCodec } {
-	return table as unknown as { fields: TFields; file?: RowFileCodec };
+		scalars: TScalars & ValidateFields<TScalars>;
+		types?: TTypes;
+	} & ([TTypes[number]] extends [never]
+		? { file?: RowFileCodecOf<{ scalars: TScalars; types: TTypes }> }
+		: { file: RowFileCodecOf<{ scalars: TScalars; types: TTypes }> }),
+): { scalars: TScalars; types: TTypes; file?: RowFileCodec } {
+	return table as unknown as {
+		scalars: TScalars;
+		types: TTypes;
+		file?: RowFileCodec;
+	};
 }
 
 export function defineKv<const TFields extends FieldMap>(
@@ -507,7 +493,7 @@ function compileDefinition(
 			reason: 'it declares no tables',
 		});
 
-	const compiledKvResult = compileTable('kv', kv);
+	const compiledKvResult = compileTable('kv', kv, []);
 	if (compiledKvResult.error !== null) return compiledKvResult;
 	const compiledKv = compiledKvResult.data;
 	const compiledTables = new Map<string, ParsedTable>();
@@ -530,14 +516,19 @@ function compileDefinition(
 		foldedNames.set(folded, tableName);
 		if (
 			!isPlainObject(declaration) ||
-			!isPlainObject((declaration as TableDeclaration).fields)
+			!isPlainObject((declaration as TableDeclaration).scalars)
 		) {
 			return DataDefinitionParseError.Malformed({
-				reason: `table '${tableName}' must declare a fields object`,
+				reason: `table '${tableName}' must declare a scalars object`,
 			});
 		}
 		const table = declaration as TableDeclaration;
-		const result = compileTable(tableName, table.fields);
+		if (table.types !== undefined && !Array.isArray(table.types)) {
+			return DataDefinitionParseError.Malformed({
+				reason: `table '${tableName}' declares 'types' as something other than a list of field names`,
+			});
+		}
+		const result = compileTable(tableName, table.scalars, table.types ?? []);
 		if (result.error !== null) return result;
 		// A codec is behavior beside the data core (ADR-0266), so a definition
 		// that arrived serialized carries its functions stripped and compiles as
@@ -569,15 +560,40 @@ function compileDefinition(
 
 function compileTable(
 	tableName: string,
-	fields: unknown,
+	scalars: unknown,
+	declaredTypes: readonly string[],
 ): Result<ParsedTable, DataDefinitionParseError> {
-	if (!isPlainObject(fields))
+	if (!isPlainObject(scalars))
 		return DataDefinitionParseError.Malformed({
-			reason: `table '${tableName}' does not declare fields`,
+			reason: `table '${tableName}' does not declare scalars`,
 		});
 	const compiled = new Map<string, DataField>();
+	// A type field compiles to a NAME and nothing else: no schema, no check, no
+	// storage class, so nothing downstream can mistake it for a column or report
+	// it as nonconforming. The declaration is the list, which is why it no
+	// longer needs a descriptor to carry a marker through the scalars.
 	const types: string[] = [];
-	for (const [fieldName, descriptor] of Object.entries(fields)) {
+	for (const fieldName of declaredTypes) {
+		if (tableName === KV_ROOT) {
+			return DataDefinitionParseError.Malformed({
+				reason: `'${fieldName}' declares a type field in kv, which holds settings rather than rows`,
+			});
+		}
+		const invalid = fieldNameProblem(tableName, fieldName);
+		if (invalid !== undefined) return invalid;
+		if (fieldName in scalars) {
+			return DataDefinitionParseError.Malformed({
+				reason: `'${fieldName}' is declared as both a scalar and a type field of table '${tableName}'`,
+			});
+		}
+		if (types.includes(fieldName)) {
+			return DataDefinitionParseError.Malformed({
+				reason: `'${fieldName}' is declared twice in table '${tableName}' types`,
+			});
+		}
+		types.push(fieldName);
+	}
+	for (const [fieldName, descriptor] of Object.entries(scalars)) {
 		const invalid = fieldNameProblem(tableName, fieldName);
 		if (invalid !== undefined) return invalid;
 		if (!isPlainObject(descriptor)) {
@@ -586,20 +602,6 @@ function compileTable(
 				field: fieldName,
 				reason: 'a field descriptor must be a JSON object',
 			});
-		}
-		// A type field is recognized here rather than by the palette, and before
-		// it, because the palette answers what a JSON value is and this holds no
-		// JSON value at all. It compiles to a NAME and nothing else: no schema, no
-		// check, no storage class, so nothing downstream can mistake it for a
-		// column or report it as nonconforming.
-		if (descriptor[YJS_TYPE_KEYWORD] === true) {
-			if (tableName === KV_ROOT) {
-				return DataDefinitionParseError.Malformed({
-					reason: `'${fieldName}' declares a nested type in kv, which holds settings rather than rows`,
-				});
-			}
-			types.push(fieldName);
-			continue;
 		}
 		if (containsDefault(descriptor)) {
 			return DataDefinitionParseError.DeclarationDefault({

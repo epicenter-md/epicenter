@@ -49,7 +49,8 @@ const probeDefinition = defineData({
 	kv: {},
 	tables: {
 		notes: defineTable({
-			fields: { title: field.string(), body: field.type() },
+			scalars: { title: field.string() },
+			types: ['body'],
 			file: {
 				serialize: (row) => ({
 					data: { title: row.title },

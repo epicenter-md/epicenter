@@ -154,6 +154,15 @@ export type PersistenceController = {
 	 */
 	durableOutbox(): readonly OutboxEntry[];
 	/**
+	 * How far through the authority's log the durable record accounts for.
+	 *
+	 * The same mirror `durableOutbox` reads, and read for the same reason: a
+	 * cursor derived from confirmed bytes can only LAG, and lagging is free
+	 * because a re-received entry is applied again and an update is
+	 * idempotent.
+	 */
+	durableCursor(): number;
+	/**
 	 * Whether anything at all is held, durably or queued: updates, outbox
 	 * entries, a moved cursor. The identity stamp's emptiness check.
 	 */
@@ -348,6 +357,7 @@ export function createPersistenceController({
 			flush,
 		}),
 		durableOutbox: () => outbox,
+		durableCursor: () => cursor,
 		hasAnyState: () =>
 			hasUpdates ||
 			outbox.length > 0 ||

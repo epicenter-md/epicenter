@@ -34,7 +34,7 @@ const labDatabase = defineData({
 	id: 'so.epicenter.synclab',
 	kv: {},
 	tables: {
-		notes: { fields: { title: field.string(), prose: field.string() } },
+		notes: { scalars: { title: field.string(), prose: field.string() } },
 	},
 });
 

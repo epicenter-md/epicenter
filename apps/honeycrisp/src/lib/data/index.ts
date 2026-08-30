@@ -32,37 +32,41 @@ export type NoteId = string;
 export type FolderId = string;
 
 const foldersTable = {
-	name: field.string(),
-	// Nullable rather than optional. A data definition has no optional
-	// fields on purpose: a field has to be one type through the CRDT attribute,
-	// the exported frontmatter value and the row alike, and "absent" is not one.
-	// Application recovery supplies a value at read time and never writes it as
-	// part of the definition (ADR-0255).
-	icon: field.nullable(field.string()),
+	scalars: {
+		name: field.string(),
+		// Nullable rather than optional. A data definition has no optional
+		// fields on purpose: a field has to be one type through the CRDT
+		// attribute, the exported frontmatter value and the row alike, and
+		// "absent" is not one. Application recovery supplies a value at read time
+		// and never writes it as part of the definition (ADR-0255).
+		icon: field.nullable(field.string()),
+	},
 } as const;
 
 const notesTable = {
-	folderId: field.nullable(field.string()),
-	title: field.string(),
-	pinned: field.boolean(),
-	// Validation-only rather than `string.date.parse`: a field has to be one
-	// type through the CRDT attribute, the exported frontmatter value and the
-	// row alike, and a parsing form would hand back a `Date` that could not
-	// round-trip.
-	// Ordinary fields nobody stamps but Honeycrisp (ADR-0297). The store stopped
-	// holding an opinion about time, so `noteMetadataWriter` below is what moves
-	// `updatedAt`, and `create` is what sets `createdAt`.
-	createdAt: field.instant(),
-	updatedAt: field.instant(),
-	deletedAt: field.nullable(field.instant()),
+	scalars: {
+		folderId: field.nullable(field.string()),
+		title: field.string(),
+		pinned: field.boolean(),
+		// Validation-only rather than `string.date.parse`: a field has to be one
+		// type through the CRDT attribute, the exported frontmatter value and the
+		// row alike, and a parsing form would hand back a `Date` that could not
+		// round-trip.
+		// Ordinary fields nobody stamps but Honeycrisp (ADR-0297). The store
+		// stopped holding an opinion about time, so `openBody` is what moves
+		// `updatedAt`, and `create` is what sets `createdAt`.
+		createdAt: field.instant(),
+		updatedAt: field.instant(),
+		deletedAt: field.nullable(field.instant()),
+	},
 	/**
-	 * The note's prose: a nested `Y.Type` on the row (ADR-0295, ADR-0296).
+	 * The note's prose: a live `Y.Type` on the row (ADR-0295, ADR-0296).
 	 *
-	 * Minted with the row and never again, and bound directly by
-	 * `@y/prosemirror`, which is typed against `Y.Type` and makes no root
-	 * assumption.
+	 * A name and nothing else, because there is nothing to configure. Minted
+	 * with the row and never again, and bound directly by `@y/prosemirror`,
+	 * which is typed against `Y.Type` and makes no root assumption.
 	 */
-	body: field.type(),
+	types: ['body'],
 } as const;
 
 /**
@@ -119,8 +123,8 @@ export const honeycrispDefinition = defineData({
 	title: 'Honeycrisp',
 	kv: {},
 	tables: {
-		folders: { fields: foldersTable },
-		notes: defineTable({ fields: notesTable, file: noteFile }),
+		folders: foldersTable,
+		notes: defineTable({ ...notesTable, file: noteFile }),
 	},
 });
 

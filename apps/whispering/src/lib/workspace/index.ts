@@ -179,8 +179,8 @@ export const whisperingDefinition = defineData({
 	title: 'Whispering',
 	kv: settingsKv,
 	tables: {
-		recordings: { fields: recordingsTable },
-		recipes: { fields: recipesTable },
+		recordings: { scalars: recordingsTable },
+		recipes: { scalars: recipesTable },
 	},
 });
 

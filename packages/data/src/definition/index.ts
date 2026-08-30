@@ -41,6 +41,5 @@ export {
 	type RowValues,
 	type ScalarsOf,
 	type TypesOf,
-	YJS_TYPE_KEYWORD,
 } from './definition.js';
 export * from './json.js';

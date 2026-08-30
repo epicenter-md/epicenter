@@ -21,7 +21,7 @@ import { attachStoreSync, type StoreSocketTransport } from './attach.js';
 const database = defineData({
 	id: 'so.epicenter.attach-test',
 	kv: {},
-	tables: { notes: { fields: { title: field.string() } } },
+	tables: { notes: { scalars: { title: field.string() } } },
 });
 
 type AddressedTestStore = AccountStore & {

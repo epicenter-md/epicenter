@@ -50,12 +50,12 @@ const evidenceDatabase = defineData({
 	kv: {},
 	tables: {
 		notes: defineTable({
-			fields: {
+			scalars: {
 				title: field.string(),
 				device: field.string(),
 				at: field.string(),
-				editor: field.type(),
 			},
+			types: ['editor'],
 			file: {
 				serialize: ({ id: _id, editor, ...fields }) => ({
 					data: fields,

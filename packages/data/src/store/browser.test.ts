@@ -50,7 +50,8 @@ function databaseFor(label: string) {
 		kv: {},
 		tables: {
 			notes: defineTable({
-				fields: { title: field.string(), editor: field.type() },
+				scalars: { title: field.string() },
+				types: ['editor'],
 				file: {
 					serialize: (row) => ({
 						data: { title: row.title },
@@ -573,7 +574,7 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 		// rather than a programmer error. The store this half-opened must
 		// release its address, or the application can never start.
 		const refused = await openDatabase(
-			{ dataId: database.id, tables: { notes: { fields: {} } } } as never,
+			{ dataId: database.id, tables: { notes: { scalars: {} } } } as never,
 			{ generation: GEN },
 		);
 		expect(refused.error).not.toBeNull();

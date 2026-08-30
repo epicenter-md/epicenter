@@ -20,7 +20,7 @@ const labDatabase = defineData({
 	kv: {},
 	tables: {
 		notes: {
-			fields: {
+			scalars: {
 				title: field.string(),
 				device: field.string(),
 				at: field.string(),

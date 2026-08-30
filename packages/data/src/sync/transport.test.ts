@@ -46,7 +46,8 @@ const database = defineData({
 	kv: {},
 	tables: {
 		notes: defineTable({
-			fields: { title: field.string(), editor: field.type() },
+			scalars: { title: field.string() },
+			types: ['editor'],
 			file: {
 				serialize: (row) => ({
 					data: { title: row.title },
@@ -1477,7 +1478,7 @@ const newerDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
 	tables: {
-		notes: { fields: { title: field.string(), pinned: field.boolean() } },
+		notes: { scalars: { title: field.string(), pinned: field.boolean() } },
 	},
 });
 
@@ -1486,8 +1487,8 @@ const twoTableDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
 	tables: {
-		notes: { fields: { title: field.string() } },
-		tasks: { fields: { label: field.string() } },
+		notes: { scalars: { title: field.string() } },
+		tasks: { scalars: { label: field.string() } },
 	},
 });
 

@@ -24,7 +24,8 @@ const store = defineData({
 	kv: { theme: field.string() },
 	tables: {
 		notes: defineTable({
-			fields: { title: field.string(), body: field.type() },
+			scalars: { title: field.string() },
+			types: ['body'],
 			file: {
 				serialize: (row) => ({
 					data: { title: row.title },
@@ -236,7 +237,8 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					fields: { title: field.string(), body: field.type() },
+					scalars: { title: field.string() },
+					types: ['body'],
 					file: {
 						serialize: () => {
 							if (explode) throw new Error('the codec refused');

@@ -17,7 +17,7 @@ const authored = defineData({
 	},
 	tables: {
 		notes: {
-			fields: {
+			scalars: {
 				title: field.string(),
 				status: field.select(['draft', 'published']),
 				tags: field.multiSelect(['work', 'personal']),
@@ -101,7 +101,7 @@ describe('data definitions', () => {
 			id: 'so.epicenter.typed',
 			kv: {},
 			tables: {
-				notes: { fields: { title: field.string(), body: field.type() } },
+				notes: { scalars: { title: field.string() }, types: ['body'] },
 			},
 		});
 		const notes = expectOk(result).tables.get('notes');
@@ -110,12 +110,24 @@ describe('data definitions', () => {
 		expect(notes?.conformance({ title: 'x' }).issues).toEqual([]);
 	});
 
-	test('a type field in kv is refused', () => {
-		// kv holds settings rather than rows, and nothing mints a type there.
+	test('a type field cannot be declared on a table twice', () => {
 		const result = parseData({
-			id: 'so.epicenter.richkv',
-			kv: { body: field.type() },
-			tables: {},
+			id: 'so.epicenter.dupes',
+			kv: {},
+			tables: {
+				notes: { scalars: { title: field.string() }, types: ['body', 'body'] },
+			},
+		});
+		expect(result.error?.name).toBe('Malformed');
+	});
+
+	test('a name cannot be both a scalar and a type field', () => {
+		const result = parseData({
+			id: 'so.epicenter.collide',
+			kv: {},
+			tables: {
+				notes: { scalars: { body: field.string() }, types: ['body'] },
+			},
 		});
 		expect(result.error?.name).toBe('Malformed');
 	});
@@ -129,7 +141,7 @@ describe('data definitions', () => {
 				id: 'so.epicenter.nocodec',
 				kv: {},
 				tables: {
-					notes: { fields: { title: field.string(), body: field.type() } },
+					notes: { scalars: { title: field.string() }, types: ['body'] },
 				},
 			}),
 		).toThrow('file codec');
@@ -140,7 +152,8 @@ describe('data definitions', () => {
 		// round-tripped through JSON loses its functions, and that husk must be
 		// parseable, because an app bundle's `database.json` is read for its id.
 		const authored = defineTable({
-			fields: { title: field.string(), body: field.type() },
+			scalars: { title: field.string() },
+			types: ['body'],
 			file: {
 				serialize: () => ({ data: {}, content: '' }),
 				deserialize: () => Ok({ title: '' }),
@@ -166,7 +179,7 @@ describe('data definitions', () => {
 			kv: {},
 			tables: {
 				notes: {
-					fields: { title: { type: field.string(), default: 'untitled' } },
+					scalars: { title: { type: field.string(), default: 'untitled' } },
 				},
 			},
 		});
@@ -178,7 +191,7 @@ describe('data definitions', () => {
 			id: 'so.epicenter.json',
 			kv: {},
 			tables: {
-				rows: { fields: { payload: field.json(field.select(['a', 'b'])) } },
+				rows: { scalars: { payload: field.json(field.select(['a', 'b'])) } },
 			},
 		});
 		const row: RowOf<typeof data.tables.rows> = { id: '1', payload: 'a' };

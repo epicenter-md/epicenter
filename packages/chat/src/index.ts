@@ -61,22 +61,25 @@ export const asConversationId = (value: string): ConversationId =>
  * export const vocabDefinition = defineData({
  *   id: 'so.epicenter.vocab',
  *   tables: {
- *     conversations: { fields: conversationsTable },
- *     entries: { fields: entriesTable },
+ *     conversations: conversationsTable,
+ *     entries: entriesTable,
  *   },
  * });
  * ```
  */
 export const conversationsTable = {
-	title: field.string(),
-	model: field.string(),
-	// Validation-only rather than `string.date.parse`: a field has to be one
-	// type through the CRDT attribute, the projection column and the row alike,
-	// and a parsing form would hand back a `Date` that could not round-trip.
-	createdAt: field.instant(),
-	updatedAt: field.instant(),
+	scalars: {
+		title: field.string(),
+		model: field.string(),
+		// Validation-only rather than `string.date.parse`: a field has to be one
+		// type through the CRDT attribute, the projection column and the row
+		// alike, and a parsing form would hand back a `Date` that could not
+		// round-trip.
+		createdAt: field.instant(),
+		updatedAt: field.instant(),
+	},
 	/**
-	 * The conversation's finished messages: a nested `Y.Type` on the row
+	 * The conversation's finished messages: a live `Y.Type` on the row
 	 * (ADR-0295, ADR-0296).
 	 *
 	 * Minted with the row and never again, which is what removes the race a
@@ -84,7 +87,7 @@ export const conversationsTable = {
 	 * struct that created it, so two devices minting one would lose a subtree,
 	 * and only the creating device ever mints this.
 	 */
-	messages: field.type(),
+	types: ['messages'],
 } as const;
 
 /**

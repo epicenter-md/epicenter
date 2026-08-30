@@ -117,8 +117,8 @@ export const vocabDefinition = defineData({
 		showReadings: field.boolean(),
 	},
 	tables: {
-		conversations: { fields: conversationsTable },
-		entries: { fields: entriesTable },
+		conversations: conversationsTable,
+		entries: { scalars: entriesTable },
 	},
 });
 

@@ -26,7 +26,8 @@ const database = defineData({
 	kv: {},
 	tables: {
 		notes: defineTable({
-			fields: { title: field.string(), editor: field.type() },
+			scalars: { title: field.string() },
+			types: ['editor'],
 			file: {
 				serialize: (row) => ({
 					data: { title: row.title },

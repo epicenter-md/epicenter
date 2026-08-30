@@ -24,7 +24,7 @@ const testDefinition = defineData({
 	kv: {},
 	tables: {
 		conversations: defineTable({
-			fields: conversationsTable,
+			...conversationsTable,
 			file: conversationsFile,
 		}),
 	},
