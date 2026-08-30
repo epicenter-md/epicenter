@@ -279,7 +279,7 @@ function createNotes(data: ReactiveData<HoneycrispData>) {
 		// writes during sustained typing, and a person who stops typing and
 		// closes the tab should not lose their title to a pending timer.
 		let queued: ReturnType<typeof setTimeout> | undefined;
-		const stop = data.watch(body, () => {
+		const stop = table.watch(body, () => {
 			if (queued !== undefined) return;
 			queued = setTimeout(() => {
 				queued = undefined;
@@ -319,7 +319,7 @@ function createNotes(data: ReactiveData<HoneycrispData>) {
 	function previewOf(id: NoteId): { readonly text: string } {
 		const body = table.get(id)?.body;
 		if (body === undefined) return { text: '' };
-		const subscribe = createSubscriber((update) => data.watch(body, update));
+		const subscribe = createSubscriber((update) => table.watch(body, update));
 		return {
 			get text() {
 				subscribe();

@@ -710,13 +710,6 @@ function createStoreEngine(
 			// so it belongs on the application's surface rather than on the
 			// store's, which is what a transport and an exporter hold.
 			transact,
-			watch(type: Y.Type, listener: () => void): () => void {
-				assertUsable();
-				// Keyed by the type itself, which is what a commit names:
-				// `deliver` reads `changedParentTypes`, so an edit anywhere inside
-				// this type reaches the listener while an edit to a sibling does not.
-				return subscribeByKey(typeListeners, type, listener);
-			},
 		};
 		return Object.freeze(handle);
 	}
@@ -930,6 +923,15 @@ function createStoreEngine(
 			 */
 			subscribe(listener: () => void): () => void {
 				return subscribeByKey(tableListeners, tableName, listener);
+			},
+			watch(type: Y.Type, listener: () => void): () => void {
+				assertUsable();
+				// Keyed by the type itself, which is what a commit names:
+				// `deliver` reads `changedParentTypes`, so an edit anywhere inside
+				// this type reaches the listener while an edit to a sibling does
+				// not. `tableName` is not consulted, which is why a type from
+				// another table is accepted here (`handles.ts` says why).
+				return subscribeByKey(typeListeners, type, listener);
 			},
 		};
 		return Object.freeze(handle);

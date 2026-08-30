@@ -163,7 +163,7 @@ export type TableHandle<
 	 *
 	 * NOT an edit inside a row's type field. A type field is nested on its row
 	 * (ADR-0295), so counting it here would wake every list in the application
-	 * on every keystroke; the data's `watch` is the signal for that, scoped to
+	 * on every keystroke; `watch` below is the signal for that, scoped to
 	 * the one type. The store decides by depth against the table root, so the
 	 * invalidation stays a superset of what changed (ADR-0187) without being
 	 * the whole document.
@@ -182,6 +182,35 @@ export type TableHandle<
 	 * `evidence/delta-names-the-row.test.ts` still proves the ids are there.
 	 */
 	subscribe(listener: () => void): () => void;
+	/**
+	 * Hear edits to ONE live type of this table, local or remote.
+	 *
+	 * Takes the type rather than an address, because the caller is already
+	 * holding it: a type field is read off its row (ADR-0295), and rendering it
+	 * needs the type anyway. Naming an address instead looked the same object
+	 * up a second time and could disagree with the first, handing back a dead
+	 * subscription for a row deleted in between.
+	 *
+	 * It is on the table because that is where the caller got the type. Every
+	 * call site reads `table.get(id)?.field` and watches what it read, so the
+	 * verb anywhere else costs a second noun at every one of them. Delivery is
+	 * keyed by the type's own identity and does not consult the table, so
+	 * another table's type is accepted here and does exactly what it says. That
+	 * is the price of the one-noun call site, paid deliberately.
+	 *
+	 * The scope is the whole reason it exists: the store writes no derived
+	 * fields (ADR-0297), so an application hangs its own write on an edit, and
+	 * a row-scoped signal would fire on the write it caused. It is also the
+	 * only way to hear prose, because `subscribe` above reports this table's
+	 * shape and deliberately not an edit inside a field.
+	 *
+	 * Fires once per commit, on the same flush every other subscriber's
+	 * notification goes out on and AFTER all of them, so a listener that writes
+	 * is writing against a settled commit. That ordering is the whole service:
+	 * the type's own `on('delta')` fires mid-acceptance, and a write from there
+	 * would re-enter the transaction being accepted.
+	 */
+	watch(type: Y.Type, listener: () => void): () => void;
 };
 
 /**
@@ -245,34 +274,6 @@ export type DataView<TDatabase extends DataDefinition> = {
 	 * not reach it at all and paid a commit per row instead.
 	 */
 	transact<TResult>(run: () => TResult): TResult;
-	/**
-	 * Hear edits to ONE live type, local or remote.
-	 *
-	 * Takes the type rather than an address, because the caller is already
-	 * holding it: a type field is read off its row (ADR-0295), and rendering it
-	 * needs the type anyway. Naming an address instead looked the same object
-	 * up a second time and could disagree with the first, handing back a dead
-	 * subscription for a row deleted in between.
-	 *
-	 * It is on the DATA rather than on a table because the delivery is keyed by
-	 * the type's own identity and knows nothing about a table. It sat on
-	 * `tables.<name>` for one release and the placement was a lie: nothing in
-	 * the implementation read the table, so watching one table's type through
-	 * another table's handle worked.
-	 *
-	 * The scope is the whole reason it exists: the store writes no derived
-	 * fields (ADR-0297), so an application hangs its own write on an edit, and
-	 * a row-scoped signal would fire on the write it caused. It is also the
-	 * only way to hear prose, because a table's `subscribe` reports that
-	 * table's shape and deliberately not an edit inside a field.
-	 *
-	 * Fires once per commit, on the same flush every other subscriber's
-	 * notification goes out on and AFTER all of them, so a listener that writes
-	 * is writing against a settled commit. That ordering is the whole service:
-	 * the type's own `on('delta')` fires mid-acceptance, and a write from there
-	 * would re-enter the transaction being accepted.
-	 */
-	watch(type: Y.Type, listener: () => void): () => void;
 };
 
 /**
@@ -449,7 +450,6 @@ export type UntypedDataView = {
 	readonly tables: Readonly<Record<string, TableHandle>>;
 	readonly kv: KvHandle;
 	transact<TResult>(run: () => TResult): TResult;
-	watch(type: Y.Type, listener: () => void): () => void;
 };
 
 /**

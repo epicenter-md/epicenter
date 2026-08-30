@@ -86,6 +86,7 @@ type AdaptableTable = {
 	readonly nonconforming: unknown[];
 	get(rowId: string): unknown;
 	subscribe(listener: () => void): () => void;
+	watch(type: never, listener: () => void): () => void;
 };
 
 /** The slice of `KvHandle` the adapter touches: its reads, and one feed. */
@@ -100,7 +101,6 @@ type AdaptableData = {
 	tables: Record<string, AdaptableTable>;
 	kv: AdaptableKv;
 	transact<TResult>(run: () => TResult): TResult;
-	watch(type: never, listener: () => void): () => void;
 };
 
 /**
@@ -133,13 +133,6 @@ export type ReactiveData<TData extends AdaptableData> = {
 	 * subscriptions a single write does, once instead of once per write.
 	 */
 	transact: TData['transact'];
-	/**
-	 * Passed straight through, for the same reason `transact` is. A type-field
-	 * watcher is what a caller wraps in its OWN `createSubscriber`, scoped to
-	 * the one type it is rendering; making it reactive here would scope it to
-	 * the whole data instead.
-	 */
-	watch: TData['watch'];
 };
 
 /** Adapt one opened data handle's `tables` and `kv` into Svelte reactivity. */
@@ -157,7 +150,6 @@ export function fromData<TData extends AdaptableData>(
 		),
 		kv: reactiveKv(data.kv),
 		transact: data.transact,
-		watch: data.watch,
 	}) as ReactiveData<TData>;
 }
 
