@@ -134,6 +134,17 @@ export type DataDefinition = {
 	};
 };
 
+/**
+ * The refusals: what a declaration may not say, checked where it is written.
+ *
+ * Each of these carries a rule `parseData` also enforces at runtime. They are
+ * the compile-time half, and they are together because the one that drifted
+ * did so alone: `ValidateTable` dispatched on `K extends 'fields'` for a day
+ * after the key became `scalars`, and a conditional type answering "no" is a
+ * legal answer, so nothing failed. Keeping the set in one place is what makes
+ * a stale key visible next to four siblings that are not.
+ */
+
 type RejectDefault<T> = T extends { default: unknown } ? never : T;
 type ValidateFields<T> = {
 	[K in keyof T]: T[K] extends TSchema ? RejectDefault<T[K]> : never;
@@ -143,7 +154,16 @@ type ValidateTable<T> = {
 		? T[K] extends FieldMap
 			? ValidateFields<T[K]>
 			: never
-		: T[K];
+		: K extends 'types'
+			? T[K] extends readonly string[]
+				? // Not a shrug: a literal with no `scalars` key has nothing for a
+					// type field to collide WITH, so passing it through is the answer
+					// rather than the absence of one.
+					T extends { scalars: infer TScalars extends FieldMap }
+					? RejectScalarCollision<TScalars, T[K]>
+					: T[K]
+				: never
+			: T[K];
 };
 type ValidateDefinition<T> = {
 	[K in keyof T]: K extends 'tables'

@@ -74,6 +74,28 @@ defineTable({
  * check can see it. Only a schema whose OWN type carries `default` is caught
  * here; the rest is `parseData`'s to refuse.
  */
+/**
+ * The same refusal on the other authoring path.
+ *
+ * A table written as a literal inside `defineData` skips `defineTable`, so it
+ * is `ValidateTable` rather than `RejectScalarCollision` that has to catch the
+ * collision. Only `definition.test.ts` and this file write tables that way;
+ * every table in the repository goes through `defineTable`.
+ *
+ * The message does not survive this path. `defineData` takes
+ * `TData & ValidateDefinition<TData>`, and the intersection collapses the
+ * offending element to `never`, taking the sentence with it. The error still
+ * lands on the name, and says only that a string is not assignable to `never`.
+ */
+defineData({
+	id: 'so.epicenter.collision-inline',
+	kv: {},
+	tables: {
+		// @ts-expect-error 'title' is already a scalar of this table
+		notes: { scalars: { title: field.string() }, types: ['title'] },
+	},
+});
+
 defineData({
 	id: 'so.epicenter.declaration-default',
 	kv: {
