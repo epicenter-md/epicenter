@@ -346,7 +346,7 @@ export type StoredData = {
  */
 export type DataOf<
 	TDatabase extends DataDefinition,
-	TStore extends DataStoreBase,
+	TStore extends DataDocument,
 > = DataView<TDatabase> & TStore;
 
 
@@ -449,7 +449,7 @@ export type UntypedDataView = {
  * bytes it encodes to (ADR-0215). Items are a property of the data and
  * reproduce anywhere; bytes-per-item is a property of the engine.
  */
-export type StorePressure = {
+export type DocumentPressure = {
 	/** Structs the engine is holding, live and dead together. */
 	items: number;
 	/** Rows the declaration can actually see, summed across declared tables. */
@@ -476,7 +476,7 @@ export type StorePressure = {
  * document, a `SyncCapability` on a replica. Every store has local
  * persistence; only a replica has a synchronization capability.
  */
-export type DataStoreBase = {
+export type DataDocument = {
 	/**
 	 * How much of this document is dead weight.
 	 *
@@ -496,7 +496,7 @@ export type DataStoreBase = {
 	 * is mostly corpse, and the decision about what to do becomes worth having
 	 * against a measurement rather than against a guess.
 	 */
-	pressure(): StorePressure;
+	pressure(): DocumentPressure;
 	/** The document's clocks: which authored state it holds, from whom. */
 	stateVector(): Uint8Array;
 	/** Everything the document has that the state vector does not. */
@@ -558,14 +558,14 @@ export type DataStoreBase = {
  * either
  * object sees the same shape with one honest difference.
  */
-export type LocalStore = DataStoreBase & {
+export type LocalStore = DataDocument & {
 	readonly sync: undefined;
 };
 
 /**
  * A store that is one replica of an authority's current document.
  *
- * The one thing it adds over `DataStoreBase` is a concrete `sync` capability:
+ * The one thing it adds over `DataDocument` is a concrete `sync` capability:
  * the app-facing facts of this replica's entanglement. The delivery
  * machinery underneath (applying peer bytes, the outbox, cursors, the
  * acknowledgement bookkeeping) is deliberately not public: only the
@@ -573,7 +573,7 @@ export type LocalStore = DataStoreBase & {
  * package. Handing those verbs to applications is how a device document once
  * grew an outbox nothing could ever drain.
  */
-export type AccountStore = DataStoreBase & {
+export type AccountStore = DataDocument & {
 	readonly sync: SyncCapability;
 };
 

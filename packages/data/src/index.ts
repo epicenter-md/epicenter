@@ -29,7 +29,7 @@
  * conformance concern between `persistence.ts` and its two ports, which import
  * it by relative path; `SNAPSHOT_FOLD_THRESHOLD` is the fold's own number. The
  * structural types an application never names (`TableHandle`, `KvHandle`,
- * `StoredData`, `StorePressure`, `DataStoreBase`, `SyncCapability`) are
+ * `StoredData`, `DocumentPressure`, `DataDocument`, `SyncCapability`) are
  * reachable through `DataOf` for anyone who needs one, and adapters like
  * `@epicenter/svelte`'s declare the slice they touch instead. The store's own
  * error constructors (`StoreError`, `StoreUnusableError`) are what a store

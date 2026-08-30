@@ -41,7 +41,7 @@ import {
 	openDatabase,
 } from './browser.js';
 import { openMemory } from './memory.js';
-import { type DataOf, type DataStoreBase, syncEngineOf } from './store.js';
+import { type DataOf, type DataDocument, syncEngineOf } from './store.js';
 
 /** One dataId per concern, so tests share no IndexedDB state. */
 function databaseFor(label: string) {
@@ -252,7 +252,7 @@ describe('one local document and one account replica per account', () => {
 		// touches.
 		const owners: [
 			() => Promise<
-				Result<DataOf<ReturnType<typeof databaseFor>, DataStoreBase>, unknown>
+				Result<DataOf<ReturnType<typeof databaseFor>, DataDocument>, unknown>
 			>,
 			string,
 		][] = [

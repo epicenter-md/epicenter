@@ -74,13 +74,13 @@ import { StoreError, StoreUnusableError } from './errors.js';
 import type {
 	AccountStore,
 	DataOf,
-	DataStoreBase,
+	DataDocument,
 	DataView,
 	KvHandle,
 	LocalStore,
 	Row,
 	StoredData,
-	StorePressure,
+	DocumentPressure,
 	SyncCapability,
 	TableHandle,
 	UntypedDataView,
@@ -90,13 +90,13 @@ export { StoreError, StoreUnusableError } from './errors.js';
 export type {
 	AccountStore,
 	DataOf,
-	DataStoreBase,
+	DataDocument,
 	DataView,
 	KvHandle,
 	LocalStore,
 	Row,
 	StoredData,
-	StorePressure,
+	DocumentPressure,
 	SyncCapability,
 	TableHandle,
 	TypedTableHandle,
@@ -1059,7 +1059,7 @@ function createStoreEngine(
 	// after hydration.
 	const view = buildView();
 
-	const base: DataStoreBase = {
+	const base: DataDocument = {
 		/**
 		 * Everything this application has stored, before its declaration reads
 		 * it (ADR-0267).
@@ -1118,7 +1118,7 @@ function createStoreEngine(
 			committedListeners.add(listener);
 			return () => committedListeners.delete(listener);
 		},
-		pressure(): StorePressure {
+		pressure(): DocumentPressure {
 			assertUsable();
 			let liveRows = 0;
 			// Only declared tables: a document may carry a table this definition
