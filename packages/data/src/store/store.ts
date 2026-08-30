@@ -313,12 +313,8 @@ export function createLocalStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
 ): LocalData<TDatabase> {
 	const { store, view } = createStoreEngine(overSqlite(options, false), 'none');
-	// Through `unknown` deliberately: comparing the untyped view with
-	// `DataView<TDatabase>` re-enters the per-field descriptor instantiation
-	// and exceeds the depth limit. The runtime value is the same object either
-	// way; only the static view of it differs.
 	return Object.freeze({
-		...(view as unknown as DataView<TDatabase>),
+		...(view as DataView<TDatabase>),
 		...store,
 	});
 }
@@ -343,7 +339,7 @@ export function createAccountStore<const TDatabase extends DataDefinition>(
 		'remote',
 	);
 	return Object.freeze({
-		...(view as unknown as DataView<TDatabase>),
+		...(view as DataView<TDatabase>),
 		...store,
 	});
 }

@@ -747,17 +747,14 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	if (account === undefined || canonicalURL === undefined) {
 		return Ok(
 			Object.freeze({
-				// Through `unknown` deliberately: comparing the untyped view with
-				// `DataView<TDatabase>` re-enters the per-field descriptor
-				// instantiation and exceeds the depth limit.
-				...(parts.view as unknown as DataView<TDatabase>),
+				...(parts.view as DataView<TDatabase>),
 				...(parts.store as LocalDocument),
 			}),
 		);
 	}
 	return Ok(
 		Object.freeze({
-			...(parts.view as unknown as DataView<TDatabase>),
+			...(parts.view as DataView<TDatabase>),
 			...(parts.store as AccountDocument),
 			baseURL: canonicalURL,
 			principalId: account.principalId,
