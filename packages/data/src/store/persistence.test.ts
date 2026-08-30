@@ -213,7 +213,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 
 		// KV: accepted live, visible at once.
 		expectOk(replica.db.kv.update({ theme: 'dark' }));
-		expect(expectOk(replica.db.kv.get()).theme).toBe('dark');
+		expect(replica.db.kv.get('theme')).toBe('dark');
 
 		// A row's type field: an editor keeps writing prose while blocked. The
 		// type is live on the document the store already holds, so a blocked
@@ -231,7 +231,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expectOk(replica.db.tables.notes.create({ title: 'retry trigger' }));
 		expect(replica.store.persistence.get()).toBe('saved');
 		const restarted = reopen(replica.sqlite);
-		expect(expectOk(restarted.db.kv.get()).theme).toBe('dark');
+		expect(restarted.db.kv.get('theme')).toBe('dark');
 		const survived = restarted.db.tables.notes.get(made.id)?.editor;
 		expect(survived?.toString()).toContain('typed while blocked');
 	});

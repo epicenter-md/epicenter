@@ -99,9 +99,10 @@ function createFakeKv<TValues>(initial: TValues) {
 			for (const listener of listeners) listener();
 		},
 		handle: {
-			get() {
-				return { data: value, error: null };
+			get<TKey extends keyof TValues & string>(key: TKey) {
+				return value[key];
 			},
+			nonconforming: [],
 			update(fields: Partial<TValues>) {
 				value = { ...value, ...fields };
 				for (const listener of listeners) listener();
@@ -202,9 +203,9 @@ test('point reads pass through and answer from current data', () => {
 
 test('kv get passes through and reflects writes', () => {
 	const { kv, reactive } = setup();
-	expect(reactive.kv.get().data).toEqual({ theme: 'dark' });
+	expect(reactive.kv.get('theme')).toBe('dark');
 	kv.set({ theme: 'light' });
-	expect(reactive.kv.get().data).toEqual({ theme: 'light' });
+	expect(reactive.kv.get('theme')).toBe('light');
 	reactive.kv.update({ theme: 'dark' });
-	expect(reactive.kv.get().data).toEqual({ theme: 'dark' });
+	expect(reactive.kv.get('theme')).toBe('dark');
 });

@@ -55,7 +55,6 @@ export {
 	type KvHandle,
 	type LocalStore,
 	type NonconformingRow,
-	type NonconformingValue,
 	type Row,
 	type RowAbsentError,
 	type StoredData,

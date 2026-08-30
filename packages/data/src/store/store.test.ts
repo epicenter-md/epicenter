@@ -9,7 +9,6 @@ import {
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 import { Ok } from 'wellcrafted/result';
-import { expectOk } from 'wellcrafted/testing';
 import { createSqliteDurablePort } from './log.js';
 import { createMemoryRecord, openMemory } from './memory.js';
 import {
@@ -116,7 +115,7 @@ describe('a read is a property access on a plain object', () => {
 			db.tables.notes.update(made.id, { title: 'x' }),
 			db.tables.notes.rows,
 			db.tables.notes.ids(),
-			db.kv.get(),
+			db.kv.get('theme'),
 			db.kv.update({ theme: 'dark' }),
 			db.tables.notes.delete(made.id),
 		]) {
@@ -430,11 +429,12 @@ describe("a row's type content lives on the row (ADR-0295)", () => {
 });
 
 describe('kv is where anything two devices both write belongs', () => {
-	test('an unwritten key is nonconforming rather than defaulted', async () => {
-		const { data, error } = db.kv.get();
-		expect(data).toBeNull();
-		expect(error?.conforming).toEqual({});
-		expect(error?.issues.map(({ field }) => field)).toEqual([
+	test('an unwritten key reads as undefined and is reported', async () => {
+		// The application falls back; the platform says which keys it could not
+		// read. Never defaulted here, because a default in a definition would be
+		// a value nothing stored (ADR-0255).
+		expect(db.kv.get('theme')).toBeUndefined();
+		expect(db.kv.nonconforming.map(({ field }) => field)).toEqual([
 			'theme',
 			'fontSize',
 		]);
@@ -442,26 +442,25 @@ describe('kv is where anything two devices both write belongs', () => {
 
 	test('a write touches only the keys it names', async () => {
 		db.kv.update({ theme: 'dark' });
-		const read = db.kv.get();
-		expect(read.data).toBeNull();
-		expect(read.error?.conforming).toEqual({ theme: 'dark' });
+		expect(db.kv.get('theme')).toBe('dark');
+		expect(db.kv.get('fontSize')).toBeUndefined();
 	});
 
 	test('an undeclared key is preserved for a future declaration', async () => {
 		db.kv.update({ nope: 1 } as never);
-		const read = db.kv.get();
-		expect(read.data).toBeNull();
-		expect(read.error?.raw).toEqual({ nope: 1 });
-		expect(read.error?.conforming).toEqual({});
+		expect(db.store.stored().kv).toEqual({ nope: 1 });
+		expect(db.kv.get('theme')).toBeUndefined();
 	});
 
-	test('an invalid value is written and reported on read', async () => {
+	test('ONE unreadable key costs that key and not the object', async () => {
+		// The whole reason conformance is per key. It used to be whole-object:
+		// one bad value made every read an error, and both applications rebuilt
+		// the good half by hand out of the diagnostic.
 		db.kv.update({ fontSize: 20 });
 		db.kv.update({ theme: 'purple' as never });
-		const read = db.kv.get();
-		expect(read.data).toBeNull();
-		expect(read.error?.conforming).toEqual({ fontSize: 20 });
-		expect(read.error?.raw).toEqual({ theme: 'purple', fontSize: 20 });
+		expect(db.kv.get('fontSize')).toBe(20);
+		expect(db.kv.get('theme')).toBeUndefined();
+		expect(db.kv.nonconforming.map(({ field }) => field)).toEqual(['theme']);
 	});
 
 	test('TWO DEVICES BOOTING OFFLINE BOTH KEEP THEIR SETTINGS', async () => {
@@ -477,9 +476,11 @@ describe('kv is where anything two devices both write belongs', () => {
 		laptop.kv.update({ fontSize: 22 });
 		exchange(phone.store, laptop.store);
 
-		const expected = { theme: 'dark', fontSize: 22 } as const;
-		expect(expectOk(phone.kv.get())).toEqual(expected);
-		expect(expectOk(laptop.kv.get())).toEqual(expected);
+		// Both writes survive on both devices, which is the claim.
+		for (const device of [phone, laptop]) {
+			expect(device.kv.get('theme')).toBe('dark');
+			expect(device.kv.get('fontSize')).toBe(22);
+		}
 	});
 });
 
@@ -742,7 +743,7 @@ describe('a subscription says a table changed', () => {
 describe('kv reports its own changes', () => {
 	test('a local update notifies, and the listener reads the new value', async () => {
 		const seen: unknown[] = [];
-		db.kv.subscribe(() => seen.push(db.kv.get().error?.conforming.theme));
+		db.kv.subscribe(() => seen.push(db.kv.get('theme')));
 
 		db.kv.update({ theme: 'dark' });
 
@@ -755,7 +756,7 @@ describe('kv reports its own changes', () => {
 		const author = await openMemory(database);
 		author.kv.update({ fontSize: 22 });
 		const seen: unknown[] = [];
-		db.kv.subscribe(() => seen.push(db.kv.get().error?.conforming.fontSize));
+		db.kv.subscribe(() => seen.push(db.kv.get('fontSize')));
 
 		syncEngineOf(db.store).applyRemote(author.store.encodeStateSince());
 
@@ -821,13 +822,12 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 		);
 		// The stored write survives the upgrade. The newly declared field remains
 		// missing, so recovery belongs to the application that opened the data.
-		const read = second.kv.get();
-		expect(read.data).toBeNull();
-		expect(read.error?.conforming).toEqual({
-			theme: 'dark',
-			future: 'kept',
-		});
-		expect(read.error?.issues.map(({ field }) => field)).toEqual(['added']);
+		expect(second.kv.get('theme')).toBe('dark');
+		expect(second.kv.get('future' as never) as unknown).toBe('kept');
+		expect(second.kv.get('added' as never) as unknown).toBeUndefined();
+		expect(second.kv.nonconforming.map(({ field }) => field)).toEqual([
+			'added',
+		]);
 		await second.store[Symbol.asyncDispose]();
 	});
 });
@@ -866,7 +866,7 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		expect(third.tables.scratch.rows).toEqual([
 			{ id: made.id, body: 'kept in the CRDT' },
 		]);
-		expect(expectOk(third.kv.get()).theme).toBe('dark');
+		expect(third.kv.get('theme')).toBe('dark');
 		await third.store[Symbol.asyncDispose]();
 	});
 
@@ -1054,7 +1054,7 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 		const app = await openMemory(database);
 		await app.store[Symbol.asyncDispose]();
 		expect(() => app.tables.notes.rows).toThrow(StoreUnusableError);
-		expect(() => app.kv.get()).toThrow(StoreUnusableError);
+		expect(() => app.kv.get('theme')).toThrow(StoreUnusableError);
 		expect(() => app.tables.notes.get('anything')).toThrow(StoreUnusableError);
 	});
 

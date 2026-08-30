@@ -21,15 +21,14 @@ export function createSettingsState({
 	deviceData: VocabRuntime['deviceData'];
 }) {
 	function read(): boolean {
-		const { data, error } = deviceData.kv.get();
-		if (data !== null) return data.showReadings;
-		// A declared key is never absent, so the only way here is a stored value
-		// that no longer satisfies the workspace: the error arm is always that
-		// diagnostic. Its surviving half over the application defaults is a whole
-		// settings object, which is the recovery composition the KV handle
-		// documents.
-		const settings = { ...APPLICATION_DEFAULTS, ...error.conforming };
-		return settings.showReadings === true;
+		// One key, one fallback. `get` answers `undefined` for a key never
+		// written and for one this release cannot read, and the recovery is the
+		// same for both: the application's own default. This used to be a
+		// whole-object `Result` read and a `{ ...APPLICATION_DEFAULTS,
+		// ...error.conforming }` merge, in both apps, to arrive here.
+		return (
+			deviceData.kv.get('showReadings') ?? APPLICATION_DEFAULTS.showReadings
+		);
 	}
 
 	let showReadings = $state.raw(read());

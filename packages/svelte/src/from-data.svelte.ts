@@ -88,9 +88,10 @@ type AdaptableTable = {
 	subscribe(listener: () => void): () => void;
 };
 
-/** The slice of `KvHandle` the adapter touches: one read verb, one feed. */
+/** The slice of `KvHandle` the adapter touches: its reads, and one feed. */
 type AdaptableKv = {
-	get(): unknown;
+	get(key: never): unknown;
+	readonly nonconforming: unknown[];
 	subscribe(listener: () => void): () => void;
 };
 
@@ -196,11 +197,28 @@ function reactiveKv<TKv extends AdaptableKv>(kv: TKv): TKv {
 	// walk feeding keyed iteration, so a fresh read per access is the simpler
 	// honest shape.
 	const subscribe = createSubscriber((update) => kv.subscribe(update));
-	return Object.freeze({
-		...kv,
-		get: () => {
-			subscribe();
-			return kv.get();
-		},
-	}) as TKv;
+	// Descriptors for the same reason a table needs them: `nonconforming` is a
+	// getter, and a spread would invoke it.
+	return Object.freeze(
+		Object.defineProperties(
+			{},
+			{
+				...Object.getOwnPropertyDescriptors(kv),
+				get: {
+					enumerable: true,
+					value: (key: never) => {
+						subscribe();
+						return kv.get(key);
+					},
+				},
+				nonconforming: {
+					enumerable: true,
+					get() {
+						subscribe();
+						return kv.nonconforming;
+					},
+				},
+			},
+		),
+	) as TKv;
 }

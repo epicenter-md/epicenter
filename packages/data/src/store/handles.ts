@@ -10,6 +10,7 @@
  * declaration can see, and a write is what it may say.
  */
 import type {
+	ConformanceIssue,
 	DataDefinition,
 	JsonObject,
 	JsonValue,
@@ -23,11 +24,7 @@ import type * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
 
 import type { RowInput } from './document.js';
-import type {
-	NonconformingRow,
-	NonconformingValue,
-	RowAbsentError,
-} from './errors.js';
+import type { NonconformingRow, RowAbsentError } from './errors.js';
 import type { PersistenceCapability } from './persistence.js';
 
 /**
@@ -364,14 +361,41 @@ export function asData<
  */
 export type KvHandle<TValues = JsonObject> = {
 	/**
-	 * The one read verb. Every declared key must be present and conforming.
+	 * One key's value, or nothing.
 	 *
-	 * The same read law a table's `get` follows, minus absence: KV always
-	 * exists, so the only error is a stored value this declaration cannot fully read,
-	 * and the diagnostic carries what survived. No id, because KV has none;
-	 * Applications compose recovery around `error.conforming`.
+	 * The same read law a table's `get` follows, and now the same shape:
+	 * `undefined` covers both "never written" and "written as something this
+	 * declaration cannot read". Conformance is per KEY, so one unreadable
+	 * setting costs that setting and not the object around it.
+	 *
+	 * It used to return the whole object as a `Result`, with the diagnostic
+	 * carrying whatever conformed, and both consumers wrote the same recovery
+	 * by hand: `{ ...APPLICATION_DEFAULTS, ...error.conforming }`, once in
+	 * Vocab and once in Whispering, which then exposed a per-key getter over
+	 * the top of it. That composition is now the line you would write anyway:
+	 *
+	 * ```ts
+	 * kv.get('theme') ?? APPLICATION_DEFAULTS.theme
+	 * ```
+	 *
+	 * The default stays in the application. A default declared in the
+	 * definition would be a value nothing stored, so `stored()` and the export
+	 * would not carry it and two releases could disagree about what is there
+	 * with no write between them (ADR-0255).
 	 */
-	get(): Result<TValues, NonconformingValue>;
+	get<TKey extends keyof TValues & string>(
+		key: TKey,
+	): TValues[TKey] | undefined;
+	/**
+	 * Every declared key this release cannot read, with what is stored there.
+	 *
+	 * The mirror of a table's `nonconforming`, for the same reason: a value
+	 * this declaration refuses is a fact about the KV, reported rather than
+	 * dropped or repaired (ADR-0125). A surface that wants to say "3 settings
+	 * could not be read" reads this; a surface that wants a value calls `get`
+	 * and falls back.
+	 */
+	readonly nonconforming: ConformanceIssue[];
 	/**
 	 * Merge some keys. Every other key is left alone.
 	 *

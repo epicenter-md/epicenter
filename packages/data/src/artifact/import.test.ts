@@ -107,8 +107,8 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		// Every scalar, at the same id, read through the same lens.
 		expect(restored.tables.notes.rows).toHaveLength(1);
 		expect(restored.tables.folders.rows).toHaveLength(1);
-		expect(expectOk(restored.kv.get())).toEqual({ theme: 'dark' });
-		expect(restored.kv.get()).toEqual(data.kv.get());
+		expect(restored.kv.get('theme')).toBe('dark');
+		expect(restored.store.stored().kv).toEqual(data.store.stored().kv);
 		// Compared through `stored()` rather than `rows`, and the reason is the
 		// claim itself. A row carries its live types now, and two documents'
 		// types are never equal: they are different objects with different client

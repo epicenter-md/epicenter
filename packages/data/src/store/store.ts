@@ -1,4 +1,5 @@
 import {
+	type ConformanceIssue,
 	type DataDefinition,
 	type JsonObject,
 	type JsonValue,
@@ -59,14 +60,12 @@ function hasPendingStructs(document: Y.Doc): boolean {
 export type {
 	ApplyFailedError,
 	NonconformingRow,
-	NonconformingValue,
 	RowAbsentError,
 } from './errors.js';
 
 import type {
 	ApplyFailedError,
 	NonconformingRow,
-	NonconformingValue,
 	RowAbsentError,
 } from './errors.js';
 // The declaration half of this module lives beside it: `errors.ts` is what a
@@ -831,21 +830,35 @@ function createStoreEngine(
 			kvTouched = true;
 		};
 
-		function readBack(): Result<JsonObject, NonconformingValue> {
+		/**
+		 * The declared keys this release can read, and the ones it cannot.
+		 *
+		 * Conformance runs over the whole stored object because that is what the
+		 * declaration checks, and then the two halves are served separately: one
+		 * key that fails costs that key, not the object around it.
+		 */
+		function readBack(): {
+			conforming: JsonObject;
+			issues: ConformanceIssue[];
+		} {
 			const raw = storedKv();
-			if (table === undefined) return Ok(raw);
-			const { conforming, issues } = table.conformance(raw);
-			// No structural id, because KV has none: the diagnostic's `conforming`
-			// composes into a whole settings object without a stray key.
-			return issues.length === 0
-				? Ok(conforming)
-				: Err({ raw, conforming, issues });
+			if (table === undefined) return { conforming: raw, issues: [] };
+			return table.conformance(raw);
 		}
 
 		return Object.freeze({
-			get() {
+			get(key: string) {
 				assertUsable();
-				return readBack();
+				const { conforming, issues } = readBack();
+				// A key the declaration refused is absent here, exactly as a key
+				// nobody ever wrote is. The caller falls back the same way for both,
+				// which is why the two are not told apart.
+				if (issues.some((issue) => issue.field === key)) return undefined;
+				return conforming[key];
+			},
+			get nonconforming(): ConformanceIssue[] {
+				assertUsable();
+				return readBack().issues;
 			},
 			subscribe(listener: () => void): () => void {
 				kvListeners.add(listener);

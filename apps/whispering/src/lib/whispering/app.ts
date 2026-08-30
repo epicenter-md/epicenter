@@ -415,19 +415,16 @@ function createWhisperingSettings({ kv }: { kv: WhisperingDeviceData['kv'] }) {
 	};
 
 	function read(): void {
-		const { data, error } = kv.get();
-		if (error !== null) {
-			// A stored value the current release cannot read costs those keys, not
-			// the whole object: the error arm is always the diagnostic, and its
-			// `conforming` carries the ones that did pass.
-			values = {
-				...APPLICATION_DEFAULTS,
-				...error.conforming,
-			} as WhisperingSettingValues;
-			notify();
-			return;
-		}
-		values = data;
+		// One key at a time, each falling back to this application's own default.
+		// A stored value the current release cannot read costs that key and not
+		// the object around it, which used to be reconstructed by hand from a
+		// whole-object `Result` and its `conforming` half.
+		values = Object.fromEntries(
+			(Object.keys(APPLICATION_DEFAULTS) as SettingKey[]).map((key) => [
+				key,
+				kv.get(key) ?? APPLICATION_DEFAULTS[key],
+			]),
+		) as WhisperingSettingValues;
 		notify();
 	}
 
