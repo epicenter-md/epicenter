@@ -98,9 +98,13 @@ function createFakeChat() {
 	};
 
 	const table = {
-		create(fields: Omit<Conversation, 'id' | 'messages'>) {
+		// Returns the SCALARS, like the real store: a rich field is a nested
+		// type minted with the row and reached through `content`, never handed
+		// back as a value (ADR-0295). A fake that returned it here would be
+		// more generous than the store it stands in for.
+		create(fields: Omit<Conversation, 'id'>) {
 			const held = createFakeMessages();
-			const row = { id: `c${++nextId}`, ...fields, messages: held.messages };
+			const row = { id: `c${++nextId}`, ...fields };
 			rows.set(row.id, row);
 			contents.set(row.id, held);
 			creates.push(row);
@@ -198,7 +202,6 @@ test('a blank conversation is unchanged: placeholder title, no opening turn', as
 			model: DEFAULT_MODEL,
 			createdAt: expect.any(String),
 			updatedAt: expect.any(String),
-			messages: expect.anything(),
 		},
 	]);
 	expect(document(id).messages).toEqual([]);

@@ -33,6 +33,7 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
  */
 import type { RichField, TypedTableHandle } from '@epicenter/data';
 import {
+	type FileRowOf,
 	RowFileError,
 	type RowOf,
 	type ScalarsOf,
@@ -100,7 +101,11 @@ export const conversationsTable = {
  * knows that.
  */
 export const conversationsFile = {
-	serialize: ({ id: _id, messages, ...fields }: Conversation) => ({
+	serialize: ({
+		id: _id,
+		messages,
+		...fields
+	}: FileRowOf<typeof conversationsTable>) => ({
 		data: fields,
 		content: JSON.stringify(
 			[...messages.attrEntries()].map(([key, val]) => ({

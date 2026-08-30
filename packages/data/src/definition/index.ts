@@ -30,6 +30,7 @@ export {
 	defineTable,
 	type FieldDescriptor,
 	type FieldMap,
+	type FileRowOf,
 	field,
 	KV_ROOT,
 	type KvOf,

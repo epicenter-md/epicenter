@@ -218,7 +218,27 @@ export type ScalarsOf<TFields> = FieldsOut<Omit<TFields, RichKeys<TFields>>>;
 
 type FieldsOfArg<T> = T extends { fields: infer TFields } ? TFields : T;
 
-export type RowOf<T> = { id: string } & FieldsOut<FieldsOfArg<T>>;
+/**
+ * One table's read shape: the id and the scalar fields, never a rich field.
+ *
+ * A rich field is absent here for the same reason it is absent from
+ * `CreateInputOf`, and the symmetry is the engine's rather than a taste. A
+ * nested type is not a JSON value, so `readRow` skips it and `get` cannot
+ * return it; a `RowOf` that named it would typecheck `note.body` and hand back
+ * `undefined`. The one way to a rich field is `table.content(rowId)`, and
+ * making that the ONLY way is what the compiler is for (ADR-0295, ADR-0296).
+ */
+export type RowOf<T> = { id: string } & ScalarsOf<FieldsOfArg<T>>;
+/**
+ * One row as its FILE CODEC sees it: the scalars and the live rich types.
+ *
+ * Not `RowOf`, and the difference is why both names exist. A read verb cannot
+ * return a nested type, so `RowOf` is scalars only; the renderer assembles
+ * this shape by hand from `get` and `content` before it calls `serialize`
+ * (`artifact/render.ts`), because writing a file is the one operation that
+ * needs both halves at once (ADR-0296).
+ */
+export type FileRowOf<T> = { id: string } & FieldsOut<FieldsOfArg<T>>;
 export type CreateInputOf<T> = ScalarsOf<FieldsOfArg<T>>;
 export type KvOf<TDatabase extends DataDefinition> = FieldsOut<TDatabase['kv']>;
 export type RowsOf<TDatabase extends DataDefinition> = {
@@ -232,7 +252,7 @@ export type CreateInputsOf<TDatabase extends DataDefinition> = {
 
 /** The codec as its own table declares it, read through that table's fields. */
 export type RowFileCodecOf<TFields> = {
-	readonly serialize: (row: { id: string } & FieldsOut<TFields>) => RowFile;
+	readonly serialize: (row: FileRowOf<TFields>) => RowFile;
 	readonly deserialize: (
 		file: RowFile,
 		types: TypesOf<TFields>,

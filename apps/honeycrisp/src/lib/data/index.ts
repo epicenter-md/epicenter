@@ -15,6 +15,7 @@ import type { DataView } from '@epicenter/data';
 import {
 	defineData,
 	defineTable,
+	type FileRowOf,
 	type RowOf,
 	type ScalarsOf,
 } from '@epicenter/data/definition';
@@ -111,7 +112,7 @@ export function deriveNoteMetadata(
  * delta, so a type built outside the document silently reorders or throws.
  */
 const noteFile = {
-	serialize: ({ id: _id, body, ...fields }: Note) => ({
+	serialize: ({ id: _id, body, ...fields }: FileRowOf<typeof notesTable>) => ({
 		data: fields,
 		content: serializeNoteBody(noteBodyAsPm(body)),
 	}),

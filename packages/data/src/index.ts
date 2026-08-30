@@ -26,6 +26,7 @@ export type {
 	ConformanceIssue,
 	DataDefinition,
 	DataDefinitionJson,
+	FileRowOf,
 	JsonObject,
 	JsonValue,
 	RowOf,
