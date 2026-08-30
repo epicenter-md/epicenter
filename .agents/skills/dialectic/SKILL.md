@@ -13,6 +13,12 @@ the collision either makes the agent’s model intelligible or produces an
 accepted greenfield articulation. In the latter case, it ends when the user can
 recognize that articulation and say, in effect, “that’s right.”
 
+Every dialectic turn must leave one clear current articulation visible. Put it
+in a prominent block quote, in plain words, even if deliberately simplified or
+oversimplified, while keeping the disagreement visible so the user can accept,
+reject, or correct the model itself without extracting it from the surrounding
+analysis.
+
 ## What an articulation is
 
 An articulation is a complete account of a model: its objects, verbs,
