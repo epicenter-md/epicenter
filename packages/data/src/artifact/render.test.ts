@@ -5,6 +5,7 @@ import {
 	field,
 	parseData,
 } from '@epicenter/data/definition';
+import * as Y from '@y/y';
 import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openMemory } from '../store/memory.js';
@@ -27,9 +28,10 @@ const store = defineData({
 					data: fields,
 					content: body.toString(),
 				}),
-				deserialize: (file, types) => {
-					if (file.content !== '') types.body.insert(0, [file.content]);
-					return Ok({ title: String(file.data.title ?? '') });
+				deserialize: (file) => {
+					const body = new Y.Type();
+					if (file.content !== '') body.insert(0, [file.content]);
+					return Ok({ title: String(file.data.title ?? ''), body });
 				},
 			},
 		}),

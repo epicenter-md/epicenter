@@ -1,4 +1,5 @@
 import { field } from '@epicenter/data/definition';
+import * as Y from '@y/y';
 /**
  * The canonical conversation shape every chat surface shares: the fields a
  * `conversations` table declares, the id vocabulary, its file codec, and the
@@ -31,7 +32,7 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
  * consumer compiles these very lines, and a type-only import it cannot resolve
  * is as fatal as a value one.
  */
-import type { RichField, TypedTableHandle } from '@epicenter/data';
+import type { TypedTableHandle } from '@epicenter/data';
 import {
 	type FileRowOf,
 	RowFileError,
@@ -116,10 +117,17 @@ export const conversationsFile = {
 			2,
 		),
 	}),
-	deserialize: (
-		file: { data: Record<string, unknown>; content: string },
-		types: { messages: RichField },
-	): Result<ScalarsOf<typeof conversationsTable>, RowFileError> => {
+	deserialize: (file: {
+		data: Record<string, unknown>;
+		content: string;
+	}): Result<
+		ScalarsOf<typeof conversationsTable> & { messages: Y.Type },
+		RowFileError
+	> => {
+		// Built here and handed back (ADR-0296, amended). `create` integrates it
+		// in the transaction that mints the row; nothing reads it before then,
+		// because a detached type reads as empty until it is integrated.
+		const messages = new Y.Type();
 		if (file.content.trim() !== '') {
 			let entries: unknown;
 			try {
@@ -141,13 +149,16 @@ export const conversationsFile = {
 						reason: 'a message entry carries no id',
 					});
 				}
-				types.messages.setAttr(entry.key as never, entry.val as never);
+				messages.setAttr(entry.key, entry.val);
 			}
 		}
 		// Verbatim, so a key an older release wrote survives the round trip; a
 		// row this declaration cannot read is reported on the first read rather
 		// than repaired here (ADR-0125).
-		return Ok(file.data as ScalarsOf<typeof conversationsTable>);
+		return Ok({
+			...(file.data as ScalarsOf<typeof conversationsTable>),
+			messages,
+		});
 	},
 };
 
@@ -167,12 +178,10 @@ export type ConversationsTable = TypedTableHandle<typeof conversationsTable>;
  *
  * @param messages The row's `messages` field, from `table.content(id)?.types`.
  */
-export function createAgentMessageStore(
-	messages: RichField,
-): AgentMessageStore {
+export function createAgentMessageStore(messages: Y.Type): AgentMessageStore {
 	return {
 		set(key, value) {
-			messages.setAttr(key as never, value as never);
+			messages.setAttr(key, value);
 		},
 		*entries() {
 			for (const [key, val] of messages.attrEntries()) {

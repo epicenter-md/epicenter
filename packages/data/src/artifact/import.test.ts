@@ -9,6 +9,7 @@
  * difference between two stores, which is the failure a person would
  * actually suffer.
  */
+
 import { describe, expect, test } from 'bun:test';
 import {
 	defineData,
@@ -16,6 +17,7 @@ import {
 	field,
 	RowFileError,
 } from '@epicenter/data/definition';
+import * as Y from '@y/y';
 import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { createMemoryRecord, openMemory } from '../store/memory.js';
@@ -47,9 +49,10 @@ const store = defineData({
 					data: fields,
 					content: body.toString(),
 				}),
-				deserialize: (file, types) => {
-					if (file.content !== '') types.body.insert(0, [file.content]);
-					return Ok(file.data as never);
+				deserialize: (file) => {
+					const body = new Y.Type();
+					if (file.content !== '') body.insert(0, [file.content]);
+					return Ok({ ...file.data, body } as never);
 				},
 			},
 		}),
@@ -243,11 +246,14 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(refused.message).toContain('no title line');
 	});
 
-	test('a codec that returns a nested type is refused', async () => {
-		// The asymmetry the engine forces: scalars are returned, rich fields are
-		// filled in place (ADR-0296). A returned type would be written as an
-		// attribute the store never minted.
-		const returning = defineData({
+	test('a codec that hands one type to two rows is refused', async () => {
+		// Two rows given one type hold the SAME body, and an edit to either shows
+		// up in both. Measured on `@y/y@14.0.0-rc.24`: setting one type at two
+		// keys leaves both keys holding the same instance, silently. `createRow`
+		// refuses a type that already belongs to a document, which is what makes
+		// that unrepresentable rather than a bug somebody finds later.
+		const shared = new Y.Type();
+		const sharing = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
 			tables: {
@@ -255,14 +261,17 @@ describe('readArtifact (ADR-0267/0268)', () => {
 					fields: { title: field.string(), body: field.type() },
 					file: {
 						serialize: () => ({ data: {}, content: '' }),
-						deserialize: (_file, types) => Ok({ title: types.body as never }),
+						deserialize: () => Ok({ title: 'x', body: shared }),
 					},
 				}),
 			},
 		});
-		const files = new Map([['notes/aaaa.md', '---\ntitle: "x"\n---\n']]);
-		const refused = expectErr(readArtifact(files, returning));
-		expect(refused.name).toBe('RowReturnedType');
+		const files = new Map([
+			['notes/aaaa.md', '---\ntitle: "x"\n---\n'],
+			['notes/bbbb.md', '---\ntitle: "y"\n---\n'],
+		]);
+		const refused = expectErr(readArtifact(files, sharing));
+		expect(refused.message).toContain('already belongs to a document');
 	});
 
 	test('a file that is not part of the artifact is left alone', async () => {

@@ -24,7 +24,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/blobs": "workspace:*",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/identity": "workspace:*",
+        "@epicenter/principal": "workspace:*",
         "@epicenter/server": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@hono/standard-validator": "catalog:",
@@ -134,9 +134,6 @@
         "@epicenter/svelte": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@sqlite.org/sqlite-wasm": "catalog:",
-        "@tauri-apps/api": "catalog:",
-        "@tauri-apps/plugin-deep-link": "catalog:",
-        "@tauri-apps/plugin-opener": "catalog:",
         "@y/prosemirror": "2.0.0-6",
         "@y/y": "14.0.0-rc.24",
         "arktype": "catalog:",
@@ -163,7 +160,6 @@
         "@sveltejs/kit": "catalog:",
         "@sveltejs/vite-plugin-svelte": "catalog:",
         "@tailwindcss/vite": "catalog:",
-        "@tauri-apps/cli": "catalog:",
         "@types/bun": "catalog:",
         "@types/markdown-it": "^14.0.0",
         "fake-indexeddb": "^6.2.5",
@@ -369,7 +365,7 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/identity": "workspace:*",
+        "@epicenter/principal": "workspace:*",
         "@epicenter/server": "workspace:*",
         "arktype": "catalog:",
         "hono": "catalog:",
@@ -386,6 +382,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/data": "workspace:*",
+        "@y/y": "14.0.0-rc.24",
         "mode-watcher": "^1.1.0",
         "wellcrafted": "catalog:",
       },
@@ -605,6 +602,7 @@
         "@lucide/svelte": "catalog:",
         "@standard-schema/spec": "catalog:",
         "@tanstack/svelte-query": "catalog:",
+        "@y/y": "14.0.0-rc.24",
         "arktype": "catalog:",
         "wellcrafted": "catalog:",
       },
@@ -621,7 +619,7 @@
       "version": "0.1.1",
       "dependencies": {
         "@epicenter/constants": "workspace:*",
-        "@epicenter/identity": "workspace:*",
+        "@epicenter/principal": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
@@ -629,21 +627,15 @@
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
-        "@tauri-apps/api": "catalog:",
-        "@tauri-apps/plugin-deep-link": "catalog:",
-        "@tauri-apps/plugin-opener": "catalog:",
         "@types/bun": "catalog:",
+        "svelte": "catalog:",
         "typescript": "catalog:",
       },
       "peerDependencies": {
-        "@tauri-apps/api": "^2",
-        "@tauri-apps/plugin-deep-link": "^2",
-        "@tauri-apps/plugin-opener": "^2",
+        "svelte": "^5",
       },
       "optionalPeers": [
-        "@tauri-apps/api",
-        "@tauri-apps/plugin-deep-link",
-        "@tauri-apps/plugin-opener",
+        "svelte",
       ],
     },
     "packages/blobs": {
@@ -667,6 +659,7 @@
       "dependencies": {
         "@epicenter/agent": "workspace:*",
         "@epicenter/data": "workspace:*",
+        "@y/y": "14.0.0-rc.24",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -683,7 +676,6 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/blobs": "workspace:*",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/identity": "workspace:*",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -696,7 +688,6 @@
       "version": "0.1.1",
       "dependencies": {
         "@epicenter/blobs": "workspace:*",
-        "@epicenter/identity": "workspace:*",
         "arktype": "catalog:",
         "wellcrafted": "catalog:",
       },
@@ -713,7 +704,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/field": "workspace:*",
-        "@epicenter/identity": "workspace:*",
+        "@epicenter/principal": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@sqlite.org/sqlite-wasm": "catalog:",
@@ -743,18 +734,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/identity": {
-      "name": "@epicenter/identity",
-      "version": "0.3.0",
-      "dependencies": {
-        "arktype": "catalog:",
-        "wellcrafted": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/matter-core": {
       "name": "@epicenter/matter-core",
       "version": "0.0.1",
@@ -762,6 +741,18 @@
         "@epicenter/field": "workspace:*",
         "wellcrafted": "catalog:",
         "yaml": "^2.8.0",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/principal": {
+      "name": "@epicenter/principal",
+      "version": "0.3.0",
+      "dependencies": {
+        "arktype": "catalog:",
+        "wellcrafted": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -791,7 +782,7 @@
         "@epicenter/blobs": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/identity": "workspace:*",
+        "@epicenter/principal": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@hono/standard-validator": "catalog:",
@@ -824,6 +815,7 @@
       "dependencies": {
         "@epicenter/data": "workspace:*",
         "@epicenter/field": "workspace:*",
+        "@y/y": "14.0.0-rc.24",
         "wellcrafted": "catalog:",
         "yaml": "^2.8.0",
       },
@@ -842,35 +834,21 @@
         "typescript": "catalog:",
       },
     },
-    "packages/svelte-utils": {
+    "packages/svelte": {
       "name": "@epicenter/svelte",
       "version": "0.3.0",
       "dependencies": {
         "@epicenter/agent": "workspace:*",
-        "@epicenter/auth": "workspace:*",
         "arktype": "catalog:",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
         "@standard-schema/spec": "catalog:",
-        "@tauri-apps/api": "catalog:",
-        "@tauri-apps/plugin-deep-link": "catalog:",
-        "@tauri-apps/plugin-opener": "catalog:",
         "@types/bun": "catalog:",
         "svelte": "catalog:",
         "svelte-check": "catalog:",
         "typescript": "catalog:",
       },
-      "peerDependencies": {
-        "@tauri-apps/api": "^2",
-        "@tauri-apps/plugin-deep-link": "^2",
-        "@tauri-apps/plugin-opener": "^2",
-      },
-      "optionalPeers": [
-        "@tauri-apps/api",
-        "@tauri-apps/plugin-deep-link",
-        "@tauri-apps/plugin-opener",
-      ],
     },
     "packages/sync": {
       "name": "@epicenter/sync",
@@ -1256,8 +1234,6 @@
 
     "@epicenter/honeycrisp": ["@epicenter/honeycrisp@workspace:apps/honeycrisp"],
 
-    "@epicenter/identity": ["@epicenter/identity@workspace:packages/identity"],
-
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
 
     "@epicenter/local-books": ["@epicenter/local-books@workspace:apps/local-books"],
@@ -1276,6 +1252,8 @@
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
 
+    "@epicenter/principal": ["@epicenter/principal@workspace:packages/principal"],
+
     "@epicenter/recorder": ["@epicenter/recorder@workspace:packages/recorder"],
 
     "@epicenter/reddit": ["@epicenter/reddit@workspace:apps/reddit"],
@@ -1288,7 +1266,7 @@
 
     "@epicenter/sqlite": ["@epicenter/sqlite@workspace:packages/sqlite"],
 
-    "@epicenter/svelte": ["@epicenter/svelte@workspace:packages/svelte-utils"],
+    "@epicenter/svelte": ["@epicenter/svelte@workspace:packages/svelte"],
 
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
 

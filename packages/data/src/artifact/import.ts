@@ -36,9 +36,8 @@ import {
 	createDatabaseDocument,
 	createRow,
 	kvRoot,
-	readRowTypes,
+	type RowInput,
 	tableRoot,
-	updateRow,
 } from '../store/document.js';
 import { parseRowFile } from './frontmatter.js';
 import { parseRowPath } from './layout.js';
@@ -90,34 +89,6 @@ export const ImportError = defineErrors({
 		rowId,
 		reason,
 		cause,
-	}),
-	/**
-	 * `deserialize` returned a nested type where a value belongs.
-	 *
-	 * The one half of the codec's contract the platform can enforce at the
-	 * boundary (ADR-0296): scalars are RETURNED and rich fields are FILLED IN
-	 * PLACE. A returned type would be written as a row attribute the store
-	 * never minted, so it is refused rather than admitted.
-	 *
-	 * Field-level conformance is deliberately NOT enforced here. The
-	 * declaration still decides what a row is, and a row it cannot read is
-	 * reported through the existing nonconforming machinery on the first read
-	 * (ADR-0125), never repaired and never hidden. Refusing the import instead
-	 * would make an artifact unreadable by the release that has to fix it.
-	 */
-	RowReturnedType: ({
-		table,
-		rowId,
-		field,
-	}: {
-		table: string;
-		rowId: string;
-		field: string;
-	}) => ({
-		message: `'${table}/${rowId}.md' deserialized '${field}' to a nested type; a rich field is filled in place, not returned`,
-		table,
-		rowId,
-		field,
 	}),
 });
 export type ImportError = InferErrors<typeof ImportError>;
@@ -198,17 +169,17 @@ export function readArtifact(
 /**
  * Put one file's row into the document.
  *
- * Two transactions rather than one, and the split is the engine's rather than
- * a taste. The row and its rich fields are minted first so the codec is handed
- * types that are already ATTACHED: a detached `Y.Type` replays one accumulated
- * prelim delta at `_integrate`, and a Markdown conversion is many sequential
- * writes, so a codec that built its own type would silently reorder or throw
- * (ADR-0296). The scalars the codec returns are validated and written second.
+ * One transaction. The codec reads the whole file into a row, rich fields
+ * included and already built, and `createRow` integrates them beside the
+ * scalars in the transaction that mints the row.
  *
- * Both land in the same document, so a caller that reads the encoded state
- * sees one row either way; what a failure between them leaves is a partially
- * written document this function is about to discard, because the whole read
- * fails closed.
+ * It used to be three writes: mint an empty row so the codec could be handed
+ * ATTACHED types, read them back, let the codec fill them and return the
+ * scalars, then write those. That existed because ADR-0296 measured a detached
+ * `Y.Type` as unable to survive more than one write. The measurement does not
+ * depend on detachment (the same `insert` pair throws on an attached type) and
+ * does not hold for a Markdown conversion, which round trips through a
+ * detached type to a byte-identical update. See ADR-0296's amendment.
  */
 function admitRow({
 	database,
@@ -252,14 +223,10 @@ function admitRow({
 	}
 
 	const types = table?.types ?? [];
-	database.transact(() => {
-		createRow(root, rowId, {}, types);
-	});
-	const attached = readRowTypes(root, rowId, types) ?? {};
 
-	let returned: JsonObject;
+	let returned: RowInput;
 	try {
-		const read = codec.deserialize({ data, content }, attached);
+		const read = codec.deserialize({ data, content });
 		if (read.error !== null) {
 			return ImportError.RowUnreadable({
 				table: tableName,
@@ -268,7 +235,7 @@ function admitRow({
 				cause: read.error.cause,
 			});
 		}
-		returned = read.data;
+		returned = read.data as RowInput;
 	} catch (cause) {
 		return ImportError.RowUnreadable({
 			table: tableName,
@@ -278,21 +245,13 @@ function admitRow({
 		});
 	}
 
-	for (const [name, value] of Object.entries(returned)) {
-		if (value instanceof Y.Type) {
-			return ImportError.RowReturnedType({
-				table: tableName,
-				rowId,
-				field: name,
-			});
-		}
-	}
 	try {
 		// Written verbatim, including a key this declaration does not name: the
 		// artifact is the truth here, and a release that stopped naming a field
-		// never meant its data was gone (ADR-0240, ADR-0125).
+		// never meant its data was gone (ADR-0240, ADR-0125). A rich field the
+		// codec built is integrated here too, in the same transaction.
 		database.transact(() => {
-			updateRow(root, rowId, returned);
+			createRow(root, rowId, returned, types);
 		});
 	} catch (cause) {
 		return ImportError.MalformedFile({

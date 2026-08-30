@@ -61,9 +61,9 @@ import {
 	createAgentMessageStore,
 } from '@epicenter/chat';
 import { createOpenAiAgentEngine } from '@epicenter/client';
-import type { RichField } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import { bindAgentConversation } from '@epicenter/svelte';
+import type * as Y from '@y/y';
 import { SvelteMap } from 'svelte/reactivity';
 import type { InferenceConnections } from '../inference-picker/connections.svelte.js';
 
@@ -223,7 +223,7 @@ export function createAgentChatState({
 
 	function createConversationHandle(
 		conversationId: ConversationId,
-		messages: RichField,
+		messages: Y.Type,
 	) {
 		let inputValue = $state('');
 		let dismissedError = $state<string | null>(null);

@@ -91,27 +91,24 @@ describe('the note body Markdown codec', () => {
 			'- [x] done',
 		].join('\n');
 
-		// An ATTACHED type, because that is the only kind the codec is ever
-		// handed (ADR-0296): a detached one replays a single positional prelim
-		// delta, and a Markdown conversion is many sequential writes.
+		// The codec builds its own body and hands it back (ADR-0296, amended), so
+		// nothing here mints or attaches one first.
+		const fields = expectOk(
+			codec.deserialize({ data: { title: 'Title' }, content: markdown }),
+		);
+		// Integrated before it is read, the way `create` does it. A detached type
+		// accumulates its writes in a prelim delta and READS AS EMPTY until
+		// `_integrate` replays them, so serializing one straight out of the codec
+		// would report an empty note and pass nothing.
 		const document = new Y.Doc();
 		try {
 			const row = document.get('tables:notes');
-			const body = new Y.Type();
 			document.transact(() => {
-				row.setAttr('body' as never, body as never);
+				row.setAttr('body' as never, fields.body as never);
 			});
-
-			const fields = expectOk(
-				codec.deserialize(
-					{ data: { title: 'Title' }, content: markdown },
-					{
-						body,
-					},
-				),
-			);
-			// What was written through `deserialize` is what `serialize` reads
-			// back: the pair is the identity on the text.
+			const body = row.getAttr('body' as never) as Y.Type;
+			// What `deserialize` produced is what `serialize` reads back: the pair
+			// is the identity on the text.
 			expect(codec.serialize({ id: 'r1', ...fields, body }).content).toBe(
 				markdown,
 			);
@@ -119,5 +116,18 @@ describe('the note body Markdown codec', () => {
 		} finally {
 			document.destroy();
 		}
+	});
+
+	test('the body it returns is fresh, so two rows never share one', () => {
+		const codec = honeycrispDefinition.tables.notes.file;
+		if (codec === undefined)
+			throw new Error('the notes table declares a codec');
+		const one = expectOk(codec.deserialize({ data: {}, content: '# One' }));
+		const two = expectOk(codec.deserialize({ data: {}, content: '# Two' }));
+		expect(one.body).not.toBe(two.body);
+		// Detached until `create` integrates it. A type that already belongs to a
+		// document is what `createRow` refuses, because two rows given one type
+		// would share one body.
+		expect((one.body as Y.Type).doc).toBeNull();
 	});
 });

@@ -58,7 +58,6 @@ export {
 	type LocalStore,
 	type NonconformingRow,
 	type NonconformingValue,
-	type RichField,
 	type Row,
 	type RowAbsentError,
 	type RowContent,

@@ -1,4 +1,5 @@
 import { field } from '@epicenter/data/definition';
+import * as Y from '@y/y';
 /**
  * What the transport does inside `workerd`, measured rather than assumed.
  *
@@ -60,9 +61,10 @@ const evidenceDatabase = defineData({
 					data: fields,
 					content: editor.toString(),
 				}),
-				deserialize: (file, types) => {
-					if (file.content !== '') types.editor.insert(0, [file.content]);
-					return Ok(file.data as never);
+				deserialize: (file) => {
+					const editor = new Y.Type();
+					if (file.content !== '') editor.insert(0, [file.content]);
+					return Ok({ ...file.data, editor } as never);
 				},
 			},
 		}),

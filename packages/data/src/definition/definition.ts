@@ -89,22 +89,28 @@ export type RowFileError = InferErrors<typeof RowFileError>;
  * frontmatter into a record, and joins it back. The table owns the MAPPING,
  * which is this.
  *
- * **Scalars are returned; rich fields are filled in place.** The asymmetry is
- * forced by the engine. A detached `Y.Type` accumulates its edits in a single
- * prelim delta replayed at `_integrate` (`ytype.js:922-928`), and a delta is
- * positional, so measured on `@y/y@14.0.0-rc.24` one operation survives and
- * more than one does not: `insert(0, ['hello ']); insert(6, ['world'])` throws
- * `Exceeded content range`, and `push` twice returns silently reordered
- * content. A Markdown-to-ProseMirror conversion is inherently many sequential
- * writes, so `deserialize` is handed types that are already ATTACHED. Do not
- * "simplify" that signature into one that returns them.
+ * **The two are inverses.** `serialize` takes a whole row and returns a file;
+ * `deserialize` takes a file and returns a whole row, rich fields included and
+ * already built. `create` integrates them in the transaction that mints the
+ * row (ADR-0296, amended).
+ *
+ * It was not always symmetric. `deserialize` used to be handed types the
+ * platform had already minted and attached, and fill them in place, because
+ * ADR-0296 measured a detached `Y.Type` as unable to survive many writes. The
+ * mechanism it named is real and the conclusion was too broad: a detached type
+ * is safe for one bulk operation and for attribute writes, which is what every
+ * codec here does and what `pmToFragment` produces, and unsafe only for a loop
+ * of positional appends. `RowFileCodec` carries the rule and
+ * `evidence/detached-rich-field.test.ts` pins it.
+ *
+ * A returned type must be fresh. Two rows given one type share one body,
+ * silently, so `createRow` refuses one that already belongs to a document.
  */
 export type RowFileCodec = {
 	readonly serialize: (row: RowValues) => RowFile;
 	readonly deserialize: (
 		file: RowFile,
-		types: Readonly<Record<string, Y.Type>>,
-	) => Result<JsonObject, RowFileError>;
+	) => Result<Record<string, JsonValue | Y.Type>, RowFileError>;
 };
 
 /** One row as a codec sees it: its id, its scalars, and its nested types. */
@@ -221,33 +227,53 @@ type FieldsOfArg<T> = T extends { fields: infer TFields } ? TFields : T;
 /**
  * One table's read shape: the id and the scalar fields, never a rich field.
  *
- * A rich field is absent here for the same reason it is absent from
- * `CreateInputOf`, and the symmetry is the engine's rather than a taste. A
- * nested type is not a JSON value, so `readRow` skips it and `get` cannot
+ * A nested type is not a JSON value, so `readRow` skips it and `get` cannot
  * return it; a `RowOf` that named it would typecheck `note.body` and hand back
- * `undefined`. The one way to a rich field is `table.content(rowId)`, and
- * making that the ONLY way is what the compiler is for (ADR-0295, ADR-0296).
+ * `undefined`. The one way to a rich field on an EXISTING row is
+ * `table.content(rowId)`. Handing one IN is different and is `NewRowOf`.
  */
 export type RowOf<T> = { id: string } & ScalarsOf<FieldsOfArg<T>>;
 /**
  * One row as its FILE CODEC sees it: the scalars and the live rich types.
  *
- * Not `RowOf`, and the difference is why both names exist. A read verb cannot
- * return a nested type, so `RowOf` is scalars only; the renderer assembles
- * this shape by hand from `get` and `content` before it calls `serialize`
- * (`artifact/render.ts`), because writing a file is the one operation that
- * needs both halves at once (ADR-0296).
+ * `NewRowOf` plus the id, and the two are one shape seen from either side of
+ * `create`: what you hand in, and what a file codec is handed back. A read
+ * verb cannot return a nested type, so `RowOf` is scalars only; writing a file
+ * is the one operation that needs both halves at once (ADR-0296).
  */
 export type FileRowOf<T> = { id: string } & FieldsOut<FieldsOfArg<T>>;
-export type CreateInputOf<T> = ScalarsOf<FieldsOfArg<T>>;
+/**
+ * A row that does not have an id yet: the scalars, and the rich types the
+ * caller built (ADR-0295, ADR-0296).
+ *
+ * What `create` takes and what `deserialize` returns, which is one shape
+ * because they are one operation with two input formats. A rich field is
+ * PASSED IN, already populated, and `create` integrates it in the transaction
+ * that mints the row.
+ *
+ * That is a reversal of ADR-0296, which had the platform mint and attach the
+ * types first. **How you fill the type you pass matters**: one bulk operation
+ * or attribute writes are safe, a loop of positional appends silently reverses,
+ * and it reads as empty until `create` integrates it. `RowFileCodec` states the
+ * rule and `evidence/detached-rich-field.test.ts` pins it.
+ *
+ * A type handed here must not already belong to a document. Two rows given one
+ * type SHARE one body, silently, and the same type set into two documents
+ * corrupts across them; `createRow` refuses an integrated type rather than
+ * letting either happen.
+ *
+ * Rich fields are OPTIONAL, and that is what keeps a programmatic `create`
+ * from having to build an empty body it does not care about: an omitted one is
+ * minted empty. A codec that means to leave a body empty says so the same way.
+ */
+export type NewRowOf<T> = ScalarsOf<FieldsOfArg<T>> &
+	Partial<TypesOf<FieldsOfArg<T>>>;
 export type KvOf<TDatabase extends DataDefinition> = FieldsOut<TDatabase['kv']>;
 export type RowsOf<TDatabase extends DataDefinition> = {
 	[K in keyof TDatabase['tables']]: RowOf<TDatabase['tables'][K]['fields']>;
 };
-export type CreateInputsOf<TDatabase extends DataDefinition> = {
-	[K in keyof TDatabase['tables']]: CreateInputOf<
-		TDatabase['tables'][K]['fields']
-	>;
+export type NewRowsOf<TDatabase extends DataDefinition> = {
+	[K in keyof TDatabase['tables']]: NewRowOf<TDatabase['tables'][K]['fields']>;
 };
 
 /** The codec as its own table declares it, read through that table's fields. */
@@ -255,8 +281,7 @@ export type RowFileCodecOf<TFields> = {
 	readonly serialize: (row: FileRowOf<TFields>) => RowFile;
 	readonly deserialize: (
 		file: RowFile,
-		types: TypesOf<TFields>,
-	) => Result<ScalarsOf<TFields>, RowFileError>;
+	) => Result<NewRowOf<TFields>, RowFileError>;
 };
 
 /**

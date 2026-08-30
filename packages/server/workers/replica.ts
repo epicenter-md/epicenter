@@ -18,6 +18,7 @@
  * Not exported from `index.ts` and not in any `wrangler.jsonc`. Only the test
  * entry mounts it, so nothing deployable grows a class that exists for a test.
  */
+
 import { DurableObject } from 'cloudflare:workers';
 import { type AccountStore, defineData, defineTable } from '@epicenter/data';
 import { field } from '@epicenter/data/definition';
@@ -31,6 +32,7 @@ import {
 	type DurableObjectSqliteStorage,
 } from '@epicenter/sqlite/durable-object';
 import { MAIN_SUBPROTOCOL, STORE_SYNC_ROUTE } from '@epicenter/sync';
+import * as Y from '@y/y';
 import { Ok } from 'wellcrafted/result';
 
 /**
@@ -53,9 +55,10 @@ const probeDefinition = defineData({
 					data: { title: row.title },
 					content: row.body.toString(),
 				}),
-				deserialize: (file, types) => {
-					if (file.content !== '') types.body.insert(0, [file.content]);
-					return Ok({ title: String(file.data.title ?? '') });
+				deserialize: (file) => {
+					const body = new Y.Type();
+					if (file.content !== '') body.insert(0, [file.content]);
+					return Ok({ title: String(file.data.title ?? ''), body });
 				},
 			},
 		}),

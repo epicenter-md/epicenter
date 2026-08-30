@@ -407,7 +407,6 @@ export async function openIdbBacking(
  */
 const STORE_GENERATION = 'v2';
 
-
 /**
  * Normalize the server identity before it becomes durable local state.
  *

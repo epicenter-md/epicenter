@@ -18,8 +18,6 @@ export * from './canonical.js';
 export {
 	type Conformance,
 	type ConformanceIssue,
-	type CreateInputOf,
-	type CreateInputsOf,
 	clearDataDefinitionCache,
 	type DataDefinition,
 	type DataDefinitionJson,
@@ -34,6 +32,8 @@ export {
 	field,
 	KV_ROOT,
 	type KvOf,
+	type NewRowOf,
+	type NewRowsOf,
 	type ParsedDataDefinition,
 	type ParsedTable,
 	parseData,

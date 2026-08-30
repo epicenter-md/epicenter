@@ -17,12 +17,12 @@
 		keymap,
 		placeholder,
 	} from '@codemirror/view';
-	import type { RichField } from '@epicenter/data';
+	import type * as Y from '@y/y';
 
 	// The markdown root itself, rather than the row document it hangs off. The
 	// caller already chose which table and which row; handing that choice down
 	// would make this component know about Skills, and it only knows about text.
-	let { content }: { content: RichField } =
+	let { content }: { content: Y.Type } =
 		$props();
 	let container: HTMLDivElement | undefined = $state();
 

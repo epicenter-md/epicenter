@@ -29,6 +29,7 @@
 		"@lucide/svelte": "catalog:",
 		"@standard-schema/spec": "catalog:",
 		"@tanstack/svelte-query": "catalog:",
+		"@y/y": "14.0.0-rc.24",
 		"arktype": "catalog:",
 		"wellcrafted": "catalog:"
 	},

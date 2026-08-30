@@ -78,9 +78,7 @@ test('a skill and its instructions survive reopening', async () => {
 		'writing-voice',
 	]);
 	expect(
-		reopened.data.tables.skills
-			.content(skillId)
-			?.types.body.toString(),
+		reopened.data.tables.skills.content(skillId)?.types.body.toString(),
 	).toBe('Write directly.');
 });
 

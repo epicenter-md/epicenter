@@ -38,9 +38,11 @@ const database = defineData({
 					data: { title: row.title, tags: row.tags, date: row.date },
 					content: row.editor.toString(),
 				}),
-				deserialize: (file, types) => {
-					if (file.content !== '') types.editor.insert(0, [file.content]);
+				deserialize: (file) => {
+					const editor = new Y.Type();
+					if (file.content !== '') editor.insert(0, [file.content]);
 					return Ok({
+						editor,
 						title: String(file.data.title ?? ''),
 						tags: (file.data.tags ?? []) as string[],
 						date: (file.data.date ?? null) as string | null,

@@ -133,6 +133,9 @@ function rowType(root: Y.Type, rowId: string): RowType | undefined {
  */
 type RowType = Y.Type<{ attrs: Record<string, JsonValue> }>;
 
+/** What `createRow` admits: scalars, plus rich fields the caller built. */
+export type RowInput = Record<string, JsonValue | Y.Type>;
+
 /** Whether this table holds a row at this address. */
 export function hasRow(root: Y.Type, rowId: string): boolean {
 	return rowType(root, rowId) !== undefined;
@@ -229,13 +232,20 @@ export function listRowIds(root: Y.Type): string[] {
 export function createRow(
 	root: Y.Type,
 	rowId: string,
-	fields: JsonObject,
 	/**
-	 * The rich fields to mint beside the scalars (ADR-0295).
+	 * The scalars, and any rich field the caller already built.
 	 *
-	 * **Minted exactly once, in the transaction that mints the row.** Root types
-	 * converge by name; nested types do not, so two devices independently
-	 * minting a body at the same attribute key lose one subtree. Minting with
+	 * A `Y.Type` value here is integrated at its key; anything else is a scalar.
+	 * A declared rich field the caller omits is minted empty, so a table whose
+	 * rows are created programmatically never has to think about it.
+	 */
+	fields: RowInput,
+	/**
+	 * Which of this table's fields are rich (ADR-0295).
+	 *
+	 * **Integrated exactly once, in the transaction that mints the row.** Root
+	 * types converge by name; nested types do not, so two devices independently
+	 * minting a body at the same attribute key lose one subtree. Doing it with
 	 * the row removes the concurrency entirely, because a row id is minted
 	 * rather than chosen and no two devices ever mint the same one.
 	 */
@@ -244,10 +254,42 @@ export function createRow(
 	refuseReservedFields(fields);
 	const existing = rowType(root, rowId);
 	const row = existing ?? mintRow(root, rowId);
-	if (existing === undefined) {
-		for (const name of types) row.setAttr(name, new Y.Type() as never);
+	// A rich field may arrive already built (ADR-0296, amended). Split what came
+	// in: a nested type is integrated at its declared key, a value is filled
+	// like any other scalar.
+	const scalars: JsonObject = {};
+	const supplied = new Map<string, Y.Type>();
+	for (const [name, value] of Object.entries(fields)) {
+		if (value instanceof Y.Type) supplied.set(name, value);
+		else scalars[name] = value as JsonValue;
 	}
-	fill(row, fields);
+	for (const name of supplied.keys()) {
+		if (types.includes(name)) continue;
+		// A nested type at an undeclared key would be unreachable through every
+		// read verb and unwritable by every codec: the declaration decides which
+		// fields are rich, so this is a programmer error rather than a value.
+		throw new Error(
+			`'${name}' is not a declared rich field of this table, so it cannot be given a nested type`,
+		);
+	}
+	if (existing === undefined) {
+		for (const name of types) {
+			const given = supplied.get(name);
+			// **A given type must not already belong to a document.** Measured on
+			// `@y/y@14.0.0-rc.24`: setting one type at two keys leaves both keys
+			// holding the SAME type, so two rows would share one body and edits to
+			// either would appear in both, silently; setting one into two documents
+			// corrupts across them. `doc` is non-null exactly when a type has been
+			// integrated, so refusing here makes both unrepresentable.
+			if (given !== undefined && given.doc !== null) {
+				throw new Error(
+					`the '${name}' given for row '${rowId}' already belongs to a document; build a fresh type per row`,
+				);
+			}
+			row.setAttr(name, (given ?? new Y.Type()) as never);
+		}
+	}
+	fill(row, scalars);
 }
 
 /**
@@ -303,7 +345,7 @@ function fill(row: RowType, fields: JsonObject): void {
 	}
 }
 
-function refuseReservedFields(fields: JsonObject): void {
+function refuseReservedFields(fields: RowInput): void {
 	for (const name of Object.keys(fields)) {
 		if (name.startsWith(RESERVED_ATTRIBUTE_PREFIX)) {
 			throw new TypeError(

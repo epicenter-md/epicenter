@@ -1,10 +1,10 @@
 import {
 	type ConformanceIssue,
-	type CreateInputOf,
 	type DataDefinition,
 	type JsonObject,
 	type JsonValue,
 	type KvOf,
+	type NewRowOf,
 	type ParsedDataDefinition,
 	type ParsedTable,
 	parseData,
@@ -24,6 +24,7 @@ import {
 	deleteRow,
 	kvRoot,
 	listRowIds,
+	type RowInput,
 	readRow,
 	readRowTypes,
 	storedTableNames,
@@ -282,16 +283,6 @@ export type {} from '@epicenter/data/definition';
 export type Row = { id: string } & JsonObject;
 
 /**
- * One rich field's live value: the nested `Y.Type` a row holds (ADR-0296).
- *
- * An alias, not a wrapper. It exists so a package that only NAMES a rich field
- * (a chat feature typing the message log it is handed) can do so through the
- * store's own vocabulary rather than reaching for `@y/y`, and so the one place
- * a rich field's type is written down is here.
- */
-export type RichField = Y.Type;
-
-/**
  * One row's rich content: the live types, and a per-field edit signal
  * (ADR-0296, ADR-0297).
  *
@@ -327,19 +318,23 @@ export type TableHandle = {
 	 * unreachable rather than merely unlikely. Anything an application wants to
 	 * name goes in `kv`, which lives at a name-addressed root.
 	 *
-	 * A rich field is not passed here and cannot be. It is a nested type, and a
-	 * type is not a value: every rich field the table declares is MINTED with
-	 * the row, in this transaction, and filled afterwards through `content`
-	 * (ADR-0295, ADR-0296). Minting it here rather than on first use is what
-	 * removes the concurrency: a nested type is addressed by the struct that
-	 * created it, so two devices minting one at the same attribute key would
-	 * lose a subtree, and a minted row id means no two devices ever do.
+	 * A rich field IS passed here, already built (ADR-0296, amended). The type
+	 * is integrated in this transaction, which is what removes the concurrency:
+	 * a nested type is addressed by the struct that created it, so two devices
+	 * minting one at the same attribute key would lose a subtree, and a minted
+	 * row id means no two devices ever do. Omit one and it is minted empty.
+	 *
+	 * The type must not already belong to a document. Two rows given one type
+	 * share one body, silently; `createRow` refuses rather than allowing it.
+	 *
+	 * The return carries the scalars and the id, not the types. You built them,
+	 * so you have them; a later reader asks through `content` (ADR-0295).
 	 *
 	 * The declaration is a read lens, so creation does not validate the supplied
 	 * values or field names. The returned object is the typed write view, while
 	 * a later `get` reports how the current lens interprets the stored payload.
 	 */
-	create(fields: JsonObject): Row;
+	create(fields: RowInput): Row;
 	/**
 	 * The one read verb, and conformance is its entire error arm.
 	 *
@@ -470,14 +465,14 @@ export type TypedTableHandle<TFields> =
 /**
  * One table's read and write shapes, from ONE descriptor instantiation.
  *
- * `RowOf` and `CreateInputOf` each instantiate the field definitions on their
- * own, so naming both across every verb of every table was enough to exceed
+ * `RowOf` and `NewRowOf` each instantiate the field definitions on their own,
+ * so naming both across every verb of every table was enough to exceed
  * TypeScript's depth limit. Resolving the pair once and reusing the two halves
  * keeps the surface identical and the instantiation count at one per table.
  */
 type TableIo<TFields> = {
 	row: RowOf<TFields>;
-	input: CreateInputOf<TFields>;
+	input: NewRowOf<TFields>;
 };
 
 /**
@@ -1640,14 +1635,18 @@ function createStoreEngine(
 		}
 
 		return Object.freeze({
-			create(fields: JsonObject): Row {
+			create(fields: RowInput): Row {
 				assertUsable();
 				const rowId = mintRowId();
-				// The rich fields are minted in the same transaction (ADR-0295), and
-				// never again: nested types do not converge by name, so a field
+				// The rich fields are integrated in the same transaction (ADR-0295),
+				// and never again: nested types do not converge by name, so a field
 				// minted lazily on two devices would lose one subtree.
 				commit(() => createRow(root, rowId, fields, richFields));
-				return { id: rowId, ...fields };
+				const scalars: JsonObject = {};
+				for (const [name, value] of Object.entries(fields)) {
+					if (!(value instanceof Y.Type)) scalars[name] = value;
+				}
+				return { id: rowId, ...scalars };
 			},
 			get(rowId: string): Result<Row | undefined, NonconformingRow> {
 				assertUsable();

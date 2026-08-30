@@ -1,4 +1,5 @@
 import { field } from '@epicenter/data/definition';
+import * as Y from '@y/y';
 /**
  * The client half of sync: what a replica owes the authority, and what it has
  * read from it.
@@ -31,9 +32,10 @@ const database = defineData({
 					data: { title: row.title },
 					content: row.editor.toString(),
 				}),
-				deserialize: (file, types) => {
-					if (file.content !== '') types.editor.insert(0, [file.content]);
-					return Ok({ title: String(file.data.title ?? '') });
+				deserialize: (file) => {
+					const editor = new Y.Type();
+					if (file.content !== '') editor.insert(0, [file.content]);
+					return Ok({ editor, title: String(file.data.title ?? '') });
 				},
 			},
 		}),

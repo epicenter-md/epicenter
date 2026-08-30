@@ -1,6 +1,6 @@
 # 0296. Rich content is a declared field and a table owns its file codec
 
-- **Status:** Accepted
+- **Status:** Accepted, amended 2026-08-30 at the codec's signature
 - **Date:** 2026-08-29
 - **Supersedes:** [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) at the codec's signature and placement. Its content rules are retained: one `<table>/<rowId>.md` per row, scalars as frontmatter, codec output as the body, `kv.json` beside them.
 - **Amends:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) by naming how a rich field is declared and serialized.
@@ -74,17 +74,12 @@ file: {
 }
 ```
 
-**Scalars are returned; rich fields are filled in place.** The asymmetry is
-forced by the engine, not by taste. A detached `Y.Type` accumulates its edits in
-a single prelim delta replayed at `_integrate` (`ytype.js:922-928`), and a delta
-is positional: it describes edits against the state it was computed against.
-Measured on `14.0.0-rc.24`, one operation survives and more than one does not.
-`insert(0, ['hello ']); insert(6, ['world'])` throws `Exceeded content range`
-from `formatText`; a child built with two inserts throws; `push` twice returns
-silently reordered content. A Markdown-to-ProseMirror conversion is inherently
-many sequential writes, so the codec must be handed a type that is already
-attached. This is an RC, and it may be a defect rather than a design; a future
-version that fixes it does not by itself justify reopening the signature.
+**Scalars are returned; rich fields are filled in place.** ~~The asymmetry is
+forced by the engine, not by taste.~~ **AMENDED 2026-08-30: this is wrong. See
+the amendment below.** The original reasoning was: a detached `Y.Type`
+accumulates its edits in a single prelim delta replayed at `_integrate`
+(`ytype.js:922-928`), and a delta is positional, so measured on `14.0.0-rc.24`
+one operation survives and more than one does not.
 
 **The platform validates what `deserialize` returns against the declaration**
 before writing it. The codec decides how to read a file; the declaration still
@@ -99,6 +94,70 @@ rich field may omit it and exports its scalars as frontmatter with an empty body
 on foreign Markdown are accepted (ADR-0268); losses on the codec's own output
 are not, because every generation is born from an import and a lossy round trip
 degrades a database each time it is minted.
+
+## Amendment, 2026-08-30: the codec is an inverse pair
+
+`deserialize` takes a file and returns a whole row, rich fields included and
+already built. `create` integrates them in the transaction that mints the row.
+The signature this record told the reader not to simplify is simplified.
+
+**The mechanism this record named is real; the conclusion drawn from it was too
+broad.** Re-measured on the same `@y/y@14.0.0-rc.24`, and pinned in
+`packages/data/evidence/detached-rich-field.test.ts`:
+
+| This record claimed | Re-measured |
+| --- | --- |
+| `push` twice returns silently reordered content | **Correct.** A loop of appends comes back reversed, and does not throw |
+| `insert(0, ['hello ']); insert(6, ['world'])` throws detached | Reproduces, **and throws attached too**, so it never argued for either design |
+| therefore a codec must be handed an attached type | Too broad. It rules out a loop of positional appends, not building a type |
+
+A delta is positional, so a sequence of independent positional writes on a
+detached type is each computed against an empty state and they all land at
+index 0. That is exactly the `push` finding and it stands. What it does not
+rule out is **one bulk operation**, which is what `@y/prosemirror`'s
+`pmToFragment` produces, or **attribute writes**, which is how a map-shaped
+codec like `packages/chat` fills a message log. A 16 KB note with a heading,
+task lists, an ordered list, a blockquote and inline marks, built detached by
+`pmToFragment` and integrated, serialises byte-identically to one built
+attached; a peer receiving either sees the same thing, from an encoded update
+of the same size to the byte (28,913 B).
+
+**The two constraints that replace the old rule**, both on `richField()`:
+
+1. Fill it in one operation, or in attribute writes. A loop of `push` reverses,
+   silently.
+2. Do not read it before handing it over. Content lives in the prelim delta, so
+   a read returns nothing and logs `Invalid access: Add Yjs type to a document
+   before reading data`.
+
+The trade is honest rather than free: the old signature made rule 1
+unrepresentable, and this one makes it a documented, tested constraint on
+whoever writes a codec. It buys an inverse pair, one write per imported row
+instead of three, and a `create` that takes what `deserialize` returns.
+
+**A new hazard the inversion creates, and its refusal.** A type handed to
+`create` must not already belong to a document. Measured: setting one type at
+two keys leaves both keys holding the SAME type, so two rows would share one
+body and an edit to either would appear in both, silently; setting one into two
+documents corrupts across them. `createRow` refuses a type whose `doc` is
+non-null, which makes both unrepresentable rather than subtle.
+
+**Concurrency is unchanged.** ADR-0295's argument is about LAZY minting, where
+two devices mint at the same attribute key on first use. A pre-built type is
+still integrated exactly once, in the one transaction that mints a row whose id
+was minted, so no two devices ever address the same nested container.
+
+**What this deletes.** `deserialize`'s `types` parameter; `TypesOf` as codec
+vocabulary; `readRowTypes` in the import path; `ImportError.RowReturnedType`,
+which inverted from an error into the requirement; `CreateInputOf` and
+`CreateInputsOf`, replaced by `NewRowOf` and `NewRowsOf`; and the three writes
+and a read-back that `admitRow` needed to hand the codec an attached type,
+which is now one `createRow` in one transaction.
+
+**`richField()` exists so this did not cost a dependency edge.** A codec must
+now construct a type, and `packages/chat` deliberately names rich fields
+through the store's vocabulary without importing `@y/y`. The store exports the
+constructor beside the type alias, for the same reason the alias exists.
 
 ## Consequences
 

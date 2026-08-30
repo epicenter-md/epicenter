@@ -27,10 +27,7 @@ import {
 import { InstantString } from '@epicenter/field';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
-import {
-	type SkillsData,
-	skillsDefinition,
-} from './workspace.js';
+import { type SkillsData, skillsDefinition } from './workspace.js';
 
 /** The Skills workspace as an earlier release declared it, before `sourceId`. */
 const historicalSkillsWorkspace = defineData({

@@ -13,15 +13,19 @@
  * a later import, and it never becomes record identity.
  */
 
-import type { DataView, RichField } from '@epicenter/data';
+import type { DataView } from '@epicenter/data';
 import {
 	defineData,
 	defineTable,
+	type FieldMap,
 	field,
 	type JsonValue,
 	jsonValue,
+	type NewRowOf,
+	type RowFileCodecOf,
 	type RowOf,
 } from '@epicenter/data/definition';
+import * as Y from '@y/y';
 import { Ok } from 'wellcrafted/result';
 
 const skillsTable = {
@@ -60,36 +64,47 @@ const referencesTable = {
  *
  * One codec, because both tables carry the same one kind of thing: the
  * markdown is the body and every declared scalar is frontmatter. It is written
- * once and passed twice rather than being a shape the platform infers, because
+ * once and applied twice rather than being a shape the platform infers, because
  * the mapping is the table's to own even when two tables happen to agree.
+ *
+ * A function of the table's fields rather than one object, so each table gets a
+ * codec typed against its OWN declaration. The two tables declare different
+ * scalars, so a single object could not be typed as either and the assignment
+ * was silenced with `as never` at both call sites. There is still one cast, but
+ * it is here, once, and it names what it asserts.
  */
-const markdownFile = {
-	serialize: ({
-		id: _id,
-		body,
-		...fields
-	}: { id: string; body: RichField } & Record<string, unknown>) => ({
+const markdownFile = <TFields extends FieldMap>(): RowFileCodecOf<TFields> => ({
+	serialize: ({ id: _id, body, ...fields }) => ({
 		data: fields as Record<string, JsonValue>,
-		content: body.toString(),
+		content: (body as Y.Type).toString(),
 	}),
-	deserialize: (
-		file: { data: Record<string, unknown>; content: string },
-		types: { body: RichField },
-	) => {
-		if (file.content !== '') types.body.insert(0, [file.content]);
-		return Ok(file.data as never);
+	deserialize: (file) => {
+		// Built here and handed back (ADR-0296, amended). Fresh per row: two rows
+		// given one type would share one body. One `insert` rather than a loop:
+		// a detached type replays one positional delta, so appends would reverse.
+		const body = new Y.Type();
+		if (file.content !== '') body.insert(0, [file.content]);
+		// Frontmatter is `unknown` and the declaration says what a scalar is;
+		// nothing here can reconcile them, and nothing should. A value this
+		// release cannot read is reported as nonconforming on the first read
+		// rather than refused at the door (ADR-0125), which is what keeps an
+		// artifact readable by the release that has to fix it.
+		return Ok({ ...file.data, body } as NewRowOf<TFields>);
 	},
-};
+});
 
 export const skillsDefinition = defineData({
 	id: 'so.epicenter.skills',
 	title: 'Skills',
 	kv: {},
 	tables: {
-		skills: defineTable({ fields: skillsTable, file: markdownFile }),
+		skills: defineTable({
+			fields: skillsTable,
+			file: markdownFile<typeof skillsTable>(),
+		}),
 		skillReferences: defineTable({
 			fields: referencesTable,
-			file: markdownFile,
+			file: markdownFile<typeof referencesTable>(),
 		}),
 	},
 });
@@ -99,4 +114,3 @@ export type SkillsData = DataView<typeof skillsDefinition>;
 
 export type Skill = RowOf<typeof skillsTable>;
 export type Reference = RowOf<typeof referencesTable>;
-

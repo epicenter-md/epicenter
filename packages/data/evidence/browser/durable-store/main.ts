@@ -35,9 +35,10 @@ const workspaces = {
 						data: { title: row.title },
 						content: row.body.toString(),
 					}),
-					deserialize: (file, types) => {
-						if (file.content !== '') types.body.insert(0, [file.content]);
-						return Ok({ title: String(file.data.title ?? '') });
+					deserialize: (file) => {
+						const body = new Y.Type();
+						if (file.content !== '') body.insert(0, [file.content]);
+						return Ok({ body, title: String(file.data.title ?? '') });
 					},
 				},
 			}),
@@ -54,9 +55,10 @@ const workspaces = {
 						data: { title: row.title },
 						content: row.body.toString(),
 					}),
-					deserialize: (file, types) => {
-						if (file.content !== '') types.body.insert(0, [file.content]);
-						return Ok({ title: String(file.data.title ?? '') });
+					deserialize: (file) => {
+						const body = new Y.Type();
+						if (file.content !== '') body.insert(0, [file.content]);
+						return Ok({ body, title: String(file.data.title ?? '') });
 					},
 				},
 			}),

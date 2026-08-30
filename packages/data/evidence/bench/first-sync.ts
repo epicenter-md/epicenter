@@ -1,4 +1,5 @@
 import { field } from '@epicenter/data/definition';
+import * as Y from '@y/y';
 /**
  * What a brand-new device pays to join a vault that has been lived in.
  *
@@ -106,9 +107,10 @@ const benchDatabase = defineData({
 					data: { title: row.title },
 					content: row.editor.toString(),
 				}),
-				deserialize: (file, types) => {
-					if (file.content !== '') types.editor.insert(0, [file.content]);
-					return Ok({ title: String(file.data.title ?? '') });
+				deserialize: (file) => {
+					const editor = new Y.Type();
+					if (file.content !== '') editor.insert(0, [file.content]);
+					return Ok({ title: String(file.data.title ?? ''), editor });
 				},
 			},
 		}),

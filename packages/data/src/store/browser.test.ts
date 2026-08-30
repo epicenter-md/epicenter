@@ -56,9 +56,10 @@ function databaseFor(label: string) {
 						data: { title: row.title },
 						content: row.editor.toString(),
 					}),
-					deserialize: (file, types) => {
-						if (file.content !== '') types.editor.insert(0, [file.content]);
-						return Ok({ title: String(file.data.title ?? '') });
+					deserialize: (file) => {
+						const editor = new Y.Type();
+						if (file.content !== '') editor.insert(0, [file.content]);
+						return Ok({ editor, title: String(file.data.title ?? '') });
 					},
 				},
 			}),

@@ -20,7 +20,7 @@ import {
 	type ScalarsOf,
 } from '@epicenter/data/definition';
 import { fragmentToPm, pmToFragment } from '@y/prosemirror';
-import type * as Y from '@y/y';
+import * as Y from '@y/y';
 import { EditorState } from 'prosemirror-state';
 import { Ok } from 'wellcrafted/result';
 import { parseNoteBody, serializeNoteBody } from '../editor/markdown.js';
@@ -78,7 +78,7 @@ const notesTable = {
 export function noteBodyAsPm(body: Y.Type) {
 	const state = EditorState.create({ schema: noteSchema });
 	if (body.length === 0) return state.doc;
-	return fragmentToPm(body as never, state.tr);
+	return fragmentToPm(body, state.tr);
 }
 
 /**
@@ -89,25 +89,29 @@ export function noteBodyAsPm(body: Y.Type) {
  * The scalars go up verbatim, so a value an older release wrote survives the
  * round trip, and the prose goes down as Markdown.
  *
- * `deserialize` fills `types.body` IN PLACE rather than returning it, and that
- * asymmetry is the engine's: a Markdown-to-ProseMirror conversion is many
- * sequential writes, and a detached `Y.Type` replays one accumulated prelim
- * delta, so a type built outside the document silently reorders or throws.
+ * `serialize` and `deserialize` are inverses: a row goes out as a file, a file
+ * comes back as a row, prose included. `deserialize` used to be handed a
+ * `types.body` the platform had already minted and fill it in place; that
+ * requirement was measured against the wrong thing (ADR-0296, amended).
  */
 const noteFile = {
 	serialize: ({ id: _id, body, ...fields }: FileRowOf<typeof notesTable>) => ({
 		data: fields,
 		content: serializeNoteBody(noteBodyAsPm(body)),
 	}),
-	deserialize: (
-		file: { data: Record<string, unknown>; content: string },
-		types: { body: Y.Type },
-	) => {
-		pmToFragment(parseNoteBody(file.content), types.body as never);
+	deserialize: (file: { data: Record<string, unknown>; content: string }) => {
+		// Built here and handed over, rather than filled into a type the platform
+		// minted first (ADR-0296, amended). `create` integrates it in the
+		// transaction that mints the row.
+		const body = new Y.Type();
+		pmToFragment(parseNoteBody(file.content), body);
 		// Verbatim, including a key this release no longer names: the artifact is
 		// the truth on the way in, and a row this declaration cannot read is
 		// reported on the first read rather than repaired here (ADR-0125).
-		return Ok(file.data as ScalarsOf<typeof notesTable>);
+		return Ok({
+			...(file.data as ScalarsOf<typeof notesTable>),
+			body,
+		});
 	},
 };
 

@@ -20,7 +20,6 @@ import {
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 import { Ok, type Result } from 'wellcrafted/result';
-
 import {
 	createAccountStore,
 	type DataView,
@@ -53,9 +52,10 @@ const database = defineData({
 					data: { title: row.title },
 					content: row.editor.toString(),
 				}),
-				deserialize: (file, types) => {
-					types.editor.insert(0, [file.content]);
-					return Ok({ title: String(file.data.title ?? '') });
+				deserialize: (file) => {
+					const editor = new Y.Type();
+					editor.insert(0, [file.content]);
+					return Ok({ editor, title: String(file.data.title ?? '') });
 				},
 			},
 		}),

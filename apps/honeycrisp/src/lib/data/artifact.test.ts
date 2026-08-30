@@ -12,7 +12,9 @@ import { readArtifact, renderArtifact } from '@epicenter/data/artifact';
 import { syncEngineOf } from '@epicenter/data/engine';
 import { openMemory } from '@epicenter/data/memory';
 import { InstantString } from '@epicenter/field';
+import { pmToFragment } from '@y/prosemirror';
 import { expectOk } from 'wellcrafted/testing';
+import { parseNoteBody } from '../editor/markdown.js';
 import { honeycrispDefinition } from './index.js';
 
 /** The notes table's real codec, which is what these tests are about. */
@@ -67,9 +69,7 @@ test('a store exports to Markdown files and imports back whole', async () => {
 	const { data, note } = await seed();
 	const content = data.tables.notes.content(note.id);
 	if (content === undefined) throw new Error('the note has no content');
-	expectOk(
-		noteFile.deserialize({ data: {}, content: MARKDOWN }, content.types),
-	);
+	pmToFragment(parseNoteBody(MARKDOWN), content.types.body as never);
 
 	const files = await collect(renderArtifact(data, honeycrispDefinition));
 	// One file per row, and the note's file is prose a person can read.

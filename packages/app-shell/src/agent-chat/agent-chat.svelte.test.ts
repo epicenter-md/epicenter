@@ -18,6 +18,7 @@
  */
 
 import { expect, mock, test } from 'bun:test';
+import type * as Y from '@y/y';
 
 (globalThis as unknown as { $state: unknown }).$state = Object.assign(
 	<TValue>(value: TValue) => value,
@@ -40,7 +41,6 @@ mock.module('@epicenter/client', () => ({
 
 import type { AgentMessage } from '@epicenter/agent';
 import type { Conversation, ConversationsTable } from '@epicenter/chat';
-import type { RichField } from '@epicenter/data';
 import { Ok } from 'wellcrafted/result';
 import { createAgentChatState } from './agent-chat.svelte.js';
 
@@ -57,7 +57,7 @@ type MessageLog = {
 
 /** A rich field that records writes instead of storing a CRDT. */
 function createFakeMessages(): {
-	messages: RichField;
+	messages: Y.Type;
 	log: MessageLog;
 } {
 	const messages: AgentMessage[] = [];
@@ -72,7 +72,7 @@ function createFakeMessages(): {
 		unobserve: (handler: () => void) => handlers.delete(handler),
 	};
 	return {
-		messages: field as unknown as RichField,
+		messages: field as unknown as Y.Type,
 		log: {
 			messages,
 			texts: () =>
@@ -88,7 +88,7 @@ function createFakeMessages(): {
 function createFakeChat() {
 	const rows = new Map<string, Conversation>();
 	const listeners = new Set<() => void>();
-	const contents = new Map<string, { messages: RichField; log: MessageLog }>();
+	const contents = new Map<string, { messages: Y.Type; log: MessageLog }>();
 	const creates: Conversation[] = [];
 	const updates: { id: string; patch: Partial<Conversation> }[] = [];
 	let nextId = 0;

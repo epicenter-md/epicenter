@@ -1,10 +1,6 @@
 import type { NonconformingRow } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
-import {
-	type Reference,
-	type Skill,
-	type SkillsData,
-} from '@epicenter/skills';
+import type { Reference, Skill, SkillsData } from '@epicenter/skills';
 
 export type SkillMetadataUpdate = Partial<
 	Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
