@@ -684,260 +684,6 @@ function createStoreEngine(
 	}
 
 	/**
-	 * The one typed surface this runtime will ever have, built over the one
-	 * definition (ADR-0240).
-	 *
-	 * SQL is deliberately not built here: an index is a follower an application
-	 * composes over this surface, not a verb the store owes.
-	 */
-	function buildView(): UntypedDataView {
-		const kv = createKvHandle();
-
-		const tables: Record<string, TableHandle> = {};
-		for (const [tableName, table] of definition.tables) {
-			tables[tableName] = createTableHandle(tableName, table);
-		}
-
-		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
-		// infers `Readonly<typeof literal>` first, so by the time the result meets
-		// the return type it is no longer a FRESH literal and an extra member is
-		// not an error. Annotating here is what makes a phantom impossible: one
-		// was implemented and unreachable for a release because a cast hid it.
-		const handle: UntypedDataView = {
-			tables: Object.freeze(tables),
-			kv,
-			// Beside the writes it groups. Grouping is what an application does,
-			// so it belongs on the application's surface rather than on the
-			// store's, which is what a transport and an exporter hold.
-			transact,
-		};
-		return Object.freeze(handle);
-	}
-
-	/**
-	 * The KV handle for this definition's one KV section.
-	 *
-	 * The root is minted here, which is safe for the same reason KV lives there
-	 * at all: `Doc.get` is `setIfUndefined` on `doc.share`, so every device that
-	 * mints `kv` converges on one logical root.
-	 *
-	 * Every definition has a `kv` section, even when it is `{}`. An empty section
-	 * has no read lens, so the handle reads and writes the raw structured value
-	 * rather than refusing keys that the declaration does not know about.
-	 */
-	function createKvHandle(): KvHandle {
-		const table = definition.kv;
-		const root = kvRoot(database);
-
-		/**
-		 * The declared keys this release can read, and the ones it cannot.
-		 *
-		 * Conformance runs over the whole stored object because that is what the
-		 * declaration checks, and then the two halves are served separately: one
-		 * key that fails costs that key, not the object around it.
-		 */
-		function readBack(): {
-			conforming: JsonObject;
-			issues: ConformanceIssue[];
-		} {
-			const raw = storedKv();
-			if (table === undefined) return { conforming: raw, issues: [] };
-			return table.conformance(raw);
-		}
-
-		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
-		// infers `Readonly<typeof literal>` first, so by the time the result meets
-		// the return type it is no longer a FRESH literal and an extra member is
-		// not an error. Annotating here is what makes a phantom impossible: one
-		// was implemented and unreachable for a release because a cast hid it.
-		const handle: KvHandle = {
-			get(key: string) {
-				assertUsable();
-				const { conforming, issues } = readBack();
-				// A key the declaration refused is absent here, exactly as a key
-				// nobody ever wrote is. The caller falls back the same way for both,
-				// which is why the two are not told apart.
-				if (issues.some((issue) => issue.field === key)) return undefined;
-				return conforming[key];
-			},
-			get nonconforming(): ConformanceIssue[] {
-				assertUsable();
-				return readBack().issues;
-			},
-			subscribe(listener: () => void): () => void {
-				kvListeners.add(listener);
-				let stopped = false;
-				return () => {
-					// Idempotent, because a Svelte effect that reruns can call the
-					// teardown it was handed more than once.
-					if (stopped) return;
-					stopped = true;
-					kvListeners.delete(listener);
-				};
-			},
-			update(values: JsonObject): void {
-				transact(() => {
-					for (const [name, value] of Object.entries(values)) {
-						root.setAttr(name as never, value as never);
-					}
-				});
-			},
-		};
-		return Object.freeze(handle);
-	}
-
-	/** Every row of one table: by id, unvalidated. */
-	function rowsOf(tableName: string): Map<string, JsonObject> {
-		const root = tableRoot(database, tableName);
-		const rows = new Map<string, JsonObject>();
-		for (const rowId of listRowIds(root)) {
-			const payload = readRow(root, rowId);
-			if (payload !== undefined) rows.set(rowId, payload);
-		}
-		return rows;
-	}
-
-	/** The kv root's stored values, unvalidated. */
-	function storedKv(): JsonObject {
-		const root = kvRoot(database);
-		const values: JsonObject = {};
-		for (const key of root.attrKeys()) {
-			values[key as string] = root.getAttr(key as never) as JsonValue;
-		}
-		return values;
-	}
-
-	function createTableHandle(
-		tableName: string,
-		table: ParsedTable,
-	): TableHandle {
-		const root = tableRoot(database, tableName);
-		// How a commit's changed types find their way back to this table. The
-		// root is taken here and nowhere else, so this is where the mapping
-		// belongs.
-		tableNameByRoot.set(root, tableName);
-		/** The type fields this table declares, minted with every row it creates. */
-		const typeFields = table.types;
-
-		/** One stored payload, read through the declaration the way every read reads. */
-		function conformRow(
-			rowId: string,
-			payload: JsonObject,
-		): Result<Row, NonconformingRow> {
-			const { conforming, issues } = table.conformance(payload);
-			return issues.length === 0
-				? Ok({ id: rowId, ...conforming })
-				: Err({
-						id: rowId,
-						raw: payload,
-						// The structural id rides along, so the two branches of the one
-						// recovery composition produce the same shape:
-						// `data ?? { ...applicationRecovery, ...error.conforming }` is a whole row
-						// either way.
-						conforming: { id: rowId, ...conforming },
-						issues,
-					});
-		}
-
-		/** One row as an application reads it: the scalars, and the live types. */
-		function withTypes(row: Row): Row {
-			return { ...row, ...readRowTypes(root, row.id, typeFields) };
-		}
-
-		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
-		// infers `Readonly<typeof literal>` first, so by the time the result meets
-		// the return type it is no longer a FRESH literal and an extra member is
-		// not an error. Annotating here is what makes a phantom impossible: one
-		// was implemented and unreachable for a release because a cast hid it.
-		const handle: TableHandle = {
-			create(fields: RowInput): Row {
-				const rowId = mintRowId();
-				// The type fields are integrated in the same transaction (ADR-0295),
-				// and never again: nested types do not converge by name, so a field
-				// minted lazily on two devices would lose one subtree.
-				transact(() => createRow(root, rowId, fields, typeFields));
-				// Read back rather than echoed: a type field the caller omitted was
-				// minted empty here, and one it passed is now the INTEGRATED type
-				// rather than the detached one it handed over. Echoing the argument
-				// would return a type that reads as empty.
-				return withTypes({ id: rowId, ...readRow(root, rowId) });
-			},
-			get(rowId: string): Row | undefined {
-				assertUsable();
-				const payload = readRow(root, rowId);
-				if (payload === undefined) return undefined;
-				// A row this declaration cannot read does not arrive. It is not
-				// hidden: it is on `nonconforming`, with its raw values, which is
-				// where every consumer already looks and where a repair is composed
-				// (ADR-0125). Absent and unreadable answer the same way here because
-				// a caller asking for one row does the same thing with either.
-				const { data } = conformRow(rowId, payload);
-				return data === null ? undefined : withTypes(data);
-			},
-			update(rowId: string, fields: JsonObject): Result<void, RowAbsentError> {
-				// One lookup, not two. This used to ask `hasRow` and then write
-				// through a function that would have minted the row had the answer
-				// changed in between; `updateRow` answers whether it found one, so
-				// the check and the write are the same read.
-				const written = transact(() => updateRow(root, rowId, fields));
-				if (!written) return StoreError.RowAbsent({ table: tableName, rowId });
-				return Ok(undefined);
-			},
-			delete(rowId: string): void {
-				// One removal (ADR-0295). Taking the row's nested type off the root
-				// takes its type fields with it, so there is no second address to
-				// retire and nothing to compose this write with.
-				transact(() => {
-					deleteRow(root, rowId);
-				});
-			},
-			ids(): string[] {
-				assertUsable();
-				return listRowIds(root);
-			},
-			get rows(): Row[] {
-				assertUsable();
-				const rows: Row[] = [];
-				for (const [rowId, payload] of rowsOf(tableName)) {
-					const { data } = conformRow(rowId, payload);
-					if (data !== null) rows.push(withTypes(data));
-				}
-				return rows;
-			},
-			get nonconforming(): NonconformingRow[] {
-				assertUsable();
-				const nonconforming: NonconformingRow[] = [];
-				for (const [rowId, payload] of rowsOf(tableName)) {
-					const { error } = conformRow(rowId, payload);
-					if (error !== null) nonconforming.push(error);
-				}
-				return nonconforming;
-			},
-			/**
-			 * Hear that this table's SHAPE changed: a row added, a row removed, or
-			 * a row's scalars edited. Not an edit inside a type field.
-			 *
-			 * A ping, not a payload. `deliver` decides what counts, by depth
-			 * against the table root, so nothing is registered on the document
-			 * here and there is no listener lifecycle to keep in step.
-			 */
-			subscribe(listener: () => void): () => void {
-				return subscribeByKey(tableListeners, tableName, listener);
-			},
-			watch(type: Y.Type, listener: () => void): () => void {
-				assertUsable();
-				// Keyed by the type itself, which is what a commit names:
-				// `deliver` reads `changedParentTypes`, so an edit anywhere inside
-				// this type reaches the listener while an edit to a sibling does
-				// not. `tableName` is not consulted, which is why a type from
-				// another table is accepted here (`handles.ts` says why).
-				return subscribeByKey(typeListeners, type, listener);
-			},
-		};
-		return Object.freeze(handle);
-	}
-
-	/**
 	 * The delivery machinery, or nothing at all.
 	 *
 	 * Composed rather than always present, so a store with no authority has
@@ -1195,6 +941,260 @@ function createStoreEngine(
 				// That costs a bounded re-download and changes nothing, because an
 				// update is idempotent.
 				return controller.durableCursor();
+			},
+		};
+		return Object.freeze(handle);
+	}
+
+	/**
+	 * The one typed surface this runtime will ever have, built over the one
+	 * definition (ADR-0240).
+	 *
+	 * SQL is deliberately not built here: an index is a follower an application
+	 * composes over this surface, not a verb the store owes.
+	 */
+	function buildView(): UntypedDataView {
+		const kv = createKvHandle();
+
+		const tables: Record<string, TableHandle> = {};
+		for (const [tableName, table] of definition.tables) {
+			tables[tableName] = createTableHandle(tableName, table);
+		}
+
+		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
+		// infers `Readonly<typeof literal>` first, so by the time the result meets
+		// the return type it is no longer a FRESH literal and an extra member is
+		// not an error. Annotating here is what makes a phantom impossible: one
+		// was implemented and unreachable for a release because a cast hid it.
+		const handle: UntypedDataView = {
+			tables: Object.freeze(tables),
+			kv,
+			// Beside the writes it groups. Grouping is what an application does,
+			// so it belongs on the application's surface rather than on the
+			// store's, which is what a transport and an exporter hold.
+			transact,
+		};
+		return Object.freeze(handle);
+	}
+
+	/**
+	 * The KV handle for this definition's one KV section.
+	 *
+	 * The root is minted here, which is safe for the same reason KV lives there
+	 * at all: `Doc.get` is `setIfUndefined` on `doc.share`, so every device that
+	 * mints `kv` converges on one logical root.
+	 *
+	 * Every definition has a `kv` section, even when it is `{}`. An empty section
+	 * has no read lens, so the handle reads and writes the raw structured value
+	 * rather than refusing keys that the declaration does not know about.
+	 */
+	function createKvHandle(): KvHandle {
+		const table = definition.kv;
+		const root = kvRoot(database);
+
+		/**
+		 * The declared keys this release can read, and the ones it cannot.
+		 *
+		 * Conformance runs over the whole stored object because that is what the
+		 * declaration checks, and then the two halves are served separately: one
+		 * key that fails costs that key, not the object around it.
+		 */
+		function readBack(): {
+			conforming: JsonObject;
+			issues: ConformanceIssue[];
+		} {
+			const raw = storedKv();
+			if (table === undefined) return { conforming: raw, issues: [] };
+			return table.conformance(raw);
+		}
+
+		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
+		// infers `Readonly<typeof literal>` first, so by the time the result meets
+		// the return type it is no longer a FRESH literal and an extra member is
+		// not an error. Annotating here is what makes a phantom impossible: one
+		// was implemented and unreachable for a release because a cast hid it.
+		const handle: KvHandle = {
+			get(key: string) {
+				assertUsable();
+				const { conforming, issues } = readBack();
+				// A key the declaration refused is absent here, exactly as a key
+				// nobody ever wrote is. The caller falls back the same way for both,
+				// which is why the two are not told apart.
+				if (issues.some((issue) => issue.field === key)) return undefined;
+				return conforming[key];
+			},
+			get nonconforming(): ConformanceIssue[] {
+				assertUsable();
+				return readBack().issues;
+			},
+			subscribe(listener: () => void): () => void {
+				kvListeners.add(listener);
+				let stopped = false;
+				return () => {
+					// Idempotent, because a Svelte effect that reruns can call the
+					// teardown it was handed more than once.
+					if (stopped) return;
+					stopped = true;
+					kvListeners.delete(listener);
+				};
+			},
+			update(values: JsonObject): void {
+				transact(() => {
+					for (const [name, value] of Object.entries(values)) {
+						root.setAttr(name as never, value as never);
+					}
+				});
+			},
+		};
+		return Object.freeze(handle);
+	}
+
+	/** Every row of one table: by id, unvalidated. */
+	function rowsOf(tableName: string): Map<string, JsonObject> {
+		const root = tableRoot(database, tableName);
+		const rows = new Map<string, JsonObject>();
+		for (const rowId of listRowIds(root)) {
+			const payload = readRow(root, rowId);
+			if (payload !== undefined) rows.set(rowId, payload);
+		}
+		return rows;
+	}
+
+	/** The kv root's stored values, unvalidated. */
+	function storedKv(): JsonObject {
+		const root = kvRoot(database);
+		const values: JsonObject = {};
+		for (const key of root.attrKeys()) {
+			values[key as string] = root.getAttr(key as never) as JsonValue;
+		}
+		return values;
+	}
+
+	function createTableHandle(
+		tableName: string,
+		table: ParsedTable,
+	): TableHandle {
+		const root = tableRoot(database, tableName);
+		// How a commit's changed types find their way back to this table. The
+		// root is taken here and nowhere else, so this is where the mapping
+		// belongs.
+		tableNameByRoot.set(root, tableName);
+		/** The type fields this table declares, minted with every row it creates. */
+		const typeFields = table.types;
+
+		/** One stored payload, read through the declaration the way every read reads. */
+		function conformRow(
+			rowId: string,
+			payload: JsonObject,
+		): Result<Row, NonconformingRow> {
+			const { conforming, issues } = table.conformance(payload);
+			return issues.length === 0
+				? Ok({ id: rowId, ...conforming })
+				: Err({
+						id: rowId,
+						raw: payload,
+						// The structural id rides along, so the two branches of the one
+						// recovery composition produce the same shape:
+						// `data ?? { ...applicationRecovery, ...error.conforming }` is a whole row
+						// either way.
+						conforming: { id: rowId, ...conforming },
+						issues,
+					});
+		}
+
+		/** One row as an application reads it: the scalars, and the live types. */
+		function withTypes(row: Row): Row {
+			return { ...row, ...readRowTypes(root, row.id, typeFields) };
+		}
+
+		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
+		// infers `Readonly<typeof literal>` first, so by the time the result meets
+		// the return type it is no longer a FRESH literal and an extra member is
+		// not an error. Annotating here is what makes a phantom impossible: one
+		// was implemented and unreachable for a release because a cast hid it.
+		const handle: TableHandle = {
+			create(fields: RowInput): Row {
+				const rowId = mintRowId();
+				// The type fields are integrated in the same transaction (ADR-0295),
+				// and never again: nested types do not converge by name, so a field
+				// minted lazily on two devices would lose one subtree.
+				transact(() => createRow(root, rowId, fields, typeFields));
+				// Read back rather than echoed: a type field the caller omitted was
+				// minted empty here, and one it passed is now the INTEGRATED type
+				// rather than the detached one it handed over. Echoing the argument
+				// would return a type that reads as empty.
+				return withTypes({ id: rowId, ...readRow(root, rowId) });
+			},
+			get(rowId: string): Row | undefined {
+				assertUsable();
+				const payload = readRow(root, rowId);
+				if (payload === undefined) return undefined;
+				// A row this declaration cannot read does not arrive. It is not
+				// hidden: it is on `nonconforming`, with its raw values, which is
+				// where every consumer already looks and where a repair is composed
+				// (ADR-0125). Absent and unreadable answer the same way here because
+				// a caller asking for one row does the same thing with either.
+				const { data } = conformRow(rowId, payload);
+				return data === null ? undefined : withTypes(data);
+			},
+			update(rowId: string, fields: JsonObject): Result<void, RowAbsentError> {
+				// One lookup, not two. This used to ask `hasRow` and then write
+				// through a function that would have minted the row had the answer
+				// changed in between; `updateRow` answers whether it found one, so
+				// the check and the write are the same read.
+				const written = transact(() => updateRow(root, rowId, fields));
+				if (!written) return StoreError.RowAbsent({ table: tableName, rowId });
+				return Ok(undefined);
+			},
+			delete(rowId: string): void {
+				// One removal (ADR-0295). Taking the row's nested type off the root
+				// takes its type fields with it, so there is no second address to
+				// retire and nothing to compose this write with.
+				transact(() => {
+					deleteRow(root, rowId);
+				});
+			},
+			ids(): string[] {
+				assertUsable();
+				return listRowIds(root);
+			},
+			get rows(): Row[] {
+				assertUsable();
+				const rows: Row[] = [];
+				for (const [rowId, payload] of rowsOf(tableName)) {
+					const { data } = conformRow(rowId, payload);
+					if (data !== null) rows.push(withTypes(data));
+				}
+				return rows;
+			},
+			get nonconforming(): NonconformingRow[] {
+				assertUsable();
+				const nonconforming: NonconformingRow[] = [];
+				for (const [rowId, payload] of rowsOf(tableName)) {
+					const { error } = conformRow(rowId, payload);
+					if (error !== null) nonconforming.push(error);
+				}
+				return nonconforming;
+			},
+			/**
+			 * Hear that this table's SHAPE changed: a row added, a row removed, or
+			 * a row's scalars edited. Not an edit inside a type field.
+			 *
+			 * A ping, not a payload. `deliver` decides what counts, by depth
+			 * against the table root, so nothing is registered on the document
+			 * here and there is no listener lifecycle to keep in step.
+			 */
+			subscribe(listener: () => void): () => void {
+				return subscribeByKey(tableListeners, tableName, listener);
+			},
+			watch(type: Y.Type, listener: () => void): () => void {
+				assertUsable();
+				// Keyed by the type itself, which is what a commit names:
+				// `deliver` reads `changedParentTypes`, so an edit anywhere inside
+				// this type reaches the listener while an edit to a sibling does
+				// not. `tableName` is not consulted, which is why a type from
+				// another table is accepted here (`handles.ts` says why).
+				return subscribeByKey(typeListeners, type, listener);
 			},
 		};
 		return Object.freeze(handle);
