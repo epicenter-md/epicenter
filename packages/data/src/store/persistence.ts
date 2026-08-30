@@ -163,17 +163,10 @@ export type PersistenceController = {
 	 */
 	durableCursor(): number;
 	/**
-	 * Whether anything at all is held, durably or queued: updates, outbox
-	 * entries, a moved cursor. The identity stamp's emptiness check.
-	 */
-	hasAnyState(): boolean;
-	/**
 	 * Hear that a flush durably grew the outbox: the moment the transport has
 	 * something it may send.
 	 */
 	onOutboxGrew(listener: () => void): () => void;
-	/** One final attempt, then settle. Disposal's drain. */
-	drain(): Promise<void>;
 };
 
 export function createPersistenceController({
@@ -197,7 +190,6 @@ export function createPersistenceController({
 	// the sync sender stay synchronous over an asynchronous engine.
 	let outbox: OutboxEntry[] = [...loaded.outbox];
 	let cursor = loaded.cursor;
-	let hasUpdates = loaded.updates.length > 0;
 
 	const statusListeners = new Set<() => void>();
 	const outboxGrewListeners = new Set<() => void>();
@@ -212,17 +204,29 @@ export function createPersistenceController({
 
 	let lastStatus: PersistenceStatus = status();
 
-	function notifyStatus(): void {
-		const next = status();
-		if (next === lastStatus) return;
-		lastStatus = next;
-		for (const listener of [...statusListeners]) {
+	/**
+	 * Tell every listener, and let none of them cost another its notification.
+	 *
+	 * Copied before iteration, because a listener is allowed to unsubscribe
+	 * while being told. A throw is contained and logged: the work this reports
+	 * on has already been accepted by the live document, so a broken listener
+	 * is that listener's bug.
+	 */
+	function notify(listeners: Iterable<() => void>): void {
+		for (const listener of [...listeners]) {
 			try {
 				listener();
 			} catch (cause) {
 				log.error(PersistenceError.SubscriberThrew({ cause }).error);
 			}
 		}
+	}
+
+	function notifyStatus(): void {
+		const next = status();
+		if (next === lastStatus) return;
+		lastStatus = next;
+		notify(statusListeners);
 	}
 
 	function settle(): void {
@@ -232,12 +236,15 @@ export function createPersistenceController({
 		for (const resolve of waiting) resolve();
 	}
 
-	function absorb(batch: readonly DurableOp[]): boolean {
+	/**
+	 * Advance the durable mirror over a batch the engine confirmed, and wake the
+	 * transport if any of it is now owed to the authority.
+	 */
+	function succeeded(batch: readonly DurableOp[]): void {
 		let outboxGrew = false;
 		for (const op of batch) {
 			switch (op.kind) {
 				case 'append': {
-					hasUpdates = true;
 					// Owed exactly when the authority has no position for it, which
 					// is the same test the port runs against the column.
 					if (op.authoritySeq === undefined) {
@@ -257,20 +264,7 @@ export function createPersistenceController({
 					break;
 			}
 		}
-		return outboxGrew;
-	}
-
-	function succeeded(batch: readonly DurableOp[]): void {
-		const outboxGrew = absorb(batch);
-		if (outboxGrew) {
-			for (const listener of [...outboxGrewListeners]) {
-				try {
-					listener();
-				} catch (cause) {
-					log.error(PersistenceError.SubscriberThrew({ cause }).error);
-				}
-			}
-		}
+		if (outboxGrew) notify(outboxGrewListeners);
 	}
 
 	function failed(batch: readonly DurableOp[], cause: unknown): void {
@@ -358,16 +352,9 @@ export function createPersistenceController({
 		}),
 		durableOutbox: () => outbox,
 		durableCursor: () => cursor,
-		hasAnyState: () =>
-			hasUpdates ||
-			outbox.length > 0 ||
-			cursor > 0 ||
-			queue.length > 0 ||
-			inFlight,
 		onOutboxGrew(listener: () => void): () => void {
 			outboxGrewListeners.add(listener);
 			return () => outboxGrewListeners.delete(listener);
 		},
-		drain: flush,
 	};
 }

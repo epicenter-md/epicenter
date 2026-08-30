@@ -475,9 +475,29 @@ function createStoreEngine(
 	 * follower marks itself dirty in.
 	 */
 	let typeTouched = new Set<() => void>();
-	const kvFlushers = new Set<() => void>();
+	/** Who is watching the one KV root. Beside the tables', for the one reason. */
+	const kvListeners = new Set<() => void>();
 	const localWorkListeners = new Set<() => void>();
 	const committedListeners = new Set<() => void>();
+
+	/**
+	 * Tell every listener, and let none of them cost another its notification.
+	 *
+	 * Copied before iteration, because a listener is allowed to subscribe or
+	 * unsubscribe while being told. A throw is contained and logged rather than
+	 * propagated: the commit that caused the notification is already accepted,
+	 * so a broken subscriber is that subscriber's bug and must not read as a
+	 * store that stopped notifying.
+	 */
+	function notify(listeners: Iterable<() => void>): void {
+		for (const listener of [...listeners]) {
+			const { error } = trySync({
+				try: listener,
+				catch: (cause) => StoreError.SubscriberThrew({ cause }),
+			});
+			if (error !== null) log.error(error);
+		}
+	}
 
 	/**
 	 * Hand a committed change to whoever is waiting for it, and reset the buffers.
@@ -493,31 +513,17 @@ function createStoreEngine(
 	function flushCommitted(): void {
 		if (committedSomething) {
 			committedSomething = false;
-			for (const listener of [...committedListeners]) {
-				const { error } = trySync({
-					try: listener,
-					catch: (cause) => StoreError.SubscriberThrew({ cause }),
-				});
-				if (error !== null) log.error(error);
-			}
+			notify(committedListeners);
 		}
 		if (kvTouched) {
 			kvTouched = false;
-			for (const flush of [...kvFlushers]) flush();
+			notify(kvListeners);
 		}
 		if (touched.size > 0) {
 			const batch = touched;
 			touched = new Set();
 			for (const tableName of batch) {
-				for (const listener of [...(tableListeners.get(tableName) ?? [])]) {
-					// Contained for the same reason every other listener here is: one
-					// broken subscriber must not cost the others their notification.
-					const { error } = trySync({
-						try: listener,
-						catch: (cause) => StoreError.SubscriberThrew({ cause }),
-					});
-					if (error !== null) log.error(error);
-				}
+				notify(tableListeners.get(tableName) ?? []);
 			}
 		}
 		// Last, and finest-grained. A type-field subscriber is where an
@@ -526,29 +532,13 @@ function createStoreEngine(
 		if (typeTouched.size === 0) return;
 		const fields = typeTouched;
 		typeTouched = new Set();
-		for (const notify of fields) {
-			const { error } = trySync({
-				try: notify,
-				catch: (cause) => StoreError.SubscriberThrew({ cause }),
-			});
-			if (error !== null) log.error(error);
-		}
+		notify(fields);
 	}
 
 	// The transport's nudge fires when a flush durably grows the outbox, not
 	// when a commit is accepted: the sender reads only the durable outbox, so
 	// nudging earlier would wake it to find nothing sendable (ADR-0238).
-	controller.onOutboxGrew(() => {
-		for (const listener of [...localWorkListeners]) {
-			// Contained for the same reason a table subscriber is: one broken
-			// listener must not cost the transport its nudge.
-			const { error } = trySync({
-				try: listener,
-				catch: (cause) => StoreError.SubscriberThrew({ cause }),
-			});
-			if (error !== null) log.error(error);
-		}
-	});
+	controller.onOutboxGrew(() => notify(localWorkListeners));
 
 	database.on(
 		'updateV2',
@@ -704,16 +694,6 @@ function createStoreEngine(
 		 * not pay for one.
 		 */
 		let subscriptions = 0;
-		const kvListeners = new Set<() => void>();
-		kvFlushers.add(() => {
-			for (const listener of [...kvListeners]) {
-				const { error } = trySync({
-					try: listener,
-					catch: (cause) => StoreError.SubscriberThrew({ cause }),
-				});
-				if (error !== null) log.error(error);
-			}
-		});
 		const onKvDelta = (): void => {
 			// Buffered onto the same flush the tables use, so a settings listener
 			// and a row listener observe one consistent commit rather than two.
@@ -1174,7 +1154,7 @@ function createStoreEngine(
 			// One final attempt over whatever is still queued, then let go.
 			// Disposal never spins on a blocked engine: closing while blocked is
 			// the accepted loss ADR-0238 makes visible, not a reason to hang.
-			await controller.drain();
+			await controller.persistence.flush();
 			database.destroy();
 			await dispose();
 		},
