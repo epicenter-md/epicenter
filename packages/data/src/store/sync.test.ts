@@ -117,7 +117,7 @@ describe('the local log holds each update once', () => {
 		expect(syncEngineOf(reader.store).coalesce()).toBeUndefined();
 	});
 
-	test("an editor writing into a row's rich field owes it, like any local work", () => {
+	test("an editor writing into a row's type field owes it, like any local work", () => {
 		// Prose reaches storage through the document's own update listener
 		// rather than through a store verb, so it is the one local write that
 		// could plausibly be missed.
@@ -264,7 +264,7 @@ describe('the cursor is a log position, and never a state vector', () => {
 	});
 });
 
-describe("a row's rich field is one type both devices edit", () => {
+describe("a row's type field is one type both devices edit", () => {
 	test('two devices typing into one note both keep their prose', () => {
 		// The race a per-row document spent a name-addressed root closing. A
 		// nested type is addressed by the struct that created it, so what makes

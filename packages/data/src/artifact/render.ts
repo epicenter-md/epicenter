@@ -45,7 +45,7 @@ export const RenderError = defineErrors({
 		reason,
 	}),
 	/**
-	 * The table declares rich content and no codec to write it with, so this
+	 * The table declares type content and no codec to write it with, so this
 	 * row's body has nowhere to go. Fatal for the row: a file that quietly
 	 * lacks its prose feeds a restore that would delete that prose everywhere.
 	 *
@@ -54,7 +54,7 @@ export const RenderError = defineErrors({
 	 * function, and that is exactly the case a silent empty body would ruin.
 	 */
 	UncodedRow: ({ table, rowId }: { table: string; rowId: string }) => ({
-		message: `Table '${table}' declares rich content and no file codec to write '${rowId}' with`,
+		message: `Table '${table}' declares type content and no file codec to write '${rowId}' with`,
 		table,
 		rowId,
 	}),
@@ -82,7 +82,7 @@ export type RenderError = InferErrors<typeof RenderError>;
 
 /**
  * The slice of opened data a render reads: the faithful reads, and each
- * table's rich content. Structural on purpose, so any typed or untyped view
+ * table's type content. Structural on purpose, so any typed or untyped view
  * satisfies it.
  */
 /**
@@ -116,7 +116,7 @@ export type RenderedRow = {
  * Render one row to its file.
  *
  * Synchronous work behind an async signature, because nothing here loads
- * anything any more: a row's rich content is in the one document the store
+ * anything any more: a row's type content is in the one document the store
  * already holds (ADR-0295). The signature stays a promise so the mirror and
  * the whole-artifact generator did not have to change shape around it.
  *
@@ -149,9 +149,9 @@ export async function renderRow(
 	const parsed = definition.tables.get(table);
 	const codec = parsed?.file;
 	if (codec === undefined) {
-		// A table with no rich content exports its scalars as frontmatter and an
+		// A table with no type content exports its scalars as frontmatter and an
 		// empty body, which is the whole of what it is (ADR-0296). A table WITH
-		// rich content and no codec has a body it cannot write, and writing the
+		// type content and no codec has a body it cannot write, and writing the
 		// file without it is the data loss this refuses.
 		if ((parsed?.types.length ?? 0) > 0) {
 			return RenderError.UncodedRow({ table, rowId });

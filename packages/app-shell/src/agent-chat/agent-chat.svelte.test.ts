@@ -55,7 +55,7 @@ type MessageLog = {
 	texts(): string[];
 };
 
-/** A rich field that records writes instead of storing a CRDT. */
+/** A type field that records writes instead of storing a CRDT. */
 function createFakeMessages(): {
 	messages: Y.Type;
 	log: MessageLog;
@@ -98,7 +98,7 @@ function createFakeChat() {
 	};
 
 	const table = {
-		// Returns the row WITH its live rich field, like the real store: `create`
+		// Returns the row WITH its live type field, like the real store: `create`
 		// integrates the type in the transaction that mints the row and hands
 		// back what `get` would (ADR-0296, amended). This fake has now followed
 		// that shape in both directions; when it drifts, the tests pass and a

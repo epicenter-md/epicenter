@@ -253,7 +253,7 @@ async function build(
 		sinceSend = 0;
 		await send();
 	};
-	/** One row's rich field, live on the one document (ADR-0295). */
+	/** One row's type field, live on the one document (ADR-0295). */
 	const bodyOf = (id: string) => {
 		const editor = db.tables.notes.get(id)?.editor;
 		if (editor === undefined) throw new Error('the row has no content');

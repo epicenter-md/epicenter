@@ -5,7 +5,7 @@
  * The mirror of `renderArtifact`, and deliberately the same kind of thing: a
  * pure function over the public vocabulary, composed outside the store. It
  * rebuilds the database's one Yjs document from every row file, mints each
- * row with its rich fields, and hands the table's codec the parsed
+ * row with its type fields, and hands the table's codec the parsed
  * frontmatter and the body beneath it.
  *
  * Producing bytes rather than writing them is what keeps import honest about
@@ -169,7 +169,7 @@ export function readArtifact(
 /**
  * Put one file's row into the document.
  *
- * One transaction. The codec reads the whole file into a row, rich fields
+ * One transaction. The codec reads the whole file into a row, type fields
  * included and already built, and `createRow` integrates them beside the
  * scalars in the transaction that mints the row.
  *
@@ -248,7 +248,7 @@ function admitRow({
 	try {
 		// Written verbatim, including a key this declaration does not name: the
 		// artifact is the truth here, and a release that stopped naming a field
-		// never meant its data was gone (ADR-0240, ADR-0125). A rich field the
+		// never meant its data was gone (ADR-0240, ADR-0125). A type field the
 		// codec built is integrated here too, in the same transaction.
 		database.transact(() => {
 			createRow(root, rowId, returned, types);

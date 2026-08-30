@@ -294,7 +294,7 @@ describe('a write syncs without anyone remembering to say so', () => {
 		expect(laptop.titles()).toEqual([]);
 	});
 
-	test("prose written into a row's rich field syncs on the same timer", () => {
+	test("prose written into a row's type field syncs on the same timer", () => {
 		const { wire, clock, phone, laptop } = setup();
 		phone.connection.start();
 		laptop.connection.start();

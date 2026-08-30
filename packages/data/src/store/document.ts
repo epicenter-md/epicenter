@@ -4,10 +4,10 @@ import * as Y from '@y/y';
 
 /**
  * A database's document: one per database, holding every table's rows and
- * every row's rich content (ADR-0295).
+ * every row's type content (ADR-0295).
  *
  * There is no second document and no address that reaches one. A row is a
- * nested type on its table root, and a rich field is a nested type on the row,
+ * nested type on its table root, and a type field is a nested type on the row,
  * so what used to be N documents multiplexed over one connection is one
  * document with one identity, one socket, one stored blob.
  */
@@ -133,7 +133,7 @@ function rowType(root: Y.Type, rowId: string): RowType | undefined {
  */
 type RowType = Y.Type<{ attrs: Record<string, JsonValue> }>;
 
-/** What `createRow` admits: scalars, plus rich fields the caller built. */
+/** What `createRow` admits: scalars, plus type fields the caller built. */
 export type RowInput = Record<string, JsonValue | Y.Type>;
 
 /** Whether this table holds a row at this address. */
@@ -158,8 +158,8 @@ export function readRow(root: Y.Type, rowId: string): JsonObject | undefined {
 		if (name.startsWith(RESERVED_ATTRIBUTE_PREFIX)) continue;
 		const value = row.getAttr(name);
 		if (value === undefined) continue;
-		// A rich field is a nested type, not a value (ADR-0295). Read through the
-		// live attributes rather than through the declaration, so a rich field an
+		// A type field is a nested type, not a value (ADR-0295). Read through the
+		// live attributes rather than through the declaration, so a type field an
 		// older release wrote and this one no longer names is still not mistaken
 		// for JSON: what a scalar read owes is every value, and a type is not one.
 		if (value instanceof Y.Type) continue;
@@ -169,11 +169,11 @@ export function readRow(root: Y.Type, rowId: string): JsonObject | undefined {
 }
 
 /**
- * One row's rich fields: the nested types at the named attributes.
+ * One row's type fields: the nested types at the named attributes.
  *
  * Reads what is THERE rather than what is declared, so a name the row does not
  * hold is simply absent and a caller never receives a type it cannot bind. A
- * row minted by this release holds every rich field its declaration names,
+ * row minted by this release holds every type field its declaration names,
  * because minting is one transaction (`createRow`); a row minted by an older
  * release that did not declare one holds nothing at that key, and gains
  * nothing by being read.
@@ -233,15 +233,15 @@ export function createRow(
 	root: Y.Type,
 	rowId: string,
 	/**
-	 * The scalars, and any rich field the caller already built.
+	 * The scalars, and any type field the caller already built.
 	 *
 	 * A `Y.Type` value here is integrated at its key; anything else is a scalar.
-	 * A declared rich field the caller omits is minted empty, so a table whose
+	 * A declared type field the caller omits is minted empty, so a table whose
 	 * rows are created programmatically never has to think about it.
 	 */
 	fields: RowInput,
 	/**
-	 * Which of this table's fields are rich (ADR-0295).
+	 * Which of this table's fields are types (ADR-0295).
 	 *
 	 * **Integrated exactly once, in the transaction that mints the row.** Root
 	 * types converge by name; nested types do not, so two devices independently
@@ -254,7 +254,7 @@ export function createRow(
 	refuseReservedFields(fields);
 	const existing = rowType(root, rowId);
 	const row = existing ?? mintRow(root, rowId);
-	// A rich field may arrive already built (ADR-0296, amended). Split what came
+	// A type field may arrive already built (ADR-0296, amended). Split what came
 	// in: a nested type is integrated at its declared key, a value is filled
 	// like any other scalar.
 	const scalars: JsonObject = {};
@@ -267,9 +267,9 @@ export function createRow(
 		if (types.includes(name)) continue;
 		// A nested type at an undeclared key would be unreachable through every
 		// read verb and unwritable by every codec: the declaration decides which
-		// fields are rich, so this is a programmer error rather than a value.
+		// fields are types, so this is a programmer error rather than a value.
 		throw new Error(
-			`'${name}' is not a declared rich field of this table, so it cannot be given a nested type`,
+			`'${name}' is not a declared type field of this table, so it cannot be given a nested type`,
 		);
 	}
 	if (existing === undefined) {
@@ -358,12 +358,12 @@ function refuseReservedFields(fields: RowInput): void {
 /**
  * Take one row off its table. Returns whether there was a row to take.
  *
- * The whole subtree goes with the attribute: every scalar field AND every rich
+ * The whole subtree goes with the attribute: every scalar field AND every type
  * field's nested type. Deleting a nested type reclaims what is under it
  * (`evidence/invariants.test.ts`), so what remains is one deleted map key,
  * measured at 2.0 items and 44.5 bytes (`evidence/bench/tombstones.ts`).
  *
- * There is nothing else to retire. A row's rich content is IN here now
+ * There is nothing else to retire. A row's type content is IN here now
  * (ADR-0295), so deletion is one removal in one document rather than a scalar
  * removal composed with a durable tombstone on a second address.
  *

@@ -88,7 +88,7 @@ function pump(): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** One row's rich `editor` field, live on the database document (ADR-0295). */
+/** One row's `editor` type field, live on the database document (ADR-0295). */
 function editorOf(replica: Replica, rowId: string) {
 	const content = replica.db.tables.notes.get(rowId);
 	if (content === undefined) throw new Error('the table holds no such row');

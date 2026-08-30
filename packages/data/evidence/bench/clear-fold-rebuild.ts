@@ -378,7 +378,7 @@ const cases = [
 ] as const;
 
 console.log(
-	`workspace: ${LIVE_ROWS.toLocaleString()} live rows, ${DEAD_ROWS.toLocaleString()} deleted rows, ${BODY_DOCUMENTS} rich bodies, ${BODY_CHARS} chars/body, ${BODY_EDITS} edits/body`,
+	`workspace: ${LIVE_ROWS.toLocaleString()} live rows, ${DEAD_ROWS.toLocaleString()} deleted rows, ${BODY_DOCUMENTS} type-field bodies, ${BODY_CHARS} chars/body, ${BODY_EDITS} edits/body`,
 );
 console.log(
 	`append-only update bytes: ${mb(aged.historyBytes)} across ${aged.historyEntries.reduce((total, entries) => total + entries.length, 0).toLocaleString()} updates`,

@@ -597,8 +597,8 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 	});
 });
 
-describe("a row's rich content survives a reopen (ADR-0295)", () => {
-	test('what was typed into a rich field comes back attached', async () => {
+describe("a row's type content survives a reopen (ADR-0295)", () => {
+	test('what was typed into a type field comes back attached', async () => {
 		const database = databaseFor('richfield');
 		let rowId!: string;
 		{

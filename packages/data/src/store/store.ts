@@ -504,7 +504,7 @@ function createStoreEngine(
 	/** Who is watching each table, by name. A ping, not a payload. */
 	const tableListeners = new Map<string, Set<() => void>>();
 	/**
-	 * Rich-field listeners whose type changed in the commit being accepted.
+	 * Type-field listeners whose type changed in the commit being accepted.
 	 *
 	 * Buffered for the same reason a table's invalidation is: a nested type's
 	 * `'delta'` fires SYNCHRONOUSLY inside `applyUpdateV2`, mid-acceptance, so
@@ -512,7 +512,7 @@ function createStoreEngine(
 	 * and would run its listener ahead of the `onCommitted` phase a composed
 	 * follower marks itself dirty in.
 	 */
-	let richTouched = new Set<() => void>();
+	let typeTouched = new Set<() => void>();
 	const kvFlushers = new Set<() => void>();
 	const localWorkListeners = new Set<() => void>();
 	const committedListeners = new Set<() => void>();
@@ -558,12 +558,12 @@ function createStoreEngine(
 				}
 			}
 		}
-		// Last, and finest-grained. A rich-field subscriber is where an
+		// Last, and finest-grained. A type-field subscriber is where an
 		// application hangs its own derived write (ADR-0297), so it runs after
 		// every coarser reader has already seen the commit that caused it.
-		if (richTouched.size === 0) return;
-		const fields = richTouched;
-		richTouched = new Set();
+		if (typeTouched.size === 0) return;
+		const fields = typeTouched;
+		typeTouched = new Set();
 		for (const notify of fields) {
 			const { error } = trySync({
 				try: notify,
@@ -626,7 +626,7 @@ function createStoreEngine(
 				);
 			}
 			// An application writing through a live type it holds: an editor bound
-			// to a rich field, which is the ordinary path since a row's rich
+			// to a type field, which is the ordinary path since a row's type
 			// content came back into this document (ADR-0295). Authored bytes join
 			// the durable queue and the outbox on their own, because no store verb
 			// is going to flush them.
@@ -910,7 +910,7 @@ function createStoreEngine(
 	 * Untyped is the point: reaching for this means giving up the lens, and the
 	 * absent row types are what makes that visible at the call site.
 	 *
-	 * A row's rich content is not here, and cannot be: a nested `Y.Type` is not
+	 * A row's type content is not here, and cannot be: a nested `Y.Type` is not
 	 * a JSON value, so no faithful read of stored VALUES can carry one. An
 	 * export reaches it through `content` and the table's own file codec
 	 * (ADR-0296).
@@ -929,7 +929,7 @@ function createStoreEngine(
 	 * Deliberately not through a table handle. `readRow` returns every stored
 	 * key including ones this release no longer declares, and no conformance
 	 * runs, so a row the lens cannot read still has a file (ADR-0267, ADR-0125).
-	 * The rich types come from the declaration's names, because a type at an
+	 * The types come from the declaration's names, because a type at an
 	 * undeclared key is unreachable by any codec anyway.
 	 */
 	function rowFile(tableName: string, rowId: string): Row | undefined {
@@ -949,8 +949,8 @@ function createStoreEngine(
 		table: ParsedTable,
 	): TableHandle {
 		const root = tableRoot(database, tableName);
-		/** The rich fields this table declares, minted with every row it creates. */
-		const richFields = table.types;
+		/** The type fields this table declares, minted with every row it creates. */
+		const typeFields = table.types;
 
 		/**
 		 * That this table changed, noted for the flush to deliver.
@@ -968,7 +968,7 @@ function createStoreEngine(
 		 * ids, and the delta test keeps standing as evidence that they were
 		 * there to be had.
 		 *
-		 * It also fires for a rich field's edit, because a nested edit bubbles
+		 * It also fires for a type field's edit, because a nested edit bubbles
 		 * through `changedParentTypes` to the table root (ADR-0295). A list that
 		 * re-renders off this signal therefore re-renders at typing frequency;
 		 * a listener that wants only one field's edits uses `content`'s own
@@ -1024,18 +1024,18 @@ function createStoreEngine(
 
 		/** One row as an application reads it: the scalars, and the live types. */
 		function withTypes(row: Row): Row {
-			return { ...row, ...readRowTypes(root, row.id, richFields) };
+			return { ...row, ...readRowTypes(root, row.id, typeFields) };
 		}
 
 		return Object.freeze({
 			create(fields: RowInput): Row {
 				assertUsable();
 				const rowId = mintRowId();
-				// The rich fields are integrated in the same transaction (ADR-0295),
+				// The type fields are integrated in the same transaction (ADR-0295),
 				// and never again: nested types do not converge by name, so a field
 				// minted lazily on two devices would lose one subtree.
-				commit(() => createRow(root, rowId, fields, richFields));
-				// Read back rather than echoed: a rich field the caller omitted was
+				commit(() => createRow(root, rowId, fields, typeFields));
+				// Read back rather than echoed: a type field the caller omitted was
 				// minted empty here, and one it passed is now the INTEGRATED type
 				// rather than the detached one it handed over. Echoing the argument
 				// would return a type that reads as empty.
@@ -1069,7 +1069,7 @@ function createStoreEngine(
 			delete(rowId: string): void {
 				assertUsable();
 				// One removal (ADR-0295). Taking the row's nested type off the root
-				// takes its rich fields with it, so there is no second address to
+				// takes its type fields with it, so there is no second address to
 				// retire and nothing to compose this write with.
 				commit(() => {
 					deleteRow(root, rowId);
@@ -1103,7 +1103,7 @@ function createStoreEngine(
 			},
 			watch(rowId: string, field: string, listener: () => void): () => void {
 				assertUsable();
-				const type = readRowTypes(root, rowId, richFields)?.[field];
+				const type = readRowTypes(root, rowId, typeFields)?.[field];
 				if (type === undefined) return () => undefined;
 				// Straight onto the field's own type, so what a listener hears is an
 				// edit to THAT content and nothing else (ADR-0297). A nested edit
@@ -1116,7 +1116,7 @@ function createStoreEngine(
 				// and the notification goes out on the same flush every other
 				// subscriber's does, so a listener that writes is writing against a
 				// settled commit.
-				const onDelta = () => richTouched.add(listener);
+				const onDelta = () => typeTouched.add(listener);
 				type.on('delta', onDelta);
 				let stopped = false;
 				return () => {
@@ -1126,7 +1126,7 @@ function createStoreEngine(
 					stopped = true;
 					type.off('delta', onDelta);
 					// A stop between the delta and the flush must not deliver.
-					richTouched.delete(listener);
+					typeTouched.delete(listener);
 				};
 			},
 			subscribe(listener: () => void): () => void {

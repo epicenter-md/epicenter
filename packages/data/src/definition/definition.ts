@@ -29,23 +29,23 @@ export type FieldMap = {
 };
 
 /**
- * The marker a rich field's descriptor carries (ADR-0296).
+ * The marker a type field's descriptor carries (ADR-0296).
  *
  * Substrate policy, like `nullable`, so it lives here rather than in the
  * closed `@epicenter/field` palette: that palette answers what a JSON value
- * is, and a rich field holds no JSON value at all. A descriptor carrying this
+ * is, and a type field holds no JSON value at all. A descriptor carrying this
  * marker matches no palette meta, which is why recognition is short-circuited
  * before `recognize` ever sees it.
  */
 export const YJS_TYPE_KEYWORD = 'x-yjs-type';
 
-/** A rich field's descriptor: `Static<>` is the nested type it holds. */
+/** A type field's descriptor: `Static<>` is the nested type it holds. */
 export type TYjsType = TUnsafe<Y.Type> & {
 	readonly [YJS_TYPE_KEYWORD]: true;
 };
 
 /**
- * A rich field: the attribute holds a nested `Y.Type` rather than a JSON value
+ * A type field: the attribute holds a nested `Y.Type` rather than a JSON value
  * (ADR-0296).
  *
  * It names what is true of storage and nothing more. Yjs 14 has one `YType`
@@ -53,6 +53,18 @@ export type TYjsType = TUnsafe<Y.Type> & {
  * a codec and an editor binding, not about the declaration. An application
  * that wants prose, an outline, or a table writes the same `field.type()` and
  * differs only in its file codec and its editor binding.
+ *
+ * The vocabulary around it used to disagree with that. These were "rich
+ * fields", ninety-six times, and "rich" is the prose connotation this comment
+ * spends a paragraph refusing: `packages/chat` keeps a message MAP in one.
+ * Worse, the code glossed it as "a nested `Y.Type`" fifty-one times, and a
+ * name that needs its own explanation attached is not the name. They are type
+ * fields, after the verb that declares them.
+ *
+ * The marker is the RUNTIME's, and only the runtime's. The engine reads it to
+ * learn which attribute keys to mint when it creates a row; nothing at the type
+ * level asks, because `ScalarsOf` and `TypesOf` ask the value whether its
+ * `Static` is a `Y.Type`.
  */
 function yjsType(): TYjsType {
 	return Type.Unsafe<Y.Type>({ [YJS_TYPE_KEYWORD]: true }) as TYjsType;
@@ -90,7 +102,7 @@ export type RowFileError = InferErrors<typeof RowFileError>;
  * which is this.
  *
  * **The two are inverses.** `serialize` takes a whole row and returns a file;
- * `deserialize` takes a file and returns a whole row, rich fields included and
+ * `deserialize` takes a file and returns a whole row, type fields included and
  * already built. `create` integrates them in the transaction that mints the
  * row (ADR-0296, amended).
  *
@@ -101,7 +113,7 @@ export type RowFileError = InferErrors<typeof RowFileError>;
  * is safe for one bulk operation and for attribute writes, which is what every
  * codec here does and what `pmToFragment` produces, and unsafe only for a loop
  * of positional appends. `RowFileCodec` carries the rule and
- * `evidence/detached-rich-field.test.ts` pins it.
+ * `evidence/detached-type.test.ts` pins it.
  *
  * A returned type must be fresh. Two rows given one type share one body,
  * silently, so `createRow` refuses one that already belongs to a document.
@@ -202,35 +214,59 @@ type FieldsOut<TFields> = {
 	[K in keyof TFields]: TFields[K] extends TSchema ? Static<TFields[K]> : never;
 };
 
-/** The declared fields that hold a nested type rather than a JSON value. */
-type RichKeys<TFields> = {
-	[K in keyof TFields]: TFields[K] extends { readonly 'x-yjs-type': true }
-		? K
-		: never;
-}[keyof TFields];
+/**
+ * Whether one declared field's value is a `Y.Type` rather than a JSON value.
+ *
+ * The predicate both halves of the partition below share, asked of the VALUE
+ * rather than of a marker keyword. `x-yjs-type` still exists and the runtime
+ * still reads it, because the engine has to know which attribute keys to mint
+ * when it creates a row; nothing at the type level needs to, because the
+ * `Static` already says so.
+ */
+type IsType<TField> = TField extends TSchema
+	? Static<TField> extends Y.Type
+		? true
+		: false
+	: false;
 
-/** One table's rich fields, as the live types a codec fills. */
+/**
+ * One table's type fields: the ones whose value is a live `Y.Type`.
+ *
+ * The mirror of `ScalarsOf`, and the symmetry is the point. One declaration
+ * holds both kinds, in the order a person wrote them, and these two partition
+ * it. There used to be a third type, `RichKeys`, whose only job was to compute
+ * the key set that `Omit` then removed; asking the value directly makes the two
+ * halves one line each and answers the question in the same breath as posing
+ * it.
+ */
 export type TypesOf<TFields> = {
-	[K in RichKeys<TFields>]: Y.Type;
+	[K in keyof TFields as IsType<TFields[K]> extends true ? K : never]: Y.Type;
 };
 
 /**
- * One table's scalar fields: what `deserialize` returns and `create` takes.
+ * One table's scalar fields: everything whose value is an ordinary JSON value.
  *
- * A rich field is absent from both, and that asymmetry is the engine's rather
- * than a taste: a nested type cannot be handed over as a value, so it is
- * minted with its row and filled in place.
+ * What `update` may patch, what `deserialize` returns beside the types it
+ * built, and what a file codec writes to frontmatter. A type field is absent
+ * because a type is not assignable: writing one over a row's attribute deletes
+ * the old subtree, so a peer that edited it concurrently loses every keystroke
+ * to map LWW. That rule is the reason this type exists, and stating it as a
+ * signature is what keeps it from being a comment somebody has to obey.
  */
-export type ScalarsOf<TFields> = FieldsOut<Omit<TFields, RichKeys<TFields>>>;
+export type ScalarsOf<TFields> = {
+	[K in keyof TFields as IsType<TFields[K]> extends true
+		? never
+		: K]: TFields[K] extends TSchema ? Static<TFields[K]> : never;
+};
 
 type FieldsOfArg<T> = T extends { fields: infer TFields } ? TFields : T;
 
 /**
- * One table's read shape: the id, the scalars, and the live rich types.
+ * One table's read shape: the id, the scalars, and the live types.
  *
  * What `get` returns, what `create` returns, and what a file codec's
  * `serialize` takes. It was scalars only, with `content(rowId)` as the one way
- * to a rich field and `RowOf` as a third shape for the codec; the row
+ * to a type field and `RowOf` as a third shape for the codec; the row
  * carries its types now, so all three collapse into this (ADR-0296, amended).
  *
  * `NewRowOf` is this minus the id and with the types optional. That sentence is
@@ -238,11 +274,11 @@ type FieldsOfArg<T> = T extends { fields: infer TFields } ? TFields : T;
  */
 export type RowOf<T> = { id: string } & FieldsOut<FieldsOfArg<T>>;
 /**
- * A row that does not have an id yet: the scalars, and the rich types the
+ * A row that does not have an id yet: the scalars, and the type types the
  * caller built (ADR-0295, ADR-0296).
  *
  * What `create` takes and what `deserialize` returns, which is one shape
- * because they are one operation with two input formats. A rich field is
+ * because they are one operation with two input formats. A type field is
  * PASSED IN, already populated, and `create` integrates it in the transaction
  * that mints the row.
  *
@@ -250,14 +286,14 @@ export type RowOf<T> = { id: string } & FieldsOut<FieldsOfArg<T>>;
  * types first. **How you fill the type you pass matters**: one bulk operation
  * or attribute writes are safe, a loop of positional appends silently reverses,
  * and it reads as empty until `create` integrates it. `RowFileCodec` states the
- * rule and `evidence/detached-rich-field.test.ts` pins it.
+ * rule and `evidence/detached-type.test.ts` pins it.
  *
  * A type handed here must not already belong to a document. Two rows given one
  * type SHARE one body, silently, and the same type set into two documents
  * corrupts across them; `createRow` refuses an integrated type rather than
  * letting either happen.
  *
- * Rich fields are OPTIONAL, and that is what keeps a programmatic `create`
+ * Type fields are OPTIONAL, and that is what keeps a programmatic `create`
  * from having to build an empty body it does not care about: an omitted one is
  * minted empty. A codec that means to leave a body empty says so the same way.
  */
@@ -279,7 +315,7 @@ export type RowFileCodecOf<TFields> = {
  * **A table that declares any `field.type()` must declare `file`** (ADR-0296),
  * and the parameter type is where that is enforced, because this is the
  * authoring call and a definition that arrived serialized has no codec to
- * declare. A rich field with no codec would export a body that silently
+ * declare. A type field with no codec would export a body that silently
  * vanishes, so the artifact directions refuse it as data loss rather than
  * writing an empty file.
  *
@@ -293,7 +329,7 @@ export type RowFileCodecOf<TFields> = {
 export function defineTable<const TFields extends FieldMap>(
 	table: {
 		fields: TFields & ValidateFields<TFields>;
-	} & ([RichKeys<TFields>] extends [never]
+	} & ([keyof TypesOf<TFields>] extends [never]
 		? { file?: RowFileCodecOf<TFields> }
 		: { file: RowFileCodecOf<TFields> }),
 ): { fields: TFields; file?: RowFileCodec } {
@@ -327,7 +363,7 @@ export function defineData<const TData extends DataDefinition>(
 	for (const [tableName, table] of compiled.data.tables) {
 		if (table.types.length === 0 || table.file !== undefined) continue;
 		throw new Error(
-			`Table '${tableName}' declares rich content (${table.types.join(
+			`Table '${tableName}' declares type content (${table.types.join(
 				', ',
 			)}) and no file codec to export or import it with`,
 		);
@@ -374,12 +410,12 @@ export type Conformance = {
 export type ParsedTable = {
 	name: string;
 	/**
-	 * The scalar fields, compiled. A rich field is NOT here: it holds no JSON
+	 * The scalar fields, compiled. A type field is NOT here: it holds no JSON
 	 * value, so it has no schema to check a payload against and nothing a
 	 * conformance read could report.
 	 */
 	fields: ReadonlyMap<string, DataField>;
-	/** The rich fields, in declaration order: the nested types a row mints. */
+	/** The type fields, in declaration order: the nested types a row mints. */
 	types: readonly string[];
 	/** The application-owned file codec, carried unread (ADR-0296). */
 	file?: RowFileCodec;
@@ -505,7 +541,7 @@ function compileDefinition(
 		if (result.error !== null) return result;
 		// A codec is behavior beside the data core (ADR-0266), so a definition
 		// that arrived serialized carries its functions stripped and compiles as
-		// no codec at all. That is why "a table with a rich field must declare a
+		// no codec at all. That is why "a table with a type field must declare a
 		// codec" is enforced at `defineTable`'s parameter type rather than here:
 		// this same function parses an app bundle's `database.json` for its id,
 		// and refusing that would be refusing a definition for missing something
@@ -551,7 +587,7 @@ function compileTable(
 				reason: 'a field descriptor must be a JSON object',
 			});
 		}
-		// A rich field is recognized here rather than by the palette, and before
+		// A type field is recognized here rather than by the palette, and before
 		// it, because the palette answers what a JSON value is and this holds no
 		// JSON value at all. It compiles to a NAME and nothing else: no schema, no
 		// check, no storage class, so nothing downstream can mistake it for a

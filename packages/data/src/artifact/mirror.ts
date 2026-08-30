@@ -56,7 +56,7 @@
  * pass knows the folder is stale and never which file.
  *
  * `table.subscribe` names the table a commit touched but not the rows, so it
- * is the narrower one. It is complete for rich content now that a rich field
+ * is the narrower one. It is complete for type content now that a type field
  * is nested on its row (ADR-0295): a body edit bubbles to the table root and
  * reaches a subscriber whether or not the application derives anything from
  * it, which it did not before the collapse.

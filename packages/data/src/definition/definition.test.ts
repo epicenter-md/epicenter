@@ -93,12 +93,12 @@ describe('data definitions', () => {
 		]);
 	});
 
-	test('a rich field compiles to a name, not a column', () => {
+	test('a type field compiles to a name, not a column', () => {
 		// `field.type()` holds a nested `Y.Type` and no JSON value (ADR-0296), so
 		// it has no schema to check a payload against and nothing a conformance
 		// read could report. It compiles into `types` and out of `fields`.
 		const result = parseData({
-			id: 'so.epicenter.rich',
+			id: 'so.epicenter.typed',
 			kv: {},
 			tables: {
 				notes: { fields: { title: field.string(), body: field.type() } },
@@ -110,7 +110,7 @@ describe('data definitions', () => {
 		expect(notes?.conformance({ title: 'x' }).issues).toEqual([]);
 	});
 
-	test('a rich field in kv is refused', () => {
+	test('a type field in kv is refused', () => {
 		// kv holds settings rather than rows, and nothing mints a type there.
 		const result = parseData({
 			id: 'so.epicenter.richkv',
@@ -120,7 +120,7 @@ describe('data definitions', () => {
 		expect(result.error?.name).toBe('Malformed');
 	});
 
-	test('a table with rich content and no codec is refused where it is authored', () => {
+	test('a table with type content and no codec is refused where it is authored', () => {
 		// The rule lives at the authoring call and nowhere else (ADR-0296): a
 		// codec is a function, so a definition that arrived as JSON cannot carry
 		// one and its absence there says nothing.

@@ -33,7 +33,7 @@ import type { PersistenceCapability } from './persistence.js';
 /**
  * One row, as an application reads it: the id, the scalars, and the live types.
  *
- * A rich field is here rather than behind a second verb (ADR-0296, amended).
+ * A type field is here rather than behind a second verb (ADR-0296, amended).
  * `readRow` cannot return one, so the handle merges what `readRowTypes` finds
  * before handing the row over; what a caller gets is one object with `body` on
  * it, not a row plus a bag to go and fetch.
@@ -51,7 +51,7 @@ export type TableHandle = {
 	 * unreachable rather than merely unlikely. Anything an application wants to
 	 * name goes in `kv`, which lives at a name-addressed root.
 	 *
-	 * A rich field IS passed here, already built (ADR-0296, amended). The type
+	 * A type field IS passed here, already built (ADR-0296, amended). The type
 	 * is integrated in this transaction, which is what removes the concurrency:
 	 * a nested type is addressed by the struct that created it, so two devices
 	 * minting one at the same attribute key would lose a subtree, and a minted
@@ -99,10 +99,10 @@ export type TableHandle = {
 	 */
 	update(rowId: string, fields: JsonObject): Result<void, RowAbsentError>;
 	/**
-	 * Take one row off the table, rich content and all (ADR-0295).
+	 * Take one row off the table, type content and all (ADR-0295).
 	 *
 	 * One removal in one document. Deleting the row's nested type reclaims
-	 * every scalar attribute and every rich field's subtree with it, so there
+	 * every scalar attribute and every type field's subtree with it, so there
 	 * is no second address to retire and no crash point between two halves.
 	 *
 	 * Returns nothing: deleting an address that holds no row is a no-op fact
@@ -137,7 +137,7 @@ export type TableHandle = {
 	 */
 	readonly nonconforming: NonconformingRow[];
 	/**
-	 * Hear edits to ONE rich field of ONE row, local or remote.
+	 * Hear edits to ONE type field of ONE row, local or remote.
 	 *
 	 * What is left of `content`'s per-field signal after the types moved onto
 	 * the row. Scoped to the field rather than the row or the table, and that
@@ -152,7 +152,7 @@ export type TableHandle = {
 	 * is writing against a settled commit. That ordering is why this exists at
 	 * all rather than the caller reaching for the type's own `on('delta')`.
 	 *
-	 * An address holding no row, or a field this table does not declare rich,
+	 * An address holding no row, or a field this table does not declare as a type,
 	 * returns a teardown that does nothing.
 	 */
 	watch(rowId: string, field: string, listener: () => void): () => void;
@@ -289,7 +289,7 @@ export type DataOf<
 	stored(): StoredData;
 	/**
 	 * One row exactly as the exporter needs it: every stored scalar, and the
-	 * live rich types beside them.
+	 * live types beside them.
 	 *
 	 * The narrow form of `stored()`, and the artifact layer's only per-row read.
 	 * It is HERE rather than on a table handle because it is not a lens: it
@@ -463,7 +463,7 @@ export type DataStoreBase = {
 	stored(): StoredData;
 	/**
 	 * One row exactly as the exporter needs it: every stored scalar, and the
-	 * live rich types beside them.
+	 * live types beside them.
 	 *
 	 * The narrow form of `stored()`, and the artifact layer's only per-row read.
 	 * It is on the STORE rather than on a table handle because it is not a

@@ -206,7 +206,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expect(restarted.store.persistence.get()).toBe('saved');
 	});
 
-	test('kv and rich-field edits are accepted while blocked, like table writes', () => {
+	test('kv and type-field edits are accepted while blocked, like table writes', () => {
 		const replica = openFailable();
 		const made = expectOk(replica.db.tables.notes.create({ title: 'holder' }));
 		replica.gate.failing = true;
@@ -215,7 +215,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expectOk(replica.db.kv.update({ theme: 'dark' }));
 		expect(expectOk(replica.db.kv.get()).theme).toBe('dark');
 
-		// A row's rich field: an editor keeps writing prose while blocked. The
+		// A row's type field: an editor keeps writing prose while blocked. The
 		// type is live on the document the store already holds, so a blocked
 		// engine never blocks acceptance.
 		const editor = replica.db.tables.notes.get(made.id)?.editor;

@@ -90,7 +90,7 @@ export const conversationsTable = {
 /**
  * The conversations table's file codec (ADR-0296).
  *
- * A table that declares a rich field must declare one, because the export is
+ * A table that declares a type field must declare one, because the export is
  * the only bridge the messages have out of the CRDT and a folder written
  * without them feeds an import that deletes them everywhere.
  *

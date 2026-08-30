@@ -21,7 +21,7 @@ const store = defineData({
 		notes: defineTable({
 			fields: { title: field.string(), body: field.type() },
 			file: {
-				// The whole row, mapped: the scalars above the fence and the rich
+				// The whole row, mapped: the scalars above the fence and the type
 				// field below it. The codec spreads what it was handed, so a value
 				// an older release wrote rides along instead of being dropped.
 				serialize: ({ id: _id, body, ...fields }) => ({
@@ -38,7 +38,7 @@ const store = defineData({
 	},
 });
 
-/** Write prose into one row's rich `body` field. */
+/** Write prose into one row's `body` type field. */
 function type(
 	data: { tables: { notes: TypedTableHandle<NoteFields> } },
 	rowId: string,
@@ -96,7 +96,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 		expect(rendered.contents).toBeUndefined();
 	});
 
-	test('a table with no rich content renders frontmatter alone', async () => {
+	test('a table with no type content renders frontmatter alone', async () => {
 		const scalarOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
@@ -168,7 +168,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 
 		// The row is one file: its id is the path, its scalars the frontmatter
 		// (strings always quoted, so every value re-reads as itself), and its
-		// rich content the body (ADR-0268, ADR-0296).
+		// type content the body (ADR-0268, ADR-0296).
 		expect(files.get(`notes/${made.id}.md`)).toBe(
 			['---', 'title: "Groceries"', '---', '', 'buy milk', ''].join('\n'),
 		);
@@ -228,7 +228,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 		expect(seen.ok).not.toContain(`notes/${bad.id}.md`);
 	});
 
-	test('a table with no rich content exports frontmatter-only files', async () => {
+	test('a table with no type content exports frontmatter-only files', async () => {
 		const scalarOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},

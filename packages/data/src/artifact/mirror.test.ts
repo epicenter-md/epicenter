@@ -153,8 +153,8 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		expect(latest(manifests)).toEqual(['kv.json']);
 	});
 
-	test('a rich-field edit reaches the file, with nothing derived to trigger it', async () => {
-		// The signal the collapse restored (ADR-0295). A rich field is a nested
+	test('a type-field edit reaches the file, with nothing derived to trigger it', async () => {
+		// The signal the collapse restored (ADR-0295). A type field is a nested
 		// type on the row, so a keystroke bubbles through `changedParentTypes`
 		// to the table root and the store's commit listener hears it. Before the
 		// collapse a body edit reached `onCommitted` only by way of a derived

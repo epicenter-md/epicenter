@@ -88,7 +88,7 @@ test('a store exports to Markdown files and imports back whole', async () => {
 	await using restored = await openMemory(honeycrispDefinition);
 	expect(syncEngineOf(restored.store).applyRemote(state).error).toBeNull();
 
-	// Through the faithful read: a row carries its live rich types now, and two
+	// Through the faithful read: a row carries its live types now, and two
 	// documents' types are never equal objects. The claim is about the record.
 	expect(restored.store.stored().tables).toEqual(data.store.stored().tables);
 

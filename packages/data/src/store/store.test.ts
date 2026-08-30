@@ -374,19 +374,19 @@ describe('two replicas converge', () => {
 	});
 });
 
-describe("a row's rich content lives on the row (ADR-0295)", () => {
+describe("a row's type content lives on the row (ADR-0295)", () => {
 	test('an absent row has no content, which is a fact not a failure', () => {
 		expect(db.tables.notes.get('nope')).toBeUndefined();
 	});
 
-	test('a rich field is minted with its row and is empty', () => {
+	test('a type field is minted with its row and is empty', () => {
 		const made = note();
 		const content = db.tables.notes.get(made.id);
 		expect(content?.editor).toBeDefined();
 		expect(content?.editor.length).toBe(0);
 	});
 
-	test('deleting the row takes its rich content with it', () => {
+	test('deleting the row takes its type content with it', () => {
 		const made = note();
 		const editor = db.tables.notes.get(made.id)?.editor;
 		editor?.applyDelta(editor.change.insert('milk') as never);
@@ -394,7 +394,7 @@ describe("a row's rich content lives on the row (ADR-0295)", () => {
 		expect(db.tables.notes.get(made.id)).toBeUndefined();
 	});
 
-	test('a rich field is a live type on the row, never a JSON scalar', () => {
+	test('a type field is a live type on the row, never a JSON scalar', () => {
 		// `get` carries it and `stored()` cannot: the faithful read answers in
 		// JSON, and a nested type is not one. That is the whole reason the
 		// exporter reads through `store.rowFile` rather than through `stored`.
@@ -404,10 +404,10 @@ describe("a row's rich content lives on the row (ADR-0295)", () => {
 		expect(db.tables.notes.get(made.id)?.editor).toBeDefined();
 	});
 
-	test('an editor writing into its own rich field cannot touch the row', () => {
+	test('an editor writing into its own type field cannot touch the row', () => {
 		// Bound to the ROW itself, a ProseMirror schema whose doc node declares
 		// attributes would overwrite the row's fields and sync that; measured in
-		// ADR-0215. A rich field is a type nested UNDER the row, so its
+		// ADR-0215. A type field is a type nested UNDER the row, so its
 		// attributes are its own.
 		const made = note();
 		db.tables.notes
@@ -416,7 +416,7 @@ describe("a row's rich content lives on the row (ADR-0295)", () => {
 		expect(db.tables.notes.get(made.id)?.title).toBe('Groceries');
 	});
 
-	test('a rich field rides the whole state and comes back attached', async () => {
+	test('a type field rides the whole state and comes back attached', async () => {
 		const made = note();
 		const editor = db.tables.notes.get(made.id)?.editor;
 		editor?.applyDelta(editor.change.insert('milk and eggs') as never);
@@ -660,7 +660,7 @@ describe('a subscription says a table changed', () => {
 		);
 	});
 
-	test("prose written into a row's rich field IS a table commit", () => {
+	test("prose written into a row's type field IS a table commit", () => {
 		// The collapse's cost, asserted rather than discovered (ADR-0295). A
 		// nested edit bubbles through `changedParentTypes`, so a keystroke
 		// reaches the table root's delta path and every table subscriber fires
@@ -943,17 +943,17 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 describe('foreign bytes have exactly one door', () => {
 	// The store's updateV2 listener treats any unrecognized origin as an
 	// application writing through a live type, which is only correct for a
-	// LOCAL transaction. An application holds a rich field and a rich field
+	// LOCAL transaction. An application holds a type field and a type field
 	// exposes `.doc`, so the branch is guarded by `transaction.local` rather
 	// than by convention: `applyUpdateV2` forces it to false and a local
 	// `transact` defaults it to true. This test also pins `transaction.local`
-	// itself: if an rc removed the field, every application write into a rich
+	// itself: if an rc removed the field, every application write into a type
 	// field would take the throw and the suite fails loudly.
 	test('a direct Y.applyUpdateV2 on the live document throws instead of forging authored work', () => {
 		const made = note({ title: 'mine' });
 		const live = db.tables.notes.get(made.id)?.editor.doc;
 		if (live === null || live === undefined) {
-			throw new Error('the rich field is not attached to a document');
+			throw new Error('the type field is not attached to a document');
 		}
 
 		const stranger = new Y.Doc({ gc: true });
@@ -1095,7 +1095,7 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 	});
 });
 
-describe('a rich field carries its own change signal (ADR-0297)', () => {
+describe('a type field carries its own change signal (ADR-0297)', () => {
 	test('an edit to the field reaches its subscriber', () => {
 		const made = note();
 		const editor = db.tables.notes.get(made.id)?.editor;

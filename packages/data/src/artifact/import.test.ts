@@ -110,7 +110,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(expectOk(restored.kv.get())).toEqual({ theme: 'dark' });
 		expect(restored.kv.get()).toEqual(data.kv.get());
 		// Compared through `stored()` rather than `rows`, and the reason is the
-		// claim itself. A row carries its live rich types now, and two documents'
+		// claim itself. A row carries its live types now, and two documents'
 		// types are never equal: they are different objects with different client
 		// ids. "Imports back whole" is a statement about the RECORD, so the
 		// faithful read is what it should have been asserted against all along.
