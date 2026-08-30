@@ -15,9 +15,10 @@ import type { DataView } from '@epicenter/data';
 import {
 	defineData,
 	defineTable,
+	RowFileError,
 	type RowOf,
-	type ScalarsOf,
 } from '@epicenter/data/definition';
+import { InstantString } from '@epicenter/field';
 import { fragmentToPm, pmToFragment } from '@y/prosemirror';
 import * as Y from '@y/y';
 import { EditorState } from 'prosemirror-state';
@@ -31,43 +32,139 @@ export type NoteId = string;
 /** Runtime-minted structural folder row id. */
 export type FolderId = string;
 
-const foldersTable = {
-	scalars: {
-		name: field.string(),
-		// Nullable rather than optional. A data definition has no optional
-		// fields on purpose: a field has to be one type through the CRDT
-		// attribute, the exported frontmatter value and the row alike, and
-		// "absent" is not one. Application recovery supplies a value at read time
-		// and never writes it as part of the definition (ADR-0255).
-		icon: field.nullable(field.string()),
+export const honeycrispDefinition = defineData({
+	id: 'so.epicenter.honeycrisp',
+	title: 'Honeycrisp',
+	kv: {},
+	tables: {
+		folders: defineTable({
+			scalars: {
+				name: field.string(),
+				// Nullable rather than optional. A data definition has no optional
+				// fields on purpose: a field has to be one type through the CRDT
+				// attribute, the exported frontmatter value and the row alike, and
+				// "absent" is not one. Application recovery supplies a value at read
+				// time and never writes it as part of the definition (ADR-0255).
+				icon: field.nullable(field.string()),
+			},
+		}),
+		notes: defineTable({
+			scalars: {
+				folderId: field.nullable(field.string()),
+				title: field.string(),
+				pinned: field.boolean(),
+				// Validation-only rather than `string.date.parse`: a field has to be
+				// one type through the CRDT attribute, the exported frontmatter value
+				// and the row alike, and a parsing form would hand back a `Date` that
+				// could not round-trip.
+				// Ordinary fields nobody stamps but Honeycrisp (ADR-0297). The store
+				// stopped holding an opinion about time, so `openBody` is what moves
+				// `updatedAt`, and `create` is what sets `createdAt`.
+				createdAt: field.instant(),
+				updatedAt: field.instant(),
+				deletedAt: field.nullable(field.instant()),
+			},
+			/**
+			 * The note's prose: a live `Y.Type` on the row (ADR-0295, ADR-0296).
+			 *
+			 * A name and nothing else, because there is nothing to configure. Minted
+			 * with the row and never again, and bound directly by `@y/prosemirror`,
+			 * which is typed against `Y.Type` and makes no root assumption.
+			 */
+			types: ['body'],
+			/**
+			 * The notes table's file codec (ADR-0296).
+			 *
+			 * The platform owns the file FORMAT: it emits `data` as frontmatter and
+			 * `content` beneath the fence, and parses both back. This owns the
+			 * MAPPING, in both directions, and the two are inverses.
+			 */
+			file: {
+				serialize: ({ id: _id, body, ...fields }) => ({
+					data: fields,
+					content: serializeNoteBody(noteBodyAsPm(body)),
+				}),
+				deserialize: (file) => {
+					// `deserialize` goes from a loose file to a typed row, so it
+					// CONSTRUCTS the row out of what it read rather than relabelling
+					// the record it was handed. That is the difference between a codec
+					// and an assertion: a file this table cannot map is reported by
+					// path, instead of arriving as a row whose type nobody checked.
+					//
+					// ABSENT AND WRONG ARE DIFFERENT. A person editing notes in a vault
+					// tool drops and reorders frontmatter keys, and the promise this app
+					// makes is that the folder stays theirs, so an absent value is one
+					// this codec decides. A value that is PRESENT and unmappable is a
+					// file this table cannot read, and it says so.
+					const raw = file.data;
+					const folderId = raw.folderId === undefined ? null : raw.folderId;
+					if (folderId !== null && typeof folderId !== 'string') {
+						return RowFileError.Unreadable({
+							reason: 'folderId is neither a folder id nor null',
+						});
+					}
+					// Empty rather than derived from the prose. `title` is one of the
+					// three fields `notes.openBody` owns (ADR-0297), and it writes one
+					// on the first open; deriving a second here would be the second
+					// writer that rule exists to refuse.
+					const title = raw.title === undefined ? '' : raw.title;
+					if (typeof title !== 'string') {
+						return RowFileError.Unreadable({ reason: 'title is not a string' });
+					}
+					const pinned = raw.pinned === undefined ? false : raw.pinned;
+					if (typeof pinned !== 'boolean') {
+						return RowFileError.Unreadable({
+							reason: 'pinned is not a boolean',
+						});
+					}
+					// A file carrying no time is stamped on the way in, because the
+					// row has to have one and the file never did.
+					const createdAt =
+						raw.createdAt === undefined ? InstantString.now() : raw.createdAt;
+					if (!InstantString.is(createdAt)) {
+						return RowFileError.Unreadable({
+							reason: 'createdAt is not a UTC instant',
+						});
+					}
+					const updatedAt =
+						raw.updatedAt === undefined ? createdAt : raw.updatedAt;
+					if (!InstantString.is(updatedAt)) {
+						return RowFileError.Unreadable({
+							reason: 'updatedAt is not a UTC instant',
+						});
+					}
+					const deletedAt = raw.deletedAt === undefined ? null : raw.deletedAt;
+					if (deletedAt !== null && !InstantString.is(deletedAt)) {
+						return RowFileError.Unreadable({
+							reason: 'deletedAt is neither a UTC instant nor null',
+						});
+					}
+					// Built here and handed over, rather than filled into a type the
+					// platform minted first (ADR-0296, amended). `create` integrates it
+					// in the transaction that mints the row.
+					const body = new Y.Type();
+					pmToFragment(parseNoteBody(file.content), body);
+					return Ok({
+						// Verbatim underneath: a key this release no longer names
+						// survives the round trip, because the artifact is the truth on
+						// the way in and a release that stopped naming a field never
+						// meant its data was gone (ADR-0125, ADR-0240).
+						...file.data,
+						// Mapped on top. This is what the row IS, and stating it here is
+						// what makes an assertion unnecessary.
+						folderId,
+						title,
+						pinned,
+						createdAt,
+						updatedAt,
+						deletedAt,
+						body,
+					});
+				},
+			},
+		}),
 	},
-} as const;
-
-const notesTable = {
-	scalars: {
-		folderId: field.nullable(field.string()),
-		title: field.string(),
-		pinned: field.boolean(),
-		// Validation-only rather than `string.date.parse`: a field has to be one
-		// type through the CRDT attribute, the exported frontmatter value and the
-		// row alike, and a parsing form would hand back a `Date` that could not
-		// round-trip.
-		// Ordinary fields nobody stamps but Honeycrisp (ADR-0297). The store
-		// stopped holding an opinion about time, so `openBody` is what moves
-		// `updatedAt`, and `create` is what sets `createdAt`.
-		createdAt: field.instant(),
-		updatedAt: field.instant(),
-		deletedAt: field.nullable(field.instant()),
-	},
-	/**
-	 * The note's prose: a live `Y.Type` on the row (ADR-0295, ADR-0296).
-	 *
-	 * A name and nothing else, because there is nothing to configure. Minted
-	 * with the row and never again, and bound directly by `@y/prosemirror`,
-	 * which is typed against `Y.Type` and makes no root assumption.
-	 */
-	types: ['body'],
-} as const;
+});
 
 /**
  * A note's prose as a ProseMirror node, read headlessly.
@@ -84,55 +181,11 @@ export function noteBodyAsPm(body: Y.Type) {
 	return fragmentToPm(body, state.tr);
 }
 
-/**
- * The notes table's file codec (ADR-0296).
- *
- * The platform owns the file format: it emits `data` as frontmatter and
- * `content` beneath the fence, and parses both back. This owns the mapping.
- * The scalars go up verbatim, so a value an older release wrote survives the
- * round trip, and the prose goes down as Markdown.
- *
- * `serialize` and `deserialize` are inverses: a row goes out as a file, a file
- * comes back as a row, prose included. `deserialize` used to be handed a
- * `types.body` the platform had already minted and fill it in place; that
- * requirement was measured against the wrong thing (ADR-0296, amended).
- */
-const noteFile = {
-	serialize: ({ id: _id, body, ...fields }: RowOf<typeof notesTable>) => ({
-		data: fields,
-		content: serializeNoteBody(noteBodyAsPm(body)),
-	}),
-	deserialize: (file: { data: Record<string, unknown>; content: string }) => {
-		// Built here and handed over, rather than filled into a type the platform
-		// minted first (ADR-0296, amended). `create` integrates it in the
-		// transaction that mints the row.
-		const body = new Y.Type();
-		pmToFragment(parseNoteBody(file.content), body);
-		// Verbatim, including a key this release no longer names: the artifact is
-		// the truth on the way in, and a row this declaration cannot read is
-		// reported on the first read rather than repaired here (ADR-0125).
-		return Ok({
-			...(file.data as ScalarsOf<typeof notesTable>),
-			body,
-		});
-	},
-};
-
-export const honeycrispDefinition = defineData({
-	id: 'so.epicenter.honeycrisp',
-	title: 'Honeycrisp',
-	kv: {},
-	tables: {
-		folders: defineTable(foldersTable),
-		notes: defineTable({ ...notesTable, file: noteFile }),
-	},
-});
-
 /** The typed view of one opened Honeycrisp data handle. */
 export type HoneycrispData = DataView<typeof honeycrispDefinition>;
 
-export type Folder = RowOf<typeof foldersTable>;
-export type Note = RowOf<typeof notesTable>;
+export type Folder = RowOf<typeof honeycrispDefinition.tables.folders>;
+export type Note = RowOf<typeof honeycrispDefinition.tables.notes>;
 
 /**
  * Delete a folder after re-parenting the notes that were in it.
