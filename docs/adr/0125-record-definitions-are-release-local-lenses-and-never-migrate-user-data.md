@@ -1,6 +1,6 @@
 # 0125. Record definitions are release-local lenses and never migrate user data
 
-- **Status:** Accepted
+- **Status:** Accepted, amended 2026-08-30 at where a nonconforming row surfaces
 - **Date:** 2026-07-15
 - **Supersedes:** [ADR-0006](0006-schema-evolution-keeps-the-version-tuple-and-refuses-repair-apis.md)
 - **Relates:** [ADR-0119](0119-complete-record-maps-sync-through-schema-blind-server-ordered-patches.md), [ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md), [ADR-0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md)
@@ -56,6 +56,43 @@ because they do not reinterpret canonical payload meaning. Connection-local SQL
 views change with the release and need no migration. Row-body root identity is
 fixed by ADR-0135. Yjs binary update compatibility evolves through the
 workspace protocol and storage major, not record lenses.
+
+## Amendment, 2026-08-30: nonconformance is a fact about the table
+
+"Typed reads surface nonconforming rows without modifying them" is unchanged
+and is still the whole point. What moved is which read surfaces them.
+
+`get(rowId)` used to return `Result<Row | undefined, NonconformingRow>`, so a
+row this release cannot read arrived as that one row's failure. It answers
+`Row | undefined` now, and a nonconforming row is `undefined`, alongside a row
+that is simply not there.
+
+**The evidence for collapsing them is that nobody had ever told them apart.**
+Across every application and package, no call site branched on `get`'s error
+arm. Honeycrisp had gone further and written `table.rows.find((f) => f.id ===
+id)` by hand rather than pay an unwrap for a variant it did not read. What three
+applications DO consume is the list-level report: Honeycrisp shows a count of
+unreadable notes, and Whispering exposes one for recordings and one for recipes.
+Conformance was already being handled as a fact about the table; the API was the
+only thing insisting it was a fact about a row.
+
+**Nothing is hidden by the collapse**, which is the clause of this record that
+matters:
+
+- `table.nonconforming` reports every unreadable row with its raw payload, its
+  conforming half, and the fields that failed. Same `NonconformingRow`, same
+  diagnostic, same guarantee that nothing was modified to produce it.
+- The recovery composition this record describes still fits on one line:
+  `row ?? { id, ...reported?.conforming }`.
+- `update` still modifies a row whose complete payload does not pass the current
+  lens, which is how a repair lands. Honeycrisp depends on this: deleting a
+  folder walks `nonconforming` as well as `rows` so a note it cannot read is not
+  a note it can orphan.
+- An export still carries the row. The exporter reads `store.rowFile`, which
+  runs no conformance at all, so a row the lens refuses still gets its file and
+  can be repaired by editing the folder. That path would have been the one
+  casualty of routing the export through `get`, and it is why the export does
+  not.
 
 ## Consequences
 

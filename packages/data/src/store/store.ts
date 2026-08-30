@@ -82,7 +82,6 @@ import type {
 	KvHandle,
 	LocalStore,
 	Row,
-	RowContent,
 	StoredData,
 	StorePressure,
 	SyncCapability,
@@ -100,7 +99,6 @@ export type {
 	KvHandle,
 	LocalStore,
 	Row,
-	RowContent,
 	StoredData,
 	StorePressure,
 	SyncCapability,
@@ -1102,11 +1100,6 @@ function createStoreEngine(
 			stored(rowId: string): JsonObject | undefined {
 				assertUsable();
 				return readRow(root, rowId);
-			},
-			content(rowId: string): RowContent | undefined {
-				assertUsable();
-				const types = readRowTypes(root, rowId, richFields);
-				return types === undefined ? undefined : { types };
 			},
 			watch(rowId: string, field: string, listener: () => void): () => void {
 				assertUsable();

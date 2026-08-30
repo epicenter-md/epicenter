@@ -1,6 +1,6 @@
 # 0295. A database is one Yjs document and a row holds its rich content
 
-- **Status:** Accepted
+- **Status:** Accepted, amended 2026-08-30 at where a rich field surfaces
 - **Date:** 2026-08-29
 - **Supersedes:** [ADR-0248](0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md) entirely, [ADR-0278](0278-a-replica-syncs-the-application-document-and-fetches-row-documents-on-demand.md) entirely, [ADR-0284](0284-the-application-document-is-an-index-and-a-rows-remaining-fields-live-in-its-own-document.md) entirely.
 - **Amends:** [ADR-0277](0277-the-authority-reads-the-bytes-and-sync-becomes-the-yjs-protocol.md) at the object granularity and the per-row HTTP surface; [ADR-0282](0282-the-authority-hydrates-the-document-and-one-object-per-document-bounds-the-blast-radius.md) at one-object-per-document; [ADR-0283](0283-a-generations-collection-is-a-ledger-that-allocates-admits-and-sweeps.md) at the per-document routes and the address register; [ADR-0280](0280-a-browser-stores-durable-record-is-a-chain-of-updates-in-indexeddb-folded-on-idle.md) at the document dimension of the record key; [ADR-0286](0286-every-generation-is-minted-from-an-artifact-and-compaction-is-an-export-then-an-import.md) and [ADR-0290](0290-a-mint-is-a-foreground-job-the-client-owns-and-it-cannot-outlive-a-page.md) at their per-document upload invariants.
@@ -113,6 +113,48 @@ times the authority's headroom rather than seven. The measurement is Bun/JSC
 rather than workerd, so it estimates the isolate rather than reading it; a
 workerd probe is the remaining refinement, and it can only move this number by a
 constant.
+
+## Amendment, 2026-08-30: the row carries its rich fields
+
+The decision above is unchanged. A database is still one Yjs document, a row is
+still a nested `Y.Type` under its table root, and a rich field is still a
+nested type on the row. What moved is only how an application reaches one.
+
+**`table.content(rowId)` is deleted.** It returned `{ types, subscribe }`, and
+it existed because `readRow` cannot return a nested type: the scalar read owes
+JSON and a type is not one. That is a fact about `readRow`, and this record let
+it become a fact about the API. `get` merges the types onto the row before
+handing it over, so a caller writes `note.body` rather than
+`content(id)?.types.body`, and `RowOf` names it.
+
+Three things followed, and each is worth recording because each was a defect
+this shape had been hiding:
+
+- **`RowOf` had been lying.** It included rich fields while `get` never
+  returned them, so `note.body` typechecked and was `undefined`. Corrected on
+  2026-08-29 by removing them from the type; corrected properly here by adding
+  them to the value.
+- **`content` was not reactive and looked like it was.** `fromData` made
+  `list`, `get` and `ids` track and left `content` alone, which is defensible;
+  two Skills editors wrapped it in `$derived` anyway and rendered nothing when a
+  row arrived from sync after mount. A rich field reached through `get` is
+  tracked, so the bug is now unwritable.
+- **The renderer was assembling by hand.** `{ id, ...handle.stored(rowId),
+  ...handle.content(rowId).types } as RowValues` fused two verbs behind a cast.
+  The exporter reads `store.rowFile(table, rowId)` now, which is on the STORE
+  rather than a handle because it must return keys this release no longer
+  declares and rows it cannot conform, and a handle is a lens.
+
+**What survives of `content` is one verb.** `watch(rowId, field, listener)` is
+the field-scoped change signal, and it is the half that earned a wrapper: a
+`Y.Type` has its own `on('delta')`, but the store defers delivery to the commit
+flush, so a listener that writes is writing against a settled commit. That
+ordering is what Honeycrisp's `updatedAt` write depends on. `RowContent` is
+deleted; after the types moved onto the row it was `{ types }` with no caller.
+
+**The concurrency argument is untouched.** A rich field is still integrated
+exactly once, in the transaction that mints its row, at a minted row id. The
+row now carries the type out; nothing about when it comes into being changed.
 
 ## Consequences
 

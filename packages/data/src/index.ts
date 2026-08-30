@@ -58,7 +58,6 @@ export {
 	type NonconformingValue,
 	type Row,
 	type RowAbsentError,
-	type RowContent,
 	type StoredData,
 	StoreError,
 	type StorePressure,

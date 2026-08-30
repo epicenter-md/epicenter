@@ -40,18 +40,6 @@ import type { PersistenceCapability } from './persistence.js';
  */
 export type Row = { id: string } & Record<string, JsonValue | Y.Type>;
 
-/**
- * One row's rich types, keyed by declared field name.
- *
- * Internal to the package now. It used to be the only way to a rich field and
- * carried a per-field `subscribe` beside them; the types moved onto the row and
- * the signal became `watch`, so what is left is the shape the artifact layer
- * reads a row's content through.
- */
-export type RowContent<TTypes = Readonly<Record<string, Y.Type>>> = {
-	readonly types: TTypes;
-};
-
 export type TableHandle = {
 	/**
 	 * Bring one row into being, at a minted id.
