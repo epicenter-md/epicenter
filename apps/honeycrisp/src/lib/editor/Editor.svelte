@@ -271,9 +271,9 @@
 				const newState = this.state.apply(tr);
 				this.updateState(newState);
 				updateActiveFormats(newState);
-				// A note's title and preview are no longer pushed from here: the store
-				// derives them from the body document on every local commit, and stamps
-				// `updatedAt` there too (ADR-0264/0265). The editor only edits.
+				// A note's title is not pushed from here: `openBody` hangs that write
+				// on the body's own field signal, coalesced, along with `updatedAt`.
+				// There is no preview to push at all any more. The editor only edits.
 			},
 		});
 		configureYProsemirror({ ytype: yxmlfragment })(

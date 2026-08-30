@@ -23,7 +23,6 @@ import { fragmentToPm, pmToFragment } from '@y/prosemirror';
 import type * as Y from '@y/y';
 import { EditorState } from 'prosemirror-state';
 import { Ok } from 'wellcrafted/result';
-import { extractNoteMetadata } from '../editor/extract-metadata.js';
 import { parseNoteBody, serializeNoteBody } from '../editor/markdown.js';
 import { noteSchema } from '../editor/schema.js';
 
@@ -46,7 +45,6 @@ const foldersTable = {
 const notesTable = {
 	folderId: field.nullable(field.string()),
 	title: field.string(),
-	preview: field.string(),
 	pinned: field.boolean(),
 	// Validation-only rather than `string.date.parse`: a field has to be one
 	// type through the CRDT attribute, the exported frontmatter value and the
@@ -81,21 +79,6 @@ export function noteBodyAsPm(body: Y.Type) {
 	const state = EditorState.create({ schema: noteSchema });
 	if (body.length === 0) return state.doc;
 	return fragmentToPm(body as never, state.tr);
-}
-
-/**
- * What the note list renders, read off the prose (ADR-0297).
- *
- * Pure, and application-run rather than store-run: the platform writes no
- * fields an application did not ask for, so Honeycrisp hangs this on the body's
- * own change signal (`notes.openBody` in `app.svelte.ts`). It reads through
- * the same ProseMirror schema the editor binds, so the derived title matches
- * what a person sees.
- */
-export function deriveNoteMetadata(
-	body: Y.Type,
-): Pick<Note, 'title' | 'preview'> {
-	return extractNoteMetadata(noteBodyAsPm(body));
 }
 
 /**

@@ -48,7 +48,6 @@ function noteFields(title: string) {
 	);
 	return {
 		title,
-		preview: '',
 		pinned: false,
 		createdAt: timestamp,
 		updatedAt: timestamp,

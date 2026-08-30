@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
-import { resolve } from '$app/paths';
 import { auth } from '#platform/auth';
+import { resolve } from '$app/paths';
 
 /**
  * Send a bare visit to whichever library this person has.

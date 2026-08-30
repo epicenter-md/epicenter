@@ -28,6 +28,17 @@
 	/** Derive deleted status from the note itself, no need to check view mode. */
 	const isDeleted = $derived(note.deletedAt !== null);
 
+	// Read off this note's prose rather than off a stored field, and subscribed
+	// to this note's body alone (ADR-0295).
+	//
+	// The initial id is the right one to capture: `NoteList` keys its `{#each}`
+	// by `note.id`, so this component is torn down and rebuilt for a different
+	// note rather than handed one. Deriving it instead would rebuild the
+	// subscription on every commit that touches the row, because `notes.all`
+	// hands out a fresh object each time.
+	// svelte-ignore state_referenced_locally
+	const preview = honeycrisp.notes.previewOf(note.id);
+
 	let confirmingPermanentDelete = $state(false);
 </script>
 
@@ -53,7 +64,7 @@
 				</span>
 			</div>
 			<Item.Description class="text-xs">
-				{note.preview || 'No content'}
+				{preview.text || 'No content'}
 			</Item.Description>
 
 			{#if isDeleted}

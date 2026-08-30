@@ -14,8 +14,8 @@
 	// on the row in the document this store already holds (ADR-0295), so there
 	// is no half-hydrated state an editor could merge keystrokes into, and
 	// edits from every device reach it live through the one store connection.
-	// What the pane still owns is the derivation the open starts: `close` stops
-	// the title and preview writes that follow this note's body.
+	// What the pane still owns is the write the open starts: `close` stops the
+	// title and `updatedAt` writes that follow this note's body.
 	let opened = $state.raw<Opened>(undefined);
 	$effect(() => {
 		const handle = honeycrisp.notes.openBody(noteId);

@@ -33,7 +33,6 @@
 		...honeycrisp.notes.all.map((note): CommandPaletteItem => ({
 			id: `note:${note.id}`,
 			label: note.title || 'Untitled',
-			description: note.preview || undefined,
 			group: 'Notes',
 			icon: FileTextIcon,
 			onSelect: () => navigation.selectNote(note.id),

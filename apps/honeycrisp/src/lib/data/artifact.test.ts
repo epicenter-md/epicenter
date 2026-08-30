@@ -55,7 +55,6 @@ async function seed() {
 	const note = data.tables.notes.create({
 		folderId: folder.id,
 		title: 'Groceries',
-		preview: '',
 		pinned: true,
 		createdAt: AT,
 		updatedAt: AT,

@@ -2,7 +2,6 @@ import type { UpdateRowError } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import {
 	deleteHoneycrispFolder,
-	deriveNoteMetadata,
 	type FolderId,
 	type HoneycrispData,
 	type Note,
@@ -10,6 +9,8 @@ import {
 } from '@epicenter/honeycrisp';
 import { fromData, type ReactiveData } from '@epicenter/svelte';
 import { createContext } from 'svelte';
+import { createSubscriber } from 'svelte/reactivity';
+import { notePreview, noteTitle } from './editor/prose-text.js';
 import { navigation } from './navigation.svelte.js';
 
 /**
@@ -59,11 +60,13 @@ export function createHoneycrisp({ data }: { data: HoneycrispData }) {
 	 * list rather than a filter over the same one, because the folder and the
 	 * query do not apply to it.
 	 *
-	 * Search covers the row: the title and the preview, both scalar fields the
-	 * editor writes back on every content change. Prose is a nested type on the
-	 * row (ADR-0295) and is not read here: searching it would walk every note's
-	 * fragment on every keystroke, so what a query can find past the preview's
-	 * hundred characters is the cost of keeping search on the scalars.
+	 * Search covers the title, and only the title. It used to also match a
+	 * stored `preview`, which sounded like body search and was not: it found a
+	 * phrase in a note's first hundred characters and silently missed it
+	 * everywhere else. Nothing is stored to match against now, and reading every
+	 * note's prose on every keystroke is not what this query is for. A real body
+	 * search would walk the fragments deliberately, once, and is a different
+	 * feature than a filter box.
 	 */
 	const visibleNotes = $derived.by(() => {
 		if (navigation.isDeletedView) return notes.deleted.toSorted(byRecentEdit);
@@ -74,8 +77,7 @@ export function createHoneycrisp({ data }: { data: HoneycrispData }) {
 			.filter((note) => folderId === null || note.folderId === folderId)
 			.filter((note) => {
 				if (!q) return true;
-				if (note.title.toLowerCase().includes(q)) return true;
-				return note.preview.toLowerCase().includes(q);
+				return note.title.toLowerCase().includes(q);
 			})
 			.toSorted(byRecentEdit);
 	});
@@ -258,18 +260,20 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	 * (ADR-0295). `undefined` means this note is no longer here.
 	 *
 	 * What is returned is not just the type. The store writes no derived fields
-	 * and no timestamps any more (ADR-0297), so `title`, `preview` and
-	 * `updatedAt` are Honeycrisp's to write, hung on the body's own change
-	 * signal. `close` stops that subscription; the pane holds exactly one note
-	 * open at a time, and the type itself outlives it either way.
+	 * and no timestamps any more (ADR-0297), so `title` and `updatedAt` are
+	 * Honeycrisp's to write, hung on the body's own change signal. `close` stops
+	 * that subscription; the pane holds exactly one note open at a time, and the
+	 * type itself outlives it either way.
 	 */
 	function openBody(id: NoteId) {
 		const content = table.content(id);
 		if (content === undefined) return undefined;
 		const body = content.types.body;
 		// Coalesced to one write per animation-frame-ish burst, because a
-		// keystroke is a commit and re-deriving on each one would write a row
-		// per character. A `setTimeout(0)` rather than a debounce with a delay:
+		// keystroke is a commit and writing the row on each one would write a row
+		// per character. Reading the title itself is cheap now (`noteTitle` slices
+		// the first block), so what this defends is the WRITE, not the read.
+		// A `setTimeout(0)` rather than a debounce with a delay:
 		// what is being avoided is one write per keystroke inside a burst, not
 		// writes during sustained typing, and a person who stops typing and
 		// closes the tab should not lose their title to a pending timer.
@@ -282,7 +286,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 				// the edit that queued this. `update` refuses an absent row, which
 				// is exactly the drop this wants.
 				table.update(id, {
-					...deriveNoteMetadata(body),
+					title: noteTitle(body),
 					updatedAt: InstantString.now(),
 				});
 			}, 0);
@@ -296,12 +300,41 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 		};
 	}
 
+	/**
+	 * One note's preview, read live off its prose and never stored.
+	 *
+	 * A card calls this once and renders `.text`; the reader slices the first
+	 * hundred characters rather than walking the note (`prose-text.ts`). The
+	 * subscription is the row's OWN field signal, so a card re-renders when its
+	 * note's body changes and not when any other note's does. That is what the
+	 * per-field signal is for, and it is why this does not ride the table
+	 * subscription the list already has: a keystroke in one note would re-read
+	 * every visible note's prose.
+	 *
+	 * `createSubscriber` ref-counts, so a card that is scrolled out of view
+	 * detaches and a note nobody is looking at costs nothing.
+	 */
+	function previewOf(id: NoteId): { readonly text: string } {
+		const content = table.content(id);
+		if (content === undefined) return { text: '' };
+		const subscribe = createSubscriber((update) =>
+			content.subscribe('body', update),
+		);
+		return {
+			get text() {
+				subscribe();
+				return notePreview(content.types.body);
+			},
+		};
+	}
+
 	return {
 		/**
 		 * Exposed as a verb so the raw `tables` never has to be. The editor pane
 		 * wanted this one call and was given the whole store shape to make it.
 		 */
 		openBody,
+		previewOf,
 		get all() {
 			return all;
 		},
@@ -320,7 +353,6 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 			const row = table.create({
 				folderId,
 				title: '',
-				preview: '',
 				pinned: false,
 				createdAt: now,
 				updatedAt: now,
