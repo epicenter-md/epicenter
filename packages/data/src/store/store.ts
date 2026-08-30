@@ -425,15 +425,16 @@ function createStoreEngine(
 	 */
 	let nextId = loaded.lastId + 1;
 	const mintId = (): number => nextId++;
-	/** Who is watching each table, by name. A ping, not a payload. */
-	const tableListeners = new Map<string, Set<() => void>>();
 	/**
-	 * Which table each root type belongs to, so a commit's changed types can be
-	 * routed back to the tables they belong to.
+	 * Who is watching each table, keyed by its ROOT. A ping, not a payload.
 	 *
-	 * Filled by `createTableHandle`, which is the one place a root is taken.
+	 * By root rather than by name, because a commit arrives as changed types and
+	 * a subscriber arrives holding the root its handle was built on: keying by
+	 * name meant a second map to translate one into the other, and the name it
+	 * produced was never used for anything but the lookup below. `typeListeners`
+	 * is keyed the same way, so both keyed signals are now one shape.
 	 */
-	const tableNameByRoot = new Map<Y.Type, string>();
+	const tableListeners = new Map<Y.Type, Set<() => void>>();
 	/** Who is watching the one KV root. Beside the tables', for the one reason. */
 	const kvListeners = new Set<() => void>();
 	/** The one KV root, taken once so a commit can be checked against it. */
@@ -537,20 +538,17 @@ function createStoreEngine(
 		// application that watches no table should walk nothing and allocate
 		// nothing. `subscribe` prunes its own entry so this stays true.
 		if (tableListeners.size === 0) return deliverTypes(transaction);
-		const tables = new Set<string>();
+		const roots = new Set<Y.Type>();
 		for (const type of transaction.changed.keys()) {
-			const asRoot = tableNameByRoot.get(type);
-			if (asRoot !== undefined) {
-				tables.add(asRoot);
+			if (tableListeners.has(type)) {
+				roots.add(type);
 				continue;
 			}
 			const parent = type.parent;
-			if (parent === null) continue;
-			const asRow = tableNameByRoot.get(parent);
-			if (asRow !== undefined) tables.add(asRow);
+			if (parent !== null && tableListeners.has(parent)) roots.add(parent);
 		}
-		for (const tableName of tables) {
-			notify(tableListeners.get(tableName));
+		for (const root of roots) {
+			notify(tableListeners.get(root));
 		}
 		deliverTypes(transaction);
 	}
@@ -1069,10 +1067,6 @@ function createStoreEngine(
 		table: ParsedTable,
 	): TableHandle {
 		const root = tableRoot(database, tableName);
-		// How a commit's changed types find their way back to this table. The
-		// root is taken here and nowhere else, so this is where the mapping
-		// belongs.
-		tableNameByRoot.set(root, tableName);
 		/** The type fields this table declares, minted with every row it creates. */
 		const typeFields = table.types;
 
@@ -1179,7 +1173,7 @@ function createStoreEngine(
 			 * here and there is no listener lifecycle to keep in step.
 			 */
 			subscribe(listener: () => void): () => void {
-				return subscribeByKey(tableListeners, tableName, listener);
+				return subscribeByKey(tableListeners, root, listener);
 			},
 			watch(type: Y.Type, listener: () => void): () => void {
 				assertUsable();
