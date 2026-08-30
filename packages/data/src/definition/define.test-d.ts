@@ -56,10 +56,12 @@ defineTable({
 /**
  * The same refusal on the other authoring path.
  *
- * A table written as a literal inside `defineData` skips `defineTable`, so it
- * is `ValidateTable` rather than `RejectScalarCollision` that has to catch the
- * collision. Only `definition.test.ts` and this file write tables that way;
- * every table in the repository goes through `defineTable`.
+ * A table that does not go through `defineTable` skips `RejectScalarCollision`,
+ * so `ValidateTable` is what has to catch the collision. That is not a rare
+ * shape: Honeycrisp declares `folders` as a bare const and passes it straight
+ * to `defineData`, `packages/chat` exports `conversationsTable` the same way,
+ * and roughly two thirds of the table literals in this repository are written
+ * without `defineTable` at all. Both paths have to carry every rule.
  *
  * The message does not survive this path. `defineData` takes
  * `TData & ValidateDefinition<TData>`, and the intersection collapses the
