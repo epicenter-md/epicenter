@@ -699,7 +699,12 @@ function createStoreEngine(
 			tables[tableName] = createTableHandle(tableName, table);
 		}
 
-		return Object.freeze({
+		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
+		// infers `Readonly<typeof literal>` first, so by the time the result meets
+		// the return type it is no longer a FRESH literal and an extra member is
+		// not an error. Annotating here is what makes a phantom impossible: one
+		// was implemented and unreachable for a release because a cast hid it.
+		const handle: UntypedDataView = {
 			tables: Object.freeze(tables),
 			kv,
 			// Beside the writes it groups. Grouping is what an application does,
@@ -728,7 +733,8 @@ function createStoreEngine(
 					if (listeners.size === 0) typeListeners.delete(type);
 				};
 			},
-		}) as UntypedDataView;
+		};
+		return Object.freeze(handle);
 	}
 
 	/**
@@ -762,7 +768,12 @@ function createStoreEngine(
 			return table.conformance(raw);
 		}
 
-		return Object.freeze({
+		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
+		// infers `Readonly<typeof literal>` first, so by the time the result meets
+		// the return type it is no longer a FRESH literal and an extra member is
+		// not an error. Annotating here is what makes a phantom impossible: one
+		// was implemented and unreachable for a release because a cast hid it.
+		const handle: KvHandle = {
 			get(key: string) {
 				assertUsable();
 				const { conforming, issues } = readBack();
@@ -794,7 +805,8 @@ function createStoreEngine(
 					}
 				});
 			},
-		}) as KvHandle;
+		};
+		return Object.freeze(handle);
 	}
 
 	/** Every row of one table: by id, unvalidated. */
@@ -855,7 +867,12 @@ function createStoreEngine(
 			return { ...row, ...readRowTypes(root, row.id, typeFields) };
 		}
 
-		return Object.freeze({
+		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
+		// infers `Readonly<typeof literal>` first, so by the time the result meets
+		// the return type it is no longer a FRESH literal and an extra member is
+		// not an error. Annotating here is what makes a phantom impossible: one
+		// was implemented and unreachable for a release because a cast hid it.
+		const handle: TableHandle = {
 			create(fields: RowInput): Row {
 				const rowId = mintRowId();
 				// The type fields are integrated in the same transaction (ADR-0295),
@@ -945,7 +962,8 @@ function createStoreEngine(
 					if (listeners.size === 0) tableListeners.delete(tableName);
 				};
 			},
-		}) as TableHandle;
+		};
+		return Object.freeze(handle);
 	}
 
 	/**
@@ -1144,7 +1162,12 @@ function createStoreEngine(
 	return { store: Object.freeze({ ...base, sync }), view, definition };
 
 	function createClientLog(): ClientLog {
-		return Object.freeze({
+		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
+		// infers `Readonly<typeof literal>` first, so by the time the result meets
+		// the return type it is no longer a FRESH literal and an extra member is
+		// not an error. Annotating here is what makes a phantom impossible: one
+		// was implemented and unreachable for a release because a cast hid it.
+		const handle: ClientLog = {
 			coalesce(): { id: number; bytes: Uint8Array } | undefined {
 				assertUsable();
 				// The DURABLE outbox, and nothing on top of it. A local edit is
@@ -1202,6 +1225,7 @@ function createStoreEngine(
 				// update is idempotent.
 				return controller.durableCursor();
 			},
-		});
+		};
+		return Object.freeze(handle);
 	}
 }
