@@ -514,6 +514,38 @@ function createStoreEngine(
 	}
 
 	/**
+	 * Register a listener under one key, and hand back its teardown.
+	 *
+	 * The key is dropped once nobody watches it, and that pruning is not
+	 * tidiness: `deliver` skips its whole table walk on `tableListeners.size
+	 * === 0` and skips the type phase on `typeListeners.size === 0`, so a key
+	 * left behind holding an empty set is a fast path quietly switched off.
+	 * Written once, so the next keyed signal cannot be added without it.
+	 *
+	 * The teardown is idempotent, because a Svelte effect that reruns can call
+	 * the one it was handed more than once.
+	 */
+	function subscribeByKey<TKey>(
+		listeners: Map<TKey, Set<() => void>>,
+		key: TKey,
+		listener: () => void,
+	): () => void {
+		let forKey = listeners.get(key);
+		if (forKey === undefined) {
+			forKey = new Set();
+			listeners.set(key, forKey);
+		}
+		forKey.add(listener);
+		let stopped = false;
+		return () => {
+			if (stopped) return;
+			stopped = true;
+			forKey.delete(listener);
+			if (forKey.size === 0) listeners.delete(key);
+		};
+	}
+
+	/**
 	 * Hand a settled commit to whoever is waiting for it.
 	 *
 	 * Runs at ACCEPTANCE, whatever the durable engine does later (ADR-0238),
@@ -723,22 +755,7 @@ function createStoreEngine(
 				// Keyed by the type itself, which is what a commit names:
 				// `deliver` reads `changedParentTypes`, so an edit anywhere inside
 				// this type reaches the listener while an edit to a sibling does not.
-				let listeners = typeListeners.get(type);
-				if (listeners === undefined) {
-					listeners = new Set();
-					typeListeners.set(type, listeners);
-				}
-				listeners.add(listener);
-				let stopped = false;
-				return () => {
-					// Idempotent, for the same reason a table subscription is: a Svelte
-					// effect that reruns can call its teardown twice.
-					if (stopped) return;
-					stopped = true;
-					listeners.delete(listener);
-					// Pruned, so `deliver` can skip this phase on `size === 0`.
-					if (listeners.size === 0) typeListeners.delete(type);
-				};
+				return subscribeByKey(typeListeners, type, listener);
 			},
 		};
 		return Object.freeze(handle);
@@ -952,22 +969,7 @@ function createStoreEngine(
 			 * here and there is no listener lifecycle to keep in step.
 			 */
 			subscribe(listener: () => void): () => void {
-				let listeners = tableListeners.get(tableName);
-				if (listeners === undefined) {
-					listeners = new Set();
-					tableListeners.set(tableName, listeners);
-				}
-				listeners.add(listener);
-				let stopped = false;
-				return () => {
-					// Idempotent, because a Svelte effect that reruns can call the
-					// teardown it was handed more than once.
-					if (stopped) return;
-					stopped = true;
-					listeners.delete(listener);
-					// Pruned, so `deliver` can skip its whole walk on `size === 0`.
-					if (listeners.size === 0) tableListeners.delete(tableName);
-				};
+				return subscribeByKey(tableListeners, tableName, listener);
 			},
 		};
 		return Object.freeze(handle);
