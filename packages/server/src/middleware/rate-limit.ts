@@ -51,6 +51,14 @@ export function rateLimit<E extends Env = Env>(opts: {
 
 		// First request, or the previous window elapsed: start a fresh window.
 		if (!window || now >= window.resetAt) {
+			// Sweep the elapsed windows while we are here. Entries were only ever
+			// overwritten, never removed, so the map grew with every principal the
+			// isolate had ever seen and nothing reclaimed one that stopped calling.
+			// Amortised against the request that starts a window, so a steady
+			// caller pays nothing and the map stays proportional to who is ACTIVE.
+			for (const [seen, elapsed] of windows) {
+				if (now >= elapsed.resetAt) windows.delete(seen);
+			}
 			windows.set(key, { count: 1, resetAt: now + windowMs });
 			return next();
 		}
