@@ -702,6 +702,10 @@ function createStoreEngine(
 		return Object.freeze({
 			tables: Object.freeze(tables),
 			kv,
+			// Beside the writes it groups. Grouping is what an application does,
+			// so it belongs on the application's surface rather than on the
+			// store's, which is what a transport and an exporter hold.
+			transact,
 		}) as UntypedDataView;
 	}
 
@@ -1038,7 +1042,6 @@ function createStoreEngine(
 	const view = buildView();
 
 	const base: DataStoreBase = {
-		transact,
 		/**
 		 * Everything this application has stored, before its declaration reads
 		 * it (ADR-0267).

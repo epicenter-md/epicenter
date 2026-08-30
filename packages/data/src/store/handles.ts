@@ -265,6 +265,20 @@ export type DataView<TDatabase extends DataDefinition> = {
 		>;
 	};
 	readonly kv: KvHandle<KvOf<TDatabase>>;
+	/**
+	 * Group direct data operations into one accepted and durable transaction.
+	 *
+	 * One commit, so one durable append and one notification per table it
+	 * touched. Deleting a folder that re-parents fifty notes is one commit
+	 * rather than fifty-one.
+	 *
+	 * It is HERE rather than on the store because grouping writes is what an
+	 * APPLICATION does, and `tables` and `kv` are the writes it groups. On the
+	 * store it was reachable only by a caller that also held the transport's
+	 * verbs, so the reference application, which narrows to this view, could
+	 * not reach it at all and paid a commit per row instead.
+	 */
+	transact<TResult>(run: () => TResult): TResult;
 };
 
 /**
@@ -304,29 +318,6 @@ export type DataOf<
 	TDatabase extends DataDefinition,
 	TStore extends DataStoreBase = AccountStore,
 > = DataView<TDatabase> & {
-	/** Group direct data operations into one accepted and durable transaction. */
-	transact<TResult>(run: () => TResult): TResult;
-	/**
-	 * Everything stored, before this declaration reads it (ADR-0267).
-	 *
-	 * A table handle reads through the declaration; this reads what is stored.
-	 * The artifact read, for an export that must not narrow.
-	 */
-	stored(): StoredData;
-	/**
-	 * One row exactly as the exporter needs it: every stored scalar, and the
-	 * live types beside them.
-	 *
-	 * The narrow form of `stored()`, and the artifact layer's only per-row read.
-	 * It is HERE rather than on a table handle because it is not a lens: it
-	 * returns keys this release no longer declares and rows this release cannot
-	 * conform, which is the one thing an export may not narrow (ADR-0267). A
-	 * handle answers what an application can see; this answers what is there.
-	 *
-	 * Not for applications. `get` is the read verb, and it carries the same
-	 * types through the declaration.
-	 */
-	rowFile(table: string, rowId: string): Row | undefined;
 	/** This application's file: pressure, the CRDT verbs, and replica sync. */
 	readonly store: TStore;
 	/** Dispose the opened data and the physical store it owns. */
@@ -345,11 +336,12 @@ export function asData<
 	TDatabase extends DataDefinition,
 	TStore extends DataStoreBase,
 >(store: TStore, view: DataView<TDatabase>): DataOf<TDatabase, TStore> {
+	// Nothing is forwarded. The view carries what an application does and the
+	// store carries what a transport and an exporter do, so each verb has one
+	// home and one spelling. `transact`, `stored` and `rowFile` used to be
+	// declared on both and copied across here.
 	return Object.freeze({
 		...view,
-		transact: store.transact,
-		stored: store.stored,
-		rowFile: store.rowFile,
 		store,
 		[Symbol.asyncDispose]: () => store[Symbol.asyncDispose](),
 	});
@@ -441,6 +433,7 @@ export type KvHandle<TValues = JsonObject> = {
 export type UntypedDataView = {
 	readonly tables: Readonly<Record<string, TableHandle>>;
 	readonly kv: KvHandle;
+	transact<TResult>(run: () => TResult): TResult;
 };
 
 /**
@@ -504,8 +497,6 @@ export type DataStoreBase = {
 	stateVector(): Uint8Array;
 	/** Everything the document has that the state vector does not. */
 	encodeStateSince(stateVector?: Uint8Array): Uint8Array;
-	/** Group direct data operations into one accepted and durable transaction. */
-	transact<TResult>(run: () => TResult): TResult;
 	/**
 	 * Everything stored, before this declaration reads it (ADR-0267).
 	 *

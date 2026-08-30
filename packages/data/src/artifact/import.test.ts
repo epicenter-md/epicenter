@@ -162,7 +162,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		const state = expectOk(readArtifact(exported, store));
 		await using restored = await openMemory(store);
 		syncEngineOf(restored.store).applyRemote(state);
-		expect(restored.stored().tables.get('notes')?.get(made.id)).toEqual({
+		expect(restored.store.stored().tables.get('notes')?.get(made.id)).toEqual({
 			title: 'Groceries',
 			code: '1',
 			flag: 'no',
@@ -183,7 +183,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		const restored = await openMemory(store);
 		syncEngineOf(restored.store).applyRemote(state);
 		expect(
-			restored.stored().tables.get('notes')?.get('aaaaaaaaaaaaaaaaaaaaaaaa'),
+			restored.store.stored().tables.get('notes')?.get('aaaaaaaaaaaaaaaaaaaaaaaa'),
 		).toEqual({ title: 'Groceries' });
 		void restored.store[Symbol.asyncDispose]();
 	});
@@ -290,7 +290,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		const state = expectOk(readArtifact(files, store));
 		const restored = await openMemory(store);
 		syncEngineOf(restored.store).applyRemote(state);
-		expect([...(restored.stored().tables.get('notes')?.keys() ?? [])]).toEqual([
+		expect([...(restored.store.stored().tables.get('notes')?.keys() ?? [])]).toEqual([
 			'aaaaaaaaaaaaaaaaaaaaaaaa',
 		]);
 		void restored.store[Symbol.asyncDispose]();

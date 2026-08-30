@@ -906,7 +906,7 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 
 		// The artifact read does, because it enumerates the roots the document
 		// holds rather than the tables the declaration names.
-		const state = second.stored();
+		const state = second.store.stored();
 		expect([...state.tables.keys()]).toEqual(['notes', 'scratch']);
 		expect(state.tables.get('scratch')?.get(made.id)).toEqual({
 			body: 'kept in the CRDT',
@@ -948,7 +948,7 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 		expect(listed.nonconforming).toEqual([]);
 		expect(listed.rows).toEqual([{ id: made.id, title: 'Groceries' }]);
 
-		expect(after.stored().tables.get('notes')?.get(made.id)).toEqual({
+		expect(after.store.stored().tables.get('notes')?.get(made.id)).toEqual({
 			title: 'Groceries',
 			preview: 'milk, eggs',
 		});
@@ -958,7 +958,7 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 	test('a deleted row is absent rather than empty', async () => {
 		const made = note();
 		db.tables.notes.delete(made.id);
-		expect(db.stored().tables.get('notes')?.has(made.id)).toBe(false);
+		expect(db.store.stored().tables.get('notes')?.has(made.id)).toBe(false);
 	});
 });
 

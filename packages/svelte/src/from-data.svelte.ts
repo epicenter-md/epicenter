@@ -99,6 +99,7 @@ type AdaptableKv = {
 type AdaptableData = {
 	tables: Record<string, AdaptableTable>;
 	kv: AdaptableKv;
+	transact<TResult>(run: () => TResult): TResult;
 };
 
 /**
@@ -125,6 +126,12 @@ export type ReactiveData<TData extends AdaptableData> = {
 	};
 	/** Same `KvHandle`, with `get()` reactive. */
 	readonly kv: TData['kv'];
+	/**
+	 * Passed straight through. Grouping writes has nothing to do with
+	 * reactivity: the commit it produces invalidates through the same table
+	 * subscriptions a single write does, once instead of once per write.
+	 */
+	transact: TData['transact'];
 };
 
 /** Adapt one opened data handle's `tables` and `kv` into Svelte reactivity. */
@@ -141,6 +148,7 @@ export function fromData<TData extends AdaptableData>(
 			),
 		),
 		kv: reactiveKv(data.kv),
+		transact: data.transact,
 	}) as ReactiveData<TData>;
 }
 

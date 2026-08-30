@@ -167,10 +167,15 @@ export function deleteHoneycrispFolder(
 			.filter((issue) => issue.raw.folderId === folderId)
 			.map((issue) => issue.id),
 	];
-	for (const noteId of inFolder) {
-		const { error } = data.tables.notes.update(noteId, { folderId: null });
-		if (error !== null && error.name !== 'RowAbsent') throw error;
-	}
-	// Deleting an absent folder is a no-op fact, not an error.
-	data.tables.folders.delete(folderId);
+	// One commit for the whole re-parenting. Without it a folder holding fifty
+	// notes cost fifty-one commits, fifty-one durable appends, and fifty-one
+	// notifications to every list on screen, for one user action.
+	data.transact(() => {
+		for (const noteId of inFolder) {
+			const { error } = data.tables.notes.update(noteId, { folderId: null });
+			if (error !== null && error.name !== 'RowAbsent') throw error;
+		}
+		// Deleting an absent folder is a no-op fact, not an error.
+		data.tables.folders.delete(folderId);
+	});
 }

@@ -96,8 +96,19 @@ export type RenderError = InferErrors<typeof RenderError>;
  * application holds.
  */
 export type RenderableData = {
-	stored(): StoredData;
-	rowFile(table: string, rowId: string): Row | undefined;
+	/**
+	 * The raw reads, declared as the slice this module needs rather than taken
+	 * as a whole store.
+	 *
+	 * They live under `store` because they are not application verbs: they
+	 * return keys this release no longer declares and rows it cannot conform,
+	 * which is the one thing an export may not narrow (ADR-0267). A table
+	 * handle answers what an application can see; these answer what is there.
+	 */
+	readonly store: {
+		stored(): StoredData;
+		rowFile(table: string, rowId: string): Row | undefined;
+	};
 };
 
 /**
@@ -136,7 +147,7 @@ export async function renderRow(
 	rowId: string,
 ): Promise<Result<RenderedRow, RenderError>> {
 	const path = rowPath(table, rowId);
-	const row = data.rowFile(table, rowId);
+	const row = data.store.rowFile(table, rowId);
 	if (row === undefined) {
 		return Ok({ path, contents: undefined });
 	}
@@ -205,7 +216,7 @@ export async function* renderArtifact(
 		return;
 	}
 	// One faithful read for the whole pass, so every file describes one instant.
-	const state = data.stored();
+	const state = data.store.stored();
 
 	yield Ok({
 		path: 'kv.json',
