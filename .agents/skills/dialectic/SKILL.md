@@ -13,23 +13,27 @@ the collision either makes the agent’s model intelligible or produces an
 accepted greenfield articulation. In the latter case, it ends when the user can
 recognize that articulation and say, in effect, “that’s right.”
 
-The collision can serve understanding or correction. In a learning dialectic,
-the user wants the agent’s current model made intelligible and does not need to
-endorse or restate it. In a corrective or design dialectic, the user and agent
-compare serious articulations until an accepted greenfield account emerges.
-
 ## What an articulation is
 
-An articulation is a positive account of what should be true: its objects,
-verbs, boundaries, owners, consequences, and refusals. It is not a preference
-label, an implementation option, or a softened summary that hides the point of
-disagreement.
+An articulation is a complete account of a model: its objects, verbs,
+boundaries, owners, consequences, and refusals. It may explain a model
+currently in use or propose a greenfield model. The dialectic’s destination
+determines whether that account is being made intelligible or accepted as what
+should exist. It is not a preference label, an implementation option, or a
+softened summary that hides the point of disagreement.
 
 The user’s articulation may arrive as a goal, question, example, analogy,
 refusal, or sentence that is not quite right yet. The agent’s articulation may
 describe the model it is currently using or propose what should exist. Keep
 observation, inference, proposal, and user-owned preference distinct so the
 collision does not confuse what exists with what either side wants.
+
+## Destinations
+
+The collision can serve understanding or correction. In a learning dialectic,
+the user wants the agent’s current model made intelligible and does not need to
+endorse or restate it. In a corrective or design dialectic, the user and agent
+compare serious articulations until an accepted greenfield account emerges.
 
 ## Establish the collision
 
@@ -39,24 +43,30 @@ its premises, structure, evidence, assumptions, and consequences. In a
 corrective or design dialectic, expose the user’s emerging ideal alongside the
 agent’s strongest greenfield account.
 
-Lead with a claim, not a questionnaire. When a real fork remains, put forward
-several serious articulations whose premises genuinely differ. Make each one
-strong enough to defend, including what it refuses and what follows from it.
-They are objects of comparison, not a menu that gives the synthesis work back
-to the user. Recommend a direction when the evidence and model support one.
+Begin with one strong account the agent can defend. Offer multiple serious
+articulations only when the agent cannot responsibly choose among materially
+different accounts, or when their contrast is necessary to expose a crux. Make
+each one strong enough to defend, including what it refuses and what follows
+from it. They are objects of comparison, not a menu that gives the synthesis
+work back to the user. When multiple articulations are needed, conclude the
+comparison with a recommendation: identify the strongest overall account when
+one exists, or give context-specific recommendations with their tradeoffs.
 
 Treat inherited implementation, prior plans, and existing design as evidence to
-inspect, not authority to obey. Push against them when they narrow the desired
-system by habit. Push against the user’s framing when it conflicts with the
-outcome they appear to want or with a premise they have already accepted. Make
-the disagreement concrete so the user can correct the premise rather than
-merely defer to the agent. External facts and explicit user constraints remain
-real inputs; surface a conflict with them instead of quietly compromising.
+inspect, not authority to obey. Push through the user’s initial framing by
+articulating what it implies, what it leaves unresolved, and what stronger
+account it may point toward. Let the user’s reaction show whether that account
+captures what they mean or exposes a crux that the next articulation must
+resolve. Make the disagreement concrete so the user can correct the premise
+rather than merely defer to the agent. External facts and explicit user
+constraints remain real inputs; surface a conflict with them instead of
+quietly compromising.
 
 ## Move the model forward
 
-One turn should make one consequential collision inspectable, even when it puts
-several articulations beside each other. Give enough structure for a precise
+Each turn should advance the highest-order unresolved crux. Related local
+collisions may appear within that movement; when they recur, zoom out to the
+shared premise and re-articulate it. Give enough structure for a precise
 reaction, then leave the unresolved seam visible. The conversation moves like
 this:
 
@@ -64,31 +74,40 @@ this:
 articulations
   -> collision of premises and consequences
   -> user reaction as directional evidence
-  -> sharper articulation
+  -> crux and required movement identified
+  -> targeted question, consequence, or refusal
+  -> sharper re-articulation
   -> understanding or accepted destination
 ```
 
-Read the reaction as evidence about the model, not as a command to obey at
-face value. Preserve what the user recognized, replace what they rejected,
-intensify what they cared about more strongly than the last model showed, and
-resolve the tension their reaction exposed. Do not merely paraphrase the latest
-message or defend a weak rendering because it already exists.
+Read the user’s reaction as directional evidence about the model and its crux,
+not as a command to obey at face value. Preserve what the user recognized,
+replace what they rejected, intensify what they cared about more strongly than
+the last model showed, and re-articulate in the direction their reaction
+indicates. The reaction is not merely a verdict on the last articulation; it
+shows how the model must move. Do not merely paraphrase the latest message or
+defend a weak rendering because it already exists.
 
 When the user returns a sentence, answer its accuracy first and name the word or
 premise carrying the divergence. When they give an example, use it to update
-the model. A wrong articulation is useful because it locates the disagreement;
-plain agreement is useful only when it moves the model forward.
+the model. A wrong articulation is useful because the user’s reaction to it
+shows what the next articulation must change. Plain agreement is useful only
+when it moves the model forward.
+
+When the user cannot explain a reaction, articulate the mismatch or crux it may
+be pointing toward and let the user react to that.
 
 ## Make the collision checkable
 
-Use the smallest form that lets the user judge the live seam. Use a concrete
-example when the idea is abstract, a comparison when articulations are peers on
-one axis, a timeline for history, quoted code when the claim is about code, and
-research when a fact could change the model. Use a diagram, HTML page, or
-prototype only when the spatial or behavioral relationship is materially easier
-to judge that way. The surface should show what is believed, what is settled,
-and what remains under pressure; it should not make a finished-looking artifact
-that gives the user nothing specific to correct.
+Use the smallest form that lets the user judge the current articulations and
+the live crux. Use a concrete example when the idea is abstract, a comparison
+when articulations are peers on one axis, a timeline for history, quoted code
+when the claim is about code, and research when a fact could change the model.
+Use a diagram, HTML page, or prototype only when the spatial or behavioral
+relationship is materially easier to judge that way. The surface should show
+which articulations are on the table, which crux separates them, what follows
+from each, and what the next re-articulation must resolve; it should not make a
+finished-looking artifact that gives the user nothing specific to correct.
 
 When an HTML page is the right surface, keep it self-contained with inline CSS
 and JavaScript, no CDN, and no build step. Write it to an ignored scratch path
@@ -105,7 +124,7 @@ enough to reason about it. Do not manufacture an accepted articulation or ask
 the user to restate one merely to prove comprehension.
 
 In a corrective or design dialectic, do not stop at a plausible model, partial
-agreement, silence, exhaustion, or approval of a plan. Stop when the user
+agreement, silence, fatigue, or approval of a plan. Stop when the user
 recognizes the complete greenfield articulation and says, in effect, “that’s
 right.” Return its shortest honest form. Recognition is not authorization for a
 merge, deletion, implementation, or other side effect.
