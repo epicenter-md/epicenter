@@ -14,7 +14,7 @@
 		if (navigation.isDeletedView) return 'Recently Deleted';
 		const folderId = navigation.folderId;
 		if (folderId === null) return 'All Notes';
-		return honeycrisp.folders.get(folderId)?.name ?? 'Notes';
+		return honeycrisp.tables.folders.get(folderId)?.name ?? 'Notes';
 	});
 
 	/**
@@ -28,7 +28,7 @@
 	 * different sentence.
 	 */
 	const emptyMessage = $derived.by(() => {
-		const unreadable = honeycrisp.notes.nonconforming.length;
+		const unreadable = honeycrisp.tables.notes.nonconforming.length;
 		if (unreadable > 0) {
 			const [subject, object] =
 				unreadable === 1 ? ['note is', 'it'] : ['notes are', 'them'];

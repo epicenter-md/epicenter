@@ -22,7 +22,7 @@
 			icon: FileTextIcon,
 			onSelect: () => navigation.selectFolder(null),
 		},
-		...honeycrisp.folders.all.map((folder): CommandPaletteItem => ({
+		...honeycrisp.tables.folders.all.map((folder): CommandPaletteItem => ({
 			id: `folder:${folder.id}`,
 			label: folder.icon ? `${folder.icon} ${folder.name}` : folder.name,
 			keywords: [folder.name],
@@ -30,7 +30,7 @@
 			icon: folder.icon ? undefined : FolderIcon,
 			onSelect: () => navigation.selectFolder(folder.id),
 		})),
-		...honeycrisp.notes.all.map((note): CommandPaletteItem => ({
+		...honeycrisp.tables.notes.all.map((note): CommandPaletteItem => ({
 			id: `note:${note.id}`,
 			label: note.title || 'Untitled',
 			group: 'Notes',
@@ -51,7 +51,7 @@
 			group: 'Actions',
 			icon: FolderPlusIcon,
 			onSelect: () =>
-				honeycrisp.folders.create(),
+				honeycrisp.tables.folders.create(),
 		},
 	]);
 </script>

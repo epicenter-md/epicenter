@@ -20,15 +20,17 @@ import { navigation } from './navigation.svelte.js';
  * sync, and the disposal that closes it (ADR-0233). This is the application
  * built on top of that one document, and the one object the UI consumes. It
  * owns the reactive named tables over that document (`fromData`),
- * Honeycrisp's domain operations (`notes`, `folders`), the one derivation that
- * needs both those tables and where the user is (`visibleNotes`), and the
- * narrow account and store capabilities the UI actually needs.
+ * Honeycrisp's domain operations (`tables.notes`, `tables.folders`), the one
+ * derivation that needs both those tables and where the user is
+ * (`visibleNotes`), and the narrow account and store capabilities the UI
+ * actually needs.
  *
- * The tables themselves do not cross this boundary either. `notes` and
- * `folders` are the whole vocabulary a component gets, so nothing downstream
- * can reach a raw write verb, the `kv` root, or the other table. That was not
- * true until recently: `tables` was exposed so one editor pane could reach one
- * note's prose, and it now asks for that by name (`notes.openBody`).
+ * The store's own handles do not cross this boundary. `tables.notes` and
+ * `tables.folders` are the whole vocabulary a component gets, and they are
+ * this application's verbs rather than the store's, so nothing downstream can
+ * reach a raw write verb or the `kv` root. The container keeps the name the
+ * data uses, because these are those tables: one shape to learn, at both
+ * levels.
  *
  * Where the user is looking is deliberately NOT here. That lives in the URL,
  * and `navigation.svelte.ts` is its module singleton, imported directly by the
@@ -47,12 +49,12 @@ import { navigation } from './navigation.svelte.js';
  */
 export function createHoneycrisp({ data }: { data: HoneycrispData }) {
 	const reactiveData = fromData(data);
-	// Both take the database. Folders always did, because deleting one
-	// re-parents the notes that were in it. Notes joined them when prose stopped
-	// being a table event: a note's body is watched through `data.watch`, which
-	// is keyed by the type and belongs to no table.
+	// Folders takes the whole database because deleting one re-parents the notes
+	// that were in it, which is a write to the other table. Notes takes its own
+	// table: prose is watched through the table that hands out the type, so
+	// nothing in it reaches across any more.
 	const folders = createFolders(reactiveData);
-	const notes = createNotes(reactiveData);
+	const notes = createNotes(reactiveData.tables.notes);
 
 	/**
 	 * The notes the user is currently looking at, in the order they appear.
@@ -84,8 +86,17 @@ export function createHoneycrisp({ data }: { data: HoneycrispData }) {
 	});
 
 	return {
-		folders,
-		notes,
+		/**
+		 * The two tables, each wearing this application's vocabulary.
+		 *
+		 * Under `tables` because that is the shape the data has, and these ARE
+		 * those tables: every verb on them is a row operation on `notes` or
+		 * `folders`. A second name for one thing at a second level would teach
+		 * two shapes for the same table. What is genuinely not a table sits
+		 * beside this container, exactly as `kv` and `transact` sit beside the
+		 * data's own `tables`.
+		 */
+		tables: { folders, notes },
 		get visibleNotes() {
 			return visibleNotes;
 		},
@@ -227,13 +238,14 @@ function createFolders(data: ReactiveData<HoneycrispData>) {
  * (`fromData`): a read inside `$derived` re-runs on any commit that changed
  * the table's SHAPE, local writes and bytes from another device alike
  * (ADR-0221), and a read in an event handler is fresh. Prose typed into a
- * note does NOT re-run it, deliberately; that is `store.watch`'s job, and it
- * is why `previewOf` below exists. What this adds is what the platform cannot know: which rows count
- * as deleted, per-folder counts, where a note's prose is, and the domain
- * commands (soft delete, pinning, re-parenting) with their URL cleanup.
+ * note does NOT re-run it, deliberately; that is `table.watch`'s job, and it is
+ * why `previewOf` below exists.
+ *
+ * What this adds is what the platform cannot know: which rows count as
+ * deleted, per-folder counts, where a note's prose is, and the domain commands
+ * (soft delete, pinning, re-parenting) with their URL cleanup.
  */
-function createNotes(data: ReactiveData<HoneycrispData>) {
-	const table = data.tables.notes;
+function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	const all = $derived(table.rows.filter((note) => note.deletedAt === null));
 	const deleted = $derived(
 		table.rows.filter((note) => note.deletedAt !== null),

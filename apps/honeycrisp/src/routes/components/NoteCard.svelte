@@ -37,7 +37,7 @@
 	// subscription on every commit that touches the row, because `notes.all`
 	// hands out a fresh object each time.
 	// svelte-ignore state_referenced_locally
-	const preview = honeycrisp.notes.previewOf(note.id);
+	const preview = honeycrisp.tables.notes.previewOf(note.id);
 
 	let confirmingPermanentDelete = $state(false);
 </script>
@@ -84,7 +84,7 @@
 						aria-label="Restore"
 						onclick={(e) => {
 							e.stopPropagation();
-							honeycrisp.notes.restore(note.id);
+							honeycrisp.tables.notes.restore(note.id);
 						}}
 					>
 						<ArchiveRestoreIcon class="size-3" />
@@ -120,7 +120,7 @@
 						aria-label={note.pinned ? 'Unpin' : 'Pin'}
 						onclick={(e) => {
 							e.stopPropagation();
-							honeycrisp.notes.togglePin(note.id);
+							honeycrisp.tables.notes.togglePin(note.id);
 						}}
 					>
 						<PinIcon class={cn('size-3', note.pinned && 'fill-current')} />
@@ -133,7 +133,7 @@
 						aria-label="Delete"
 						onclick={(e) => {
 							e.stopPropagation();
-							honeycrisp.notes.softDelete(note.id);
+							honeycrisp.tables.notes.softDelete(note.id);
 						}}
 					>
 						<TrashIcon class="size-3" />
@@ -147,7 +147,7 @@
 		{#if isDeleted}
 			<ContextMenu.Item
 				onclick={() =>
-					honeycrisp.notes.restore(note.id)}
+					honeycrisp.tables.notes.restore(note.id)}
 			>
 				<ArchiveRestoreIcon class="mr-2 size-4" />
 				Restore
@@ -165,7 +165,7 @@
 		{:else}
 			<ContextMenu.Item
 				onclick={() =>
-					honeycrisp.notes.togglePin(note.id)}
+					honeycrisp.tables.notes.togglePin(note.id)}
 			>
 				<PinIcon class={cn('mr-2 size-4', note.pinned && 'fill-current')} />
 				{note.pinned ? 'Unpin' : 'Pin'}
@@ -179,16 +179,16 @@
 				<ContextMenu.SubContent class="w-48">
 					<ContextMenu.Item
 						onclick={() =>
-							honeycrisp.notes.moveToFolder(note.id, null)}
+							honeycrisp.tables.notes.moveToFolder(note.id, null)}
 					>
 						<FileTextIcon class="mr-2 size-4" />
 						Unfiled
 					</ContextMenu.Item>
 					<ContextMenu.Separator />
-					{#each honeycrisp.folders.all as folder (folder.id)}
+					{#each honeycrisp.tables.folders.all as folder (folder.id)}
 						<ContextMenu.Item
 							onclick={() =>
-								honeycrisp.notes.moveToFolder(note.id, folder.id)}
+								honeycrisp.tables.notes.moveToFolder(note.id, folder.id)}
 						>
 							{#if folder.icon}
 								<span class="mr-2 text-base leading-none">{folder.icon}</span>
@@ -204,7 +204,7 @@
 			<ContextMenu.Item
 				class="text-destructive focus:text-destructive"
 				onclick={() =>
-					honeycrisp.notes.softDelete(note.id)}
+					honeycrisp.tables.notes.softDelete(note.id)}
 			>
 				<TrashIcon class="mr-2 size-4" />
 				Delete
@@ -226,7 +226,7 @@
 			<AlertDialog.Action
 				class={buttonVariants({ variant: 'destructive' })}
 				onclick={() =>
-					honeycrisp.notes.permanentlyDelete(note.id)}
+					honeycrisp.tables.notes.permanentlyDelete(note.id)}
 				>Delete</AlertDialog.Action
 			>
 		</AlertDialog.Footer>

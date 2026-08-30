@@ -8,7 +8,7 @@
 	let { noteId, focusRequest }: { noteId: NoteId; focusRequest: number } =
 		$props();
 
-	type Opened = ReturnType<typeof honeycrisp.notes.openBody>;
+	type Opened = ReturnType<typeof honeycrisp.tables.notes.openBody>;
 
 	// The note's prose, per note. Nothing is loaded: the prose is a nested type
 	// on the row in the document this store already holds (ADR-0295), so there
@@ -18,7 +18,7 @@
 	// title and `updatedAt` writes that follow this note's body.
 	let opened = $state.raw<Opened>(undefined);
 	$effect(() => {
-		const handle = honeycrisp.notes.openBody(noteId);
+		const handle = honeycrisp.tables.notes.openBody(noteId);
 		opened = handle;
 		return () => handle?.close();
 	});

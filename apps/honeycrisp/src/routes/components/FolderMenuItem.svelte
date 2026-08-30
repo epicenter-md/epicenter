@@ -25,7 +25,7 @@
 
 	function commitRename() {
 		if (editingName.trim()) {
-			honeycrisp.folders.rename(folder.id, editingName.trim());
+			honeycrisp.tables.folders.rename(folder.id, editingName.trim());
 		}
 		isEditing = false;
 		editingName = '';
@@ -41,7 +41,7 @@
 	let isPickingIcon = $state(false);
 
 	function setIcon(icon: string | null) {
-		honeycrisp.folders.setIcon(folder.id, icon);
+		honeycrisp.tables.folders.setIcon(folder.id, icon);
 		isPickingIcon = false;
 	}
 
@@ -80,7 +80,7 @@
 			{/if}
 			<span>{folder.name}</span>
 			<span class="ml-auto text-xs text-muted-foreground">
-				{honeycrisp.notes.countsByFolder[folder.id] ?? 0}
+				{honeycrisp.tables.notes.countsByFolder[folder.id] ?? 0}
 			</span>
 		</Sidebar.MenuButton>
 		<DropdownMenu.Root>
@@ -193,7 +193,7 @@
 			<AlertDialog.Action
 				class={buttonVariants({ variant: 'destructive' })}
 				onclick={() =>
-					honeycrisp.folders.delete(folder.id)}
+					honeycrisp.tables.folders.delete(folder.id)}
 			>
 				Delete
 			</AlertDialog.Action>

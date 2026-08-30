@@ -85,7 +85,7 @@
 							<FileTextIcon class="size-4" />
 							<span>All Notes</span>
 							<span class="ml-auto text-xs text-muted-foreground">
-								{honeycrisp.notes.all.length}
+								{honeycrisp.tables.notes.all.length}
 							</span>
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>
@@ -96,9 +96,9 @@
 						>
 							<TrashIcon class="size-4" />
 							<span>Recently Deleted</span>
-							{#if honeycrisp.notes.deleted.length > 0}
+							{#if honeycrisp.tables.notes.deleted.length > 0}
 								<span class="ml-auto text-xs text-muted-foreground">
-									{honeycrisp.notes.deleted.length}
+									{honeycrisp.tables.notes.deleted.length}
 								</span>
 							{/if}
 						</Sidebar.MenuButton>
@@ -115,7 +115,7 @@
 				<Sidebar.GroupAction
 					title="New Folder"
 					onclick={() =>
-						honeycrisp.folders.create()}
+						honeycrisp.tables.folders.create()}
 				>
 					<PlusIcon />
 					<span class="sr-only">New Folder</span>
@@ -123,7 +123,7 @@
 				<Collapsible.Content>
 					<Sidebar.GroupContent>
 						<Sidebar.Menu>
-							{#each honeycrisp.folders.all as folder (folder.id)}
+							{#each honeycrisp.tables.folders.all as folder (folder.id)}
 								<FolderMenuItem {folder} />
 							{:else}
 								<Sidebar.MenuItem>

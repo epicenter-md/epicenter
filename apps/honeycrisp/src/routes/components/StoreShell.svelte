@@ -31,7 +31,7 @@
 
 		if (e.key === 'n' && e.shiftKey) {
 			e.preventDefault();
-			honeycrisp.folders.create();
+			honeycrisp.tables.folders.create();
 		} else if (e.key === 'n') {
 			e.preventDefault();
 			honeycrisp.createNote();
