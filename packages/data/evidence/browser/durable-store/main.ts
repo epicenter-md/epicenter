@@ -10,11 +10,10 @@ import { Ok } from 'wellcrafted/result';
 
 import {
 	importGeneration,
-	type LocalStore,
 	listLocalGenerations,
 	openDatabase,
 } from '../../../src/store/browser.js';
-import type { DataOf } from '../../../src/store/store.js';
+import type { LocalData } from '../../../src/store/store.js';
 
 /**
  * Two namespaces, because a dataId is what makes two stores two stores.
@@ -68,7 +67,7 @@ const workspaces = {
 	}),
 } as const;
 
-type ProbeApplication = DataOf<(typeof workspaces)['vault'], LocalStore>;
+type ProbeApplication = LocalData<(typeof workspaces)['vault']>;
 
 let db: ProbeApplication | undefined;
 

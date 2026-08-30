@@ -48,7 +48,7 @@
  */
 import { Ok, type Result } from 'wellcrafted/result';
 
-import { type AccountStore, syncEngineOf } from '../store/store.js';
+import { type AccountDocument, syncEngineOf } from '../store/store.js';
 import {
 	createSyncClient,
 	type Schedule,
@@ -189,7 +189,7 @@ export function createSyncConnection({
 	 */
 	unacknowledgedMs = 30_000,
 }: {
-	store: AccountStore;
+	store: AccountDocument;
 	dial: SyncDial;
 	idleMs?: number;
 	maxBufferedBytes?: number;

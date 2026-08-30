@@ -1,7 +1,7 @@
 /**
  * Test-only: a replica that lives inside `workerd`, driven by the real driver.
  *
- * It is a Durable Object for one reason. A replica is an `AccountStore`, a
+ * It is a Durable Object for one reason. A replica is an `AccountDocument`, a
  * store's durable record is SQLite here, and the only synchronous SQLite
  * inside `workerd` is a Durable Object's own storage. Everything else here is
  * the deployed
@@ -20,7 +20,7 @@
  */
 
 import { DurableObject } from 'cloudflare:workers';
-import { type AccountStore, defineData, defineTable } from '@epicenter/data';
+import { type AccountDocument, defineData, defineTable } from '@epicenter/data';
 import { field } from '@epicenter/data/definition';
 import { createAccountStore } from '@epicenter/data/direct';
 import {
@@ -88,7 +88,7 @@ type Env = { SELF: { fetch(request: Request): Promise<Response> } };
 export class StoreTestReplica extends DurableObject<Env> {
 	private db: ReturnType<typeof openNotes> | undefined;
 	private connection: SyncConnection | undefined;
-	private store: AccountStore | undefined;
+	private store: AccountDocument | undefined;
 	private bearer = '';
 	private origin = '';
 

@@ -7,12 +7,12 @@ type PrincipalId = Extract<
 	{ principalId: unknown }
 >['principalId'];
 
-import type { DataOf } from '@epicenter/data';
+import { type BrowserData, type LocalData } from '@epicenter/data';
 import {
-	type BrowserAccountStore,
+	type AddressedDocument,
 	GENERATIONS_ROUTE,
 	importGeneration,
-	type LocalStore,
+	type LocalDocument,
 	listLocalGenerations,
 	openDatabase,
 } from '@epicenter/data/browser';
@@ -61,7 +61,7 @@ export type VocabRuntime = {
 	 * never syncs, survives every sign-in and sign-out, and holds this device's
 	 * `kv` settings whether or not an account is present.
 	 */
-	readonly localData: DataOf<typeof vocabDefinition, LocalStore>;
+	readonly localData: LocalData<typeof vocabDefinition>;
 	/**
 	 * The boot principal's retained account replica. Present exactly when the
 	 * boot auth snapshot carried an identity, and always past its bound gate: a
@@ -70,7 +70,7 @@ export type VocabRuntime = {
 	 */
 	readonly account?: {
 		/** The account's conversations and entries, offline included once bound. */
-		readonly data: DataOf<typeof vocabDefinition, BrowserAccountStore>;
+		readonly data: BrowserData<typeof vocabDefinition>;
 		/**
 		 * What sync is doing, or undefined when it is not part of this generation
 		 * anymore: a bound replica whose dials were permanently denied works
@@ -154,7 +154,7 @@ export async function openVocabRuntime({
 
 /** The account arm plus the disposal only the runtime may run. */
 type AccountRuntime = {
-	data: DataOf<typeof vocabDefinition, BrowserAccountStore>;
+	data: BrowserData<typeof vocabDefinition>;
 	syncStatus(): SyncConnectionStatus | undefined;
 	dispose(): Promise<void>;
 };

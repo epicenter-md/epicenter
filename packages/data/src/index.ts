@@ -30,7 +30,7 @@
  * it by relative path; `SNAPSHOT_FOLD_THRESHOLD` is the fold's own number. The
  * structural types an application never names (`TableHandle`, `KvHandle`,
  * `StoredData`, `DocumentPressure`, `DataDocument`, `SyncCapability`) are
- * reachable through `DataOf` for anyone who needs one, and adapters like
+ * reachable through `LocalData`/`AccountData` for anyone who needs one, and adapters like
  * `@epicenter/svelte`'s declare the slice they touch instead. The store's own
  * error constructors (`StoreError`, `StoreUnusableError`) are what a store
  * THROWS, not what a caller builds.
@@ -56,11 +56,13 @@ export {
 } from './definition/index.js';
 export type { PersistenceCapability } from './store/persistence.js';
 export {
-	type AccountStore,
+	type AccountDocument,
 	type ApplyFailedError,
-	type DataOf,
+	type AccountData,
+	type BrowserData,
+	type LocalData,
 	type DataView,
-	type LocalStore,
+	type LocalDocument,
 	type NonconformingRow,
 	type Row,
 	type RowAbsentError,

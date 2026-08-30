@@ -29,7 +29,7 @@ import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Ok } from 'wellcrafted/result';
 
 import {
-	type AccountStore,
+	type AccountDocument,
 	createAccountStore,
 } from '../../src/store/store.js';
 import {
@@ -480,7 +480,7 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 	/** How many sockets each side has opened, which is how a recovery is counted. */
 	const dials = { author: 0, reader: 0 };
 
-	function drive(side: 'author' | 'reader', store: AccountStore) {
+	function drive(side: 'author' | 'reader', store: AccountDocument) {
 		return createSyncConnection({
 			store,
 			idleMs: 5,

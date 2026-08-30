@@ -12,11 +12,11 @@ import { Ok } from 'wellcrafted/result';
 import { createSqliteDurablePort } from './log.js';
 import { createMemoryRecord, openMemory } from './memory.js';
 import {
-	type AccountStore,
+	type AccountDocument,
 	createAccountStore,
 	createLocalStore,
-	type DataOf,
-	type LocalStore,
+	type AccountData,
+	type LocalDocument,
 	StoreUnusableError,
 	type SyncCapability,
 	syncEngineOf,
@@ -53,7 +53,7 @@ const database = defineData({
 	},
 });
 
-let db: DataOf<typeof database, AccountStore>;
+let db: AccountData<typeof database>;
 
 beforeEach(async () => {
 	db = await openMemory(database);
@@ -80,7 +80,7 @@ function editorOf(id: string) {
 
 /** Wrap one application-document update the way the wire carries it. */
 
-function exchange(a: AccountStore, b: AccountStore) {
+function exchange(a: AccountDocument, b: AccountDocument) {
 	const fromA = a.encodeStateSince(b.stateVector());
 	const fromB = b.encodeStateSince(a.stateVector());
 	syncEngineOf(b).applyRemote(fromA);
@@ -1043,15 +1043,15 @@ describe('a document store owes nobody (ADR-0233)', () => {
 		// Compile-time pins: `sync !== undefined` must narrow the union in both
 		// directions without an `in`-probe or a cast. The annotations are the
 		// assertions; a shape change fails typecheck before it fails a test.
-		function kindOf(store: LocalStore | AccountStore): 'local' | 'account' {
+		function kindOf(store: LocalDocument | AccountDocument): 'local' | 'account' {
 			if (store.sync !== undefined) {
 				const capability: SyncCapability = store.sync;
 				void capability;
-				const account: AccountStore = store;
+				const account: AccountDocument = store;
 				void account;
 				return 'account';
 			}
-			const device: LocalStore = store;
+			const device: LocalDocument = store;
 			void device;
 			return 'local';
 		}

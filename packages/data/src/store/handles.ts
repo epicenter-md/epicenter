@@ -19,6 +19,7 @@ import type {
 	RowOf,
 	ScalarsOf,
 } from '@epicenter/data/definition';
+import type { PrincipalId } from '@epicenter/principal';
 import type * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
 
@@ -310,11 +311,11 @@ export type StoredData = {
 /**
  * One application's opened data: everything it holds, on one object.
  *
- * The view and the document's own capabilities, intersected rather than
- * nested. There used to be a `store` key here, and the split it drew was by
- * audience: `tables` and `kv` for an application, `store` for a transport and
- * an exporter. The audience distinction is real; the OBJECT was the wrong
- * place to carry it.
+ * A view of its definition, intersected with what its document can do. There
+ * used to be a `store` key here, and the split it drew was by audience:
+ * `tables` and `kv` for an application, `store` for a transport and an
+ * exporter. The audience distinction is real; the OBJECT was the wrong place
+ * to carry it.
  *
  * What carries it instead is the narrowing type an application already writes:
  *
@@ -324,30 +325,41 @@ export type StoredData = {
  *
  * That is per-app, costs nothing at runtime, and is where this repository
  * actually enforces "a feature does not touch the document". Every consumer
- * does it. A second boundary inside the package duplicated that work and got
- * the contents wrong: `persistence`, the ONE member an application reaches
- * for, sat on the side labelled "a feature never touches", while `transact`
- * had to be moved off it because the label made it unreachable.
+ * does it.
  *
- * `TStore` has no default, deliberately. Every consumer passes both, and a
- * default of `AccountStore` failed UPWARD: a caller who forgot got the more
- * capable kind, so code that only works on a replica typechecked against a
- * local store and broke at runtime.
- *
- * Structural typing does the rest. `DataView<T> & AccountStore` IS an
- * `AccountStore`, so `syncEngineOf` and `attachStoreSync` take this object
- * unchanged.
+ * There is no `DataOf<TDefinition, TDocument>` either. It took a second type
+ * argument that only ever held one of three values, and its default failed
+ * UPWARD: a caller who omitted it got the replica kind, so code that only
+ * works against an authority typechecked against a local document. The three
+ * values have names now, and a call site says which one it means.
  *
  * An opener composes one by spreading the two halves together. Object spread
  * copies own enumerable SYMBOL keys, which is what carries `asyncDispose`
- * across without anyone forwarding it by hand. The `store` key survives on the OVER-PORT parts
- * (`createAccountStoreOverPort`), which is a construction seam and not a
- * handle: an opener still has a bare store to wrap before it composes one.
+ * across without anyone forwarding it by hand.
  */
-export type DataOf<
-	TDatabase extends DataDefinition,
-	TStore extends DataDocument,
-> = DataView<TDatabase> & TStore;
+export type LocalData<TDatabase extends DataDefinition> = DataView<TDatabase> &
+	LocalDocument;
+
+/**
+ * Data replicated to an authority, which is what makes sync reachable.
+ *
+ * `syncEngineOf` takes this. Structural typing is what makes that work without
+ * a cast: this IS an `AccountDocument`, so every transport signature accepts
+ * it unchanged.
+ */
+export type AccountData<TDatabase extends DataDefinition> =
+	DataView<TDatabase> & AccountDocument;
+
+/**
+ * Account data that knows the server it belongs to.
+ *
+ * What a browser opener returns once an account is present, and what
+ * `attachStoreSync` needs in order to address a socket. Both used to declare
+ * this shape themselves, in two files, and only structural typing kept the two
+ * copies interchangeable.
+ */
+export type BrowserData<TDatabase extends DataDefinition> =
+	DataView<TDatabase> & AddressedDocument;
 
 
 /**
@@ -554,11 +566,11 @@ export type DataDocument = {
  *
  * `sync` is present and `undefined`, deliberately: the discriminant is the
  * VALUE, not the property's absence, so `store.sync === undefined` narrows a
- * `LocalStore | AccountStore` without `in`-probing, and a future reader of
+ * `LocalDocument | AccountDocument` without `in`-probing, and a future reader of
  * either
  * object sees the same shape with one honest difference.
  */
-export type LocalStore = DataDocument & {
+export type LocalDocument = DataDocument & {
 	readonly sync: undefined;
 };
 
@@ -573,8 +585,22 @@ export type LocalStore = DataDocument & {
  * package. Handing those verbs to applications is how a device document once
  * grew an outbox nothing could ever drain.
  */
-export type AccountStore = DataDocument & {
+export type AccountDocument = DataDocument & {
 	readonly sync: SyncCapability;
+};
+
+/**
+ * An account document that knows its server.
+ *
+ * Declared once. `browser.ts` called it `AddressedDocument` and
+ * `sync/attach.ts` called it `AddressedDocument`, structurally identical,
+ * in two files, and nothing but structural typing made them one type.
+ */
+export type AddressedDocument = AccountDocument & {
+	/** The canonical server identity this replica belongs to. */
+	readonly baseURL: string;
+	/** The principal asserted by that server for this replica. */
+	readonly principalId: PrincipalId;
 };
 
 /**

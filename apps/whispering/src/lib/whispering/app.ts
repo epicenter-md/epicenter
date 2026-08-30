@@ -7,12 +7,12 @@ type PrincipalId = Extract<
 	{ principalId: unknown }
 >['principalId'];
 
-import type { DataOf } from '@epicenter/data';
+import { type BrowserData, type LocalData } from '@epicenter/data';
 import {
-	type BrowserAccountStore,
+	type AddressedDocument,
 	GENERATIONS_ROUTE,
 	importGeneration,
-	type LocalStore,
+	type LocalDocument,
 	listLocalGenerations,
 	openDatabase,
 } from '@epicenter/data/browser';
@@ -40,15 +40,9 @@ export type { WhisperingBlobs } from './recording-audio';
 
 /** The device-owned document: this machine's settings, and its work when
  * signed out. */
-export type WhisperingDeviceData = DataOf<
-	typeof whisperingDefinition,
-	LocalStore
->;
+export type WhisperingDeviceData = LocalData<typeof whisperingDefinition>;
 /** One account's retained replica of the portable work. */
-export type WhisperingAccountData = DataOf<
-	typeof whisperingDefinition,
-	BrowserAccountStore
->;
+export type WhisperingAccountData = BrowserData<typeof whisperingDefinition>;
 
 /**
  * Failures that reach `reportBackgroundError`: work nobody is awaiting, so the

@@ -15,7 +15,7 @@ import { expect, test } from 'bun:test';
 import { defineData } from '@epicenter/data/definition';
 import { asPrincipalId } from '@epicenter/principal';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { type AccountStore, createAccountStore } from '../store/store.js';
+import { type AccountDocument, createAccountStore } from '../store/store.js';
 import { attachStoreSync, type StoreSocketTransport } from './attach.js';
 
 const database = defineData({
@@ -24,7 +24,7 @@ const database = defineData({
 	tables: { notes: { scalars: { title: field.string() } } },
 });
 
-type AddressedTestStore = AccountStore & {
+type AddressedTestStore = AccountDocument & {
 	baseURL: string;
 	principalId: ReturnType<typeof asPrincipalId>;
 };

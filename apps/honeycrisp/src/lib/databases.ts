@@ -12,14 +12,14 @@ type PrincipalId = Extract<
 	{ principalId: unknown }
 >['principalId'];
 
-import type { DataOf } from '@epicenter/data';
+import { type BrowserData, type LocalData } from '@epicenter/data';
 import { readArtifact } from '@epicenter/data/artifact';
 import { attachMirror } from '@epicenter/data/artifact/mirror';
 import {
-	type BrowserAccountStore,
+	type AddressedDocument,
 	GENERATIONS_ROUTE,
 	importGeneration,
-	type LocalStore,
+	type LocalDocument,
 	listLocalGenerations,
 	openDatabase,
 } from '@epicenter/data/browser';
@@ -83,12 +83,12 @@ function opening<TDatabase>(
 
 /** What the `/device` route renders once its database is open. */
 export type DeviceDatabase = {
-	readonly data: DataOf<typeof honeycrispDefinition, LocalStore>;
+	readonly data: LocalData<typeof honeycrispDefinition>;
 };
 
 /** What the `/account` route renders once its replica is safe to edit. */
 export type AccountDatabase = {
-	readonly data: DataOf<typeof honeycrispDefinition, BrowserAccountStore>;
+	readonly data: BrowserData<typeof honeycrispDefinition>;
 	syncStatus(): SyncConnectionStatus | undefined;
 };
 

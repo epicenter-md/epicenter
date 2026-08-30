@@ -19,7 +19,7 @@ import { Database } from 'bun:sqlite';
 import type { DataDefinition } from '@epicenter/data/definition';
 import type { SqliteDatabase } from '@epicenter/sqlite';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { type AccountStore, createAccountStore, type DataOf } from './store.js';
+import { type AccountData, createAccountStore } from './store.js';
 
 /**
  * One durable record, held in memory, that outlives the stores opened over it.
@@ -57,7 +57,7 @@ export function createMemoryRecord(): MemoryRecord {
 export async function openMemory<const TDatabase extends DataDefinition>(
 	definition: TDatabase,
 	record?: MemoryRecord,
-): Promise<DataOf<TDatabase, AccountStore>> {
+): Promise<AccountData<TDatabase>> {
 	const durable = record ?? createMemoryRecord();
 	return createAccountStore({
 		definition,

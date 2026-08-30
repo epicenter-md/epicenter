@@ -64,12 +64,13 @@ import type {
 	OutboxEntry,
 } from './persistence.js';
 import {
-	type AccountStore,
+	type AccountDocument,
 	createAccountStoreOverPort,
 	createLocalStoreOverPort,
-	type DataOf,
+	type BrowserData,
+	type LocalData,
 	type DataView,
-	type LocalStore,
+	type LocalDocument,
 	StoreError,
 	type UntypedDataView,
 } from './store.js';
@@ -84,7 +85,7 @@ export {
 } from '@epicenter/sync/generations-route';
 // Re-exported so a browser caller's one import site names both kinds beside
 // the openers that produce them.
-export type { AccountStore, LocalStore } from './store.js';
+export type { AccountDocument, LocalDocument } from './store.js';
 
 /**
  * One generation of one account's database, held on this device.
@@ -95,7 +96,7 @@ export type { AccountStore, LocalStore } from './store.js';
  * one is opening a different address and this one is simply an older copy
  * (ADR-0292). Deleting it is a storage decision, not a correctness one.
  */
-export type BrowserAccountStore = AccountStore & {
+export type AddressedDocument = AccountDocument & {
 	/** The canonical server identity this replica belongs to. */
 	readonly baseURL: string;
 	/** The principal asserted by that server for this replica. */
@@ -602,7 +603,7 @@ export function openDatabase<const TDatabase extends DataDefinition>(
 	options: OpenDatabaseOptions & { account: DatabaseAccount },
 ): Promise<
 	Result<
-		DataOf<TDatabase, BrowserAccountStore>,
+		BrowserData<TDatabase>,
 		StoreError | DataDefinitionParseError
 	>
 >;
@@ -610,14 +611,14 @@ export function openDatabase<const TDatabase extends DataDefinition>(
 	definition: TDatabase,
 	options: OpenDatabaseOptions & { account?: undefined },
 ): Promise<
-	Result<DataOf<TDatabase, LocalStore>, StoreError | DataDefinitionParseError>
+	Result<LocalData<TDatabase>, StoreError | DataDefinitionParseError>
 >;
 export async function openDatabase<const TDatabase extends DataDefinition>(
 	definition: TDatabase,
 	{ generation, account }: OpenDatabaseOptions,
 ): Promise<
 	Result<
-		DataOf<TDatabase, LocalStore | BrowserAccountStore>,
+		LocalData<TDatabase> | BrowserData<TDatabase>,
 		StoreError | DataDefinitionParseError
 	>
 > {
@@ -712,7 +713,7 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	// contained so a corrupt record refuses the boot instead of leaking the
 	// claim and the open connection.
 	let parts: {
-		store: LocalStore | AccountStore;
+		store: LocalDocument | AccountDocument;
 		view: UntypedDataView;
 		definition: ParsedDataDefinition;
 	};
@@ -750,14 +751,14 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 				// `DataView<TDatabase>` re-enters the per-field descriptor
 				// instantiation and exceeds the depth limit.
 				...(parts.view as unknown as DataView<TDatabase>),
-				...(parts.store as LocalStore),
+				...(parts.store as LocalDocument),
 			}),
 		);
 	}
 	return Ok(
 		Object.freeze({
 			...(parts.view as unknown as DataView<TDatabase>),
-			...(parts.store as AccountStore),
+			...(parts.store as AccountDocument),
 			baseURL: canonicalURL,
 			principalId: account.principalId,
 		}),

@@ -10,7 +10,7 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
-import { type AccountStore, syncEngineOf } from '../store/store.js';
+import { type AccountDocument, syncEngineOf } from '../store/store.js';
 import {
 	CHUNK_BYTES,
 	createChunkCollector,
@@ -160,14 +160,14 @@ export function createSyncClient({
 	/** Guards the authority's in-memory reassembly, and mirrors its limit. */
 	maxBufferedBytes = 64 * 1024 * 1024,
 }: {
-	store: AccountStore;
+	store: AccountDocument;
 	idleMs?: number;
 	schedule?: Schedule;
 	maxBufferedBytes?: number;
 }): SyncClient {
 	// The delivery machinery behind the store's public capability: the client
 	// log, applyRemote, and the dependency alarm. Only the transport drives
-	// these, which is the whole reason they are not on `AccountStore` itself.
+	// these, which is the whole reason they are not on `AccountDocument` itself.
 	const engine = syncEngineOf(store);
 	// Rebuilt on every attach rather than held for the life of the client. A
 	// collector keyed by position outliving its socket is how a partial left by a

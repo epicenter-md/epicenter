@@ -9,11 +9,11 @@
  * appears, beside the first rather than instead of it.
  */
 
-import type { DataOf } from '@epicenter/data';
+import { type LocalData } from '@epicenter/data';
 import { readArtifact } from '@epicenter/data/artifact';
 import {
 	importGeneration,
-	type LocalStore,
+	type LocalDocument,
 	listLocalGenerations,
 	openDatabase,
 } from '@epicenter/data/browser';
@@ -22,7 +22,7 @@ import { createSkillsState } from './state/skills-state.svelte.js';
 
 export type SkillsRuntime = {
 	/** The device-owned document, open for the whole page lifetime. */
-	readonly data: DataOf<typeof skillsDefinition, LocalStore>;
+	readonly data: LocalData<typeof skillsDefinition>;
 	readonly state: ReturnType<typeof createSkillsState>;
 	[Symbol.asyncDispose](): Promise<void>;
 };

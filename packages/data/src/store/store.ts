@@ -72,12 +72,13 @@ import type {
 // every caller already name them through this path.
 import { StoreError, StoreUnusableError } from './errors.js';
 import type {
-	AccountStore,
-	DataOf,
+	AccountDocument,
+	AccountData,
+	LocalData,
 	DataDocument,
 	DataView,
 	KvHandle,
-	LocalStore,
+	LocalDocument,
 	Row,
 	StoredData,
 	DocumentPressure,
@@ -88,12 +89,14 @@ import type {
 
 export { StoreError, StoreUnusableError } from './errors.js';
 export type {
-	AccountStore,
-	DataOf,
+	AccountDocument,
+	AccountData,
+	BrowserData,
+	LocalData,
 	DataDocument,
 	DataView,
 	KvHandle,
-	LocalStore,
+	LocalDocument,
 	Row,
 	StoredData,
 	DocumentPressure,
@@ -261,7 +264,7 @@ const syncEngines = new WeakMap<SyncCapability, SyncEngine>();
  * Package-internal by convention: exported for the transport and tests, and
  * deliberately absent from the package barrel.
  */
-export function syncEngineOf(store: AccountStore): SyncEngine {
+export function syncEngineOf(store: AccountDocument): SyncEngine {
 	const engine = syncEngines.get(store.sync);
 	if (engine === undefined) {
 		throw new Error(
@@ -348,7 +351,7 @@ function overSqlite<TDatabase extends DataDefinition>(
  */
 export function createLocalStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
-): DataOf<TDatabase, LocalStore> {
+): LocalData<TDatabase> {
 	const { store, view } = createStoreEngine(overSqlite(options, false), 'none');
 	// Through `unknown` deliberately: comparing the untyped view with
 	// `DataView<TDatabase>` re-enters the per-field descriptor instantiation
@@ -374,7 +377,7 @@ export function createLocalStore<const TDatabase extends DataDefinition>(
  */
 export function createAccountStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
-): DataOf<TDatabase, AccountStore> {
+): AccountData<TDatabase> {
 	const { store, view } = createStoreEngine(
 		overSqlite(options, true),
 		'remote',
@@ -397,7 +400,7 @@ export function createAccountStore<const TDatabase extends DataDefinition>(
  * the view are one runtime either way, born over one definition.
  */
 export function createLocalStoreOverPort(options: StoreEngineOptions): {
-	store: LocalStore;
+	store: LocalDocument;
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 } {
@@ -405,7 +408,7 @@ export function createLocalStoreOverPort(options: StoreEngineOptions): {
 }
 
 export function createAccountStoreOverPort(options: StoreEngineOptions): {
-	store: AccountStore;
+	store: AccountDocument;
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 } {
@@ -416,7 +419,7 @@ function createStoreEngine(
 	options: StoreEngineOptions,
 	replication: 'none',
 ): {
-	store: LocalStore;
+	store: LocalDocument;
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 };
@@ -424,7 +427,7 @@ function createStoreEngine(
 	options: StoreEngineOptions,
 	replication: 'remote',
 ): {
-	store: AccountStore;
+	store: AccountDocument;
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 };
@@ -438,7 +441,7 @@ function createStoreEngine(
 	}: StoreEngineOptions,
 	replication: 'none' | 'remote',
 ): {
-	store: LocalStore | AccountStore;
+	store: LocalDocument | AccountDocument;
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 } {

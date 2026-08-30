@@ -22,11 +22,11 @@
 import type { PrincipalId } from '@epicenter/principal';
 import { isOpenWebSocketDenial } from '@epicenter/sync/auth-subprotocol';
 import { STORE_SYNC_ROUTE } from '@epicenter/sync/store-route';
-import type { AccountStore } from '../store/store.js';
+import type { AccountDocument } from '../store/store.js';
 import { createSyncConnection, type SyncConnection } from './connection.js';
 
 /** An account replica with the server identity its socket must reach. */
-type AddressedAccountStore = AccountStore & {
+type AddressedDocument = AccountDocument & {
 	readonly baseURL: string;
 	readonly principalId: PrincipalId;
 };
@@ -52,7 +52,7 @@ export type StoreSocketTransport = {
 
 export type AttachStoreSyncOptions = {
 	/** The open account replica this connection carries. */
-	store: AddressedAccountStore;
+	store: AddressedDocument;
 	/** The database id being synced, which addresses the authority. */
 	dataId: string;
 	/**
