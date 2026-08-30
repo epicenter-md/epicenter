@@ -60,8 +60,8 @@ converges to unexpected state or grows faster than its content.
 
 An application is ONE `Y.Doc`. Roots are `tables:<name>` and `kv`. A row is a
 nested `Y.Type` attribute on its table root, a scalar field is a JSON attribute
-on the row, and a rich field is a nested `Y.Type` on the row (ADR-0295,
-ADR-0296). Holding the attribute is what it means to exist; removing it is what
+on the row, and the content node is a nested `Y.Type` at the row's reserved
+`content` key (ADR-0295, ADR-0299). Holding the attribute is what it means to exist; removing it is what
 deletion does, and it reclaims the row's whole subtree in one operation.
 
 The nesting is not stylistic. `Item.write` calls `findRootTypeKey`, a linear
@@ -78,9 +78,9 @@ the row. Advice naming `documents.ts`, `openDocument`, `_tombstones`, or
 // Scalars are attributes on the row, written through the table.
 db.tables.notes.update(noteId, { title, pinned: true });
 
-// A rich field is ON the row, read synchronously with everything else.
+// The content node is ON the row, read synchronously with everything else.
 const note = db.tables.notes.get(noteId);
-const body = note?.body;              // a live Y.Type an editor binds to
+const body = note?.content;           // a live Y.Type an editor binds to
 ```
 
 Inside the application document only `Doc.get` mints, and every key reaching it
@@ -90,9 +90,9 @@ must be a table name the database declares: reading an unknown ROW through
 ## Two Signals, And Which One Fires
 
 - `table.subscribe` fires when a table's SHAPE changes: a row added, removed,
-  or a scalar edited. It does NOT fire for an edit inside a rich field.
-- `table.watch(type)` fires for edits inside one rich field, keyed by the
-  type's own identity.
+  or a scalar edited. It does NOT fire for an edit inside a content node.
+- `table.watch(node)` fires for edits inside one content node, keyed by the
+  node's own identity.
 
 The distinction is forced by the library. Delivery routes off
 `transaction.changed`, which Yjs fills with the types a transaction modified
@@ -171,7 +171,7 @@ ROW's shape is declared). Everything downstream of that line is typed.
 - `packages/data/evidence/invariants.test.ts`: the library behaviour this design rests on, pinned against the installed rc
 - `packages/data/src/sync/`: the Yjs 14 wire (frames, connection, client, authority)
 - [ADR-0295](../../../docs/adr/0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md): one document per application, and a row holds its rich content (supersedes ADR-0248)
-- [ADR-0296](../../../docs/adr/0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md): a rich field is declared, and a table owns its file codec
+- [ADR-0299](../../../docs/adr/0299-a-row-is-its-scalars-and-one-content-node.md): a row is its scalars and one content node, and the table declares what the node means
 - [ADR-0221](../../../docs/adr/0221-a-table-names-the-rows-a-commit-touched-and-says-so-after-the-projection-commits.md): what `subscribe` reports and when it fires
 - [ADR-0146](../../../docs/adr/0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md): Yjs 14-only persistence decision
 - [ADR-0159](../../../docs/adr/0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md): one owner-side SQLite update log and shared attachment seam

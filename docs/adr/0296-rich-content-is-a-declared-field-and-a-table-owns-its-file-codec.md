@@ -1,6 +1,6 @@
 # 0296. Rich content is a declared field and a table owns its file codec
 
-- **Status:** Accepted, amended 2026-08-30 at the codec's signature and again at how a type field is declared
+- **Status:** Superseded by [ADR-0299](0299-a-row-is-its-scalars-and-one-content-node.md) at the codec's signature and at how rich content is declared. Its file layout stands: one `<table>/<rowId>.md` per row, scalars as frontmatter, codec output as the body, `kv.json` beside them.
 - **Date:** 2026-08-29
 - **Supersedes:** [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) at the codec's signature and placement. Its content rules are retained: one `<table>/<rowId>.md` per row, scalars as frontmatter, codec output as the body, `kv.json` beside them.
 - **Amends:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) by naming how a rich field is declared and serialized.

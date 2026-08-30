@@ -152,29 +152,30 @@ shapes, see `docs/adr/`.
   is what existing means, and there is no second fact that can disagree. Its id
   is minted and never reused.
 - **Field**: one attribute on a row type. A scalar field holds one JSON value;
-  a rich field holds a nested `Y.Type`. Two devices editing different fields
-  both keep their edit; one scalar field is last-write-wins.
+  the content node holds a nested `Y.Type`. Two devices editing different
+  fields both keep their edit; one scalar field is last-write-wins.
 - **Whole-value replacement**: an array or object field is one value, so a
   concurrent write replaces all of it and one addition is lost (ADR-0228). This
   is chosen, not missing. A collection several devices append to concurrently
   wants to be a table.
-- **Rich field**: a field declared `field.type()`, holding a nested `Y.Type`
-  under its row (ADR-0296). Read with `data.tables.<table>.content(rowId)`,
-  which is synchronous and hands back the live types plus a per-field edit
-  signal; there is nothing to open and nothing to dispose. **Minted in the
-  transaction that mints its row and never again**: a nested type is addressed
-  by the struct that created it, so lazy minting on two devices would lose a
-  subtree. Epicenter never reads inside one; the table's `file` codec is the
-  only thing that turns one into text.
-- **File codec**: the `file: { serialize, deserialize }` a table declares
-  (ADR-0296). The platform owns the file format and the table owns the mapping.
-  A table declaring any rich field must declare one, because the export is the
-  only bridge that content has out of the CRDT. `deserialize` is handed ATTACHED
-  types and fills them in place; it returns scalars only, because a detached
-  `Y.Type` replays one positional prelim delta and cannot be built with more
-  than one operation.
+- **Content node**: the one nested `Y.Type` every row holds, at the reserved
+  key `content` (ADR-0299). Read it off the row: `table.get(id).content` is
+  synchronous and hands back the live node; there is nothing to open and
+  nothing to dispose. **Minted in the transaction that mints its row and never
+  again**: a nested type is addressed by the struct that created it, so lazy
+  minting on two devices would lose a subtree. A row holds exactly one, because
+  one file has one region below the fence. Epicenter never reads inside one;
+  the table's declared codec is the only thing that turns one into text.
+- **Content codec**: the `content: { encode, decode }` every table declares
+  (ADR-0299). `encode` takes the node and returns the text below the fence;
+  `decode` takes that text and returns a fresh node. The platform owns the
+  file, writing the scalars as frontmatter under their own field names, so no
+  row shape ever reaches a codec author. There is no default: a node carries a
+  sequence and attributes at once, so rendering one as text round-trips a keyed
+  log into one literal string that prints identically. `plainText()` is a codec
+  a table opts into.
 - **Deletion**: removing the row's attribute from its table root. The whole
-  subtree goes with it, rich fields included, so there is one removal in one
+  subtree goes with it, the content node included, so there is one removal in one
   document and no second address to retire. No tombstone and no revive path
   (ADR-0219).
 - **Nonconforming row**: a row this release's declaration cannot read. A view, not

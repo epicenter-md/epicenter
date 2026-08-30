@@ -378,7 +378,8 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0293](0293-a-generation-is-created-by-importing-a-folder-and-the-ledger-row-is-its-existence.md) | A generation is created by importing a folder, and the ledger row is its existence | Accepted (provisional number; supersedes 0286 and 0290; amends 0283 and 0287; unbuilt) |
 | [0294](0294-a-database-is-sized-against-a-measured-device-budget-not-an-assumed-ceiling.md) | A database is sized against a measured device budget, not an assumed ceiling | Accepted (provisional number; withdraws the memory justification for 0284) |
 | [0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) | A database is one Yjs document and a row holds its rich content | Accepted (Unbuilt) |
-| [0296](0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md) | Rich content is a declared field and a table owns its file codec | Accepted (Unbuilt) |
+| [0296](0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md) | Rich content is a declared field and a table owns its file codec | Superseded by 0299 at the codec's signature; its file layout stands |
 | [0297](0297-the-store-manages-no-timestamps.md) | The store manages no timestamps | Accepted (Unbuilt) |
+| [0299](0299-a-row-is-its-scalars-and-one-content-node.md) | A row is its scalars and one content node | Accepted (supersedes 0296 at the codec's signature; amends 0295) |
 
 When you add an ADR, add its row here.

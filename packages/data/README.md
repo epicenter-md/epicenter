@@ -162,10 +162,10 @@ local write and for bytes from another device alike, and after every
 `onCommitted` listener has run, so a composed follower is already marked dirty
 by the time a subscriber reads through it.
 
-It deliberately does NOT fire for prose typed inside a row's type field. A type
-field is nested on its row, so counting it here would wake every list in the
-application at typing frequency. `data.watch(type, listener)` is the signal for
-that, scoped to the one type, and it is delivered last so a listener that writes
+It deliberately does NOT fire for prose typed inside a row's content node. The
+node is nested on its row, so counting it here would wake every list in the
+application at typing frequency. `data.watch(node, listener)` is the signal for
+that, scoped to the one node, and it is delivered last so a listener that writes
 is writing against a settled commit.
 
 Registration is synchronous, does no I/O, and never fires initially, so a
@@ -224,22 +224,35 @@ is nothing to open, nothing to await, and nothing to dispose:
 
 ```ts
 const note = data.tables.notes.get(id);
-const body = note?.body;                     // a live Y.Type, read off the row
+const body = note?.content;                  // the live node, read off the row
 const stop = body && data.watch(body, onEdit);
 ```
 
 `watch` takes the type rather than an address, because a caller holding one has
 already done that lookup: rendering the field needs the type anyway.
 
-A rich field is minted in the transaction that mints its row and never again.
-That is what makes it safe: a nested type is addressed by the struct that
-created it, so two devices minting one at the same key would lose a subtree, and
-a minted row id means only the creating device ever mints one.
+The node is minted in the transaction that mints its row and never again. That
+is what makes it safe: a nested type is addressed by the struct that created it,
+so two devices minting one at the same key would lose a subtree, and a minted
+row id means only the creating device ever mints one.
 
-The table declares one `file` codec for the whole row, and a table that declares
-any `field.type()` must declare it: the platform owns the file format
-(frontmatter above the fence, the body beneath it) and the table owns the
-mapping. Epicenter picks no rich-content format and never looks inside.
+A row holds exactly one node, because one file has one region below the fence
+(ADR-0299). Every table declares how its node becomes that text and back:
+
+```ts
+type ContentCodec = {
+  encode: (node: Y.Type) => string;
+  decode: (text: string) => Result<Y.Type, ContentError>;
+};
+```
+
+The platform owns the file, writing the scalars as frontmatter under their own
+field names and joining the encoded node beneath the fence, and reversing both.
+The table owns what its node MEANS, and there is no default: a node carries a
+sequence and attributes at once, so rendering one as text round-trips a keyed
+log into one literal string that prints identically. `plainText()` is a codec a
+table opts into, not a fallback. Epicenter picks no content format and never
+looks inside.
 
 ## What merges with what
 
@@ -251,7 +264,7 @@ shaped.
 | two fields of one row | independent, both survive |
 | one scalar field | last write wins, converged |
 | one array or object field | last write wins on the WHOLE value |
-| a rich field | per character |
+| the content node | per character |
 | any composed index | a cache derived from the CRDT |
 
 A row is an attribute map and a write sets only the attributes handed to it, so
