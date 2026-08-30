@@ -33,28 +33,6 @@ import {
 	type DurableSnapshot,
 } from './persistence.js';
 
-/**
- * Whether a document is holding updates whose dependencies never arrived.
- *
- * `store.pendingStructs` is internal, and deliberately so: Yjs buffers an
- * update it cannot integrate and returns normally, with no error, no event, and
- * no public reader. It is still the only observable symptom of silent data
- * loss, and Yjs's own test helper asserts on this exact field after sync, so it
- * is read here through one named function rather than reached for in several
- * places. Pinned by a test, because it is internal and an rc can move it.
- */
-function hasPendingStructs(document: Y.Doc): boolean {
-	const store = (
-		document as unknown as {
-			store?: { pendingStructs?: unknown; pendingDs?: unknown };
-		}
-	).store;
-	return (
-		(store?.pendingStructs ?? null) !== null ||
-		(store?.pendingDs ?? null) !== null
-	);
-}
-
 export type {
 	ApplyFailedError,
 	NonconformingRow,
@@ -105,24 +83,6 @@ export type {
 	TypedTableHandle,
 	UntypedDataView,
 } from './handles.js';
-
-/**
- * Structs the engine is holding.
- *
- * Reads the same internal `store.clients` the memory benches count, and for the
- * same reason: there is no public reader, and the number is the one memory
- * actually tracks. Pinned by a test, because an rc can move it.
- */
-function structCount(document: Y.Doc): number {
-	const clients = (
-		document as unknown as {
-			store?: { clients?: Map<number, { length: number }[]> };
-		}
-	).store?.clients;
-	let total = 0;
-	for (const structs of clients?.values() ?? []) total += structs.length;
-	return total;
-}
 
 /** ADR-0206's minted id: 24 characters, so a collision never happens. */
 const mintRowId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 24);
@@ -1237,4 +1197,48 @@ function createStoreEngine(
 		};
 		return Object.freeze(handle);
 	}
+}
+
+// What Yjs knows and will not say. Both of these reach past the public API into
+// `doc.store`, both have exactly one caller above, and both are pinned by a
+// test, because the field they read is internal and an rc can move it.
+
+/**
+ * Whether a document is holding updates whose dependencies never arrived.
+ *
+ * `store.pendingStructs` is internal, and deliberately so: Yjs buffers an
+ * update it cannot integrate and returns normally, with no error, no event, and
+ * no public reader. It is still the only observable symptom of silent data
+ * loss, and Yjs's own test helper asserts on this exact field after sync, so it
+ * is read here through one named function rather than reached for in several
+ * places. Pinned by a test, because it is internal and an rc can move it.
+ */
+function hasPendingStructs(document: Y.Doc): boolean {
+	const store = (
+		document as unknown as {
+			store?: { pendingStructs?: unknown; pendingDs?: unknown };
+		}
+	).store;
+	return (
+		(store?.pendingStructs ?? null) !== null ||
+		(store?.pendingDs ?? null) !== null
+	);
+}
+
+/**
+ * Structs the engine is holding.
+ *
+ * Reads the same internal `store.clients` the memory benches count, and for the
+ * same reason: there is no public reader, and the number is the one memory
+ * actually tracks. Pinned by a test, because an rc can move it.
+ */
+function structCount(document: Y.Doc): number {
+	const clients = (
+		document as unknown as {
+			store?: { clients?: Map<number, { length: number }[]> };
+		}
+	).store?.clients;
+	let total = 0;
+	for (const structs of clients?.values() ?? []) total += structs.length;
+	return total;
 }
