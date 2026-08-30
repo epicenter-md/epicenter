@@ -94,6 +94,9 @@ the model. A wrong articulation is useful because the user’s reaction to it
 shows what the next articulation must change. Plain agreement is useful only
 when it moves the model forward.
 
+When the user cannot explain a reaction, articulate the mismatch or crux it may
+be pointing toward and let the user react to that.
+
 ## Make the collision checkable
 
 Use the smallest form that lets the user judge the current articulations and
