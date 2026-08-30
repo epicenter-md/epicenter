@@ -1,4 +1,3 @@
-import { field } from '@epicenter/data/definition';
 /**
  * THROWAWAY, and test-only: a peer that lives inside `workerd`.
  *
@@ -19,13 +18,13 @@ import { field } from '@epicenter/data/definition';
  * deploys grows a class that exists for a test.
  */
 import { DurableObject } from 'cloudflare:workers';
+import { defineData, field } from '@epicenter/data/definition';
 import { createAccountStore } from '@epicenter/data/engine';
 import {
 	createSyncClient,
 	decodeFrame,
 	type SyncClient,
 } from '@epicenter/data/sync';
-import { defineData } from '@epicenter/data/definition';
 import {
 	createDurableObjectSqliteAdapter,
 	type DurableObjectSqliteStorage,
@@ -34,7 +33,9 @@ import {
 const labDatabase = defineData({
 	id: 'so.epicenter.synclab',
 	kv: {},
-	tables: { notes: { fields: { title: field.string() } } },
+	tables: {
+		notes: { fields: { title: field.string(), prose: field.string() } },
+	},
 });
 
 /**
@@ -111,12 +112,6 @@ export class SyncLabTestPeer extends DurableObject<Env> {
 	 * with the deeply unhelpful "Specified address is missing port".
 	 */
 	async openSocket(partition: string): Promise<void> {
-		if (this.client.document() === undefined) {
-			await this.dialBootstrap(partition);
-			if (this.client.document() === undefined) {
-				throw new Error('the bootstrap dial named no document');
-			}
-		}
 		const socket = await this.dial(partition);
 		socket.accept();
 		// Attached in the same synchronous turn as `accept()`, because catch-up
@@ -130,43 +125,17 @@ export class SyncLabTestPeer extends DurableObject<Env> {
 		this.client.attach({ send: (bytes) => socket.send(bytes) });
 	}
 
-	/** One upgrade at this peer's cursor, declaring its identity if it has one. */
+	/** One upgrade at this peer's cursor. There is nothing else to declare. */
 	private async dial(partition: string): Promise<WebSocket> {
 		const stub = this.env.SYNC.get(this.env.SYNC.idFromName(partition));
-		const document = this.client.document();
-		const declared =
-			document === undefined ? '' : `&document=${encodeURIComponent(document)}`;
 		const response = await stub.fetch(
-			`https://sync-lab.invalid/sync?cursor=${this.client.cursor()}${declared}`,
+			`https://sync-lab.invalid/sync?cursor=${this.client.cursor()}`,
 			{ headers: { Upgrade: 'websocket' } },
 		);
 		const socket = response.webSocket;
 		if (socket === null)
 			throw new Error(`the authority answered ${response.status}`);
 		return socket;
-	}
-
-	/**
-	 * The first-contact dial: hear the document announcement, wait out the
-	 * close the authority answers a pristine peer with, and return. The
-	 * client stamps the identity from the frame; nothing else arrives on this
-	 * socket, by design.
-	 */
-	private async dialBootstrap(partition: string): Promise<void> {
-		const socket = await this.dial(partition);
-		socket.accept();
-		await new Promise<void>((resolve) => {
-			socket.addEventListener('message', (event) => {
-				if (typeof event.data === 'string') return;
-				this.client.receive(new Uint8Array(event.data));
-				// Close this half too, once the stamp landed. The authority already
-				// closed its own; without this echo the server half lingers in the
-				// hibernation set and `stat().sockets` counts a corpse.
-				if (this.client.document() !== undefined) socket.close(1000, 'stamped');
-			});
-			socket.addEventListener('close', () => resolve());
-			socket.addEventListener('error', () => resolve());
-		});
 	}
 
 	/**
@@ -190,7 +159,7 @@ export class SyncLabTestPeer extends DurableObject<Env> {
 
 	/** Write one row and send it now. */
 	write(title: string): void {
-		const written = this.db.tables.notes.create({ title });
+		this.db.tables.notes.create({ title, prose: '' });
 		this.client.flush();
 	}
 
@@ -200,15 +169,8 @@ export class SyncLabTestPeer extends DurableObject<Env> {
 	 * The only affordable way to reach the authority's 64 KB snapshot floor from
 	 * a test: hundreds of small rows would take hundreds of round trips.
 	 */
-	async writeLarge(title: string, bytes: number): Promise<void> {
-		const written = this.db.tables.notes.create({ title });
-		const opened = await this.db.tables.notes.openDocument(written.id);
-		if (opened.error !== null) throw opened.error;
-		const handle = opened.data;
-		if (handle === undefined) throw new Error('the row has no document');
-		const text = handle.get('editor', 'text');
-		text.applyDelta(text.change.insert('x'.repeat(bytes)) as never);
-		handle[Symbol.dispose]();
+	writeLarge(title: string, bytes: number): void {
+		this.db.tables.notes.create({ title, prose: 'x'.repeat(bytes) });
 		this.client.flush();
 	}
 

@@ -52,13 +52,20 @@ export type BlobPrincipalPrefix = `principals/${string}/blobs/`;
  * the value of `defineData({ id })`. It is a sibling of `blobs` under the same
  * partition, which is the whole job `stores` was doing.
  *
- * ADR-0276 extends this name with `/generations/<n>`, at which point the bare
- * name below stops holding a log and starts holding a pointer. Nothing anywhere
- * maps an old name to a new one, here or there: the name is derived on both
+ * The name carries the GENERATION (ADR-0276, ADR-0292), and that is what makes
+ * the object an exact address rather than a mutable one: a generation is
+ * created once and never mutated in place, so an object at this name holds one
+ * history and a replica that reached it cannot be carrying another's bytes.
+ * The document identity stamp existed to answer that question and is retired
+ * with it.
+ *
+ * Nothing anywhere maps an old name to a new one: the name is derived on both
  * halves from values they already hold, so a rename strands data rather than
  * requiring a migration.
  */
-export type StoreAuthorityDoName = `principals/${string}/data/${string}`;
+export type StoreCollectionDoName = `principals/${string}/data/${string}`;
+export type StoreAuthorityDoName =
+	`${StoreCollectionDoName}/generations/${number}`;
 
 /** Durable key of an opaque-id blob's R2 object. */
 export function blobKey(principalId: PrincipalId, blobId: BlobId): BlobR2Key {
@@ -72,10 +79,24 @@ export function blobPrincipalPrefix(
 	return `principals/${principalId}/blobs/`;
 }
 
-/** Durable name of one partition's store authority for one application. */
+/**
+ * Durable name of one partition's generations ledger for one database.
+ *
+ * The bare name the authority used to hold. It holds numbers now: which
+ * generations exist, which is what makes one addressable at all (ADR-0293).
+ */
+export function storeCollectionName(
+	principalId: PrincipalId,
+	dataId: string,
+): StoreCollectionDoName {
+	return `principals/${principalId}/data/${dataId}`;
+}
+
+/** Durable name of one partition's authority for one database generation. */
 export function storeAuthorityName(
 	principalId: PrincipalId,
 	dataId: string,
+	generation: number,
 ): StoreAuthorityDoName {
-	return `principals/${principalId}/data/${dataId}`;
+	return `principals/${principalId}/data/${dataId}/generations/${generation}`;
 }

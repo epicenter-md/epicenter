@@ -22,6 +22,10 @@ export default defineConfig({
 						className: 'StoreAuthority',
 						useSQLite: true,
 					},
+					GENERATIONS_LEDGER: {
+						className: 'GenerationsLedger',
+						useSQLite: true,
+					},
 					REPLICA: { className: 'StoreTestReplica', useSQLite: true },
 				},
 				// The replicas dial the route through the worker itself, which is

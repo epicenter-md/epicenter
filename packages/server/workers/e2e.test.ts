@@ -68,18 +68,20 @@ function openAccount(label: string) {
 }
 
 /**
- * The boot gate, test-shaped (ADR-0231): a signed-in workspace that has never
- * downloaded is unavailable until its first bootstrap binds it, so a device
- * writes only once bound. Writing earlier authors work no authority document
- * owns, and first contact discards it; the STATED LOSS test asserts that
- * deliberately, and every other test binds before writing.
+ * Wait for the socket, which is all a device waits for now.
+ *
+ * There used to be a boot gate here: a signed-in replica was unavailable until
+ * its first bootstrap stamped it with the authority's document identity, and
+ * writing before that authored work no document owned. The generation is in
+ * the address (ADR-0292), so a replica is bound the moment it opens and the
+ * only thing left to wait for is a connection.
  */
 async function bound(device: {
 	report(): Promise<ReplicaReport>;
 }): Promise<void> {
 	await until(
-		'the device to bind to the authority document',
-		async () => (await device.report()).document !== undefined,
+		'the device to connect to its authority',
+		async () => (await device.report()).connected,
 	);
 }
 

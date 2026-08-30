@@ -53,6 +53,14 @@
 			{
 				"name": "STORE_AUTHORITY",
 				"class_name": "StoreAuthority"
+			},
+			// One GenerationsLedger per (principalId, application id) holds which
+			// generations exist (ADR-0293). It stores numbers and never a byte of
+			// anyone's data: the state goes straight to the generation's own
+			// authority, and the ledger row is the last write of an import.
+			{
+				"name": "GENERATIONS_LEDGER",
+				"class_name": "GenerationsLedger"
 			}
 		]
 	},
@@ -71,6 +79,10 @@
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["StoreAuthority"]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": ["GenerationsLedger"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

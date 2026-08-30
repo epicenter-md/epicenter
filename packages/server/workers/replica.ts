@@ -1,4 +1,3 @@
-import { field } from '@epicenter/data/definition';
 /**
  * Test-only: a replica that lives inside `workerd`, driven by the real driver.
  *
@@ -19,7 +18,8 @@ import { field } from '@epicenter/data/definition';
  * entry mounts it, so nothing deployable grows a class that exists for a test.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { type AccountStore, defineData } from '@epicenter/data';
+import { type AccountStore, defineData, defineTable } from '@epicenter/data';
+import { field } from '@epicenter/data/definition';
 import { createAccountStore } from '@epicenter/data/engine';
 import {
 	createSyncConnection,
@@ -30,11 +30,35 @@ import {
 	type DurableObjectSqliteStorage,
 } from '@epicenter/sqlite/durable-object';
 import { MAIN_SUBPROTOCOL, STORE_SYNC_ROUTE } from '@epicenter/sync';
+import { Ok } from 'wellcrafted/result';
+
+/**
+ * The one generation this probe ever opens.
+ *
+ * A generation is an address (ADR-0292), so a probe needs one the way it needs
+ * a dataId. It never changes here: moving to a newer generation is opening a
+ * different object, and what these tests exercise is the transport into one.
+ */
+const PROBE_GENERATION = 1;
 
 const probeDefinition = defineData({
 	id: 'so.epicenter.storeprobe',
 	kv: {},
-	tables: { notes: { fields: { title: field.string() } } },
+	tables: {
+		notes: defineTable({
+			fields: { title: field.string(), body: field.type() },
+			file: {
+				serialize: (row) => ({
+					data: { title: row.title },
+					content: row.body.toString(),
+				}),
+				deserialize: (file, types) => {
+					if (file.content !== '') types.body.insert(0, [file.content]);
+					return Ok({ title: String(file.data.title ?? '') });
+				},
+			},
+		}),
+	},
 });
 
 function openNotes(
@@ -45,8 +69,7 @@ function openNotes(
 
 export type ReplicaReport = {
 	cursor: number;
-	/** The document this replica's state is stamped into, if any (ADR-0231). */
-	document: string | undefined;
+
 	connected: boolean;
 	titles: string[];
 	prose: string[];
@@ -54,7 +77,6 @@ export type ReplicaReport = {
 	/** Structs the engine holds; how a test sees tombstones reclaimed. */
 	items: number;
 	/** How many times this replica discarded and booted fresh (ADR-0231). */
-	adoptions: number;
 };
 
 type Env = { SELF: { fetch(request: Request): Promise<Response> } };
@@ -65,7 +87,6 @@ export class StoreTestReplica extends DurableObject<Env> {
 	private store: AccountStore | undefined;
 	private bearer = '';
 	private origin = '';
-	private adoptions = 0;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -103,17 +124,14 @@ export class StoreTestReplica extends DurableObject<Env> {
 		this.connection = createSyncConnection({
 			store: this.store,
 			idleMs: 20,
-			// Fast enough that a stale dial meets the document announcement within a
-			// test's patience; the deployed default is seconds, not correctness.
+			// Fast enough for a test's patience; the deployed default is seconds,
+			// not correctness.
 			backoff: () => 100,
-			onSuperseded: () => {
-				void this.adoptFresh();
-			},
-			dial: ({ cursor, document, opened, received, closed }) => {
+			dial: ({ cursor, opened, received, closed }) => {
 				const url = STORE_SYNC_ROUTE.url(origin, {
 					dataId: probeDefinition.id,
+					generation: PROBE_GENERATION,
 					cursor,
-					...(document === undefined ? {} : { document }),
 				});
 				// The same handshake a browser performs: the credential rides as a
 				// subprotocol because an upgrade cannot set `Authorization`.
@@ -161,43 +179,13 @@ export class StoreTestReplica extends DurableObject<Env> {
 		this.connection = undefined;
 	}
 
-	/**
-	 * The reload, replica-shaped: discard the local file whole, boot fresh.
-	 *
-	 * What a real host does with `discard()` and a page reload. The wipe is
-	 * whole (every store relation), never a surgical edit across documents.
-	 */
-	private async adoptFresh(): Promise<void> {
-		this.adoptions += 1;
-		this.connection?.[Symbol.dispose]();
-		this.connection = undefined;
-		await this.store?.[Symbol.asyncDispose]();
-		this.store = undefined;
-		this.db = undefined;
-		const database = createDurableObjectSqliteAdapter(
-			this.ctx.storage as unknown as DurableObjectSqliteStorage,
-		);
-		// `_meta` included: the pledge is a commitment to the document being
-		// discarded, and a wipe that leaves it behind boots a "fresh" replica
-		// that is retired on sight, forever (a real host deletes the whole
-		// file, where this cannot be forgotten).
-		for (const relation of ['_updates', '_outbox', '_cursor', '_meta']) {
-			database.run(`DELETE FROM ${relation}`);
-		}
-		this.open(this.bearer, this.origin);
-	}
-
 	/** Create a note with prose, the way an application does. */
-	async write(title: string, prose: string): Promise<void> {
+	write(title: string, prose: string): void {
 		if (this.db === undefined) throw new Error('open first');
 		const made = this.db.tables.notes.create({ title });
-		const opened = await this.db.tables.notes.openDocument(made.id);
-		if (opened.error !== null) throw opened.error;
-		const handle = opened.data;
-		if (handle === undefined) throw new Error('the row has no document');
-		const body = handle.get('body', 'text');
+		const body = this.db.tables.notes.content(made.id)?.types.body;
+		if (body === undefined) throw new Error('the row has no body');
 		body.applyDelta(body.change.insert(prose) as never);
-		handle[Symbol.dispose]();
 	}
 
 	/** Delete the note holding this title, the way an application does. */
@@ -222,13 +210,11 @@ export class StoreTestReplica extends DurableObject<Env> {
 		if (db === undefined || store === undefined) {
 			return {
 				cursor: 0,
-				document: undefined,
 				connected: false,
 				titles: [],
 				prose: [],
 				lastError: undefined,
 				items: 0,
-				adoptions: this.adoptions,
 			};
 		}
 		const listed = db.tables.notes.list();
@@ -236,24 +222,17 @@ export class StoreTestReplica extends DurableObject<Env> {
 		const pressure = store.pressure();
 		return {
 			cursor: status?.cursor ?? 0,
-			document: store.sync.get().document,
 			connected: status?.connected ?? false,
 			titles: listed.rows.map((row) => row.title).sort(),
-			prose: (
-				await Promise.all(
-					listed.rows.map(async (row) => {
-						const opened = await db.tables.notes.openDocument(row.id);
-						const text = JSON.stringify(
-							opened?.data?.get('body', 'text')?.toJSON() ?? null,
-						);
-						opened?.data?.[Symbol.dispose]();
-						return text;
-					}),
+			prose: listed.rows
+				.map((row) =>
+					JSON.stringify(
+						db.tables.notes.content(row.id)?.types.body.toJSON() ?? null,
+					),
 				)
-			).sort(),
+				.sort(),
 			lastError: status?.lastError?.name,
 			items: pressure.items,
-			adoptions: this.adoptions,
 		};
 	}
 

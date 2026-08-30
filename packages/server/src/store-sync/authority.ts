@@ -1,5 +1,6 @@
 /**
- * One principal's authority for one application's store, in a Durable Object.
+ * One principal's authority for one generation of one database, in a Durable
+ * Object.
  *
  * A thin adapter and nothing more. Every rule about who has been sent what
  * lives in `@epicenter/data/sync`, so what is deployed here and what the
@@ -9,8 +10,11 @@
  * back in order, and keeps one snapshot plus the entries after it (ADR-0220).
  * Nothing here imports Yjs or a store, and there is no verb that could.
  *
- * It also names the current document. Connecting is not admission: every
- * authenticated upgrade is accepted, and `hub.join` decides everything.
+ * The generation is in the object's NAME (ADR-0292), so this object holds one
+ * history and cannot be pointed at another. That is what deleted the document
+ * announcement, the bootstrap round-trip, and the retirement close: every
+ * authenticated upgrade is accepted and caught up, and the only refusal left
+ * is storage that cannot be read.
  */
 import { DurableObject } from 'cloudflare:workers';
 import {
@@ -24,26 +28,20 @@ import {
 	createDurableObjectSqliteAdapter,
 	type DurableObjectSqliteStorage,
 } from '@epicenter/sqlite/durable-object';
+import { LOG_POSITION_HEADER } from '@epicenter/sync/generations-route';
 
 /**
- * A socket's position and declared document, kept where they survive
- * hibernation.
+ * A socket's position, kept where it survives hibernation.
  *
  * The in-memory map is the fast path and the attachment is the fallback. They
  * can disagree only in the safe direction: a woken object reads a position that
  * is BEHIND, re-sends entries the replica already has, and every one of them is
  * idempotent. The other direction would skip, and a skipped entry is invisible
- * forever. The document is set once at the dial and never moves.
+ * forever.
  */
-function attachmentOf(socket: WebSocket): {
-	cursor: number;
-	document: string | undefined;
-} {
-	const attached = socket.deserializeAttachment() as {
-		cursor?: number;
-		document?: string;
-	} | null;
-	return { cursor: attached?.cursor ?? 0, document: attached?.document };
+function cursorOf(socket: WebSocket): number {
+	const attached = socket.deserializeAttachment() as { cursor?: number } | null;
+	return attached?.cursor ?? 0;
 }
 
 export class StoreAuthority extends DurableObject {
@@ -81,18 +79,12 @@ export class StoreAuthority extends DurableObject {
 	private adopt(socket: WebSocket): HubConnection | undefined {
 		const existing = this.connections.get(socket);
 		if (existing !== undefined) return existing;
-		const attached = attachmentOf(socket);
-		let written = attached.cursor;
+		let written = cursorOf(socket);
 		const connection: HubConnection = {
 			cursor: written,
-			document: attached.document,
 			send(bytes) {
 				// A closing or closed socket takes nothing more: the hub's send is
-				// fire-and-forget, and workerd throws on a dead socket. Reachable
-				// when a frame in flight during the funeral re-runs admission and
-				// the retired verdict answers a socket the funeral already closed;
-				// the replica hears the fact on its next dial instead, which is
-				// free.
+				// fire-and-forget, and workerd throws on a dead socket.
 				if (socket.readyState !== WebSocket.OPEN) return;
 				socket.send(bytes);
 				// `serializeAttachment` is a DURABLE STORAGE WRITE. Written after the
@@ -102,40 +94,33 @@ export class StoreAuthority extends DurableObject {
 				// value that had not changed.
 				if (connection.cursor === written) return;
 				written = connection.cursor;
-				socket.serializeAttachment({
-					cursor: written,
-					...(connection.document === undefined
-						? {}
-						: { document: connection.document }),
-				});
+				socket.serializeAttachment({ cursor: written });
 			},
 		};
-		const admission = this.hub.join(connection);
-		if (admission !== 'admitted') {
-			// A retired connection was answered with the document announcement
-			// (already on the wire, through the send above); an unreadable
-			// document answers nothing, failing closed. Either way there is no
-			// membership and no cache entry, so a frame arriving after this
-			// close re-runs admission and meets the same verdict, which is what
-			// retired the readyState guard this class briefly carried
-			// (ADR-0231).
-			socket.close(
-				1000,
-				admission === 'bootstrap'
-					? 'bootstrap complete: reconnect with document identity'
-					: admission === 'retired'
-						? 'document superseded'
-						: 'authority unavailable',
-			);
+		if (this.hub.join(connection) !== 'admitted') {
+			// Storage that cannot be read: fail closed, with no membership and no
+			// cache entry, so a frame arriving after this close re-runs admission
+			// and meets the same verdict.
+			socket.close(1000, 'authority unavailable');
 			return undefined;
 		}
 		this.connections.set(socket, connection);
 		return connection;
 	}
 
-	/** Take one authenticated store-sync upgrade. */
+	/**
+	 * Take one authenticated store-sync upgrade, or one bulk transfer.
+	 *
+	 * Three verbs over one object, and they never overlap (ADR-0292): the
+	 * socket carries what is being edited, `POST` brings this generation into
+	 * being from one whole state, and `GET` hands that state to a device that
+	 * does not have it. The last two are HTTP because getting a complete copy
+	 * is parallel, resumable, cacheable, and needs no protocol.
+	 */
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get('Upgrade') !== 'websocket') {
+			if (request.method === 'POST') return this.seed(request);
+			if (request.method === 'GET') return this.serve();
 			return new Response('The store transport is WebSocket-only', {
 				status: 426,
 			});
@@ -143,35 +128,67 @@ export class StoreAuthority extends DurableObject {
 		const query = new URL(request.url).searchParams;
 		const asked = Number(query.get('cursor') ?? '0');
 		const cursor = Number.isFinite(asked) && asked >= 0 ? asked : 0;
-		// The membership fact the cursor cannot carry (ADR-0231): which
-		// document this replica's state belongs to. Absent means never
-		// stamped, which is also what an old build says. Bounded because it
-		// becomes part of a durable attachment.
-		const declared = query.get('document');
-		const document =
-			declared !== null && declared.length > 0 && declared.length <= 128
-				? declared
-				: undefined;
 		const pair = new WebSocketPair();
 
 		this.ctx.acceptWebSocket(pair[1]);
 		// Written before adopting, because the attachment is where a position
 		// comes from: this is the one place it is set from a request rather than
 		// read back off the socket, and there is no second source of truth.
-		pair[1].serializeAttachment({
-			cursor,
-			...(document === undefined ? {} : { document }),
-		});
-		// Adoption decides everything (ADR-0231): a servable connection joins
-		// the hub and catch-up runs here, synchronously, before this handler
-		// returns, so the replica's contiguity check holds by construction; a
-		// retired one is answered with the document announcement and closed
-		// without ever becoming a member. Either way the upgrade itself
-		// succeeds, because a browser can read a frame and cannot read a
-		// refused handshake.
+		pair[1].serializeAttachment({ cursor });
+		// Catch-up runs here, synchronously, before this handler returns, so the
+		// replica's contiguity check holds by construction. The upgrade itself
+		// succeeds either way, because a browser can read a frame and cannot
+		// read a refused handshake.
 		this.adopt(pair[1]);
 
 		return new Response(null, { status: 101, webSocket: pair[0] });
+	}
+
+	/**
+	 * Store one whole database state as this generation's first snapshot.
+	 *
+	 * Refused on a log that already holds anything: a generation is created
+	 * once and never mutated in place, so a second seed is a caller confusing
+	 * import with sync. The refusal is `409`, and a client that meets one
+	 * lists generations rather than retrying (ADR-0293).
+	 */
+	private async seed(request: Request): Promise<Response> {
+		const body = new Uint8Array(await request.arrayBuffer());
+		if (body.length === 0) {
+			return new Response('a generation needs a state', { status: 400 });
+		}
+		const { data: position, error } = this.authority.seed(body);
+		if (error !== null) {
+			return new Response(error.message, {
+				status: error.name === 'SnapshotRefused' ? 409 : 500,
+			});
+		}
+		return Response.json({ position });
+	}
+
+	/**
+	 * This generation's whole state, and the position it is current through.
+	 *
+	 * Served verbatim from the snapshot the import wrote, because the state is
+	 * stored whole and the authority has no way to re-encode it. The position
+	 * rides in a header so a bootstrapping device seeds its cursor there and
+	 * the socket carries only what happened afterwards, rather than being
+	 * handed the same state a second time.
+	 */
+	private serve(): Response {
+		const { data: snapshot, error } = this.authority.snapshot();
+		if (error !== null) return new Response(error.message, { status: 500 });
+		if (snapshot === undefined) {
+			return new Response('this generation has no stored state', {
+				status: 404,
+			});
+		}
+		return new Response(snapshot.bytes as unknown as BodyInit, {
+			headers: {
+				'content-type': 'application/octet-stream',
+				[LOG_POSITION_HEADER]: String(snapshot.position),
+			},
+		});
 	}
 
 	override webSocketMessage(

@@ -46,14 +46,23 @@ describe('blobPrincipalPrefix', () => {
 
 describe('storeAuthorityName', () => {
 	test('the resource segment is data, a sibling of blobs (ADR-0276)', () => {
-		expect(storeAuthorityName(userPrincipal, 'so.epicenter.honeycrisp')).toBe(
-			'principals/abc/data/so.epicenter.honeycrisp',
-		);
+		expect(
+			storeAuthorityName(userPrincipal, 'so.epicenter.honeycrisp', 3),
+		).toBe('principals/abc/data/so.epicenter.honeycrisp/generations/3');
 	});
 
 	test('an instance addresses one authority under the literal instance principal', () => {
-		expect(storeAuthorityName(instance, 'so.epicenter.honeycrisp')).toBe(
-			'principals/instance/data/so.epicenter.honeycrisp',
+		expect(storeAuthorityName(instance, 'so.epicenter.honeycrisp', 1)).toBe(
+			'principals/instance/data/so.epicenter.honeycrisp/generations/1',
 		);
+	});
+
+	test('two generations of one database are two objects (ADR-0292)', () => {
+		// The whole of membership. A replica addressed at generation 3 cannot
+		// reach generation 4's bytes however its dial is written, which is what
+		// retired the document identity stamp.
+		expect(
+			storeAuthorityName(userPrincipal, 'so.epicenter.honeycrisp', 3),
+		).not.toBe(storeAuthorityName(userPrincipal, 'so.epicenter.honeycrisp', 4));
 	});
 });

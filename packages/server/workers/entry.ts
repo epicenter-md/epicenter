@@ -10,10 +10,14 @@
  * is everything the store transport added.
  */
 import { Hono } from 'hono';
-import { mountStoreSyncApp } from '../src/store-sync/mount.js';
+import {
+	type GenerationsLedgerStub,
+	mountStoreSyncApp,
+} from '../src/store-sync/mount.js';
 import type { Env, ResolveBearerPrincipal } from '../src/types.js';
 
 export { StoreAuthority } from '../src/store-sync/authority.js';
+export { GenerationsLedger } from '../src/store-sync/generations.js';
 export { StoreTestReplica } from './replica.js';
 
 /** `device:<principalId>` and nothing else. Anything unrecognised is refused. */
@@ -43,6 +47,14 @@ mountStoreSyncApp(app, {
 		) as unknown as {
 			fetch(request: Request): Promise<Response>;
 		};
+	},
+	resolveLedger: (env, name) => {
+		const ledgerNamespace = (
+			env as unknown as { GENERATIONS_LEDGER: DurableObjectNamespace }
+		).GENERATIONS_LEDGER;
+		return ledgerNamespace.get(
+			ledgerNamespace.idFromName(name),
+		) as unknown as GenerationsLedgerStub;
 	},
 });
 

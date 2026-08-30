@@ -1,4 +1,5 @@
 import { field } from '@epicenter/data/definition';
+
 /**
  * THROWAWAY. One page, two devices, one row crossing between them.
  *
@@ -8,9 +9,9 @@ import { field } from '@epicenter/data/definition';
  * thing no test in this repository can establish.
  */
 
+import { defineData } from '@epicenter/data/definition';
 import { createAccountStore } from '@epicenter/data/engine';
 import { createSyncConnection } from '@epicenter/data/sync';
-import { defineData } from '@epicenter/data/definition';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
@@ -19,7 +20,12 @@ const labDatabase = defineData({
 	kv: {},
 	tables: {
 		notes: {
-			fields: { title: field.string(), device: field.string(), at: field.string() },
+			fields: {
+				title: field.string(),
+				device: field.string(),
+				at: field.string(),
+				prose: field.string(),
+			},
 		},
 	},
 });
@@ -50,15 +56,11 @@ const store = db.store;
  */
 const connection = createSyncConnection({
 	store,
-	dial: ({ cursor, document: documentId, opened, received, closed }) => {
+	dial: ({ cursor, opened, received, closed }) => {
 		const url = new URL('/sync', location.href);
 		url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
 		url.searchParams.set('app', 'lab');
 		url.searchParams.set('cursor', String(cursor));
-		// The membership fact (ADR-0231). This store is in-memory, so every
-		// page load is a pristine replica: one bootstrap dial learns the name,
-		// and this redial declares it through the equality door.
-		if (documentId !== undefined) url.searchParams.set('document', documentId);
 		const socket = new WebSocket(url);
 		socket.binaryType = 'arraybuffer';
 
@@ -125,10 +127,11 @@ function render(): void {
 }
 
 function write(fields: { title: string }): void {
-	const written = db.tables.notes.create({
+	db.tables.notes.create({
 		title: fields.title,
 		device,
 		at: new Date().toISOString(),
+		prose: '',
 	});
 	// Nothing nudges. The store announces the work it authored and the driver
 	// starts the idle timer, which is what turns a burst of transactions into
@@ -148,17 +151,13 @@ title.addEventListener('keydown', (event) => {
 paste.addEventListener('click', () => {
 	// One transaction well past the 2,097,152-byte storage cap, so the chunking
 	// path is exercised by hand on a real device rather than only in a test.
-	const written = db.tables.notes.create({
+	db.tables.notes.create({
 		title: 'a 3 MB paste',
 		device,
 		at: new Date().toISOString(),
+		prose: 'x'.repeat(3_000_000),
 	});
-	void db.tables.notes.openDocument(written.id).then((opened) => {
-		const text = opened.data?.get('editor', 'text');
-		text?.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
-		opened.data?.[Symbol.dispose]();
-		render();
-	});
+	render();
 });
 
 render();

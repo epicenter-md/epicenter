@@ -37,15 +37,9 @@ type Env = {
  * idempotent. The other direction would skip. The document is set once at the
  * dial and never moves.
  */
-function attachmentOf(socket: WebSocket): {
-	cursor: number;
-	document: string | undefined;
-} {
-	const attached = socket.deserializeAttachment() as {
-		cursor?: number;
-		document?: string;
-	} | null;
-	return { cursor: attached?.cursor ?? 0, document: attached?.document };
+function attachmentOf(socket: WebSocket): { cursor: number } {
+	const attached = socket.deserializeAttachment() as { cursor?: number } | null;
+	return { cursor: attached?.cursor ?? 0 };
 }
 
 export class SyncLabAuthority extends DurableObject {
@@ -86,11 +80,9 @@ export class SyncLabAuthority extends DurableObject {
 	private adopt(socket: WebSocket): HubConnection | undefined {
 		const existing = this.connections.get(socket);
 		if (existing !== undefined) return existing;
-		const attached = attachmentOf(socket);
-		let written = attached.cursor;
+		let written = attachmentOf(socket).cursor;
 		const connection: HubConnection = {
 			cursor: written,
-			document: attached.document,
 			send(bytes) {
 				if (socket.readyState !== WebSocket.OPEN) return;
 				socket.send(bytes);
@@ -105,27 +97,13 @@ export class SyncLabAuthority extends DurableObject {
 				// replica already has, which is idempotent.
 				if (connection.cursor === written) return;
 				written = connection.cursor;
-				socket.serializeAttachment({
-					cursor: written,
-					...(connection.document === undefined
-						? {}
-						: { document: connection.document }),
-				});
+				socket.serializeAttachment({ cursor: written });
 			},
 		};
-		const admission = this.hub.join(connection);
-		if (admission !== 'admitted') {
-			// The same door as the deployed adapter: a bootstrap heard the name,
-			// a retired replica heard the verdict, and neither is a member. The
-			// driver redials with the identity it persisted.
-			socket.close(
-				1000,
-				admission === 'bootstrap'
-					? 'bootstrap complete: reconnect with document identity'
-					: admission === 'retired'
-						? 'document replaced'
-						: 'authority unavailable',
-			);
+		if (this.hub.join(connection) !== 'admitted') {
+			// The same door as the deployed adapter: storage that cannot be read
+			// seats nobody, and there is nothing else left to refuse (ADR-0292).
+			socket.close(1000, 'authority unavailable');
 			return undefined;
 		}
 		this.connections.set(socket, connection);

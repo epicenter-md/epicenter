@@ -18,6 +18,7 @@ import {
 	type CloudEnv,
 	connectHyperdriveDb,
 	createServerApp,
+	GenerationsLedger,
 	mountBlobsApp,
 	mountCloudAuth,
 	mountCloudDb,
@@ -124,12 +125,13 @@ mountCloudAuth(app, {
 
 // Principal-partitioned reusable surfaces.
 mountSessionApp(app, { auth: cookieOrBearer });
-// The store transport (ADR-0220/0222): one Durable Object per
-// (principal, application id), reached by a WebSocket upgrade carrying
-// the same OAuth bearer every other surface uses. The principal is stamped from
-// the resolved bearer and the DO is addressed by it, so being signed in on two
-// devices is the whole of the sharing model: both dial their own partition and
-// converge. The authority reads nothing it stores (ADR-0218).
+// The store transport (ADR-0222, ADR-0292, ADR-0298): one Durable Object per
+// (principal, application id, generation) for the log, and one ledger per
+// (principal, application id) for which generations exist. Both are reached
+// with the same OAuth bearer every other surface uses, and the principal is
+// stamped from that bearer and prefixed onto the object name, so being signed
+// in on two devices is the whole of the sharing model. The authority reads
+// nothing it stores.
 mountStoreSyncApp(app, {
 	resolveBearerPrincipal: resolveRequestOAuthPrincipal,
 	resolveAuthority: (env, name) => {
@@ -143,6 +145,14 @@ mountStoreSyncApp(app, {
 		) as unknown as {
 			fetch(request: Request): Promise<Response>;
 		};
+	},
+	resolveLedger: (env, name) => {
+		const ledgerNamespace = (
+			env as Cloudflare.Env & {
+				GENERATIONS_LEDGER: DurableObjectNamespace<GenerationsLedger>;
+			}
+		).GENERATIONS_LEDGER;
+		return ledgerNamespace.get(ledgerNamespace.idFromName(name));
 	},
 });
 // Content-addressed blob store (supersedes the retired assets surface). v1 is
@@ -196,4 +206,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { StoreAuthority };
+export { GenerationsLedger, StoreAuthority };

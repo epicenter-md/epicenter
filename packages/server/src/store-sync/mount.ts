@@ -17,6 +17,7 @@
  */
 import {
 	DATA_ID,
+	GENERATIONS_ROUTE,
 	MAIN_SUBPROTOCOL,
 	parseSubprotocols,
 	STORE_SYNC_ROUTE,
@@ -30,7 +31,7 @@ import { OAuthError } from '../auth/oauth-errors.js';
 import { createOAuthUnauthorizedResourceResponse } from '../auth/oauth-resource.js';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
 import { setPrincipalOrReject } from '../middleware/require-auth.js';
-import { storeAuthorityName } from '../principal.js';
+import { storeAuthorityName, storeCollectionName } from '../principal.js';
 import type { ServerBindings } from '../server-bindings.js';
 import type { Env, ResolveBearerPrincipal } from '../types.js';
 
@@ -39,11 +40,32 @@ export type StoreAuthorityStub = {
 	fetch(request: Request): Promise<Response>;
 };
 
-/** How this runtime finds the authority for one (principal, dataId). */
+/** How this runtime finds the authority for one generation. */
 export type ResolveStoreAuthority = (
 	env: ServerBindings,
 	name: string,
 ) => StoreAuthorityStub;
+
+/**
+ * The ledger for one (principal, dataId): which generations exist.
+ *
+ * A generation exists if and only if its row is here (ADR-0293), so this is
+ * the gate every read passes and the last write every import makes. It is
+ * reached by method call rather than by `fetch`, because it carries numbers
+ * rather than bytes and there is no request to forward.
+ */
+export type GenerationsLedgerStub = {
+	allocate(): number | Promise<number>;
+	admit(generation: number): void | Promise<void>;
+	holds(generation: number): boolean | Promise<boolean>;
+	list(): number[] | Promise<number[]>;
+};
+
+/** How this runtime finds the ledger for one (principal, dataId). */
+export type ResolveGenerationsLedger = (
+	env: ServerBindings,
+	name: string,
+) => GenerationsLedgerStub;
 
 function requireStoreBearer<E extends Env>(
 	resolveBearerPrincipal: ResolveBearerPrincipal<E>,
@@ -67,6 +89,20 @@ function parseDataId(value: string | undefined): string | undefined {
 }
 
 /**
+ * The generation being synced, or undefined for anything that is not one.
+ *
+ * The same grammar the client admits at its own boundary (ADR-0292), checked
+ * again here because the value becomes part of a Durable Object name. A
+ * generation is a positive safe integer; `NaN` out of a URL segment is a bad
+ * request, never generation zero.
+ */
+function parseGeneration(value: string | null): number | undefined {
+	if (value === null) return undefined;
+	const parsed = Number(value);
+	return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : undefined;
+}
+
+/**
  * Mount the store transport on a deployment's server app.
  *
  * `resolveAuthority` binds this runtime's backend from the per-request env. The
@@ -79,6 +115,7 @@ export function mountStoreSyncApp<E extends Env = Env>(
 	opts: {
 		resolveBearerPrincipal: ResolveBearerPrincipal<E>;
 		resolveAuthority: ResolveStoreAuthority;
+		resolveLedger: ResolveGenerationsLedger;
 	},
 ): void {
 	app.use(
@@ -107,7 +144,13 @@ export function mountStoreSyncApp<E extends Env = Env>(
 					status: 400,
 				});
 			}
-			const name = storeAuthorityName(c.var.principal.id, dataId);
+			const generation = parseGeneration(c.req.query('generation') ?? null);
+			if (generation === undefined) {
+				return new Response('generation must be a positive integer', {
+					status: 400,
+				});
+			}
+			const name = storeAuthorityName(c.var.principal.id, dataId, generation);
 			const offered = parseSubprotocols(
 				c.req.header('sec-websocket-protocol') ?? null,
 			);
@@ -129,6 +172,110 @@ export function mountStoreSyncApp<E extends Env = Env>(
 						? { 'sec-websocket-protocol': MAIN_SUBPROTOCOL }
 						: undefined,
 			});
+		},
+	);
+
+	// The generations collection (ADR-0292, ADR-0293). Ordinary authenticated
+	// requests rather than upgrades, so they go through the same bearer
+	// middleware every other `/api` surface uses.
+	storeApp.use(
+		GENERATIONS_ROUTE.collectionPattern,
+		requireStoreBearer(opts.resolveBearerPrincipal),
+	);
+	storeApp.use(
+		GENERATIONS_ROUTE.itemPattern,
+		requireStoreBearer(opts.resolveBearerPrincipal),
+	);
+
+	storeApp.get(
+		GENERATIONS_ROUTE.collectionPattern,
+		describeRoute({
+			description: 'Every generation of this database that exists',
+			tags: ['store-sync'],
+		}),
+		async (c) => {
+			const dataId = parseDataId(c.req.param('dataId'));
+			if (dataId === undefined) {
+				return c.text('dataId must be a data definition id', 400);
+			}
+			const ledger = opts.resolveLedger(
+				c.env,
+				storeCollectionName(c.var.principal.id, dataId),
+			);
+			return c.json({ generations: await ledger.list() });
+		},
+	);
+
+	storeApp.post(
+		GENERATIONS_ROUTE.collectionPattern,
+		describeRoute({
+			description: 'Import one whole database state as a new generation',
+			tags: ['store-sync'],
+		}),
+		async (c) => {
+			const dataId = parseDataId(c.req.param('dataId'));
+			if (dataId === undefined) {
+				return c.text('dataId must be a data definition id', 400);
+			}
+			const ledger = opts.resolveLedger(
+				c.env,
+				storeCollectionName(c.var.principal.id, dataId),
+			);
+			// Allocate, store, admit, in that order (ADR-0293). The number is
+			// durable before anything is written under it, so it is never reused;
+			// the ledger row is last, so a crash leaves an object nothing
+			// addresses rather than a generation somebody can open half-written.
+			const generation = await ledger.allocate();
+			const stored = await opts
+				.resolveAuthority(
+					c.env,
+					storeAuthorityName(c.var.principal.id, dataId, generation),
+				)
+				.fetch(
+					new Request(new URL(c.req.url), {
+						method: 'POST',
+						body: c.req.raw.body,
+						headers: { 'content-type': 'application/octet-stream' },
+					}),
+				);
+			if (!stored.ok) return stored;
+			const { position } = (await stored.json()) as { position: number };
+			await ledger.admit(generation);
+			return c.json({ generation, position });
+		},
+	);
+
+	storeApp.get(
+		GENERATIONS_ROUTE.itemPattern,
+		describeRoute({
+			description: "One generation's whole state, served verbatim",
+			tags: ['store-sync'],
+		}),
+		async (c) => {
+			const dataId = parseDataId(c.req.param('dataId'));
+			if (dataId === undefined) {
+				return c.text('dataId must be a data definition id', 400);
+			}
+			const generation = parseGeneration(c.req.param('generation') ?? null);
+			if (generation === undefined) {
+				return c.text('generation must be a positive integer', 400);
+			}
+			// The ledger is the gate, not the authority's storage. An object
+			// holding bytes whose import never finished is addressable and must
+			// not be served: a generation exists if and only if it is listed.
+			const ledger = opts.resolveLedger(
+				c.env,
+				storeCollectionName(c.var.principal.id, dataId),
+			);
+			if (!(await ledger.holds(generation))) {
+				return c.text('no such generation', 404);
+			}
+			return opts
+				.resolveAuthority(
+					c.env,
+					storeAuthorityName(c.var.principal.id, dataId, generation),
+				)
+				.fetch(new Request(new URL(c.req.url), { method: 'GET' }));
 		},
 	);
 }

@@ -86,8 +86,11 @@ export { createServerApp } from './server-app.js';
 // apps/api); a Bun host validates `process.env` with the schema at boot.
 export { ServerBindings } from './server-bindings.js';
 export { StoreAuthority } from './store-sync/authority.js';
+export { GenerationsLedger } from './store-sync/generations.js';
 export {
+	type GenerationsLedgerStub,
 	mountStoreSyncApp,
+	type ResolveGenerationsLedger,
 	type ResolveStoreAuthority,
 	type StoreAuthorityStub,
 } from './store-sync/mount.js';
