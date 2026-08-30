@@ -566,9 +566,11 @@ export type AccountDocument = DataDocument & {
 /**
  * An account document that knows its server.
  *
- * Declared once. `browser.ts` called it `AddressedDocument` and
- * `sync/attach.ts` called it `AddressedDocument`, structurally identical,
- * in two files, and nothing but structural typing made them one type.
+ * Declared once, and now actually once. `browser.ts` and `sync/attach.ts` each
+ * kept their own copy of this after the consolidation that this comment
+ * claimed: three identical declarations, held together by structural typing,
+ * under a sentence saying there was one. A comment cannot enforce an
+ * invariant, which is why the other two now import.
  */
 export type AddressedDocument = AccountDocument & {
 	/** The canonical server identity this replica belongs to. */

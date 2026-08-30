@@ -69,6 +69,7 @@ export { StoreError, StoreUnusableError } from './errors.js';
 export type {
 	AccountData,
 	AccountDocument,
+	AddressedDocument,
 	BrowserData,
 	DataDocument,
 	DataView,

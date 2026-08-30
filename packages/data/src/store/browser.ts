@@ -65,11 +65,11 @@ import type {
 } from './persistence.js';
 import {
 	type AccountDocument,
+	type BrowserData,
 	createAccountStoreOverPort,
 	createLocalStoreOverPort,
-	type BrowserData,
-	type LocalData,
 	type DataView,
+	type LocalData,
 	type LocalDocument,
 	StoreError,
 	type UntypedDataView,
@@ -83,10 +83,6 @@ export {
 	GENERATIONS_ROUTE,
 	LOG_POSITION_HEADER,
 } from '@epicenter/sync/generations-route';
-// Re-exported so a browser caller's one import site names both kinds beside
-// the openers that produce them.
-export type { AccountDocument, LocalDocument } from './store.js';
-
 /**
  * One generation of one account's database, held on this device.
  *
@@ -96,12 +92,10 @@ export type { AccountDocument, LocalDocument } from './store.js';
  * one is opening a different address and this one is simply an older copy
  * (ADR-0292). Deleting it is a storage decision, not a correctness one.
  */
-export type AddressedDocument = AccountDocument & {
-	/** The canonical server identity this replica belongs to. */
-	readonly baseURL: string;
-	/** The principal asserted by that server for this replica. */
-	readonly principalId: PrincipalId;
-};
+export type { AddressedDocument } from './handles.js';
+// Re-exported so a browser caller's one import site names both kinds beside
+// the openers that produce them.
+export type { AccountDocument, LocalDocument } from './store.js';
 
 /**
  * The durable facts, one object store each (ADR-0238, ADR-0295).
@@ -602,17 +596,12 @@ export function openDatabase<const TDatabase extends DataDefinition>(
 	definition: TDatabase,
 	options: OpenDatabaseOptions & { account: DatabaseAccount },
 ): Promise<
-	Result<
-		BrowserData<TDatabase>,
-		StoreError | DataDefinitionParseError
-	>
+	Result<BrowserData<TDatabase>, StoreError | DataDefinitionParseError>
 >;
 export function openDatabase<const TDatabase extends DataDefinition>(
 	definition: TDatabase,
 	options: OpenDatabaseOptions & { account?: undefined },
-): Promise<
-	Result<LocalData<TDatabase>, StoreError | DataDefinitionParseError>
->;
+): Promise<Result<LocalData<TDatabase>, StoreError | DataDefinitionParseError>>;
 export async function openDatabase<const TDatabase extends DataDefinition>(
 	definition: TDatabase,
 	{ generation, account }: OpenDatabaseOptions,

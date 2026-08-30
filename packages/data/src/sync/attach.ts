@@ -19,17 +19,10 @@
  * `AuthClient` satisfies it structurally with no adapter.
  */
 
-import type { PrincipalId } from '@epicenter/principal';
 import { isOpenWebSocketDenial } from '@epicenter/sync/auth-subprotocol';
 import { STORE_SYNC_ROUTE } from '@epicenter/sync/store-route';
-import type { AccountDocument } from '../store/store.js';
+import type { AddressedDocument } from '../store/store.js';
 import { createSyncConnection, type SyncConnection } from './connection.js';
-
-/** An account replica with the server identity its socket must reach. */
-type AddressedDocument = AccountDocument & {
-	readonly baseURL: string;
-	readonly principalId: PrincipalId;
-};
 
 /**
  * How this host reaches its authority over a socket.
