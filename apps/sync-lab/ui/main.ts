@@ -9,7 +9,7 @@ import { field } from '@epicenter/data/definition';
  * thing no test in this repository can establish.
  */
 
-import { defineData } from '@epicenter/data/definition';
+import { defineData, defineTable } from '@epicenter/data/definition';
 import { createAccountStore } from '@epicenter/data/direct';
 import { createSyncConnection } from '@epicenter/data/sync';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
@@ -19,14 +19,14 @@ const labDatabase = defineData({
 	id: 'so.epicenter.synclab',
 	kv: {},
 	tables: {
-		notes: {
+		notes: defineTable({
 			scalars: {
 				title: field.string(),
 				device: field.string(),
 				at: field.string(),
 				prose: field.string(),
 			},
-		},
+		}),
 	},
 });
 

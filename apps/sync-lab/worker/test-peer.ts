@@ -18,7 +18,7 @@
  * deploys grows a class that exists for a test.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { defineData, field } from '@epicenter/data/definition';
+import { defineData, defineTable, field } from '@epicenter/data/definition';
 import { createAccountStore } from '@epicenter/data/direct';
 import {
 	createSyncClient,
@@ -34,7 +34,9 @@ const labDatabase = defineData({
 	id: 'so.epicenter.synclab',
 	kv: {},
 	tables: {
-		notes: { scalars: { title: field.string(), prose: field.string() } },
+		notes: defineTable({
+			scalars: { title: field.string(), prose: field.string() },
+		}),
 	},
 });
 
