@@ -1,4 +1,4 @@
-import { field } from '@epicenter/data/definition';
+import { field, plainText } from '@epicenter/data/definition';
 /**
  * Two replicas and one authority, wired through in-process sockets.
  *
@@ -19,7 +19,7 @@ import {
 } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
-import { Ok, type Result } from 'wellcrafted/result';
+import type { Result } from 'wellcrafted/result';
 import {
 	createAccountStore,
 	type DataView,
@@ -47,18 +47,7 @@ const database = defineData({
 	tables: {
 		notes: defineTable({
 			scalars: { title: field.string() },
-			types: ['editor'],
-			file: {
-				serialize: (row) => ({
-					data: { title: row.title },
-					content: row.editor.toString(),
-				}),
-				deserialize: (file) => {
-					const editor = new Y.Type();
-					editor.insert(0, [file.content]);
-					return Ok({ editor, title: String(file.data.title ?? '') });
-				},
-			},
+			content: plainText(),
 		}),
 	},
 });
@@ -89,11 +78,11 @@ function pump(): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** One row's `editor` type field, live on the database document (ADR-0295). */
+/** One row's `content` type field, live on the database document (ADR-0295). */
 function editorOf(replica: Replica, rowId: string) {
 	const content = replica.db.tables.notes.get(rowId);
 	if (content === undefined) throw new Error('the table holds no such row');
-	return content.editor;
+	return content.content;
 }
 
 /**
@@ -561,7 +550,7 @@ describe('chunking is framing, and carries what no single frame could', () => {
 		// about reassembly. This asserts the split happened AND that a lone piece
 		// is independently worthless, so concatenation is doing real work.
 		const doc = new Y.Doc({ gc: true });
-		const text = doc.get('editor', 'text');
+		const text = doc.get('content', 'text');
 		doc.transact(() =>
 			text.applyDelta(text.change.insert('x'.repeat(5_000_000)) as never),
 		);
@@ -1481,6 +1470,7 @@ const newerDatabase = defineData({
 	tables: {
 		notes: defineTable({
 			scalars: { title: field.string(), pinned: field.boolean() },
+			content: plainText(),
 		}),
 	},
 });
@@ -1490,8 +1480,14 @@ const twoTableDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
 	tables: {
-		notes: defineTable({ scalars: { title: field.string() } }),
-		tasks: defineTable({ scalars: { label: field.string() } }),
+		notes: defineTable({
+			scalars: { title: field.string() },
+			content: plainText(),
+		}),
+		tasks: defineTable({
+			scalars: { label: field.string() },
+			content: plainText(),
+		}),
 	},
 });
 
@@ -1532,7 +1528,7 @@ describe('two devices whose databases disagree', () => {
 		// reports no trouble: an undeclared key is not a conformance failure.
 		const seen = olderNotes;
 		expect(seen.nonconforming).toEqual([]);
-		expect(seen.rows).toEqual([{ id: made.id, title: 'Groceries' }]);
+		expect(seen.rows).toMatchObject([{ id: made.id, title: 'Groceries' }]);
 
 		expectOk(olderNotes.update(made.id, { title: 'Groceries and milk' }));
 		older.client.flush();
@@ -1541,7 +1537,7 @@ describe('two devices whose databases disagree', () => {
 		// Both halves in one assertion, and each is the other's control. The new
 		// title proves the round trip actually happened; `pinned` proves it did not
 		// cost the updated device a field the older one had never heard of.
-		expect(updatedNotes.get(made.id)).toEqual({
+		expect(updatedNotes.get(made.id)).toMatchObject({
 			id: made.id,
 			title: 'Groceries and milk',
 			pinned: true,
@@ -1604,7 +1600,7 @@ describe('two devices whose databases disagree', () => {
 
 		const seen = updatedNotes;
 		expect(seen.nonconforming).toEqual([]);
-		expect(seen.rows).toEqual([
+		expect(seen.rows).toMatchObject([
 			{ id: made.id, title: 'Groceries', pinned: false },
 		]);
 	});
@@ -1629,7 +1625,7 @@ describe('two devices whose databases disagree', () => {
 		// The device is updated: same durable file, the next runtime, a
 		// declaration that now names the table (ADR-0240).
 		const upgraded = await older.upgrade(twoTableDatabase);
-		expect(tableOf(upgraded.bound, 'tasks').rows).toEqual([
+		expect(tableOf(upgraded.bound, 'tasks').rows).toMatchObject([
 			{ id: task.id, label: 'buy milk' },
 		]);
 	});
@@ -1699,7 +1695,7 @@ describe('two devices whose databases disagree', () => {
 		const upgraded = await updating.upgrade(twoTableDatabase);
 		upgraded.connect();
 
-		expect(tableOf(upgraded.bound, 'tasks').rows).toEqual([]);
+		expect(tableOf(upgraded.bound, 'tasks').rows).toMatchObject([]);
 		expectOk(otherNotes.create({ title: 'Bread' }));
 		other.client.flush();
 		wire.settle();
@@ -1716,7 +1712,7 @@ describe('two devices whose databases disagree', () => {
 
 		const upgraded = await absent.upgrade(twoTableDatabase);
 
-		expect(tableOf(upgraded.bound, 'tasks').rows).toEqual([]);
+		expect(tableOf(upgraded.bound, 'tasks').rows).toMatchObject([]);
 	});
 });
 

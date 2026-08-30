@@ -1,5 +1,4 @@
-import { field } from '@epicenter/data/definition';
-import * as Y from '@y/y';
+import { field, plainText } from '@epicenter/data/definition';
 /**
  * What a brand-new device pays to join a vault that has been lived in.
  *
@@ -91,7 +90,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineData, defineTable } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { Ok } from 'wellcrafted/result';
 
 import { createAccountStore, syncEngineOf } from '../../src/store/store.js';
 import { openSyncAuthority } from '../../src/sync/authority.js';
@@ -102,18 +100,7 @@ const benchDatabase = defineData({
 	tables: {
 		notes: defineTable({
 			scalars: { title: field.string() },
-			types: ['editor'],
-			file: {
-				serialize: (row) => ({
-					data: { title: row.title },
-					content: row.editor.toString(),
-				}),
-				deserialize: (file) => {
-					const editor = new Y.Type();
-					if (file.content !== '') editor.insert(0, [file.content]);
-					return Ok({ title: String(file.data.title ?? ''), editor });
-				},
-			},
+			content: plainText(),
 		}),
 	},
 });
@@ -123,7 +110,7 @@ const NOTES = 986;
 const BODY_CHARS = 2800;
 
 /**
- * One day of use, as transactions a real editor would dispatch.
+ * One day of use, as transactions a real content would dispatch.
  *
  * Typing is per keystroke because ProseMirror dispatches that way. The churn is
  * the part `never-compact.ts` did not have and this bench needs: a snapshot is
@@ -149,7 +136,7 @@ const DAY = {
  * The client merges its own unsent updates on an idle timer, so the log grows
  * with SENDS rather than with transactions. Forty is roughly a send per second
  * of sustained typing, which is `never-compact.ts`'s "per second" policy and the
- * one a real editor's debounce produces.
+ * one a real content's debounce produces.
  */
 const SEND_EVERY = 40;
 
@@ -256,9 +243,9 @@ async function build(
 	};
 	/** One row's type field, live on the one document (ADR-0295). */
 	const bodyOf = (id: string) => {
-		const editor = db.tables.notes.get(id)?.editor;
-		if (editor === undefined) throw new Error('the row has no content');
-		return editor;
+		const content = db.tables.notes.get(id)?.content;
+		if (content === undefined) throw new Error('the row has no content');
+		return content;
 	};
 
 	const alive: string[] = [];
@@ -433,7 +420,7 @@ async function apply(
 	const canary = rows.rows.find((row) => row.title === expectation.canaryTitle);
 	let prose: string | undefined;
 	if (canary !== undefined) {
-		prose = db.tables.notes.get(canary.id)?.editor.toString();
+		prose = db.tables.notes.get(canary.id)?.content.toString();
 	}
 	// Guarding the guard: an expectation of an empty string would be satisfied by
 	// a replica that received nothing, which is the exact run this control exists

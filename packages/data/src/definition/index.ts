@@ -23,17 +23,19 @@ export {
 	type ParsedTable,
 	parseData,
 } from './compile.js';
+export { plainText } from './content.js';
 export {
+	CONTENT_FIELD,
+	type ContentCodec,
+	ContentError,
+	type CreateRowOf,
 	type DataDefinition,
 	type FieldMap,
 	field,
 	type KvOf,
-	type NewRowOf,
 	RESERVED_ATTRIBUTE_PREFIX,
-	type RowFileCodecOf,
-	RowFileError,
+	type ReservedRowField,
 	type RowOf,
-	type RowValues,
 	type ScalarsOf,
 	type TableDeclaration,
 } from './declaration.js';

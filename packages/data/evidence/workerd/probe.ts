@@ -1,5 +1,4 @@
-import { field } from '@epicenter/data/definition';
-import * as Y from '@y/y';
+import { field, plainText } from '@epicenter/data/definition';
 /**
  * What the transport does inside `workerd`, measured rather than assumed.
  *
@@ -26,7 +25,6 @@ import * as Y from '@y/y';
 import { Database } from 'bun:sqlite';
 import { defineData, defineTable } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { Ok } from 'wellcrafted/result';
 
 import {
 	type AccountDocument,
@@ -55,18 +53,7 @@ const evidenceDatabase = defineData({
 				device: field.string(),
 				at: field.string(),
 			},
-			types: ['editor'],
-			file: {
-				serialize: ({ id: _id, editor, ...fields }) => ({
-					data: fields,
-					content: editor.toString(),
-				}),
-				deserialize: (file) => {
-					const editor = new Y.Type();
-					if (file.content !== '') editor.insert(0, [file.content]);
-					return Ok({ ...file.data, editor } as never);
-				},
-			},
+			content: plainText(),
 		}),
 	},
 });
@@ -208,8 +195,8 @@ console.log('\n2. an update past the cap, through the real socket');
 		device: 'probe',
 		at: new Date().toISOString(),
 	});
-	const text = author.db.tables.notes.get(note.id)?.editor;
-	if (text === undefined) throw new Error('the row has no editor');
+	const text = author.db.tables.notes.get(note.id)?.content;
+	if (text === undefined) throw new Error('the row has no content');
 	// One transaction, well past the cap. There is no seam here for a coalescing
 	// bound to cut at, which is why the fix has to be framing at storage.
 	text.applyDelta(text.change.insert('x'.repeat(5_000_000)) as never);
@@ -217,7 +204,7 @@ console.log('\n2. an update past the cap, through the real socket');
 
 	let arrived: { length: number } | undefined;
 	await until('the reader to receive the paste', async () => {
-		arrived = reader.db.tables.notes.get(note.id)?.editor;
+		arrived = reader.db.tables.notes.get(note.id)?.content;
 		return (arrived?.length ?? 0) === 5_000_000;
 	});
 

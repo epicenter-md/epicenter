@@ -19,8 +19,12 @@
  * plain JSON, and both are faithful where the lens narrows.
  */
 import { describe, expect, test } from 'bun:test';
-import * as Y from '@y/y';
-import { defineData, defineTable, field } from '../src/definition/index.js';
+import {
+	defineData,
+	defineTable,
+	field,
+	plainText,
+} from '../src/definition/index.js';
 import { openMemory } from '../src/store/memory.js';
 import { syncEngineOf } from '../src/store/store.js';
 
@@ -30,14 +34,7 @@ const database = defineData({
 	tables: {
 		notes: defineTable({
 			scalars: { title: field.string() },
-			types: ['body'],
-			file: {
-				serialize: ({ id: _id, body, ...rest }) => ({
-					data: rest,
-					content: String(body),
-				}),
-				deserialize: (file) => ({ ...file.data, body: new Y.Type() }) as never,
-			},
+			content: plainText(),
 		}),
 	},
 });
@@ -46,8 +43,8 @@ const database = defineData({
 async function convergedPair() {
 	const phone = await openMemory(database);
 	const made = phone.tables.notes.create({ title: 'Groceries' });
-	const body = phone.tables.notes.get(made.id)?.body;
-	body?.insert(0, ['buy milk']);
+	const content = phone.tables.notes.get(made.id)?.content;
+	content?.insert(0, ['buy milk']);
 
 	const laptop = await openMemory(database);
 	syncEngineOf(laptop).applyRemote(phone.encodeStateSince());
@@ -58,7 +55,7 @@ describe('a row is a read, not a value', () => {
 	test('two converged stores do NOT produce equal rows', async () => {
 		const { phone, laptop, id } = await convergedPair();
 		// Same content, both directions of sync settled. The rows still differ,
-		// because each `body` is a live container with its own client id. This is
+		// because each `content` is a live container with its own client id. This is
 		// not a bug to fix; it is what carrying a handle means.
 		expect(laptop.tables.notes.get(id)).not.toEqual(
 			phone.tables.notes.get(id) as never,
@@ -77,14 +74,14 @@ describe('a row is a read, not a value', () => {
 		const held = phone.tables.notes.get(id);
 
 		phone.tables.notes.update(id, { title: 'Errands' });
-		held?.body.insert(0, ['and eggs, ']);
+		held?.content.insert(0, ['and eggs, ']);
 
 		// The scalar was copied out when it was read, so the held row still says
 		// what it said. The type field is the container itself, so the edit is
 		// visible through the same object.
 		expect(held?.title).toBe('Groceries');
 		expect(phone.tables.notes.get(id)?.title).toBe('Errands');
-		expect(held?.body.toString()).toContain('and eggs');
+		expect(held?.content.toString()).toContain('and eggs');
 	});
 
 	test('rowFile answers in plain JSON, for one row', async () => {
@@ -93,7 +90,7 @@ describe('a row is a read, not a value', () => {
 		if (row === undefined) throw new Error('the row is gone');
 		// Faithful and untyped: every stored scalar, and the live types beside
 		// them for a codec. The scalars alone are what a value comparison wants.
-		const { body: _body, ...scalars } = row;
+		const { content: _body, ...scalars } = row;
 		expect(scalars).toEqual({ id, title: 'Groceries' });
 	});
 });

@@ -1,5 +1,4 @@
-import { field } from '@epicenter/data/definition';
-import * as Y from '@y/y';
+import { field, plainText } from '@epicenter/data/definition';
 /**
  * The driver, over the same hub and authority that get deployed.
  *
@@ -19,7 +18,7 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { defineData, defineTable } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { Ok, type Result } from 'wellcrafted/result';
+import type { Result } from 'wellcrafted/result';
 
 import { createAccountStore, type DataView } from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
@@ -32,18 +31,7 @@ const database = defineData({
 	tables: {
 		notes: defineTable({
 			scalars: { title: field.string() },
-			types: ['editor'],
-			file: {
-				serialize: (row) => ({
-					data: { title: row.title },
-					content: row.editor.toString(),
-				}),
-				deserialize: (file) => {
-					const editor = new Y.Type();
-					if (file.content !== '') editor.insert(0, [file.content]);
-					return Ok({ editor, title: String(file.data.title ?? '') });
-				},
-			},
+			content: plainText(),
 		}),
 	},
 });
@@ -302,12 +290,12 @@ describe('a write syncs without anyone remembering to say so', () => {
 		run(wire, clock, 0);
 
 		const note = expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
-		const body = phone.db.tables.notes.get(note.id)?.editor;
-		if (body === undefined) throw new Error('the row has no editor');
+		const body = phone.db.tables.notes.get(note.id)?.content;
+		if (body === undefined) throw new Error('the row has no content');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
 		run(wire, clock, 1_000);
 
-		const arrived = laptop.db.tables.notes.get(note.id)?.editor;
+		const arrived = laptop.db.tables.notes.get(note.id)?.content;
 		expect(JSON.stringify(arrived?.toJSON())).toContain('milk and eggs');
 	});
 });

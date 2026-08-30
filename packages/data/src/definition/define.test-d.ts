@@ -14,6 +14,7 @@
  */
 
 import { Ok } from 'wellcrafted/result';
+import { plainText } from './content.js';
 
 import { defineData, defineTable, field } from './index.js';
 
@@ -36,6 +37,7 @@ defineTable({
 		serialize: () => ({ data: {}, content: '' }),
 		deserialize: () => Ok({}) as never,
 	},
+	content: plainText(),
 });
 
 /**

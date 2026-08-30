@@ -1,4 +1,4 @@
-import { defineTable, field } from '@epicenter/data/definition';
+import { defineTable, field, plainText } from '@epicenter/data/definition';
 /**
  * What the authority's storage actually tracks.
  *
@@ -36,7 +36,12 @@ import { openSyncAuthority } from '../../src/sync/authority.js';
 const evidenceDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: defineTable({ scalars: { title: field.string() } }) },
+	tables: {
+		notes: defineTable({
+			scalars: { title: field.string() },
+			content: plainText(),
+		}),
+	},
 });
 
 /** Roughly the live size of a working vault. */

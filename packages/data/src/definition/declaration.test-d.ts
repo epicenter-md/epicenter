@@ -4,6 +4,7 @@ import type {
 	InstantString,
 } from '@epicenter/field';
 import type { Static } from 'typebox';
+import { plainText } from './content.js';
 import { defineData, defineTable, field, type RowOf } from './index.js';
 
 /**
@@ -44,6 +45,7 @@ const definition = defineData({
 			scalars: {
 				status: field.select(['draft', 'published']),
 			},
+			content: plainText(),
 		}),
 	},
 });

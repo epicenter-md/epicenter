@@ -5,17 +5,18 @@
  * The round trip is proven end to end rather than by inspecting bytes: export a
  * live store, read the files back into one document's state, apply that state
  * to a fresh store, and compare what the two stores hold. A frontmatter emitter
- * that retyped a value or a codec that lost a body shows up here as a
+ * that retyped a value or a codec that lost a content shows up here as a
  * difference between two stores, which is the failure a person would
  * actually suffer.
  */
 
 import { describe, expect, test } from 'bun:test';
 import {
+	ContentError,
 	defineData,
 	defineTable,
 	field,
-	RowFileError,
+	plainText,
 } from '@epicenter/data/definition';
 import * as Y from '@y/y';
 import { Ok } from 'wellcrafted/result';
@@ -29,7 +30,10 @@ const store = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.string() },
 	tables: {
-		folders: defineTable({ scalars: { name: field.string() } }),
+		folders: defineTable({
+			scalars: { name: field.string() },
+			content: plainText(),
+		}),
 		notes: defineTable({
 			scalars: {
 				title: field.string(),
@@ -40,21 +44,10 @@ const store = defineData({
 				tags: field.tags(),
 				folderId: field.nullable(field.string()),
 			},
-			types: ['body'],
 			// The faithful codec: everything the store holds goes above the fence
 			// and comes back off it, so a key an older release wrote survives the
 			// round trip. The `id` is the path, not a field.
-			file: {
-				serialize: ({ id: _id, body, ...fields }) => ({
-					data: fields,
-					content: body.toString(),
-				}),
-				deserialize: (file) => {
-					const body = new Y.Type();
-					if (file.content !== '') body.insert(0, [file.content]);
-					return Ok({ ...file.data, body } as never);
-				},
-			},
+			content: plainText(),
 		}),
 	},
 });
@@ -78,7 +71,7 @@ async function seeded() {
 	});
 	const content = data.tables.notes.get(note.id);
 	if (content === undefined) throw new Error('the row has no content');
-	content.body.insert(0, ['buy milk\n\n---\nnot a fence']);
+	content.content.insert(0, ['buy milk\n\n---\nnot a fence']);
 	return { data, folder, note };
 }
 
@@ -117,7 +110,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(restored.stored().tables).toEqual(data.stored().tables);
 
 		// And the prose, through the codec, `---` fence and all.
-		expect(restored.tables.notes.get(note.id)?.body.toString()).toBe(
+		expect(restored.tables.notes.get(note.id)?.content.toString()).toBe(
 			'buy milk\n\n---\nnot a fence',
 		);
 		await data[Symbol.asyncDispose]();
@@ -194,11 +187,26 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(refused.name).toBe('MalformedFile');
 	});
 
-	test('a body under a table with no codec refuses, rather than dropping the prose', async () => {
+	test('a body under a table with no codec refuses, rather than dropping it', async () => {
+		// A definition that arrived as JSON carries no codec, because a function
+		// cannot be serialized (ADR-0266). A body underneath it has nowhere to
+		// go, and dropping it is the data loss this refuses.
+		const husk = JSON.parse(
+			JSON.stringify({
+				id: 'so.epicenter.honeycrisp',
+				kv: {},
+				tables: {
+					notes: defineTable({
+						scalars: { title: field.string() },
+						content: plainText(),
+					}),
+				},
+			}),
+		) as typeof store;
 		const files = new Map([
-			['folders/aaaa.md', '---\nname: "Inbox"\n---\n\nprose\n'],
+			['notes/aaaa.md', '---\ntitle: "x"\n---\n\nprose\n'],
 		]);
-		const refused = expectErr(readArtifact(files, store));
+		const refused = expectErr(readArtifact(files, husk));
 		expect(refused.name).toBe('UncodedBody');
 	});
 
@@ -209,11 +217,10 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			tables: {
 				notes: defineTable({
 					scalars: { title: field.string() },
-					types: ['body'],
-					file: {
-						serialize: () => ({ data: {}, content: '' }),
-						deserialize: () => {
-							throw new Error('not my format');
+					content: {
+						encode: (node) => node.toString(),
+						decode: () => {
+							throw new Error('the codec exploded');
 						},
 					},
 				}),
@@ -235,11 +242,9 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			tables: {
 				notes: defineTable({
 					scalars: { title: field.string() },
-					types: ['body'],
-					file: {
-						serialize: () => ({ data: {}, content: '' }),
-						deserialize: () =>
-							RowFileError.Unreadable({ reason: 'no title line' }),
+					content: {
+						encode: (node) => node.toString(),
+						decode: () => ContentError.Unreadable({ reason: 'no title line' }),
 					},
 				}),
 			},
@@ -252,12 +257,12 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(refused.message).toContain('no title line');
 	});
 
-	test('a codec that hands one type to two rows is refused', async () => {
-		// Two rows given one type hold the SAME body, and an edit to either shows
-		// up in both. Measured on `@y/y@14.0.0-rc.24`: setting one type at two
-		// keys leaves both keys holding the same instance, silently. `createRow`
-		// refuses a type that already belongs to a document, which is what makes
-		// that unrepresentable rather than a bug somebody finds later.
+	test('a codec that hands one node to two rows is refused', async () => {
+		// Two rows given one node hold the SAME content, and an edit to either
+		// shows up in both. Measured on `@y/y@14.0.0-rc.24`: setting one node at
+		// two keys leaves both keys holding the same instance, silently.
+		// `createRow` refuses a node that already belongs to a document, which is
+		// what makes that unrepresentable rather than a bug somebody finds later.
 		const shared = new Y.Type();
 		const sharing = defineData({
 			id: 'so.epicenter.honeycrisp',
@@ -265,17 +270,17 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			tables: {
 				notes: defineTable({
 					scalars: { title: field.string() },
-					types: ['body'],
-					file: {
-						serialize: () => ({ data: {}, content: '' }),
-						deserialize: () => Ok({ title: 'x', body: shared }),
+					// Hands back ONE node for every row, which is the mistake.
+					content: {
+						encode: (node) => node.toString(),
+						decode: () => Ok(shared),
 					},
 				}),
 			},
 		});
 		const files = new Map([
-			['notes/aaaa.md', '---\ntitle: "x"\n---\n'],
-			['notes/bbbb.md', '---\ntitle: "y"\n---\n'],
+			['notes/aaaa.md', '---\ntitle: "x"\n---\n\nfirst\n'],
+			['notes/bbbb.md', '---\ntitle: "y"\n---\n\nsecond\n'],
 		]);
 		const refused = expectErr(readArtifact(files, sharing));
 		expect(refused.message).toContain('already belongs to a document');

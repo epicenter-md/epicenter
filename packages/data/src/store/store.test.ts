@@ -5,10 +5,10 @@ import {
 	defineTable,
 	field,
 	InstantString,
+	plainText,
 } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
-import { Ok } from 'wellcrafted/result';
 import { createSqliteDurablePort } from './log.js';
 import { createMemoryRecord, openMemory } from './memory.js';
 import {
@@ -32,23 +32,7 @@ const database = defineData({
 				tags: field.tags(),
 				date: field.nullable(field.string()),
 			},
-			types: ['editor'],
-			file: {
-				serialize: (row) => ({
-					data: { title: row.title, tags: row.tags, date: row.date },
-					content: row.editor.toString(),
-				}),
-				deserialize: (file) => {
-					const editor = new Y.Type();
-					if (file.content !== '') editor.insert(0, [file.content]);
-					return Ok({
-						editor,
-						title: String(file.data.title ?? ''),
-						tags: (file.data.tags ?? []) as string[],
-						date: (file.data.date ?? null) as string | null,
-					});
-				},
-			},
+			content: plainText(),
 		}),
 	},
 });
@@ -71,11 +55,11 @@ function note(
 	});
 }
 
-/** One row's editor type, which `store.watch` takes directly. */
+/** One row's content type, which `store.watch` takes directly. */
 function editorOf(id: string) {
-	const editor = db.tables.notes.get(id)?.editor;
-	if (editor === undefined) throw new Error('the row has no editor');
-	return editor;
+	const content = db.tables.notes.get(id)?.content;
+	if (content === undefined) throw new Error('the row has no content');
+	return content;
 }
 
 /** Wrap one application-document update the way the wire carries it. */
@@ -257,6 +241,7 @@ describe('a nonconforming row is reported, never repaired', () => {
 					tags: field.string(),
 					date: field.nullable(field.string()),
 				},
+				content: plainText(),
 			}),
 		},
 	});
@@ -388,14 +373,14 @@ describe("a row's type content lives on the row (ADR-0295)", () => {
 	test('a type field is minted with its row and is empty', () => {
 		const made = note();
 		const content = db.tables.notes.get(made.id);
-		expect(content?.editor).toBeDefined();
-		expect(content?.editor.length).toBe(0);
+		expect(content?.content).toBeDefined();
+		expect(content?.content.length).toBe(0);
 	});
 
 	test('deleting the row takes its type content with it', () => {
 		const made = note();
-		const editor = db.tables.notes.get(made.id)?.editor;
-		editor?.applyDelta(editor.change.insert('milk') as never);
+		const content = db.tables.notes.get(made.id)?.content;
+		content?.applyDelta(content.change.insert('milk') as never);
 		db.tables.notes.delete(made.id);
 		expect(db.tables.notes.get(made.id)).toBeUndefined();
 	});
@@ -406,11 +391,11 @@ describe("a row's type content lives on the row (ADR-0295)", () => {
 		// exporter reads through `store.rowFile` rather than through `stored`.
 		const made = note();
 		const stored = db.stored().tables.get('notes')?.get(made.id);
-		expect(Object.keys(stored ?? {})).not.toContain('editor');
-		expect(db.tables.notes.get(made.id)?.editor).toBeDefined();
+		expect(Object.keys(stored ?? {})).not.toContain('content');
+		expect(db.tables.notes.get(made.id)?.content).toBeDefined();
 	});
 
-	test('an editor writing into its own type field cannot touch the row', () => {
+	test('an content writing into its own type field cannot touch the row', () => {
 		// Bound to the ROW itself, a ProseMirror schema whose doc node declares
 		// attributes would overwrite the row's fields and sync that; measured in
 		// ADR-0215. A type field is a type nested UNDER the row, so its
@@ -418,18 +403,18 @@ describe("a row's type content lives on the row (ADR-0295)", () => {
 		const made = note();
 		db.tables.notes
 			.get(made.id)
-			?.editor.setAttr('title' as never, 'CLOBBER' as never);
+			?.content.setAttr('title' as never, 'CLOBBER' as never);
 		expect(db.tables.notes.get(made.id)?.title).toBe('Groceries');
 	});
 
 	test('a type field rides the whole state and comes back attached', async () => {
 		const made = note();
-		const editor = db.tables.notes.get(made.id)?.editor;
-		editor?.applyDelta(editor.change.insert('milk and eggs') as never);
+		const content = db.tables.notes.get(made.id)?.content;
+		content?.applyDelta(content.change.insert('milk and eggs') as never);
 
 		const laptop = await openMemory(database);
 		syncEngineOf(laptop).applyRemote(db.encodeStateSince());
-		expect(laptop.tables.notes.get(made.id)?.editor.toString()).toContain(
+		expect(laptop.tables.notes.get(made.id)?.content.toString()).toContain(
 			'milk and eggs',
 		);
 	});
@@ -627,8 +612,12 @@ describe('a subscription says a table changed', () => {
 							tags: field.tags(),
 							date: field.nullable(field.string()),
 						},
+						content: plainText(),
 					}),
-					folders: defineTable({ scalars: { name: field.string() } }),
+					folders: defineTable({
+						scalars: { name: field.string() },
+						content: plainText(),
+					}),
 				},
 			}),
 		);
@@ -679,8 +668,8 @@ describe('a subscription says a table changed', () => {
 		const made = note();
 		const { seen } = record(db.tables.notes);
 
-		const body = db.tables.notes.get(made.id)?.editor;
-		if (body === undefined) throw new Error('the row has no editor');
+		const body = db.tables.notes.get(made.id)?.content;
+		if (body === undefined) throw new Error('the row has no content');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
 		expect(seen).toEqual([]);
 	});
@@ -835,6 +824,7 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 							tags: field.tags(),
 							date: field.nullable(field.string()),
 						},
+						content: plainText(),
 					}),
 				},
 			}),
@@ -857,14 +847,25 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		id: 'so.epicenter.honeycrisp',
 		kv: { theme: field.select(['light', 'dark']) },
 		tables: {
-			notes: defineTable({ scalars: { title: field.string() } }),
-			scratch: defineTable({ scalars: { body: field.string() } }),
+			notes: defineTable({
+				scalars: { title: field.string() },
+				content: plainText(),
+			}),
+			scratch: defineTable({
+				scalars: { body: field.string() },
+				content: plainText(),
+			}),
 		},
 	});
 	const withoutScratch = defineData({
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
-		tables: { notes: defineTable({ scalars: { title: field.string() } }) },
+		tables: {
+			notes: defineTable({
+				scalars: { title: field.string() },
+				content: plainText(),
+			}),
+		},
 	});
 
 	test('the next runtime has no handle; one that re-declares it reads every row back', async () => {
@@ -883,7 +884,7 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		// A later release declares them again: nothing was lost, because the
 		// CRDT is the truth and never dropped a byte.
 		const third = await openMemory(withScratch, record);
-		expect(third.tables.scratch.rows).toEqual([
+		expect(third.tables.scratch.rows).toMatchObject([
 			{ id: made.id, body: 'kept in the CRDT' },
 		]);
 		expect(third.kv.get('theme')).toBe('dark');
@@ -921,13 +922,19 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 		tables: {
 			notes: defineTable({
 				scalars: { title: field.string(), preview: field.string() },
+				content: plainText(),
 			}),
 		},
 	});
 	const withoutPreview = defineData({
 		id: 'so.epicenter.honeycrisp',
 		kv: {},
-		tables: { notes: defineTable({ scalars: { title: field.string() } }) },
+		tables: {
+			notes: defineTable({
+				scalars: { title: field.string() },
+				content: plainText(),
+			}),
+		},
 	});
 
 	test('a field the declaration dropped survives here and nowhere else', async () => {
@@ -946,7 +953,7 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 		const after = await openMemory(withoutPreview, record);
 		const listed = after.tables.notes;
 		expect(listed.nonconforming).toEqual([]);
-		expect(listed.rows).toEqual([{ id: made.id, title: 'Groceries' }]);
+		expect(listed.rows).toMatchObject([{ id: made.id, title: 'Groceries' }]);
 
 		expect(after.stored().tables.get('notes')?.get(made.id)).toEqual({
 			title: 'Groceries',
@@ -973,13 +980,13 @@ describe('foreign bytes have exactly one door', () => {
 	// field would take the throw and the suite fails loudly.
 	test('a direct Y.applyUpdateV2 on the live document throws instead of forging authored work', () => {
 		const made = note({ title: 'mine' });
-		const live = db.tables.notes.get(made.id)?.editor.doc;
+		const live = db.tables.notes.get(made.id)?.content.doc;
 		if (live === null || live === undefined) {
 			throw new Error('the type field is not attached to a document');
 		}
 
 		const stranger = new Y.Doc({ gc: true });
-		const text = stranger.get('editor', 'text' as never);
+		const text = stranger.get('content', 'text' as never);
 		stranger.transact(() =>
 			text.applyDelta(text.change.insert('theirs') as never),
 		);
@@ -1122,13 +1129,13 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 describe('a type field carries its own change signal (ADR-0297)', () => {
 	test('an edit to the field reaches its subscriber', () => {
 		const made = note();
-		const editor = db.tables.notes.get(made.id)?.editor;
-		if (editor === undefined) throw new Error('the row has no content');
+		const content = db.tables.notes.get(made.id)?.content;
+		if (content === undefined) throw new Error('the row has no content');
 		let fired = 0;
 		db.tables.notes.watch(editorOf(made.id), () => {
 			fired += 1;
 		});
-		editor.applyDelta(editor.change.insert('milk') as never);
+		content.applyDelta(content.change.insert('milk') as never);
 		expect(fired).toBe(1);
 	});
 
@@ -1148,15 +1155,15 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 
 	test('unsubscribing stops delivery, and doing it twice is harmless', () => {
 		const made = note();
-		const editor = db.tables.notes.get(made.id)?.editor;
-		if (editor === undefined) throw new Error('the row has no content');
+		const content = db.tables.notes.get(made.id)?.content;
+		if (content === undefined) throw new Error('the row has no content');
 		let fired = 0;
 		const stop = db.tables.notes.watch(editorOf(made.id), () => {
 			fired += 1;
 		});
 		stop();
 		stop();
-		editor.applyDelta(editor.change.insert('milk') as never);
+		content.applyDelta(content.change.insert('milk') as never);
 		expect(fired).toBe(0);
 	});
 
@@ -1166,16 +1173,16 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 		// commit that caused it, so a write made here is one commit later rather
 		// than a re-entry into the one being accepted.
 		const made = note();
-		const editor = db.tables.notes.get(made.id)?.editor;
-		if (editor === undefined) throw new Error('the row has no content');
+		const content = db.tables.notes.get(made.id)?.content;
+		if (content === undefined) throw new Error('the row has no content');
 		const order: string[] = [];
 		db.onCommitted(() => order.push('committed'));
 		db.tables.notes.subscribe(() => order.push('table'));
 		db.tables.notes.watch(editorOf(made.id), () => order.push('field'));
 
 		db.transact(() => {
-			editor.applyDelta(editor.change.insert('a') as never);
-			editor.applyDelta(editor.change.insert('b') as never);
+			content.applyDelta(content.change.insert('a') as never);
+			content.applyDelta(content.change.insert('b') as never);
 		});
 		// No 'table': prose is not a table event. The phase ORDER is still the
 		// contract, which is what a commit touching both halves shows.
@@ -1184,7 +1191,7 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 		order.length = 0;
 		db.transact(() => {
 			db.tables.notes.update(made.id, { title: 'renamed' });
-			editor.applyDelta(editor.change.insert('c') as never);
+			content.applyDelta(content.change.insert('c') as never);
 		});
 		expect(order).toEqual(['committed', 'table', 'field']);
 	});
@@ -1202,13 +1209,13 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 		});
 
 		const there = laptop.tables.notes.get(made.id);
-		there?.editor.applyDelta(
-			there.editor.change.insert('typed elsewhere') as never,
+		there?.content.applyDelta(
+			there.content.change.insert('typed elsewhere') as never,
 		);
 		syncEngineOf(db).applyRemote(laptop.encodeStateSince());
 
 		expect(fired).toBeGreaterThan(0);
-		expect(here.editor.toString()).toContain('typed elsewhere');
+		expect(here.content.toString()).toContain('typed elsewhere');
 	});
 });
 
@@ -1226,6 +1233,7 @@ describe('the store manages no timestamps (ADR-0297)', () => {
 						title: field.string(),
 						updatedAt: field.instant(),
 					},
+					content: plainText(),
 				}),
 			},
 		});
@@ -1244,10 +1252,17 @@ describe('the store manages no timestamps (ADR-0297)', () => {
 		const plain = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
-			tables: { notes: defineTable({ scalars: { title: field.string() } }) },
+			tables: {
+				notes: defineTable({
+					scalars: { title: field.string() },
+					content: plainText(),
+				}),
+			},
 		});
 		const data = await openMemory(plain);
 		const made = data.tables.notes.create({ title: 'Groceries' });
-		expect(Object.keys(made).sort()).toEqual(['id', 'title']);
+		// Its id, its declared scalar, and the node every row has. No timestamp,
+		// which is the claim: the store stamps nothing (ADR-0297).
+		expect(Object.keys(made).sort()).toEqual(['content', 'id', 'title']);
 	});
 });

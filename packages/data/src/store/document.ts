@@ -1,5 +1,8 @@
 import type { JsonObject, JsonValue } from '@epicenter/data/definition';
-import { RESERVED_ATTRIBUTE_PREFIX } from '@epicenter/data/definition';
+import {
+	CONTENT_FIELD,
+	RESERVED_ATTRIBUTE_PREFIX,
+} from '@epicenter/data/definition';
 import * as Y from '@y/y';
 
 /**
@@ -169,28 +172,21 @@ export function readRow(root: Y.Type, rowId: string): JsonObject | undefined {
 }
 
 /**
- * One row's type fields: the nested types at the named attributes.
+ * One row's content node.
  *
- * Reads what is THERE rather than what is declared, so a name the row does not
- * hold is simply absent and a caller never receives a type it cannot bind. A
- * row minted by this release holds every type field its declaration names,
- * because minting is one transaction (`createRow`); a row minted by an older
- * release that did not declare one holds nothing at that key, and gains
- * nothing by being read.
+ * Reads what is THERE rather than what is declared, so a row an older release
+ * minted without one is simply absent here and a caller never receives a node
+ * it cannot bind. Every row this release mints holds one, because minting is
+ * one transaction (`createRow`).
  */
-export function readRowTypes(
+export function readRowContent(
 	root: Y.Type,
 	rowId: string,
-	names: readonly string[],
-): Record<string, Y.Type> | undefined {
+): Y.Type | undefined {
 	const row = rowType(root, rowId);
 	if (row === undefined) return undefined;
-	const types: Record<string, Y.Type> = {};
-	for (const name of names) {
-		const value = row.getAttr(name) as unknown;
-		if (value instanceof Y.Type) types[name] = value;
-	}
-	return types;
+	const value = row.getAttr(CONTENT_FIELD) as unknown;
+	return value instanceof Y.Type ? value : undefined;
 }
 
 /**
@@ -233,61 +229,52 @@ export function createRow(
 	root: Y.Type,
 	rowId: string,
 	/**
-	 * The scalars, and any type field the caller already built.
+	 * The scalars, and the content node if the caller built one.
 	 *
-	 * A `Y.Type` value here is integrated at its key; anything else is a scalar.
-	 * A declared type field the caller omits is minted empty, so a table whose
-	 * rows are created programmatically never has to think about it.
+	 * A `Y.Type` at `content` is integrated there; anything else is a scalar.
+	 * An omitted node is minted empty, so a table whose rows are created
+	 * programmatically never has to think about it.
 	 */
 	fields: RowInput,
-	/**
-	 * Which of this table's fields are types (ADR-0295).
-	 *
-	 * **Integrated exactly once, in the transaction that mints the row.** Root
-	 * types converge by name; nested types do not, so two devices independently
-	 * minting a body at the same attribute key lose one subtree. Doing it with
-	 * the row removes the concurrency entirely, because a row id is minted
-	 * rather than chosen and no two devices ever mint the same one.
-	 */
-	types: readonly string[] = [],
 ): void {
 	refuseReservedFields(fields);
 	const existing = rowType(root, rowId);
 	const row = existing ?? mintRow(root, rowId);
-	// A type field may arrive already built (ADR-0296, amended). Split what came
-	// in: a nested type is integrated at its declared key, a value is filled
-	// like any other scalar.
 	const scalars: JsonObject = {};
-	const supplied = new Map<string, Y.Type>();
+	let given: Y.Type | undefined;
 	for (const [name, value] of Object.entries(fields)) {
-		if (value instanceof Y.Type) supplied.set(name, value);
-		else scalars[name] = value as JsonValue;
-	}
-	for (const name of supplied.keys()) {
-		if (types.includes(name)) continue;
-		// A nested type at an undeclared key would be unreachable through every
-		// read verb and unwritable by every codec: the declaration decides which
-		// fields are types, so this is a programmer error rather than a value.
-		throw new Error(
-			`'${name}' is not a declared type field of this table, so it cannot be given a nested type`,
-		);
+		if (!(value instanceof Y.Type)) {
+			scalars[name] = value as JsonValue;
+			continue;
+		}
+		if (name !== CONTENT_FIELD) {
+			// A row holds one node, at one reserved key. A node anywhere else
+			// would be unreachable through every read verb and unwritable by
+			// every codec, so this is a programmer error rather than a value.
+			throw new Error(
+				`'${name}' cannot hold a node: a row's one node is at '${CONTENT_FIELD}'`,
+			);
+		}
+		given = value;
 	}
 	if (existing === undefined) {
-		for (const name of types) {
-			const given = supplied.get(name);
-			// **A given type must not already belong to a document.** Measured on
-			// `@y/y@14.0.0-rc.24`: setting one type at two keys leaves both keys
-			// holding the SAME type, so two rows would share one body and edits to
-			// either would appear in both, silently; setting one into two documents
-			// corrupts across them. `doc` is non-null exactly when a type has been
-			// integrated, so refusing here makes both unrepresentable.
-			if (given !== undefined && given.doc !== null) {
-				throw new Error(
-					`the '${name}' given for row '${rowId}' already belongs to a document; build a fresh type per row`,
-				);
-			}
-			row.setAttr(name, (given ?? new Y.Type()) as never);
+		// **Integrated exactly once, in the transaction that mints the row.**
+		// Root types converge by name; nested ones do not, so two devices
+		// independently minting a node at the same key lose one subtree. Doing
+		// it with the row removes the concurrency entirely, because a row id is
+		// minted rather than chosen and no two devices ever mint the same one.
+		//
+		// **A given node must not already belong to a document.** Measured on
+		// `@y/y@14.0.0-rc.24`: setting one node at two keys leaves both keys
+		// holding the SAME node, so two rows would share it and edits to either
+		// would appear in both, silently. `doc` is non-null exactly when a node
+		// has been integrated, so refusing here makes that unrepresentable.
+		if (given !== undefined && given.doc !== null) {
+			throw new Error(
+				`the content given for row '${rowId}' already belongs to a document; build a fresh node per row`,
+			);
 		}
+		row.setAttr(CONTENT_FIELD, (given ?? new Y.Type()) as never);
 	}
 	fill(row, scalars);
 }

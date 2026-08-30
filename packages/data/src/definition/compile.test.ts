@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { Ok } from 'wellcrafted/result';
+import * as Y from '@y/y';
 import { expectOk } from 'wellcrafted/testing';
 import { parseData } from './compile.js';
-import { type DeclaredTable, field, type RowOf } from './declaration.js';
+import { plainText } from './content.js';
+import { field, type RowOf } from './declaration.js';
 import { defineData, defineTable } from './define.js';
 
 const authored = defineData({
@@ -19,6 +20,7 @@ const authored = defineData({
 				tags: field.multiSelect(['work', 'personal']),
 				publishedAt: field.nullable(field.instant()),
 			},
+			content: plainText(),
 		}),
 	},
 });
@@ -89,64 +91,46 @@ describe('data definitions', () => {
 		]);
 	});
 
-	test('a type field compiles to a name, not a column', () => {
-		// `field.type()` holds a nested `Y.Type` and no JSON value (ADR-0296), so
-		// it has no schema to check a payload against and nothing a conformance
-		// read could report. It compiles into `types` and out of `fields`.
+	test('the content codec compiles beside the fields, not into them', () => {
+		// A row's node holds no JSON value (ADR-0296), so it has no schema to
+		// check a payload against and nothing a conformance read could report.
+		// It compiles into `content` and stays out of `fields`.
 		const result = parseData({
 			id: 'so.epicenter.typed',
 			kv: {},
 			tables: {
-				notes: { scalars: { title: field.string() }, types: ['body'] },
+				notes: defineTable({
+					scalars: { title: field.string() },
+					content: plainText(),
+				}),
 			},
 		});
 		const notes = expectOk(result).tables.get('notes');
 		expect([...(notes?.fields.keys() ?? [])]).toEqual(['title']);
-		expect(notes?.types).toEqual(['body']);
+		expect(notes?.content).toBeDefined();
 		expect(notes?.conformance({ title: 'x' }).issues).toEqual([]);
 	});
 
-	test('a type field cannot be declared on a table twice', () => {
-		const result = parseData({
-			id: 'so.epicenter.dupes',
-			kv: {},
-			tables: {
-				notes: { scalars: { title: field.string() }, types: ['body', 'body'] },
-			},
-		});
-		expect(result.error?.name).toBe('Malformed');
-	});
-
-	test('a name cannot be both a scalar and a type field', () => {
+	test("a scalar cannot be called 'content', because every row already has one", () => {
+		// The compile-time half is `ValidateFields`, which puts the sentence on
+		// the offending key. This is the runtime half, for a definition that
+		// arrived as JSON and never met `defineTable`.
 		const result = parseData({
 			id: 'so.epicenter.collide',
 			kv: {},
-			tables: {
-				notes: { scalars: { body: field.string() }, types: ['body'] },
-			},
+			tables: { notes: { scalars: { content: field.string() } } },
 		});
 		expect(result.error?.name).toBe('Malformed');
 	});
 
-	test('a table with type content and no codec is refused where it is authored', () => {
-		// The rule lives at the authoring call and nowhere else (ADR-0296): a
-		// codec is a function, so a definition that arrived as JSON cannot carry
-		// one and its absence there says nothing.
-		expect(() =>
-			defineData({
-				id: 'so.epicenter.nocodec',
-				kv: {},
-				tables: {
-					// Cast past `defineTable`, which refuses this at compile time now.
-					// The runtime throw is the backstop for exactly that cast, and for
-					// a definition assembled some other way.
-					notes: {
-						scalars: { title: field.string() },
-						types: ['body'],
-					} as unknown as DeclaredTable,
-				},
-			}),
-		).toThrow('file codec');
+	test("kv may hold a field called 'content', because kv holds no rows", () => {
+		// Reserved on a ROW and only there. kv is settings, so nothing collides.
+		const result = parseData({
+			id: 'so.epicenter.kvcontent',
+			kv: { content: field.string() },
+			tables: { notes: { scalars: { title: field.string() } } },
+		});
+		expect(result.error).toBeNull();
 	});
 
 	test('a serialized codec husk compiles as no codec', () => {
@@ -155,11 +139,7 @@ describe('data definitions', () => {
 		// parseable, because an app bundle's `database.json` is read for its id.
 		const authored = defineTable({
 			scalars: { title: field.string() },
-			types: ['body'],
-			file: {
-				serialize: () => ({ data: {}, content: '' }),
-				deserialize: () => Ok({ title: '' }),
-			},
+			content: plainText(),
 		});
 		const result = parseData(
 			JSON.parse(
@@ -171,8 +151,12 @@ describe('data definitions', () => {
 			),
 		);
 		expect(result.error).toBeNull();
-		expect(result.data?.tables.get('notes')?.file).toBeUndefined();
-		expect(result.data?.tables.get('notes')?.types).toEqual(['body']);
+		// The codec is gone and the scalars survive: a husk is parseable, and
+		// what a missing codec costs is paid at the artifact boundary.
+		expect(result.data?.tables.get('notes')?.content).toBeUndefined();
+		expect([
+			...(result.data?.tables.get('notes')?.fields.keys() ?? []),
+		]).toEqual(['title']);
 	});
 
 	test('declaration defaults are rejected', () => {
@@ -195,10 +179,15 @@ describe('data definitions', () => {
 			tables: {
 				rows: defineTable({
 					scalars: { payload: field.json(field.select(['a', 'b'])) },
+					content: plainText(),
 				}),
 			},
 		});
-		const row: RowOf<typeof data.tables.rows> = { id: '1', payload: 'a' };
+		const row: RowOf<typeof data.tables.rows> = {
+			id: '1',
+			payload: 'a',
+			content: new Y.Type(),
+		};
 		expect(row.payload).toBe('a');
 	});
 });

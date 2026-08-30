@@ -1,5 +1,4 @@
-import { field } from '@epicenter/data/definition';
-import * as Y from '@y/y';
+import { field, plainText } from '@epicenter/data/definition';
 /**
  * The client half of sync: what a replica owes the authority, and what it has
  * read from it.
@@ -14,7 +13,7 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { defineData, defineTable } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { Ok, type Result } from 'wellcrafted/result';
+import type { Result } from 'wellcrafted/result';
 
 import { copyBytes } from './log.js';
 import { createAccountStore, syncEngineOf } from './store.js';
@@ -27,18 +26,7 @@ const database = defineData({
 	tables: {
 		notes: defineTable({
 			scalars: { title: field.string() },
-			types: ['editor'],
-			file: {
-				serialize: (row) => ({
-					data: { title: row.title },
-					content: row.editor.toString(),
-				}),
-				deserialize: (file) => {
-					const editor = new Y.Type();
-					if (file.content !== '') editor.insert(0, [file.content]);
-					return Ok({ editor, title: String(file.data.title ?? '') });
-				},
-			},
+			content: plainText(),
 		}),
 	},
 });
@@ -118,7 +106,7 @@ describe('the local log holds each update once', () => {
 		expect(syncEngineOf(reader.store).coalesce()).toBeUndefined();
 	});
 
-	test("an editor writing into a row's type field owes it, like any local work", () => {
+	test("an content writing into a row's type field owes it, like any local work", () => {
 		// Prose reaches storage through the document's own update listener
 		// rather than through a store verb, so it is the one local write that
 		// could plausibly be missed.
@@ -127,8 +115,8 @@ describe('the local log holds each update once', () => {
 			author.db.tables.notes.create({ title: 'Groceries' }),
 		);
 		const before = author.outbox().length;
-		const text = author.db.tables.notes.get(note.id)?.editor;
-		if (text === undefined) throw new Error('the row has no editor');
+		const text = author.db.tables.notes.get(note.id)?.content;
+		if (text === undefined) throw new Error('the row has no content');
 		text.applyDelta(text.change.insert('buy milk') as never);
 
 		expect(author.outbox().length).toBeGreaterThan(before);
@@ -285,8 +273,8 @@ describe("a row's type field is one type both devices edit", () => {
 			[author, 'written on the phone'],
 			[other, 'written on the laptop'],
 		] as const) {
-			const text = replica.db.tables.notes.get(note.id)?.editor;
-			if (text === undefined) throw new Error('the row has no editor');
+			const text = replica.db.tables.notes.get(note.id)?.content;
+			if (text === undefined) throw new Error('the row has no content');
 			text.applyDelta(text.change.insert(words) as never);
 		}
 
@@ -301,7 +289,7 @@ describe("a row's type field is one type both devices edit", () => {
 		expectOk(syncEngineOf(other.store).applyRemote(fromAuthor.bytes));
 
 		const readBack = (replica: typeof author) =>
-			JSON.stringify(replica.db.tables.notes.get(note.id)?.editor.toJSON());
+			JSON.stringify(replica.db.tables.notes.get(note.id)?.content.toJSON());
 		const merged = readBack(author);
 		expect(merged).toContain('phone');
 		expect(merged).toContain('laptop');

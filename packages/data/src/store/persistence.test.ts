@@ -1,5 +1,4 @@
-import { field } from '@epicenter/data/definition';
-import * as Y from '@y/y';
+import { field, plainText } from '@epicenter/data/definition';
 /**
  * The optimistic persistence boundary (ADR-0238): acceptance is live and
  * cannot fail for storage reasons; durability is an ordered queue flushed
@@ -15,7 +14,7 @@ import { describe, expect, test } from 'bun:test';
 import { defineData, defineTable, parseData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Logger } from 'wellcrafted/logger';
-import { Ok, type Result } from 'wellcrafted/result';
+import type { Result } from 'wellcrafted/result';
 
 import { createSqliteDurablePort } from './log.js';
 import { createPersistenceController, type DurableOp } from './persistence.js';
@@ -33,18 +32,7 @@ const database = defineData({
 	tables: {
 		notes: defineTable({
 			scalars: { title: field.string() },
-			types: ['editor'],
-			file: {
-				serialize: (row) => ({
-					data: { title: row.title },
-					content: row.editor.toString(),
-				}),
-				deserialize: (file) => {
-					const editor = new Y.Type();
-					if (file.content !== '') editor.insert(0, [file.content]);
-					return Ok({ editor, title: String(file.data.title ?? '') });
-				},
-			},
+			content: plainText(),
 		}),
 	},
 });
@@ -216,13 +204,13 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expectOk(replica.db.kv.update({ theme: 'dark' }));
 		expect(replica.db.kv.get('theme')).toBe('dark');
 
-		// A row's type field: an editor keeps writing prose while blocked. The
+		// A row's type field: an content keeps writing prose while blocked. The
 		// type is live on the document the store already holds, so a blocked
 		// engine never blocks acceptance.
-		const editor = replica.db.tables.notes.get(made.id)?.editor;
-		if (editor === undefined) throw new Error('the row has no editor');
-		editor.applyDelta(editor.change.insert('typed while blocked') as never);
-		expect(editor.toString()).toContain('typed while blocked');
+		const content = replica.db.tables.notes.get(made.id)?.content;
+		if (content === undefined) throw new Error('the row has no content');
+		content.applyDelta(content.change.insert('typed while blocked') as never);
+		expect(content.toString()).toContain('typed while blocked');
 
 		expect(replica.store.persistence.get()).toBe('blocked');
 		// Nothing reached the durable engine; everything above is the debt.
@@ -233,7 +221,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expect(replica.store.persistence.get()).toBe('saved');
 		const restarted = reopen(replica.sqlite);
 		expect(restarted.db.kv.get('theme')).toBe('dark');
-		const survived = restarted.db.tables.notes.get(made.id)?.editor;
+		const survived = restarted.db.tables.notes.get(made.id)?.content;
 		expect(survived?.toString()).toContain('typed while blocked');
 	});
 

@@ -21,7 +21,7 @@ import {
 	listRowIds,
 	type RowInput,
 	readRow,
-	readRowTypes,
+	readRowContent,
 	storedTableNames,
 	tableRoot,
 	updateRow,
@@ -815,11 +815,11 @@ function createStoreEngine(
 			const root = tableRoot(database, tableName);
 			const fields = readRow(root, rowId);
 			if (fields === undefined) return undefined;
-			const types = definition.tables.get(tableName)?.types ?? [];
+			const content = readRowContent(root, rowId);
 			return {
 				id: rowId,
 				...fields,
-				...readRowTypes(root, rowId, types),
+				...(content === undefined ? {} : { content }),
 			};
 		},
 		onCommitted(listener: () => void): () => void {
@@ -1068,8 +1068,6 @@ function createStoreEngine(
 		table: ParsedTable,
 	): TableHandle {
 		const root = tableRoot(database, tableName);
-		/** The type fields this table declares, minted with every row it creates. */
-		const typeFields = table.types;
 
 		/** One stored payload, read through the declaration the way every read reads. */
 		function conformRow(
@@ -1091,9 +1089,10 @@ function createStoreEngine(
 					});
 		}
 
-		/** One row as an application reads it: the scalars, and the live types. */
-		function withTypes(row: Row): Row {
-			return { ...row, ...readRowTypes(root, row.id, typeFields) };
+		/** One row as an application reads it: the scalars, and the live node. */
+		function withContent(row: Row): Row {
+			const content = readRowContent(root, row.id);
+			return content === undefined ? row : { ...row, content };
 		}
 
 		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
@@ -1104,15 +1103,15 @@ function createStoreEngine(
 		const handle: TableHandle = {
 			create(fields: RowInput): Row {
 				const rowId = mintRowId();
-				// The type fields are integrated in the same transaction (ADR-0295),
-				// and never again: nested types do not converge by name, so a field
-				// minted lazily on two devices would lose one subtree.
-				transact(() => createRow(root, rowId, fields, typeFields));
-				// Read back rather than echoed: a type field the caller omitted was
-				// minted empty here, and one it passed is now the INTEGRATED type
-				// rather than the detached one it handed over. Echoing the argument
-				// would return a type that reads as empty.
-				return withTypes({ id: rowId, ...readRow(root, rowId) });
+				// The node is integrated in the same transaction (ADR-0295), and
+				// never again: nested types do not converge by name, so one minted
+				// lazily on two devices would lose a subtree.
+				transact(() => createRow(root, rowId, fields));
+				// Read back rather than echoed: a node the caller omitted was minted
+				// empty here, and one it passed is now the INTEGRATED node rather
+				// than the detached one it handed over. Echoing the argument would
+				// return a node that reads as empty.
+				return withContent({ id: rowId, ...readRow(root, rowId) });
 			},
 			get(rowId: string): Row | undefined {
 				assertUsable();
@@ -1124,7 +1123,7 @@ function createStoreEngine(
 				// (ADR-0125). Absent and unreadable answer the same way here because
 				// a caller asking for one row does the same thing with either.
 				const { data } = conformRow(rowId, payload);
-				return data === null ? undefined : withTypes(data);
+				return data === null ? undefined : withContent(data);
 			},
 			update(rowId: string, fields: JsonObject): Result<void, RowAbsentError> {
 				// One lookup, not two. This used to ask `hasRow` and then write
@@ -1152,7 +1151,7 @@ function createStoreEngine(
 				const rows: Row[] = [];
 				for (const [rowId, payload] of rowsOf(tableName)) {
 					const { data } = conformRow(rowId, payload);
-					if (data !== null) rows.push(withTypes(data));
+					if (data !== null) rows.push(withContent(data));
 				}
 				return rows;
 			},

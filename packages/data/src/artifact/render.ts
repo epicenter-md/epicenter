@@ -148,30 +148,37 @@ export async function renderRow(
 	if (row === undefined) {
 		return Ok({ path, contents: undefined });
 	}
-	const { id: _id, ...values } = row;
+	const { id: _id, content, ...values } = row;
+	// The scalars ARE the frontmatter, by field name. The platform writes them,
+	// because the name is already the durable key in the document and a second
+	// name on disk would be a second copy of an identifier.
 	const fields: JsonObject = {};
 	for (const [name, value] of Object.entries(values)) {
 		if (!(value instanceof Y.Type)) fields[name] = value as JsonValue;
 	}
 
-	const parsed = definition.tables.get(table);
-	const codec = parsed?.file;
+	const node = content instanceof Y.Type ? content : undefined;
+	const codec = definition.tables.get(table)?.content;
 	if (codec === undefined) {
-		// A table with no type content exports its scalars as frontmatter and an
-		// empty body, which is the whole of what it is (ADR-0296). A table WITH
-		// type content and no codec has a body it cannot write, and writing the
-		// file without it is the data loss this refuses.
-		if ((parsed?.types.length ?? 0) > 0) {
+		// A definition that arrived as JSON carries no codec, and a row whose
+		// node is empty has nothing that needed one: its file is its frontmatter,
+		// which is the whole of what it is (ADR-0296). A node WITH content and no
+		// codec has a body it cannot write, and writing the file without it is
+		// the data loss this refuses.
+		if (node !== undefined && node.length > 0) {
 			return RenderError.UncodedRow({ table, rowId });
 		}
 		return Ok({ path, contents: rowFile(fields, undefined) });
 	}
 
 	try {
-		// One object, straight through. The row already carries its live types,
-		// so nothing here assembles a shape out of two verbs and casts it.
-		const file = codec.serialize(row);
-		return Ok({ path, contents: rowFile(file.data, file.content) });
+		return Ok({
+			path,
+			contents: rowFile(
+				fields,
+				node === undefined ? undefined : codec.encode(node),
+			),
+		});
 	} catch (cause) {
 		return RenderError.BodyUnwritable({ table, rowId, cause });
 	}

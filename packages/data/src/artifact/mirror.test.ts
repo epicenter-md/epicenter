@@ -13,7 +13,12 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { defineData, defineTable, field } from '@epicenter/data/definition';
+import {
+	defineData,
+	defineTable,
+	field,
+	plainText,
+} from '@epicenter/data/definition';
 import * as Y from '@y/y';
 import { Ok } from 'wellcrafted/result';
 import { openMemory } from '../store/memory.js';
@@ -25,18 +30,7 @@ const store = defineData({
 	tables: {
 		notes: defineTable({
 			scalars: { title: field.string() },
-			types: ['body'],
-			file: {
-				serialize: (row) => ({
-					data: { title: row.title },
-					content: row.body.toString(),
-				}),
-				deserialize: (file) => {
-					const body = new Y.Type();
-					if (file.content !== '') body.insert(0, [file.content]);
-					return Ok({ title: String(file.data.title ?? ''), body });
-				},
-			},
+			content: plainText(),
 		}),
 	},
 });
@@ -158,7 +152,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		// The signal the collapse restored (ADR-0295). A type field is a nested
 		// type on the row, so a keystroke bubbles through `changedParentTypes`
 		// to the table root and the store's commit listener hears it. Before the
-		// collapse a body edit reached `onCommitted` only by way of a derived
+		// collapse a content edit reached `onCommitted` only by way of a derived
 		// write onto the row, so a table declaring no derivation wrote bytes
 		// that notified nobody and the folder stayed stale until the next
 		// unrelated commit.
@@ -177,7 +171,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 
 		const content = data.tables.notes.get(made.id);
 		if (content === undefined) throw new Error('the row has no content');
-		content.body.insert(0, ['buy milk']);
+		content.content.insert(0, ['buy milk']);
 		await settle();
 
 		expect(files.get(`notes/${made.id}.md`)).toContain('buy milk');
@@ -238,13 +232,12 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 			tables: {
 				notes: defineTable({
 					scalars: { title: field.string() },
-					types: ['body'],
-					file: {
-						serialize: () => {
-							if (explode) throw new Error('the codec refused');
-							return { data: {}, content: '' };
+					content: {
+						encode: (node) => {
+							if (explode) throw new Error('the codec exploded');
+							return node.toString();
 						},
-						deserialize: () => Ok({ title: '' }),
+						decode: () => Ok(new Y.Type()),
 					},
 				}),
 			},

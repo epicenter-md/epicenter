@@ -21,74 +21,55 @@
  */
 import { parseData } from './compile.js';
 import type {
+	ContentCodec,
 	DeclaredMark,
 	DeclaredTable,
 	FieldMap,
-	RowFileCodec,
-	RowFileCodecOf,
+	ReservedRowField,
 } from './declaration.js';
 
 type RejectDefault<T> = T extends { default: unknown } ? never : T;
+
 /**
- * The scalars of one bucket, with a declared default refused at the field.
+ * The scalars of one bucket, with a declared default refused at the field and
+ * a reserved name refused at the key.
  *
  * `defineTable` applies this to a table's `scalars` and `defineData` applies it
- * to `kv`, which are the two places a field map is authored. Nothing applies it
- * to a TABLE any more: a table reaches `defineData` already branded, so it has
- * been through `defineTable` and been checked there.
+ * to `kv`, which are the two places a field map is authored.
+ *
+ * The reserved-name arm is what replaced a mapped type over the type-field
+ * TUPLE that carried its error sentence in the element position. A row has one
+ * node, at one reserved key, so a collision is a key comparison rather than a
+ * search, and the message lands on the offending field.
  */
 type ValidateFields<T extends FieldMap> = {
-	[K in keyof T]: RejectDefault<T[K]>;
+	[K in keyof T]: K extends ReservedRowField
+		? `'${K & string}' is reserved: every row already has an id and a content node`
+		: RejectDefault<T[K]>;
 };
 
 /**
- * Refuse a type field that is already a scalar, at the name that collides.
+ * Declare one table.
  *
- * `RowOf` is `{ id } & ScalarsOf<T> & TypesOf<T>`, so one name in both buckets
- * intersects a `Static<>` with a `Y.Type` and the field reads as an impossible
- * type rather than as a mistake. `parseData` refuses it at runtime; this is the
- * compile-time half, and it belongs here because this is the authoring call.
+ * **Every table declares its content codec**, because the platform cannot know
+ * what a table's node means and there is no safe default: rendering a node as
+ * text and reading the rendering back turns attributes into one literal string
+ * that prints identically. A table whose content is exactly its text says
+ * `plainText()`; a table whose node means something else says so itself.
  *
- * The bad element's expected type BECOMES the sentence, rather than the whole
- * declaration failing. That is what puts the error under `'title'` in `types`
- * and prints the reason, instead of reporting a mismatched object three lines
- * up. Intersecting with `TTypes` would collapse the element to `never` and take
- * the sentence with it.
- *
- * A homomorphic mapped type over `keyof TTypes`, so it stays an inference site:
- * `types: ['body']` still infers `readonly ['body']` rather than widening.
- *
- * A name declared twice WITHIN `types` is not caught here. Finding it means
- * accumulating what has been seen across the tuple, which is a search rather
- * than a lookup; `parseData` refuses that one, and it stays runtime.
+ * The return ERASES the codec down to `ContentCodec`, which costs nothing now
+ * that a codec is a pair over one node rather than over a row. A
+ * `DataDefinition` holds every table under one shape, so it cannot be generic
+ * over each table's fields.
  */
-type RejectScalarCollision<
-	TScalars extends FieldMap,
-	TTypes extends readonly string[],
-> = {
-	[I in keyof TTypes]: TTypes[I] extends keyof TScalars
-		? `'${TTypes[I] & string}' is already a scalar of this table, and one name cannot be both`
-		: TTypes[I];
-};
-
-export function defineTable<
-	const TScalars extends FieldMap,
-	const TTypes extends readonly string[] = readonly [],
->(
-	table: {
-		scalars: TScalars & ValidateFields<TScalars>;
-		types?: RejectScalarCollision<TScalars, TTypes>;
-	} & ([TTypes[number]] extends [never]
-		? { file?: RowFileCodecOf<{ scalars: TScalars; types: TTypes }> }
-		: { file: RowFileCodecOf<{ scalars: TScalars; types: TTypes }> }),
-): DeclaredMark & { scalars: TScalars; types: TTypes; file?: RowFileCodec } {
-	// The brand is a phantom: declared, never assigned, and asserted here. The
-	// cast that carries it is the same one that already erased `RowFileCodecOf`
-	// down to `RowFileCodec`, so this adds an assertion rather than a hop.
+export function defineTable<const TScalars extends FieldMap>(table: {
+	scalars: TScalars & ValidateFields<TScalars>;
+	content: ContentCodec;
+}): DeclaredMark & { scalars: TScalars; content: ContentCodec } {
+	// The brand is a phantom: declared, never assigned, and asserted here.
 	return table as unknown as DeclaredMark & {
 		scalars: TScalars;
-		types: TTypes;
-		file?: RowFileCodec;
+		content: ContentCodec;
 	};
 }
 
@@ -123,21 +104,6 @@ export function defineData<
 	const compiled = parseData(data);
 	if (compiled.error !== null) {
 		throw new Error(compiled.error.message, { cause: compiled.error });
-	}
-	// **A table that declares any `field.type()` must declare `file`**
-	// (ADR-0296), and this is the only place the rule can be enforced at
-	// runtime. `parseData` cannot: it also reads a definition that arrived as
-	// JSON, which cannot carry a function, so a codec's absence there says
-	// nothing. This call is the authoring boundary, where a missing codec is a
-	// programmer error and the last moment it is fixable rather than a body
-	// missing from a backup.
-	for (const [tableName, table] of compiled.data.tables) {
-		if (table.types.length === 0 || table.file !== undefined) continue;
-		throw new Error(
-			`Table '${tableName}' declares type content (${table.types.join(
-				', ',
-			)}) and no file codec to export or import it with`,
-		);
 	}
 	return data as TData;
 }

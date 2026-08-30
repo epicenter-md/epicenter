@@ -1,4 +1,4 @@
-import { field } from '@epicenter/data/definition';
+import { field, plainText } from '@epicenter/data/definition';
 /**
  * Browser Store Address Tests
  *
@@ -32,7 +32,7 @@ import { describe, expect, test } from 'bun:test';
 import { defineData, defineTable } from '@epicenter/data/definition';
 import { asPrincipalId } from '@epicenter/principal';
 import * as Y from '@y/y';
-import { Ok, type Result } from 'wellcrafted/result';
+import type { Result } from 'wellcrafted/result';
 import { expectErr, expectOk as expectOkResult } from 'wellcrafted/testing';
 
 import {
@@ -51,18 +51,7 @@ function databaseFor(label: string) {
 		tables: {
 			notes: defineTable({
 				scalars: { title: field.string() },
-				types: ['editor'],
-				file: {
-					serialize: (row) => ({
-						data: { title: row.title },
-						content: row.editor.toString(),
-					}),
-					deserialize: (file) => {
-						const editor = new Y.Type();
-						if (file.content !== '') editor.insert(0, [file.content]);
-						return Ok({ editor, title: String(file.data.title ?? '') });
-					},
-				},
+				content: plainText(),
 			}),
 		},
 	});
@@ -605,20 +594,20 @@ describe("a row's type content survives a reopen (ADR-0295)", () => {
 		{
 			const local = expectOk(await openLocalData(database));
 			rowId = local.tables.notes.create({ title: 'x' }).id;
-			const content = local.tables.notes.get(rowId);
-			if (content === undefined) throw new Error('the row has no content');
-			// The application picks the field's format. In Yjs 14 `change` hands
+			const row = local.tables.notes.get(rowId);
+			if (row === undefined) throw new Error('the row has no content');
+			// The application picks the node's format. In Yjs 14 `change` hands
 			// back a fresh builder and `applyDelta` commits it.
-			const editor = content.editor;
-			editor.applyDelta(editor.change.insert('buy milk') as never);
-			editor.setAttr('cursor' as never, 8 as never);
+			const { content } = row;
+			content.applyDelta(content.change.insert('buy milk') as never);
+			content.setAttr('cursor' as never, 8 as never);
 			await local[Symbol.asyncDispose]();
 		}
 
 		const reopened = expectOk(await openLocalData(database));
-		const editor = reopened.tables.notes.get(rowId)?.editor;
-		expect(editor?.toString()).toContain('buy milk');
-		expect(editor?.getAttr('cursor' as never)).toBe(8);
+		const content = reopened.tables.notes.get(rowId)?.content;
+		expect(content?.toString()).toContain('buy milk');
+		expect(content?.getAttr('cursor' as never)).toBe(8);
 		await reopened[Symbol.asyncDispose]();
 	});
 });

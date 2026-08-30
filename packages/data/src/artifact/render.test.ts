@@ -4,6 +4,7 @@ import {
 	defineTable,
 	field,
 	parseData,
+	plainText,
 } from '@epicenter/data/definition';
 import * as Y from '@y/y';
 import { Ok } from 'wellcrafted/result';
@@ -20,26 +21,12 @@ const store = defineData({
 	tables: {
 		notes: defineTable({
 			scalars: { title: field.string() },
-			types: ['body'],
-			file: {
-				// The whole row, mapped: the scalars above the fence and the type
-				// field below it. The codec spreads what it was handed, so a value
-				// an older release wrote rides along instead of being dropped.
-				serialize: ({ id: _id, body, ...fields }) => ({
-					data: fields,
-					content: body.toString(),
-				}),
-				deserialize: (file) => {
-					const body = new Y.Type();
-					if (file.content !== '') body.insert(0, [file.content]);
-					return Ok({ title: String(file.data.title ?? ''), body });
-				},
-			},
+			content: plainText(),
 		}),
 	},
 });
 
-/** Write prose into one row's `body` type field. */
+/** Write prose into one row's `content` type field. */
 function type(
 	data: { tables: { notes: TypedTableHandle<NoteFields> } },
 	rowId: string,
@@ -47,7 +34,7 @@ function type(
 ): void {
 	const content = data.tables.notes.get(rowId);
 	if (content === undefined) throw new Error('the row has no content');
-	content.body.insert(0, [text]);
+	content.content.insert(0, [text]);
 }
 
 /** Collect the stream into a map, which is what an assertion wants. */
@@ -101,7 +88,12 @@ describe('renderRow is the unit (ADR-0271)', () => {
 		const scalarOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
-			tables: { folders: defineTable({ scalars: { name: field.string() } }) },
+			tables: {
+				folders: defineTable({
+					scalars: { name: field.string() },
+					content: plainText(),
+				}),
+			},
 		});
 		await using data = await openMemory(scalarOnly);
 		const made = data.tables.folders.create({ name: 'Inbox' });
@@ -123,12 +115,11 @@ describe('renderRow is the unit (ADR-0271)', () => {
 			tables: {
 				notes: defineTable({
 					scalars: { title: field.string() },
-					types: ['body'],
-					file: {
-						serialize: () => {
-							throw new Error('this row is not my shape');
+					content: {
+						encode: () => {
+							throw new Error('the codec exploded');
 						},
-						deserialize: () => Ok({ title: '' }),
+						decode: () => Ok(new Y.Type()),
 					},
 				}),
 			},
@@ -156,7 +147,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 });
 
 describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
-	test('exports kv.json and one markdown file per row, fields above the body', async () => {
+	test('exports kv.json and one markdown file per row, fields above the content', async () => {
 		await using data = await openMemory(store);
 		data.kv.update({ theme: 'dark' });
 		const made = data.tables.notes.create({ title: 'Groceries' });
@@ -170,7 +161,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 
 		// The row is one file: its id is the path, its scalars the frontmatter
 		// (strings always quoted, so every value re-reads as itself), and its
-		// type content the body (ADR-0268, ADR-0296).
+		// type content the content (ADR-0268, ADR-0296).
 		expect(files.get(`notes/${made.id}.md`)).toBe(
 			['---', 'title: "Groceries"', '---', '', 'buy milk', ''].join('\n'),
 		);
@@ -203,14 +194,16 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 			tables: {
 				notes: defineTable({
 					scalars: { title: field.string() },
-					types: ['body'],
-					file: {
-						serialize: (row) => {
-							const content = row.body.toString();
-							if (content === 'poison') throw new Error('not my shape');
-							return { data: { title: row.title }, content };
+					content: {
+						// Poisoned for ONE row, so the loop has both to carry.
+						encode: (node) => {
+							const text = node.toString();
+							if (text.includes('poison')) {
+								throw new Error('the codec exploded');
+							}
+							return text;
 						},
-						deserialize: () => Ok({ title: '' }),
+						decode: () => Ok(new Y.Type()),
 					},
 				}),
 			},
@@ -235,7 +228,12 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 		const scalarOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
-			tables: { folders: defineTable({ scalars: { name: field.string() } }) },
+			tables: {
+				folders: defineTable({
+					scalars: { name: field.string() },
+					content: plainText(),
+				}),
+			},
 		});
 		await using data = await openMemory(scalarOnly);
 		const made = data.tables.folders.create({ name: 'Inbox' });

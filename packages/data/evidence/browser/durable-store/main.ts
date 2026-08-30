@@ -4,9 +4,13 @@
  * It exposes verbs rather than running a script, so the runner decides when a
  * reload happens, which is the only part of this that matters.
  */
-import { defineData, defineTable, field } from '@epicenter/data/definition';
+import {
+	defineData,
+	defineTable,
+	field,
+	plainText,
+} from '@epicenter/data/definition';
 import * as Y from '@y/y';
-import { Ok } from 'wellcrafted/result';
 
 import {
 	importGeneration,
@@ -29,18 +33,7 @@ const workspaces = {
 		tables: {
 			notes: defineTable({
 				scalars: { title: field.string() },
-				types: ['body'],
-				file: {
-					serialize: (row) => ({
-						data: { title: row.title },
-						content: row.body.toString(),
-					}),
-					deserialize: (file) => {
-						const body = new Y.Type();
-						if (file.content !== '') body.insert(0, [file.content]);
-						return Ok({ body, title: String(file.data.title ?? '') });
-					},
-				},
+				content: plainText(),
 			}),
 		},
 	}),
@@ -50,18 +43,7 @@ const workspaces = {
 		tables: {
 			notes: defineTable({
 				scalars: { title: field.string() },
-				types: ['body'],
-				file: {
-					serialize: (row) => ({
-						data: { title: row.title },
-						content: row.body.toString(),
-					}),
-					deserialize: (file) => {
-						const body = new Y.Type();
-						if (file.content !== '') body.insert(0, [file.content]);
-						return Ok({ body, title: String(file.data.title ?? '') });
-					},
-				},
+				content: plainText(),
 			}),
 		},
 	}),
@@ -116,9 +98,9 @@ Object.assign(globalThis, {
 	async write(title: string, prose: string) {
 		const db = bound();
 		const made = db.tables.notes.create({ title });
-		const body = db.tables.notes.get(made.id)?.body;
-		if (body === undefined) return { error: 'the row has no body' };
-		body.applyDelta(body.change.insert(prose) as never);
+		const content = db.tables.notes.get(made.id)?.content;
+		if (content === undefined) return { error: 'the row has no content' };
+		content.applyDelta(content.change.insert(prose) as never);
 		await db.persistence.flush();
 		return {
 			id: made.id,
@@ -136,7 +118,7 @@ Object.assign(globalThis, {
 			notes.push({
 				title: row.title,
 				prose: JSON.stringify(
-					db.tables.notes.get(row.id)?.body.toJSON() ?? null,
+					db.tables.notes.get(row.id)?.content.toJSON() ?? null,
 				),
 			});
 		}

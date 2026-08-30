@@ -27,12 +27,13 @@ import {
 } from './addresses.js';
 import { canonicalJson } from './canonical.js';
 import {
+	CONTENT_FIELD,
+	type ContentCodec,
 	type DataDefinition,
 	type DataField,
 	KV_ROOT,
 	RESERVED_ATTRIBUTE_PREFIX,
 	RESERVED_TABLE_NAMES,
-	type RowFileCodec,
 	type TableDeclaration,
 } from './declaration.js';
 import type { JsonObject, JsonValue } from './json.js';
@@ -76,15 +77,19 @@ export type Conformance = {
 export type ParsedTable = {
 	name: string;
 	/**
-	 * The scalar fields, compiled. A type field is NOT here: it holds no JSON
-	 * value, so it has no schema to check a payload against and nothing a
+	 * The scalar fields, compiled. The content node is NOT here: it holds no
+	 * JSON value, so it has no schema to check a payload against and nothing a
 	 * conformance read could report.
 	 */
 	fields: ReadonlyMap<string, DataField>;
-	/** The type fields, in declaration order: the nested types a row mints. */
-	types: readonly string[];
-	/** The application-owned file codec, carried unread (ADR-0296). */
-	file?: RowFileCodec;
+	/**
+	 * How this table's content node becomes text, carried unread (ADR-0296).
+	 *
+	 * Absent when the definition arrived as JSON, which cannot carry a
+	 * function. What that costs is paid at the artifact boundary, where a node
+	 * with content and no codec is a refusal in both directions.
+	 */
+	content?: ContentCodec;
 	conformance(payload: JsonObject): Conformance;
 };
 
@@ -173,7 +178,7 @@ function compileDefinition(
 			reason: 'it declares no tables',
 		});
 
-	const compiledKvResult = compileTable('kv', kv, []);
+	const compiledKvResult = compileTable(KV_ROOT, kv);
 	if (compiledKvResult.error !== null) return compiledKvResult;
 	const compiledKv = compiledKvResult.data;
 	const compiledTables = new Map<string, ParsedTable>();
@@ -203,25 +208,20 @@ function compileDefinition(
 			});
 		}
 		const table = declaration as TableDeclaration;
-		if (table.types !== undefined && !Array.isArray(table.types)) {
-			return DataDefinitionParseError.Malformed({
-				reason: `table '${tableName}' declares 'types' as something other than a list of field names`,
-			});
-		}
-		const result = compileTable(tableName, table.scalars, table.types ?? []);
+		const result = compileTable(tableName, table.scalars);
 		if (result.error !== null) return result;
 		// A codec is behavior beside the data core (ADR-0266), so a definition
 		// that arrived serialized carries its functions stripped and compiles as
-		// no codec at all. That is why "a table with a type field must declare a
-		// codec" is enforced at `defineTable`'s parameter type rather than here:
-		// this same function parses an app bundle's `database.json` for its id,
-		// and refusing that would be refusing a definition for missing something
+		// no codec at all. That is why "every table declares its content codec"
+		// is enforced at `defineTable`'s parameter type rather than here: this
+		// same function parses an app bundle's `database.json` for its id, and
+		// refusing that would be refusing a definition for missing something
 		// JSON cannot carry. What a missing codec costs is paid at the artifact
-		// boundary, where an uncoded body is a refusal in both directions.
+		// boundary, where uncoded content is a refusal in both directions.
 		compiledTables.set(
 			tableName,
-			isFileCodec(table.file)
-				? { ...result.data, file: table.file }
+			isContentCodec(table.content)
+				? { ...result.data, content: table.content }
 				: result.data,
 		);
 	}
@@ -241,38 +241,12 @@ function compileDefinition(
 function compileTable(
 	tableName: string,
 	scalars: unknown,
-	declaredTypes: readonly string[],
 ): Result<ParsedTable, DataDefinitionParseError> {
 	if (!isPlainObject(scalars))
 		return DataDefinitionParseError.Malformed({
 			reason: `table '${tableName}' does not declare scalars`,
 		});
 	const compiled = new Map<string, DataField>();
-	// A type field compiles to a NAME and nothing else: no schema, no check, no
-	// storage class, so nothing downstream can mistake it for a column or report
-	// it as nonconforming. The declaration is the list, which is why it no
-	// longer needs a descriptor to carry a marker through the scalars.
-	const types: string[] = [];
-	for (const fieldName of declaredTypes) {
-		if (tableName === KV_ROOT) {
-			return DataDefinitionParseError.Malformed({
-				reason: `'${fieldName}' declares a type field in kv, which holds settings rather than rows`,
-			});
-		}
-		const invalid = fieldNameProblem(tableName, fieldName);
-		if (invalid !== undefined) return invalid;
-		if (fieldName in scalars) {
-			return DataDefinitionParseError.Malformed({
-				reason: `'${fieldName}' is declared as both a scalar and a type field of table '${tableName}'`,
-			});
-		}
-		if (types.includes(fieldName)) {
-			return DataDefinitionParseError.Malformed({
-				reason: `'${fieldName}' is declared twice in table '${tableName}' types`,
-			});
-		}
-		types.push(fieldName);
-	}
 	for (const [fieldName, descriptor] of Object.entries(scalars)) {
 		const invalid = fieldNameProblem(tableName, fieldName);
 		if (invalid !== undefined) return invalid;
@@ -324,7 +298,6 @@ function compileTable(
 		Object.freeze({
 			name: tableName,
 			fields: compiled,
-			types: Object.freeze(types),
 			conformance(payload: JsonObject): Conformance {
 				const conforming: JsonObject = {};
 				const issues: ConformanceIssue[] = [];
@@ -384,6 +357,9 @@ function fieldNameProblem(
 	if (
 		fieldName.startsWith(RESERVED_ATTRIBUTE_PREFIX) ||
 		fieldName.toLowerCase() === 'id' ||
+		// Reserved on a ROW, and only there: kv holds settings rather than rows,
+		// so it has no node and nothing to collide with.
+		(tableName !== KV_ROOT && fieldName === CONTENT_FIELD) ||
 		!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName)
 	) {
 		return DataDefinitionParseError.Malformed({
@@ -393,11 +369,10 @@ function fieldNameProblem(
 	return undefined;
 }
 
-function isFileCodec(value: unknown): value is RowFileCodec {
-	const codec = value as Partial<RowFileCodec> | undefined;
+function isContentCodec(value: unknown): value is ContentCodec {
+	const codec = value as Partial<ContentCodec> | undefined;
 	return (
-		typeof codec?.serialize === 'function' &&
-		typeof codec.deserialize === 'function'
+		typeof codec?.encode === 'function' && typeof codec.decode === 'function'
 	);
 }
 

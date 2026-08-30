@@ -20,8 +20,6 @@ import { type Static, type TSchema, Type } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
-import type { JsonValue } from './json.js';
-
 export const RESERVED_ATTRIBUTE_PREFIX = '!';
 export const KV_ROOT = 'kv';
 export const RESERVED_TABLE_NAMES: readonly string[] = [KV_ROOT];
@@ -44,88 +42,82 @@ export type FieldMap = {
 	readonly [field: string]: TSchema;
 };
 
-/** One row's export file, split at the fence (ADR-0296). */
-export type RowFile = {
-	/** The frontmatter, parsed. */
-	readonly data: Record<string, JsonValue>;
-	/** Everything below the fence. */
-	readonly content: string;
-};
-
-export const RowFileError = defineErrors({
+export const ContentError = defineErrors({
 	/**
-	 * A table's own `deserialize` refused this file.
+	 * A table's own `decode` refused this text.
 	 *
-	 * The codec's error arm, returned rather than thrown, because a folder a
-	 * person hands to an import is data rather than a programmer error and the
-	 * import that reads it reports which file it could not read.
+	 * Returned rather than thrown, because a folder a person hands to an import
+	 * is data rather than a programmer error, and the import that reads it
+	 * reports which file it could not read.
 	 */
 	Unreadable: ({ reason, cause }: { reason: string; cause?: unknown }) => ({
-		message: `This file could not be read into a row: ${reason}`,
+		message: `This content could not be read into a row's node: ${reason}`,
 		reason,
 		cause,
 	}),
 });
-export type RowFileError = InferErrors<typeof RowFileError>;
+export type ContentError = InferErrors<typeof ContentError>;
 
 /**
- * A table's bidirectional file codec, erased of its declaration (ADR-0296).
+ * How one table's content node becomes text, and back (ADR-0296).
  *
- * The platform owns the file FORMAT: it splits the fence, parses the
- * frontmatter into a record, and joins it back. The table owns the MAPPING,
- * which is this.
+ * A row is its scalars and ONE live node. The platform owns the file: it
+ * writes the scalars as frontmatter by field name and joins this below the
+ * fence, and it reverses both. The table owns what its node MEANS, which is
+ * this and nothing else.
  *
- * **The two are inverses.** `serialize` takes a whole row and returns a file;
- * `deserialize` takes a file and returns a whole row, type fields included and
- * already built. `create` integrates them in the transaction that mints the
- * row (ADR-0296, amended).
+ * There is no default. A node carries a sequence and attributes at once, so
+ * "render it as text" is not a safe fallback: `toString` is a debug rendering,
+ * not a serialization, and feeding its output back through `insert` turns an
+ * attribute-bearing node into one literal string that PRINTS IDENTICALLY. A
+ * table that declared nothing would round-trip through that silently, so every
+ * table states what its content is.
  *
- * It was not always symmetric. `deserialize` used to be handed types the
- * platform had already minted and attached, and fill them in place, because
- * ADR-0296 measured a detached `Y.Type` as unable to survive many writes. The
- * mechanism it named is real and the conclusion was too broad: a detached type
- * is safe for one bulk operation and for attribute writes, which is what every
- * codec here does and what `pmToFragment` produces, and unsafe only for a loop
- * of positional appends. `RowFileCodec` carries the rule and
- * `evidence/detached-type.test.ts` pins it.
- *
- * A returned type must be fresh. Two rows given one type share one body,
- * silently, so `createRow` refuses one that already belongs to a document.
+ * A returned node must be fresh. Two rows given one node share it, silently,
+ * so `createRow` refuses one that already belongs to a document. **How you
+ * fill it matters**: one bulk operation or attribute writes are safe, a loop
+ * of positional appends silently reverses, and it reads as empty until
+ * `create` integrates it. `evidence/detached-type.test.ts` pins that.
  */
-export type RowFileCodec = {
-	readonly serialize: (row: RowValues) => RowFile;
-	readonly deserialize: (
-		file: RowFile,
-	) => Result<Record<string, JsonValue | Y.Type>, RowFileError>;
+export type ContentCodec = {
+	readonly encode: (node: Y.Type) => string;
+	readonly decode: (text: string) => Result<Y.Type, ContentError>;
 };
 
-/** One row as a codec sees it: its id, its scalars, and its nested types. */
-export type RowValues = {
-	readonly id: string;
-} & Readonly<Record<string, JsonValue | Y.Type>>;
+/**
+ * The field every row holds its live node at, reserved the way `id` is.
+ *
+ * A row has exactly one, because one file has one region below the fence and
+ * an export that could not write a second node would be losing data rather
+ * than formatting it. Naming it per table would be a second name for a role
+ * the structure already fixes.
+ */
+export const CONTENT_FIELD = 'content';
+
+/** What a table may not call a scalar, because a row already has it. */
+export type ReservedRowField = 'id' | typeof CONTENT_FIELD;
 
 /**
  * One table's declaration, as the inert definition carries it.
  *
- * TWO BUCKETS. A scalar holds a JSON value: replaced whole on write, last write
- * wins. A type field holds a live `Y.Type`: edited in place, merging
- * internally. They are different in every operation, so the declaration says
- * so rather than hiding it in a marker for the type system to rediscover.
+ * TWO BUCKETS, and every table declares both. A scalar holds a JSON value:
+ * replaced whole on write, last write wins, and written to the file's
+ * frontmatter under its own field name. The content is the row's one live
+ * node: edited in place, merging internally, and written below the fence
+ * through the codec declared here. They are different in every operation, so
+ * the declaration says so rather than hiding it in a marker for the type
+ * system to rediscover.
+ *
+ * `content` is optional HERE and required at the authoring call. A definition
+ * that arrived as JSON cannot carry a function, so the serialized form has no
+ * codec; `defineTable` demands one, and the export refuses a row whose node
+ * has content and whose table declares nothing to write it with.
  */
 export type TableDeclaration = {
-	/** The fields holding a JSON value. */
+	/** The fields holding a JSON value, by name. */
 	readonly scalars: FieldMap;
-	/**
-	 * The fields holding a live `Y.Type`, by name.
-	 *
-	 * Names and nothing else, because there is nothing to configure: a type
-	 * field has no schema, no nullability and no format. It used to be declared
-	 * with `field.type()`, a descriptor whose entire content was a marker
-	 * saying "I am not a descriptor", and what that marker smuggled through the
-	 * scalars was this list.
-	 */
-	readonly types?: readonly string[];
-	readonly file?: RowFileCodec;
+	/** How this table's content node becomes text, and back. */
+	readonly content?: ContentCodec;
 };
 
 /**
@@ -215,22 +207,11 @@ type FieldsOut<TFields extends FieldMap> = {
 };
 
 /**
- * One table's type fields: the live `Y.Type` at each declared name.
+ * One table's scalar fields: what `update` may patch, and what a row's
+ * frontmatter carries.
  *
- * A lookup, not a filter. The declaration already lists them, and a table that
- * declares none lists nothing: `NonNullable` covers the absent key without a
- * conditional, because absent and empty are the same answer here.
- */
-export type TypesOf<T extends TableDeclaration> = {
-	[K in NonNullable<T['types']>[number]]: Y.Type;
-};
-
-/**
- * One table's scalar fields: what `update` may patch, what `deserialize`
- * returns beside the types it built, and what a codec writes to frontmatter.
- *
- * A type field is absent because a type is not assignable: writing one over a
- * row's attribute deletes the old subtree, so a peer that edited it
+ * The content node is absent because a node is not assignable: writing one
+ * over a row's attribute deletes the old subtree, so a peer that edited it
  * concurrently loses every keystroke to map LWW. That rule is why this type
  * exists, and stating it as a signature is what keeps it from being a comment
  * somebody has to obey.
@@ -238,68 +219,34 @@ export type TypesOf<T extends TableDeclaration> = {
 export type ScalarsOf<T extends TableDeclaration> = FieldsOut<T['scalars']>;
 
 /**
- * One table's read shape: the id, the scalars, and the live types.
+ * One row: its id, its scalars, and its one live node.
  *
- * What `get` returns, what `create` returns, and what a file codec's
- * `serialize` takes. It was scalars only, with `content(rowId)` as the one way
- * to a type field and `RowOf` as a third shape for the codec; the row
- * carries its types now, so all three collapse into this (ADR-0296, amended).
- *
- * `NewRowOf` is this minus the id and with the types optional. That sentence is
- * the whole relationship between the two shapes an application ever names.
+ * What `get` returns, what `create` returns, and what the export writes. No
+ * conditional and no optionality: every row has a node, minted with it,
+ * whether or not anything ever writes to it. Measured at 9 bytes per row for
+ * an unwritten one against 31 for a written one, flat from a thousand rows to
+ * a hundred thousand, which is what buys the simplicity here.
  */
-export type RowOf<T extends TableDeclaration> = { id: string } & ScalarsOf<T> &
-	TypesOf<T>;
-/**
- * A row that does not have an id yet: the scalars, and the type types the
- * caller built (ADR-0295, ADR-0296).
- *
- * What `create` takes and what `deserialize` returns, which is one shape
- * because they are one operation with two input formats. A type field is
- * PASSED IN, already populated, and `create` integrates it in the transaction
- * that mints the row.
- *
- * That is a reversal of ADR-0296, which had the platform mint and attach the
- * types first. **How you fill the type you pass matters**: one bulk operation
- * or attribute writes are safe, a loop of positional appends silently reverses,
- * and it reads as empty until `create` integrates it. `RowFileCodec` states the
- * rule and `evidence/detached-type.test.ts` pins it.
- *
- * A type handed here must not already belong to a document. Two rows given one
- * type SHARE one body, silently, and the same type set into two documents
- * corrupts across them; `createRow` refuses an integrated type rather than
- * letting either happen.
- *
- * Type fields are OPTIONAL, and that is what keeps a programmatic `create`
- * from having to build an empty body it does not care about: an omitted one is
- * minted empty. A codec that means to leave a body empty says so the same way.
- */
-export type NewRowOf<T extends TableDeclaration> = ScalarsOf<T> &
-	Partial<TypesOf<T>>;
-export type KvOf<TDatabase extends DataDefinition> = FieldsOut<TDatabase['kv']>;
+export type RowOf<T extends TableDeclaration> = {
+	id: string;
+	content: Y.Type;
+} & ScalarsOf<T>;
 
-/** The codec as its own table declares it, read through that table's fields. */
-export type RowFileCodecOf<TFields extends TableDeclaration> = {
-	readonly serialize: (row: RowOf<TFields>) => RowFile;
-	readonly deserialize: (
-		file: RowFile,
-	) => Result<NewRowOf<TFields>, RowFileError>;
+/**
+ * What `create` takes: the scalars, and the node if the caller built one.
+ *
+ * The node is OPTIONAL, and that is what keeps a programmatic `create` from
+ * having to build an empty one it does not care about: an omitted node is
+ * minted empty. An import that decoded a file passes the node it built, and
+ * `create` integrates it in the transaction that mints the row.
+ *
+ * A node handed here must not already belong to a document. Two rows given one
+ * node SHARE it, silently, and the same node set into two documents corrupts
+ * across them; `createRow` refuses an integrated node rather than letting
+ * either happen.
+ */
+export type CreateRowOf<T extends TableDeclaration> = ScalarsOf<T> & {
+	content?: Y.Type;
 };
 
-/**
- * Declare one table.
- *
- * **A table that declares any `field.type()` must declare `file`** (ADR-0296),
- * and the parameter type is where that is enforced, because this is the
- * authoring call and a definition that arrived serialized has no codec to
- * declare. A type field with no codec would export a body that silently
- * vanishes, so the artifact directions refuse it as data loss rather than
- * writing an empty file.
- *
- * The return ERASES the codec's types, and the cast is what that costs. A
- * `DataDefinition` holds every table under one shape, so it cannot be generic
- * over each table's fields; `RowFileCodecOf<TFields>` narrows `serialize`'s
- * parameter, and a narrowed parameter is not assignable to a wider one. The
- * typing that matters happens here, at the authoring call, and the store reads
- * the erased form.
- */
+export type KvOf<TDatabase extends DataDefinition> = FieldsOut<TDatabase['kv']>;

@@ -11,11 +11,11 @@
  */
 import type {
 	ConformanceIssue,
+	CreateRowOf,
 	DataDefinition,
 	JsonObject,
 	JsonValue,
 	KvOf,
-	NewRowOf,
 	RowOf,
 	ScalarsOf,
 	TableDeclaration,
@@ -213,7 +213,7 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 /** One table, with its own declaration's row and create-input types. */
 export type TypedTableHandle<TFields extends TableDeclaration> = TableHandle<
 	RowOf<TFields>,
-	NewRowOf<TFields>,
+	CreateRowOf<TFields>,
 	Partial<ScalarsOf<TFields>>
 >;
 

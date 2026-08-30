@@ -27,6 +27,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
 import {
+	CONTENT_FIELD,
 	type DataDefinition,
 	type JsonObject,
 	type ParsedTable,
@@ -199,59 +200,50 @@ function admitRow({
 	content: string;
 }): Result<void, ImportError> {
 	const root = tableRoot(database, tableName);
-	const codec = table?.file;
+	const codec = table?.content;
 
-	// No codec: the frontmatter IS the row, verbatim. That covers a table this
-	// definition no longer declares (ADR-0240) and a table that declares only
-	// scalars and no codec. A body under either has nowhere to go, and dropping
-	// it is the data loss this refuses.
-	if (codec === undefined) {
-		if (content !== '') {
+	// The frontmatter IS the row, verbatim, including a key this declaration
+	// does not name: the artifact is the truth here, and a release that stopped
+	// naming a field never meant its data was gone (ADR-0240, ADR-0125). No
+	// value is checked on the way in. Conformance is one decision, made once,
+	// at read, for every row from every direction.
+	const fields: RowInput = { ...data };
+
+	if (content !== '') {
+		// A body with no codec to read it has nowhere to go, and dropping it is
+		// the data loss this refuses. That covers a table this definition no
+		// longer declares and a definition that arrived as JSON.
+		if (codec === undefined) {
 			return ImportError.UncodedBody({ table: tableName, rowId });
 		}
+		let node: Y.Type;
 		try {
-			database.transact(() => {
-				createRow(root, rowId, data, table?.types ?? []);
-			});
+			const read = codec.decode(content);
+			if (read.error !== null) {
+				return ImportError.RowUnreadable({
+					table: tableName,
+					rowId,
+					reason: read.error.reason,
+					cause: read.error.cause,
+				});
+			}
+			node = read.data;
 		} catch (cause) {
-			return ImportError.MalformedFile({
-				path,
-				reason: cause instanceof Error ? cause.message : String(cause),
-			});
-		}
-		return Ok(undefined);
-	}
-
-	const types = table?.types ?? [];
-
-	let returned: RowInput;
-	try {
-		const read = codec.deserialize({ data, content });
-		if (read.error !== null) {
 			return ImportError.RowUnreadable({
 				table: tableName,
 				rowId,
-				reason: read.error.reason,
-				cause: read.error.cause,
+				reason: cause instanceof Error ? cause.message : String(cause),
+				cause,
 			});
 		}
-		returned = read.data;
-	} catch (cause) {
-		return ImportError.RowUnreadable({
-			table: tableName,
-			rowId,
-			reason: cause instanceof Error ? cause.message : String(cause),
-			cause,
-		});
+		fields[CONTENT_FIELD] = node;
 	}
 
 	try {
-		// Written verbatim, including a key this declaration does not name: the
-		// artifact is the truth here, and a release that stopped naming a field
-		// never meant its data was gone (ADR-0240, ADR-0125). A type field the
-		// codec built is integrated here too, in the same transaction.
+		// One transaction: the row is minted, its scalars filled, and the node
+		// the codec built integrated, together.
 		database.transact(() => {
-			createRow(root, rowId, returned, types);
+			createRow(root, rowId, fields);
 		});
 	} catch (cause) {
 		return ImportError.MalformedFile({
