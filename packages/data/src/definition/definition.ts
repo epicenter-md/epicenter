@@ -159,22 +159,26 @@ type ValidateDefinition<T> = {
  * Add data-substrate nullability without teaching the generic field package
  * about it.
  *
- * The declared return carries the inner schema's `Static` explicitly rather
- * than leaving it to be recovered from the `anyOf`. Structural recovery worked
- * for a plain `TString` and produced `unknown` for a branded `TUnsafe`, so
+ * `Type.Union` with `Type.Null`, which is TypeBox's own spelling of exactly
+ * this. It emits the same `anyOf: [inner, { type: 'null' }]` the hand-rolled
+ * version did, byte for byte, and infers `Static<S> | null` including for a
+ * BRANDED inner schema, which is the case that made this a function in the
+ * first place.
+ *
+ * It used to be built with `Type.Unsafe` and two casts, because a schema
+ * assembled that way leaves its `Static` to be recovered structurally from the
+ * `anyOf` and that recovery produced `unknown` for a branded `TUnsafe`:
  * `field.nullable(field.string())` read as `string | null` while
- * `field.nullable(field.instant())` read as `unknown`, in the same table.
+ * `field.nullable(field.instant())` read as `unknown`, in the same table. That
+ * is a real defect in structural recovery and it is not a reason to reach for
+ * the escape hatch, because `Type.Union` never had it.
+ *
+ * The old return type also carried `& { anyOf: readonly [S, …] }` so the shape
+ * could be read back at the type level. Nothing ever read it: `nullableParts`
+ * recognizes a nullable field at RUNTIME, off an untyped record.
  */
-function nullable<S extends TSchema>(
-	inner: S,
-): TUnsafe<Static<S> | null> & {
-	readonly anyOf: readonly [S, { readonly type: 'null' }];
-} {
-	return Type.Unsafe<Static<S> | null>({
-		anyOf: [inner, { type: 'null' }],
-	}) as unknown as TUnsafe<Static<S> | null> & {
-		readonly anyOf: readonly [S, { readonly type: 'null' }];
-	};
+function nullable<S extends TSchema>(inner: S) {
+	return Type.Union([inner, Type.Null()]);
 }
 
 /** The data definition's field namespace. */
@@ -278,6 +282,13 @@ export type RowFileCodecOf<TFields> = {
  * declare. A rich field with no codec would export a body that silently
  * vanishes, so the artifact directions refuse it as data loss rather than
  * writing an empty file.
+ *
+ * The return ERASES the codec's types, and the cast is what that costs. A
+ * `DataDefinition` holds every table under one shape, so it cannot be generic
+ * over each table's fields; `RowFileCodecOf<TFields>` narrows `serialize`'s
+ * parameter, and a narrowed parameter is not assignable to a wider one. The
+ * typing that matters happens here, at the authoring call, and the store reads
+ * the erased form.
  */
 export function defineTable<const TFields extends FieldMap>(
 	table: {
