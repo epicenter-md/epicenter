@@ -1,4 +1,4 @@
-import type { UpdateRowError } from '@epicenter/data';
+import type { RowAbsentError } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import {
 	deleteHoneycrispFolder,
@@ -120,22 +120,21 @@ export const [getHoneycrisp, setHoneycrisp] = createContext<Honeycrisp>();
  * `InstantString.now()` into `'string.date.iso'`. That leaves `RowAbsent`,
  * which means another device deleted the row between the render and the click.
  *
- * That last one is ordinary, and this app already ruled on it twice:
+ * That one is ordinary, and this app already ruled on it twice:
  * `permanentlyDelete` calls an absent row "a no-op fact, not an error", and
  * `togglePin` returns early on one. The reactive list is about to drop the row
  * on its own, so a sentence would only ask the person to care about a race they
  * cannot lose. Silence is the honest answer, and it is what deleted the toast
  * wrapper every call site used to carry.
  *
- * The other two mean a declaration and this file disagree. That is ours, not
- * theirs, so it throws: uncaught, into the console, with a stack. The wrapper
- * this replaces caught around the whole call rather than the write, so a
- * `TypeError` in domain code and the `StoreUnusableError` a disposed store
- * throws both surfaced as "Could not update note". The second is especially
- * wrong: a disposed store means this generation is over, and the answer is a
- * reload rather than a retry.
+ * It is also the ONLY one. `update` refuses an absent address and nothing else,
+ * which the `UpdateRowError` alias used to hide: this function's `throw` was
+ * documented as catching two other failures where a declaration and this file
+ * disagree, and neither exists. The throw is unreachable today and stays
+ * anyway, because a variant the store grows later should surface here rather
+ * than be swallowed by a guard written when there was only one.
  */
-function updated(error: UpdateRowError | null): void {
+function updated(error: RowAbsentError | null): void {
 	if (error === null || error.name === 'RowAbsent') return;
 	throw error;
 }

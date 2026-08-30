@@ -134,9 +134,6 @@ export type DataDefinition = {
 	};
 };
 
-/** The JSON representation carries the same closed field vocabulary; behaviors are code that rides alongside (ADR-0266). */
-export type DataDefinitionJson = DataDefinition;
-
 type RejectDefault<T> = T extends { default: unknown } ? never : T;
 type ValidateFields<T> = {
 	[K in keyof T]: T[K] extends TSchema ? RejectDefault<T[K]> : never;
@@ -269,12 +266,6 @@ export type FileRowOf<T> = { id: string } & FieldsOut<FieldsOfArg<T>>;
 export type NewRowOf<T> = ScalarsOf<FieldsOfArg<T>> &
 	Partial<TypesOf<FieldsOfArg<T>>>;
 export type KvOf<TDatabase extends DataDefinition> = FieldsOut<TDatabase['kv']>;
-export type RowsOf<TDatabase extends DataDefinition> = {
-	[K in keyof TDatabase['tables']]: RowOf<TDatabase['tables'][K]['fields']>;
-};
-export type NewRowsOf<TDatabase extends DataDefinition> = {
-	[K in keyof TDatabase['tables']]: NewRowOf<TDatabase['tables'][K]['fields']>;
-};
 
 /** The codec as its own table declares it, read through that table's fields. */
 export type RowFileCodecOf<TFields> = {

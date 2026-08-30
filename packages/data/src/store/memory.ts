@@ -30,7 +30,7 @@ import { type AccountStore, createAccountStore, type DataOf } from './store.js';
  * claim that something survives rather than merely exists.
  */
 export type MemoryRecord = {
-	/** Handed to `@epicenter/data/engine` directly by tests that want the seam. */
+	/** Handed to `@epicenter/data/direct` directly by tests that want the seam. */
 	readonly sqlite: SqliteDatabase;
 	close(): void;
 };

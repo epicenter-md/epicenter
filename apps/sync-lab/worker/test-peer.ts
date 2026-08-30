@@ -5,7 +5,7 @@
  * is the only such SQLite `workerd` supplies. This is NOT the browser storage
  * topology: a browser keeps its durable client facts in IndexedDB. The peer
  * keeps them in its one DO SQLite database through the engine seam
- * (`@epicenter/data/engine`), so this Worker-runtime test can run the real
+ * (`@epicenter/data/direct`), so this Worker-runtime test can run the real
  * `createAccountStore`, `createSyncClient`, and WebSocket protocol against
  * the real authority.
  *
@@ -19,7 +19,7 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import { defineData, field } from '@epicenter/data/definition';
-import { createAccountStore } from '@epicenter/data/engine';
+import { createAccountStore } from '@epicenter/data/direct';
 import {
 	createSyncClient,
 	decodeFrame,

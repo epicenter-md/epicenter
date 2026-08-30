@@ -27,7 +27,7 @@ function integrate(type: Y.Type): Y.Type {
 
 const named = (...names: string[]) => names.map((name) => new Y.Type(name));
 
-describe('a detached rich field is SAFE for', () => {
+describe('a detached type is SAFE for', () => {
 	test('one bulk insert, which is what `pmToFragment` produces', () => {
 		const type = new Y.Type();
 		type.insert(0, named('a', 'b', 'c'));
@@ -53,7 +53,7 @@ describe('a detached rich field is SAFE for', () => {
 	});
 });
 
-describe('a detached rich field is UNSAFE for', () => {
+describe('a detached type is UNSAFE for', () => {
 	test('repeated positional appends, which REVERSE and do not throw', () => {
 		// The trap, and the reason this file exists. ADR-0296 recorded it and it
 		// is real: each `push` is computed against an empty type, so all three
@@ -99,7 +99,7 @@ describe('what is NOT about detachment', () => {
 	});
 });
 
-describe('what a fresh `new Y.Type()` guarantees', () => {
+describe('what a fresh `new Y.Type()` gives you', () => {
 	test('a fresh type, owned by no document', () => {
 		expect(new Y.Type().doc).toBeNull();
 		expect(new Y.Type()).not.toBe(new Y.Type());

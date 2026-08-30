@@ -10,7 +10,7 @@ import { field } from '@epicenter/data/definition';
  */
 
 import { defineData } from '@epicenter/data/definition';
-import { createAccountStore } from '@epicenter/data/engine';
+import { createAccountStore } from '@epicenter/data/direct';
 import { createSyncConnection } from '@epicenter/data/sync';
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';

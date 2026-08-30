@@ -25,7 +25,6 @@
 export type {
 	ConformanceIssue,
 	DataDefinition,
-	DataDefinitionJson,
 	FileRowOf,
 	JsonObject,
 	JsonValue,
@@ -68,5 +67,4 @@ export {
 	type SyncCapability,
 	type TableHandle,
 	type TypedTableHandle,
-	type UpdateRowError,
 } from './store/store.js';

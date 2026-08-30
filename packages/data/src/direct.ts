@@ -1,6 +1,10 @@
 /**
- * The construction seam: a store over a synchronous SQLite the caller opened
- * itself.
+ * Open a store DIRECTLY, over a synchronous SQLite the caller opened itself.
+ *
+ * Named for what it does rather than for a layer. It was `@epicenter/data/direct`
+ * and there is no engine here: `syncEngineOf` is one accessor and the rest is a
+ * constructor, while the actual engine lives in `store/store.ts` where nothing
+ * calls itself one.
  *
  * Not the public story. An application opens its data through a runtime's
  * opener (`@epicenter/data/browser`), which owns the address, the claim, the

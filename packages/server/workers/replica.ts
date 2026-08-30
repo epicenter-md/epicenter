@@ -22,7 +22,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { type AccountStore, defineData, defineTable } from '@epicenter/data';
 import { field } from '@epicenter/data/definition';
-import { createAccountStore } from '@epicenter/data/engine';
+import { createAccountStore } from '@epicenter/data/direct';
 import {
 	createSyncConnection,
 	type SyncConnection,
