@@ -1,27 +1,32 @@
 <script lang="ts">
-	import { disposeOnUnmount } from '@epicenter/svelte';
 	import { Loading } from '@epicenter/ui/loading';
-	import { openLocalDatabase } from '$lib/databases.js';
-	import HoneycrispProvider from '$lib/HoneycrispProvider.svelte';
-	import StoreShell from '../components/StoreShell.svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { resolveLocalGeneration } from '$lib/databases.js';
 	import StoreFailure from '../components/StoreFailure.svelte';
 
-	// The route owns disposal (ADR-0233), and owning it is one line: the handle
-	// is disposable before it is open, so nothing here reaches into a promise.
-	const db = openLocalDatabase();
-	disposeOnUnmount(db);
+	// Which generation, decided once and then in the URL (ADR-0285). The
+	// opener below takes an exact number and never discovers one, so this is
+	// the one place the question is asked: the newest copy this device holds,
+	// or a fresh one imported from nothing if it holds none.
+	//
+	// Resolved rather than redirected-from-a-guess, because a number in a URL
+	// is an address: sending somebody to `/device/1` before knowing 1 exists
+	// would be asking the opener to invent it.
+	const resolved = resolveLocalGeneration();
+	$effect(() => {
+		void resolved.then((generation) =>
+			goto(resolve('/device/[generation]', { generation: String(generation) }), {
+				replaceState: true,
+			}),
+		);
+	});
 </script>
 
-{#await db.ready}
+{#await resolved}
 	<Loading class="h-dvh" label="Opening notes on this device…" />
-{:then { data }}
-	<HoneycrispProvider {data}>
-		<StoreShell
-			storeLabel="On this device"
-			otherStoreLabel="Across your devices"
-			otherStoreHref="/account"
-		/>
-	</HoneycrispProvider>
+{:then}
+	<Loading class="h-dvh" label="Opening notes on this device…" />
 {:catch error}
 	<StoreFailure store="local" {error} />
 {/await}

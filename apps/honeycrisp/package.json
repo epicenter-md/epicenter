@@ -20,6 +20,7 @@
 	"scripts": {
 		"dev": "bun run dev:web",
 		"dev:web": "vite dev",
+		"smoke": "bun run build && bun run evidence/smoke.ts",
 		"build": "NODE_ENV=production vite build",
 		"build:epicenter": "EPICENTER_HOST=1 bun run build",
 		"preview": "vite preview",

@@ -8,27 +8,16 @@
  * actually be lost.
  */
 import { expect, test } from 'bun:test';
-import {
-	type ArtifactDocument,
-	readArtifact,
-	renderArtifact,
-} from '@epicenter/data/artifact';
-import { encodeEnvelope, syncEngineOf } from '@epicenter/data/engine';
-
-/**
- * Pack what `readArtifact` returns into what today's store still accepts.
- *
- * `readArtifact` returns documents, because a mint uploads them one at a time
- * to their own addresses and a local import writes them one at a time into a
- * chain (ADR-0286). This packing goes when the positional log does.
- */
-const asEnvelope = (documents: readonly ArtifactDocument[]) =>
-	encodeEnvelope([...documents]);
-
+import { readArtifact, renderArtifact } from '@epicenter/data/artifact';
+import { syncEngineOf } from '@epicenter/data/engine';
 import { openMemory } from '@epicenter/data/memory';
 import { InstantString } from '@epicenter/field';
 import { expectOk } from 'wellcrafted/testing';
-import { honeycrispDefinition, NOTE_BODY } from './index.js';
+import { honeycrispDefinition } from './index.js';
+
+/** The notes table's real codec, which is what these tests are about. */
+const noteFile = honeycrispDefinition.tables.notes.file;
+if (noteFile === undefined) throw new Error('the notes table declares a codec');
 
 const AT = InstantString.fromDate(new Date('2026-08-10T00:00:00.000Z'));
 
@@ -77,15 +66,11 @@ async function seed() {
 
 test('a store exports to Markdown files and imports back whole', async () => {
 	const { data, note } = await seed();
-	{
-		const opened = await data.tables.notes.openDocument(note.id);
-		using handle = expectOk(opened);
-		if (handle === undefined) throw new Error('the note has no document');
-		honeycrispDefinition.tables.notes.document.file.deserialize(
-			MARKDOWN,
-			handle,
-		);
-	}
+	const content = data.tables.notes.content(note.id);
+	if (content === undefined) throw new Error('the note has no content');
+	expectOk(
+		noteFile.deserialize({ data: {}, content: MARKDOWN }, content.types),
+	);
 
 	const files = await collect(renderArtifact(data, honeycrispDefinition));
 	// One file per row, and the note's file is prose a person can read.
@@ -100,22 +85,19 @@ test('a store exports to Markdown files and imports back whole', async () => {
 	expect(file).toContain('title: "Groceries"');
 	expect(file).toContain('- [ ] buy milk');
 
-	const envelope = asEnvelope(
-		expectOk(readArtifact(files, honeycrispDefinition)),
-	);
+	const state = expectOk(readArtifact(files, honeycrispDefinition));
 	await using restored = await openMemory(honeycrispDefinition);
-	expect(syncEngineOf(restored.store).applyRemote(envelope).error).toBeNull();
+	expect(syncEngineOf(restored.store).applyRemote(state).error).toBeNull();
 
 	expect(restored.tables.notes.list()).toEqual(data.tables.notes.list());
 	expect(restored.tables.folders.list()).toEqual(data.tables.folders.list());
 
 	// And the prose came back as the same Markdown, through the real codec.
-	const reopened = await restored.tables.notes.openDocument(note.id);
-	using handle = expectOk(reopened);
-	if (handle === undefined) throw new Error('the note lost its document');
-	expect(
-		honeycrispDefinition.tables.notes.document.file.serialize(handle),
-	).toBe(MARKDOWN);
+	const back = restored.tables.notes.content(note.id);
+	if (back === undefined) throw new Error('the note lost its content');
+	const row = expectOk(restored.tables.notes.get(note.id));
+	if (row === undefined) throw new Error('the note lost its row');
+	expect(noteFile.serialize({ ...row, ...back.types }).content).toBe(MARKDOWN);
 	await data.store[Symbol.asyncDispose]();
 });
 
@@ -124,14 +106,11 @@ test('a note with no prose exports as frontmatter alone and still imports', asyn
 	const files = await collect(renderArtifact(data, honeycrispDefinition));
 	expect(files.get(`notes/${note.id}.md`)).not.toContain('\n\n');
 
-	const envelope = asEnvelope(
-		expectOk(readArtifact(files, honeycrispDefinition)),
-	);
+	const state = expectOk(readArtifact(files, honeycrispDefinition));
 	await using restored = await openMemory(honeycrispDefinition);
-	syncEngineOf(restored.store).applyRemote(envelope);
+	syncEngineOf(restored.store).applyRemote(state);
 	expect(expectOk(restored.tables.notes.get(note.id))?.title).toBe('Groceries');
-	const reopened = await restored.tables.notes.openDocument(note.id);
-	using handle = expectOk(reopened);
-	expect(handle?.get(NOTE_BODY)).toBeDefined();
+	// The body is minted with the row, so an empty note still has one.
+	expect(restored.tables.notes.content(note.id)?.types.body).toBeDefined();
 	await data.store[Symbol.asyncDispose]();
 });

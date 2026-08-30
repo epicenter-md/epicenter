@@ -13,12 +13,15 @@ import { field } from '@epicenter/data/definition';
 
 import type { DataView } from '@epicenter/data';
 import {
-	type DocumentReader,
 	defineData,
+	defineTable,
 	type RowOf,
+	type ScalarsOf,
 } from '@epicenter/data/definition';
 import { fragmentToPm, pmToFragment } from '@y/prosemirror';
+import type * as Y from '@y/y';
 import { EditorState } from 'prosemirror-state';
+import { Ok } from 'wellcrafted/result';
 import { extractNoteMetadata } from '../editor/extract-metadata.js';
 import { parseNoteBody, serializeNoteBody } from '../editor/markdown.js';
 import { noteSchema } from '../editor/schema.js';
@@ -48,61 +51,79 @@ const notesTable = {
 	// type through the CRDT attribute, the exported frontmatter value and the
 	// row alike, and a parsing form would hand back a `Date` that could not
 	// round-trip.
+	// Ordinary fields nobody stamps but Honeycrisp (ADR-0297). The store stopped
+	// holding an opinion about time, so `noteMetadataWriter` below is what moves
+	// `updatedAt`, and `create` is what sets `createdAt`.
 	createdAt: field.instant(),
 	updatedAt: field.instant(),
 	deletedAt: field.nullable(field.instant()),
+	/**
+	 * The note's prose: a nested `Y.Type` on the row (ADR-0295, ADR-0296).
+	 *
+	 * Minted with the row and never again, and bound directly by
+	 * `@y/prosemirror`, which is typed against `Y.Type` and makes no root
+	 * assumption.
+	 */
+	body: field.type(),
 } as const;
 
 /**
- * The root a note's prose lives at, inside the note's own document.
+ * A note's prose as a ProseMirror node, read headlessly.
  *
- * One spelling, used at every open and by the store-run derivation. Minting on
- * first use is safe in an independent document: a top-level root is addressed by
- * its name, so two devices first-opening one note converge with both writes
- * retained (ADR-0248).
+ * A note nobody has typed into has an empty body, and an empty fragment is not
+ * a valid ProseMirror document: `fragmentToPm` refuses it outright. What that
+ * note actually is, is the empty document the schema mints, so an untouched
+ * note derives an empty title and exports an empty body rather than throwing
+ * at whoever reads it.
  */
-export const NOTE_BODY = 'body';
-
-/**
- * Read a note's row fields off its body document (ADR-0264).
- *
- * Pure and store-run: the store hands it the note's document on every local
- * edit, and it returns the `title` and `preview` the list renders. It reads the
- * body headlessly through the same ProseMirror schema the editor binds, so the
- * derived title matches what a person sees.
- */
-function deriveNoteMetadata(
-	doc: DocumentReader,
-): Pick<Note, 'title' | 'preview'> {
-	return extractNoteMetadata(bodyOf(doc));
-}
-
-/**
- * The body root as a ProseMirror node, read headlessly.
- *
- * A note nobody has typed into has an empty body root, and an empty fragment
- * is not a valid ProseMirror document: `fragmentToPm` refuses it outright.
- * What that note actually is, is the empty document the schema mints, so an
- * untouched note derives an empty title and exports an empty body rather than
- * throwing at whoever reads it.
- */
-function bodyOf(doc: DocumentReader) {
+export function noteBodyAsPm(body: Y.Type) {
 	const state = EditorState.create({ schema: noteSchema });
-	const body = doc.get(NOTE_BODY) as { length: number };
 	if (body.length === 0) return state.doc;
 	return fragmentToPm(body as never, state.tr);
 }
 
 /**
- * The note's file codec (ADR-0264/0267): its export file's body is the note's
- * body as Markdown, and import writes that Markdown back into a fresh
- * document's `body` root. The row's fields ride outside this codec, as the
- * file's frontmatter; the codec carries prose and nothing else.
+ * What the note list renders, read off the prose (ADR-0297).
+ *
+ * Pure, and application-run rather than store-run: the platform writes no
+ * fields an application did not ask for, so Honeycrisp hangs this on the body's
+ * own change signal (`notes.watchBody` in `app.svelte.ts`). It reads through
+ * the same ProseMirror schema the editor binds, so the derived title matches
+ * what a person sees.
+ */
+export function deriveNoteMetadata(
+	body: Y.Type,
+): Pick<Note, 'title' | 'preview'> {
+	return extractNoteMetadata(noteBodyAsPm(body));
+}
+
+/**
+ * The notes table's file codec (ADR-0296).
+ *
+ * The platform owns the file format: it emits `data` as frontmatter and
+ * `content` beneath the fence, and parses both back. This owns the mapping.
+ * The scalars go up verbatim, so a value an older release wrote survives the
+ * round trip, and the prose goes down as Markdown.
+ *
+ * `deserialize` fills `types.body` IN PLACE rather than returning it, and that
+ * asymmetry is the engine's: a Markdown-to-ProseMirror conversion is many
+ * sequential writes, and a detached `Y.Type` replays one accumulated prelim
+ * delta, so a type built outside the document silently reorders or throws.
  */
 const noteFile = {
-	serialize: (doc: DocumentReader) => serializeNoteBody(bodyOf(doc)),
-	deserialize: (text: string, doc: DocumentReader) => {
-		pmToFragment(parseNoteBody(text), doc.get(NOTE_BODY) as never);
+	serialize: ({ id: _id, body, ...fields }: Note) => ({
+		data: fields,
+		content: serializeNoteBody(noteBodyAsPm(body)),
+	}),
+	deserialize: (
+		file: { data: Record<string, unknown>; content: string },
+		types: { body: Y.Type },
+	) => {
+		pmToFragment(parseNoteBody(file.content), types.body as never);
+		// Verbatim, including a key this release no longer names: the artifact is
+		// the truth on the way in, and a row this declaration cannot read is
+		// reported on the first read rather than repaired here (ADR-0125).
+		return Ok(file.data as ScalarsOf<typeof notesTable>);
 	},
 };
 
@@ -112,10 +133,7 @@ export const honeycrispDefinition = defineData({
 	kv: {},
 	tables: {
 		folders: { fields: foldersTable },
-		notes: {
-			fields: notesTable,
-			document: { derive: deriveNoteMetadata, file: noteFile },
-		},
+		notes: defineTable({ fields: notesTable, file: noteFile }),
 	},
 });
 

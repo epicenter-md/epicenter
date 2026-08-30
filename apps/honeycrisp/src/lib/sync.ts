@@ -32,32 +32,36 @@ import { reportBackgroundError } from './report.js';
  */
 export function attachHoneycrispSync({
 	store,
+	generation,
 	auth,
-	onSuperseded,
 	onDenied,
 }: {
 	store: BrowserAccountStore;
+	/**
+	 * The generation this replica holds, which addresses its authority with the
+	 * database id (ADR-0292).
+	 *
+	 * It arrives from the route rather than being discovered here, and that is
+	 * what deleted supersession: a generation is created once and never mutated
+	 * in place, so a socket addressed at one cannot be told it belongs to
+	 * another.
+	 */
+	generation: number;
 	auth: AuthClient;
 	/**
-	 * This replica's document is superseded (ADR-0231). The driver has already
-	 * stopped; the application discards the local store whole and reloads, and
-	 * the fresh boot's ordinary join is the whole of adoption.
-	 */
-	onSuperseded: () => void;
-	/**
 	 * No dial in this app generation can ever succeed (reauth required, a
-	 * refused credential), so the boot gate can reject an unbound database as
-	 * unavailable rather than waiting on a bootstrap that will never come.
+	 * refused credential). Reported rather than fatal: the store opened from
+	 * local state before this was called and works offline without it.
 	 */
 	onDenied?: () => void;
 }): SyncConnection {
 	return attachStoreSync({
 		store,
 		dataId: honeycrispDefinition.id,
+		generation,
 		transport: {
 			openWebSocket: (url) => auth.openWebSocket(url),
 		},
-		onSuperseded,
 		onDenied,
 		onTransportError: reportBackgroundError,
 	});

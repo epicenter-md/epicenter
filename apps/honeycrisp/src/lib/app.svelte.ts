@@ -2,9 +2,9 @@ import type { UpdateRowError } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import {
 	deleteHoneycrispFolder,
+	deriveNoteMetadata,
 	type FolderId,
 	type HoneycrispData,
-	NOTE_BODY,
 	type Note,
 	type NoteId,
 } from '@epicenter/honeycrisp';
@@ -261,15 +261,50 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	 *
 	 * The only place `NOTE_BODY` is read: one spelling of the root name.
 	 */
-	async function openBody(id: NoteId) {
-		const { data: handle, error } = await table.openDocument(id);
-		// Storage that cannot be read is this generation's boot-shaped failure,
-		// not a per-note outcome; it surfaces at the app's error boundary.
-		if (error !== null) throw error;
-		if (handle === undefined) return undefined;
+	/**
+	 * Open this note's prose for the editor to bind to, and keep the row's
+	 * derived fields moving while it is open.
+	 *
+	 * Synchronous, and there is nothing left to await: the prose is a nested
+	 * type on the row, in the one document this store already holds
+	 * (ADR-0295). `undefined` means this note is no longer here.
+	 *
+	 * What is returned is not just the type. The store writes no derived fields
+	 * and no timestamps any more (ADR-0297), so `title`, `preview` and
+	 * `updatedAt` are Honeycrisp's to write, hung on the body's own change
+	 * signal. `close` stops that subscription; the pane holds exactly one note
+	 * open at a time, and the type itself outlives it either way.
+	 */
+	function openBody(id: NoteId) {
+		const content = table.content(id);
+		if (content === undefined) return undefined;
+		const body = content.types.body;
+		// Coalesced to one write per animation-frame-ish burst, because a
+		// keystroke is a commit and re-deriving on each one would write a row
+		// per character. A `setTimeout(0)` rather than a debounce with a delay:
+		// what is being avoided is one write per keystroke inside a burst, not
+		// writes during sustained typing, and a person who stops typing and
+		// closes the tab should not lose their title to a pending timer.
+		let queued: ReturnType<typeof setTimeout> | undefined;
+		const stop = content.subscribe('body', () => {
+			if (queued !== undefined) return;
+			queued = setTimeout(() => {
+				queued = undefined;
+				// The note may have been deleted, here or on another device, since
+				// the edit that queued this. `update` refuses an absent row, which
+				// is exactly the drop this wants.
+				table.update(id, {
+					...deriveNoteMetadata(body),
+					updatedAt: InstantString.now(),
+				});
+			}, 0);
+		});
 		return {
-			body: handle.get(NOTE_BODY),
-			close: () => handle[Symbol.dispose](),
+			body,
+			close: () => {
+				stop();
+				if (queued !== undefined) clearTimeout(queued);
+			},
 		};
 	}
 

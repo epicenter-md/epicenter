@@ -8,36 +8,23 @@
 	let { noteId, focusRequest }: { noteId: NoteId; focusRequest: number } =
 		$props();
 
-	type Opened = Awaited<ReturnType<typeof honeycrisp.notes.openBody>>;
+	type Opened = ReturnType<typeof honeycrisp.notes.openBody>;
 
-	// The note's prose, opened per note. The open resolves only after complete
-	// local hydration (ADR-0248), so the editor never binds to a half-hydrated
-	// document and never merges keystrokes at the wrong position; edits from
-	// every device reach the open document live through the one store
-	// connection. The pane owns the handle: switching notes or unmounting
-	// closes the previous document, which is what lets the store unload it.
-	let opened = $state.raw<Opened | 'loading'>('loading');
+	// The note's prose, per note. Nothing is loaded: the prose is a nested type
+	// on the row in the document this store already holds (ADR-0295), so there
+	// is no half-hydrated state an editor could merge keystrokes into, and
+	// edits from every device reach it live through the one store connection.
+	// What the pane still owns is the derivation the open starts: `close` stops
+	// the title and preview writes that follow this note's body.
+	let opened = $state.raw<Opened>(undefined);
 	$effect(() => {
-		let stale = false;
-		opened = 'loading';
-		void honeycrisp.notes.openBody(noteId).then((handle) => {
-			if (stale) {
-				handle?.close();
-				return;
-			}
-			opened = handle;
-		});
-		return () => {
-			stale = true;
-			if (opened !== 'loading') opened?.close();
-		};
+		const handle = honeycrisp.notes.openBody(noteId);
+		opened = handle;
+		return () => handle?.close();
 	});
 </script>
 
-{#if opened === 'loading'}
-	<!-- Hydration is a local read; a blank pane beats a flash of message. -->
-	<div class="h-full"></div>
-{:else if opened === undefined}
+{#if opened === undefined}
 	<div class="flex h-full items-center justify-center p-6 text-center">
 		<p class="text-sm text-muted-foreground">This note is no longer here.</p>
 	</div>

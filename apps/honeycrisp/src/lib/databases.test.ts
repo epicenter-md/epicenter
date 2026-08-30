@@ -5,17 +5,25 @@ installTestLocks();
 
 import { expect, mock, test } from 'bun:test';
 import type { AuthClient } from '@epicenter/auth';
+import { readArtifact } from '@epicenter/data/artifact';
+import { importGeneration } from '@epicenter/data/browser';
 import { encodeFrame } from '@epicenter/data/sync';
 import { InstantString } from '@epicenter/field';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
-import { openAccountDatabase, openLocalDatabase } from './databases.js';
+import {
+	openAccountDatabase,
+	openLocalDatabase,
+	resolveLocalGeneration,
+} from './databases.js';
 
 const reloads = mock();
 (globalThis as unknown as { location: unknown }).location = {
 	reload: reloads,
 };
 
-const LOCAL = `epicenter/v1/${honeycrispDefinition.id}/local`;
+/** The generation every test here works in: the one a fresh device imports. */
+const GEN = 1;
+const LOCAL = `epicenter/v2/${honeycrispDefinition.id}/local/gen/${GEN}`;
 
 async function databaseNames(): Promise<string[]> {
 	const databases = await indexedDB.databases();
@@ -83,6 +91,37 @@ function createFakeSocket() {
 	};
 }
 
+/**
+ * The generations collection, in memory, per fake account.
+ *
+ * The one HTTP surface opening touches (ADR-0292, ADR-0293): a POST that
+ * assigns a number and a GET that hands the state back. Held per auth client
+ * so two fake accounts are two accounts.
+ */
+function createFakeGenerations() {
+	const held = new Map<number, Uint8Array>();
+	return {
+		held,
+		async fetch(input: Request | string | URL, init?: RequestInit) {
+			const url = new URL(String(input instanceof Request ? input.url : input));
+			const item = /\/generations\/(\d+)$/.exec(url.pathname);
+			if (init?.method === 'POST') {
+				const generation = held.size + 1;
+				held.set(generation, new Uint8Array(init.body as ArrayBuffer));
+				return Response.json({ generation, position: 1 });
+			}
+			if (item !== null) {
+				const bytes = held.get(Number(item[1]));
+				if (bytes === undefined) return new Response(null, { status: 404 });
+				return new Response(bytes as unknown as BodyInit, {
+					headers: { 'epicenter-log-position': '1' },
+				});
+			}
+			return Response.json({ generations: [...held.keys()].sort() });
+		},
+	};
+}
+
 function createFakeAuth({
 	status,
 	principalId = 'principal-under-test',
@@ -95,6 +134,7 @@ function createFakeAuth({
 	const unused = () => {
 		throw new Error('not part of database opening');
 	};
+	const generations = createFakeGenerations();
 	return {
 		state: status === 'signed-out' ? { status } : { status, principalId },
 		connection: {
@@ -105,14 +145,23 @@ function createFakeAuth({
 		onStateChange: () => () => undefined,
 		startSignIn: unused,
 		signOut: unused,
-		fetch: unused,
+		fetch: (input: Request | string | URL, init?: RequestInit) =>
+			generations.fetch(input, init),
 		getProfile: unused,
 		openWebSocket,
 		[Symbol.dispose]: () => undefined,
 	} as unknown as AuthClient;
 }
 
-function announcingAuth(principalId: string, documentId: string) {
+/**
+ * An account whose socket opens and says nothing.
+ *
+ * There is nothing for it to say on connect any more. It used to announce the
+ * document this replica's state had to belong to, and a replica was
+ * unavailable until it heard one; the generation is in the address, so the
+ * store is usable the moment it opens (ADR-0292).
+ */
+function connectingAuth(principalId: string) {
 	const dials: ReturnType<typeof createFakeSocket>[] = [];
 	const auth = createFakeAuth({
 		status: 'signed-in',
@@ -120,14 +169,28 @@ function announcingAuth(principalId: string, documentId: string) {
 		openWebSocket: async () => {
 			const fake = createFakeSocket();
 			dials.push(fake);
-			setTimeout(() => {
-				fake.open();
-				fake.deliver({ kind: 'document', id: documentId });
-			}, 0);
+			setTimeout(() => fake.open(), 0);
 			return fake.socket;
 		},
 	});
 	return { auth, dials };
+}
+
+/** Import an empty generation into this account, the way a first run does. */
+async function importEmptyAccountGeneration(auth: AuthClient): Promise<void> {
+	const state = readArtifact(new Map(), honeycrispDefinition);
+	if (state.error !== null) throw state.error;
+	const principalId =
+		auth.state.status === 'signed-out' ? undefined : auth.state.principalId;
+	if (principalId === undefined) throw new Error('signed out');
+	const created = await importGeneration(honeycrispDefinition, state.data, {
+		account: {
+			baseURL: auth.connection.baseURL,
+			principalId,
+			fetch: (input, init) => auth.fetch(input, init),
+		},
+	});
+	if (created.error !== null) throw created.error;
 }
 
 async function until(condition: () => boolean): Promise<void> {
@@ -140,26 +203,50 @@ async function until(condition: () => boolean): Promise<void> {
 
 test('the local opener owns only the local database', async () => {
 	await resetStorage();
+	// Resolving is what creates generation 1 on a device holding none: an
+	// import of an empty folder, which is what "a new database here" means
+	// when importing is the only way a generation comes into being (ADR-0293).
+	expect(await resolveLocalGeneration()).toBe(GEN);
 
-	const first = openLocalDatabase();
+	const first = openLocalDatabase(GEN);
 	(await first.ready).data.tables.notes.create(noteFields('local note'));
 	await first[Symbol.asyncDispose]();
 
-	const second = openLocalDatabase();
+	const second = openLocalDatabase(GEN);
 	expect(titles((await second.ready).data)).toEqual(['local note']);
 	await second[Symbol.asyncDispose]();
 
 	expect(await databaseNames()).toEqual([LOCAL]);
 });
 
+test('resolving twice reuses the generation rather than importing another', async () => {
+	await resetStorage();
+	expect(await resolveLocalGeneration()).toBe(GEN);
+	expect(await resolveLocalGeneration()).toBe(GEN);
+	expect(await databaseNames()).toEqual([LOCAL]);
+});
+
+test('a generation this device does not hold refuses to open', async () => {
+	await resetStorage();
+	// A number in a URL is an address, not an instruction to allocate, so a
+	// route that lands on one nobody made renders a failure.
+	const missing = openLocalDatabase(9);
+	await expect(missing.ready).rejects.toMatchObject({
+		name: 'GenerationNotFound',
+	});
+	await missing[Symbol.asyncDispose]();
+});
+
 test('the account opener owns only the account replica', async () => {
 	await resetStorage();
-	const local = openLocalDatabase();
+	await resolveLocalGeneration();
+	const local = openLocalDatabase(GEN);
 	const localData = (await local.ready).data;
 	localData.tables.notes.create(noteFields('local note'));
 
-	const { auth } = announcingAuth('alice', 'document-alice');
-	const account = openAccountDatabase({ auth });
+	const { auth } = connectingAuth('alice');
+	await importEmptyAccountGeneration(auth);
+	const account = openAccountDatabase({ auth, generation: GEN });
 	const accountData = (await account.ready).data;
 	accountData.tables.notes.create(noteFields('account note'));
 
@@ -174,8 +261,9 @@ test('a bound account replica opens from local storage before sync is available'
 	await resetStorage();
 
 	{
-		const { auth } = announcingAuth('alice', 'document-alice');
-		const account = openAccountDatabase({ auth });
+		const { auth } = connectingAuth('alice');
+		await importEmptyAccountGeneration(auth);
+		const account = openAccountDatabase({ auth, generation: GEN });
 		(await account.ready).data.tables.notes.create(
 			noteFields('offline account note'),
 		);
@@ -183,6 +271,7 @@ test('a bound account replica opens from local storage before sync is available'
 	}
 
 	const account = openAccountDatabase({
+		generation: GEN,
 		auth: createFakeAuth({
 			status: 'signed-in',
 			principalId: 'alice',
@@ -193,30 +282,28 @@ test('a bound account replica opens from local storage before sync is available'
 	await account[Symbol.asyncDispose]();
 });
 
-test('a fresh account reports credential refusal through readiness', async () => {
+test('a cached account generation opens even when the credential is refused', async () => {
 	await resetStorage();
-
-	const account = openAccountDatabase({
-		auth: createFakeAuth({
-			status: 'reauth-required',
-			principalId: 'alice',
-			openWebSocket: () =>
-				Promise.reject({
-					name: 'OpenWebSocketDenied',
-					permanence: 'permanent',
-					code: 'reauth-required',
-				}),
-		}),
+	const refusing = createFakeAuth({
+		status: 'reauth-required',
+		principalId: 'alice',
+		openWebSocket: () =>
+			Promise.reject({
+				name: 'OpenWebSocketDenied',
+				permanence: 'permanent',
+				code: 'reauth-required',
+			}),
 	});
+	await importEmptyAccountGeneration(refusing);
 
-	// A refused credential and a store that would not open reach a route through
-	// one channel, which is what lets the account page render one gate from one
-	// `:catch` instead of four arms that never looked at the error.
-	await expect(account.ready).rejects.toMatchObject({
-		name: 'CredentialRefused',
-	});
-	// The store opened and never became ready, so disposal still owes it a
-	// close. That is why the handle is disposable before it is open.
+	// The reversal ADR-0292 bought. A refused credential used to REJECT the
+	// boot, because a fresh replica was unavailable until the authority stamped
+	// it; the store now opens from local state before a socket is attempted, so
+	// a denial costs sync and not the notes.
+	const account = openAccountDatabase({ auth: refusing, generation: GEN });
+	const opened = await account.ready;
+	expect(titles(opened.data)).toEqual([]);
+	expect(opened.syncStatus()).toBeUndefined();
 	await account[Symbol.asyncDispose]();
 });
 
@@ -224,6 +311,7 @@ test('an account without a principal is refused without opening a store', async 
 	await resetStorage();
 
 	const account = openAccountDatabase({
+		generation: GEN,
 		auth: createFakeAuth({ status: 'signed-out' }),
 	});
 	await expect(account.ready).rejects.toMatchObject({ name: 'Unaddressable' });
@@ -231,25 +319,4 @@ test('an account without a principal is refused without opening a store', async 
 	// Disposing something that never opened is a no-op rather than a throw: a
 	// route registers the teardown before it knows which way the open went.
 	await account[Symbol.asyncDispose]();
-});
-
-test('supersession reloads without touching the local database', async () => {
-	await resetStorage();
-	reloads.mockClear();
-
-	const local = openLocalDatabase();
-	const localData = (await local.ready).data;
-	localData.tables.notes.create(noteFields('kept local note'));
-	const { auth, dials } = announcingAuth('alice', 'document-alice');
-	const account = openAccountDatabase({ auth });
-	await account.ready;
-
-	const socket = dials.at(-1);
-	if (socket === undefined) throw new Error('account never dialled');
-	socket.deliver({ kind: 'document', id: 'document-alice-two' });
-	await until(() => reloads.mock.calls.length > 0);
-
-	await account[Symbol.asyncDispose]();
-	expect(titles(localData)).toEqual(['kept local note']);
-	await local[Symbol.asyncDispose]();
 });

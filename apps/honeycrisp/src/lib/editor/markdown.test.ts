@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from '@y/y';
 
-import { honeycrispDefinition, NOTE_BODY } from '../data/index.js';
+import { expectOk } from 'wellcrafted/testing';
+
+import { honeycrispDefinition } from '../data/index.js';
 import { parseNoteBody, serializeNoteBody } from './markdown.js';
 import { noteSchema } from './schema.js';
 
@@ -77,8 +79,10 @@ describe('the note body Markdown codec', () => {
 		expect(serializeNoteBody(underlined)).toBe('kept');
 	});
 
-	test('the declared codec round-trips a body through a Yjs document', () => {
-		const codec = honeycrispDefinition.tables.notes.document.file;
+	test('the declared codec round-trips a body through an attached type', () => {
+		const codec = honeycrispDefinition.tables.notes.file;
+		if (codec === undefined)
+			throw new Error('the notes table declares a codec');
 		const markdown = [
 			'# Title',
 			'',
@@ -87,19 +91,33 @@ describe('the note body Markdown codec', () => {
 			'- [x] done',
 		].join('\n');
 
-		const written = new Y.Doc();
+		// An ATTACHED type, because that is the only kind the codec is ever
+		// handed (ADR-0296): a detached one replays a single positional prelim
+		// delta, and a Markdown conversion is many sequential writes.
+		const document = new Y.Doc();
 		try {
-			const reader = written as unknown as {
-				get(root: string, typeName?: string | null): unknown;
-			};
-			codec.deserialize(markdown, reader);
-			// What was written through `deserialize` is what `serialize` reads back:
-			// the export/import pair over one document is the identity on the text.
-			expect(codec.serialize(reader)).toBe(markdown);
-			// And the body landed at the root every open names (ADR-0248).
-			expect(String(written.get(NOTE_BODY).toString())).toContain('Title');
+			const row = document.get('tables:notes');
+			const body = new Y.Type();
+			document.transact(() => {
+				row.setAttr('body' as never, body as never);
+			});
+
+			const fields = expectOk(
+				codec.deserialize(
+					{ data: { title: 'Title' }, content: markdown },
+					{
+						body,
+					},
+				),
+			);
+			// What was written through `deserialize` is what `serialize` reads
+			// back: the pair is the identity on the text.
+			expect(codec.serialize({ id: 'r1', ...fields, body }).content).toBe(
+				markdown,
+			);
+			expect(body.toString()).toContain('Title');
 		} finally {
-			written.destroy();
+			document.destroy();
 		}
 	});
 });

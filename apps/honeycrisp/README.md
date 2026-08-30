@@ -1,8 +1,8 @@
 # Honeycrisp
 
-Honeycrisp is a local-first notes app. The scalar application state is one Yjs
-document: folders and notes are rows in it. Each note's prose is a rich-text
-type in an independent row document that merges per character.
+Honeycrisp is a local-first notes app. The whole database is one Yjs document:
+folders and notes are rows in it, and each note's prose is a rich-text type
+nested on its note row, merging per character.
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
 
@@ -21,15 +21,16 @@ disabled; the app runs entirely in the browser as a static site.
 Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and opens it as a store the app owns:
 
 ```txt
-openLocalDatabase()                                       local database
-openAccountDatabase({ auth })                             account replica
+resolveLocalGeneration()                                  which number, once
+openLocalDatabase(generation)                             local database
+openAccountDatabase({ auth, generation })                 account replica
 data.tables.notes.list()                                  synchronous from here on
 ```
 
-The definition names the application and the route-owned opener names which
-durable document it means (ADR-0229 as amended by ADR-0233). `/device` opens
-the local database. `/account` gates auth and opens one retained account
-replica. Each route owns one store, and nothing falls back to the other route's
+The definition names the application and the route names which exact generation
+of it (ADR-0229, ADR-0292). `/device` and `/account` resolve a number and
+redirect; `/device/[generation]` and `/account/[generation]` open it. Each route
+owns one store, and nothing falls back to the other route's
 data.
 The scalar document shape is the shared `app`/`kv`/`tables:<name>` grammar in
 [ADR-0257](../../docs/adr/0257-the-application-document-has-named-kv-and-table-roots.md).
@@ -51,18 +52,20 @@ refresh anywhere.
 
 ### Rich-text editing
 
-A note's prose is a live type at the `body` root inside the note's own
-independent document. `NoteBodyPane.svelte` opens that document through
-`data.tables.notes.openDocument(noteId)`, receives a fully hydrated handle, and
-hands `handle.get('body')` straight to ProseMirror through `@y/prosemirror`.
-Opening is awaited and the handle is disposed when the editor closes; two
-devices first-opening the same named root converge because it is name-addressed.
+A note's prose is the `body` rich field on its note row, declared
+`field.type()` and minted with the row. `NoteBodyPane.svelte` reaches it through
+`notes.openBody(noteId)` and hands the type straight to ProseMirror through
+`@y/prosemirror`. Nothing is awaited and nothing is loaded: the type is in the
+document the store already holds.
 
-User edits extract the title, preview, and word count and write them back to the note row with an explicit `updatedAt`. Binding-origin transactions do not update metadata, so opening or remotely hydrating a note does not make it look newly edited.
+`openBody` also subscribes to that field's own edit signal and writes the
+note's `title`, `preview`, and `updatedAt` back onto the row, coalesced to one
+write per burst. The store writes no derived fields and no timestamps
+(ADR-0297), so this is Honeycrisp's job; `close` stops it.
 
 ### Soft deletion
 
-Normal deletion is soft deletion: the note row gets a `deletedAt` timestamp and appears in Recently Deleted. Permanent deletion removes the canonical row and revokes its document lease.
+Normal deletion is soft deletion: the note row gets a `deletedAt` timestamp and appears in Recently Deleted. Permanent deletion removes the row, and its prose goes with it: the whole nested subtree is reclaimed in the same removal.
 
 ### Auth and sync
 

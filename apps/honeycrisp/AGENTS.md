@@ -1,22 +1,33 @@
 # Honeycrisp App
 
 Local-first notes SPA. Folders and notes are rows in one Yjs document, and each
-note's prose lives in that note's own independent Yjs document, opened on
-demand at the row's derived address (ADR-0248). The one application running on
-the store today, so it is also the reference for how an app is built.
+note's prose is a rich field on its note row inside that same document
+(ADR-0295). The one application running on the store today, so it is also the
+reference for how an app is built.
 
-Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0248](../../docs/adr/0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md) (a row owns an independent Yjs document at a derived address), [ADR-0261](../../docs/adr/0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md) (a retained replica is qualified by its application, server URL, and verified principal), [ADR-0256](../../docs/adr/0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md) (automatic folding is current; manual workspace compaction is deferred).
+Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0295](../../docs/adr/0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) (a database is one Yjs document and a row holds its rich content), [ADR-0292](../../docs/adr/0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) (a database opens an exact generation cache-first), [ADR-0261](../../docs/adr/0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md) (a retained replica is qualified by its application, server URL, and verified principal), [ADR-0256](../../docs/adr/0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md) (automatic folding is current; manual workspace compaction is deferred).
 
-## Two durable documents, and routes open one
+## A generation is the address, and a route resolves it once
 
-`src/lib/databases.ts` is the only place that opens a store. The `/device`
-route opens the local database, while `/account` gates auth and opens the
-account replica. Each route owns exactly one store lifetime (ADR-0261):
+`src/lib/databases.ts` is the only place that opens a store, and every open
+takes an EXACT generation (ADR-0292). `/device` and `/account` resolve one and
+redirect; `/device/[generation]` and `/account/[generation]` open it.
 
 ```text
-epicenter/so.epicenter.honeycrisp/device                     never syncs, always open
-epicenter/so.epicenter.honeycrisp/account/<base URL>/<principal id> one per server identity
+epicenter/v2/so.epicenter.honeycrisp/local/gen/<n>
+epicenter/v2/so.epicenter.honeycrisp/account/<base URL>/<principal id>/gen/<n>
 ```
+
+`resolveLocalGeneration` takes the newest copy this device holds and imports an
+empty one if it holds none; `resolveAccountGeneration` takes the newest local
+copy and otherwise asks the account which exist. Only the local resolver ever
+CREATES one: an account generation is the account's, and a device arriving
+second must not invent a history for it.
+
+Opening is cache-first and never waits on a socket. A device holding a copy is
+usable offline; one that holds none of an account's fetches the generation
+whole before returning, so a fresh account never renders empty while its state
+is arriving.
 
 `createHoneycrisp` turns the one route-owned data capability into the reactive
 application object the UI consumes. It adapts that document into
@@ -26,12 +37,10 @@ no database identity or fallback. Components reach it through
 `getHoneycrisp()`; raw stores never cross that boundary. Account sync status is
 passed separately by the account route for the sidebar's status line.
 
-A fresh account replica is unavailable until its first bootstrap binds it to an
-authority document, so `/account` shows its loading gate while it waits. The
-device route is independent and never waits on account binding. A permanent
-credential refusal stays on `/account` and offers reconnection; it never falls
-back to device data. Importing between the two documents is deliberately
-deferred as a future explicit application feature.
+A permanent credential refusal costs sync, not the notes: the store opened
+from local state before a socket was attempted, and the sidebar's status line
+goes quiet. It never falls back to device data. Importing between the local
+and account databases is deliberately deferred as a future explicit feature.
 
 ## Three builds, one store shape
 
@@ -42,9 +51,9 @@ deferred as a future explicit application feature.
 | Epicenter-hosted | `bun run build:epicenter` |
 
 **They differ in nothing that concerns data.** Every build calls
-`openLocal` and `openAccount` from `@epicenter/data/browser` and owns its
-documents; the desktop host
-serves the bundle and brokers the credential and owns none of it (ADR-0226).
+`openDatabase` from `@epicenter/data/browser` and owns its databases; the
+desktop host serves the bundle and brokers the credential and owns none of it
+(ADR-0226).
 There used to be a platform seam where the hosted build reached the host's
 shared `epicenter.sqlite3`, and ADR-0226 refused it.
 
@@ -71,12 +80,20 @@ only the default one is checked by an editor.
 - Do not copy, merge, or promote the local document into an account replica,
   in either direction. Nothing in sync may name the local document; a copy
   action, if the product ever wants one, is an explicit application feature.
-- Do not fall back to the local document when a workspace cannot open.
-  A signed-in generation with no usable principal, or one whose dial is
-  permanently denied before its first bootstrap, is unavailable and says so.
+- Do not fall back to the local database when an account one cannot open. A
+  signed-in generation with no usable principal says so; one that is missing
+  or unreachable says which, because a retry fixes the second and never the
+  first (`boot-failure.ts`).
+- Do not open a generation the route did not resolve. A number in a URL is an
+  address, not an instruction to allocate: `openDatabase` refuses a miss with
+  `GenerationNotFound` rather than inventing an empty database at whatever
+  somebody typed.
 - Do not add a `#platform/*` seam for storage. Every build opens its own store;
   a seam there is the thing ADR-0226 refused.
-- Do not hold a note's document open past the surface that opened it. The pane
-  owns the handle: dispose on note switch and unmount, so the store can unload
-  the document. Minting the `body` root on first open is safe (a top-level
-  root is addressed by its name, ADR-0248); leaking handles is the hazard now.
+- Do not write a note's `title`, `preview`, or `updatedAt` from anywhere but
+  `notes.openBody`'s subscription. The store writes no derived fields and no
+  timestamps (ADR-0297), so those three are Honeycrisp's, hung on the body's
+  own edit signal and coalesced. A second writer would fight it.
+- Do not leave `openBody`'s `close` uncalled. Nothing is loaded any more, so
+  there is no document to leak; what leaks is the derivation subscription, and
+  two of them on one note write the row twice per keystroke.

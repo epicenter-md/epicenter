@@ -1,11 +1,27 @@
 import type { AuthClient } from '@epicenter/auth';
+
+/**
+ * The principal half of an account address, as the auth client states it.
+ *
+ * Taken from `AuthClient` rather than from `@epicenter/principal`, so this app
+ * depends on the client it already holds rather than on the identity package
+ * behind it.
+ */
+type PrincipalId = Extract<
+	AuthClient['state'],
+	{ principalId: unknown }
+>['principalId'];
+
 import type { AccountStore, DataOf } from '@epicenter/data';
+import { readArtifact } from '@epicenter/data/artifact';
 import { attachMirror } from '@epicenter/data/artifact/mirror';
 import {
 	type BrowserAccountStore,
+	GENERATIONS_ROUTE,
+	importGeneration,
 	type LocalStore,
-	openAccount,
-	openLocal,
+	listLocalGenerations,
+	openDatabase,
 } from '@epicenter/data/browser';
 import { persistOnHide } from '@epicenter/data/flush-on-hide';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
@@ -84,13 +100,19 @@ type Opened<TDatabase> = TDatabase & AsyncDisposable;
  * The handle is disposable immediately; a route hands it to
  * `disposeOnUnmount` and never touches the lifetime again.
  */
-export function openLocalDatabase(): OpeningDatabase<DeviceDatabase> {
-	const opened = openLocalReplica();
+export function openLocalDatabase(
+	generation: number,
+): OpeningDatabase<DeviceDatabase> {
+	const opened = openLocalReplica(generation);
 	return opening(opened, opened);
 }
 
-async function openLocalReplica(): Promise<Opened<DeviceDatabase>> {
-	const { data, error } = await openLocal(honeycrispDefinition);
+async function openLocalReplica(
+	generation: number,
+): Promise<Opened<DeviceDatabase>> {
+	const { data, error } = await openDatabase(honeycrispDefinition, {
+		generation,
+	});
 	if (error !== null) throw error;
 
 	const mirror = attachMirror({
@@ -116,87 +138,68 @@ async function openLocalReplica(): Promise<Opened<DeviceDatabase>> {
 }
 
 /**
- * Open one account's retained replica for the `/account` route.
+ * Open one account's retained replica of one generation.
  *
- * Opening the local replica and making it safe to edit are two real moments in
- * the library: a previously bound replica is ready the instant it opens, and a
- * fresh one waits for its first bootstrap or a denial. They are not two moments
- * for a ROUTE, which renders the same loading state across both and nothing at
- * all in between, so they are one promise here.
+ * The same shape as the local opener now, and that is the change ADR-0292
+ * bought. Opening and becoming safe to edit used to be two moments: a fresh
+ * replica was unavailable until the authority stamped it with the document it
+ * belonged to, so this function carried a readiness promise, a supersession
+ * handler, and a discard-and-reload. The generation is the address, a
+ * generation is created complete, and a cache hit is bound; what is left is
+ * open, attach a socket, and return.
  *
- * The handle is disposable immediately, which matters more here than for the
- * local database: navigation can leave while the first bootstrap is still
- * binding, and that store is open and must be closed.
+ * The handle is disposable immediately, so navigating away mid-open closes
+ * what finishes opening afterwards.
  */
 export function openAccountDatabase(options: {
 	auth: AuthClient;
-	principalId?: Parameters<typeof openAccount>[1]['principalId'];
+	generation: number;
+	principalId?: PrincipalId;
 }): OpeningDatabase<AccountDatabase> {
 	const opened = openAccountReplica(options);
-	return opening(
-		opened,
-		opened.then(async (replica) => {
-			const bound = await replica.ready;
-			if (bound.error !== null) throw bound.error;
-			return replica;
-		}),
-	);
+	return opening(opened, opened);
 }
 
 async function openAccountReplica({
 	auth,
+	generation,
 	principalId = auth.state.status === 'signed-out'
 		? undefined
 		: auth.state.principalId,
 }: {
 	auth: AuthClient;
-	principalId?: Parameters<typeof openAccount>[1]['principalId'];
-}): Promise<
-	Opened<AccountDatabase> & { ready: Promise<Result<void, unknown>> }
-> {
+	generation: number;
+	principalId?: PrincipalId;
+}): Promise<Opened<AccountDatabase>> {
 	if (principalId === undefined) {
 		const error = new Error('Account access requires a signed-in principal');
 		error.name = 'Unaddressable';
 		throw error;
 	}
 
-	const { data, error } = await openAccount(honeycrispDefinition, {
-		baseURL: auth.connection.baseURL,
-		principalId,
+	const { data, error } = await openDatabase(honeycrispDefinition, {
+		generation,
+		account: {
+			baseURL: auth.connection.baseURL,
+			principalId,
+			fetch: (input, init) => auth.fetch(input, init),
+		},
 	});
 	if (error !== null) throw error;
 
-	/** Discard and reload after the authority says this replica is superseded. */
-	const adoptCurrentDocument = async (): Promise<void> => {
-		const discarded = await data.store.discard();
-		if (discarded.error !== null) reportBackgroundError(discarded.error);
-		location.reload();
-	};
-
-	const denial = Promise.withResolvers<void>();
 	const connectionResult = trySync({
-		try: () =>
-			attachHoneycrispSync({
-				store: data.store,
-				auth,
-				onSuperseded: () => void adoptCurrentDocument(),
-				onDenied: denial.resolve,
-			}),
+		try: () => attachHoneycrispSync({ store: data.store, generation, auth }),
 		catch: (cause) => Err(cause),
 	});
 	if (!isOk(connectionResult)) {
 		await disposeQuietly(data);
 		throw connectionResult.error;
 	}
-
 	const connection = connectionResult.data;
-	const readiness = waitUntilReplicaIsBound({
-		store: data.store,
-		denied: denial.promise,
-	});
-	// The folder follows the account replica as well as the device document
-	// (ADR-0271). It is attached after sync, so a replica that refills from its
-	// authority renders what arrived rather than the empty state it opened with.
+
+	// The folder follows the account replica as well as the device database
+	// (ADR-0271). Attached after sync, so a replica that catches up renders what
+	// arrived rather than the state it opened with.
 	const mirror = attachMirror({
 		data,
 		definition: honeycrispDefinition,
@@ -211,17 +214,12 @@ async function openAccountReplica({
 
 	return {
 		data,
-		// Internal, and the reason this file has a second function: the OPENED
-		// store must be disposable even if it never becomes ready, so the two
-		// cannot be one promise here. They are one promise for the route.
-		ready: readiness.promise,
 		syncStatus: () => {
 			const status = connection.status();
 			return status.denied ? undefined : status;
 		},
 		async [Symbol.asyncDispose]() {
 			stopHideFlush();
-			readiness.cancel();
 			connection[Symbol.dispose]();
 			await mirror[Symbol.asyncDispose]();
 			await data[Symbol.asyncDispose]();
@@ -230,62 +228,83 @@ async function openAccountReplica({
 }
 
 /**
- * Resolve once a fresh replica is bound, or a credential is permanently denied.
+ * The generation this device should open, creating one if it holds none.
  *
- * A fossil with a shelf life. Its whole predicate is `store.sync.get().document
- * !== undefined`, which asks whether the authority has stamped this replica
- * with the document it belongs to. Under ADR-0285 the generation is the
- * address and arrives as a route parameter before the store is constructed,
- * and the switch deletes `SyncCapability`, `documentIdentity`, and
- * `adoptDocumentIdentity` outright. When that lands there is nothing to wait
- * to be told, and `openAccountDatabase` collapses to the local opener's shape.
+ * A route resolves this once and redirects to the number; every open below
+ * that takes an exact address (ADR-0292). Highest rather than newest-by-time:
+ * the number IS the order, and a device holding several holds older copies.
+ *
+ * Creating one is an import of an empty folder (ADR-0293), which is what "a
+ * new database on this device" means when importing is the only way a
+ * generation comes into being. There is no other allocation path and there is
+ * deliberately no fallback: a route that cannot resolve a number renders a
+ * failure rather than opening something.
  */
-function waitUntilReplicaIsBound({
-	store,
-	denied,
-}: {
-	store: AccountStore;
-	denied: Promise<void>;
-}): { promise: Promise<Result<void, unknown>>; cancel(): void } {
-	const bound = (): boolean => store.sync.get().document !== undefined;
-	let cancel = () => undefined;
-	const promise = new Promise<Result<void, unknown>>((resolve) => {
-		let settled = false;
-		const settle = (result: Result<void, unknown>) => {
-			if (settled) return;
-			settled = true;
-			resolve(result);
-		};
+export async function resolveLocalGeneration(): Promise<number> {
+	const held = await listLocalGenerations(honeycrispDefinition.id);
+	const newest = held.at(-1);
+	if (newest !== undefined) return newest;
 
-		if (bound()) {
-			settle(Ok(undefined));
-			return;
-		}
+	const state = readArtifact(new Map(), honeycrispDefinition);
+	if (state.error !== null) throw state.error;
+	const created = await importGeneration(honeycrispDefinition, state.data);
+	if (created.error !== null) throw created.error;
+	return created.data.generation;
+}
 
-		const stopBound = store.sync.subscribe(() => {
-			if (!bound()) return;
-			stopBound();
-			settle(Ok(undefined));
-		});
-		cancel = () => {
-			stopBound();
-			const disposed = new Error(
-				'The account replica was disposed before it became ready',
-			);
-			disposed.name = 'Disposed';
-			settle(Err(disposed));
-		};
-		void denied.then(() => {
-			stopBound();
-			const refused = new Error(
-				'The account credential was refused before this replica bound to an authority document',
-			);
-			refused.name = 'CredentialRefused';
-			settle(Err(refused));
-		});
+/**
+ * The account generation this device should open.
+ *
+ * Cache first, then the account's own list: a device that already holds a copy
+ * uses it without waiting for a server, and one that holds none asks which
+ * exist. Unlike the local resolver this never CREATES one, because an account
+ * generation is the account's and a device arriving second must not invent a
+ * history for it.
+ */
+export async function resolveAccountGeneration(
+	auth: AuthClient,
+	principalId: PrincipalId,
+): Promise<number> {
+	const held = await listLocalGenerations(honeycrispDefinition.id, {
+		baseURL: auth.connection.baseURL,
+		principalId,
 	});
+	const newest = held.at(-1);
+	if (newest !== undefined) return newest;
 
-	return { promise, cancel: () => cancel() };
+	const listed = await auth.fetch(
+		GENERATIONS_ROUTE.collection(
+			auth.connection.baseURL,
+			honeycrispDefinition.id,
+		),
+	);
+	if (!listed.ok) {
+		const error = new Error(
+			`The account could not be asked which generations exist (${listed.status})`,
+		);
+		error.name = 'GenerationUnavailable';
+		throw error;
+	}
+	const { generations } = (await listed.json()) as { generations: number[] };
+	const latest = generations.at(-1);
+	if (latest !== undefined) return latest;
+	// An EMPTY list is a first run, not a refusal, and the distinction is the
+	// listing itself: a failed one already threw above. Creating the account's
+	// first generation is an import of an empty folder (ADR-0293), which is the
+	// only way one ever comes into being; what a device must not do is invent
+	// one because it could not SEE what the account has.
+	const state = readArtifact(new Map(), honeycrispDefinition);
+	if (state.error !== null) throw state.error;
+	const created = await importGeneration(honeycrispDefinition, state.data, {
+		account: {
+			baseURL: auth.connection.baseURL,
+			principalId,
+			fetch: (input: Request | string | URL, init?: RequestInit) =>
+				auth.fetch(input, init),
+		},
+	});
+	if (created.error !== null) throw created.error;
+	return created.data.generation;
 }
 
 async function disposeQuietly(resource: AsyncDisposable): Promise<void> {
