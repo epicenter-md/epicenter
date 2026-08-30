@@ -999,9 +999,7 @@ function createStoreEngine(
 			conforming: JsonObject;
 			issues: ConformanceIssue[];
 		} {
-			const raw = storedKv();
-			if (table === undefined) return { conforming: raw, issues: [] };
-			return table.conformance(raw);
+			return table.conformance(storedKv());
 		}
 
 		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
