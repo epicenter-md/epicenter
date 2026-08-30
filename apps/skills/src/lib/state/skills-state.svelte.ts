@@ -2,7 +2,6 @@ import type { NonconformingRow } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import {
 	type Reference,
-	SKILL_CONTENT,
 	type Skill,
 	type SkillsData,
 } from '@epicenter/skills';

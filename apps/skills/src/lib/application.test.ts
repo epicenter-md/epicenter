@@ -33,7 +33,7 @@ import { expect, test } from 'bun:test';
 	{ by: <TValue>(derive: () => TValue) => derive() },
 );
 
-import { SKILL_CONTENT, skillsDefinition } from '@epicenter/skills';
+import { skillsDefinition } from '@epicenter/skills';
 import { openSkillsRuntime } from './application.js';
 
 async function resetStorage(): Promise<void> {
@@ -66,7 +66,7 @@ test('a skill and its instructions survive reopening', async () => {
 		skillId = runtime.state.createSkill('writing-voice');
 		const held = runtime.data.tables.skills.content(skillId);
 		if (held === undefined) throw new Error('the row has no content');
-		const content = held.types[SKILL_CONTENT];
+		const content = held.types.body;
 		content.applyDelta(content.change.insert('Write directly.') as never);
 		// The durable flush is asynchronous, so a reopen must wait for it.
 		await runtime.data.store.persistence.flush();
@@ -80,7 +80,7 @@ test('a skill and its instructions survive reopening', async () => {
 	expect(
 		reopened.data.tables.skills
 			.content(skillId)
-			?.types[SKILL_CONTENT].toString(),
+			?.types.body.toString(),
 	).toBe('Write directly.');
 });
 

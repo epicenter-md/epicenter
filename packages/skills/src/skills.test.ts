@@ -28,7 +28,6 @@ import { InstantString } from '@epicenter/field';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
 import {
-	SKILL_CONTENT,
 	type SkillsData,
 	skillsDefinition,
 } from './workspace.js';
@@ -59,7 +58,7 @@ function openSkills(record: MemoryRecord) {
 function readInstructions(data: SkillsData, skillId: string): string {
 	const content = data.tables.skills.content(skillId);
 	if (content === undefined) throw new Error(`Skill '${skillId}' has no row`);
-	return content.types[SKILL_CONTENT].toString();
+	return content.types.body.toString();
 }
 
 test('a stricter Skills workspace exposes nonconformance until an update repairs it', async () => {
@@ -133,7 +132,7 @@ test("a skill's instructions live under its own row id", async () => {
 			writtenTo = written.id;
 			const held = data.tables.skills.content(writtenTo);
 			if (held === undefined) throw new Error('the row has no content');
-			const content = held.types[SKILL_CONTENT];
+			const content = held.types.body;
 			content.applyDelta(content.change.insert('Keep it concise.') as never);
 
 			const other = data.tables.skills.create({

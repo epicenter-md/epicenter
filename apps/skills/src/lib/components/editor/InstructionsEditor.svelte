@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { SKILL_CONTENT } from '@epicenter/skills';
-	import { getSkills } from '$lib/context.js';
+		import { getSkills } from '$lib/context.js';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { skillId }: { skillId: string } = $props();
@@ -11,7 +10,7 @@
 	// half-hydrated state to bind to. Undefined means the row is gone, which
 	// renders as nothing rather than as an empty file it could then save over.
 	const content = $derived(
-		skills.data.tables.skills.content(skillId)?.types[SKILL_CONTENT],
+		skills.data.tables.skills.content(skillId)?.types.body,
 	);
 </script>
 

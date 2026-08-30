@@ -16,7 +16,7 @@ import {
 } from 'wellcrafted/error';
 import { parseSkillMd } from './parse.js';
 import { serializeSkillMd } from './serialize.js';
-import { SKILL_CONTENT, type Skill, type SkillsData } from './workspace.js';
+import type { Skill, SkillsData } from './workspace.js';
 
 /** Either Skills table, for the document helpers that treat them alike. */
 type SkillsTable = SkillsData['tables']['skills' | 'skillReferences'];
@@ -264,7 +264,7 @@ export async function exportSkillsToDisk({
  * reviving an address that no longer holds a skill.
  */
 function writeContent(table: SkillsTable, rowId: string, value: string): void {
-	const content = table.content(rowId)?.types[SKILL_CONTENT];
+	const content = table.content(rowId)?.types.body;
 	if (content === undefined) return;
 	content.applyDelta(
 		content.change.delete(content.length).insert(value) as never,
@@ -272,7 +272,7 @@ function writeContent(table: SkillsTable, rowId: string, value: string): void {
 }
 
 function readContent(table: SkillsTable, rowId: string): string {
-	return table.content(rowId)?.types[SKILL_CONTENT].toString() ?? '';
+	return table.content(rowId)?.types.body.toString() ?? '';
 }
 
 function referenceKey(skillId: string, path: string): string {
