@@ -43,12 +43,14 @@ its premises, structure, evidence, assumptions, and consequences. In a
 corrective or design dialectic, expose the user’s emerging ideal alongside the
 agent’s strongest greenfield account.
 
-Lead with a claim, not a questionnaire. In a corrective or design dialectic,
-when a real fork remains, put forward several serious articulations whose
-premises genuinely differ. Make each one strong enough to defend, including
-what it refuses and what follows from it. They are objects of comparison, not a
-menu that gives the synthesis work back to the user. Recommend the strongest
-articulation when the evidence and model support one.
+Begin with one strong account the agent can defend. Offer multiple serious
+articulations only when the agent cannot responsibly choose among materially
+different accounts, or when their contrast is necessary to expose a crux. Make
+each one strong enough to defend, including what it refuses and what follows
+from it. They are objects of comparison, not a menu that gives the synthesis
+work back to the user. When multiple articulations are needed, conclude the
+comparison with a recommendation: identify the strongest overall account when
+one exists, or give context-specific recommendations with their tradeoffs.
 
 Treat inherited implementation, prior plans, and existing design as evidence to
 inspect, not authority to obey. Push against them when they narrow the desired
