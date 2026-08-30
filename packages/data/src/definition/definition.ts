@@ -22,10 +22,22 @@ export const RESERVED_ATTRIBUTE_PREFIX = '!';
 export const KV_ROOT = 'kv';
 export const RESERVED_TABLE_NAMES: readonly string[] = [KV_ROOT];
 
-/** A field descriptor as authored or serialized. */
-export type FieldDescriptor = object;
+/**
+ * The fields of one bucket, by name.
+ *
+ * A field IS a schema. It was `object` for one release, so that this one type
+ * could describe both a declaration written with `field.*` and one that arrived
+ * as JSON, and every type reading a declaration paid for it: unable to assume a
+ * schema, each asked `extends TSchema` and answered `never` when the guess
+ * failed. A wrong answer, silently, rather than an error.
+ *
+ * Nothing needed it. A definition read from JSON reaches `parseData` as
+ * `unknown` and is validated there (`apps/epicenter/src/static-assets.ts` is
+ * the one caller that does it), so the serialized shape never had a static
+ * form to accommodate. What is declared here is what an author writes.
+ */
 export type FieldMap = {
-	readonly [field: string]: FieldDescriptor;
+	readonly [field: string]: TSchema;
 };
 
 /** One row's export file, split at the fence (ADR-0296). */
@@ -185,48 +197,21 @@ export type DataField = {
 	readonly reference: string | null;
 };
 
-type FieldsOut<TFields> = {
-	[K in keyof TFields]: TFields[K] extends TSchema ? Static<TFields[K]> : never;
+/** What one bucket's fields read as, once the schemas are resolved. */
+type FieldsOut<TFields extends FieldMap> = {
+	[K in keyof TFields]: Static<TFields[K]>;
 };
-
-/**
- * One table declaration: its scalars, its type fields, and its file codec.
- *
- * TWO BUCKETS, and the split is the declaration saying what is true rather than
- * encoding it for the type system to rediscover. A scalar holds a JSON value,
- * is replaced whole on write, and merges last-write-wins. A type field holds a
- * live `Y.Type`, is edited in place, and merges internally. They are different
- * in every operation: `update` takes only scalars, `watch` takes only types,
- * `create` requires the first and mints the second, and a table with any type
- * field must declare a codec.
- *
- * They used to share one bag, and three types existed to pull them apart again
- * off an `x-yjs-type` marker: `RichKeys` computed a key union, `TypesOf` mapped
- * it, `ScalarsOf` `Omit`ed it. `field.type()` was the marker's carrier, and it
- * was a descriptor that described nothing: no schema, no check, no
- * nullability. What it smuggled through the bag was a list of names, which is
- * what the runtime holds and what `types` now is.
- */
-export type TableDeclarationOf<
-	TScalars extends FieldMap = FieldMap,
-	TTypes extends readonly string[] = readonly string[],
-> = {
-	readonly scalars: TScalars;
-	readonly types?: TTypes;
-	readonly file?: RowFileCodec;
-};
-
-type ScalarsIn<T> = T extends { scalars: infer S } ? S : T;
-type TypeNamesIn<T> = T extends { types: infer N extends readonly string[] }
-	? N[number]
-	: never;
 
 /**
  * One table's type fields: the live `Y.Type` at each declared name.
  *
- * A lookup, not a filter. The declaration already lists them.
+ * A lookup, not a filter. The declaration already lists them, and a table that
+ * declares none lists nothing: `NonNullable` covers the absent key without a
+ * conditional, because absent and empty are the same answer here.
  */
-export type TypesOf<T> = { [K in TypeNamesIn<T>]: Y.Type };
+export type TypesOf<T extends TableDeclaration> = {
+	[K in NonNullable<T['types']>[number]]: Y.Type;
+};
 
 /**
  * One table's scalar fields: what `update` may patch, what `deserialize`
@@ -238,7 +223,7 @@ export type TypesOf<T> = { [K in TypeNamesIn<T>]: Y.Type };
  * exists, and stating it as a signature is what keeps it from being a comment
  * somebody has to obey.
  */
-export type ScalarsOf<T> = FieldsOut<ScalarsIn<T>>;
+export type ScalarsOf<T extends TableDeclaration> = FieldsOut<T['scalars']>;
 
 /**
  * One table's read shape: the id, the scalars, and the live types.
@@ -251,7 +236,8 @@ export type ScalarsOf<T> = FieldsOut<ScalarsIn<T>>;
  * `NewRowOf` is this minus the id and with the types optional. That sentence is
  * the whole relationship between the two shapes an application ever names.
  */
-export type RowOf<T> = { id: string } & ScalarsOf<T> & TypesOf<T>;
+export type RowOf<T extends TableDeclaration> = { id: string } & ScalarsOf<T> &
+	TypesOf<T>;
 /**
  * A row that does not have an id yet: the scalars, and the type types the
  * caller built (ADR-0295, ADR-0296).
@@ -276,11 +262,12 @@ export type RowOf<T> = { id: string } & ScalarsOf<T> & TypesOf<T>;
  * from having to build an empty body it does not care about: an omitted one is
  * minted empty. A codec that means to leave a body empty says so the same way.
  */
-export type NewRowOf<T> = ScalarsOf<T> & Partial<TypesOf<T>>;
+export type NewRowOf<T extends TableDeclaration> = ScalarsOf<T> &
+	Partial<TypesOf<T>>;
 export type KvOf<TDatabase extends DataDefinition> = FieldsOut<TDatabase['kv']>;
 
 /** The codec as its own table declares it, read through that table's fields. */
-export type RowFileCodecOf<TFields> = {
+export type RowFileCodecOf<TFields extends TableDeclaration> = {
 	readonly serialize: (row: RowOf<TFields>) => RowFile;
 	readonly deserialize: (
 		file: RowFile,

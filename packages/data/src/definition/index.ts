@@ -40,6 +40,7 @@ export {
 	type RowOf,
 	type RowValues,
 	type ScalarsOf,
+	type TableDeclaration,
 	type TypesOf,
 } from './definition.js';
 export * from './json.js';

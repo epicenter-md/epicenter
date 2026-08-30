@@ -18,6 +18,7 @@ import type {
 	NewRowOf,
 	RowOf,
 	ScalarsOf,
+	TableDeclaration,
 } from '@epicenter/data/definition';
 import type { PrincipalId } from '@epicenter/principal';
 import type * as Y from '@y/y';
@@ -54,11 +55,7 @@ import type { PersistenceCapability } from './persistence.js';
  */
 export type Row = { id: string } & Record<string, JsonValue | Y.Type>;
 
-export type TableHandle<
-	TRow = Row,
-	TInput = RowInput,
-	TPatch = JsonObject,
-> = {
+export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	/**
 	 * Bring one row into being, at a minted id.
 	 *
@@ -214,7 +211,7 @@ export type TableHandle<
 };
 
 /** One table, with its own declaration's row and create-input types. */
-export type TypedTableHandle<TFields> = TableHandle<
+export type TypedTableHandle<TFields extends TableDeclaration> = TableHandle<
 	RowOf<TFields>,
 	NewRowOf<TFields>,
 	Partial<ScalarsOf<TFields>>
@@ -339,7 +336,6 @@ export type AccountData<TDatabase extends DataDefinition> =
  */
 export type BrowserData<TDatabase extends DataDefinition> =
 	DataView<TDatabase> & AddressedDocument;
-
 
 /**
  * One application's KV: the values it keeps exactly one of.

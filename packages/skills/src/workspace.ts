@@ -17,13 +17,13 @@ import type { DataView } from '@epicenter/data';
 import {
 	defineData,
 	defineTable,
-	type FieldMap,
 	field,
 	type JsonValue,
 	jsonValue,
 	type NewRowOf,
 	type RowFileCodecOf,
 	type RowOf,
+	type TableDeclaration,
 } from '@epicenter/data/definition';
 import * as Y from '@y/y';
 import { Ok } from 'wellcrafted/result';
@@ -71,13 +71,20 @@ const referencesTable = {
  * once and applied twice rather than being a shape the platform infers, because
  * the mapping is the table's to own even when two tables happen to agree.
  *
- * A function of the table's fields rather than one object, so each table gets a
- * codec typed against its OWN declaration. The two tables declare different
- * scalars, so a single object could not be typed as either and the assignment
- * was silenced with `as never` at both call sites. There is still one cast, but
- * it is here, once, and it names what it asserts.
+ * A function of the table's declaration rather than one object, so each table
+ * gets a codec typed against its OWN. The two tables declare different scalars,
+ * so a single object could not be typed as either and the assignment was
+ * silenced with `as never` at both call sites. There is still one cast, but it
+ * is here, once, and it names what it asserts.
+ *
+ * The parameter is the DECLARATION, not its scalars. It read `extends FieldMap`
+ * and was handed `typeof skillsTable`, which is a declaration; that only
+ * compiled while a field was `object` and a declaration's `types` array passed
+ * for one. Both call sites already passed the right thing.
  */
-const markdownFile = <TFields extends FieldMap>(): RowFileCodecOf<TFields> => ({
+const markdownFile = <
+	TFields extends TableDeclaration,
+>(): RowFileCodecOf<TFields> => ({
 	serialize: ({ id: _id, body, ...fields }) => ({
 		data: fields as Record<string, JsonValue>,
 		content: (body as Y.Type).toString(),
