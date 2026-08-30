@@ -235,7 +235,7 @@ function admitRow({
 				cause: read.error.cause,
 			});
 		}
-		returned = read.data as RowInput;
+		returned = read.data;
 	} catch (cause) {
 		return ImportError.RowUnreadable({
 			table: tableName,

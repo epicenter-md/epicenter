@@ -28,7 +28,6 @@ import {
 	type JsonValue,
 	type ParsedDataDefinition,
 	parseData,
-	type RowValues,
 } from '../definition/index.js';
 import type { Row, StoredData } from '../store/store.js';
 import { rowFile } from './frontmatter.js';
@@ -171,7 +170,7 @@ export async function renderRow(
 	try {
 		// One object, straight through. The row already carries its live types,
 		// so nothing here assembles a shape out of two verbs and casts it.
-		const file = codec.serialize(row as RowValues);
+		const file = codec.serialize(row);
 		return Ok({ path, contents: rowFile(file.data, file.content) });
 	} catch (cause) {
 		return RenderError.BodyUnwritable({ table, rowId, cause });
