@@ -10,9 +10,10 @@
  * and the real routes, so a test can assert on the rows a device actually
  * holds rather than on frames a harness counted.
  *
- * Adoption is modelled the way a page does it (ADR-0231): on a probe-confirmed
- * supersession the replica discards its local rows whole and boots fresh,
- * which is this class's stand-in for the reload a real host performs.
+ * There is no adoption step and nothing to supersede. A replica is addressed at
+ * one generation, a generation is created complete and never mutated in place,
+ * so the address is the identity (ADR-0292): the class opens, dials, and
+ * catches up, exactly as a page does.
  *
  * Not exported from `index.ts` and not in any `wrangler.jsonc`. Only the test
  * entry mounts it, so nothing deployable grows a class that exists for a test.
@@ -76,7 +77,6 @@ export type ReplicaReport = {
 	lastError: string | undefined;
 	/** Structs the engine holds; how a test sees tombstones reclaimed. */
 	items: number;
-	/** How many times this replica discarded and booted fresh (ADR-0231). */
 };
 
 type Env = { SELF: { fetch(request: Request): Promise<Response> } };
@@ -200,9 +200,9 @@ export class StoreTestReplica extends DurableObject<Env> {
 	/**
 	 * What this replica actually holds, read back out of its own SQLite.
 	 *
-	 * Tolerant of the instant between discard and fresh boot, because a test
-	 * polls this while an adoption is in flight: the answer is simply "nothing
-	 * yet", and the next poll sees the fresh store.
+	 * Tolerant of being asked before the store is open, because a test polls
+	 * this while a boot is in flight: the answer is simply "nothing yet", and
+	 * the next poll sees the opened store.
 	 */
 	async report(): Promise<ReplicaReport> {
 		const db = this.db;

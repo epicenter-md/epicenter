@@ -88,7 +88,7 @@ export function noteBodyAsPm(body: Y.Type) {
  *
  * Pure, and application-run rather than store-run: the platform writes no
  * fields an application did not ask for, so Honeycrisp hangs this on the body's
- * own change signal (`notes.watchBody` in `app.svelte.ts`). It reads through
+ * own change signal (`notes.openBody` in `app.svelte.ts`). It reads through
  * the same ProseMirror schema the editor binds, so the derived title matches
  * what a person sees.
  */

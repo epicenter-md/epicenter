@@ -12,7 +12,7 @@ type PrincipalId = Extract<
 	{ principalId: unknown }
 >['principalId'];
 
-import type { AccountStore, DataOf } from '@epicenter/data';
+import type { DataOf } from '@epicenter/data';
 import { readArtifact } from '@epicenter/data/artifact';
 import { attachMirror } from '@epicenter/data/artifact/mirror';
 import {

@@ -11,10 +11,14 @@
  * through a `createSubscriber` per table, so a read inside `$derived` or an
  * effect re-runs when a commit touches that table, whoever committed it: a
  * local write and bytes that arrived from another device alike (ADR-0221).
- * `openDocument()` is not a read: it is the store's own asynchronous load of
- * a row's independent document (ADR-0248), and it passes through untouched.
- * Prose typed inside an open document is observed on the document's own Yjs
- * types, never through a table signal.
+ * `content()` is not one of them, deliberately. It hands back the row's live
+ * nested Yjs types, which carry their own field-scoped `subscribe` (ADR-0296):
+ * an editor binds the type directly and hears every keystroke, local or
+ * remote, without a table signal in the path. Routing it through this
+ * adapter's per-table subscriber would fire the whole list on every character.
+ * `stored()` is not made reactive either, and for the opposite reason: its
+ * caller is a mirror rendering files off its own commit subscription, and it
+ * has no template that would track.
  *
  * Writes pass through. `create`, `update`, and `delete` are the store's own
  * synchronous verbs, untouched; the commit they make is what fires the
@@ -67,9 +71,11 @@ import { createSubscriber } from 'svelte/reactivity';
  * the table's own input type, so it is not assignable to the untyped
  * `TableHandle`; constraining on the shared read surface accepts every typed
  * handle while `ReactiveTable<TTable>` preserves the caller's exact type.
- * Verbs not named here (`create`, `update`, `delete`, `document`,
- * `subscribe`) pass through the spread untouched; a read verb the store
- * grows later must be added here to become reactive.
+ * Verbs not named here (`create`, `update`, `delete`, `content`, `stored`,
+ * `subscribe`) pass through the spread untouched. A read verb the store grows
+ * later must either be added here or be given a line in the module doc above
+ * saying why it is better off untracked; silence is how `content` and `stored`
+ * both arrived without anyone deciding.
  */
 type AdaptableTable = {
 	list(): { rows: unknown[]; nonconforming: unknown[] };

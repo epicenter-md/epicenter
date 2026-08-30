@@ -7,7 +7,7 @@ type PrincipalId = Extract<
 	{ principalId: unknown }
 >['principalId'];
 
-import type { AccountStore, DataOf } from '@epicenter/data';
+import type { DataOf } from '@epicenter/data';
 import {
 	type BrowserAccountStore,
 	GENERATIONS_ROUTE,
@@ -178,12 +178,12 @@ export type WhisperingApp = {
  * one `recordings` and one `recipes`, over one document, for the whole
  * generation.
  *
- * The account arm resolves only with a replica that is safe to edit
- * (ADR-0231): a fresh unbound one keeps this promise pending, behind the
- * layout's boot gate, until the first bootstrap binds it, and rejects if the
- * dial is permanently denied first. It never falls back to the device
- * document, because silently writing a signed-in person's recordings into
- * device storage is the one outcome nobody can undo later.
+ * The account arm opens one exact generation and is safe to edit the moment it
+ * resolves (ADR-0292): a cache hit is already bound and a miss bootstraps the
+ * whole state first, so there is no second moment and no boot gate. It never
+ * falls back to the device document, because silently writing a signed-in
+ * person's recordings into device storage is the one outcome nobody can undo
+ * later.
  */
 export async function openWhisperingApp(
 	{ auth, blobs, reportBackgroundError }: WhisperingAppDependencies,

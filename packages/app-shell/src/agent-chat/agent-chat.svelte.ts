@@ -143,9 +143,9 @@ export function createAgentChatState({
 	 * One table, and the registry never asks which document it came from: an app
 	 * with an account replica passes the account's, a signed-out one passes the
 	 * device's, and a surface writes one or the other and never both. It is also
-	 * where a conversation's messages come from, through `table.openDocument(id)`,
+	 * where a conversation's messages come from, through `table.content(id)`,
 	 * which is why there is no separate document opener to inject: the row and
-	 * the prose beside it are one thing in one document.
+	 * the log beside it are one thing in one document.
 	 */
 	table: ConversationsTable;
 	/** Report failures from subscription-driven refreshes and metadata writes. */
@@ -509,7 +509,7 @@ export function createAgentChatState({
 		for (const id of handles.keys()) {
 			if (!liveIds.has(id)) destroyConversation(id);
 		}
-		for (const conversationId of liveIds) void ensureHandle(conversationId);
+		for (const conversationId of liveIds) ensureHandle(conversationId);
 
 		// Keep the selection pointed at a live handle.
 		if (selection.current !== null && handles.has(selection.current)) return;
@@ -535,18 +535,16 @@ export function createAgentChatState({
 	 *
 	 * With a {@link ConversationOpener}, the conversation is born titled and its
 	 * first turn is sent through its own handle, so a deliberately opened session
-	 * never writes into whatever conversation happened to be active. Awaited,
-	 * because the conversation's document is an independent one that hydrates
-	 * on open (ADR-0248): by the time this resolves, the row, its document and
-	 * its handle all exist.
+	 * never writes into whatever conversation happened to be active.
 	 *
-	 * The row write itself has no schema-error channel. A later read remains the
-	 * conformance boundary, while opening the row's independent document can
-	 * still report lifecycle errors.
+	 * Synchronous, because nothing here loads. The message log is a nested type
+	 * minted in the same transaction as the row (ADR-0295), so by the time
+	 * `create` returns, the row, its log and its handle all exist.
+	 *
+	 * The row write has no schema-error channel; a later read remains the
+	 * conformance boundary.
 	 */
-	async function createConversation(
-		opener: ConversationOpener = {},
-	): Promise<ConversationId> {
+	function createConversation(opener: ConversationOpener = {}): ConversationId {
 		const nowIso = InstantString.now();
 		const current =
 			selection.current === null ? undefined : handles.get(selection.current);
@@ -559,7 +557,7 @@ export function createAgentChatState({
 		});
 
 		const id = asConversationId(row.id);
-		await ensureHandle(id);
+		ensureHandle(id);
 		selection.select(id);
 
 		if (opener.opening !== undefined) {
@@ -587,7 +585,7 @@ export function createAgentChatState({
 		if (selection.current === conversationId) {
 			const next = conversationList[0];
 			if (next) selection.select(next.id);
-			else void createConversation();
+			else createConversation();
 		}
 	}
 

@@ -7,7 +7,7 @@ type PrincipalId = Extract<
 	{ principalId: unknown }
 >['principalId'];
 
-import type { AccountStore, DataOf } from '@epicenter/data';
+import type { DataOf } from '@epicenter/data';
 import {
 	type BrowserAccountStore,
 	GENERATIONS_ROUTE,
@@ -89,16 +89,12 @@ export type VocabRuntime = {
  * log. Everything after it is a property access on documents already in
  * memory.
  *
- * The account arm resolves only with a replica that is safe to edit
- * (ADR-0231). A replica already bound to an authority document resolves at once
- * and syncs or works offline as ever. A fresh unbound one is UNAVAILABLE: this
- * promise stays pending, behind the layout's boot gate, until the first
- * bootstrap binds it, and rejects if the dial is permanently denied first. That
- * gate holds the whole app, device data included, by decision: there is no
- * partial-ready surface for a signed-in generation whose account is still
- * binding. Neither arm ever falls back to the device document, because silently
- * writing a signed-in person's work into device storage is the one outcome
- * nobody can undo later.
+ * The account arm opens one exact generation and is safe to edit the moment it
+ * resolves (ADR-0292). There is no second moment and no boot gate: a generation
+ * is created complete, so a cache hit is already bound and a miss bootstraps
+ * the whole state before this resolves. Neither arm ever falls back to the
+ * device document, because silently writing a signed-in person's work into
+ * device storage is the one outcome nobody can undo later.
  */
 export async function openVocabRuntime({
 	auth,

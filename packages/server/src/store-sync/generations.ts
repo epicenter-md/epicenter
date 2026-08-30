@@ -1,6 +1,12 @@
 /**
  * One principal's ledger of one database's generations, in a Durable Object.
  *
+ * It exists because a Durable Object namespace cannot be enumerated. There is
+ * `idFromName` and there is `get`, and there is nothing that lists what a
+ * namespace holds, so "which generations exist" has no answer unless something
+ * durable writes the set down. That is the whole reason for a second object;
+ * everything below is about how it stays true under a crash.
+ *
  * A generation exists if and only if its row is here (ADR-0293). That sentence
  * is the whole design: the state is stored first, in the generation's own
  * authority object, and the row is written last, so a crash between them leaves

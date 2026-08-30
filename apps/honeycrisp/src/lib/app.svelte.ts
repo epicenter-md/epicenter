@@ -60,10 +60,10 @@ export function createHoneycrisp({ data }: { data: HoneycrispData }) {
 	 * query do not apply to it.
 	 *
 	 * Search covers the row: the title and the preview, both scalar fields the
-	 * editor writes back on every content change. Prose lives in each note's
-	 * own document, loaded only when the note is opened (ADR-0248), so a query
-	 * never hydrates the vault; what it can find past the preview's hundred
-	 * characters is the cost of that laziness.
+	 * editor writes back on every content change. Prose is a nested type on the
+	 * row (ADR-0295) and is not read here: searching it would walk every note's
+	 * fragment on every keystroke, so what a query can find past the preview's
+	 * hundred characters is the cost of keeping search on the scalars.
 	 */
 	const visibleNotes = $derived.by(() => {
 		if (navigation.isDeletedView) return notes.deleted.toSorted(byRecentEdit);
@@ -249,18 +249,6 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 		updated(error);
 	}
 
-	/**
-	 * Open this note's prose for the editor to bind to.
-	 *
-	 * A load, awaited: the note's document is independent and hydrates on
-	 * demand (ADR-0248), and the handle that comes back is complete rather
-	 * than half-hydrated, so the editor never merges keystrokes into a
-	 * document that is still arriving. `undefined` means this note is no
-	 * longer here. The caller closes what it opened; the pane holds exactly
-	 * one note open at a time.
-	 *
-	 * The only place `NOTE_BODY` is read: one spelling of the root name.
-	 */
 	/**
 	 * Open this note's prose for the editor to bind to, and keep the row's
 	 * derived fields moving while it is open.

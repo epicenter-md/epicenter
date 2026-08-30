@@ -13,10 +13,9 @@ import type { Node } from 'prosemirror-model';
 /**
  * The row fields derived from a note's ProseMirror document.
  *
- * Exactly what the note list renders, and nothing else, and since prose moved
- * into each note's own lazily loaded document (ADR-0248), also everything
- * search covers beyond the title. Two things used to ride along here and no
- * longer do: the whole flattened text, which fed a device-local search index,
+ * Exactly what the note list renders, and nothing else, and since search reads
+ * the scalars rather than the prose, also everything search covers beyond the
+ * title. Two things used to ride along here and no longer do: the whole flattened text, which fed a device-local search index,
  * and a word count nothing ever displayed.
  */
 export type NoteMetadata = {
