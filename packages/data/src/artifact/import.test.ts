@@ -102,25 +102,25 @@ describe('readArtifact (ADR-0267/0268)', () => {
 
 		const state = expectOk(readArtifact(exported, store));
 		await using restored = await openMemory(store);
-		expect(syncEngineOf(restored.store).applyRemote(state).error).toBeNull();
+		expect(syncEngineOf(restored).applyRemote(state).error).toBeNull();
 
 		// Every scalar, at the same id, read through the same lens.
 		expect(restored.tables.notes.rows).toHaveLength(1);
 		expect(restored.tables.folders.rows).toHaveLength(1);
 		expect(restored.kv.get('theme')).toBe('dark');
-		expect(restored.store.stored().kv).toEqual(data.store.stored().kv);
+		expect(restored.stored().kv).toEqual(data.stored().kv);
 		// Compared through `stored()` rather than `rows`, and the reason is the
 		// claim itself. A row carries its live types now, and two documents'
 		// types are never equal: they are different objects with different client
 		// ids. "Imports back whole" is a statement about the RECORD, so the
 		// faithful read is what it should have been asserted against all along.
-		expect(restored.store.stored().tables).toEqual(data.store.stored().tables);
+		expect(restored.stored().tables).toEqual(data.stored().tables);
 
 		// And the prose, through the codec, `---` fence and all.
 		expect(restored.tables.notes.get(note.id)?.body.toString()).toBe(
 			'buy milk\n\n---\nnot a fence',
 		);
-		await data.store[Symbol.asyncDispose]();
+		await data[Symbol.asyncDispose]();
 	});
 
 	test('a value keeps its type, so a string that looks like a number stays one', async () => {
@@ -128,7 +128,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		const exported = await collect(renderArtifact(data, store));
 		const state = expectOk(readArtifact(exported, store));
 		await using restored = await openMemory(store);
-		syncEngineOf(restored.store).applyRemote(state);
+		syncEngineOf(restored).applyRemote(state);
 
 		const row = restored.tables.notes.get(note.id);
 		expect(row?.title).toBe('007');
@@ -137,7 +137,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(row?.pinned).toBe(false);
 		expect(row?.count).toBe(3);
 		expect(row?.tags).toEqual(['no', '2024-03-05']);
-		await data.store[Symbol.asyncDispose]();
+		await data[Symbol.asyncDispose]();
 	});
 
 	test('a row the declaration no longer names survives the round trip', async () => {
@@ -157,12 +157,12 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		});
 		withLegacy.tables.notes.update(made.id, { legacy: 'kept' } as never);
 		const exported = await collect(renderArtifact(withLegacy, store));
-		await withLegacy.store[Symbol.asyncDispose]();
+		await withLegacy[Symbol.asyncDispose]();
 
 		const state = expectOk(readArtifact(exported, store));
 		await using restored = await openMemory(store);
-		syncEngineOf(restored.store).applyRemote(state);
-		expect(restored.store.stored().tables.get('notes')?.get(made.id)).toEqual({
+		syncEngineOf(restored).applyRemote(state);
+		expect(restored.stored().tables.get('notes')?.get(made.id)).toEqual({
 			title: 'Groceries',
 			code: '1',
 			flag: 'no',
@@ -181,11 +181,11 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		]);
 		const state = expectOk(readArtifact(files, store));
 		const restored = await openMemory(store);
-		syncEngineOf(restored.store).applyRemote(state);
+		syncEngineOf(restored).applyRemote(state);
 		expect(
-			restored.store.stored().tables.get('notes')?.get('aaaaaaaaaaaaaaaaaaaaaaaa'),
+			restored.stored().tables.get('notes')?.get('aaaaaaaaaaaaaaaaaaaaaaaa'),
 		).toEqual({ title: 'Groceries' });
-		void restored.store[Symbol.asyncDispose]();
+		void restored[Symbol.asyncDispose]();
 	});
 
 	test('a file that is not a row file refuses the whole import', async () => {
@@ -289,10 +289,10 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		]);
 		const state = expectOk(readArtifact(files, store));
 		const restored = await openMemory(store);
-		syncEngineOf(restored.store).applyRemote(state);
-		expect([...(restored.store.stored().tables.get('notes')?.keys() ?? [])]).toEqual([
+		syncEngineOf(restored).applyRemote(state);
+		expect([...(restored.stored().tables.get('notes')?.keys() ?? [])]).toEqual([
 			'aaaaaaaaaaaaaaaaaaaaaaaa',
 		]);
-		void restored.store[Symbol.asyncDispose]();
+		void restored[Symbol.asyncDispose]();
 	});
 });

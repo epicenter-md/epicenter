@@ -105,10 +105,8 @@ export type RenderableData = {
 	 * which is the one thing an export may not narrow (ADR-0267). A table
 	 * handle answers what an application can see; these answer what is there.
 	 */
-	readonly store: {
-		stored(): StoredData;
-		rowFile(table: string, rowId: string): Row | undefined;
-	};
+	stored(): StoredData;
+	rowFile(table: string, rowId: string): Row | undefined;
 };
 
 /**
@@ -147,7 +145,7 @@ export async function renderRow(
 	rowId: string,
 ): Promise<Result<RenderedRow, RenderError>> {
 	const path = rowPath(table, rowId);
-	const row = data.store.rowFile(table, rowId);
+	const row = data.rowFile(table, rowId);
 	if (row === undefined) {
 		return Ok({ path, contents: undefined });
 	}
@@ -216,7 +214,7 @@ export async function* renderArtifact(
 		return;
 	}
 	// One faithful read for the whole pass, so every file describes one instant.
-	const state = data.store.stored();
+	const state = data.stored();
 
 	yield Ok({
 		path: 'kv.json',

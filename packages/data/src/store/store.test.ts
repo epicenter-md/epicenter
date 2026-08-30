@@ -224,12 +224,12 @@ describe('deletion', () => {
 		// does not get to opt out. At this row's shape the two models measure 37 B
 		// and 86 B per dead row, so a regression to clear-and-flag fails here long
 		// before anyone notices it on a device.
-		const empty = db.store.encodeStateSince().length;
+		const empty = db.encodeStateSince().length;
 		for (let index = 0; index < 200; index += 1) {
 			db.tables.notes.delete(note({ title: 'x'.repeat(100) }).id);
 		}
 		expect(db.tables.notes.ids()).toEqual([]);
-		const perDeadRow = (db.store.encodeStateSince().length - empty) / 200;
+		const perDeadRow = (db.encodeStateSince().length - empty) / 200;
 		expect(perDeadRow).toBeLessThan(60);
 	});
 
@@ -269,10 +269,10 @@ describe('a nonconforming row is reported, never repaired', () => {
 	 */
 	async function corruptTags(rowId: string): Promise<void> {
 		const peer = await openMemory(wrongDatabase);
-		exchange(db.store, peer.store);
+		exchange(db, peer);
 		const written = peer.tables.notes.update(rowId, { tags: 'food' });
 		if (written.error !== null) throw written.error;
-		exchange(db.store, peer.store);
+		exchange(db, peer);
 	}
 
 	test('the call site composes application recovery and what survived', async () => {
@@ -318,7 +318,7 @@ describe('two replicas converge', () => {
 	test('a row made on one device appears on the other', async () => {
 		const { laptop } = await pair();
 		const made = note({ title: 'Recorded on the phone', tags: ['voice'] });
-		exchange(db.store, laptop.store);
+		exchange(db, laptop);
 
 		expect(laptop.tables.notes.get(made.id)?.title).toBe(
 			'Recorded on the phone',
@@ -328,11 +328,11 @@ describe('two replicas converge', () => {
 	test('offline edits to different fields of one row both survive', async () => {
 		const { laptop } = await pair();
 		const made = note({ title: 'first' });
-		exchange(db.store, laptop.store);
+		exchange(db, laptop);
 
 		db.tables.notes.update(made.id, { title: 'phone title' });
 		laptop.tables.notes.update(made.id, { date: '2026-08-07' });
-		exchange(db.store, laptop.store);
+		exchange(db, laptop);
 
 		for (const [name, handle] of [
 			['phone', db.tables.notes],
@@ -352,11 +352,11 @@ describe('two replicas converge', () => {
 		// (`evidence/deletion-model.test.ts`).
 		const { laptop } = await pair();
 		const made = note({ title: 'first' });
-		exchange(db.store, laptop.store);
+		exchange(db, laptop);
 
 		db.tables.notes.delete(made.id);
 		laptop.tables.notes.update(made.id, { title: 'edited offline' });
-		exchange(db.store, laptop.store);
+		exchange(db, laptop);
 
 		expect(db.tables.notes.get(made.id)).toBeUndefined();
 		expect(laptop.tables.notes.get(made.id)).toBeUndefined();
@@ -373,7 +373,7 @@ describe('two replicas converge', () => {
 			tags: [],
 			date: null,
 		});
-		exchange(db.store, laptop.store);
+		exchange(db, laptop);
 
 		expect(db.tables.notes.rows).toHaveLength(2);
 		expect(laptop.tables.notes.rows).toHaveLength(2);
@@ -405,7 +405,7 @@ describe("a row's type content lives on the row (ADR-0295)", () => {
 		// JSON, and a nested type is not one. That is the whole reason the
 		// exporter reads through `store.rowFile` rather than through `stored`.
 		const made = note();
-		const stored = db.store.stored().tables.get('notes')?.get(made.id);
+		const stored = db.stored().tables.get('notes')?.get(made.id);
 		expect(Object.keys(stored ?? {})).not.toContain('editor');
 		expect(db.tables.notes.get(made.id)?.editor).toBeDefined();
 	});
@@ -428,7 +428,7 @@ describe("a row's type content lives on the row (ADR-0295)", () => {
 		editor?.applyDelta(editor.change.insert('milk and eggs') as never);
 
 		const laptop = await openMemory(database);
-		syncEngineOf(laptop.store).applyRemote(db.store.encodeStateSince());
+		syncEngineOf(laptop).applyRemote(db.encodeStateSince());
 		expect(laptop.tables.notes.get(made.id)?.editor.toString()).toContain(
 			'milk and eggs',
 		);
@@ -455,7 +455,7 @@ describe('kv is where anything two devices both write belongs', () => {
 
 	test('an undeclared key is preserved for a future declaration', async () => {
 		db.kv.update({ nope: 1 } as never);
-		expect(db.store.stored().kv).toEqual({ nope: 1 });
+		expect(db.stored().kv).toEqual({ nope: 1 });
 		expect(db.kv.get('theme')).toBeUndefined();
 	});
 
@@ -481,7 +481,7 @@ describe('kv is where anything two devices both write belongs', () => {
 
 		phone.kv.update({ theme: 'dark' });
 		laptop.kv.update({ fontSize: 22 });
-		exchange(phone.store, laptop.store);
+		exchange(phone, laptop);
 
 		// Both writes survive on both devices, which is the claim.
 		for (const device of [phone, laptop]) {
@@ -504,36 +504,36 @@ describe('a received update is persisted as the bytes that arrived', () => {
 			tags: [],
 			date: null,
 		});
-		const first = origin.store.encodeStateSince();
-		const afterFirst = origin.store.stateVector();
+		const first = origin.encodeStateSince();
+		const afterFirst = origin.stateVector();
 		origin.tables.notes.update(made.id, { title: 'second' });
-		const second = origin.store.encodeStateSince(afterFirst);
+		const second = origin.encodeStateSince(afterFirst);
 
 		// A close and a reopen over one durable record: the pending bytes were
 		// stored as they arrived, so the gap is still a gap on the way back up.
 		const record = createMemoryRecord();
 		const laptop = await openMemory(database, record);
-		expect(syncEngineOf(laptop.store).applyRemote(second).error).toBeNull();
-		expect(syncEngineOf(laptop.store).hasUnresolvedDependencies()).toBe(true);
-		await laptop.store[Symbol.asyncDispose]();
+		expect(syncEngineOf(laptop).applyRemote(second).error).toBeNull();
+		expect(syncEngineOf(laptop).hasUnresolvedDependencies()).toBe(true);
+		await laptop[Symbol.asyncDispose]();
 
 		const db2 = await openMemory(database, record);
-		const reopened = syncEngineOf(db2.store);
+		const reopened = syncEngineOf(db2);
 		expect(reopened.hasUnresolvedDependencies()).toBe(true);
 
 		expect(reopened.applyRemote(first).error).toBeNull();
 		expect(reopened.hasUnresolvedDependencies()).toBe(false);
 		expect(db2.tables.notes.get(made.id)?.title).toBe('second');
-		await db2.store[Symbol.asyncDispose]();
+		await db2[Symbol.asyncDispose]();
 	});
 
 	test('a fully applied replica reports no unresolved dependencies', async () => {
 		note();
 		const laptop = await openMemory(database);
-		syncEngineOf(laptop.store).applyRemote(
-			db.store.encodeStateSince(laptop.store.stateVector()),
+		syncEngineOf(laptop).applyRemote(
+			db.encodeStateSince(laptop.stateVector()),
 		);
-		expect(syncEngineOf(laptop.store).hasUnresolvedDependencies()).toBe(false);
+		expect(syncEngineOf(laptop).hasUnresolvedDependencies()).toBe(false);
 	});
 });
 
@@ -541,7 +541,7 @@ describe('pressure is the number that decides whether any of this matters', () =
 	test('a healthy document sits near the item cost of one row', async () => {
 		for (let index = 0; index < 20; index += 1)
 			note({ title: `note ${index}` });
-		const pressure = db.store.pressure();
+		const pressure = db.pressure();
 
 		expect(pressure.liveRows).toBe(20);
 		// A note here is a container and three fields, so
@@ -555,20 +555,20 @@ describe('pressure is the number that decides whether any of this matters', () =
 		// documents are indistinguishable from every other verb.
 		for (let index = 0; index < 20; index += 1)
 			note({ title: `keeper ${index}` });
-		const healthy = db.store.pressure().itemsPerLiveRow;
+		const healthy = db.pressure().itemsPerLiveRow;
 
 		for (let index = 0; index < 200; index += 1) {
 			const doomed = note({ title: `churn ${index}` });
 			db.tables.notes.delete(doomed.id);
 		}
-		const churned = db.store.pressure();
+		const churned = db.pressure();
 
 		expect(churned.liveRows).toBe(20);
 		expect(churned.itemsPerLiveRow).toBeGreaterThan(healthy * 3);
 	});
 
 	test('an empty document reports its items rather than dividing by zero', async () => {
-		const pressure = db.store.pressure();
+		const pressure = db.pressure();
 
 		expect(pressure.liveRows).toBe(0);
 		expect(Number.isFinite(pressure.itemsPerLiveRow)).toBe(true);
@@ -657,7 +657,7 @@ describe('a subscription says a table changed', () => {
 		});
 		const { seen } = record(db.tables.notes);
 
-		syncEngineOf(db.store).applyRemote(author.store.encodeStateSince());
+		syncEngineOf(db).applyRemote(author.encodeStateSince());
 
 		// One notification for the whole remote batch, however many rows it
 		// carried: a subscriber re-reads, so telling it twice would only cost it
@@ -780,7 +780,7 @@ describe('kv reports its own changes', () => {
 		const seen: unknown[] = [];
 		db.kv.subscribe(() => seen.push(db.kv.get('fontSize')));
 
-		syncEngineOf(db.store).applyRemote(author.store.encodeStateSince());
+		syncEngineOf(db).applyRemote(author.encodeStateSince());
 
 		expect(seen).toEqual([22]);
 	});
@@ -820,7 +820,7 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 		const first = await openMemory(database, record);
 		first.kv.update({ theme: 'dark' });
 		first.kv.update({ future: 'kept' } as never);
-		await first.store[Symbol.asyncDispose]();
+		await first[Symbol.asyncDispose]();
 
 		const second = await openMemory(
 			defineData({
@@ -850,7 +850,7 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 		expect(second.kv.nonconforming.map(({ field }) => field)).toEqual([
 			'added',
 		]);
-		await second.store[Symbol.asyncDispose]();
+		await second[Symbol.asyncDispose]();
 	});
 });
 
@@ -874,13 +874,13 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		const first = await openMemory(withScratch, record);
 		const made = first.tables.scratch.create({ body: 'kept in the CRDT' });
 		first.kv.update({ theme: 'dark' });
-		await first.store[Symbol.asyncDispose]();
+		await first[Symbol.asyncDispose]();
 
 		// The device updates (ADR-0240): the same durable record, the next
 		// runtime, a declaration that no longer names `scratch` or `kv`.
 		const second = await openMemory(withoutScratch, record);
 		expect((second.tables as Record<string, unknown>).scratch).toBeUndefined();
-		await second.store[Symbol.asyncDispose]();
+		await second[Symbol.asyncDispose]();
 
 		// A later release declares them again: nothing was lost, because the
 		// CRDT is the truth and never dropped a byte.
@@ -889,7 +889,7 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 			{ id: made.id, body: 'kept in the CRDT' },
 		]);
 		expect(third.kv.get('theme')).toBe('dark');
-		await third.store[Symbol.asyncDispose]();
+		await third[Symbol.asyncDispose]();
 	});
 
 	test('stored() sees the table and the kv key the declaration dropped', async () => {
@@ -897,7 +897,7 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		const first = await openMemory(withScratch, record);
 		const made = first.tables.scratch.create({ body: 'kept in the CRDT' });
 		first.kv.update({ theme: 'dark' });
-		await first.store[Symbol.asyncDispose]();
+		await first[Symbol.asyncDispose]();
 
 		const second = await openMemory(withoutScratch, record);
 		// The lens cannot reach them: there is no handle for `scratch`, and this
@@ -906,13 +906,13 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 
 		// The artifact read does, because it enumerates the roots the document
 		// holds rather than the tables the declaration names.
-		const state = second.store.stored();
+		const state = second.stored();
 		expect([...state.tables.keys()]).toEqual(['notes', 'scratch']);
 		expect(state.tables.get('scratch')?.get(made.id)).toEqual({
 			body: 'kept in the CRDT',
 		});
 		expect(state.kv).toEqual({ theme: 'dark' });
-		await second.store[Symbol.asyncDispose]();
+		await second[Symbol.asyncDispose]();
 	});
 });
 
@@ -937,7 +937,7 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 			title: 'Groceries',
 			preview: 'milk, eggs',
 		});
-		await before.store[Symbol.asyncDispose]();
+		await before[Symbol.asyncDispose]();
 
 		// The release stops declaring `preview`. The row still CONFORMS, because
 		// every field this declaration names reads fine, so it is not reported as
@@ -948,17 +948,17 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 		expect(listed.nonconforming).toEqual([]);
 		expect(listed.rows).toEqual([{ id: made.id, title: 'Groceries' }]);
 
-		expect(after.store.stored().tables.get('notes')?.get(made.id)).toEqual({
+		expect(after.stored().tables.get('notes')?.get(made.id)).toEqual({
 			title: 'Groceries',
 			preview: 'milk, eggs',
 		});
-		await after.store[Symbol.asyncDispose]();
+		await after[Symbol.asyncDispose]();
 	});
 
 	test('a deleted row is absent rather than empty', async () => {
 		const made = note();
 		db.tables.notes.delete(made.id);
-		expect(db.store.stored().tables.get('notes')?.has(made.id)).toBe(false);
+		expect(db.stored().tables.get('notes')?.has(made.id)).toBe(false);
 	});
 });
 
@@ -1005,7 +1005,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 	test('local commits leave the outbox empty and no replica verb exists', async () => {
 		const { sqlite } = createMemoryRecord();
 		const local = createLocalStore({ definition: database, sqlite });
-		const store = local.store;
+		const store = local;
 		try {
 			const made = local.tables.notes.create({
 				title: 'device work',
@@ -1035,7 +1035,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 			// @ts-expect-error a device store has no sync engine
 			expect(() => syncEngineOf(store)).toThrow('not a replica');
 		} finally {
-			await local.store[Symbol.asyncDispose]();
+			await local[Symbol.asyncDispose]();
 		}
 	});
 
@@ -1062,11 +1062,11 @@ describe('a document store owes nobody (ADR-0233)', () => {
 		});
 		const account = await openMemory(database);
 		try {
-			expect(kindOf(local.store)).toBe('local');
-			expect(kindOf(account.store)).toBe('account');
+			expect(kindOf(local)).toBe('local');
+			expect(kindOf(account)).toBe('account');
 		} finally {
-			await local.store[Symbol.asyncDispose]();
-			await account.store[Symbol.asyncDispose]();
+			await local[Symbol.asyncDispose]();
+			await account[Symbol.asyncDispose]();
 		}
 	});
 });
@@ -1074,7 +1074,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 describe('an unusable store throws, and never dresses up as a read outcome', () => {
 	test('using a disposed store throws StoreUnusableError', async () => {
 		const app = await openMemory(database);
-		await app.store[Symbol.asyncDispose]();
+		await app[Symbol.asyncDispose]();
 		expect(() => app.tables.notes.rows).toThrow(StoreUnusableError);
 		expect(() => app.kv.get('theme')).toThrow(StoreUnusableError);
 		expect(() => app.tables.notes.get('anything')).toThrow(StoreUnusableError);
@@ -1097,7 +1097,7 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 				trace: () => undefined,
 			},
 		});
-		const store = bound.store;
+		const store = bound;
 		// Pull durable storage out from under a live document.
 		raw.close();
 
@@ -1167,7 +1167,7 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 		const editor = db.tables.notes.get(made.id)?.editor;
 		if (editor === undefined) throw new Error('the row has no content');
 		const order: string[] = [];
-		db.store.onCommitted(() => order.push('committed'));
+		db.onCommitted(() => order.push('committed'));
 		db.tables.notes.subscribe(() => order.push('table'));
 		db.watch(editorOf(made.id), () => order.push('field'));
 
@@ -1190,7 +1190,7 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 	test('a remote edit to the field reaches it too', async () => {
 		const made = note();
 		const laptop = await openMemory(database);
-		syncEngineOf(laptop.store).applyRemote(db.store.encodeStateSince());
+		syncEngineOf(laptop).applyRemote(db.encodeStateSince());
 
 		const here = db.tables.notes.get(made.id);
 		if (here === undefined) throw new Error('the row has no content');
@@ -1203,7 +1203,7 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 		there?.editor.applyDelta(
 			there.editor.change.insert('typed elsewhere') as never,
 		);
-		syncEngineOf(db.store).applyRemote(laptop.store.encodeStateSince());
+		syncEngineOf(db).applyRemote(laptop.encodeStateSince());
 
 		expect(fired).toBeGreaterThan(0);
 		expect(here.editor.toString()).toContain('typed elsewhere');

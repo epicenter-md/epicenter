@@ -193,7 +193,7 @@ async function openAccountRuntime({
 	try {
 		signal?.throwIfAborted();
 		const connection = attachStoreSync({
-			store: data.store,
+			store: data,
 			dataId: vocabDefinition.id,
 			generation,
 			transport: {

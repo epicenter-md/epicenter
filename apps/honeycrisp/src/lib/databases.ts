@@ -125,7 +125,7 @@ async function openLocalReplica(
 	// A store accepts work live and pays for it afterwards (ADR-0238). Nothing
 	// closes that window when a tab is torn down, and this is the local
 	// database: what is not on disk is not anywhere.
-	const stopHideFlush = persistOnHide(() => data.store.persistence.flush());
+	const stopHideFlush = persistOnHide(() => data.persistence.flush());
 
 	return {
 		data,
@@ -188,7 +188,7 @@ async function openAccountReplica({
 	if (error !== null) throw error;
 
 	const connectionResult = trySync({
-		try: () => attachHoneycrispSync({ store: data.store, generation, auth }),
+		try: () => attachHoneycrispSync({ store: data, generation, auth }),
 		catch: (cause) => Err(cause),
 	});
 	if (!isOk(connectionResult)) {
@@ -210,7 +210,7 @@ async function openAccountReplica({
 	// Same window as the local database, and it matters here too: durable work
 	// is what a reconnect offers the authority, so a flush that never happened
 	// is work the account never hears about either.
-	const stopHideFlush = persistOnHide(() => data.store.persistence.flush());
+	const stopHideFlush = persistOnHide(() => data.persistence.flush());
 
 	return {
 		data,

@@ -308,22 +308,42 @@ export type StoredData = {
 };
 
 /**
- * One application's opened data: its view, and the file under `store`.
+ * One application's opened data: everything it holds, on one object.
+ *
+ * The view and the document's own capabilities, intersected rather than
+ * nested. There used to be a `store` key here, and the split it drew was by
+ * audience: `tables` and `kv` for an application, `store` for a transport and
+ * an exporter. The audience distinction is real; the OBJECT was the wrong
+ * place to carry it.
+ *
+ * What carries it instead is the narrowing type an application already writes:
+ *
+ * ```ts
+ * type HoneycrispData = DataView<typeof honeycrispDefinition>;
+ * ```
+ *
+ * That is per-app, costs nothing at runtime, and is where this repository
+ * actually enforces "a feature does not touch the document". Every consumer
+ * does it. A second boundary inside the package duplicated that work and got
+ * the contents wrong: `persistence`, the ONE member an application reaches
+ * for, sat on the side labelled "a feature never touches", while `transact`
+ * had to be moved off it because the label made it unreachable.
  *
  * `TStore` has no default, deliberately. Every consumer passes both, and a
  * default of `AccountStore` failed UPWARD: a caller who forgot got the more
  * capable kind, so code that only works on a replica typechecked against a
  * local store and broke at runtime.
+ *
+ * Structural typing does the rest. `DataView<T> & AccountStore` IS an
+ * `AccountStore`, so `syncEngineOf` and `attachStoreSync` take this object
+ * unchanged. The `store` key survives on the OVER-PORT parts
+ * (`createAccountStoreOverPort`), which is a construction seam and not a
+ * handle: an opener still has a bare store to wrap before it composes one.
  */
 export type DataOf<
 	TDatabase extends DataDefinition,
 	TStore extends DataStoreBase,
-> = DataView<TDatabase> & {
-	/** This application's file: pressure, the CRDT verbs, and replica sync. */
-	readonly store: TStore;
-	/** Dispose the opened data and the physical store it owns. */
-	[Symbol.asyncDispose](): Promise<void>;
-};
+> = DataView<TDatabase> & TStore;
 
 /**
  * Compose one file's verbs with its definition's view of it.
@@ -337,15 +357,10 @@ export function asData<
 	TDatabase extends DataDefinition,
 	TStore extends DataStoreBase,
 >(store: TStore, view: DataView<TDatabase>): DataOf<TDatabase, TStore> {
-	// Nothing is forwarded. The view carries what an application does and the
-	// store carries what a transport and an exporter do, so each verb has one
-	// home and one spelling. `transact`, `stored` and `rowFile` used to be
-	// declared on both and copied across here.
-	return Object.freeze({
-		...view,
-		store,
-		[Symbol.asyncDispose]: () => store[Symbol.asyncDispose](),
-	});
+	// One object. `asyncDispose` is a symbol key and object spread copies own
+	// enumerable symbol properties, so the store's own disposal comes across
+	// with everything else rather than being forwarded by hand.
+	return Object.freeze({ ...view, ...store });
 }
 
 /**

@@ -108,7 +108,7 @@ async function setup({
 		recordings: domain.recordings,
 		async dispose() {
 			domain[Symbol.dispose]();
-			await data.store[Symbol.asyncDispose]();
+			await data[Symbol.asyncDispose]();
 		},
 	};
 }

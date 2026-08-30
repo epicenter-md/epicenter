@@ -296,7 +296,7 @@ async function openAccountRuntime({
 	try {
 		signal?.throwIfAborted();
 		const connection = attachStoreSync({
-			store: data.store,
+			store: data,
 			dataId: whisperingDefinition.id,
 			generation,
 			transport: {

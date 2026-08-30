@@ -43,7 +43,7 @@ const db = createAccountStore({
 	definition: labDatabase,
 	sqlite: createBrowserSqliteAdapter(new sqlite3.oo1.DB(':memory:')),
 });
-const store = db.store;
+const store = db;
 
 /**
  * The whole of what this host writes: how to make a socket.

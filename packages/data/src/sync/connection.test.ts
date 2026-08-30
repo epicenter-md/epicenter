@@ -160,7 +160,7 @@ function openDriven({
 		definition: database,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	const store = data.store;
+	const store = data;
 	const db = data as DataView<typeof database>;
 
 	/** Cursor each dial asked the authority to start after, oldest first. */
@@ -500,7 +500,7 @@ describe('a dial that can never succeed stops the driver for good', () => {
 			definition: database,
 			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
-		const store = data.store;
+		const store = data;
 		const db = data as DataView<typeof database>;
 		let dials = 0;
 		const connection = createSyncConnection({
@@ -602,7 +602,7 @@ describe('a retired opcode on the wire is ignored, not concluded from', () => {
 		});
 		const retired = new Uint8Array([9, 1, 2, 3]);
 		const connection = createSyncConnection({
-			store: data.store,
+			store: data,
 			idleMs: 1_000,
 			schedule: clock.schedule,
 			dial: ({ opened, received }) => {
@@ -617,6 +617,6 @@ describe('a retired opcode on the wire is ignored, not concluded from', () => {
 		expect(connection.status().connected).toBe(true);
 		expect(connection.status().lastError).toBeUndefined();
 		connection[Symbol.dispose]();
-		void data.store[Symbol.asyncDispose]();
+		void data[Symbol.asyncDispose]();
 	});
 });

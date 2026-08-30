@@ -120,10 +120,10 @@ Object.assign(globalThis, {
 		const body = db.tables.notes.get(made.id)?.body;
 		if (body === undefined) return { error: 'the row has no body' };
 		body.applyDelta(body.change.insert(prose) as never);
-		await db.store.persistence.flush();
+		await db.persistence.flush();
 		return {
 			id: made.id,
-			durable: db.store.persistence.get() === 'saved',
+			durable: db.persistence.get() === 'saved',
 		};
 	},
 
@@ -143,8 +143,8 @@ Object.assign(globalThis, {
 		}
 		return {
 			notes: notes.sort((left, right) => left.title.localeCompare(right.title)),
-			durability: { healthy: db.store.persistence.get() !== 'blocked' },
-			pressure: db.store.pressure(),
+			durability: { healthy: db.persistence.get() !== 'blocked' },
+			pressure: db.pressure(),
 		};
 	},
 });

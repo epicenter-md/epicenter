@@ -115,7 +115,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 			this.ctx.storage as unknown as DurableObjectSqliteStorage,
 		);
 		this.db = openNotes(database);
-		this.store = this.db.store;
+		this.store = this.db;
 		if (connect) this.startSync();
 	}
 

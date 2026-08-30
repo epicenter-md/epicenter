@@ -86,18 +86,18 @@ test('a store exports to Markdown files and imports back whole', async () => {
 
 	const state = expectOk(readArtifact(files, honeycrispDefinition));
 	await using restored = await openMemory(honeycrispDefinition);
-	expect(syncEngineOf(restored.store).applyRemote(state).error).toBeNull();
+	expect(syncEngineOf(restored).applyRemote(state).error).toBeNull();
 
 	// Through the faithful read: a row carries its live types now, and two
 	// documents' types are never equal objects. The claim is about the record.
-	expect(restored.store.stored().tables).toEqual(data.store.stored().tables);
+	expect(restored.stored().tables).toEqual(data.stored().tables);
 
 	// And the prose came back as the same Markdown, through the real codec. One
 	// row goes in, not a row spliced together with a bag of types.
 	const row = restored.tables.notes.get(note.id);
 	if (row === undefined) throw new Error('the note lost its row');
 	expect(noteFile.serialize(row).content).toBe(MARKDOWN);
-	await data.store[Symbol.asyncDispose]();
+	await data[Symbol.asyncDispose]();
 });
 
 test('a note with no prose exports as frontmatter alone and still imports', async () => {
@@ -107,9 +107,9 @@ test('a note with no prose exports as frontmatter alone and still imports', asyn
 
 	const state = expectOk(readArtifact(files, honeycrispDefinition));
 	await using restored = await openMemory(honeycrispDefinition);
-	syncEngineOf(restored.store).applyRemote(state);
+	syncEngineOf(restored).applyRemote(state);
 	expect(restored.tables.notes.get(note.id)?.title).toBe('Groceries');
 	// The body is minted with the row, so an empty note still has one.
 	expect(restored.tables.notes.get(note.id)?.body).toBeDefined();
-	await data.store[Symbol.asyncDispose]();
+	await data[Symbol.asyncDispose]();
 });

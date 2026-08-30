@@ -93,7 +93,7 @@ export class SyncLabTestPeer extends DurableObject<Env> {
 		);
 		// Every send in this file is explicit, so the idle timer never fires and a
 		// test never waits on a clock it does not control.
-		this.client = createSyncClient({ store: this.db.store, idleMs: 60_000 });
+		this.client = createSyncClient({ store: this.db, idleMs: 60_000 });
 	}
 
 	/**

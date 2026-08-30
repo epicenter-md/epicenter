@@ -80,8 +80,8 @@ function expectOk<TValue, TError>(
 }
 
 /** This replica's whole state, as a snapshot carries it. */
-function snapshotOf(replica: { store: Replica['store'] }): Promise<Uint8Array> {
-	return syncEngineOf(replica.store).encodeSnapshot();
+function snapshotOf(replica: { data: Replica['data'] }): Promise<Uint8Array> {
+	return syncEngineOf(replica.data).encodeSnapshot();
 }
 
 /** Let fire-and-forget work (a snapshot offer's encode) reach the wire. */
@@ -173,14 +173,14 @@ function openReplica(
 	sqlite = createBunSqliteAdapter(new Database(':memory:')),
 ): Replica {
 	const data = createAccountStore({ definition: through, sqlite });
-	const store = data.store;
+
 	// One runtime, two static views of it: the typed view costs nothing and is
 	// honest for every replica running the default database; a replica running
 	// another one reads through `bound`.
 	const bound = data as unknown as UntypedDataView;
 	const db = data as unknown as DataView<typeof database>;
 	const client = createSyncClient({
-		store,
+		store: data,
 		idleMs: 0,
 		// The idle timer fires through the wire, so a test controls when a
 		// coalesced batch leaves rather than waiting on a clock.
@@ -213,7 +213,7 @@ function openReplica(
 
 	return {
 		label,
-		store,
+		data,
 		db,
 		bound,
 		client,
@@ -240,7 +240,7 @@ function openReplica(
 			generation += 1;
 			hub.leave(connection);
 			client.detach();
-			await store[Symbol.asyncDispose]();
+			await data[Symbol.asyncDispose]();
 			return openReplica(label, hub, wire, next, sqlite);
 		},
 		titles: () => db.tables.notes.rows.map((row) => row.title).sort(),
@@ -249,7 +249,8 @@ function openReplica(
 
 type Replica = {
 	label: string;
-	store: ReturnType<typeof createAccountStore>['store'];
+	/** The whole opened handle: one object since the store stopped nesting. */
+	data: ReturnType<typeof createAccountStore>;
 	db: DataView<typeof database>;
 	bound: UntypedDataView;
 	client: ReturnType<typeof createSyncClient>;
@@ -772,7 +773,7 @@ describe('a socket that dies part way through a chunked transfer', () => {
 describe('reassembly holds partials in memory, and only in memory', () => {
 	/** One replica's whole state, cut into more chunks than any case needs. */
 	function cutUpdate(source: ReturnType<typeof openReplica>, limit = 16) {
-		const bytes = source.store.encodeStateSince();
+		const bytes = source.data.encodeStateSince();
 		const chunks = intoChunks(bytes, limit);
 		if (chunks.length < 4) throw new Error(`only ${chunks.length} chunks`);
 		return { bytes, chunks };
@@ -807,7 +808,7 @@ describe('reassembly holds partials in memory, and only in memory', () => {
 		// Byte equality alone would not show the update still works, so it is
 		// applied to a replica that has never seen this row and read back through
 		// that replica's own database.
-		expectOk(syncEngineOf(laptop.store).applyRemote(whole as Uint8Array));
+		expectOk(syncEngineOf(laptop.data).applyRemote(whole as Uint8Array));
 		expect(laptop.titles()).toEqual(['Groceries']);
 	});
 
@@ -846,7 +847,7 @@ describe('reassembly holds partials in memory, and only in memory', () => {
 
 		expect(whole).toEqual(bytes);
 		expect(collector.bufferedBytes()).toBe(0);
-		expectOk(syncEngineOf(laptop.store).applyRemote(whole as Uint8Array));
+		expectOk(syncEngineOf(laptop.data).applyRemote(whole as Uint8Array));
 		expect(laptop.titles()).toEqual(['Groceries']);
 	});
 

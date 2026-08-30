@@ -98,7 +98,7 @@ function openReplica() {
 		definition: evidenceDatabase,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	return { store: db.store, db };
+	return { store: db, db };
 }
 
 /** A live socket to the authority, feeding a real client. */

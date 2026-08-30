@@ -36,7 +36,7 @@ function openStore(): AddressedTestStore {
 		sqlite: createBunSqliteAdapter(live),
 		dispose: () => live.close(),
 	});
-	const addressed = Object.create(db.store) as AddressedTestStore;
+	const addressed = Object.create(db) as AddressedTestStore;
 	Object.defineProperties(addressed, {
 		baseURL: { value: 'https://api.epicenter.test' },
 		principalId: { value: asPrincipalId('alice') },

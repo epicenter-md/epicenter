@@ -49,7 +49,7 @@ function openReplica() {
 		definition: evidenceDatabase,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	return { store: db.store, db };
+	return { store: db, db };
 }
 
 /**

@@ -69,8 +69,8 @@ test('a skill and its instructions survive reopening', async () => {
 		const content = held.body;
 		content.applyDelta(content.change.insert('Write directly.') as never);
 		// The durable flush is asynchronous, so a reopen must wait for it.
-		await runtime.data.store.persistence.flush();
-		expect(runtime.data.store.persistence.get()).toBe('saved');
+		await runtime.data.persistence.flush();
+		expect(runtime.data.persistence.get()).toBe('saved');
 	}
 
 	await using reopened = await openSkillsRuntime();

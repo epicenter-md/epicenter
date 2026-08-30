@@ -192,7 +192,7 @@ const BATCH_BYTES = 1024 * 1024;
  * document, whoever authored it, and a whole render needs no more than that.
  */
 export type MirrorableData = RenderableData & {
-	readonly store: { onCommitted(listener: () => void): () => void };
+	onCommitted(listener: () => void): () => void;
 };
 
 /** The file a render error was about, when it was about one. */
@@ -299,7 +299,7 @@ export function attachMirror({
 
 	schedule();
 
-	const unsubscribe = data.store.onCommitted(() => {
+	const unsubscribe = data.onCommitted(() => {
 		// A commit says the folder is out of date and nothing more. It does not
 		// say which file, on purpose: that is the signal a whole render does not
 		// need and cannot get wrong.

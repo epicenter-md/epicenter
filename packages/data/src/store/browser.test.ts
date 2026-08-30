@@ -186,9 +186,9 @@ describe('one local document and one account replica per account', () => {
 		expect(names).toContain(accountAddress(database.id, CLOUD, ALICE));
 		expect(names).toContain(accountAddress(database.id, CLOUD, BOB));
 
-		await local.store[Symbol.asyncDispose]();
-		await alice.store[Symbol.asyncDispose]();
-		await bob.store[Symbol.asyncDispose]();
+		await local[Symbol.asyncDispose]();
+		await alice[Symbol.asyncDispose]();
+		await bob[Symbol.asyncDispose]();
 	});
 
 	test('a second open of one address is refused, and another account is not that address', async () => {
@@ -199,12 +199,12 @@ describe('one local document and one account replica per account', () => {
 
 		// Another account's replica is a different document, so it opens.
 		const bob = expectOk(await openAccountData(database, BOB));
-		await bob.store[Symbol.asyncDispose]();
-		await alice.store[Symbol.asyncDispose]();
+		await bob[Symbol.asyncDispose]();
+		await alice[Symbol.asyncDispose]();
 
 		// Disposal releases the claim, so the same address opens again.
 		const reopened = expectOk(await openAccountData(database, ALICE));
-		await reopened.store[Symbol.asyncDispose]();
+		await reopened[Symbol.asyncDispose]();
 	});
 
 	test('the same principal on two servers gets two retained replicas', async () => {
@@ -223,8 +223,8 @@ describe('one local document and one account replica per account', () => {
 		expect(names).toContain(accountAddress(database.id, CLOUD, ALICE));
 		expect(names).toContain(accountAddress(database.id, OTHER_SERVER, ALICE));
 
-		await cloud.store[Symbol.asyncDispose]();
-		await selfHosted.store[Symbol.asyncDispose]();
+		await cloud[Symbol.asyncDispose]();
+		await selfHosted[Symbol.asyncDispose]();
 	});
 
 	test('equivalent server URL spellings reuse one retained replica', async () => {
@@ -233,7 +233,7 @@ describe('one local document and one account replica per account', () => {
 			await openAccountData(database, ALICE, `${CLOUD}/?ignored=true#ignored`),
 		);
 		first.tables.notes.create({ title: 'kept work' });
-		await first.store[Symbol.asyncDispose]();
+		await first[Symbol.asyncDispose]();
 
 		const equivalent = expectOk(
 			await openAccountData(database, ALICE, `${CLOUD}/`),
@@ -242,7 +242,7 @@ describe('one local document and one account replica per account', () => {
 		expect(await databaseNames()).toContain(
 			accountAddress(database.id, CLOUD, ALICE),
 		);
-		await equivalent.store[Symbol.asyncDispose]();
+		await equivalent[Symbol.asyncDispose]();
 	});
 
 	test('every address survives a close-and-reopen under its own name', async () => {
@@ -263,7 +263,7 @@ describe('one local document and one account replica per account', () => {
 		for (const [openDocument, title] of owners) {
 			const opened = expectOk(await openDocument());
 			opened.tables.notes.create({ title });
-			await opened.store[Symbol.asyncDispose]();
+			await opened[Symbol.asyncDispose]();
 		}
 
 		// Retention is the whole reason the account is in the address: coming
@@ -275,9 +275,9 @@ describe('one local document and one account replica per account', () => {
 		expect(titles(local)).toEqual(['kept local work']);
 		expect(titles(alice)).toEqual(["kept alice's"]);
 		expect(titles(bob)).toEqual(["kept bob's"]);
-		await local.store[Symbol.asyncDispose]();
-		await alice.store[Symbol.asyncDispose]();
-		await bob.store[Symbol.asyncDispose]();
+		await local[Symbol.asyncDispose]();
+		await alice[Symbol.asyncDispose]();
+		await bob[Symbol.asyncDispose]();
 	});
 
 	test('a second generation is a second address, and the first is untouched', async () => {
@@ -292,7 +292,7 @@ describe('one local document and one account replica per account', () => {
 			await openDatabase(database, { generation: 1, account }),
 		);
 		first.tables.notes.create({ title: 'in generation one' });
-		await first.store[Symbol.asyncDispose]();
+		await first[Symbol.asyncDispose]();
 
 		await importGeneration(database, emptyState(), {
 			account: accountFor(ALICE),
@@ -305,7 +305,7 @@ describe('one local document and one account replica per account', () => {
 			await openDatabase(database, { generation: 1, account }),
 		);
 		expect(titles(reopened)).toEqual(['in generation one']);
-		await reopened.store[Symbol.asyncDispose]();
+		await reopened[Symbol.asyncDispose]();
 	});
 
 	test('a generation this device does not hold is not found, and none is made', async () => {
@@ -336,8 +336,8 @@ describe('one local document and one account replica per account', () => {
 		const database = databaseFor('bootstrap');
 		const author = expectOk(await openLocalData(database));
 		author.tables.notes.create({ title: 'made elsewhere' });
-		const state = author.store.encodeStateSince();
-		await author.store[Symbol.asyncDispose]();
+		const state = author.encodeStateSince();
+		await author[Symbol.asyncDispose]();
 
 		const account = accountFor(BOB, CLOUD, { bytes: state, position: 4 });
 		const arrived = expectOk(
@@ -346,8 +346,8 @@ describe('one local document and one account replica per account', () => {
 		expect(titles(arrived)).toEqual(['made elsewhere']);
 		// The position rode in on the append, so the socket carries only what
 		// happened after it rather than the state it just downloaded.
-		expect(syncEngineOf(arrived.store).cursor()).toBe(4);
-		await arrived.store[Symbol.asyncDispose]();
+		expect(syncEngineOf(arrived).cursor()).toBe(4);
+		await arrived[Symbol.asyncDispose]();
 	});
 
 	test('an account miss the authority cannot serve leaves nothing behind', async () => {
@@ -393,7 +393,7 @@ describe('one local document and one account replica per account', () => {
 
 		// And the refusal held no claim, so a real account still opens.
 		const alice = expectOk(await openAccountData(database, ALICE));
-		await alice.store[Symbol.asyncDispose]();
+		await alice[Symbol.asyncDispose]();
 	});
 });
 
@@ -455,8 +455,8 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		const database = databaseFor('generation');
 		const author = await openMemory(database);
 		author.tables.notes.create({ title: 'pre-break note' });
-		const bytes = author.store.encodeStateSince();
-		await author.store[Symbol.asyncDispose]();
+		const bytes = author.encodeStateSince();
+		await author[Symbol.asyncDispose]();
 
 		await seedPreviousGeneration(
 			`epicenter/v1/${database.id}/account/${encodeURIComponent(CLOUD)}/${ALICE}`,
@@ -468,10 +468,10 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 			// Nothing of it is merged, and nothing of it is inherited: the replica
 			// is a fresh install that refills from its authority.
 			expect(titles(replica)).toEqual([]);
-			expect(syncEngineOf(replica.store).cursor()).toBe(0);
-			expect(syncEngineOf(replica.store).coalesce()).toBeUndefined();
+			expect(syncEngineOf(replica).cursor()).toBe(0);
+			expect(syncEngineOf(replica).coalesce()).toBeUndefined();
 		} finally {
-			await replica.store[Symbol.asyncDispose]();
+			await replica[Symbol.asyncDispose]();
 		}
 	});
 
@@ -482,15 +482,15 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		for (let index = 0; index < 70; index += 1) {
 			local.tables.notes.create({ title: `note ${index}` });
 		}
-		await local.store.persistence.flush();
-		expect(local.store.persistence.get()).toBe('saved');
-		await local.store[Symbol.asyncDispose]();
+		await local.persistence.flush();
+		expect(local.persistence.get()).toBe('saved');
+		await local[Symbol.asyncDispose]();
 
 		expect(await countRows(address, 'updates')).toBeLessThan(70);
 
 		const reopened = expectOk(await openLocalData(database));
 		expect(titles(reopened)).toHaveLength(70);
-		await reopened.store[Symbol.asyncDispose]();
+		await reopened[Symbol.asyncDispose]();
 	});
 });
 
@@ -534,7 +534,7 @@ describe('the clean break: storage from before the generation address', () => {
 		// Untouched, and unread. Both halves matter: nothing of it reached the
 		// store, and nothing deleted a person's bytes on their behalf.
 		expect(await databaseNames()).toContain(superseded);
-		await local.store[Symbol.asyncDispose]();
+		await local[Symbol.asyncDispose]();
 	});
 });
 
@@ -580,7 +580,7 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 		expect(refused.error).not.toBeNull();
 
 		const after = expectOk(await openLocalData(database));
-		await after.store[Symbol.asyncDispose]();
+		await after[Symbol.asyncDispose]();
 	});
 
 	test('a corrupt durable record refuses the boot and releases the claim', async () => {
@@ -612,13 +612,13 @@ describe("a row's type content survives a reopen (ADR-0295)", () => {
 			const editor = content.editor;
 			editor.applyDelta(editor.change.insert('buy milk') as never);
 			editor.setAttr('cursor' as never, 8 as never);
-			await local.store[Symbol.asyncDispose]();
+			await local[Symbol.asyncDispose]();
 		}
 
 		const reopened = expectOk(await openLocalData(database));
 		const editor = reopened.tables.notes.get(rowId)?.editor;
 		expect(editor?.toString()).toContain('buy milk');
 		expect(editor?.getAttr('cursor' as never)).toBe(8);
-		await reopened.store[Symbol.asyncDispose]();
+		await reopened[Symbol.asyncDispose]();
 	});
 });

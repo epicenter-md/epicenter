@@ -222,7 +222,7 @@ async function build(
 		definition: benchDatabase,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	const store = db.store;
+	const store = db;
 
 	let sinceSend = 0;
 	/** Hand everything unsent to the authority, exactly as the client does. */
@@ -415,7 +415,7 @@ async function apply(
 		definition: benchDatabase,
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
-	const store = db.store;
+	const store = db;
 
 	let appliedBytes = 0;
 	const started = performance.now();

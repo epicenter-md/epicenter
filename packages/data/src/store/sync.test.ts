@@ -48,7 +48,7 @@ function open() {
 	const sqlite = createBunSqliteAdapter(raw);
 	const db = createAccountStore({ definition: database, sqlite });
 	return {
-		store: db.store,
+		store: db,
 		db,
 		logRows: () =>
 			sqlite.all<{ seq: number; len: number }>(
@@ -234,13 +234,13 @@ describe('the cursor is a log position, and never a state vector', () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 		const first = createAccountStore({ definition: database, sqlite });
 		expectOk(first.tables.notes.create({ title: 'owed' }));
-		const sent = syncEngineOf(first.store).coalesce();
+		const sent = syncEngineOf(first).coalesce();
 		if (sent === undefined) throw new Error('nothing to send');
-		syncEngineOf(first.store).acknowledge(sent.id, 7);
+		syncEngineOf(first).acknowledge(sent.id, 7);
 
 		expect(
 			syncEngineOf(
-				createAccountStore({ definition: database, sqlite }).store,
+				createAccountStore({ definition: database, sqlite }),
 			).cursor(),
 		).toBe(7);
 	});
@@ -248,7 +248,7 @@ describe('the cursor is a log position, and never a state vector', () => {
 	test('an acknowledgement that covers nothing owed moves no durable cursor', () => {
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 		syncEngineOf(
-			createAccountStore({ definition: database, sqlite }).store,
+			createAccountStore({ definition: database, sqlite }),
 		).acknowledge(0, 7);
 
 		// The honest consequence of deriving the cursor instead of storing it: it
@@ -259,7 +259,7 @@ describe('the cursor is a log position, and never a state vector', () => {
 		// submissions.
 		expect(
 			syncEngineOf(
-				createAccountStore({ definition: database, sqlite }).store,
+				createAccountStore({ definition: database, sqlite }),
 			).cursor(),
 		).toBe(0);
 	});

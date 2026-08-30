@@ -50,7 +50,7 @@ async function convergedPair() {
 	body?.insert(0, ['buy milk']);
 
 	const laptop = await openMemory(database);
-	syncEngineOf(laptop.store).applyRemote(phone.store.encodeStateSince());
+	syncEngineOf(laptop).applyRemote(phone.encodeStateSince());
 	return { phone, laptop, id: made.id };
 }
 
@@ -69,7 +69,7 @@ describe('a row is a read, not a value', () => {
 		const { phone, laptop } = await convergedPair();
 		// The same two stores, compared where a value lives. This is the assertion
 		// an "imports back whole" or "converged" test wants.
-		expect(laptop.store.stored().tables).toEqual(phone.store.stored().tables);
+		expect(laptop.stored().tables).toEqual(phone.stored().tables);
 	});
 
 	test('a scalar is a snapshot and a type field is not', async () => {
@@ -89,7 +89,7 @@ describe('a row is a read, not a value', () => {
 
 	test('rowFile answers in plain JSON, for one row', async () => {
 		const { phone, id } = await convergedPair();
-		const row = phone.store.rowFile('notes', id);
+		const row = phone.rowFile('notes', id);
 		if (row === undefined) throw new Error('the row is gone');
 		// Faithful and untyped: every stored scalar, and the live types beside
 		// them for a codec. The scalars alone are what a value comparison wants.
