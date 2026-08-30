@@ -106,7 +106,11 @@ export type WhisperingSettings = {
 };
 
 /** Release-local initialization and recovery values for the device KV. */
-const APPLICATION_DEFAULTS: Partial<WhisperingSettingValues> = {
+// TYPED COMPLETE, not `Partial`. `read` below builds the settings object by
+// walking these keys, so a key declared in `settingsKv` and missing here would
+// vanish from settings silently rather than fall back. `Partial` allowed
+// exactly that; the full record makes the drift a compile error.
+const APPLICATION_DEFAULTS: WhisperingSettingValues = {
 	soundManualStart: true,
 	soundManualStop: true,
 	soundManualCancel: true,

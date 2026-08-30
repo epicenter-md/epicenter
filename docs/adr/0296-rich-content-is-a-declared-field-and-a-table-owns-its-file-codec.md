@@ -1,6 +1,6 @@
 # 0296. Rich content is a declared field and a table owns its file codec
 
-- **Status:** Accepted, amended 2026-08-30 at the codec's signature
+- **Status:** Accepted, amended 2026-08-30 at the codec's signature and again at how a type field is declared
 - **Date:** 2026-08-29
 - **Supersedes:** [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) at the codec's signature and placement. Its content rules are retained: one `<table>/<rowId>.md` per row, scalars as frontmatter, codec output as the body, `kv.json` beside them.
 - **Amends:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) by naming how a rich field is declared and serialized.
@@ -158,6 +158,70 @@ which is now one `createRow` in one transaction.
 now construct a type, and `packages/chat` deliberately names rich fields
 through the store's vocabulary without importing `@y/y`. The store exports the
 constructor beside the type alias, for the same reason the alias exists.
+
+## Second amendment, 2026-08-30: a table declares scalars and types
+
+`field.type()` is deleted. A table declares two buckets:
+
+```ts
+notes: defineTable({
+	scalars: { folderId, title, pinned, createdAt, updatedAt, deletedAt },
+	types: ['body'],
+	file: noteFile,
+})
+```
+
+**The descriptor described nothing.** `field.type()` returned
+`Type.Unsafe<Y.Type>({ 'x-yjs-type': true })`: no schema, no check, no
+nullability, no format. Every other field descriptor says something about its
+value; this one said "I am not that kind of thing." What the marker smuggled
+through a bag of schemas was a LIST OF NAMES, and that list is what the runtime
+has always held as `ParsedTable.types`. Declaring the list directly makes the
+smuggling unnecessary, so `TYjsType` and `YJS_TYPE_KEYWORD` go with it and the
+keyword leaves the JSON Schema entirely.
+
+**Why two buckets rather than one bag.** The two kinds are apart in every
+operation this record and its amendment describe: `update` takes only scalars
+because a type is not assignable, `watch` takes only types, `create` requires
+the first and mints the second, and a table with any type field must declare a
+codec. They were together in exactly two places, the declaration and the read,
+and the declaration was the one encoding the distinction in a marker for the
+type system to rediscover.
+
+The read still joins them. `get(id)` returns `{ id, title, …, body }`, one row.
+Declaration and read answer different questions: *what kinds of storage does
+this table have* wants them apart, *what is this note* wants them together.
+
+**What the type level loses, across this amendment and the one before it:**
+
+| | why it existed | now |
+| --- | --- | --- |
+| `RichKeys` | compute the key union `Omit` subtracts | deleted |
+| `IsType` | ask whether a value's `Static` is a `Y.Type` | deleted |
+| `ScalarsOf<T>` | `FieldsOut<Omit<T, RichKeys<T>>>` | `FieldsOut<T['scalars']>` |
+| `TypesOf<T>` | map over a computed union | `{ [K in T['types'][number]]: Y.Type }` |
+| `RowOf<T>` | `{ id } & FieldsOut<T>` | `{ id } & ScalarsOf<T> & TypesOf<T>` |
+
+No filtering anywhere, and `defineTable`'s codec rule reads as its meaning:
+`[TTypes[number]] extends [never] ? { file? } : { file }`.
+
+**Two refusals that were not previously expressible**, both now tested: a name
+declared as both a scalar and a type field, and a name declared twice in
+`types`. When the bag was the declaration, neither was a shape you could write.
+
+**The vocabulary settled here too.** These were "rich fields", ninety-six
+times, against fifty-one where the code immediately glossed the term as "a
+nested `Y.Type`" — a name that needs its explanation attached that often is not
+the name. "Rich" also carried the prose connotation this record's own
+`field.type()` comment spent a paragraph refusing, and `packages/chat` keeps a
+message MAP in one. They are type fields, after the bucket that declares them.
+"Nested" survives where position is the point (root types converge by name and
+nested ones do not; a nested edit bubbles to the table root) and "live" where
+reference-versus-value is the point.
+
+This record's title still says "rich content". Titles are dated and every
+cross-reference uses this filename; the vocabulary moved, the record's name did
+not.
 
 ## Consequences
 
