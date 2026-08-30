@@ -1,6 +1,6 @@
 ---
 name: dialectic
-description: "Make an unsettled product, architecture, or design model visible through the deliberate collision of articulations. Use when the user wants to understand the agent's current model, correct it, or discover an accepted greenfield destination before a plan exists. Do not use for a settled subject that needs a standalone lesson, interrogating an existing plan, a bounded comparison, or choosing files, commits, or execution steps."
+description: "Make an unsettled product, architecture, or design model visible through the deliberate collision of articulations. Use when the user asks for a dialectic, asks to hear or see the full articulation of a model, or wants to understand, correct, or redesign an unsettled model."
 ---
 
 # Dialectic
