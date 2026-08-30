@@ -56,12 +56,12 @@ export {
 } from './definition/index.js';
 export type { PersistenceCapability } from './store/persistence.js';
 export {
+	type AccountData,
 	type AccountDocument,
 	type ApplyFailedError,
-	type AccountData,
 	type BrowserData,
-	type LocalData,
 	type DataView,
+	type LocalData,
 	type LocalDocument,
 	type NonconformingRow,
 	type Row,

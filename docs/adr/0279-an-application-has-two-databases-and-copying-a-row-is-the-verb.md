@@ -46,4 +46,8 @@ It also gave the wrong reason for keeping the row's id. "The row keeps its id, s
 
 ## Naming, unresolved
 
-This record says **database** for what an application opens two of, and the code says `AccountStore` and `LocalStore`. That is one word too many again, of exactly the kind ADR-0270's "workspace" was. It is left open deliberately rather than swept in passing: `store` is defensible as the runtime handle and `database` as the tables and rows it reaches, but nothing yet forces that distinction to be real, and a rename that is not forced is a rename that will be re-argued.
+This record said **database** for what an application opens two of, while the code said `AccountStore` and `LocalStore`. It left the rename open deliberately, on the grounds that "a rename that is not forced is a rename that will be re-argued", and named what would force it: something making the store-versus-database distinction real.
+
+**That happened.** `DataOf` was `DataView & { store }`, and the `store` key was deleted: the audience boundary it drew is carried by the narrowing type every application already writes (`type HoneycrispData = DataView<typeof honeycrispDefinition>`), and the object-level copy of it held the wrong members. With no `store` key on a handle, `LocalStore` and `AccountStore` named nothing, so they are `LocalDocument` and `AccountDocument`, over `DataDocument`, and what an application holds is `LocalData<TDef>` / `AccountData<TDef>` / `BrowserData<TDef>`.
+
+The distinction this record wanted is now real and the other way around from the guess. `store` is not the runtime handle; it is the package, the verbs that create one (`createAccountStore`), and what it throws (`StoreError`). The runtime handle is DATA, and the thing underneath it is a DOCUMENT.

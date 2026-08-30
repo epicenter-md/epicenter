@@ -7,6 +7,15 @@
 - **Amends:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md)
   at the store surface: the replica verbs (`applyRemote`, the client log,
   `onLocalWork`, `hasUnresolvedDependencies`) leave the public type.
+- **Amended at the vocabulary only.** `WorkspaceStoreBase` is `DataDocument`,
+  `LocalStore`/`AccountStore` are `LocalDocument`/`AccountDocument`, and
+  `DataOf<TDef, TStore>` is retired for `LocalData<TDef>` /
+  `AccountData<TDef>` / `BrowserData<TDef>`. The decision is untouched: a
+  document's kind is still its `sync` value, `undefined` or a
+  `SyncCapability`, and the delivery verbs are still behind `syncEngineOf`.
+  What changed is that the `store` KEY those names hung off was deleted, so
+  they named an object that no longer exists. ADR-0279 left this rename open
+  and said what would force it; this was it.
 - **Relates:** [ADR-0238](0238-the-live-document-is-the-truth-while-open-and-persistence-is-a-visible-debt.md)
   (persistence as a capability; this record gives sync the same shape).
 
