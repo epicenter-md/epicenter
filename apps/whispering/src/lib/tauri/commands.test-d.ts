@@ -30,12 +30,27 @@ import type {
 	TranscriptionOutcome as SharedTranscriptionOutcome,
 } from './commands.types';
 
-// Helper: a no-op assertion that two types are equal.
+/**
+ * A failed assertion carries both sides, so the error names what moved.
+ *
+ * `Expect` requires `true`, so an unequal pair reports the object below rather
+ * than `Type 'false' does not satisfy the constraint 'true'`, which names
+ * neither type:
+ *
+ *     Type '{ expected: "draft" | "published"; got: string; }'
+ *     does not satisfy the constraint 'true'.
+ *
+ * Copied rather than shared. It is four lines of the canonical spelling with no
+ * semantics of its own, and the two other copies live in `@epicenter/field` and
+ * `apps/whispering`, which do not otherwise reach into each other for test
+ * utilities. `wellcrafted/testing` exports this pair as of the release after
+ * 0.44.0; import it from there once the catalog moves and these go.
+ */
 type Expect<T extends true> = T;
 type Equal<X, Y> =
 	(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
 		? true
-		: false;
+		: { expected: Y; got: X };
 
 // Browser-safe copies of generated contracts must move in lockstep with the
 // native bindings without importing their runtime module into the hosted SPA.
