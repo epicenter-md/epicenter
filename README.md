@@ -41,11 +41,11 @@
 The hard problem with local-first apps is synchronization. If each device has
 its own SQLite file, how do you keep them in sync?
 
-Epicenter's answer: **an application has one scalar Yjs document, replayed in
-full before any handle exists, and the surface over it is synchronous.** A read
-is a property access, not a round trip, so nothing is awaited and nothing needs
-cache invalidation or race protection. Rich row content lives in independently
-loaded row documents.
+Epicenter's answer: **a database is one Yjs document, replayed in full before
+any handle exists, and the surface over it is synchronous.** A read is a
+property access, not a round trip, so nothing is awaited and nothing needs cache
+invalidation or race protection. Rich content is in there too: a row's prose is
+a nested type on the row, not a second document with an address of its own.
 
 ```typescript
 import { openDevice } from '@epicenter/data/browser';
@@ -56,9 +56,11 @@ const notesDefinition = defineData({
 	kv: {},
 	tables: {
 		notes: {
-			title: field.string(),
-			pinned: field.boolean(),
-			folderId: field.nullable(field.string()),
+			fields: {
+				title: field.string(),
+				pinned: field.boolean(),
+				folderId: field.nullable(field.string()),
+			},
 		},
 	},
 });
@@ -78,11 +80,13 @@ release-local and never migrates your data. A row it cannot read is reported
 beside the rows it can, with the reason and the raw values intact, and an
 ordinary write repairs it.
 
-Prose merges per character in an independent row document: open it with
-`await data.tables.notes.openDocument(note.id)`, then bind a named root such as
-`body` to the editor. Epicenter never looks inside the row document. The scalar
-application document's exact `app`/`kv`/`tables:<name>` shape is recorded in
-[ADR-0257](docs/adr/0257-the-application-document-has-named-kv-and-table-roots.md).
+Prose merges per character in a rich field. Declare it with `field.type()`,
+reach it with `data.tables.notes.content(note.id)`, and bind it to the editor;
+Epicenter never looks inside. The database document's `kv`/`tables:<name>` shape
+is recorded in
+[ADR-0257](docs/adr/0257-the-application-document-has-named-kv-and-table-roots.md)
+and its collapse to one document in
+[ADR-0295](docs/adr/0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md).
 
 Sync is one Cloudflare Durable Object per (account, application). Being signed
 in on two devices is the entire sharing model: nothing is paired, invited, or

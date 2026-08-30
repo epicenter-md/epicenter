@@ -150,7 +150,9 @@ I/O: a file or an IndexedDB read, and the replay of a durable log. Everything
 after it is a property access on a document already in memory.
 
 ```ts
-const { data, error } = await openLocal(honeycrispDefinition);
+const { data, error } = await openDatabase(honeycrispDefinition, {
+	generation,
+});
 if (error !== null) throw error;
 
 const listed = data.tables.notes.list();          // { rows, nonconforming }

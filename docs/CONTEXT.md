@@ -30,10 +30,15 @@ shapes, see `docs/adr/`.
 - **Replica**: one complete local or server copy of an Epicenter. A native
   installation, browser origin, OS profile, or server actor may impose its own
   physical replica, but that adapter boundary is not a product data owner.
-- **Epicenter store**: the storage backing one replica: the durable ledgers a
-  crash cannot reconstruct (the update log, the outbox, the cursor, the
-  document identity), four small IndexedDB relations in the browser, with no
-  worker and no OPFS (ADR-0223, ADR-0241). SQL is not stored here: it is a
+- **Epicenter store**: the storage backing one replica: the durable ledger a
+  crash cannot reconstruct, which is the update log, with the outbox and the
+  cursor read off it. One IndexedDB object store in the browser, with no worker
+  and no OPFS (ADR-0223, ADR-0241).
+- **Generation**: one whole database, created once by importing a folder and
+  never mutated in place (ADR-0293). It is an exact ADDRESS: the number is in
+  the local record's name, in the authority's Durable Object name, and in the
+  page's URL, which is what retired the document identity stamp (ADR-0292).
+  `openDatabase` takes one and never discovers one. SQL is not stored here: it is a
   follower an application composes, and no application composed one, so the
   package no longer ships it (ADR-0269).
 - **Sync attachment**: the permanent binding from a local replica to one
@@ -135,36 +140,43 @@ shapes, see `docs/adr/`.
 - **Opened data**: the synchronous typed surface (`tables`, `kv`, `documents`,
   `store`, and `transact`) an opened runtime holds over one data definition.
   Born with the store; nothing rebinds a live runtime.
-- **Application document**: the scalar Yjs document persisted under the log name
-  `app`. Its current top-level roots are the bare named root `kv` and one
-  `tables:<name>` root per declared table (ADR-0257). A row is nested under its
-  table; rich row content is an independent row document (ADR-0248).
+- **Database document**: the one Yjs document a database is (ADR-0295),
+  persisted under the log name `app`. Its top-level roots are the bare named
+  root `kv` and one `tables:<name>` root per declared table (ADR-0257). A row is
+  nested under its table, and a row's rich content is nested under the row.
+  There is no second document and no address that reaches one.
 - **Table root**: the `tables:<name>` root holding one table's rows. Every
   top-level root says what kind of thing it is, so a table genuinely named `kv`
   lands at `tables:kv` and cannot reach the settings root.
 - **Row**: a nested `Y.Type` held as an attribute on its table root. Holding it
   is what existing means, and there is no second fact that can disagree. Its id
   is minted and never reused.
-- **Field**: one attribute on a row type, holding one JSON value. Two devices
-  editing different fields both keep their edit; one scalar field is
-  last-write-wins.
+- **Field**: one attribute on a row type. A scalar field holds one JSON value;
+  a rich field holds a nested `Y.Type`. Two devices editing different fields
+  both keep their edit; one scalar field is last-write-wins.
 - **Whole-value replacement**: an array or object field is one value, so a
   concurrent write replaces all of it and one addition is lost (ADR-0228). This
   is chosen, not missing. A collection several devices append to concurrently
   wants to be a table.
-- **Row document**: the independent Yjs document a row owns at its derived
-  address, `{dataId}/{tableName}/{rowId}` (ADR-0248), holding roots the
-  application names. Opened with
-  `await data.tables.<table>.openDocument(rowId)`, which resolves to a fully
-  hydrated handle whose `get(name)` returns a `Y.Type` an editor binds to
-  directly; dispose the handle when the surface holding it unmounts. Epicenter
-  never reads inside one. Roots are minted by name on first use, which
-  converges because a top-level root is addressed by its name.
-- **Deletion**: removing the row's attribute from its table root, and durably
-  retiring the row's document address in the same atomic step (ADR-0248). The
-  scalar side has no tombstone and no revive path (ADR-0219); the document
-  side keeps one durable tombstone so a late write cannot resurrect a retired
-  address.
+- **Rich field**: a field declared `field.type()`, holding a nested `Y.Type`
+  under its row (ADR-0296). Read with `data.tables.<table>.content(rowId)`,
+  which is synchronous and hands back the live types plus a per-field edit
+  signal; there is nothing to open and nothing to dispose. **Minted in the
+  transaction that mints its row and never again**: a nested type is addressed
+  by the struct that created it, so lazy minting on two devices would lose a
+  subtree. Epicenter never reads inside one; the table's `file` codec is the
+  only thing that turns one into text.
+- **File codec**: the `file: { serialize, deserialize }` a table declares
+  (ADR-0296). The platform owns the file format and the table owns the mapping.
+  A table declaring any rich field must declare one, because the export is the
+  only bridge that content has out of the CRDT. `deserialize` is handed ATTACHED
+  types and fills them in place; it returns scalars only, because a detached
+  `Y.Type` replays one positional prelim delta and cannot be built with more
+  than one operation.
+- **Deletion**: removing the row's attribute from its table root. The whole
+  subtree goes with it, rich fields included, so there is one removal in one
+  document and no second address to retire. No tombstone and no revive path
+  (ADR-0219).
 - **Nonconforming row**: a row this release's declaration cannot read. A view, not
   damage. `list()` returns `{ rows, nonconforming }`, and each failure carries
   its `address`, machine-readable `issues`, the `conforming` survivors, and the

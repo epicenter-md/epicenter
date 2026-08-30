@@ -20,7 +20,7 @@ An application declares one inert data definition and opens its own store throug
 defineData({ id, title, kv, tables })
   pure JSON: no storage, no network, no framework
 
-openLocal(definition) / openAccount(definition, { baseURL, principalId })
+openDatabase(definition, { generation, account? })
   sqlite-wasm in the page, three durable relations in IndexedDB,
   one database per document (ADR-0261)
 
