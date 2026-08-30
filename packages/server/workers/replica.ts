@@ -20,7 +20,12 @@
  */
 
 import { DurableObject } from 'cloudflare:workers';
-import { type AccountDocument, defineData, defineTable } from '@epicenter/data';
+import {
+	type AccountDocument,
+	defineData,
+	defineTable,
+	plainText,
+} from '@epicenter/data';
 import { field } from '@epicenter/data/definition';
 import { createAccountStore } from '@epicenter/data/direct';
 import {
@@ -32,8 +37,6 @@ import {
 	type DurableObjectSqliteStorage,
 } from '@epicenter/sqlite/durable-object';
 import { MAIN_SUBPROTOCOL, STORE_SYNC_ROUTE } from '@epicenter/sync';
-import * as Y from '@y/y';
-import { Ok } from 'wellcrafted/result';
 
 /**
  * The one generation this probe ever opens.
@@ -50,18 +53,7 @@ const probeDefinition = defineData({
 	tables: {
 		notes: defineTable({
 			scalars: { title: field.string() },
-			types: ['body'],
-			file: {
-				serialize: (row) => ({
-					data: { title: row.title },
-					content: row.body.toString(),
-				}),
-				deserialize: (file) => {
-					const body = new Y.Type();
-					if (file.content !== '') body.insert(0, [file.content]);
-					return Ok({ title: String(file.data.title ?? ''), body });
-				},
-			},
+			content: plainText(),
 		}),
 	},
 });
@@ -187,9 +179,9 @@ export class StoreTestReplica extends DurableObject<Env> {
 	write(title: string, prose: string): void {
 		if (this.db === undefined) throw new Error('open first');
 		const made = this.db.tables.notes.create({ title });
-		const body = this.db.tables.notes.get(made.id)?.body;
-		if (body === undefined) throw new Error('the row has no body');
-		body.applyDelta(body.change.insert(prose) as never);
+		const content = this.db.tables.notes.get(made.id)?.content;
+		if (content === undefined) throw new Error('the row has no content');
+		content.applyDelta(content.change.insert(prose) as never);
 	}
 
 	/** Delete the note holding this title, the way an application does. */
@@ -230,7 +222,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 			titles: listed.rows.map((row) => row.title).sort(),
 			prose: listed.rows
 				.map((row) =>
-					JSON.stringify(db.tables.notes.get(row.id)?.body.toJSON() ?? null),
+					JSON.stringify(db.tables.notes.get(row.id)?.content.toJSON() ?? null),
 				)
 				.sort(),
 			lastError: status?.lastError?.name,

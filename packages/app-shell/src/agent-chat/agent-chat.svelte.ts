@@ -490,7 +490,7 @@ export function createAgentChatState({
 		// the document this store already holds. Absent means the row went away
 		// between the read and this line rather than that a conversation lacks
 		// somewhere to keep its messages.
-		const messages = table.get(conversationId)?.messages;
+		const messages = table.get(conversationId)?.content;
 		if (messages === undefined) return;
 		handles.set(
 			conversationId,

@@ -1,4 +1,4 @@
-import { field, jsonValue } from '@epicenter/data/definition';
+import { field, jsonValue, plainText } from '@epicenter/data/definition';
 /**
  * Skills data tests, against the real workspace through a memory store.
  *
@@ -44,6 +44,7 @@ const historicalSkillsWorkspace = defineData({
 				allowedTools: field.nullable(field.string()),
 				updatedAt: field.instant(),
 			},
+			content: plainText(),
 		}),
 	},
 });
@@ -55,7 +56,7 @@ function openSkills(record: MemoryRecord) {
 function readInstructions(data: SkillsData, skillId: string): string {
 	const content = data.tables.skills.get(skillId);
 	if (content === undefined) throw new Error(`Skill '${skillId}' has no row`);
-	return content.body.toString();
+	return content.content.toString();
 }
 
 test('a stricter Skills workspace exposes nonconformance until an update repairs it', async () => {
@@ -131,7 +132,7 @@ test("a skill's instructions live under its own row id", async () => {
 			writtenTo = written.id;
 			const held = data.tables.skills.get(writtenTo);
 			if (held === undefined) throw new Error('the row has no content');
-			const content = held.body;
+			const content = held.content;
 			content.applyDelta(content.change.insert('Keep it concise.') as never);
 
 			const other = data.tables.skills.create({

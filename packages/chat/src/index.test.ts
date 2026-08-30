@@ -13,11 +13,7 @@ import type { AgentMessage } from '@epicenter/agent';
 import { defineData, defineTable } from '@epicenter/data/definition';
 import { createMemoryRecord, openMemory } from '@epicenter/data/memory';
 import { InstantString } from '@epicenter/field';
-import {
-	conversationsFile,
-	conversationsTable,
-	createAgentMessageStore,
-} from './index.js';
+import { conversationsTable, createAgentMessageStore } from './index.js';
 
 const testDefinition = defineData({
 	id: 'so.epicenter.chat-test',
@@ -25,7 +21,6 @@ const testDefinition = defineData({
 	tables: {
 		conversations: defineTable({
 			...conversationsTable,
-			file: conversationsFile,
 		}),
 	},
 });
@@ -56,7 +51,7 @@ test('the agent store observes writes and survives a restart', async () => {
 
 			const content = db.tables.conversations.get(rowId);
 			if (content === undefined) throw new Error('the row has no content');
-			using store = createAgentMessageStore(content.messages);
+			using store = createAgentMessageStore(content.content);
 			let observations = 0;
 			const unobserve = store.observe(() => observations++);
 			store.set(message.id, message);
@@ -68,7 +63,7 @@ test('the agent store observes writes and survives a restart', async () => {
 		await using _db = db;
 		const content = db.tables.conversations.get(rowId);
 		if (content === undefined) throw new Error('the row has no content');
-		using store = createAgentMessageStore(content.messages);
+		using store = createAgentMessageStore(content.content);
 		expect([...store.entries()]).toEqual([{ key: message.id, val: message }]);
 	} finally {
 		record.close();

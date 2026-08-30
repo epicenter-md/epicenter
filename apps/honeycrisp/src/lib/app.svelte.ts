@@ -280,7 +280,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	 * type itself outlives it either way.
 	 */
 	function openBody(id: NoteId) {
-		const body = table.get(id)?.body;
+		const body = table.get(id)?.content;
 		if (body === undefined) return undefined;
 		// Coalesced to one write per animation-frame-ish burst, because a
 		// keystroke is a commit and writing the row on each one would write a row
@@ -329,7 +329,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	 * detaches and a note nobody is looking at costs nothing.
 	 */
 	function previewOf(id: NoteId): { readonly text: string } {
-		const body = table.get(id)?.body;
+		const body = table.get(id)?.content;
 		if (body === undefined) return { text: '' };
 		const subscribe = createSubscriber((update) => table.watch(body, update));
 		return {

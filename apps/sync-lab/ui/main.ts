@@ -1,4 +1,4 @@
-import { field } from '@epicenter/data/definition';
+import { field, plainText } from '@epicenter/data/definition';
 
 /**
  * THROWAWAY. One page, two devices, one row crossing between them.
@@ -26,6 +26,7 @@ const labDatabase = defineData({
 				at: field.string(),
 				prose: field.string(),
 			},
+			content: plainText(),
 		}),
 	},
 });

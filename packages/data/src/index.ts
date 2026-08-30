@@ -41,17 +41,20 @@
 
 export type {
 	ConformanceIssue,
+	ContentCodec,
 	DataDefinition,
 	JsonObject,
 	JsonValue,
 	RowOf,
 } from './definition/index.js';
 export {
+	ContentError,
 	DataDefinitionParseError,
 	defineData,
 	defineTable,
 	field,
 	parseData,
+	plainText,
 } from './definition/index.js';
 export type { PersistenceCapability } from './store/persistence.js';
 export type {

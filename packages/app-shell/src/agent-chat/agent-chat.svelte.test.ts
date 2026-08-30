@@ -55,7 +55,7 @@ type MessageLog = {
 	texts(): string[];
 };
 
-/** A type field that records writes instead of storing a CRDT. */
+/** A content node that records writes instead of storing a CRDT. */
 function createFakeMessages(): {
 	messages: Y.Type;
 	log: MessageLog;
@@ -103,9 +103,9 @@ function createFakeChat() {
 		// back what `get` would (ADR-0296, amended). This fake has now followed
 		// that shape in both directions; when it drifts, the tests pass and a
 		// browser does not.
-		create(fields: Omit<Conversation, 'id' | 'messages'>) {
+		create(fields: Omit<Conversation, 'id' | 'content'>) {
 			const held = createFakeMessages();
-			const row = { id: `c${++nextId}`, ...fields, messages: held.messages };
+			const row = { id: `c${++nextId}`, ...fields, content: held.messages };
 			rows.set(row.id, row);
 			contents.set(row.id, held);
 			creates.push(row);
@@ -201,7 +201,7 @@ test('a blank conversation is unchanged: placeholder title, no opening turn', as
 			model: DEFAULT_MODEL,
 			createdAt: expect.any(String),
 			updatedAt: expect.any(String),
-			messages: expect.anything(),
+			content: expect.anything(),
 		},
 	]);
 	expect(document(id).messages).toEqual([]);

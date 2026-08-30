@@ -33,11 +33,7 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
  * is as fatal as a value one.
  */
 import type { TypedTableHandle } from '@epicenter/data';
-import {
-	RowFileError,
-	type RowOf,
-	type ScalarsOf,
-} from '@epicenter/data/definition';
+import { ContentError, type RowOf } from '@epicenter/data/definition';
 import type { Brand } from 'wellcrafted/brand';
 import { Ok, type Result } from 'wellcrafted/result';
 
@@ -79,90 +75,65 @@ export const conversationsTable = {
 		updatedAt: field.instant(),
 	},
 	/**
-	 * The conversation's finished messages: a live `Y.Type` on the row
-	 * (ADR-0295, ADR-0296).
+	 * The conversation's finished messages, as a keyed log (ADR-0295, ADR-0296).
 	 *
-	 * Minted with the row and never again, which is what removes the race a
-	 * name-addressed root used to close: a nested type is addressed by the
+	 * NOT prose, and not a sequence at all: the entries live in the node's
+	 * ATTRIBUTES, keyed by message id. `plainText()` would be silent data loss
+	 * here, because `toString` renders attributes and `insert` takes the
+	 * rendering back as one literal string that prints identically. Only this
+	 * package knows what a conversation's node means, which is why the codec is
+	 * declared here rather than defaulted.
+	 *
+	 * One entry per line of a pretty-printed array, which is what makes a diff
+	 * of two exports legible.
+	 *
+	 * The node is minted with the row and never again, which removes the race a
+	 * name-addressed root used to close: a nested node is addressed by the
 	 * struct that created it, so two devices minting one would lose a subtree,
 	 * and only the creating device ever mints this.
 	 */
-	types: ['messages'],
-} as const;
-
-/**
- * The conversations table's file codec (ADR-0296).
- *
- * A table that declares a type field must declare one, because the export is
- * the only bridge the messages have out of the CRDT and a folder written
- * without them feeds an import that deletes them everywhere.
- *
- * The body is the message log as JSON, one entry per line of a pretty-printed
- * array, which is what makes a diff of two exports legible. It is not
- * Markdown, and that is the point of the codec being the TABLE's: a
- * conversation is a log of structured parts, not prose, and only this package
- * knows that.
- */
-export const conversationsFile = {
-	serialize: ({
-		id: _id,
-		messages,
-		...fields
-	}: RowOf<typeof conversationsTable>) => ({
-		data: fields,
-		content: JSON.stringify(
-			[...messages.attrEntries()].map(([key, val]) => ({
-				key: String(key),
-				val,
-			})),
-			null,
-			2,
-		),
-	}),
-	deserialize: (file: {
-		data: Record<string, unknown>;
-		content: string;
-	}): Result<
-		ScalarsOf<typeof conversationsTable> & { messages: Y.Type },
-		RowFileError
-	> => {
-		// Built here and handed back (ADR-0296, amended). `create` integrates it
-		// in the transaction that mints the row; nothing reads it before then,
-		// because a detached type reads as empty until it is integrated.
-		const messages = new Y.Type();
-		if (file.content.trim() !== '') {
+	content: {
+		encode: (node: Y.Type) =>
+			JSON.stringify(
+				[...node.attrEntries()].map(([key, val]) => ({
+					key: String(key),
+					val,
+				})),
+				null,
+				2,
+			),
+		decode: (text: string): Result<Y.Type, ContentError> => {
+			// Built here and handed back (ADR-0296, amended). `create` integrates
+			// it in the transaction that mints the row; nothing reads it before
+			// then, because a detached node reads as empty until it is integrated.
+			const messages = new Y.Type();
+			if (text.trim() === '') return Ok(messages);
 			let entries: unknown;
 			try {
-				entries = JSON.parse(file.content);
+				entries = JSON.parse(text);
 			} catch (cause) {
-				return RowFileError.Unreadable({
+				return ContentError.Unreadable({
 					reason: 'the message log is not JSON',
 					cause,
 				});
 			}
 			if (!Array.isArray(entries)) {
-				return RowFileError.Unreadable({
+				return ContentError.Unreadable({
 					reason: 'the message log is not an array of entries',
 				});
 			}
 			for (const entry of entries as { key?: unknown; val?: unknown }[]) {
 				if (typeof entry?.key !== 'string') {
-					return RowFileError.Unreadable({
+					return ContentError.Unreadable({
 						reason: 'a message entry carries no id',
 					});
 				}
 				messages.setAttr(entry.key, entry.val);
 			}
-		}
-		// Verbatim, so a key an older release wrote survives the round trip; a
-		// row this declaration cannot read is reported on the first read rather
-		// than repaired here (ADR-0125).
-		return Ok({
-			...(file.data as ScalarsOf<typeof conversationsTable>),
-			messages,
-		});
+			return Ok(messages);
+		},
 	},
-};
+} as const;
 
 /** One conversation row, as a read hands it back. */
 export type Conversation = RowOf<typeof conversationsTable>;

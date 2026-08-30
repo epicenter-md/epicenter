@@ -13,12 +13,12 @@ import { field } from '@epicenter/data/definition';
 
 import type { DataView } from '@epicenter/data';
 import {
+	type ContentCodec,
 	defineData,
 	defineTable,
-	RowFileError,
+	plainText,
 	type RowOf,
 } from '@epicenter/data/definition';
-import { InstantString } from '@epicenter/field';
 import { fragmentToPm, pmToFragment } from '@y/prosemirror';
 import * as Y from '@y/y';
 import { EditorState } from 'prosemirror-state';
@@ -31,6 +31,49 @@ export type NoteId = string;
 
 /** Runtime-minted structural folder row id. */
 export type FolderId = string;
+
+/**
+ * A note's prose as a ProseMirror node, read headlessly.
+ *
+ * A note nobody has typed into has an empty body, and an empty fragment is not
+ * a valid ProseMirror document: `fragmentToPm` refuses it outright. What that
+ * note actually is, is the empty document the schema mints, so an untouched
+ * note derives an empty title and exports an empty body rather than throwing
+ * at whoever reads it.
+ */
+export function noteBodyAsPm(body: Y.Type) {
+	const state = EditorState.create({ schema: noteSchema });
+	if (body.length === 0) return state.doc;
+	return fragmentToPm(body, state.tr);
+}
+
+/**
+ * A note's content node as Markdown, and back (ADR-0296).
+ *
+ * The whole of what this app declares about its files. The platform writes the
+ * scalars as frontmatter under their own field names and joins this below the
+ * fence, and reverses both; only Honeycrisp knows that a note's node is a
+ * ProseMirror document rather than a line of text or a keyed log.
+ *
+ * `decode` cannot fail on well-formed input, because any Markdown parses. What
+ * it must not do is judge the frontmatter: a value this release cannot read is
+ * reported as nonconforming on the first read rather than refused at the door
+ * (ADR-0125), which is what keeps an artifact readable by the release that has
+ * to fix it, and what keeps one hand-edited file from costing somebody the
+ * import of their whole folder.
+ */
+const noteMarkdown: ContentCodec = {
+	encode: (node) => serializeNoteBody(noteBodyAsPm(node)),
+	decode: (text) => {
+		// Built here and handed over (ADR-0296, amended). Fresh per row: two rows
+		// given one node would share it. One `pmToFragment` rather than a loop,
+		// because a detached node replays one positional delta and appends would
+		// reverse.
+		const node = new Y.Type();
+		pmToFragment(parseNoteBody(text), node);
+		return Ok(node);
+	},
+};
 
 export const honeycrispDefinition = defineData({
 	id: 'so.epicenter.honeycrisp',
@@ -47,6 +90,9 @@ export const honeycrispDefinition = defineData({
 				// time and never writes it as part of the definition (ADR-0255).
 				icon: field.nullable(field.string()),
 			},
+			// A folder is its name and its icon. Nothing types into one, so its
+			// node stays empty and its file is its frontmatter.
+			content: plainText(),
 		}),
 		notes: defineTable({
 			scalars: {
@@ -64,122 +110,10 @@ export const honeycrispDefinition = defineData({
 				updatedAt: field.instant(),
 				deletedAt: field.nullable(field.instant()),
 			},
-			/**
-			 * The note's prose: a live `Y.Type` on the row (ADR-0295, ADR-0296).
-			 *
-			 * A name and nothing else, because there is nothing to configure. Minted
-			 * with the row and never again, and bound directly by `@y/prosemirror`,
-			 * which is typed against `Y.Type` and makes no root assumption.
-			 */
-			types: ['body'],
-			/**
-			 * The notes table's file codec (ADR-0296).
-			 *
-			 * The platform owns the file FORMAT: it emits `data` as frontmatter and
-			 * `content` beneath the fence, and parses both back. This owns the
-			 * MAPPING, in both directions, and the two are inverses.
-			 */
-			file: {
-				serialize: ({ id: _id, body, ...fields }) => ({
-					data: fields,
-					content: serializeNoteBody(noteBodyAsPm(body)),
-				}),
-				deserialize: (file) => {
-					// `deserialize` goes from a loose file to a typed row, so it
-					// CONSTRUCTS the row out of what it read rather than relabelling
-					// the record it was handed. That is the difference between a codec
-					// and an assertion: a file this table cannot map is reported by
-					// path, instead of arriving as a row whose type nobody checked.
-					//
-					// ABSENT AND WRONG ARE DIFFERENT. A person editing notes in a vault
-					// tool drops and reorders frontmatter keys, and the promise this app
-					// makes is that the folder stays theirs, so an absent value is one
-					// this codec decides. A value that is PRESENT and unmappable is a
-					// file this table cannot read, and it says so.
-					const raw = file.data;
-					const folderId = raw.folderId === undefined ? null : raw.folderId;
-					if (folderId !== null && typeof folderId !== 'string') {
-						return RowFileError.Unreadable({
-							reason: 'folderId is neither a folder id nor null',
-						});
-					}
-					// Empty rather than derived from the prose. `title` is one of the
-					// three fields `notes.openBody` owns (ADR-0297), and it writes one
-					// on the first open; deriving a second here would be the second
-					// writer that rule exists to refuse.
-					const title = raw.title === undefined ? '' : raw.title;
-					if (typeof title !== 'string') {
-						return RowFileError.Unreadable({ reason: 'title is not a string' });
-					}
-					const pinned = raw.pinned === undefined ? false : raw.pinned;
-					if (typeof pinned !== 'boolean') {
-						return RowFileError.Unreadable({
-							reason: 'pinned is not a boolean',
-						});
-					}
-					// A file carrying no time is stamped on the way in, because the
-					// row has to have one and the file never did.
-					const createdAt =
-						raw.createdAt === undefined ? InstantString.now() : raw.createdAt;
-					if (!InstantString.is(createdAt)) {
-						return RowFileError.Unreadable({
-							reason: 'createdAt is not a UTC instant',
-						});
-					}
-					const updatedAt =
-						raw.updatedAt === undefined ? createdAt : raw.updatedAt;
-					if (!InstantString.is(updatedAt)) {
-						return RowFileError.Unreadable({
-							reason: 'updatedAt is not a UTC instant',
-						});
-					}
-					const deletedAt = raw.deletedAt === undefined ? null : raw.deletedAt;
-					if (deletedAt !== null && !InstantString.is(deletedAt)) {
-						return RowFileError.Unreadable({
-							reason: 'deletedAt is neither a UTC instant nor null',
-						});
-					}
-					// Built here and handed over, rather than filled into a type the
-					// platform minted first (ADR-0296, amended). `create` integrates it
-					// in the transaction that mints the row.
-					const body = new Y.Type();
-					pmToFragment(parseNoteBody(file.content), body);
-					return Ok({
-						// Verbatim underneath: a key this release no longer names
-						// survives the round trip, because the artifact is the truth on
-						// the way in and a release that stopped naming a field never
-						// meant its data was gone (ADR-0125, ADR-0240).
-						...file.data,
-						// Mapped on top. This is what the row IS, and stating it here is
-						// what makes an assertion unnecessary.
-						folderId,
-						title,
-						pinned,
-						createdAt,
-						updatedAt,
-						deletedAt,
-						body,
-					});
-				},
-			},
+			content: noteMarkdown,
 		}),
 	},
 });
-
-/**
- * A note's prose as a ProseMirror node, read headlessly.
- *
- * A note nobody has typed into has an empty body, and an empty fragment is not
- * a valid ProseMirror document: `fragmentToPm` refuses it outright. What that
- * note actually is, is the empty document the schema mints, so an untouched
- * note derives an empty title and exports an empty body rather than throwing
- * at whoever reads it.
- */
-export function noteBodyAsPm(body: Y.Type) {
-	const state = EditorState.create({ schema: noteSchema });
-	if (body.length === 0) return state.doc;
-	return fragmentToPm(body, state.tr);
-}
 
 /** The typed view of one opened Honeycrisp data handle. */
 export type HoneycrispData = DataView<typeof honeycrispDefinition>;

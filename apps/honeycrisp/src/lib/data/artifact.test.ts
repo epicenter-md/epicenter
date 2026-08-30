@@ -18,8 +18,7 @@ import { parseNoteBody } from '../editor/markdown.js';
 import { honeycrispDefinition } from './index.js';
 
 /** The notes table's real codec, which is what these tests are about. */
-const noteFile = honeycrispDefinition.tables.notes.file;
-if (noteFile === undefined) throw new Error('the notes table declares a codec');
+const noteFile = honeycrispDefinition.tables.notes.content;
 
 const AT = InstantString.fromDate(new Date('2026-08-10T00:00:00.000Z'));
 
@@ -67,9 +66,9 @@ async function seed() {
 
 test('a store exports to Markdown files and imports back whole', async () => {
 	const { data, note } = await seed();
-	const content = data.tables.notes.get(note.id);
-	if (content === undefined) throw new Error('the note has no content');
-	pmToFragment(parseNoteBody(MARKDOWN), content.body as never);
+	const seeded = data.tables.notes.get(note.id);
+	if (seeded === undefined) throw new Error('the note has no row');
+	pmToFragment(parseNoteBody(MARKDOWN), seeded.content as never);
 
 	const files = await collect(renderArtifact(data, honeycrispDefinition));
 	// One file per row, and the note's file is prose a person can read.
@@ -96,7 +95,7 @@ test('a store exports to Markdown files and imports back whole', async () => {
 	// row goes in, not a row spliced together with a bag of types.
 	const row = restored.tables.notes.get(note.id);
 	if (row === undefined) throw new Error('the note lost its row');
-	expect(noteFile.serialize(row).content).toBe(MARKDOWN);
+	expect(noteFile.encode(row.content)).toBe(MARKDOWN);
 	await data[Symbol.asyncDispose]();
 });
 
@@ -109,7 +108,7 @@ test('a note with no prose exports as frontmatter alone and still imports', asyn
 	await using restored = await openMemory(honeycrispDefinition);
 	syncEngineOf(restored).applyRemote(state);
 	expect(restored.tables.notes.get(note.id)?.title).toBe('Groceries');
-	// The body is minted with the row, so an empty note still has one.
-	expect(restored.tables.notes.get(note.id)?.body).toBeDefined();
+	// The node is minted with the row, so an empty note still has one.
+	expect(restored.tables.notes.get(note.id)?.content).toBeDefined();
 	await data[Symbol.asyncDispose]();
 });

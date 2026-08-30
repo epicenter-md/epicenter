@@ -79,10 +79,8 @@ describe('the note body Markdown codec', () => {
 		expect(serializeNoteBody(underlined)).toBe('kept');
 	});
 
-	test('the declared codec round-trips a body through an attached type', () => {
-		const codec = honeycrispDefinition.tables.notes.file;
-		if (codec === undefined)
-			throw new Error('the notes table declares a codec');
+	test('the declared codec round-trips a body through an attached node', () => {
+		const codec = honeycrispDefinition.tables.notes.content;
 		const markdown = [
 			'# Title',
 			'',
@@ -91,43 +89,37 @@ describe('the note body Markdown codec', () => {
 			'- [x] done',
 		].join('\n');
 
-		// The codec builds its own body and hands it back (ADR-0296, amended), so
+		// The codec builds its own node and hands it back (ADR-0296, amended), so
 		// nothing here mints or attaches one first.
-		const fields = expectOk(
-			codec.deserialize({ data: { title: 'Title' }, content: markdown }),
-		);
-		// Integrated before it is read, the way `create` does it. A detached type
+		const built = expectOk(codec.decode(markdown));
+		// Integrated before it is read, the way `create` does it. A detached node
 		// accumulates its writes in a prelim delta and READS AS EMPTY until
-		// `_integrate` replays them, so serializing one straight out of the codec
+		// `_integrate` replays them, so encoding one straight out of the codec
 		// would report an empty note and pass nothing.
 		const document = new Y.Doc();
 		try {
 			const row = document.get('tables:notes');
 			document.transact(() => {
-				row.setAttr('body' as never, fields.body as never);
+				row.setAttr('content' as never, built as never);
 			});
-			const body = row.getAttr('body' as never) as Y.Type;
-			// What `deserialize` produced is what `serialize` reads back: the pair
-			// is the identity on the text.
-			expect(codec.serialize({ id: 'r1', ...fields, body }).content).toBe(
-				markdown,
-			);
-			expect(body.toString()).toContain('Title');
+			const node = row.getAttr('content' as never) as Y.Type;
+			// What `decode` produced is what `encode` reads back: the pair is the
+			// identity on the text.
+			expect(codec.encode(node)).toBe(markdown);
+			expect(node.toString()).toContain('Title');
 		} finally {
 			document.destroy();
 		}
 	});
 
-	test('the body it returns is fresh, so two rows never share one', () => {
-		const codec = honeycrispDefinition.tables.notes.file;
-		if (codec === undefined)
-			throw new Error('the notes table declares a codec');
-		const one = expectOk(codec.deserialize({ data: {}, content: '# One' }));
-		const two = expectOk(codec.deserialize({ data: {}, content: '# Two' }));
-		expect(one.body).not.toBe(two.body);
-		// Detached until `create` integrates it. A type that already belongs to a
-		// document is what `createRow` refuses, because two rows given one type
+	test('the node it returns is fresh, so two rows never share one', () => {
+		const codec = honeycrispDefinition.tables.notes.content;
+		const one = expectOk(codec.decode('# One'));
+		const two = expectOk(codec.decode('# Two'));
+		expect(one).not.toBe(two);
+		// Detached until `create` integrates it. A node that already belongs to a
+		// document is what `createRow` refuses, because two rows given one node
 		// would share one body.
-		expect((one.body as Y.Type).doc).toBeNull();
+		expect(one.doc).toBeNull();
 	});
 });
