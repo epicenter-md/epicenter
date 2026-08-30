@@ -19,6 +19,8 @@
  */
 import * as Y from '@y/y';
 
+import { rowAt, typeAt } from '../raw-document.js';
+
 /** One day of use, as transactions a real editor would dispatch. */
 const DAY = {
 	/** Notes whose scalar fields change: renames, tags, dates. */
@@ -98,19 +100,18 @@ function simulate(days: number, policy: Policy) {
 		for (let edit = 0; edit < DAY.fieldEdits; edit += 1) {
 			const id = `r${String((day * 7 + edit) % 986).padStart(23, '0')}`;
 			transaction(() => {
-				(root.getAttr(id as never) as unknown as Y.Type).setAttr(
-					'title' as never,
-					`edited on day ${day}` as never,
-				);
+				rowAt(root, id)?.setAttr('title', `edited on day ${day}`);
 			});
 		}
 		for (let keystroke = 0; keystroke < DAY.charsTyped; keystroke += 1) {
 			const id = `r${String((day * 3 + keystroke) % 986).padStart(23, '0')}`;
 			transaction(() => {
-				const container = (
-					root.getAttr(id as never) as unknown as Y.Type
-				).getAttr('!doc' as never) as unknown as Y.Type;
-				const text = container.getAttr('editor' as never) as unknown as Y.Type;
+				const row = rowAt(root, id);
+				if (row === undefined) throw new Error('the row is gone');
+				const container = typeAt(row, '!doc');
+				const text =
+					container === undefined ? undefined : typeAt(container, 'editor');
+				if (text === undefined) throw new Error('the row has no prose');
 				text.applyDelta(text.change.retain(10).insert('a') as never);
 			});
 		}

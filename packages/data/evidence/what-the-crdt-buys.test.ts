@@ -23,6 +23,8 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from '@y/y';
 
+import { putRow, rowAt, type ScalarType } from './raw-document.js';
+
 function sync(a: Y.Doc, b: Y.Doc): void {
 	const fromA = Y.encodeStateAsUpdateV2(a, Y.encodeStateVector(b));
 	const fromB = Y.encodeStateAsUpdateV2(b, Y.encodeStateVector(a));
@@ -35,24 +37,25 @@ function pair() {
 	const phone = new Y.Doc({ gc: true });
 	const laptop = new Y.Doc({ gc: true });
 	phone.transact(() => {
-		const row = new Y.Type();
-		phone.get('notes').setAttr('n1' as never, row as never);
-		row.setAttr('title' as never, 'original' as never);
-		row.setAttr('tags' as never, ['a'] as never);
+		const row: ScalarType = new Y.Type();
+		putRow(phone.get('notes'), 'n1', row);
+		row.setAttr('title', 'original');
+		row.setAttr('tags', ['a']);
 	});
 	sync(phone, laptop);
-	const row = (doc: Y.Doc) =>
-		doc.get('notes').getAttr('n1' as never) as unknown as Y.Type;
+	const row = (doc: Y.Doc): ScalarType => {
+		const found = rowAt(doc.get('notes'), 'n1');
+		if (found === undefined) throw new Error('the row is gone');
+		return found;
+	};
 	return { phone, laptop, row };
 }
 
 describe('a row of scalars', () => {
 	test('DIFFERENT fields merge, which a per-field table also does', () => {
 		const { phone, laptop, row } = pair();
-		phone.transact(() =>
-			row(phone).setAttr('title' as never, 'from phone' as never),
-		);
-		laptop.transact(() => row(laptop).setAttr('tags' as never, ['b'] as never));
+		phone.transact(() => row(phone).setAttr('title', 'from phone'));
+		laptop.transact(() => row(laptop).setAttr('tags', ['b']));
 		sync(phone, laptop);
 
 		expect(row(phone).getAttrs()).toEqual({ title: 'from phone', tags: ['b'] });
@@ -63,16 +66,13 @@ describe('a row of scalars', () => {
 		// sensible answer. Here it is not: one edit is thrown away, and the only
 		// question is which.
 		const { phone, laptop, row } = pair();
-		phone.transact(() =>
-			row(phone).setAttr('title' as never, 'from the phone' as never),
-		);
-		laptop.transact(() =>
-			row(laptop).setAttr('title' as never, 'from the laptop' as never),
-		);
+		phone.transact(() => row(phone).setAttr('title', 'from the phone'));
+		laptop.transact(() => row(laptop).setAttr('title', 'from the laptop'));
 		sync(phone, laptop);
 
-		const survivor = row(phone).getAttr('title' as never);
-		expect(row(laptop).getAttr('title' as never)).toBe(survivor as never);
+		const survivor = row(phone).getAttr('title');
+		if (typeof survivor !== 'string') throw new Error('the title is gone');
+		expect(row(laptop).getAttr('title')).toEqual(survivor);
 		expect(['from the phone', 'from the laptop']).toContain(survivor);
 	});
 
@@ -85,14 +85,10 @@ describe('a row of scalars', () => {
 		const rounds = 40;
 		for (let round = 0; round < rounds; round += 1) {
 			const { phone, laptop, row } = pair();
-			phone.transact(() =>
-				row(phone).setAttr('title' as never, 'phone' as never),
-			);
-			laptop.transact(() =>
-				row(laptop).setAttr('title' as never, 'laptop' as never),
-			);
+			phone.transact(() => row(phone).setAttr('title', 'phone'));
+			laptop.transact(() => row(laptop).setAttr('title', 'laptop'));
 			sync(phone, laptop);
-			if (row(phone).getAttr('title' as never) === 'phone') phoneWon += 1;
+			if (row(phone).getAttr('title') === 'phone') phoneWon += 1;
 		}
 
 		// Neither side is systematically favoured, which is what makes it

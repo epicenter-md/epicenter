@@ -21,6 +21,8 @@
  */
 import * as Y from '@y/y';
 
+import { putRow, rowAt, type ScalarType } from '../raw-document.js';
+
 const FIELDS = {
 	title: 'A note title of typical length',
 	tags: ['work', 'idea'],
@@ -114,14 +116,13 @@ const NESTED: Shape = {
 			[laptop, 'date', 'laptop'],
 		] as const) {
 			doc.transact(() => {
-				const row = new Y.Type();
-				doc.get('notes').setAttr('n1' as never, row as never);
-				row.setAttr(key as never, value as never);
+				const row: ScalarType = new Y.Type();
+				putRow(doc.get('notes'), 'n1', row);
+				row.setAttr(key, value);
 			});
 		}
 		exchange(phone, laptop);
-		const read = (d: Y.Doc) =>
-			(d.get('notes').getAttr('n1' as never) as unknown as Y.Type).getAttrs();
+		const read = (d: Y.Doc) => rowAt(d.get('notes'), 'n1')?.getAttrs() ?? {};
 		const merged = read(phone) as Record<string, unknown>;
 		return {
 			phone: merged,

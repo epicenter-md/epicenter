@@ -37,6 +37,8 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from '@y/y';
 
+import { putRow, rowAt, type ScalarType } from './raw-document.js';
+
 const EMPTY_STATE_VECTOR = new Uint8Array(
 	Y.encodeStateVector(new Y.Doc({ gc: true })),
 );
@@ -131,19 +133,16 @@ function incrementOverSeed(): { seed: Uint8Array; increment: Uint8Array } {
 	const root = doc.get('notes');
 	doc.transact(() => {
 		for (let index = 0; index < 20; index += 1) {
-			const row = new Y.Type();
-			root.setAttr(`r${index}` as never, row as never);
-			row.setAttr('title' as never, `note ${index}` as never);
+			const row: ScalarType = new Y.Type();
+			putRow(root, `r${index}`, row);
+			row.setAttr('title', `note ${index}`);
 		}
 	});
 	const seed = new Uint8Array(Y.encodeStateAsUpdateV2(doc));
 	const mark = Y.encodeStateVector(doc);
 	doc.transact(() => {
 		for (let index = 0; index < 20; index += 1) {
-			(root.getAttr(`r${index}` as never) as unknown as Y.Type).setAttr(
-				'title' as never,
-				`edited ${index}` as never,
-			);
+			rowAt(root, `r${index}`)?.setAttr('title', `edited ${index}`);
 		}
 	});
 	const increment = new Uint8Array(

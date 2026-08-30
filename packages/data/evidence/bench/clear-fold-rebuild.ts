@@ -21,6 +21,8 @@
 
 import * as Y from '@y/y';
 
+import { rowAt } from '../raw-document.js';
+
 const LIVE_ROWS = 1_000;
 const DEAD_ROWS = 5_000;
 const BODY_DOCUMENTS = 200;
@@ -335,12 +337,9 @@ function addOfflineEdits(workspace: Workspace): void {
 	const root = workspace.index.get('notes');
 	const first = [...root.attrKeys()][0];
 	if (first === undefined) throw new Error('workspace has no rows');
-	const row = root.getAttr(first as never) as unknown as Y.Type;
+	const row = rowAt(root, String(first));
 	workspace.index.transact(() =>
-		row.setAttr(
-			'title' as never,
-			'offline edit after the export point' as never,
-		),
+		row?.setAttr('title', 'offline edit after the export point'),
 	);
 	const body = workspace.bodies[0];
 	if (body === undefined) throw new Error('workspace has no body');

@@ -15,6 +15,14 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from '@y/y';
 
+import {
+	putRow,
+	putType,
+	rowAt,
+	type ScalarType,
+	typeAt,
+} from './raw-document.js';
+
 const PRESENCE = '!presence';
 const DOCUMENT = '!doc';
 
@@ -33,11 +41,11 @@ function rowsOf(doc: Y.Doc): Y.Type {
 
 function create(doc: Y.Doc, rowId: string, title: string): void {
 	doc.transact(() => {
-		const row = new Y.Type();
-		rowsOf(doc).setAttr(rowId as never, row as never);
-		row.setAttr(PRESENCE as never, 'present' as never);
-		row.setAttr(DOCUMENT as never, new Y.Type() as never);
-		row.setAttr('title' as never, title as never);
+		const row: ScalarType = new Y.Type();
+		putRow(rowsOf(doc), rowId, row);
+		putType(row, DOCUMENT, new Y.Type());
+		row.setAttr(PRESENCE, 'present');
+		row.setAttr('title', title);
 	});
 }
 
@@ -48,30 +56,29 @@ function remove(doc: Y.Doc, rowId: string, model: Model): void {
 			root.deleteAttr(rowId);
 			return;
 		}
-		const row = root.getAttr(rowId as never) as unknown as Y.Type;
+		const row = rowAt(root, rowId);
+		if (row === undefined) return;
 		for (const key of [...row.attrKeys()]) {
-			if (key !== PRESENCE) row.deleteAttr(key as string);
+			if (key !== PRESENCE) row.deleteAttr(key);
 		}
-		row.setAttr(PRESENCE as never, 'absent' as never);
+		row.setAttr(PRESENCE, 'absent');
 	});
 }
 
 function edit(doc: Y.Doc, rowId: string, title: string): void {
 	doc.transact(() => {
-		const row = rowsOf(doc).getAttr(rowId as never) as unknown as Y.Type;
-		row.setAttr('title' as never, title as never);
+		rowAt(rowsOf(doc), rowId)?.setAttr('title', title);
 	});
 }
 
 /** What the store's `readRow` would return: undefined unless live. */
 function read(doc: Y.Doc, rowId: string): Record<string, unknown> | undefined {
-	const value = rowsOf(doc).getAttr(rowId as never) as unknown;
-	if (!(value instanceof Y.Type)) return undefined;
-	if (value.getAttr(PRESENCE as never) !== 'present') return undefined;
+	const row = rowAt(rowsOf(doc), rowId);
+	if (row === undefined) return undefined;
+	if (row.getAttr(PRESENCE) !== 'present') return undefined;
 	const payload: Record<string, unknown> = {};
-	for (const key of value.attrKeys()) {
-		const name = key as string;
-		if (!name.startsWith('!')) payload[name] = value.getAttr(name as never);
+	for (const name of row.attrKeys()) {
+		if (!name.startsWith('!')) payload[name] = row.getAttr(name);
 	}
 	return payload;
 }
@@ -145,9 +152,9 @@ describe('what the two models really differ on', () => {
 		edit(phone, rowId, 'renamed on the phone');
 		sync(laptop, phone);
 
-		const corpse = rowsOf(laptop).getAttr(rowId as never) as unknown as Y.Type;
-		expect(corpse.getAttr('title' as never)).toBe('renamed on the phone');
-		expect(corpse.getAttr(PRESENCE as never)).toBe('absent');
+		const corpse = rowAt(rowsOf(laptop), rowId);
+		expect(corpse?.getAttr('title')).toBe('renamed on the phone');
+		expect(corpse?.getAttr(PRESENCE)).toBe('absent');
 	});
 
 	test('and reviving that address resurrects the stray field', () => {
@@ -160,8 +167,7 @@ describe('what the two models really differ on', () => {
 		sync(laptop, phone);
 
 		laptop.transact(() => {
-			const row = rowsOf(laptop).getAttr(rowId as never) as unknown as Y.Type;
-			row.setAttr(PRESENCE as never, 'present' as never);
+			rowAt(rowsOf(laptop), rowId)?.setAttr(PRESENCE, 'present');
 		});
 
 		expect(read(laptop, rowId)).toEqual({ title: 'renamed on the phone' });
@@ -173,7 +179,7 @@ describe('what the two models really differ on', () => {
 		edit(phone, rowId, 'renamed on the phone');
 		sync(laptop, phone);
 
-		expect(rowsOf(laptop).getAttr(rowId as never)).toBeUndefined();
+		expect(rowAt(rowsOf(laptop), rowId)).toBeUndefined();
 		expect([...rowsOf(laptop).attrKeys()]).toEqual([]);
 	});
 
@@ -208,15 +214,15 @@ describe('a row document under a concurrent delete', () => {
 	for (const model of ['clear-and-flag', 'drop'] as const) {
 		test(`${model}: prose written concurrently does not revive the row`, () => {
 			const { laptop, phone, rowId } = pair();
-			const container = rowsOf(phone).getAttr(
-				rowId as never,
-			) as unknown as Y.Type;
-			const text = container.getAttr(DOCUMENT as never) as unknown as Y.Type;
+			const container = rowAt(rowsOf(phone), rowId);
+			if (container === undefined) throw new Error('the row is gone');
+			const text = typeAt(container, DOCUMENT);
+			if (text === undefined) throw new Error('the row has no document');
 
 			remove(laptop, rowId, model);
 			phone.transact(() => {
 				const editor = new Y.Type('text' as never);
-				text.setAttr('editor' as never, editor as never);
+				putType(text, 'editor', editor);
 				editor.applyDelta(editor.change.insert('buy milk') as never);
 			});
 			sync(laptop, phone);

@@ -28,6 +28,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as Y from '@y/y';
 
+import { putRow, rowAt, type ScalarType } from '../raw-document.js';
+
 const RECORDING = {
 	audioBlobId: 'blob_01JQ8ZXY3M4N5P6Q7R8S9T0V',
 	title: 'Recording 2026-08-07 14:32',
@@ -107,11 +109,11 @@ function buildDoc({ live, dead, pattern }: Case): Y.Doc {
 	const id = () => `r${String(minted++).padStart(23, '0')}`;
 
 	const create = (key: string) => {
-		const row = new Y.Type();
-		root.setAttr(key as never, row as never);
-		row.setAttr('!presence' as never, 'present' as never);
+		const row: ScalarType = new Y.Type();
+		putRow(root, key, row);
+		row.setAttr('!presence', 'present');
 		for (const [field, value] of Object.entries(RECORDING)) {
-			row.setAttr(field as never, value as never);
+			row.setAttr(field, value);
 		}
 	};
 	const kill = (key: string) => {
@@ -123,11 +125,12 @@ function buildDoc({ live, dead, pattern }: Case): Y.Doc {
 			root.deleteAttr(key);
 			return;
 		}
-		const row = root.getAttr(key as never) as unknown as Y.Type;
+		const row = rowAt(root, key);
+		if (row === undefined) return;
 		for (const field of [...row.attrKeys()]) {
-			if (field !== '!presence') row.deleteAttr(field as string);
+			if (field !== '!presence') row.deleteAttr(field);
 		}
-		row.setAttr('!presence' as never, 'absent' as never);
+		row.setAttr('!presence', 'absent');
 	};
 
 	if (pattern === 'none') {
@@ -219,10 +222,10 @@ function liveRows(doc: Y.Doc): number {
 	const root = doc.get('recordings');
 	let alive = 0;
 	for (const key of root.attrKeys()) {
-		const row = root.getAttr(key as never) as unknown as Y.Type;
+		const row = rowAt(root, String(key));
 		// A dropped row leaves no key at all, so mere presence of the container
 		// counts; a cleared row leaves the key and says so on the flag.
-		const flag = row?.getAttr('!presence' as never);
+		const flag = row?.getAttr('!presence');
 		if (flag === undefined || flag === 'present') alive += 1;
 	}
 	return alive;
@@ -367,11 +370,12 @@ try {
 	genB.transact(() => {
 		const root = genB.get('recordings');
 		for (const key of source.attrKeys()) {
-			const row = source.getAttr(key as never) as unknown as Y.Type;
-			const fresh = new Y.Type();
-			root.setAttr(key as never, fresh as never);
+			const row = rowAt(source, String(key));
+			if (row === undefined) continue;
+			const fresh: ScalarType = new Y.Type();
+			putRow(root, String(key), fresh);
 			for (const field of row.attrKeys()) {
-				fresh.setAttr(field as never, row.getAttr(field as never) as never);
+				fresh.setAttr(field, row.getAttr(field) ?? null);
 			}
 		}
 	});
