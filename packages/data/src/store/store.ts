@@ -31,7 +31,6 @@ import {
 	createPersistenceController,
 	type DurablePort,
 	type DurableSnapshot,
-	type OutboxEntry,
 } from './persistence.js';
 
 /**
@@ -133,8 +132,6 @@ const localOrigin = Object.freeze({ kind: 'epicenter-local' });
 const hydrationOrigin = Object.freeze({ kind: 'epicenter-hydration' });
 /** Bytes that arrived from a peer: durable, but not local work. */
 const remoteOrigin = Object.freeze({ kind: 'epicenter-remote' });
-
-export type {} from '@epicenter/data/definition';
 
 /**
  * The client half of sync, which is two facts the store already owns.
@@ -449,24 +446,6 @@ function createStoreEngine(
 	let nextId = loaded.lastId + 1;
 	const mintId = (): number => nextId++;
 	/**
-	 * What an append this device authored owes the authority: nothing yet.
-	 *
-	 * Always `undefined`, on both store kinds, because neither has a position
-	 * for bytes the authority has not seen. On a local store nothing ever
-	 * reads the result, since there is no sender, and the port folds its chain
-	 * whole rather than asking.
-	 */
-	const authoredSeq = (): number | undefined => undefined;
-
-	/**
-	 * Where a table's `'delta'` event becomes a subscriber's invalidation.
-	 *
-	 * `@epicenter/data/definition` owns the grouping, the per-table dedup and the delivery
-	 * laws, and a delta-fed producer needs exactly those. Nothing about them is
-	 * specific to a carrier, which is why they were written once there rather
-	 * than here (ADR-0187).
-	 */
-	/**
 	 * Tables the transaction in progress changed, held until the commit lands.
 	 *
 	 * The one reason this buffer exists. A table root's `'delta'` fires
@@ -622,7 +601,12 @@ function createStoreEngine(
 						kind: 'append',
 						id: mintId(),
 						bytes: authored,
-						authoritySeq: authoredSeq(),
+						// What an append this device authored owes the authority:
+						// nothing yet, on either store kind, because neither has a
+						// position for bytes the authority has not seen. On a local
+						// store nothing ever reads it, since there is no sender, and
+						// the port folds its chain whole rather than asking.
+						authoritySeq: undefined,
 					},
 				]);
 			} finally {
@@ -646,7 +630,13 @@ function createStoreEngine(
 	}
 
 	/**
-	 * Run one mutation under the origin that marks it as this device's work.
+	 * Run direct data operations as one Yjs transaction and one durable batch,
+	 * under the origin that marks them as this device's work.
+	 *
+	 * The one write path: every store verb runs its mutation through here, and
+	 * an application groups several of them by calling it itself. There is no
+	 * second, ungated form, so the disposal check is on the mutation rather
+	 * than on the caller remembering to have made it.
 	 *
 	 * Everything durable happens in the `updateV2` listener, which fires inside
 	 * `transact` after the observers, after `afterTransaction`, and after
@@ -656,18 +646,10 @@ function createStoreEngine(
 	 * half and cannot fail for storage reasons; durability is the queued half
 	 * (ADR-0238). On a synchronous engine the flush completes before this
 	 * returns.
-	 */
-	function commit(mutate: () => void): void {
-		database.transact(mutate, localOrigin);
-	}
-
-	/**
-	 * Run several direct data operations as one Yjs transaction and one durable
-	 * batch.
 	 *
 	 * Nesting needs no bookkeeping here. A `transact` opened inside an open one
 	 * reuses the transaction already running and ignores the origin it was
-	 * handed, so nested store verbs join this coordinator by construction and
+	 * handed, so nested store verbs join the outer one by construction and
 	 * `updateV2` fires once, for the outermost. A throw from `run` still leaves
 	 * through Yjs's own `finally`, so a partial mutation is queued and
 	 * delivered before the error propagates.
@@ -782,8 +764,7 @@ function createStoreEngine(
 				};
 			},
 			update(values: JsonObject): void {
-				assertUsable();
-				commit(() => {
+				transact(() => {
 					for (const [name, value] of Object.entries(values)) {
 						root.setAttr(name as never, value as never);
 					}
@@ -811,58 +792,6 @@ function createStoreEngine(
 			values[key as string] = root.getAttr(key as never) as JsonValue;
 		}
 		return values;
-	}
-
-	/**
-	 * Everything this application has stored, before its declaration reads it
-	 * (ADR-0267).
-	 *
-	 * The one faithful read, and it is on the data rather than on a table on
-	 * purpose. A table handle is the application's lens: `get` and `list` answer
-	 * what THIS release can read, and both narrow to the declared fields, so a
-	 * key an older release wrote and this one no longer names is unreachable
-	 * through them. That narrowing is correct for an application and correct for
-	 * any index a follower rebuilds on demand. It is wrong for an artifact: an
-	 * export that drops a field is data loss, and the
-	 * caller that must not lose one is asking about the store, not a table.
-	 *
-	 * So it enumerates the roots the document actually holds rather than the
-	 * tables the declaration names, and it hands back stored values untyped.
-	 * Untyped is the point: reaching for this means giving up the lens, and the
-	 * absent row types are what makes that visible at the call site.
-	 *
-	 * A row's type content is not here, and cannot be: a nested `Y.Type` is not
-	 * a JSON value, so no faithful read of stored VALUES can carry one. An
-	 * export reaches it through `content` and the table's own file codec
-	 * (ADR-0296).
-	 */
-	function stored(): StoredData {
-		const tables = new Map<string, ReadonlyMap<string, JsonObject>>();
-		for (const tableName of storedTableNames(database)) {
-			tables.set(tableName, rowsOf(tableName));
-		}
-		return { tables, kv: storedKv() };
-	}
-
-	/**
-	 * One row as the exporter reads it: faithful scalars, live types.
-	 *
-	 * Deliberately not through a table handle. `readRow` returns every stored
-	 * key including ones this release no longer declares, and no conformance
-	 * runs, so a row the lens cannot read still has a file (ADR-0267, ADR-0125).
-	 * The types come from the declaration's names, because a type at an
-	 * undeclared key is unreachable by any codec anyway.
-	 */
-	function rowFile(tableName: string, rowId: string): Row | undefined {
-		const parsed = definition.tables.get(tableName);
-		const root = tableRoot(database, tableName);
-		const fields = readRow(root, rowId);
-		if (fields === undefined) return undefined;
-		return {
-			id: rowId,
-			...fields,
-			...readRowTypes(root, rowId, parsed?.types ?? []),
-		};
 	}
 
 	function createTableHandle(
@@ -950,12 +879,11 @@ function createStoreEngine(
 
 		return Object.freeze({
 			create(fields: RowInput): Row {
-				assertUsable();
 				const rowId = mintRowId();
 				// The type fields are integrated in the same transaction (ADR-0295),
 				// and never again: nested types do not converge by name, so a field
 				// minted lazily on two devices would lose one subtree.
-				commit(() => createRow(root, rowId, fields, typeFields));
+				transact(() => createRow(root, rowId, fields, typeFields));
 				// Read back rather than echoed: a type field the caller omitted was
 				// minted empty here, and one it passed is now the INTEGRATED type
 				// rather than the detached one it handed over. Echoing the argument
@@ -975,24 +903,19 @@ function createStoreEngine(
 				return data === null ? undefined : withTypes(data);
 			},
 			update(rowId: string, fields: JsonObject): Result<void, RowAbsentError> {
-				assertUsable();
 				// One lookup, not two. This used to ask `hasRow` and then write
 				// through a function that would have minted the row had the answer
 				// changed in between; `updateRow` answers whether it found one, so
 				// the check and the write are the same read.
-				let written = false;
-				commit(() => {
-					written = updateRow(root, rowId, fields);
-				});
+				const written = transact(() => updateRow(root, rowId, fields));
 				if (!written) return StoreError.RowAbsent({ table: tableName, rowId });
 				return Ok(undefined);
 			},
 			delete(rowId: string): void {
-				assertUsable();
 				// One removal (ADR-0295). Taking the row's nested type off the root
 				// takes its type fields with it, so there is no second address to
 				// retire and nothing to compose this write with.
-				commit(() => {
+				transact(() => {
 					deleteRow(root, rowId);
 				});
 			},
@@ -1166,13 +1089,59 @@ function createStoreEngine(
 
 	const base: DataStoreBase = {
 		transact,
+		/**
+		 * Everything this application has stored, before its declaration reads
+		 * it (ADR-0267).
+		 *
+		 * The one faithful read, and it is on the data rather than on a table on
+		 * purpose. A table handle is the application's lens: `get` and `list`
+		 * answer what THIS release can read, and both narrow to the declared
+		 * fields, so a key an older release wrote and this one no longer names
+		 * is unreachable through them. That narrowing is correct for an
+		 * application and correct for any index a follower rebuilds on demand.
+		 * It is wrong for an artifact: an export that drops a field is data
+		 * loss, and the caller that must not lose one is asking about the store,
+		 * not a table.
+		 *
+		 * So it enumerates the roots the document actually holds rather than the
+		 * tables the declaration names, and it hands back stored values untyped.
+		 * Untyped is the point: reaching for this means giving up the lens, and
+		 * the absent row types are what makes that visible at the call site.
+		 *
+		 * A row's type content is not here, and cannot be: a nested `Y.Type` is
+		 * not a JSON value, so no faithful read of stored VALUES can carry one.
+		 * An export reaches it through `content` and the table's own file codec
+		 * (ADR-0296).
+		 */
 		stored(): StoredData {
 			assertUsable();
-			return stored();
+			const tables = new Map<string, ReadonlyMap<string, JsonObject>>();
+			for (const tableName of storedTableNames(database)) {
+				tables.set(tableName, rowsOf(tableName));
+			}
+			return { tables, kv: storedKv() };
 		},
+		/**
+		 * One row as the exporter reads it: faithful scalars, live types.
+		 *
+		 * Deliberately not through a table handle. `readRow` returns every
+		 * stored key including ones this release no longer declares, and no
+		 * conformance runs, so a row the lens cannot read still has a file
+		 * (ADR-0267, ADR-0125). The types come from the declaration's names,
+		 * because a type at an undeclared key is unreachable by any codec
+		 * anyway.
+		 */
 		rowFile(tableName: string, rowId: string): Row | undefined {
 			assertUsable();
-			return rowFile(tableName, rowId);
+			const root = tableRoot(database, tableName);
+			const fields = readRow(root, rowId);
+			if (fields === undefined) return undefined;
+			const types = definition.tables.get(tableName)?.types ?? [];
+			return {
+				id: rowId,
+				...fields,
+				...readRowTypes(root, rowId, types),
+			};
 		},
 		onCommitted(listener: () => void): () => void {
 			committedListeners.add(listener);
@@ -1255,7 +1224,7 @@ function createStoreEngine(
 				// work and changes nothing.
 				const bytes =
 					entries.length === 1
-						? (entries[0] as OutboxEntry).bytes
+						? last.bytes
 						: new Uint8Array(
 								Y.mergeUpdatesV2(
 									entries.map((entry) =>
