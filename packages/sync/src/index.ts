@@ -19,6 +19,7 @@ export {
 	parseSubprotocols,
 } from './auth-subprotocol';
 export {
-	DATA_ID,
-	STORE_SYNC_ROUTE,
-} from './store-route.js';
+	GENERATIONS_ROUTE,
+	LOG_POSITION_HEADER,
+} from './generations-route.js';
+export { DATA_ID, STORE_SYNC_ROUTE } from './store-route.js';

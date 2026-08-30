@@ -33,26 +33,27 @@ export const STORE_SYNC_ROUTE = {
 	/**
 	 * Where this replica connects, asking for everything after `cursor`.
 	 *
-	 * The cursor is the replica's own durably applied position within the
-	 * document it declares, so a reconnect is a catch-up rather than a fresh
-	 * start (ADR-0222). `document` is the membership fact (ADR-0231): the
-	 * opaque identity of the authority document this replica's state belongs
-	 * to, stamped at first entanglement. Equality is the sole condition for
-	 * syncing an existing local document; absent is servable only with a
-	 * cursor of zero, because a replica with nothing to resume either has no
-	 * local document or holds one that grew alone.
+	 * The cursor is the replica's own durably applied position in this
+	 * generation's log, so a reconnect is a catch-up rather than a fresh start
+	 * (ADR-0222, ADR-0298).
+	 *
+	 * `generation` is the exact database being synced, and it is what the
+	 * `document` membership stamp used to be (ADR-0231, retired by ADR-0292).
+	 * A generation is created once, complete, and never mutated in place, so
+	 * the address IS the identity: a replica addressed at generation 3 cannot
+	 * be holding some other history's bytes, and there is nothing left to
+	 * compare on a dial. What used to be an opaque stamp negotiated at first
+	 * entanglement is now a number the page already had in its URL.
 	 */
 	url(
 		baseURL: string,
-		params: { dataId: string; cursor: number; document?: string },
+		params: { dataId: string; generation: number; cursor: number },
 	): string {
 		const url = new URL(`${stripTrailing(baseURL)}${STORE_SYNC_ROUTE.pattern}`);
 		url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
 		url.searchParams.set('dataId', params.dataId);
+		url.searchParams.set('generation', String(params.generation));
 		url.searchParams.set('cursor', String(params.cursor));
-		if (params.document !== undefined) {
-			url.searchParams.set('document', params.document);
-		}
 		return url.toString();
 	},
 } as const;
