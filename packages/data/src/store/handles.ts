@@ -213,34 +213,12 @@ export type TableHandle<
 	watch(type: Y.Type, listener: () => void): () => void;
 };
 
-/**
- * One table, with its own declaration's row and create-input types.
- *
- * Written out rather than derived as `Omit<TableHandle, ...> & {...}`. The
- * subtraction is what pushed a typed view past TypeScript's instantiation depth
- * limit (`TS2589`), because `RowOf` already instantiates a field descriptor per
- * field and `Omit` re-maps every remaining member on top of that.
- */
-export type TypedTableHandle<TFields> =
-	TableIo<TFields> extends {
-		row: infer TRow;
-		input: infer TInput;
-	}
-		? TableHandle<TRow, TInput, Partial<ScalarsOf<TFields>>>
-		: never;
-
-/**
- * One table's read and write shapes, from ONE descriptor instantiation.
- *
- * `RowOf` and `NewRowOf` each instantiate the field definitions on their own,
- * so naming both across every verb of every table was enough to exceed
- * TypeScript's depth limit. Resolving the pair once and reusing the two halves
- * keeps the surface identical and the instantiation count at one per table.
- */
-type TableIo<TFields> = {
-	row: RowOf<TFields>;
-	input: NewRowOf<TFields>;
-};
+/** One table, with its own declaration's row and create-input types. */
+export type TypedTableHandle<TFields> = TableHandle<
+	RowOf<TFields>,
+	NewRowOf<TFields>,
+	Partial<ScalarsOf<TFields>>
+>;
 
 /**
  * The typed view of one store through its data definition.
