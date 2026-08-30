@@ -100,12 +100,6 @@ export function defineTable<
 	};
 }
 
-export function defineKv<const TFields extends FieldMap>(
-	fields: TFields & ValidateFields<TFields>,
-): TFields {
-	return fields as TFields;
-}
-
 export function defineData<const TData extends DataDefinition>(
 	data: TData & ValidateDefinition<TData>,
 ): TData {

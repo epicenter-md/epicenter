@@ -37,5 +37,5 @@ export {
 	type ScalarsOf,
 	type TableDeclaration,
 } from './declaration.js';
-export { defineData, defineKv, defineTable } from './define.js';
+export { defineData, defineTable } from './define.js';
 export * from './json.js';

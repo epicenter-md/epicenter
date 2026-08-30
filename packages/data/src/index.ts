@@ -49,22 +49,21 @@ export type {
 export {
 	DataDefinitionParseError,
 	defineData,
-	defineKv,
 	defineTable,
 	field,
 	parseData,
 } from './definition/index.js';
 export type { PersistenceCapability } from './store/persistence.js';
-export {
-	type AccountData,
-	type AccountDocument,
-	type ApplyFailedError,
-	type BrowserData,
-	type DataView,
-	type LocalData,
-	type LocalDocument,
-	type NonconformingRow,
-	type Row,
-	type RowAbsentError,
-	type TypedTableHandle,
+export type {
+	AccountData,
+	AccountDocument,
+	ApplyFailedError,
+	BrowserData,
+	DataView,
+	LocalData,
+	LocalDocument,
+	NonconformingRow,
+	Row,
+	RowAbsentError,
+	TypedTableHandle,
 } from './store/store.js';
