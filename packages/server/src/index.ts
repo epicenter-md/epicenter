@@ -90,8 +90,7 @@ export { GenerationsLedger } from './store-sync/generations.js';
 export {
 	type GenerationsLedgerStub,
 	mountStoreSyncApp,
-	type ResolveGenerationsLedger,
-	type ResolveStoreAuthority,
+	type ResolveStore,
 	type StoreAuthorityStub,
 } from './store-sync/mount.js';
 // Public Hono context types: the portable `Env` (both deployments), the cloud's

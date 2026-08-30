@@ -134,25 +134,21 @@ mountSessionApp(app, { auth: cookieOrBearer });
 // nothing it stores.
 mountStoreSyncApp(app, {
 	resolveBearerPrincipal: resolveRequestOAuthPrincipal,
-	resolveAuthority: (env, name) => {
-		const authorityNamespace = (
-			env as Cloudflare.Env & {
-				STORE_AUTHORITY: DurableObjectNamespace<StoreAuthority>;
-			}
-		).STORE_AUTHORITY;
-		return authorityNamespace.get(
-			authorityNamespace.idFromName(name),
-		) as unknown as {
-			fetch(request: Request): Promise<Response>;
+	resolveStore: (env) => {
+		const bindings = env as Cloudflare.Env & {
+			STORE_AUTHORITY: DurableObjectNamespace<StoreAuthority>;
+			GENERATIONS_LEDGER: DurableObjectNamespace<GenerationsLedger>;
 		};
-	},
-	resolveLedger: (env, name) => {
-		const ledgerNamespace = (
-			env as Cloudflare.Env & {
-				GENERATIONS_LEDGER: DurableObjectNamespace<GenerationsLedger>;
-			}
-		).GENERATIONS_LEDGER;
-		return ledgerNamespace.get(ledgerNamespace.idFromName(name));
+		return {
+			authority: (name) =>
+				bindings.STORE_AUTHORITY.get(
+					bindings.STORE_AUTHORITY.idFromName(name),
+				) as unknown as { fetch(request: Request): Promise<Response> },
+			ledger: (name) =>
+				bindings.GENERATIONS_LEDGER.get(
+					bindings.GENERATIONS_LEDGER.idFromName(name),
+				),
+		};
 	},
 });
 // Content-addressed blob store (supersedes the retired assets surface). v1 is

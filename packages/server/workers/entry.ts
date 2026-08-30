@@ -38,23 +38,21 @@ const resolveTestPrincipal: ResolveBearerPrincipal<Env> = async (
 const app = new Hono<Env>();
 mountStoreSyncApp(app, {
 	resolveBearerPrincipal: resolveTestPrincipal,
-	resolveAuthority: (env, name) => {
-		const authorityNamespace = (
-			env as unknown as { STORE_AUTHORITY: DurableObjectNamespace }
-		).STORE_AUTHORITY;
-		return authorityNamespace.get(
-			authorityNamespace.idFromName(name),
-		) as unknown as {
-			fetch(request: Request): Promise<Response>;
+	resolveStore: (env) => {
+		const bindings = env as unknown as {
+			STORE_AUTHORITY: DurableObjectNamespace;
+			GENERATIONS_LEDGER: DurableObjectNamespace;
 		};
-	},
-	resolveLedger: (env, name) => {
-		const ledgerNamespace = (
-			env as unknown as { GENERATIONS_LEDGER: DurableObjectNamespace }
-		).GENERATIONS_LEDGER;
-		return ledgerNamespace.get(
-			ledgerNamespace.idFromName(name),
-		) as unknown as GenerationsLedgerStub;
+		return {
+			authority: (name) =>
+				bindings.STORE_AUTHORITY.get(
+					bindings.STORE_AUTHORITY.idFromName(name),
+				) as unknown as { fetch(request: Request): Promise<Response> },
+			ledger: (name) =>
+				bindings.GENERATIONS_LEDGER.get(
+					bindings.GENERATIONS_LEDGER.idFromName(name),
+				) as unknown as GenerationsLedgerStub,
+		};
 	},
 });
 

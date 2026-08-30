@@ -40,12 +40,6 @@ export type StoreAuthorityStub = {
 	fetch(request: Request): Promise<Response>;
 };
 
-/** How this runtime finds the authority for one generation. */
-export type ResolveStoreAuthority = (
-	env: ServerBindings,
-	name: string,
-) => StoreAuthorityStub;
-
 /**
  * The ledger for one (principal, dataId): which generations exist.
  *
@@ -61,11 +55,19 @@ export type GenerationsLedgerStub = {
 	list(): number[] | Promise<number[]>;
 };
 
-/** How this runtime finds the ledger for one (principal, dataId). */
-export type ResolveGenerationsLedger = (
-	env: ServerBindings,
-	name: string,
-) => GenerationsLedgerStub;
+/**
+ * How this runtime reaches its store backends, by name.
+ *
+ * One resolver rather than two, because both halves answer the same question
+ * for the same deployment: the Cloud Worker addresses a Durable Object by
+ * name, and a Bun instance will resolve a per-name in-process object when it
+ * exists. Splitting them meant every deployment wrote the same lookup twice
+ * and `mountStoreSyncApp` grew a parameter per backend the store later holds.
+ */
+export type ResolveStore = (env: ServerBindings) => {
+	authority(name: string): StoreAuthorityStub;
+	ledger(name: string): GenerationsLedgerStub;
+};
 
 function requireStoreBearer<E extends Env>(
 	resolveBearerPrincipal: ResolveBearerPrincipal<E>,
@@ -105,17 +107,16 @@ function parseGeneration(value: string | null): number | undefined {
 /**
  * Mount the store transport on a deployment's server app.
  *
- * `resolveAuthority` binds this runtime's backend from the per-request env. The
- * Cloud Worker addresses a Durable Object by name; nothing else implements one
- * yet, and a Bun instance will resolve a per-name in-process authority when it
+ * `resolveStore` binds this runtime's backends from the per-request env. The
+ * Cloud Worker addresses Durable Objects by name; nothing else implements one
+ * yet, and a Bun instance will resolve per-name in-process objects when it
  * does.
  */
 export function mountStoreSyncApp<E extends Env = Env>(
 	app: Hono<E>,
 	opts: {
 		resolveBearerPrincipal: ResolveBearerPrincipal<E>;
-		resolveAuthority: ResolveStoreAuthority;
-		resolveLedger: ResolveGenerationsLedger;
+		resolveStore: ResolveStore;
 	},
 ): void {
 	app.use(
@@ -150,7 +151,6 @@ export function mountStoreSyncApp<E extends Env = Env>(
 					status: 400,
 				});
 			}
-			const name = storeAuthorityName(c.var.principal.id, dataId, generation);
 			const offered = parseSubprotocols(
 				c.req.header('sec-websocket-protocol') ?? null,
 			);
@@ -160,8 +160,19 @@ export function mountStoreSyncApp<E extends Env = Env>(
 					{ status: 400 },
 				);
 			}
+			// No ledger check here, and the asymmetry with the bootstrap GET below
+			// is deliberate rather than an oversight. That route SERVES bytes, so
+			// it must refuse a generation whose import never finished; this one
+			// only opens a log. A client cannot reach it at a number that does not
+			// exist anyway, because `openDatabase` dials only after a cache hit or
+			// a successful bootstrap, and the bootstrap is gated. What a
+			// hand-written request could do is append to an authority object under
+			// a name nobody admitted, inside its own principal's partition, which
+			// is junk it pays for rather than anything anyone else can see.
+			// Checking would put a ledger round trip on every socket open.
 			const response = await opts
-				.resolveAuthority(c.env, name)
+				.resolveStore(c.env)
+				.authority(storeAuthorityName(c.var.principal.id, dataId, generation))
 				.fetch(c.req.raw);
 			if (response.status !== 101) return response;
 			return new Response(response.body, {
@@ -198,10 +209,9 @@ export function mountStoreSyncApp<E extends Env = Env>(
 			if (dataId === undefined) {
 				return c.text('dataId must be a data definition id', 400);
 			}
-			const ledger = opts.resolveLedger(
-				c.env,
-				storeCollectionName(c.var.principal.id, dataId),
-			);
+			const ledger = opts
+				.resolveStore(c.env)
+				.ledger(storeCollectionName(c.var.principal.id, dataId));
 			return c.json({ generations: await ledger.list() });
 		},
 	);
@@ -217,20 +227,17 @@ export function mountStoreSyncApp<E extends Env = Env>(
 			if (dataId === undefined) {
 				return c.text('dataId must be a data definition id', 400);
 			}
-			const ledger = opts.resolveLedger(
-				c.env,
-				storeCollectionName(c.var.principal.id, dataId),
-			);
+			const ledger = opts
+				.resolveStore(c.env)
+				.ledger(storeCollectionName(c.var.principal.id, dataId));
 			// Allocate, store, admit, in that order (ADR-0293). The number is
 			// durable before anything is written under it, so it is never reused;
 			// the ledger row is last, so a crash leaves an object nothing
 			// addresses rather than a generation somebody can open half-written.
 			const generation = await ledger.allocate();
 			const stored = await opts
-				.resolveAuthority(
-					c.env,
-					storeAuthorityName(c.var.principal.id, dataId, generation),
-				)
+				.resolveStore(c.env)
+				.authority(storeAuthorityName(c.var.principal.id, dataId, generation))
 				.fetch(
 					new Request(new URL(c.req.url), {
 						method: 'POST',
@@ -263,18 +270,15 @@ export function mountStoreSyncApp<E extends Env = Env>(
 			// The ledger is the gate, not the authority's storage. An object
 			// holding bytes whose import never finished is addressable and must
 			// not be served: a generation exists if and only if it is listed.
-			const ledger = opts.resolveLedger(
-				c.env,
-				storeCollectionName(c.var.principal.id, dataId),
-			);
+			const ledger = opts
+				.resolveStore(c.env)
+				.ledger(storeCollectionName(c.var.principal.id, dataId));
 			if (!(await ledger.holds(generation))) {
 				return c.text('no such generation', 404);
 			}
 			return opts
-				.resolveAuthority(
-					c.env,
-					storeAuthorityName(c.var.principal.id, dataId, generation),
-				)
+				.resolveStore(c.env)
+				.authority(storeAuthorityName(c.var.principal.id, dataId, generation))
 				.fetch(new Request(new URL(c.req.url), { method: 'GET' }));
 		},
 	);
