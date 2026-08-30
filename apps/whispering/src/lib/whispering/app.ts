@@ -1,10 +1,20 @@
 import type { AuthClient } from '@epicenter/auth';
+import { readArtifact } from '@epicenter/data/artifact';
+
+/** The principal half of an account address, as the auth client states it. */
+type PrincipalId = Extract<
+	AuthClient['state'],
+	{ principalId: unknown }
+>['principalId'];
+
 import type { AccountStore, DataOf } from '@epicenter/data';
 import {
 	type BrowserAccountStore,
+	GENERATIONS_ROUTE,
+	importGeneration,
 	type LocalStore,
-	openAccount,
-	openLocal,
+	listLocalGenerations,
+	openDatabase,
 } from '@epicenter/data/browser';
 import {
 	attachStoreSync,
@@ -181,13 +191,15 @@ export async function openWhisperingApp(
 ): Promise<WhisperingApp> {
 	signal?.throwIfAborted();
 	// An auth state carrying no usable principal id is refused inside
-	// `openAccount` as `Unaddressable` rather than guessed at.
+	// `openDatabase` as `Unaddressable` rather than guessed at.
 	const boot =
 		auth.state.status === 'signed-out'
 			? undefined
 			: { principalId: auth.state.principalId };
 
-	const opened = await openLocal(whisperingDefinition);
+	const opened = await openDatabase(whisperingDefinition, {
+		generation: await resolveLocalGeneration(),
+	});
 	if (opened.error !== null) throw opened.error;
 	const localData = opened.data;
 
@@ -257,14 +269,21 @@ async function openAccountRuntime({
 	signal,
 }: {
 	auth: AuthClient;
-	/** Derived from `openAccount` itself: exactly what an address needs. */
-	principalId: Parameters<typeof openAccount>[1]['principalId'];
+	/** Exactly what an account address needs, beside the server URL. */
+	principalId: PrincipalId;
 	reportBackgroundError(cause: unknown): void;
 	signal?: AbortSignal;
 }): Promise<AccountRuntime> {
-	const opened = await openAccount(whisperingDefinition, {
+	const account = {
 		baseURL: auth.connection.baseURL,
 		principalId,
+		fetch: (input: Request | string | URL, init?: RequestInit) =>
+			auth.fetch(input, init),
+	};
+	const generation = await resolveAccountGeneration(auth, principalId);
+	const opened = await openDatabase(whisperingDefinition, {
+		generation,
+		account,
 	});
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
@@ -272,45 +291,16 @@ async function openAccountRuntime({
 	let sync: SyncConnection | undefined;
 	try {
 		signal?.throwIfAborted();
-		/**
-		 * The one adoption path (ADR-0231): discard the replica's store whole and
-		 * reload. What it can reach is this generation's own account replica; the
-		 * device document holding this machine's settings is a database it cannot
-		 * name, so those survive.
-		 */
-		const adoptCurrentDocument = async (): Promise<void> => {
-			const discarded = await data.store.discard();
-			if (discarded.error !== null) reportBackgroundError(discarded.error);
-			location.reload();
-		};
-		// A permanent denial is latched: it can land before the gate starts
-		// waiting (the flag answers "already?") or while it waits.
-		let denied = false;
-		let noticeDenied: (() => void) | undefined;
 		const connection = attachStoreSync({
 			store: data.store,
 			dataId: whisperingDefinition.id,
+			generation,
 			transport: {
 				openWebSocket: (url) => auth.openWebSocket(url),
-			},
-			onSuperseded: () => void adoptCurrentDocument(),
-			onDenied: () => {
-				denied = true;
-				noticeDenied?.();
 			},
 			onTransportError: reportBackgroundError,
 		});
 		sync = connection;
-
-		await waitUntilReplicaIsBound({
-			store: data.store,
-			signal,
-			wasDenied: () => denied,
-			onDenied: (notice) => {
-				noticeDenied = notice;
-				return () => (noticeDenied = undefined);
-			},
-		});
 
 		return {
 			data,
@@ -331,56 +321,71 @@ async function openAccountRuntime({
 }
 
 /**
- * Resolve once this replica is bound to an authority document (ADR-0231).
+ * The generation this device opens locally, creating one if it holds none.
  *
- * A correctness gate, not a loading delay: a fresh replica must not take
- * recordings that a later bootstrap would have to discard.
+ * A generation is an address (ADR-0292) and importing is the only way one comes
+ * into being (ADR-0293), so "a new local database here" is an import of an
+ * empty folder. Newest rather than latest-by-time: the number IS the order.
  */
-function waitUntilReplicaIsBound({
-	store,
-	signal,
-	wasDenied,
-	onDenied,
-}: {
-	store: AccountStore;
-	signal?: AbortSignal;
-	/** Whether the dial was already permanently denied before the wait began. */
-	wasDenied: () => boolean;
-	/** Hear a permanent denial that lands while waiting; returns unsubscribe. */
-	onDenied: (notice: () => void) => () => void;
-}): Promise<void> {
-	const bound = (): boolean => store.sync.get().document !== undefined;
-	if (bound()) return Promise.resolve();
-	return new Promise<void>((resolve, reject) => {
-		function cleanup(): void {
-			stopBound();
-			stopDenied();
-			signal?.removeEventListener('abort', onAbort);
-		}
-		function finish(): void {
-			cleanup();
-			resolve();
-		}
-		function unavailable(): void {
-			cleanup();
-			reject(
-				new Error(
-					'Whispering is signed in, but its credential was refused before the first download. Sign in again to load your recordings.',
-				),
-			);
-		}
-		function onAbort(): void {
-			cleanup();
-			reject(signal?.reason);
-		}
-		const stopBound = store.sync.subscribe(() => {
-			if (bound()) finish();
-		});
-		const stopDenied = onDenied(unavailable);
-		signal?.addEventListener('abort', onAbort, { once: true });
-		if (bound()) finish();
-		else if (wasDenied()) unavailable();
+async function resolveLocalGeneration(): Promise<number> {
+	const held = await listLocalGenerations(whisperingDefinition.id);
+	const newest = held.at(-1);
+	if (newest !== undefined) return newest;
+	const state = readArtifact(new Map(), whisperingDefinition);
+	if (state.error !== null) throw state.error;
+	const created = await importGeneration(whisperingDefinition, state.data);
+	if (created.error !== null) throw created.error;
+	return created.data.generation;
+}
+
+/**
+ * The account generation this device opens: its own newest copy, or the
+ * account's newest.
+ *
+ * Never creates one. An account generation is the account's, and a device
+ * arriving second must not invent a history for it.
+ */
+async function resolveAccountGeneration(
+	auth: AuthClient,
+	principalId: PrincipalId,
+): Promise<number> {
+	const held = await listLocalGenerations(whisperingDefinition.id, {
+		baseURL: auth.connection.baseURL,
+		principalId,
 	});
+	const newest = held.at(-1);
+	if (newest !== undefined) return newest;
+	const listed = await auth.fetch(
+		GENERATIONS_ROUTE.collection(
+			auth.connection.baseURL,
+			whisperingDefinition.id,
+		),
+	);
+	if (!listed.ok) {
+		throw new Error(
+			`Whispering could not ask your account which recordings it holds (${listed.status}).`,
+		);
+	}
+	const { generations } = (await listed.json()) as { generations: number[] };
+	const latest = generations.at(-1);
+	if (latest !== undefined) return latest;
+	// An EMPTY list is a first run, not a refusal, and the distinction is the
+	// listing itself: a failed one already threw above. Creating the account's
+	// first generation is an import of an empty folder (ADR-0293), which is the
+	// only way one ever comes into being; what a device must not do is invent
+	// one because it could not SEE what the account has.
+	const state = readArtifact(new Map(), whisperingDefinition);
+	if (state.error !== null) throw state.error;
+	const created = await importGeneration(whisperingDefinition, state.data, {
+		account: {
+			baseURL: auth.connection.baseURL,
+			principalId,
+			fetch: (input: Request | string | URL, init?: RequestInit) =>
+				auth.fetch(input, init),
+		},
+	});
+	if (created.error !== null) throw created.error;
+	return created.data.generation;
 }
 
 type SettingKey = keyof WhisperingSettingValues;

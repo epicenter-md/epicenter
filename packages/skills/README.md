@@ -5,10 +5,12 @@ services over an already opened handle. The package does not open storage,
 construct browser or Node runtimes, expose Yjs GUIDs, or register actions.
 
 ```ts
-import { openLocal } from '@epicenter/data/browser';
+import { openDatabase } from '@epicenter/data/browser';
 import { skillsDefinition } from '@epicenter/skills';
 
-const { data: skills, error } = await openLocal(skillsDefinition);
+const { data: skills, error } = await openDatabase(skillsDefinition, {
+	generation,
+});
 if (error !== null) return handle(error);
 const { rows } = skills.tables.skills.list();
 ```
@@ -21,18 +23,17 @@ ids. A
 SKILL.md `metadata.id` is stored separately as `sourceId`, so filesystem
 round-trips can match records without forging canonical identity.
 
-Each skill and reference row owns one document. The skill document stores its
-instructions; the reference document stores its Markdown body:
+Each skill and reference row carries a `content` rich field. A skill's holds its
+instructions; a reference's holds its Markdown body:
 
 ```ts
-await using instructions = await skills.skills.openDocument(skill.id);
-const content = instructions.get('content');
-instructions.transact(() => content.insert(0, '# Instructions'));
-await instructions.whenDurable();
+const content = skills.skills.content(skill.id)?.types.content;
+content?.insert(0, ['# Instructions']);
 ```
 
-The runtime derives persistence and synchronization from the row address.
-Callers pass the structural row id they already own.
+The field is minted with its row and lives in the same document, so there is
+nothing to open, await, or dispose. Callers pass the structural row id they
+already own.
 
 Catalog reads return nonconforming diagnostics with the preserved canonical
 rows; they never heal user data during reads. A developer repairs a row with

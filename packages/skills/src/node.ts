@@ -142,7 +142,7 @@ export async function importSkillsFromDisk({
 				'utf8',
 			);
 		}
-		await writeDocumentText(data.tables.skills, skill.id, read.instructions);
+		writeContent(data.tables.skills, skill.id, read.instructions);
 
 		const referencesPath = join(read.skillPath, 'references');
 		let referenceFiles: string[] = [];
@@ -175,11 +175,7 @@ export async function importSkillsFromDisk({
 					referenceId = data.tables.skillReferences.create(fields).id;
 				}
 				referencesByOwnerAndPath.set(key, { id: referenceId });
-				await writeDocumentText(
-					data.tables.skillReferences,
-					referenceId,
-					content,
-				);
+				writeContent(data.tables.skillReferences, referenceId, content);
 			}),
 		);
 	}
@@ -211,10 +207,7 @@ export async function exportSkillsToDisk({
 			await mkdir(skillDir, { recursive: true });
 			await writeFile(
 				join(skillDir, 'SKILL.md'),
-				serializeSkillMd(
-					skill,
-					await readDocumentText(data.tables.skills, skill.id),
-				),
+				serializeSkillMd(skill, readContent(data.tables.skills, skill.id)),
 				'utf8',
 			);
 			const references = referencesScan.rows.filter(
@@ -227,7 +220,7 @@ export async function exportSkillsToDisk({
 				references.map(async (reference) =>
 					writeFile(
 						join(referencesDir, reference.path),
-						await readDocumentText(data.tables.skillReferences, reference.id),
+						readContent(data.tables.skillReferences, reference.id),
 						'utf8',
 					),
 				),
@@ -270,29 +263,16 @@ export async function exportSkillsToDisk({
  * A row that vanished between the read and here writes nothing rather than
  * reviving an address that no longer holds a skill.
  */
-async function writeDocumentText(
-	table: SkillsTable,
-	rowId: string,
-	value: string,
-): Promise<void> {
-	const opened = await table.openDocument(rowId);
-	if (opened.error !== null) throw opened.error;
-	using handle = opened.data;
-	if (handle === undefined) return;
-	const content = handle.get(SKILL_CONTENT);
+function writeContent(table: SkillsTable, rowId: string, value: string): void {
+	const content = table.content(rowId)?.types[SKILL_CONTENT];
+	if (content === undefined) return;
 	content.applyDelta(
 		content.change.delete(content.length).insert(value) as never,
 	);
 }
 
-async function readDocumentText(
-	table: SkillsTable,
-	rowId: string,
-): Promise<string> {
-	const opened = await table.openDocument(rowId);
-	if (opened.error !== null) throw opened.error;
-	using handle = opened.data;
-	return handle?.get(SKILL_CONTENT).toString() ?? '';
+function readContent(table: SkillsTable, rowId: string): string {
+	return table.content(rowId)?.types[SKILL_CONTENT].toString() ?? '';
 }
 
 function referenceKey(skillId: string, path: string): string {

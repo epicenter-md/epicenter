@@ -22,6 +22,7 @@ import 'fake-indexeddb/auto';
 import { installTestLocks } from '@epicenter/data/test-locks';
 
 installTestLocks();
+
 import { expect, test } from 'bun:test';
 import { InstantString } from '@epicenter/field';
 
@@ -125,6 +126,34 @@ function createFakeAuth({
 	const unused = () => {
 		throw new Error('not part of the app boot');
 	};
+	/**
+	 * The generations collection, in memory, per fake account.
+	 *
+	 * The one HTTP surface a boot touches (ADR-0292): which generations exist,
+	 * and one whole state to bootstrap from. Held per client so two fake
+	 * accounts are two accounts.
+	 */
+	const held = new Map<number, Uint8Array>();
+	const generations = async (
+		input: Request | string | URL,
+		init?: RequestInit,
+	): Promise<Response> => {
+		const url = new URL(String(input instanceof Request ? input.url : input));
+		const item = /\/generations\/(\d+)$/.exec(url.pathname);
+		if (init?.method === 'POST') {
+			const generation = held.size + 1;
+			held.set(generation, new Uint8Array(init.body as ArrayBuffer));
+			return Response.json({ generation, position: 1 });
+		}
+		if (item !== null) {
+			const bytes = held.get(Number(item[1]));
+			if (bytes === undefined) return new Response(null, { status: 404 });
+			return new Response(bytes as unknown as BodyInit, {
+				headers: { 'epicenter-log-position': '1' },
+			});
+		}
+		return Response.json({ generations: [...held.keys()].sort() });
+	};
 	return {
 		state: status === 'signed-out' ? { status } : { status, principalId },
 		connection: {
@@ -135,24 +164,27 @@ function createFakeAuth({
 		onStateChange: () => () => undefined,
 		startSignIn: unused,
 		signOut: unused,
-		fetch: unused,
+		fetch: generations,
 		getProfile: unused,
 		openWebSocket,
 		[Symbol.dispose]: () => undefined,
 	} as unknown as AuthClient;
 }
 
-/** An auth for one account whose every dial completes by announcing a document. */
+/**
+ * An auth for one account whose every dial simply connects.
+ *
+ * There is nothing for a dial to announce any more: a replica used to be
+ * unavailable until the authority named the document it belonged to, and the
+ * generation is in the address now (ADR-0292).
+ */
 function announcingAuth(principalId: string): AuthClient {
 	return createFakeAuth({
 		status: 'signed-in',
 		principalId,
 		openWebSocket: async () => {
 			const fake = createFakeSocket();
-			setTimeout(() => {
-				fake.open();
-				fake.deliver({ kind: 'document', id: `document-for-${principalId}` });
-			}, 0);
+			setTimeout(() => fake.open(), 0);
 			return fake.socket;
 		},
 	});
@@ -191,7 +223,9 @@ test('a signed-out boot opens one document and never dials', async () => {
 	expect(app.recipes.count).toBe(0);
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
-	expect(names).toContain(`epicenter/${whisperingDefinition.id}/device`);
+	expect(names).toContain(
+		`epicenter/v2/${whisperingDefinition.id}/local/gen/1`,
+	);
 	expect(names.some((name) => name?.includes('/account/'))).toBe(false);
 });
 

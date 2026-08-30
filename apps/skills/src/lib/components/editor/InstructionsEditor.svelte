@@ -6,34 +6,17 @@
 	let { skillId }: { skillId: string } = $props();
 	const skills = getSkills();
 
-	// The skill's markdown, opened per skill. The open resolves only after
-	// complete local hydration (ADR-0248), so the editor never binds to a
-	// half-hydrated document. Undefined means the row is gone, which renders
-	// as nothing rather than as an empty file it could then save over.
-	type Opened = Awaited<
-		ReturnType<typeof skills.data.tables.skills.openDocument>
-	>['data'];
-	let opened = $state.raw<Opened | 'loading'>('loading');
-	$effect(() => {
-		let stale = false;
-		opened = 'loading';
-		void skills.data.tables.skills.openDocument(skillId).then((result) => {
-			if (result.error !== null) throw result.error;
-			if (stale) {
-				result.data?.[Symbol.dispose]();
-				return;
-			}
-			opened = result.data;
-		});
-		return () => {
-			stale = true;
-			if (opened !== 'loading') opened?.[Symbol.dispose]();
-		};
-	});
+	// The skill's markdown: a nested type on the row, live on the one document
+	// this store holds (ADR-0295), so nothing loads and there is no
+	// half-hydrated state to bind to. Undefined means the row is gone, which
+	// renders as nothing rather than as an empty file it could then save over.
+	const content = $derived(
+		skills.data.tables.skills.content(skillId)?.types[SKILL_CONTENT],
+	);
 </script>
 
-{#if opened !== 'loading' && opened !== undefined && opened !== null}
+{#if content !== undefined}
 	{#key skillId}
-		<CodeMirrorEditor content={opened.get(SKILL_CONTENT)} />
+		<CodeMirrorEditor {content} />
 	{/key}
 {/if}

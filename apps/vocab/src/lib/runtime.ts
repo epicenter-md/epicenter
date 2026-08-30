@@ -1,10 +1,20 @@
 import type { AuthClient } from '@epicenter/auth';
+import { readArtifact } from '@epicenter/data/artifact';
+
+/** The principal half of an account address, as the auth client states it. */
+type PrincipalId = Extract<
+	AuthClient['state'],
+	{ principalId: unknown }
+>['principalId'];
+
 import type { AccountStore, DataOf } from '@epicenter/data';
 import {
 	type BrowserAccountStore,
+	GENERATIONS_ROUTE,
+	importGeneration,
 	type LocalStore,
-	openAccount,
-	openLocal,
+	listLocalGenerations,
+	openDatabase,
 } from '@epicenter/data/browser';
 import {
 	attachStoreSync,
@@ -96,16 +106,18 @@ export async function openVocabRuntime({
 }: OpenVocabRuntimeOptions): Promise<VocabRuntime> {
 	signal?.throwIfAborted();
 	// The boot snapshot, read once. An auth state carrying no usable principal
-	// id is refused inside `openAccount` as `Unaddressable` rather than guessed
-	// at: a signed-in generation with no account is unavailable, never quietly
-	// the device document.
+	// id is refused inside `openDatabase` as `Unaddressable` rather than
+	// guessed at: a signed-in generation with no account is unavailable, never
+	// quietly the local database.
 	const boot =
 		auth.state.status === 'signed-out'
 			? undefined
 			: { auth, principalId: auth.state.principalId };
 
-	const { data: localData, error: deviceError } =
-		await openLocal(vocabDefinition);
+	const { data: localData, error: deviceError } = await openDatabase(
+		vocabDefinition,
+		{ generation: await resolveLocalGeneration() },
+	);
 	if (deviceError !== null) throw deviceError;
 
 	let account: AccountRuntime | undefined;
@@ -164,13 +176,19 @@ async function openAccountRuntime({
 	signal,
 }: {
 	auth: AuthClient;
-	/** Derived from `openAccount` itself: exactly what an address needs. */
-	principalId: Parameters<typeof openAccount>[1]['principalId'];
+	/** Exactly what an account address needs, beside the server URL. */
+	principalId: PrincipalId;
 	signal?: AbortSignal;
 }): Promise<AccountRuntime> {
-	const opened = await openAccount(vocabDefinition, {
-		baseURL: auth.connection.baseURL,
-		principalId,
+	const generation = await resolveAccountGeneration(auth, principalId);
+	const opened = await openDatabase(vocabDefinition, {
+		generation,
+		account: {
+			baseURL: auth.connection.baseURL,
+			principalId,
+			fetch: (input: Request | string | URL, init?: RequestInit) =>
+				auth.fetch(input, init),
+		},
 	});
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
@@ -178,48 +196,16 @@ async function openAccountRuntime({
 	let sync: SyncConnection | undefined;
 	try {
 		signal?.throwIfAborted();
-		/**
-		 * The one adoption path (ADR-0231): discard the replica's store whole and
-		 * reload. Runs after a confirmed supersession; the fresh boot's ordinary
-		 * join delivers the current document into an empty replica. What it can
-		 * reach is one address, this generation's own account replica. The device
-		 * document is a database this generation never opened for deletion and
-		 * cannot name here, so the settings on it survive.
-		 */
-		const adoptCurrentDocument = async (): Promise<void> => {
-			const discarded = await data.store.discard();
-			if (discarded.error !== null) reportBackgroundError(discarded.error);
-			location.reload();
-		};
-		// A permanent denial is latched: it can land before the gate starts
-		// waiting (the flag answers "already?") or while it waits (the listener
-		// hears "just now").
-		let denied = false;
-		let noticeDenied: (() => void) | undefined;
 		const connection = attachStoreSync({
 			store: data.store,
 			dataId: vocabDefinition.id,
+			generation,
 			transport: {
 				openWebSocket: (url) => auth.openWebSocket(url),
-			},
-			onSuperseded: () => void adoptCurrentDocument(),
-			onDenied: () => {
-				denied = true;
-				noticeDenied?.();
 			},
 			onTransportError: reportBackgroundError,
 		});
 		sync = connection;
-
-		await waitUntilReplicaIsBound({
-			store: data.store,
-			signal,
-			wasDenied: () => denied,
-			onDenied: (notice) => {
-				noticeDenied = notice;
-				return () => (noticeDenied = undefined);
-			},
-		});
 
 		return {
 			data,
@@ -242,65 +228,63 @@ async function openAccountRuntime({
 }
 
 /**
- * Resolve once this replica is bound to an authority document (ADR-0231).
+ * The generation this device opens locally, creating one if it holds none.
  *
- * A correctness gate, not a loading delay: a fresh replica must not take edits
- * that a later bootstrap would have to discard, so a signed-in generation
- * resolves only with a replica that is safe to edit. One already stamped
- * resolves at once. An unbound one waits for the first bootstrap to commit the
- * stamp; if the dial is permanently denied first, this rejects with the honest
- * answer instead, because only an auth change can repair the credential and
- * that change starts the next generation (ADR-0232, ADR-0233). A fresh replica
- * that is offline waits here indefinitely, behind the root boot gate, by
- * decision: a new generation (signing out) is the way back to device-only use.
+ * A generation is an address (ADR-0292) and importing is the only way one comes
+ * into being (ADR-0293), so "a new local database here" is an import of an
+ * empty folder.
  */
-function waitUntilReplicaIsBound({
-	store,
-	signal,
-	wasDenied,
-	onDenied,
-}: {
-	store: AccountStore;
-	signal?: AbortSignal;
-	/** Whether the dial was already permanently denied before the wait began. */
-	wasDenied: () => boolean;
-	/** Hear a permanent denial that lands while waiting; returns unsubscribe. */
-	onDenied: (notice: () => void) => () => void;
-}): Promise<void> {
-	const bound = (): boolean => store.sync.get().document !== undefined;
-	if (bound()) return Promise.resolve();
-	return new Promise<void>((resolve, reject) => {
-		function cleanup(): void {
-			stopBound();
-			stopDenied();
-			signal?.removeEventListener('abort', onAbort);
-		}
-		function finish(): void {
-			cleanup();
-			resolve();
-		}
-		function unavailable(): void {
-			cleanup();
-			reject(
-				new Error(
-					'Vocab is signed in, but its credential was refused before the first download. Sign in again to load it.',
-				),
-			);
-		}
-		function onAbort(): void {
-			cleanup();
-			reject(signal?.reason);
-		}
-		// The stamp is the one fact `sync.get()` reports, so its subscription
-		// is the notification that the replica became bound; denial arrives
-		// through the latch wired at the attach site, which may already have
-		// fired.
-		const stopBound = store.sync.subscribe(() => {
-			if (bound()) finish();
-		});
-		const stopDenied = onDenied(unavailable);
-		signal?.addEventListener('abort', onAbort, { once: true });
-		if (bound()) finish();
-		else if (wasDenied()) unavailable();
+async function resolveLocalGeneration(): Promise<number> {
+	const held = await listLocalGenerations(vocabDefinition.id);
+	const newest = held.at(-1);
+	if (newest !== undefined) return newest;
+	const state = readArtifact(new Map(), vocabDefinition);
+	if (state.error !== null) throw state.error;
+	const created = await importGeneration(vocabDefinition, state.data);
+	if (created.error !== null) throw created.error;
+	return created.data.generation;
+}
+
+/**
+ * The account generation this device opens: its own newest copy, or the
+ * account's newest. Never creates one.
+ */
+async function resolveAccountGeneration(
+	auth: AuthClient,
+	principalId: PrincipalId,
+): Promise<number> {
+	const held = await listLocalGenerations(vocabDefinition.id, {
+		baseURL: auth.connection.baseURL,
+		principalId,
 	});
+	const newest = held.at(-1);
+	if (newest !== undefined) return newest;
+	const listed = await auth.fetch(
+		GENERATIONS_ROUTE.collection(auth.connection.baseURL, vocabDefinition.id),
+	);
+	if (!listed.ok) {
+		throw new Error(
+			`Vocab could not ask your account which entries it holds (${listed.status}).`,
+		);
+	}
+	const { generations } = (await listed.json()) as { generations: number[] };
+	const latest = generations.at(-1);
+	if (latest !== undefined) return latest;
+	// An EMPTY list is a first run, not a refusal, and the distinction is the
+	// listing itself: a failed one already threw above. Creating the account's
+	// first generation is an import of an empty folder (ADR-0293), which is the
+	// only way one ever comes into being; what a device must not do is invent
+	// one because it could not SEE what the account has.
+	const state = readArtifact(new Map(), vocabDefinition);
+	if (state.error !== null) throw state.error;
+	const created = await importGeneration(vocabDefinition, state.data, {
+		account: {
+			baseURL: auth.connection.baseURL,
+			principalId,
+			fetch: (input: Request | string | URL, init?: RequestInit) =>
+				auth.fetch(input, init),
+		},
+	});
+	if (created.error !== null) throw created.error;
+	return created.data.generation;
 }

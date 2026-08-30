@@ -10,7 +10,13 @@
  */
 
 import type { DataOf } from '@epicenter/data';
-import { type LocalStore, openLocal } from '@epicenter/data/browser';
+import { readArtifact } from '@epicenter/data/artifact';
+import {
+	importGeneration,
+	type LocalStore,
+	listLocalGenerations,
+	openDatabase,
+} from '@epicenter/data/browser';
 import { skillsDefinition } from '@epicenter/skills';
 import { createSkillsState } from './state/skills-state.svelte.js';
 
@@ -35,7 +41,9 @@ export async function openSkillsRuntime({
 	signal?: AbortSignal;
 } = {}): Promise<SkillsRuntime> {
 	signal?.throwIfAborted();
-	const opened = await openLocal(skillsDefinition);
+	const opened = await openDatabase(skillsDefinition, {
+		generation: await resolveLocalGeneration(),
+	});
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
 
@@ -57,4 +65,22 @@ export async function openSkillsRuntime({
 		await data[Symbol.asyncDispose]().catch(() => undefined);
 		throw cause;
 	}
+}
+
+/**
+ * The generation this device opens, creating one if it holds none.
+ *
+ * A generation is an address (ADR-0292) and importing is the only way one comes
+ * into being (ADR-0293), so "a new local database here" is an import of an
+ * empty folder.
+ */
+async function resolveLocalGeneration(): Promise<number> {
+	const held = await listLocalGenerations(skillsDefinition.id);
+	const newest = held.at(-1);
+	if (newest !== undefined) return newest;
+	const state = readArtifact(new Map(), skillsDefinition);
+	if (state.error !== null) throw state.error;
+	const created = await importGeneration(skillsDefinition, state.data);
+	if (created.error !== null) throw created.error;
+	return created.data.generation;
 }

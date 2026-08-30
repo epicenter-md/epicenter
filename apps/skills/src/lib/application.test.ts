@@ -18,6 +18,7 @@ import 'fake-indexeddb/auto';
 import { installTestLocks } from '@epicenter/data/test-locks';
 
 installTestLocks();
+
 import { expect, test } from 'bun:test';
 
 // The state module IS reactive state, so the runes are shimmed to their
@@ -47,14 +48,14 @@ async function resetStorage(): Promise<void> {
 	}
 }
 
-test('the runtime opens the device document and nothing else', async () => {
+test('the runtime opens the local document and nothing else', async () => {
 	await resetStorage();
 	await using runtime = await openSkillsRuntime();
 
 	expect(runtime.state.skills).toEqual([]);
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
-	expect(names).toEqual([`epicenter/${skillsDefinition.id}/device`]);
+	expect(names).toEqual([`epicenter/v2/${skillsDefinition.id}/local/gen/1`]);
 });
 
 test('a skill and its instructions survive reopening', async () => {
@@ -63,11 +64,9 @@ test('a skill and its instructions survive reopening', async () => {
 	{
 		await using runtime = await openSkillsRuntime();
 		skillId = runtime.state.createSkill('writing-voice');
-		const opened = await runtime.data.tables.skills.openDocument(skillId);
-		if (opened.error !== null) throw opened.error;
-		using handle = opened.data;
-		if (handle === undefined) throw new Error('the row has no document');
-		const content = handle.get(SKILL_CONTENT);
+		const held = runtime.data.tables.skills.content(skillId);
+		if (held === undefined) throw new Error('the row has no content');
+		const content = held.types[SKILL_CONTENT];
 		content.applyDelta(content.change.insert('Write directly.') as never);
 		// The durable flush is asynchronous, so a reopen must wait for it.
 		await runtime.data.store.persistence.flush();
@@ -78,10 +77,11 @@ test('a skill and its instructions survive reopening', async () => {
 	expect(reopened.state.skills.map(({ name }) => name)).toEqual([
 		'writing-voice',
 	]);
-	const opened = await reopened.data.tables.skills.openDocument(skillId);
-	if (opened.error !== null) throw opened.error;
-	using handle = opened.data;
-	expect(handle?.get(SKILL_CONTENT).toString()).toBe('Write directly.');
+	expect(
+		reopened.data.tables.skills
+			.content(skillId)
+			?.types[SKILL_CONTENT].toString(),
+	).toBe('Write directly.');
 });
 
 test('an aborted boot rejects with the abort', async () => {

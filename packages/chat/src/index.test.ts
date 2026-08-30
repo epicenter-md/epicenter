@@ -10,15 +10,24 @@
 
 import { expect, test } from 'bun:test';
 import type { AgentMessage } from '@epicenter/agent';
-import { defineData } from '@epicenter/data/definition';
+import { defineData, defineTable } from '@epicenter/data/definition';
 import { createMemoryRecord, openMemory } from '@epicenter/data/memory';
 import { InstantString } from '@epicenter/field';
-import { conversationsTable, createAgentMessageStore } from './index.js';
+import {
+	conversationsFile,
+	conversationsTable,
+	createAgentMessageStore,
+} from './index.js';
 
 const testDefinition = defineData({
 	id: 'so.epicenter.chat-test',
 	kv: {},
-	tables: { conversations: { fields: conversationsTable } },
+	tables: {
+		conversations: defineTable({
+			fields: conversationsTable,
+			file: conversationsFile,
+		}),
+	},
 });
 
 const message: AgentMessage = {
@@ -45,11 +54,9 @@ test('the agent store observes writes and survives a restart', async () => {
 			});
 			rowId = created.id;
 
-			const conversation = await db.tables.conversations.openDocument(rowId);
-			if (conversation.error !== null) throw conversation.error;
-			using document = conversation.data;
-			if (document === undefined) throw new Error('the row has no document');
-			using store = createAgentMessageStore(document);
+			const content = db.tables.conversations.content(rowId);
+			if (content === undefined) throw new Error('the row has no content');
+			using store = createAgentMessageStore(content.types.messages);
 			let observations = 0;
 			const unobserve = store.observe(() => observations++);
 			store.set(message.id, message);
@@ -59,11 +66,9 @@ test('the agent store observes writes and survives a restart', async () => {
 
 		const db = await openMemory(testDefinition, record);
 		await using _db = db;
-		const opened = await db.tables.conversations.openDocument(rowId);
-		if (opened.error !== null) throw opened.error;
-		using document = opened.data;
-		if (document === undefined) throw new Error('the row has no document');
-		using store = createAgentMessageStore(document);
+		const content = db.tables.conversations.content(rowId);
+		if (content === undefined) throw new Error('the row has no content');
+		using store = createAgentMessageStore(content.types.messages);
 		expect([...store.entries()]).toEqual([{ key: message.id, val: message }]);
 	} finally {
 		record.close();

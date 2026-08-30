@@ -13,13 +13,16 @@
  * a later import, and it never becomes record identity.
  */
 
-import type { DataView } from '@epicenter/data';
+import type { DataView, RichField } from '@epicenter/data';
 import {
 	defineData,
+	defineTable,
 	field,
+	type JsonValue,
 	jsonValue,
 	type RowOf,
 } from '@epicenter/data/definition';
+import { Ok } from 'wellcrafted/result';
 
 const skillsTable = {
 	sourceId: field.string(),
@@ -40,21 +43,54 @@ const skillsTable = {
 	// Validation-only rather than `string.date.parse`: a parsing form would hand
 	// back a `Date` that could not round-trip through the projection.
 	updatedAt: field.instant(),
+	/** The markdown a person edits: a nested `Y.Type` on the row (ADR-0295). */
+	content: field.type(),
 } as const;
 
 const referencesTable = {
 	skillId: field.string(),
 	path: field.string(),
 	updatedAt: field.instant(),
+	/** The markdown a person edits: a nested `Y.Type` on the row (ADR-0295). */
+	content: field.type(),
 } as const;
+
+/**
+ * The file codec both tables share (ADR-0296).
+ *
+ * One codec, because both tables carry the same one kind of thing: the
+ * markdown is the body and every declared scalar is frontmatter. It is written
+ * once and passed twice rather than being a shape the platform infers, because
+ * the mapping is the table's to own even when two tables happen to agree.
+ */
+const markdownFile = {
+	serialize: ({
+		id: _id,
+		content,
+		...fields
+	}: { id: string; content: RichField } & Record<string, unknown>) => ({
+		data: fields as Record<string, JsonValue>,
+		content: content.toString(),
+	}),
+	deserialize: (
+		file: { data: Record<string, unknown>; content: string },
+		types: { content: RichField },
+	) => {
+		if (file.content !== '') types.content.insert(0, [file.content]);
+		return Ok(file.data as never);
+	},
+};
 
 export const skillsDefinition = defineData({
 	id: 'so.epicenter.skills',
 	title: 'Skills',
 	kv: {},
 	tables: {
-		skills: { fields: skillsTable },
-		skillReferences: { fields: referencesTable },
+		skills: defineTable({ fields: skillsTable, file: markdownFile }),
+		skillReferences: defineTable({
+			fields: referencesTable,
+			file: markdownFile,
+		}),
 	},
 });
 
@@ -65,16 +101,10 @@ export type Skill = RowOf<typeof skillsTable>;
 export type Reference = RowOf<typeof referencesTable>;
 
 /**
- * The root a skill's instructions, or a reference's body, lives at inside that
- * row's own document.
+ * The rich field a skill's instructions, or a reference's body, lives in.
  *
  * One name for both tables, because it is one kind of thing: the markdown a
- * person edits, kept out of the row so it merges per character rather than
- * per write (ADR-0207).
- *
- * One spelling, used at every open. Minting on first use is safe in an
- * independent row document: a top-level root is addressed by its name, so two
- * devices first-opening one skill converge with both writes retained
- * (ADR-0248).
+ * person edits, kept out of the scalar row so it merges per character rather
+ * than per write (ADR-0207). Minted with the row and never again (ADR-0295).
  */
 export const SKILL_CONTENT = 'content';

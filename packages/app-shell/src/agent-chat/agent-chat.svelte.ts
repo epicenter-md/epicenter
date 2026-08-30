@@ -61,7 +61,7 @@ import {
 	createAgentMessageStore,
 } from '@epicenter/chat';
 import { createOpenAiAgentEngine } from '@epicenter/client';
-import type { RowDocumentHandle } from '@epicenter/data';
+import type { RichField } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import { bindAgentConversation } from '@epicenter/svelte';
 import { SvelteMap } from 'svelte/reactivity';
@@ -223,7 +223,7 @@ export function createAgentChatState({
 
 	function createConversationHandle(
 		conversationId: ConversationId,
-		document: RowDocumentHandle,
+		messages: RichField,
 	) {
 		let inputValue = $state('');
 		let dismissedError = $state<string | null>(null);
@@ -255,7 +255,7 @@ export function createAgentChatState({
 		// mid-conversation model switch takes effect on the next answer.
 		const convo = bindAgentConversation(
 			createAgentConversation({
-				store: createAgentMessageStore(document),
+				store: createAgentMessageStore(messages),
 				engine: createOpenAiAgentEngine({
 					// The conversation's model (ADR-0055) is resolved per turn against this
 					// device's connection set (ADR-0059), so a switch lands on the next
@@ -296,9 +296,9 @@ export function createAgentChatState({
 				// Unblock a pending approval so the awaiting loop unwinds, then abort.
 				settleApproval(false);
 				convo[Symbol.dispose]();
-				// Release the conversation's document; the store unloads it once
-				// the last handle closes (ADR-0248).
-				document[Symbol.dispose]();
+				// Nothing to release. The message log is a nested type on the row in
+				// the one document this store holds (ADR-0295), so its lifetime is
+				// the row's and holding it pins nothing.
 			},
 
 			// ── Identity and metadata (from the row) ──
@@ -484,30 +484,17 @@ export function createAgentChatState({
 	 * Mirror the table into the handle registry: open a handle for every row,
 	 * dispose one whose row is gone, and keep a live conversation selected.
 	 */
-	/** Documents whose open is in flight, so a reconcile never double-opens. */
-	const opening = new Set<ConversationId>();
-
-	async function ensureHandle(conversationId: ConversationId): Promise<void> {
+	function ensureHandle(conversationId: ConversationId): void {
 		if (disposed || handles.has(conversationId)) return;
-		if (opening.has(conversationId)) return;
-		opening.add(conversationId);
-		// A load (ADR-0248): the row's document hydrates on demand. Absent means
-		// the row went away between the read and this line rather than that a
-		// conversation lacks somewhere to keep its messages.
-		const { data: document, error } = await table.openDocument(conversationId);
-		opening.delete(conversationId);
-		if (error !== null) {
-			reportBackgroundError(error);
-			return;
-		}
-		if (document === undefined) return;
-		if (disposed || handles.has(conversationId)) {
-			document[Symbol.dispose]();
-			return;
-		}
+		// Nothing loads (ADR-0295): the message log is a nested type on the row in
+		// the document this store already holds. Absent means the row went away
+		// between the read and this line rather than that a conversation lacks
+		// somewhere to keep its messages.
+		const content = table.content(conversationId);
+		if (content === undefined) return;
 		handles.set(
 			conversationId,
-			createConversationHandle(conversationId, document),
+			createConversationHandle(conversationId, content.types.messages),
 		);
 		// The open resolved after the reconcile that requested it, so re-run the
 		// selection rule now that the handle exists.

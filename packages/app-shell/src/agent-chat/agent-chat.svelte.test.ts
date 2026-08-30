@@ -40,7 +40,7 @@ mock.module('@epicenter/client', () => ({
 
 import type { AgentMessage } from '@epicenter/agent';
 import type { Conversation, ConversationsTable } from '@epicenter/chat';
-import type { RowDocumentHandle } from '@epicenter/data';
+import type { RichField } from '@epicenter/data';
 import { Ok } from 'wellcrafted/result';
 import { createAgentChatState } from './agent-chat.svelte.js';
 
@@ -55,14 +55,14 @@ type MessageLog = {
 	texts(): string[];
 };
 
-/** A row document that records writes instead of storing a CRDT. */
-function createFakeDocument(): {
-	document: RowDocumentHandle;
+/** A rich field that records writes instead of storing a CRDT. */
+function createFakeMessages(): {
+	messages: RichField;
 	log: MessageLog;
 } {
 	const messages: AgentMessage[] = [];
 	const handlers = new Set<() => void>();
-	const root = {
+	const field = {
 		setAttr(_key: string, value: AgentMessage) {
 			messages.push(value);
 			for (const handler of handlers) handler();
@@ -72,10 +72,7 @@ function createFakeDocument(): {
 		unobserve: (handler: () => void) => handlers.delete(handler),
 	};
 	return {
-		document: {
-			get: () => root,
-			[Symbol.dispose]() {},
-		} as unknown as RowDocumentHandle,
+		messages: field as unknown as RichField,
 		log: {
 			messages,
 			texts: () =>
@@ -91,10 +88,7 @@ function createFakeDocument(): {
 function createFakeChat() {
 	const rows = new Map<string, Conversation>();
 	const listeners = new Set<() => void>();
-	const documents = new Map<
-		string,
-		{ document: RowDocumentHandle; log: MessageLog }
-	>();
+	const contents = new Map<string, { messages: RichField; log: MessageLog }>();
 	const creates: Conversation[] = [];
 	const updates: { id: string; patch: Partial<Conversation> }[] = [];
 	let nextId = 0;
@@ -104,10 +98,11 @@ function createFakeChat() {
 	};
 
 	const table = {
-		create(fields: Omit<Conversation, 'id'>) {
-			const row = { id: `c${++nextId}`, ...fields };
+		create(fields: Omit<Conversation, 'id' | 'messages'>) {
+			const held = createFakeMessages();
+			const row = { id: `c${++nextId}`, ...fields, messages: held.messages };
 			rows.set(row.id, row);
-			documents.set(row.id, createFakeDocument());
+			contents.set(row.id, held);
 			creates.push(row);
 			announce();
 			return row;
@@ -120,7 +115,7 @@ function createFakeChat() {
 		},
 		delete(id: string) {
 			const existed = rows.delete(id);
-			documents.delete(id);
+			contents.delete(id);
 			announce();
 			return existed;
 		},
@@ -130,7 +125,12 @@ function createFakeChat() {
 		list() {
 			return { rows: [...rows.values()], nonconforming: [] };
 		},
-		openDocument: async (id: string) => Ok(documents.get(id)?.document),
+		content: (id: string) => {
+			const held = contents.get(id);
+			return held === undefined
+				? undefined
+				: { types: { messages: held.messages }, subscribe: () => () => {} };
+		},
 		subscribe(listener: () => void) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
@@ -159,9 +159,9 @@ function createFakeChat() {
 		rows,
 		/** The message log for one conversation, which must already exist. */
 		document(id: string): MessageLog {
-			const opened = documents.get(id);
-			if (!opened) throw new Error(`No document was opened for ${id}`);
-			return opened.log;
+			const held = contents.get(id);
+			if (!held) throw new Error(`No conversation exists at ${id}`);
+			return held.log;
 		},
 	};
 }
@@ -198,6 +198,7 @@ test('a blank conversation is unchanged: placeholder title, no opening turn', as
 			model: DEFAULT_MODEL,
 			createdAt: expect.any(String),
 			updatedAt: expect.any(String),
+			messages: expect.anything(),
 		},
 	]);
 	expect(document(id).messages).toEqual([]);

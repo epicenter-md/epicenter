@@ -56,15 +56,10 @@ function openSkills(record: MemoryRecord) {
 	return openMemory(skillsDefinition, record);
 }
 
-async function readInstructions(
-	data: SkillsData,
-	skillId: string,
-): Promise<string> {
-	const opened = await data.tables.skills.openDocument(skillId);
-	if (opened.error !== null) throw opened.error;
-	using handle = opened.data;
-	if (handle === undefined) throw new Error(`Skill '${skillId}' has no row`);
-	return handle.get(SKILL_CONTENT).toString();
+function readInstructions(data: SkillsData, skillId: string): string {
+	const content = data.tables.skills.content(skillId);
+	if (content === undefined) throw new Error(`Skill '${skillId}' has no row`);
+	return content.types[SKILL_CONTENT].toString();
 }
 
 test('a stricter Skills workspace exposes nonconformance until an update repairs it', async () => {
@@ -136,11 +131,9 @@ test("a skill's instructions live under its own row id", async () => {
 				updatedAt: InstantString.now(),
 			});
 			writtenTo = written.id;
-			const opened = await data.tables.skills.openDocument(writtenTo);
-			if (opened.error !== null) throw opened.error;
-			using handle = opened.data;
-			if (handle === undefined) throw new Error('the row has no document');
-			const content = handle.get(SKILL_CONTENT);
+			const held = data.tables.skills.content(writtenTo);
+			if (held === undefined) throw new Error('the row has no content');
+			const content = held.types[SKILL_CONTENT];
 			content.applyDelta(content.change.insert('Keep it concise.') as never);
 
 			const other = data.tables.skills.create({
@@ -153,14 +146,12 @@ test("a skill's instructions live under its own row id", async () => {
 				allowedTools: null,
 				updatedAt: InstantString.now(),
 			});
-			expect(await readInstructions(data, other.id)).toBe('');
+			expect(readInstructions(data, other.id)).toBe('');
 		}
 
 		const reopened = await openSkills(record);
 		await using _reopened = reopened;
-		expect(await readInstructions(reopened, writtenTo)).toBe(
-			'Keep it concise.',
-		);
+		expect(readInstructions(reopened, writtenTo)).toBe('Keep it concise.');
 	} finally {
 		record.close();
 	}

@@ -17,12 +17,12 @@
 		keymap,
 		placeholder,
 	} from '@codemirror/view';
-	import type { RowDocumentHandle } from '@epicenter/data';
+	import type { RichField } from '@epicenter/data';
 
 	// The markdown root itself, rather than the row document it hangs off. The
 	// caller already chose which table and which row; handing that choice down
 	// would make this component know about Skills, and it only knows about text.
-	let { content }: { content: ReturnType<RowDocumentHandle['get']> } =
+	let { content }: { content: RichField } =
 		$props();
 	let container: HTMLDivElement | undefined = $state();
 

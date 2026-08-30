@@ -21,24 +21,23 @@ being silently deleted or migrated.
 The app uses runtime-owned structural record IDs. Each valid skill and reference
 also carries a stable `sourceId` in its JSON payload for domain-level references.
 Deleting a skill explicitly deletes its currently conforming reference records.
-Deleting a row also deletes its owned document state.
+Deleting a row also removes its rich content, which is nested under it.
 
-Instructions and reference bodies open through their owning rows:
+Instructions and reference bodies are rich fields on their owning rows:
 
 ```ts
-await skills.skills.openDocument(skillId);
-await skills.skillReferences.openDocument(referenceId);
+skills.skills.content(skillId)?.types.content;
+skills.skillReferences.content(referenceId)?.types.content;
 ```
 
-Application code never constructs document addresses, authority identities, or
-providers. The runtime derives them from the table and structural row id.
+Application code never constructs addresses, authority identities, or providers.
+There is one document, and the runtime owns it.
 
 ## UI
 
 The single route renders a resizable split view with a searchable skill list,
 metadata editor, Markdown instructions editor, references panel, and command
-palette. CodeMirror writes document content through the row document handle once
-the browser channel is available.
+palette. CodeMirror binds directly to the row's `content` field.
 
 ## Development
 

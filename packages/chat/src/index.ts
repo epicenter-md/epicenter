@@ -1,14 +1,15 @@
 import { field } from '@epicenter/data/definition';
 /**
  * The canonical conversation shape every chat surface shares: the fields a
- * `conversations` table declares, the id vocabulary, and the adapter that
- * presents one conversation's message root as the agent loop's store.
+ * `conversations` table declares, the id vocabulary, its file codec, and the
+ * adapter that presents one conversation's message field as the agent loop's
+ * store.
  *
  * Inert, and deliberately so. Nothing here opens a document, mints an address,
  * or knows which document a conversation lives in. An application splices
  * {@link conversationsTable} into its own workspace under its own id,
  * opens its own document (device or account, ADR-0233), and hands the row's
- * message root to {@link createAgentMessageStore}. Vocab has always worked this
+ * `messages` field to {@link createAgentMessageStore}. Vocab has always worked this
  * way and said so; the `chatLens` that used to sit beside the table was a
  * declaration no application ever bound, kept alive by its own test, and a
  * standalone declaration is a standalone document, which is exactly what a
@@ -19,9 +20,9 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
 /**
  * Two packages, because two different things are being named.
  *
- * `RowDocumentHandle` and `TypedTableHandle` are runtime handles a store
- * constructs, so they come from `@epicenter/data`. `RowOf` is inert contract vocabulary
- * owned by `@epicenter/data/definition`; `@epicenter/data` re-exports it, but reaching it
+ * `TypedTableHandle` is a runtime handle a store constructs, so it comes from
+ * `@epicenter/data`. `RowOf` is inert contract vocabulary owned by
+ * `@epicenter/data/definition`; `@epicenter/data` re-exports it, but reaching it
  * through the runtime would say this module builds its schema out of a SQLite
  * projection, which it never does.
  *
@@ -30,9 +31,14 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
  * consumer compiles these very lines, and a type-only import it cannot resolve
  * is as fatal as a value one.
  */
-import type { RowDocumentHandle, TypedTableHandle } from '@epicenter/data';
-import type { RowOf } from '@epicenter/data/definition';
+import type { RichField, TypedTableHandle } from '@epicenter/data';
+import {
+	RowFileError,
+	type RowOf,
+	type ScalarsOf,
+} from '@epicenter/data/definition';
 import type { Brand } from 'wellcrafted/brand';
+import { Ok, type Result } from 'wellcrafted/result';
 
 export type ConversationId = string & Brand<'ConversationId'>;
 
@@ -68,7 +74,77 @@ export const conversationsTable = {
 	// and a parsing form would hand back a `Date` that could not round-trip.
 	createdAt: field.instant(),
 	updatedAt: field.instant(),
+	/**
+	 * The conversation's finished messages: a nested `Y.Type` on the row
+	 * (ADR-0295, ADR-0296).
+	 *
+	 * Minted with the row and never again, which is what removes the race a
+	 * name-addressed root used to close: a nested type is addressed by the
+	 * struct that created it, so two devices minting one would lose a subtree,
+	 * and only the creating device ever mints this.
+	 */
+	messages: field.type(),
 } as const;
+
+/**
+ * The conversations table's file codec (ADR-0296).
+ *
+ * A table that declares a rich field must declare one, because the export is
+ * the only bridge the messages have out of the CRDT and a folder written
+ * without them feeds an import that deletes them everywhere.
+ *
+ * The body is the message log as JSON, one entry per line of a pretty-printed
+ * array, which is what makes a diff of two exports legible. It is not
+ * Markdown, and that is the point of the codec being the TABLE's: a
+ * conversation is a log of structured parts, not prose, and only this package
+ * knows that.
+ */
+export const conversationsFile = {
+	serialize: ({ id: _id, messages, ...fields }: Conversation) => ({
+		data: fields,
+		content: JSON.stringify(
+			[...messages.attrEntries()].map(([key, val]) => ({
+				key: String(key),
+				val,
+			})),
+			null,
+			2,
+		),
+	}),
+	deserialize: (
+		file: { data: Record<string, unknown>; content: string },
+		types: { messages: RichField },
+	): Result<ScalarsOf<typeof conversationsTable>, RowFileError> => {
+		if (file.content.trim() !== '') {
+			let entries: unknown;
+			try {
+				entries = JSON.parse(file.content);
+			} catch (cause) {
+				return RowFileError.Unreadable({
+					reason: 'the message log is not JSON',
+					cause,
+				});
+			}
+			if (!Array.isArray(entries)) {
+				return RowFileError.Unreadable({
+					reason: 'the message log is not an array of entries',
+				});
+			}
+			for (const entry of entries as { key?: unknown; val?: unknown }[]) {
+				if (typeof entry?.key !== 'string') {
+					return RowFileError.Unreadable({
+						reason: 'a message entry carries no id',
+					});
+				}
+				types.messages.setAttr(entry.key as never, entry.val as never);
+			}
+		}
+		// Verbatim, so a key an older release wrote survives the round trip; a
+		// row this declaration cannot read is reported on the first read rather
+		// than repaired here (ADR-0125).
+		return Ok(file.data as ScalarsOf<typeof conversationsTable>);
+	},
+};
 
 /** One conversation row, as a read hands it back. */
 export type Conversation = RowOf<typeof conversationsTable>;
@@ -77,35 +153,18 @@ export type Conversation = RowOf<typeof conversationsTable>;
 export type ConversationsTable = TypedTableHandle<typeof conversationsTable>;
 
 /**
- * The root a conversation's finished messages live at, inside the
- * conversation's own independent document (ADR-0248).
+ * Present one conversation's `messages` field as the agent loop's by-id store.
  *
- * One spelling, used at every open. Minting on first use is safe: a top-level
- * root is addressed by its name, so two devices first-opening one
- * conversation converge with both sides' messages retained.
+ * An adapter and nothing more: it opens nothing and releases nothing. The type
+ * is live on the database's one document (ADR-0295), so its lifetime is the
+ * row's; durability is the store's write-behind and propagation is the
+ * ordinary transport.
  *
- * @example
- * ```ts
- * const { data: handle } = await table.openDocument(conversationId);
- * ```
- */
-export const CONVERSATION_MESSAGES = 'messages';
-
-/**
- * Present one conversation's message root as the agent loop's by-id store.
- *
- * An adapter and nothing more: it opens nothing and releases nothing. The
- * caller opened the conversation's document and keeps the handle alive for as
- * long as the loop runs; durability is the store's write-behind and
- * propagation is the ordinary transport.
- *
- * @param document The open handle, from `await table.openDocument(conversationId)`.
+ * @param messages The row's `messages` field, from `table.content(id)?.types`.
  */
 export function createAgentMessageStore(
-	document: Pick<RowDocumentHandle, 'get'>,
+	messages: RichField,
 ): AgentMessageStore {
-	const messages = document.get(CONVERSATION_MESSAGES);
-
 	return {
 		set(key, value) {
 			messages.setAttr(key as never, value as never);
