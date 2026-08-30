@@ -139,10 +139,7 @@ function reopen(sqlite: ReturnType<typeof createBunSqliteAdapter>) {
 }
 
 function titles(db: ReturnType<typeof openFailable>['db']): string[] {
-	return db.tables.notes
-		.list()
-		.rows.map((row) => row.title as string)
-		.sort();
+	return db.tables.notes.rows.map((row) => row.title as string).sort();
 }
 
 describe('acceptance is live, durability is a visible debt', () => {
@@ -216,12 +213,12 @@ describe('acceptance is live, durability is a visible debt', () => {
 
 		// KV: accepted live, visible at once.
 		expectOk(replica.db.kv.update({ theme: 'dark' }));
-		expect(replica.db.kv.get().data?.theme).toBe('dark');
+		expect(expectOk(replica.db.kv.get()).theme).toBe('dark');
 
 		// A row's rich field: an editor keeps writing prose while blocked. The
 		// type is live on the document the store already holds, so a blocked
 		// engine never blocks acceptance.
-		const editor = replica.db.tables.notes.content(made.id)?.types.editor;
+		const editor = replica.db.tables.notes.get(made.id)?.editor;
 		if (editor === undefined) throw new Error('the row has no editor');
 		editor.applyDelta(editor.change.insert('typed while blocked') as never);
 		expect(editor.toString()).toContain('typed while blocked');
@@ -234,8 +231,8 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expectOk(replica.db.tables.notes.create({ title: 'retry trigger' }));
 		expect(replica.store.persistence.get()).toBe('saved');
 		const restarted = reopen(replica.sqlite);
-		expect(restarted.db.kv.get().data?.theme).toBe('dark');
-		const survived = restarted.db.tables.notes.content(made.id)?.types.editor;
+		expect(expectOk(restarted.db.kv.get()).theme).toBe('dark');
+		const survived = restarted.db.tables.notes.get(made.id)?.editor;
 		expect(survived?.toString()).toContain('typed while blocked');
 	});
 
@@ -284,7 +281,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expect(store.persistence.get()).toBe('pending');
 		// Acceptance is not waiting on the flight: live reads already hold the
 		// row.
-		expect(db.tables.notes.list().rows.map((row) => row.title)).toEqual(['a']);
+		expect(db.tables.notes.rows.map((row) => row.title)).toEqual(['a']);
 
 		// Two more accepted mid-flight; they must ride the NEXT batch together.
 		expectOk(db.tables.notes.create({ title: 'b' }));

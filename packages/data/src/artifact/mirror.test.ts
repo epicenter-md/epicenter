@@ -174,9 +174,9 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		await settle();
 
-		const content = data.tables.notes.content(made.id);
+		const content = data.tables.notes.get(made.id);
 		if (content === undefined) throw new Error('the row has no content');
-		content.types.body.insert(0, ['buy milk']);
+		content.body.insert(0, ['buy milk']);
 		await settle();
 
 		expect(files.get(`notes/${made.id}.md`)).toContain('buy milk');

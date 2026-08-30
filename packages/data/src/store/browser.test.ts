@@ -153,14 +153,9 @@ async function openAccountData(
 }
 
 function titles(app: {
-	tables: {
-		notes: { list(): { rows: { title: string }[] } };
-	};
+	tables: { notes: { readonly rows: readonly { title: string }[] } };
 }): string[] {
-	return app.tables.notes
-		.list()
-		.rows.map((row) => row.title)
-		.sort();
+	return app.tables.notes.rows.map((row) => row.title).sort();
 }
 
 async function databaseNames(): Promise<string[]> {
@@ -178,9 +173,9 @@ describe('one local document and one account replica per account', () => {
 		const alice = expectOk(await openAccountData(database, ALICE));
 		const bob = expectOk(await openAccountData(database, BOB));
 
-		expectOk(local.tables.notes.create({ title: 'mine alone' }));
-		expectOk(alice.tables.notes.create({ title: "alice's" }));
-		expectOk(bob.tables.notes.create({ title: "bob's" }));
+		local.tables.notes.create({ title: 'mine alone' });
+		alice.tables.notes.create({ title: "alice's" });
+		bob.tables.notes.create({ title: "bob's" });
 		expect(titles(local)).toEqual(['mine alone']);
 		expect(titles(alice)).toEqual(["alice's"]);
 		expect(titles(bob)).toEqual(["bob's"]);
@@ -218,8 +213,8 @@ describe('one local document and one account replica per account', () => {
 			await openAccountData(database, ALICE, OTHER_SERVER),
 		);
 
-		expectOk(cloud.tables.notes.create({ title: 'cloud work' }));
-		expectOk(selfHosted.tables.notes.create({ title: 'self-hosted work' }));
+		cloud.tables.notes.create({ title: 'cloud work' });
+		selfHosted.tables.notes.create({ title: 'self-hosted work' });
 		expect(titles(cloud)).toEqual(['cloud work']);
 		expect(titles(selfHosted)).toEqual(['self-hosted work']);
 
@@ -236,7 +231,7 @@ describe('one local document and one account replica per account', () => {
 		const first = expectOk(
 			await openAccountData(database, ALICE, `${CLOUD}/?ignored=true#ignored`),
 		);
-		expectOk(first.tables.notes.create({ title: 'kept work' }));
+		first.tables.notes.create({ title: 'kept work' });
 		await first.store[Symbol.asyncDispose]();
 
 		const equivalent = expectOk(
@@ -266,7 +261,7 @@ describe('one local document and one account replica per account', () => {
 		];
 		for (const [openDocument, title] of owners) {
 			const opened = expectOk(await openDocument());
-			expectOk(opened.tables.notes.create({ title }));
+			opened.tables.notes.create({ title });
 			await opened.store[Symbol.asyncDispose]();
 		}
 
@@ -295,7 +290,7 @@ describe('one local document and one account replica per account', () => {
 		const first = expectOk(
 			await openDatabase(database, { generation: 1, account }),
 		);
-		expectOk(first.tables.notes.create({ title: 'in generation one' }));
+		first.tables.notes.create({ title: 'in generation one' });
 		await first.store[Symbol.asyncDispose]();
 
 		await importGeneration(database, emptyState(), {
@@ -339,7 +334,7 @@ describe('one local document and one account replica per account', () => {
 		// account database never renders empty while its state is arriving.
 		const database = databaseFor('bootstrap');
 		const author = expectOk(await openLocalData(database));
-		expectOk(author.tables.notes.create({ title: 'made elsewhere' }));
+		author.tables.notes.create({ title: 'made elsewhere' });
 		const state = author.store.encodeStateSince();
 		await author.store[Symbol.asyncDispose]();
 
@@ -458,7 +453,7 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 	test('a v1 record at the same logical address is not opened', async () => {
 		const database = databaseFor('generation');
 		const author = await openMemory(database);
-		expectOk(author.tables.notes.create({ title: 'pre-break note' }));
+		author.tables.notes.create({ title: 'pre-break note' });
 		const bytes = author.store.encodeStateSince();
 		await author.store[Symbol.asyncDispose]();
 
@@ -484,7 +479,7 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		const address = localAddress(database.id);
 		const local = expectOk(await openLocalData(database));
 		for (let index = 0; index < 70; index += 1) {
-			expectOk(local.tables.notes.create({ title: `note ${index}` }));
+			local.tables.notes.create({ title: `note ${index}` });
 		}
 		await local.store.persistence.flush();
 		expect(local.store.persistence.get()).toBe('saved');
@@ -608,19 +603,19 @@ describe("a row's rich content survives a reopen (ADR-0295)", () => {
 		let rowId!: string;
 		{
 			const local = expectOk(await openLocalData(database));
-			rowId = expectOk(local.tables.notes.create({ title: 'x' })).id;
-			const content = local.tables.notes.content(rowId);
+			rowId = local.tables.notes.create({ title: 'x' }).id;
+			const content = local.tables.notes.get(rowId);
 			if (content === undefined) throw new Error('the row has no content');
 			// The application picks the field's format. In Yjs 14 `change` hands
 			// back a fresh builder and `applyDelta` commits it.
-			const editor = content.types.editor;
+			const editor = content.editor;
 			editor.applyDelta(editor.change.insert('buy milk') as never);
 			editor.setAttr('cursor' as never, 8 as never);
 			await local.store[Symbol.asyncDispose]();
 		}
 
 		const reopened = expectOk(await openLocalData(database));
-		const editor = reopened.tables.notes.content(rowId)?.types.editor;
+		const editor = reopened.tables.notes.get(rowId)?.editor;
 		expect(editor?.toString()).toContain('buy milk');
 		expect(editor?.getAttr('cursor' as never)).toBe(8);
 		await reopened.store[Symbol.asyncDispose]();

@@ -76,9 +76,9 @@ async function seeded() {
 		tags: ['no', '2024-03-05'],
 		folderId: folder.id,
 	});
-	const content = data.tables.notes.content(note.id);
+	const content = data.tables.notes.get(note.id);
 	if (content === undefined) throw new Error('the row has no content');
-	content.types.body.insert(0, ['buy milk\n\n---\nnot a fence']);
+	content.body.insert(0, ['buy milk\n\n---\nnot a fence']);
 	return { data, folder, note };
 }
 
@@ -105,15 +105,19 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(syncEngineOf(restored.store).applyRemote(state).error).toBeNull();
 
 		// Every scalar, at the same id, read through the same lens.
-		expect(restored.tables.notes.list().rows).toHaveLength(1);
-		expect(restored.tables.folders.list().rows).toHaveLength(1);
-		expect(restored.kv.get().data).toEqual({ theme: 'dark' });
-		expect(restored.kv.get().data).toEqual(data.kv.get().data);
-		expect(restored.tables.notes.list()).toEqual(data.tables.notes.list());
-		expect(restored.tables.folders.list()).toEqual(data.tables.folders.list());
+		expect(restored.tables.notes.rows).toHaveLength(1);
+		expect(restored.tables.folders.rows).toHaveLength(1);
+		expect(expectOk(restored.kv.get())).toEqual({ theme: 'dark' });
+		expect(restored.kv.get()).toEqual(data.kv.get());
+		// Compared through `stored()` rather than `rows`, and the reason is the
+		// claim itself. A row carries its live rich types now, and two documents'
+		// types are never equal: they are different objects with different client
+		// ids. "Imports back whole" is a statement about the RECORD, so the
+		// faithful read is what it should have been asserted against all along.
+		expect(restored.store.stored().tables).toEqual(data.store.stored().tables);
 
 		// And the prose, through the codec, `---` fence and all.
-		expect(restored.tables.notes.content(note.id)?.types.body.toString()).toBe(
+		expect(restored.tables.notes.get(note.id)?.body.toString()).toBe(
 			'buy milk\n\n---\nnot a fence',
 		);
 		await data.store[Symbol.asyncDispose]();
@@ -126,7 +130,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		await using restored = await openMemory(store);
 		syncEngineOf(restored.store).applyRemote(state);
 
-		const row = expectOk(restored.tables.notes.get(note.id));
+		const row = restored.tables.notes.get(note.id);
 		expect(row?.title).toBe('007');
 		expect(row?.code).toBe('123');
 		expect(row?.flag).toBe('true');

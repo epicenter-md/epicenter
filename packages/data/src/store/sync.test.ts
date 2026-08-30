@@ -80,10 +80,7 @@ function expectOk<TValue, TError>(
 }
 
 function titles(replica: ReturnType<typeof open>): string[] {
-	return replica.db.tables.notes
-		.list()
-		.rows.map((row) => row.title)
-		.sort();
+	return replica.db.tables.notes.rows.map((row) => row.title).sort();
 }
 
 describe('the local log holds each update once', () => {
@@ -129,7 +126,7 @@ describe('the local log holds each update once', () => {
 			author.db.tables.notes.create({ title: 'Groceries' }),
 		);
 		const before = author.outbox().length;
-		const text = author.db.tables.notes.content(note.id)?.types.editor;
+		const text = author.db.tables.notes.get(note.id)?.editor;
 		if (text === undefined) throw new Error('the row has no editor');
 		text.applyDelta(text.change.insert('buy milk') as never);
 
@@ -287,7 +284,7 @@ describe("a row's rich field is one type both devices edit", () => {
 			[author, 'written on the phone'],
 			[other, 'written on the laptop'],
 		] as const) {
-			const text = replica.db.tables.notes.content(note.id)?.types.editor;
+			const text = replica.db.tables.notes.get(note.id)?.editor;
 			if (text === undefined) throw new Error('the row has no editor');
 			text.applyDelta(text.change.insert(words) as never);
 		}
@@ -303,9 +300,7 @@ describe("a row's rich field is one type both devices edit", () => {
 		expectOk(syncEngineOf(other.store).applyRemote(fromAuthor.bytes));
 
 		const readBack = (replica: typeof author) =>
-			JSON.stringify(
-				replica.db.tables.notes.content(note.id)?.types.editor.toJSON(),
-			);
+			JSON.stringify(replica.db.tables.notes.get(note.id)?.editor.toJSON());
 		const merged = readBack(author);
 		expect(merged).toContain('phone');
 		expect(merged).toContain('laptop');

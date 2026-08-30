@@ -26,7 +26,6 @@ export {
 	defineKv,
 	defineTable,
 	type FieldMap,
-	type FileRowOf,
 	field,
 	KV_ROOT,
 	type KvOf,

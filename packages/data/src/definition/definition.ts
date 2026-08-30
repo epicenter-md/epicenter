@@ -222,23 +222,17 @@ export type ScalarsOf<TFields> = FieldsOut<Omit<TFields, RichKeys<TFields>>>;
 type FieldsOfArg<T> = T extends { fields: infer TFields } ? TFields : T;
 
 /**
- * One table's read shape: the id and the scalar fields, never a rich field.
+ * One table's read shape: the id, the scalars, and the live rich types.
  *
- * A nested type is not a JSON value, so `readRow` skips it and `get` cannot
- * return it; a `RowOf` that named it would typecheck `note.body` and hand back
- * `undefined`. The one way to a rich field on an EXISTING row is
- * `table.content(rowId)`. Handing one IN is different and is `NewRowOf`.
- */
-export type RowOf<T> = { id: string } & ScalarsOf<FieldsOfArg<T>>;
-/**
- * One row as its FILE CODEC sees it: the scalars and the live rich types.
+ * What `get` returns, what `create` returns, and what a file codec's
+ * `serialize` takes. It was scalars only, with `content(rowId)` as the one way
+ * to a rich field and `RowOf` as a third shape for the codec; the row
+ * carries its types now, so all three collapse into this (ADR-0296, amended).
  *
- * `NewRowOf` plus the id, and the two are one shape seen from either side of
- * `create`: what you hand in, and what a file codec is handed back. A read
- * verb cannot return a nested type, so `RowOf` is scalars only; writing a file
- * is the one operation that needs both halves at once (ADR-0296).
+ * `NewRowOf` is this minus the id and with the types optional. That sentence is
+ * the whole relationship between the two shapes an application ever names.
  */
-export type FileRowOf<T> = { id: string } & FieldsOut<FieldsOfArg<T>>;
+export type RowOf<T> = { id: string } & FieldsOut<FieldsOfArg<T>>;
 /**
  * A row that does not have an id yet: the scalars, and the rich types the
  * caller built (ADR-0295, ADR-0296).
@@ -269,7 +263,7 @@ export type KvOf<TDatabase extends DataDefinition> = FieldsOut<TDatabase['kv']>;
 
 /** The codec as its own table declares it, read through that table's fields. */
 export type RowFileCodecOf<TFields> = {
-	readonly serialize: (row: FileRowOf<TFields>) => RowFile;
+	readonly serialize: (row: RowOf<TFields>) => RowFile;
 	readonly deserialize: (
 		file: RowFile,
 	) => Result<NewRowOf<TFields>, RowFileError>;

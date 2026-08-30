@@ -12,9 +12,11 @@
 import type {
 	DataDefinition,
 	JsonObject,
+	JsonValue,
 	KvOf,
 	NewRowOf,
 	RowOf,
+	ScalarsOf,
 	TypesOf,
 } from '@epicenter/data/definition';
 import type * as Y from '@y/y';
@@ -28,31 +30,26 @@ import type {
 } from './errors.js';
 import type { PersistenceCapability } from './persistence.js';
 
-export type Row = { id: string } & JsonObject;
+/**
+ * One row, as an application reads it: the id, the scalars, and the live types.
+ *
+ * A rich field is here rather than behind a second verb (ADR-0296, amended).
+ * `readRow` cannot return one, so the handle merges what `readRowTypes` finds
+ * before handing the row over; what a caller gets is one object with `body` on
+ * it, not a row plus a bag to go and fetch.
+ */
+export type Row = { id: string } & Record<string, JsonValue | Y.Type>;
 
 /**
- * One row's rich content: the live types, and a per-field edit signal
- * (ADR-0296, ADR-0297).
+ * One row's rich types, keyed by declared field name.
  *
- * The signal is scoped to the FIELD rather than to the row, and that is the
- * whole reason it exists in this shape. The store writes no timestamps
- * (ADR-0297), so an application that wants a recency-sorted list hangs its own
- * write on an edit; a row-scoped signal would fire on the write it caused, and
- * every application would have to break its own loop.
+ * Internal to the package now. It used to be the only way to a rich field and
+ * carried a per-field `subscribe` beside them; the types moved onto the row and
+ * the signal became `watch`, so what is left is the shape the artifact layer
+ * reads a row's content through.
  */
 export type RowContent<TTypes = Readonly<Record<string, Y.Type>>> = {
-	/** The nested types, by declared field name. */
 	readonly types: TTypes;
-	/**
-	 * Hear edits to one rich field, local or remote.
-	 *
-	 * Fires for what changed INSIDE the type, never for the row's scalars, so
-	 * an application's own derived write does not re-enter through it. Fires
-	 * once per commit, on the same flush every other subscriber's notification
-	 * goes out on and after all of them, so a listener that writes is writing
-	 * against a settled commit.
-	 */
-	subscribe(field: keyof TTypes & string, listener: () => void): () => void;
 };
 
 export type TableHandle = {
@@ -75,8 +72,10 @@ export type TableHandle = {
 	 * The type must not already belong to a document. Two rows given one type
 	 * share one body, silently; `createRow` refuses rather than allowing it.
 	 *
-	 * The return carries the scalars and the id, not the types. You built them,
-	 * so you have them; a later reader asks through `content` (ADR-0295).
+	 * The return is the row `get` would give you: the id, the scalars, and the
+	 * INTEGRATED types. Read back rather than echoed, because a type you passed
+	 * in was detached and reads as empty until it is integrated here, and one
+	 * you omitted was minted for you.
 	 *
 	 * The declaration is a read lens, so creation does not validate the supplied
 	 * values or field names. The returned object is the typed write view, while
@@ -84,17 +83,22 @@ export type TableHandle = {
 	 */
 	create(fields: RowInput): Row;
 	/**
-	 * The one read verb, and conformance is its entire error arm.
+	 * One row, whole, or nothing.
 	 *
-	 * `Ok(Row)` is a live row this declaration reads whole. `Ok(undefined)` means the
-	 * address holds no row, which is a fact rather than a failure.
-	 * `Err(NonconformingRow)` is a live row this declaration cannot fully read; it
-	 * carries `conforming`, so a caller composes whatever forgiveness it wants
-	 * without a second verb existing. This Result is about conformance and
-	 * nothing else: a store that cannot serve reads at all throws
-	 * `StoreUnusableError` instead of dressing up as a read outcome.
+	 * `undefined` covers both "no row at this address" and "a row this
+	 * declaration cannot read", and collapsing them is deliberate: a caller
+	 * asking about one row does the same thing with either answer, and no
+	 * consumer in this repo ever branched on the difference. A row that does
+	 * not conform is not hidden by that, it is on `nonconforming` with its raw
+	 * values, which is where a repair is composed (ADR-0125) and where all
+	 * three applications that care already look.
+	 *
+	 * No `Result`, and that is what the collapse bought. The error arm carried
+	 * one variant nobody read, so every call site paid an unwrap for it;
+	 * Honeycrisp had written `table.rows.find(...)` by hand rather than use
+	 * this verb.
 	 */
-	get(rowId: string): Result<Row | undefined, NonconformingRow>;
+	get(rowId: string): Row | undefined;
 	/**
 	 * Merge fields into an existing row. Refuses an absent address.
 	 *
@@ -118,49 +122,52 @@ export type TableHandle = {
 	 * discarding the boolean this used to report.
 	 */
 	delete(rowId: string): void;
-	/** Every row id, sorted. */
+	/**
+	 * Every row id, sorted, without conforming any of them.
+	 *
+	 * Kept for the cheap count. `rows.length` answers the same question by
+	 * walking every row through the declaration, which is the right answer for
+	 * an application and the wrong one for a bench measuring the store: no
+	 * application calls this, and `evidence/` calls it constantly.
+	 */
 	ids(): string[];
 	/**
-	 * Every row, with the ones this declaration cannot read reported separately rather
-	 * than dropped or repaired. Not a Result: there is nothing here that can
-	 * fail, so there is nothing for a caller to mishandle into an empty list.
+	 * Every row this declaration reads whole, with its live types.
+	 *
+	 * A member rather than `list().rows`, because every consumer destructured
+	 * that tuple and three applications then re-exposed each half as its own
+	 * getter. This is the shape they were all rebuilding.
 	 */
-	list(): { rows: Row[]; nonconforming: NonconformingRow[] };
+	readonly rows: Row[];
 	/**
-	 * One row's stored fields, before this declaration reads them (ADR-0267).
+	 * Every row stored here that this declaration cannot read, with its raw
+	 * values (ADR-0125).
 	 *
-	 * The narrow form of `data.stored()`, for a caller that already knows which
-	 * row it is asking about: a subscriber holding the ids a commit touched,
-	 * rendering one file each (ADR-0271). Reading the whole store to answer
-	 * about one row is what that caller would otherwise have to do on every
-	 * keystroke.
-	 *
-	 * It is on the handle and the whole read is on the data, and the asymmetry
-	 * is honest rather than an oversight: `data.stored()` enumerates the roots
-	 * the document holds, so it sees a table this declaration no longer names
-	 * (ADR-0240), and no handle exists to ask that question through. What a
-	 * handle can answer is narrower and that is all this claims.
-	 *
-	 * Untyped, and never a Result. `get` is the lens and conformance is its
-	 * error arm; this is what is stored, so an absent row is `undefined` and
-	 * there is nothing here to fail.
+	 * Reported rather than dropped or repaired, and reachable for WRITES:
+	 * Honeycrisp walks this to re-parent notes out of a folder it is deleting,
+	 * so a row it cannot read is not a row it can orphan.
 	 */
-	stored(rowId: string): JsonObject | undefined;
+	readonly nonconforming: NonconformingRow[];
 	/**
-	 * One row's rich fields: the live nested types, and their edit signals
-	 * (ADR-0295, ADR-0296).
+	 * Hear edits to ONE rich field of ONE row, local or remote.
 	 *
-	 * Synchronous, and there is nothing left for it to await. The types are in
-	 * the one document this store already holds, so there is no address to
-	 * derive, no chain to hydrate, no handle to refcount, and no half-hydrated
-	 * type an editor could merge keystrokes into. `undefined` means the table
-	 * holds no row at this address.
+	 * What is left of `content`'s per-field signal after the types moved onto
+	 * the row. Scoped to the field rather than the row or the table, and that
+	 * scope is the whole reason it exists: the store writes no derived fields
+	 * (ADR-0297), so an application hangs its own write on an edit, and a
+	 * row-scoped signal would fire on the write it caused. A note list that
+	 * re-rendered off `subscribe` below would re-read every visible note's
+	 * prose on every keystroke.
 	 *
-	 * Nothing is disposed. A type's lifetime is its row's: it is minted when
-	 * the row is minted and reclaimed when the row is deleted, so holding one
-	 * pins nothing that a close could release.
+	 * Fires once per commit, on the same flush every other subscriber's
+	 * notification goes out on and after all of them, so a listener that writes
+	 * is writing against a settled commit. That ordering is why this exists at
+	 * all rather than the caller reaching for the type's own `on('delta')`.
+	 *
+	 * An address holding no row, or a field this table does not declare rich,
+	 * returns a teardown that does nothing.
 	 */
-	content(rowId: string): RowContent | undefined;
+	watch(rowId: string, field: string, listener: () => void): () => void;
 	/**
 	 * Hear when anything in this table changes, whoever changed it.
 	 *
@@ -195,17 +202,20 @@ export type TypedTableHandle<TFields> =
 	}
 		? {
 				create(fields: TInput): TRow;
-				get(rowId: string): Result<TRow | undefined, NonconformingRow>;
+				get(rowId: string): TRow | undefined;
 				update(
 					rowId: string,
-					fields: Partial<TInput>,
+					fields: Partial<ScalarsOf<TFields>>,
 				): Result<void, RowAbsentError>;
 				delete(rowId: string): void;
 				ids(): string[];
-				list(): { rows: TRow[]; nonconforming: NonconformingRow[] };
-				/** One row's stored fields, untyped, before the declaration reads them. */
-				stored(rowId: string): JsonObject | undefined;
-				content(rowId: string): RowContent<TypesOf<TFields>> | undefined;
+				readonly rows: TRow[];
+				readonly nonconforming: NonconformingRow[];
+				watch(
+					rowId: string,
+					field: keyof TypesOf<TFields> & string,
+					listener: () => void,
+				): () => void;
 				subscribe(listener: () => void): () => void;
 			}
 		: never;
@@ -289,6 +299,20 @@ export type DataOf<
 	 * The artifact read, for an export that must not narrow.
 	 */
 	stored(): StoredData;
+	/**
+	 * One row exactly as the exporter needs it: every stored scalar, and the
+	 * live rich types beside them.
+	 *
+	 * The narrow form of `stored()`, and the artifact layer's only per-row read.
+	 * It is HERE rather than on a table handle because it is not a lens: it
+	 * returns keys this release no longer declares and rows this release cannot
+	 * conform, which is the one thing an export may not narrow (ADR-0267). A
+	 * handle answers what an application can see; this answers what is there.
+	 *
+	 * Not for applications. `get` is the read verb, and it carries the same
+	 * types through the declaration.
+	 */
+	rowFile(table: string, rowId: string): Row | undefined;
 	/** This application's file: pressure, the CRDT verbs, and replica sync. */
 	readonly store: TStore;
 	/** Dispose the opened data and the physical store it owns. */
@@ -311,6 +335,7 @@ export function asData<
 		...view,
 		transact: store.transact,
 		stored: store.stored,
+		rowFile: store.rowFile,
 		store,
 		[Symbol.asyncDispose]: () => store[Symbol.asyncDispose](),
 	});
@@ -448,6 +473,18 @@ export type DataStoreBase = {
 	 * an artifact needs and a feature never touches.
 	 */
 	stored(): StoredData;
+	/**
+	 * One row exactly as the exporter needs it: every stored scalar, and the
+	 * live rich types beside them.
+	 *
+	 * The narrow form of `stored()`, and the artifact layer's only per-row read.
+	 * It is on the STORE rather than on a table handle because it is not a
+	 * lens: it returns keys this release no longer declares and rows this
+	 * release cannot conform, which is the one thing an export may not narrow
+	 * (ADR-0267). A handle answers what an application can see; this answers
+	 * what is there.
+	 */
+	rowFile(table: string, rowId: string): Row | undefined;
 	/**
 	 * Hear when anything committed into this document, whoever authored it.
 	 *

@@ -925,6 +925,27 @@ function createStoreEngine(
 		return { tables, kv: storedKv() };
 	}
 
+	/**
+	 * One row as the exporter reads it: faithful scalars, live types.
+	 *
+	 * Deliberately not through a table handle. `readRow` returns every stored
+	 * key including ones this release no longer declares, and no conformance
+	 * runs, so a row the lens cannot read still has a file (ADR-0267, ADR-0125).
+	 * The rich types come from the declaration's names, because a type at an
+	 * undeclared key is unreachable by any codec anyway.
+	 */
+	function rowFile(tableName: string, rowId: string): Row | undefined {
+		const parsed = definition.tables.get(tableName);
+		const root = tableRoot(database, tableName);
+		const fields = readRow(root, rowId);
+		if (fields === undefined) return undefined;
+		return {
+			id: rowId,
+			...fields,
+			...readRowTypes(root, rowId, parsed?.types ?? []),
+		};
+	}
+
 	function createTableHandle(
 		tableName: string,
 		table: ParsedTable,
@@ -1003,6 +1024,11 @@ function createStoreEngine(
 					});
 		}
 
+		/** One row as an application reads it: the scalars, and the live types. */
+		function withTypes(row: Row): Row {
+			return { ...row, ...readRowTypes(root, row.id, richFields) };
+		}
+
 		return Object.freeze({
 			create(fields: RowInput): Row {
 				assertUsable();
@@ -1011,17 +1037,23 @@ function createStoreEngine(
 				// and never again: nested types do not converge by name, so a field
 				// minted lazily on two devices would lose one subtree.
 				commit(() => createRow(root, rowId, fields, richFields));
-				const scalars: JsonObject = {};
-				for (const [name, value] of Object.entries(fields)) {
-					if (!(value instanceof Y.Type)) scalars[name] = value;
-				}
-				return { id: rowId, ...scalars };
+				// Read back rather than echoed: a rich field the caller omitted was
+				// minted empty here, and one it passed is now the INTEGRATED type
+				// rather than the detached one it handed over. Echoing the argument
+				// would return a type that reads as empty.
+				return withTypes({ id: rowId, ...readRow(root, rowId) });
 			},
-			get(rowId: string): Result<Row | undefined, NonconformingRow> {
+			get(rowId: string): Row | undefined {
 				assertUsable();
 				const payload = readRow(root, rowId);
-				if (payload === undefined) return Ok(undefined);
-				return conformRow(rowId, payload);
+				if (payload === undefined) return undefined;
+				// A row this declaration cannot read does not arrive. It is not
+				// hidden: it is on `nonconforming`, with its raw values, which is
+				// where every consumer already looks and where a repair is composed
+				// (ADR-0125). Absent and unreadable answer the same way here because
+				// a caller asking for one row does the same thing with either.
+				const { data } = conformRow(rowId, payload);
+				return data === null ? undefined : withTypes(data);
 			},
 			update(rowId: string, fields: JsonObject): Result<void, RowAbsentError> {
 				assertUsable();
@@ -1049,16 +1081,23 @@ function createStoreEngine(
 				assertUsable();
 				return listRowIds(root);
 			},
-			list() {
+			get rows(): Row[] {
 				assertUsable();
 				const rows: Row[] = [];
+				for (const [rowId, payload] of rowsOf(tableName)) {
+					const { data } = conformRow(rowId, payload);
+					if (data !== null) rows.push(withTypes(data));
+				}
+				return rows;
+			},
+			get nonconforming(): NonconformingRow[] {
+				assertUsable();
 				const nonconforming: NonconformingRow[] = [];
 				for (const [rowId, payload] of rowsOf(tableName)) {
-					const { data, error } = conformRow(rowId, payload);
+					const { error } = conformRow(rowId, payload);
 					if (error !== null) nonconforming.push(error);
-					else rows.push(data);
 				}
-				return { rows, nonconforming };
+				return nonconforming;
 			},
 			stored(rowId: string): JsonObject | undefined {
 				assertUsable();
@@ -1067,33 +1106,34 @@ function createStoreEngine(
 			content(rowId: string): RowContent | undefined {
 				assertUsable();
 				const types = readRowTypes(root, rowId, richFields);
-				if (types === undefined) return undefined;
-				return {
-					types,
-					subscribe(field: string, listener: () => void): () => void {
-						const type = types[field];
-						if (type === undefined) return () => undefined;
-						// Straight onto the field's own type, so what a listener hears
-						// is an edit to THAT content and nothing else (ADR-0297). A
-						// nested edit does also bubble to the table root, which is what
-						// `subscribe` above reports; this one does not widen to it.
-						//
-						// Noted rather than delivered: the delta fires inside
-						// acceptance, and the notification goes out on the same flush
-						// every other subscriber's does.
-						const onDelta = () => richTouched.add(listener);
-						type.on('delta', onDelta);
-						let stopped = false;
-						return () => {
-							// Idempotent, for the same reason a table subscription is: a
-							// Svelte effect that reruns can call its teardown twice.
-							if (stopped) return;
-							stopped = true;
-							type.off('delta', onDelta);
-							// A stop between the delta and the flush must not deliver.
-							richTouched.delete(listener);
-						};
-					},
+				return types === undefined ? undefined : { types };
+			},
+			watch(rowId: string, field: string, listener: () => void): () => void {
+				assertUsable();
+				const type = readRowTypes(root, rowId, richFields)?.[field];
+				if (type === undefined) return () => undefined;
+				// Straight onto the field's own type, so what a listener hears is an
+				// edit to THAT content and nothing else (ADR-0297). A nested edit
+				// does also bubble to the table root, which is what `subscribe`
+				// reports; this one does not widen to it. That scope is the whole
+				// point: a note list that re-rendered off the table signal would
+				// re-read every visible note's prose on every keystroke.
+				//
+				// Noted rather than delivered: the delta fires inside acceptance,
+				// and the notification goes out on the same flush every other
+				// subscriber's does, so a listener that writes is writing against a
+				// settled commit.
+				const onDelta = () => richTouched.add(listener);
+				type.on('delta', onDelta);
+				let stopped = false;
+				return () => {
+					// Idempotent, for the same reason a table subscription is: a
+					// Svelte effect that reruns can call its teardown twice.
+					if (stopped) return;
+					stopped = true;
+					type.off('delta', onDelta);
+					// A stop between the delta and the flush must not deliver.
+					richTouched.delete(listener);
 				};
 			},
 			subscribe(listener: () => void): () => void {
@@ -1220,6 +1260,10 @@ function createStoreEngine(
 		stored(): StoredData {
 			assertUsable();
 			return stored();
+		},
+		rowFile(tableName: string, rowId: string): Row | undefined {
+			assertUsable();
+			return rowFile(tableName, rowId);
 		},
 		onCommitted(listener: () => void): () => void {
 			committedListeners.add(listener);

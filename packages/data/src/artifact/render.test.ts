@@ -44,9 +44,9 @@ function type(
 	rowId: string,
 	text: string,
 ): void {
-	const content = data.tables.notes.content(rowId);
+	const content = data.tables.notes.get(rowId);
 	if (content === undefined) throw new Error('the row has no content');
-	content.types.body.insert(0, [text]);
+	content.body.insert(0, [text]);
 }
 
 /** Collect the stream into a map, which is what an assertion wants. */
@@ -149,7 +149,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 			await renderRow(data, parsed(store), 'notes', made.id),
 		);
 		expect(rendered.contents).toContain('legacy: "kept"');
-		expect(data.tables.notes.list().rows[0]).not.toHaveProperty('legacy');
+		expect(data.tables.notes.rows[0]).not.toHaveProperty('legacy');
 	});
 });
 
@@ -187,7 +187,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 
 		const files = await collect(renderArtifact(data, store));
 		expect(files.get(`notes/${made.id}.md`) ?? '').toContain('legacy: "kept"');
-		expect(data.tables.notes.list().rows[0]).not.toHaveProperty('legacy');
+		expect(data.tables.notes.rows[0]).not.toHaveProperty('legacy');
 	});
 
 	test('one row that cannot render does not cost the others their files', async () => {

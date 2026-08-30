@@ -18,17 +18,19 @@
  * Composed on the opened data's public surface, so it is a follower and never
  * a store verb. It reads; nothing it returns can reach back in.
  */
+import * as Y from '@y/y';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
 import {
 	type DataDefinition,
 	type JsonObject,
+	type JsonValue,
 	type ParsedDataDefinition,
 	parseData,
 	type RowValues,
 } from '../definition/index.js';
-import type { RowContent, StoredData } from '../store/store.js';
+import type { Row, StoredData } from '../store/store.js';
 import { rowFile } from './frontmatter.js';
 import { rowPath } from './layout.js';
 
@@ -83,17 +85,19 @@ export type RenderError = InferErrors<typeof RenderError>;
  * table's rich content. Structural on purpose, so any typed or untyped view
  * satisfies it.
  */
+/**
+ * What a render needs, and it is not a table handle.
+ *
+ * Two faithful reads, both on the store: everything, and one row. A handle
+ * would be the wrong shape twice over, because it narrows to the declared
+ * fields and refuses a row it cannot conform, and an export may do neither
+ * (ADR-0267). This used to reach through `data.tables[table].stored/content`,
+ * which meant the artifact layer's requirements sat on the type every
+ * application holds.
+ */
 export type RenderableData = {
 	stored(): StoredData;
-	readonly tables: Readonly<
-		Record<
-			string,
-			{
-				stored(rowId: string): JsonObject | undefined;
-				content(rowId: string): RowContent | undefined;
-			}
-		>
-	>;
+	rowFile(table: string, rowId: string): Row | undefined;
 };
 
 /**
@@ -132,10 +136,14 @@ export async function renderRow(
 	rowId: string,
 ): Promise<Result<RenderedRow, RenderError>> {
 	const path = rowPath(table, rowId);
-	const handle = data.tables[table];
-	const fields = handle?.stored(rowId);
-	if (handle === undefined || fields === undefined) {
+	const row = data.rowFile(table, rowId);
+	if (row === undefined) {
 		return Ok({ path, contents: undefined });
+	}
+	const { id: _id, ...values } = row;
+	const fields: JsonObject = {};
+	for (const [name, value] of Object.entries(values)) {
+		if (!(value instanceof Y.Type)) fields[name] = value as JsonValue;
 	}
 
 	const parsed = definition.tables.get(table);
@@ -151,18 +159,10 @@ export async function renderRow(
 		return Ok({ path, contents: rowFile(fields, undefined) });
 	}
 
-	const content = handle.content(rowId);
-	// Taken between the read and the content lookup. Its file is about to be
-	// unlinked by whoever asks about it next.
-	if (content === undefined) {
-		return Ok({ path, contents: undefined });
-	}
 	try {
-		const file = codec.serialize({
-			id: rowId,
-			...fields,
-			...content.types,
-		} as RowValues);
+		// One object, straight through. The row already carries its live types,
+		// so nothing here assembles a shape out of two verbs and casts it.
+		const file = codec.serialize(row as RowValues);
 		return Ok({ path, contents: rowFile(file.data, file.content) });
 	} catch (cause) {
 		return RenderError.BodyUnwritable({ table, rowId, cause });

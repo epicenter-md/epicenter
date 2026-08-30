@@ -9,6 +9,7 @@ import {
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 import { Ok } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
 import { createSqliteDurablePort } from './log.js';
 import { createMemoryRecord, openMemory } from './memory.js';
 import {
@@ -88,9 +89,9 @@ describe('a read is a property access on a plain object', () => {
 		const opened = await openMemory(database);
 		{
 			await using data = opened;
-			expect(data.tables.notes.list().rows).toEqual([]);
+			expect(data.tables.notes.rows).toEqual([]);
 		}
-		expect(() => opened.tables.notes.list()).toThrow();
+		expect(() => opened.tables.notes.rows).toThrow();
 	});
 
 	test('create returns the row it made, at a minted id', async () => {
@@ -101,10 +102,8 @@ describe('a read is a property access on a plain object', () => {
 		expect(made.tags).toEqual(['food']);
 	});
 
-	test('an absent row reads as Ok(undefined), which is a fact not a failure', async () => {
-		const { data, error } = db.tables.notes.get('nope');
-		expect(error).toBeNull();
-		expect(data).toBeUndefined();
+	test('an absent row reads as undefined, which is a fact not a failure', async () => {
+		expect(db.tables.notes.get('nope')).toBeUndefined();
 	});
 
 	test('every scalar verb is synchronous; only a document open is a load', async () => {
@@ -115,7 +114,7 @@ describe('a read is a property access on a plain object', () => {
 		for (const value of [
 			db.tables.notes.get(made.id),
 			db.tables.notes.update(made.id, { title: 'x' }),
-			db.tables.notes.list(),
+			db.tables.notes.rows,
 			db.tables.notes.ids(),
 			db.kv.get(),
 			db.kv.update({ theme: 'dark' }),
@@ -139,7 +138,7 @@ describe('a read is a property access on a plain object', () => {
 		// One notification for two rows, which is the point of grouping: a
 		// transaction is one commit, so it is one thing to re-read after.
 		expect(notifications).toBe(1);
-		expect(db.tables.notes.list().rows).toHaveLength(2);
+		expect(db.tables.notes.rows).toHaveLength(2);
 	});
 });
 
@@ -154,9 +153,13 @@ describe('a write that reaches nothing is a failure', () => {
 	test('create admits a payload and get reports its conformance', async () => {
 		const made = db.tables.notes.create({} as never);
 		expect(made.id).toHaveLength(24);
-		const read = db.tables.notes.get(made.id);
-		expect(read.data).toBeNull();
-		expect(read.error?.issues.map((issue) => issue.field)).toEqual([
+		// A row this declaration cannot read does not arrive through `get`; it is
+		// on `nonconforming`, with its raw values and the fields that failed.
+		expect(db.tables.notes.get(made.id)).toBeUndefined();
+		const issue = db.tables.notes.nonconforming.find(
+			(candidate) => candidate.id === made.id,
+		);
+		expect(issue?.issues.map((each) => each.field)).toEqual([
 			'title',
 			'tags',
 			'date',
@@ -169,10 +172,15 @@ describe('a write that reaches nothing is a failure', () => {
 			tags: 'food' as never,
 		});
 		expect(result.error).toBeNull();
-		const after = db.tables.notes.get(made.id);
-		expect(after.data).toBeNull();
-		expect(after.error?.conforming.title).toBe('Groceries');
-		expect(after.error?.issues.map((issue) => issue.field)).toEqual(['tags']);
+		// The write lands; the read is where the declaration objects. `get` stops
+		// answering for the row, and `nonconforming` carries what survived so a
+		// caller can compose its own repair (ADR-0125).
+		expect(db.tables.notes.get(made.id)).toBeUndefined();
+		const reported = db.tables.notes.nonconforming.find(
+			(candidate) => candidate.id === made.id,
+		);
+		expect(reported?.conforming.title).toBe('Groceries');
+		expect(reported?.issues.map((issue) => issue.field)).toEqual(['tags']);
 	});
 
 	test('reserved row attributes remain a structural boundary', async () => {
@@ -180,7 +188,7 @@ describe('a write that reaches nothing is a failure', () => {
 		expect(() =>
 			db.tables.notes.update(made.id, { '!presence': 'absent' } as never),
 		).toThrow(/reserved/);
-		expect(db.tables.notes.get(made.id).data?.title).toBe('Groceries');
+		expect(db.tables.notes.get(made.id)?.title).toBe('Groceries');
 	});
 });
 
@@ -188,7 +196,7 @@ describe('deletion', () => {
 	test('a deleted row reads as absent', async () => {
 		const made = note();
 		db.tables.notes.delete(made.id);
-		expect(db.tables.notes.get(made.id).data).toBeUndefined();
+		expect(db.tables.notes.get(made.id)).toBeUndefined();
 		expect(db.tables.notes.ids()).toEqual([]);
 	});
 
@@ -199,7 +207,7 @@ describe('deletion', () => {
 		// verb has no outcome to report, so the second call is indistinguishable
 		// from never having made it.
 		db.tables.notes.delete(made.id);
-		expect(db.tables.notes.get(made.id).data).toBeUndefined();
+		expect(db.tables.notes.get(made.id)).toBeUndefined();
 		expect(db.tables.notes.ids()).toEqual([]);
 	});
 
@@ -228,7 +236,7 @@ describe('deletion', () => {
 		const { data, error } = db.tables.notes.update(made.id, { title: 'back?' });
 		expect(data).toBeNull();
 		expect(error?.name).toBe('RowAbsent');
-		expect(db.tables.notes.get(made.id).data).toBeUndefined();
+		expect(db.tables.notes.get(made.id)).toBeUndefined();
 	});
 });
 
@@ -265,31 +273,32 @@ describe('a nonconforming row is reported, never repaired', () => {
 		const made = note();
 		await corruptTags(made.id);
 
-		const { data, error } = db.tables.notes.get(made.id);
-		expect(data).toBeNull();
-		// Plain diagnostic data, not a tagged error: the read's only error IS
-		// nonconformance, so there is nothing to discriminate it from.
-		expect(error?.id).toBe(made.id);
-		expect(error?.issues.map((issue) => issue.field)).toEqual(['tags']);
+		const row = db.tables.notes.get(made.id);
+		expect(row).toBeUndefined();
+		// Plain diagnostic data, not a tagged error: nonconformance is a fact
+		// about the table, so it is reported on the table rather than handed back
+		// as one row's failure.
+		const reported = db.tables.notes.nonconforming.find(
+			(candidate) => candidate.id === made.id,
+		);
+		expect(reported?.issues.map((issue) => issue.field)).toEqual(['tags']);
 		// Never repaired and never hidden: the raw payload survives intact.
-		expect(error?.raw).toEqual({
+		expect(reported?.raw).toEqual({
 			title: 'Groceries',
 			tags: 'food',
 			date: null,
 		});
 
-		const recovered = data ?? {
-			id: made.id,
-			...error?.conforming,
-		};
+		// The one recovery composition, and it still reads as one expression.
+		const recovered = row ?? { id: made.id, ...reported?.conforming };
 		expect(recovered).toEqual({ id: made.id, title: 'Groceries', date: null });
 	});
 
-	test('list separates what it can read from what it cannot', async () => {
+	test('rows and nonconforming separate what it can read from what it cannot', async () => {
 		const broken = note({ title: 'broken' });
 		const fine = note({ title: 'fine' });
 		await corruptTags(broken.id);
-		const listed = db.tables.notes.list();
+		const listed = db.tables.notes;
 		expect(listed.rows.map((row) => row.id)).toEqual([fine.id]);
 		expect(listed.nonconforming.map((issue) => issue.id)).toEqual([broken.id]);
 	});
@@ -305,7 +314,7 @@ describe('two replicas converge', () => {
 		const made = note({ title: 'Recorded on the phone', tags: ['voice'] });
 		exchange(db.store, laptop.store);
 
-		expect(laptop.tables.notes.get(made.id).data?.title).toBe(
+		expect(laptop.tables.notes.get(made.id)?.title).toBe(
 			'Recorded on the phone',
 		);
 	});
@@ -323,7 +332,7 @@ describe('two replicas converge', () => {
 			['phone', db.tables.notes],
 			['laptop', laptop.tables.notes],
 		] as const) {
-			const settled = handle.get(made.id).data;
+			const settled = handle.get(made.id);
 			expect(`${name}:${settled?.title}`).toBe(`${name}:phone title`);
 			expect(`${name}:${settled?.date}`).toBe(`${name}:2026-08-07`);
 		}
@@ -343,8 +352,8 @@ describe('two replicas converge', () => {
 		laptop.tables.notes.update(made.id, { title: 'edited offline' });
 		exchange(db.store, laptop.store);
 
-		expect(db.tables.notes.get(made.id).data).toBeUndefined();
-		expect(laptop.tables.notes.get(made.id).data).toBeUndefined();
+		expect(db.tables.notes.get(made.id)).toBeUndefined();
+		expect(laptop.tables.notes.get(made.id)).toBeUndefined();
 		expect(laptop.tables.notes.ids()).toEqual([]);
 	});
 
@@ -360,40 +369,39 @@ describe('two replicas converge', () => {
 		});
 		exchange(db.store, laptop.store);
 
-		expect(db.tables.notes.list().rows).toHaveLength(2);
-		expect(laptop.tables.notes.list().rows).toHaveLength(2);
+		expect(db.tables.notes.rows).toHaveLength(2);
+		expect(laptop.tables.notes.rows).toHaveLength(2);
 	});
 });
 
 describe("a row's rich content lives on the row (ADR-0295)", () => {
 	test('an absent row has no content, which is a fact not a failure', () => {
-		// The same answer `get` gives an absent row.
-		expect(db.tables.notes.content('nope')).toBeUndefined();
+		expect(db.tables.notes.get('nope')).toBeUndefined();
 	});
 
 	test('a rich field is minted with its row and is empty', () => {
 		const made = note();
-		const content = db.tables.notes.content(made.id);
-		expect(content?.types.editor).toBeDefined();
-		expect(content?.types.editor.length).toBe(0);
+		const content = db.tables.notes.get(made.id);
+		expect(content?.editor).toBeDefined();
+		expect(content?.editor.length).toBe(0);
 	});
 
 	test('deleting the row takes its rich content with it', () => {
 		const made = note();
-		const editor = db.tables.notes.content(made.id)?.types.editor;
+		const editor = db.tables.notes.get(made.id)?.editor;
 		editor?.applyDelta(editor.change.insert('milk') as never);
 		db.tables.notes.delete(made.id);
-		expect(db.tables.notes.content(made.id)).toBeUndefined();
+		expect(db.tables.notes.get(made.id)).toBeUndefined();
 	});
 
-	test('a rich field is not a scalar, in either read', () => {
-		// `stored` is the faithful read and `get` is the lens; a nested type is
-		// a value in neither, so neither can hand one out as JSON.
+	test('a rich field is a live type on the row, never a JSON scalar', () => {
+		// `get` carries it and `stored()` cannot: the faithful read answers in
+		// JSON, and a nested type is not one. That is the whole reason the
+		// exporter reads through `store.rowFile` rather than through `stored`.
 		const made = note();
-		expect(Object.keys(db.tables.notes.stored(made.id) ?? {})).not.toContain(
-			'editor',
-		);
-		expect(db.tables.notes.get(made.id).error).toBeNull();
+		const stored = db.store.stored().tables.get('notes')?.get(made.id);
+		expect(Object.keys(stored ?? {})).not.toContain('editor');
+		expect(db.tables.notes.get(made.id)?.editor).toBeDefined();
 	});
 
 	test('an editor writing into its own rich field cannot touch the row', () => {
@@ -403,21 +411,21 @@ describe("a row's rich content lives on the row (ADR-0295)", () => {
 		// attributes are its own.
 		const made = note();
 		db.tables.notes
-			.content(made.id)
-			?.types.editor.setAttr('title' as never, 'CLOBBER' as never);
-		expect(db.tables.notes.get(made.id).data?.title).toBe('Groceries');
+			.get(made.id)
+			?.editor.setAttr('title' as never, 'CLOBBER' as never);
+		expect(db.tables.notes.get(made.id)?.title).toBe('Groceries');
 	});
 
 	test('a rich field rides the whole state and comes back attached', async () => {
 		const made = note();
-		const editor = db.tables.notes.content(made.id)?.types.editor;
+		const editor = db.tables.notes.get(made.id)?.editor;
 		editor?.applyDelta(editor.change.insert('milk and eggs') as never);
 
 		const laptop = await openMemory(database);
 		syncEngineOf(laptop.store).applyRemote(db.store.encodeStateSince());
-		expect(
-			laptop.tables.notes.content(made.id)?.types.editor.toString(),
-		).toContain('milk and eggs');
+		expect(laptop.tables.notes.get(made.id)?.editor.toString()).toContain(
+			'milk and eggs',
+		);
 	});
 });
 
@@ -470,8 +478,8 @@ describe('kv is where anything two devices both write belongs', () => {
 		exchange(phone.store, laptop.store);
 
 		const expected = { theme: 'dark', fontSize: 22 } as const;
-		expect(phone.kv.get().data).toEqual(expected);
-		expect(laptop.kv.get().data).toEqual(expected);
+		expect(expectOk(phone.kv.get())).toEqual(expected);
+		expect(expectOk(laptop.kv.get())).toEqual(expected);
 	});
 });
 
@@ -507,7 +515,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 
 		expect(reopened.applyRemote(first).error).toBeNull();
 		expect(reopened.hasUnresolvedDependencies()).toBe(false);
-		expect(db2.tables.notes.get(made.id).data?.title).toBe('second');
+		expect(db2.tables.notes.get(made.id)?.title).toBe('second');
 		await db2.store[Symbol.asyncDispose]();
 	});
 
@@ -647,12 +655,9 @@ describe('a subscription says a table changed', () => {
 		// carried: a subscriber re-reads, so telling it twice would only cost it
 		// a second walk of the same document.
 		expect(seen).toEqual(['changed']);
-		expect(
-			db.tables.notes
-				.list()
-				.rows.map((row) => row.id)
-				.sort(),
-		).toEqual([...ids].sort());
+		expect(db.tables.notes.rows.map((row) => row.id).sort()).toEqual(
+			[...ids].sort(),
+		);
 	});
 
 	test("prose written into a row's rich field IS a table commit", () => {
@@ -665,7 +670,7 @@ describe('a subscription says a table changed', () => {
 		const made = note();
 		const { seen } = record(db.tables.notes);
 
-		const body = db.tables.notes.content(made.id)?.types.editor;
+		const body = db.tables.notes.get(made.id)?.editor;
 		if (body === undefined) throw new Error('the row has no editor');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
 		expect(seen).toEqual(['changed']);
@@ -720,7 +725,7 @@ describe('a subscription says a table changed', () => {
 			// A subscriber re-reads to find out what moved, which is the whole
 			// contract now, and writing from inside its own notification is the
 			// case the swap-before-deliver buffer exists for.
-			written = db.tables.notes.list().rows.at(0)?.id;
+			written = db.tables.notes.rows.at(0)?.id;
 			if (written !== undefined) {
 				db.tables.notes.update(written, { title: 'renamed' });
 			}
@@ -729,7 +734,7 @@ describe('a subscription says a table changed', () => {
 		const made = note();
 
 		expect(written).toBe(made.id);
-		expect(db.tables.notes.get(made.id).data?.title).toBe('renamed');
+		expect(db.tables.notes.get(made.id)?.title).toBe('renamed');
 		expect(seen).toEqual(['changed', 'changed']);
 	});
 });
@@ -858,10 +863,10 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		// A later release declares them again: nothing was lost, because the
 		// CRDT is the truth and never dropped a byte.
 		const third = await openMemory(withScratch, record);
-		expect(third.tables.scratch.list().rows).toEqual([
+		expect(third.tables.scratch.rows).toEqual([
 			{ id: made.id, body: 'kept in the CRDT' },
 		]);
-		expect(third.kv.get().data?.theme).toBe('dark');
+		expect(expectOk(third.kv.get()).theme).toBe('dark');
 		await third.store[Symbol.asyncDispose]();
 	});
 
@@ -917,7 +922,7 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 		// nonconforming either. Through the lens the stored value is unreachable
 		// from both arms, which is exactly the data loss an export must not copy.
 		const after = await openMemory(withoutPreview, record);
-		const listed = after.tables.notes.list();
+		const listed = after.tables.notes;
 		expect(listed.nonconforming).toEqual([]);
 		expect(listed.rows).toEqual([{ id: made.id, title: 'Groceries' }]);
 
@@ -946,7 +951,7 @@ describe('foreign bytes have exactly one door', () => {
 	// field would take the throw and the suite fails loudly.
 	test('a direct Y.applyUpdateV2 on the live document throws instead of forging authored work', () => {
 		const made = note({ title: 'mine' });
-		const live = db.tables.notes.content(made.id)?.types.editor.doc;
+		const live = db.tables.notes.get(made.id)?.editor.doc;
 		if (live === null || live === undefined) {
 			throw new Error('the rich field is not attached to a document');
 		}
@@ -1048,7 +1053,7 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 	test('using a disposed store throws StoreUnusableError', async () => {
 		const app = await openMemory(database);
 		await app.store[Symbol.asyncDispose]();
-		expect(() => app.tables.notes.list()).toThrow(StoreUnusableError);
+		expect(() => app.tables.notes.rows).toThrow(StoreUnusableError);
 		expect(() => app.kv.get()).toThrow(StoreUnusableError);
 		expect(() => app.tables.notes.get('anything')).toThrow(StoreUnusableError);
 	});
@@ -1081,7 +1086,7 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 		});
 		expect(made.id).toHaveLength(24);
 		// Reads follow the accepted edit immediately.
-		expect(bound.tables.notes.list().rows.map((row) => row.title)).toEqual([
+		expect(bound.tables.notes.rows.map((row) => row.title)).toEqual([
 			'still accepted',
 		]);
 		// The debt is visible: a restart would lose this edit, and the status
@@ -1093,15 +1098,13 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 describe('a rich field carries its own change signal (ADR-0297)', () => {
 	test('an edit to the field reaches its subscriber', () => {
 		const made = note();
-		const content = db.tables.notes.content(made.id);
-		if (content === undefined) throw new Error('the row has no content');
+		const editor = db.tables.notes.get(made.id)?.editor;
+		if (editor === undefined) throw new Error('the row has no content');
 		let fired = 0;
-		content.subscribe('editor', () => {
+		db.tables.notes.watch(made.id, 'editor', () => {
 			fired += 1;
 		});
-		content.types.editor.applyDelta(
-			content.types.editor.change.insert('milk') as never,
-		);
+		editor.applyDelta(editor.change.insert('milk') as never);
 		expect(fired).toBe(1);
 	});
 
@@ -1111,10 +1114,8 @@ describe('a rich field carries its own change signal (ADR-0297)', () => {
 		// signal would fire on the write it caused, so every application would
 		// have to break its own loop.
 		const made = note();
-		const content = db.tables.notes.content(made.id);
-		if (content === undefined) throw new Error('the row has no content');
 		let fired = 0;
-		content.subscribe('editor', () => {
+		db.tables.notes.watch(made.id, 'editor', () => {
 			fired += 1;
 		});
 		db.tables.notes.update(made.id, { title: 'Groceries and milk' });
@@ -1123,17 +1124,15 @@ describe('a rich field carries its own change signal (ADR-0297)', () => {
 
 	test('unsubscribing stops delivery, and doing it twice is harmless', () => {
 		const made = note();
-		const content = db.tables.notes.content(made.id);
-		if (content === undefined) throw new Error('the row has no content');
+		const editor = db.tables.notes.get(made.id)?.editor;
+		if (editor === undefined) throw new Error('the row has no content');
 		let fired = 0;
-		const stop = content.subscribe('editor', () => {
+		const stop = db.tables.notes.watch(made.id, 'editor', () => {
 			fired += 1;
 		});
 		stop();
 		stop();
-		content.types.editor.applyDelta(
-			content.types.editor.change.insert('milk') as never,
-		);
+		editor.applyDelta(editor.change.insert('milk') as never);
 		expect(fired).toBe(0);
 	});
 
@@ -1143,20 +1142,16 @@ describe('a rich field carries its own change signal (ADR-0297)', () => {
 		// commit that caused it, so a write made here is one commit later rather
 		// than a re-entry into the one being accepted.
 		const made = note();
-		const content = db.tables.notes.content(made.id);
-		if (content === undefined) throw new Error('the row has no content');
+		const editor = db.tables.notes.get(made.id)?.editor;
+		if (editor === undefined) throw new Error('the row has no content');
 		const order: string[] = [];
 		db.store.onCommitted(() => order.push('committed'));
 		db.tables.notes.subscribe(() => order.push('table'));
-		content.subscribe('editor', () => order.push('field'));
+		db.tables.notes.watch(made.id, 'editor', () => order.push('field'));
 
 		db.transact(() => {
-			content.types.editor.applyDelta(
-				content.types.editor.change.insert('a') as never,
-			);
-			content.types.editor.applyDelta(
-				content.types.editor.change.insert('b') as never,
-			);
+			editor.applyDelta(editor.change.insert('a') as never);
+			editor.applyDelta(editor.change.insert('b') as never);
 		});
 		expect(order).toEqual(['committed', 'table', 'field']);
 	});
@@ -1166,21 +1161,21 @@ describe('a rich field carries its own change signal (ADR-0297)', () => {
 		const laptop = await openMemory(database);
 		syncEngineOf(laptop.store).applyRemote(db.store.encodeStateSince());
 
-		const here = db.tables.notes.content(made.id);
+		const here = db.tables.notes.get(made.id);
 		if (here === undefined) throw new Error('the row has no content');
 		let fired = 0;
-		here.subscribe('editor', () => {
+		db.tables.notes.watch(made.id, 'editor', () => {
 			fired += 1;
 		});
 
-		const there = laptop.tables.notes.content(made.id);
-		there?.types.editor.applyDelta(
-			there.types.editor.change.insert('typed elsewhere') as never,
+		const there = laptop.tables.notes.get(made.id);
+		there?.editor.applyDelta(
+			there.editor.change.insert('typed elsewhere') as never,
 		);
 		syncEngineOf(db.store).applyRemote(laptop.store.encodeStateSince());
 
 		expect(fired).toBeGreaterThan(0);
-		expect(here.types.editor.toString()).toContain('typed elsewhere');
+		expect(here.editor.toString()).toContain('typed elsewhere');
 	});
 });
 
@@ -1209,7 +1204,7 @@ describe('the store manages no timestamps (ADR-0297)', () => {
 		});
 		expect(made.updatedAt).toBe(written);
 		data.tables.notes.update(made.id, { title: 'Groceries and milk' });
-		expect(data.tables.notes.get(made.id).data?.updatedAt).toBe(written);
+		expect(data.tables.notes.get(made.id)?.updatedAt).toBe(written);
 	});
 
 	test('a table declaring no timestamp stores none', async () => {
