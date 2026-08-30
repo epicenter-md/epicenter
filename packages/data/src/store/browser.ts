@@ -407,26 +407,6 @@ export async function openIdbBacking(
  */
 const STORE_GENERATION = 'v2';
 
-/**
- * Where one generation of one database lives on this device (ADR-0292).
- *
- * ```txt
- * epicenter/v2/<dataId>/local/gen/<n>
- * epicenter/v2/<dataId>/account/<baseURL>/<principalId>/gen/<n>
- * ```
- *
- * Both account segments are percent-encoded, because a base URL contains
- * `://` and may keep a path prefix. The generation is the last segment and is
- * a NUMBER: enumeration parses it rather than sorting it, because `gen/9`
- * sorts above `gen/10`.
- *
- * The generation being IN the address is what retires the document identity
- * stamp. A record at this name can only belong to this generation, so there is
- * nothing to compare on a dial and nothing a stale replica could merge into.
- */
-function localAddress(dataId: string, generation: number): string {
-	return `epicenter/${STORE_GENERATION}/${dataId}/local/gen/${generation}`;
-}
 
 /**
  * Normalize the server identity before it becomes durable local state.
@@ -456,15 +436,52 @@ function canonicalBaseURL(raw: string): string | undefined {
 	return `${url.origin}${url.pathname}`.replace(/\/+$/, '');
 }
 
-function accountAddress(
+/**
+ * Where one database's generations live on this device, up to the number
+ * (ADR-0292).
+ *
+ * ```txt
+ * epicenter/v2/<dataId>/local/gen/
+ * epicenter/v2/<dataId>/account/<baseURL>/<principalId>/gen/
+ * ```
+ *
+ * The PREFIX rather than an address, because both callers want it: one appends
+ * a number to open exactly that generation, the other matches it to enumerate
+ * what this device holds. It used to be an address function that enumeration
+ * called with generation zero and then chopped the last character off, which
+ * worked only while zero rendered as one digit.
+ *
+ * Both account segments are percent-encoded, because a base URL contains `://`
+ * and may keep a path prefix. The generation is the last segment and is a
+ * NUMBER: enumeration parses it rather than sorting it, because `gen/9` sorts
+ * above `gen/10`.
+ *
+ * The generation being IN the address is what retires the document identity
+ * stamp. A record at this name can only belong to this generation, so there is
+ * nothing to compare on a dial and nothing a stale replica could merge into.
+ *
+ * Refusing here is what keeps one deployment from being two: an account whose
+ * URL cannot be canonicalized has no address, rather than an address under
+ * whatever the caller happened to spell.
+ */
+function generationPrefix(
 	dataId: string,
-	{
+	account?: { baseURL: string; principalId: PrincipalId },
+): Result<{ prefix: string; baseURL: string | undefined }, StoreError> {
+	const root = `epicenter/${STORE_GENERATION}/${dataId}`;
+	if (account === undefined) {
+		return Ok({ prefix: `${root}/local/gen/`, baseURL: undefined });
+	}
+	const baseURL = canonicalBaseURL(account.baseURL);
+	if (baseURL === undefined || account.principalId.trim() === '') {
+		return StoreError.Unaddressable({
+			reason: 'an account generation needs a server URL and a principal',
+		});
+	}
+	return Ok({
+		prefix: `${root}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(account.principalId)}/gen/`,
 		baseURL,
-		principalId,
-		generation,
-	}: { baseURL: string; principalId: PrincipalId; generation: number },
-): string {
-	return `epicenter/${STORE_GENERATION}/${dataId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}/gen/${generation}`;
+	});
 }
 
 /**
@@ -617,15 +634,9 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	const { data: parsed, error: parseError } = parseData(definition);
 	if (parseError !== null) return Err(parseError);
 
-	let canonicalURL: string | undefined;
-	if (account !== undefined) {
-		canonicalURL = canonicalBaseURL(account.baseURL);
-		if (canonicalURL === undefined || account.principalId.trim() === '') {
-			return StoreError.Unaddressable({
-				reason: 'an account generation needs a server URL and a principal',
-			});
-		}
-	}
+	const located = generationPrefix(parsed.id, account);
+	if (located.error !== null) return Err(located.error);
+	const canonicalURL = located.data.baseURL;
 
 	// Asked here rather than by an application, because this is the one place
 	// that knows durable storage is about to matter, and because an eviction
@@ -633,14 +644,7 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	// finds nothing. Not awaited, and a refusal is ordinary.
 	void requestPersistentStorage();
 
-	const address =
-		account === undefined || canonicalURL === undefined
-			? localAddress(parsed.id, generation)
-			: accountAddress(parsed.id, {
-					baseURL: canonicalURL,
-					principalId: account.principalId,
-					generation,
-				});
+	const address = `${located.data.prefix}${generation}`;
 	const { error: claimError } = await claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
@@ -779,8 +783,13 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
  * Refuses an address that already holds state rather than adding to it. A
  * generation is created once and never mutated in place, so a second write
  * here would be a caller confusing import with sync.
+ *
+ * Not exported. Both call sites are `importGeneration` below, and the split is
+ * the two halves of one operation rather than a surface: without a number
+ * there is nothing to write under, and choosing the number is what
+ * `importGeneration` is for.
  */
-export async function writeGeneration({
+async function writeGeneration({
 	dataId,
 	generation,
 	state,
@@ -798,22 +807,9 @@ export async function writeGeneration({
 			reason: `'${generation}' is not a generation number`,
 		});
 	}
-	let address: string;
-	if (account === undefined) {
-		address = localAddress(dataId, generation);
-	} else {
-		const canonicalURL = canonicalBaseURL(account.baseURL);
-		if (canonicalURL === undefined || account.principalId.trim() === '') {
-			return StoreError.Unaddressable({
-				reason: 'an account generation needs a server URL and a principal',
-			});
-		}
-		address = accountAddress(dataId, {
-			baseURL: canonicalURL,
-			principalId: account.principalId,
-			generation,
-		});
-	}
+	const located = generationPrefix(dataId, account);
+	if (located.error !== null) return Err(located.error);
+	const address = `${located.data.prefix}${generation}`;
 
 	const { error: claimError } = await claimDocument(address);
 	if (claimError !== null) return Err(claimError);
@@ -965,14 +961,12 @@ export async function listLocalGenerations(
 	dataId: string,
 	account?: { baseURL: string; principalId: PrincipalId },
 ): Promise<number[]> {
-	const prefix =
-		account === undefined
-			? `${localAddress(dataId, 0).slice(0, -'0'.length)}`
-			: `${accountAddress(dataId, {
-					baseURL: canonicalBaseURL(account.baseURL) ?? account.baseURL,
-					principalId: account.principalId,
-					generation: 0,
-				}).slice(0, -'0'.length)}`;
+	const located = generationPrefix(dataId, account);
+	// An account with no address holds nothing addressable, so there is nothing
+	// here to find. `openDatabase` refuses the same input loudly; this one is a
+	// question about what is on disk and the honest answer is "none".
+	if (located.error !== null) return [];
+	const { prefix } = located.data;
 	const names = (await indexedDB.databases())
 		.map(({ name }) => name)
 		.filter((name): name is string => name !== undefined);
