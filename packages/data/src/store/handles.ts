@@ -37,6 +37,23 @@ import type { PersistenceCapability } from './persistence.js';
  * `readRow` cannot return one, so the handle merges what `readRowTypes` finds
  * before handing the row over; what a caller gets is one object with `body` on
  * it, not a row plus a bag to go and fetch.
+ *
+ * **The two halves have different lifetimes, and that is forced rather than
+ * chosen.** A scalar is a snapshot: it was copied out of the document when you
+ * read, and a later commit does not change it. A type field is a reference: it
+ * IS the container in the document, so an edit through it is an edit to the
+ * store, and a peer's edit shows up in it without anyone re-reading.
+ *
+ * Neither could be the other. Copying a `Y.Type` out would break the merge that
+ * makes it worth having, and a scalar has nothing to reference: it is a JSON
+ * value on a map, not an object. So a row is half snapshot and half handle,
+ * and which half a field is, its declared kind already says.
+ *
+ * What keeps that liveable is that reads are cheap and reactive. `get` walks a
+ * document already in memory, and `fromData` re-runs a `$derived` on any commit
+ * that touches the table, so a surface re-reads rather than holding. Holding a
+ * destructured scalar across a commit is the one way to be surprised, and it is
+ * the same way it always was.
  */
 export type Row = { id: string } & Record<string, JsonValue | Y.Type>;
 
