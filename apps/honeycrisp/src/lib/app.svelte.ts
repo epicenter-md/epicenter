@@ -223,10 +223,11 @@ function createFolders(data: ReactiveData<HoneycrispData>) {
  * Honeycrisp's own note concepts, over the reactive `notes` table.
  *
  * The table already answers "what rows are here right now" reactively
- * (`fromData`): a read inside `$derived` re-runs on any commit that
- * touched the table, local writes, prose typed into a note's document, and
- * bytes from another device alike (ADR-0221), and a read in an event handler
- * is fresh. What this adds is what the platform cannot know: which rows count
+ * (`fromData`): a read inside `$derived` re-runs on any commit that changed
+ * the table's SHAPE, local writes and bytes from another device alike
+ * (ADR-0221), and a read in an event handler is fresh. Prose typed into a
+ * note does NOT re-run it, deliberately; that is `store.watch`'s job, and it
+ * is why `previewOf` below exists. What this adds is what the platform cannot know: which rows count
  * as deleted, per-folder counts, where a note's prose is, and the domain
  * commands (soft delete, pinning, re-parenting) with their URL cleanup.
  */
@@ -276,7 +277,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 		// writes during sustained typing, and a person who stops typing and
 		// closes the tab should not lose their title to a pending timer.
 		let queued: ReturnType<typeof setTimeout> | undefined;
-		const stop = table.watch(id, 'body', () => {
+		const stop = table.watch(body, () => {
 			if (queued !== undefined) return;
 			queued = setTimeout(() => {
 				queued = undefined;
@@ -316,9 +317,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	function previewOf(id: NoteId): { readonly text: string } {
 		const body = table.get(id)?.body;
 		if (body === undefined) return { text: '' };
-		const subscribe = createSubscriber((update) =>
-			table.watch(id, 'body', update),
-		);
+		const subscribe = createSubscriber((update) => table.watch(body, update));
 		return {
 			get text() {
 				subscribe();

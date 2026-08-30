@@ -18,7 +18,6 @@ import type {
 	NewRowOf,
 	RowOf,
 	ScalarsOf,
-	TypesOf,
 } from '@epicenter/data/definition';
 import type * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
@@ -154,27 +153,31 @@ export type TableHandle = {
 	 */
 	readonly nonconforming: NonconformingRow[];
 	/**
-	 * Hear edits to ONE type field of ONE row, local or remote.
+	 * Hear edits to ONE live type of this table, local or remote.
 	 *
-	 * What is left of `content`'s per-field signal after the types moved onto
-	 * the row. Scoped to the field rather than the row or the table, and that
-	 * scope is the whole reason it exists: the store writes no derived fields
-	 * (ADR-0297), so an application hangs its own write on an edit, and a
-	 * row-scoped signal would fire on the write it caused.
+	 * Takes the type rather than a row id and a field name, because the caller
+	 * is already holding it: a type field is read off its row (ADR-0295), and
+	 * rendering it needs the type anyway. Naming an address instead looked the
+	 * same object up a second time and could disagree with the first, handing
+	 * back a dead subscription for a row deleted in between.
 	 *
-	 * This is also the ONLY way to hear prose. `subscribe` below reports a
-	 * table's shape and deliberately not an edit inside a field, so a list does
-	 * not wake at typing frequency.
+	 * It stays on the table because that is the APPLICATION's side of the
+	 * surface, which is where a feature reaches; the delivery it drives is
+	 * store-wide and knows nothing about a table.
+	 *
+	 * The scope is the whole reason it exists: the store writes no derived
+	 * fields (ADR-0297), so an application hangs its own write on an edit, and
+	 * a row-scoped signal would fire on the write it caused. It is also the
+	 * only way to hear prose, because `subscribe` below reports this table's
+	 * shape and deliberately not an edit inside a field.
 	 *
 	 * Fires once per commit, on the same flush every other subscriber's
-	 * notification goes out on and after all of them, so a listener that writes
-	 * is writing against a settled commit. That ordering is why this exists at
-	 * all rather than the caller reaching for the type's own `on('delta')`.
-	 *
-	 * An address holding no row, or a field this table does not declare as a type,
-	 * returns a teardown that does nothing.
+	 * notification goes out on and AFTER all of them, so a listener that writes
+	 * is writing against a settled commit. That ordering is the whole service:
+	 * the type's own `on('delta')` fires mid-acceptance, and a write from there
+	 * would re-enter the transaction being accepted.
 	 */
-	watch(rowId: string, field: string, listener: () => void): () => void;
+	watch(type: Y.Type, listener: () => void): () => void;
 	/**
 	 * Hear when this table's SHAPE changes: a row added, a row removed, or a
 	 * row's scalars edited.
@@ -182,7 +185,7 @@ export type TableHandle = {
 	 * NOT an edit inside a row's type field. A type field is nested on its row
 	 * (ADR-0295), so counting it here would wake every list in the application
 	 * on every keystroke; `watch` above is the signal for that, scoped to the
-	 * one field. The store decides by depth against the table root, so the
+	 * one type. The store decides by depth against the table root, so the
 	 * invalidation stays a superset of what changed (ADR-0187) without being
 	 * the whole document.
 	 *
@@ -226,11 +229,7 @@ export type TypedTableHandle<TFields> =
 				ids(): string[];
 				readonly rows: TRow[];
 				readonly nonconforming: NonconformingRow[];
-				watch(
-					rowId: string,
-					field: keyof TypesOf<TFields> & string,
-					listener: () => void,
-				): () => void;
+				watch(type: Y.Type, listener: () => void): () => void;
 				subscribe(listener: () => void): () => void;
 			}
 		: never;

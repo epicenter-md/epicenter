@@ -897,19 +897,11 @@ function createStoreEngine(
 				assertUsable();
 				return readRow(root, rowId);
 			},
-			watch(rowId: string, field: string, listener: () => void): () => void {
+			watch(type: Y.Type, listener: () => void): () => void {
 				assertUsable();
-				const type = readRowTypes(root, rowId, typeFields)?.[field];
-				if (type === undefined) return () => undefined;
-				// Keyed by the field's own type, so what a listener hears is an edit
-				// to THAT content and nothing else (ADR-0297). `deliver` reads
-				// `changedParentTypes` for this phase, so an edit anywhere inside
-				// the field reaches it while an edit to a sibling row does not.
-				//
-				// It no longer widens to the table either, and that is the point of
-				// the depth rule in `deliver`: before it, a note list rendering off
-				// the table signal re-read every visible note's prose on every
-				// keystroke.
+				// Keyed by the type itself, which is what a commit names:
+				// `deliver` reads `changedParentTypes`, so an edit anywhere inside
+				// this type reaches the listener while an edit to a sibling does not.
 				let listeners = typeListeners.get(type);
 				if (listeners === undefined) {
 					listeners = new Set();
@@ -918,11 +910,12 @@ function createStoreEngine(
 				listeners.add(listener);
 				let stopped = false;
 				return () => {
-					// Idempotent, for the same reason a table subscription is: a
-					// Svelte effect that reruns can call its teardown twice.
+					// Idempotent, for the same reason a table subscription is: a Svelte
+					// effect that reruns can call its teardown twice.
 					if (stopped) return;
 					stopped = true;
 					listeners.delete(listener);
+					// Pruned, so `deliver` can skip this phase on `size === 0`.
 					if (listeners.size === 0) typeListeners.delete(type);
 				};
 			},
