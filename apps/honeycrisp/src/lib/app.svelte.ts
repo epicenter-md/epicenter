@@ -47,11 +47,12 @@ import { navigation } from './navigation.svelte.js';
  */
 export function createHoneycrisp({ data }: { data: HoneycrispData }) {
 	const reactiveData = fromData(data);
-	// Asymmetric on purpose: notes are table-local, folders are not. Deleting a
-	// folder re-parents the notes that were in it, so it needs both tables and
-	// says so by taking the database.
+	// Both take the database. Folders always did, because deleting one
+	// re-parents the notes that were in it. Notes joined them when prose stopped
+	// being a table event: a note's body is watched through `data.watch`, which
+	// is keyed by the type and belongs to no table.
 	const folders = createFolders(reactiveData);
-	const notes = createNotes(reactiveData.tables.notes);
+	const notes = createNotes(reactiveData);
 
 	/**
 	 * The notes the user is currently looking at, in the order they appear.
@@ -231,7 +232,8 @@ function createFolders(data: ReactiveData<HoneycrispData>) {
  * as deleted, per-folder counts, where a note's prose is, and the domain
  * commands (soft delete, pinning, re-parenting) with their URL cleanup.
  */
-function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
+function createNotes(data: ReactiveData<HoneycrispData>) {
+	const table = data.tables.notes;
 	const all = $derived(table.rows.filter((note) => note.deletedAt === null));
 	const deleted = $derived(
 		table.rows.filter((note) => note.deletedAt !== null),
@@ -277,7 +279,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 		// writes during sustained typing, and a person who stops typing and
 		// closes the tab should not lose their title to a pending timer.
 		let queued: ReturnType<typeof setTimeout> | undefined;
-		const stop = table.watch(body, () => {
+		const stop = data.watch(body, () => {
 			if (queued !== undefined) return;
 			queued = setTimeout(() => {
 				queued = undefined;
@@ -317,7 +319,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	function previewOf(id: NoteId): { readonly text: string } {
 		const body = table.get(id)?.body;
 		if (body === undefined) return { text: '' };
-		const subscribe = createSubscriber((update) => table.watch(body, update));
+		const subscribe = createSubscriber((update) => data.watch(body, update));
 		return {
 			get text() {
 				subscribe();

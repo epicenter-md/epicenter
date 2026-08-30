@@ -128,6 +128,7 @@ function setup() {
 		kv: kv.handle,
 		// Passed through untouched, so the fake just runs it.
 		transact: <TResult,>(run: () => TResult) => run(),
+		watch: () => () => undefined,
 	});
 	// One subscriber per table plus one for kv, created in declaration order.
 	const [notesControl, foldersControl] = subscriberControls;

@@ -53,7 +53,7 @@ const database = defineData({
 	},
 });
 
-let db: DataOf<typeof database>;
+let db: DataOf<typeof database, AccountStore>;
 
 beforeEach(async () => {
 	db = await openMemory(database);
@@ -1123,7 +1123,7 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 		const editor = db.tables.notes.get(made.id)?.editor;
 		if (editor === undefined) throw new Error('the row has no content');
 		let fired = 0;
-		db.tables.notes.watch(editorOf(made.id), () => {
+		db.watch(editorOf(made.id), () => {
 			fired += 1;
 		});
 		editor.applyDelta(editor.change.insert('milk') as never);
@@ -1137,7 +1137,7 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 		// have to break its own loop.
 		const made = note();
 		let fired = 0;
-		db.tables.notes.watch(editorOf(made.id), () => {
+		db.watch(editorOf(made.id), () => {
 			fired += 1;
 		});
 		db.tables.notes.update(made.id, { title: 'Groceries and milk' });
@@ -1149,7 +1149,7 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 		const editor = db.tables.notes.get(made.id)?.editor;
 		if (editor === undefined) throw new Error('the row has no content');
 		let fired = 0;
-		const stop = db.tables.notes.watch(editorOf(made.id), () => {
+		const stop = db.watch(editorOf(made.id), () => {
 			fired += 1;
 		});
 		stop();
@@ -1169,7 +1169,7 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 		const order: string[] = [];
 		db.store.onCommitted(() => order.push('committed'));
 		db.tables.notes.subscribe(() => order.push('table'));
-		db.tables.notes.watch(editorOf(made.id), () => order.push('field'));
+		db.watch(editorOf(made.id), () => order.push('field'));
 
 		db.transact(() => {
 			editor.applyDelta(editor.change.insert('a') as never);
@@ -1195,7 +1195,7 @@ describe('a type field carries its own change signal (ADR-0297)', () => {
 		const here = db.tables.notes.get(made.id);
 		if (here === undefined) throw new Error('the row has no content');
 		let fired = 0;
-		db.tables.notes.watch(editorOf(made.id), () => {
+		db.watch(editorOf(made.id), () => {
 			fired += 1;
 		});
 

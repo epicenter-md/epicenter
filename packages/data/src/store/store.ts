@@ -706,6 +706,28 @@ function createStoreEngine(
 			// so it belongs on the application's surface rather than on the
 			// store's, which is what a transport and an exporter hold.
 			transact,
+			watch(type: Y.Type, listener: () => void): () => void {
+				assertUsable();
+				// Keyed by the type itself, which is what a commit names:
+				// `deliver` reads `changedParentTypes`, so an edit anywhere inside
+				// this type reaches the listener while an edit to a sibling does not.
+				let listeners = typeListeners.get(type);
+				if (listeners === undefined) {
+					listeners = new Set();
+					typeListeners.set(type, listeners);
+				}
+				listeners.add(listener);
+				let stopped = false;
+				return () => {
+					// Idempotent, for the same reason a table subscription is: a Svelte
+					// effect that reruns can call its teardown twice.
+					if (stopped) return;
+					stopped = true;
+					listeners.delete(listener);
+					// Pruned, so `deliver` can skip this phase on `size === 0`.
+					if (listeners.size === 0) typeListeners.delete(type);
+				};
+			},
 		}) as UntypedDataView;
 	}
 
@@ -896,32 +918,6 @@ function createStoreEngine(
 					if (error !== null) nonconforming.push(error);
 				}
 				return nonconforming;
-			},
-			stored(rowId: string): JsonObject | undefined {
-				assertUsable();
-				return readRow(root, rowId);
-			},
-			watch(type: Y.Type, listener: () => void): () => void {
-				assertUsable();
-				// Keyed by the type itself, which is what a commit names:
-				// `deliver` reads `changedParentTypes`, so an edit anywhere inside
-				// this type reaches the listener while an edit to a sibling does not.
-				let listeners = typeListeners.get(type);
-				if (listeners === undefined) {
-					listeners = new Set();
-					typeListeners.set(type, listeners);
-				}
-				listeners.add(listener);
-				let stopped = false;
-				return () => {
-					// Idempotent, for the same reason a table subscription is: a Svelte
-					// effect that reruns can call its teardown twice.
-					if (stopped) return;
-					stopped = true;
-					listeners.delete(listener);
-					// Pruned, so `deliver` can skip this phase on `size === 0`.
-					if (listeners.size === 0) typeListeners.delete(type);
-				};
 			},
 			/**
 			 * Hear that this table's SHAPE changed: a row added, a row removed, or
