@@ -79,23 +79,26 @@ export type SyncHub = {
 	attached(): number;
 };
 
+/**
+ * The ceiling on chunks held for a submission that is still incomplete.
+ *
+ * Reassembly is in memory, so a peer that opens a submission and never
+ * finishes it is asking the other side to hold bytes indefinitely. Past this
+ * the partial is dropped and the peer is refused, which it can act on because
+ * it still owes the work.
+ *
+ * A constant rather than an option, for the reason `client.ts` states at its
+ * own copy: no caller ever passed one.
+ */
+const BUFFER_CEILING_BYTES = 64 * 1024 * 1024;
+
 export function createSyncHub({
 	authority,
 	/** Entries per read. Bounds one catch-up read, not the catch-up itself. */
 	batch = 64,
-	/**
-	 * The ceiling on chunks held for submissions that are still incomplete.
-	 *
-	 * Reassembly is in memory, so a client that opens a submission and never
-	 * finishes it is asking the authority to hold bytes indefinitely. Past this
-	 * the partial is dropped and the client is refused, which it can act on
-	 * because it still owes the work.
-	 */
-	maxBufferedBytes = 64 * 1024 * 1024,
 }: {
 	authority: SyncAuthority;
 	batch?: number;
-	maxBufferedBytes?: number;
 }): SyncHub {
 	const connections = new Map<HubConnection, ChunkCollector>();
 
@@ -166,7 +169,7 @@ export function createSyncHub({
 			if (authority.head().error !== null) return 'unavailable';
 			connections.set(
 				connection,
-				createChunkCollector({ limitBytes: maxBufferedBytes }),
+				createChunkCollector({ limitBytes: BUFFER_CEILING_BYTES }),
 			);
 			deliver(connection);
 			return 'admitted';

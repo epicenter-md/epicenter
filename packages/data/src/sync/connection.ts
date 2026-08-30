@@ -163,7 +163,6 @@ export function createSyncConnection({
 	store,
 	dial,
 	idleMs,
-	maxBufferedBytes,
 	schedule = (task, delayMs) => {
 		const handle = setTimeout(task, delayMs);
 		return () => clearTimeout(handle);
@@ -192,7 +191,6 @@ export function createSyncConnection({
 	store: AccountDocument;
 	dial: SyncDial;
 	idleMs?: number;
-	maxBufferedBytes?: number;
 	schedule?: Schedule;
 	backoff?: (attempts: number) => number;
 	healthyMs?: number;
@@ -201,7 +199,6 @@ export function createSyncConnection({
 	const client: SyncClient = createSyncClient({
 		store,
 		...(idleMs === undefined ? {} : { idleMs }),
-		...(maxBufferedBytes === undefined ? {} : { maxBufferedBytes }),
 		schedule,
 	});
 

@@ -144,6 +144,20 @@ const defaultSchedule: Schedule = (task, delayMs) => {
 	return () => clearTimeout(handle);
 };
 
+/**
+ * The ceiling on chunks held for a submission that is still incomplete.
+ *
+ * Reassembly is in memory, so a peer that opens a submission and never
+ * finishes it asks the other side to hold bytes indefinitely. Past this the
+ * partial is dropped and the peer is refused, which it can act on because it
+ * still owes the work.
+ *
+ * A constant rather than an option. It was one here and on `createSyncHub`,
+ * threaded through `createSyncConnection` on the way, and across the life of
+ * the three files no caller ever passed it.
+ */
+const BUFFER_CEILING_BYTES = 64 * 1024 * 1024;
+
 export function createSyncClient({
 	store,
 	/**
@@ -157,13 +171,10 @@ export function createSyncClient({
 	 */
 	idleMs = 1_000,
 	schedule = defaultSchedule,
-	/** Guards the authority's in-memory reassembly, and mirrors its limit. */
-	maxBufferedBytes = 64 * 1024 * 1024,
 }: {
 	store: AccountDocument;
 	idleMs?: number;
 	schedule?: Schedule;
-	maxBufferedBytes?: number;
 }): SyncClient {
 	// The delivery machinery behind the store's public capability: the client
 	// log, applyRemote, and the dependency alarm. Only the transport drives
@@ -172,7 +183,7 @@ export function createSyncClient({
 	// Rebuilt on every attach rather than held for the life of the client. A
 	// collector keyed by position outliving its socket is how a partial left by a
 	// dead connection collides with a later frame at the same number.
-	let collector = createChunkCollector({ limitBytes: maxBufferedBytes });
+	let collector = createChunkCollector({ limitBytes: BUFFER_CEILING_BYTES });
 	/**
 	 * The live connection, and the one submission it may have outstanding.
 	 *
@@ -379,7 +390,7 @@ export function createSyncClient({
 			// A new socket starts a new reassembly. Whatever the old one left half
 			// delivered is being re-sent from this replica's cursor anyway, and
 			// keeping it could only collide.
-			collector = createChunkCollector({ limitBytes: maxBufferedBytes });
+			collector = createChunkCollector({ limitBytes: BUFFER_CEILING_BYTES });
 			// A fresh socket asks from this replica's own cursor, which is exactly
 			// the repair a gap needs.
 			needsResync = false;
@@ -388,7 +399,7 @@ export function createSyncClient({
 
 		detach() {
 			connection = undefined;
-			collector = createChunkCollector({ limitBytes: maxBufferedBytes });
+			collector = createChunkCollector({ limitBytes: BUFFER_CEILING_BYTES });
 			clearIdle();
 		},
 
