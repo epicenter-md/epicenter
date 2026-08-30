@@ -1,13 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
-import {
-	defineData,
-	defineTable,
-	field,
-	parseData,
-	type RowOf,
-} from './definition.js';
+import { parseData } from './compile.js';
+import { field, type RowOf } from './declaration.js';
+import { defineData, defineTable } from './define.js';
 
 const authored = defineData({
 	id: 'so.epicenter.data',

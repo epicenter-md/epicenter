@@ -18,18 +18,17 @@ export * from './canonical.js';
 export {
 	type Conformance,
 	type ConformanceIssue,
-	type DataDefinition,
 	DataDefinitionParseError,
-	defineData,
-	defineKv,
-	defineTable,
+	type ParsedDataDefinition,
+	type ParsedTable,
+	parseData,
+} from './compile.js';
+export {
+	type DataDefinition,
 	type FieldMap,
 	field,
 	type KvOf,
 	type NewRowOf,
-	type ParsedDataDefinition,
-	type ParsedTable,
-	parseData,
 	RESERVED_ATTRIBUTE_PREFIX,
 	type RowFileCodecOf,
 	RowFileError,
@@ -37,5 +36,6 @@ export {
 	type RowValues,
 	type ScalarsOf,
 	type TableDeclaration,
-} from './definition.js';
+} from './declaration.js';
+export { defineData, defineKv, defineTable } from './define.js';
 export * from './json.js';
