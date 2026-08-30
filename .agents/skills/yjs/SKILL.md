@@ -32,7 +32,11 @@ converges to unexpected state or grows faster than its content.
 
 ## Transactions, Origins, And Undo
 
-- Yjs updates are commutative and idempotent. Custom sync and persistence layers should use state vectors instead of inventing ordering guarantees.
+- Yjs updates are commutative and idempotent. A state vector describes what a
+  replica HAS; it does not order what it owes. A delete moves no client clock,
+  so two replicas can hold the same vector and differ, which is why this store
+  carries its own cursor and outbox rather than deriving obligation from a
+  vector (`packages/data/evidence/invariants.test.ts`).
 - Use `Y.encodeStateVector(doc)` to describe local clocks, then `Y.encodeStateAsUpdateV2(doc, remoteStateVector)` to send only missing updates.
 - Persist and transmit bytes from the `updateV2` event. Replay them with `Y.applyUpdateV2(doc, update, origin)`.
 - Wrap multi-write user actions in `doc.transact(() => { ... }, origin)`. This reduces observer churn and gives persistence, providers, and undo logic a useful origin.
@@ -52,135 +56,107 @@ converges to unexpected state or grows faster than its content.
 - Large updates are chunked at `CHUNK_BYTES`, set by Cloudflare's documented Durable Object SQLite value cap rather than by anything about Yjs. Do not raise it to the measured wall; the documented limit is the one Cloudflare is entitled to enforce.
 - Presence is deliberately absent until a concrete consumer earns awareness state and disconnect cleanup. If added later, awareness is ephemeral and must never be persisted into the Y.Doc or the SQLite update log as canonical data.
 
-## The Application Document And Independent Row Documents
+## One Document Per Application
 
-The application's scalar rows live in one `Y.Doc` per application: roots are
-`tables:<name>` and `kv`, a row is a nested `Y.Type` attribute on its table
-root, and a field is an attribute on the row. Holding the attribute is what it
-means to exist, and removing it is what deletion does. The nesting is not
-stylistic: `Item.write` calls `findRootTypeKey`, a linear scan of `doc.share`,
-so one root per row makes encoding quadratic in rows (5,417 ms for 20,000 rows
-against 13 ms nested).
+An application is ONE `Y.Doc`. Roots are `tables:<name>` and `kv`. A row is a
+nested `Y.Type` attribute on its table root, a scalar field is a JSON attribute
+on the row, and a rich field is a nested `Y.Type` on the row (ADR-0295,
+ADR-0296). Holding the attribute is what it means to exist; removing it is what
+deletion does, and it reclaims the row's whole subtree in one operation.
 
-A row's rich content lives in its own independent top-level `Y.Doc` at the
-row's derived address, `{databaseId}/{tableName}/{rowId}` (ADR-0248). The
-document manager (`packages/data/src/store/documents.ts`) treats the address
-as an opaque string: it opens fully hydrated handles, reuses one live `Y.Doc`
-per address, persists locally authored `updateV2` bytes through the store's
-one durable queue, and unloads a document when its last handle closes.
+The nesting is not stylistic. `Item.write` calls `findRootTypeKey`, a linear
+scan of `doc.share`, so one root per row makes encoding quadratic in rows
+(5,417 ms for 20,000 rows against 13 ms nested).
+
+There are no independent row documents. A row's prose used to live in its own
+top-level document at a derived address, with a document manager, a tombstone
+table and an `openDocument` verb (ADR-0248); ADR-0295 collapsed all of it into
+the row. Advice naming `documents.ts`, `openDocument`, `_tombstones`, or
+"hydrate the row's document" is describing a design that no longer exists.
 
 ```typescript
-// Scalar fields are attributes on the row, written through the table.
+// Scalars are attributes on the row, written through the table.
 db.tables.notes.update(noteId, { title, pinned: true });
-db.kv.update({ 'theme.mode': 'dark' });
 
-// Prose never lives in a field. Each row owns an independent document,
-// opened on demand and disposed when the surface holding it unmounts.
-const { data: handle } = await db.tables.notes.openDocument(noteId);
-const body = handle?.get('body', 'text'); // a Y.Type an editor binds to
-handle?.[Symbol.dispose]();
+// A rich field is ON the row, read synchronously with everything else.
+const note = db.tables.notes.get(noteId);
+const body = note?.body;              // a live Y.Type an editor binds to
 ```
 
-Roots inside a row document are minted by name on first use, and that is safe
-because a top-level root is addressed by its NAME: two devices first-opening
-one note converge with both writes retained
-(`packages/data/evidence/independent-document-roots.test.ts`). No root is
-reserved at create time. Inside the APPLICATION document, only `Doc.get`
-mints, and every key reaching it must be a table name the database declares:
-reading an unknown row through `getAttr` costs nothing, while a misspelled
-table name costs a permanent root.
+Inside the application document only `Doc.get` mints, and every key reaching it
+must be a table name the database declares: reading an unknown ROW through
+`getAttr` costs nothing, while a misspelled TABLE name costs a permanent root.
 
-Row deletion is one composition point: `table.delete(rowId)` removes the
-scalar row and durably tombstones the derived address in one atomic batch, so
-a late update cannot resurrect a retired document. Lists and previews read
-scalar fields only and never hydrate rich documents.
+## Two Signals, And Which One Fires
+
+- `table.subscribe` fires when a table's SHAPE changes: a row added, removed,
+  or a scalar edited. It does NOT fire for an edit inside a rich field.
+- `table.watch(type)` fires for edits inside one rich field, keyed by the
+  type's own identity.
+
+The distinction is forced by the library. Delivery routes off
+`transaction.changed`, which Yjs fills with the types a transaction modified
+DIRECTLY, so a keystroke in a body puts the BODY's type there; its parent is
+the row, not the table root. Nothing bubbles to the table. A surface that
+watches a table for prose changes sees nothing.
 
 ## Owner-Side Persistence
 
-Every document's update chain persists in the store's one durable record:
-`_updates (document, seq, bytes)` in SQLite, `[document, seq]` keys in the
-browser's IndexedDB, with retired addresses in `_tombstones` and unsent work
-in a per-document `_outbox` (ADR-0238, ADR-0248). Do not add a separate
-IndexedDB provider or a second document store.
+One document, so one chain: `_updates (id, bytes, authoritySeq)` in SQLite, and
+the matching object store in the browser's IndexedDB. There is no per-document
+partition, no `_tombstones`, and no separate `_outbox` — what a replica still
+owes is the rows with `authoritySeq IS NULL`, which is a partial index rather
+than a second table (ADR-0238). Do not add a separate IndexedDB provider or a
+second document store.
 
-- Attach the `updateV2` listener before hydration. Replay stored updates with a private hydration origin so loading cannot append the same bytes again.
-- A locally authored append joins the durable queue with an outbox id on a replica. Authority-accepted bytes use a remote origin and create no outbound obligation.
-- Each document's chain folds at `SNAPSHOT_FOLD_THRESHOLD` by replaying into a fresh `gc: true` document and rewriting the chain as one complete V2 state update.
+- Hydrate BEFORE attaching the `updateV2` listener. Replaying stored bytes
+  through the listener would re-append them; the engine applies its history
+  first and then attaches, and throws if a foreign apply ever reaches the
+  listener, so a mistake here fails the open loudly rather than duplicating a
+  log (`packages/data/src/store/store.ts`).
+- A locally authored append joins the durable queue owed. Authority-accepted
+  bytes arrive on a remote origin and create no outbound obligation, which is
+  what the one listener checks before appending.
+- The chain folds at `SNAPSHOT_FOLD_THRESHOLD` by replaying into a fresh
+  `gc: true` document and rewriting it as one complete V2 state update. Replay
+  rather than `mergeUpdatesV2`, because merging does not GC and collapsing
+  tombstones is the point. `encodeStateAsUpdateV2` folds buffered pending state
+  back into its output, so a fold taken while dependencies are missing cannot
+  silently drop them.
 - Treat replay corruption as storage failure: a document that cannot hydrate refuses its open rather than handing out a half-hydrated handle.
 
 ## Storage Optimization
 
-Use raw `Y.Map` for bounded, rarely changing structures inside a document root.
-`Y.Map` tombstones retain the key forever, and every `ymap.set(key, value)`
+v14 has ONE shared type, `Y.Type`, reached as `doc.get(name)` for a map-like
+root or `doc.get(name, 'text')` for a text one. There is no `Y.Map`, `Y.Text`,
+`Y.Array` or `Y.XmlFragment`; code or advice naming them is Yjs 13 and is
+replacement material.
+
+Attribute tombstones retain the key forever, and every `setAttr(key, value)`
 creates a new internal item and tombstones the previous one, which is why
 `gc: true` is what collapses a field edited 5,000 times down to two structs.
 
-## Working with Raw Y.js Types Outside Their Owning Module
+## Raw Types At The Boundary
 
-Y.js shared types (`Y.Map`, `Y.Text`, `Y.XmlFragment`, `Y.Array`) are implementation details that should stay behind typed APIs. When consumer code reaches through an abstraction to manipulate raw shared types, it creates coupling that's hard to change later.
+A `Y.Type` handed out by a table handle is a live CRDT reference and is MEANT
+to be bound to an editor. That is the design: the store hands the editor the
+real thing rather than proxying it, because a copy would break the merge that
+makes it worth having.
 
-**The pattern**: If a module returns Y.js shared types for editor binding (e.g., `handle.asText()` returns `Y.Text`), that's intentional: the consumer needs the live CRDT reference. But if consumer code is *constructing*, *casting*, or *mutating* Y.js types that the owning module should encapsulate, that's a leak.
+What does not belong in a feature:
 
-```typescript
-// BAD: consumer reaches through handle to do raw Y.Text mutation
-const entry = handle.currentEntry;
-if (entry?.type === 'text') {
-    handle.batch(() => entry.content.insert(entry.content.length, text));
-}
+- **Constructing the layout.** A feature does not decide which attribute a row
+  keeps its prose under. It asks the table for the row and reads the declared
+  field.
+- **Casting into shape.** `as Y.Type` outside `packages/data/src/store/` means
+  something is reading a document the store owns without going through it.
+- **Reaching the document.** `doc.get(...)` in a feature bypasses the
+  declaration, the conformance lens, and the durable queue at once.
 
-// GOOD: timeline owns the append operation
-handle.append(text);
-```
-
-```typescript
-// BAD: consumer constructs Y.Maps to call an internal CSV helper
-import { parseSheetFromCsv } from './internal/sheet.js';
-const columns = new Y.Map<Y.Map<string>>();
-const rows = new Y.Map<Y.Map<string>>();
-parseSheetFromCsv(csv, columns, rows);
-
-// GOOD: use the handle's write method, which encapsulates CSV parsing
-handle.write(csv);  // mode-aware, handles sheet internally
-```
-
-### How to Spot Abstraction Leaks
-
-These are code smell indicators that Y.js internals are leaking:
-
-- **Type assertions**: `as Y.Map`, `as Y.Text`, `as Y.XmlFragment` outside the owning module means someone is working with untyped data and forcing it into shape. The typed API is incomplete.
-- **Mode branching**: `if (entry.type === 'text') ... else if (entry.type === 'sheet')` in consumer code means the consumer knows about internal content modes that the abstraction should handle.
-- **Raw mutations in batch callbacks**: `handle.batch(() => ytext.insert(...))` means the consumer is doing CRDT operations that should be a method on the handle.
-- **Internal helper re-exports**: Functions that take `Y.Map<Y.Map<string>>` parameters on a public API force consumers to have raw Y.js references to call them.
-- **`ydoc.getArray()`/`ydoc.getMap()` outside infrastructure**: Consumer code accessing the raw Y.Doc to read/write data bypasses the table/kv/timeline APIs.
-
-### The Boundary Rule
-
-Three layers, each with clear Y.js exposure:
-
-```
-┌──────────────────────────────────────────────────────┐
-│  Consumer Code (apps, features)                      │
-│  • Uses row document handles and typed root APIs     │
-│  • MAY bind to Y.Text/Y.XmlFragment from as*()      │
-│  • NEVER constructs Y.js types                       │
-│  • NEVER casts to Y.js types                         │
-│  • NEVER calls .insert()/.delete() on raw types      │
-├──────────────────────────────────────────────────────┤
-│  Format Bridges (markdown, sheet converters)          │
-│  • Accepts Y.js types as parameters (they're bridges)│
-│  • Converts between Y.js ↔ string/JSON               │
-│  • Lives close to the owning module                   │
-├──────────────────────────────────────────────────────┤
-│  Row Document Internals                               │
-│  • Constructs and manages Y.js shared types           │
-│  • Owns the Y.Doc layout (array keys, map structure)  │
-│  • Exposes typed APIs that hide the CRDT details      │
-└──────────────────────────────────────────────────────┘
-```
-
-When reviewing code, ask: "Could this consumer do its job with only the typed API?" If yes and it's using raw Y.js types instead, that's a leak worth fixing.
-
-See the article `docs/articles/yjs-abstraction-leaks-cost-more-than-the-abstraction.md` for the full pattern with real examples.
+The store's own boundary is `packages/data/src/store/document.ts`: it holds one
+cast, at `rowType`, and states why (a container whose attributes are themselves
+types has no expressible configuration, so a table root stays untyped while a
+ROW's shape is declared). Everything downstream of that line is typed.
 
 ## References
 
@@ -191,10 +167,11 @@ See the article `docs/articles/yjs-abstraction-leaks-cost-more-than-the-abstract
 - [fractional-indexing](https://github.com/rocicorp/fractional-indexing) - Production library
 - [YATA paper](https://www.researchgate.net/publication/310212186_Near_Real-Time_Peer-to-Peer_Shared_Editing_on_Extensible_Data_Types) - Academic foundation
 - `packages/data/src/store/document.ts`: the application-document grammar (roots, row types, field reads)
-- `packages/data/src/store/documents.ts`: the document manager (independent row documents at derived addresses)
-- `packages/data/src/store/log.ts` and `packages/data/src/store/persistence.ts`: the durable update log, outbox, tombstones, and the persistence queue
+- `packages/data/src/store/log.ts` and `packages/data/src/store/persistence.ts`: the durable update log, the outbox, and the persistence queue
+- `packages/data/evidence/invariants.test.ts`: the library behaviour this design rests on, pinned against the installed rc
 - `packages/data/src/sync/`: the Yjs 14 wire (frames, connection, client, authority)
-- [ADR-0248](../../../docs/adr/0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md): a row owns an independent Yjs document at a derived address
+- [ADR-0295](../../../docs/adr/0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md): one document per application, and a row holds its rich content (supersedes ADR-0248)
+- [ADR-0296](../../../docs/adr/0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md): a rich field is declared, and a table owns its file codec
 - [ADR-0221](../../../docs/adr/0221-a-table-names-the-rows-a-commit-touched-and-says-so-after-the-projection-commits.md): what `subscribe` reports and when it fires
 - [ADR-0146](../../../docs/adr/0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md): Yjs 14-only persistence decision
 - [ADR-0159](../../../docs/adr/0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md): one owner-side SQLite update log and shared attachment seam
