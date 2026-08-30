@@ -88,8 +88,9 @@ import { Database } from 'bun:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defineData } from '@epicenter/data/definition';
+import { defineData, defineTable } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { Ok } from 'wellcrafted/result';
 
 import { createAccountStore, syncEngineOf } from '../../src/store/store.js';
 import { openSyncAuthority } from '../../src/sync/authority.js';
@@ -97,7 +98,21 @@ import { openSyncAuthority } from '../../src/sync/authority.js';
 const benchDatabase = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: { fields: { title: field.string() } } },
+	tables: {
+		notes: defineTable({
+			fields: { title: field.string(), editor: field.type() },
+			file: {
+				serialize: (row) => ({
+					data: { title: row.title },
+					content: row.editor.toString(),
+				}),
+				deserialize: (file, types) => {
+					if (file.content !== '') types.editor.insert(0, [file.content]);
+					return Ok({ title: String(file.data.title ?? '') });
+				},
+			},
+		}),
+	},
 });
 
 /** The real vault's shape, the same one the other benches in here model. */
@@ -236,25 +251,11 @@ async function build(
 		sinceSend = 0;
 		await send();
 	};
-	/** Open row documents once and keep the handles for the workload's life. */
-	const handles = new Map<
-		string,
-		NonNullable<
-			Awaited<ReturnType<typeof db.tables.notes.openDocument>>['data']
-		>
-	>();
-	const bodyOf = async (id: string) => {
-		let handle = handles.get(id);
-		if (handle === undefined) {
-			const opened = await db.tables.notes.openDocument(id);
-			if (opened.error !== null) throw opened.error;
-			if (opened.data === null || opened.data === undefined) {
-				throw new Error('the row has no document');
-			}
-			handle = opened.data;
-			handles.set(id, handle);
-		}
-		return handle.get('editor', 'text');
+	/** One row's rich field, live on the one document (ADR-0295). */
+	const bodyOf = (id: string) => {
+		const content = db.tables.notes.content(id);
+		if (content === undefined) throw new Error('the row has no content');
+		return content.types.editor;
 	};
 
 	const alive: string[] = [];
@@ -266,7 +267,7 @@ async function build(
 		const made = db.tables.notes.create({
 			title: canary ? 'the canary note' : `note ${index}`,
 		});
-		const text = await bodyOf(made.id);
+		const text = bodyOf(made.id);
 		await transaction(() => {
 			text.applyDelta(
 				text.change.insert(
@@ -291,15 +292,13 @@ async function build(
 		}
 		for (let keystroke = 0; keystroke < DAY.charsTyped; keystroke += 1) {
 			const id = alive[(day * 3 + keystroke) % alive.length] as string;
-			const text = await bodyOf(id);
+			const text = bodyOf(id);
 			await transaction(() => {
 				text.applyDelta(text.change.retain(10).insert('a') as never);
 			});
 		}
 		for (let gone = 0; gone < DAY.notesDeleted; gone += 1) {
 			const victim = alive.shift() as string;
-			handles.get(victim)?.[Symbol.dispose]();
-			handles.delete(victim);
 			await transaction(() => {
 				db.tables.notes.delete(victim);
 			});
@@ -308,7 +307,7 @@ async function build(
 			const index = created;
 			created += 1;
 			const made = db.tables.notes.create({ title: `note ${index}` });
-			const text = await bodyOf(made.id);
+			const text = bodyOf(made.id);
 			await transaction(() => {
 				text.applyDelta(text.change.insert(bodyText(index)) as never);
 				alive.push(made.id);
@@ -341,7 +340,7 @@ async function build(
 	const ids = db.tables.notes.ids();
 	const canary = db.tables.notes.get(canaryId);
 	if (canary.error !== null) throw canary.error;
-	const canaryProse = (await bodyOf(canaryId)).toString();
+	const canaryProse = bodyOf(canaryId).toString();
 
 	return {
 		payload,
@@ -431,10 +430,7 @@ async function apply(
 	const canary = rows.rows.find((row) => row.title === expectation.canaryTitle);
 	let prose: string | undefined;
 	if (canary !== undefined) {
-		const opened = await db.tables.notes.openDocument(canary.id);
-		if (opened.error !== null) throw opened.error;
-		prose = opened.data?.get('editor', 'text').toString();
-		opened.data?.[Symbol.dispose]();
+		prose = db.tables.notes.content(canary.id)?.types.editor.toString();
 	}
 	// Guarding the guard: an expectation of an empty string would be satisfied by
 	// a replica that received nothing, which is the exact run this control exists

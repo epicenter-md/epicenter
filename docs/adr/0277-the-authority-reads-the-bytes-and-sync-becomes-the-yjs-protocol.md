@@ -1,6 +1,6 @@
 # 0277. The authority reads the bytes, and sync becomes the Yjs protocol
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-28
 - **Supersedes:** [ADR-0218](0218-the-authority-reads-nothing-and-a-poison-entry-is-repaired-rather-than-prevented.md) entirely, and [ADR-0217](0217-the-authority-appends-opaque-bytes-and-the-client-owns-every-merge.md) at the opaque-append model, the client-owned merge, and the absence of state vectors from the transport. ADR-0217's chunking survives.
 - **Supersedes:** [ADR-0220](0220-the-authority-keeps-a-snapshot-and-a-tail-and-a-deletion-becomes-real.md). A snapshot and a tail are what a byte-blind server keeps instead of a document; a reading one keeps the document.
@@ -8,9 +8,13 @@
 - **Amends:** [ADR-0238](0238-the-live-document-is-the-truth-while-open-and-persistence-is-a-visible-debt.md) at the outbox. Acceptance and durability still split; what a replica owes is no longer a durable queue.
 - **Amends:** [ADR-0276](0276-an-authority-holds-a-numbered-succession-of-generations-and-nothing-is-ever-overwritten.md) at what a generation holds: a set of documents rather than a log and a snapshot. The numbering, the two verbs, the retention rule, and the routes are unchanged.
 - **Returns to:** [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md), which decided this on 2026-06-15 and has never been superseded.
-- **Unbuilt:** all of it.
+- **Superseded by:** [ADR-0298](0298-the-authority-is-byte-blind-and-a-cursor-is-a-log-position.md) entirely. ADR-0295 deleted the split that made a document-granular server worth its price; the byte-blind positional log this record retired is what actually deploys, and the implementation written for this one was never routed to.
+- **Unbuilt:** all of it, and now permanently. Nothing here shipped.
 - **Amended by:** [ADR-0282](0282-the-authority-hydrates-the-document-and-one-object-per-document-bounds-the-blast-radius.md) at three stated reasons, not at its decision. Withdrawn: refusal at the door, "128 MB per isolate, shared" as the mechanism, and request count as the argument against per-generation. The granularity stands on blast radius, measured.
 - **Amended by:** [ADR-0283](0283-a-generations-collection-is-a-ledger-that-allocates-admits-and-sweeps.md) at the address surface, which moves under `/api` and gains explicit non-existence.
+- **Amended by:** [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses-from-one-snapshot.md) at bulk bootstrap, which uses one complete envelope before the incremental socket.
+- **Amended by:** [ADR-0293](0293-a-generation-is-created-by-importing-a-folder-and-the-ledger-row-is-its-existence.md) at the envelope's surviving role in bulk generation transfer.
+- **Amended by:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) at the object granularity and the per-row HTTP surface: one object holds one database, not one document per row. This record's own refused alternative, one object per generation, is the chosen shape there.
 
 ## Context
 

@@ -40,9 +40,6 @@
  *   retrying it on a timer is a hot loop against a wall; the repair is a new
  *   app generation, which the host owns (reload on auth change), not a state
  *   in this driver.
- * - Stopping for good when the client concludes `superseded` (ADR-0231): the
- *   authority named a document that is not the one this replica's state
- *   belongs to, meaning its document is superseded. `onSuperseded` fires
  *   once, after the driver has let go of everything, and the host discards
  *   the local file whole and reloads. Nothing else can trigger it: a close
  *   without the announcement, garbage, and every failure are ordinary
@@ -80,16 +77,6 @@ export type SyncAttempt = {
 	 * (ADR-0238).
 	 */
 	readonly cursor: number;
-	/**
-	 * Which authority document this replica's state belongs to, or undefined
-	 * for one that never exchanged a byte. Belongs in the URL beside the
-	 * cursor (ADR-0231).
-	 *
-	 * The membership fact the cursor cannot carry: admission compares it by
-	 * equality, and the cursor means only "how far through THAT document's
-	 * log".
-	 */
-	readonly document: string | undefined;
 	/** The socket is live and can carry bytes. */
 	opened(socket: SyncSocket): void;
 	/** Bytes arrived from the authority. */
@@ -138,16 +125,6 @@ export type SyncConnectionStatus = SyncClientStatus & {
 	 * a denied connection the same as no connection at all.
 	 */
 	denied: boolean;
-	/**
-	 * Whether this replica's document was confirmed superseded (ADR-0231).
-	 *
-	 * Once true it stays true, and `onSuperseded` has fired: the host is
-	 * discarding the local file and reloading, so this status exists only for
-	 * the moments in between. The one thing that sets it is the client's
-	 * `superseded` conclusion from a document announcement that names a
-	 * document this replica does not belong to; doubt has no path here.
-	 */
-	superseded: boolean;
 	/**
 	 * Failed attempts since the last one that stayed up long enough to count.
 	 *
@@ -211,7 +188,6 @@ export function createSyncConnection({
 	 * free: an update is idempotent (`evidence/invariants.test.ts`).
 	 */
 	unacknowledgedMs = 30_000,
-	onSuperseded,
 }: {
 	store: AccountStore;
 	dial: SyncDial;
@@ -221,16 +197,6 @@ export function createSyncConnection({
 	backoff?: (attempts: number) => number;
 	healthyMs?: number;
 	unacknowledgedMs?: number;
-	/**
-	 * This replica's document is superseded; sync is over for good.
-	 *
-	 * Fires at most once, after the driver has already shut down, and only
-	 * because the client drew the `superseded` conclusion from a document
-	 * announcement on this replica's own authenticated socket (ADR-0231).
-	 * The host discards the local file whole and reloads (ADR-0232's
-	 * instrument); adoption is the ordinary join the fresh boot runs.
-	 */
-	onSuperseded?: () => void;
 }): SyncConnection {
 	const client: SyncClient = createSyncClient({
 		store,
@@ -242,7 +208,6 @@ export function createSyncConnection({
 	let running = false;
 	let disposed = false;
 	let denied = false;
-	let superseded = false;
 	let connected = false;
 	let attempts = 0;
 	let lastReconnect: ReconnectReason | undefined;
@@ -308,21 +273,10 @@ export function createSyncConnection({
 	 * `needsResync` is the reason this exists and the reason it runs after every
 	 * single delivery rather than on a timer: the client sets it and then waits
 	 * for someone to notice, and a randomised schedule showed that nobody does.
-	 * `superseded` rides the same set-and-wait shape, and it is terminal: the
-	 * one thing that can set it is an announcement the client already vetted
-	 * against its own stamped identity, so noticing it here IS the whole
-	 * discovery.
 	 */
 	function settle(): void {
 		if (!running) return;
-		const status = client.status();
-		if (status.superseded) {
-			superseded = true;
-			shutdown();
-			onSuperseded?.();
-			return;
-		}
-		if (status.needsResync) reconnect('resync');
+		if (client.status().needsResync) reconnect('resync');
 	}
 
 	/**
@@ -342,12 +296,10 @@ export function createSyncConnection({
 	function open(): void {
 		if (!running || teardown !== undefined) return;
 		const attempt = ++generation;
-		const bootstrapping = client.document() === undefined;
 		const live = () => running && generation === attempt;
 
 		teardown = dial({
 			cursor: client.cursor(),
-			document: client.document(),
 			opened(socket: SyncSocket) {
 				if (!live()) return;
 				connected = true;
@@ -369,16 +321,6 @@ export function createSyncConnection({
 			},
 			closed() {
 				if (!live()) return;
-				// A bootstrap connection is intentionally one-way: the authority
-				// sends the current document, closes without admitting it, and the
-				// client has stamped the announced identity by the time this callback
-				// runs. Reopen immediately through the equality door. This is not a
-				// transport failure and should not consume backoff budget.
-				if (bootstrapping && client.document() !== undefined) {
-					abandon();
-					open();
-					return;
-				}
 				reconnect('closed');
 			},
 			denied() {
@@ -426,13 +368,13 @@ export function createSyncConnection({
 
 	return Object.freeze({
 		start() {
-			if (disposed || denied || superseded || running) return;
+			if (disposed || denied || running) return;
 			running = true;
 			open();
 		},
 
 		flush() {
-			if (disposed || denied || superseded) return Ok(undefined);
+			if (disposed || denied) return Ok(undefined);
 			return client.flush();
 		},
 
@@ -441,7 +383,6 @@ export function createSyncConnection({
 				...client.status(),
 				connected,
 				denied,
-				superseded,
 				attempts,
 				lastReconnect,
 			};
@@ -450,7 +391,7 @@ export function createSyncConnection({
 		[Symbol.dispose]() {
 			if (disposed) return;
 			disposed = true;
-			if (!denied && !superseded) shutdown();
+			if (!denied) shutdown();
 		},
 	});
 }

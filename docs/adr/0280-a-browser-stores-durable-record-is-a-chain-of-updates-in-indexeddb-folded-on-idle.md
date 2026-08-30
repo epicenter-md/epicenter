@@ -1,11 +1,13 @@
 # 0280. A browser store's durable record is a chain of updates in IndexedDB, folded on idle
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-28
 - **Supersedes:** [ADR-0275](0275-a-browser-stores-durable-record-is-sqlite-over-opfs-in-a-worker.md). SQLite over OPFS in a worker was sized for an update log that a whole-document write was about to delete, and then the whole-document write was itself deleted. Its OPFS half was already reverted in `7cf2e01b`; this record retires the rest, and `claims.ts` survives rather than being replaced by a filesystem fact.
 - **Amends:** [ADR-0238](0238-the-live-document-is-the-truth-while-open-and-persistence-is-a-visible-debt.md) at the debt. Acceptance and durability still split, but the window between them is now one IndexedDB transaction rather than a queue, so the three-state debt machine is replaced by a single health bit.
-- **Unbuilt:** the switch onto it. The record itself is built; the decision gained one invariant while it was being built, recorded below as "no memory state names a key".
+- **Superseded by:** [ADR-0298](0298-the-authority-is-byte-blind-and-a-cursor-is-a-log-position.md). The switch onto it never happened: `store/record.ts` served the document-aware client path and nothing else, and it is deleted with it. What a browser store durably holds is `store/browser.ts`'s two object stores, folded at a threshold inside the accepting transaction rather than on an idle timer.
+- **Unbuilt:** the switch onto it, permanently. The record itself was built and is now deleted; the invariant it gained while being built, "no memory state names a key", is recorded below and is worth reading before anything writes an IndexedDB chain again.
 - **Amended by:** [ADR-0285](0285-a-generation-is-a-url-parameter-and-a-device-stores-no-selection.md) at the Web Lock, which moves onto the generation database rather than the name above it.
+- **Amended by:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) at the document dimension of the record key, which degenerates to a constant.
 
 ## Context
 

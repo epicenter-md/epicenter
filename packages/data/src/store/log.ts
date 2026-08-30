@@ -31,9 +31,9 @@ export type { OutboxEntry } from './persistence.js';
  * appends updates and squashes at `PREFERRED_TRIM_SIZE = 500` by writing
  * `Y.encodeStateAsUpdate(doc)` and deleting what it replaced, which is exactly
  * what `fold` below does. It sits at 500 to avoid re-encoding a whole document
- * often; this sits at 1 because re-encoding one document is cheap when a
- * document is a row's prose or one application's scalar fields, and because
- * paying it buys the deletion of ids, ordering, replay and the chain itself.
+ * often; this sits at 1 because re-encoding one document is cheap at the sizes
+ * a personal database reaches, and because paying it buys the deletion of ids,
+ * ordering, replay and the chain itself.
  *
  * A syncing store still folds only the acknowledged prefix, so owed appends
  * stay individually addressable for their acknowledgement. That is the last
@@ -68,34 +68,25 @@ export type { OutboxEntry } from './persistence.js';
  */
 export const SNAPSHOT_FOLD_THRESHOLD = 64;
 
-/**
- * The application document's name in the log.
- *
- * The log is per-document (ADR-0248): the application document holds every
- * scalar row under this reserved name, and each row's rich document holds its
- * chain under the row's derived address (`{dataId}/{tableName}/{rowId}`).
- * The two spellings cannot collide, because a derived address always carries
- * two slashes and this name carries none.
- */
-export const APP_DOCUMENT = 'app';
-
 type StoredUpdate = SqliteRow & {
 	seq: number;
 	bytes: Uint8Array | ArrayBuffer;
 };
 
 /**
- * The durable record: the update log, the outbox, the cursor, the metadata,
- * and the tombstones, in one file so that one flush commits them together.
+ * The durable record: the update log, and the outbox and the cursor that are
+ * read off it. One relation, because the generation is in the ADDRESS
+ * (ADR-0292): what used to sit beside the chain was the document identity, the
+ * membership fact a replica stamped at first entanglement, and a record at
+ * this address can only belong to one generation.
  */
 export function applyStoreSchema(sqlite: SqliteDatabase): void {
 	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS _updates (
-			document     TEXT    NOT NULL,
 			id           INTEGER NOT NULL CHECK (id > 0),
 			bytes        BLOB    NOT NULL,
 			authoritySeq INTEGER CHECK (authoritySeq IS NULL OR authoritySeq >= 0),
-			PRIMARY KEY (document, id)
+			PRIMARY KEY (id)
 		) WITHOUT ROWID, STRICT
 	`);
 	// Owed work is read off the chain, so the query that answers "what do I
@@ -103,28 +94,6 @@ export function applyStoreSchema(sqlite: SqliteDatabase): void {
 	sqlite.run(`
 		CREATE INDEX IF NOT EXISTS _updates_owed
 			ON _updates (id) WHERE authoritySeq IS NULL
-	`);
-	// Which authority document this replica's state belongs to (ADR-0231).
-	// At most one row, ever: the primary key IS the first-write-wins rule, so
-	// membership cannot change in place, only by discarding the record whole.
-	// It used to share a key-value table with the storage format, and the
-	// format left for the address, where a record under another shape is not
-	// detected and wiped but simply not addressed.
-	sqlite.run(`
-		CREATE TABLE IF NOT EXISTS _identity (
-			document TEXT NOT NULL,
-			PRIMARY KEY (document)
-		) WITHOUT ROWID, STRICT
-	`);
-	// A retired document address (ADR-0248): a row deletion records one here,
-	// atomically with removing the scalar row and the document's chain, and
-	// nothing ever removes it. A tombstoned address takes no further bytes, so
-	// a late write cannot resurrect a deleted row's document.
-	sqlite.run(`
-		CREATE TABLE IF NOT EXISTS _tombstones (
-			document TEXT NOT NULL,
-			PRIMARY KEY (document)
-		) WITHOUT ROWID, STRICT
 	`);
 }
 
@@ -167,14 +136,10 @@ export function readOutbox(
 	// would ever read the result: there is no sender.
 	if (!syncs) return [];
 	return sqlite
-		.all<SqliteRow & { document: string; id: number; bytes: Uint8Array }>(
-			'SELECT document, id, bytes FROM _updates WHERE authoritySeq IS NULL ORDER BY id',
+		.all<SqliteRow & { id: number; bytes: Uint8Array }>(
+			'SELECT id, bytes FROM _updates WHERE authoritySeq IS NULL ORDER BY id',
 		)
-		.map((row) => ({
-			id: row.id,
-			document: row.document,
-			bytes: copyBytes(row.bytes),
-		}));
+		.map((row) => ({ id: row.id, bytes: copyBytes(row.bytes) }));
 }
 
 /**
@@ -183,10 +148,6 @@ export function readOutbox(
  * Derived, and that is the point: a cursor computed from the bytes it accounts
  * for cannot run ahead of them. The rule that used to need one atomic batch to
  * enforce ("with the bytes, never after them") is now unrepresentable.
- *
- * It can lag, when an entry arrived whose sections were all for retired
- * addresses and nothing was stored. That is the safe direction: the entry is
- * received again and applying an update twice is free.
  *
  * Zero means nothing has been read, which is also what a fresh replica and a
  * local store both report.
@@ -228,33 +189,9 @@ export function acknowledge(
 	);
 }
 
-/** Which authority document this replica's state belongs to (ADR-0231). */
-export function readDocumentIdentity(
-	sqlite: SqliteDatabase,
-): string | undefined {
-	return sqlite.all<SqliteRow & { document: string }>(
-		'SELECT document FROM _identity',
-	)[0]?.document;
-}
-
-/**
- * Stamp which document this replica's state belongs to. First write wins:
- * membership never changes in place, only by discarding the file whole.
- */
-export function writeDocumentIdentity(
-	sqlite: SqliteDatabase,
-	id: string,
-): void {
-	sqlite.run('INSERT OR IGNORE INTO _identity (document) VALUES (?)', [id]);
-}
-
-export function readUpdates(
-	sqlite: SqliteDatabase,
-	document: string,
-): StoredUpdate[] {
+export function readUpdates(sqlite: SqliteDatabase): StoredUpdate[] {
 	return sqlite.all<StoredUpdate>(
-		'SELECT id AS seq, bytes FROM _updates WHERE document = ? ORDER BY id',
-		[document],
+		'SELECT id AS seq, bytes FROM _updates ORDER BY id',
 	);
 }
 
@@ -288,14 +225,12 @@ export function replay(updates: readonly StoredUpdate[]): Y.Doc {
  */
 export function appendUpdate({
 	sqlite,
-	document,
 	id,
 	update,
 	authoritySeq,
 	syncs,
 }: {
 	sqlite: SqliteDatabase;
-	document: string;
 	id: number;
 	update: Uint8Array;
 	authoritySeq: number | undefined;
@@ -303,10 +238,10 @@ export function appendUpdate({
 	syncs: boolean;
 }): void {
 	sqlite.run(
-		'INSERT INTO _updates (document, id, bytes, authoritySeq) VALUES (?, ?, ?, ?)',
-		[document, id, new Uint8Array(update), authoritySeq ?? null],
+		'INSERT INTO _updates (id, bytes, authoritySeq) VALUES (?, ?, ?)',
+		[id, new Uint8Array(update), authoritySeq ?? null],
 	);
-	fold(sqlite, document, syncs);
+	fold(sqlite, syncs);
 }
 
 /**
@@ -332,13 +267,12 @@ export function appendUpdate({
  * local append a redundant constant and made `authoritySeq` three-valued in a
  * way that would have collided the day a log position started at zero.
  */
-function fold(sqlite: SqliteDatabase, document: string, syncs: boolean): void {
+function fold(sqlite: SqliteDatabase, syncs: boolean): void {
 	const foldable = syncs
 		? sqlite.all<StoredUpdate>(
-				'SELECT id AS seq, bytes FROM _updates WHERE document = ? AND authoritySeq IS NOT NULL ORDER BY id',
-				[document],
+				'SELECT id AS seq, bytes FROM _updates WHERE authoritySeq IS NOT NULL ORDER BY id',
 			)
-		: readUpdates(sqlite, document);
+		: readUpdates(sqlite);
 	if (foldable.length < SNAPSHOT_FOLD_THRESHOLD) return;
 
 	const through = foldable.at(-1)?.seq;
@@ -349,8 +283,7 @@ function fold(sqlite: SqliteDatabase, document: string, syncs: boolean): void {
 	// does not sync there is no position and none is invented.
 	const position = syncs
 		? (sqlite.all<SqliteRow & { seq: number | null }>(
-				'SELECT MAX(authoritySeq) AS seq FROM _updates WHERE document = ?',
-				[document],
+				'SELECT MAX(authoritySeq) AS seq FROM _updates',
 			)[0]?.seq ?? null)
 		: NO_AUTHORITY;
 	const compacted = replay(foldable);
@@ -358,13 +291,12 @@ function fold(sqlite: SqliteDatabase, document: string, syncs: boolean): void {
 		const baseline = new Uint8Array(Y.encodeStateAsUpdateV2(compacted));
 		sqlite.run(
 			syncs
-				? 'DELETE FROM _updates WHERE document = ? AND authoritySeq IS NOT NULL'
-				: 'DELETE FROM _updates WHERE document = ?',
-			[document],
+				? 'DELETE FROM _updates WHERE authoritySeq IS NOT NULL'
+				: 'DELETE FROM _updates',
 		);
 		sqlite.run(
-			'INSERT INTO _updates (document, id, bytes, authoritySeq) VALUES (?, ?, ?, ?)',
-			[document, through, baseline, position],
+			'INSERT INTO _updates (id, bytes, authoritySeq) VALUES (?, ?, ?)',
+			[through, baseline, position],
 		);
 	} finally {
 		compacted.destroy();
@@ -372,45 +304,19 @@ function fold(sqlite: SqliteDatabase, document: string, syncs: boolean): void {
 }
 
 /**
- * Retire one document address (ADR-0248): tombstone it durably and delete
- * its stored chain and unsent entries. Runs inside the caller's transaction,
- * beside the scalar row removal it composes with.
- */
-export function retireDocument(sqlite: SqliteDatabase, document: string): void {
-	sqlite.run('INSERT OR IGNORE INTO _tombstones (document) VALUES (?)', [
-		document,
-	]);
-	// One statement, because owed work is a column on the chain now rather
-	// than a second relation that had to be swept alongside it.
-	sqlite.run('DELETE FROM _updates WHERE document = ?', [document]);
-}
-
-/** Every durably retired document address. */
-export function readTombstones(sqlite: SqliteDatabase): string[] {
-	return sqlite
-		.all<SqliteRow & { document: string }>('SELECT document FROM _tombstones')
-		.map((row) => row.document);
-}
-
-/**
  * Everything this file durably held at open, materialized once.
  *
- * The store hydrates its application document from `updates`, seeds its
- * durable mirror from the rest, and never reads this file again outside a
- * flush or a row document's own open (ADR-0238, ADR-0248).
+ * The store hydrates its one document from `updates`, seeds its durable mirror
+ * from the rest, and never reads this file again outside a flush (ADR-0238).
  */
 export function loadDurableSnapshot(
 	sqlite: SqliteDatabase,
 	syncs: boolean,
 ): DurableSnapshot {
 	return {
-		updates: readUpdates(sqlite, APP_DOCUMENT).map((stored) =>
-			copyBytes(stored.bytes),
-		),
+		updates: readUpdates(sqlite).map((stored) => copyBytes(stored.bytes)),
 		outbox: readOutbox(sqlite, syncs),
 		cursor: readCursor(sqlite),
-		identity: readDocumentIdentity(sqlite),
-		tombstones: readTombstones(sqlite),
 		lastId: readLastId(sqlite),
 	};
 }
@@ -445,7 +351,6 @@ export function createSqliteDurablePort({
 						case 'append':
 							appendUpdate({
 								sqlite,
-								document: op.document,
 								id: op.id,
 								update: op.bytes,
 								authoritySeq: op.authoritySeq,
@@ -455,23 +360,9 @@ export function createSqliteDurablePort({
 						case 'ack':
 							acknowledge(sqlite, op.throughId, op.authoritySeq);
 							break;
-						case 'identity':
-							writeDocumentIdentity(sqlite, op.id);
-							break;
-						case 'retire':
-							retireDocument(sqlite, op.document);
-							break;
 					}
 				}
 			});
 		},
-		readDocument: (document: string) =>
-			readUpdates(sqlite, document).map((stored) => copyBytes(stored.bytes)),
-		listDocuments: () =>
-			sqlite
-				.all<SqliteRow & { document: string }>(
-					'SELECT DISTINCT document FROM _updates ORDER BY document',
-				)
-				.map((row) => row.document),
 	};
 }

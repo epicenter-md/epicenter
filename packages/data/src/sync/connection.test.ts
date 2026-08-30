@@ -16,24 +16,33 @@ import { field } from '@epicenter/data/definition';
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineData } from '@epicenter/data/definition';
+import { defineData, defineTable } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import type { Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 
-import {
-	createAccountStore,
-	type DataView,
-	syncEngineOf,
-} from '../store/store.js';
+import { createAccountStore, type DataView } from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
 import { createSyncConnection, type SyncDial } from './connection.js';
-import { encodeFrame } from './frames.js';
 import { createSyncHub, type HubConnection } from './hub.js';
 
 const database = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: { fields: { title: field.string() } } },
+	tables: {
+		notes: defineTable({
+			fields: { title: field.string(), editor: field.type() },
+			file: {
+				serialize: (row) => ({
+					data: { title: row.title },
+					content: row.editor.toString(),
+				}),
+				deserialize: (file, types) => {
+					if (file.content !== '') types.editor.insert(0, [file.content]);
+					return Ok({ title: String(file.data.title ?? '') });
+				},
+			},
+		}),
+	},
 });
 
 function expectOk<TValue, TError>(
@@ -158,13 +167,12 @@ function openDriven({
 	let generation = 0;
 	let breakSocket: (() => void) | undefined;
 
-	const dial: SyncDial = ({ cursor, document, opened, received, closed }) => {
+	const dial: SyncDial = ({ cursor, opened, received, closed }) => {
 		dialledFrom.push(cursor);
 		generation += 1;
 		const mine = generation;
 		const connection: HubConnection = {
 			cursor,
-			document,
 			send: (bytes) =>
 				wire.defer(() => {
 					if (mine !== generation) return;
@@ -181,17 +189,7 @@ function openDriven({
 					if (mine === generation) hub.receive(connection, bytes);
 				}),
 		});
-		const admission = hub.join(connection);
-		if (admission === 'bootstrap') {
-			// The authority sends bootstrap frames before closing. The close runs
-			// after the queued delivery, so the driver immediately redials with
-			// the identity it just persisted.
-			wire.defer(() => {
-				if (mine !== generation) return;
-				hub.leave(connection);
-				closed();
-			});
-		}
+		hub.join(connection);
 		// The server dropping the socket, which is what a hibernating Durable
 		// Object, a lost network and a rejected credential all look like here.
 		breakSocket = () => {
@@ -298,26 +296,20 @@ describe('a write syncs without anyone remembering to say so', () => {
 		expect(laptop.titles()).toEqual([]);
 	});
 
-	test('prose written into a row document syncs on the same timer', async () => {
+	test("prose written into a row's rich field syncs on the same timer", () => {
 		const { wire, clock, phone, laptop } = setup();
 		phone.connection.start();
 		laptop.connection.start();
 		run(wire, clock, 0);
 
 		const note = expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
-		const opened = expectOk(await phone.db.tables.notes.openDocument(note.id));
-		const body = opened?.get('body', 'text');
-		if (body === undefined) throw new Error('the row has no document');
+		const body = phone.db.tables.notes.content(note.id)?.types.editor;
+		if (body === undefined) throw new Error('the row has no editor');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
 		run(wire, clock, 1_000);
 
-		const received = expectOk(
-			await laptop.db.tables.notes.openDocument(note.id),
-		);
-		const arrived = received?.get('body', 'text');
+		const arrived = laptop.db.tables.notes.content(note.id)?.types.editor;
 		expect(JSON.stringify(arrived?.toJSON())).toContain('milk and eggs');
-		opened?.[Symbol.dispose]();
-		received?.[Symbol.dispose]();
 	});
 });
 
@@ -409,12 +401,15 @@ describe('a socket that dies is dialled again from the replica own cursor', () =
 		laptop.breakSocket();
 		run(wire, clock, 5_000);
 
-		// Not zero on the second dial. A reconnect that asked from the start
-		// would work, and would re-download everything on every wobble.
-		// The initial bootstrap is a one-way dial at zero, followed immediately
-		// by the identity-bearing connection. The later reconnect still resumes
-		// from the durable cursor rather than starting again.
-		expect(laptop.dialledFrom).toEqual([0, 0, 1]);
+		// Two dials, not three. The first is the ordinary open at zero; the
+		// bootstrap round-trip that used to sit between them went with the
+		// identity stamp (ADR-0292), because there is no longer a name to be
+		// handed and reconnect with.
+		//
+		// Not zero on the second. A reconnect that asked from the start would
+		// work, and would re-download everything on every wobble; it resumes
+		// from the durable cursor instead.
+		expect(laptop.dialledFrom).toEqual([0, 1]);
 	});
 
 	test('a socket that never stays up backs off, and a working one resets it', () => {
@@ -592,186 +587,37 @@ describe('the driver lets go of what it has abandoned', () => {
 	});
 });
 
-describe('a foreign document name supersedes the replica, and nothing else does (ADR-0231)', () => {
-	/**
-	 * A replica whose door is scripted: the dial opens, the door answers with
-	 * whatever `answers` says, and the socket closes. This is the accepted-
-	 * then-answered shape the deployed hub produces; the frame is the only
-	 * signal, exactly as on the wire.
-	 */
-	function openAtDoor({
-		clock,
-		cursor,
-		document,
-		answers,
-	}: {
-		clock: Clock;
-		/** What this replica has durably applied, seeded before the driver runs. */
-		cursor: number;
-		/** The identity this replica durably stamped, if any. */
-		document?: string;
-		/** Frames the door sends this dial before closing, if any. */
-		answers: (dial: number) => Uint8Array[];
-	}) {
+describe('a retired opcode on the wire is ignored, not concluded from', () => {
+	// Two opcodes are retired, 8 and 9. Opcode 9 carried the authority naming
+	// the history its log described, which a replica compared against its own
+	// stamp and could conclude supersession from; the generation is in the
+	// address now, so there is no question to ask and no verdict to draw
+	// (ADR-0292). A decoder meeting either ignores it, which is what lets a
+	// deployment roll forward past a peer that has not.
+	test('a frame nobody understands leaves the driver running', () => {
+		const wire = createWire();
+		const clock = createClock();
 		const data = createAccountStore({
 			definition: database,
 			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
-		const store = data.store;
-		const db = data as DataView<typeof database>;
-		// Stamped before the cursor moves, in the order every real replica
-		// follows: the stamp refuses a store that grew before it.
-		if (document !== undefined) {
-			expectOk(syncEngineOf(store).adoptDocumentIdentity(document));
-		}
-		if (cursor > 0) syncEngineOf(store).acknowledge(0, cursor);
-		let dials = 0;
-		let discarded = 0;
+		const retired = new Uint8Array([9, 1, 2, 3]);
 		const connection = createSyncConnection({
-			store,
+			store: data.store,
+			idleMs: 1_000,
 			schedule: clock.schedule,
-			onSuperseded: () => {
-				discarded += 1;
-			},
-			dial: ({ opened, received, closed }) => {
-				dials += 1;
+			dial: ({ opened, received }) => {
 				opened({ send: () => undefined });
-				for (const bytes of answers(dials)) received(bytes);
-				closed();
+				wire.defer(() => received(retired));
 				return () => undefined;
 			},
 		});
-		return { db, connection, dials: () => dials, discarded: () => discarded };
-	}
+		connection.start();
+		run(wire, clock, 0);
 
-	test('a foreign document name stops the driver for good and fires onSuperseded once', () => {
-		const clock = createClock();
-		const replica = openAtDoor({
-			clock,
-			cursor: 7,
-			document: 'the-old-document',
-			answers: () => [encodeFrame({ kind: 'document', id: 'a-new-document' })],
-		});
-		replica.connection.start();
-		clock.advance(120_000);
-
-		expect(replica.dials()).toBe(1);
-		expect(replica.discarded()).toBe(1);
-		expect(replica.connection.status().superseded).toBe(true);
-		expect(replica.connection.status().connected).toBe(false);
-
-		// Local work must not wake a driver that is over for good.
-		expectOk(replica.db.tables.notes.create({ title: 'local only' }));
-		clock.advance(120_000);
-		expect(replica.dials()).toBe(1);
-		expect(clock.pending()).toBe(0);
-
-		// Disposal after supersession is a quiet no-op.
-		replica.connection[Symbol.dispose]();
-		expect(replica.connection.status().superseded).toBe(true);
-	});
-
-	test('CONTROL: a close with no announcement retries forever and never discards', () => {
-		// The structural half of "doubt never discards": a network blip, a dead
-		// authority, and an auth wobble all look like this, and none of them can
-		// fabricate the frame, so there is no path from here to a discard.
-		const clock = createClock();
-		const replica = openAtDoor({ clock, cursor: 7, answers: () => [] });
-		replica.connection.start();
-		clock.advance(120_000);
-
-		expect(replica.discarded()).toBe(0);
-		expect(replica.connection.status().superseded).toBe(false);
-		expect(replica.dials()).toBeGreaterThan(3);
-		replica.connection[Symbol.dispose]();
-	});
-
-	test('garbage on the wire is ignored, not concluded from', () => {
-		const clock = createClock();
-		const replica = openAtDoor({
-			clock,
-			cursor: 7,
-			answers: () => [new Uint8Array([255, 1, 2, 3]), new Uint8Array(0)],
-		});
-		replica.connection.start();
-		clock.advance(120_000);
-
-		expect(replica.discarded()).toBe(0);
-		expect(replica.dials()).toBeGreaterThan(3);
-		replica.connection[Symbol.dispose]();
-	});
-
-	test('a retired opcode on the wire is ignored, not concluded from', () => {
-		// Opcode 8 carried `boundary` for one unreleased build. A decoder
-		// treats it as unknown, and unknown never discards.
-		const clock = createClock();
-		const retiredOpcode = new Uint8Array(5);
-		retiredOpcode[0] = 8;
-		const replica = openAtDoor({
-			clock,
-			cursor: 7,
-			document: 'the-current-document',
-			answers: () => [retiredOpcode],
-		});
-		replica.connection.start();
-		clock.advance(120_000);
-
-		expect(replica.discarded()).toBe(0);
-		expect(replica.connection.status().superseded).toBe(false);
-		expect(replica.dials()).toBeGreaterThan(3);
-		replica.connection[Symbol.dispose]();
-	});
-
-	test('a stamped replica told a different document concludes superseded, even at cursor zero', () => {
-		// The membership fact at work (ADR-0231, seventh correction): a push
-		// that landed while the ack died leaves the cursor at zero, and the
-		// stamped identity is what keeps that replica from being greeted as
-		// fresh. The conclusion is one inequality, no ordering arithmetic.
-		const clock = createClock();
-		const replica = openAtDoor({
-			clock,
-			cursor: 0,
-			document: 'the-old-document',
-			answers: () => [encodeFrame({ kind: 'document', id: 'a-new-document' })],
-		});
-		replica.connection.start();
-		clock.advance(120_000);
-
-		expect(replica.dials()).toBe(1);
-		expect(replica.discarded()).toBe(1);
-		expect(replica.connection.status().superseded).toBe(true);
-	});
-
-	test('CONTROL: the same document name is not supersession, and a bare announcement never is', () => {
-		// An equal name is the ordinary case on every healthy connection, and
-		// a fresh replica hearing its first announcement is being greeted, not
-		// retired. Neither may discard anything.
-		const clock = createClock();
-		const stamped = openAtDoor({
-			clock,
-			cursor: 7,
-			document: 'the-current-document',
-			answers: () => [
-				encodeFrame({ kind: 'document', id: 'the-current-document' }),
-			],
-		});
-		stamped.connection.start();
-		clock.advance(120_000);
-		expect(stamped.discarded()).toBe(0);
-		expect(stamped.connection.status().superseded).toBe(false);
-		stamped.connection[Symbol.dispose]();
-
-		const fresh = openAtDoor({
-			clock,
-			cursor: 0,
-			answers: () => [
-				encodeFrame({ kind: 'document', id: 'whatever-is-current' }),
-			],
-		});
-		fresh.connection.start();
-		clock.advance(120_000);
-		expect(fresh.discarded()).toBe(0);
-		expect(fresh.connection.status().superseded).toBe(false);
-		fresh.connection[Symbol.dispose]();
+		expect(connection.status().connected).toBe(true);
+		expect(connection.status().lastError).toBeUndefined();
+		connection[Symbol.dispose]();
+		void data.store[Symbol.asyncDispose]();
 	});
 });

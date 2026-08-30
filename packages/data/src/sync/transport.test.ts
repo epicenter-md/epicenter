@@ -12,13 +12,15 @@ import { field } from '@epicenter/data/definition';
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { type DataDefinition, defineData } from '@epicenter/data/definition';
+import {
+	type DataDefinition,
+	defineData,
+	defineTable,
+} from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
-import type { Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 
-import { encodeEnvelope } from '../store/envelope.js';
-import { APP_DOCUMENT } from '../store/log.js';
 import {
 	createAccountStore,
 	type DataView,
@@ -43,7 +45,21 @@ import { createSyncHub, type HubConnection } from './hub.js';
 const database = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: { fields: { title: field.string() } } },
+	tables: {
+		notes: defineTable({
+			fields: { title: field.string(), editor: field.type() },
+			file: {
+				serialize: (row) => ({
+					data: { title: row.title },
+					content: row.editor.toString(),
+				}),
+				deserialize: (file, types) => {
+					types.editor.insert(0, [file.content]);
+					return Ok({ title: String(file.data.title ?? '') });
+				},
+			},
+		}),
+	},
 });
 
 function expectOk<TValue, TError>(
@@ -62,12 +78,7 @@ function expectOk<TValue, TError>(
 	return result as TValue;
 }
 
-/** Wrap one application-document update the way the wire carries it. */
-function asEnvelope(bytes: Uint8Array): Uint8Array {
-	return encodeEnvelope([{ document: APP_DOCUMENT, bytes }]);
-}
-
-/** This replica's whole state as the envelope a snapshot carries. */
+/** This replica's whole state, as a snapshot carries it. */
 function snapshotOf(replica: { store: Replica['store'] }): Promise<Uint8Array> {
 	return syncEngineOf(replica.store).encodeSnapshot();
 }
@@ -77,12 +88,11 @@ function pump(): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** Open one row's document and hand back its editor root, fully hydrated. */
-async function editorOf(replica: Replica, rowId: string) {
-	const opened = await replica.db.tables.notes.openDocument(rowId);
-	if (opened.error !== null) throw opened.error;
-	if (opened.data === undefined) throw new Error('the row has no document');
-	return opened.data.get('editor', 'text');
+/** One row's rich `editor` field, live on the database document (ADR-0295). */
+function editorOf(replica: Replica, rowId: string) {
+	const content = replica.db.tables.notes.content(rowId);
+	if (content === undefined) throw new Error('the table holds no such row');
+	return content.types.editor;
 }
 
 /**
@@ -184,7 +194,6 @@ function openReplica(
 	let generation = 0;
 	const connection: HubConnection = {
 		cursor: client.cursor(),
-		document: client.document(),
 		send: (bytes) => {
 			const sentOn = generation;
 			wire.defer(() => {
@@ -211,22 +220,8 @@ function openReplica(
 		socket,
 		connect() {
 			connection.cursor = client.cursor();
-			// Tests sometimes seed the durable identity after creating the client.
-			// A real client reads it when it is constructed; use the durable value
-			// here so the simulated connection has the same declared identity.
-			connection.document = syncEngineOf(store).documentIdentity();
 			const admission = hub.join(connection);
 			client.attach(socket);
-			if (admission === 'bootstrap') {
-				// Bootstrap carries bytes but never membership. A real authority
-				// closes here and the driver dials again; this synchronous harness
-				// delivers the bootstrap then performs that second dial directly.
-				wire.settle();
-				if (client.status().superseded) return admission;
-				connection.cursor = client.cursor();
-				connection.document = client.document();
-				return hub.join(connection);
-			}
 			return admission;
 		},
 		disconnect() {
@@ -351,7 +346,7 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		expect(laptop.client.status().unresolvedDependencies).toBe(false);
 	});
 
-	test('database work authored before bootstrap is discarded instead of merged', () => {
+	test('database work authored while offline is published on the first dial', () => {
 		const { wire, authority, phone, laptop } = setup();
 		laptop.connect();
 
@@ -363,13 +358,17 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		expect(laptop.titles()).toEqual([]);
 
 		phone.connect();
+		phone.client.flush();
 		wire.settle();
 
-		// A pre-bootstrap document has no authority identity. It is not an
-		// offline database replica, so it never joins or republishes its bytes.
-		expect(phone.client.status().superseded).toBe(true);
-		expect(laptop.titles()).toEqual([]);
-		expect(expectOk(authority.head())).toBe(0);
+		// The reversal the generation address bought (ADR-0292). This work used
+		// to be DISCARDED: a replica that grew before it was stamped belonged to
+		// no authority document, so first contact concluded supersession and
+		// threw it away. A generation is created complete and opened at its own
+		// address, so a device holding one is a replica from the moment it opens
+		// and its offline work is ordinary owed work.
+		expect(laptop.titles()).toEqual(['also on a plane', 'written on a plane']);
+		expect(expectOk(authority.head())).toBe(1);
 	});
 
 	test('a deletion replicates, which a state vector could never have told us', () => {
@@ -393,12 +392,12 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		phone.connect();
 		laptop.connect();
 		const note = expectOk(phone.db.tables.notes.create({ title: 'Groceries' }));
-		const text = await editorOf(phone, note.id);
+		const text = editorOf(phone, note.id);
 		text.applyDelta(text.change.insert('buy milk') as never);
 		phone.client.flush();
 		wire.settle();
 
-		const arrived = await editorOf(laptop, note.id);
+		const arrived = editorOf(laptop, note.id);
 		expect(arrived.length).toBe('buy milk'.length);
 	});
 });
@@ -440,7 +439,6 @@ describe('the ack is what makes a refusal visible', () => {
 		const answers: Uint8Array[] = [];
 		const connection: HubConnection = {
 			cursor: 0,
-			document: expectOk(authority.document()),
 			send: (bytes) => answers.push(bytes),
 		};
 		hub.join(connection);
@@ -470,9 +468,8 @@ describe('the ack is what makes a refusal visible', () => {
 
 		// The authority answered rather than going quiet, and it named the
 		// submission, so the client knows exactly which work it still owes.
-		// (The first frame is the document announcement every join begins with.)
-		expect(answers).toHaveLength(2);
-		const refusal = expectOk(decodeFrame(answers[1] as Uint8Array));
+		expect(answers).toHaveLength(1);
+		const refusal = expectOk(decodeFrame(answers[0] as Uint8Array));
 		if (refusal.kind !== 'refuse')
 			throw new Error(`answered with ${refusal.kind}`);
 		expect(refusal.submission).toBe(7);
@@ -548,14 +545,14 @@ describe('chunking is framing, and carries what no single frame could', () => {
 		const note = expectOk(
 			phone.db.tables.notes.create({ title: 'a big paste' }),
 		);
-		const text = await editorOf(phone, note.id);
+		const text = editorOf(phone, note.id);
 		// One transaction, well past 2,097,152 bytes. There is no seam here for a
 		// coalescing bound to cut at, which is why the fix is framing at storage.
 		text.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
 		phone.client.flush();
 		wire.settle();
 
-		const arrived = await editorOf(laptop, note.id);
+		const arrived = editorOf(laptop, note.id);
 		expect(arrived.length).toBe(3_000_000);
 		expect(laptop.titles()).toEqual(['a big paste']);
 		expect(laptop.client.status().unresolvedDependencies).toBe(false);
@@ -600,7 +597,7 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		const note = expectOk(
 			phone.db.tables.notes.create({ title: 'a big paste' }),
 		);
-		const text = await editorOf(phone, note.id);
+		const text = editorOf(phone, note.id);
 		text.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
 		phone.client.flush();
 
@@ -621,7 +618,7 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		wire.settle();
 
 		expect(laptop.titles()).toEqual(['a big paste']);
-		const arrived = await editorOf(laptop, note.id);
+		const arrived = editorOf(laptop, note.id);
 		expect(arrived.length).toBe(3_000_000);
 		expect(phone.client.status().owed).toBe(0);
 	});
@@ -636,7 +633,7 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		const note = expectOk(
 			phone.db.tables.notes.create({ title: 'a big paste' }),
 		);
-		const text = await editorOf(phone, note.id);
+		const text = editorOf(phone, note.id);
 		text.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
 		phone.client.flush();
 		wire.step();
@@ -645,10 +642,8 @@ describe('a socket that dies part way through a chunked transfer', () => {
 
 		expect(expectOk(authority.head())).toBe(0);
 		expect(laptop.titles()).toEqual([]);
-		// The row itself never arrived, so the laptop has no document to open.
-		expect(
-			expectOk(await laptop.db.tables.notes.openDocument(note.id)),
-		).toBeUndefined();
+		// The row itself never arrived, so the laptop holds no content for it.
+		expect(laptop.db.tables.notes.content(note.id)).toBeUndefined();
 		// And the phone still owes it, which is what the reconnect above spends.
 		expect(phone.client.status().owed).toBeGreaterThan(0);
 	});
@@ -662,7 +657,6 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		const answers: Uint8Array[] = [];
 		const first: HubConnection = {
 			cursor: 0,
-			document: expectOk(authority.document()),
 			send: (bytes) => answers.push(bytes),
 		};
 		hub.join(first);
@@ -682,7 +676,6 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		// 7. It completes nothing, because there is nothing here to complete.
 		const second: HubConnection = {
 			cursor: 0,
-			document: expectOk(authority.document()),
 			send: (bytes) => answers.push(bytes),
 		};
 		hub.join(second);
@@ -708,7 +701,6 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		const answers: Uint8Array[] = [];
 		const only: HubConnection = {
 			cursor: 0,
-			document: expectOk(authority.document()),
 			send: (bytes) => answers.push(bytes),
 		};
 		hub.join(only);
@@ -737,7 +729,7 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		const note = expectOk(
 			phone.db.tables.notes.create({ title: 'a big paste' }),
 		);
-		const text = await editorOf(phone, note.id);
+		const text = editorOf(phone, note.id);
 		text.applyDelta(text.change.insert('x'.repeat(3_000_000)) as never);
 		phone.client.flush();
 		wire.settle();
@@ -749,11 +741,6 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		expect(expectOk(authority.snapshotPosition())).toBe(1);
 		expect(expectOk(authority.since(0, 1_000))).toEqual([]);
 
-		expectOk(
-			syncEngineOf(laptop.store).adoptDocumentIdentity(
-				expectOk(authority.document()),
-			),
-		);
 		laptop.connect();
 		expect(wire.inFlight()).toBeGreaterThan(1);
 		wire.step();
@@ -769,7 +756,7 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		wire.settle();
 
 		expect(laptop.titles()).toEqual(['a big paste']);
-		const arrived = await editorOf(laptop, note.id);
+		const arrived = editorOf(laptop, note.id);
 		expect(arrived.length).toBe(3_000_000);
 		expect(laptop.client.status().cursor).toBe(1);
 		expect(laptop.client.status().unresolvedDependencies).toBe(false);
@@ -788,7 +775,7 @@ describe('a socket that dies part way through a chunked transfer', () => {
 describe('reassembly holds partials in memory, and only in memory', () => {
 	/** One replica's whole state, cut into more chunks than any case needs. */
 	function cutUpdate(source: ReturnType<typeof openReplica>, limit = 16) {
-		const bytes = asEnvelope(source.store.encodeStateSince());
+		const bytes = source.store.encodeStateSince();
 		const chunks = intoChunks(bytes, limit);
 		if (chunks.length < 4) throw new Error(`only ${chunks.length} chunks`);
 		return { bytes, chunks };
@@ -964,23 +951,13 @@ describe('a partial that outlives the socket that opened it', () => {
 		const note = expectOk(
 			phone.db.tables.notes.create({ title: 'a big paste' }),
 		);
-		const text = await editorOf(phone, note.id);
+		const text = editorOf(phone, note.id);
 		text.applyDelta(text.change.insert('x'.repeat(4_000_000)) as never);
 		phone.client.flush();
 		wire.settle();
 		expectOk(authority.replaceSnapshot(1, await snapshotOf(phone)));
 		const first = expectOk(authority.snapshot());
 		const snapshotChunks = intoChunks(first?.bytes as Uint8Array).length;
-		// This test needs to control the first snapshot frame. Give the empty
-		// replica the current identity before it connects so it enters the normal
-		// equality path rather than completing bootstrap synchronously in the
-		// harness.
-		expectOk(
-			syncEngineOf(laptop.store).adoptDocumentIdentity(
-				expectOk(authority.document()),
-			),
-		);
-
 		// Entry 2 is a second paste: two chunks, where the state through 2 is four.
 		// That difference is the whole scenario, and it is what a delta and a whole
 		// state at the same position ordinarily look like.
@@ -995,7 +972,7 @@ describe('a partial that outlives the socket that opened it', () => {
 	}
 
 	async function readProse(replica: Replica, rowId: string) {
-		return (await editorOf(replica, rowId)).length;
+		return editorOf(replica, rowId).length;
 	}
 
 	test('a snapshot cut differently to the entry it replaces still arrives', async () => {
@@ -1195,7 +1172,6 @@ describe('an entry that will not apply is loud, not silent', () => {
 		const answers: Uint8Array[] = [];
 		const writer: HubConnection = {
 			cursor: 0,
-			document: expectOk(authority.document()),
 			send: (bytes) => answers.push(bytes),
 		};
 		hub.join(writer);
@@ -1211,8 +1187,7 @@ describe('an entry that will not apply is loud, not silent', () => {
 		);
 
 		// Accepted: acknowledged at a position, and in the log byte for byte.
-		// (The first frame is the document announcement every join begins with.)
-		const answer = expectOk(decodeFrame(answers[1] as Uint8Array));
+		const answer = expectOk(decodeFrame(answers[0] as Uint8Array));
 		if (answer.kind !== 'ack') throw new Error(`answered with ${answer.kind}`);
 		expect(answer.seq).toBe(1);
 		expect(expectOk(authority.head())).toBe(1);
@@ -1244,8 +1219,8 @@ describe('an entry that will not apply is loud, not silent', () => {
 	test('neutralising the position in the log unsticks the replica', () => {
 		// Why no server-side check is needed to RECOVER from a poison pill. The
 		// log is append-only and every entry is individually addressable, so the
-		// repair is to overwrite one row with the empty envelope, a valid no-op
-		// carrying zero sections. The sequence stays contiguous and every
+		// repair is to overwrite one row with an empty update, which every
+		// document applies as a no-op. The sequence stays contiguous and every
 		// replica walks straight past it.
 		const { wire, phone, laptop } = setup();
 		phone.connect();
@@ -1254,8 +1229,9 @@ describe('an entry that will not apply is loud, not silent', () => {
 		laptop.client.flush();
 		wire.settle();
 
-		const noop = encodeEnvelope([]);
-		expect(noop.length).toBe(5);
+		const empty = new Y.Doc({ gc: true });
+		const noop = new Uint8Array(Y.encodeStateAsUpdateV2(empty));
+		empty.destroy();
 		const stuck = phone.client.receive(
 			encodeFrame({
 				kind: 'entry',
@@ -1405,7 +1381,6 @@ describe('who may replace the snapshot', () => {
 		const answers: Uint8Array[] = [];
 		const stale: HubConnection = {
 			cursor: 0,
-			document: expectOk(authority.document()),
 			send: (bytes) => answers.push(bytes),
 		};
 		hub.join(stale);
@@ -1847,7 +1822,7 @@ async function fuzz(
 			// Prose, which is the one thing that reaches storage without going
 			// through a store verb.
 			const rowId = mine[random.below(mine.length)] as string;
-			const text = await editorOf(device, rowId);
+			const text = editorOf(device, rowId);
 			text.applyDelta(text.change.insert('x') as never);
 			seen.prose += 1;
 		}
@@ -1925,100 +1900,63 @@ describe('random schedules, and everyone still agrees', () => {
 	});
 });
 
-describe('admission is one equality: a stale replica gets the announcement and nothing else', () => {
-	test('never admitted: the announcement, no history, and its pushes land nowhere', () => {
-		const { wire, sqlite, authority, hub, phone } = setup();
+describe('admission is catch-up, and there is nothing else to check', () => {
+	// Four verdicts became two (ADR-0292). `bootstrap` and `retired` existed to
+	// answer "is this replica's state part of the history this log describes",
+	// and the generation is in the address now: a replica reaching this hub was
+	// addressed at this generation, which is created once and never mutated in
+	// place, so the question cannot be asked wrongly. What is left is membership
+	// and storage trouble.
+	test('any connection is admitted and caught up from its own cursor', () => {
+		const { wire, hub, phone } = setup();
 		phone.connect();
 		for (let index = 0; index < 3; index += 1) {
 			expectOk(phone.db.tables.notes.create({ title: `note ${index}` }));
 			phone.client.flush();
 			wire.settle();
 		}
-		const retired = expectOk(authority.document());
-		sqlite.run("UPDATE _meta SET value = ? WHERE key = 'document'", [
-			crypto.randomUUID(),
-		]);
-		const membersBefore = hub.attached();
+
 		const sent: Uint8Array[] = [];
-		const stale: HubConnection = {
+		const late: HubConnection = {
 			cursor: 2,
-			document: retired,
 			send: (bytes) => sent.push(bytes),
 		};
-		expect(hub.join(stale)).toBe('retired');
-		expect(hub.attached()).toBe(membersBefore);
+		expect(hub.join(late)).toBe('admitted');
+		expect(hub.attached()).toBe(2);
+		// Everything after its cursor, and nothing before: no announcement, no
+		// handshake, no second dial.
 		expect(sent.map((bytes) => expectOk(decodeFrame(bytes)))).toEqual([
-			{ kind: 'document', id: expectOk(authority.document()) },
+			expect.objectContaining({ kind: 'entry', seq: 3 }),
 		]);
-		const headBefore = expectOk(authority.head());
-		hub.receive(
-			stale,
-			encodeFrame({
-				kind: 'push',
-				submission: 1,
-				chunk: 0,
-				chunks: 1,
-				bytes: new Uint8Array([1, 2, 3]),
-			}),
-		);
-		expect(expectOk(authority.head())).toBe(headBefore);
-		expect(sent).toHaveLength(1);
 	});
 
-	test('an undeclared nonzero cursor is never admitted: the former protocol has no fallback', () => {
-		const { wire, authority, hub, phone } = setup();
+	test('a cursor at the head is admitted and sent nothing', () => {
+		const { wire, hub, phone } = setup();
 		phone.connect();
 		expectOk(phone.db.tables.notes.create({ title: 'current' }));
 		phone.client.flush();
 		wire.settle();
 
 		const sent: Uint8Array[] = [];
-		const undeclared: HubConnection = {
+		const caughtUp: HubConnection = {
 			cursor: 1,
-			document: undefined,
 			send: (bytes) => sent.push(bytes),
 		};
-		expect(hub.join(undeclared)).toBe('retired');
-		expect(hub.attached()).toBe(1);
-		expect(sent.map((bytes) => expectOk(decodeFrame(bytes)))).toEqual([
-			{ kind: 'document', id: expectOk(authority.document()) },
-		]);
+		expect(hub.join(caughtUp)).toBe('admitted');
+		expect(hub.attached()).toBe(2);
+		expect(sent).toHaveLength(0);
 	});
 
-	test('a driven stale replica concludes superseded without merging', () => {
-		const { wire, sqlite, phone, laptop } = setup();
-		phone.connect();
-		laptop.connect();
-		expectOk(phone.db.tables.notes.create({ title: 'old document' }));
-		phone.client.flush();
-		wire.settle();
-		const before = laptop.titles();
-		expect(before).toEqual(['old document']);
-		phone.disconnect();
-		laptop.disconnect();
-
-		sqlite.run("UPDATE _meta SET value = ? WHERE key = 'document'", [
-			crypto.randomUUID(),
-		]);
-
-		laptop.connect();
-		wire.settle();
-		expect(laptop.client.status().superseded).toBe(true);
-		expect(laptop.titles()).toEqual(before);
-		expect(laptop.client.status().cursor).toBe(1);
-	});
-
-	test('an unnameable document fails closed: no admission and no frame', () => {
+	test('an unreadable log fails closed: no admission and no frame', () => {
 		const { authority } = openAuthority();
 		const broken: SyncAuthority = {
 			...authority,
-			document: () => AuthorityError.StorageFailed({ cause: new Error('io') }),
+			head: () => AuthorityError.StorageFailed({ cause: new Error('io') }),
 		};
 		const hub = createSyncHub({ authority: broken });
 		const sent: Uint8Array[] = [];
 		const connection: HubConnection = {
 			cursor: 5,
-			document: undefined,
 			send: (bytes) => sent.push(bytes),
 		};
 		expect(hub.join(connection)).toBe('unavailable');

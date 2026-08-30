@@ -1,5 +1,5 @@
 /**
- * A row becomes one file (ADR-0268, ADR-0271).
+ * A row becomes one file (ADR-0268, ADR-0271, ADR-0296).
  *
  * This is the unit, and everything else is iteration: the mirror renders the
  * rows a commit touched, and a whole render is the same call in a loop. The
@@ -10,28 +10,25 @@
  * and its prose go in the same file, so they are read in the same function
  * and never rejoined.
  *
+ * **The platform owns the format; the table owns the mapping** (ADR-0296).
+ * What is here is the fence: the frontmatter block, the blank separator, and
+ * the body beneath it. What the codec answers is which values go above the
+ * fence and what text goes below it.
+ *
  * Composed on the opened data's public surface, so it is a follower and never
  * a store verb. It reads; nothing it returns can reach back in.
- *
- * Everything scalar comes from the faithful read, never from `get` or `list`.
- * A table handle reads through the declaration and narrows to the fields it
- * names, so rendering through the lens would drop a value an older release
- * wrote: the row still conforms, so it is not reported as nonconforming, and
- * the value is simply gone from the file. That is the one thing an artifact
- * may not do.
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
 import {
 	type DataDefinition,
-	type DocumentReader,
 	type JsonObject,
 	type ParsedDataDefinition,
 	parseData,
+	type RowValues,
 } from '../definition/index.js';
-import type { RowDocumentHandle } from '../store/documents.js';
-import type { StoredData } from '../store/store.js';
+import type { RowContent, StoredData } from '../store/store.js';
 import { rowFile } from './frontmatter.js';
 import { rowPath } from './layout.js';
 
@@ -46,26 +43,21 @@ export const RenderError = defineErrors({
 		reason,
 	}),
 	/**
-	 * A row's document could not be opened, so this render cannot say what that
-	 * body holds. Fatal for the row: a file that quietly lacks its prose feeds
-	 * a restore that would delete that prose everywhere.
+	 * The table declares rich content and no codec to write it with, so this
+	 * row's body has nowhere to go. Fatal for the row: a file that quietly
+	 * lacks its prose feeds a restore that would delete that prose everywhere.
+	 *
+	 * Unreachable through `defineTable`, whose parameter type refuses it. It is
+	 * reachable through a definition that arrived as JSON, which cannot carry a
+	 * function, and that is exactly the case a silent empty body would ruin.
 	 */
-	DocumentUnreadable: ({
+	UncodedRow: ({ table, rowId }: { table: string; rowId: string }) => ({
+		message: `Table '${table}' declares rich content and no file codec to write '${rowId}' with`,
 		table,
 		rowId,
-		cause,
-	}: {
-		table: string;
-		rowId: string;
-		cause: unknown;
-	}) => ({
-		message: `Document for '${table}/${rowId}' could not be read`,
-		table,
-		rowId,
-		cause,
 	}),
 	/**
-	 * The table's own `serialize` threw on this document. Contained rather than
+	 * The table's own `serialize` threw on this row. Contained rather than
 	 * allowed to escape: a codec that throws is a case a person needs told,
 	 * not a stack trace in the middle of their data being written to disk.
 	 */
@@ -78,7 +70,7 @@ export const RenderError = defineErrors({
 		rowId: string;
 		cause: unknown;
 	}) => ({
-		message: `The document at '${table}/${rowId}' could not be serialized`,
+		message: `The row at '${table}/${rowId}' could not be serialized`,
 		table,
 		rowId,
 		cause,
@@ -88,8 +80,8 @@ export type RenderError = InferErrors<typeof RenderError>;
 
 /**
  * The slice of opened data a render reads: the faithful reads, and each
- * table's document opener. Structural on purpose, so any typed or untyped
- * view satisfies it.
+ * table's rich content. Structural on purpose, so any typed or untyped view
+ * satisfies it.
  */
 export type RenderableData = {
 	stored(): StoredData;
@@ -98,10 +90,7 @@ export type RenderableData = {
 			string,
 			{
 				stored(rowId: string): JsonObject | undefined;
-				openDocument(rowId: string): Promise<{
-					data: RowDocumentHandle | undefined | null;
-					error: unknown;
-				}>;
+				content(rowId: string): RowContent | undefined;
 			}
 		>
 	>;
@@ -122,11 +111,19 @@ export type RenderedRow = {
 /**
  * Render one row to its file.
  *
- * It opens the row's document itself rather than taking a body, and that is
- * what deletes the join: a row's fields and its prose belong to one file, so
- * one function reads both. The handle is disposed here, so a document opened
- * only to be rendered unloads again, and one that a person already has open
- * is simply borrowed for the read.
+ * Synchronous work behind an async signature, because nothing here loads
+ * anything any more: a row's rich content is in the one document the store
+ * already holds (ADR-0295). The signature stays a promise so the mirror and
+ * the whole-artifact generator did not have to change shape around it.
+ *
+ * Everything scalar comes from the faithful read, never from `get` or `list`.
+ * A table handle reads through the declaration and narrows to the fields it
+ * names, so rendering through the lens would drop a value an older release
+ * wrote: the row still conforms, so it is not reported as nonconforming, and
+ * the value is simply gone from the file. That is the one thing an artifact
+ * may not do, which is why the codec is handed the STORED payload rather than
+ * a conformed row, and why a codec that spreads what it was given keeps
+ * everything the store holds.
  */
 export async function renderRow(
 	data: RenderableData,
@@ -141,36 +138,34 @@ export async function renderRow(
 		return Ok({ path, contents: undefined });
 	}
 
-	const codec = definition.tables.get(table)?.document?.file;
-	if (codec === undefined)
+	const parsed = definition.tables.get(table);
+	const codec = parsed?.file;
+	if (codec === undefined) {
+		// A table with no rich content exports its scalars as frontmatter and an
+		// empty body, which is the whole of what it is (ADR-0296). A table WITH
+		// rich content and no codec has a body it cannot write, and writing the
+		// file without it is the data loss this refuses.
+		if ((parsed?.types.length ?? 0) > 0) {
+			return RenderError.UncodedRow({ table, rowId });
+		}
 		return Ok({ path, contents: rowFile(fields, undefined) });
-
-	const opened = await handle.openDocument(rowId);
-	if (opened.error !== null && opened.error !== undefined) {
-		return RenderError.DocumentUnreadable({
-			table,
-			rowId,
-			cause: opened.error,
-		});
 	}
-	const doc = opened.data;
-	// Taken between the read and the open. It has no body to carry, and its
-	// file is about to be unlinked by whoever asks about it next.
-	if (doc === undefined || doc === null) {
-		return Ok({ path, contents: rowFile(fields, undefined) });
+
+	const content = handle.content(rowId);
+	// Taken between the read and the content lookup. Its file is about to be
+	// unlinked by whoever asks about it next.
+	if (content === undefined) {
+		return Ok({ path, contents: undefined });
 	}
 	try {
-		return Ok({
-			path,
-			contents: rowFile(
-				fields,
-				codec.serialize(doc as unknown as DocumentReader),
-			),
-		});
+		const file = codec.serialize({
+			id: rowId,
+			...fields,
+			...content.types,
+		} as RowValues);
+		return Ok({ path, contents: rowFile(file.data, file.content) });
 	} catch (cause) {
 		return RenderError.BodyUnwritable({ table, rowId, cause });
-	} finally {
-		doc[Symbol.dispose]();
 	}
 }
 
@@ -188,9 +183,7 @@ export async function renderRow(
  * Yielded rather than collected, because the one consumer writes each file as
  * it arrives and never wants the set. A caller that does want the set builds
  * one from this in a line; the reverse is not true, which is what makes this
- * the shape rather than a Map. It also means an application's whole prose is
- * never resident at once, which is more than the store itself promises: row
- * documents hydrate one at a time and unload again, and this holds one file.
+ * the shape rather than a Map.
  *
  * Row ids come from the faithful read, so a table this declaration no longer
  * names is rendered too (ADR-0240).

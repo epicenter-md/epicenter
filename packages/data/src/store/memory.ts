@@ -50,17 +50,9 @@ export function createMemoryRecord(): MemoryRecord {
 /**
  * Asynchronous before it needs to be, on purpose.
  *
- * Nothing in this body awaits anything yet. It is async because the store is
- * about to open its application document through a handle, and opening a
- * handle is a hydration: `store.ts` already refuses a synchronous surface in
- * front of one for row documents, because it "either forces eager loading or
- * hands out a half-hydrated handle an editor merges keystrokes into at the
- * wrong position", and the same sentence is about to be true of the
- * application document.
- *
- * Moving the eighty-five call sites in a commit that changes no behaviour is
- * worth a lie that is about to become true: when the rewire goes red, the red
- * should be about the store.
+ * Nothing in this body awaits anything. The signature matches every other
+ * opener's, and a browser opener genuinely awaits IndexedDB, so the shape is
+ * the entry point's rather than this one's (ADR-0229).
  */
 export async function openMemory<const TDatabase extends DataDefinition>(
 	definition: TDatabase,

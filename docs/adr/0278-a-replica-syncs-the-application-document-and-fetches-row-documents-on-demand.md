@@ -1,7 +1,8 @@
 # 0278. A replica syncs the application document and fetches row documents on demand
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-28
+- **Superseded by:** [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) entirely; a new generation receives one complete bootstrap envelope rather than the application document first and row documents on demand.
 - **Relates:** [ADR-0277](0277-the-authority-reads-the-bytes-and-sync-becomes-the-yjs-protocol.md) (one Durable Object per document, and HTTP for bulk, which is what makes this a choice at all), [ADR-0248](0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md) (the row document and its lazy open), [ADR-0270](0270-an-application-has-two-workspaces-and-moving-a-row-between-them-is-the-primitive.md) (the local workspace, which this does not touch).
 - **Unbuilt.**
 

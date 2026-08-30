@@ -1,7 +1,8 @@
 # 0284. The application document is an index, and a row's remaining fields live in its own document
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-28
+- **Superseded by:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md), which makes a database one Yjs document and puts a row's rich content in the row.
 - **Amends:** [ADR-0212](0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md) and [ADR-0248](0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md) at what a row document holds. A row is still a Yjs type in the application document and still owns an independent document at a derived address; that document now holds scalars as well as prose.
 - **Unbuilt:** all of it.
 

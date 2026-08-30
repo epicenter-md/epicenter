@@ -31,7 +31,6 @@ export {
 	rowFile,
 } from './frontmatter.js';
 export {
-	type ArtifactDocument,
 	type ImportError,
 	readArtifact,
 } from './import.js';

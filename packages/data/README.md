@@ -1,8 +1,8 @@
 # @epicenter/data
 
-The Epicenter store: one scalar Yjs document per application, independently
-loaded row documents for rich content, a synchronous surface over the scalar
-state, and the transport that carries it between a person's devices. MIT.
+The Epicenter store: one Yjs document per database, holding every row and every
+row's rich content, a synchronous surface over it, and the transport that
+carries it between a person's devices. AGPL-3.0-or-later.
 
 The package has one definition entrypoint and four runtime entrypoints:
 
@@ -10,7 +10,7 @@ The package has one definition entrypoint and four runtime entrypoints:
 | --- | --- |
 | `@epicenter/data` | the opened data surface |
 | `@epicenter/data/definition` | `defineData`, `parseData`, and the field descriptor vocabulary |
-| `@epicenter/data/browser` | `openLocal(definition)`, and `openAccount(definition, { baseURL, principalId })` |
+| `@epicenter/data/browser` | `openDatabase(definition, { generation, account? })`, and `importGeneration` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 | `@epicenter/data/artifact` | `renderRow` and `renderArtifact` out, `readArtifact` back in: the folder a person keeps |
 | `@epicenter/data/memory` | `openMemory(definition)` and `createMemoryRecord()`, test support |
@@ -23,11 +23,14 @@ live at their own entry points rather than on `@epicenter/data`.
 ## Opening is the only asynchronous thing
 
 ```ts
-import { openAccount } from '@epicenter/data/browser';
+import { openDatabase } from '@epicenter/data/browser';
 
-const { data, error } = await openAccount(honeycrispDefinition, {
-	baseURL,
-	principalId,
+// One opener. The presence of `account` is the discriminant, all the way
+// down: it decides the address, whether the store carries an outbox, and
+// whether a cache miss can be bootstrapped or is simply not here.
+const { data, error } = await openDatabase(honeycrispDefinition, {
+	generation,
+	account: { baseURL, principalId, fetch },
 });
 if (error !== null) return handle(error);
 
@@ -85,7 +88,7 @@ data.tables.notes.update(id, patch)               // void; merges; refuses an ab
 data.tables.notes.delete(id)                      // boolean: was there a row to take?
 data.tables.notes.ids()                           // string[], sorted
 data.tables.notes.list()                          // { rows, nonconforming }
-data.tables.notes.openDocument(id)               // RowDocument | undefined
+data.tables.notes.content(id)                     // RowContent | undefined
 data.tables.notes.subscribe(listener)             // returns its own unsubscribe
 ```
 
@@ -204,24 +207,28 @@ two containers and map LWW discards one **with every field in it**. Anything an
 application wants to name by hand goes in `kv`, where independent minting
 converges (ADR-0216).
 
-### Prose
+### Rich content
 
-A row's rich content lives in an independent Yjs document at its derived
-address (ADR-0248), not in a nested `!doc` container on the row. The application
-names roots inside that independent document when it first opens them:
+A row's rich content is a nested `Y.Type` on the row, declared like any other
+field (ADR-0295, ADR-0296). It is in the same document as the scalars, so there
+is nothing to open, nothing to await, and nothing to dispose:
 
 ```ts
-const { data: handle } = await data.tables.notes.openDocument(id);
+const content = data.tables.notes.content(id);
 
-const body = handle?.get('body'); // a live Y.Type
-handle?.[Symbol.dispose]();
+const body = content?.types.body;            // a live Y.Type
+const stop = content?.subscribe('body', onEdit);
 ```
 
-Because the row document is independently name-addressed, two devices
-first-opening the same named root converge with both writes retained. What
-comes back is a hydrated handle whose `get(name)` returns a `Y.Type` an editor
-binds to directly. Epicenter picks no rich-content format and never looks
-inside.
+A rich field is minted in the transaction that mints its row and never again.
+That is what makes it safe: a nested type is addressed by the struct that
+created it, so two devices minting one at the same key would lose a subtree, and
+a minted row id means only the creating device ever mints one.
+
+The table declares one `file` codec for the whole row, and a table that declares
+any `field.type()` must declare it: the platform owns the file format
+(frontmatter above the fence, the body beneath it) and the table owns the
+mapping. Epicenter picks no rich-content format and never looks inside.
 
 ## What merges with what
 
@@ -233,7 +240,7 @@ shaped.
 | two fields of one row | independent, both survive |
 | one scalar field | last write wins, converged |
 | one array or object field | last write wins on the WHOLE value |
-| a row document | per character |
+| a rich field | per character |
 | any composed index | a cache derived from the CRDT |
 
 A row is an attribute map and a write sets only the attributes handed to it, so
@@ -325,16 +332,17 @@ prevent.
 
 The `Y.Doc` is the truth while the client is open; everything else follows it
 (ADR-0238). The store keeps exactly the ledgers a crash cannot reconstruct:
-the update log, the outbox, the cursor, and the document identity, each
-written in the same atomic act that incurs it (ADR-0241). They live behind a
+the update log, and the outbox and cursor that are read off it, written in the
+same atomic act that incurs them (ADR-0241). The document identity used to sit
+beside them and is gone with the membership question: the generation is in the
+address (ADR-0292). They live behind a
 per-store persistence controller: every accepted edit queues its durable work
 and one coalesced flush commits the whole queue atomically. Everything
 derived from the document (SQL, search, exports) is a follower composed
 outside the store.
 
-In the browser the durable facts live directly in IndexedDB, four object
-stores (`updates`, `outbox`, `tombstones`, `meta`) written one atomic
-transaction per flush. Over a synchronous SQLite (a Durable Object's storage,
+In the browser the durable facts live directly in IndexedDB, one object store
+(`updates`) written one atomic transaction per flush. Over a synchronous SQLite (a Durable Object's storage,
 or a memory record in a test) a flush is one transaction, so a successful
 write is durable when the verb returns.
 

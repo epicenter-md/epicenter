@@ -23,8 +23,9 @@ import { field } from '@epicenter/data/definition';
  */
 
 import { Database } from 'bun:sqlite';
-import { defineData } from '@epicenter/data/definition';
+import { defineData, defineTable } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { Ok } from 'wellcrafted/result';
 
 import {
 	type AccountStore,
@@ -47,13 +48,24 @@ const evidenceDatabase = defineData({
 	id: 'so.epicenter.synclab',
 	kv: {},
 	tables: {
-		notes: {
+		notes: defineTable({
 			fields: {
 				title: field.string(),
 				device: field.string(),
 				at: field.string(),
+				editor: field.type(),
 			},
-		},
+			file: {
+				serialize: ({ id: _id, editor, ...fields }) => ({
+					data: fields,
+					content: editor.toString(),
+				}),
+				deserialize: (file, types) => {
+					if (file.content !== '') types.editor.insert(0, [file.content]);
+					return Ok(file.data as never);
+				},
+			},
+		}),
 	},
 });
 
@@ -194,10 +206,8 @@ console.log('\n2. an update past the cap, through the real socket');
 		device: 'probe',
 		at: new Date().toISOString(),
 	});
-	const opened = await author.db.tables.notes.openDocument(note.id);
-	if (opened.error !== null) throw opened.error;
-	const text = opened.data?.get('editor', 'text');
-	if (text === undefined) throw new Error('the row has no document');
+	const text = author.db.tables.notes.content(note.id)?.types.editor;
+	if (text === undefined) throw new Error('the row has no editor');
 	// One transaction, well past the cap. There is no seam here for a coalescing
 	// bound to cut at, which is why the fix has to be framing at storage.
 	text.applyDelta(text.change.insert('x'.repeat(5_000_000)) as never);
@@ -205,10 +215,7 @@ console.log('\n2. an update past the cap, through the real socket');
 
 	let arrived: { length: number } | undefined;
 	await until('the reader to receive the paste', async () => {
-		const received = await reader.db.tables.notes.openDocument(note.id);
-		if (received.error !== null) return false;
-		arrived = received.data?.get('editor', 'text');
-		received.data?.[Symbol.dispose]();
+		arrived = reader.db.tables.notes.content(note.id)?.types.editor;
 		return (arrived?.length ?? 0) === 5_000_000;
 	});
 

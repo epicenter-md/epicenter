@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { defineData, field, parseData, type RowOf } from './definition.js';
+import { Ok } from 'wellcrafted/result';
+import { expectOk } from 'wellcrafted/testing';
+import {
+	defineData,
+	defineTable,
+	field,
+	parseData,
+	type RowOf,
+} from './definition.js';
 
 const authored = defineData({
 	id: 'so.epicenter.data',
@@ -85,42 +93,71 @@ describe('data definitions', () => {
 		]);
 	});
 
-	test('a document block without a file codec is refused', () => {
-		// `derive` without `file` is the authored mistake the guard exists for: a
-		// document whose export could never carry its body (ADR-0264/0267).
+	test('a rich field compiles to a name, not a column', () => {
+		// `field.type()` holds a nested `Y.Type` and no JSON value (ADR-0296), so
+		// it has no schema to check a payload against and nothing a conformance
+		// read could report. It compiles into `types` and out of `fields`.
 		const result = parseData({
-			id: 'so.epicenter.nocodec',
+			id: 'so.epicenter.rich',
 			kv: {},
 			tables: {
-				notes: {
-					fields: { title: field.string() },
-					document: { derive: () => ({ title: 'x' }) },
-				},
+				notes: { fields: { title: field.string(), body: field.type() } },
 			},
 		});
-		expect(result.error?.name).toBe('Malformed');
-		expect(result.error?.message).toContain('file codec');
+		const notes = expectOk(result).tables.get('notes');
+		expect([...(notes?.fields.keys() ?? [])]).toEqual(['title']);
+		expect(notes?.types).toEqual(['body']);
+		expect(notes?.conformance({ title: 'x' }).issues).toEqual([]);
 	});
 
-	test('a serialized document husk compiles as no document block', () => {
-		// Behaviors are code and cannot arrive as data (ADR-0266): a definition
-		// round-tripped through JSON keeps the block's keys and loses its
-		// functions, and that husk must not be refused or carried.
-		const authored = defineData({
-			id: 'so.epicenter.husk',
-			kv: {},
-			tables: {
-				notes: {
-					fields: { title: field.string() },
-					document: {
-						file: { serialize: () => '', deserialize: () => undefined },
-					},
+	test('a rich field in kv is refused', () => {
+		// kv holds settings rather than rows, and nothing mints a type there.
+		const result = parseData({
+			id: 'so.epicenter.richkv',
+			kv: { body: field.type() },
+			tables: {},
+		});
+		expect(result.error?.name).toBe('Malformed');
+	});
+
+	test('a table with rich content and no codec is refused where it is authored', () => {
+		// The rule lives at the authoring call and nowhere else (ADR-0296): a
+		// codec is a function, so a definition that arrived as JSON cannot carry
+		// one and its absence there says nothing.
+		expect(() =>
+			defineData({
+				id: 'so.epicenter.nocodec',
+				kv: {},
+				tables: {
+					notes: { fields: { title: field.string(), body: field.type() } },
 				},
+			}),
+		).toThrow('file codec');
+	});
+
+	test('a serialized codec husk compiles as no codec', () => {
+		// Behaviors are code and cannot arrive as data (ADR-0266): a definition
+		// round-tripped through JSON loses its functions, and that husk must be
+		// parseable, because an app bundle's `database.json` is read for its id.
+		const authored = defineTable({
+			fields: { title: field.string(), body: field.type() },
+			file: {
+				serialize: () => ({ data: {}, content: '' }),
+				deserialize: () => Ok({ title: '' }),
 			},
 		});
-		const result = parseData(JSON.parse(JSON.stringify(authored)));
+		const result = parseData(
+			JSON.parse(
+				JSON.stringify({
+					id: 'so.epicenter.husk',
+					kv: {},
+					tables: { notes: authored },
+				}),
+			),
+		);
 		expect(result.error).toBeNull();
-		expect(result.data?.tables.get('notes')?.document).toBeUndefined();
+		expect(result.data?.tables.get('notes')?.file).toBeUndefined();
+		expect(result.data?.tables.get('notes')?.types).toEqual(['body']);
 	});
 
 	test('declaration defaults are rejected', () => {

@@ -59,15 +59,17 @@
  * Do not reintroduce root-document compaction or baselines here. Snapshot
  * coverage is the separate automatic log-folding invariant.
  *
- * A document identity is metadata for sync admission. This authority names
- * the current identity but does not expose a destructive whole-document
- * replacement operation; any future whole-document rebuild must own that
- * product decision explicitly. ADR-0276 is that decision and names the action
- * Rebuild rather than Compact, because it retains what it rebuilt from.
+ * This authority describes exactly one generation of one database, and the
+ * ADDRESS says which (ADR-0292). It holds no identity of its own and answers
+ * no membership question, because a generation is created once and never
+ * mutated in place, so a replica that reached this object was addressed at
+ * this history. A whole-database rebuild is a new generation, which is a new
+ * object; ADR-0276 named that action Rebuild rather than Compact, because it
+ * retains what it rebuilt from.
  */
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Err, type Result, trySync } from 'wellcrafted/result';
+import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 import { copyBytes } from '../store/log.js';
 import { CHUNK_BYTES, intoChunks } from './frames.js';
@@ -150,8 +152,6 @@ export type SyncAuthority = {
 		position: number,
 		bytes: Uint8Array,
 	): Result<void, AuthorityError>;
-	/** The opaque name of the document this log describes (ADR-0231). */
-	document(): Result<string, AuthorityError>;
 	/**
 	 * Whether the tail has outgrown the snapshot, and is worth replacing at all.
 	 *
@@ -168,6 +168,25 @@ export type SyncAuthority = {
 	shouldSnapshot(): Result<boolean, AuthorityError>;
 	/** Total stored bytes, snapshot and tail together. */
 	storedBytes(): Result<number, AuthorityError>;
+	/**
+	 * Bring this log into being from one whole database state (ADR-0293).
+	 *
+	 * What an import writes, and the only write that is not a replica's. The
+	 * state is stored as the log's first snapshot, so a device that bootstraps
+	 * later is handed exactly these bytes at exactly the position they are
+	 * current through, and the socket carries only what happened afterwards.
+	 *
+	 * Position 1 rather than 0, and the reason is that 0 already means "no
+	 * snapshot": the state is appended as entry 1 and immediately snapshotted
+	 * there, in one transaction, which composes the two existing verbs instead
+	 * of teaching the position space a second meaning.
+	 *
+	 * **Once, on an empty log.** A generation is created once and never mutated
+	 * in place, so a second seed is a caller confusing import with sync and is
+	 * refused rather than merged. Returns the position the state is current
+	 * through.
+	 */
+	seed(bytes: Uint8Array): Result<number, AuthorityError>;
 };
 
 export function applyAuthoritySchema(sqlite: SqliteDatabase): void {
@@ -195,17 +214,6 @@ export function applyAuthoritySchema(sqlite: SqliteDatabase): void {
 			chunk    INTEGER NOT NULL,
 			bytes    BLOB    NOT NULL,
 			PRIMARY KEY (position, chunk)
-		)
-	`);
-	// One durable fact beyond the log and the snapshot: the document, the
-	// opaque name of the history this log describes (ADR-0231). A key-value
-	// shape rather than a one-column table so a new fact is a row and not a
-	// migration.
-	sqlite.run(`
-		CREATE TABLE IF NOT EXISTS _meta (
-			key   TEXT    NOT NULL,
-			value NOT NULL,
-			PRIMARY KEY (key)
 		)
 	`);
 }
@@ -346,6 +354,26 @@ export function openSyncAuthority({
 			});
 		},
 
+		seed(bytes: Uint8Array): Result<number, AuthorityError> {
+			const { data: head, error } = read(headSeq);
+			if (error !== null) return Err(error);
+			if (head !== 0) {
+				// Not empty, so this is not a birth. `head` is nonzero for a log
+				// with entries and for one whose entries a snapshot replaced, which
+				// is exactly the pair of states a second seed must not overwrite.
+				return AuthorityError.SnapshotRefused({
+					offered: 1,
+					head,
+					current: head,
+				});
+			}
+			const appended = this.append(bytes);
+			if (appended.error !== null) return appended;
+			const replaced = this.replaceSnapshot(appended.data, bytes);
+			if (replaced.error !== null) return Err(replaced.error);
+			return Ok(appended.data);
+		},
+
 		replaceSnapshot(position, bytes): Result<void, AuthorityError> {
 			const { data: head, error } = read(headSeq);
 			if (error !== null) return Err(error);
@@ -389,22 +417,6 @@ export function openSyncAuthority({
 			);
 		},
 
-		document(): Result<string, AuthorityError> {
-			return read(() => {
-				const existing = documentOf();
-				if (existing !== undefined) return existing;
-				// Minted lazily at first need, so a dataId that predates the
-				// identity acquires one on its next dial and every replica stamps
-				// the same name from then on.
-				const minted = crypto.randomUUID();
-				sqlite.run(
-					"INSERT OR IGNORE INTO _meta (key, value) VALUES ('document', ?)",
-					[minted],
-				);
-				return documentOf() ?? minted;
-			});
-		},
-
 		shouldSnapshot(): Result<boolean, AuthorityError> {
 			return read(() => {
 				const tail = sumBytes('_log');
@@ -437,12 +449,6 @@ export function openSyncAuthority({
 				'SELECT COALESCE(MAX(position), 0) AS position FROM _snapshot',
 			)[0]?.position ?? 0
 		);
-	}
-
-	function documentOf(): string | undefined {
-		return sqlite.all<SqliteRow & { value: string }>(
-			"SELECT value FROM _meta WHERE key = 'document'",
-		)[0]?.value;
 	}
 }
 

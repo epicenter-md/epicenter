@@ -3,11 +3,15 @@ import { RESERVED_ATTRIBUTE_PREFIX } from '@epicenter/data/definition';
 import * as Y from '@y/y';
 
 /**
- * The application's document: one per app, holding every table's scalar rows.
- * A row's rich content lives in its own independent document at the row's
- * derived address (ADR-0248), never nested in here.
+ * A database's document: one per database, holding every table's rows and
+ * every row's rich content (ADR-0295).
+ *
+ * There is no second document and no address that reaches one. A row is a
+ * nested type on its table root, and a rich field is a nested type on the row,
+ * so what used to be N documents multiplexed over one connection is one
+ * document with one identity, one socket, one stored blob.
  */
-export function createAppDocument(): Y.Doc {
+export function createDatabaseDocument(): Y.Doc {
 	// `gc: true` is what collapses a field edited 5,000 times to two structs.
 	// The CRDT keeps no history to lose by it: what a person keeps is the
 	// export (ADR-0268), and collapse supersedes rather than discards
@@ -150,9 +154,40 @@ export function readRow(root: Y.Type, rowId: string): JsonObject | undefined {
 	for (const name of row.attrKeys()) {
 		if (name.startsWith(RESERVED_ATTRIBUTE_PREFIX)) continue;
 		const value = row.getAttr(name);
-		if (value !== undefined) payload[name] = value;
+		if (value === undefined) continue;
+		// A rich field is a nested type, not a value (ADR-0295). Read through the
+		// live attributes rather than through the declaration, so a rich field an
+		// older release wrote and this one no longer names is still not mistaken
+		// for JSON: what a scalar read owes is every value, and a type is not one.
+		if (value instanceof Y.Type) continue;
+		payload[name] = value as JsonValue;
 	}
 	return payload;
+}
+
+/**
+ * One row's rich fields: the nested types at the named attributes.
+ *
+ * Reads what is THERE rather than what is declared, so a name the row does not
+ * hold is simply absent and a caller never receives a type it cannot bind. A
+ * row minted by this release holds every rich field its declaration names,
+ * because minting is one transaction (`createRow`); a row minted by an older
+ * release that did not declare one holds nothing at that key, and gains
+ * nothing by being read.
+ */
+export function readRowTypes(
+	root: Y.Type,
+	rowId: string,
+	names: readonly string[],
+): Record<string, Y.Type> | undefined {
+	const row = rowType(root, rowId);
+	if (row === undefined) return undefined;
+	const types: Record<string, Y.Type> = {};
+	for (const name of names) {
+		const value = row.getAttr(name) as unknown;
+		if (value instanceof Y.Type) types[name] = value;
+	}
+	return types;
 }
 
 /**
@@ -195,9 +230,23 @@ export function createRow(
 	root: Y.Type,
 	rowId: string,
 	fields: JsonObject,
+	/**
+	 * The rich fields to mint beside the scalars (ADR-0295).
+	 *
+	 * **Minted exactly once, in the transaction that mints the row.** Root types
+	 * converge by name; nested types do not, so two devices independently
+	 * minting a body at the same attribute key lose one subtree. Minting with
+	 * the row removes the concurrency entirely, because a row id is minted
+	 * rather than chosen and no two devices ever mint the same one.
+	 */
+	types: readonly string[] = [],
 ): void {
 	refuseReservedFields(fields);
-	const row = rowType(root, rowId) ?? mintRow(root, rowId);
+	const existing = rowType(root, rowId);
+	const row = existing ?? mintRow(root, rowId);
+	if (existing === undefined) {
+		for (const name of types) row.setAttr(name, new Y.Type() as never);
+	}
 	fill(row, fields);
 }
 
@@ -267,12 +316,14 @@ function refuseReservedFields(fields: JsonObject): void {
 /**
  * Take one row off its table. Returns whether there was a row to take.
  *
- * The whole subtree goes with the attribute: every field. Deleting a nested
- * type reclaims what is under it (`evidence/invariants.test.ts`), so what
- * remains is one deleted map key, measured at 2.0 items and 44.5 bytes
- * (`evidence/bench/tombstones.ts`). The row's rich document is not in here to
- * reclaim: it lives at the row's derived address and the table verb retires
- * it beside this removal (ADR-0248).
+ * The whole subtree goes with the attribute: every scalar field AND every rich
+ * field's nested type. Deleting a nested type reclaims what is under it
+ * (`evidence/invariants.test.ts`), so what remains is one deleted map key,
+ * measured at 2.0 items and 44.5 bytes (`evidence/bench/tombstones.ts`).
+ *
+ * There is nothing else to retire. A row's rich content is IN here now
+ * (ADR-0295), so deletion is one removal in one document rather than a scalar
+ * removal composed with a durable tombstone on a second address.
  *
  * ADR-0212 chose the other model: clear every field and set a reserved
  * `!presence` attribute to `absent`, leaving the container attached to the root

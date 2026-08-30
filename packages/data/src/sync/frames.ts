@@ -116,17 +116,6 @@ export type SnapshotFrame = {
 /** The authority asking a current replica to supply a new snapshot. */
 export type WantedFrame = { kind: 'wanted'; position: number };
 
-/**
- * The authority naming the document its log describes (ADR-0231).
- *
- * The first frame on every connection, admitted or not. The id is opaque
- * and minted by the authority. A replica compares it to the identity its own
- * state belongs to: equal proceeds, absent adopts at first entanglement, different is the
- * client's `superseded` conclusion. Fact on the wire, verdict in the
- * client.
- */
-export type DocumentFrame = { kind: 'document'; id: string };
-
 export type Frame =
 	| PushFrame
 	| AckFrame
@@ -134,8 +123,7 @@ export type Frame =
 	| EntryFrame
 	| OfferFrame
 	| SnapshotFrame
-	| WantedFrame
-	| DocumentFrame;
+	| WantedFrame;
 
 const PUSH = 1;
 const ACK = 2;
@@ -146,7 +134,12 @@ const SNAPSHOT = 6;
 const WANTED = 7;
 // Opcode 8 carried `boundary` for one unreleased build and is retired; a
 // decoder treats it as unknown. Do not reuse it.
-const DOCUMENT = 9;
+//
+// Opcode 9 carried `document`, the authority naming the history its log
+// described, and is retired with the identity itself: the generation is in the
+// address now, so there is nothing to announce (ADR-0292). Do not reuse it
+// either. A decoder meeting one ignores it, which is what lets a deployment
+// roll forward past a peer that has not.
 
 /** `u8 kind` plus three `u32` fields, ahead of the payload. */
 const DATA_HEADER_BYTES = 13;
@@ -190,13 +183,6 @@ export function encodeFrame(frame: Frame): Uint8Array {
 			const view = new DataView(buffer.buffer);
 			view.setUint8(0, WANTED);
 			view.setUint32(1, frame.position);
-			return buffer;
-		}
-		case 'document': {
-			const id = new TextEncoder().encode(frame.id);
-			const buffer = new Uint8Array(1 + id.length);
-			buffer[0] = DOCUMENT;
-			buffer.set(id, 1);
 			return buffer;
 		}
 		case 'ack': {
@@ -248,18 +234,6 @@ export function decodeFrame(input: Uint8Array): Result<Frame, FrameError> {
 			});
 		}
 		return Ok({ kind: 'wanted', position: view.getUint32(1) });
-	}
-
-	if (kind === DOCUMENT) {
-		if (input.length < 2) {
-			return FrameError.Malformed({
-				reason: `document is ${input.length} bytes`,
-			});
-		}
-		return Ok({
-			kind: 'document',
-			id: new TextDecoder().decode(input.subarray(1)),
-		});
 	}
 
 	if (kind === ACK || kind === REFUSE) {

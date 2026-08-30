@@ -65,8 +65,8 @@ test('the first dial names the dataId and a cursor of zero', async () => {
 	const connection = attachStoreSync({
 		store,
 		dataId: database.id,
+		generation: 1,
 		transport,
-		onSuperseded: () => {},
 		onTransportError: (cause) => {
 			throw cause;
 		},
@@ -99,8 +99,8 @@ test('a permanent denial stops the driver and is not a transport error', async (
 	const connection = attachStoreSync({
 		store,
 		dataId: database.id,
+		generation: 1,
 		transport,
-		onSuperseded: () => {},
 		onDenied: () => denials++,
 		onTransportError: (cause) => transportErrors.push(cause),
 	});
@@ -129,8 +129,8 @@ test('a transient denial is reported and left to the backoff', async () => {
 	const connection = attachStoreSync({
 		store,
 		dataId: database.id,
+		generation: 1,
 		transport,
-		onSuperseded: () => {},
 		onDenied: () => denials++,
 		onTransportError: (cause) => transportErrors.push(cause),
 	});
@@ -152,8 +152,8 @@ test('an unrecognised rejection is a close, never a denial', async () => {
 	const connection = attachStoreSync({
 		store,
 		dataId: database.id,
+		generation: 1,
 		transport,
-		onSuperseded: () => {},
 		onDenied: () => denials++,
 		onTransportError: (error) => transportErrors.push(error),
 	});
@@ -179,8 +179,8 @@ test('abandoning an attempt closes a socket that arrives late', async () => {
 	const connection = attachStoreSync({
 		store,
 		dataId: database.id,
+		generation: 1,
 		transport,
-		onSuperseded: () => {},
 		onTransportError: (cause) => {
 			throw cause;
 		},

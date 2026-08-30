@@ -18,16 +18,6 @@
  * `createLocalStore` stays in `store/store.js` for the tests that construct one
  * directly.
  */
-
-/**
- * The packing an artifact's consumer still has to do, until it does not.
- *
- * `readArtifact` returns documents (ADR-0286) and today's store accepts one
- * envelope, so a caller bridging the two needs this. It is exported HERE, on
- * the seam that exists for test infrastructure and dies with the transport,
- * rather than given a subpath of its own that would outlive its reason.
- */
-export { encodeEnvelope } from './store/envelope.js';
 export {
 	type CreateStoreOptions,
 	createAccountStore,

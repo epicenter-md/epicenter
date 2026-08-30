@@ -8,12 +8,10 @@
  * `DurableOp[]` and asserts the same observable result, which is the only
  * thing that can hold two implementations of one contract together.
  *
- * What "observable" means here is deliberately narrow: what a reopen loads,
- * and what `readDocument`/`listDocuments` answer. Row counts and storage
- * layout are not the contract; two ports may fold at different moments and
- * still be correct, so the fold test asserts REPLAYED STATE rather than
- * shape, and records the layout difference as evidence rather than failing on
- * it.
+ * What "observable" means here is deliberately narrow: what a reopen loads.
+ * Row counts and storage layout are not the contract; two ports may fold at
+ * different moments and still be correct, so the fold test asserts REPLAYED
+ * STATE rather than shape.
  *
  * A case that fails on only one side is not automatically that side's bug.
  * It is a question about which behavior the contract intends, and the answer
@@ -31,7 +29,7 @@ import * as Y from '@y/y';
 
 import { openIdbBacking } from './browser.js';
 import { createRow, readRow, tableRoot } from './document.js';
-import { APP_DOCUMENT, createSqliteDurablePort, replay } from './log.js';
+import { createSqliteDurablePort, replay } from './log.js';
 import type { DurableOp, DurablePort, DurableSnapshot } from './persistence.js';
 
 /**
@@ -146,49 +144,25 @@ function valueOf(chain: readonly Uint8Array[]): unknown {
 }
 
 let nextId = 0;
-const append = (
-	document: string,
-	text: string,
-	authoritySeq?: number,
-): DurableOp => {
+const append = (text: string, authoritySeq?: number): DurableOp => {
 	nextId += 1;
-	return {
-		kind: 'append',
-		document,
-		id: nextId,
-		bytes: update(text),
-		authoritySeq,
-	};
+	return { kind: 'append', id: nextId, bytes: update(text), authoritySeq };
 };
 
 for (const engine of ENGINES) {
 	describe(`DurablePort conformance: ${engine.name}`, () => {
-		test('an append survives a reopen, and listDocuments names it', async () => {
+		test('an append survives a reopen', async () => {
 			const record = await engine.create(`append-${counter}`);
-			await record.commit([append(APP_DOCUMENT, 'one')]);
-
-			const { loaded, port } = await record.reopen();
-			expect(valueOf(loaded.updates)).toBe('one');
-			expect(await port.listDocuments()).toContain(APP_DOCUMENT);
-		});
-
-		test('the identity stamp is first-write-wins', async () => {
-			const record = await engine.create(`identity-${counter}`);
-			await record.commit([{ kind: 'identity', id: 'first' }]);
-			await record.commit([{ kind: 'identity', id: 'second' }]);
+			await record.commit([append('one')]);
 
 			const { loaded } = await record.reopen();
-			// `log.ts` states this in words above `writeDocumentIdentity`:
-			// "First write wins: membership never changes in place, only by
-			// discarding the file whole." A port that overwrites lets a replica
-			// full of one account's bytes claim to be another's.
-			expect(loaded.identity).toBe('first');
+			expect(valueOf(loaded.updates)).toBe('one');
 		});
 
 		test('an append with no position is owed, and one with a position is not', async () => {
 			const record = await engine.create(`owed-${counter}`);
-			const owed = append(APP_DOCUMENT, 'mine');
-			const received = append(APP_DOCUMENT, 'theirs', 9);
+			const owed = append('mine');
+			const received = append('theirs', 9);
 			await record.commit([owed, received]);
 
 			const { loaded } = await record.reopen();
@@ -201,8 +175,8 @@ for (const engine of ENGINES) {
 
 		test('an ack retires the work it names AND records where it landed', async () => {
 			const record = await engine.create(`ack-${counter}`);
-			const first = append(APP_DOCUMENT, 'a');
-			const second = append(APP_DOCUMENT, 'b');
+			const first = append('a');
+			const second = append('b');
 			await record.commit([first, second]);
 
 			const afterWrite = await record.reopen();
@@ -226,7 +200,7 @@ for (const engine of ENGINES) {
 
 		test('a repeated ack does not restamp work a later ack already took', async () => {
 			const record = await engine.create(`reack-${counter}`);
-			const only = append(APP_DOCUMENT, 'a');
+			const only = append('a');
 			await record.commit([only]);
 			await record.commit([
 				{ kind: 'ack', throughId: only.id, authoritySeq: 3 },
@@ -246,23 +220,6 @@ for (const engine of ENGINES) {
 			expect(loaded.cursor).toBe(3);
 		});
 
-		test('retire tombstones the address and drops its chain and its owed work', async () => {
-			const record = await engine.create(`retire-${counter}`);
-			const doomed = append('row', 'doomed');
-			const kept = append(APP_DOCUMENT, 'kept');
-			await record.commit([doomed, kept]);
-			await record.commit([{ kind: 'retire', document: 'row' }]);
-
-			const { loaded, port } = await record.reopen();
-			expect(loaded.tombstones).toEqual(['row']);
-			expect(await port.readDocument('row')).toEqual([]);
-			expect(await port.listDocuments()).not.toContain('row');
-			// The retired address takes its owed bytes with it, which is now one
-			// deletion rather than a sweep of a second relation.
-			expect(loaded.outbox.map((entry) => entry.id)).toEqual([kept.id]);
-			expect(valueOf(loaded.updates)).toBe('kept');
-		});
-
 		test('a folded chain replays to the same value, and leaves owed work alone', async () => {
 			const record = await engine.create(`fold-${counter}`);
 			// Past the fold threshold, all acknowledged, so the whole prefix is
@@ -277,7 +234,6 @@ for (const engine of ENGINES) {
 				nextId += 1;
 				return {
 					kind: 'append' as const,
-					document: APP_DOCUMENT,
 					id: nextId,
 					bytes,
 					// Everything but the last is acknowledged, so the foldable
@@ -289,26 +245,48 @@ for (const engine of ENGINES) {
 			const owed = numbered[70] as DurableOp & { id: number };
 			await record.commit([owed]);
 
-			const { loaded, port } = await record.reopen();
+			const { loaded } = await record.reopen();
 			// Only the replayed state is the contract. The two ports may hold
 			// different numbers of rows and both be right.
 			expect(valueOf(loaded.updates)).toBe('v70');
 			expect(loaded.outbox.map((entry) => entry.id)).toEqual([owed.id]);
-			const stored = await port.readDocument(APP_DOCUMENT);
 			// The point of the fold: fewer rows than were written.
-			expect(stored.length).toBeLessThan(71);
+			expect(loaded.updates.length).toBeLessThan(71);
 		});
 
 		test('a batch is all or nothing', async () => {
 			const record = await engine.create(`atomic-${counter}`);
-			const one = append(APP_DOCUMENT, 'a');
-			await record.commit([one, { kind: 'identity', id: 'doc' }]);
+			// One document's two successive updates, so the replayed value is
+			// the later one rather than whichever won a last-writer race.
+			const [first, second] = chain(2) as [Uint8Array, Uint8Array];
+			nextId += 1;
+			const one: DurableOp = {
+				kind: 'append',
+				id: nextId,
+				bytes: first,
+				authoritySeq: undefined,
+			};
+			nextId += 1;
+			const two: DurableOp = {
+				kind: 'append',
+				id: nextId,
+				bytes: second,
+				authoritySeq: undefined,
+			};
+			await record.commit([
+				one,
+				two,
+				{ kind: 'ack', throughId: one.id, authoritySeq: 4 },
+			]);
 
+			// Every op in the batch landed, in order: both appends are stored,
+			// the ack retired only what it named, and the cursor is the position
+			// it landed at.
 			const { loaded } = await record.reopen();
-			expect(loaded.identity).toBe('doc');
-			expect(loaded.outbox.map((entry) => entry.id)).toEqual([one.id]);
-			expect(valueOf(loaded.updates)).toBe('a');
-			expect(loaded.lastId).toBe(one.id);
+			expect(loaded.outbox.map((entry) => entry.id)).toEqual([two.id]);
+			expect(loaded.cursor).toBe(4);
+			expect(valueOf(loaded.updates)).toBe('v1');
+			expect(loaded.lastId).toBe(two.id);
 		});
 	});
 }

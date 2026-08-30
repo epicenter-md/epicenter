@@ -13,6 +13,8 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
+import { expectOk } from 'wellcrafted/testing';
+
 import { openSyncAuthority } from './authority.js';
 
 /** Deterministic garbage: bytes that are not a Yjs update by any decoding. */
@@ -66,5 +68,46 @@ describe('an authority needs no definition: every verb moves unread bytes', () =
 		if (held.error !== null) throw held.error;
 		expect(held.data?.position).toBe(2);
 		expect(held.data?.bytes).toEqual(opaque(9, 128));
+	});
+});
+
+describe('a generation is seeded once, from one whole state (ADR-0293)', () => {
+	test('the seed becomes the snapshot, and the tail is empty behind it', () => {
+		const authority = openAuthority();
+		const state = new Uint8Array([1, 2, 3, 4]);
+
+		const position = expectOk(authority.seed(state));
+		// Position 1, not 0: zero already means "no snapshot", so the state is
+		// appended as entry 1 and snapshotted there in one step.
+		expect(position).toBe(1);
+		expect(expectOk(authority.snapshotPosition())).toBe(1);
+		expect(expectOk(authority.snapshot())?.bytes).toEqual(state);
+		// The entry it was appended as is gone, replaced by the snapshot that
+		// covers it, so a bootstrapping device is sent the state exactly once.
+		expect(expectOk(authority.since(0))).toEqual([]);
+	});
+
+	test('a seeded log takes ordinary appends after it', () => {
+		const authority = openAuthority();
+		expectOk(authority.seed(new Uint8Array([1])));
+		expect(expectOk(authority.append(new Uint8Array([2])))).toBe(2);
+		expect(expectOk(authority.since(1)).map((entry) => entry.seq)).toEqual([2]);
+	});
+
+	test('seeding twice is refused: a generation is created once', () => {
+		const authority = openAuthority();
+		expectOk(authority.seed(new Uint8Array([1])));
+		expect(authority.seed(new Uint8Array([9])).error?.name).toBe(
+			'SnapshotRefused',
+		);
+		expect(expectOk(authority.snapshot())?.bytes).toEqual(new Uint8Array([1]));
+	});
+
+	test('a log that already took an append refuses a seed', () => {
+		const authority = openAuthority();
+		expectOk(authority.append(new Uint8Array([1])));
+		expect(authority.seed(new Uint8Array([9])).error?.name).toBe(
+			'SnapshotRefused',
+		);
 	});
 });

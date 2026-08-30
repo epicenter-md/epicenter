@@ -21,7 +21,18 @@
  *     so a run that restored rows and lost documents would otherwise read as a
  *     pass.
  */
-import { chromium } from 'playwright';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { chromium, webkit } from 'playwright';
+
+/**
+ * Which engine to prove it in. `--webkit` is not a nicety: the desktop ships a
+ * WKWebView, so a result from Chromium alone says the code works somewhere
+ * other than where it runs.
+ */
+const ENGINE = process.argv.includes('--webkit') ? webkit : chromium;
+
 import { build } from 'vite';
 
 const root = new URL('./durable-store/', import.meta.url).pathname;
@@ -58,7 +69,13 @@ type Reading = {
 	pressure?: { items: number; liveRows: number; itemsPerLiveRow: number };
 };
 
-const browser = await chromium.launch();
+// A PERSISTENT context, not an ephemeral one. WebKit refuses a sync access
+// handle in a throwaway profile with `UnknownError`, which reads as a code
+// failure and is a harness artifact: the origin private file system needs
+// somewhere to actually be.
+const profile = mkdtempSync(join(tmpdir(), 'epicenter-durable-'));
+const browser = await ENGINE.launchPersistentContext(profile, {});
+console.log(`engine: ${ENGINE.name()}\n`);
 let failures = 0;
 function check(label: string, held: boolean, detail: unknown = ''): void {
 	if (!held) failures += 1;
@@ -111,13 +128,13 @@ try {
 		`${after.pressure?.items} items / ${after.pressure?.liveRows} rows`,
 	);
 
-	console.log('\n2. CONTROL: a different databaseId is a different file');
+	console.log('\n2. CONTROL: a different dataId is a different file');
 	await page.reload();
 	await page.waitForFunction('typeof globalThis.open === "function"');
 	await page.evaluate('globalThis.open("somewhere-else")');
 	const elsewhere = (await page.evaluate('globalThis.read()')) as Reading;
 	check(
-		'a store under another databaseId sees nothing',
+		'a store under another dataId sees nothing',
 		elsewhere.notes.length === 0,
 		`${elsewhere.notes.length} notes`,
 	);
@@ -130,6 +147,7 @@ try {
 	check('the vault still holds both notes', again.notes.length === 2);
 } finally {
 	await browser.close();
+	rmSync(profile, { recursive: true, force: true });
 	await server.stop(true);
 }
 

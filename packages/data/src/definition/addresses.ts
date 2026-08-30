@@ -1,37 +1,22 @@
 /**
- * The structured row address: the one canonical way to name a unit of
- * independent convergence (ADR-0160, ADR-0164, ADR-0206).
+ * The durable names a database declares, and what makes each one admissible.
  *
- * An address is always a structured object, never a flat concatenated string,
- * and it is always exactly three coordinates deep: who owns it, what kind of
- * thing it is, which one. Fixed depth is what makes this a coordinate instead of
- * a path, so nothing needs traversal, prefix matching, or globbing to find
- * anything, which is the machinery ADR-0176 refuses.
+ * A database id, a table name and a row id: three grammars and their byte
+ * ceilings. There is no address TYPE here any more. A row used to own an
+ * independent Yjs document at a derived `{dataId}/{tableName}/{rowId}` string,
+ * and the structured `RowAddress` existed to compose it (ADR-0160, ADR-0164,
+ * ADR-0206, ADR-0248); a database is one document now (ADR-0295), a row is an
+ * attribute key on its table root, and nothing addresses one from outside.
  *
- * The coordinates are spelled `tableName` and `rowId` rather than `table` and
- * `row`. Each reads as the durable name it is at every call site and cannot be
- * misread as the thing it names, and `table_name` and `row_id` are the matching
- * SQL column names, so one vocabulary spans the typed API, the wire, and
- * storage.
- *
- * A database id and table are durable names a database declares. A row id comes from
- * whoever knows it: the runtime mints one when nobody does, and an application
- * supplies one when it does (ADR-0206). Renaming any coordinate produces a
- * different address, and therefore a different unit of convergence; there is no
- * rename operation and no alias.
- *
- * A table name is mounted as a SQL relation by a trusted inspection host, so it
- * must be a bare SQL identifier and `SELECT * FROM notes` must need no quoting
- * (ADR-0162). It requires a leading letter, which reserves every `_`-prefixed
- * relation name for internal use.
+ * What survives is the grammar, because the names are still durable. A row id
+ * still admits only characters safe verbatim in a URL path segment and still
+ * refuses a leading `.`, `-` or `_`, because a row still becomes a file in an
+ * exported folder (ADR-0268). A table name is still mounted as a SQL relation
+ * by a trusted inspection host, so it must be a bare identifier and
+ * `SELECT * FROM notes` must need no quoting (ADR-0162). Renaming any of them
+ * produces a different name and therefore a different thing; there is no rename
+ * operation and no alias.
  */
-
-import { type Static, Type } from 'typebox';
-import { Value } from 'typebox/value';
-
-import { canonicalJson } from './canonical.js';
-
-const CLOSED = { additionalProperties: false } as const;
 
 /** Reverse-domain database id: two or more lowercase, dot-separated labels. */
 const DATA_ID_PATTERN =
@@ -134,66 +119,6 @@ function utf8ByteLength(value: string): number {
 	return bytes;
 }
 
-const dataIdSchema = Type.String({
-	minLength: 3,
-	pattern: DATA_ID_PATTERN,
-});
-const tableNameSchema = Type.String({
-	minLength: 1,
-	pattern: TABLE_NAME_PATTERN,
-});
-const rowIdSchema = Type.String({
-	minLength: 1,
-	pattern: ROW_ID_PATTERN,
-});
-
-export const RowAddressSchema = Type.Object(
-	{
-		dataId: dataIdSchema,
-		tableName: tableNameSchema,
-		rowId: rowIdSchema,
-	},
-	CLOSED,
-);
-export type RowAddress = Static<typeof RowAddressSchema>;
-
-/**
- * A private, order-stable identity string for one structured address.
- *
- * Internal map keying only: it never reaches storage, the wire, or a URL. The
- * canonical JSON form keeps the identity independent of coordinate insertion
- * order. It is deliberately not parseable back into an address: nothing may
- * reconstruct coordinates from a joined string.
- */
-export function addressKey(address: RowAddress): string {
-	return canonicalJson(address);
-}
-
-/**
- * The canonical address of the independent Yjs document a row owns (ADR-0248).
- *
- * A fixed-depth derived string, `{dataId}/{tableName}/{rowId}`, composed
- * one way only. It does not encode, parse, or revalidate coordinates: every
- * coordinate is slash-free by the grammar in this file, checked where names
- * are declared and where addresses are admitted, so the interpolation cannot
- * be ambiguous. A future coordinate that cannot satisfy a slash-free grammar
- * must earn a new grammar or be refused, never be silently escaped. There is
- * no inverse, and nothing may scan or interpret prefixes of the result; the
- * document manager that consumes it treats it as an opaque string.
- */
-export function documentAddress(address: RowAddress) {
-	return `${address.dataId}/${address.tableName}/${address.rowId}`;
-}
-
-/** Structured identity equality: equal exactly when every coordinate matches. */
-export function addressesEqual(left: RowAddress, right: RowAddress): boolean {
-	return (
-		left.dataId === right.dataId &&
-		left.tableName === right.tableName &&
-		left.rowId === right.rowId
-	);
-}
-
 /** Whether a durable database id is well formed and within its ceiling. */
 export function isDatabaseId(
 	value: string,
@@ -238,34 +163,4 @@ export function isTableName(
 export function isRowId(value: string, ceilings: AddressByteCeilings): boolean {
 	const bytes = utf8ByteLength(value);
 	return bytes >= 1 && bytes <= ceilings.rowIdBytes && ROW_ID.test(value);
-}
-
-/** Semantic byte-length admission for an already structurally valid address. */
-export function isAdmissibleAddress(
-	address: RowAddress,
-	ceilings: AddressByteCeilings,
-): boolean {
-	return (
-		isDatabaseId(address.dataId, ceilings) &&
-		isTableName(address.tableName, ceilings) &&
-		isRowId(address.rowId, ceilings)
-	);
-}
-
-/**
- * Structural and semantic admission for an untrusted candidate address.
- *
- * These are predicates rather than parsers on purpose. Every caller is guarding
- * a boundary and then reporting its own domain failure (a replica input error, an
- * HTTP 400), so a dedicated address error variant would carry no information any
- * caller reads, and returning a defensive clone would charge every local read for
- * a copy it discards.
- */
-export function isRowAddress(
-	value: unknown,
-	ceilings: AddressByteCeilings,
-): value is RowAddress {
-	return (
-		Value.Check(RowAddressSchema, value) && isAdmissibleAddress(value, ceilings)
-	);
 }

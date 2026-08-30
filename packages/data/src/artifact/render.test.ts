@@ -1,32 +1,51 @@
 import { describe, expect, test } from 'bun:test';
-import { defineData, field, parseData } from '@epicenter/data/definition';
+import {
+	defineData,
+	defineTable,
+	field,
+	parseData,
+} from '@epicenter/data/definition';
+import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openMemory } from '../store/memory.js';
+import type { TypedTableHandle } from '../store/store.js';
 import { type RenderedRow, renderArtifact, renderRow } from './render.js';
 
-type TitleRoot = {
-	getAttr(key: string): unknown;
-	setAttr(key: string, value: unknown): void;
-};
+type NoteFields = (typeof store)['tables']['notes']['fields'];
 
 const store = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.string() },
 	tables: {
-		notes: {
-			fields: { title: field.string() },
-			document: {
-				file: {
-					serialize: (doc) =>
-						String((doc.get('meta') as TitleRoot).getAttr('title') ?? ''),
-					deserialize: (text, doc) => {
-						(doc.get('meta') as TitleRoot).setAttr('title', text);
-					},
+		notes: defineTable({
+			fields: { title: field.string(), body: field.type() },
+			file: {
+				// The whole row, mapped: the scalars above the fence and the rich
+				// field below it. The codec spreads what it was handed, so a value
+				// an older release wrote rides along instead of being dropped.
+				serialize: ({ id: _id, body, ...fields }) => ({
+					data: fields,
+					content: body.toString(),
+				}),
+				deserialize: (file, types) => {
+					if (file.content !== '') types.body.insert(0, [file.content]);
+					return Ok({ title: String(file.data.title ?? '') });
 				},
 			},
-		},
+		}),
 	},
 });
+
+/** Write prose into one row's rich `body` field. */
+function type(
+	data: { tables: { notes: TypedTableHandle<NoteFields> } },
+	rowId: string,
+	text: string,
+): void {
+	const content = data.tables.notes.content(rowId);
+	if (content === undefined) throw new Error('the row has no content');
+	content.types.body.insert(0, [text]);
+}
 
 /** Collect the stream into a map, which is what an assertion wants. */
 async function collect(
@@ -50,10 +69,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 	test('one row becomes one file: fields on top, prose underneath', async () => {
 		await using data = await openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
-		const opened = await data.tables.notes.openDocument(made.id);
-		using handle = expectOk(opened);
-		if (handle === undefined) throw new Error('the document should open');
-		handle.get('meta').setAttr('title' as never, 'buy milk' as never);
+		type(data, made.id, 'buy milk');
 
 		const rendered = expectOk(
 			await renderRow(data, parsed(store), 'notes', made.id),
@@ -78,7 +94,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 		expect(rendered.contents).toBeUndefined();
 	});
 
-	test('a table with no document block renders frontmatter alone', async () => {
+	test('a table with no rich content renders frontmatter alone', async () => {
 		const scalarOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
@@ -102,17 +118,15 @@ describe('renderRow is the unit (ADR-0271)', () => {
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
 			tables: {
-				notes: {
-					fields: { title: field.string() },
-					document: {
-						file: {
-							serialize: () => {
-								throw new Error('this document is not my shape');
-							},
-							deserialize: () => undefined,
+				notes: defineTable({
+					fields: { title: field.string(), body: field.type() },
+					file: {
+						serialize: () => {
+							throw new Error('this row is not my shape');
 						},
+						deserialize: () => Ok({ title: '' }),
 					},
-				},
+				}),
 			},
 		});
 		await using data = await openMemory(breaking);
@@ -142,13 +156,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 		await using data = await openMemory(store);
 		data.kv.update({ theme: 'dark' });
 		const made = data.tables.notes.create({ title: 'Groceries' });
-		const opened = await data.tables.notes.openDocument(made.id);
-		const handle = opened.data;
-		if (handle === undefined || handle === null) {
-			throw new Error('the document should open');
-		}
-		handle.get('meta').setAttr('title' as never, 'buy milk' as never);
-		handle[Symbol.dispose]();
+		type(data, made.id, 'buy milk');
 
 		const files = await collect(renderArtifact(data, store));
 
@@ -156,9 +164,9 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 			theme: 'dark',
 		});
 
-		// The row is one file: its id is the path, its fields the frontmatter
+		// The row is one file: its id is the path, its scalars the frontmatter
 		// (strings always quoted, so every value re-reads as itself), and its
-		// document the body (ADR-0268).
+		// rich content the body (ADR-0268, ADR-0296).
 		expect(files.get(`notes/${made.id}.md`)).toBe(
 			['---', 'title: "Groceries"', '---', '', 'buy milk', ''].join('\n'),
 		);
@@ -189,31 +197,23 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
 			tables: {
-				notes: {
-					fields: { title: field.string() },
-					document: {
-						file: {
-							serialize: (doc) => {
-								const body = String(
-									(doc.get('meta') as TitleRoot).getAttr('title') ?? '',
-								);
-								if (body === 'poison') throw new Error('not my shape');
-								return body;
-							},
-							deserialize: () => undefined,
+				notes: defineTable({
+					fields: { title: field.string(), body: field.type() },
+					file: {
+						serialize: (row) => {
+							const content = row.body.toString();
+							if (content === 'poison') throw new Error('not my shape');
+							return { data: { title: row.title }, content };
 						},
+						deserialize: () => Ok({ title: '' }),
 					},
-				},
+				}),
 			},
 		});
 		await using data = await openMemory(poisoned);
 		const bad = data.tables.notes.create({ title: 'broken' });
 		const good = data.tables.notes.create({ title: 'fine' });
-		{
-			const opened = await data.tables.notes.openDocument(bad.id);
-			using handle = expectOk(opened);
-			handle?.get('meta').setAttr('title' as never, 'poison' as never);
-		}
+		type(data, bad.id, 'poison');
 
 		const seen: { ok: string[]; failed: number } = { ok: [], failed: 0 };
 		for await (const rendered of renderArtifact(data, poisoned)) {
@@ -226,7 +226,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 		expect(seen.ok).not.toContain(`notes/${bad.id}.md`);
 	});
 
-	test('a table without a document block exports frontmatter-only files', async () => {
+	test('a table with no rich content exports frontmatter-only files', async () => {
 		const scalarOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},

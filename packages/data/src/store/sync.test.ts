@@ -11,23 +11,33 @@ import { field } from '@epicenter/data/definition';
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineData } from '@epicenter/data/definition';
+import { defineData, defineTable } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import type { Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 
-import { encodeEnvelope } from './envelope.js';
-import { APP_DOCUMENT, copyBytes } from './log.js';
+import { copyBytes } from './log.js';
 import { createAccountStore, syncEngineOf } from './store.js';
 
 /** Wrap one application-document update the way the wire carries it. */
-function asEnvelope(bytes: Uint8Array): Uint8Array {
-	return encodeEnvelope([{ document: APP_DOCUMENT, bytes }]);
-}
 
 const database = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: {},
-	tables: { notes: { fields: { title: field.string() } } },
+	tables: {
+		notes: defineTable({
+			fields: { title: field.string(), editor: field.type() },
+			file: {
+				serialize: (row) => ({
+					data: { title: row.title },
+					content: row.editor.toString(),
+				}),
+				deserialize: (file, types) => {
+					if (file.content !== '') types.editor.insert(0, [file.content]);
+					return Ok({ title: String(file.data.title ?? '') });
+				},
+			},
+		}),
+	},
 });
 
 function open() {
@@ -86,7 +96,7 @@ describe('the local log holds each update once', () => {
 		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
 		const update = author.store.encodeStateSince();
 
-		expectOk(syncEngineOf(reader.store).applyRemote(asEnvelope(update)));
+		expectOk(syncEngineOf(reader.store).applyRemote(update));
 
 		const rows = reader.logRows();
 		expect(rows).toHaveLength(1);
@@ -101,31 +111,27 @@ describe('the local log holds each update once', () => {
 		const reader = open();
 		expectOk(author.db.tables.notes.create({ title: 'Groceries' }));
 		expectOk(
-			syncEngineOf(reader.store).applyRemote(
-				asEnvelope(author.store.encodeStateSince()),
-			),
+			syncEngineOf(reader.store).applyRemote(author.store.encodeStateSince()),
 		);
 
 		expect(reader.outbox()).toHaveLength(0);
 		expect(syncEngineOf(reader.store).coalesce()).toBeUndefined();
 	});
 
-	test('an application writing inside a row document owes it, like any local work', async () => {
-		// Prose reaches storage through the manager's update listener rather
-		// than through a store verb, so it is the one local write that could
-		// plausibly be missed.
+	test("an editor writing into a row's rich field owes it, like any local work", () => {
+		// Prose reaches storage through the document's own update listener
+		// rather than through a store verb, so it is the one local write that
+		// could plausibly be missed.
 		const author = open();
 		const note = expectOk(
 			author.db.tables.notes.create({ title: 'Groceries' }),
 		);
 		const before = author.outbox().length;
-		const opened = await author.db.tables.notes.openDocument(note.id);
-		const text = opened.data?.get('editor', 'text');
-		if (text === undefined) throw new Error('the row has no document');
+		const text = author.db.tables.notes.content(note.id)?.types.editor;
+		if (text === undefined) throw new Error('the row has no editor');
 		text.applyDelta(text.change.insert('buy milk') as never);
 
 		expect(author.outbox().length).toBeGreaterThan(before);
-		opened.data?.[Symbol.dispose]();
 	});
 });
 
@@ -166,7 +172,7 @@ describe('coalesce merges only what this replica authored', () => {
 		const last = author.outbox().at(-1);
 		if (last === undefined) throw new Error('empty outbox');
 
-		expectOk(syncEngineOf(lastOnly.store).applyRemote(asEnvelope(last.bytes)));
+		expectOk(syncEngineOf(lastOnly.store).applyRemote(last.bytes));
 
 		expect(titles(lastOnly)).toEqual(['note 19']);
 		// And the replica cannot even report the shortfall as an error, which is
@@ -259,67 +265,33 @@ describe('the cursor is a log position, and never a state vector', () => {
 	});
 });
 
-describe('the stamp lands only on an empty store', () => {
-	test('a store that grew before it was stamped is refused with Unstampable', () => {
-		const { store, db } = open();
-		expectOk(db.tables.notes.create({ title: 'pre-bootstrap work' }));
-
-		const refused = syncEngineOf(store).adoptDocumentIdentity('doc-1');
-		expect(refused.error?.name).toBe('Unstampable');
-		expect(syncEngineOf(store).documentIdentity()).toBeUndefined();
-	});
-
-	test('a stamped store keeps its first identity, and re-stamping is a no-op', () => {
-		const { store, db } = open();
-		expectOk(syncEngineOf(store).adoptDocumentIdentity('doc-1'));
-		expectOk(db.tables.notes.create({ title: 'after the stamp' }));
-
-		// First write wins: membership never changes in place, even once the
-		// store holds state, and only discarding the file whole changes it.
-		expectOk(syncEngineOf(store).adoptDocumentIdentity('doc-2'));
-		expect(syncEngineOf(store).documentIdentity()).toBe('doc-1');
-	});
-
-	test('read progress alone is a commitment: a moved cursor refuses the stamp', () => {
-		const { store } = open();
-		syncEngineOf(store).acknowledge(0, 3);
-
-		const refused = syncEngineOf(store).adoptDocumentIdentity('doc-1');
-		expect(refused.error?.name).toBe('Unstampable');
-	});
-});
-
-describe('a row document root converges however many devices first-open it', () => {
-	test('two devices first-opening one note both keep their prose', async () => {
-		// The race the nested-container design spent a create-time declaration
-		// closing. In an independent document a top-level root is addressed by
-		// its NAME, so two devices minting `editor` concurrently converge with
-		// both writes retained (ADR-0248,
-		// `evidence/independent-document-roots.test.ts`), and no root is
-		// reserved at create.
+describe("a row's rich field is one type both devices edit", () => {
+	test('two devices typing into one note both keep their prose', () => {
+		// The race a per-row document spent a name-addressed root closing. A
+		// nested type is addressed by the struct that created it, so what makes
+		// this safe is that it is minted ONCE, in the transaction that mints its
+		// row (ADR-0295): both devices reach the same type because only the
+		// creating device ever minted one.
 		const author = open();
 		const other = open();
 		const note = expectOk(
 			author.db.tables.notes.create({ title: 'Groceries' }),
 		);
 		expectOk(
-			syncEngineOf(other.store).applyRemote(
-				asEnvelope(author.store.encodeStateSince()),
-			),
+			syncEngineOf(other.store).applyRemote(author.store.encodeStateSince()),
 		);
 
 		for (const [replica, words] of [
 			[author, 'written on the phone'],
 			[other, 'written on the laptop'],
 		] as const) {
-			const opened = await replica.db.tables.notes.openDocument(note.id);
-			const text = opened.data?.get('editor', 'text');
+			const text = replica.db.tables.notes.content(note.id)?.types.editor;
 			if (text === undefined) throw new Error('the row has no editor');
 			text.applyDelta(text.change.insert(words) as never);
 		}
 
 		// Cross-deliver each device's unsent work through the one connection's
-		// payload; re-delivered sections are idempotent.
+		// payload; a re-delivered update is idempotent.
 		const fromAuthor = syncEngineOf(author.store).coalesce();
 		const fromOther = syncEngineOf(other.store).coalesce();
 		if (fromAuthor === undefined || fromOther === undefined) {
@@ -328,15 +300,13 @@ describe('a row document root converges however many devices first-open it', () 
 		expectOk(syncEngineOf(author.store).applyRemote(fromOther.bytes));
 		expectOk(syncEngineOf(other.store).applyRemote(fromAuthor.bytes));
 
-		const readBack = async (replica: typeof author) => {
-			const opened = await replica.db.tables.notes.openDocument(note.id);
-			const text = JSON.stringify(opened.data?.get('editor').toJSON());
-			opened.data?.[Symbol.dispose]();
-			return text;
-		};
-		const merged = await readBack(author);
+		const readBack = (replica: typeof author) =>
+			JSON.stringify(
+				replica.db.tables.notes.content(note.id)?.types.editor.toJSON(),
+			);
+		const merged = readBack(author);
 		expect(merged).toContain('phone');
 		expect(merged).toContain('laptop');
-		expect(merged).toBe(await readBack(other));
+		expect(merged).toBe(readBack(other));
 	});
 });

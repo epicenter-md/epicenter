@@ -11,8 +11,8 @@ export function canonicalJson(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
 	if (typeof value === 'object') {
 		// Function and `undefined` values are dropped, as `JSON.stringify` drops
-		// them: a definition's document behaviors (ADR-0264) ride beside its data,
-		// and the canonical form is the inert data core alone (ADR-0266).
+		// them: a table's file codec (ADR-0296) rides beside its data, and the
+		// canonical form is the inert data core alone (ADR-0266).
 		return `{${Object.entries(value)
 			.filter(([, child]) => typeof child !== 'function' && child !== undefined)
 			.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))

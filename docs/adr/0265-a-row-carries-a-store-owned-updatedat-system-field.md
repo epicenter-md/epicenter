@@ -1,7 +1,8 @@
 # 0265. A row's `createdAt` and `updatedAt` are store-managed instant fields
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-26
+- **Superseded by:** [ADR-0297](0297-the-store-manages-no-timestamps.md). The store writes no timestamps; an application declares and writes its own.
 - **Relates:** [ADR-0264](0264-a-table-declares-its-row-documents-derivation-and-file-codec.md) (the pure `derive` these fields are deliberately kept out of), [ADR-0248](0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md), [ADR-0253](0253-schema-lenses-interpret-stored-json-on-read-and-writes-admit-storage-valid-facts.md), [ADR-0257](0257-the-application-document-has-named-kv-and-table-roots.md)
 - **Unbuilt:** the store manages the timestamps, but honeycrisp still stamps `updatedAt` by hand in `updateContent` and its editor chain has not yet been collapsed onto `derive`. Excluding the managed names from `CreateInputOf` (so an application cannot pass them) is a deferred type-only cleanup.
 

@@ -15,13 +15,12 @@ import { describe, expect, test } from 'bun:test';
 import * as Y from '@y/y';
 
 import {
-	createAppDocument,
+	createDatabaseDocument,
 	KV_ROOT_NAME,
 	kvRoot,
 	tableRoot,
 	tableRootName,
 } from '../src/store/document.js';
-import { APP_DOCUMENT } from '../src/store/log.js';
 
 /** Exchange everything each side is missing, both directions. */
 function sync(a: Y.Doc, b: Y.Doc): void {
@@ -35,9 +34,9 @@ function attrs(type: Y.Type): Record<string, unknown> {
 	return type.getAttrs() as Record<string, unknown>;
 }
 
-describe('the scalar application document has one named root grammar', () => {
-	test('uses app, kv, and tables:<name> without a nested tables root', () => {
-		const document = createAppDocument();
+describe('the database document has one named root grammar', () => {
+	test('uses kv and tables:<name> without a nested tables root', () => {
+		const document = createDatabaseDocument();
 		const kv = kvRoot(document);
 		const pages = tableRoot(document, 'pages');
 		const folders = tableRoot(document, 'folders');
@@ -50,7 +49,6 @@ describe('the scalar application document has one named root grammar', () => {
 			folders.setAttr('folder-1' as never, new Y.Type() as never);
 		});
 
-		expect(APP_DOCUMENT).toBe('app');
 		expect(KV_ROOT_NAME).toBe('kv');
 		expect(tableRootName('pages')).toBe('tables:pages');
 		expect([...document.share.keys()]).toEqual([

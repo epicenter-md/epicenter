@@ -14,11 +14,12 @@
  * A second path for the live case is where a transport grows a rule that is
  * true only when it is warm.
  *
- * Since ADR-0231 the log describes exactly one document, and the authority
- * names it as the first frame on every connection. Bytes merge only when
- * they name the same document, so admission is one equality; a replica of a
- * superseded document is never admitted to the relay membership, which is the
- * whole guard.
+ * The log describes exactly one generation of one database, and the address
+ * says which (ADR-0292). That is what deleted admission: a replica reaching
+ * this hub was addressed at this generation, a generation is created once and
+ * never mutated in place, so there is no history it could be holding bytes
+ * from and nothing to compare. The document announcement, the bootstrap
+ * round-trip, and the retirement arm all went with the question.
  */
 import { Ok, type Result } from 'wellcrafted/result';
 
@@ -44,51 +45,32 @@ import {
 export type HubConnection = {
 	send(bytes: Uint8Array): void;
 	cursor: number;
-	/**
-	 * Which document this replica declared on its dial, or undefined for one
-	 * that has never been entangled with any (ADR-0231).
-	 *
-	 * The membership fact, and the whole of admission: equal to the
-	 * authority's current document proceeds, different is retired. Undefined
-	 * is servable only at cursor zero (a replica with no reading to resume);
-	 * an undeclared nonzero cursor is a protocol that no longer exists and is
-	 * never admitted.
-	 */
-	document: string | undefined;
 };
 
 /**
- * What admission decided, which is everything (ADR-0231).
+ * What admission decided (ADR-0292).
  *
- * `bootstrap` names the current document to a pristine replica, and that is
- * all it does: no history, no membership. The replica persists the ID and
- * reconnects with it; every byte of state moves on that admitted connection,
- * so "a replica exchanges database updates only when its persisted document
- * ID equals the authority's current ID" is true without an exception for
- * first contact. `admitted` is membership: catch-up ran and the connection
- * now receives relays and may push. `retired` means this connection cannot sync the
- * current document (its declared identity differs, or it declared nothing
- * while claiming a reading position): the announcement was sent and the
- * connection was never registered, so the hub relays nothing to it and
- * `receive` drops anything from it; the caller should close the socket.
- * `unavailable` means the document could not be named: fail closed, no
- * frame, no membership, and the caller closes, because admitting unchecked
- * could seat a stale replica and an announcement the authority did not
- * actually make must never be sent.
+ * Two answers, and it used to be four. `bootstrap`, `retired`, and the whole
+ * document-announcement handshake existed to answer one question: is this
+ * replica's state part of the history this log describes? The generation is in
+ * the address now, so a replica addressed here can only be holding this
+ * generation's bytes, and the question has no way to be asked wrongly.
+ *
+ * `admitted` is membership: catch-up ran and the connection now receives
+ * relays and may push. `unavailable` is storage trouble reading the log: fail
+ * closed, no membership, and the caller closes, because a connection seated
+ * without catch-up would receive relays it has no baseline for.
  */
-export type Admission = 'bootstrap' | 'admitted' | 'retired' | 'unavailable';
+export type Admission = 'admitted' | 'unavailable';
 
 export type SyncHub = {
 	/**
 	 * A replica attached at its cursor: the one door.
 	 *
-	 * The authority names its document first, on every connection; equality
-	 * with the replica's declared identity is the sole condition for syncing
-	 * an existing local document. An identity-less cursor-zero connection only
-	 * bootstraps, then reconnects with its stored identity. Membership is what
-	 * makes both contamination directions
-	 * impossible without guards: an unregistered connection is sent no
-	 * history and its pushes land nowhere.
+	 * Catch-up runs before the connection is registered, so a replica is never
+	 * relayed an update it has no baseline for, and membership is what makes
+	 * the reverse impossible too: an unregistered connection's pushes land
+	 * nowhere.
 	 */
 	join(connection: HubConnection): Admission;
 	/** Bytes arrived from a replica. */
@@ -179,26 +161,9 @@ export function createSyncHub({
 
 	return Object.freeze({
 		join(connection): Admission {
-			// The name is read before anything is sent, so an unreadable
-			// authority answers with silence rather than with a fact it cannot
-			// stand behind.
-			const { data: document, error: documentError } = authority.document();
-			if (documentError !== null) return 'unavailable';
-			// The authority names its document first, on every connection: a
-			// fresh replica stamps this name at its first entanglement, and a
-			// stamped one compares it. The invariant is one sentence: bytes
-			// merge only when they name the same document (ADR-0231).
-			connection.send(encodeFrame({ kind: 'document', id: document }));
-			if (connection.document === undefined) {
-				if (connection.cursor !== 0) return 'retired';
-				// The announcement is the whole of bootstrap. The authority cannot
-				// prove a client is pristine, so it hands over nothing but the name;
-				// the client stamps it only when its own durable state is empty,
-				// then reconnects through the equality door, and the state arrives
-				// on that admitted connection like anyone else's catch-up.
-				return 'bootstrap';
-			}
-			if (connection.document !== document) return 'retired';
+			// Read before anything is sent, so an unreadable log answers with
+			// silence rather than seating a connection it cannot catch up.
+			if (authority.head().error !== null) return 'unavailable';
 			connections.set(
 				connection,
 				createChunkCollector({ limitBytes: maxBufferedBytes }),

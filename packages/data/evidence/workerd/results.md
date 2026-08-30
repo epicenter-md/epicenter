@@ -245,13 +245,51 @@ seeds on its first run and found two defects no written scenario reached.
 Both are fixed and the sweep is now 300 seeds with no failures. The fuzz runs in
 one process over an in-order wire, so it says nothing about the two items below.
 
+## 5. A whole database through the generations routes, and where the heap walls
+
+Measured by `../../../server/workers/large-snapshot.test.ts`, which runs inside
+`workerd` under `vitest-pool-workers` rather than against a deployment, so it
+runs in CI and not only by hand.
+
+| | result |
+| --- | --- |
+| 8 MB imported as one request body, served back | **bytes intact** (SHA-256) |
+| that against the enforced value cap | 3.8 caps, so chunked and rejoined |
+| control: one flipped byte changes the digest | held |
+
+**8 MB is nearly four value caps and the server path does not strain.** The
+import stores it whole, the bootstrap `GET` serves it verbatim with its log
+position in a header, and the digest matches.
+
+**What DOES run out is the assertion.** A byte-for-byte
+`expect(back).toEqual(state)` on two 8 MB typed arrays kills the isolate:
+
+```txt
+  V8 fatal error; Ineffective mark-compacts near heap limit
+  allocation failed: JavaScript heap out of memory
+```
+
+Bisected, it walls between **7.75 MB (passes) and 7.87 MB (fatal)**. The same
+8 MB import and bootstrap pass when the test does not hold both copies and
+build a diff over them, which is how the attribution was made rather than
+assumed: the ceiling is the comparison's, not the authority's.
+
+That is worth writing down for two reasons. It is the first in-runtime number
+for how much slack an isolate actually has around a whole-database transfer,
+and it is a warning about the shape of the test: an evidence file that
+allocates several copies of its own subject measures itself.
+
 ## What is still unmeasured
 
 - **Genuine hibernation eviction.** These runs held one incarnation, which is
   what the sustained claim needed, but it means the wake path that rebuilds
   connections from their attachments has not been exercised under a real
   eviction. `wrangler dev` cannot trigger one honestly.
-- **Memory on the authority under a large reassembly.** The 5 MB paste worked;
-  nothing here measures what the Durable Object's heap does while holding the
-  chunks of a much larger submission.
+- **The authority's row ceiling.** ADR-0295 puts it near ten thousand notes
+  from a Bun/JSC measurement of what hydrating a document costs
+  (`evidence/bench/validate.ts`). Nothing here hydrates one inside `workerd`,
+  which is where the 128 MB actually binds. The 8 MB transfer above says the
+  transfer is not the constraint; it says nothing about the document.
+- **A large transfer against real Cloudflare.** Experiment 5 is `workerd` under
+  miniflare, whose isolate limit is not promised to be the deployed one.
 - **More than two replicas**, and a replica reconnecting mid-catch-up.

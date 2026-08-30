@@ -3,43 +3,32 @@
  * person exports is what they get when they import it again (ADR-0267/0268).
  *
  * The round trip is proven end to end rather than by inspecting bytes: export a
- * live store, read the files back into an envelope, apply that envelope to
- * a fresh store, and compare what the two stores hold. A frontmatter emitter
+ * live store, read the files back into one document's state, apply that state
+ * to a fresh store, and compare what the two stores hold. A frontmatter emitter
  * that retyped a value or a codec that lost a body shows up here as a
  * difference between two stores, which is the failure a person would
  * actually suffer.
  */
 import { describe, expect, test } from 'bun:test';
-import { defineData, field } from '@epicenter/data/definition';
+import {
+	defineData,
+	defineTable,
+	field,
+	RowFileError,
+} from '@epicenter/data/definition';
+import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { encodeEnvelope } from '../store/envelope.js';
 import { createMemoryRecord, openMemory } from '../store/memory.js';
 import { syncEngineOf } from '../store/store.js';
-import { type ArtifactDocument, readArtifact } from './import.js';
+import { readArtifact } from './import.js';
 import { type RenderedRow, renderArtifact } from './render.js';
-
-/**
- * Pack what `readArtifact` returns into what today's store still accepts.
- *
- * `readArtifact` returns documents now, because a mint uploads them one at a
- * time to their own addresses and a local import writes them one at a time
- * into a chain (ADR-0286). The envelope existed to batch several documents
- * into one entry of a positional log, and this packing goes when the log does.
- */
-const asEnvelope = (documents: readonly ArtifactDocument[]) =>
-	encodeEnvelope([...documents]);
-
-type MetaRoot = {
-	getAttr(key: string): unknown;
-	setAttr(key: string, value: unknown): void;
-};
 
 const store = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.string() },
 	tables: {
 		folders: { fields: { name: field.string() } },
-		notes: {
+		notes: defineTable({
 			fields: {
 				title: field.string(),
 				code: field.string(),
@@ -48,17 +37,22 @@ const store = defineData({
 				count: field.number(),
 				tags: field.tags(),
 				folderId: field.nullable(field.string()),
+				body: field.type(),
 			},
-			document: {
-				file: {
-					serialize: (doc) =>
-						String((doc.get('meta') as MetaRoot).getAttr('body') ?? ''),
-					deserialize: (text, doc) => {
-						(doc.get('meta') as MetaRoot).setAttr('body', text);
-					},
+			// The faithful codec: everything the store holds goes above the fence
+			// and comes back off it, so a key an older release wrote survives the
+			// round trip. The `id` is the path, not a field.
+			file: {
+				serialize: ({ id: _id, body, ...fields }) => ({
+					data: fields,
+					content: body.toString(),
+				}),
+				deserialize: (file, types) => {
+					if (file.content !== '') types.body.insert(0, [file.content]);
+					return Ok(file.data as never);
 				},
 			},
-		},
+		}),
 	},
 });
 
@@ -79,12 +73,9 @@ async function seeded() {
 		tags: ['no', '2024-03-05'],
 		folderId: folder.id,
 	});
-	const opened = await data.tables.notes.openDocument(note.id);
-	using handle = expectOk(opened);
-	if (handle === undefined) throw new Error('the document should open');
-	handle
-		.get('meta')
-		.setAttr('body' as never, 'buy milk\n\n---\nnot a fence' as never);
+	const content = data.tables.notes.content(note.id);
+	if (content === undefined) throw new Error('the row has no content');
+	content.types.body.insert(0, ['buy milk\n\n---\nnot a fence']);
 	return { data, folder, note };
 }
 
@@ -106,9 +97,9 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		const { data, note } = await seeded();
 		const exported = await collect(renderArtifact(data, store));
 
-		const envelope = asEnvelope(expectOk(readArtifact(exported, store)));
+		const state = expectOk(readArtifact(exported, store));
 		await using restored = await openMemory(store);
-		expect(syncEngineOf(restored.store).applyRemote(envelope).error).toBeNull();
+		expect(syncEngineOf(restored.store).applyRemote(state).error).toBeNull();
 
 		// Every scalar, at the same id, read through the same lens.
 		expect(restored.tables.notes.list().rows).toHaveLength(1);
@@ -119,9 +110,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(restored.tables.folders.list()).toEqual(data.tables.folders.list());
 
 		// And the prose, through the codec, `---` fence and all.
-		const opened = await restored.tables.notes.openDocument(note.id);
-		using handle = expectOk(opened);
-		expect(handle?.get('meta').getAttr('body' as never)).toBe(
+		expect(restored.tables.notes.content(note.id)?.types.body.toString()).toBe(
 			'buy milk\n\n---\nnot a fence',
 		);
 		await data.store[Symbol.asyncDispose]();
@@ -130,9 +119,9 @@ describe('readArtifact (ADR-0267/0268)', () => {
 	test('a value keeps its type, so a string that looks like a number stays one', async () => {
 		const { data, note } = await seeded();
 		const exported = await collect(renderArtifact(data, store));
-		const envelope = asEnvelope(expectOk(readArtifact(exported, store)));
+		const state = expectOk(readArtifact(exported, store));
 		await using restored = await openMemory(store);
-		syncEngineOf(restored.store).applyRemote(envelope);
+		syncEngineOf(restored.store).applyRemote(state);
 
 		const row = expectOk(restored.tables.notes.get(note.id));
 		expect(row?.title).toBe('007');
@@ -163,9 +152,9 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		const exported = await collect(renderArtifact(withLegacy, store));
 		await withLegacy.store[Symbol.asyncDispose]();
 
-		const envelope = asEnvelope(expectOk(readArtifact(exported, store)));
+		const state = expectOk(readArtifact(exported, store));
 		await using restored = await openMemory(store);
-		syncEngineOf(restored.store).applyRemote(envelope);
+		syncEngineOf(restored.store).applyRemote(state);
 		expect(restored.stored().tables.get('notes')?.get(made.id)).toEqual({
 			title: 'Groceries',
 			code: '1',
@@ -183,9 +172,9 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		const files = new Map([
 			['notes/aaaaaaaaaaaaaaaaaaaaaaaa.md', '---\ntitle: Groceries\n---\n'],
 		]);
-		const envelope = asEnvelope(expectOk(readArtifact(files, store)));
+		const state = expectOk(readArtifact(files, store));
 		const restored = await openMemory(store);
-		syncEngineOf(restored.store).applyRemote(envelope);
+		syncEngineOf(restored.store).applyRemote(state);
 		expect(
 			restored.stored().tables.get('notes')?.get('aaaaaaaaaaaaaaaaaaaaaaaa'),
 		).toEqual({ title: 'Groceries' });
@@ -211,24 +200,69 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
 			tables: {
-				notes: {
-					fields: { title: field.string() },
-					document: {
-						file: {
-							serialize: () => '',
-							deserialize: () => {
-								throw new Error('not my format');
-							},
+				notes: defineTable({
+					fields: { title: field.string(), body: field.type() },
+					file: {
+						serialize: () => ({ data: {}, content: '' }),
+						deserialize: () => {
+							throw new Error('not my format');
 						},
 					},
-				},
+				}),
 			},
 		});
 		const files = new Map([
 			['notes/aaaa.md', '---\ntitle: "x"\n---\n\nprose\n'],
 		]);
 		const refused = expectErr(readArtifact(files, breaking));
-		expect(refused.name).toBe('BodyUnreadable');
+		expect(refused.name).toBe('RowUnreadable');
+	});
+
+	test('a codec that refuses a file refuses the whole import', async () => {
+		// The codec's error arm is a Result, not a throw: a folder a person
+		// hands to an import is data, and the file it could not read is named.
+		const refusing = defineData({
+			id: 'so.epicenter.honeycrisp',
+			kv: {},
+			tables: {
+				notes: defineTable({
+					fields: { title: field.string(), body: field.type() },
+					file: {
+						serialize: () => ({ data: {}, content: '' }),
+						deserialize: () =>
+							RowFileError.Unreadable({ reason: 'no title line' }),
+					},
+				}),
+			},
+		});
+		const files = new Map([
+			['notes/aaaa.md', '---\ntitle: "x"\n---\n\nprose\n'],
+		]);
+		const refused = expectErr(readArtifact(files, refusing));
+		expect(refused.name).toBe('RowUnreadable');
+		expect(refused.message).toContain('no title line');
+	});
+
+	test('a codec that returns a nested type is refused', async () => {
+		// The asymmetry the engine forces: scalars are returned, rich fields are
+		// filled in place (ADR-0296). A returned type would be written as an
+		// attribute the store never minted.
+		const returning = defineData({
+			id: 'so.epicenter.honeycrisp',
+			kv: {},
+			tables: {
+				notes: defineTable({
+					fields: { title: field.string(), body: field.type() },
+					file: {
+						serialize: () => ({ data: {}, content: '' }),
+						deserialize: (_file, types) => Ok({ title: types.body as never }),
+					},
+				}),
+			},
+		});
+		const files = new Map([['notes/aaaa.md', '---\ntitle: "x"\n---\n']]);
+		const refused = expectErr(readArtifact(files, returning));
+		expect(refused.name).toBe('RowReturnedType');
 	});
 
 	test('a file that is not part of the artifact is left alone', async () => {
@@ -237,9 +271,9 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			['README.md', '# not a row'],
 			['notes/aaaaaaaaaaaaaaaaaaaaaaaa.md', '---\ntitle: "kept"\n---\n'],
 		]);
-		const envelope = asEnvelope(expectOk(readArtifact(files, store)));
+		const state = expectOk(readArtifact(files, store));
 		const restored = await openMemory(store);
-		syncEngineOf(restored.store).applyRemote(envelope);
+		syncEngineOf(restored.store).applyRemote(state);
 		expect([...(restored.stored().tables.get('notes')?.keys() ?? [])]).toEqual([
 			'aaaaaaaaaaaaaaaaaaaaaaaa',
 		]);

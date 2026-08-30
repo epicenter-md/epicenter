@@ -117,34 +117,11 @@ export type SyncClientStatus = {
 	 * finds out.
 	 */
 	needsResync: boolean;
-	/**
-	 * The CLIENT's conclusion from the announcement (ADR-0231): this
-	 * replica's document is superseded, and sync is over for good.
-	 *
-	 * Drawn only when the authority, on this replica's own authenticated
-	 * socket, named a document that is not the one this replica's state
-	 * durably belongs to. Any other frame, close, or failure leaves it
-	 * false, which is what makes "doubt never discards" structural. Sticky
-	 * once true, in the same set-and-wait shape as `needsResync`: the driver
-	 * notices, stops for good, and the host discards the local file whole
-	 * and reloads.
-	 */
-	superseded: boolean;
 };
 
 export type SyncClient = {
 	/** The position to ask the authority to start from. Goes in the URL. */
 	cursor(): number;
-	/**
-	 * Which authority document this replica's state belongs to, or undefined
-	 * for one that never exchanged a byte. Goes in the URL beside the cursor
-	 * (ADR-0231).
-	 *
-	 * The membership fact the cursor cannot carry. Admission is equality on
-	 * it: the cursor says only how far through THAT document's log this
-	 * replica has read.
-	 */
-	document(): string | undefined;
 	/** A socket is live. Anything owed goes out now. */
 	attach(socket: SyncSocket): void;
 	/** The socket is gone. Whatever was in flight is owed again. */
@@ -217,12 +194,9 @@ export function createSyncClient({
 		| undefined;
 	let nextSubmission = 1;
 	let cursor = engine.cursor();
-	/** The document this replica's state durably belongs to, if any. */
-	let identity = engine.documentIdentity();
 	let owed = 0;
 	let lastError: SyncClientError | undefined;
 	let needsResync = false;
-	let superseded = false;
 	let cancelIdle: (() => void) | undefined;
 	let disposed = false;
 
@@ -250,18 +224,6 @@ export function createSyncClient({
 			return Ok(undefined);
 		}
 		owed = entry.bytes.length;
-
-		// No push ever leaves an unstamped replica (ADR-0231). Once these bytes
-		// are on the wire they may land in the authority's log while the ack
-		// dies with the socket, and membership in that log is a fact the cursor
-		// cannot record. The stamp is accepted when the document frame is
-		// handled, which on a bootstrap connection precedes admission itself;
-		// until then the work stays owed and goes out on a later nudge, which is
-		// the safe direction. `coalesce` adds the second half of the guarantee:
-		// it offers only DURABLE outbox entries, and the stamp is queued ahead
-		// of every append, so a sendable entry implies a durably stamped
-		// replica (ADR-0238).
-		if (identity === undefined) return Ok(undefined);
 
 		const submission = nextSubmission;
 		nextSubmission += 1;
@@ -364,16 +326,16 @@ export function createSyncClient({
 	}
 
 	/**
-	 * Answer a request for a snapshot with this replica's whole state: the
-	 * application document and every row document, one envelope (ADR-0248).
+	 * Answer a request for a snapshot with this replica's whole state: the one
+	 * database document, as one update (ADR-0295).
 	 *
 	 * Refused unless this replica is exactly at the position asked for, and
 	 * unless it is holding no update whose dependencies never arrived. Both
 	 * would produce a snapshot missing data, and a snapshot replaces history
 	 * rather than adding to it, so what it misses is gone for everybody.
 	 *
-	 * The encode is asynchronous, because closed row documents are read from
-	 * storage. The position is re-checked after it: state that moved meanwhile
+	 * The encode is asynchronous by signature rather than by need. The position
+	 * is re-checked after it: state that moved meanwhile
 	 * would stamp newer content with an older position, so the offer is
 	 * dropped instead, and the authority simply asks again.
 	 */
@@ -406,8 +368,6 @@ export function createSyncClient({
 
 	return Object.freeze({
 		cursor: () => cursor,
-
-		document: () => identity,
 
 		attach(next: SyncSocket) {
 			// Whatever was in flight was never acknowledged, so it is owed again.
@@ -448,11 +408,6 @@ export function createSyncClient({
 		receive(message: Uint8Array): Result<void, SyncClientError> {
 			const { data: frame, error } = decodeFrame(message);
 			if (error !== null) return Ok(undefined);
-			// A superseded replica takes nothing more. The conclusion is
-			// terminal, the driver is about to tear everything down, and bytes
-			// arriving after it must not be merged into a document that is
-			// already declared to belong elsewhere.
-			if (superseded) return Ok(undefined);
 
 			switch (frame.kind) {
 				case 'ack': {
@@ -511,12 +466,6 @@ export function createSyncClient({
 					return refused;
 				}
 				case 'entry': {
-					// An unstamped replica takes no foreign bytes. The document frame
-					// precedes everything on a well-behaved connection, so this is
-					// unreachable against a real authority; against anything else it
-					// is what keeps "persisted state and persisted document ID never
-					// disagree" structural rather than assumed (ADR-0231).
-					if (identity === undefined) return Ok(undefined);
 					const { data: whole, error: chunkError } = collector.accept(frame);
 					// A reassembly failure is NOT nothing. It means this replica's view
 					// of the stream is broken, and returning Ok here left it stalled
@@ -527,7 +476,6 @@ export function createSyncClient({
 					return apply(frame.seq, whole);
 				}
 				case 'snapshot': {
-					if (identity === undefined) return Ok(undefined);
 					const { data: whole, error: chunkError } = collector.accept(frame);
 					if (chunkError !== null) return brokenStream(chunkError.reason);
 					if (whole === undefined) return Ok(undefined);
@@ -535,46 +483,6 @@ export function createSyncClient({
 				}
 				case 'wanted':
 					return offerSnapshot(frame.position);
-				case 'document':
-					// The authority names its document; the conclusion is this
-					// replica's to draw. A different name than the one this
-					// replica's state belongs to is the whole of supersession: no
-					// ordering arithmetic, one inequality on an authenticated
-					// socket, which is what makes "doubt never discards"
-					// structural (no failure can fabricate a typed frame).
-					if (identity !== undefined && identity !== frame.id) {
-						superseded = true;
-						return Ok(undefined);
-					}
-					// The one stamping point. The stamp itself refuses a store that
-					// grew before it was stamped (`Unstampable`), which is a
-					// defensive assertion at the bootstrap boundary rather than a
-					// product concept: a database replica is never allowed to grow
-					// before it adopts the authority's document, and the application
-					// enforces that by keeping an unbound signed-in database
-					// unavailable. Bytes that exist here anyway belong to no
-					// authority document and are not a merge case, so the refusal
-					// concludes `superseded` and the host discards them and starts
-					// again. The stamp commits durably before any foreign byte is
-					// applied and before any push can leave, because both are refused
-					// while `identity` is undefined.
-					if (identity === undefined) {
-						const { error: stampError } = engine.adoptDocumentIdentity(
-							frame.id,
-						);
-						if (stampError !== null) {
-							// The one refusal the stamp can return: this store grew before
-							// it was stamped, so its bytes belong to no authority document
-							// and the conclusion is supersession. Storage is not here to
-							// distinguish from: the stamp is accepted live and queued
-							// durably, and the sender's durable-outbox gate keeps any
-							// push behind it (ADR-0238).
-							superseded = true;
-							return Ok(undefined);
-						}
-						identity = frame.id;
-					}
-					return Ok(undefined);
 				case 'push':
 				case 'offer':
 					// A client never receives either. Ignored rather than thrown on,
@@ -591,7 +499,6 @@ export function createSyncClient({
 			lastError,
 			unresolvedDependencies: engine.hasUnresolvedDependencies(),
 			needsResync,
-			superseded,
 		}),
 
 		dispose() {

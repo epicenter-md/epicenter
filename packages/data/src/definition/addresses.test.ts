@@ -2,41 +2,47 @@ import { describe, expect, test } from 'bun:test';
 
 import {
 	DATA_ADDRESS_CEILINGS,
-	documentAddress,
-	isRowAddress,
+	isDatabaseId,
+	isRowId,
+	isTableName,
 } from './addresses.js';
 
-describe('documentAddress (ADR-0248)', () => {
-	test('composes the fixed-depth derived string, deterministically', () => {
-		const address = {
-			dataId: 'so.epicenter.honeycrisp',
-			tableName: 'notes',
-			rowId: 'abc123',
-		};
-		expect(documentAddress(address)).toBe(
-			'so.epicenter.honeycrisp/notes/abc123',
-		);
-		expect(documentAddress(address)).toBe(documentAddress({ ...address }));
+describe('the durable name grammars (ADR-0206)', () => {
+	test('a row id is safe verbatim in a path segment and never hides', () => {
+		// A row still becomes one file in an exported folder (ADR-0268), so an
+		// id that could be a relative segment or a dotfile is refused where it
+		// is minted rather than escaped where it is written.
+		for (const bad of ['.hidden', '-lead', '_lead', 'r/1', 'r 1', '']) {
+			expect(isRowId(bad, DATA_ADDRESS_CEILINGS)).toBe(false);
+		}
+		expect(isRowId('abc123', DATA_ADDRESS_CEILINGS)).toBe(true);
+		expect(isRowId('a.b-c_d', DATA_ADDRESS_CEILINGS)).toBe(true);
+		// Case-sensitive, matching SQLite's default collation.
+		expect(isRowId('App', DATA_ADDRESS_CEILINGS)).toBe(true);
 	});
 
-	test('coordinate validation lives at the grammar, not in the composer', () => {
-		// The composer never escapes, so a slash-bearing coordinate must already
-		// be unrepresentable. The grammar refuses each coordinate that could
-		// make the interpolation ambiguous.
-		for (const candidate of [
-			{ dataId: 'a/b.example', tableName: 'notes', rowId: 'r1' },
-			{ dataId: 'so.example', tableName: 'no/tes', rowId: 'r1' },
-			{ dataId: 'so.example', tableName: 'notes', rowId: 'r/1' },
-			{ dataId: 'so.example', tableName: '', rowId: 'r1' },
-			{ dataId: 'so.example', tableName: 'notes', rowId: '.hidden' },
-		]) {
-			expect(isRowAddress(candidate, DATA_ADDRESS_CEILINGS)).toBe(false);
+	test('a table name is a bare SQL identifier', () => {
+		for (const bad of ['no/tes', '_internal', '1notes', 'order', '']) {
+			expect(isTableName(bad, DATA_ADDRESS_CEILINGS)).toBe(false);
 		}
-		expect(
-			isRowAddress(
-				{ dataId: 'so.example', tableName: 'notes', rowId: 'r1' },
-				DATA_ADDRESS_CEILINGS,
-			),
-		).toBe(true);
+		expect(isTableName('notes', DATA_ADDRESS_CEILINGS)).toBe(true);
+	});
+
+	test('a database id is reverse-domain', () => {
+		for (const bad of ['honeycrisp', 'a/b.example', 'So.Example', '']) {
+			expect(isDatabaseId(bad, DATA_ADDRESS_CEILINGS)).toBe(false);
+		}
+		expect(isDatabaseId('so.epicenter.honeycrisp', DATA_ADDRESS_CEILINGS)).toBe(
+			true,
+		);
+	});
+
+	test('every grammar is bounded in bytes, not characters', () => {
+		const ceilings = { dataIdBytes: 4, tableNameBytes: 4, rowIdBytes: 4 };
+		expect(isRowId('aaaa', ceilings)).toBe(true);
+		expect(isRowId('aaaaa', ceilings)).toBe(false);
+		// One emoji is four UTF-8 bytes, and is not admitted by the grammar
+		// anyway; a two-byte character is, and counts as two.
+		expect(isTableName('aaaaa', ceilings)).toBe(false);
 	});
 });

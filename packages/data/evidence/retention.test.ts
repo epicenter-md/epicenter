@@ -1,23 +1,30 @@
 /**
  * What an authority still holds after you delete something, and for how long.
  *
- * This file used to prove a different system. Its claim was that "a device
- * joining for the FIRST time replays the log from position zero, so it
- * downloads everything anyone has ever deleted", which was true of the
- * positional log ADR-0277 removed. The new authority answers a state vector
- * from a document it holds, so a fresh device receives current state and not
- * history, and the file kept passing while describing a leak the shipped
- * design no longer has.
+ * This file has been rewritten twice, and the reason is worth stating because
+ * it is the hazard evidence files have: it kept passing while describing a
+ * system that was not deployed. Its first claim was about the positional log,
+ * ADR-0277 replaced that log with a document-holding server, and the file was
+ * rewritten to measure the replacement. ADR-0298 deleted the replacement,
+ * which was never routed to anything, so the positional log is the shipped
+ * design again and this measures it again.
  *
- * What survives is narrower, real, and now the thing being measured: an
- * authority's CHAIN holds the update that created a row, so between the
- * deletion and the next fold, the deleted content is still in storage and
- * still reachable by anyone who asks for everything. Folding is what removes
- * it, because a fold encodes a garbage-collected document rather than merging
- * bytes (ADR-0282).
+ * The claim, and it is not a comfortable one: **a byte-blind authority
+ * retains deleted content, and a fresh device is sent it.** The authority
+ * stores opaque updates and forwards them, so the update that created a row
+ * is still a row in the log after the row is deleted, and catch-up from
+ * position zero replays it. Nothing on the server collects it, because
+ * collecting requires reading the bytes.
  *
- * Evidence for the fold, for `pressure()`, and for ADR-0286's compaction. Not
- * a product workflow.
+ * What removes it is the SNAPSHOT, and the snapshot comes from a client. A
+ * client encodes its own garbage-collected document and offers it; the
+ * authority verifies only that the connection was sent through the offered
+ * position, replaces the snapshot, and forgets every entry the snapshot
+ * covers. So retention is bounded by snapshot cadence, and the party that
+ * does the collecting is the one that can read the bytes.
+ *
+ * Evidence for `shouldSnapshot`, for `replaceSnapshot`, and for what ADR-0298
+ * accepts by keeping the authority blind. Not a product workflow.
  */
 
 import { Database } from 'bun:sqlite';
@@ -27,116 +34,137 @@ import * as Y from '@y/y';
 import { expectOk } from 'wellcrafted/testing';
 
 import {
-	type DocumentAuthority,
-	openDocumentAuthority,
-} from '../src/sync/document-authority.js';
+	openSyncAuthority,
+	type SyncAuthority,
+} from '../src/sync/authority.js';
 
 const CANARY = 'a sentence somebody deleted on purpose';
 
 function authority() {
 	const sqlite = createBunSqliteAdapter(new Database(':memory:'));
 	return {
-		held: openDocumentAuthority({
+		held: openSyncAuthority({
 			sqlite,
-			// Every fold here is asked for explicitly, so the floor must not
+			// Every snapshot here is asked for explicitly, so the floor must not
 			// decline one on a document this small.
-			foldFloorBytes: 0,
+			snapshotFloorBytes: 0,
 		}),
-		/** Everything in the chain, as text. Evidence reaches past the surface. */
+		/** Everything in storage, as text. Evidence reaches past the surface. */
 		storage: () =>
-			sqlite
-				.all<{ bytes: Uint8Array | ArrayBuffer }>(
-					'SELECT bytes FROM updates ORDER BY seq, chunk',
-				)
-				.map((row) =>
-					new TextDecoder('utf-8', { fatal: false }).decode(
-						new Uint8Array(row.bytes as ArrayBuffer),
-					),
-				)
+			[
+				...sqlite.all<{ bytes: Uint8Array | ArrayBuffer }>(
+					'SELECT bytes FROM _log ORDER BY seq, chunk',
+				),
+				...sqlite.all<{ bytes: Uint8Array | ArrayBuffer }>(
+					'SELECT bytes FROM _snapshot ORDER BY position, chunk',
+				),
+			]
+				.map((row) => decode(new Uint8Array(row.bytes as ArrayBuffer)))
 				.join(''),
 	};
 }
 
-/** What a device with nothing would be sent, as text. */
-function everythingSentToANewDevice(held: DocumentAuthority): string {
-	return new TextDecoder('utf-8', { fatal: false }).decode(held.since());
+function decode(bytes: Uint8Array): string {
+	return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
 }
 
-function write(mutate: (root: Y.Type) => void): Uint8Array {
-	const doc = new Y.Doc({ gc: true });
-	doc.transact(() => mutate(doc.get('notes')));
-	const update = new Uint8Array(Y.encodeStateAsUpdateV2(doc));
-	doc.destroy();
-	return update;
+/** Everything a device holding nothing would be sent, as text. */
+function everythingSentToANewDevice(held: SyncAuthority): string {
+	const snapshot = expectOk(held.snapshot());
+	const entries = expectOk(held.since(expectOk(held.snapshotPosition())));
+	return [
+		...(snapshot === undefined ? [] : [snapshot.bytes]),
+		...entries.map((entry) => entry.bytes),
+	]
+		.map(decode)
+		.join('');
 }
 
 describe('what a deletion leaves behind', () => {
-	test('storage carries deleted content until a fold, and the wire never does', () => {
+	test('storage and the wire both carry deleted content until a snapshot', () => {
 		const { held, storage } = authority();
 		const doc = new Y.Doc({ gc: true });
 
 		doc.transact(() =>
 			doc.get('notes').setAttr('body' as never, CANARY as never),
 		);
-		expectOk(held.receive(new Uint8Array(Y.encodeStateAsUpdateV2(doc))));
+		expectOk(held.append(new Uint8Array(Y.encodeStateAsUpdateV2(doc))));
 
+		const afterWrite = Y.encodeStateVector(doc);
 		doc.transact(() => doc.get('notes').deleteAttr('body'));
 		expectOk(
-			held.receive(new Uint8Array(Y.encodeStateAsUpdateV2(doc, undefined))),
+			held.append(new Uint8Array(Y.encodeStateAsUpdateV2(doc, afterWrite))),
 		);
 
-		// The correction this file exists to record. The update that CREATED the
-		// row is still a record in the chain, so the sentence is on the server's
-		// disk after it was deleted.
+		// The update that CREATED the row is still an entry, so the sentence is
+		// on the server's disk after it was deleted.
 		expect(storage()).toContain(CANARY);
 
-		// And it is not on the wire, not even before a fold. `since` encodes
-		// from the hydrated, garbage-collected document rather than from the
-		// stored bytes, so a device joining now is sent current state and never
-		// sees this. That is the difference ADR-0282 measured from the other
-		// side: merging bytes deduplicates and never collects, so a byte-only
-		// authority WOULD have handed this over.
-		expect(everythingSentToANewDevice(held)).not.toContain(CANARY);
+		// And unlike a document-holding authority, it is also on the WIRE: a
+		// device joining now replays from position zero and is handed the
+		// creation before the deletion. Nothing on the server collects it,
+		// because collecting means reading the bytes, and the authority does
+		// not (ADR-0298). This is the cost blindness actually has, stated.
+		expect(everythingSentToANewDevice(held)).toContain(CANARY);
 
-		expectOk(held.fold());
+		// The client is the party that can collect, so the client is the party
+		// that does. It encodes its own garbage-collected document and offers
+		// it at the position it was sent through.
+		const collected = new Uint8Array(Y.encodeStateAsUpdateV2(doc));
+		expect(decode(collected)).not.toContain(CANARY);
+		expectOk(held.replaceSnapshot(expectOk(held.head()), collected));
 
-		// The fold writes what the wire was already saying, so storage catches
-		// up with it. This is the operation that actually reclaims the bytes.
+		// The snapshot forgets every entry it covers, so both storage and the
+		// wire catch up with what the client already knew.
 		expect(storage()).not.toContain(CANARY);
-		expect(held.storedBytes()).toBeGreaterThan(0);
+		expect(everythingSentToANewDevice(held)).not.toContain(CANARY);
 		doc.destroy();
-		held.dispose();
 	});
 
-	test('a fresh device is sent current state, not the history that reached it', () => {
+	test('a fresh device is sent the snapshot plus the tail after it', () => {
 		const { held } = authority();
-		// Ten separate updates, so a positional log would have ten entries to
-		// replay and this has one document to describe.
+		const doc = new Y.Doc({ gc: true });
+		// Ten separate updates, so a log with no snapshot has ten entries to
+		// replay and one with a snapshot has one value plus what followed.
 		for (let index = 0; index < 10; index += 1) {
+			const before = Y.encodeStateVector(doc);
+			doc.transact(() =>
+				doc.get('notes').setAttr(`k${index}` as never, index as never),
+			);
 			expectOk(
-				held.receive(
-					write((root) => root.setAttr(`k${index}` as never, index as never)),
-				),
+				held.append(new Uint8Array(Y.encodeStateAsUpdateV2(doc, before))),
 			);
 		}
-		expectOk(held.fold());
+		expect(expectOk(held.since(0))).toHaveLength(10);
 
+		expectOk(
+			held.replaceSnapshot(
+				expectOk(held.head()),
+				new Uint8Array(Y.encodeStateAsUpdateV2(doc)),
+			),
+		);
+		expect(expectOk(held.since(expectOk(held.snapshotPosition())))).toEqual([]);
+
+		// And what it replays to is the same document either way, which is the
+		// only thing a replica is owed.
 		const fresh = new Y.Doc({ gc: true });
-		Y.applyUpdateV2(fresh, held.since());
+		const snapshot = expectOk(held.snapshot());
+		if (snapshot === undefined) throw new Error('the snapshot should be held');
+		Y.applyUpdateV2(fresh, snapshot.bytes as Uint8Array<ArrayBuffer>);
 		expect(Object.keys(fresh.get('notes').getAttrs() ?? {})).toHaveLength(10);
 		fresh.destroy();
-		held.dispose();
+		doc.destroy();
 	});
 
-	test('a caught-up device is sent almost nothing', () => {
+	test('a caught-up device is sent nothing at all', () => {
 		const { held } = authority();
-		expectOk(
-			held.receive(write((root) => root.setAttr('a' as never, 1 as never))),
-		);
+		const doc = new Y.Doc({ gc: true });
+		doc.transact(() => doc.get('notes').setAttr('a' as never, 1 as never));
+		expectOk(held.append(new Uint8Array(Y.encodeStateAsUpdateV2(doc))));
 
-		// The whole of what a replica owes when it owes nothing. There is no
-		// cursor to compare and no position to be at: it says what it has.
-		expect(held.since(held.stateVector()).byteLength).toBeLessThan(20);
-		held.dispose();
+		// The whole of what a replica owes when it owes nothing: an integer
+		// comparison, not a state vector to encode and diff against.
+		expect(expectOk(held.since(expectOk(held.head())))).toEqual([]);
+		doc.destroy();
 	});
 });

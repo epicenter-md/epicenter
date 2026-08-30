@@ -12,31 +12,28 @@
  * behaviour and belongs to the host's tests.
  */
 import { describe, expect, test } from 'bun:test';
-import { defineData, field } from '@epicenter/data/definition';
+import { defineData, defineTable, field } from '@epicenter/data/definition';
+import { Ok } from 'wellcrafted/result';
 import { openMemory } from '../store/memory.js';
 import { attachMirror, type MirrorSink, MirrorSinkError } from './mirror.js';
-
-type MetaRoot = {
-	getAttr(key: string): unknown;
-	setAttr(key: string, value: unknown): void;
-};
 
 const store = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.string() },
 	tables: {
-		notes: {
-			fields: { title: field.string() },
-			document: {
-				file: {
-					serialize: (doc) =>
-						String((doc.get('meta') as MetaRoot).getAttr('body') ?? ''),
-					deserialize: (text, doc) => {
-						(doc.get('meta') as MetaRoot).setAttr('body', text);
-					},
+		notes: defineTable({
+			fields: { title: field.string(), body: field.type() },
+			file: {
+				serialize: (row) => ({
+					data: { title: row.title },
+					content: row.body.toString(),
+				}),
+				deserialize: (file, types) => {
+					if (file.content !== '') types.body.insert(0, [file.content]);
+					return Ok({ title: String(file.data.title ?? '') });
 				},
 			},
-		},
+		}),
 	},
 });
 
@@ -153,69 +150,14 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		expect(latest(manifests)).toEqual(['kv.json']);
 	});
 
-	test('a body edit reaches the file when the table declares a derivation', async () => {
-		const derived = defineData({
-			id: 'so.epicenter.honeycrisp',
-			kv: {},
-			tables: {
-				notes: {
-					fields: { title: field.string() },
-					document: {
-						// Honeycrisp's shape: a body edit writes derived fields onto
-						// the row, which IS a table commit, which is what `onCommitted`
-						// hears. That is how a document change reaches the folder today.
-						derive: (doc) => ({
-							title: String(
-								(doc.get('meta') as MetaRoot).getAttr('body') ?? '',
-							),
-						}),
-						file: {
-							serialize: (doc) =>
-								String((doc.get('meta') as MetaRoot).getAttr('body') ?? ''),
-							deserialize: (text, doc) => {
-								(doc.get('meta') as MetaRoot).setAttr('body', text);
-							},
-						},
-					},
-				},
-			},
-		});
-		await using data = await openMemory(derived);
-		const { files, sink } = recordingSink();
-		await using _mirror = attachMirror({
-			data,
-			definition: derived,
-			place: 'account',
-			sink,
-			log: silent,
-			idleMs: 1,
-		});
-		const made = data.tables.notes.create({ title: '' });
-		await settle();
-
-		{
-			const opened = await data.tables.notes.openDocument(made.id);
-			const handle = opened.data;
-			if (handle === undefined || handle === null) {
-				throw new Error('the document should open');
-			}
-			handle.get('meta').setAttr('body' as never, 'buy milk' as never);
-			handle[Symbol.dispose]();
-		}
-		await settle();
-
-		expect(files.get(`notes/${made.id}.md`)).toContain('buy milk');
-	});
-
-	test('a body edit on a table with no derivation does not trigger a pass', async () => {
-		// The store's signal gap, stated rather than worked around. A commit into
-		// a row's own document reaches `onCommitted` only by way of a derived
-		// write onto the row (ADR-0264) or a store-managed `updatedAt`
-		// (ADR-0265); a table declaring neither commits bytes that notify nobody.
-		//
-		// Whole rendering is what makes this survivable rather than corrupting:
-		// nothing is written WRONG, the folder is only late, and the next commit
-		// anywhere renders the body correctly.
+	test('a rich-field edit reaches the file, with nothing derived to trigger it', async () => {
+		// The signal the collapse restored (ADR-0295). A rich field is a nested
+		// type on the row, so a keystroke bubbles through `changedParentTypes`
+		// to the table root and the store's commit listener hears it. Before the
+		// collapse a body edit reached `onCommitted` only by way of a derived
+		// write onto the row, so a table declaring no derivation wrote bytes
+		// that notified nobody and the folder stayed stale until the next
+		// unrelated commit.
 		await using data = await openMemory(store);
 		const { files, sink } = recordingSink();
 		await using _mirror = attachMirror({
@@ -229,22 +171,11 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		await settle();
 
-		{
-			const opened = await data.tables.notes.openDocument(made.id);
-			const handle = opened.data;
-			if (handle === undefined || handle === null) {
-				throw new Error('the document should open');
-			}
-			handle.get('meta').setAttr('body' as never, 'buy milk' as never);
-			handle[Symbol.dispose]();
-		}
+		const content = data.tables.notes.content(made.id);
+		if (content === undefined) throw new Error('the row has no content');
+		content.types.body.insert(0, ['buy milk']);
 		await settle();
-		expect(files.get(`notes/${made.id}.md`)).not.toContain('buy milk');
 
-		// And the next commit anywhere picks it up, because a pass reads current
-		// state rather than a queue of what it was told.
-		data.tables.notes.create({ title: 'anything' });
-		await settle();
 		expect(files.get(`notes/${made.id}.md`)).toContain('buy milk');
 	});
 
@@ -301,18 +232,16 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
 			tables: {
-				notes: {
-					fields: { title: field.string() },
-					document: {
-						file: {
-							serialize: () => {
-								if (explode) throw new Error('the codec refused');
-								return '';
-							},
-							deserialize: () => undefined,
+				notes: defineTable({
+					fields: { title: field.string(), body: field.type() },
+					file: {
+						serialize: () => {
+							if (explode) throw new Error('the codec refused');
+							return { data: {}, content: '' };
 						},
+						deserialize: () => Ok({ title: '' }),
 					},
-				},
+				}),
 			},
 		});
 		await using data = await openMemory(throwing);

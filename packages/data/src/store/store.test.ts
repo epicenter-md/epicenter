@@ -1,11 +1,15 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { defineData, field, InstantString } from '@epicenter/data/definition';
+import {
+	defineData,
+	defineTable,
+	field,
+	InstantString,
+} from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
-import { expectOk } from 'wellcrafted/testing';
-import { encodeEnvelope } from './envelope.js';
-import { APP_DOCUMENT, createSqliteDurablePort } from './log.js';
+import { Ok } from 'wellcrafted/result';
+import { createSqliteDurablePort } from './log.js';
 import { createMemoryRecord, openMemory } from './memory.js';
 import {
 	type AccountStore,
@@ -22,13 +26,28 @@ const database = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.select(['light', 'dark']), fontSize: field.number() },
 	tables: {
-		notes: {
+		notes: defineTable({
 			fields: {
 				title: field.string(),
 				tags: field.tags(),
 				date: field.nullable(field.string()),
+				editor: field.type(),
 			},
-		},
+			file: {
+				serialize: (row) => ({
+					data: { title: row.title, tags: row.tags, date: row.date },
+					content: row.editor.toString(),
+				}),
+				deserialize: (file, types) => {
+					if (file.content !== '') types.editor.insert(0, [file.content]);
+					return Ok({
+						title: String(file.data.title ?? ''),
+						tags: (file.data.tags ?? []) as string[],
+						date: (file.data.date ?? null) as string | null,
+					});
+				},
+			},
+		}),
 	},
 });
 
@@ -51,15 +70,12 @@ function note(
 }
 
 /** Wrap one application-document update the way the wire carries it. */
-function asEnvelope(bytes: Uint8Array): Uint8Array {
-	return encodeEnvelope([{ document: APP_DOCUMENT, bytes }]);
-}
 
 function exchange(a: AccountStore, b: AccountStore) {
 	const fromA = a.encodeStateSince(b.stateVector());
 	const fromB = b.encodeStateSince(a.stateVector());
-	syncEngineOf(b).applyRemote(asEnvelope(fromA));
-	syncEngineOf(a).applyRemote(asEnvelope(fromB));
+	syncEngineOf(b).applyRemote(fromA);
+	syncEngineOf(a).applyRemote(fromB);
 }
 
 describe('a read is a property access on a plain object', () => {
@@ -347,38 +363,59 @@ describe('two replicas converge', () => {
 	});
 });
 
-describe('the document a row inherently owns (ADR-0248)', () => {
-	test('an absent row has no document, which is a fact not a failure', async () => {
-		// The same answer `get` gives an absent row, rather than an Err for one
-		// and an Ok(undefined) for the other.
-		const { data, error } = await db.tables.notes.openDocument('nope');
-		expect(error).toBeNull();
-		expect(data).toBeUndefined();
+describe("a row's rich content lives on the row (ADR-0295)", () => {
+	test('an absent row has no content, which is a fact not a failure', () => {
+		// The same answer `get` gives an absent row.
+		expect(db.tables.notes.content('nope')).toBeUndefined();
 	});
 
-	test('deleting the row retires its document', async () => {
+	test('a rich field is minted with its row and is empty', () => {
 		const made = note();
-		const opened = await db.tables.notes.openDocument(made.id);
-		opened.data?.get('editor', 'text');
-		opened.data?.[Symbol.dispose]();
+		const content = db.tables.notes.content(made.id);
+		expect(content?.types.editor).toBeDefined();
+		expect(content?.types.editor.length).toBe(0);
+	});
+
+	test('deleting the row takes its rich content with it', () => {
+		const made = note();
+		const editor = db.tables.notes.content(made.id)?.types.editor;
+		editor?.applyDelta(editor.change.insert('milk') as never);
 		db.tables.notes.delete(made.id);
-		const after = await db.tables.notes.openDocument(made.id);
-		expect(after.error).toBeNull();
-		expect(after.data).toBeUndefined();
+		expect(db.tables.notes.content(made.id)).toBeUndefined();
 	});
 
-	test('an editor writing into its own document cannot touch the row', async () => {
-		// Why the split exists at all. Bound to the row itself, a ProseMirror
-		// schema whose doc node declares attributes overwrites the row's fields
-		// and syncs that; measured in ADR-0215, and structurally unreachable now
-		// that the row and its rich content are two documents.
+	test('a rich field is not a scalar, in either read', () => {
+		// `stored` is the faithful read and `get` is the lens; a nested type is
+		// a value in neither, so neither can hand one out as JSON.
 		const made = note();
-		const opened = await db.tables.notes.openDocument(made.id);
-		opened.data
-			?.get('editor', 'text')
-			.setAttr('title' as never, 'CLOBBER' as never);
+		expect(Object.keys(db.tables.notes.stored(made.id) ?? {})).not.toContain(
+			'editor',
+		);
+		expect(db.tables.notes.get(made.id).error).toBeNull();
+	});
+
+	test('an editor writing into its own rich field cannot touch the row', () => {
+		// Bound to the ROW itself, a ProseMirror schema whose doc node declares
+		// attributes would overwrite the row's fields and sync that; measured in
+		// ADR-0215. A rich field is a type nested UNDER the row, so its
+		// attributes are its own.
+		const made = note();
+		db.tables.notes
+			.content(made.id)
+			?.types.editor.setAttr('title' as never, 'CLOBBER' as never);
 		expect(db.tables.notes.get(made.id).data?.title).toBe('Groceries');
-		opened.data?.[Symbol.dispose]();
+	});
+
+	test('a rich field rides the whole state and comes back attached', async () => {
+		const made = note();
+		const editor = db.tables.notes.content(made.id)?.types.editor;
+		editor?.applyDelta(editor.change.insert('milk and eggs') as never);
+
+		const laptop = await openMemory(database);
+		syncEngineOf(laptop.store).applyRemote(db.store.encodeStateSince());
+		expect(
+			laptop.tables.notes.content(made.id)?.types.editor.toString(),
+		).toContain('milk and eggs');
 	});
 });
 
@@ -458,9 +495,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		// stored as they arrived, so the gap is still a gap on the way back up.
 		const record = createMemoryRecord();
 		const laptop = await openMemory(database, record);
-		expect(
-			syncEngineOf(laptop.store).applyRemote(asEnvelope(second)).error,
-		).toBeNull();
+		expect(syncEngineOf(laptop.store).applyRemote(second).error).toBeNull();
 		expect(syncEngineOf(laptop.store).hasUnresolvedDependencies()).toBe(true);
 		await laptop.store[Symbol.asyncDispose]();
 
@@ -468,7 +503,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		const reopened = syncEngineOf(db2.store);
 		expect(reopened.hasUnresolvedDependencies()).toBe(true);
 
-		expect(reopened.applyRemote(asEnvelope(first)).error).toBeNull();
+		expect(reopened.applyRemote(first).error).toBeNull();
 		expect(reopened.hasUnresolvedDependencies()).toBe(false);
 		expect(db2.tables.notes.get(made.id).data?.title).toBe('second');
 		await db2.store[Symbol.asyncDispose]();
@@ -478,7 +513,7 @@ describe('a received update is persisted as the bytes that arrived', () => {
 		note();
 		const laptop = await openMemory(database);
 		syncEngineOf(laptop.store).applyRemote(
-			asEnvelope(db.store.encodeStateSince(laptop.store.stateVector())),
+			db.store.encodeStateSince(laptop.store.stateVector()),
 		);
 		expect(syncEngineOf(laptop.store).hasUnresolvedDependencies()).toBe(false);
 	});
@@ -604,9 +639,7 @@ describe('a subscription says a table changed', () => {
 		});
 		const { seen } = record(db.tables.notes);
 
-		syncEngineOf(db.store).applyRemote(
-			asEnvelope(author.store.encodeStateSince()),
-		);
+		syncEngineOf(db.store).applyRemote(author.store.encodeStateSince());
 
 		// One notification for the whole remote batch, however many rows it
 		// carried: a subscriber re-reads, so telling it twice would only cost it
@@ -620,24 +653,20 @@ describe('a subscription says a table changed', () => {
 		).toEqual([...ids].sort());
 	});
 
-	test("prose written inside a row's document is not a table commit", async () => {
-		// The split's contract (ADR-0248): a row's rich document is its own
-		// document, so an editor keystroke never touches the table root and
-		// never invalidates the table. What a list renders from a document is
-		// a preview, and a preview is an ordinary scalar field the application
-		// writes itself, which is the invalidation the list actually needs.
+	test("prose written into a row's rich field IS a table commit", () => {
+		// The collapse's cost, asserted rather than discovered (ADR-0295). A
+		// nested edit bubbles through `changedParentTypes`, so a keystroke
+		// reaches the table root's delta path and every table subscriber fires
+		// at typing frequency. A list that re-renders off this signal is paying
+		// for it; what the ADR says about that is that the signal is coarse, and
+		// a field-scoped one is `content(id).subscribe`.
 		const made = note();
 		const { seen } = record(db.tables.notes);
 
-		const opened = await db.tables.notes.openDocument(made.id);
-		const body = opened.data?.get('body', 'text');
-		if (body === undefined) throw new Error('the row has no document');
+		const body = db.tables.notes.content(made.id)?.types.editor;
+		if (body === undefined) throw new Error('the row has no editor');
 		body.applyDelta(body.change.insert('milk and eggs') as never);
-		expect(seen).toEqual([]);
-
-		db.tables.notes.update(made.id, { title: 'Groceries, previewed' });
 		expect(seen).toEqual(['changed']);
-		opened.data?.[Symbol.dispose]();
 	});
 
 	test('unsubscribing stops delivery, and doing it twice is harmless', async () => {
@@ -721,9 +750,7 @@ describe('kv reports its own changes', () => {
 		const seen: unknown[] = [];
 		db.kv.subscribe(() => seen.push(db.kv.get().error?.conforming.fontSize));
 
-		syncEngineOf(db.store).applyRemote(
-			asEnvelope(author.store.encodeStateSince()),
-		);
+		syncEngineOf(db.store).applyRemote(author.store.encodeStateSince());
 
 		expect(seen).toEqual([22]);
 	});
@@ -907,21 +934,19 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 });
 
 describe('foreign bytes have exactly one door', () => {
-	// The manager's updateV2 listener treats any unrecognized origin as an
-	// application writing into its own document, which is only correct for a
-	// LOCAL transaction. An application holds the live document (a handle's
-	// root exposes `.doc`), so the branch is guarded by `transaction.local`
-	// rather than by convention: `applyUpdateV2` forces it to false and a
-	// local `transact` defaults it to true. This test also pins
-	// `transaction.local` itself: if an rc removed the field, every
-	// application row-document write would take the throw and the suite fails
-	// loudly.
-	test('a direct Y.applyUpdateV2 on a live row document throws instead of forging authored work', async () => {
+	// The store's updateV2 listener treats any unrecognized origin as an
+	// application writing through a live type, which is only correct for a
+	// LOCAL transaction. An application holds a rich field and a rich field
+	// exposes `.doc`, so the branch is guarded by `transaction.local` rather
+	// than by convention: `applyUpdateV2` forces it to false and a local
+	// `transact` defaults it to true. This test also pins `transaction.local`
+	// itself: if an rc removed the field, every application write into a rich
+	// field would take the throw and the suite fails loudly.
+	test('a direct Y.applyUpdateV2 on the live document throws instead of forging authored work', () => {
 		const made = note({ title: 'mine' });
-		const opened = await db.tables.notes.openDocument(made.id);
-		const live = opened.data?.get('editor', 'text').doc;
+		const live = db.tables.notes.content(made.id)?.types.editor.doc;
 		if (live === null || live === undefined) {
-			throw new Error('root not attached to a document');
+			throw new Error('the rich field is not attached to a document');
 		}
 
 		const stranger = new Y.Doc({ gc: true });
@@ -934,7 +959,7 @@ describe('foreign bytes have exactly one door', () => {
 
 		expect(() =>
 			Y.applyUpdateV2(live, foreign as Uint8Array<ArrayBuffer>),
-		).toThrow('store connection');
+		).toThrow('applyRemote');
 
 		// The throw fired before anything persisted, so the store is not
 		// poisoned: local work still commits.
@@ -944,7 +969,6 @@ describe('foreign bytes have exactly one door', () => {
 			date: null,
 		});
 		expect(after.id).toHaveLength(24);
-		opened.data?.[Symbol.dispose]();
 	});
 });
 
@@ -1064,128 +1088,129 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 	});
 });
 
-describe('a document commit derives its row fields (ADR-0264)', () => {
-	const withDerive = defineData({
-		id: 'so.epicenter.honeycrisp',
-		kv: {},
-		tables: {
-			notes: {
-				fields: { preview: field.string() },
-				document: {
-					// Pure: the row's preview is whatever the document's `meta` root
-					// says its title is. The store runs this on every local commit.
-					derive: (doc) => {
-						const meta = doc.get('meta') as { getAttr(key: string): unknown };
-						return { preview: String(meta.getAttr('title') ?? '') };
-					},
-					// A document block owes its codec (ADR-0264/0267); this test only
-					// exercises `derive`, so the codec is inert.
-					file: { serialize: () => '', deserialize: () => undefined },
-				},
-			},
-		},
+describe('a rich field carries its own change signal (ADR-0297)', () => {
+	test('an edit to the field reaches its subscriber', () => {
+		const made = note();
+		const content = db.tables.notes.content(made.id);
+		if (content === undefined) throw new Error('the row has no content');
+		let fired = 0;
+		content.subscribe('editor', () => {
+			fired += 1;
+		});
+		content.types.editor.applyDelta(
+			content.types.editor.change.insert('milk') as never,
+		);
+		expect(fired).toBe(1);
 	});
 
-	test('a local edit to a row document writes the derived field onto the row', async () => {
-		await using data = await openMemory(withDerive);
-		const made = data.tables.notes.create({ preview: '' });
-		const opened = await data.tables.notes.openDocument(made.id);
-		const handle = opened.data;
-		if (handle === undefined || handle === null) {
-			throw new Error('the document should open');
-		}
-		handle.get('meta').setAttr('title' as never, 'Groceries' as never);
-		expect(data.tables.notes.get(made.id).data?.preview).toBe('Groceries');
-		handle[Symbol.dispose]();
+	test('a scalar write on the same row does not fire it', () => {
+		// Why the signal is scoped to the FIELD rather than to the row. An
+		// application hangs its own `updatedAt` write on this, and a row-scoped
+		// signal would fire on the write it caused, so every application would
+		// have to break its own loop.
+		const made = note();
+		const content = db.tables.notes.content(made.id);
+		if (content === undefined) throw new Error('the row has no content');
+		let fired = 0;
+		content.subscribe('editor', () => {
+			fired += 1;
+		});
+		db.tables.notes.update(made.id, { title: 'Groceries and milk' });
+		expect(fired).toBe(0);
 	});
 
-	test('a later edit re-derives the field', async () => {
-		await using data = await openMemory(withDerive);
-		const made = data.tables.notes.create({ preview: '' });
-		const opened = await data.tables.notes.openDocument(made.id);
-		const handle = opened.data;
-		if (handle === undefined || handle === null) {
-			throw new Error('the document should open');
-		}
-		handle.get('meta').setAttr('title' as never, 'First' as never);
-		expect(data.tables.notes.get(made.id).data?.preview).toBe('First');
-		handle.get('meta').setAttr('title' as never, 'Second' as never);
-		expect(data.tables.notes.get(made.id).data?.preview).toBe('Second');
-		handle[Symbol.dispose]();
+	test('unsubscribing stops delivery, and doing it twice is harmless', () => {
+		const made = note();
+		const content = db.tables.notes.content(made.id);
+		if (content === undefined) throw new Error('the row has no content');
+		let fired = 0;
+		const stop = content.subscribe('editor', () => {
+			fired += 1;
+		});
+		stop();
+		stop();
+		content.types.editor.applyDelta(
+			content.types.editor.change.insert('milk') as never,
+		);
+		expect(fired).toBe(0);
 	});
 
-	test('the derivation comes back with the document, after it has unloaded', async () => {
-		// The follow-up lives on the live document's entry, so it dies when the
-		// last handle does. What proves that is not a leak: the next open
-		// registers it again, and an edit derives exactly as the first one did.
-		await using data = await openMemory(withDerive);
-		const made = data.tables.notes.create({ preview: '' });
-		{
-			const opened = await data.tables.notes.openDocument(made.id);
-			using handle = expectOk(opened);
-			if (handle === undefined) throw new Error('the document should open');
-			handle.get('meta').setAttr('title' as never, 'First' as never);
-		}
-		expect(data.tables.notes.get(made.id).data?.preview).toBe('First');
+	test('it fires once per commit, after the table subscriber', () => {
+		// The order is the contract an application's own derived write depends
+		// on: by the time this runs, every coarser reader has already seen the
+		// commit that caused it, so a write made here is one commit later rather
+		// than a re-entry into the one being accepted.
+		const made = note();
+		const content = db.tables.notes.content(made.id);
+		if (content === undefined) throw new Error('the row has no content');
+		const order: string[] = [];
+		db.store.onCommitted(() => order.push('committed'));
+		db.tables.notes.subscribe(() => order.push('table'));
+		content.subscribe('editor', () => order.push('field'));
 
-		const reopened = await data.tables.notes.openDocument(made.id);
-		using handle = expectOk(reopened);
-		if (handle === undefined) throw new Error('the document should reopen');
-		handle.get('meta').setAttr('title' as never, 'Second' as never);
-		expect(data.tables.notes.get(made.id).data?.preview).toBe('Second');
+		db.transact(() => {
+			content.types.editor.applyDelta(
+				content.types.editor.change.insert('a') as never,
+			);
+			content.types.editor.applyDelta(
+				content.types.editor.change.insert('b') as never,
+			);
+		});
+		expect(order).toEqual(['committed', 'table', 'field']);
+	});
+
+	test('a remote edit to the field reaches it too', async () => {
+		const made = note();
+		const laptop = await openMemory(database);
+		syncEngineOf(laptop.store).applyRemote(db.store.encodeStateSince());
+
+		const here = db.tables.notes.content(made.id);
+		if (here === undefined) throw new Error('the row has no content');
+		let fired = 0;
+		here.subscribe('editor', () => {
+			fired += 1;
+		});
+
+		const there = laptop.tables.notes.content(made.id);
+		there?.types.editor.applyDelta(
+			there.types.editor.change.insert('typed elsewhere') as never,
+		);
+		syncEngineOf(db.store).applyRemote(laptop.store.encodeStateSince());
+
+		expect(fired).toBeGreaterThan(0);
+		expect(here.types.editor.toString()).toContain('typed elsewhere');
 	});
 });
 
-describe('the store manages instant createdAt/updatedAt (ADR-0265)', () => {
-	const withTimestamps = defineData({
-		id: 'so.epicenter.honeycrisp',
-		kv: {},
-		tables: {
-			notes: {
-				fields: {
-					title: field.string(),
-					createdAt: field.instant(),
-					updatedAt: field.instant(),
+describe('the store manages no timestamps (ADR-0297)', () => {
+	test('a declared instant field is an ordinary field nobody stamps', async () => {
+		// `field.instant()` is a type, not a contract. The platform stops
+		// holding an opinion about time: a table that wants recency declares
+		// the field and writes it, and what it stores is exactly that.
+		const timed = defineData({
+			id: 'so.epicenter.honeycrisp',
+			kv: {},
+			tables: {
+				notes: {
+					fields: {
+						title: field.string(),
+						updatedAt: field.instant(),
+					},
 				},
 			},
-		},
-	});
-
-	test('create stamps createdAt and updatedAt over whatever is passed', async () => {
-		const data = await openMemory(withTimestamps);
+		});
+		const data = await openMemory(timed);
+		const written = InstantString.fromDate(new Date(0));
 		const made = data.tables.notes.create({
 			title: 'Groceries',
-			createdAt: 'not-an-instant' as never,
-			updatedAt: 'not-an-instant' as never,
+			updatedAt: written,
 		});
-		expect(made.createdAt).not.toBe('not-an-instant');
-		expect(InstantString.is(made.createdAt)).toBe(true);
-		expect(InstantString.is(made.updatedAt)).toBe(true);
+		expect(made.updatedAt).toBe(written);
+		data.tables.notes.update(made.id, { title: 'Groceries and milk' });
+		expect(data.tables.notes.get(made.id).data?.updatedAt).toBe(written);
 	});
 
-	test('update moves updatedAt and leaves createdAt', async () => {
-		const data = await openMemory(withTimestamps);
-		const made = data.tables.notes.create({
-			title: 'Groceries',
-			createdAt: 'x' as never,
-			updatedAt: 'x' as never,
-		});
-		const updated = data.tables.notes.update(made.id, {
-			title: 'Groceries and milk',
-			updatedAt: 'stale' as never,
-		});
-		expect(updated.error).toBeNull();
-		const after = data.tables.notes.get(made.id).data;
-		expect(after?.createdAt).toBe(made.createdAt);
-		expect(after?.updatedAt).not.toBe('stale');
-		expect(
-			after !== undefined &&
-				after !== null &&
-				after.updatedAt >= made.updatedAt,
-		).toBe(true);
-	});
-
-	test('a table without instant createdAt/updatedAt is left alone', async () => {
+	test('a table declaring no timestamp stores none', async () => {
 		const plain = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},

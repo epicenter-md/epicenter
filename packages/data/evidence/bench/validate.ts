@@ -21,8 +21,13 @@
  *     negative heap deltas, which is the tell.
  *   - The corpus is built once and written to disk; the measuring process reads
  *     bytes, so building never peaks inside the measurement.
- *   - Baseline after a forced GC. `rss` is reported rather than `heapUsed`
- *     because the two disagree and rss is the one a Durable Object is billed on.
+ *   - Baseline after a forced GC. BOTH `rss` and `heapUsed` are reported,
+ *     because they disagree and the disagreement is the finding. A Durable
+ *     Object's 128 MB is documented as "the JavaScript heap and WebAssembly
+ *     allocations", so `heapUsed` is what a ceiling derived from this table
+ *     should use; `rss` is the process's whole footprint and overstates the
+ *     object's by two to three times (ADR-0294 caught exactly that error being
+ *     made from an earlier run of this file).
  *   - The answer is discarded exactly as an authority would discard it.
  */
 
@@ -107,7 +112,13 @@ if (process.argv[2] === '--measure') {
 	// Touch the answer so nothing above can be optimised away, then drop it.
 	const produced = answer === undefined || answer === null ? 0 : 1;
 	console.log(
-		JSON.stringify({ ms, rss: after.rss - before.rss, produced, threw }),
+		JSON.stringify({
+			ms,
+			rss: after.rss - before.rss,
+			heap: after.heapUsed - before.heapUsed,
+			produced,
+			threw,
+		}),
 	);
 	process.exit(0);
 }
@@ -144,17 +155,28 @@ try {
 			const result = JSON.parse(out) as {
 				ms: number;
 				rss: number;
+				heap: number;
 				produced: number;
 				threw: boolean;
 			};
+			const mb = (value: number) => `${(value / 1048576).toFixed(1)} MB`;
 			console.log(
-				`    ${label.padEnd(34)} ${`${result.ms.toFixed(1)} ms`.padStart(9)} ${`${(result.rss / 1048576).toFixed(1)} MB`.padStart(9)} rss${result.threw ? '   THREW' : ''}`,
+				`    ${label.padEnd(34)} ${`${result.ms.toFixed(1)} ms`.padStart(9)} ${mb(result.heap).padStart(9)} heap ${mb(result.rss).padStart(9)} rss${result.threw ? '   THREW' : ''}`,
 			);
 		}
 		console.log('');
 	}
 
 	console.log('  reading this table:');
+	console.log(
+		'    The 986-row heap deltas read 0.0 MB and the rss deltas do not. That is',
+	);
+	console.log(
+		"    JSC's accounting granularity at that size, not a free hydration; the two",
+	);
+	console.log(
+		'    agree from 5,000 rows up, which is where a ceiling should be read.',
+	);
 	console.log(
 		'    The filter that shipped for a while, `diffUpdateV2`, decodes the whole',
 	);

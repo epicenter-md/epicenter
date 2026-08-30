@@ -1,10 +1,12 @@
 # 0286. Every generation is minted from an artifact, and compaction is an export then an import
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-29
+- **Superseded by:** [ADR-0293](0293-a-generation-is-created-by-importing-a-folder-and-the-ledger-row-is-its-existence.md) at the mint upload and publication protocol. The artifact source, client-owned codecs, and one mint path are retained there.
 - **Amends:** [ADR-0281](0281-a-generation-is-a-whole-database-and-a-device-chooses-which-one-it-holds.md) at compaction, which stops being its own path.
 - **Amends:** [ADR-0276](0276-an-authority-holds-a-numbered-succession-of-generations-and-nothing-is-ever-overwritten.md) by withdrawing the Restore/Rebuild split and the lease Rebuild required. There is one verb, it is always additive, and there is nothing to compare and swap.
 - **Amended by:** [ADR-0290](0290-a-mint-is-a-foreground-job-the-client-owns-and-it-cannot-outlive-a-page.md) at who runs the mint and what a `409` means. Invariant 5's `409` keeps only its abandon meaning, because a mint is never resumed; invariant 7's pacing gains an owner and loses any deadline. That record also corrects Decision bullet 1 below, which names ADR-0267's layout where invariant 2 names the shipped one: `<table>/<rowId>.md` plus `kv.json` is correct.
+- **Amended by:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) at its per-document upload invariants.
 - **Unbuilt:** all of it.
 
 ## Context

@@ -14,53 +14,19 @@
 import { defineErrors } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
 
-/**
- * One unsent entry, at the local position that orders it, naming the document
- * its bytes belong to (the application document or a row's derived address).
- */
-export type OutboxEntry = { id: number; document: string; bytes: Uint8Array };
+/** One unsent entry, at the local position that orders it. */
+export type OutboxEntry = { id: number; bytes: Uint8Array };
 
-/**
- * One durable fact the store owes its storage, in the order it was accepted.
- *
- * `append` names the document its bytes belong to: the application document,
- * or a row's derived address (ADR-0248). It carries its outbox id when the
- * bytes are locally authored work a replica owes the authority, and
- * `undefined` for received bytes and for a device document's own work (which
- * is owed to nobody). Ids are assigned by the store, not the port, so the
- * in-memory mirror and the durable engine can never disagree about which
- * entry an acknowledgement names.
- *
- * `retire` is a row deletion's durable half: it records the address as
- * tombstoned and deletes the document's stored chain and outbox entries, in
- * the same atomic batch as the scalar row removal, so a late write can never
- * resurrect the address (ADR-0248).
- */
-/**
- * What the store owes its storage, in acceptance order.
- *
- * Four arms, and the shape of the union is the design. What used to be six
- * collapsed when two facts turned out to be one: "the authority does not have
- * these bytes" and "the authority gave these bytes no position" say the same
- * thing, so an append carries a nullable `authoritySeq` and the outbox and the
- * cursor are both READ OFF IT rather than stored beside it.
- *
- * That is what deletes `dropOutbox` (an ack is not a deletion, it is a
- * position landing), `replaceOutbox` (a compaction that carried no invariant,
- * and the only one that crossed this boundary while the far larger fold stayed
- * private to the port), and `cursor` (never a fact of its own).
- */
 export type DurableOp =
 	| {
 			kind: 'append';
-			document: string;
 			/**
-			 * One monotone sequence across every document, never reused.
+			 * One monotone sequence, never reused.
 			 *
-			 * Never reused is the load-bearing half. The fold used to renumber a
-			 * document's chain from 1, so a position recorded against it silently
-			 * came to mean a different update, which is why owed work had to live
-			 * in a relation of its own. Stable ids make it a column.
+			 * Never reused is the load-bearing half. The fold used to renumber the
+			 * chain from 1, so a position recorded against it silently came to
+			 * mean a different update, which is why owed work had to live in a
+			 * relation of its own. Stable ids make it a column.
 			 */
 			id: number;
 			bytes: Uint8Array;
@@ -72,16 +38,14 @@ export type DurableOp =
 			 * The authority took responsibility through `throughId` and put those
 			 * bytes at `authoritySeq`.
 			 *
-			 * One submission is one envelope and lands as ONE log entry, so every
-			 * covered append takes the same position. This is both halves of what
-			 * the client used to do in two calls, `advance` and `acknowledge`.
+			 * One submission lands as ONE log entry, so every covered append takes
+			 * the same position. This is both halves of what the client used to do
+			 * in two calls, `advance` and `acknowledge`.
 			 */
 			kind: 'ack';
 			throughId: number;
 			authoritySeq: number;
-	  }
-	| { kind: 'identity'; id: string }
-	| { kind: 'retire'; document: string };
+	  };
 
 /**
  * Everything the durable engine held at open, materialized once.
@@ -92,7 +56,7 @@ export type DurableOp =
  * open, so the store never asks storage a second question.
  */
 export type DurableSnapshot = {
-	/** The application document's own chain; row documents hydrate on open. */
+	/** The database document's chain, oldest first. */
 	updates: Uint8Array[];
 	/** Appends with no authority position, in id order. */
 	outbox: OutboxEntry[];
@@ -104,9 +68,6 @@ export type DurableSnapshot = {
 	 * is applied again, and an update is idempotent.
 	 */
 	cursor: number;
-	identity: string | undefined;
-	/** Every durably retired document address (ADR-0248). */
-	tombstones: string[];
 	/** The highest id any append carries, so the store mints from here. */
 	lastId: number;
 };
@@ -121,16 +82,13 @@ export type DurableSnapshot = {
  * for, which is exactly the corruption ADR-0231 exists to prevent. Ordering
  * within the batch is the queue's order.
  *
- * The two readers serve the document manager (ADR-0248): a row document
- * hydrates from its stored chain at open, and a snapshot bundle enumerates
- * every chain the store holds. Both treat the address as an opaque string.
+ * One verb, because there is one document (ADR-0295). The two readers this
+ * used to carry, `readDocument` and `listDocuments`, served a manager that
+ * hydrated a row's own document on demand and enumerated every chain a store
+ * held; a store holds one chain, and it is loaded whole at open.
  */
 export type DurablePort = {
 	commit(ops: readonly DurableOp[]): void | Promise<void>;
-	/** One document's stored chain, oldest first. Empty when nothing is held. */
-	readDocument(document: string): Uint8Array[] | Promise<Uint8Array[]>;
-	/** Every document address with a stored chain, the application's included. */
-	listDocuments(): string[] | Promise<string[]>;
 };
 
 export type PersistenceStatus = 'saved' | 'pending' | 'blocked';
@@ -196,19 +154,6 @@ export type PersistenceController = {
 	 */
 	durableOutbox(): readonly OutboxEntry[];
 	/**
-	 * Bytes accepted for one document that the durable engine has not
-	 * confirmed: the in-flight batch and the queue, in order.
-	 *
-	 * The document manager's hydration overlay (ADR-0248): a row document
-	 * opened while an asynchronous flush is out must still see everything the
-	 * store accepted. A byte the durable read already covered may appear here
-	 * again during that window; re-applying it is free because an update is
-	 * idempotent.
-	 */
-	pendingAppends(document: string): Uint8Array[];
-	/** Every document named by an unconfirmed append, for state enumeration. */
-	pendingDocuments(): string[];
-	/**
 	 * Whether anything at all is held, durably or queued: updates, outbox
 	 * entries, a moved cursor. The identity stamp's emptiness check.
 	 */
@@ -243,11 +188,7 @@ export function createPersistenceController({
 	// the sync sender stay synchronous over an asynchronous engine.
 	let outbox: OutboxEntry[] = [...loaded.outbox];
 	let cursor = loaded.cursor;
-	let identity = loaded.identity;
 	let hasUpdates = loaded.updates.length > 0;
-	let hasTombstones = loaded.tombstones.length > 0;
-	/** The batch handed to an asynchronous port and not yet settled. */
-	let flying: readonly DurableOp[] = [];
 
 	const statusListeners = new Set<() => void>();
 	const outboxGrewListeners = new Set<() => void>();
@@ -291,7 +232,7 @@ export function createPersistenceController({
 					// Owed exactly when the authority has no position for it, which
 					// is the same test the port runs against the column.
 					if (op.authoritySeq === undefined) {
-						outbox.push({ id: op.id, document: op.document, bytes: op.bytes });
+						outbox.push({ id: op.id, bytes: op.bytes });
 						outboxGrew = true;
 					} else if (op.authoritySeq > cursor) {
 						cursor = op.authoritySeq;
@@ -304,13 +245,6 @@ export function createPersistenceController({
 					// fact reported twice.
 					outbox = outbox.filter((entry) => entry.id > op.throughId);
 					if (op.authoritySeq > cursor) cursor = op.authoritySeq;
-					break;
-				case 'identity':
-					identity ??= op.id;
-					break;
-				case 'retire':
-					hasTombstones = true;
-					outbox = outbox.filter((entry) => entry.document !== op.document);
 					break;
 			}
 		}
@@ -373,7 +307,6 @@ export function createPersistenceController({
 			return;
 		}
 		inFlight = true;
-		flying = batch;
 		notifyStatus();
 		void outcome
 			.then(
@@ -382,7 +315,6 @@ export function createPersistenceController({
 			)
 			.finally(() => {
 				inFlight = false;
-				flying = [];
 				if (again) {
 					again = false;
 					attempt();
@@ -416,28 +348,10 @@ export function createPersistenceController({
 			flush,
 		}),
 		durableOutbox: () => outbox,
-		pendingAppends(document: string): Uint8Array[] {
-			const bytes: Uint8Array[] = [];
-			for (const op of [...flying, ...queue]) {
-				if (op.kind === 'append' && op.document === document) {
-					bytes.push(op.bytes);
-				}
-			}
-			return bytes;
-		},
-		pendingDocuments(): string[] {
-			const documents = new Set<string>();
-			for (const op of [...flying, ...queue]) {
-				if (op.kind === 'append') documents.add(op.document);
-			}
-			return [...documents];
-		},
 		hasAnyState: () =>
 			hasUpdates ||
-			hasTombstones ||
 			outbox.length > 0 ||
 			cursor > 0 ||
-			identity !== undefined ||
 			queue.length > 0 ||
 			inFlight,
 		onOutboxGrew(listener: () => void): () => void {

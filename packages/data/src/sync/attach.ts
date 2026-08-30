@@ -55,13 +55,16 @@ export type AttachStoreSyncOptions = {
 	store: AddressedAccountStore;
 	/** The database id being synced, which addresses the authority. */
 	dataId: string;
-	transport: StoreSocketTransport;
 	/**
-	 * This replica's document is superseded. The driver has already stopped; the
-	 * application discards the local store whole and reloads, and the fresh
-	 * boot's ordinary join is the whole of adoption.
+	 * The exact generation being synced, which addresses it with the id.
+	 *
+	 * The whole of membership (ADR-0292). A generation is created once and
+	 * never mutated in place, so a socket addressed here can only be carrying
+	 * this history's bytes; there is nothing to announce, nothing to compare,
+	 * and no supersession to conclude.
 	 */
-	onSuperseded: () => void;
+	generation: number;
+	transport: StoreSocketTransport;
 	/**
 	 * No dial in this app generation can ever succeed (reauth required, a
 	 * refused credential). Fired from the same classification that stops the
@@ -85,33 +88,30 @@ export type AttachStoreSyncOptions = {
  * syncs, so a signed-out boot has nothing to attach.
  *
  * Whether sync can work is decided by the first dial rather than by inspecting
- * auth here. For a bound replica a permanent denial is not a failure and is not
- * reported as one; the store works offline without this. For an unbound one the
- * application rejects its boot, because a signed-in replica that cannot
- * bootstrap is unavailable, never the local document. A credential arriving
- * later never resumes this connection: acquiring one changes auth state, and
- * reloading on that change starts the next generation, which dials fresh.
+ * auth here, and a permanent denial is not a failure: the store opened from
+ * local state before this was called and works offline without it (ADR-0292).
+ * A credential arriving later never resumes this connection; acquiring one
+ * changes auth state, and reloading on that change dials fresh.
  */
 export function attachStoreSync({
 	store,
 	dataId,
+	generation,
 	transport,
-	onSuperseded,
 	onDenied,
 	onTransportError,
 }: AttachStoreSyncOptions): SyncConnection {
 	const connection = createSyncConnection({
 		store,
-		onSuperseded,
-		dial: ({ cursor, document, opened, received, closed, denied }) => {
+		dial: ({ cursor, opened, received, closed, denied }) => {
 			let socket: WebSocket | undefined;
 			let abandoned = false;
 			void transport
 				.openWebSocket(
 					STORE_SYNC_ROUTE.url(store.baseURL, {
 						dataId,
+						generation,
 						cursor,
-						...(document === undefined ? {} : { document }),
 					}),
 				)
 				.then(

@@ -2,9 +2,6 @@ import {
 	type ConformanceIssue,
 	type CreateInputOf,
 	type DataDefinition,
-	type DocumentReader,
-	documentAddress,
-	InstantString,
 	type JsonObject,
 	type JsonValue,
 	type KvOf,
@@ -12,6 +9,7 @@ import {
 	type ParsedTable,
 	parseData,
 	type RowOf,
+	type TypesOf,
 } from '@epicenter/data/definition';
 import type { SqliteDatabase } from '@epicenter/sqlite';
 import * as Y from '@y/y';
@@ -21,34 +19,24 @@ import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 import {
-	createAppDocument,
+	createDatabaseDocument,
 	createRow,
 	deleteRow,
-	hasRow,
 	kvRoot,
 	listRowIds,
 	readRow,
+	readRowTypes,
 	storedTableNames,
 	tableRoot,
 	updateRow,
 } from './document.js';
-import {
-	createDocumentEngine,
-	type DocumentError,
-	type RowDocumentHandle,
-} from './documents.js';
-import { decodeEnvelope, encodeEnvelope } from './envelope.js';
-import {
-	APP_DOCUMENT,
-	copyBytes,
-	createSqliteDurablePort,
-	NO_AUTHORITY,
-} from './log.js';
+import { copyBytes, createSqliteDurablePort, NO_AUTHORITY } from './log.js';
 import {
 	createPersistenceController,
 	type DurableOp,
 	type DurablePort,
 	type DurableSnapshot,
+	type OutboxEntry,
 	type PersistenceCapability,
 } from './persistence.js';
 
@@ -217,9 +205,57 @@ export const StoreError = defineErrors({
 	 * can claim afterwards. Unavailable is the honest answer, and only an auth
 	 * change repairs it.
 	 */
-	Unaddressable: () => ({
-		message:
-			'A definition replica belongs to one account, and no account id was supplied, so it has no address',
+	Unaddressable: ({ reason }: { reason: string }) => ({
+		message: `This database has no address: ${reason}`,
+		reason,
+	}),
+	/**
+	 * This device holds no copy of the generation asked for, and has no account
+	 * to fetch it from (ADR-0292).
+	 *
+	 * A generation number is an ADDRESS, not an instruction to allocate. Opening
+	 * an empty database here would turn any URL somebody typed into a real
+	 * generation, so the miss is reported and the caller decides: import a
+	 * folder to create one, or send the person somewhere that exists.
+	 */
+	GenerationNotFound: ({
+		dataId,
+		generation,
+	}: {
+		dataId: string;
+		generation: number;
+	}) => ({
+		message: `This device holds no generation ${generation} of '${dataId}'`,
+		dataId,
+		generation,
+	}),
+	/**
+	 * The authority could not be asked for a generation this device lacks.
+	 *
+	 * Distinct from `GenerationNotFound`, and the distinction is the whole
+	 * point: not-found is a fact about the generation and this is a fact about
+	 * the network. A retry can fix one and never the other, so a boot surface
+	 * that conflates them tells a person their data is gone when their wifi is
+	 * off.
+	 */
+	GenerationUnavailable: ({
+		dataId,
+		generation,
+		status,
+		cause,
+	}: {
+		dataId: string;
+		generation: number;
+		status?: number;
+		cause?: unknown;
+	}) => ({
+		message: `Generation ${generation} of '${dataId}' could not be fetched${
+			status === undefined ? '' : ` (${status})`
+		}`,
+		dataId,
+		generation,
+		status,
+		cause,
 	}),
 	/**
 	 * A subscriber threw while being told about a committed change.
@@ -232,24 +268,11 @@ export const StoreError = defineErrors({
 		message: 'A store subscriber threw while being told about a commit',
 		cause,
 	}),
-	/**
-	 * A document identity cannot be stamped onto a store already holding state.
-	 *
-	 * Membership is stamped at first entanglement, before any push leaves and
-	 * before any foreign byte applies, so a stampable store is necessarily
-	 * empty. State without an identity is unplaceable across the clean break
-	 * (ADR-0231): the caller discards it whole and rejoins, and nothing merges.
-	 */
-	Unstampable: () => ({
-		message:
-			'This store already holds state that belongs to no document, so it cannot adopt one; discard it and rejoin',
-	}),
 });
 export type StoreError = InferErrors<typeof StoreError>;
 
 export type RowAbsentError = Extract<StoreError, { name: 'RowAbsent' }>;
 export type ApplyFailedError = Extract<StoreError, { name: 'ApplyFailed' }>;
-export type UnstampableError = Extract<StoreError, { name: 'Unstampable' }>;
 
 /** What a row update can refuse with: only an address holding no row. */
 export type UpdateRowError = RowAbsentError;
@@ -257,6 +280,41 @@ export type UpdateRowError = RowAbsentError;
 export type {} from '@epicenter/data/definition';
 
 export type Row = { id: string } & JsonObject;
+
+/**
+ * One rich field's live value: the nested `Y.Type` a row holds (ADR-0296).
+ *
+ * An alias, not a wrapper. It exists so a package that only NAMES a rich field
+ * (a chat feature typing the message log it is handed) can do so through the
+ * store's own vocabulary rather than reaching for `@y/y`, and so the one place
+ * a rich field's type is written down is here.
+ */
+export type RichField = Y.Type;
+
+/**
+ * One row's rich content: the live types, and a per-field edit signal
+ * (ADR-0296, ADR-0297).
+ *
+ * The signal is scoped to the FIELD rather than to the row, and that is the
+ * whole reason it exists in this shape. The store writes no timestamps
+ * (ADR-0297), so an application that wants a recency-sorted list hangs its own
+ * write on an edit; a row-scoped signal would fire on the write it caused, and
+ * every application would have to break its own loop.
+ */
+export type RowContent<TTypes = Readonly<Record<string, Y.Type>>> = {
+	/** The nested types, by declared field name. */
+	readonly types: TTypes;
+	/**
+	 * Hear edits to one rich field, local or remote.
+	 *
+	 * Fires for what changed INSIDE the type, never for the row's scalars, so
+	 * an application's own derived write does not re-enter through it. Fires
+	 * once per commit, on the same flush every other subscriber's notification
+	 * goes out on and after all of them, so a listener that writes is writing
+	 * against a settled commit.
+	 */
+	subscribe(field: keyof TTypes & string, listener: () => void): () => void;
+};
 
 export type TableHandle = {
 	/**
@@ -269,12 +327,13 @@ export type TableHandle = {
 	 * unreachable rather than merely unlikely. Anything an application wants to
 	 * name goes in `kv`, which lives at a name-addressed root.
 	 *
-	 * Nothing about the row's rich document is declared here. The document is
-	 * inherent: it exists as an address derived from the row's coordinates
-	 * (ADR-0248), and its roots are minted by name on first use, which is safe
-	 * in an independent document because a top-level root is addressed by its
-	 * name and concurrent minting converges
-	 * (`evidence/independent-document-roots.test.ts`).
+	 * A rich field is not passed here and cannot be. It is a nested type, and a
+	 * type is not a value: every rich field the table declares is MINTED with
+	 * the row, in this transaction, and filled afterwards through `content`
+	 * (ADR-0295, ADR-0296). Minting it here rather than on first use is what
+	 * removes the concurrency: a nested type is addressed by the struct that
+	 * created it, so two devices minting one at the same attribute key would
+	 * lose a subtree, and a minted row id means no two devices ever do.
 	 *
 	 * The declaration is a read lens, so creation does not validate the supplied
 	 * values or field names. The returned object is the typed write view, while
@@ -305,12 +364,11 @@ export type TableHandle = {
 	 */
 	update(rowId: string, fields: JsonObject): Result<void, UpdateRowError>;
 	/**
-	 * Take one row off the table, and retire its document (ADR-0248).
+	 * Take one row off the table, rich content and all (ADR-0295).
 	 *
-	 * One composition point: the scalar row's removal and the durable
-	 * tombstone on its derived document address commit in one atomic batch, so
-	 * a missed notification can never leave a live document behind, and a late
-	 * write cannot resurrect the address.
+	 * One removal in one document. Deleting the row's nested type reclaims
+	 * every scalar attribute and every rich field's subtree with it, so there
+	 * is no second address to retire and no crash point between two halves.
 	 *
 	 * Returns nothing: deleting an address that holds no row is a no-op fact
 	 * rather than an outcome a caller acts on, and every consumer said so by
@@ -346,25 +404,20 @@ export type TableHandle = {
 	 */
 	stored(rowId: string): JsonObject | undefined;
 	/**
-	 * Open the independent document this row owns at its derived address
-	 * (ADR-0248).
+	 * One row's rich fields: the live nested types, and their edit signals
+	 * (ADR-0295, ADR-0296).
 	 *
-	 * `openDocument` is asynchronous and resolves only after complete local hydration:
-	 * it is a load, and a synchronous surface in front of one either forces
-	 * eager loading or hands out a half-hydrated handle an editor merges
-	 * keystrokes into at the wrong position. `Ok(undefined)` means the table
-	 * holds no row at this address, which is a fact rather than a failure; the
-	 * error arm is storage trouble.
+	 * Synchronous, and there is nothing left for it to await. The types are in
+	 * the one document this store already holds, so there is no address to
+	 * derive, no chain to hydrate, no handle to refcount, and no half-hydrated
+	 * type an editor could merge keystrokes into. `undefined` means the table
+	 * holds no row at this address.
 	 *
-	 * The application names its own roots and picks their formats:
-	 * `handle.get('editor', 'text')`. Epicenter derives the address, retires
-	 * the document with the row, and never looks inside. Dispose the handle
-	 * when the surface holding it unmounts; the manager keeps one live
-	 * document per address while any handle holds it.
+	 * Nothing is disposed. A type's lifetime is its row's: it is minted when
+	 * the row is minted and reclaimed when the row is deleted, so holding one
+	 * pins nothing that a close could release.
 	 */
-	openDocument(
-		rowId: string,
-	): Promise<Result<RowDocumentHandle | undefined, DocumentError>>;
+	content(rowId: string): RowContent | undefined;
 	/**
 	 * Hear when anything in this table changes, whoever changed it.
 	 *
@@ -372,8 +425,8 @@ export type TableHandle = {
 	 * turned out to read them: the one live subscriber discards the argument,
 	 * the mirror refuses the signal and renders everything (ADR-0271), and the
 	 * consumer the ids were kept for reads `updatedAt` off the index through
-	 * the change feed instead (ADR-0278). A caller re-reads with `list()`,
-	 * which walks a document already in memory.
+	 * A caller re-reads with `list()`, which walks a document already in
+	 * memory.
 	 *
 	 * Fires after the commit is accepted, on the same flush as KV's and after
 	 * `onCommitted`, so a composed follower is dirty before any subscriber
@@ -409,9 +462,7 @@ export type TypedTableHandle<TFields> =
 				list(): { rows: TRow[]; nonconforming: NonconformingRow[] };
 				/** One row's stored fields, untyped, before the declaration reads them. */
 				stored(rowId: string): JsonObject | undefined;
-				openDocument(
-					rowId: string,
-				): Promise<Result<RowDocumentHandle | undefined, DocumentError>>;
+				content(rowId: string): RowContent<TypesOf<TFields>> | undefined;
 				subscribe(listener: () => void): () => void;
 			}
 		: never;
@@ -601,18 +652,15 @@ export type UntypedDataView = {
  */
 type ClientLog = {
 	/**
-	 * Merge every unsent update into one envelope, and return it.
+	 * Merge every unsent update into one, and return it.
 	 *
 	 * The 30x. Sending one update per transaction is what made the authority's
 	 * log look like it had to be compacted; merging on the idle timer an editor
 	 * debounces on anyway makes it a rounding error
 	 * (`evidence/bench/never-compact.ts`).
 	 *
-	 * Per document first, then one envelope: entries for different documents
-	 * cannot merge into one Yjs update, so each document's unsent bytes merge
-	 * on their own and the envelope carries one section per document
-	 * (ADR-0248). `id` is the highest outbox id the envelope covers, which is
-	 * what an acknowledgement retires.
+	 * One document, so one merge (ADR-0295). `id` is the highest outbox id the
+	 * merged bytes cover, which is what an acknowledgement retires.
 	 *
 	 * It needs no proof from anybody, and that is the whole reason the merge
 	 * lives here rather than on the authority. Every withdrawn design was trying
@@ -625,30 +673,6 @@ type ClientLog = {
 	acknowledge(throughId: number, authoritySeq: number): void;
 	/** How far through the authority's log this replica has read. */
 	cursor(): number;
-	/**
-	 * Which authority document this replica's state belongs to, or undefined
-	 * for a document that has never exchanged a byte (ADR-0231).
-	 *
-	 * The cursor says how far through a delivery log this replica has read;
-	 * this says WHICH document its bytes are entangled with. Both facts are
-	 * needed: a push that landed while the ack died leaves the authority's
-	 * log holding this replica's bytes with the cursor still at zero, and
-	 * without the identity that replica would later present itself as a
-	 * fresh install and republish a retired document's bytes into a new one.
-	 */
-	documentIdentity(): string | undefined;
-	/**
-	 * Stamp membership, durably and before the first push leaves. First write
-	 * wins; membership changes only by discarding the file whole.
-	 *
-	 * Only an empty store can be stamped, because the stamp happens at first
-	 * entanglement and nothing may precede it. A store holding state without an
-	 * identity is refused with `Unstampable`: its bytes are unplaceable across
-	 * the clean break (ADR-0231) and must be discarded, never merged. That
-	 * refusal is the one outcome this log returns, because it is the one a
-	 * caller concludes something from (supersession).
-	 */
-	adoptDocumentIdentity(id: string): Result<void, UnstampableError>;
 };
 
 /**
@@ -708,9 +732,9 @@ export type DataStoreBase = {
 	 * against a measurement rather than against a guess.
 	 */
 	pressure(): StorePressure;
-	/** The application document's clocks: which authored state it holds, from whom. */
+	/** The document's clocks: which authored state it holds, from whom. */
 	stateVector(): Uint8Array;
-	/** Everything the application document has that the state vector does not. */
+	/** Everything the document has that the state vector does not. */
 	encodeStateSince(stateVector?: Uint8Array): Uint8Array;
 	/** Group direct data operations into one accepted and durable transaction. */
 	transact<TResult>(run: () => TResult): TResult;
@@ -779,30 +803,19 @@ export type AccountStore = DataStoreBase & {
 };
 
 /**
- * The app-facing half of sync: what a surface renders and a boot gate reads.
+ * That this store replicates, and the key its transport is registered against.
  *
- * Mirrors `persistence` in shape: one snapshot, one change subscription.
- * Everything else about sync (connection health, attempts, in-flight
- * submissions) belongs to the connection driving the socket, not to the
- * store.
- */
-export type SyncCapability = {
-	get(): SyncFacts;
-	/** Hear when the facts change. Never fires initially. */
-	subscribe(listener: () => void): () => void;
-};
-
-/**
- * The facts a replica can state about its own entanglement.
+ * It carries no facts, and it used to carry one: the document identity, which
+ * was a boot gate's whole question (ADR-0231). The generation is in the address
+ * now, so a replica is bound the moment it opens and there is nothing left to
+ * wait for (ADR-0292). What is left is the discriminant the store types already
+ * had, plus an object identity `syncEngineOf` can key on, so a wrapper that
+ * spreads the store keeps the door reachable.
  *
- * `document` is which authority document this replica's state belongs to,
- * or `undefined` for one that has never exchanged a byte (ADR-0231). It is
- * the boot gate's whole question: a signed-in definition is safe to edit once
- * it is stamped.
+ * Connection health, attempts, and in-flight submissions belong to the
+ * connection driving the socket and were never here.
  */
-export type SyncFacts = {
-	readonly document: string | undefined;
-};
+export type SyncCapability = { readonly replicates: true };
 
 /**
  * The delivery machinery only the transport drives (ADR-0238's audit): the
@@ -818,10 +831,7 @@ type SyncEngine = ClientLog & {
 	 * The bytes are accepted live immediately; the durable append and the
 	 * `advanceTo` bookmark join the persistence queue as ADJACENT OPS in one
 	 * atomic flush batch, so durable state can never hold a cursor ahead of
-	 * the bytes it accounts for (ADR-0231, carried by ADR-0238). Membership
-	 * is not stamped here: the sync client commits `adoptDocumentIdentity` at
-	 * the document announcement and refuses foreign bytes until it has, so an
-	 * absent identity always means no foreign byte was ever applied.
+	 * the bytes it accounts for (ADR-0231, carried by ADR-0238).
 	 *
 	 * The Result's one error is `ApplyFailed`: bytes this document cannot
 	 * decode, which is a property of the bytes and leaves the store usable.
@@ -854,11 +864,12 @@ type SyncEngine = ClientLog & {
 	 */
 	onLocalWork(listener: () => void): () => void;
 	/**
-	 * This replica's whole state as one envelope: the application document's
-	 * complete state plus every row document's, one section each (ADR-0248).
+	 * This replica's whole state as one update: the database document's
+	 * complete state (ADR-0295).
 	 *
-	 * What a snapshot offer carries. Asynchronous because closed
-	 * row documents are read from storage rather than hydrated.
+	 * What a snapshot offer carries. Still asynchronous, because the transport
+	 * awaits it and the shape outlives the reason: it used to read closed row
+	 * documents from storage.
 	 */
 	encodeSnapshot(): Promise<Uint8Array>;
 };
@@ -901,7 +912,6 @@ type StoreEngineOptions = {
 	durable: DurablePort;
 	/** What that engine held at open, materialized once. */
 	loaded: DurableSnapshot;
-	now?: () => number;
 	dispose?: () => void | Promise<void>;
 	/**
 	 * Where a subscriber's own failure and a failed durable flush go.
@@ -920,7 +930,6 @@ export type CreateStoreOptions<TDatabase extends DataDefinition> = {
 	definition: TDatabase;
 	/** The durable record: the update log, the outbox, the cursor, the metadata. */
 	sqlite: SqliteDatabase;
-	now?: () => number;
 	dispose?: () => void | Promise<void>;
 	log?: Logger;
 };
@@ -1046,7 +1055,6 @@ function createStoreEngine(
 		definition,
 		durable,
 		loaded,
-		now = () => Date.now(),
 		dispose = () => undefined,
 		log = createLogger('data/store'),
 	}: StoreEngineOptions,
@@ -1056,7 +1064,7 @@ function createStoreEngine(
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 } {
-	const index = createAppDocument();
+	const database = createDatabaseDocument();
 	let pending: Uint8Array[] = [];
 	let composedTransaction: DurableOp[] | undefined;
 	let disposed = false;
@@ -1079,7 +1087,6 @@ function createStoreEngine(
 	// thing that separates them, and a restart then honestly recovers the
 	// mirror's version.
 	let liveCursor = loaded.cursor;
-	let liveIdentity = loaded.identity;
 	/**
 	 * The highest outbox id acknowledged this session. An overlay over the
 	 * durable mirror, so an acknowledged entry is never re-offered while its
@@ -1095,7 +1102,6 @@ function createStoreEngine(
 	 * reopen.
 	 */
 	let nextId = loaded.lastId + 1;
-	/** One sequence for every document, application and rows alike. */
 	const mintId = (): number => nextId++;
 	/**
 	 * What an append this device authored owes the authority: nothing yet.
@@ -1106,70 +1112,6 @@ function createStoreEngine(
 	 * whole rather than asking.
 	 */
 	const authoredSeq = (): number | undefined => undefined;
-
-	/**
-	 * The row documents' runtime (ADR-0248): live handles, hydration, remote
-	 * acceptance, and retirement, over the same durable queue every other
-	 * accepted fact joins.
-	 */
-	/**
-	 * The store's answer to a local document commit (ADR-0264, ADR-0265): run the
-	 * table's pure `derive` over the document, stamp `updatedAt` if the store
-	 * manages it, and, only when the result changes the row, write it as its own
-	 * follow-up commit. Not merged with the body append, so a crash leaves a
-	 * self-healing one-edit-stale shadow rather than paying the cross-plane
-	 * atomicity an inline merge would cost.
-	 *
-	 * Built at open and handed down to the document engine, which holds it on
-	 * the live entry and calls it back with the document. The engine stays
-	 * schema-blind: it never learns what a row or a table is, and the closure
-	 * dies with the entry rather than outliving it in a map of its own.
-	 */
-	function deriveOnCommit(target: {
-		derive?: (doc: DocumentReader) => Record<string, unknown>;
-		managesUpdatedAt: boolean;
-		root: Y.Type;
-		rowId: string;
-	}): (doc: Y.Doc) => void {
-		return (doc) => {
-			const patch: Record<string, unknown> = target.derive
-				? { ...target.derive(doc as unknown as DocumentReader) }
-				: {};
-			// A body edit is an edit to the row: `updatedAt` moves even when the
-			// derived preview does not, so a fresh instant always makes the patch
-			// non-empty and the write always happens on a local body edit.
-			if (target.managesUpdatedAt) {
-				patch.updatedAt = InstantString.fromDate(new Date(now()));
-			}
-			const current = readRow(target.root, target.rowId) ?? {};
-			let changed = false;
-			for (const key of Object.keys(patch)) {
-				if ((current as Record<string, unknown>)[key] !== patch[key]) {
-					changed = true;
-					break;
-				}
-			}
-			if (!changed) return;
-			// `updateRow`, never `createRow`: a derive fires when a row's DOCUMENT
-			// commits, and on a device whose row was deleted elsewhere a minting
-			// write would bring it back as new data nothing can refuse
-			// (`evidence/invariants.test.ts`). A derive for a row that is gone is
-			// simply dropped.
-			commit(() => updateRow(target.root, target.rowId, patch as JsonObject));
-		};
-	}
-
-	const documents = createDocumentEngine({
-		readDocument: (address) => durable.readDocument(address),
-		listDocuments: () => durable.listDocuments(),
-		appDocument: APP_DOCUMENT,
-		controller,
-		mintId,
-		authoredSeq,
-		tombstones: loaded.tombstones,
-		assertUsable: () => assertUsable(),
-		log,
-	});
 
 	/**
 	 * Where a table's `'delta'` event becomes a subscriber's invalidation.
@@ -1199,11 +1141,19 @@ function createStoreEngine(
 	let kvTouched = false;
 	/** Who is watching each table, by name. A ping, not a payload. */
 	const tableListeners = new Map<string, Set<() => void>>();
+	/**
+	 * Rich-field listeners whose type changed in the commit being accepted.
+	 *
+	 * Buffered for the same reason a table's invalidation is: a nested type's
+	 * `'delta'` fires SYNCHRONOUSLY inside `applyUpdateV2`, mid-acceptance, so
+	 * delivering there would hand a subscriber a commit still being accepted
+	 * and would run its listener ahead of the `onCommitted` phase a composed
+	 * follower marks itself dirty in.
+	 */
+	let richTouched = new Set<() => void>();
 	const kvFlushers = new Set<() => void>();
 	const localWorkListeners = new Set<() => void>();
 	const committedListeners = new Set<() => void>();
-	/** Who is watching `sync.get()`'s facts; notified when the stamp lands. */
-	const syncFactsListeners = new Set<() => void>();
 
 	/**
 	 * Hand a committed change to whoever is waiting for it, and reset the buffers.
@@ -1231,19 +1181,33 @@ function createStoreEngine(
 			kvTouched = false;
 			for (const flush of [...kvFlushers]) flush();
 		}
-		if (touched.size === 0) return;
-		const batch = touched;
-		touched = new Set();
-		for (const tableName of batch) {
-			for (const listener of [...(tableListeners.get(tableName) ?? [])]) {
-				// Contained for the same reason every other listener here is: one
-				// broken subscriber must not cost the others their notification.
-				const { error } = trySync({
-					try: listener,
-					catch: (cause) => StoreError.SubscriberThrew({ cause }),
-				});
-				if (error !== null) log.error(error);
+		if (touched.size > 0) {
+			const batch = touched;
+			touched = new Set();
+			for (const tableName of batch) {
+				for (const listener of [...(tableListeners.get(tableName) ?? [])]) {
+					// Contained for the same reason every other listener here is: one
+					// broken subscriber must not cost the others their notification.
+					const { error } = trySync({
+						try: listener,
+						catch: (cause) => StoreError.SubscriberThrew({ cause }),
+					});
+					if (error !== null) log.error(error);
+				}
 			}
+		}
+		// Last, and finest-grained. A rich-field subscriber is where an
+		// application hangs its own derived write (ADR-0297), so it runs after
+		// every coarser reader has already seen the commit that caused it.
+		if (richTouched.size === 0) return;
+		const fields = richTouched;
+		richTouched = new Set();
+		for (const notify of fields) {
+			const { error } = trySync({
+				try: notify,
+				catch: (cause) => StoreError.SubscriberThrew({ cause }),
+			});
+			if (error !== null) log.error(error);
 		}
 	}
 
@@ -1262,7 +1226,7 @@ function createStoreEngine(
 		}
 	});
 
-	index.on(
+	database.on(
 		'updateV2',
 		(
 			update: Uint8Array,
@@ -1299,11 +1263,11 @@ function createStoreEngine(
 					"Foreign bytes must enter through applyRemote. A direct Y.applyUpdateV2 on this document would be republished as this device's own work, and is lost entirely when its causal dependencies have not arrived.",
 				);
 			}
-			// A local write through a leaked type rather than a store verb. No
-			// public surface hands out the application document's types since a
-			// row's rich content moved to its own document (ADR-0248), so this is
-			// defense rather than a path: authored bytes reach durable storage
-			// and the outbox rather than silently vanishing.
+			// An application writing through a live type it holds: an editor bound
+			// to a rich field, which is the ordinary path since a row's rich
+			// content came back into this document (ADR-0295). Authored bytes join
+			// the durable queue and the outbox on their own, because no store verb
+			// is going to flush them.
 			//
 			// The notification flush runs in a finally, deliberately: the live
 			// document already holds the change, so the ids are true whatever the
@@ -1315,7 +1279,6 @@ function createStoreEngine(
 				controller.enqueue([
 					{
 						kind: 'append',
-						document: APP_DOCUMENT,
 						id: mintId(),
 						bytes: authored,
 						authoritySeq: authoredSeq(),
@@ -1330,7 +1293,7 @@ function createStoreEngine(
 	// Attach the listener before hydrating, then replay under an origin the
 	// listener ignores, so loading cannot append the same bytes it just read.
 	for (const stored of loaded.updates) {
-		Y.applyUpdateV2(index, copyBytes(stored), hydrationOrigin);
+		Y.applyUpdateV2(database, copyBytes(stored), hydrationOrigin);
 	}
 
 	/**
@@ -1357,26 +1320,29 @@ function createStoreEngine(
 		mutate: () => void,
 		/**
 		 * Ops composed with this commit's appends into ONE atomic batch, built
-		 * after the mutation so they can depend on what it did. Row deletion
-		 * rides here: the scalar removal and the document retirement are one
-		 * durable step (ADR-0248).
+		 * after the mutation so they can depend on what it did.
+		 *
+		 * Nothing passes it today. Row deletion used to: the scalar removal and
+		 * the row document's durable tombstone had to land together, and a
+		 * database is one document now, so a deletion is bytes like any other
+		 * write (ADR-0295). Kept because `transact` composes through the same
+		 * seam and the next fact that needs one atomic batch will want it.
 		 */
 		compose?: () => DurableOp[],
 	): void {
 		if (composedTransaction !== undefined) {
-			index.transact(mutate, localOrigin);
+			database.transact(mutate, localOrigin);
 			composedTransaction.push(...(compose?.() ?? []));
 			return;
 		}
 		pending = [];
-		index.transact(mutate, localOrigin);
+		database.transact(mutate, localOrigin);
 		const authored = pending;
 		pending = [];
 		try {
 			const ops: DurableOp[] = authored.map(
 				(update): DurableOp => ({
 					kind: 'append',
-					document: APP_DOCUMENT,
 					id: mintId(),
 					bytes: update,
 					authoritySeq: authoredSeq(),
@@ -1409,7 +1375,7 @@ function createStoreEngine(
 		let failed = false;
 		let cause: unknown;
 		try {
-			index.transact(() => {
+			database.transact(() => {
 				result = run();
 			}, localOrigin);
 		} catch (error) {
@@ -1425,7 +1391,6 @@ function createStoreEngine(
 			const ops: DurableOp[] = authored.map(
 				(update): DurableOp => ({
 					kind: 'append',
-					document: APP_DOCUMENT,
 					id: mintId(),
 					bytes: update,
 					authoritySeq: authoredSeq(),
@@ -1477,7 +1442,7 @@ function createStoreEngine(
 	 */
 	function createKvHandle(): KvHandle {
 		const table = definition.kv;
-		const root = kvRoot(index);
+		const root = kvRoot(database);
 
 		/**
 		 * How many live subscriptions this handle holds.
@@ -1546,7 +1511,7 @@ function createStoreEngine(
 
 	/** Every row of one table: by id, unvalidated. */
 	function rowsOf(tableName: string): Map<string, JsonObject> {
-		const root = tableRoot(index, tableName);
+		const root = tableRoot(database, tableName);
 		const rows = new Map<string, JsonObject>();
 		for (const rowId of listRowIds(root)) {
 			const payload = readRow(root, rowId);
@@ -1557,7 +1522,7 @@ function createStoreEngine(
 
 	/** The kv root's stored values, unvalidated. */
 	function storedKv(): JsonObject {
-		const root = kvRoot(index);
+		const root = kvRoot(database);
 		const values: JsonObject = {};
 		for (const key of root.attrKeys()) {
 			values[key as string] = root.getAttr(key as never) as JsonValue;
@@ -1583,13 +1548,14 @@ function createStoreEngine(
 	 * Untyped is the point: reaching for this means giving up the lens, and the
 	 * absent row types are what makes that visible at the call site.
 	 *
-	 * Row documents are not here. They are independent Yjs documents at derived
-	 * addresses, not scalars on the index, and an export serializes them through
-	 * the application's own file codec (ADR-0264).
+	 * A row's rich content is not here, and cannot be: a nested `Y.Type` is not
+	 * a JSON value, so no faithful read of stored VALUES can carry one. An
+	 * export reaches it through `content` and the table's own file codec
+	 * (ADR-0296).
 	 */
 	function stored(): StoredData {
 		const tables = new Map<string, ReadonlyMap<string, JsonObject>>();
-		for (const tableName of storedTableNames(index)) {
+		for (const tableName of storedTableNames(database)) {
 			tables.set(tableName, rowsOf(tableName));
 		}
 		return { tables, kv: storedKv() };
@@ -1599,26 +1565,9 @@ function createStoreEngine(
 		tableName: string,
 		table: ParsedTable,
 	): TableHandle {
-		const root = tableRoot(index, tableName);
-		const addressOf = (rowId: string) => ({
-			dataId: definition.id,
-			tableName,
-			rowId,
-		});
-
-		// Store-managed timestamps (ADR-0265). Which ones is the declaration's
-		// answer, resolved at compile: the store stamps `createdAt` once at
-		// create and `updatedAt` on every commit that touches the row, so an
-		// application never writes them by hand.
-		const manages = table.manages;
-		function stamps(mode: 'create' | 'update'): JsonObject {
-			if (!manages.updatedAt && !manages.createdAt) return {};
-			const iso = InstantString.fromDate(new Date(now()));
-			const at: JsonObject = {};
-			if (manages.updatedAt) at.updatedAt = iso;
-			if (mode === 'create' && manages.createdAt) at.createdAt = iso;
-			return at;
-		}
+		const root = tableRoot(database, tableName);
+		/** The rich fields this table declares, minted with every row it creates. */
+		const richFields = table.types;
 
 		/**
 		 * That this table changed, noted for the flush to deliver.
@@ -1631,11 +1580,16 @@ function createStoreEngine(
 		 * (`evidence/delta-names-the-row.test.ts`).
 		 *
 		 * Nothing ever read that name. The one live subscriber, `from-data`'s
-		 * `createSubscriber`, discards the argument, the mirror refuses the
-		 * signal and renders everything, and the future consumer the payload
-		 * was kept for reads `updatedAt` off the index instead (ADR-0278). So
-		 * this notes the table and drops the ids, and the delta test keeps
-		 * standing as evidence that they were there to be had.
+		 * `createSubscriber`, discards the argument, and the mirror refuses the
+		 * signal and renders everything. So this notes the table and drops the
+		 * ids, and the delta test keeps standing as evidence that they were
+		 * there to be had.
+		 *
+		 * It also fires for a rich field's edit, because a nested edit bubbles
+		 * through `changedParentTypes` to the table root (ADR-0295). A list that
+		 * re-renders off this signal therefore re-renders at typing frequency;
+		 * a listener that wants only one field's edits uses `content`'s own
+		 * per-field signal instead.
 		 */
 		function collectTouched(delta: unknown): void {
 			const { attrs } = delta as { attrs?: Record<string, unknown> };
@@ -1689,9 +1643,11 @@ function createStoreEngine(
 			create(fields: JsonObject): Row {
 				assertUsable();
 				const rowId = mintRowId();
-				const at = stamps('create');
-				commit(() => createRow(root, rowId, { ...fields, ...at }));
-				return { id: rowId, ...fields, ...at };
+				// The rich fields are minted in the same transaction (ADR-0295), and
+				// never again: nested types do not converge by name, so a field
+				// minted lazily on two devices would lose one subtree.
+				commit(() => createRow(root, rowId, fields, richFields));
+				return { id: rowId, ...fields };
 			},
 			get(rowId: string): Result<Row | undefined, NonconformingRow> {
 				assertUsable();
@@ -1707,30 +1663,19 @@ function createStoreEngine(
 				// the check and the write are the same read.
 				let written = false;
 				commit(() => {
-					written = updateRow(root, rowId, {
-						...fields,
-						...stamps('update'),
-					});
+					written = updateRow(root, rowId, fields);
 				});
 				if (!written) return StoreError.RowAbsent({ table: tableName, rowId });
 				return Ok(undefined);
 			},
 			delete(rowId: string): void {
 				assertUsable();
-				let removed = false;
-				// One composition point (ADR-0248): the scalar removal's bytes and
-				// the document's durable tombstone join one atomic batch, so no
-				// crash point leaves a deleted row with a live document, and a late
-				// write cannot resurrect the retired address.
-				commit(
-					() => {
-						removed = deleteRow(root, rowId);
-					},
-					() =>
-						removed
-							? [documents.retire(documentAddress(addressOf(rowId)))]
-							: [],
-				);
+				// One removal (ADR-0295). Taking the row's nested type off the root
+				// takes its rich fields with it, so there is no second address to
+				// retire and nothing to compose this write with.
+				commit(() => {
+					deleteRow(root, rowId);
+				});
 			},
 			ids(): string[] {
 				assertUsable();
@@ -1751,30 +1696,37 @@ function createStoreEngine(
 				assertUsable();
 				return readRow(root, rowId);
 			},
-			async openDocument(
-				rowId: string,
-			): Promise<Result<RowDocumentHandle | undefined, DocumentError>> {
+			content(rowId: string): RowContent | undefined {
 				assertUsable();
-				// Row liveness is the table's own composition over the manager:
-				// an absent row is a fact rather than a failure, answered the
-				// same way `get` answers it, and refusing here is what keeps a
-				// deleted or misspelled id from minting an orphan document.
-				if (!hasRow(root, rowId)) return Ok(undefined);
-				// The follow-up a local edit to this document owes its row, built
-				// here where the table is in scope and handed down as a closure, so
-				// the engine never decodes the address back to a row (ADR-0264/0265).
-				const derive = table.document?.derive;
-				return documents.open(
-					documentAddress(addressOf(rowId)),
-					derive !== undefined || manages.updatedAt
-						? deriveOnCommit({
-								derive,
-								managesUpdatedAt: manages.updatedAt,
-								root,
-								rowId,
-							})
-						: undefined,
-				);
+				const types = readRowTypes(root, rowId, richFields);
+				if (types === undefined) return undefined;
+				return {
+					types,
+					subscribe(field: string, listener: () => void): () => void {
+						const type = types[field];
+						if (type === undefined) return () => undefined;
+						// Straight onto the field's own type, so what a listener hears
+						// is an edit to THAT content and nothing else (ADR-0297). A
+						// nested edit does also bubble to the table root, which is what
+						// `subscribe` above reports; this one does not widen to it.
+						//
+						// Noted rather than delivered: the delta fires inside
+						// acceptance, and the notification goes out on the same flush
+						// every other subscriber's does.
+						const onDelta = () => richTouched.add(listener);
+						type.on('delta', onDelta);
+						let stopped = false;
+						return () => {
+							// Idempotent, for the same reason a table subscription is: a
+							// Svelte effect that reruns can call its teardown twice.
+							if (stopped) return;
+							stopped = true;
+							type.off('delta', onDelta);
+							// A stop between the delta and the flush must not deliver.
+							richTouched.delete(listener);
+						};
+					},
+				};
 			},
 			subscribe(listener: () => void): () => void {
 				let listeners = tableListeners.get(tableName);
@@ -1819,64 +1771,30 @@ function createStoreEngine(
 						opts?: { advanceTo?: number },
 					): Result<void, ApplyFailedError> {
 						assertUsable();
-						// Every remote payload is an envelope (ADR-0248): sections for
-						// the application document and for row documents, carried
-						// together through the one connection. A payload that is not an
-						// envelope is refused whole, before anything is accepted.
-						const { data: sections, error: envelopeError } =
-							decodeEnvelope(update);
-						if (envelopeError !== null) {
-							return StoreError.ApplyFailed({ cause: envelopeError });
-						}
-						// The RECEIVED bytes are what gets persisted, never what a document
-						// emitted in response to them. Measured against `@y/y@14.0.0-rc.24`: an
-						// update whose causal dependencies have not arrived is buffered into
-						// `store.pendingStructs`, `applyUpdateV2` returns normally, and the
-						// document emits NO `updateV2` event at all. Persisting emitted bytes
-						// therefore writes nothing, while the caller advances its cursor and the
+						// One document, so one run of bytes (ADR-0295). The envelope that
+						// used to wrap this is gone with the split it multiplexed: there
+						// is nothing left to address, so the payload IS the update.
+						//
+						// The RECEIVED bytes are what gets persisted, never what the
+						// document emitted in response to them. Measured against
+						// `@y/y@14.0.0-rc.24`: an update whose causal dependencies have
+						// not arrived is buffered into `store.pendingStructs`,
+						// `applyUpdateV2` returns normally, and the document emits NO
+						// `updateV2` event at all. Persisting emitted bytes therefore
+						// writes nothing, while the caller advances its cursor and the
 						// data is lost permanently with every layer reporting success.
 						pending = [];
-						const ops: DurableOp[] = [];
-						// A decode refusal is a property of the bytes: nothing already
-						// applied is rolled back (an update is idempotent, so a re-receive
-						// after the refusal re-applies harmlessly), the cursor does not
-						// advance, and the store stays usable.
+						const received = copyBytes(update);
+						// A refusal is a property of the bytes: nothing already applied is
+						// rolled back (an update is idempotent, so a re-receive after the
+						// refusal re-applies harmlessly), the cursor does not advance, and
+						// the store stays usable.
 						const { error } = trySync({
-							try: () => {
-								for (const section of sections) {
-									if (section.document === APP_DOCUMENT) {
-										const received = copyBytes(section.bytes);
-										Y.applyUpdateV2(index, received, remoteOrigin);
-										ops.push({
-											kind: 'append',
-											document: APP_DOCUMENT,
-											id: mintId(),
-											bytes: received,
-											// The position these bytes came FROM. Never owed, and
-											// this is also what moves the durable cursor: it is
-											// read off the appends rather than written beside them,
-											// so it cannot run ahead of them.
-											// Bytes that arrived are never owed, whether or not
-											// the caller knew the position they arrived at.
-											authoritySeq: opts?.advanceTo ?? NO_AUTHORITY,
-										});
-										continue;
-									}
-									// A row document's section: applied live when open,
-									// appended durably either way, dropped whole when the
-									// address was retired (ADR-0248).
-									const op = documents.acceptRemote(
-										section.document,
-										section.bytes,
-										opts?.advanceTo ?? NO_AUTHORITY,
-									);
-									if (op !== undefined) ops.push(op);
-								}
-							},
+							try: () => Y.applyUpdateV2(database, received, remoteOrigin),
 							catch: (cause) => StoreError.ApplyFailed({ cause }),
 						});
 						if (error !== null) return Err(error);
-						// Whatever any document emitted in response is dropped: it
+						// Whatever the document emitted in response is dropped: it
 						// describes the same change the received bytes already carry.
 						pending = [];
 						try {
@@ -1886,25 +1804,30 @@ function createStoreEngine(
 							// durable state can never hold a cursor ahead of the bytes, and
 							// never bytes wearing a fresh install's cursor (ADR-0231,
 							// carried by ADR-0238's whole-queue flush). The LIVE cursor
-							// advances now; the durable one advances when the batch lands,
-							// and a crash before then re-receives, which is free because an
+							// advances now; the durable one is derived from the position
+							// the append carries, so it cannot run ahead of it, and a crash
+							// before the batch lands re-receives, which is free because an
 							// update is idempotent.
-							// Only the LIVE cursor is set here. The durable one is
-							// derived from the positions the appends above carry, so
-							// there is nothing to write and nothing that could be
-							// written ahead of them. An entry whose sections were all
-							// dropped stores nothing and leaves the durable cursor
-							// behind, which re-receives on the next boot: free, because
-							// an update is idempotent.
 							if (opts?.advanceTo !== undefined) {
 								liveCursor = opts.advanceTo;
 							}
-							controller.enqueue(ops);
+							controller.enqueue([
+								{
+									kind: 'append',
+									id: mintId(),
+									bytes: received,
+									// The position these bytes came FROM. Bytes that arrived
+									// are never owed, whether or not the caller knew the
+									// position they arrived at.
+									authoritySeq: opts?.advanceTo ?? NO_AUTHORITY,
+								},
+							]);
 						} finally {
-							// After the enqueue, which is what the ids were buffered for:
-							// the `'delta'` that named them fired inside `applyUpdateV2`
-							// above, mid-acceptance, and delivery waits until acceptance
-							// completes so every listener phase observes one settled commit.
+							// After the enqueue, which is what the touched tables were
+							// buffered for: the `'delta'` naming them fired inside
+							// `applyUpdateV2` above, mid-acceptance, and delivery waits
+							// until acceptance completes so every listener phase observes
+							// one settled commit.
 							flushCommitted();
 						}
 						return Ok(undefined);
@@ -1913,16 +1836,10 @@ function createStoreEngine(
 						localWorkListeners.add(listener);
 						return () => localWorkListeners.delete(listener);
 					},
-					hasUnresolvedDependencies: () => hasPendingStructs(index),
+					hasUnresolvedDependencies: () => hasPendingStructs(database),
 					async encodeSnapshot(): Promise<Uint8Array> {
 						assertUsable();
-						return encodeEnvelope([
-							{
-								document: APP_DOCUMENT,
-								bytes: new Uint8Array(Y.encodeStateAsUpdateV2(index)),
-							},
-							...(await documents.states()),
-						]);
+						return new Uint8Array(Y.encodeStateAsUpdateV2(database));
 					},
 				};
 
@@ -1947,18 +1864,18 @@ function createStoreEngine(
 			// does not declare, and guessing at it would report a number
 			// nobody could act on.
 			for (const tableName of definition.tables.keys()) {
-				liveRows += listRowIds(tableRoot(index, tableName)).length;
+				liveRows += listRowIds(tableRoot(database, tableName)).length;
 			}
-			const items = structCount(index);
+			const items = structCount(database);
 			return {
 				items,
 				liveRows,
 				itemsPerLiveRow: liveRows === 0 ? items : items / liveRows,
 			};
 		},
-		stateVector: () => new Uint8Array(Y.encodeStateVector(index)),
+		stateVector: () => new Uint8Array(Y.encodeStateVector(database)),
 		encodeStateSince: (stateVector?: Uint8Array) =>
-			new Uint8Array(Y.encodeStateAsUpdateV2(index, stateVector)),
+			new Uint8Array(Y.encodeStateAsUpdateV2(database, stateVector)),
 		// Acceptance, retirement, and state enumeration are the engine's to drive.
 		persistence: controller.persistence,
 		async [Symbol.asyncDispose]() {
@@ -1968,8 +1885,7 @@ function createStoreEngine(
 			// Disposal never spins on a blocked engine: closing while blocked is
 			// the accepted loss ADR-0238 makes visible, not a reason to hang.
 			await controller.drain();
-			documents.destroy();
-			index.destroy();
+			database.destroy();
 			await dispose();
 		},
 	};
@@ -1984,13 +1900,7 @@ function createStoreEngine(
 			definition,
 		};
 	}
-	const sync: SyncCapability = Object.freeze({
-		get: (): SyncFacts => ({ document: liveIdentity }),
-		subscribe(listener: () => void): () => void {
-			syncFactsListeners.add(listener);
-			return () => syncFactsListeners.delete(listener);
-		},
-	});
+	const sync: SyncCapability = Object.freeze({ replicates: true as const });
 	syncEngines.set(sync, Object.freeze(syncEngine));
 	return { store: Object.freeze({ ...base, sync }), view, definition };
 
@@ -2009,43 +1919,27 @@ function createStoreEngine(
 					.filter((entry) => entry.id > ackedThrough);
 				const last = entries.at(-1);
 				if (last === undefined) return undefined;
-				// Per document: entries for different documents cannot merge into
-				// one Yjs update, so each document's unsent bytes merge on their
-				// own and the envelope carries one section per document (ADR-0248).
-				const byDocument = new Map<
-					string,
-					{ throughId: number; bytes: Uint8Array[] }
-				>();
-				for (const entry of entries) {
-					const group = byDocument.get(entry.document) ?? {
-						throughId: 0,
-						bytes: [],
-					};
-					group.throughId = Math.max(group.throughId, entry.id);
-					group.bytes.push(entry.bytes);
-					byDocument.set(entry.document, group);
-				}
-				const sections: { document: string; bytes: Uint8Array }[] = [];
-				for (const [document, group] of byDocument) {
-					if (group.bytes.length === 1) {
-						sections.push({
-							document,
-							bytes: group.bytes[0] as Uint8Array,
-						});
-						continue;
-					}
-					const merged = new Uint8Array(
-						Y.mergeUpdatesV2(group.bytes as Uint8Array<ArrayBuffer>[]),
-					);
-					// Merged for the wire and nowhere else. This used to write the
-					// merge back as a durable op, which was the only compaction that
-					// crossed the port boundary while the far larger fold stayed
-					// private to it. It carried no invariant: merging preserves the
-					// highest covered id and is idempotent, so re-merging on the next
-					// pass costs a little work and changes nothing.
-					sections.push({ document, bytes: merged });
-				}
-				return { id: last.id, bytes: encodeEnvelope(sections) };
+				// One document, so one merge (ADR-0295). Every unsent entry belongs
+				// to the same document, so they merge into one update rather than
+				// grouping into an envelope's sections.
+				//
+				// Merged for the wire and nowhere else. This used to write the merge
+				// back as a durable op, which was the only compaction that crossed
+				// the port boundary while the far larger fold stayed private to it.
+				// It carried no invariant: merging preserves the highest covered id
+				// and is idempotent, so re-merging on the next pass costs a little
+				// work and changes nothing.
+				const bytes =
+					entries.length === 1
+						? (entries[0] as OutboxEntry).bytes
+						: new Uint8Array(
+								Y.mergeUpdatesV2(
+									entries.map((entry) =>
+										copyBytes(entry.bytes),
+									) as Uint8Array<ArrayBuffer>[],
+								),
+							);
+				return { id: last.id, bytes };
 			},
 			acknowledge(throughId: number, authoritySeq: number): void {
 				assertUsable();
@@ -2067,48 +1961,6 @@ function createStoreEngine(
 				// always describe the same state. At open, with nothing queued, it
 				// equals the durable cursor, which is what a reconnect dials from.
 				return liveCursor;
-			},
-
-			documentIdentity(): string | undefined {
-				assertUsable();
-				return liveIdentity;
-			},
-			adoptDocumentIdentity(id: string): Result<void, UnstampableError> {
-				assertUsable();
-				// First write wins, so a store that already carries its stamp has
-				// nothing to do; membership changes only by discarding the file.
-				if (liveIdentity !== undefined) return Ok(undefined);
-				// The stamp lands only on an empty, unstamped store, checked here
-				// because this verb owns the invariant: any bytes, pending work,
-				// or read progress without an identity are unplaceable across the
-				// clean break and must be discarded, never stamped into a document
-				// they may not belong to (ADR-0231). The check spans the durable
-				// mirror AND the queue, so work retained behind a blocked flush
-				// still counts as held.
-				if (controller.hasAnyState() || liveCursor > 0) {
-					return StoreError.Unstampable();
-				}
-				liveIdentity = id;
-				// Queued ahead of every append that follows, and the sender reads
-				// only the durable outbox, so no push can leave before the stamp
-				// is durable: a durable outbox entry structurally implies a
-				// durable identity (ADR-0238 closing ADR-0231's window).
-				try {
-					committedSomething = true;
-					controller.enqueue([{ kind: 'identity', id }]);
-				} finally {
-					flushCommitted();
-					// The one fact `sync.get()` reports just changed; the boot gate
-					// that waits on it hears it here. Contained like every listener.
-					for (const listener of [...syncFactsListeners]) {
-						const { error } = trySync({
-							try: listener,
-							catch: (cause) => StoreError.SubscriberThrew({ cause }),
-						});
-						if (error !== null) log.error(error);
-					}
-				}
-				return Ok(undefined);
 			},
 		});
 	}

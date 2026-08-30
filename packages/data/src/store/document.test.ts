@@ -10,7 +10,7 @@ import { describe, expect, test } from 'bun:test';
 import * as Y from '@y/y';
 
 import {
-	createAppDocument,
+	createDatabaseDocument,
 	createRow,
 	deleteRow,
 	hasRow,
@@ -20,7 +20,7 @@ import {
 } from './document.js';
 
 function table(): { document: Y.Doc; notes: Y.Type } {
-	const document = createAppDocument();
+	const document = createDatabaseDocument();
 	return { document, notes: tableRoot(document, 'notes') };
 }
 
@@ -120,8 +120,8 @@ describe('why there is no upsert', () => {
 		// This is the chosen-id door ADR-0216 closed, arriving through an API
 		// shape rather than through an id parameter, which is why the assertion
 		// below is about the invariant and not about a winner.
-		const phone = createAppDocument();
-		const laptop = createAppDocument();
+		const phone = createDatabaseDocument();
+		const laptop = createDatabaseDocument();
 		phone.transact(() =>
 			createRow(tableRoot(phone, 'notes'), 'shared', { fromPhone: 'a' }),
 		);
@@ -144,8 +144,8 @@ describe('why there is no upsert', () => {
 
 	test('the same two devices, each minting its own id, lose nothing', () => {
 		// The control, and the whole of why `create` mints rather than accepts.
-		const phone = createAppDocument();
-		const laptop = createAppDocument();
+		const phone = createDatabaseDocument();
+		const laptop = createDatabaseDocument();
 		phone.transact(() =>
 			createRow(tableRoot(phone, 'notes'), 'phone-1', { fromPhone: 'a' }),
 		);

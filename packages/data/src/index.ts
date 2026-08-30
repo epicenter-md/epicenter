@@ -28,7 +28,6 @@ export type {
 	DataDefinitionJson,
 	JsonObject,
 	JsonValue,
-	RowAddress,
 	RowOf,
 } from './definition/index.js';
 export {
@@ -36,21 +35,10 @@ export {
 	defineData,
 	defineKv,
 	defineTable,
-	documentAddress,
 	field,
 	parseData,
 } from './definition/index.js';
-export type {
-	DocumentError,
-	RowDocumentHandle,
-} from './store/documents.js';
-export {
-	decodeEnvelope,
-	type EnvelopeError,
-	type EnvelopeSection,
-	encodeEnvelope,
-} from './store/envelope.js';
-export { APP_DOCUMENT, SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
+export { SNAPSHOT_FOLD_THRESHOLD } from './store/log.js';
 export type {
 	DurableOp,
 	DurablePort,
@@ -69,16 +57,16 @@ export {
 	type LocalStore,
 	type NonconformingRow,
 	type NonconformingValue,
+	type RichField,
 	type Row,
 	type RowAbsentError,
+	type RowContent,
 	type StoredData,
 	StoreError,
 	type StorePressure,
 	StoreUnusableError,
 	type SyncCapability,
-	type SyncFacts,
 	type TableHandle,
 	type TypedTableHandle,
-	type UnstampableError,
 	type UpdateRowError,
 } from './store/store.js';

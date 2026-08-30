@@ -8,6 +8,7 @@
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0216 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Relates:** [ADR-0212](0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md)
+- **Relates:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) restores this record's shape after ADR-0248 superseded it. This record stays superseded; ADR-0295 carries the decision.
   (the store), [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md)
   (the lens and the application surface),
   [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md)

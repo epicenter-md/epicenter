@@ -1,12 +1,12 @@
 /**
- * The artifact read back: files in, one envelope out (ADR-0267, ADR-0268).
+ * The artifact read back: files in, one document out (ADR-0267, ADR-0268,
+ * ADR-0295).
  *
- * The mirror of `exportStore`, and deliberately the same kind of thing: a
+ * The mirror of `renderArtifact`, and deliberately the same kind of thing: a
  * pure function over the public vocabulary, composed outside the store. It
- * rebuilds the application document from every row file's frontmatter and each
- * row's own document from that file's body through the table's codec, then
- * encodes both halves as one envelope, exactly the shape `encodeSnapshot`
- * produces from a live replica.
+ * rebuilds the database's one Yjs document from every row file, mints each
+ * row with its rich fields, and hands the table's codec the parsed
+ * frontmatter and the body beneath it.
  *
  * Producing bytes rather than writing them is what keeps import honest about
  * where the destruction happens. Replacing a store means discarding its
@@ -15,9 +15,11 @@
  * the address. This function is the half that can be tested by reading its
  * output, and it holds no handle to anything a mistake could destroy.
  *
- * It fails closed, for the same reason the export does: what comes out of here
- * replaces a store, so a file it could not read is a refusal rather than a
- * row quietly left out.
+ * It fails closed, for the same reason the export does not: what comes out of
+ * here replaces a store, so a file it could not read is a refusal rather than
+ * a row quietly left out. `deserialize` runs once per row for every database
+ * that will ever exist, because import is the only way a generation comes
+ * into being (ADR-0293), which is rare in frequency and absolute in role.
  */
 
 import * as Y from '@y/y';
@@ -26,18 +28,18 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 import {
 	type DataDefinition,
-	type DocumentReader,
-	documentAddress,
 	type JsonObject,
+	type ParsedTable,
 	parseData,
 } from '../definition/index.js';
 import {
-	createAppDocument,
+	createDatabaseDocument,
 	createRow,
 	kvRoot,
+	readRowTypes,
 	tableRoot,
+	updateRow,
 } from '../store/document.js';
-import { APP_DOCUMENT } from '../store/log.js';
 import { parseRowFile } from './frontmatter.js';
 import { parseRowPath } from './layout.js';
 
@@ -71,40 +73,62 @@ export const ImportError = defineErrors({
 		table,
 		rowId,
 	}),
-	/** The table's own `deserialize` threw on this body. */
-	BodyUnreadable: ({
+	/** The table's own `deserialize` refused or threw on this file. */
+	RowUnreadable: ({
 		table,
 		rowId,
+		reason,
 		cause,
 	}: {
 		table: string;
 		rowId: string;
-		cause: unknown;
+		reason: string;
+		cause?: unknown;
 	}) => ({
-		message: `The body of '${table}/${rowId}.md' could not be deserialized`,
+		message: `'${table}/${rowId}.md' could not be read into a row: ${reason}`,
 		table,
 		rowId,
+		reason,
 		cause,
+	}),
+	/**
+	 * `deserialize` returned a nested type where a value belongs.
+	 *
+	 * The one half of the codec's contract the platform can enforce at the
+	 * boundary (ADR-0296): scalars are RETURNED and rich fields are FILLED IN
+	 * PLACE. A returned type would be written as a row attribute the store
+	 * never minted, so it is refused rather than admitted.
+	 *
+	 * Field-level conformance is deliberately NOT enforced here. The
+	 * declaration still decides what a row is, and a row it cannot read is
+	 * reported through the existing nonconforming machinery on the first read
+	 * (ADR-0125), never repaired and never hidden. Refusing the import instead
+	 * would make an artifact unreadable by the release that has to fix it.
+	 */
+	RowReturnedType: ({
+		table,
+		rowId,
+		field,
+	}: {
+		table: string;
+		rowId: string;
+		field: string;
+	}) => ({
+		message: `'${table}/${rowId}.md' deserialized '${field}' to a nested type; a rich field is filled in place, not returned`,
+		table,
+		rowId,
+		field,
 	}),
 });
 export type ImportError = InferErrors<typeof ImportError>;
 
-/** One document an artifact carries, ready to be written or uploaded. */
-export type ArtifactDocument = {
-	/** `app`, or a row's derived address. */
-	readonly document: string;
-	/** The document's whole state, as one `updateV2`. */
-	readonly bytes: Uint8Array;
-};
-
 /**
- * Read a whole artifact into the documents that make up a store.
+ * Read a whole artifact into the one document that IS the database.
  *
- * Documents rather than one packed value, because there is nothing left to
- * pack into: a mint uploads them one at a time to their own addresses
- * (ADR-0286), and a local import writes them one at a time into a chain. The
- * envelope this used to return existed to batch several documents into one
- * entry of a positional log, and ADR-0277 deleted the log.
+ * One value, because there is one document (ADR-0295). What this used to
+ * return was a list, because a row's prose was an independent document at a
+ * derived address and a mint uploaded each one separately (ADR-0286); the
+ * addresses are gone and so is the list.
  *
  * Paths are the addressing, as they are on the way out: `kv.json` is the kv
  * root, and every `<table>/<rowId>.md` is one row. A table the definition no
@@ -117,15 +141,13 @@ export type ArtifactDocument = {
 export function readArtifact(
 	files: ReadonlyMap<string, string>,
 	definition: DataDefinition,
-): Result<ArtifactDocument[], ImportError> {
+): Result<Uint8Array, ImportError> {
 	const parsed = parseData(definition);
 	if (parsed.error !== null) {
 		return ImportError.MalformedDefinition({ reason: parsed.error.message });
 	}
-	const dataId = parsed.data.id;
 
-	const app = createAppDocument();
-	const documents: ArtifactDocument[] = [];
+	const database = createDatabaseDocument();
 	try {
 		const kv = files.get('kv.json');
 		if (kv !== undefined) {
@@ -136,8 +158,8 @@ export function readArtifact(
 					reason: 'it is not a JSON object',
 				});
 			}
-			app.transact(() => {
-				const root = kvRoot(app);
+			database.transact(() => {
+				const root = kvRoot(database);
 				for (const [key, value] of Object.entries(values)) {
 					root.setAttr(key as never, value as never);
 				}
@@ -147,65 +169,138 @@ export function readArtifact(
 		for (const [path, text] of files) {
 			const at = parseRowPath(path);
 			if (at === undefined) continue;
-			const row = parseRowFile(text);
-			if (row === undefined) {
+			const file = parseRowFile(text);
+			if (file === undefined) {
 				return ImportError.MalformedFile({
 					path,
 					reason: 'it does not open with a frontmatter block',
 				});
 			}
-			try {
-				app.transact(() => {
-					createRow(tableRoot(app, at.table), at.rowId, row.fields);
-				});
-			} catch (cause) {
-				return ImportError.MalformedFile({
-					path,
-					reason: cause instanceof Error ? cause.message : String(cause),
-				});
-			}
-
-			if (row.body === '') continue;
-			const codec = parsed.data.tables.get(at.table)?.document?.file;
-			if (codec === undefined) {
-				return ImportError.UncodedBody({ table: at.table, rowId: at.rowId });
-			}
-			const body = new Y.Doc({ gc: true });
-			try {
-				codec.deserialize(row.body, body as unknown as DocumentReader);
-				documents.push({
-					document: documentAddress({
-						dataId,
-						tableName: at.table,
-						rowId: at.rowId,
-					}),
-					bytes: new Uint8Array(Y.encodeStateAsUpdateV2(body)),
-				});
-			} catch (cause) {
-				return ImportError.BodyUnreadable({
-					table: at.table,
-					rowId: at.rowId,
-					cause,
-				});
-			} finally {
-				body.destroy();
-			}
+			const table = parsed.data.tables.get(at.table);
+			const { error } = admitRow({
+				database,
+				table,
+				tableName: at.table,
+				rowId: at.rowId,
+				path,
+				data: file.fields,
+				content: file.body,
+			});
+			if (error !== null) return { data: null, error };
 		}
 
-		// The application document leads: a row's document is meaningless
-		// without the row it belongs to, and a mint uploads it LAST for the same
-		// reason read backwards, since it is what makes a generation reachable
-		// (ADR-0286). A consumer that writes in order is safe either way.
-		return Ok([
-			{
-				document: APP_DOCUMENT,
-				bytes: new Uint8Array(Y.encodeStateAsUpdateV2(app)),
-			},
-			...documents,
-		]);
+		return Ok(new Uint8Array(Y.encodeStateAsUpdateV2(database)));
 	} finally {
-		app.destroy();
+		database.destroy();
 	}
+}
+
+/**
+ * Put one file's row into the document.
+ *
+ * Two transactions rather than one, and the split is the engine's rather than
+ * a taste. The row and its rich fields are minted first so the codec is handed
+ * types that are already ATTACHED: a detached `Y.Type` replays one accumulated
+ * prelim delta at `_integrate`, and a Markdown conversion is many sequential
+ * writes, so a codec that built its own type would silently reorder or throw
+ * (ADR-0296). The scalars the codec returns are validated and written second.
+ *
+ * Both land in the same document, so a caller that reads the encoded state
+ * sees one row either way; what a failure between them leaves is a partially
+ * written document this function is about to discard, because the whole read
+ * fails closed.
+ */
+function admitRow({
+	database,
+	table,
+	tableName,
+	rowId,
+	path,
+	data,
+	content,
+}: {
+	database: Y.Doc;
+	table: ParsedTable | undefined;
+	tableName: string;
+	rowId: string;
+	path: string;
+	data: JsonObject;
+	content: string;
+}): Result<void, ImportError> {
+	const root = tableRoot(database, tableName);
+	const codec = table?.file;
+
+	// No codec: the frontmatter IS the row, verbatim. That covers a table this
+	// definition no longer declares (ADR-0240) and a table that declares only
+	// scalars and no codec. A body under either has nowhere to go, and dropping
+	// it is the data loss this refuses.
+	if (codec === undefined) {
+		if (content !== '') {
+			return ImportError.UncodedBody({ table: tableName, rowId });
+		}
+		try {
+			database.transact(() => {
+				createRow(root, rowId, data, table?.types ?? []);
+			});
+		} catch (cause) {
+			return ImportError.MalformedFile({
+				path,
+				reason: cause instanceof Error ? cause.message : String(cause),
+			});
+		}
+		return Ok(undefined);
+	}
+
+	const types = table?.types ?? [];
+	database.transact(() => {
+		createRow(root, rowId, {}, types);
+	});
+	const attached = readRowTypes(root, rowId, types) ?? {};
+
+	let returned: JsonObject;
+	try {
+		const read = codec.deserialize({ data, content }, attached);
+		if (read.error !== null) {
+			return ImportError.RowUnreadable({
+				table: tableName,
+				rowId,
+				reason: read.error.reason,
+				cause: read.error.cause,
+			});
+		}
+		returned = read.data;
+	} catch (cause) {
+		return ImportError.RowUnreadable({
+			table: tableName,
+			rowId,
+			reason: cause instanceof Error ? cause.message : String(cause),
+			cause,
+		});
+	}
+
+	for (const [name, value] of Object.entries(returned)) {
+		if (value instanceof Y.Type) {
+			return ImportError.RowReturnedType({
+				table: tableName,
+				rowId,
+				field: name,
+			});
+		}
+	}
+	try {
+		// Written verbatim, including a key this declaration does not name: the
+		// artifact is the truth here, and a release that stopped naming a field
+		// never meant its data was gone (ADR-0240, ADR-0125).
+		database.transact(() => {
+			updateRow(root, rowId, returned);
+		});
+	} catch (cause) {
+		return ImportError.MalformedFile({
+			path,
+			reason: cause instanceof Error ? cause.message : String(cause),
+		});
+	}
+	return Ok(undefined);
 }
 
 function parseKv(text: string): JsonObject | undefined {

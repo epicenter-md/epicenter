@@ -52,31 +52,28 @@
  * the store's two signals are complete in opposite halves.
  *
  * `onCommitted`, which this listens to, fires for anything committed into the
- * application document by anyone, and a remote apply raises it for a row
- * document's bytes too (`store.ts`, the `applyRemote` arm). It is the complete
- * one, and it names nothing: a pass knows the folder is stale and never which
- * file.
+ * database document by anyone. It is the complete one, and it names nothing: a
+ * pass knows the folder is stale and never which file.
  *
- * `table.subscribe` names the rows a commit touched, and it is the incomplete
- * one. A row's prose lives in its own Yjs document (ADR-0248), so a local body
- * edit reaches a table subscriber only by the derived write the store makes on
- * its behalf, and only when the table declared a `derive` or an instant
- * `updatedAt` for that write to carry (ADR-0264, ADR-0265). A table that
- * declared neither gets no row named on a local body edit at all.
+ * `table.subscribe` names the table a commit touched but not the rows, so it
+ * is the narrower one. It is complete for rich content now that a rich field
+ * is nested on its row (ADR-0295): a body edit bubbles to the table root and
+ * reaches a subscriber whether or not the application derives anything from
+ * it, which it did not before the collapse.
  *
  * So a whole render is not waiting on a signal that does not exist; it is
- * refusing to depend on one whose completeness a third-party declaration
- * decides. It reads what is there.
+ * refusing to depend on one that names a table rather than a row. It reads
+ * what is there.
  *
- * The cost is honest: every pass hydrates every row's document, measured at
- * roughly 71 ms per thousand rows. Rendering only the rows a signal names
- * costs about 0.1 ms, and what it needs is for the store to name the row on a
- * document commit unconditionally, on both the local and the remote arm,
- * rather than as a side effect of a derivation the application opted into.
- * That is the next change, and the manifest is what makes it safe when it
- * lands: a partial content signal would cost one row's contents being stale,
- * and could never lose a deletion or miss a new row, because the manifest is
- * enumerated from current state and depends on no signal.
+ * The cost is honest: every pass re-serializes every row, measured at roughly
+ * 71 ms per thousand rows back when each one also had to hydrate its own
+ * document. Rendering only the rows a signal names costs about 0.1 ms, and
+ * what it needs is for the store to name the row again, which the delta still
+ * carries (`evidence/delta-names-the-row.test.ts`). The manifest is what makes
+ * that safe when it lands: a partial content signal would cost one row's
+ * contents being stale, and could never lose a deletion or miss a new row,
+ * because the manifest is enumerated from current state and depends on no
+ * signal.
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';

@@ -1,7 +1,9 @@
 # 0290. A mint is a foreground job the client owns, and it cannot outlive a page
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-29
+- **Amended by:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) at its per-document completeness precondition, which cannot arise when a database is one document.
+- **Superseded by:** [ADR-0293](0293-a-generation-is-created-by-importing-a-folder-and-the-ledger-row-is-its-existence.md) at the mint upload and publication protocol.
 - **Amends:** [ADR-0286](0286-every-generation-is-minted-from-an-artifact-and-compaction-is-an-export-then-an-import.md) at three points. Its invariant 5 said a `409` means abandon; a resumable mint would also need `409` to mean "skip, already sent", and this refuses resumption so the status keeps one meaning. Its invariant 7's pacing gains an owner and loses a deadline. And its Decision bullet 1 still names ADR-0267's layout (`tables/<table>.json` + `documents/<table>/<row>.<ext>`) where its own invariant 2 names the shipped one; **`<table>/<rowId>.md` plus `kv.json` is correct**, per ADR-0268 and `packages/data/src/artifact/layout.ts`.
 - **Amends:** [ADR-0283](0283-a-generations-collection-is-a-ledger-that-allocates-admits-and-sweeps.md) at two words in its minting paragraph. "The client uploads documents by `PUT`, in parallel and **resumably**" loses the last word, for the reason below. And "a bad mint is a visible ledger row a person deletes" survives only as far as ADR-0287 lets it: there is no `DELETE`, so an abandoned number is inert rather than removable. Its route table is unchanged, and this record calls only `POST` on the collection, `PUT` on a document, and `PUT` on the generation.
 - **Relates:** [ADR-0284](0284-the-application-document-is-an-index-and-a-rows-remaining-fields-live-in-its-own-document.md) (the row ceiling this lands beside), [ADR-0289](0289-the-folder-is-where-a-generation-is-minted-from-not-a-surface-kept-current-for-its-own-sake.md).

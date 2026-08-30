@@ -11,13 +11,12 @@ import { field } from '@epicenter/data/definition';
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineData, parseData } from '@epicenter/data/definition';
+import { defineData, defineTable, parseData } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Logger } from 'wellcrafted/logger';
-import type { Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 
-import { encodeEnvelope } from './envelope.js';
-import { APP_DOCUMENT, createSqliteDurablePort } from './log.js';
+import { createSqliteDurablePort } from './log.js';
 import { createPersistenceController, type DurableOp } from './persistence.js';
 import {
 	createAccountStoreOverPort,
@@ -26,14 +25,25 @@ import {
 } from './store.js';
 
 /** Wrap one application-document update the way the wire carries it. */
-function asEnvelope(bytes: Uint8Array): Uint8Array {
-	return encodeEnvelope([{ document: APP_DOCUMENT, bytes }]);
-}
 
 const database = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.select(['light', 'dark']) },
-	tables: { notes: { fields: { title: field.string() } } },
+	tables: {
+		notes: defineTable({
+			fields: { title: field.string(), editor: field.type() },
+			file: {
+				serialize: (row) => ({
+					data: { title: row.title },
+					content: row.editor.toString(),
+				}),
+				deserialize: (file, types) => {
+					if (file.content !== '') types.editor.insert(0, [file.content]);
+					return Ok({ title: String(file.data.title ?? '') });
+				},
+			},
+		}),
+	},
 });
 
 /** The parsed form the over-port constructors take (ADR-0240). */
@@ -88,8 +98,6 @@ function openFailable() {
 				inner.commit(ops);
 				batches.push([...ops]);
 			},
-			readDocument: (document) => inner.readDocument(document),
-			listDocuments: () => inner.listDocuments(),
 		},
 		loaded: inner.load(),
 		log: silent,
@@ -199,7 +207,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expect(restarted.store.persistence.get()).toBe('saved');
 	});
 
-	test('kv and row-document edits are accepted while blocked, like table writes', async () => {
+	test('kv and rich-field edits are accepted while blocked, like table writes', () => {
 		const replica = openFailable();
 		const made = expectOk(replica.db.tables.notes.create({ title: 'holder' }));
 		replica.gate.failing = true;
@@ -208,14 +216,11 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expectOk(replica.db.kv.update({ theme: 'dark' }));
 		expect(replica.db.kv.get().data?.theme).toBe('dark');
 
-		// A row's document: an editor keeps writing prose while blocked. The
-		// open hydrates from the (empty) chain plus the retained queue, so a
-		// blocked engine never blocks acceptance.
-		const handle = expectOk(
-			await replica.db.tables.notes.openDocument(made.id),
-		);
-		if (handle === undefined) throw new Error('no document');
-		const editor = handle.get('editor', 'text');
+		// A row's rich field: an editor keeps writing prose while blocked. The
+		// type is live on the document the store already holds, so a blocked
+		// engine never blocks acceptance.
+		const editor = replica.db.tables.notes.content(made.id)?.types.editor;
+		if (editor === undefined) throw new Error('the row has no editor');
 		editor.applyDelta(editor.change.insert('typed while blocked') as never);
 		expect(editor.toString()).toContain('typed while blocked');
 
@@ -226,16 +231,10 @@ describe('acceptance is live, durability is a visible debt', () => {
 		replica.gate.failing = false;
 		expectOk(replica.db.tables.notes.create({ title: 'retry trigger' }));
 		expect(replica.store.persistence.get()).toBe('saved');
-		handle[Symbol.dispose]();
 		const restarted = reopen(replica.sqlite);
 		expect(restarted.db.kv.get().data?.theme).toBe('dark');
-		const survived = expectOk(
-			await restarted.db.tables.notes.openDocument(made.id),
-		);
-		expect(survived?.get('editor', 'text').toString()).toContain(
-			'typed while blocked',
-		);
-		survived?.[Symbol.dispose]();
+		const survived = restarted.db.tables.notes.content(made.id)?.types.editor;
+		expect(survived?.toString()).toContain('typed while blocked');
 	});
 
 	test('the status is subscribable, and transitions fire once per change', () => {
@@ -273,8 +272,6 @@ describe('acceptance is live, durability is a visible debt', () => {
 						});
 					});
 				},
-				readDocument: (document) => inner.readDocument(document),
-				listDocuments: () => inner.listDocuments(),
 			},
 			loaded: inner.load(),
 			log: silent,
@@ -347,7 +344,7 @@ describe('sync reads only durable facts', () => {
 	test('a remote update is live at once, and its cursor lands with its bytes', async () => {
 		const author = openFailable();
 		expectOk(author.db.tables.notes.create({ title: 'from the authority' }));
-		const update = asEnvelope(author.store.encodeStateSince());
+		const update = author.store.encodeStateSince();
 
 		const replica = openFailable();
 		replica.gate.failing = true;
@@ -367,27 +364,6 @@ describe('sync reads only durable facts', () => {
 		const restarted = reopen(replica.sqlite);
 		expect(titles(restarted.db)).toEqual(['from the authority']);
 		expect(syncEngineOf(restarted.store).cursor()).toBe(7);
-	});
-
-	test('the identity stamp precedes every push, structurally', async () => {
-		const replica = openFailable();
-		replica.gate.failing = true;
-
-		expectOk(syncEngineOf(replica.store).adoptDocumentIdentity('doc-1'));
-		expect(syncEngineOf(replica.store).documentIdentity()).toBe('doc-1');
-		expectOk(replica.db.tables.notes.create({ title: 'stamped work' }));
-
-		// Nothing is durable, so nothing is sendable: no push can ever leave
-		// before the stamp lands, because the stamp is queued ahead of the
-		// append and the whole queue commits atomically.
-		expect(syncEngineOf(replica.store).coalesce()).toBeUndefined();
-
-		replica.gate.failing = false;
-		await replica.store.persistence.flush();
-
-		expect(syncEngineOf(replica.store).coalesce()?.id).toBe(1);
-		const restarted = reopen(replica.sqlite);
-		expect(syncEngineOf(restarted.store).documentIdentity()).toBe('doc-1');
 	});
 
 	test('an acknowledged entry is not re-offered while its drop is retained', async () => {
@@ -413,7 +389,7 @@ describe('sync reads only durable facts', () => {
 	test('a remote update lost with a blocked close is simply re-received', async () => {
 		const author = openFailable();
 		expectOk(author.db.tables.notes.create({ title: 'from the authority' }));
-		const update = asEnvelope(author.store.encodeStateSince());
+		const update = author.store.encodeStateSince();
 
 		const replica = openFailable();
 		replica.gate.failing = true;
@@ -457,36 +433,6 @@ describe('sync reads only durable facts', () => {
 		const restarted = reopen(replica.sqlite);
 		expect(titles(restarted.db)).toEqual(['authored while blocked', 'sent']);
 	});
-
-	test('the stamp rides ahead of the appends inside one atomic batch', async () => {
-		const replica = openFailable();
-		replica.gate.failing = true;
-		expectOk(syncEngineOf(replica.store).adoptDocumentIdentity('doc-1'));
-		expectOk(replica.db.tables.notes.create({ title: 'stamped work' }));
-
-		replica.gate.failing = false;
-		await replica.store.persistence.flush();
-
-		// The queue's order IS the guarantee: identity strictly before the
-		// append it certifies, in the same all-or-nothing batch.
-		const kinds = replica.batches.at(-1)?.map((op) => op.kind);
-		expect(kinds?.indexOf('identity')).toBeGreaterThanOrEqual(0);
-		expect(kinds?.indexOf('identity')).toBeLessThan(
-			kinds?.indexOf('append') ?? -1,
-		);
-	});
-
-	test('a store that grew only in memory still refuses the stamp', () => {
-		const replica = openFailable();
-		replica.gate.failing = true;
-		expectOk(replica.db.tables.notes.create({ title: 'pre-bootstrap work' }));
-
-		// The work is retained in the queue rather than durable, and it still
-		// counts as held state: stamping over it would entangle unplaceable
-		// bytes with a document they may not belong to (ADR-0231).
-		const refused = syncEngineOf(replica.store).adoptDocumentIdentity('doc-1');
-		expect(refused.error?.name).toBe('Unstampable');
-	});
 });
 
 describe('the controller against an asynchronous engine', () => {
@@ -517,7 +463,6 @@ describe('the controller against an asynchronous engine', () => {
 
 	const append = (id: number): DurableOp => ({
 		kind: 'append',
-		document: 'app',
 		id,
 		bytes: new Uint8Array([id]),
 		authoritySeq: undefined,
@@ -531,8 +476,6 @@ describe('the controller against an asynchronous engine', () => {
 				updates: [],
 				outbox: [],
 				cursor: 0,
-				identity: undefined,
-				tombstones: [],
 				lastId: 0,
 			},
 			log: silent,
@@ -562,8 +505,6 @@ describe('the controller against an asynchronous engine', () => {
 				updates: [],
 				outbox: [],
 				cursor: 0,
-				identity: undefined,
-				tombstones: [],
 				lastId: 0,
 			},
 			log: silent,
