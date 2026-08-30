@@ -21,7 +21,6 @@
  * from and nothing to compare. The document announcement, the bootstrap
  * round-trip, and the retirement arm all went with the question.
  */
-import { Ok, type Result } from 'wellcrafted/result';
 
 import type { SyncAuthority } from './authority.js';
 import {
@@ -74,7 +73,7 @@ export type SyncHub = {
 	 */
 	join(connection: HubConnection): Admission;
 	/** Bytes arrived from a replica. */
-	receive(connection: HubConnection, message: Uint8Array): Result<void, never>;
+	receive(connection: HubConnection, message: Uint8Array): void;
 	leave(connection: HubConnection): void;
 	attached(): number;
 };
@@ -183,13 +182,13 @@ export function createSyncHub({
 
 		receive(connection, message) {
 			const collector = connections.get(connection);
-			if (collector === undefined) return Ok(undefined);
+			if (collector === undefined) return;
 
 			const { data: frame, error } = decodeFrame(message);
-			if (error !== null) return Ok(undefined);
+			if (error !== null) return;
 			if (frame.kind === 'offer')
 				return takeOffer(connection, collector, frame);
-			if (frame.kind !== 'push') return Ok(undefined);
+			if (frame.kind !== 'push') return;
 
 			// The only refusal about CONTENT that survives, and it is about framing
 			// rather than about meaning: a submission that changes its chunk count
@@ -205,9 +204,9 @@ export function createSyncHub({
 						reason: chunkError.reason,
 					}),
 				);
-				return Ok(undefined);
+				return;
 			}
-			if (whole === undefined) return Ok(undefined);
+			if (whole === undefined) return;
 
 			const { data: seq, error: appendError } = authority.append(whole);
 			if (appendError !== null) {
@@ -223,7 +222,7 @@ export function createSyncHub({
 						reason: appendError.message,
 					}),
 				);
-				return Ok(undefined);
+				return;
 			}
 
 			// Anything this connection has not been sent yet goes out BEFORE its
@@ -240,7 +239,7 @@ export function createSyncHub({
 				if (other !== connection) deliver(other);
 			}
 			askForSnapshot(connection);
-			return Ok(undefined);
+			return;
 		},
 	});
 
@@ -265,9 +264,9 @@ export function createSyncHub({
 		connection: HubConnection,
 		collector: ChunkCollector,
 		frame: OfferFrame,
-	): Result<void, never> {
+	): void {
 		const { data: whole, error } = collector.accept(frame);
-		if (error !== null || whole === undefined) return Ok(undefined);
+		if (error !== null || whole === undefined) return;
 
 		// The half of the accept condition only the hub can check, and the half
 		// that separates this from the client-posted baseline an earlier design
@@ -287,7 +286,7 @@ export function createSyncHub({
 					reason: `a snapshot at ${frame.position} came from a connection sent only through ${connection.cursor}`,
 				}),
 			);
-			return Ok(undefined);
+			return;
 		}
 
 		// And the half the authority checks: that this is also the head.
@@ -304,6 +303,6 @@ export function createSyncHub({
 				}),
 			);
 		}
-		return Ok(undefined);
+		return;
 	}
 }
