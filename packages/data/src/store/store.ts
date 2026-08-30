@@ -50,16 +50,16 @@ import type {
 // every caller already name them through this path.
 import { StoreError, StoreUnusableError } from './errors.js';
 import type {
-	AccountDocument,
 	AccountData,
-	LocalData,
+	AccountDocument,
 	DataDocument,
 	DataView,
+	DocumentPressure,
 	KvHandle,
+	LocalData,
 	LocalDocument,
 	Row,
 	StoredData,
-	DocumentPressure,
 	SyncCapability,
 	TableHandle,
 	UntypedDataView,
@@ -67,17 +67,17 @@ import type {
 
 export { StoreError, StoreUnusableError } from './errors.js';
 export type {
-	AccountDocument,
 	AccountData,
+	AccountDocument,
 	BrowserData,
-	LocalData,
 	DataDocument,
 	DataView,
+	DocumentPressure,
 	KvHandle,
+	LocalData,
 	LocalDocument,
 	Row,
 	StoredData,
-	DocumentPressure,
 	SyncCapability,
 	TableHandle,
 	TypedTableHandle,
@@ -1197,46 +1197,41 @@ function createStoreEngine(
 	}
 }
 
-// What Yjs knows and will not say. Both of these reach past the public API into
-// `doc.store`, both have exactly one caller above, and both are pinned by a
-// test, because the field they read is internal and an rc can move it.
+// What Yjs knows and will not say in one word. Both of these read `doc.store`,
+// which is DECLARED and typed in `@y/y`'s shipped types; what is missing is a
+// predicate, not the fields. Both have exactly one caller above.
 
 /**
  * Whether a document is holding updates whose dependencies never arrived.
  *
- * `store.pendingStructs` is internal, and deliberately so: Yjs buffers an
- * update it cannot integrate and returns normally, with no error, no event, and
- * no public reader. It is still the only observable symptom of silent data
- * loss, and Yjs's own test helper asserts on this exact field after sync, so it
- * is read here through one named function rather than reached for in several
- * places. Pinned by a test, because it is internal and an rc can move it.
+ * Yjs buffers an update it cannot integrate and returns normally, with no
+ * error and no event, so `pendingStructs` is the only observable symptom of
+ * silent data loss. Its own test helper asserts on this exact field after
+ * sync.
+ *
+ * `store.pendingStructs` and `store.pendingDs` are public, typed
+ * `null | {...}` on `StructStore`, so this is a plain read and a rename is a
+ * BUILD error rather than a test failure. It used to go through
+ * `as unknown as { store?: { pendingStructs?: unknown } }`, which is what made
+ * a pinning test necessary: the cast accepted a document with no `store` at
+ * all and answered "nothing pending" for it.
  */
 function hasPendingStructs(document: Y.Doc): boolean {
-	const store = (
-		document as unknown as {
-			store?: { pendingStructs?: unknown; pendingDs?: unknown };
-		}
-	).store;
 	return (
-		(store?.pendingStructs ?? null) !== null ||
-		(store?.pendingDs ?? null) !== null
+		document.store.pendingStructs !== null || document.store.pendingDs !== null
 	);
 }
 
 /**
  * Structs the engine is holding.
  *
- * Reads the same internal `store.clients` the memory benches count, and for the
- * same reason: there is no public reader, and the number is the one memory
- * actually tracks. Pinned by a test, because an rc can move it.
+ * `store.clients` is the same map the memory benches count, and the number is
+ * the one memory actually tracks. Public and typed, like the fields above.
  */
 function structCount(document: Y.Doc): number {
-	const clients = (
-		document as unknown as {
-			store?: { clients?: Map<number, { length: number }[]> };
-		}
-	).store?.clients;
 	let total = 0;
-	for (const structs of clients?.values() ?? []) total += structs.length;
+	for (const structs of document.store.clients.values()) {
+		total += structs.length;
+	}
 	return total;
 }

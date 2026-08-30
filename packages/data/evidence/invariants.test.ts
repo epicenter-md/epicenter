@@ -272,17 +272,6 @@ describe('delivery: what the transport must guarantee', () => {
 		expect(attrs(replica.get('notes'))).toEqual({ a: 1, b: 2 });
 	});
 
-	test('the internal field the store reads still exists', () => {
-		// Pinned separately, because `hasUnresolvedDependencies()` reads an
-		// internal that no public API replaces. If this moves, that reader is
-		// silently always-false, which is worse than it throwing.
-		const doc = new Y.Doc({ gc: true });
-		const store = (doc as unknown as { store?: Record<string, unknown> }).store;
-		expect(store).toBeDefined();
-		expect('pendingStructs' in (store ?? {})).toBe(true);
-		expect('pendingDs' in (store ?? {})).toBe(true);
-	});
-
 	test('updates are idempotent, so duplicate delivery is free', () => {
 		const origin = new Y.Doc({ gc: true });
 		origin.transact(() =>
@@ -463,23 +452,12 @@ describe('claims a record got wrong, kept so they stay wrong', () => {
 		const replica = new Y.Doc({ gc: true });
 		Y.applyUpdateV2(replica, Y.encodeStateAsUpdateV2(origin));
 
-		const named = replica.get('editor', 'text') as unknown as {
-			name?: unknown;
-		};
-		expect(named.name ?? null).toBeNull();
+		expect(replica.get('editor', 'text').name ?? null).toBeNull();
 	});
 });
 
 function pendingOf(doc: Y.Doc): boolean {
-	const store = (
-		doc as unknown as {
-			store?: { pendingStructs?: unknown; pendingDs?: unknown };
-		}
-	).store;
-	return (
-		(store?.pendingStructs ?? null) !== null ||
-		(store?.pendingDs ?? null) !== null
-	);
+	return doc.store.pendingStructs !== null || doc.store.pendingDs !== null;
 }
 
 function permutations<T>(items: readonly T[]): T[][] {

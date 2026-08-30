@@ -108,13 +108,13 @@ export function kvRoot(document: Y.Doc): Y.Type {
  * misspelled table name would cost a permanent root.
  */
 function rowType(root: Y.Type, rowId: string): RowType | undefined {
-	// The one cast in this file, and the reason it cannot be typed away. A
-	// `DeltaConf`'s `attrs` values must be `Fingerprintable`, and a nested
-	// `Y.Type` is not one, so the table root's shape — attributes that are
-	// themselves types — is not expressible in the library's attribute typing.
-	// A row's shape IS expressible, which is why `RowType` exists and why
-	// everything downstream of here needs no cast at all.
-	const value = root.getAttr(rowId as never) as unknown;
+	// A table root stays at the library's default configuration, so its keys are
+	// `string` and this is a plain read. It cannot be configured further: a
+	// `DeltaConf`'s `attrs` values must be `Fingerprintable` and a nested
+	// `Y.Type` is not one, so a container whose attributes are themselves types
+	// has no expressible shape. A ROW's does, which is why `RowType` exists and
+	// why the value is narrowed here rather than asserted.
+	const value: unknown = root.getAttr(rowId);
 	return value instanceof Y.Type ? (value as RowType) : undefined;
 }
 
@@ -335,7 +335,7 @@ export function updateRow(
  */
 function mintRow(root: Y.Type, rowId: string): RowType {
 	const row = new Y.Type() as RowType;
-	root.setAttr(rowId as never, row as never);
+	root.setAttr(rowId, row);
 	return row;
 }
 
