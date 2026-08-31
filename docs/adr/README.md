@@ -383,4 +383,5 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0299](0299-a-row-is-its-scalars-and-one-content-node.md) | A row is its scalars and one content node | Accepted (supersedes 0296 at the codec's signature; amends 0295) |
 | [0300](0300-accepted-edits-are-live-immediately-and-persistence-and-sync-are-best-effort.md) | Accepted edits are live immediately, and persistence and sync are best-effort | Accepted (amends 0238; relates to 0298 and 0110) |
 
+| [0301](0301-owed-updates-collapse-into-one-resendable-row-and-the-fold-stops-asking-whether-a-store-syncs.md) | Owed updates collapse into one resendable row, and the fold stops asking whether a store syncs | Accepted (amends 0239 and 0298; unbuilt) |
 When you add an ADR, add its row here.
