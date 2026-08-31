@@ -33,12 +33,14 @@ export const EPICENTER_BUNDLE_IDENTIFIER = 'so.epicenter';
 /**
  * The one grammar for an app id, shared with catalog admission.
  *
- * An app id names a place, and two issuers name into that one space: admission
- * issues one when it accepts a folder. For an admitted app, that id is the
- * reverse-domain data id the folder declares (ADR-0210); the composition
- * root also issues ids for the engines it composes. The grammar has one
- * definition because those ids share one identifier space; a second copy of this
- * pattern is how they would drift apart.
+ * An app id names an application surface and its application-owned data root,
+ * and two issuers name into that one space: admission issues one when it
+ * accepts a folder, while the composition root issues ids for the engines it
+ * composes. An admitted app commonly uses the same reverse-domain value for
+ * its default data id (ADR-0210), but application identity and data identity
+ * remain separate concepts at the data and sync boundaries. The grammar has
+ * one definition because application roots share one identifier space; a
+ * second copy of this pattern is how they would drift apart.
  *
  * Dots are admitted because an admitted app's id *is* its reverse-domain
  * data id, and bare labels stay legal so the composed ids (`local-mail`,

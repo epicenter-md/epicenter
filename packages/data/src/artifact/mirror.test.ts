@@ -272,7 +272,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		await using data = await openMemory(store);
 		data.tables.notes.create({ title: 'still here' });
 		const { manifests, sink } = recordingSink();
-		const broken = { ...store, id: 'Not A Database Id' } as never;
+		const broken = { ...store, id: 'Not A Data Id' } as never;
 		await using _mirror = attachMirror({
 			data,
 			definition: broken,

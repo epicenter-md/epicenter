@@ -1,7 +1,7 @@
 /**
  * The durable names a database declares, and what makes each one admissible.
  *
- * A database id, a table name and a row id: three grammars and their byte
+ * A data id, a table name and a row id: three grammars and their byte
  * ceilings. There is no address TYPE here any more. A row used to own an
  * independent Yjs document at a derived `{dataId}/{tableName}/{rowId}` string,
  * and the structured `RowAddress` existed to compose it (ADR-0160, ADR-0164,
@@ -18,7 +18,7 @@
  * operation and no alias.
  */
 
-/** Reverse-domain database id: two or more lowercase, dot-separated labels. */
+/** Reverse-domain data id: two or more lowercase, dot-separated labels. */
 const DATA_ID_PATTERN =
 	'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$';
 /** A durable table name: one bare SQL identifier, so a mount needs no quoting. */
@@ -119,8 +119,8 @@ function utf8ByteLength(value: string): number {
 	return bytes;
 }
 
-/** Whether a durable database id is well formed and within its ceiling. */
-export function isDatabaseId(
+/** Whether a durable data id is well formed and within its ceiling. */
+export function isDataId(
 	value: string,
 	ceilings: AddressByteCeilings,
 ): boolean {

@@ -34,18 +34,18 @@ export type BlobR2Key = `principals/${string}/blobs/${string}`;
 export type BlobPrincipalPrefix = `principals/${string}/blobs/`;
 
 /**
- * Durable Object name template for one partition's store of one application.
+ * Durable Object name template for one partition's store of one data domain.
  *
  * One Durable Object per `(principalId, dataId)` rather than per principal,
- * because ADR-0215 makes an application ONE document and the authority's log is
- * that document's: two applications sharing a log would interleave positions
+ * because ADR-0215 makes one data domain ONE document and the authority's log
+ * is that document's: two data domains sharing a log would interleave positions
  * neither could read past. The `principalId` segment is the partition, so a
- * client that names another application's id still lands inside its OWN
- * partition.
+ * client that names another data id still lands inside its OWN partition.
  *
- * The application is named by its `dataId`, which is the same identifier the
- * replica derives its local storage from, so the two halves of one application
- * cannot come to disagree about which application they are.
+ * The `dataId` is the durable data domain's identity and is the same identifier
+ * the replica derives its local storage from. An application's default data id
+ * commonly matches its application id, but the store does not require that
+ * relationship and can be opened by another application.
  *
  * The resource segment is `data` rather than `stores` (ADR-0276). A store is the
  * runtime object a client holds; what is addressed here is one data definition,

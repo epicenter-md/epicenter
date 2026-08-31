@@ -22,7 +22,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 import {
 	DATA_ADDRESS_CEILINGS,
-	isDatabaseId,
+	isDataId,
 	isTableName,
 } from './addresses.js';
 import { canonicalJson } from './canonical.js';
@@ -154,7 +154,7 @@ function compileDefinition(
 			reason: 'it is not a plain object',
 		});
 	const { id, title, kv, tables } = value as Partial<DataDefinition>;
-	if (typeof id !== 'string' || !isDatabaseId(id, DATA_ADDRESS_CEILINGS)) {
+	if (typeof id !== 'string' || !isDataId(id, DATA_ADDRESS_CEILINGS)) {
 		return DataDefinitionParseError.Malformed({
 			reason: 'it declares an invalid id',
 		});

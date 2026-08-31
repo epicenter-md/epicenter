@@ -94,7 +94,7 @@ export type AppCatalog = {
  * Derive the trusted app catalog from validated build output: one directory
  * per app below `catalogRoot`. The catalog is generated, never authored. A
  * missing root is an empty catalog; an entry that breaks the output contract
- * (a missing `index.html`, a missing or invalid `database.json`, a database id a
+ * (a missing `index.html`, a missing or invalid `database.json`, a data id a
  * sibling already claimed, or a root that escapes the catalog directory) is not
  * a catalog member.
  *
@@ -152,7 +152,7 @@ export async function deriveAppCatalog(
 		if (database === null) continue;
 
 		// The directory this arrived in is not an identity (ADR-0210), so two
-		// directories may declare one database id. The
+		// directories may declare one data id. The
 		// filesystem used to refuse that by refusing two directories with one
 		// name; now the first declaration wins and the second is not a member,
 		// which `promoteAppCatalogCandidate` turns into a refused promotion.

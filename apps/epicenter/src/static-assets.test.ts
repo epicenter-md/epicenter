@@ -95,7 +95,7 @@ async function derive(root: string): Promise<AppCatalog> {
 
 // The app-id grammar itself lives in `@epicenter/constants/app-data` and is
 // tested there: an id names a served route and a directory, and one grammar is
-// what keeps those from being two database ids (ADR-0201).
+// what keeps those from being two data ids (ADR-0201).
 
 describe('deriveAppCatalog', () => {
 	test('missing catalog root derives an empty catalog', async () => {
@@ -107,7 +107,7 @@ describe('deriveAppCatalog', () => {
 		const root = tempDir('epicenter-catalog-');
 		writeApp(root, 'so.test.zeta');
 		writeApp(root, 'so.test.alpha');
-		// A bare label is not a database id, which is also why no built-in
+		// A bare label is not a data id, which is also why no built-in
 		// built-in app id can ever be claimed here (ADR-0210).
 		writeApp(root, 'whispering');
 		writeApp(root, 'so.test.baddeclaration', { declaration: '{ not json' });
@@ -141,7 +141,7 @@ describe('deriveAppCatalog', () => {
 		]);
 	});
 
-	test('two directories declaring one database id yield one member', async () => {
+	test('two directories declaring one data id yield one member', async () => {
 		const root = tempDir('epicenter-catalog-');
 		writeApp(root, 'first', {
 			declaration: { id: 'so.test.twin', tables: {} },

@@ -32,7 +32,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { COMPOSED_APP_IDS } from '@epicenter/constants/app-data';
-import { DATA_ADDRESS_CEILINGS, isDatabaseId } from '@epicenter/data/definition';
+import { DATA_ADDRESS_CEILINGS, isDataId } from '@epicenter/data/definition';
 import {
 	loadActiveAppCatalog,
 	promoteAppCatalogCandidate,
@@ -202,7 +202,7 @@ describe('promoteAppCatalogCandidate', () => {
 		mkdirSync(join(noIndex, 'no-index'));
 
 		// A declaration that is not well-formed, and one whose id is a bare
-		// label. Both are the same refusal now: an id is a database id (ADR-0210).
+		// label. Both are the same refusal now: an id is a data id (ADR-0210).
 		const notADeclaration = tempDir('epicenter-candidate-');
 		writeApp(notADeclaration, 'so.test.broken', { declaration: '{ not json' });
 
@@ -245,7 +245,7 @@ describe('promoteAppCatalogCandidate', () => {
 		expect(generations).toHaveLength(1);
 	});
 
-	test('an id the host already spent cannot be claimed, because it is not a database id', async () => {
+	test('an id the host already spent cannot be claimed, because it is not a data id', async () => {
 		// An app id names a place under the one data root, and every trusted app
 		// has one (ADR-0201). A second claimant on the directory holding Local
 		// Mail's credentials and its undelivered intent used to be refused by a
@@ -260,7 +260,7 @@ describe('promoteAppCatalogCandidate', () => {
 			'whispering',
 			'honeycrisp',
 		]) {
-			expect(isDatabaseId(id, DATA_ADDRESS_CEILINGS)).toBe(false);
+			expect(isDataId(id, DATA_ADDRESS_CEILINGS)).toBe(false);
 			await expect(
 				promoteAppCatalogCandidate(
 					root,
@@ -271,7 +271,7 @@ describe('promoteAppCatalogCandidate', () => {
 		expect((await load(root)).apps).toEqual([]);
 	});
 
-	test('two folders declaring one database id admit neither', async () => {
+	test('two folders declaring one data id admit neither', async () => {
 		// The filesystem used to make this check for us by refusing two
 		// directories with one name. Folder names mean nothing now.
 		const root = tempDir('epicenter-catalog-root-');

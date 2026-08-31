@@ -33,6 +33,17 @@ declaration as `data.definition`. `data` owns the physical capability at
 therefore use `await using data` for the lifecycle, while integrations use
 `data.store` for pressure, persistence, sync, and commit observation.
 
+An application identity and a data identity are separate concepts. The
+application identity names a launchable or otherwise distributable application;
+the data identity names a durable data domain that can be opened, synced,
+exported, or interpreted by one or more applications. Most applications have
+one default data domain, and conventionally use the same stable reverse-domain
+string for both identities. That equality is a default composition, not a
+requirement of `defineData`. An application may open another application's data
+domain or more than one data domain, and a data domain may have more than one
+client. Separate data ids represent separate durable worlds, not internal
+partitions such as an archive table.
+
 SQL follows the opened data and reads its definition from `data.definition`:
 `createSqliteProjection({ data, sqlite })`. The projection does not accept a
 second definition argument that could disagree with the opened data.

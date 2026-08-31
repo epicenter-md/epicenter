@@ -1761,7 +1761,7 @@ describe('mirror routes (ADR-0271)', () => {
 		}
 	});
 
-	test('a place or a database id the render never produces is refused', async () => {
+	test('a place or a data id the render never produces is refused', async () => {
 		const folderRoot = mkdtempSync(join(tmpdir(), 'mirror-route-test-'));
 		const previousRoot = process.env.EPICENTER_FOLDER_DIR;
 		process.env.EPICENTER_FOLDER_DIR = folderRoot;

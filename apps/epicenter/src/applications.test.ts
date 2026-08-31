@@ -21,7 +21,7 @@ function catalogOf(...members: { id: string; title: string }[]): AppCatalog {
 					id,
 					title,
 					page: '<!doctype html><html></html>',
-					// An id is the database id its declaration declared (ADR-0210), which is
+					// An id is the data id its declaration declared (ADR-0210), which is
 					// the only thing admission keeps: the compiled declaration itself is not
 					// carried past it, because the host reads nobody's rows.
 					directory: id,

@@ -141,7 +141,7 @@ export type DeclaredMark = { readonly [DECLARED]: true };
 /** A table declaration that went through `defineTable`. */
 export type DeclaredTable = TableDeclaration & DeclaredMark;
 
-/** One application's complete, inert data definition. */
+/** One durable data domain's complete, inert definition. */
 export type DataDefinition = {
 	readonly id: string;
 	readonly title?: string;

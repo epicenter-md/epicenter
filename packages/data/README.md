@@ -285,10 +285,16 @@ rather than an array splice that races.
 
 ## The data definition
 
-A data definition is one application's complete declaration of its durable data
-domain: closed JSON field descriptors, with no storage or lifecycle
+A data definition is one durable data domain's complete declaration: closed JSON
+field descriptors, with no storage or lifecycle
 (ADR-0213, ADR-0240). It never migrates user data (ADR-0125). A newer release
 ships a newer definition and reads the same durable data through it.
+
+The definition's `id` is the data domain's stable reverse-domain identifier.
+An application commonly uses its own application identifier for this value when
+it owns one default data domain, but the two identities are not required to be
+equal. One application may open several data domains, and a data domain may be
+opened by several applications or tools.
 
 ```ts
 import { defineData, defineTable, field, plainText } from '@epicenter/data/definition';

@@ -43,7 +43,7 @@ test('a place that is not one of the two is refused', () => {
 	expect(folder('..', APP)).toBeUndefined();
 });
 
-test('a database id that could not name an app directory is refused', () => {
+test('a data id that could not name an app directory is refused', () => {
 	expect(folder('local', '..')).toBeUndefined();
 	expect(folder('local', '.')).toBeUndefined();
 	expect(folder('local', '')).toBeUndefined();

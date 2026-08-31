@@ -13,7 +13,7 @@
  * to ask. Being signed in on two devices IS the sharing model.
  *
  * One door, one partition rule. Store synchronization is a WebSocket upgrade
- * addressed by the application id and the authenticated principal.
+ * addressed by the data id and the authenticated principal.
  */
 import {
 	DATA_ID,

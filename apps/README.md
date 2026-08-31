@@ -14,11 +14,15 @@ data.
 
 ## How a surface is put together
 
-An application declares one inert data definition and opens its own store through it:
+An application declares one inert default data definition and opens its own
+store through it. The application ID and the definition's data ID usually use
+the same reverse-domain string, but they are separate concepts: an application
+can open another data domain, and a data domain can be opened by another
+application or tool.
 
 ```txt
 defineData({ id, title, kv, tables })
-  pure JSON: no storage, no network, no framework
+  pure JSON: one durable data domain; no storage, network, or framework
 
 openDatabase(definition, { generation, account? })
   sqlite-wasm in the page, three durable relations in IndexedDB,

@@ -59,13 +59,13 @@ export const LOCAL_BLOB_ROUTE = {
 /**
  * One pass of the `~/Epicenter` mirror (ADR-0271).
  *
- * A place and a database name a folder, and nothing below that appears in the
+ * A place and a data id name a folder, and nothing below that appears in the
  * URL: a pass carries its files and its manifest in an NDJSON body, so there
  * is no per-file path to route, capture, or validate. That is what the earlier
  * per-file design cost, and it cost it silently: Hono routes a bare `*` but
  * captures nothing under it, so every write arrived with an empty path.
  *
- * The host takes the database id from the caller and does not verify that the
+ * The host takes the data id from the caller and does not verify that the
  * caller owns it, which is the trust model rather than a gap in it: ADR-0118
  * decided that every SPA on this origin is fully trusted and that "workspace
  * ids and database names separate their data logically, not as a sandbox or

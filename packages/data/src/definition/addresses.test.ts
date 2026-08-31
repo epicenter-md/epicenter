@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
 	DATA_ADDRESS_CEILINGS,
-	isDatabaseId,
+	isDataId,
 	isRowId,
 	isTableName,
 } from './addresses.js';
@@ -28,11 +28,11 @@ describe('the durable name grammars (ADR-0206)', () => {
 		expect(isTableName('notes', DATA_ADDRESS_CEILINGS)).toBe(true);
 	});
 
-	test('a database id is reverse-domain', () => {
+	test('a data id is reverse-domain', () => {
 		for (const bad of ['honeycrisp', 'a/b.example', 'So.Example', '']) {
-			expect(isDatabaseId(bad, DATA_ADDRESS_CEILINGS)).toBe(false);
+			expect(isDataId(bad, DATA_ADDRESS_CEILINGS)).toBe(false);
 		}
-		expect(isDatabaseId('so.epicenter.honeycrisp', DATA_ADDRESS_CEILINGS)).toBe(
+		expect(isDataId('so.epicenter.honeycrisp', DATA_ADDRESS_CEILINGS)).toBe(
 			true,
 		);
 	});

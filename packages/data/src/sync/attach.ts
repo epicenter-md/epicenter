@@ -11,7 +11,7 @@
  * It lives beside the driver rather than in the app that first wrote it,
  * because the classification is correctness rather than taste: getting
  * "permanent" wrong spins a backoff against a refusal forever, or gives up on
- * a network blip. What an application actually varies is its database id.
+ * a network blip. What an application actually varies is the data id it opens.
  *
  * The credential model arrives as a two-member port, not as an `AuthClient`.
  * That keeps this file MIT alongside the rest of the store, and an
@@ -45,7 +45,7 @@ export type StoreSocketTransport = {
 export type AttachStoreSyncOptions = {
 	/** The open account replica this connection carries. */
 	store: AddressedDocument;
-	/** The database id being synced, which addresses the authority. */
+	/** The data id being synced, which addresses the authority. */
 	dataId: string;
 	/**
 	 * The exact generation being synced, which addresses it with the id.

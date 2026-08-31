@@ -10,7 +10,7 @@ composition to read first.
 
 ## The store authority
 
-An application's store syncs to one Durable Object per
+One data domain's store syncs to one Durable Object per
 `(principalId, dataId, generation)`, named
 `principals/<principalId>/data/<dataId>/generations/<generation>` (ADR-0292,
 ADR-0298). Being signed in
