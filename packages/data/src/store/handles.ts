@@ -28,28 +28,28 @@ import type { NonconformingRow, RowAbsentError } from './errors.js';
 import type { PersistenceCapability } from './persistence.js';
 
 /**
- * One row, as an application reads it: the id, the scalar snapshots, and the
+ * One row, as an application reads it: the id, the value snapshots, and the
  * live `content` node.
  *
  * The row's `content` node is here rather than behind a second verb
- * (ADR-0299). `readRow` reads the scalar snapshot and `readRowContent` reads
+ * (ADR-0299). `readRow` reads the value snapshot and `readRowContent` reads
  * the live node before the handle hands one flat object to the caller.
  *
  * **The two halves have different lifetimes, and that is forced rather than
- * chosen.** A scalar is a snapshot: it was copied out of the document when you
+ * chosen.** A value is a snapshot: it was copied out of the document when you
  * read, and a later commit does not change it. The content node is a reference: it
  * IS the container in the document, so an edit through it is an edit to the
  * store, and a peer's edit shows up in it without anyone re-reading.
  *
  * Neither could be the other. Copying a `Y.Type` out would break the merge that
- * makes it worth having, and a scalar has nothing to reference: it is a JSON
+ * makes it worth having, and a value has nothing to reference: it is a JSON
  * value on a map, not an object. So a row is half snapshot and half handle,
  * and which half a field is, its declared kind already says.
  *
  * What keeps that liveable is that reads are cheap and reactive. `get` walks a
  * document already in memory, and `fromData` re-runs a `$derived` on any commit
  * that touches the table, so a surface re-reads rather than holding. Holding a
- * destructured scalar across a commit is the one way to be surprised, and it is
+ * destructured value across a commit is the one way to be surprised, and it is
  * the same way it always was.
  */
 export type Row = { id: string } & Record<string, JsonValue | Y.Type>;
@@ -82,7 +82,7 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 * The type must not already belong to a document. Two rows given one type
 	 * share one body, silently; `createRow` refuses rather than allowing it.
 	 *
-	 * The return is the row `get` would give you: the id, the scalars, and the
+	 * The return is the row `get` would give you: the id, the values, and the
 	 * INTEGRATED content node. Read back rather than echoed, because a node you passed
 	 * in was detached and reads as empty until it is integrated here, and one
 	 * you omitted was minted for you.
@@ -127,7 +127,7 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 * Take one row off the table, its content node and all (ADR-0295).
 	 *
 	 * One removal in one document. Deleting the row's nested type reclaims
-	 * every scalar attribute and the content node's subtree with it, so there
+	 * every value attribute and the content node's subtree with it, so there
 	 * is no second address to retire and no crash point between two halves.
 	 *
 	 * Returns nothing: deleting an address that holds no row is a no-op fact
@@ -168,7 +168,7 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	readonly nonconforming: NonconformingRow[];
 	/**
 	 * Hear when this table's SHAPE changes: a row added, a row removed, or a
-	 * row's scalars edited.
+	 * row's values edited.
 	 *
 	 * NOT an edit inside a row's content node. The content node is nested on its row
 	 * (ADR-0295), so counting it here would wake every list in the application
@@ -370,9 +370,16 @@ export type KvHandle<TValues = JsonObject> = {
 	 * One key's value, or nothing.
 	 *
 	 * The same read law a table's `get` follows, and now the same shape:
-	 * `undefined` covers both "never written" and "written as something this
-	 * declaration cannot read". Conformance is per KEY, so one unreadable
-	 * setting costs that setting and not the object around it.
+	 * `undefined` covers "never written", "written as something this
+	 * declaration cannot read", and "not a key this declaration names". A
+	 * caller falls back the same way for all three, which is why they are not
+	 * told apart.
+	 *
+	 * One key's work, not the object's. It reads that attribute and checks it
+	 * against that field, so conformance is per KEY in the work as well as in
+	 * the answer: one unreadable setting costs that setting and not the object
+	 * around it. `nonconforming` is the verb that conforms everything, because
+	 * reporting every key it cannot read is what it is for.
 	 *
 	 * It used to return the whole object as a `Result`, with the diagnostic
 	 * carrying whatever conformed, and both consumers wrote the same recovery
@@ -513,7 +520,7 @@ export type DataDocument = {
 	 */
 	stored(): StoredData;
 	/**
-	 * One row exactly as the exporter needs it: every stored scalar, and the
+	 * One row exactly as the exporter needs it: every stored value, and the
 	 * the live content node beside them.
 	 *
 	 * The narrow form of `stored()`, and the artifact layer's only per-row read.

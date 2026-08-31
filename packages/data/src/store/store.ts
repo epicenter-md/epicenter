@@ -579,7 +579,7 @@ function createStoreEngine(
 		// three (ADR-0187's superset, drawn as tightly as the document allows):
 		//
 		//   the table root    a row was added or removed
-		//   a row             one of its scalars changed
+		//   a row             one of its values changed
 		//   deeper            a row's content node. NOT a table event.
 		//
 		// The third line is the whole point. A row's content node is nested on the
@@ -907,7 +907,7 @@ function createStoreEngine(
 			return { tables, kv: storedKv() };
 		},
 		/**
-		 * One row as the exporter reads it: faithful scalars and its live content node.
+		 * One row as the exporter reads it: faithful values and its live content node.
 		 *
 		 * Deliberately not through a table handle. `readRow` returns every
 		 * stored key including ones this release no longer declares, and no
@@ -1111,12 +1111,25 @@ function createStoreEngine(
 		const handle: KvHandle = {
 			get(key: string) {
 				assertUsable();
-				const { conforming, issues } = readBack();
+				// One key, checked against one declared field. This used to read
+				// every stored key, conform the whole object, and then serve one
+				// value out of the result, which made the signature describe work
+				// it was not doing: `get(key)` promised a key and cost the object.
+				//
 				// A key the declaration refused is absent here, exactly as a key
-				// nobody ever wrote is. The caller falls back the same way for both,
-				// which is why the two are not told apart.
-				if (issues.some((issue) => issue.field === key)) return undefined;
-				return conforming[key];
+				// nobody ever wrote is, and a key the declaration does not name is
+				// absent for a third reason. The caller falls back the same way for
+				// all three, which is why they are not told apart.
+				//
+				// `nonconforming` still conforms the whole object, because that is
+				// what it reports: every declared key this release cannot read.
+				const field = table.fields.get(key);
+				if (field === undefined) return undefined;
+				const value = kvRoot(database).getAttr(key as never) as
+					| JsonValue
+					| undefined;
+				if (value === undefined || !field.check(value)) return undefined;
+				return value;
 			},
 			get nonconforming(): ConformanceIssue[] {
 				assertUsable();
@@ -1198,7 +1211,7 @@ function createStoreEngine(
 					});
 		}
 
-		/** One row as an application reads it: the scalars, and the live node. */
+		/** One row as an application reads it: the values, and the live node. */
 		function withContent(row: Row): Row {
 			const content = readRowContent(root, row.id);
 			if (content === undefined) {
@@ -1280,7 +1293,7 @@ function createStoreEngine(
 			},
 			/**
 			 * Hear that this table's SHAPE changed: a row added, a row removed, or
-			 * a row's scalars edited. Not an edit inside its content node.
+			 * a row's values edited. Not an edit inside its content node.
 			 *
 			 * `deliver` decides WHO hears, by depth against the table root; the
 			 * root's own delta decides WHAT they are handed. Both are attached
