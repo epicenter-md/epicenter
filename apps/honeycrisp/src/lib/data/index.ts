@@ -90,8 +90,11 @@ export const honeycrispDefinition = defineData({
 				// time and never writes it as part of the definition (ADR-0255).
 				icon: field.nullable(field.string()),
 			},
-			// A folder is its name and its icon. Nothing types into one, so its
-			// node stays empty and its file is its frontmatter.
+			// A folder's body, if it ever has one, is text. Nothing writes there
+			// today, so its file is its frontmatter and nothing below the fence.
+			// That is a capability sitting unused rather than a field standing
+			// empty: the day a folder wants a description, writing into
+			// `folder.content` exports, imports, and merges with no change here.
 			content: plainText(),
 		}),
 		notes: defineTable({
