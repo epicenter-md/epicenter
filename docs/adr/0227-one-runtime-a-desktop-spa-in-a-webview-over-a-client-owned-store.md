@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Amended by:** [ADR-0273](0273-an-epicenter-app-is-an-spa-with-a-namespace-and-background-work-is-a-hidden-window.md) at two points: a window may run without being shown, and the client-owned store is what an application may use rather than what makes it one.
 - **Amended by:** [ADR-0305](0305-the-third-party-app-catalog-is-a-future-epicenter-deployment-plane.md) at the temporary refusal of third-party installed apps. The current product remains one first-party runtime; the future catalog plane is preserved as an unbuilt deployment direction.
+- **Amended by:** [ADR-0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md) at the hosted-web refusal, which shipped code already contradicts. A browser build is a target again, and a deliberately reduced one. Every other refusal here stands.
 - **Date:** 2026-08-08
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0227 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
