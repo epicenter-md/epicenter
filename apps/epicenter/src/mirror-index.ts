@@ -25,9 +25,9 @@
  * it. Nothing here touches the store, and a corrupt index is repaired by
  * deleting it.
  *
- * ## Scalars, and a path
+ * ## Values, and a path
  *
- * Frontmatter and a `path` column, never the prose. An agent asks SQL for
+ * Frontmatter and a `path` column, never the body. An agent asks SQL for
  * structure, gets paths back, and reads those files for text. Carrying the
  * bodies here would duplicate the whole vault to answer questions `rg` already
  * answers better.
@@ -142,7 +142,7 @@ function writeTable(
 /**
  * One frontmatter value as SQLite holds it.
  *
- * A scalar is itself; a boolean is 0 or 1, because SQLite has no boolean and
+ * A plain value is itself; a boolean is 0 or 1, because SQLite has no boolean and
  * every SQL dialect's `WHERE pinned = 1` expects the integer; anything
  * compound is its JSON text, which `json_extract` reads and a person can see.
  */

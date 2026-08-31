@@ -5,7 +5,7 @@
  * (`markdown.ts`, which the file export and import both run through) convert
  * the same document shape (ADR-0264). Nothing reads a title or a preview
  * through here any more; those are sliced off the `Y.Type` directly
- * (`prose-text.ts`).
+ * (`node-text.ts`).
  */
 import { type MarkSpec, type NodeSpec, Schema } from 'prosemirror-model';
 import { schema as basicSchema } from 'prosemirror-schema-basic';

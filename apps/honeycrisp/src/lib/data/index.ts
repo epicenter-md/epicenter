@@ -51,7 +51,7 @@ export function noteBodyAsPm(body: Y.Type) {
  * A note's content node as Markdown, and back (ADR-0296).
  *
  * The whole of what this app declares about its files. The platform writes the
- * scalars as frontmatter under their own field names and joins this below the
+ * values as frontmatter under their own field names and joins this below the
  * fence, and reverses both; only Honeycrisp knows that a note's node is a
  * ProseMirror document rather than a line of text or a keyed log.
  *

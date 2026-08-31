@@ -57,8 +57,8 @@ function openAccount(label: string) {
 					),
 				startSync: () => inside((replica) => replica.startSync()),
 				stopSync: () => inside((replica) => replica.stopSync()),
-				write: (title: string, prose: string) =>
-					inside((replica) => replica.write(title, prose)),
+				write: (title: string, text: string) =>
+					inside((replica) => replica.write(title, text)),
 				remove: (title: string) => inside((replica) => replica.remove(title)),
 				report: (): Promise<ReplicaReport> =>
 					inside((replica) => replica.report()).then((made) => made),
@@ -101,7 +101,7 @@ async function until(
 }
 
 describe('two devices on one account converge', () => {
-	it('a note written on the phone arrives on the laptop, with its prose', async () => {
+	it('a note written on the phone arrives on the laptop, with its text', async () => {
 		const vault: Replicas = openAccount('converge');
 		const phone = vault.device('phone');
 		const laptop = vault.device('laptop');
@@ -118,7 +118,7 @@ describe('two devices on one account converge', () => {
 
 		const arrived = await laptop.report();
 		expect(arrived.titles).toEqual(['Groceries']);
-		expect(arrived.prose.join(' ')).toContain('milk and eggs');
+		expect(arrived.text.join(' ')).toContain('milk and eggs');
 		expect(arrived.lastError).toBeUndefined();
 	});
 

@@ -41,7 +41,7 @@ const labDatabase = defineData({
 	tables: {
 		notes: defineTable({
 			title: field.string(),
-			prose: field.string(),
+			body: field.string(),
 			content: plainText(),
 		}),
 	},
@@ -168,18 +168,18 @@ export class SyncLabTestPeer extends DurableObject<Env> {
 
 	/** Write one row and send it now. */
 	write(title: string): void {
-		this.db.tables.notes.create({ title, prose: '' });
+		this.db.tables.notes.create({ title, body: '' });
 		this.client.flush();
 	}
 
 	/**
-	 * Write one row carrying `bytes` of prose, in one transaction.
+	 * Write one row carrying `bytes` of body text, in one transaction.
 	 *
 	 * The only affordable way to reach the authority's 64 KB snapshot floor from
 	 * a test: hundreds of small rows would take hundreds of round trips.
 	 */
 	writeLarge(title: string, bytes: number): void {
-		this.db.tables.notes.create({ title, prose: 'x'.repeat(bytes) });
+		this.db.tables.notes.create({ title, body: 'x'.repeat(bytes) });
 		this.client.flush();
 	}
 

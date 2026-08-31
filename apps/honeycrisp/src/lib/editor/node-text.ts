@@ -1,9 +1,9 @@
 /**
- * Plain text read off a note's prose, without rebuilding the note.
+ * Plain text read off a note's node, without rebuilding the note.
  *
  * A note's body is a nested `Y.Type` in the document this store already holds
  * (ADR-0295), so the list can read what it needs directly. It used to read a
- * `preview` scalar the editor wrote back on every change, because a body lived
+ * `preview` value the editor wrote back on every change, because a body lived
  * in its own lazily loaded document (ADR-0248) and a list could not afford to
  * open one per row. That reason is gone.
  *
@@ -62,7 +62,7 @@ export function noteTitle(body: Y.Type): string {
 }
 
 /**
- * A note's preview: the first hundred characters of its prose.
+ * A note's preview: the first hundred characters of its text.
  *
  * Blocks are joined with a space so the last word of one does not run into the
  * first word of the next. Not stored anywhere; the list reads it.

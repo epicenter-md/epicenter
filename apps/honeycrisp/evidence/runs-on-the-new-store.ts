@@ -71,15 +71,15 @@ try {
 	await page.waitForTimeout(2500);
 	const reloaded = await page.locator('body').innerText();
 	check('the note survived the reload', reloaded.includes('Groceries'));
-	const prose = await page
+	const text = await page
 		.locator('.ProseMirror')
 		.first()
 		.innerText()
 		.catch(() => '');
 	check(
-		'its prose survived too',
-		reloaded.includes('milk and eggs') || prose.includes('milk and eggs'),
-		prose.slice(0, 60),
+		'its text survived too',
+		reloaded.includes('milk and eggs') || text.includes('milk and eggs'),
+		text.slice(0, 60),
 	);
 	check(
 		'no page errors after reload',

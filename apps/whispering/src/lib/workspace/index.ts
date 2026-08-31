@@ -17,7 +17,7 @@ import { field } from '@epicenter/data/definition';
  *
  * **Transcripts stay in the row.** They are machine-produced, replaced
  * wholesale, and rendered in the recordings list, so nothing about them wants
- * per-character merging. That is the opposite of Honeycrisp's call for prose
+ * per-character merging. That is the opposite of Honeycrisp's call for a node
  * (ADR-0207) and it is deliberate: a note is written by a person a character at
  * a time, a transcript arrives finished.
  *
@@ -196,7 +196,7 @@ export const whisperingDefinition = defineData({
 export type WhisperingData = DataView<typeof whisperingDefinition>;
 
 export type Recording = RowOf<typeof recordingsTable>;
-/** The scalar recipe projection used by the picker and editor. */
+/** The recipe values the picker and editor read. */
 export type Recipe = Pick<
 	RowOf<typeof recipesTable>,
 	'id' | 'name' | 'instructions' | 'icon'

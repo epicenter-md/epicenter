@@ -23,7 +23,7 @@ const labDatabase = defineData({
 			title: field.string(),
 			device: field.string(),
 			at: field.string(),
-			prose: field.string(),
+			body: field.string(),
 			content: plainText(),
 		}),
 	},
@@ -130,7 +130,7 @@ function write(fields: { title: string }): void {
 		title: fields.title,
 		device,
 		at: new Date().toISOString(),
-		prose: '',
+		body: '',
 	});
 	// Nothing nudges. The store announces the work it authored and the driver
 	// starts the idle timer, which is what turns a burst of transactions into
@@ -154,7 +154,7 @@ paste.addEventListener('click', () => {
 		title: 'a 3 MB paste',
 		device,
 		at: new Date().toISOString(),
-		prose: 'x'.repeat(3_000_000),
+		body: 'x'.repeat(3_000_000),
 	});
 	render();
 });

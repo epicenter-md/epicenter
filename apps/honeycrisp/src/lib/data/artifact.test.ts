@@ -47,7 +47,7 @@ const MARKDOWN = [
 	'- [ ] buy milk',
 	'- [x] ~~pay rent~~',
 	'',
-	'Some **bold** and *italic* prose.',
+	'Some **bold** and *italic* text.',
 ].join('\n');
 
 async function seed() {
@@ -71,7 +71,7 @@ test('a store exports to Markdown files and imports back whole', async () => {
 	pmToFragment(parseNoteBody(MARKDOWN), seeded.content as never);
 
 	const files = await collect(renderArtifact(data, honeycrispDefinition));
-	// One file per row, and the note's file is prose a person can read.
+	// One file per row, and the note's file is text a person can read.
 	expect([...files.keys()].sort()).toEqual(
 		[
 			`folders/${data.tables.folders.rows[0]?.id}.md`,
@@ -91,7 +91,7 @@ test('a store exports to Markdown files and imports back whole', async () => {
 	// documents' nodes are never equal objects. The claim is about the record.
 	expect(restored.stored().tables).toEqual(data.stored().tables);
 
-	// And the prose came back as the same Markdown, through the real codec. One
+	// And the text came back as the same Markdown, through the real codec. One
 	// row goes in, not a row spliced together with a bag of types.
 	const row = restored.tables.notes.get(note.id);
 	if (row === undefined) throw new Error('the note lost its row');
@@ -99,7 +99,7 @@ test('a store exports to Markdown files and imports back whole', async () => {
 	await data[Symbol.asyncDispose]();
 });
 
-test('a note with no prose exports as frontmatter alone and still imports', async () => {
+test('a note with no body text exports as frontmatter alone and still imports', async () => {
 	const { data, note } = await seed();
 	const files = await collect(renderArtifact(data, honeycrispDefinition));
 	expect(files.get(`notes/${note.id}.md`)).not.toContain('\n\n');

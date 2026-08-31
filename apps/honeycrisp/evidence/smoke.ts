@@ -4,8 +4,8 @@
  * Run: `bun run smoke` (builds first)
  *
  * The one thing typecheck and the unit suites cannot judge: that a person can
- * open the app, make a note, type prose into it, reload, and find both still
- * there. Prose is the half that matters here, because it lives in the row's
+ * open the app, make a note, type text into it, reload, and find both still
+ * there. The node is the half that matters here, because it lives in the row's
  * nested `content` node on the database document (ADR-0295).
  */
 import { chromium } from 'playwright';
@@ -84,11 +84,11 @@ try {
 	);
 
 	await page.getByText('Groceries').first().click();
-	const prose = await page.locator('.ProseMirror').first().innerText();
+	const text = await page.locator('.ProseMirror').first().innerText();
 	check(
-		'its prose survived too',
-		prose.includes('buy milk'),
-		JSON.stringify(prose.slice(0, 40)),
+		'its text survived too',
+		text.includes('buy milk'),
+		JSON.stringify(text.slice(0, 40)),
 	);
 	check('nothing threw in the page', crashes.length === 0, crashes[0] ?? '');
 } finally {

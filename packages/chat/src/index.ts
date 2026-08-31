@@ -75,7 +75,7 @@ export const conversationsTable = defineTable({
 	/**
 	 * The conversation's finished messages, as a keyed log (ADR-0295, ADR-0296).
 	 *
-	 * NOT prose, and not a sequence at all: the entries live in the node's
+	 * NOT text, and not a sequence at all: the entries live in the node's
 	 * ATTRIBUTES, keyed by message id. `plainText()` would be silent data loss
 	 * here, because `toString` renders attributes and `insert` takes the
 	 * rendering back as one literal string that prints identically. Only this

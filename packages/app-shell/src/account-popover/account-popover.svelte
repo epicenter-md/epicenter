@@ -33,7 +33,7 @@
 	 * Shared account popover.
 	 *
 	 * Renders auth identity and sign-out. When a Data runtime is present, it also
-	 * renders scalar sync status from its narrow observation surface.
+	 * renders a plain sync status from its narrow observation surface.
 	 *
 	 * Mount once in each app's root layout, alongside `<ConfirmationDialog />`
 	 * and inside a `<Tooltip.Provider>`: the trigger pill renders a tooltip,

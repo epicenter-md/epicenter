@@ -131,7 +131,7 @@ function createNavigation() {
 		/**
 		 * Filter the list by title or body text. Empty string clears it.
 		 *
-		 * A plain param write: reading every note's prose is the cost of an
+		 * A plain param write: reading every note's text is the cost of an
 		 * active query and it is paid by the filter, not prepaid by a sweep here.
 		 */
 		setQuery(query: string): void {

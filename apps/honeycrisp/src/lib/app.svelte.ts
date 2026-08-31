@@ -14,7 +14,7 @@ import {
 	type Tracked,
 } from '@epicenter/svelte';
 import { createContext } from 'svelte';
-import { notePreview, noteTitle } from './editor/prose-text.js';
+import { notePreview, noteTitle } from './editor/node-text.js';
 import { navigation } from './navigation.svelte.js';
 
 /**
@@ -71,7 +71,7 @@ export function createHoneycrisp({ data }: { data: HoneycrispData }) {
 	 * stored `preview`, which sounded like body search and was not: it found a
 	 * phrase in a note's first hundred characters and silently missed it
 	 * everywhere else. Nothing is stored to match against now, and reading every
-	 * note's prose on every keystroke is not what this query is for. A real body
+	 * note's text on every keystroke is not what this query is for. A real body
 	 * search would walk the fragments deliberately, once, and is a different
 	 * feature than a filter box.
 	 */
@@ -241,12 +241,12 @@ function createFolders(data: ReactiveData<HoneycrispData>) {
  * The table already answers "what rows are here right now" reactively
  * (`fromData`): a read inside `$derived` re-runs on any commit that changed
  * the table's SHAPE, local writes and bytes from another device alike
- * (ADR-0221), and a read in an event handler is fresh. Prose typed into a
+ * (ADR-0221), and a read in an event handler is fresh. Text typed into a
  * note does NOT re-run it, deliberately; that is `table.watch`'s job, and it is
  * why `previewOf` below exists.
  *
  * What this adds is what the platform cannot know: which rows count as
- * deleted, per-folder counts, where a note's prose is, and the domain commands
+ * deleted, per-folder counts, where a note's node is, and the domain commands
  * (soft delete, pinning, re-parenting) with their URL cleanup.
  */
 function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
@@ -270,7 +270,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	}
 
 	/**
-	 * Open this note's prose for the editor to bind to, and keep the row's
+	 * Open this note's node for the editor to bind to, and keep the row's
 	 * derived fields moving while it is open.
 	 *
 	 * Synchronous, and there is nothing left to await: the content is a nested
@@ -318,10 +318,10 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	}
 
 	/**
-	 * One note's preview, read live off its prose and never stored.
+	 * One note's preview, read live off its node and never stored.
 	 *
 	 * A card calls this once and renders `.current`; the reader slices the first
-	 * hundred characters rather than walking the note (`prose-text.ts`). The
+	 * hundred characters rather than walking the note (`node-text.ts`). The
 	 * subscription is the row's OWN field signal, so a card re-renders when its
 	 * note's body changes and not when any other note's does. That is what the
 	 * per-field signal is for, and it is the ONLY signal that carries a node's

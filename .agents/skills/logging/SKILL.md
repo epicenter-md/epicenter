@@ -128,7 +128,7 @@ Minting a variant is not the same as publishing one. Two kinds:
 |---|---|---|
 | Who sees it | Consumers, who branch on `.name` | A log sink |
 | Export it? | Yes; renaming a variant is a breaking change | No, `const` at module scope |
-| Examples | `ReplicaError`, `DocumentPullError`, `DataReadError`, `ScalarProtocolError` | `SyncSupervisorError`, `BrowserWorkerError`, `ObservationCarrierError` |
+| Examples | `ReplicaError`, `DocumentPullError`, `DataReadError`, `TransportProtocolError` | `SyncSupervisorError`, `BrowserWorkerError`, `ObservationCarrierError` |
 
 Exporting a log-only set publishes a name no one can import for a reason and freezes a string you should stay free to reword. `packages/data` and `packages/lens` keep theirs private for exactly this; only errors that leave in a `Result` are in the published failure surface. Export a log-only set solely when a second file in the same package logs the same failure, and even then, only within the package.
 

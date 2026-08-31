@@ -13,7 +13,7 @@ function roundTrip(markdown: string): string {
 }
 
 describe('the note body Markdown codec', () => {
-	test('prose round-trips through its own export', () => {
+	test('body text round-trips through its own export', () => {
 		const markdown = [
 			'# Groceries',
 			'',

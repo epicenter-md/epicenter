@@ -299,7 +299,7 @@ workspace's declared `tables`/`kv` and makes every read verb reactive
 (`rows`, `nonconforming`, `list`, `get`, `ids`, `document`), while `create`,
 `update`, and `delete` pass through unchanged. The signal it rides names the
 rows a commit touched (ADR-0221) and fires for a local write and for bytes that
-arrived from another device alike. Prose typed inside a row's content node is
+arrived from another device alike. Text typed inside a row's content node is
 not a table commit; `watch(node, listener)` is its signal.
 
 ```typescript

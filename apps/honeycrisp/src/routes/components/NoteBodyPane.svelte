@@ -10,7 +10,7 @@
 
 	type Opened = ReturnType<typeof honeycrisp.tables.notes.openContent>;
 
-	// The note's prose, per note. Nothing is loaded: the prose is a nested type
+	// The note's node, per note. Nothing is loaded: the node is a nested type
 	// on the row in the document this store already holds (ADR-0295), so there
 	// is no half-hydrated state an editor could merge keystrokes into, and
 	// edits from every device reach it live through the one store connection.

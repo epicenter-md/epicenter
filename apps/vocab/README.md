@@ -54,7 +54,7 @@ vocab.browser.ts            # openVocabBrowser runtime wiring
 
 ## Key decisions
 
-- The conversation list and each transcript live in the database document: metadata is scalar row state and messages are keyed attributes on the row's `content` node. There is no `chatMessages` table.
+- The conversation list and each transcript live in the database document: metadata is ordinary row values and messages are keyed attributes on the row's `content` node. There is no `chatMessages` table.
 - The live answer streams in component `$state`, not the synced doc (ADR-0046): vocab is capability-free, so re-asking is free and only finished messages need to sync. Each finished message is one LWW JSON blob keyed by message id, written the moment a normal app would POST the row.
 - The cloud never writes the doc: it is a blind relay plus a stateless metered inference stream (ADR-0033).
 - SSR is disabled; the app is CSR-only.

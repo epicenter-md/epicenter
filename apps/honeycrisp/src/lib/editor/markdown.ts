@@ -61,7 +61,7 @@ export function serializeNoteBody(body: Node): string {
 
 /**
  * CommonMark plus strikethrough, matching what the serializer emits. Inline
- * HTML stays off: a note's body is prose, and `<u>` coming back as literal
+ * HTML stays off: a note's body is written text, and `<u>` coming back as literal
  * text is better than an HTML parser in the import path.
  */
 const tokenizer = MarkdownIt('commonmark', { html: false }).enable(

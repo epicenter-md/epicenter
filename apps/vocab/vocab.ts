@@ -102,7 +102,7 @@ const entriesTable = defineTable({
  * composing a chat table: the conversations are Vocab's, not a workspace id another
  * application owns.
  *
- * Conversation transcripts are not scalar fields: each conversation row owns a
+ * Conversation transcripts are not value fields: each conversation row owns a
  * content node holding one {@link VocabMessage} per key (ADR-0046). The open client tab
  * answers in-process (ADR-0043): it streams the live turn in component state
  * and writes each finished message into that content node.

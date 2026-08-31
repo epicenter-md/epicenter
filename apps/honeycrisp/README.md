@@ -1,7 +1,7 @@
 # Honeycrisp
 
 Honeycrisp is a local-first notes app. The whole database is one Yjs document:
-folders and notes are rows in it, and each note's prose is a rich-text type
+folders and notes are rows in it, and each note's body is the node
 nested on its note row, merging per character.
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
@@ -32,7 +32,7 @@ of it (ADR-0229, ADR-0292). `/device` and `/account` resolve a number and
 redirect; `/device/[generation]` and `/account/[generation]` open it. Each route
 owns one store, and nothing falls back to the other route's
 data.
-The scalar document shape is the shared `app`/`kv`/`tables:<name>` grammar in
+The document shape is the shared `app`/`kv`/`tables:<name>` grammar in
 [ADR-0257](../../docs/adr/0257-the-application-document-has-named-kv-and-table-roots.md).
 
 Every build opens its own store, with no platform seam, and reaches one
@@ -54,7 +54,7 @@ counter and no manual refresh anywhere.
 
 ### Rich-text editing
 
-A note's prose is the `content` node on its note row, declared with a content
+A note's body is the `content` node on its note row, declared with a content
 codec and minted with the row. `NoteBodyPane.svelte` reaches it through
 `notes.openContent(noteId)` and hands the type straight to ProseMirror through
 `@y/prosemirror`. Nothing is awaited and nothing is loaded: the type is in the
@@ -67,7 +67,7 @@ burst. The store writes no derived fields and no timestamps
 
 ### Soft deletion
 
-Normal deletion is soft deletion: the note row gets a `deletedAt` timestamp and appears in Recently Deleted. Permanent deletion removes the row, and its prose goes with it: the whole nested subtree is reclaimed in the same removal.
+Normal deletion is soft deletion: the note row gets a `deletedAt` timestamp and appears in Recently Deleted. Permanent deletion removes the row, and its node goes with it: the whole nested subtree is reclaimed in the same removal.
 
 ### Auth and sync
 
@@ -116,9 +116,10 @@ attribute, the exported frontmatter value and the row alike, and "absent" is not
 type. So what would have been optional is nullable, and the application writes
 or recovers `null` explicitly.
 
-Each note's prose lives at the `content` root inside that note's document. The
-application names the root and picks its format; Epicenter allocates the
-container with the row, collects it with the row, and never looks inside.
+Each note's body lives at the reserved `content` key on its note row, nested in
+the one application document. The table picks its format through a codec;
+Epicenter mints the node with the row, collects it with the row, and never looks
+inside.
 
 Honeycrisp has no KV schema. View selection, sorting, and URL state live in the Svelte state layer.
 
@@ -156,7 +157,7 @@ To run Honeycrisp the way it ships, start the host: `bun dev:epicenter`. Honeycr
 bun run --cwd apps/honeycrisp evidence:runs   # against a running dev:web
 ```
 
-Drives the real app in a real browser: make a note, type prose into it, reload,
+Drives the real app in a real browser: make a note, type text into it, reload,
 and assert both survived. The reload is the point: the live Yjs document dies
 with the page, and IndexedDB holds what has to outlive it.
 

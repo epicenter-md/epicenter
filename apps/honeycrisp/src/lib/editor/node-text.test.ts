@@ -1,5 +1,5 @@
 /**
- * Reading a note's title and preview off the prose itself.
+ * Reading a note's title and preview off the node itself.
  *
  * These replace the assertions that used to run against a ProseMirror document
  * built by `fragmentToPm`. The subject is now the nested `Y.Type` (ADR-0295),
@@ -12,7 +12,7 @@ import { openMemory } from '@epicenter/data/memory';
 import { pmToFragment } from '@y/prosemirror';
 import { honeycrispDefinition } from '../data/index.js';
 import { parseNoteBody } from './markdown.js';
-import { notePreview, noteTitle } from './prose-text.js';
+import { notePreview, noteTitle } from './node-text.js';
 
 const AT = InstantString.fromDate(new Date('2026-08-10T00:00:00.000Z'));
 
@@ -64,7 +64,7 @@ test('the preview is capped at 100 characters', async () => {
 });
 
 test('a long note is not walked to answer a short question', async () => {
-	// The claim `prose-text.ts` rests on: `slice` returns as soon as it has the
+	// The claim `node-text.ts` rests on: `slice` returns as soon as it has the
 	// count it was asked for, so the cost is the answer's size and not the
 	// note's. Asserted as a ratio rather than a duration, because a wall-clock
 	// threshold on a shared runner is a flake.

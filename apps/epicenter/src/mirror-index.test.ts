@@ -61,7 +61,7 @@ test('an agent can ask for structure and get paths back', async () => {
 					.all(),
 			).toEqual([{ path: 'notes/aaaaaaaaaaaaaaaaaaaaaaaa.md' }]);
 
-			// The prose is deliberately not here. SQL answers structure and hands
+			// The body is deliberately not here. SQL answers structure and hands
 			// back a path; the file beside it answers text.
 			expect(
 				database.query(`SELECT * FROM notes LIMIT 1`).all()[0],

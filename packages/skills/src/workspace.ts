@@ -46,7 +46,7 @@ const skillsTable = defineTable({
 	 * The markdown a person edits: this row's one live node (ADR-0295).
 	 *
 	 * `plainText()` is the whole of it. The node IS its text here, so the
-	 * platform's codec is the right one rather than a fallback: the scalars go
+	 * platform's codec is the right one rather than a fallback: the values go
 	 * to frontmatter under their own names and the markdown goes below the
 	 * fence, in both directions, and this package writes nothing to say so.
 	 */
@@ -61,7 +61,7 @@ const referencesTable = defineTable({
 	 * The markdown a person edits: this row's one live node (ADR-0295).
 	 *
 	 * `plainText()` is the whole of it. The node IS its text here, so the
-	 * platform's codec is the right one rather than a fallback: the scalars go
+	 * platform's codec is the right one rather than a fallback: the values go
 	 * to frontmatter under their own names and the markdown goes below the
 	 * fence, in both directions, and this package writes nothing to say so.
 	 */

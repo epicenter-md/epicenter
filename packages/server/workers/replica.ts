@@ -69,7 +69,7 @@ export type ReplicaReport = {
 
 	connected: boolean;
 	titles: string[];
-	prose: string[];
+	text: string[];
 	lastError: string | undefined;
 	/** Structs the engine holds; how a test sees tombstones reclaimed. */
 	items: number;
@@ -175,13 +175,13 @@ export class StoreTestReplica extends DurableObject<Env> {
 		this.connection = undefined;
 	}
 
-	/** Create a note with prose, the way an application does. */
-	write(title: string, prose: string): void {
+	/** Create a note with body text, the way an application does. */
+	write(title: string, text: string): void {
 		if (this.db === undefined) throw new Error('open first');
 		const made = this.db.tables.notes.create({ title });
 		const content = this.db.tables.notes.get(made.id)?.content;
 		if (content === undefined) throw new Error('the row has no content');
-		content.applyDelta(content.change.insert(prose) as never);
+		content.applyDelta(content.change.insert(text) as never);
 	}
 
 	/** Delete the note holding this title, the way an application does. */
@@ -208,7 +208,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 				cursor: 0,
 				connected: false,
 				titles: [],
-				prose: [],
+				text: [],
 				lastError: undefined,
 				items: 0,
 			};
@@ -220,7 +220,7 @@ export class StoreTestReplica extends DurableObject<Env> {
 			cursor: status?.cursor ?? 0,
 			connected: status?.connected ?? false,
 			titles: listed.rows.map((row) => row.title).sort(),
-			prose: listed.rows
+			text: listed.rows
 				.map((row) =>
 					JSON.stringify(db.tables.notes.get(row.id)?.content.toJSON() ?? null),
 				)

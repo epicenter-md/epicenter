@@ -28,7 +28,7 @@
 	/** Derive deleted status from the note itself, no need to check view mode. */
 	const isDeleted = $derived(note.deletedAt !== null);
 
-	// Read off this note's prose rather than off a stored field, and subscribed
+	// Read off this note's node rather than off a stored field, and subscribed
 	// to this note's body alone (ADR-0295).
 	//
 	// The initial id is the right one to capture: `NoteList` keys its `{#each}`
