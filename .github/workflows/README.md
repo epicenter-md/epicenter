@@ -59,24 +59,24 @@ endpoint gets its own workflow on its own trigger, as the two below do.
 
 We use [changesets](https://github.com/changesets/changesets) to version and publish npm packages.
 
-### Public and private packages
+### What is publishable
 
-| Package | npm name | Published |
-|---|---|---|
-| `packages/workspace` | `@epicenter/workspace` | yes |
-| `packages/sync` | `@epicenter/sync` | yes |
-| `packages/filesystem` | `@epicenter/filesystem` | yes |
-| `packages/skills` | `@epicenter/skills` | yes |
-| `packages/ui` | `@epicenter/ui` | yes |
-| `packages/identity` | `@epicenter/identity` | yes |
-| `packages/svelte-utils` | `@epicenter/svelte` | yes (see note) |
-| `packages/constants` | `@epicenter/constants` | no (private) |
+**Nothing, today.** Every package under `packages/` and every app under `apps/` is
+`private: true`, so `scripts/publish-packages.ts` finds no candidates and exits.
+The machinery is kept because the path is expected to reopen, not because it
+currently runs.
+
+Some packages WERE published, before 2026-08. Those versions stay available under
+the license they shipped with, which the root [LICENSE](../../LICENSE) records.
+One of them, `@epicenter/field`, no longer exists as a package at all: its field
+palette lives in `packages/data/src/field` and is reached as
+`@epicenter/data/field` (ADR-0309).
 
 ### Fixed version group
 
-The framework closure shares one version number, configured via the `fixed` array in `.changeset/config.json`: `sync`, `skills`, and `identity`. When any one of them changes, all of them bump together. This keeps the ecosystem coherent: if you install `@epicenter/sync@0.3.0`, you know `@epicenter/identity@0.3.0` is the matching release.
-
-Packages published outside that group (`workspace`, `filesystem`, `ui`, `svelte`) version independently.
+`.changeset/config.json` keeps one `fixed` array so a closure of packages shares a
+version number. It is inert while everything is private, and it is only worth
+maintaining if publishing resumes.
 
 ### Day-to-day: adding a changeset
 

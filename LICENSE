@@ -32,13 +32,13 @@ anyone who forks and distributes a modified binary shares the changes back.
     packages/client          @epicenter/client
     packages/constants       @epicenter/constants
     packages/data            @epicenter/data
-    packages/identity        @epicenter/identity
     packages/matter-core     @epicenter/matter-core
+    packages/principal       @epicenter/principal
     packages/recorder        @epicenter/recorder
     packages/server          @epicenter/server
     packages/skills          @epicenter/skills
     packages/sqlite          @epicenter/sqlite
-    packages/svelte-utils    @epicenter/svelte
+    packages/svelte          @epicenter/svelte
     packages/sync            @epicenter/sync
     packages/ui              @epicenter/ui
     packages/vite-config     @epicenter/vite-config

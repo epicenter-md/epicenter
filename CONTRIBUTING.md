@@ -285,9 +285,9 @@ curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.19"
 
 ## Licensing
 
-Epicenter uses split licensing by how you use the code. Code you build with (the toolkit: `@epicenter/workspace`, `@epicenter/field`, `@epicenter/ui`, and the contracts they carry) is MIT: contribute freely, no strings attached. Code we ship or run (all apps, the shared `@epicenter/server` library, and internal glue) is AGPL-3.0. Contributions to either layer are welcome under the license of the file you are editing (inbound = outbound).
+One license. Everything under `packages/` and `apps/` is AGPL-3.0-or-later: run it, modify it, self-host it, and if you distribute a modified version, share the changes back. Contributions are welcome under that license (inbound = outbound), and there is no CLA.
 
-See [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAINABILITY.md) for the full reasoning behind the split.
+An MIT toolkit tier existed until 2026-08 and was dissolved because no external embedder ever arrived. Versions published to npm under MIT before then stay MIT for those versions, permanently; the root [LICENSE](LICENSE) lists which. See [docs/licensing/licensing-strategy.md](docs/licensing/licensing-strategy.md) for the reasoning, and [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAINABILITY.md) for why the money side works.
 
 ## Philosophy
 
