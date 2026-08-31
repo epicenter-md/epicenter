@@ -66,7 +66,7 @@ in a barrel the other has to load.
 One database `Y.Doc` per application is persisted under the application log
 name `app` (ADR-0257). Its current top-level roots are the bare named root
 `kv` and one `tables:<name>` root for each declared table. Each table declares
-ordinary scalar fields and one required `content` codec.
+ordinary value fields and one required `content` codec.
 
 ```text
 Y.Doc "app"
@@ -84,7 +84,7 @@ not a style choice: `Item.write` scans `doc.share` linearly, so one root per row
 makes encoding quadratic, measured at 5,417 ms against 13 ms at 20,000 rows.
 Deletion removes the row's attribute outright and the whole subtree goes with
 it, which leaves one deleted map key rather than a permanent corpse. The row is
-flat at the public API: `id`, its scalar fields, and one live `content` node.
+flat at the public API: `id`, its value fields, and one live `content` node.
 
 ## Content is one live node on the row
 
@@ -97,7 +97,7 @@ row?.content; // the live Y.Type an editor binds to directly
 ```
 
 Storage mints an empty `content` node when a row is created without one, and
-deleting the row removes the node with the row. Lists and previews read scalar
+deleting the row removes the node with the row. Lists and previews read value
 fields without opening another document; editors bind the row's live node.
 
 ## What granularity an edit has
@@ -105,7 +105,7 @@ fields without opening another document; editors bind the row's live node.
 | edit | merge |
 | --- | --- |
 | two devices, different fields of one row | both survive |
-| two devices, one scalar field | last write wins |
+| two devices, one value field | last write wins |
 | two devices, one array or object field | last write wins on the WHOLE value |
 | two devices, an edit inside a row's content node | per character |
 

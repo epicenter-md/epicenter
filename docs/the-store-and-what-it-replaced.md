@@ -13,7 +13,7 @@ It is an explanation of intent.
 
 **An application has ONE Yjs document, replayed in full before any handle
 exists, and the surface over it is synchronous.** Each row owns one nested live
-content node at `row.content`; scalar fields remain ordinary row values.
+content node at `row.content`; every other field holds an ordinary value.
 
 The old stack was many documents behind a process boundary: a replica owned by a
 worker or a desktop host, reached over a message port or HTTP. Every read was a
@@ -82,7 +82,7 @@ a problem that no longer exists.
 
 **New:** `db.notes.subscribe(listener)` fires once per commit with the ROW IDS
 that commit touched (ADR-0221), for a local write and for bytes that arrived
-from another device alike. Prose typed inside a row's content node is NOT a
+from another device alike. Text typed inside a row's content node is NOT a
 table commit: it has its own signal, `watch(node, listener)`, because routing
 it here would wake every list in the application at typing frequency.
 It fires after every `onCommitted` listener has run, so a composed follower
@@ -183,7 +183,7 @@ data.kv.update({ theme: 'dark' });  // merges; other keys untouched
 
 ---
 
-## Prose and row content
+## Nodes and row content
 
 **Old:** rich content was opened through a separate row-document lease and
 polled for remote changes.
@@ -208,7 +208,7 @@ machine-produced, replaced wholesale, and rendered in a list.
 
 **Old:** TypeBox, `defineTable({ fields: { title: field.string() } })`.
 
-**New:** ordinary scalar field descriptors at the table's top level, one
+**New:** ordinary value field descriptors at the table's top level, one
 required `content` codec, pure JSON definitions, and application-owned
 recovery values (ADR-0255).
 
@@ -225,17 +225,17 @@ export const definition = defineData({
 Three things bite immediately:
 
 1. **There are no optional fields.** A field must be one type through the CRDT
-   attribute, the projection column and the row alike. `field.nullable(inner)`
-   accepts stored null, while a missing field is nonconforming.
+   attribute and the row alike. `field.nullable(inner)` accepts stored null,
+   while a missing field is nonconforming.
 2. **Definitions do not own defaults.** Initialization and recovery values live
    in application code, and `parseData` rejects declaration defaults.
 3. **No transforming fields.** Date, instant, and datetime descriptors preserve
-   their string representation, so values round-trip through storage and SQL.
+   their string representation, so values round-trip through storage.
    `update(id, { when: row.when })` would break.
 
 Objects have no STRING expression, so `'{ status: ... }'` does not parse and
 `'object|null'` validates nothing. Today that means flattening a
-`{ status, completedAt, error }` shape into columns.
+`{ status, completedAt, error }` shape into separate fields.
 
 `parseData` is the runtime parser for this closed descriptor vocabulary. It
 accepts storage-valid JSON facts and leaves conformance to reads; it does not
@@ -349,7 +349,7 @@ attribute.
 **Inside one field there is no merging at all.** Two devices writing the same
 field converge on one winner (last write wins by client id), and the other
 value is gone. That is correct for a title and it is the whole story for every
-scalar.
+value.
 
 **An array or object field is ONE value, so it is replaced wholesale. This is
 kept on purpose.** It surprises people, so it is worth being explicit that it is
@@ -370,7 +370,7 @@ counters that add, maps that deep-merge, and a declaration syntax rich enough to
 say which. Every one of those is a second merge semantics an author has to learn
 and a reader has to hold, and each is a place two releases can disagree about
 what a field even is. Refusing all of it means there is exactly one rule for
-every scalar, array and object a workspace can declare, and the rule fits on a line.
+every value a workspace can declare, whatever its shape, and the rule fits on a line.
 
 The price is bounded and nameable: **a set that several devices append to
 concurrently will lose an addition.** That is a real cost and it is paid by a
@@ -397,7 +397,7 @@ cache derived from the CRDT, so it never affects what merges with what.
 | where | granularity |
 | --- | --- |
 | two fields of one row | independent, both survive |
-| one scalar field | last write wins, converged |
+| one value field | last write wins, converged |
 | one array or object field | last write wins on the WHOLE value (kept, see above) |
 | a row's content node | per character |
 | the SQL projection | a composed cache; rebuilt whole at the next read |
@@ -479,12 +479,12 @@ because a patch validates only the values it supplies:
 db.notes.update(issue.id, { n: 7 });
 ```
 
-Nonconforming rows project raw in the composed SQL projection, so SQL can
-SHOW them. It cannot FIND them: the projection carries one column per
-declared field and no conformance marker, and SQL cannot re-run arktype. The
-typed read is the only thing that knows which rows failed, so a repair
-surface identifies them with `list().nonconforming` and may then use SQL to
-display or group them.
+A derived index built over the store (ADR-0307) can SHOW nonconforming rows,
+because it reads what is stored. It cannot FIND them: an index carries the
+declared fields and no conformance marker, and it cannot re-run the
+declaration's checks. The typed read is the only thing that knows which rows
+failed, so a repair surface identifies them with `list().nonconforming` and may
+then use an index to display or group them.
 
 One thing the projection does NOT promise, worth knowing before building on
 it: it is a cache, derived from the CRDT rather than authoritative over it,
@@ -516,7 +516,7 @@ indefinitely without hurting anyone, and `raw` still holds it.
 1. Rewrite the workspace: arktype strings, nullable-with-default, no optionals, no
    objects, defaults inline. Settings to `kv`.
 2. Decide whether the value belongs in the row's `content` node or in an ordinary
-   scalar field.
+   value field.
 3. Replace `openEpicenter` with `openLocal(workspace)` (and `openAccount(workspace,
    { principalId })` for a signed-in replica, per ADR-0233).
 4. Replace `scan` + `refresh` + generations with `read()` + `subscribe(read)`.

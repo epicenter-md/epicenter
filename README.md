@@ -43,7 +43,7 @@ its own SQLite file, how do you keep them in sync?
 Epicenter's answer: **a database is one Yjs document, replayed in full before
 any handle exists, and the surface over it is synchronous.** A read is a
 property access, not a round trip, so nothing is awaited and nothing needs cache
-invalidation or race protection. Rich content is in there too: a row's prose is
+invalidation or race protection. The rich half is in there too: a row's node is
 a nested type on the row, not a second document with an address of its own.
 
 ```typescript
@@ -79,7 +79,7 @@ release-local and never migrates your data. A row it cannot read is reported
 beside the rows it can, with the reason and the raw values intact, and an
 ordinary write repairs it.
 
-Prose merges per character in the row's `content` node. Declare its codec with
+The node at `content` merges per character. Declare its codec with
 `content: plainText()` and reach it with `data.tables.notes.get(note.id)?.content`;
 Epicenter never looks inside. The database document's `kv`/`tables:<name>` shape
 is recorded in
@@ -132,7 +132,7 @@ Signed-in sync sends your data to a trusted server that reads it in plaintext. O
 
 | App | Status | Notes |
 | --- | --- | --- |
-| [Honeycrisp](apps/honeycrisp) | Runs on the store | Local-first notes. Folders and notes are rows; a note's prose is a rich-text type inside its row. |
+| [Honeycrisp](apps/honeycrisp) | Runs on the store | Local-first notes. Folders and notes are rows; a note's body is the node on its row. |
 | [Matter](apps/matter) | Runs, separately | Typed grid over user-owned Markdown folders. It edits ordinary `.md` files directly; `matter.sqlite` is a disposable query mirror. |
 | [Local Books](apps/local-books), [Local Mail](apps/local-mail) | Run, separately | Headless CLI mirrors that pull QuickBooks and Gmail into local SQLite. |
 | [API](apps/api) | Hosted infrastructure | Personal cloud Worker. Owns the store authority binding, hosted-only billing, and the dashboard. |
