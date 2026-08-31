@@ -405,6 +405,38 @@ for (const engine of ENGINES) {
 			expect(loaded.cursor).toBe(12);
 		});
 
+		test('a long chain that is mostly owed folds on neither port', async () => {
+			// The two ports gate the fold on different quantities and converge
+			// only because of an inner re-check. SQL counts the ACKNOWLEDGED rows
+			// and stops there; IndexedDB counts the WHOLE chain, walks it, and
+			// then re-tests the foldable subset. Nothing drove the state where
+			// those two numbers disagree, and ADR-0301 made that state ordinary:
+			// a device offline long enough has a long chain that is almost
+			// entirely owed.
+			const record = await engine.create(`owed-chain-${counter}`);
+			const written = chain(70);
+			const numbered = written.map((bytes, index) => {
+				nextId += 1;
+				return {
+					kind: 'append' as const,
+					id: nextId,
+					bytes,
+					// A short acknowledged prefix under a long owed suffix: the
+					// chain is 70, and only 10 rows may be folded.
+					authoritySeq: index < 10 ? 1 : undefined,
+				};
+			});
+			await record.commit(numbered);
+
+			const { loaded } = await record.reopen();
+			// Neither port folds, because neither has 64 foldable rows, and the
+			// answer must not depend on which one is asked.
+			expect(loaded.updates.length).toBe(70);
+			expect(loaded.outbox.length).toBe(60);
+			expect(valueOf(loaded.updates)).toBe('v69');
+			expect(loaded.cursor).toBe(1);
+		});
+
 		test('a batch is all or nothing', async () => {
 			const record = await engine.create(`atomic-${counter}`);
 			// One document's two successive updates, so the replayed value is
