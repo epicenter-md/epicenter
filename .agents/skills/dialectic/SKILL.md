@@ -6,12 +6,13 @@ description: "Make an unsettled model intelligible through the deliberate collis
 # Dialectic
 
 A dialectic is the deliberate collision of ambitious articulations: visions of
-what should exist and how it should work, often greenfield clean-break visions
-that can be built backward from. Their differences, consequences, and refusals
-expose the cruxes that the next articulation must resolve. The human and agent
-trade these visions, and each reaction shows what is right, wrong, missing, or
-newly possible. Through repeated re-articulation, the model becomes intelligible
-or produces a vision the user can recognize and say, in effect, “that’s right.”
+what should exist and how it should work, often uncompromising greenfield
+clean-break visions that can be built backward from. Their differences,
+consequences, and refusals expose the cruxes that the next articulation must
+resolve. The human and agent trade these visions, and each reaction shows what
+is right, wrong, missing, or newly possible. Through repeated re-articulation,
+the model becomes intelligible or produces a vision the user can recognize and
+say, in effect, “that’s right.”
 
 Every turn must leave the live articulation or articulations visible. Put the
 principal account in a prominent block quote, in plain words. When multiple
@@ -21,13 +22,17 @@ itself.
 
 ## What an articulation is
 
-An articulation is a complete, ambitious vision of what should exist and how it
-should work: its objects, actions, sequence, ownership, boundaries,
-consequences, and refusals. It is the account we could build backward from. It
-should be plain enough to see as a whole and may be deliberately
-oversimplified. It is complete in meaning but does not need to be fully
-justified before it is offered. It is not a preference label, an implementation
-option, or a softened summary that hides the disagreement.
+An articulation is an uncompromising vision of what should exist and how it
+should work: the cleanest model with inherited constraints suspended. It is the
+account we could build backward from. Keep the model whole. State it plainly
+and succinctly, and allow it to be deliberately oversimplified. It is complete
+in meaning but does not need to be fully justified before it is offered. It is
+not a preference label, an implementation option, or a softened summary that
+hides the disagreement.
+
+> **Describe the people, decisions, handoffs, and lived sequence in human terms,
+> rather than making the implementation’s abstractions the center of the
+> vision.**
 
 The agent should make its strongest account, not wait for certainty. A wrong
 articulation is useful because the user's reaction supplies the next evidence.
@@ -51,10 +56,9 @@ account emerges.
 ## Make the next move
 
 Before the first turn, identify the live uncertainty that makes the next
-judgment difficult. Lead with a claim, not a questionnaire. Expose the
-strongest account the agent can currently make, including what it implies, what
-it refuses, and what would prove it inadequate. Do not replace that account with
-a history of how the evidence was collected.
+judgment difficult. Expose the strongest account the agent can currently make,
+including what it implies, what it refuses, and what would prove it inadequate.
+Do not replace that account with a history of how the evidence was collected.
 
 Offer multiple articulations when their collision is necessary to expose the
 crux or when the agent cannot responsibly choose among materially different
