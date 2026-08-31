@@ -23,6 +23,10 @@ const subscriberControls: SubscriberControl[] = [];
  * test.
  */
 mock.module('svelte/reactivity', () => ({
+	// A plain Map stands in for the reactive one. These are bun tests with no
+	// reactive runtime, and what is asserted here is WHICH underlying verbs a
+	// read pays for; that a `SvelteMap` wakes per key is Svelte's own suite.
+	SvelteMap: Map,
 	createSubscriber(start: (update: () => void) => () => void) {
 		let stop: (() => void) | undefined;
 		const control = {
@@ -55,30 +59,34 @@ import { fromData } from './from-data.svelte.js';
  */
 function createFakeTable<TRow extends { id: string }>(seed: TRow[]) {
 	const rows = new Map<string, TRow>(seed.map((row) => [row.id, row]));
-	const listeners = new Set<() => void>();
-	const calls = { rows: 0, subscribe: 0 };
+	const listeners = new Set<(rowIds: readonly string[]) => void>();
+	const calls = { rows: 0, get: 0, subscribe: 0 };
+	const announce = (rowId: string) => {
+		for (const listener of listeners) listener([rowId]);
+	};
 	return {
 		calls,
 		handle: {
 			create(fields: Omit<TRow, 'id'>) {
 				const row = { id: `row-${rows.size + 1}`, ...fields } as TRow;
 				rows.set(row.id, row);
-				for (const listener of listeners) listener();
+				announce(row.id);
 				return row;
 			},
 			get(rowId: string) {
+				calls.get += 1;
 				return rows.get(rowId);
 			},
 			update(rowId: string, fields: Partial<TRow>) {
 				const row = rows.get(rowId);
 				if (row === undefined) return { data: null, error: { rowId } };
 				rows.set(rowId, { ...row, ...fields });
-				for (const listener of listeners) listener();
+				announce(rowId);
 				return { data: undefined, error: null };
 			},
 			delete(rowId: string) {
 				const removed = rows.delete(rowId);
-				if (removed) for (const listener of listeners) listener();
+				if (removed) announce(rowId);
 			},
 			ids() {
 				return [...rows.keys()].sort();
@@ -93,7 +101,7 @@ function createFakeTable<TRow extends { id: string }>(seed: TRow[]) {
 			watch() {
 				return () => undefined;
 			},
-			subscribe(listener: () => void) {
+			subscribe(listener: (rowIds: readonly string[]) => void) {
 				calls.subscribe += 1;
 				listeners.add(listener);
 				return () => listeners.delete(listener);
@@ -175,15 +183,10 @@ function setup() {
 		watch: () => () => undefined,
 		persistence: persistence.handle,
 	});
-	// One subscriber per table, one for kv, one for persistence, created in
-	// declaration order.
-	const [notesControl, foldersControl, , persistenceControl] =
-		subscriberControls;
-	if (
-		notesControl === undefined ||
-		foldersControl === undefined ||
-		persistenceControl === undefined
-	)
+	// Two subscribers, in declaration order: kv, then persistence. A table
+	// creates none — its projection IS its signal.
+	const [kvControl, persistenceControl] = subscriberControls;
+	if (kvControl === undefined || persistenceControl === undefined)
 		throw new Error('expected one subscriber control per tracked read');
 	return {
 		notes,
@@ -191,8 +194,7 @@ function setup() {
 		kv,
 		persistence,
 		reactive,
-		notesControl,
-		foldersControl,
+		kvControl,
 		persistenceControl,
 	};
 }
@@ -207,38 +209,49 @@ test('mirrors the declared table names and preserves their row types', () => {
 	expect(folderRows).toEqual([]);
 });
 
-test('wrapping subscribes to nothing and reads nothing', () => {
+test('wrapping seeds the projection once and never reads `rows`', () => {
 	const { notes, folders } = setup();
-	expect(notes.calls.subscribe).toBe(0);
-	expect(folders.calls.subscribe).toBe(0);
+	// One `get` per seeded row, and no walk through the handle's own `rows`:
+	// the projection is built from ids and point reads, which is the only
+	// shape that lets a later commit rebuild one row instead of all of them.
+	expect(notes.calls.get).toBe(1);
 	expect(notes.calls.rows).toBe(0);
-});
-
-test('every read is a fresh walk, never a cached copy', () => {
-	const { notes, reactive } = setup();
-	expect(reactive.tables.notes.rows).toHaveLength(1);
-	notes.handle.create({ title: 'second' });
-	expect(reactive.tables.notes.rows).toHaveLength(2);
-	expect(notes.calls.rows).toBe(2);
-	expect(notes.calls.subscribe).toBe(0);
-});
-
-test('an observed table still reads through on every access', () => {
-	const { notes, reactive, notesControl } = setup();
-	notesControl.activate();
 	expect(notes.calls.subscribe).toBe(1);
+	expect(folders.calls.get).toBe(0);
+});
 
-	// No snapshot even while observed: the store's public `onCommitted` phase
-	// runs before table invalidations, so a reader in that phase must see the
-	// committed rows, which only a read-through guarantees.
-	expect(reactive.tables.notes.rows).toHaveLength(1);
+test('a commit rebuilds the rows it named, and no others', () => {
+	const { notes, reactive } = setup();
+	const before = notes.calls.get;
+
 	notes.handle.create({ title: 'second' });
+	// Exactly one rebuild, for the row the commit named. The row already held
+	// is untouched, which is the whole point: work proportional to the change.
+	expect(notes.calls.get).toBe(before + 1);
 	expect(reactive.tables.notes.rows).toHaveLength(2);
-	expect(notes.calls.rows).toBe(2);
 
-	notesControl.deactivate();
+	const settled = notes.calls.get;
 	expect(reactive.tables.notes.rows).toHaveLength(2);
-	expect(notes.calls.rows).toBe(3);
+	expect(reactive.tables.notes.rows).toHaveLength(2);
+	// Reading again costs nothing. Before this, each read rebuilt every row.
+	expect(notes.calls.get).toBe(settled);
+});
+
+test('a removed row leaves the projection', () => {
+	const { notes, reactive } = setup();
+	expect(reactive.tables.notes.get('n1')?.title).toBe('first');
+
+	notes.handle.delete('n1');
+
+	expect(reactive.tables.notes.get('n1')).toBeUndefined();
+	expect(reactive.tables.notes.rows).toEqual([]);
+});
+
+test('an edited row is the edited one, not the one that was seeded', () => {
+	const { notes, reactive } = setup();
+	notes.handle.update('n1', { title: 'renamed' });
+	expect(reactive.tables.notes.get('n1')?.title).toBe('renamed');
+	expect(reactive.tables.notes.rows[0]?.title).toBe('renamed');
 });
 
 test('write verbs pass through to the underlying handle', () => {

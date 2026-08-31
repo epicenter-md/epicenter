@@ -59,7 +59,7 @@
  * ```
  */
 
-import { createSubscriber } from 'svelte/reactivity';
+import { createSubscriber, SvelteMap } from 'svelte/reactivity';
 
 /**
  * The slice of `@epicenter/data`'s `TableHandle` this adapter touches: the
@@ -79,8 +79,9 @@ import { createSubscriber } from 'svelte/reactivity';
 type AdaptableTable = {
 	readonly rows: unknown[];
 	readonly nonconforming: unknown[];
+	ids(): string[];
 	get(rowId: string): unknown;
-	subscribe(listener: () => void): () => void;
+	subscribe(listener: (rowIds: readonly string[]) => void): () => void;
 	watch(type: never, listener: () => void): () => void;
 };
 
@@ -217,23 +218,56 @@ function reactivePersistence<TPersistence extends AdaptablePersistence>(
 	) as TPersistence;
 }
 
+/**
+ * One table, held as a live projection of its rows.
+ *
+ * A row is CRDT structs until somebody builds a plain object out of it, and
+ * building one costs about two microseconds. Reading `rows` builds every one
+ * of them, so a list over ten thousand notes pays twenty milliseconds to
+ * discover that one note moved. This holds what it built and rebuilds only
+ * what the commit named.
+ *
+ * **Seeded here, never during a read.** An application reads `rows` inside
+ * `$derived`, and writing Svelte state from there is `state_unsafe_mutation`.
+ * Filling the map lazily on first read is therefore not available, which is
+ * why this is eager and why `fromData` is no longer free to call.
+ *
+ * **Never torn down.** The subscription is held for the life of the wrapper
+ * rather than ref-counted to readers, because a projection that stops being
+ * maintained is stale rather than free: the object survives, the updates stop,
+ * and the next reader is served rows from before it looked away. It dies with
+ * the document it mirrors, which is the only lifetime that fits a cache.
+ *
+ * A `SvelteMap` rather than a plain one, and that is the reactivity: reading a
+ * key tracks that key, iterating tracks all of them, so a list wakes on any
+ * change while a component reading one row wakes only for that row. Nothing
+ * here calls `createSubscriber`; the map IS the signal.
+ *
+ * `nonconforming` passes through and is NOT tracked. Rows this release cannot
+ * read are absent from the projection by construction, so there is nothing
+ * here to keep current, and the getter still answers correctly whenever it is
+ * asked.
+ */
 function reactiveTable<TTable extends AdaptableTable>(
 	table: TTable,
 ): ReactiveTable<TTable> {
-	// No snapshot cache, deliberately. The store flushes a commit in phases:
-	// public `onCommitted` listeners run first, table invalidations after, so
-	// a cache invalidated by the table subscription would still serve
-	// pre-commit rows to an `onCommitted` reader (a composed follower reads in
-	// exactly that phase). The handle's `rows` is a walk over a document already
-	// in memory and builds a fresh array per access either way, so a
-	// read-through is the store's own contract; this adapter adds tracking,
-	// never a second copy of the data.
-	const subscribe = createSubscriber((update) => table.subscribe(update));
+	const rows = new SvelteMap<string, unknown>();
+	for (const rowId of table.ids()) {
+		const row = table.get(rowId);
+		if (row !== undefined) rows.set(rowId, row);
+	}
+
+	table.subscribe((rowIds) => {
+		for (const rowId of rowIds) {
+			const row = table.get(rowId);
+			if (row === undefined) rows.delete(rowId);
+			else rows.set(rowId, row);
+		}
+	});
+
 	// Descriptors, not a spread. `rows` and `nonconforming` are GETTERS on the
 	// handle, and `{ ...table }` would invoke them: wrapping a table would walk
-	// every row once, before anything had read anything. `from-data.svelte.test`
-	// caught exactly that, which is what "wrapping subscribes to nothing and
-	// reads nothing" is there to hold.
+	// every row once, before anything had read anything.
 	return Object.freeze(
 		Object.defineProperties(
 			{},
@@ -242,23 +276,12 @@ function reactiveTable<TTable extends AdaptableTable>(
 				rows: {
 					enumerable: true,
 					get() {
-						subscribe();
-						return table.rows;
-					},
-				},
-				nonconforming: {
-					enumerable: true,
-					get() {
-						subscribe();
-						return table.nonconforming;
+						return [...rows.values()];
 					},
 				},
 				get: {
 					enumerable: true,
-					value: (rowId: string) => {
-						subscribe();
-						return table.get(rowId);
-					},
+					value: (rowId: string) => rows.get(rowId),
 				},
 			},
 		),
