@@ -26,7 +26,7 @@ live at their own entry points rather than on `@epicenter/data`.
 import { openDatabase } from '@epicenter/data/browser';
 
 // One opener. The presence of `account` is the discriminant, all the way
-// down: it decides the address, whether the store carries an outbox, and
+// down: it decides the address, whether appends are owed to an authority, and
 // whether a cache miss can be bootstrapped or is simply not here.
 const { data, error } = await openDatabase(honeycrispDefinition, {
 	generation,
@@ -389,9 +389,9 @@ await data.persistence.flush();
 
 `blocked` means the latest flush failed and a restart would lose the retained
 work; a later edit or an explicit `flush()` retries. Nothing is lost while
-the client stays open: the `Y.Doc` still holds the work. A replica may also
-offer accepted work to the authority before local persistence settles; local
-persistence and sync are independent best-effort paths (ADR-0300).
+the client stays open: the `Y.Doc` still holds the work. The sender reads the
+durable outbox, so a local edit is offered to the authority once it is durable
+and a blocked device stops syncing until storage recovers (ADR-0302).
 
 ## Sync
 

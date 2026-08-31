@@ -34,9 +34,11 @@ converges to unexpected state or grows faster than its content.
 
 - Yjs updates are commutative and idempotent. A state vector describes what a
   replica HAS; it does not order what it owes. A delete moves no client clock,
-  so two replicas can hold the same vector and differ, which is why this store
-  carries its own cursor and outbox rather than deriving obligation from a
-  vector (`packages/data/evidence/invariants.test.ts`).
+  so two replicas can hold the same vector and differ, which is why obligation
+  in this store is a log position rather than a vector. Both the cursor and the
+  outbox are then DERIVED from one column on the update rows, `MAX(authoritySeq)`
+  and `authoritySeq IS NULL`, so neither can disagree with the bytes it accounts
+  for (`packages/data/evidence/invariants.test.ts`, ADR-0298).
 - Use `Y.encodeStateVector(doc)` to describe local clocks, then `Y.encodeStateAsUpdateV2(doc, remoteStateVector)` to send only missing updates.
 - Persist and transmit bytes from the `updateV2` event. Replay them with `Y.applyUpdateV2(doc, update, origin)`.
 - Wrap multi-write user actions in `doc.transact(() => { ... }, origin)`. This reduces observer churn and gives persistence, providers, and undo logic a useful origin.
@@ -117,12 +119,19 @@ second document store.
 - A locally authored append joins the durable queue owed. Authority-accepted
   bytes arrive on a remote origin and create no outbound obligation, which is
   what the one listener checks before appending.
-- The chain folds at `SNAPSHOT_FOLD_THRESHOLD` by replaying into a fresh
-  `gc: true` document and rewriting it as one complete V2 state update. Replay
+- The chain compacts by ROW, and the row's `authoritySeq` picks which of two
+  mechanisms applies (ADR-0301). Rows the authority has taken replay into a
+  fresh `gc: true` document and rewrite as one complete V2 state update: replay
   rather than `mergeUpdatesV2`, because merging does not GC and collapsing
   tombstones is the point. `encodeStateAsUpdateV2` folds buffered pending state
   back into its output, so a fold taken while dependencies are missing cannot
   silently drop them.
+- Rows still OWED cannot take that path, and this is the one to get right. A
+  whole-document re-encode is not a delta the authority could be offered, so
+  owed rows collapse with `mergeUpdatesV2` into one resendable row that takes a
+  NEW id above every existing one. Folding them like acknowledged rows would
+  offer the authority a whole document per keystroke; inheriting a lower id
+  would let an earlier acknowledgement stamp bytes it never carried.
 - Treat replay corruption as storage failure: a document that cannot hydrate refuses its open rather than handing out a half-hydrated handle.
 
 ## Storage Optimization

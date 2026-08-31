@@ -218,8 +218,8 @@ export function createSyncClient({
 
 	function send(): Result<void, SyncClientError> {
 		// One submission at a time. Two in flight would make an ack ambiguous
-		// about which delivery entries it retires, and the delivery queue is the
-		// record that work is still owed.
+		// about which appends it retires, and the durable outbox is the only
+		// record that work is still owed (ADR-0302).
 		// Two conditions, and they mean different things. No connection is "this
 		// cannot be sent"; an outstanding submission is "this must not be sent
 		// yet". Both answer Ok, because `send` is called on every state change

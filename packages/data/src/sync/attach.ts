@@ -5,9 +5,8 @@
  * is that one thing, written once, because it turned out to be the same
  * everywhere: build the store route's URL, hand the socket's four events to
  * the driver, and classify a rejection as a permanent denial or a close.
- * Reconnecting, backoff, cursor placement, the unacknowledged-submission
- * watchdog, and concluding supersession from a document announcement all stay
- * in `createSyncConnection`, where they always were.
+ * Reconnecting, backoff, cursor placement, and the unacknowledged-submission
+ * watchdog all stay in `createSyncConnection`, where they always were.
  *
  * It lives beside the driver rather than in the app that first wrote it,
  * because the classification is correctness rather than taste: getting

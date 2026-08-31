@@ -40,11 +40,11 @@
  *   retrying it on a timer is a hot loop against a wall; the repair is a new
  *   app generation, which the host owns (reload on auth change), not a state
  *   in this driver.
- *   once, after the driver has let go of everything, and the host discards
- *   the local file whole and reloads. Nothing else can trigger it: a close
- *   without the announcement, garbage, and every failure are ordinary
- *   weather and reconnect on backoff, which is what makes "doubt never
- *   discards" structural.
+ *
+ * Everything else is ordinary weather: a close, garbage on the wire, and every
+ * failure reconnect on backoff. Nothing this driver sees can discard local
+ * state, which is what makes "doubt never discards" structural rather than
+ * careful.
  */
 import { Ok, type Result } from 'wellcrafted/result';
 

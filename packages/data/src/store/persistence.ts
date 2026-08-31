@@ -174,9 +174,13 @@ export type PersistenceController = {
 	/** The public status surface, frozen for the store to expose. */
 	persistence: PersistenceCapability;
 	/**
-	 * What the durable engine has confirmed. The sync sender combines this with
-	 * its transient in-memory delivery queue; this mirror is still required to
-	 * recover locally persisted work after a restart.
+	 * What the durable engine has confirmed, and the sender's only input
+	 * (ADR-0302).
+	 *
+	 * A mirror rather than a query, because `coalesce` is synchronous and no
+	 * port can answer `authoritySeq IS NULL` synchronously. It is also what
+	 * recovers locally persisted work after a restart, so it would exist for
+	 * that alone.
 	 */
 	durableOutbox(): readonly OutboxEntry[];
 	/**
