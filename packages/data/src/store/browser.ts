@@ -240,8 +240,14 @@ export async function openIdbBacking(
 					cursor = row.authoritySeq;
 				}
 			}
-			stored.sort((a, b) => a.id - b.id);
-			outbox.sort((a, b) => a.id - b.id);
+			// Not sorted, because they are already in order and saying so is the
+			// point. `getAll` returns an object store's rows in ascending key
+			// order, and both arrays are pushed in that one iteration. Sorting
+			// them was a no-op on every real input, and worse than a no-op as
+			// documentation: this loop ALREADY depends on that ordering, pairing
+			// `rows[index]` with `ids[index]`, so a defensive sort implied a
+			// doubt the line above it does not share. The fold and `held` depend
+			// on it too. One dependency, stated once.
 			let held = stored.length;
 
 			const loaded: DurableSnapshot = {
