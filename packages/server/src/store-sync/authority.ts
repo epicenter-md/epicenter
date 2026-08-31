@@ -6,8 +6,8 @@
  * lives in `@epicenter/data/sync`, so what is deployed here and what the
  * transport's tests drive are the same object rather than two that agree today.
  *
- * The authority reads nothing (ADR-0218). It holds opaque bytes, hands them
- * back in order, and keeps one snapshot plus the entries after it (ADR-0220).
+ * The authority reads nothing (ADR-0298, restoring ADR-0218). It holds opaque
+ * bytes, hands them back in order, and folds acknowledged log prefixes.
  * Nothing here imports Yjs or a store, and there is no verb that could.
  *
  * The generation is in the object's NAME (ADR-0292), so this object holds one

@@ -4,7 +4,7 @@
 - **Date:** 2026-08-29
 - **Supersedes:** [ADR-0277](0277-the-authority-reads-the-bytes-and-sync-becomes-the-yjs-protocol.md) entirely.
 - **Restores:** [ADR-0217](0217-the-authority-appends-opaque-bytes-and-the-client-owns-every-merge.md) and [ADR-0218](0218-the-authority-reads-nothing-and-a-poison-entry-is-repaired-rather-than-prevented.md), whose model never actually left the tree.
-- **Relates:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md), which removed the reason ADR-0277 existed; [ADR-0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md), whose document identity is untouched; [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md), which this does not reopen.
+- **Relates:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md), which removed the reason ADR-0277 existed; [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md), which puts generation identity in the address; [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md), which this does not reopen.
 
 ## Context
 

@@ -1,10 +1,9 @@
 /**
- * The CRDT's own durable bytes: the update log, its snapshot folding, the outbox and
- * the cursor.
+ * The CRDT's durable bytes: an append log with an acknowledged-prefix fold.
  *
- * Everything here is what the document IS and what `../sync` reads. Anything
- * derived from it, an index or an export, is a follower an application
- * composes on the public surface, never a relation kept beside these.
+ * A syncing store reads its owed suffix and cursor from the same records. A
+ * local-only store has no authority positions. Everything else, such as an
+ * index or an export, is a follower an application composes over the document.
  */
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import * as Y from '@y/y';
@@ -21,50 +20,11 @@ export type { OutboxEntry } from './persistence.js';
 /**
  * How many appends a document's chain holds before it folds into one baseline.
  *
- * It is 1, which means a document is one value: every fold-eligible append
- * collapses immediately and no chain is ever two rows long. That is not a
- * smaller number of the same kind. It is the setting at which the machinery
- * around it stops having anything to do, and it is the step before that
- * machinery is deleted.
- *
- * The dial is the same one every Yjs persistence layer has. `y-indexeddb`
- * appends updates and squashes at `PREFERRED_TRIM_SIZE = 500` by writing
- * `Y.encodeStateAsUpdate(doc)` and deleting what it replaced, which is exactly
- * what `fold` below does. It sits at 500 to avoid re-encoding a whole document
- * often; this sits at 1 because re-encoding one document is cheap at the sizes
- * a personal database reaches, and because paying it buys the deletion of ids,
- * ordering, replay and the chain itself.
- *
- * A syncing store still folds only the acknowledged prefix, so owed appends
- * stay individually addressable for their acknowledgement. That is the last
- * thing keeping a chain plural, and a state vector at the last acknowledged
- * push replaces it (`store.ts` exposes both halves already: `stateVector` and
- * `encodeStateSince`).
- *
- * ## Why it is not 1 yet, with a number rather than an argument
- *
- * It was set to 1 and the whole suite passed, which is a real result: whole
- * state and a chain are the same mechanism and nothing depends on the chain
- * being plural. What passing did not say is what it cost. `transport.test.ts`
- * drives a thousand sends with no idle gap between them, and it is the one
- * place the price is visible:
- *
- * ```txt
- *   threshold 64   the file's suite passes in  7.5 s
- *   threshold  1   the same suite takes       20   s, and one case times out
- * ```
- *
- * Folding at 1 re-encodes the whole document on every acknowledgement instead
- * of every sixty-fourth. That cost is INHERENT to storing a document as one
- * value, not an artifact of this intermediate: the destination writes O(document)
- * per persisted commit too. What makes it acceptable in production is the
- * sender's one-second idle debounce, which this test deliberately does not
- * have.
- *
- * So the number stays at 64 until the swap that pays for it. At 1 today the
- * chain machinery is all still here and 1 buys none of its deletion; it is
- * cost with the benefit still one commit away. The measurement is worth more
- * than the intermediate was.
+ * A syncing store folds only the acknowledged prefix, so owed appends remain
+ * individually addressable for their acknowledgement. The current threshold
+ * is 64: folding on every acknowledgement re-encodes the whole document too
+ * often. In `transport.test.ts`, threshold 64 takes about 7.5 seconds; forcing
+ * threshold 1 takes about 20 seconds and times out one case.
  */
 export const SNAPSHOT_FOLD_THRESHOLD = 64;
 

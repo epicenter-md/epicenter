@@ -1,7 +1,7 @@
 # 0238. The live document is the truth while open, and persistence is a visible debt
 
 - **Status:** Accepted
-- **Amended by:** [ADR-0277](0277-the-authority-reads-the-bytes-and-sync-becomes-the-yjs-protocol.md) at the outbox. Acceptance and durability still split and durability is still a visible debt; what a replica owes the authority is no longer a durable queue, because it asks rather than remembers.
+- **Amended by:** [ADR-0298](0298-the-authority-is-byte-blind-and-a-cursor-is-a-log-position.md) at sync delivery. The authority is byte-blind and positional; a replica's owed suffix is still read from its durable update log.
 - **Date:** 2026-08-12
 - **Provisional number.** `main` ends at ADR-0205; 0206 through 0238 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
@@ -12,11 +12,13 @@
   error, because "this statement got no trustworthy answer" is one outcome
   however it came about.
   [ADR-0231](0231-rebuilding-replaces-a-workspaces-current-yjs-document.md) at
-  the mechanism of two atomicity rules: bytes-with-cursor and stamp-before-push
-  are now guaranteed by one ordered queue flushed whole, rather than by each
-  verb owning its own SQLite transaction.
+  the mechanism of bytes-with-cursor: the update and its authority position are
+  attempted by one ordered queue flushed whole, rather than by each verb owning
+  its own SQLite transaction. The old document-identity stamp is retired by
+  ADR-0292.
 - **Relates:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md)
-- **Amended by:** [ADR-0280](0280-a-browser-stores-durable-record-is-a-chain-of-updates-in-indexeddb-folded-on-idle.md) at the debt machine. The acceptance-and-durability split stands; the observable queue and the three states are replaced by one health bit, because an eager append has no debt window to report.
+- **Amended by:** [ADR-0280](0280-a-browser-stores-durable-record-is-a-chain-of-updates-in-indexeddb-folded-on-idle.md) at the browser layout. Its proposed whole-document write was not adopted; the current browser still keeps an update log, with authority positions read from its records.
+- **Amended by:** [ADR-0300](0300-accepted-edits-are-live-immediately-and-persistence-and-sync-are-best-effort.md) at the sync gate. Accepted edits may be delivered before local persistence settles; persistence and sync are independent best-effort debts.
   (which documents exist and where), [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md)
   (the client owns the store).
 
@@ -62,10 +64,12 @@ only in memory are lost. That is accepted. Hiding it is not.
 ## Decision
 
 **Accepting an edit and recording it durably are two steps. Acceptance is
-synchronous and cannot fail for storage reasons: the live Yjs document and the
-SQL projection update immediately. Durable recording is an ordered queue of
+synchronous and cannot fail for storage reasons: the live Yjs document and its
+declared data view update immediately. Durable recording is an ordered queue of
 work the store owes its own storage, flushed whole and atomically, with one
-observable status. Sync sends only what is durably recorded.**
+observable status. Sync may deliver accepted work before durable recording
+settles; a persistence failure is a visible debt rather than an acceptance
+failure.**
 
 ### Two debts, never conflated
 
@@ -73,14 +77,15 @@ observable status. Sync sends only what is durably recorded.**
 local-persistence debt: has this client written the update durably?
   private in-memory queue -> durable update log
 
-sync-delivery debt: has the authority accepted an already durable local update?
-  durable outbox -> server acknowledgement
+sync-delivery debt: has the authority accepted an accepted local update?
+  transient delivery queue -> server acknowledgement
 ```
 
-A local edit is never offered to the authority merely because it is visible in
-memory. The sender reads only the durable outbox, and acknowledgement removes
-only durable outbox work. Offline is a sync fact; blocked is a persistence
-fact; the two statuses never share a channel.
+An accepted local edit may be offered to the authority before its durable write
+finishes. A persistence failure leaves the live edit usable and visible as a
+durability debt; a sync failure leaves it available for retry. Offline is a
+sync fact; blocked is a persistence fact; the two statuses never share a
+channel.
 
 ### The persistence surface
 
@@ -111,13 +116,12 @@ flush attempt; a blocked store is retried by the next edit, by an explicit
 ### One queue, flushed whole
 
 Each store owns a private controller: an ordered queue of durable operations
-(append update to the log, also enqueue it in the outbox, advance the cursor,
-drop or replace outbox entries, stamp the document identity) and a mirror of
-what the durable engine has confirmed. A flush hands the entire queue to the
-storage port as one atomic batch: all of it commits or none of it does. On
-success the ops leave the queue and the mirror advances; on failure everything
-stays queued, in order, and the status reports blocked. Ops accepted during an
-in-flight flush join the next batch.
+(append an update with its authority position, or acknowledge a submitted
+range) and a mirror of what the durable engine has confirmed. A flush hands the
+entire queue to the storage port as one atomic batch: all of it commits or none
+of it does. On success the ops leave the queue and the mirror advances; on
+failure everything stays queued, in order, and the status reports blocked. Ops
+accepted during an in-flight flush join the next batch.
 
 Whole-queue atomicity is what carries ADR-0231's two invariants without
 per-verb transactions:
@@ -126,46 +130,26 @@ per-verb transactions:
   are adjacent ops in one batch, so durable state never holds a cursor ahead
   of the bytes it accounts for. A remote update may be live before it is
   durable; a crash then simply re-receives it, and updates are idempotent.
-- **Stamp before push.** The identity stamp is queued before any append that
-  follows it, and the sender reads only the durable outbox, so no push can
-  leave before the stamp is durable: a durable outbox entry structurally
-  implies a durable identity. The old browser checkpoint left this window
-  open (the stamp was durable only when the next checkpoint happened to
-  land); the queue closes it.
+- **Accepted work may precede durability.** The sender can offer an accepted
+  local edit before its durable append succeeds. If the process ends first, the
+  edit may be lost locally; if the authority accepted it, the next connection
+  can download it again. ADR-0300 makes this independent failure boundary
+  explicit.
 
 On a synchronous storage port (Bun's file SQLite, a Durable Object's SQLite)
 the flush attempt runs inside the accepting verb, so a successful write is
 durable when the verb returns, exactly as before. On an asynchronous port
 (IndexedDB) the attempt starts immediately and bursts coalesce into the next
-batch. `onLocalWork` fires when a flush durably grows the outbox, because that
-is the moment the transport has something it may send.
+batch. `onLocalWork` fires when an accepted local edit enters the transient
+delivery queue. The transport may send it immediately; the durable log remains
+the restart and resend path.
 
-### The read index rebuilds or refuses
+### Derived views
 
-The SQL projection is the third surface acceptance touches, and it gets the
-same discipline as durability: its failure is contained, never the verb's.
-
-```text
-projection write succeeds -> index stays fresh
-projection write fails    -> keep the Yjs edit, log the cause, mark stale
-next query(...) on stale  -> rebuild the WHOLE index from live Yjs, then run
-rebuild fails             -> QueryFailed; nothing served from the stale cache
-```
-
-A failed projection write cannot fail a table or KV verb, cannot keep the
-edit's bytes (or a remote update's bytes and cursor) out of the durable
-queue, and cannot poison anything. While stale, per-edit projection writes
-are skipped rather than patched into a distrusted cache: they coalesce into
-the one rebuild the next `query` runs, synchronously, covering schema, every
-declared table, and KV. The rebuild is one code path, shared with a remote
-update's projection refresh, so a stale index can never serve rows the live
-document has moved past; SQL is allowed to fail explicitly rather than lie.
-There is no public `ProjectionStale` error and no cache state in table/KV
-`Result`s: `QueryFailed` remains SQL's one refusal, whatever refused.
-
-Opening seeds the index through the same containment, so construction cannot
-fail for projection storage reasons and the openers treat only an unparseable
-workspace declaration as a declaration failure (ADR-0240).
+The declared data view reads the live Yjs document and updates with acceptance.
+SQL is not a built-in store surface; an application may compose it as a
+follower and rebuild it from the document (ADR-0241, ADR-0269). A follower's
+failure does not fail the edit or change the persistence and sync debts.
 
 ### What still throws, what still returns
 
@@ -181,29 +165,20 @@ their caller-actionable `Result`s.
 
 ### Runtime storage
 
-One logical durable record everywhere: the update log, the outbox, the
-cursor, and metadata (format certificate, document identity).
+One logical durable record everywhere: the update log, with an authority
+position on each record when the store syncs. The outbox and cursor are derived
+from those records; generation identity is in the address (ADR-0292).
 
 ```text
-projection (both runtimes)
-  An in-memory SQLite, written synchronously with every accepted edit and
-  rebuilt from the live document at open. Never durable: the durable
-  projection was already discarded at every open, because opening rebuilds
-  unconditionally. `query(...)` therefore follows accepted edits even while
-  persistence is blocked, and sees only projected tables, not the log.
-
 Bun / desktop / Durable Object
-  SQLite owns the durable facts directly (_updates, _outbox, _cursor, _meta),
-  with the existing snapshot fold and the optional history shelf. The port's
-  commit is synchronous.
+  SQLite owns the durable facts directly in `_updates`, including the update
+  id, bytes, and optional authority position. The port's commit is synchronous.
 
 browser
-  IndexedDB owns the durable facts directly: an `updates` store, an `outbox`
-  store, and a `meta` store, written in one multi-store readwrite transaction
-  per flush, with the same fold threshold applied inside the transaction. The
-  whole-checkpoint snapshot of an in-memory SQLite file is deleted. On open,
-  the durable updates hydrate the Yjs document and the projection is rebuilt
-  from it.
+  IndexedDB owns the durable facts directly in one `updates` object store,
+  written in one transaction per flush. The whole-checkpoint snapshot of an
+  in-memory SQLite file is deleted. On open, the durable updates hydrate the
+  Yjs document.
 ```
 
 y-indexeddb was evaluated and rejected for the browser engine: it exposes no
@@ -216,11 +191,12 @@ dependency talks to IndexedDB directly instead.
 ### Restart is honest
 
 Reopening reconstructs exactly the last durable state: durable updates replay
-into the document, the durable outbox is what is owed, the durable cursor is
-where reading resumes. Work that was accepted but never flushed is gone, which
-is the loss the status made visible while the client was open. Closing while
-`blocked` is the one way to lose data, and it is a choice the application can
-surface (warn, retry, export) rather than a corruption.
+into the document, the durable outbox is what remains to send, and the durable
+cursor is where reading resumes. Work that was accepted but never flushed is
+gone locally, although the authority may restore it if it accepted the edit.
+Closing while `blocked` is the one way to lose the only local copy, and it is a
+choice the application can surface (warn, retry, export) rather than a
+corruption.
 
 ## Consequences
 

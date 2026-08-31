@@ -11,8 +11,9 @@
  * The key is the durable document's own address, which is what makes the guard
  * exact. On Bun that is the dataId, because an application folder holds one
  * document; in a browser it is the ownership path
- * `epicenter/<dataId>/local` or
- * `epicenter/<dataId>/account/<base URL>/<principal id>` (ADR-0261), so an
+ * `epicenter/v2/<dataId>/local/gen/<generation>` or
+ * `epicenter/v2/<dataId>/account/<base URL>/<principal id>/gen/<generation>`
+ * (ADR-0261, ADR-0292), so an
  * application's device document and one account's replica may be
  * open at once, two accounts' replicas may be open at once, and a second open
  * of any one of them is still refused.

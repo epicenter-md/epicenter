@@ -2,9 +2,10 @@
  * Open one application's store in a browser page.
  *
  * The store runs HERE, on the main thread. The live Yjs document is the
- * source of truth, and the durable facts (the update log, the outbox, the
- * cursor, and the metadata) live directly in IndexedDB, written one atomic
- * multi-store transaction per flush (ADR-0238). Every read a person makes
+ * source of truth, and the durable update log lives directly in IndexedDB.
+ * Each record carries its authority position, so the outbox and cursor are
+ * read from that same store and one flush is one atomic transaction (ADR-0238).
+ * Every read a person makes
  * (`get`, `list`, `ids`, `document`) comes from the `Y.Doc` already in
  * memory; SQL, when an application wants it, is a follower it composes over
  * this surface, so opening a store here loads no SQLite at all.
@@ -13,17 +14,15 @@
  *
  * The previous shape snapshotted the whole in-memory SQLite (log, outbox,
  * cursor) into one IndexedDB checkpoint record after every commit. That
- * indirection stored one runtime's file format inside another's storage,
- * paid a whole-file write per commit, and left ADR-0231's stamp-before-push
- * window open: the identity stamp was durable only when the next checkpoint
- * happened to land. Four object stores written through the persistence
- * controller's atomic batch replace it; the controller's queue ordering is
- * what closes the window (ADR-0238).
+ * indirection stored one runtime's file format inside another's storage and
+ * paid a whole-file write per commit. The update records now hold the only
+ * durable facts, and the persistence controller's queue ordering keeps a
+ * cursor from advancing before its bytes land (ADR-0238).
  *
  * y-indexeddb was considered and rejected: it exposes no public way to
- * participate in its transactions, so the outbox and cursor could never
- * commit atomically with the updates it stores, and its own debounce and
- * compaction make its update store unreadable as a stable log.
+ * participate in the transaction that records authority positions, and its
+ * own debounce and compaction make its update store unreadable as the stable
+ * log this transport needs.
  *
  * ## Why there is no worker
  *
@@ -356,26 +355,22 @@ export async function openIdbBacking(
  * (ADR-0261, amending ADR-0233):
  *
  * ```text
- * epicenter/<definition id>/local
- * epicenter/<definition id>/account/<base URL>/<principal id>
+ * epicenter/v2/<definition id>/local/gen/<generation>
+ * epicenter/v2/<definition id>/account/<base URL>/<principal id>/gen/<generation>
  * ```
  *
  * A browser application keeps one device document and one retained account
  * replica per server identity, and may hold them open at once. The device
  * document never joins definition sync and survives every sign-in and
  * sign-out; an account replica is this device's replica of one principal's
- * current authority document (ADR-0231), retained across sign-out too. The
+ * current generation, retained across sign-out too. The
  * server URL is part of the address because the same principal identifier can
  * exist on multiple independent servers.
  *
- * Three identities, none of them collapsed into another: the definition id says
- * which application, the base URL and principal form the server identity that
- * owns this replica, and the authority document id says which current Yjs
- * document that replica belongs to. The first two are in the name. The third
- * lives inside the store
- * because a future explicit document replacement may change it while the
- * logical address stays stable; the current runtime does not expose that
- * replacement action.
+ * The definition id says which application, the base URL and principal form
+ * the server identity that owns this replica, and the generation selects the
+ * immutable database history. All three are in the address; the store no
+ * longer carries a separate authority document identity.
  *
  * A definition id is dot-separated lowercase labels, so it holds no `/`: the
  * segment after `epicenter/` is always exactly the application, and no address

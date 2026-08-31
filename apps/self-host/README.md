@@ -65,8 +65,8 @@ Community-supported, not Epicenter-operated. Issues filed against this folder ar
 
 The store transport is `mountStoreSyncApp` in
 `packages/server/src/store-sync/`, and only the hosted Worker mounts it today.
-It resolves one authority per (principal, application id) as a Cloudflare
-Durable Object, and no other runtime implements that backend yet. So an instance
+It resolves one authority per (principal, application id, generation) as a
+Cloudflare Durable Object, and no other runtime implements that backend yet. So an instance
 currently serves session, inference, transcription, and blobs. An application
 pointed at it keeps its data locally without converging with a second device.
 

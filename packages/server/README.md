@@ -11,8 +11,9 @@ composition to read first.
 ## The store authority
 
 An application's store syncs to one Durable Object per
-`(principalId, dataId)`, named
-`principals/<principalId>/data/<dataId>` (ADR-0225). Being signed in
+`(principalId, dataId, generation)`, named
+`principals/<principalId>/data/<dataId>/generations/<generation>` (ADR-0292,
+ADR-0298). Being signed in
 on two devices is the whole sharing model: there is nothing to pair, invite, or
 approve, and no identifier a client can supply that reaches another partition.
 
@@ -26,9 +27,9 @@ partition however the query is written.
 `StoreAuthority` in `src/store-sync/authority.ts` is a thin adapter and nothing
 more. Every rule about who has been sent what lives in `@epicenter/data/sync`,
 so what is deployed and what the transport's own tests drive are the same
-object. The authority reads nothing (ADR-0218): it holds opaque bytes, hands
-them back in order, and keeps one snapshot plus the entries after it
-(ADR-0220). Nothing in it imports Yjs or a workspace.
+object. The authority reads nothing (ADR-0298): it holds opaque bytes, hands
+them back in order, and folds acknowledged log prefixes. Nothing in it imports
+Yjs or a workspace.
 
 Rooms, the row-document HTTP pull, and the `src/epicenter-sync/` authority they
 shared were deleted with the superseded data stack (ADR-0227), and the store

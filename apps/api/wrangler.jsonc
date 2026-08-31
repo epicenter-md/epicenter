@@ -46,8 +46,8 @@
 	// --- Durable Objects ---
 	"durable_objects": {
 		"bindings": [
-			// One StoreAuthority per (principalId, application id) holds the
-			// opaque log for the new store transport (ADR-0220). It reads nothing
+			// One StoreAuthority per (principalId, application id, generation) holds
+			// the opaque log for the store transport (ADR-0298). It reads nothing
 			// it stores, and it is addressed only by a name built from a resolved
 			// bearer's principal, never from a query.
 			{
@@ -69,8 +69,9 @@
 	// requires.
 	//
 	// The class is stable; the NAMES are not, and no migration tag can express
-	// that. Authorities are addressed `principals/<p>/data/<dataId>` as of
-	// ADR-0276, renamed from `stores`, and that record extends the name again
+	// that. Authorities are addressed
+	// `principals/<p>/data/<dataId>/generations/<n>` as of ADR-0292, renamed
+	// from `stores`, and that record extends the name again
 	// with `/generations/<n>`. A name is derived on both halves from values they
 	// already hold and is never stored, so a rename leaves old objects
 	// unreachable rather than broken: there is nothing to migrate, and nothing

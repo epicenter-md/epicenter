@@ -165,12 +165,11 @@ reads the export, which is Markdown files (ADR-0268).
 
 ## Where the durable facts live
 
-The store keeps exactly the ledgers a crash cannot reconstruct: the update
-log, the outbox, the cursor, and the document identity (ADR-0241). In the
-browser, which is the runtime an application opens (ADR-0269), they are small
-IndexedDB relations: `updates`, `outbox`, `tombstones`, `meta` (ADR-0223,
-ADR-0238). There is no worker and no OPFS, and nothing derived is ever
-restored, only rebuilt.
+The store keeps the update log and the authority positions a crash cannot
+reconstruct (ADR-0238, amended by ADR-0300). Each update record carries its
+authority position, so the outbox and cursor are read from the same `updates`
+store. There is no worker and no OPFS, and nothing derived is restored, only
+rebuilt.
 
 History lives outside the CRDT (ADR-0214). The document runs with garbage
 collection on, which is what collapses a field edited five thousand times to two
@@ -178,9 +177,9 @@ structs.
 
 ## The authority owns availability, not meaning
 
-One Durable Object per principal and application, named
-`principals/<id>/stores/<ns>`, keeping a snapshot and a tail (ADR-0220,
-ADR-0225). It appends opaque bytes and reads nothing about their meaning.
+One Durable Object per principal, application, and generation, named
+`principals/<id>/data/<dataId>/generations/<generation>` (ADR-0292,
+ADR-0298). It appends opaque bytes and reads nothing about their meaning.
 
 Being signed in is the whole of the sharing model. The route stamps the
 principal from the bearer and addresses one Durable Object by it, so every

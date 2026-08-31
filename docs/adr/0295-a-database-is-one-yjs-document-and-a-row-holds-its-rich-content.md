@@ -3,16 +3,13 @@
 - **Status:** Accepted, amended 2026-08-30 at where a rich field surfaces
 - **Date:** 2026-08-29
 - **Supersedes:** [ADR-0248](0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md) entirely, [ADR-0278](0278-a-replica-syncs-the-application-document-and-fetches-row-documents-on-demand.md) entirely, [ADR-0284](0284-the-application-document-is-an-index-and-a-rows-remaining-fields-live-in-its-own-document.md) entirely.
-- **Amends:** [ADR-0277](0277-the-authority-reads-the-bytes-and-sync-becomes-the-yjs-protocol.md) at the object granularity and the per-row HTTP surface; [ADR-0282](0282-the-authority-hydrates-the-document-and-one-object-per-document-bounds-the-blast-radius.md) at one-object-per-document; [ADR-0283](0283-a-generations-collection-is-a-ledger-that-allocates-admits-and-sweeps.md) at the per-document routes and the address register; [ADR-0280](0280-a-browser-stores-durable-record-is-a-chain-of-updates-in-indexeddb-folded-on-idle.md) at the document dimension of the record key; [ADR-0286](0286-every-generation-is-minted-from-an-artifact-and-compaction-is-an-export-then-an-import.md) and [ADR-0290](0290-a-mint-is-a-foreground-job-the-client-owns-and-it-cannot-outlive-a-page.md) at their per-document upload invariants.
+- **Amends:** [ADR-0277](0277-the-authority-reads-the-bytes-and-sync-becomes-the-yjs-protocol.md) at the object granularity and the per-row HTTP surface; [ADR-0282](0282-the-authority-hydrates-the-document-and-one-object-per-document-bounds-the-blast-radius.md) at one-object-per-document; [ADR-0283](0283-a-generations-collection-is-a-ledger-that-allocates-admits-and-sweeps.md) at the per-document routes and the address register; [ADR-0280](0280-a-browser-stores-durable-record-is-a-chain-of-updates-in-indexeddb-folded-on-idle.md) at the document dimension of the record key; [ADR-0286](0286-every-generation-is-minted-from-an-artifact-and-compaction-is-an-export-then-an-import.md) and [ADR-0290](0290-a-mint-is-a-foreground-job-the-client-owns-and-it-cannot-outlive-a-page.md) at their per-document upload invariants; [ADR-0300](0300-accepted-edits-are-live-immediately-and-persistence-and-sync-are-best-effort.md) at accepted edits being delivered before local persistence settles.
 - **Relates:** [ADR-0294](0294-a-database-is-sized-against-a-measured-device-budget-not-an-assumed-ceiling.md), which withdrew the memory justification for the split this record retires; [ADR-0215](0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md), whose shape this restores; [ADR-0281](0281-a-generation-is-a-whole-database-and-a-device-chooses-which-one-it-holds.md), which this makes literally true.
-- **Unbuilt:** the client and the authority are both built. A database is one
-  `Y.Doc`, a rich field is a nested type on the row, and `store/envelope.ts`,
-  `store/documents.ts`, the derived row addresses and the tombstone protocol are
-  deleted. The authority is `sync/authority.ts`, byte-blind and positional
-  (ADR-0298), and the document-aware twin this record's `Amends` on ADR-0277
-  pointed at is deleted rather than kept. What remains unbuilt is the generation
-  layer: ADR-0292's exact-generation cache, ADR-0293's import-creates-a-
-  generation path, and the ledger row.
+- **Unbuilt:** generation deletion remains unbuilt; see ADR-0293. The client
+  and authority are built: a database is one `Y.Doc`, a rich field is a nested
+  type on the row, and `store/envelope.ts`, `store/documents.ts`, the derived
+  row addresses, and the tombstone protocol are deleted. The authority is
+  `sync/authority.ts`, byte-blind and positional (ADR-0298).
 
 ## Context
 
@@ -71,48 +68,21 @@ minting a body at the same attribute key lose one subtree. Minting with the row
 removes the concurrency entirely.
 
 **The authority is one Durable Object per `(principal, dataId, generation)`.** It
-holds that one document, answers `since(stateVector)`, and relays updates
-verbatim. ADR-0277's own first answer, refused there, is the shape here.
+holds opaque update bytes, assigns log positions, and relays entries after a
+replica's cursor. It does not hold a `Y.Doc` or answer `since(stateVector)`;
+ADR-0298 restores the byte-blind positional authority that ADR-0277 had
+replaced.
 
-**The device is not the constraint; the authority is.** ADR-0294 measured a
+**The device is the residency boundary.** ADR-0294 measured a
 tab budget of 1,792 MB on an idle iPhone 15 Pro and a per-document cost of
 `rows x 5.5 KB + body bytes x 1.8`, which puts roughly 127,000 pages at the
 measured 3.2 KB vault mean inside a 1,400 MB working budget. The earlier
 per-item rule that priced this at about 100 MB was read from process RSS, which
 overstates by two to three times. On the client, one document per database has
-roughly fifty times the headroom the largest real collection needs.
+roughly fifty times the headroom the largest real collection needs. Because the
+authority does not hydrate the document, those measurements describe client
+memory rather than an authority ceiling.
 
-The authority does not. A Durable Object runs in a Workers isolate documented at
-128 MB "including the JavaScript heap and WebAssembly allocations," and it
-hydrates the whole document to answer `since(stateVector)`. **A database is
-therefore sized by its authority, not by its device.**
-
-That ceiling was derived when this record was written, from an rss figure, which
-is the error ADR-0294 caught. It has since been measured.
-`evidence/bench/validate.ts` now reports `heapUsed` beside `rss`, one OS process
-per cell, and on notes with prose bodies `applyUpdateV2` into a fresh `Doc`
-costs:
-
-```txt
-   986 notes   2.7 MB encoded      0.0 MB heap    17.0 MB rss
- 5,000 notes  13.9 MB encoded     44.0 MB heap    61.0 MB rss
-10,000 notes  27.7 MB encoded    112.1 MB heap   110.2 MB rss
-```
-
-The 986-row heap reading is JSC's accounting granularity rather than a free
-hydration; from 5,000 rows up the two columns agree. So the finding is the
-opposite of the one this record expected: **for a hydrated document, heap and
-rss do not disagree, and the four-times rule was right.** The rss overstatement
-ADR-0294 found is real for a whole process under load and absent for this one
-allocation.
-
-What that changes is the number, downward. Ten thousand notes at the real
-vault's mean already costs 112 MB against a 128 MB isolate, so the ceiling is on
-the order of **ten thousand rows, not twenty**, and the phone has roughly twelve
-times the authority's headroom rather than seven. The measurement is Bun/JSC
-rather than workerd, so it estimates the isolate rather than reading it; a
-workerd probe is the remaining refinement, and it can only move this number by a
-constant.
 
 ## Amendment, 2026-08-30: the row carries its content node
 
@@ -198,9 +168,10 @@ row now carries the type out; nothing about when it comes into being changed.
 ## Considered alternatives
 
 - **Keep N documents and multiplex them.** Refused. The envelope already does
-  this on the client, but the authority must hydrate a document to serve a diff,
-  and Yjs hydrates all-or-nothing, so the server splits regardless. The byte-blind
-  alternative was measured and rejected in ADR-0282.
+  this on the client, but it preserves the addressing, residency, and lifecycle
+  machinery that the one-document shape removes. The byte-blind authority can
+  relay opaque bytes without hydrating a document; ADR-0298 records that
+  authority model.
 - **Yjs subdocuments.** Refused, and measured: 25,000 never-touched subdocs cost
   about 5.1 KB of heap each because `ContentDoc.integrate` eagerly constructs a
   full `Doc` per reference. Subdoc updates never appear in the parent's stream,

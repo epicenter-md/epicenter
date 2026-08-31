@@ -9,9 +9,9 @@ Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL
 Runs on Cloudflare Workers with Durable Objects. Store sync is one WebSocket
 route, `/api/store/v1/sync`, mounted by `mountStoreSyncApp`
 (`packages/server/src/store-sync/`). It resolves one Durable Object per
-(principal, application id), named
-`principals/<principalId>/data/<dataId>`, holding a snapshot plus the
-entries after it (ADR-0220, ADR-0225).
+(principal, application id, generation), named
+`principals/<principalId>/data/<dataId>/generations/<generation>`, holding an
+opaque positional log (ADR-0292, ADR-0298).
 
 The principal is stamped from the resolved bearer and the Durable Object is
 addressed by it, so a client supplies a workspace id and a cursor and nothing
@@ -21,7 +21,7 @@ structural rather than checked. **Being signed in on two devices is the whole of
 the sharing model.** Both devices resolve to one principal, address one
 authority, and converge; nothing is paired, invited, or approved.
 
-The authority reads nothing it stores (ADR-0218). It holds opaque bytes, hands
+The authority reads nothing it stores (ADR-0298). It holds opaque bytes, hands
 them back in order, and imports neither Yjs nor a workspace.
 
 ## Why a hub exists
@@ -109,7 +109,7 @@ Cloudflare Workers
 │   └── /api/store/v1/sync     store sync upgrade (mountStoreSyncApp)
 │
 ├── StoreAuthority (Durable Object, SQLite-backed)
-│   └── One opaque log per (principal, application id)
+│   └── One opaque log per (principal, application id, generation)
 ```
 
 API keys for AI providers are environment secrets (`wrangler secret put`). They never leave the hub. The client sends a session token, the hub validates it and swaps in the real key before forwarding to the provider.

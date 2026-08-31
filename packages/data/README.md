@@ -101,7 +101,8 @@ recovery values explicitly from `error.conforming`.
 
 The row owns its content node, and the database document owns its lifetime.
 `data.transact(() => { ... })` groups direct table and KV operations into one
-accepted and durable transaction.
+accepted transaction. Persistence is a separate best-effort step exposed by
+`data.persistence` (ADR-0300).
 
 SQL, when an application wants it, is a follower it composes over this
 surface: hydrate from `rows`, follow commits through `data.onCommitted`,
@@ -356,9 +357,9 @@ prevent.
 ## Where it stores
 
 The `Y.Doc` is the truth while the client is open; everything else follows it
-(ADR-0238). The store keeps exactly the ledgers a crash cannot reconstruct:
-the update log, and the outbox and cursor that are read off it, written in the
-same atomic act that incurs them (ADR-0241). The document identity used to sit
+(ADR-0238). The store keeps the ledger a crash cannot reconstruct: the update
+log, with the outbox and cursor read from it, written in the same atomic act
+that incurs them (ADR-0241). The document identity used to sit
 beside them and is gone with the membership question: the generation is in the
 address (ADR-0292). They live behind a
 per-store persistence controller: every accepted edit queues its durable work
@@ -413,9 +414,11 @@ proved that omitting the resync reconnect wedges a device permanently. The
 store announces its own durable local work to the transport internally, so
 nothing has to remember to nudge it.
 
-The authority is one Cloudflare Durable Object per (principal, definitionId), named
-`principals/<principalId>/data/<dataId>`, keeping a snapshot plus the
-entries after it (ADR-0220, ADR-0225). It reads nothing and holds opaque bytes.
+The authority is one Cloudflare Durable Object per
+(principal, definitionId, generation), named
+`principals/<principalId>/data/<dataId>/generations/<generation>`, keeping an
+opaque positional log (ADR-0292, ADR-0298). It reads nothing and holds opaque
+bytes.
 `packages/server/src/store-sync/` is the mount; `@epicenter/data/sync` is where
 every merge rule actually lives, so what is deployed and what the transport's
 tests drive are the same object.

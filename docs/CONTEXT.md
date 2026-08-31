@@ -203,9 +203,10 @@ shapes, see `docs/adr/`.
 - **Pressure**: structs the engine holds over rows the declaration can see. The one
   number worth watching, because a deleted row leaves a small permanent cost that
   only a rebuild reclaims.
-- **Store authority**: one Durable Object per principal and application, named
-  `principals/<id>/stores/<ns>`, keeping a snapshot and a tail (ADR-0225,
-  ADR-0220). It appends opaque bytes and reads nothing about their meaning.
+- **Store authority**: one Durable Object per principal, application, and
+  generation, named `principals/<id>/data/<dataId>/generations/<generation>`
+  (ADR-0292, ADR-0298). It appends opaque bytes and reads nothing about their
+  meaning.
 - **`dial`**: the one thing a host supplies to the transport, a function that
   makes a socket. The library owns the cursor, attach and detach, reconnect, and
   the unacknowledged-submission watchdog (ADR-0222).

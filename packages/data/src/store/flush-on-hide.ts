@@ -1,12 +1,10 @@
 /**
- * Make the durable write happen before the page goes away.
+ * Ask the durable controller to flush before the page goes away.
  *
- * A store accepts work live and pays for it afterwards (ADR-0238), so there is
- * always a window between "the person typed it" and "it is on disk". Today the
- * controller requests a flush on every enqueue and coalesces, so the window is
- * about a microtask and nobody has noticed it. It is about to get much bigger:
- * once a document is written whole rather than appended to, the write moves
- * onto the owner's idle timer, and the window becomes that timer.
+ * A store accepts work live and pays for it afterwards (ADR-0238, amended by
+ * ADR-0300), so there is always a window between "the person typed it" and
+ * "it is on disk". The controller coalesces normal writes; this hook gives a
+ * page lifecycle event one last best-effort flush opportunity.
  *
  * A tab does not close politely. `Cmd+W`, a mobile app switch, and a bfcache
  * navigation all tear the page down with whatever was pending still pending,

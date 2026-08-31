@@ -7,12 +7,13 @@ decision is the trust model, and everything below is a consequence of it.
 This page describes what the code does today. The files that carry it:
 
 - `packages/server/src/store-sync/authority.ts`: the authority, one Durable
-  Object per principal and application (ADR-0225)
+  Object per principal, application, and generation (ADR-0292, ADR-0298)
 - `packages/server/src/store-sync/mount.ts`: the authenticated upgrade onto it
 - `packages/data/src/store/store.ts`: the client-owned store
 - `packages/data/src/store/browser.ts`: local persistence, in the client
 
-The shape changed with ADR-0218 and is worth stating precisely, because it moves
+The shape changed with ADR-0298, restoring ADR-0218, and is worth stating
+precisely, because it moves
 the trust boundary in the direction this page is about: **the authority reads
 nothing it stores.** It holds opaque bytes, hands them back in order, and has no
 Yjs import and no verb that could interpret one. What the server can still see
@@ -35,8 +36,8 @@ decode them with an ordinary Yjs library.
 
 What the authority itself does is narrower, and the difference is worth being
 exact about because it is easy to overstate in either direction. **The authority
-reads nothing it stores** (ADR-0218). It appends opaque entries, hands them back
-in order, and keeps one snapshot plus the entries after it (ADR-0220). Nothing
+reads nothing it stores** (ADR-0298). It appends opaque entries, hands them back
+in order, and folds acknowledged log prefixes. Nothing
 in `packages/server/src/store-sync/authority.ts` imports Yjs or a workspace, and
 there is no verb there that could interpret an update. So the honest statement
 is not "the server reads your rows" and not "the server cannot read your rows":
@@ -62,7 +63,7 @@ a who-writes-when graph Epicenter can read.
 
 Super Chat remote attach adds a second, live channel beside CRDT sync, but not a second privacy promise (ADR-0115).
 
-- **The authority holds plaintext.** It decrypts nothing because nothing is encrypted, and its operator can decode what it holds. It does not read it itself (ADR-0218): serving a sleeping device's catch-up needs the bytes in order, not their meaning.
+- **The authority holds plaintext.** It decrypts nothing because nothing is encrypted, and its operator can decode what it holds. It does not read it itself (ADR-0298): serving a sleeping device's catch-up needs the bytes in order, not their meaning.
 - **The live attach relay forwards plaintext live frames.** It carries a Super Chat session (prompts, tool results, approvals) between two of your own signed-in devices, addressed by `principalId`, `hostId`, `deviceId`, and `attachId`. It stores no frames and exposes no route/capability/tool surface, but hosted Epicenter may observe the live payloads while forwarding them. It is endpoint-addressed, not route-addressed, so it is not a resurrection of the deleted relay floor (ADR-0086, ADR-0115).
 
 Confidentiality follows topology. On Cloud, the operator can read live attach frames just as it can read your synced data. On self-host the operator is you. The private answer is to run the deployment yourself.
