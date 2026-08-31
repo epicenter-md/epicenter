@@ -138,10 +138,15 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	/**
 	 * Every row id, sorted, without conforming any of them.
 	 *
-	 * Kept for the cheap count. `rows.length` answers the same question by
-	 * walking every row through the declaration, which is the right answer for
-	 * an application and the wrong one for a bench measuring the store: no
-	 * application calls this, and `evidence/` calls it constantly.
+	 * The cheap way to name what is here. `rows.length` answers the same
+	 * question by walking every row through the declaration, which is the right
+	 * answer for a surface that wants the rows and the wrong one for anything
+	 * that only wants to know which ids exist.
+	 *
+	 * Two callers today: `evidence/`, which measures the store without paying
+	 * for conformance, and `@epicenter/svelte`'s adapter, which seeds its
+	 * projection from ids and point reads so that a later commit can rebuild
+	 * one row rather than all of them.
 	 */
 	ids(): string[];
 	/**

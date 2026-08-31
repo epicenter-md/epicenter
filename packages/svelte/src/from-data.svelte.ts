@@ -1,51 +1,49 @@
 /**
  * A Svelte 5 reactivity adapter over one opened data handle's declared shape.
  *
- * `fromData(data)` mirrors the declaration exactly: `tables.<name>` and
- * `kv`, with the names and row types the definition declares, plus
- * `persistence`. It earns its existence by adding reactivity, not by renaming
- * anything, and the rule is one sentence: every read verb tracks its own
- * invalidation signal, and every write verb passes through unchanged.
+ * `fromData(data)` mirrors the declaration exactly: `tables.<name>` and `kv`,
+ * with the names and row types the definition declares, plus `persistence`.
+ * Same verbs, same types, same names. Every read is reactive and every write
+ * passes through unchanged.
  *
- * Reads track. `rows`, `nonconforming`, and `get()` read
- * through a `createSubscriber` per table, so a read inside `$derived` or an
- * effect re-runs when a commit touches that table, whoever committed it: a
- * local write and bytes that arrived from another device alike (ADR-0221).
- * A row's `content` node is not made reactive by this adapter, deliberately. It
- * carries its own field-scoped `subscribe` (ADR-0296): an editor binds the type
- * directly and hears every keystroke, local or remote, without a table signal in
- * the path. Routing it through this adapter's per-table subscriber would fire
- * the whole list on every character. `stored()` is not made reactive either, and for the opposite reason: its
- * caller is a mirror rendering files off its own commit subscription, and it
- * has no template that would track.
+ * **A table is held. Everything else is read through.** A row is CRDT structs
+ * until somebody builds a plain object out of it, and building one costs about
+ * two microseconds, so reading ten thousand of them to learn that one moved
+ * costs twenty milliseconds. A table is therefore a live projection keyed by
+ * row id: seeded when this is called, patched with the ids each commit names,
+ * read from thereafter. `kv` is ten keys and `persistence` is one enum, so
+ * both stay read-through. The rule is "hold what is expensive to rebuild", and
+ * it says no twice as often as it says yes.
  *
- * Writes pass through. `create`, `update`, and `delete` are the store's own
- * synchronous verbs, untouched; the commit they make is what fires the
- * invalidation the reads are subscribed to, so there is no second write path
- * and no cache to tell.
+ * **A `SvelteMap` IS the signal for a table.** Reading one key tracks that
+ * key; iterating tracks all of them. So a list wakes on any change and a
+ * component reading one row wakes only for that row, with no signal in the
+ * store beyond the ids it already had. `kv` and `persistence` use
+ * `createSubscriber` instead, because there is nothing keyed to track.
  *
- * Lazy by construction. Wrapping subscribes to nothing: a table's store
- * subscription attaches when the first effect reads it and detaches when the
- * last stops, because `createSubscriber` ref-counts subscription to effect
- * usage. A declared table no surface reads costs nothing, and the store's own
- * per-table delta hook (which is also subscription-counted) stays off too.
- * That ref-counting is the whole lifecycle: there is nothing to dispose here,
- * and the raw runtime keeps ownership of opening, sync attachment, and
- * disposal. Network operations stay on the raw plane on purpose: a reactive
- * wrapper must not pretend a rebuild or a reconnect is local state.
+ * **A row's `content` node is not made reactive here, deliberately.** It
+ * carries its own field-scoped `subscribe` (ADR-0296): an editor binds the
+ * type directly and hears every keystroke without a table signal in the path.
+ * `fromSubscription` is how an application reads a value off one.
+ *
+ * **Eager, because it cannot be lazy.** An application reads `rows` inside
+ * `$derived`, and writing Svelte state from there is `state_unsafe_mutation`,
+ * so a projection filled on first read is not available. `fromData` walks each
+ * declared table once when it is called.
+ *
+ * **Never torn down.** Ref-counting a projection to its readers leaves the
+ * object alive and the updates stopped, which serves the next reader rows from
+ * before it looked away. Stale is worse than absent, so the subscription is
+ * held for the life of the wrapper and dies with the document it mirrors.
+ * There is nothing to dispose: the raw runtime still owns opening, sync
+ * attachment, and disposal, and network operations stay on the raw plane on
+ * purpose, because a reactive wrapper must not pretend a reconnect is local
+ * state.
  *
  * One instance per opened data object, owned by whoever opened it, usually a
  * root component that provides it through context. Never a module-global
- * singleton: the data it wraps is one auth generation's document, and the
- * next generation opens its own.
- *
- * Every read is a read-through: a fresh walk over the document already in
- * memory, never a cached copy. The store flushes a commit in phases (public
- * `onCommitted` listeners before table invalidations), so any snapshot this
- * adapter kept would be observably stale to an `onCommitted` reader; holding
- * no copy makes every phase, every event handler, and every effect read the
- * same current rows. `$derived` over `rows` still memoizes its own result,
- * which is where filtering and sorting belong.
+ * singleton: the data it wraps is one auth generation's document, and the next
+ * generation opens its own.
  *
  * @example
  * ```svelte
@@ -289,9 +287,10 @@ function reactiveTable<TTable extends AdaptableTable>(
 }
 
 function reactiveKv<TKv extends AdaptableKv>(kv: TKv): TKv {
-	// No snapshot cache, unlike a table: KV is one small object, not an N-row
-	// walk feeding keyed iteration, so a fresh read per access is the simpler
-	// honest shape.
+	// Read through, unlike a table, and the rule is the same one: hold what is
+	// expensive to rebuild. Ten keys and ten validations is not, so there is
+	// nothing here to hold, nothing to keep current, and no `keys()` verb the
+	// handle would have to grow so this could seed itself.
 	const subscribe = createSubscriber((update) => kv.subscribe(update));
 	// Descriptors for the same reason a table needs them: `nonconforming` is a
 	// getter, and a spread would invoke it.

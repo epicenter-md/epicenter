@@ -557,38 +557,6 @@ function createStoreEngine(
 	}
 
 	/**
-	 * Register a listener under one key, and hand back its teardown.
-	 *
-	 * The key is dropped once nobody watches it, and that pruning is not
-	 * tidiness: `deliver` skips its whole table walk on `tableListeners.size
-	 * === 0` and skips the type phase on `typeListeners.size === 0`, so a key
-	 * left behind holding an empty set is a fast path quietly switched off.
-	 * Written once, so the next keyed signal cannot be added without it.
-	 *
-	 * The teardown is idempotent, because a Svelte effect that reruns can call
-	 * the one it was handed more than once.
-	 */
-	function subscribeByKey<TKey>(
-		listeners: Map<TKey, Set<() => void>>,
-		key: TKey,
-		listener: () => void,
-	): () => void {
-		let forKey = listeners.get(key);
-		if (forKey === undefined) {
-			forKey = new Set();
-			listeners.set(key, forKey);
-		}
-		forKey.add(listener);
-		let stopped = false;
-		return () => {
-			if (stopped) return;
-			stopped = true;
-			forKey.delete(listener);
-			if (forKey.size === 0) listeners.delete(key);
-		};
-	}
-
-	/**
 	 * Hand a settled commit to whoever is waiting for it.
 	 *
 	 * Runs at ACCEPTANCE, whatever the durable engine does later (ADR-0238),
@@ -1327,7 +1295,25 @@ function createStoreEngine(
 				// this type reaches the listener while an edit to a sibling does
 				// not. `tableName` is not consulted, which is why a type from
 				// another table is accepted here (`handles.ts` says why).
-				return subscribeByKey(typeListeners, type, listener);
+				let forType = typeListeners.get(type);
+				if (forType === undefined) {
+					forType = new Set();
+					typeListeners.set(type, forType);
+				}
+				forType.add(listener);
+				let stopped = false;
+				return () => {
+					// Idempotent, because a Svelte effect that reruns can call the
+					// teardown it was handed more than once.
+					if (stopped) return;
+					stopped = true;
+					forType.delete(listener);
+					// Pruning the key is not tidiness: `deliver` skips the type
+					// phase entirely on `typeListeners.size === 0`, so an entry left
+					// behind holding an empty set is a fast path quietly switched
+					// off.
+					if (forType.size === 0) typeListeners.delete(type);
+				};
 			},
 		};
 		return Object.freeze(handle);
