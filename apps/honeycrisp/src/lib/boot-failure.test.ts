@@ -10,15 +10,27 @@ import { bootFailureMessage } from './boot-failure.js';
  */
 describe('bootFailureMessage', () => {
 	test('a refused credential says to sign in again, where signing in is the repair', () => {
-		for (const name of ['Unaddressable', 'CredentialRefused']) {
-			expect(
-				bootFailureMessage({ name, message: 'internal' }, 'account'),
-			).toMatch(/sign in again/i);
-			// The same failure on the local store has no sign-in to offer, so it
-			// names the repair that exists instead of one that does not.
-			expect(
-				bootFailureMessage({ name, message: 'internal' }, 'local'),
-			).toMatch(/restarting honeycrisp/i);
+		expect(
+			bootFailureMessage({ name: 'CredentialRefused', message: 'x' }, 'account'),
+		).toMatch(/sign in again/i);
+		// The same failure on the local store has no sign-in to offer, so it
+		// names the repair that exists instead of one that does not.
+		expect(
+			bootFailureMessage({ name: 'CredentialRefused', message: 'x' }, 'local'),
+		).toMatch(/restarting honeycrisp/i);
+	});
+
+	test('an address that cannot be built points at the notes that exist, never at a restart', () => {
+		// A route hands the store `Number(params.generation)`, so a hand-edited
+		// or truncated link arrives as NaN. Restarting reopens the same URL, so
+		// naming it as the repair is the one answer that cannot work.
+		for (const store of ['local', 'account'] as const) {
+			const message = bootFailureMessage(
+				{ name: 'Unaddressable', message: 'internal' },
+				store,
+			);
+			expect(message).toMatch(/that link/i);
+			expect(message).not.toMatch(/restart/i);
 		}
 	});
 
