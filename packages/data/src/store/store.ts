@@ -451,8 +451,6 @@ function createStoreEngine(
 	 */
 	const typeListeners = new Map<Y.Type, Set<() => void>>();
 	const localWorkListeners = new Set<() => void>();
-	/** Local work that can be sent before its persistence attempt succeeds. */
-	let localOutbox: { id: number; bytes: Uint8Array }[] = [];
 	/**
 	 * The highest id `coalesce` has ever handed to the sender.
 	 *
@@ -633,10 +631,11 @@ function createStoreEngine(
 			try {
 				const id = mintId();
 				const bytes = copyBytes(update);
-				if (replication === 'remote') {
-					localOutbox.push({ id, bytes });
-					notify(localWorkListeners);
-				}
+				// Nudged at acceptance, not when the flush lands, and the sender's
+				// idle timer is what makes that safe: it waits a second before
+				// asking what is owed, and a flush is a microtask. By the time
+				// `coalesce` reads the durable outbox the append is in it.
+				if (replication === 'remote') notify(localWorkListeners);
 				controller.enqueue([
 					{
 						kind: 'append',
@@ -676,9 +675,9 @@ function createStoreEngine(
 	 * fold's threshold exists to avoid; new appends land as their own rows and
 	 * collapse again when enough of them gather.
 	 *
-	 * The transient queue is kept in step here rather than left to `coalesce`,
-	 * because the merged bytes have to stay sendable while the merge itself is
-	 * only queued (ADR-0300).
+	 * Enqueued like any other durable op, so the merged row becomes sendable
+	 * when it commits and not before. A merge that fails to commit leaves the
+	 * rows it would have replaced exactly where they were.
 	 */
 	function mergeOwedIfLong(): void {
 		if (replication !== 'remote') return;
@@ -695,9 +694,6 @@ function createStoreEngine(
 			),
 		);
 		const replaces = owed.map((entry) => entry.id);
-		const replaced = new Set(replaces);
-		localOutbox = localOutbox.filter((entry) => !replaced.has(entry.id));
-		localOutbox.push({ id, bytes });
 		controller.enqueue([{ kind: 'mergeOwed', replaces, id, bytes }]);
 	}
 
@@ -943,25 +939,12 @@ function createStoreEngine(
 		const handle: ClientLog = {
 			coalesce(): { id: number; bytes: Uint8Array } | undefined {
 				assertUsable();
-				// The durable outbox supplies work from a previous process. The
-				// transient outbox supplies work accepted in this process before its
-				// persistence attempt succeeds. The same update can be in both, so
-				// remove transient entries that have since become durable, then
-				// combine the remaining work by local id.
-				const durableEntries = controller.durableOutbox();
-				const durableIds = new Set(durableEntries.map((entry) => entry.id));
-				localOutbox = localOutbox.filter((entry) => !durableIds.has(entry.id));
-				const entriesById = new Map<
-					number,
-					{ id: number; bytes: Uint8Array }
-				>();
-				for (const entry of durableEntries) {
-					entriesById.set(entry.id, entry);
-				}
-				for (const entry of localOutbox) {
-					entriesById.set(entry.id, entry);
-				}
-				const entries = [...entriesById.values()].sort((a, b) => a.id - b.id);
+				// The durable outbox, and nothing on top of it. A local edit is
+				// offered to the authority once it is durable (ADR-0302): the
+				// sender's idle timer is a second and a flush is a microtask, so
+				// what is accepted has landed by the time this is asked, and a
+				// blocked flush simply leaves nothing new to send.
+				const entries = controller.durableOutbox();
 				const last = entries.at(-1);
 				if (last === undefined) return undefined;
 				// One document, so one merge (ADR-0295). Every unsent entry belongs
@@ -989,7 +972,6 @@ function createStoreEngine(
 			},
 			acknowledge(throughId: number, authoritySeq: number): void {
 				assertUsable();
-				localOutbox = localOutbox.filter((entry) => entry.id > throughId);
 				// One op for what used to be two. Dropping the outbox and moving
 				// the cursor were the same fact reported twice: these bytes reached
 				// the authority's log, at this position. If it never lands and the

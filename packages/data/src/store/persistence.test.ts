@@ -342,20 +342,23 @@ describe('owed work collapses so an offline chain stays bounded (ADR-0301)', () 
 	});
 });
 
-describe('sync can use accepted work before persistence settles', () => {
-	test('coalesce offers accepted work while persistence is blocked', () => {
+describe('sync reads only durable facts', () => {
+	test('coalesce offers nothing while the append is still in the queue', () => {
 		const replica = openFailable();
 		replica.gate.failing = true;
 		expectOk(replica.db.tables.notes.create({ title: 'not yet durable' }));
 
-		// The live document and transient delivery queue hold the edit even
-		// though the durable engine refused it.
-		expect(syncEngineOf(replica.store).coalesce()?.id).toBe(1);
+		// The live document holds the edit and the person can see it; the sender
+		// cannot, because what is owed is a property of the durable record
+		// (ADR-0302). Nothing is lost by waiting: the sender's idle timer is a
+		// second and a flush is a microtask, so this gap only exists while
+		// storage is actually refusing.
+		expect(syncEngineOf(replica.store).coalesce()).toBeUndefined();
 
 		replica.gate.failing = false;
 		expectOk(replica.db.tables.notes.create({ title: 'now everything lands' }));
+		// Both edits land together and merge into one submission.
 		const merged = syncEngineOf(replica.store).coalesce();
-		expect(merged).toBeDefined();
 		expect(merged?.id).toBe(2);
 	});
 
@@ -366,6 +369,9 @@ describe('sync can use accepted work before persistence settles', () => {
 			nudges += 1;
 		});
 
+		// The nudge starts the sender's idle timer, and the timer is what makes
+		// nudging early safe: it asks what is owed a second later, by which point
+		// an unblocked flush has long since committed.
 		replica.gate.failing = true;
 		expectOk(replica.db.tables.notes.create({ title: 'accepted' }));
 		expect(nudges).toBe(1);
@@ -373,22 +379,6 @@ describe('sync can use accepted work before persistence settles', () => {
 		replica.gate.failing = false;
 		expectOk(replica.db.tables.notes.create({ title: 'flushed' }));
 		expect(nudges).toBe(2);
-	});
-
-	test('an acknowledged in-memory edit need not wait for local storage', () => {
-		const replica = openFailable();
-		replica.gate.failing = true;
-		expectOk(replica.db.tables.notes.create({ title: 'server accepted' }));
-
-		const sent = syncEngineOf(replica.store).coalesce();
-		if (sent === undefined) throw new Error('nothing to send');
-		syncEngineOf(replica.store).acknowledge(sent.id, 1);
-
-		// The authority accepted it even though this process could not save it.
-		// The transient delivery queue can retire it independently; a restart
-		// would recover it from the authority by re-reading from the old cursor.
-		expect(syncEngineOf(replica.store).coalesce()).toBeUndefined();
-		expect(replica.store.persistence.get()).toBe('blocked');
 	});
 
 	test('a remote update is live at once, and its cursor waits for the bytes', async () => {
