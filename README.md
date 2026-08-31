@@ -47,7 +47,7 @@ invalidation or race protection. Rich content is in there too: a row's prose is
 a nested type on the row, not a second document with an address of its own.
 
 ```typescript
-import { openDevice } from '@epicenter/data/browser';
+import { openDatabase } from '@epicenter/data/browser';
 import { defineData, defineTable, field, plainText } from '@epicenter/data/definition';
 
 const notesDefinition = defineData({
@@ -63,13 +63,14 @@ const notesDefinition = defineData({
 	},
 });
 
-// Every verb returns a Result; the error arm is elided here for length.
-const { data } = await openDevice(notesDefinition);  // the only await
+// Opening is the asynchronous boundary; reads and writes are synchronous.
+const { data, error } = await openDatabase(notesDefinition, { generation: 1 });
+if (error !== null) throw error;
 
 const note = data.tables.notes.create({ title: 'Hello', pinned: false, folderId: null });
 
 const listed = data.tables.notes.rows;             // synchronous flat rows
-const stop = data.tables.notes.subscribe(read);   // fires with the row ids a commit touched
+const stop = data.tables.notes.subscribe(() => { /* re-read rows */ });
 ```
 
 A *data definition* is one application's declaration of its durable data: pure

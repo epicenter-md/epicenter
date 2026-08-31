@@ -13,17 +13,18 @@ When a schema, builder, or configuration is only used once in a test, inline it 
 
 ```typescript
 test('builds a workspace bundle', () => {
-	const posts = defineTable({ id: field.string<PostId>(), title: field.string() });
-
-	const theme = defineKv(Type.Union([Type.Literal('light'), Type.Literal('dark')]), () => 'light');
-
-	const workspace = createWorkspace({
+	const definition = defineData({
 		id: 'test-app',
-		tables: { posts },
-		kv: { theme },
+		kv: { theme: field.string() },
+		tables: {
+			posts: defineTable({
+				title: field.string(),
+				content: plainText(),
+			}),
+		},
 	});
 
-	expect(workspace.ydoc.guid).toBe('test-app');
+	expect(definition.id).toBe('test-app');
 });
 ```
 
@@ -31,20 +32,18 @@ test('builds a workspace bundle', () => {
 
 ```typescript
 test('builds a workspace bundle', () => {
-	const workspace = createWorkspace({
+	const definition = defineData({
 		id: 'test-app',
+		kv: { theme: field.string() },
 		tables: {
-			posts: defineTable({ id: field.string<PostId>(), title: field.string() }),
-		},
-		kv: {
-			theme: defineKv(
-				Type.Union([Type.Literal('light'), Type.Literal('dark')]),
-				() => 'light',
-			),
+			posts: defineTable({
+				title: field.string(),
+				content: plainText(),
+			}),
 		},
 	});
 
-	expect(workspace.ydoc.guid).toBe('test-app');
+	expect(definition.id).toBe('test-app');
 });
 ```
 
@@ -60,14 +59,13 @@ test('builds a workspace bundle', () => {
 Extract to a variable when:
 
 - The value is used **multiple times** in the same test
-- You need to chain methods on the result (e.g., `.migrate()` on a multi-version `defineTable(v1, v2)`)
+- The value is used to build several related definitions in the same test
 - The definition is **shared across multiple tests** in a `beforeEach` or test fixture
 - The inline version would exceed ~15-20 lines and hurt readability
 
 ### Applies To
 
-- `defineTable()`, `defineKv()`, `createDisposableCache()` builders
-- `createWorkspace()` factory calls
+- `defineData()`, `defineTable()`, `createDisposableCache()` builders
 - Schema definitions (TypeBox `field.*` / `Type.*`, arktype, zod, etc.)
 - Configuration objects passed to factories
 - Mock functions used only once

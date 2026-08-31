@@ -77,9 +77,9 @@ open at once.
 
 ## The surface
 
-Each table the definition declares is a key on `data.tables`. The physical file
-and CRDT capability that `data` owns sits under `data.store`, so a table can be
-named anything a person names it:
+Each table the definition declares is a key on `data.tables`. The opened data
+object carries both the application view and the document capabilities, so a
+table can be named anything a person names it:
 
 ```ts
 data.tables.notes.create(fields)                  // Row, at a minted 24-character id
@@ -104,13 +104,13 @@ The row owns its content node, and the database document owns its lifetime.
 accepted and durable transaction.
 
 SQL, when an application wants it, is a follower it composes over this
-surface: hydrate from `rows`, follow commits through `store.onCommitted`,
+surface: hydrate from `rows`, follow commits through `data.onCommitted`,
 and rebuild whole at the next read, so an index can never serve rows the live
 document has moved past (ADR-0241). The package shipped one such follower and
 no application ever composed it, so it was deleted; a person who wants to look
 at their data outside the app reads the export (ADR-0268), which is files.
 
-`data.store` carries the document itself: `pressure()` (how much of it is dead
+`data` carries the document itself: `pressure()` (how much of it is dead
 weight), `stored()` and `rowFile()` (what is there, before the declaration reads
 it, which is the export's read and not an application's), `onCommitted`
 (anything committed, whoever wrote it), `persistence` (whether accepted work has
@@ -381,17 +381,16 @@ Persistence failing never fails a verb and never poisons the store. The debt
 is observable instead:
 
 ```ts
-data.store.persistence.get(); // 'saved' | 'pending' | 'blocked'
-data.store.persistence.subscribe(listener);
-await data.store.persistence.flush();
+data.persistence.get(); // 'saved' | 'pending' | 'blocked'
+data.persistence.subscribe(listener);
+await data.persistence.flush();
 ```
 
 `blocked` means the latest flush failed and a restart would lose the retained
 work; a later edit or an explicit `flush()` retries. Nothing is lost while
-the client stays open: the `Y.Doc` still holds the work, and on a replica the
-outbox still owes it to the authority once it lands durably. Sync sends only
-durable work, so an edit is never offered to the authority merely because it
-is visible in memory.
+the client stays open: the `Y.Doc` still holds the work. A replica may also
+offer accepted work to the authority before local persistence settles; local
+persistence and sync are independent best-effort paths (ADR-0300).
 
 ## Sync
 

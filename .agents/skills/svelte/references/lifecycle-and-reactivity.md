@@ -365,20 +365,18 @@ State modules use a factory function that returns a flat object with getters and
 function createBookmarkState(db: AppData) {
 	let rows = $state.raw<Bookmark[]>([]);
 	function read() {
-		const { data, error } = db.bookmarks.list();
-		if (error !== null) return reportBackgroundError(error);
-		rows = data.rows;
+		rows = db.tables.bookmarks.rows;
 	}
 	read();
-	const stop = db.bookmarks.subscribe(read);
+	const stop = db.tables.bookmarks.subscribe(read);
 
 	const bookmarks = $derived(rows.filter((b) => b.deletedAt === null));
 
 	return {
 		[Symbol.dispose]: stop,
 		get bookmarks() { return bookmarks; },
-		add(fields: BookmarkFields) { /* ... */ },
-		remove(id: BookmarkId) { /* ... */ },
+		add(fields: BookmarkFields) { db.tables.bookmarks.create(fields); },
+		remove(id: BookmarkId) { db.tables.bookmarks.delete(id); },
 	};
 }
 

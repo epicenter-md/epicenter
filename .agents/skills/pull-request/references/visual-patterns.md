@@ -71,9 +71,9 @@ Use when two to six files move and the new location communicates intent (these b
 When components stack, show them from high-level to low-level with a one-line job per layer. Keep it to a thin form; full boxes are rarely worth it.
 
 ```txt
-createDisposableCache(...).open(id)   high-level: refcounted handle per id
-  createWorkspace({ id, tables, kv }) mid-level:  Y.Doc + typed tables in one call
-    defineTable() / defineKv()        low-level:  pure schema definitions
+openDatabase(definition, options)     high-level: open one local or account document
+  createStoreEngine(...)              mid-level:  Y.Doc + persistence + signals
+    defineData() / defineTable()      low-level: pure schema definitions
 ```
 
 ## Comparison Table
