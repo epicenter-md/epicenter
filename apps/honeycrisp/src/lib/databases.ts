@@ -13,7 +13,7 @@ type PrincipalId = Extract<
 >['principalId'];
 
 import { type BrowserData, type LocalData } from '@epicenter/data';
-import { readArtifact } from '@epicenter/data/artifact';
+import { emptyDatabase } from '@epicenter/data/artifact';
 import { attachMirror } from '@epicenter/data/artifact/mirror';
 import {
 	type AddressedDocument,
@@ -245,7 +245,7 @@ export async function resolveLocalGeneration(): Promise<number> {
 	const newest = held.at(-1);
 	if (newest !== undefined) return newest;
 
-	const state = readArtifact(new Map(), honeycrispDefinition);
+	const state = emptyDatabase(honeycrispDefinition);
 	if (state.error !== null) throw state.error;
 	const created = await importGeneration(honeycrispDefinition, state.data);
 	if (created.error !== null) throw created.error;
@@ -289,11 +289,9 @@ export async function resolveAccountGeneration(
 	const latest = generations.at(-1);
 	if (latest !== undefined) return latest;
 	// An EMPTY list is a first run, not a refusal, and the distinction is the
-	// listing itself: a failed one already threw above. Creating the account's
-	// first generation is an import of an empty folder (ADR-0293), which is the
-	// only way one ever comes into being; what a device must not do is invent
-	// one because it could not SEE what the account has.
-	const state = readArtifact(new Map(), honeycrispDefinition);
+	// listing itself: a failed one already threw above. What a device must not
+	// do is invent a generation because it could not SEE what the account has.
+	const state = emptyDatabase(honeycrispDefinition);
 	if (state.error !== null) throw state.error;
 	const created = await importGeneration(honeycrispDefinition, state.data, {
 		account: {

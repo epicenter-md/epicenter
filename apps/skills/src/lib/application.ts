@@ -10,7 +10,7 @@
  */
 
 import { type LocalData } from '@epicenter/data';
-import { readArtifact } from '@epicenter/data/artifact';
+import { emptyDatabase } from '@epicenter/data/artifact';
 import {
 	importGeneration,
 	type LocalDocument,
@@ -78,7 +78,7 @@ async function resolveLocalGeneration(): Promise<number> {
 	const held = await listLocalGenerations(skillsDefinition.id);
 	const newest = held.at(-1);
 	if (newest !== undefined) return newest;
-	const state = readArtifact(new Map(), skillsDefinition);
+	const state = emptyDatabase(skillsDefinition);
 	if (state.error !== null) throw state.error;
 	const created = await importGeneration(skillsDefinition, state.data);
 	if (created.error !== null) throw created.error;

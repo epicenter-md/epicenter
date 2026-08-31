@@ -5,7 +5,7 @@
  * ```txt
  * kv.json              the kv root's stored values
  * <table>/<rowId>.md   one file per row: raw fields as frontmatter, and the
- *                      document through the table's codec as the body
+ *                      node through the table's codec as the body
  * ```
  *
  * The unit is one row and one file. `renderRow` is what the mirror calls for
@@ -16,6 +16,11 @@
  *
  * Two pure inverse pairs sit underneath both: `rowPath`/`parseRowPath` for
  * where a row's file lives, and `rowFile`/`parseRowFile` for what is in it.
+ * They are NOT re-exported here. They have their own entry point,
+ * `@epicenter/data/artifact/format`, because reading a folder is not the same
+ * job as holding a store and the host that indexes these files has no business
+ * loading a CRDT to parse a string. Offering them here too made that boundary
+ * advisory: the heavy path stayed available, so nothing enforced the split.
  *
  * Both directions are composed on the public surface and neither is a store
  * verb. Writing the files out and reading them back in belongs to whoever
@@ -25,16 +30,10 @@
  * (ADR-0272).
  */
 export {
-	frontmatter,
-	type ParsedRowFile,
-	parseRowFile,
-	rowFile,
-} from './frontmatter.js';
-export {
+	emptyDatabase,
 	type ImportError,
 	readArtifact,
 } from './import.js';
-export { parseRowPath, rowPath } from './layout.js';
 export {
 	type RenderableData,
 	RenderError,

@@ -1,5 +1,5 @@
 import type { AuthClient } from '@epicenter/auth';
-import { readArtifact } from '@epicenter/data/artifact';
+import { emptyDatabase } from '@epicenter/data/artifact';
 
 /** The principal half of an account address, as the auth client states it. */
 type PrincipalId = Extract<
@@ -234,7 +234,7 @@ async function resolveLocalGeneration(): Promise<number> {
 	const held = await listLocalGenerations(vocabDefinition.id);
 	const newest = held.at(-1);
 	if (newest !== undefined) return newest;
-	const state = readArtifact(new Map(), vocabDefinition);
+	const state = emptyDatabase(vocabDefinition);
 	if (state.error !== null) throw state.error;
 	const created = await importGeneration(vocabDefinition, state.data);
 	if (created.error !== null) throw created.error;
@@ -271,7 +271,7 @@ async function resolveAccountGeneration(
 	// first generation is an import of an empty folder (ADR-0293), which is the
 	// only way one ever comes into being; what a device must not do is invent
 	// one because it could not SEE what the account has.
-	const state = readArtifact(new Map(), vocabDefinition);
+	const state = emptyDatabase(vocabDefinition);
 	if (state.error !== null) throw state.error;
 	const created = await importGeneration(vocabDefinition, state.data, {
 		account: {
