@@ -44,12 +44,15 @@ The address is derived synchronously and keeps the storage format epoch, which
 is what lets the record shape change by stranding rather than migrating:
 
 ```txt
-epicenter/v2/<dataId>/local/gen/<n>
-epicenter/v2/<dataId>/account/<encodedBaseURL>/<encodedPrincipalId>/gen/<n>
+epicenter/v3/<dataId>/local/gen/<n>
+epicenter/v3/<dataId>/account/<encodedBaseURL>/<encodedPrincipalId>/gen/<n>
 ```
 
-The epoch is `v2` rather than `v1` as written: ADR-0295 changed the record's
-shape, which is exactly the event the epoch exists to strand.
+The epoch has moved twice since this was written, which is the mechanism
+working rather than drifting: ADR-0295 changed the record's shape to reach
+`v2`, and ADR-0301 changed what a NULL position means to reach `v3`. The
+current value lives in `packages/data/src/store/browser.ts`; this record owns
+the scheme, not the number.
 
 Both segments are percent-encoded; a base URL contains `://` and may keep a path
 prefix. Enumeration parses the number rather than sorting it, because `gen/9`

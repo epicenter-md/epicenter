@@ -19,6 +19,8 @@
 - **Relates:** [ADR-0238](0238-the-live-document-is-the-truth-while-open-and-persistence-is-a-visible-debt.md)
   (persistence as a capability; this record gives sync the same shape).
 
+- **Amended by:** [ADR-0301](0301-owed-updates-collapse-into-one-resendable-row-and-the-fold-stops-asking-whether-a-store-syncs.md) at the fold's use of the store's kind. A store's kind is no longer a constructor argument the fold reads; the row's `authoritySeq` decides.
+
 ## Context
 
 `ReplicaStore` was `Store` plus a bag of replica verbs: `applyRemote`, a

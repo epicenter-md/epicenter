@@ -18,7 +18,7 @@
   ADR-0292.
 - **Relates:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md)
 - **Amended by:** [ADR-0280](0280-a-browser-stores-durable-record-is-a-chain-of-updates-in-indexeddb-folded-on-idle.md) at the browser layout. Its proposed whole-document write was not adopted; the current browser still keeps an update log, with authority positions read from its records.
-- **Amended by:** [ADR-0300](0300-accepted-edits-are-live-immediately-and-persistence-and-sync-are-best-effort.md) at the sync gate. Accepted edits may be delivered before local persistence settles; persistence and sync are independent best-effort debts.
+- **Amended by:** [ADR-0300](0300-accepted-edits-are-live-immediately-and-persistence-and-sync-are-best-effort.md) at the sync gate, and restored at that gate by [ADR-0302](0302-a-local-edit-is-offered-to-the-authority-once-it-is-durable.md). Sync sends only durably recorded work again; what 0300 kept is that an edit is accepted live and neither path may throw through the editor.
   (which documents exist and where), [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md)
   (the client owns the store).
 

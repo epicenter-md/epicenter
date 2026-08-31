@@ -6,6 +6,8 @@
 - **Restores:** [ADR-0217](0217-the-authority-appends-opaque-bytes-and-the-client-owns-every-merge.md) and [ADR-0218](0218-the-authority-reads-nothing-and-a-poison-entry-is-repaired-rather-than-prevented.md), whose model never actually left the tree.
 - **Relates:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md), which removed the reason ADR-0277 existed; [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md), which puts generation identity in the address; [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md), which this does not reopen.
 
+- **Amended by:** [ADR-0301](0301-owed-updates-collapse-into-one-resendable-row-and-the-fold-stops-asking-whether-a-store-syncs.md) at owed appends staying individually addressable. They collapse into one resendable row above every existing id; the derived cursor and derived outbox are untouched.
+
 ## Context
 
 ADR-0277 decided that the authority holds Yjs documents and speaks
