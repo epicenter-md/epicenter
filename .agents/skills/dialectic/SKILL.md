@@ -14,25 +14,38 @@ is right, wrong, missing, or newly possible. Through repeated re-articulation,
 the model becomes intelligible or produces a vision the user can recognize and
 say, in effect, “that’s right.”
 
-Every turn must leave the live articulation or articulations visible. Put the
-principal account in a prominent block quote, in plain words. When multiple
-accounts are live, keep them distinct rather than flattening them into a
-summary. The user should be able to accept, reject, or correct the account
-itself.
+Every turn must leave the live articulation or articulations visible. Make the
+main surface the articulation itself: an uncompromising greenfield vision of
+what should exist and how it should work. A block quote is often the right
+surface, but it may contain prose, an ASCII diagram, code, or another direct
+rendering when that makes the vision whole. It may be as expansive as the
+vision requires, but it must contain no history of how it was reached, evidence
+collection, summary of the user's material, or explanation of the answer. Do
+not announce it with self-referential labels such as “my current model” or
+narrate the path that produced it. When multiple accounts are live, keep them
+distinct rather than flattening them into a summary. The user should be able
+to accept, reject, or correct the account itself.
 
 ## What an articulation is
 
 An articulation is an uncompromising vision of what should exist and how it
 should work: the cleanest model with inherited constraints suspended. It is the
 account we could build backward from. Keep the model whole. State it plainly
-and succinctly, and allow it to be deliberately oversimplified. It is complete
-in meaning but does not need to be fully justified before it is offered. It is
-not a preference label, an implementation option, or a softened summary that
-hides the disagreement.
+and efficiently, and allow it to be deliberately oversimplified. It is complete
+in meaning but does not need to be fully justified before it is offered.
+Ambition comes from the scope and consequences of the claim, not from its
+length. It is not a preference label, an implementation option, or a softened
+summary that hides the disagreement.
 
 > **Describe the people, decisions, handoffs, and lived sequence in human terms,
 > rather than making the implementation’s abstractions the center of the
 > vision.**
+
+The vision must be enterable, not merely defensible. Render what it would be
+like to inhabit the proposed whole: what the person is trying to do, what they
+encounter, what they can now decide or accomplish, and what the system carries
+for them. Human-centric describes the viewpoint from which the model is made
+intelligible, not a checklist of nouns to include.
 
 The agent should make its strongest account, not wait for certainty. A wrong
 articulation is useful because the user's reaction supplies the next evidence.
@@ -52,6 +65,13 @@ the user wants the agent’s current model made intelligible and does not need t
 endorse or restate it. In a greenfield dialectic, the user and agent compare
 ambitious visions of what should exist and how it should work until an accepted
 account emerges.
+
+When the interaction itself needs calibration, read the relevant behavioral
+reference: [learning-dialectic.md](references/learning-dialectic.md) shows a
+model becoming intelligible through a human reaction, and
+[greenfield-dialectic.md](references/greenfield-dialectic.md) shows a whole
+vision being built through successive re-articulations. These are reference
+interactions, not templates or scripts.
 
 ## Make the next move
 
@@ -110,18 +130,33 @@ the model. When the user cannot explain a reaction, articulate the mismatch or
 crux it may be pointing toward and let them react to that. Plain agreement is
 useful only when it moves the model forward.
 
+The user's reaction may be meandering, repetitive, partial, or uncertain. Do
+not mirror that shape. Extract the directional evidence, identify the crux, and
+respond with the tightest account that preserves the ambition of the next
+articulation. Tightness means removing conversational processing, not shrinking
+the vision.
+
 ## Make the collision checkable
 
-Use enough structure for the user to judge the live articulations and crux, but
-do not turn the turn into a report. Use a concrete example when the idea is
-abstract, a comparison when articulations are peers, quoted code when the
-claim is about code, and research when a fact could change the model. Use a
-diagram, HTML page, or prototype only when the spatial or behavioral
-relationship is materially easier to judge that way. If HTML is the right
-surface, read [references/example-turn.html](references/example-turn.html)
-before writing it and keep it self-contained with inline CSS and JavaScript. The
-surface should show which articulations are live, which crux separates them,
-what follows from each, and what the next re-articulation must resolve.
+State the whole articulation first, then render enough of the proposed future
+for the user to enter it and react to what is actually being proposed. Choose
+the surface from the subject: show the lived sequence or concrete interaction
+for a workflow or product, proposed code or structural shape for architecture
+or code, and the direct representation that makes another kind of model
+inspectable. Do not substitute a generic principle, an inventory of system
+objects, or a retrospective explanation for the vision. After the articulation,
+add only the minimum consequence, refusal, comparison, or crux needed to make
+the next reaction possible; if the articulation is sufficient, stop there.
+
+Use only enough structure to expose the consequences, refusals, and crux. Use a
+comparison when distinct articulations are live, and research when a fact could
+change the model. Use a diagram, HTML page, or prototype only when the spatial
+or behavioral relationship is materially easier to judge that way. If HTML is
+the right surface, read [references/example-turn.html](references/example-turn.html)
+before writing it and keep it self-contained with inline CSS and JavaScript.
+Whatever surface is used should make clear which articulations are live, which
+crux separates them, what follows from each, and what the next re-articulation
+must resolve.
 
 ## End according to the destination
 
