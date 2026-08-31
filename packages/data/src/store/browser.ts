@@ -122,40 +122,36 @@ type BrowserDurableSchema = DBSchema & {
 
 type BrowserDurableDatabase = IDBPDatabase<BrowserDurableSchema>;
 
-const DURABLE_STORES = ['updates'] as const;
+/**
+ * The one object store, named once.
+ *
+ * Two others are gone with the designs they served: `tombstones` with the
+ * document split (ADR-0295), because there is no second address a row deletion
+ * could retire, and `identity` with the membership stamp (ADR-0292), because
+ * the generation is in the address. What was left was a one-element list being
+ * looped over.
+ */
+const UPDATES_STORE = 'updates';
 
 function openIndexedDb(address: string): Promise<BrowserDurableDatabase> {
-	return new Promise((resolve, reject) => {
-		let blocked = false;
-		// Version 1, because the address carries the generation: a shape change
-		// strands the old record at a name nothing opens rather than upgrading it
-		// in place, so this database is only ever created, never migrated.
-		void openDB<BrowserDurableSchema>(address, 1, {
-			upgrade(sqlite) {
-				for (const name of DURABLE_STORES) {
-					if (!sqlite.objectStoreNames.contains(name)) {
-						sqlite.createObjectStore(name);
-					}
-				}
-			},
-			blocked() {
-				// A later schema upgrade must not leave boot hanging behind a tab that
-				// still holds the old version. `idb` still resolves if that tab closes,
-				// so close the late connection rather than leaking it after rejection.
-				blocked = true;
-				reject(
-					new Error(
-						'Another tab is holding an older version of this store open. Close it and reload.',
-					),
-				);
-			},
-		}).then(
-			(sqlite) => {
-				if (blocked) sqlite.close();
-				else resolve(sqlite);
-			},
-			(cause) => reject(cause),
-		);
+	// Version 1, and it is a constant rather than a starting point: the address
+	// carries the storage generation, so a shape change strands the old record
+	// at a name nothing opens rather than upgrading it in place. This database
+	// is only ever created, never migrated.
+	//
+	// That is why there is no `blocked` handler here. `blocked` fires when a
+	// versionchange transaction is needed while another connection is open,
+	// which requires opening at a HIGHER version than a live connection holds.
+	// With a constant 1 that can never be requested, so the handler this file
+	// used to carry, and the flag and late-close branch around it, defended an
+	// event the address scheme had already made unreachable. `deleteIndexedDb`
+	// keeps its own: a delete always needs exclusive access, so that one fires.
+	return openDB<BrowserDurableSchema>(address, 1, {
+		upgrade(durable) {
+			if (!durable.objectStoreNames.contains(UPDATES_STORE)) {
+				durable.createObjectStore(UPDATES_STORE);
+			}
+		},
 	});
 }
 
@@ -208,8 +204,8 @@ export async function openIdbBacking(
 		try: async () => {
 			const durable = await openIndexedDb(address);
 
-			const read = durable.transaction(DURABLE_STORES, 'readonly');
-			const updateStore = read.objectStore('updates');
+			const read = durable.transaction(UPDATES_STORE, 'readonly');
+			const updateStore = read.objectStore(UPDATES_STORE);
 			const rows = await updateStore.getAll();
 			const ids = (await updateStore.getAllKeys()) as number[];
 			await read.done;
@@ -221,15 +217,25 @@ export async function openIdbBacking(
 			const outbox: OutboxEntry[] = [];
 			let cursor = 0;
 			let lastId = 0;
+			// Not copied, and the SQL port's `copyBytes` is not an inconsistency
+			// here. `bun:sqlite` can hand back a view over memory it still owns,
+			// so that port has to copy; `getAll` structured-clones, so these
+			// arrays are already this caller's alone. Copying them again bought
+			// nothing and cost a second whole document on every boot, because the
+			// baseline row IS the whole document.
+			//
+			// One array per row, shared by `stored` and `outbox`: an owed row
+			// appears in both and neither ever writes through it.
 			for (const [index, row] of rows.entries()) {
 				const id = ids[index] as number;
 				if (id > lastId) lastId = id;
-				stored.push({ id, bytes: copyBytes(row.bytes) });
+				const bytes = row.bytes;
+				stored.push({ id, bytes });
 				if (row.authoritySeq === null) {
 					// NULL means owed, on every store kind (ADR-0301). A store with
 					// no authority records `NO_AUTHORITY` on its own appends, so it
 					// reaches this branch for nothing and needs no flag to say so.
-					outbox.push({ id, bytes: copyBytes(row.bytes) });
+					outbox.push({ id, bytes });
 				} else if (row.authoritySeq > cursor) {
 					cursor = row.authoritySeq;
 				}
@@ -247,8 +253,8 @@ export async function openIdbBacking(
 
 			const port: DurablePort = {
 				async commit(ops: readonly DurableOp[]): Promise<void> {
-					const transaction = durable.transaction(DURABLE_STORES, 'readwrite');
-					const updates = transaction.objectStore('updates');
+					const transaction = durable.transaction(UPDATES_STORE, 'readwrite');
+					const updates = transaction.objectStore(UPDATES_STORE);
 					let chain = held;
 					let grew = false;
 					for (const op of ops) {
