@@ -594,7 +594,12 @@ function createStoreEngine(
 	// `transaction.local === false` with no remote origin, and the throw below
 	// would fail the open loudly on the first stored update.
 	for (const stored of loaded.updates) {
-		Y.applyUpdateV2(database, copyBytes(stored), null);
+		// Not copied. Both ports hand over arrays that are already this caller's
+		// alone, and `applyUpdateV2` reads its input rather than writing to it,
+		// so a copy here duplicated the whole document for the length of one
+		// call: after a fold the chain is one baseline row, and that row IS the
+		// document.
+		Y.applyUpdateV2(database, stored, null);
 	}
 
 	database.on(
