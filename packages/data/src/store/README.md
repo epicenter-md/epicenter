@@ -46,9 +46,15 @@ explain something here, that is a bug in the code rather than in the sentence.
 ```
 
 Neither arrow out of the live document can block or fail an edit. An edit is
-accepted the moment the Yjs transaction commits; persistence and delivery are
-two independent best-effort attempts that catch up afterwards (ADR-0300). A
-storage failure becomes persistence status, never a thrown edit.
+accepted the moment the Yjs transaction commits, and a storage failure becomes
+persistence status rather than a thrown edit (ADR-0300).
+
+The two arrows are not independent, though, and the order matters: **the sender
+reads the durable outbox, so an edit is offered to the authority once it is
+durable** (ADR-0302). That costs nothing in the normal path, because the sender
+waits a second after being nudged before asking what is owed and a flush is a
+microtask. It costs exactly one thing: a device whose storage is refusing
+writes stops syncing until storage recovers.
 
 ## The one column you have to understand
 
