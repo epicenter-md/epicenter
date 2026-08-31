@@ -384,4 +384,5 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0300](0300-accepted-edits-are-live-immediately-and-persistence-and-sync-are-best-effort.md) | Accepted edits are live immediately, and persistence and sync are best-effort | Accepted (amends 0238; relates to 0298 and 0110) |
 
 | [0301](0301-owed-updates-collapse-into-one-resendable-row-and-the-fold-stops-asking-whether-a-store-syncs.md) | Owed updates collapse into one resendable row, and the fold stops asking whether a store syncs | Accepted (amends 0239 and 0298; unbuilt) |
+| [0302](0302-a-local-edit-is-offered-to-the-authority-once-it-is-durable.md) | A local edit is offered to the authority once it is durable | Accepted (amends 0300 at the transient delivery queue, which is withdrawn) |
 When you add an ADR, add its row here.
