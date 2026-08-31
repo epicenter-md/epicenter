@@ -224,7 +224,7 @@ test('a signed-out boot opens one document and never dials', async () => {
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
 	expect(names).toContain(
-		`epicenter/v2/${whisperingDefinition.id}/local/gen/1`,
+		`epicenter/v3/${whisperingDefinition.id}/local/gen/1`,
 	);
 	expect(names.some((name) => name?.includes('/account/'))).toBe(false);
 });

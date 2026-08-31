@@ -55,7 +55,7 @@ test('the runtime opens the local document and nothing else', async () => {
 	expect(runtime.state.skills).toEqual([]);
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
-	expect(names).toEqual([`epicenter/v2/${skillsDefinition.id}/local/gen/1`]);
+	expect(names).toEqual([`epicenter/v3/${skillsDefinition.id}/local/gen/1`]);
 });
 
 test('a skill and its instructions survive reopening', async () => {

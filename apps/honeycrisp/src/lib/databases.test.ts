@@ -23,7 +23,7 @@ const reloads = mock();
 
 /** The generation every test here works in: the one a fresh device imports. */
 const GEN = 1;
-const LOCAL = `epicenter/v2/${honeycrispDefinition.id}/local/gen/${GEN}`;
+const LOCAL = `epicenter/v3/${honeycrispDefinition.id}/local/gen/${GEN}`;
 
 async function databaseNames(): Promise<string[]> {
 	const databases = await indexedDB.databases();

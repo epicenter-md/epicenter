@@ -14,8 +14,8 @@ takes an EXACT generation (ADR-0292). `/device` and `/account` resolve one and
 redirect; `/device/[generation]` and `/account/[generation]` open it.
 
 ```text
-epicenter/v2/so.epicenter.honeycrisp/local/gen/<n>
-epicenter/v2/so.epicenter.honeycrisp/account/<base URL>/<principal id>/gen/<n>
+epicenter/v3/so.epicenter.honeycrisp/local/gen/<n>
+epicenter/v3/so.epicenter.honeycrisp/account/<base URL>/<principal id>/gen/<n>
 ```
 
 `resolveLocalGeneration` takes the newest copy this device holds and imports an
