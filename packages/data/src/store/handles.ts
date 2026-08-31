@@ -54,6 +54,14 @@ import type { PersistenceCapability } from './persistence.js';
  */
 export type Row = { id: string } & Record<string, JsonValue | Y.Type>;
 
+/**
+ * What a table's subscriber is handed: the rows this commit touched.
+ *
+ * A list may ignore it. A projection keyed by row id cannot, which is the
+ * reason it exists.
+ */
+export type TableListener = (rowIds: readonly string[]) => void;
+
 export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	/**
 	 * Bring one row into being, at a minted id.
@@ -164,12 +172,18 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 * invalidation stays a superset of what changed (ADR-0187) without being
 	 * the whole document.
 	 *
-	 * A ping, not a payload. It carried the ids a commit touched until nothing
-	 * turned out to read them: the one live subscriber discards the argument,
-	 * the mirror refuses the signal and renders everything (ADR-0271), and the
-	 * consumer the ids were kept for reads `updatedAt` off the index through
-	 * A caller re-reads with `rows`, which walks a document already in
-	 * memory.
+	 * It names the rows the commit touched, and a caller may ignore them: a
+	 * re-read with `rows` walks a document already in memory and is always
+	 * correct. What the ids buy is the caller that holds a projection of the
+	 * rows and wants to rebuild only what moved, which is the difference
+	 * between work proportional to the change and work proportional to the
+	 * table.
+	 *
+	 * The ids come from the table root's own `'delta'`, whose `attrs` is keyed
+	 * by the attribute that changed, and a row IS an attribute on the root
+	 * (`evidence/delta-names-the-row.test.ts`). The listener is attached with
+	 * the first subscriber and dropped with the last, so a table nobody watches
+	 * names nothing.
 	 *
 	 * Fires after the commit is accepted, on the same flush as KV's and after
 	 * `onCommitted`, so a composed follower is dirty before any subscriber
@@ -177,7 +191,7 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 * them: a commit's changed types ARE the rows, and
 	 * `evidence/delta-names-the-row.test.ts` still proves the ids are there.
 	 */
-	subscribe(listener: () => void): () => void;
+	subscribe(listener: TableListener): () => void;
 	/**
 	 * Hear edits to ONE live type of this table, local or remote.
 	 *

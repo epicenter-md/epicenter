@@ -67,6 +67,7 @@ import type {
 	StoredData,
 	SyncCapability,
 	TableHandle,
+	TableListener,
 	UntypedDataView,
 } from './handles.js';
 
@@ -440,7 +441,22 @@ function createStoreEngine(
 	 * produced was never used for anything but the lookup below. `typeListeners`
 	 * is keyed the same way, so both keyed signals are now one shape.
 	 */
-	const tableListeners = new Map<Y.Type, Set<() => void>>();
+	const tableListeners = new Map<Y.Type, Set<TableListener>>();
+	/**
+	 * Row ids a table's own delta has named since the last delivery.
+	 *
+	 * Collected rather than delivered from: `'delta'` fires synchronously
+	 * inside acceptance, and a listener that wrote from there would re-enter
+	 * the transaction being accepted. It is held here and handed out in
+	 * `deliver`, on the same flush every other subscriber hears.
+	 *
+	 * Only tables somebody subscribes to have an entry, so a commit of two
+	 * thousand rows in an application that watches no table still collects
+	 * nothing.
+	 */
+	const touchedRows = new Map<Y.Type, Set<string>>();
+	/** How to stop the delta listener filling `touchedRows` for one root. */
+	const rowNamers = new Map<Y.Type, () => void>();
 	/** Who is watching the one KV root. Beside the tables', for the one reason. */
 	const kvListeners = new Set<() => void>();
 	/** The one KV root, taken once so a commit can be checked against it. */
@@ -485,6 +501,59 @@ function createStoreEngine(
 			});
 			if (error !== null) log.error(error);
 		}
+	}
+
+	/** The same, for the listeners a table's ids go to. */
+	function notifyRows(
+		listeners: ReadonlySet<TableListener> | undefined,
+		rowIds: readonly string[],
+	): void {
+		if (listeners === undefined || listeners.size === 0) return;
+		for (const listener of [...listeners]) {
+			const { error } = trySync({
+				try: () => listener(rowIds),
+				catch: (cause) => StoreError.SubscriberThrew({ cause }),
+			});
+			if (error !== null) log.error(error);
+		}
+	}
+
+	/**
+	 * Subscribe to one table, attaching the thing that names its rows.
+	 *
+	 * The delta listener is attached with the FIRST subscriber and dropped with
+	 * the last, so naming rows is paid for by the tables somebody is watching
+	 * and by no others. `evidence/delta-names-the-row.test.ts` pins the
+	 * property this rests on: a row is an attribute on the table root, so
+	 * `attrs` names it on insert, on a field edit, and on delete.
+	 */
+	function subscribeTable(root: Y.Type, listener: TableListener): () => void {
+		let forRoot = tableListeners.get(root);
+		if (forRoot === undefined) {
+			forRoot = new Set();
+			tableListeners.set(root, forRoot);
+			const named = new Set<string>();
+			touchedRows.set(root, named);
+			const onDelta = (delta: unknown): void => {
+				const { attrs } = delta as { attrs?: Record<string, unknown> };
+				if (attrs === undefined) return;
+				for (const rowId of Object.keys(attrs)) named.add(rowId);
+			};
+			root.on('delta', onDelta);
+			rowNamers.set(root, () => root.off('delta', onDelta));
+		}
+		forRoot.add(listener);
+		let stopped = false;
+		return () => {
+			if (stopped) return;
+			stopped = true;
+			forRoot.delete(listener);
+			if (forRoot.size > 0) return;
+			tableListeners.delete(root);
+			touchedRows.delete(root);
+			rowNamers.get(root)?.();
+			rowNamers.delete(root);
+		};
 	}
 
 	/**
@@ -565,7 +634,10 @@ function createStoreEngine(
 			if (parent !== null && tableListeners.has(parent)) roots.add(parent);
 		}
 		for (const root of roots) {
-			notify(tableListeners.get(root));
+			const named = touchedRows.get(root);
+			const rowIds = named === undefined ? [] : [...named];
+			named?.clear();
+			notifyRows(tableListeners.get(root), rowIds);
 		}
 		deliverTypes(transaction);
 	}
@@ -1245,8 +1317,8 @@ function createStoreEngine(
 			 * against the table root, so nothing is registered on the document
 			 * here and there is no listener lifecycle to keep in step.
 			 */
-			subscribe(listener: () => void): () => void {
-				return subscribeByKey(tableListeners, root, listener);
+			subscribe(listener: TableListener): () => void {
+				return subscribeTable(root, listener);
 			},
 			watch(type: Y.Type, listener: () => void): () => void {
 				assertUsable();

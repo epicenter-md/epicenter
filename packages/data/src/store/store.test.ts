@@ -559,10 +559,9 @@ describe('a subscription says a table changed', () => {
 	/**
 	 * Counts notifications rather than collecting payloads.
 	 *
-	 * `subscribe` is a ping now, so what these tests assert is how MANY times
-	 * a table said something and for which table, which is everything a
-	 * subscriber can act on. Which rows moved is proved separately, and still
-	 * is, by `evidence/delta-names-the-row.test.ts`.
+	 * What these assert is how MANY times a table said something and for which
+	 * table. The ids it hands over are pinned separately, below, so a change to
+	 * the payload cannot quietly pass by breaking only the counting.
 	 */
 	function record(table: { subscribe(listener: () => void): () => void }) {
 		const seen: 'changed'[] = [];
@@ -592,6 +591,45 @@ describe('a subscription says a table changed', () => {
 		db.tables.notes.delete(made.id);
 		expect(seen.at(-1)).toBe('changed');
 		expect(seen).toHaveLength(3);
+	});
+
+	test('the ids name the rows a commit touched, on every arm', async () => {
+		// The reason the payload exists: a caller holding a projection keyed by
+		// row id rebuilds only what moved. A list may ignore this and re-read.
+		const seen: string[][] = [];
+		db.tables.notes.subscribe((rowIds) => seen.push([...rowIds]));
+
+		const made = note();
+		expect(seen.at(-1)).toEqual([made.id]);
+
+		db.tables.notes.update(made.id, { title: 'Shopping' });
+		expect(seen.at(-1)).toEqual([made.id]);
+
+		db.tables.notes.delete(made.id);
+		expect(seen.at(-1)).toEqual([made.id]);
+
+		// One commit naming several rows names all of them, once.
+		const a = note();
+		const b = note();
+		db.transact(() => {
+			db.tables.notes.update(a.id, { title: 'A' });
+			db.tables.notes.update(b.id, { title: 'B' });
+		});
+		expect(seen.at(-1)?.slice().sort()).toEqual([a.id, b.id].sort());
+	});
+
+	test('a table nobody subscribes to names nothing', async () => {
+		// The delta listener is attached with the first subscriber and dropped
+		// with the last, so the naming is paid for by the tables being watched.
+		// Without this a commit in an application that renders no list would
+		// collect ids into a set nothing ever reads.
+		const first = note();
+		const seen: string[][] = [];
+		const stop = db.tables.notes.subscribe((rowIds) => seen.push([...rowIds]));
+		stop();
+		db.tables.notes.update(first.id, { title: 'after' });
+
+		expect(seen).toEqual([]);
 	});
 
 	test("a write to another table is not this table's business", async () => {
