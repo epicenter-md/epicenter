@@ -1,5 +1,5 @@
 import type { Logger } from 'wellcrafted/logger';
-import type { AuthFetch, SyncAuthClient } from './auth-contract.js';
+import type { AuthClient, AuthFetch } from './auth-contract.js';
 import { createOAuthAppAuth } from './create-oauth-app-auth.js';
 import type { Instance } from './instance.js';
 import { createInstanceTokenAuth } from './instance-token-auth.js';
@@ -34,8 +34,8 @@ export type CreateAppAuthClientOptions = {
 };
 
 /**
- * The one client-side choke point that turns a persisted {@link Instance} into a
- * concrete auth client, mirroring `createMachineAuthClient` on the node side.
+ * The one choke point that turns a persisted {@link Instance} into a concrete
+ * auth client. Every Epicenter surface reaches auth through here.
  *
  * The persisted instance is the only branch, and it is a clean two-state value
  * (ADR-0070/0071):
@@ -48,12 +48,13 @@ export type CreateAppAuthClientOptions = {
  *   {@link InstanceSetting} guarantees a no-token instance carries the hosted
  *   base URL, so OAuth never targets a self-hosted origin.
  *
- * Both branches return a {@link SyncAuthClient}, so the result is a drop-in for
- * principal-scoped cloud sync regardless of which credential model was chosen.
- * There is no persisted mode tag: the credential model is recomputed from the
- * instance at construction, not stored as a discriminator. The chosen branch is
- * recorded once on the client as `deployment.kind`, which is what UI branches
- * on; nothing downstream re-derives the mode from the persisted instance.
+ * Both branches carry a bearer, so both can actually open the sync socket
+ * {@link AuthClient.openWebSocket} promises, and the result is a drop-in for
+ * principal-scoped sync regardless of which credential model was chosen. There
+ * is no persisted mode tag: the credential model is recomputed from the
+ * instance at construction, not stored as a discriminator. Downstream callers
+ * receive one connection shape and do not need to know which credential branch
+ * produced it.
  */
 export function createAppAuthClient(
 	instance: Instance,
@@ -66,7 +67,7 @@ export function createAppAuthClient(
 		now,
 		log,
 	}: CreateAppAuthClientOptions,
-): SyncAuthClient {
+): AuthClient {
 	if (instance.token) {
 		return createInstanceTokenAuth({
 			baseURL: instance.baseURL,

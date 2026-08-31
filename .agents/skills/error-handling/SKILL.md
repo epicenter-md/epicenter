@@ -1,6 +1,6 @@
 ---
 name: error-handling
-description: Adapt thrown or rejected operations into wellcrafted Results and consume Result values without swallowing failures. Use when replacing try-catch, adding trySync or tryAsync, choosing fallback versus typed propagation or selective rethrow, forwarding Err, handling fire-and-forget promises, mapping known failures at HTTP boundaries, or surfacing tagged errors with toastOnError.
+description: Apply Wellcrafted Result patterns to fallible operations and preserve failures at boundaries. Use when replacing try/catch, adding trySync or tryAsync, choosing fallback or propagation, or mapping errors.
 metadata:
   author: epicenter
   version: '3.1'
@@ -19,7 +19,6 @@ Read the scoped references only when needed:
 - Read [references/wrapping-boundaries.md](references/wrapping-boundaries.md) when deciding how much work one `trySync` or `tryAsync` should cover, especially around cleanup.
 - Read [references/toast-on-error.md](references/toast-on-error.md) when presenting tagged failures in UI code.
 - Read [references/http-boundaries.md](references/http-boundaries.md) when mapping failures into Hono responses or deciding which exceptions must keep propagating.
-- Read [workspace action return shapes](../workspace-api/references/action-return-shapes.md) for `defineQuery` and `defineMutation` throw-versus-`Err` semantics.
 
 ## Choose The Contract First
 
@@ -29,7 +28,7 @@ Read the scoped references only when needed:
 | Failure has a valid fallback | Return `Ok(fallback)` from `catch` |
 | Failure must propagate as data | Return a typed `defineErrors` factory result from `catch` |
 | Only known external failures should become `Err` | Map known exceptions and rethrow unknown ones |
-| Surrounding API is exception-based | Keep `try-catch`, or unwrap only at that boundary |
+| Surrounding API is exception-based | Keep its throwing contract |
 | Cleanup must run on success, failure, cancellation, or early return | Use `finally` |
 
 Use `trySync` for a synchronous operation and `tryAsync` for an operation returning a Promise.
@@ -44,6 +43,22 @@ return Ok(response);
 ```
 
 `defineErrors` factories already return `Err(...)`. Pass the raw `cause` into the factory and let the factory compose its message with `extractErrorMessage`. Do not use raw `Err(cause)` at a catch boundary: thrown values may be `null` or `undefined`, and an untyped cause loses the domain failure.
+
+## Cross a deliberate throwing boundary
+
+Keep a `Result` as data while the caller can still recover, report, retry, or
+propagate. Use `unwrap` only where the surrounding API already throws as its
+failure channel:
+
+```ts
+import { unwrap } from 'wellcrafted/result';
+
+const document = unwrap(await openDocument(id));
+```
+
+`unwrap` returns `Ok.data` and throws `Err.error`. The throw is the boundary's
+contract, not a sign the failure was unexpected. Guard on `error !== null`
+instead when this function must recover, add context, or clean up.
 
 ## Consume Every Possible Err Branch
 

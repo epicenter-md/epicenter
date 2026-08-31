@@ -1,4 +1,4 @@
-import type { PrincipalId } from '@epicenter/identity';
+import type { PrincipalId } from '@epicenter/principal';
 import { eq } from 'drizzle-orm';
 import type { Db } from './create-db.js';
 import { user } from './schema/auth.js';

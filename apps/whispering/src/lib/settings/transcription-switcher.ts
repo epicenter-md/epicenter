@@ -76,8 +76,8 @@ function toTranscriber(
 		key: entry.id,
 		icon: entry.icon,
 		invertInDarkMode: entry.invertInDarkMode,
-		isActive: app.settings.get('settings.transcription.service') === entry.id,
-		select: () => app.settings.set('settings.transcription.service', entry.id),
+		isActive: app.settings.get('transcriptionService') === entry.id,
+		select: () => app.settings.set('transcriptionService', entry.id),
 	};
 	switch (entry.access) {
 		case 'session':

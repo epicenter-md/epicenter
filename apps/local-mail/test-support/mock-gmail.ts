@@ -9,10 +9,9 @@
  *
  * Env:
  *   MOCK_PORT   port to bind on 127.0.0.1 (0 => an ephemeral port, printed below)
- *   MOCK_DB     absolute path to the copied `mail.db` (opened read-only)
+ *   MOCK_DB     absolute path to the copied mirror artifact,
+ *               `mail.v<version>.db` (opened read-only)
  *   MOCK_LOG    absolute path for the modify JSONL log (optional)
- *   MOCK_FOLD   "false" => every modify omits `labelIds` (exercises the
- *               `folded:false`, still-catching-up UI path); anything else folds
  *
  * Every route other than history-echo and modify returns a NON-retryable 403,
  * which the engine treats as a hard, non-destructive failure. That guarantees
@@ -28,24 +27,23 @@ import { appendFileSync } from 'node:fs';
 const PORT = Number(process.env.MOCK_PORT) || 0;
 const DB_PATH = process.env.MOCK_DB;
 const LOG_PATH = process.env.MOCK_LOG;
-const FOLD = process.env.MOCK_FOLD !== 'false';
 
 if (!DB_PATH) {
-	console.error('MOCK_DB is required (path to the copied mail.db).');
+	console.error('MOCK_DB is required (path to the copied mail.v<version>.db).');
 	process.exit(1);
 }
 
 const db = new Database(DB_PATH, { readonly: true });
-const getRaw = db.query<{ raw: string }, [string]>(
-	'SELECT raw FROM messages WHERE id = ?',
+const getResource = db.query<{ resource: string }, [string]>(
+	'SELECT resource FROM messages WHERE id = ?',
 );
 
 function currentMessage(
 	id: string,
 ): { threadId: string; labelIds: string[] } | null {
-	const row = getRaw.get(id);
+	const row = getResource.get(id);
 	if (!row) return null;
-	const parsed = JSON.parse(row.raw) as {
+	const parsed = JSON.parse(row.resource) as {
 		threadId: string;
 		labelIds?: string[];
 	};
@@ -103,17 +101,16 @@ const server = Bun.serve({
 			if (LOG_PATH) {
 				appendFileSync(
 					LOG_PATH,
-					`${JSON.stringify({ at: new Date().toISOString(), id, add, remove, resultLabelIds: labelIds, folded: FOLD })}\n`,
+					`${JSON.stringify({ at: new Date().toISOString(), id, add, remove, resultLabelIds: labelIds })}\n`,
 				);
 			}
 
-			// folded:true => return labelIds so the mirror row folds immediately.
-			// folded:false => omit labelIds so the engine reports folded:false.
-			return json(
-				FOLD
-					? { id, threadId: cur.threadId, labelIds }
-					: { id, threadId: cur.threadId },
-			);
+			// Always the post-modify label set, the way Gmail answers. There is no
+			// omit-the-labels mode: an absent `labelIds` means the EMPTY set, which
+			// the reconciler folds as such, so a flag for it would only offer a way
+			// to strip every label off a row rather than a delivery path worth
+			// exercising.
+			return json({ id, threadId: cur.threadId, labelIds });
 		}
 
 		// history.list — echo the cursor with NO `history` key => no changes.

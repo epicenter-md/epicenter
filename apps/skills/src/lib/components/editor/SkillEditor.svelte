@@ -1,12 +1,12 @@
 <script lang="ts">
 	import * as Empty from '@epicenter/ui/empty';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
-	import { getSkillsApp } from '$lib/context.js';
+	import { getSkills } from '$lib/context.js';
 	import InstructionsEditor from './InstructionsEditor.svelte';
 	import ReferencesPanel from './ReferencesPanel.svelte';
 	import SkillMetadataForm from './SkillMetadataForm.svelte';
 
-	const { state: skillsState } = getSkillsApp();
+	const { state: skillsState } = getSkills();
 </script>
 
 <div class="flex h-full flex-col">

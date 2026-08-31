@@ -34,18 +34,18 @@ export const BLOB_ID_ROUTE_REGEX = 'blob_[a-z0-9]{21}';
 /**
  * Opaque, globally unique blob identifier.
  *
- * Validator-first dual declaration: `BlobId` is the arktype validator in
- * value position (parse untrusted input with `BlobId(value)` and branch on
- * `instanceof type.errors`) and the branded string type in type position.
- * Mint fresh ids with {@link generateBlobId}; never cast raw strings.
+ * The type is declared first and the validator is annotated to it, so the brand
+ * is written once and the pattern conforms to it rather than the reverse. Both
+ * carry one PascalCase name: `BlobId` is the branded string in type position
+ * and the arktype validator in value position (parse untrusted input with
+ * `BlobId(value)` and branch on `instanceof type.errors`). Mint fresh ids with
+ * {@link generateBlobId}; never cast raw strings.
  *
  * The literal pattern must stay in lockstep with {@link generateBlobId}; the
  * mint/parse round-trip test locks the two together.
  */
-export const BlobId = type(new RegExp(`^${BLOB_ID_ROUTE_REGEX}$`)).as<
-	string & Brand<'BlobId'>
->();
-export type BlobId = typeof BlobId.infer;
+export type BlobId = string & Brand<'BlobId'>;
+export const BlobId = type(new RegExp(`^${BLOB_ID_ROUTE_REGEX}$`)).as<BlobId>();
 
 /**
  * Mint a fresh {@link BlobId}. Every other appearance of the id in TypeScript

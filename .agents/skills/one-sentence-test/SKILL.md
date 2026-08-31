@@ -1,6 +1,6 @@
 ---
 name: one-sentence-test
-description: "Force one concrete sentence to find orphaned surfaces, duplicate verbs, inert abstractions. Use for \"what does X actually do\", \"in one sentence\", \"too many options\", or auditing whether a surface or abstraction is coherent. For a plain code-comprehension question, answer directly instead."
+description: Test a product, API, utility, or design by stating what it actually does in one sentence. Use when auditing coherence or looking for orphaned surfaces, duplicate verbs, or inert abstractions, not for plain code-comprehension questions.
 metadata:
   author: epicenter
   version: '2.0'

@@ -5,5 +5,10 @@
 		"noUnusedLocals": true,
 		"noUnusedParameters": true
 	},
-	"exclude": ["browser-evidence"]
+	"exclude": [
+		"evidence/browser/durable-store",
+		"src/store/browser.ts",
+		"src/store/browser.test.ts",
+		"src/store/port-conformance.test.ts"
+	]
 }

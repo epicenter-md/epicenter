@@ -1,6 +1,6 @@
 ---
 name: greenfield-clean-breaks
-description: "Greenfield clean-break review and execution for starting from an uncompromised target vision, working backward to deletion waves and owner changes, reopening settled decisions, refusing compatibility, collapsing old and new paths, moving ownership boundaries, replacing APIs, redesigning from first principles, and surfacing refusal candidates that delete disproportionate complexity. Use when the user says greenfield clean break, greenfield, clean break, no users, no compatibility burden, refuse compatibility, remove slop, collapse this, replace the API, trace upward, pressure-test the architecture, or asks whether old behavior can be deleted."
+description: Reconsider a system from a clean-slate target and identify legacy or compatibility paths to delete. Use when evaluating a greenfield redesign, clean break, no users, or removal of old behavior.
 ---
 
 # Greenfield Clean Breaks

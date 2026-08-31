@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-15
 - **Amended by:** [ADR-0175](0175-table-traversal-is-complete-and-classified-with-paging-kept-private.md) (replaces `list()` with the complete `entries()` traversal and its `scan()` fold)
+- **Amended by:** [ADR-0253](0253-schema-lenses-interpret-stored-json-on-read-and-writes-admit-storage-valid-facts.md) at write admission. Withdrawn: declaration-level value and known-field rejection on ordinary writes; read conformance, field presence, and explicit repair remain.
 - **Relates:** [ADR-0119](0119-complete-record-maps-sync-through-schema-blind-server-ordered-patches.md), [ADR-0124](0124-workspace-documents-are-top-level-parameterized-resources.md), [ADR-0129](0129-matter-and-workspace-share-fields-not-authority-policy.md)
 
 ## Context
@@ -54,16 +55,15 @@ Typed reads validate without mutation. `get(id)` returns
 nonconforming diagnostics in separate buckets. A read never inserts defaults,
 clears invalid values, rewrites a row, or records a new version.
 
-Typed creation requires required fields, permits optional fields, and allocates
-the row id. Typed patching changes only supplied keys. An own optional-field
-patch property with value `undefined` means unset; required fields do not admit
-`undefined`. An omitted property means untouched. Before any JSON transport,
-the client normalizes that object into the explicit wire-level `set` and `unset`
-collections from ADR-0119. `undefined` is never canonical data. `null` remains
-an ordinary set value when admitted by the field. A patch validates only the
-supplied values and may modify an existing row even when the complete row does
-not conform to the current lens. This lets ordinary application code repair one
-key without first fabricating a valid whole row.
+Typed creation still exposes required fields to TypeScript, permits defaulted
+fields to be omitted, and allocates the row id. Runtime creation admits the
+storage-valid payload and returns its typed write view; the current lens reports
+missing or invalid fields on the subsequent read. Typed patching changes only
+supplied keys. An omitted property means untouched. A patch does not validate
+the supplied values against the current declaration, so ordinary application
+code can repair one key without first fabricating a valid whole row. The
+storage boundary still rejects values that cannot be represented by the JSON
+and CRDT formats.
 
 Table names and field names are exact permanent storage keys. Renaming starts
 reading and writing a different key. A developer who wants to copy or remove old
@@ -89,7 +89,8 @@ conform afterward.
 - Invalid and extra canonical values remain available for diagnostics and later
   explicit application repair.
 - No release may assume that every canonical row conforms to its lens. Old
-  releases may continue creating rows that newer releases reject.
+  releases may continue creating rows that newer releases interpret
+  differently.
 - The public patch API remains compact while the wire stays valid JSON and
   preserves unset intent across process boundaries.
 - Defaults remain release-local application expressions such as

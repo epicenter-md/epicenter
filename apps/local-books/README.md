@@ -65,7 +65,7 @@ local-books query "SELECT json_extract(line.value, '\$.AccountBasedExpenseLineDe
 The local copy is just a SQLite file, so any agent that can run SQL can answer questions about your finances without your data leaving the machine. Print its path and point your agent at it:
 
 ```sh
-local-books status                # shows the data dir; the file is <data-dir>/<company-id>/books.db
+local-books status                # prints the exact path of the local copy
 ```
 
 Then open Claude Code or Codex in that folder and ask in plain English. To reach it from your phone or another machine, expose your box over a private mesh like [Tailscale](https://tailscale.com) and drive the agent there; the books still never leave the box. Set `LOCAL_BOOKS_READ_ONLY=1` to disable `recategorize` while you let an agent explore (both reads stay available).
@@ -74,11 +74,10 @@ Then open Claude Code or Codex in that folder and ask in plain English. To reach
 
 `local-books mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio, so a coding agent drives the books through real tools instead of hand-written SQL: it gets `query`, `status`, `report`, `sync`, and, unless `LOCAL_BOOKS_READ_ONLY` is set, `recategorize`. The agent spawns the server as a local subprocess that reads the same SQLite file, so the data still never leaves the machine, and the financial data never touches a network (this is why the exposure is local stdio, not a hosted server).
 
-Register it with Claude Code, passing the data dir and company through the environment:
+Register it with Claude Code, passing the company through the environment (and the Epicenter data root only if yours is not the default):
 
 ```sh
 claude mcp add local-books \
-  --env LOCAL_BOOKS_DIR=<your-data-dir> \
   --env LOCAL_BOOKS_QB_REALM=<company-id> \
   -- local-books mcp
 ```
@@ -175,13 +174,22 @@ bun run status:production
 ## Where things live
 
 ```
-<data-dir>/<company-id>/books.db   # record-type tables + sync state
-<data-dir>/credentials.json        # OAuth tokens (0600), never inside a company's db
-<data-dir>/companies.json          # which companies are connected, and the default
-<data-dir>/config.json             # optional: entities, environment, schedule
+<epicenter-root>/apps/local-books/
+  companies/<company-id>/
+    books.v<version>.db          # record-type tables + sync state; `status` prints the path
+  credentials.json               # OAuth tokens (0600), never inside a company's db
+  config.json                    # optional: entities, environment, schedule
 ```
 
-`<data-dir>` defaults to the OS app-data path (`~/Library/Application Support/local-books` on macOS), overridable with `--data-dir` or `LOCAL_BOOKS_DIR`. Tokens live in a `0600` `credentials.json` at the data-dir root, never inside a company's db, so the read-only query surface can never read them. Override the token path with `LOCAL_BOOKS_TOKEN_FILE`.
+Epicenter owns one data root on the machine and gives local-books one directory below it, so a CLI run from a terminal and the Epicenter desktop app see the same books. The root is `~/Library/Application Support/so.epicenter` on macOS, `%APPDATA%\so.epicenter` on Windows, and `$XDG_DATA_HOME/so.epicenter` (or `~/.local/share/so.epicenter`) elsewhere; `EPICENTER_DATA_DIR` moves it, and it is the only such override.
+
+Tokens live in a `0600` `credentials.json` at the app-directory root, never inside a company's db, so the read-only query surface can never read them. Override the token path with `LOCAL_BOOKS_TOKEN_FILE`. That file is also the record of which companies are connected: there is no separate index. With one connected company the verbs find it on their own; with more than one, pass `--realm <company-id>` or set `LOCAL_BOOKS_QB_REALM`.
+
+Everything under the app directory belongs to local-books. No other Epicenter app receives a path or a database handle into it: a company's books reach another app only through a verb local-books publishes (the MCP tools above) or through a fact you promote into Epicenter yourself.
+
+## The pre-Epicenter-root layout
+
+local-books used to keep its data in its own application-data directory (`~/Library/Application Support/local-books` on macOS), with a `companies.json` index beside the tokens. That directory is not read, moved, or referenced by any code here. Run `local-books auth` again and `sync` re-pulls the mirror; the old directory is inert bytes you can delete whenever you notice it.
 
 ## Build a single binary
 

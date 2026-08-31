@@ -14,8 +14,10 @@
 
 	const app = getWhisperingApp();
 
-	const dictionary = $derived(app.settings.get('settings.dictionary'));
-	// Intent (`settings.polish.enabled`) and capability (a usable provider) are separate
+	// Null when the person has added no terms: the definition cannot default an array,
+	// so "never touched" and "emptied" are the same empty list here.
+	const dictionary = $derived(app.settings.get('dictionary') ?? []);
+	// Intent (`polishEnabled`) and capability (a usable provider) are separate
 	// facts; the toggle below sets intent, this surfaces when intent is on but
 	// the provider is missing so the control never silently reads "on" while the
 	// pipeline ships raw.
@@ -30,12 +32,12 @@
 		// Injection-only and order-free, so dedupe and ignore blanks; a repeated
 		// term would only bloat the prompt block.
 		if (!term || dictionary.includes(term)) return;
-		app.settings.set('settings.dictionary', [...dictionary, term]);
+		app.settings.set('dictionary', [...dictionary, term]);
 	}
 
 	function removeTerm(term: string) {
 		app.settings.set(
-			'settings.dictionary',
+			'dictionary',
 			dictionary.filter((t) => t !== term),
 		);
 	}
@@ -58,11 +60,11 @@
 			</Field.Description>
 			<Field.Group>
 				<SettingSwitch
-					key="settings.polish.enabled"
+					key="polishEnabled"
 					label="Polish transcripts with AI"
 					description="Turn off for speed mode: the raw transcript ships instantly, with no AI call."
 				/>
-				{#if app.settings.get('settings.polish.enabled')}
+				{#if app.settings.get('polishEnabled')}
 					<p class="text-muted-foreground text-sm">{destination}</p>
 				{/if}
 
@@ -80,7 +82,7 @@
 					</div>
 				{/if}
 
-				{#if app.settings.get('settings.polish.enabled')}
+				{#if app.settings.get('polishEnabled')}
 					<AdvancedDisclosure>
 						<Field.Field>
 							<Field.Label for="polish-instructions">
@@ -88,12 +90,12 @@
 							</Field.Label>
 							<Textarea
 								id="polish-instructions"
-								placeholder={app.settings.getDefault('settings.polish.instructions')}
-								value={app.settings.get('settings.polish.instructions')}
+								placeholder={app.settings.getDefault('polishInstructions')}
+								value={app.settings.get('polishInstructions')}
 								onblur={(e) => {
 									const next = e.currentTarget.value;
-									if (next !== app.settings.get('settings.polish.instructions'))
-										app.settings.set('settings.polish.instructions', next);
+									if (next !== app.settings.get('polishInstructions'))
+										app.settings.set('polishInstructions', next);
 								}}
 							/>
 							<Field.Description>

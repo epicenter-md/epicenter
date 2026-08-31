@@ -1,44 +1,26 @@
 <script lang="ts">
 	import { FlushEditsOnHide } from '@epicenter/svelte';
-	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import { Loading } from '@epicenter/ui/loading';
+	import { reloadOnAuthChange } from '@epicenter/auth/svelte';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { ModeWatcher } from 'mode-watcher';
-	import { honeycrispPlatform } from '#platform/application';
-	import HoneycrispAppProvider from '$lib/HoneycrispAppProvider.svelte';
-	import { openHoneycrispApplication } from '$lib/application.js';
+	import { auth } from '#platform/auth';
 	import '@epicenter/ui/app.css';
 
 	let { children } = $props();
 
-	const boot = new AbortController();
-	const opening = openHoneycrispApplication(honeycrispPlatform, {
-		signal: boot.signal,
-	});
-	$effect(() => () => boot.abort());
+	// Auth changes start a fresh document generation. The route that initiated
+	// the change does not swap its database in place, so every route boots with
+	// one principal and one data capability.
+	$effect(() =>
+		reloadOnAuthChange(auth, { callbackDestination: '/account' }),
+	);
 </script>
 
 <svelte:head><title>Honeycrisp</title></svelte:head>
 
-{#await opening}
-	<Loading class="h-dvh" />
-{:then application}
-	<HoneycrispAppProvider {application}>
-		<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
-	</HoneycrispAppProvider>
-{:catch error}
-	<div class="flex h-dvh items-center justify-center p-6 text-center">
-		<div class="max-w-md space-y-2">
-			<h1 class="text-lg font-semibold">Honeycrisp could not start</h1>
-			<p class="text-sm text-muted-foreground">
-				{error instanceof Error ? error.message : String(error)}
-			</p>
-		</div>
-	</div>
-{/await}
+<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
 
 <Toaster offset={16} closeButton />
-<ConfirmationDialog />
 <ModeWatcher defaultMode="dark" track={false} />
 <FlushEditsOnHide />

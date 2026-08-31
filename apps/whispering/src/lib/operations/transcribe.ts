@@ -6,17 +6,21 @@ import {
 } from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { type AnyTaggedError, defineErrors } from 'wellcrafted/error';
+import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { auth } from '#platform/auth';
 import { customFetch } from '#platform/http';
 import { tauri } from '#platform/tauri';
-import type { SupportedLanguage } from '$lib/constants/languages';
+import {
+	isSupportedLanguage,
+	type SupportedLanguage,
+} from '$lib/constants/languages';
 import { logAnalyticsEvent } from '$lib/operations/analytics';
 import {
 	recordTranscriptionOutcome,
 	type TranscriptionSuccess,
 } from '$lib/operations/transcription-history';
-import { log, report } from '$lib/report';
+import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { DeepgramTranscriptionServiceLive } from '$lib/services/transcription/cloud/deepgram';
 import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/cloud/elevenlabs';
@@ -30,6 +34,8 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
 import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
 import type { WhisperingApp } from '$lib/whispering/app';
 import type { RecordingId } from '$lib/workspace';
+
+const log = createLogger('whispering/transcribe');
 
 /**
  * The error any transcription path can surface. Deliberately `AnyTaggedError`
@@ -119,7 +125,7 @@ function secretApiKey(key: SecretKey): string | undefined {
 const uploadDispatch = (app: WhisperingApp) =>
 	({
 		// Epicenter (`session`) STT: the transport is the signed-in session fetch against
-		// the deployment you are bonded to (`auth.deployment.baseURL`, so a self-hosted instance's own
+		// the server you are bonded to (`auth.connection.baseURL`, so a self-hosted instance's own
 		// gateway is used when connected to one), never a stored key. Both deployables mount
 		// this gateway on their house key; a hosted deployment meters it (ADR-0100), a
 		// self-host deployment does not. The model is fixed by the gateway.
@@ -127,7 +133,7 @@ const uploadDispatch = (app: WhisperingApp) =>
 			kind: 'wire',
 			resolve: () => ({
 				fetch: auth.fetch,
-				baseURL: API_ROUTES.ai.baseUrl(auth.deployment.baseURL),
+				baseURL: API_ROUTES.ai.baseUrl(auth.connection.baseURL),
 			}),
 			model: () => PROVIDERS.epicenter.model,
 		},
@@ -221,7 +227,7 @@ async function loadForUpload(
 		});
 		void logAnalyticsEvent(app, {
 			type: 'compression_failed',
-			provider: app.settings.get('settings.transcription.service'),
+			provider: app.settings.get('transcriptionService'),
 			error_message: error,
 		});
 	}
@@ -245,7 +251,7 @@ export async function transcribeAudio(
 	app: WhisperingApp,
 	audioBlobId: BlobId,
 ): Promise<Result<string, TranscriptionError>> {
-	const selectedService = app.settings.get('settings.transcription.service');
+	const selectedService = app.settings.get('transcriptionService');
 
 	const startTime = Date.now();
 	void logAnalyticsEvent(app, {
@@ -314,7 +320,7 @@ export async function transcribeAndPersist(
 export function prewarmOnDeviceModel(app: WhisperingApp): void {
 	if (!tauri) return;
 
-	const selectedService = app.settings.get('settings.transcription.service');
+	const selectedService = app.settings.get('transcriptionService');
 	if (!isOnDeviceProviderId(selectedService)) return;
 
 	tauri.transcription.prewarmModel();
@@ -328,8 +334,12 @@ export function prewarmOnDeviceModel(app: WhisperingApp): void {
  * in `@epicenter/client`: the wire just carries one prompt string. An empty
  * Dictionary returns the prompt unchanged. See ADR-0099.
  */
-function withDictionaryTerms(prompt: string, dictionary: string[]): string {
-	if (dictionary.length === 0) return prompt;
+function withDictionaryTerms(
+	prompt: string,
+	/** Null when the person has added no terms: the definition cannot default an array. */
+	dictionary: readonly string[] | null,
+): string {
+	if (dictionary === null || dictionary.length === 0) return prompt;
 	const glossary = dictionary.join(', ');
 	const trimmed = prompt.trim();
 	return trimmed ? `${trimmed} ${glossary}` : glossary;
@@ -359,10 +369,10 @@ async function transcribeOnDevice(
 	// there is no ambient config to go stale. `auto` language and an empty prompt
 	// map to the wire's "unset" (an omitted optional field). The Dictionary terms
 	// fold into the prompt so local recognition spells them the user's way.
-	const language = app.settings.get('settings.transcription.language');
+	const language = app.settings.get('transcriptionLanguage');
 	const prompt = withDictionaryTerms(
-		app.settings.get('settings.transcription.prompt'),
-		app.settings.get('settings.dictionary'),
+		app.settings.get('transcriptionPrompt'),
+		app.settings.get('dictionary'),
 	);
 	const { data: outcome, error } =
 		await tauri.transcription.transcribeRecording(audioBlobId, {
@@ -404,10 +414,17 @@ async function transcribeViaUpload(
 	// and the server answers 401, surfaced as a RequestFailed carrying that detail.
 	// The Dictionary terms fold into the prompt so cloud recognition spells them
 	// the user's way.
-	const spokenLanguage = app.settings.get('settings.transcription.language');
+	// Narrowed here rather than in the workspace: the stored code is a plain string so
+	// a hand-written union could never drift from `constants/languages.ts`, and a
+	// code this release no longer supports falls back to letting the provider
+	// detect the language rather than being sent through unchecked.
+	const stored = app.settings.get('transcriptionLanguage');
+	const spokenLanguage: SupportedLanguage = isSupportedLanguage(stored)
+		? stored
+		: 'auto';
 	const prompt = withDictionaryTerms(
-		app.settings.get('settings.transcription.prompt'),
-		app.settings.get('settings.dictionary'),
+		app.settings.get('transcriptionPrompt'),
+		app.settings.get('dictionary'),
 	);
 	const entry = uploadDispatch(app)[selectedService];
 	switch (entry.kind) {

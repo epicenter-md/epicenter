@@ -48,7 +48,7 @@ Two refinements the chain settles:
   credits is a deliberate choice, symmetric with BYOK requiring a key.
 - **No placeholder.** A daemon that can satisfy no backend resolves to `null` and
   hosts the conversation's sync without answering, rather than streaming a
-  deterministic stand-in reply. The stand-in was bring-up scaffolding; in
+  deterministic stand-in reply. The stand-in was temporary bring-up code; in
   production it wrote fake assistant text into a real, synced conversation every
   device sees. A turn a daemon cannot answer is left for a configured answerer (a
   keyed daemon, or an open browser tab on the metered account).

@@ -1,0 +1,35 @@
+{
+	"name": "@epicenter/svelte",
+	"version": "0.3.0",
+	"private": true,
+	"type": "module",
+	"description": "Svelte 5 bindings for Epicenter: reactive workspace state, persisted state, and the auth/session adapter.",
+	"keywords": [
+		"svelte",
+		"local-first",
+		"CRDT",
+		"epicenter",
+		"workspace",
+		"reactive state"
+	],
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"@epicenter/agent": "workspace:*",
+		"arktype": "catalog:",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@standard-schema/spec": "catalog:",
+		"@types/bun": "catalog:",
+		"svelte": "catalog:",
+		"svelte-check": "catalog:",
+		"typescript": "catalog:"
+	},
+	"scripts": {
+		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
+		"test": "bun test"
+	},
+	"license": "AGPL-3.0-or-later"
+}

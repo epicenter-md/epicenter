@@ -3,6 +3,7 @@ export {
 	type AgentChatState,
 	type AgentKit,
 	type ConversationHandle,
+	type ConversationOpener,
 	createAgentChatState,
 } from './agent-chat.svelte.js';
 export { default as AgentChatThread } from './agent-chat-thread.svelte';

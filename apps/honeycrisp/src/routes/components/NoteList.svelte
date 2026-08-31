@@ -1,33 +1,50 @@
 <script lang="ts">
 	import type { Note } from '@epicenter/honeycrisp';
 	import { Button } from '@epicenter/ui/button';
-	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as ScrollArea from '@epicenter/ui/scroll-area';
-	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down';
-	import CheckIcon from '@lucide/svelte/icons/check';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { getHoneycrispApp } from '$lib/context.js';
-	import { runHoneycrispMutation } from '$lib/mutation.js';
-	import { getDateLabel } from '$lib/utils/date';
+	import { getHoneycrisp } from '$lib/app.svelte.js';
+	import { navigation } from '$lib/navigation.svelte.js';
+	import { getDateLabel } from '$lib/date-label.js';
 	import NoteCard from '../components/NoteCard.svelte';
 
-	const honeycrisp = getHoneycrispApp();
+	const honeycrisp = getHoneycrisp();
 
-	const sortOptions = [
-		{ value: 'dateEdited' as const, label: 'Date Edited' },
-		{ value: 'dateCreated' as const, label: 'Date Created' },
-		{ value: 'title' as const, label: 'Title' },
-	];
+	const title = $derived.by(() => {
+		if (navigation.isDeletedView) return 'Recently Deleted';
+		const folderId = navigation.folderId;
+		if (folderId === null) return 'All Notes';
+		return honeycrisp.folders.get(folderId)?.name ?? 'Notes';
+	});
 
+	/**
+	 * What to say when the list is empty.
+	 *
+	 * "No notes yet" is a claim about the person's history, and it is false when
+	 * the list is empty because this release cannot INTERPRET what they wrote. A
+	 * note written by a newer release, or by a database this one has since
+	 * changed, reads as `Nonconforming` (ADR-0125); the row is intact and
+	 * unreadable, which is a different thing from absent and deserves a
+	 * different sentence.
+	 */
+	const emptyMessage = $derived.by(() => {
+		const unreadable = honeycrisp.notes.nonconforming.length;
+		if (unreadable > 0) {
+			const [subject, object] =
+				unreadable === 1 ? ['note is', 'it'] : ['notes are', 'them'];
+			return `${unreadable} ${subject} here but this version of Honeycrisp cannot read ${object}. Nothing has been lost.`;
+		}
+		return navigation.isDeletedView
+			? 'No deleted notes'
+			: 'No notes yet. Click + to create one.';
+	});
+
+	// Grouping only: `visibleNotes` already owns the order (newest edit first),
+	// so the pinned partition and the date labels preserve it.
 	const groupedNotes = $derived.by(() => {
-		const notes = honeycrisp.state.view.currentNotes;
-		const pinned = notes
-			.filter((n) => n.pinned)
-			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-
-		const unpinned = notes
-			.filter((n) => !n.pinned)
-			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+		const notes = honeycrisp.visibleNotes;
+		const pinned = notes.filter((n) => n.pinned);
+		const unpinned = notes.filter((n) => !n.pinned);
 
 		const groups: { label: string; entries: Note[] }[] = [];
 
@@ -63,12 +80,6 @@
 		groupedNotes.flatMap((g) => g.entries.map((n) => n.id)),
 	);
 
-	async function createAndSelectNote(): Promise<void> {
-		const { id } = await honeycrisp.state.notes.create(
-			honeycrisp.state.view.selectedFolderId,
-		);
-		honeycrisp.state.view.selectNote(id);
-	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -79,18 +90,18 @@
 		if (flatNoteIds.length === 0) return;
 		e.preventDefault();
 
-		const currentIndex = honeycrisp.state.view.selectedNoteId
-			? flatNoteIds.indexOf(honeycrisp.state.view.selectedNoteId)
+		const currentIndex = navigation.noteId
+			? flatNoteIds.indexOf(navigation.noteId)
 			: -1;
 
 		if (e.key === 'ArrowDown') {
 			const nextIndex =
 				currentIndex < flatNoteIds.length - 1 ? currentIndex + 1 : 0;
-			honeycrisp.state.view.selectNote(flatNoteIds[nextIndex]!);
+			navigation.selectNote(flatNoteIds[nextIndex]!);
 		} else {
 			const prevIndex =
 				currentIndex > 0 ? currentIndex - 1 : flatNoteIds.length - 1;
-			honeycrisp.state.view.selectNote(flatNoteIds[prevIndex]!);
+			navigation.selectNote(flatNoteIds[prevIndex]!);
 		}
 	}}
 	tabindex="-1"
@@ -98,46 +109,22 @@
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<div class="flex items-center gap-2">
 			<h2 class="text-sm font-semibold">
-				{honeycrisp.state.view.currentTitle}
+				{title}
 			</h2>
 			<span class="text-xs text-muted-foreground"
-				>{honeycrisp.state.view.currentNotes.length}</span
+				>{honeycrisp.visibleNotes.length}</span
 			>
 		</div>
-		{#if honeycrisp.state.view.currentShowControls}
+		{#if !navigation.isDeletedView}
 			<div class="flex items-center gap-1">
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger>
-						{#snippet child({ props })}
-							<Button variant="ghost" size="icon" class="size-7" {...props}>
-								<ArrowUpDownIcon class="size-4" />
-							</Button>
-						{/snippet}
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="w-44">
-						{#each sortOptions as option}
-							<DropdownMenu.Item
-								onclick={() => honeycrisp.state.view.setSortBy(option.value)}
-							>
-								{#if honeycrisp.state.view.sortBy === option.value}
-									<CheckIcon class="mr-2 size-4" />
-								{:else}
-									<span class="mr-2 size-4"></span>
-								{/if}
-								{option.label}
-							</DropdownMenu.Item>
-						{/each}
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
 				<Button
 					variant="ghost"
 					size="icon"
 					class="size-7"
+					tooltip="New note"
+					aria-label="New note"
 					onclick={() =>
-						runHoneycrispMutation(
-							createAndSelectNote(),
-							'Could not create note',
-						)}
+						honeycrisp.createNote()}
 				>
 					<PlusIcon class="size-4" />
 				</Button>
@@ -146,11 +133,11 @@
 	</div>
 
 	<ScrollArea.Root class="flex-1">
-		{#if honeycrisp.state.view.currentNotes.length === 0}
+		{#if honeycrisp.visibleNotes.length === 0}
 			<div
 				class="flex h-full items-center justify-center p-8 text-center text-muted-foreground"
 			>
-				<p class="text-sm">{honeycrisp.state.view.currentEmptyMessage}</p>
+				<p class="text-sm">{emptyMessage}</p>
 			</div>
 		{:else}
 			<div class="flex flex-col gap-4 p-2">
@@ -162,8 +149,8 @@
 						{#each group.entries as note (note.id)}
 							<NoteCard
 								{note}
-								isSelected={note.id === honeycrisp.state.view.selectedNoteId}
-								onSelect={() => honeycrisp.state.view.selectNote(note.id)}
+								isSelected={note.id === navigation.noteId}
+								onSelect={() => navigation.selectNote(note.id)}
 							/>
 						{/each}
 					</div>

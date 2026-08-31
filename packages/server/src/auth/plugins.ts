@@ -10,15 +10,14 @@ import { JWT_SIGNING_ALG } from './base-config.js';
  * Build the Better Auth plugins that define Epicenter's OAuth server boundary.
  *
  * Use this only from the API auth factory, where the request URL is known.
- * `apiBaseURL` plays two roles: it's the OAuth resource audience (clients
- * pass it as `resource`, and we accept tokens minted only for this audience,
- * preventing tokens from one resource server being replayed against another),
- * and it's the deployment input to `buildTrustedOAuthClients` so the
- * trusted-client-id set matches the clients the seeder will install.
+ * `apiBaseURL` is the OAuth resource audience: clients pass it as `resource`,
+ * and we accept tokens minted only for this audience, preventing tokens from
+ * one resource server being replayed against another. It also fixes the
+ * passkey Relying Party below.
  */
 export function authPlugins(apiBaseURL: string) {
 	const trustedOAuthClientIds = new Set(
-		buildTrustedOAuthClients(apiBaseURL).map((client) => client.clientId),
+		buildTrustedOAuthClients().map((client) => client.clientId),
 	);
 	// WebAuthn binds credentials to a Relying Party. Passkeys are only ever
 	// created and used on the hosted auth pages, which the API serves at its own
@@ -76,6 +75,23 @@ export function authPlugins(apiBaseURL: string) {
 			//   deletes the session row and the refresh row survives with
 			//   `session_id` SET NULL (offline_access semantics). Killing a grant
 			//   takes /oauth2/revoke or deleting its rows.
+			// A rotated-out refresh token replayed within this window returns the
+			// CACHED token pair instead of invalidating the family, and only when
+			// the client, scopes, resources, and sender constraint all match; a
+			// mismatch inside the window is a plain `invalid_grant` with the
+			// family left alone. Default is 0, which means any duplicate refresh
+			// signs the person out of this app on every device. Upstream's own
+			// `mcp()` plugin defaults to 30s for the same reason.
+			//
+			// What this covers: a lost response, a duplicated request, a retry
+			// across a flaky connection. What it does NOT cover, and the reason
+			// this is not the whole fix: a second tab holding a stale grant in
+			// memory refreshes when ITS access token nears expiry, which is up to
+			// `accessTokenExpiresIn` after the first tab rotated. No interval
+			// short enough to be safe reaches that. The fix for the cross-tab race
+			// is the client adopting a rotated grant (`persisted-auth-storage.ts`
+			// reads once and never re-reads), not a longer window here.
+			refreshTokenReuseInterval: 60,
 			cachedTrustedClients: trustedOAuthClientIds,
 			validAudiences: [apiBaseURL],
 			allowDynamicClientRegistration: false,

@@ -1,23 +1,21 @@
 <script lang="ts">
-	import { getSkillsApp } from '$lib/context.js';
+		import { getSkills } from '$lib/context.js';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { id }: { id: string } = $props();
-	const skills = getSkillsApp();
+	const skills = getSkills();
 
-	const lease = $derived(skills.tables.skillReferences.openDocument(id));
-	$effect(() => {
-		const openedLease = lease;
-		return () =>
-			void openedLease.then(
-				(opened) => opened[Symbol.asyncDispose](),
-				() => undefined,
-			);
-	});
+	// Same shape as InstructionsEditor: the body is a nested type on the row
+	// (ADR-0295), so there is nothing to open and nothing to dispose.
+	const content = $derived(
+		skills.data.tables.skillReferences.get(id)?.body,
+	);
 </script>
 
 <div class="h-48 border-t">
-	{#await lease then opened}
-		<CodeMirrorEditor document={opened} />
-	{/await}
+	{#if content !== undefined}
+		{#key id}
+			<CodeMirrorEditor {content} />
+		{/key}
+	{/if}
 </div>

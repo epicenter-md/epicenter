@@ -1,205 +1,140 @@
 ---
 name: dialectic
-description: "Help two participants with rich private models use concrete proposals and directional reactions to make latent taste legible, converging through a naturally paced conversation on either a shared explanatory model or an explicitly accepted destination before planning or implementation. Use when the user wants to discover what they think, understand a subject together, develop an uncompromising vision, receive iterative synthesis and pushback, or explore an architecture or product model before a plan exists. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
+description: "Make an unsettled product, architecture, or design model visible through the deliberate collision of articulations. Use when the user asks for a dialectic, asks to hear or see the full articulation of a model, or wants to understand, correct, or redesign an unsettled model."
 ---
 
 # Dialectic
 
-Bring two rich private models into enough contact that both participants can
-reason from a live shared model.
+A dialectic is the deliberate collision of articulations: the user’s emerging
+account of what should be true and the agent’s competing greenfield accounts.
+Their differences, consequences, and refusals expose the cruxes that the next
+articulation must resolve. Through repeated re-articulation and crux-finding,
+the collision either makes the agent’s model intelligible or produces an
+accepted greenfield articulation. In the latter case, it ends when the user can
+recognize that articulation and say, in effect, “that’s right.”
+
+## What an articulation is
+
+An articulation is a complete account of a model: its objects, verbs,
+boundaries, owners, consequences, and refusals. It may explain a model
+currently in use or propose a greenfield model. The dialectic’s destination
+determines whether that account is being made intelligible or accepted as what
+should exist. It is not a preference label, an implementation option, or a
+softened summary that hides the point of disagreement.
+
+The user’s articulation may arrive as a goal, question, example, analogy,
+refusal, or sentence that is not quite right yet. The agent’s articulation may
+describe the model it is currently using or propose what should exist. Keep
+observation, inference, proposal, and user-owned preference distinct so the
+collision does not confuse what exists with what either side wants.
+
+## Destinations
+
+The collision can serve understanding or correction. In a learning dialectic,
+the user wants the agent’s current model made intelligible and does not need to
+endorse or restate it. In a corrective or design dialectic, the user and agent
+compare serious articulations until an accepted greenfield account emerges.
+
+## Establish the collision
+
+Before the first turn, identify the live uncertainty that makes the next
+judgment difficult. In a learning dialectic, expose the agent’s current model:
+its premises, structure, evidence, assumptions, and consequences. In a
+corrective or design dialectic, expose the user’s emerging ideal alongside the
+agent’s strongest greenfield account.
+
+Begin with one strong account the agent can defend. Offer multiple serious
+articulations only when the agent cannot responsibly choose among materially
+different accounts, or when their contrast is necessary to expose a crux. Make
+each one strong enough to defend, including what it refuses and what follows
+from it. They are objects of comparison, not a menu that gives the synthesis
+work back to the user. When multiple articulations are needed, conclude the
+comparison with a recommendation: identify the strongest overall account when
+one exists, or give context-specific recommendations with their tradeoffs.
+
+Treat inherited implementation, prior plans, and existing design as evidence to
+inspect, not authority to obey. Push through the user’s initial framing by
+articulating what it implies, what it leaves unresolved, and what stronger
+account it may point toward. Let the user’s reaction show whether that account
+captures what they mean or exposes a crux that the next articulation must
+resolve. Make the disagreement concrete so the user can correct the premise
+rather than merely defer to the agent. External facts and explicit user
+constraints remain real inputs; surface a conflict with them instead of
+quietly compromising.
+
+## Move the model forward
+
+Each turn should advance the highest-order unresolved crux. Related local
+collisions may appear within that movement; when they recur, zoom out to the
+shared premise and re-articulate it. Give enough structure for a precise
+reaction, then leave the unresolved seam visible. The conversation moves like
+this:
 
 ```txt
-agent's private model  <── small conversational contributions ──>  user's private model
-                                      │
-                                      v
-                             live shared model
+articulations
+  -> collision of premises and consequences
+  -> user reaction as directional evidence
+  -> crux and required movement identified
+  -> targeted question, consequence, or refusal
+  -> sharper re-articulation
+  -> understanding or accepted destination
 ```
 
-Neither participant needs to state their whole model. The conversation works by
-making one useful part visible, letting the other participant respond, and
-updating what is shared.
+Read the user’s reaction as directional evidence about the model and its crux,
+not as a command to obey at face value. Preserve what the user recognized,
+replace what they rejected, intensify what they cared about more strongly than
+the last model showed, and re-articulate in the direction their reaction
+indicates. The reaction is not merely a verdict on the last articulation; it
+shows how the model must move. Do not merely paraphrase the latest message or
+defend a weak rendering because it already exists.
 
-## Expose The Smallest Useful Part
+When the user returns a sentence, answer its accuracy first and name the word or
+premise carrying the divergence. When they give an example, use it to update
+the model. A wrong articulation is useful because the user’s reaction to it
+shows what the next articulation must change. Plain agreement is useful only
+when it moves the model forward.
 
-Carry the larger model privately. In each response, expose only the smallest
-useful part that gives the user something meaningful to respond to.
+When the user cannot explain a reaction, articulate the mismatch or crux it may
+be pointing toward and let the user react to that.
 
-Make exactly one contribution. It may be:
+## Make the collision checkable
 
-- a synthesis;
-- a distinction;
-- a consequence;
-- a disagreement;
-- a proposal;
-- a grounded explanation;
-- or a question.
+Use the smallest form that lets the user judge the current articulations and
+the live crux. Use a concrete example when the idea is abstract, a comparison
+when articulations are peers on one axis, a timeline for history, quoted code
+when the claim is about code, and research when a fact could change the model.
+Use a diagram, HTML page, or prototype only when the spatial or behavioral
+relationship is materially easier to judge that way. The surface should show
+which articulations are on the table, which crux separates them, what follows
+from each, and what the next re-articulation must resolve; it should not make a
+finished-looking artifact that gives the user nothing specific to correct.
 
-State it naturally, then stop. Do not complete the whole argument, enumerate
-every implication, pre-answer likely objections, or recap the entire shared
-model. What remains can become the next turn.
+When an HTML page is the right surface, keep it self-contained with inline CSS
+and JavaScript, no CDN, and no build step. Write it to an ignored scratch path
+and open it after writing or redrawing it. Before writing the page, read
+[references/example-turn.html](references/example-turn.html) and borrow its
+load-bearing properties: draw the model in the system’s own materials and make
+the region requiring the user’s judgment visually distinct. The example is a
+form to borrow, not a template to reproduce.
 
-If the contribution is a question, give only the context required to make that
-question useful. If the contribution is not a question, do not append one to
-solicit a response. A synthesis, distinction, consequence, disagreement, or
-proposal already gives the user something to react to. The explicit recognition
-test at convergence is the only time to present a model and ask for judgment in
-the same turn.
+## End according to the destination
 
-Closely related ideas are still separate contributions when the user would need
-to hold both in mind to respond. Give the first one that makes the second useful,
-then wait. Combine only what must be understood together to keep the present
-contribution honest.
+In a learning dialectic, stop when the user understands the agent’s model well
+enough to reason about it. Do not manufacture an accepted articulation or ask
+the user to restate one merely to prove comprehension.
 
-Write for the ear. Prefer a few connected sentences over a report, framework,
-or menu of options. Expand when the user asks for more. Do not mistake a rich
-private model for an obligation to display it.
+In a corrective or design dialectic, do not stop at a plausible model, partial
+agreement, silence, fatigue, or approval of a plan. Stop when the user
+recognizes the complete greenfield articulation and says, in effect, “that’s
+right.” Return its shortest honest form. Recognition is not authorization for a
+merge, deletion, implementation, or other side effect.
 
-## Run One Conversational Loop
+For an accepted greenfield destination, hand it to
+[greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) for backward
+planning. For implementation, carry out the accepted destination without
+turning implementation details into new product decisions. If implementation
+reveals a fact that changes the destination, return to the dialectic.
 
-For each turn:
-
-1. Update the live shared model from what the user just said.
-2. Choose the most useful unresolved edge the user can engage now.
-3. Make one contribution that advances or tests that edge.
-4. Leave room for the user's response.
-
-Begin with a useful contribution, not a questionnaire. Choose a question when
-its answer could reveal or change the model. Choose a position when the agent's
-view would give the user something more meaningful to react to than an empty
-prompt.
-
-A concrete one-sentence model is often enough:
-
-```txt
-Here is my current one-sentence model: ...
-```
-
-Treat the user's acceptance, revision, or rejection as evidence. The sentence
-is a probe, not an automatic conclusion or a request for formal teach-back.
-
-Continue from what is already shared. Do not recap settled ground to demonstrate
-memory. When the model changes, name the change or its immediate consequence,
-not every reasoning step behind it.
-
-## Treat Reactions As Directional Data
-
-A user's reaction is not merely feedback on the last contribution. It is
-evidence about taste the user may not yet be able to state directly. Concrete
-proposals create contrast; reactions such as "closer," "too ornate," "right
-structure, wrong premise," or an unstructured explanation reveal different
-boundaries within the user's private model.
-
-Do not flatten that evidence into a scalar score or obey only its surface form.
-Interpret which distinction the reaction exposes, update the live shared model,
-and make the next contribution more discriminating. The purpose is not to make
-each proposal more agreeable in isolation. It is to help both participants
-articulate what "right" means and converge on a model or destination the user
-could not have fully specified in advance.
-
-## Lead And Ground
-
-Both participants may contribute evidence, interpretation, values, causal
-reasoning, possibilities, examples, taste, and refusals. The agent supplies
-intellectual leadership by grounding consequential claims, forming coherent
-proposals, revealing useful leanings, and choosing the next edge. The user
-supplies intellectual leadership through their own account of reality and
-possibility. Do not reduce either participant to a fixed role.
-
-Inspect the repository or external sources when facts materially affect the
-model. Distinguish evidence from interpretation or assumption when the
-difference matters to the current edge. Bring forward only the grounding needed
-for the present contribution; do not print an evidence ledger by default.
-
-When shaping a destination, let evidence constrain what is possible without
-quietly treating inherited APIs, names, compatibility paths, package
-boundaries, prior plans, or implementation effort as requirements. Preserve
-only external constraints and explicit promises the user chooses to keep.
-
-## Keep Real Tension Alive
-
-Do not average the models merely to produce agreement. Find the premise, value,
-distinction, or consequence that creates the divergence. Apply pressure to one
-consequential edge at a time.
-
-If the conversation stalls, name the unresolved divergence and the one decision
-or piece of evidence most likely to move it. Reveal the agent's current leaning.
-
-A shared explanation may preserve understood uncertainty. A chosen destination
-may not hide a consequential mismatch behind `or`, `also`, `sometimes`, or
-compatibility language. Do not plan backward from a destination that still
-contains such a mismatch.
-
-## Recognize Convergence
-
-Convergence means the shared model is generative: both participants can reason
-forward from it, anticipate important consequences, and recognize what would
-contradict it. It does not require identical private models or identical words.
-
-Do not infer convergence from silence, fatigue, partial approval, or the absence
-of another objection. When the model appears complete, present its shortest
-honest form and ask the user to recognize or revise it. A consequential caveat
-starts another conversational turn.
-
-Freeze only what the conversation produced.
-
-For a shared explanatory model, return:
-
-```txt
-Shared model: one concrete sentence.
-Grounding: the decisive facts and causal connection.
-Consequences: what follows from the model.
-Open uncertainty: what remains genuinely unknown, if anything.
-Recognition test: what the model explains and what would contradict it.
-```
-
-For a chosen destination, return:
-
-```txt
-Accepted destination: one concrete, uncompromising sentence.
-Mental model: the central objects, verbs, boundaries, and owner.
-Hard constraints: desired outcomes and external realities that must remain true.
-Refusals: what the destination deliberately does not preserve.
-Consequences: the important tradeoffs both participants recognize.
-Recognition test: what would prove or violate the destination.
-```
-
-Keep either result compact. If it cannot stay compact, continue the dialectic
-with the smallest unresolved part instead of printing a large provisional
-model.
-
-## Hand Off Only What Converged
-
-After a shared explanatory model, return it and stop unless the user asks for a
-new kind of work.
-
-After an accepted destination:
-
-- Stop after returning it for a thinking-only request.
-- Use [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) when an
-  existing system must be worked backward into owner changes, deletion waves,
-  and refusals.
-- Preserve a durable architectural decision in an ADR when the repository
-  workflow calls for one.
-
-Use [grill-me](../grill-me/SKILL.md) instead when a plan already exists and the
-job is to interrogate its decision tree. Use [ui-design](../ui-design/SKILL.md)
-when an accepted UI destination must become a buildable interface.
-
-Do not implement early to create momentum. Implementation follows an accepted
-destination unless the user explicitly asks to proceed with a stated
-assumption.
-
-## Check The Conversation
-
-Before each response, ask:
-
-```txt
-What is the smallest useful part I can expose now?
-Does this response make exactly one contribution?
-Can the user respond without holding several new ideas at once?
-Am I leaving the rest for later?
-```
-
-Before exiting, also confirm that both participants shaped the result, real
-disagreement or uncertainty was preserved, and the user explicitly recognized
-the final model or destination.
+A dialectic is not a standalone lesson. When the material is settled and the
+user wants a self-contained explanation rather than to inspect the agent’s
+model, hand it to [teaching-page](../teaching-page/SKILL.md).

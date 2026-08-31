@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Database } from '@lucide/svelte';
-	import { getSkillsApp } from '$lib/context.js';
+	import { getSkills } from '$lib/context.js';
 
-	const { state: skillsState } = getSkillsApp();
+	const { state: skillsState } = getSkills();
 </script>
 
 <div
@@ -10,13 +10,9 @@
 >
 	<Database class="size-3 shrink-0" />
 	<span>
-		{#if skillsState.loadError}
-			<span class="text-destructive">Load failed</span>
-		{:else}
-			{skillsState.skills.length}
-			{skillsState.skills.length === 1 ? 'skill' : 'skills'}
-		{/if}
-		{#if !skillsState.loadError && skillsState.nonconforming.length > 0}
+		{skillsState.skills.length}
+		{skillsState.skills.length === 1 ? 'skill' : 'skills'}
+		{#if skillsState.nonconforming.length > 0}
 			<span class="text-muted-foreground/60">·</span>
 			<span class="text-destructive">
 				{skillsState.nonconforming.length} invalid

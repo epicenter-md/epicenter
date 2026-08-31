@@ -31,11 +31,10 @@
  * deliberately does not exist as an HTTP surface.
  */
 
-import { Principal } from '@epicenter/auth';
+import { asPrincipalId } from '@epicenter/principal';
 import {
 	blobPrincipalPrefix,
 	type CloudEnv,
-	createDurableObjectAccountAuthorities,
 	deleteStorageObservations,
 	resolveDeploymentBlobStore,
 } from '@epicenter/server';
@@ -101,7 +100,10 @@ const requireFreshCookieSession: MiddlewareHandler<CloudEnv> =
 		if (Date.now() - createdAt >= FRESH_AGE_SECONDS * 1000) {
 			return c.json(AccountDeletionError.SessionNotFresh(), 403);
 		}
-		c.set('principal', Principal.assert(session.user));
+		c.set('principal', {
+			id: asPrincipalId(session.user.id),
+			email: session.user.email,
+		});
 		return next();
 	});
 
@@ -117,10 +119,6 @@ export function mountAccountDeletionApi(app: Hono<CloudEnv>): void {
 		requireFreshCookieSession,
 		async (c) => {
 			const principalId = c.var.principal.id;
-			const authority = () =>
-				createDurableObjectAccountAuthorities(
-					(c.env as Cloudflare.Env).EPICENTER_SYNC,
-				).authority(principalId);
 			const sweepBlobs = async () => {
 				const store = resolveDeploymentBlobStore(c.env);
 				if (!store) {
@@ -133,7 +131,6 @@ export function mountAccountDeletionApi(app: Hono<CloudEnv>): void {
 			};
 			const result = await runAccountDeletion(
 				{
-					authority: () => authority().deleteAccount(),
 					blobs: sweepBlobs,
 					async billing() {
 						const principalEmail = await readHostedPrincipalEmail(
@@ -168,10 +165,7 @@ export function mountAccountDeletionApi(app: Hono<CloudEnv>): void {
 			// Post-fence sweeps: close the recreation window that was open while
 			// the auth user still authenticated pushes and uploads. Best-effort by
 			// design; see the module JSDoc.
-			for (const [name, sweep] of [
-				['authority-sweep', () => authority().deleteAccount()],
-				['blobs-sweep', sweepBlobs],
-			] as const) {
+			for (const [name, sweep] of [['blobs-sweep', sweepBlobs]] as const) {
 				try {
 					await sweep();
 				} catch (cause) {

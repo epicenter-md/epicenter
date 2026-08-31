@@ -17,14 +17,17 @@
 		keymap,
 		placeholder,
 	} from '@codemirror/view';
-	import type { RowDocument } from '@epicenter/data';
+	import type * as Y from '@y/y';
 
-	let { document }: { document: RowDocument } = $props();
+	// The markdown root itself, rather than the row document it hangs off. The
+	// caller already chose which table and which row; handing that choice down
+	// would make this component know about Skills, and it only knows about text.
+	let { content }: { content: Y.Type } =
+		$props();
 	let container: HTMLDivElement | undefined = $state();
 
 	$effect(() => {
 		if (!container) return;
-		const content = document.get('content');
 		let applyingDocumentUpdate = false;
 		const view = new EditorView({
 			state: EditorState.create({
@@ -39,10 +42,12 @@
 					EditorView.updateListener.of((update) => {
 						if (update.docChanged && !applyingDocumentUpdate) {
 							const next = update.state.doc.toString();
-							document.transact(() => {
-								content.delete(0, content.length);
-								content.insert(0, next);
-							});
+							// One delta rather than a delete followed by an insert:
+							// `applyDelta` opens its own transaction, so two calls would
+							// publish an empty document to every peer in between.
+							content.applyDelta(
+								content.change.delete(content.length).insert(next) as never,
+							);
 						}
 					}),
 					placeholder('Write skill instructions here...'),

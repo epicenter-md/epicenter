@@ -11,10 +11,9 @@
  *
  * This is the "one binary, no Cloudflare account, no database" instance artifact:
  * `bun server.ts` (or a `bun build --compile` binary) is a complete box on a
- * single node. Authority state is `bun:sqlite` files on local disk, so this is a
- * single-node deployment by design: it does not shard or hibernate the way the
- * Durable Object edge does, which is exactly right for one homelab, one family, or
- * one small team and the price of owning your own data on your own machine.
+ * single node. It owns no application data: the client does. The current
+ * reference instance does not mount store sync, so two devices do not converge
+ * through it yet.
  *
  * There is ONE shape, not a mode (ADR-0075). Every request resolves to the pinned
  * `principals/instance` partition. Authentication is one operator-supplied static bearer
@@ -30,11 +29,8 @@
  * keeping the instance Bun-or-Cloudflare (the operator supplies the secret either
  * way).
  *
- * Surface: session + sync + inference + blobs behind the operator bearer, zero
- * billing, no dashboard SPA, no auth surface. Remote Super Chat attach is the one
- * exception (ADR-0115): an attach connect carries a revocable per-device
- * grant instead of the operator token, and the operator token administers that
- * device allowlist through `/attach/grants`. The blob store is a portable
+ * Surface: session + inference + transcription + blobs behind the operator bearer, zero
+ * billing, no dashboard SPA, no auth surface. The blob store is a portable
  * content-addressed media store over any S3 (your own MinIO/Garage/R2); it is
  * mounted by default and answers 503 until `BLOBS_S3_*` is set, exactly as the
  * inference gateway answers 503 until a provider house key is set. Owning your
@@ -43,20 +39,11 @@
  * storage.
  */
 
-import { mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
 import { assertStrongToken } from '@epicenter/auth';
 import {
-	createAttachRelayBunServer,
-	createBunEpicenterSyncRuntime,
-	createDeviceGrantStore,
 	createEnvTokenResolver,
 	createServerApp,
-	mountAttachGrantsApp,
-	mountAttachRelayApp,
 	mountBlobsApp,
-	mountBunEpicenterSyncApp,
-	mountHostDirectoryApp,
 	mountInferenceApp,
 	mountSessionApp,
 	mountTranscriptionApp,
@@ -79,7 +66,6 @@ const InstanceBindings = ServerBindings.merge({
 	'PORT?': 'string',
 	'API_PUBLIC_ORIGIN?': 'string',
 	'TRUSTED_BROWSER_ORIGINS?': 'string',
-	'DATA_DIR?': 'string',
 	'INSTANCE_TOKEN?': 'string',
 });
 
@@ -138,27 +124,6 @@ export function startSelfHostServer(): void {
 		env.TRUSTED_BROWSER_ORIGINS,
 	);
 
-	// One data directory for this host's record SQLite files.
-	const dataDir = resolve(env.DATA_DIR ?? './.data');
-	mkdirSync(dataDir, { recursive: true });
-	// The current-state authority owns the same private records directory. Its
-	// first open deliberately drops legacy authority tables: synchronized
-	// authority state resets, while unrelated local-only workspace storage is
-	// untouched.
-	const epicenterSync = createBunEpicenterSyncRuntime({
-		dir: join(dataDir, 'records'),
-	});
-	// The AttachRelay coordinator for this instance (ADR-0115): the
-	// endpoint-addressed byte forwarder. It owns this process's one `Bun.serve`
-	// WebSocket handler.
-	const attachRelay = createAttachRelayBunServer();
-	// The revocable per-device attach allowlist (ADR-0115). Attach connects
-	// resolve against this, not the operator token: a device pairs once (the
-	// operator mints it a grant, below), presents that grant on connect, and loses
-	// access the moment the operator revokes it. In-memory, so a restart re-pairs
-	// devices; persisting grants beside the authority state is deferred.
-	const attachGrants = createDeviceGrantStore();
-
 	const app = createServerApp({
 		// The instance composes no Postgres (no Better Auth), so it never calls
 		// `mountCloudDb` and `createServerApp` stays on the portable `Env`: `c.var.db`
@@ -178,40 +143,6 @@ export function startSelfHostServer(): void {
 	// operator bearer (`auth` above) is the only gate, so every surface is
 	// bearer-authenticated (ADR-0075).
 	mountSessionApp(app, { auth });
-	mountBunEpicenterSyncApp(app, {
-		auth,
-		runtime: epicenterSync,
-	});
-	// The AttachRelay upgrade (`/attach`), WS-aware and gated by a per-device grant
-	// (ADR-0115), not the operator token: a connect resolves against the
-	// device-grant store, and the instance principal is stamped server-side so a
-	// query `principalId` can never point an attach at another partition (ADR-0075).
-	// A revoked or never-minted grant fails the handshake closed. Cloud attach is
-	// not built.
-	mountAttachRelayApp(app, {
-		resolveBearerPrincipal: attachGrants.resolveBearerPrincipal,
-		// One in-process coordinator for this instance; the env is unused (Bun
-		// binds its backend at boot, not per request). The Cloud Worker instead
-		// returns a Durable Object registry keyed on its bound namespace.
-		resolveRelay: () => attachRelay,
-	});
-	// The operator's device-grant admin surface (`/attach/grants`), gated by the
-	// operator token, NOT a grant: the operator mints a grant per device (the
-	// desktop host's own device included), lists them, and revokes one to cut a
-	// device off. This is where "the desktop approves a device" lives on an
-	// instance (ADR-0115 clause 3); minting the secret here is the pairing step.
-	mountAttachGrantsApp(app, { auth, grants: attachGrants });
-	// The client's host-discovery read (`GET /attach/hosts`, ADR-0115 clause 3),
-	// gated by a per-device grant (the same credential a client attaches with, NOT
-	// the operator token): a paired phone lists this instance's desktop hosts and
-	// their `online`/`offline` liveness, then attaches to one. The directory is the
-	// relay's own retained membership joined with its live host set; the principal
-	// is stamped server-side, so a client only ever reads the instance principal's
-	// hosts. No write route: a host publishes itself by connecting as a host.
-	mountHostDirectoryApp(app, {
-		resolveBearerPrincipal: attachGrants.resolveBearerPrincipal,
-		resolveHostDirectory: () => attachRelay.hostDirectory,
-	});
 	// Inference spends the operator's house key on every request. Cap the burn
 	// rate so a leaked or overused bearer cannot run the provider bill up
 	// unbounded between invoices. This is the in-process backstop; the real
@@ -239,15 +170,9 @@ export function startSelfHostServer(): void {
 	const server = Bun.serve({
 		port,
 		fetch: (req) => app.fetch(req, env),
-		// The attach relay owns the WebSocket surface on this port.
-		websocket: attachRelay.websocket,
 	});
-	attachRelay.bindServer(server);
 
-	// Close authority databases and their sockets before the process dies so WAL
-	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.
 	const shutdown = () => {
-		epicenterSync.close();
 		void server.stop(true);
 		process.exit(0);
 	};
@@ -256,7 +181,7 @@ export function startSelfHostServer(): void {
 
 	console.log(
 		`apps/self-host instance (Bun) listening on ${origin} ` +
-			`(data in ${dataDir}, partition principals/instance). Hand INSTANCE_TOKEN to ` +
+			`(partition principals/instance). Hand INSTANCE_TOKEN to ` +
 			'whoever should have access.',
 	);
 }

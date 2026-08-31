@@ -1,6 +1,6 @@
 ---
 name: drizzle-orm
-description: 'Drizzle ORM patterns: schema definitions, Drizzle Kit migrations, query builders, type branding, custom types, SQLite, Postgres, D1, and Turso/libSQL boundaries. Use when mentioning Drizzle, drizzle-orm, DB schemas, migrations, branded column types, or typed SQL queries.'
+description: Apply Drizzle ORM patterns for schemas, migrations, queries, branded types, and Postgres or D1 boundaries. Use when working with Drizzle or typed SQL, not raw `bun:sqlite` or non-Drizzle engines.
 metadata:
   author: epicenter
   version: '1.0'
@@ -10,11 +10,15 @@ metadata:
 ## Reference Repositories
 
 - [Drizzle ORM](https://github.com/drizzle-team/drizzle-orm) : TypeScript ORM with SQL-like query builder
-- [Turso](https://github.com/tursodatabase/turso) : Edge-hosted LibSQL database (Epicenter's database)
+
+Drizzle's one database here is Postgres: `apps/api/drizzle.config.ts` declares
+`dialect: 'postgresql'` and `pg-core` is the only dialect imported. The
+repository's other SQLite engines are not Drizzle, so a SQLite question is
+usually a question about them instead.
 
 ## Upstream Grounding
 
-When Drizzle schema definitions, migration snapshots, query builder APIs, column typing, custom types, or driver integration affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `drizzle-team/drizzle-orm`; for libSQL, Turso sync, embedded replicas, D1 compatibility, or remote SQLite behavior, ask against `tursodatabase/turso`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local installed types, generated migrations, source, driver versions, or official docs before changing code.
+When Drizzle schema definitions, migration snapshots, query builder APIs, column typing, custom types, or driver integration affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `drizzle-team/drizzle-orm`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local installed types, generated migrations, source, driver versions, or official docs before changing code.
 
 Skip DeepWiki for repo-local schema naming and storage-boundary conventions already documented below.
 
@@ -36,7 +40,6 @@ Skip DeepWiki for repo-local schema naming and storage-boundary conventions alre
 
 - `bun:sqlite` and `better-sqlite3` are local synchronous SQLite drivers. Do not use them in Cloudflare Workers.
 - D1 is a Cloudflare binding with Worker-specific behavior. Keep it behind Worker code and generated bindings.
-- libSQL and Turso are SQLite-compatible but have network, sync, and compatibility details that are not generic SQLite. Use the `turso` skill for those decisions.
 
 ## Use $type<T>() for Branded Strings, Not customType
 

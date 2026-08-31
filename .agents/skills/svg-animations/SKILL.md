@@ -1,6 +1,6 @@
 ---
 name: svg-animations
-description: 'SVG animation: SMIL, CSS keyframes, stroke path drawing, shape morphing, motion paths. Use when animating an SVG (spinners, animated logos, draw-in effects, morphing icons). Not for static SVG drawing or icon layout.'
+description: Animate SVGs with SMIL, CSS keyframes, stroke drawing, shape morphing, and motion paths. Use when adding motion to SVGs such as spinners, logos, draw-in effects, or morphing icons, not for static drawing or icon layout.
 ---
 
 Handcrafted SVG animation. Every SVG element is a DOM node you can style, animate, and script; the craft is picking the right animation layer and dodging the handful of gotchas below.

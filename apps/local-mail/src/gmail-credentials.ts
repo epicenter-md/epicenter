@@ -81,7 +81,7 @@ export function resolveGmailCredentials(
 
 /**
  * The machine-tier credential source: env wins per-name, then the 0600
- * provider.json at the data-dir root. Env stays the override/CI/test seam; the
+ * provider.json at the app-dir root. Env stays the override/CI/test seam; the
  * file is the durable default every worktree shares.
  */
 export function gmailCredentialSource(dataDir: string): CredentialSource {

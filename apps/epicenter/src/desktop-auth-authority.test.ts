@@ -66,9 +66,9 @@ test('legacy keyring cell boots the hosted principal and authorizes after verifi
 		throw new Error('Expected signed-in boot snapshot.');
 	}
 	expect(String(authority.bootSnapshot.state.principalId)).toBe('alice');
-	expect(authority.bootSnapshot.deployment).toEqual({
-		kind: 'hosted',
+	expect(authority.bootSnapshot.connection).toEqual({
 		baseURL: 'https://api.epicenter.so',
+		status: 'connected',
 	});
 	expect(authority.bootSnapshot.networkEligible).toBe(false);
 	expect(await authority.authorize()).toEqual({
@@ -144,13 +144,12 @@ test('self-hosted boot keeps the token in Bun and grants it after verification',
 	}
 	expect(String(authority.bootSnapshot.state.principalId)).toBe('instance');
 	expect({
-		deployment: authority.bootSnapshot.deployment,
+		connection: authority.bootSnapshot.connection,
 		networkEligible: authority.bootSnapshot.networkEligible,
 	}).toEqual({
-		deployment: {
-			kind: 'self-hosted',
+		connection: {
 			baseURL: 'https://box.example',
-			connectionStatus: 'connecting',
+			status: 'connecting',
 		},
 		networkEligible: false,
 	});

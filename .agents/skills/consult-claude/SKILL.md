@@ -1,42 +1,58 @@
 ---
 name: consult-claude
-description: Give Claude one fresh, read-only, evidence-seeking independent judgment on a bounded question. Use when the user asks Codex to consult Claude or when an independent investigation would materially reduce risk in a high-stakes, ambiguous, architectural, product, planning, or clean-break decision. Do not use for implementation, an obvious bounded decision, or a continuing Claude conversation.
+description: Run Claude Code as an independent reviewer or research laboratory while you keep ownership of the live repository. Use when the user asks to consult Claude, requests a Claude review, or asks Claude to investigate or research independently.
 ---
 
 # Consult Claude
 
-This is deliberately the inverse direction of `/codex:rescue`: Codex asks
-Claude for a fresh read. It does not prescribe how a Claude Code mission uses
-Codex.
+The consulted Claude owns a sealed laboratory. You own the living checkout,
+integration, and final decision. A consultation is not a packet-only print
+call: Claude gets an editable snapshot of the current repository and may
+research, rewrite code, run tests, commit experiments, and change its mind
+there. The living checkout is not part of Claude's tool boundary.
 
-Invite Claude to investigate one question as an independent collaborator. Give
-it the outcome you need, the few sources or facts worth seeing, and any real
-boundary. Do not give it a theory to defend, a mandatory form to complete, or a
-set of decisions to make later.
+Give Claude one outcome, the settled values it must preserve, and source
+territory worth starting from. Do not give it your working theory, a menu of
+answers, or a prescribed method. Tell it what would make the research complete.
+The runner supplies the snapshot ID, laboratory boundary, checkpoint path, and
+permission profile.
 
-Write the invitation naturally and briefly. Ask Claude to follow its own
-reasoning, replace the framing when the evidence warrants it, and return a
-decisive memo with the direction it chose, why, and what follows. A current
-hypothesis is optional evidence, never the assignment.
+Start the native Claude background session from the repository root and keep
+the command attached when the user wants the answer before this task continues:
 
-The consultation is read-only. The runner exposes `Read`, `Glob`, `Grep`,
-`WebFetch`, and `WebSearch`, but neither shell nor edit tools. Keep it inside
-the task's repository and subject; ask the user before including credentials,
-personal data, unrelated private material, or a system that needs new access.
+```bash
+bun .agents/skills/consult-claude/scripts/consult-claude.ts start --wait
+```
 
-## Run it
+Type the compact research brief, then send EOF. `start` prints a run ID, native
+Agent View ID, native session ID, and checkpoint path. It creates an independent
+replica, removes its Git remote, and keeps Bash network egress offline. Claude
+may search the web, but direct fetching or any external action is a deliberate
+escalation, not part of the default run. It does not recreate Claude's session
+manager: inspect, attach, steer, or stop the live worker with `claude agents`.
 
-Resolve this skill's directory from its loaded `SKILL.md` path. Start
-`scripts/consult-claude.ts` in the task's working directory with a PTY. Write
-the invitation to stdin, then send `Ctrl-D`. The runner uses high effort, safe
-mode, and no session persistence, so include the repository instructions that
-materially affect the question.
+Read the latest result without waking the worker:
 
-Keep the command attached. Treat silence as slow, not hung: it emits a
-heartbeat every minute. Cancel when the user changes direction or the
-consultation is no longer useful.
+```bash
+bun .agents/skills/consult-claude/scripts/consult-claude.ts status <run-id>
+```
 
-Afterward, verify material factual discoveries, preserve Claude's chosen
-direction accurately, and carry in-scope consequences forward. Escalate only a
-destructive action, external write, unrelated private-data access, or material
-expansion beyond the user's request.
+When Claude writes `state: needs-decision` or `state: complete`, you may
+continue the same laboratory conversation. The runner archives the prior
+checkpoint and waits for a fresh one when requested:
+
+```bash
+bun .agents/skills/consult-claude/scripts/consult-claude.ts follow-up <run-id> --wait
+```
+
+Type the follow-up, then send EOF. Do not use this to interrupt a working
+laboratory; reply through `claude agents` when immediate steering is needed.
+Every checkpoint is tied to one snapshot. Treat a claim that cannot be
+re-verified against the living checkout as a question, not a fact. When live
+work has materially moved on, start a new laboratory snapshot; never silently
+refresh a worker's replica beneath it.
+
+Use each checkpoint to decide whether to edit, ask Claude a sharper question,
+or stop. Consultation does not transfer authorship: Claude-generated patches
+are evidence, not changes to apply. Return Claude's recommendation,
+material objections, and any remaining disagreement to the user.

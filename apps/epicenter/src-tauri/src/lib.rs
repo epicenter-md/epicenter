@@ -28,6 +28,8 @@ use tauri_specta::Event as _;
 #[cfg(test)]
 mod command_names;
 
+pub mod app_data;
+
 pub mod audio;
 use audio::encode_recording_for_upload;
 
@@ -94,7 +96,7 @@ const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Surface {
+enum BuiltInApp {
     Home,
     Whispering,
     Honeycrisp,
@@ -102,7 +104,7 @@ enum Surface {
     Books,
 }
 
-impl Surface {
+impl BuiltInApp {
     const ALL: [Self; 5] = [
         Self::Home,
         Self::Whispering,
@@ -111,14 +113,15 @@ impl Surface {
         Self::Books,
     ];
 
-    /// Whether Home lists this surface as an application a person can open
-    /// (ADR-0189).
+    /// Whether Home lists this app as one a person can open (ADR-0189).
     ///
-    /// Home is the shell the list lives in. Mail and Books are release-bundled
-    /// placeholder documents with nothing behind them to open. Both stay
-    /// reserved IDs the catalog refuses to admit, so "not launchable" never
-    /// means "free for someone else to claim".
-    const fn is_application(self) -> bool {
+    /// Every variant here is an app in the product model; this says only which
+    /// ones Home offers. Home is absent because you are already looking at it,
+    /// not because it is above the others (ADR-0209). Mail and Books are
+    /// release-bundled placeholder documents with nothing behind them to open.
+    /// All stay reserved IDs the catalog refuses to admit, so "not launchable"
+    /// never means "free for someone else to claim".
+    const fn is_launchable(self) -> bool {
         matches!(self, Self::Whispering | Self::Honeycrisp)
     }
 
@@ -153,7 +156,7 @@ impl Surface {
     }
 
     fn from_id(id: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|surface| surface.id() == id)
+        Self::ALL.into_iter().find(|built_in| built_in.id() == id)
     }
 }
 
@@ -219,7 +222,7 @@ struct HostState {
     next_generation: AtomicU64,
     process: Mutex<Option<ManagedChild>>,
     active_token: Mutex<Option<String>>,
-    pending_surfaces: Mutex<Vec<Surface>>,
+    pending_apps: Mutex<Vec<BuiltInApp>>,
     pending_oauth_callback: Mutex<Option<String>>,
     /// A section of Home an application asked the shell to open, held until Home
     /// is able to claim it. Only the latest survives: two recovery nudges in a
@@ -236,7 +239,7 @@ impl HostState {
             next_generation: AtomicU64::new(1),
             process: Mutex::new(None),
             active_token: Mutex::new(None),
-            pending_surfaces: Mutex::new(Vec::new()),
+            pending_apps: Mutex::new(Vec::new()),
             pending_oauth_callback: Mutex::new(None),
             pending_home_section: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
@@ -251,23 +254,15 @@ impl HostState {
             .map_err(|error| anyhow!(error.clone()))
     }
 
-    fn queue_surface(&self, surface: Surface) {
-        let mut pending = self
-            .pending_surfaces
-            .lock()
-            .expect("pending surface lock poisoned");
-        if !pending.contains(&surface) {
-            pending.push(surface);
+    fn queue_app(&self, built_in: BuiltInApp) {
+        let mut pending = self.pending_apps.lock().expect("pending app lock poisoned");
+        if !pending.contains(&built_in) {
+            pending.push(built_in);
         }
     }
 
-    fn take_pending_surfaces(&self) -> Vec<Surface> {
-        std::mem::take(
-            &mut *self
-                .pending_surfaces
-                .lock()
-                .expect("pending surface lock poisoned"),
-        )
+    fn take_pending_apps(&self) -> Vec<BuiltInApp> {
+        std::mem::take(&mut *self.pending_apps.lock().expect("pending app lock poisoned"))
     }
 
     fn queue_home_section(&self, section: HomeSection) {
@@ -343,7 +338,7 @@ enum FailureChoice {
 /// The typed Whispering command and event contract. The raw audio response,
 /// Epicenter host-status command, and host-owned `launch_application` remain on Tauri's
 /// handwritten handler because they are outside this generated Whispering
-/// binding surface.
+/// binding API.
 fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new()
         .commands(tauri_specta::collect_commands![
@@ -391,10 +386,10 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
 
 #[cfg(test)]
 mod export_bindings {
-    /// Both consumers of this crate's typed command surface are generated from
+    /// Both consumers of this crate's typed command API are generated from
     /// the one builder, so neither can drift from Rust.
     ///
-    /// Each file carries the whole surface because `tauri_specta` exports a
+    /// Each file carries the whole API because `tauri_specta` exports a
     /// builder, not a slice of one. What a window may actually call is decided
     /// by its capability file, not by which bindings it can import: Home's
     /// `home-model-administration-*` capability grants exactly the local-model
@@ -418,7 +413,7 @@ mod export_bindings {
 /// A section of Epicenter Home an application can ask the shell to open.
 ///
 /// A closed set, not a string-addressed destination: Home is a privileged
-/// built-in surface, so what an application may name inside it is enumerated
+/// built-in app, so what an application may name inside it is enumerated
 /// here rather than parsed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
@@ -434,7 +429,7 @@ pub enum HomeSection {
 #[derive(Clone, Debug, serde::Serialize, specta::Type, tauri_specta::Event)]
 pub struct HomeSectionPending;
 
-/// Take the user to the surface that can fix an unavailable local transcription
+/// Take the user to the app that can fix an unavailable local transcription
 /// route.
 ///
 /// The app shell owns this navigation. The host reports that the route is
@@ -454,8 +449,8 @@ pub struct HomeSectionPending;
 #[specta::specta]
 fn open_home(section: HomeSection, app: DesktopAppHandle) {
     app.state::<HostState>().queue_home_section(section);
-    request_surface(&app, Surface::Home);
-    let _ = HomeSectionPending.emit_to(&app, Surface::Home.id());
+    request_window(&app, BuiltInApp::Home);
+    let _ = HomeSectionPending.emit_to(&app, BuiltInApp::Home.id());
 }
 
 /// Claim the pending section intent, if any. Home calls this on mount and
@@ -478,7 +473,7 @@ fn take_pending_home_section(app: DesktopAppHandle) -> Option<HomeSection> {
 enum Application {
     /// A compiled application with its own stable window label and enumerated
     /// capabilities.
-    Compiled(Surface),
+    Compiled(BuiltInApp),
     /// Anything else: opened in an `app-` window pointed at `/apps/<id>/`.
     Admitted(String),
 }
@@ -486,6 +481,12 @@ enum Application {
 /// Launch one application Home lists: reveal and focus its window, creating it
 /// the first time. Calling again focuses rather than duplicating, and Home is
 /// never hidden to do it.
+///
+/// Windows are deliberate (ADR-0209). One window that switched between
+/// applications would union every capability file onto one label, because a
+/// label is what native authority is granted to; separate windows are what keep
+/// `home`, `whispering`, and `app-*` meaning different things. From here the OS
+/// is the switcher.
 ///
 /// This is Home's verb, not an app-facing one. It deliberately does not reuse
 /// the `openApp(appId)` name ADR-0181 reserves for the portable handle, because
@@ -495,7 +496,7 @@ enum Application {
 /// # Who decides an ID is real
 ///
 /// Not this function. Rust validates the ID's *shape* and resolves it against
-/// its own compiled surface table; it never asks whether a folder was admitted,
+/// its own compiled app table; it never asks whether a folder was admitted,
 /// because the catalog is one immutable generation owned by Bun (ADR-0179) and
 /// a second copy in Rust would be a second answer. What keeps a made-up ID from
 /// arriving is that Home only offers IDs from the authenticated list Bun serves.
@@ -521,7 +522,7 @@ fn launch_application(
 ) -> std::result::Result<(), String> {
     let Some(application) = parse_application_id(&app_id) else {
         return Err(format!(
-            "app id must match [a-z0-9-]+ and must not name a built-in surface that is not an application: {app_id}"
+            "app id must match [a-z0-9-]+ and must not name a built-in app Home does not offer: {app_id}"
         ));
     };
     // Unlike the tray, deep links, and startup, a user-invoked launch does not
@@ -537,7 +538,7 @@ fn launch_application(
 
 /// Create or reveal the window on the main thread and report what happened.
 ///
-/// Mirrors `create_surfaces_on_main_thread`: hand the work over, wait for the
+/// Mirrors `create_windows_on_main_thread`: hand the work over, wait for the
 /// one result. The sender lives in the closure, so an event loop that shuts
 /// down before running it drops the sender and this returns an error rather
 /// than waiting forever.
@@ -553,8 +554,8 @@ fn launch_on_main_thread(
     app.run_on_main_thread(move || {
         let result = if window_app.state::<HostState>().token_is_active(&token) {
             match application {
-                Application::Compiled(surface) => {
-                    ensure_surface(&window_app, surface, port, &token, true)
+                Application::Compiled(built_in) => {
+                    ensure_window(&window_app, built_in, port, &token, true)
                 }
                 Application::Admitted(id) => ensure_app_window(&window_app, &id, port, &token),
             }
@@ -574,31 +575,55 @@ fn launch_on_main_thread(
         .context("the main thread stopped before opening the window")?
 }
 
-/// Accept the ID shapes this command can act on: the `[a-z0-9-]+` contract an
-/// admitted folder name must satisfy (ADR-0179), resolved against the compiled
-/// surface table.
+/// Accept the ID shapes this command can act on, resolved against the compiled
+/// app table.
 ///
-/// This is a shape and reserved-name check, not a membership check. A reserved
-/// surface that is not an application (Home itself, a placeholder) and an ID
-/// with characters no folder name may contain are the same refusal, because
-/// Home offers neither.
+/// The grammar mirrors `APP_ID_PATTERN` in `@epicenter/constants`: lowercase
+/// alphanumerics, `-`, and `.`, beginning and ending alphanumeric. Dots are here
+/// because an admitted app's ID is the reverse-domain workspace ID it declares
+/// (ADR-0210); bare labels stay legal for the compiled apps. The
+/// first and last character are constrained for the same reason the TypeScript
+/// side constrains them: an ID names a directory, and `.` or `..` would name one
+/// outside it.
+///
+/// This is a shape check, not a membership check. A reserved built-in app Home
+/// does not offer (Home itself, a placeholder) and an ID with characters no ID
+/// may contain are the same refusal, because Home offers neither.
 fn parse_application_id(id: &str) -> Option<Application> {
-    let matches_pattern = !id.is_empty()
-        && id
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+    let is_inner = |byte: u8| {
+        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'.'
+    };
+    let is_edge = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
+    let bytes = id.as_bytes();
+    let matches_pattern = match (bytes.first(), bytes.last()) {
+        (Some(&first), Some(&last)) => {
+            is_edge(first) && is_edge(last) && bytes.iter().all(|&byte| is_inner(byte))
+        }
+        _ => false,
+    };
     if !matches_pattern {
         return None;
     }
-    match Surface::from_id(id) {
-        Some(surface) if surface.is_application() => Some(Application::Compiled(surface)),
+    match BuiltInApp::from_id(id) {
+        Some(built_in) if built_in.is_launchable() => Some(Application::Compiled(built_in)),
         Some(_) => None,
         None => Some(Application::Admitted(id.to_string())),
     }
 }
 
+/// The Tauri handle for one application's window.
+///
+/// A window label admits alphanumerics, `-`, `/`, `:`, and `_`, and no `.`, and
+/// Tauri enforces that with an assertion rather than an error, so a workspace
+/// ID with dots would panic the host. Mapping `.` to `_` is a bijection and not
+/// an escape: an app ID's whole alphabet is `[a-z0-9-.]`, so `_` cannot occur in
+/// one and no two IDs can produce one label.
+///
+/// This is the only place Tauri's label grammar reaches. A window label is
+/// Tauri's handle for a window, not Epicenter's name for an application
+/// (ADR-0210).
 fn app_window_label(id: &str) -> String {
-    format!("{APP_WINDOW_PREFIX}{id}")
+    format!("{APP_WINDOW_PREFIX}{}", id.replace('.', "_"))
 }
 
 fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -> Result<()> {
@@ -633,7 +658,7 @@ fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -
 /// window can no longer stop or cancel anything, so its recording would hold
 /// the one host recorder until the process exits.
 ///
-/// Surface windows are hidden rather than destroyed when the user closes them,
+/// Built-in windows are hidden rather than destroyed when the user closes them,
 /// so this fires for them only on a host restart teardown. App windows have no
 /// close interception and are destroyed on close, which is the live path.
 fn release_host_resources_on_destroy(window: &WebviewWindow<Wry>) {
@@ -736,20 +761,20 @@ pub fn run() {
             });
 
             let current = app.deep_link().get_current()?;
-            let mut opened_surface = false;
+            let mut opened_window = false;
             if let Some(urls) = current {
                 for url in &urls {
                     if let Some(callback) = parse_oauth_callback(url) {
                         queue_or_send_oauth_callback(app.handle(), callback);
                     }
-                    if let Some(surface) = parse_surface_deep_link(url) {
-                        request_surface(app.handle(), surface);
-                        opened_surface = true;
+                    if let Some(built_in) = parse_app_deep_link(url) {
+                        request_window(app.handle(), built_in);
+                        opened_window = true;
                     }
                 }
             }
-            if !opened_surface {
-                request_surface(app.handle(), Surface::Home);
+            if !opened_window {
+                request_window(app.handle(), BuiltInApp::Home);
             }
             request_start(app.handle().clone(), None);
             Ok(())
@@ -757,14 +782,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build Epicenter")
         .run(|app, event| match event {
-            RunEvent::Reopen { .. } => request_surface(app, Surface::Home),
+            RunEvent::Reopen { .. } => request_window(app, BuiltInApp::Home),
             RunEvent::Exit => shutdown_host(app),
             _ => {}
         });
 }
 
 fn open_forwarded_deep_links(app: &DesktopAppHandle, arguments: &[String]) {
-    let surfaces = surfaces_from_arguments(arguments);
+    let built_ins = apps_from_arguments(arguments);
     for argument in arguments {
         let Ok(url) = tauri::Url::parse(argument) else {
             continue;
@@ -773,29 +798,29 @@ fn open_forwarded_deep_links(app: &DesktopAppHandle, arguments: &[String]) {
             queue_or_send_oauth_callback(app, callback);
         }
     }
-    if surfaces.is_empty() {
-        request_surface(app, Surface::Home);
+    if built_ins.is_empty() {
+        request_window(app, BuiltInApp::Home);
     } else {
-        for surface in surfaces {
-            request_surface(app, surface);
+        for built_in in built_ins {
+            request_window(app, built_in);
         }
     }
 }
 
-fn surfaces_from_arguments(arguments: &[String]) -> Vec<Surface> {
-    let mut surfaces = Vec::new();
+fn apps_from_arguments(arguments: &[String]) -> Vec<BuiltInApp> {
+    let mut built_ins = Vec::new();
     for argument in arguments {
         let Ok(url) = tauri::Url::parse(argument) else {
             continue;
         };
-        let Some(surface) = parse_surface_deep_link(&url) else {
+        let Some(built_in) = parse_app_deep_link(&url) else {
             continue;
         };
-        if !surfaces.contains(&surface) {
-            surfaces.push(surface);
+        if !built_ins.contains(&built_in) {
+            built_ins.push(built_in);
         }
     }
-    surfaces
+    built_ins
 }
 
 fn open_deep_links(app: &DesktopAppHandle, urls: &[tauri::Url]) {
@@ -803,8 +828,8 @@ fn open_deep_links(app: &DesktopAppHandle, urls: &[tauri::Url]) {
         if let Some(callback) = parse_oauth_callback(url) {
             queue_or_send_oauth_callback(app, callback);
         }
-        if let Some(surface) = parse_surface_deep_link(url) {
-            request_surface(app, surface);
+        if let Some(built_in) = parse_app_deep_link(url) {
+            request_window(app, built_in);
         }
     }
 }
@@ -847,17 +872,17 @@ fn queue_or_send_oauth_callback(app: &DesktopAppHandle, url: String) {
     }
 }
 
-/// Ask for a surface without waiting: queue it when the host is not ready yet,
+/// Ask for a window without waiting: queue it when the host is not ready yet,
 /// and log rather than report what the main thread makes of it.
 ///
 /// That is right for the callers that have nobody to answer to (startup, the
 /// tray, a deep link, macOS reopen, an app asking for a section of Home). It is
 /// wrong for `launch_application`, where a person clicked and is owed an
 /// outcome, so that command waits on the main thread instead.
-fn request_surface(app: &DesktopAppHandle, surface: Surface) {
+fn request_window(app: &DesktopAppHandle, built_in: BuiltInApp) {
     let state = app.state::<HostState>();
     let Some(token) = state.active_token() else {
-        state.queue_surface(surface);
+        state.queue_app(built_in);
         return;
     };
     let Ok(port) = state.port() else {
@@ -869,21 +894,28 @@ fn request_surface(app: &DesktopAppHandle, surface: Surface) {
         if !window_app.state::<HostState>().token_is_active(&token) {
             return;
         }
-        if let Err(error) = ensure_surface(&window_app, surface, port, &token, true) {
+        if let Err(error) = ensure_window(&window_app, built_in, port, &token, true) {
             append_parent_log(
                 &window_app,
-                &format!("open {} surface: {error:#}", surface.id()),
+                &format!("open {} window: {error:#}", built_in.id()),
             );
         }
     });
     if let Err(error) = schedule {
-        append_parent_log(app, &format!("schedule {} surface: {error}", surface.id()));
+        append_parent_log(app, &format!("schedule {} window: {error}", built_in.id()));
     }
 }
 
-fn parse_surface_deep_link(url: &tauri::Url) -> Option<Surface> {
+/// Resolve `epicenter://app/<id>` to the built-in app it names.
+///
+/// The segment is `app` because it is the same ID space as `/apps/<id>/` and
+/// the list Home shows: a person pasting a link names the thing they want, not
+/// the frame it arrives in. `epicenter://auth/...` stays disjoint by segment,
+/// and an admitted app's dotted ID cannot collide with these bare labels
+/// (ADR-0210), so widening this to the catalog later needs no new grammar.
+fn parse_app_deep_link(url: &tauri::Url) -> Option<BuiltInApp> {
     if url.scheme() != "epicenter"
-        || url.host_str() != Some("surface")
+        || url.host_str() != Some("app")
         || !url.username().is_empty()
         || url.password().is_some()
         || url.port().is_some()
@@ -897,7 +929,7 @@ fn parse_surface_deep_link(url: &tauri::Url) -> Option<Surface> {
     if id.is_empty() || id.contains('/') {
         return None;
     }
-    Surface::from_id(id)
+    BuiltInApp::from_id(id)
 }
 
 fn request_start(app: DesktopAppHandle, initial_error: Option<String>) {
@@ -924,7 +956,7 @@ fn start_until_ready(app: DesktopAppHandle, mut failure: Option<String>) {
 
         if let Some(message) = failure.take() {
             append_parent_log(&app, &message);
-            invalidate_surfaces(&app);
+            invalidate_windows(&app);
             match show_failure_dialog(&app, &message) {
                 FailureChoice::Retry => {}
                 FailureChoice::Quit => {
@@ -985,16 +1017,16 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
     }
 
     state.activate(&token);
-    let mut surfaces = state.take_pending_surfaces();
-    if surfaces.is_empty() {
-        surfaces.push(Surface::Home);
+    let mut built_ins = state.take_pending_apps();
+    if built_ins.is_empty() {
+        built_ins.push(BuiltInApp::Home);
     }
-    if let Err(error) = create_surfaces_on_main_thread(app, port, &token, surfaces) {
+    if let Err(error) = create_windows_on_main_thread(app, port, &token, built_ins) {
         state.deactivate();
         if let Some(child) = take_generation(&state, generation) {
             stop_child(child);
         }
-        invalidate_surfaces(app);
+        invalidate_windows(app);
         return Err(error);
     }
 
@@ -1004,11 +1036,15 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
 
 fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
     let log = open_log_file(app)?;
-    let app_data_dir = app.path().app_data_dir()?;
 
+    // The Bun host resolves the Epicenter data root itself, from the one
+    // TypeScript function that owns that path (ADR-0201). Do not pass one from
+    // here: a Rust-computed root leaves the desktop and every CLI as two
+    // implementations of a directory they have to agree on exactly, and it
+    // swallows the ambient `EPICENTER_DATA_DIR` that the host and the
+    // recorder's `crate::app_data` both honour.
     let mut command = host_command(app)?;
     command
-        .env("EPICENTER_DATA_DIR", &app_data_dir)
         .env("EPICENTER_APPS_DIST", apps_dist(app)?)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1290,7 +1326,7 @@ fn fail_generation(app: &DesktopAppHandle, generation: u64, message: String) {
     };
     state.deactivate();
     stop_child(child);
-    invalidate_surfaces(app);
+    invalidate_windows(app);
     request_start(app.clone(), Some(message));
 }
 
@@ -1340,11 +1376,11 @@ fn shutdown_host(app: &DesktopAppHandle) {
     }
 }
 
-fn create_surfaces_on_main_thread(
+fn create_windows_on_main_thread(
     app: &DesktopAppHandle,
     port: u16,
     token: &str,
-    surfaces: Vec<Surface>,
+    built_ins: Vec<BuiltInApp>,
 ) -> Result<()> {
     let (sender, receiver) = mpsc::sync_channel(1);
     let app = app.clone();
@@ -1354,17 +1390,17 @@ fn create_surfaces_on_main_thread(
             #[cfg(target_os = "macos")]
             create_recording_overlay(&app, port, &token)?;
 
-            ensure_surface(&app, Surface::Whispering, port, &token, false)?;
+            ensure_window(&app, BuiltInApp::Whispering, port, &token, false)?;
 
-            surfaces
+            built_ins
                 .into_iter()
-                .try_for_each(|surface| ensure_surface(&app, surface, port, &token, true))
+                .try_for_each(|built_in| ensure_window(&app, built_in, port, &token, true))
         })();
         let _ = sender.send(result);
     })?;
     receiver
         .recv()
-        .context("the main thread stopped before creating Epicenter surfaces")?
+        .context("the main thread stopped before creating Epicenter windows")?
 }
 
 #[cfg(target_os = "macos")]
@@ -1376,14 +1412,20 @@ fn create_recording_overlay(app: &DesktopAppHandle, port: u16, token: &str) -> R
         .context("create the Whispering recording overlay")
 }
 
-fn ensure_surface(
+/// Make sure the one window for this built-in app exists, and reveal it.
+///
+/// The window label is the app's ID, which is what every capability file in
+/// `src-tauri/capabilities/` selects on. One built-in app has one window here;
+/// an app owning a second window (Whispering's recording overlay) creates it
+/// separately, under its own label.
+fn ensure_window(
     app: &DesktopAppHandle,
-    surface: Surface,
+    built_in: BuiltInApp,
     port: u16,
     token: &str,
     reveal: bool,
 ) -> Result<()> {
-    if let Some(window) = app.get_webview_window(surface.id()) {
+    if let Some(window) = app.get_webview_window(built_in.id()) {
         if reveal {
             focus(window);
         }
@@ -1391,10 +1433,10 @@ fn ensure_surface(
     }
 
     let origin = origin(port);
-    let url: tauri::Url = format!("{origin}{}", surface.path()).parse()?;
+    let url: tauri::Url = format!("{origin}{}", built_in.path()).parse()?;
     let initialization_script = initialization_script(&origin, token)?;
-    let window = WebviewWindowBuilder::new(app, surface.id(), WebviewUrl::External(url))
-        .title(surface.title())
+    let window = WebviewWindowBuilder::new(app, built_in.id(), WebviewUrl::External(url))
+        .title(built_in.title())
         .inner_size(1100.0, 760.0)
         .min_inner_size(680.0, 480.0)
         .visible(reveal)
@@ -1402,7 +1444,7 @@ fn ensure_surface(
         .on_navigation(move |url| is_allowed_navigation(url, port))
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .build()
-        .with_context(|| format!("create the {} WebView", surface.title()))?;
+        .with_context(|| format!("create the {} WebView", built_in.title()))?;
 
     let close_window = window.clone();
     window.on_window_event(move |event| {
@@ -1424,12 +1466,12 @@ fn focus<R: Runtime>(window: WebviewWindow<R>) {
     let _ = window.set_focus();
 }
 
-fn invalidate_surfaces(app: &DesktopAppHandle) {
+fn invalidate_windows(app: &DesktopAppHandle) {
     let (sender, receiver) = mpsc::sync_channel(1);
     let app = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
-        for surface in Surface::ALL {
-            if let Some(window) = app.get_webview_window(surface.id()) {
+        for built_in in BuiltInApp::ALL {
+            if let Some(window) = app.get_webview_window(built_in.id()) {
                 if window.destroy().is_err() {
                     let _ = window.hide();
                 }
@@ -1457,8 +1499,11 @@ fn show_failure_dialog(app: &DesktopAppHandle, message: &str) -> FailureChoice {
     loop {
         let result = app
             .dialog()
+            // A person reads the first two lines and the buttons; the detail is
+            // kept because this is a startup crash, where the one useful thing
+            // anybody can do with it is paste it into a report.
             .message(format!(
-                "Epicenter could not start its application host.\n\n{message}\n\nNo application window was opened."
+                "Epicenter could not start.\n\nNo app window was opened. Retry, or reveal the logs if it keeps happening.\n\nDetails: {message}"
             ))
             .title("Epicenter could not start")
             .kind(MessageDialogKind::Error)
@@ -1703,8 +1748,8 @@ mod tests {
     }
 
     #[test]
-    fn surface_table_has_stable_ids_routes_and_titles() {
-        let actual = Surface::ALL.map(|surface| (surface.id(), surface.path(), surface.title()));
+    fn built_in_window_table_has_stable_ids_routes_and_titles() {
+        let actual = BuiltInApp::ALL.map(|window| (window.id(), window.path(), window.title()));
         assert_eq!(
             actual,
             [
@@ -1723,10 +1768,10 @@ mod tests {
     /// asserts the same list against `applications.ts`.
     #[test]
     fn compiled_applications_are_the_release_built_spas() {
-        let launchable: Vec<&str> = Surface::ALL
+        let launchable: Vec<&str> = BuiltInApp::ALL
             .into_iter()
-            .filter(|surface| surface.is_application())
-            .map(Surface::id)
+            .filter(|window| window.is_launchable())
+            .map(BuiltInApp::id)
             .collect();
         assert_eq!(launchable, ["whispering", "honeycrisp"]);
     }
@@ -1735,11 +1780,11 @@ mod tests {
     fn one_verb_opens_compiled_and_admitted_applications_alike() {
         assert!(matches!(
             parse_application_id("whispering"),
-            Some(Application::Compiled(Surface::Whispering))
+            Some(Application::Compiled(BuiltInApp::Whispering))
         ));
         assert!(matches!(
             parse_application_id("honeycrisp"),
-            Some(Application::Compiled(Surface::Honeycrisp))
+            Some(Application::Compiled(BuiltInApp::Honeycrisp))
         ));
 
         // Every well-formed non-reserved ID resolves to the app-window path,
@@ -1764,7 +1809,7 @@ mod tests {
             "..",
             "hello http",
             "héllo",
-            // Reserved surfaces Home does not list: the shell itself, and
+            // Reserved windows Home does not list: the shell itself, and
             // placeholder documents with nothing behind them to open.
             "home",
             "mail",
@@ -1781,7 +1826,7 @@ mod tests {
     fn app_window_labels_are_reserved_and_never_collide_with_host_windows() {
         assert_eq!(app_window_label("hello-http"), "app-hello-http");
 
-        let mut host_labels: Vec<&str> = Surface::ALL.map(Surface::id).to_vec();
+        let mut host_labels: Vec<&str> = BuiltInApp::ALL.map(BuiltInApp::id).to_vec();
         host_labels.push("recording-overlay");
         for label in host_labels {
             assert!(
@@ -1851,7 +1896,7 @@ mod tests {
     /// camera) to reach the two it used. A grant naming a plugin this build does
     /// not ship is a silent no-op, so nothing would fail if it were pasted back;
     /// what it would do is describe an authority the app does not have. Both
-    /// Whispering surfaces are checked, not just the one that had it.
+    /// Whispering windows are checked, not just the one that had it.
     #[test]
     fn no_whispering_capability_grants_the_deleted_permissions_plugin() {
         for encoded in [
@@ -1965,7 +2010,7 @@ mod tests {
     /// The generated bindings are a committed artifact, so they can go stale
     /// against the command list without anything failing to compile.
     ///
-    /// Two commands are deliberately outside the generated surface: they ride
+    /// Two commands are deliberately outside the generated API: they ride
     /// Tauri's handwritten handler because their shapes are not `specta::Type`
     /// (raw bytes) or are host-owned rather than part of the app contract.
     #[test]
@@ -2110,9 +2155,9 @@ mod tests {
             .collect()
     }
 
-    /// An app window's native command surface is the public client's surface,
-    /// exactly: nothing the client cannot call, and nothing it can call that
-    /// the window was not granted.
+    /// An app window's native command API is the public client's API, exactly:
+    /// nothing the client cannot call, and nothing it can call that the window
+    /// was not granted.
     ///
     /// This is API admission, not a sandbox. ADR-0179 is explicit that an
     /// admitted app already holds the shared origin, the session, and the
@@ -2121,7 +2166,7 @@ mod tests {
     /// to unblock something fails here rather than quietly widening what every
     /// installed app can do.
     #[test]
-    fn app_windows_reach_exactly_the_public_client_surface() {
+    fn app_windows_reach_exactly_the_public_client_api() {
         let expected: std::collections::BTreeSet<String> = PUBLIC_CLIENT_COMMANDS
             .iter()
             .map(|command| command.to_string())
@@ -2130,7 +2175,7 @@ mod tests {
             assert_eq!(
                 granted_app_commands(encoded),
                 expected,
-                "the app-window capability must grant the public client's surface and nothing else"
+                "the app-window capability must grant the public client's API and nothing else"
             );
         }
     }
@@ -2164,7 +2209,7 @@ mod tests {
     /// spelling, not what was sent) and fragile enough to pass or fail on how
     /// the bindings happened to be formatted.
     #[test]
-    fn the_public_client_surface_is_commands_this_build_declares() {
+    fn the_public_client_api_is_commands_this_build_declares() {
         let declared: std::collections::BTreeSet<&str> =
             crate::command_names::COMMANDS.iter().copied().collect();
         for command in PUBLIC_CLIENT_COMMANDS {
@@ -2250,10 +2295,10 @@ mod tests {
     }
 
     /// ADR-0181 keeps `openHome(section)` and `openApp(appId)` apart because a
-    /// built-in surface and an admitted member have different identity and
+    /// built-in window and an admitted member have different identity and
     /// authority rules. Home's launch verb crosses that line by design, which is
     /// exactly why no app window may hold it: an admitted app must not be able
-    /// to reveal a compiled surface, and reusing the reserved `open_app` name
+    /// to reveal a compiled window, and reusing the reserved `open_app` name
     /// for this would have made that the default the day a `shell` namespace
     /// shipped.
     #[test]
@@ -2267,32 +2312,32 @@ mod tests {
     }
 
     #[test]
-    fn deep_links_accept_only_the_closed_surface_route_table() {
+    fn deep_links_accept_only_the_closed_built_in_app_table() {
         for (url, expected) in [
-            ("epicenter://surface/home", Surface::Home),
-            ("epicenter://surface/whispering", Surface::Whispering),
-            ("epicenter://surface/honeycrisp", Surface::Honeycrisp),
-            ("epicenter://surface/mail", Surface::Mail),
-            ("epicenter://surface/books", Surface::Books),
+            ("epicenter://app/home", BuiltInApp::Home),
+            ("epicenter://app/whispering", BuiltInApp::Whispering),
+            ("epicenter://app/honeycrisp", BuiltInApp::Honeycrisp),
+            ("epicenter://app/mail", BuiltInApp::Mail),
+            ("epicenter://app/books", BuiltInApp::Books),
         ] {
-            assert_eq!(
-                parse_surface_deep_link(&url.parse().unwrap()),
-                Some(expected)
-            );
+            assert_eq!(parse_app_deep_link(&url.parse().unwrap()), Some(expected));
         }
 
         for denied in [
-            "epicenter://surface/unknown",
-            "epicenter://surface/home/",
-            "epicenter://surface/home/extra",
-            "epicenter://surface/home?mode=other",
-            "epicenter://surface/home#other",
-            "epicenter://user@surface/home",
-            "epicenter://user:secret@surface/home",
+            // Both retired spellings. Neither is kept as a compatibility alias.
+            "epicenter://surface/home",
+            "epicenter://window/home",
+            "epicenter://app/unknown",
+            "epicenter://app/home/",
+            "epicenter://app/home/extra",
+            "epicenter://app/home?mode=other",
+            "epicenter://app/home#other",
+            "epicenter://user@app/home",
+            "epicenter://user:secret@app/home",
             "epicenter://other/query",
-            "https://surface/home",
+            "https://app/home",
         ] {
-            assert_eq!(parse_surface_deep_link(&denied.parse().unwrap()), None);
+            assert_eq!(parse_app_deep_link(&denied.parse().unwrap()), None);
         }
     }
 
@@ -2362,18 +2407,18 @@ mod tests {
     }
 
     #[test]
-    fn forwarded_arguments_extract_valid_unique_surface_links() {
+    fn forwarded_arguments_extract_valid_unique_app_links() {
         let arguments = [
             "/Applications/Epicenter.app/Contents/MacOS/Epicenter",
-            "epicenter://surface/mail",
-            "epicenter://surface/unknown",
-            "epicenter://surface/mail",
-            "epicenter://surface/books",
+            "epicenter://app/mail",
+            "epicenter://app/unknown",
+            "epicenter://app/mail",
+            "epicenter://app/books",
         ]
         .map(String::from);
         assert_eq!(
-            surfaces_from_arguments(&arguments),
-            vec![Surface::Mail, Surface::Books]
+            apps_from_arguments(&arguments),
+            vec![BuiltInApp::Mail, BuiltInApp::Books]
         );
     }
 

@@ -9,18 +9,24 @@
 # never hits Google's token endpoint. The mock ignores the bearer anyway.
 #
 # Env overrides (all optional):
-#   LOCAL_MAIL_REAL_DIR   source mirror (default: macOS Application Support dir)
-#   LM_TEST_DIR           throwaway copy destination (default: /tmp/local-mail-harness)
+#   LOCAL_MAIL_REAL_DIR   source app dir (default: the real one under the macOS
+#                         Epicenter data root)
+#   LM_TEST_DIR           throwaway Epicenter data root (default:
+#                         /tmp/local-mail-harness)
 #   LOCAL_MAIL_ACCOUNT    account email to forge (default: the sole account found)
 #
 # Prints machine-readable lines the other scripts parse:
 #   ACCOUNT <email>
-#   COPY_READY <dir>
-#   MOCK_DB <path to copied mail.db>
+#   COPY_READY <throwaway data root>
+#   MOCK_DB <path to the copied current mirror artifact>
 set -euo pipefail
 
-REAL="${LOCAL_MAIL_REAL_DIR:-$HOME/Library/Application Support/local-mail}"
+# Epicenter owns one data root and Local Mail lives at <root>/apps/local-mail,
+# partitioned under accounts/ (ADR-0201). The harness copies the app dir into a
+# throwaway root and points EPICENTER_DATA_DIR at that root.
+REAL="${LOCAL_MAIL_REAL_DIR:-$HOME/Library/Application Support/so.epicenter/apps/local-mail}"
 COPY="${LM_TEST_DIR:-/tmp/local-mail-harness}"
+APP="$COPY/apps/local-mail"
 
 if [ ! -d "$REAL" ]; then
 	echo "error: real mirror not found at: $REAL" >&2
@@ -28,43 +34,68 @@ if [ ! -d "$REAL" ]; then
 	exit 1
 fi
 
-# Resolve the account: an explicit override, else the sole subdir holding a mail.db.
+# The mirror artifact is named by its corpus version (`mail.v<version>.db`,
+# ADR-0197), and a bump leaves the predecessor on disk. Versions only ever
+# increase, so the highest one is the current one; a lower one is a predecessor
+# by definition. This reads the grammar rather than mtime, which a stray `touch`
+# or a copy would get wrong.
+newest_artifact() {
+	find "$1" -maxdepth 1 -name 'mail.v*.db' 2>/dev/null |
+		sed -E 's|.*/mail\.v([0-9]+)\.db$|\1 &|' | sort -rn | head -1 | cut -d' ' -f2-
+}
+
+# Resolve the account: an explicit override, else the sole subdir holding an artifact.
 if [ -n "${LOCAL_MAIL_ACCOUNT:-}" ]; then
 	ACCT="$LOCAL_MAIL_ACCOUNT"
 else
-	DBS=()
-	while IFS= read -r db; do DBS+=("$db"); done < <(find "$REAL" -maxdepth 2 -name mail.db)
-	if [ "${#DBS[@]}" -eq 0 ]; then
-		echo "error: no mail.db found under $REAL" >&2
+	ACCTS=()
+	while IFS= read -r dir; do
+		if [ -n "$(newest_artifact "$dir")" ]; then
+			ACCTS+=("$dir")
+		fi
+	done < <(find "$REAL/accounts" -maxdepth 1 -mindepth 1 -type d)
+	if [ "${#ACCTS[@]}" -eq 0 ]; then
+		echo "error: no mail.v<version>.db found under $REAL" >&2
 		exit 1
 	fi
-	if [ "${#DBS[@]}" -gt 1 ]; then
+	if [ "${#ACCTS[@]}" -gt 1 ]; then
 		echo "error: multiple accounts found; set LOCAL_MAIL_ACCOUNT to one of:" >&2
-		for d in "${DBS[@]}"; do basename "$(dirname "$d")" >&2; done
+		for d in "${ACCTS[@]}"; do basename "$d" >&2; done
 		exit 1
 	fi
-	ACCT="$(basename "$(dirname "${DBS[0]}")")"
+	ACCT="$(basename "${ACCTS[0]}")"
 fi
 
-if [ ! -f "$REAL/$ACCT/mail.db" ]; then
-	echo "error: no mail.db for account '$ACCT' under $REAL" >&2
+ARTIFACT="$(newest_artifact "$REAL/accounts/$ACCT")"
+if [ -z "$ARTIFACT" ]; then
+	echo "error: no mirror artifact for account '$ACCT' under $REAL" >&2
 	exit 1
 fi
 
 rm -rf "$COPY"
-cp -R "$REAL" "$COPY"
-# Drop any copied lock so `up` can acquire its own, plus stray journals/artifacts.
-rm -f "$COPY/$ACCT/lock.db" "$COPY/$ACCT/lock.db-journal" "$COPY/.DS_Store" || true
+mkdir -p "$(dirname "$APP")"
+cp -R "$REAL" "$APP"
+# Drop any copied lock so the app can acquire its own, plus stray journals and
+# artifacts. The copied `intent.db` goes too: it holds triage the REAL account
+# still owes Gmail, and a harness run would deliver it into the mock and count
+# it in the smoke's assertions. The copy starts owing nothing.
+rm -f \
+	"$APP/accounts/$ACCT/lock.db" \
+	"$APP/accounts/$ACCT/lock.db-journal" \
+	"$APP/accounts/$ACCT/intent.db" \
+	"$APP/accounts/$ACCT/intent.db-wal" \
+	"$APP/accounts/$ACCT/intent.db-shm" \
+	"$APP/.DS_Store" || true
 
 # Forge credentials.json: dummy access+refresh tokens, expiry far in the future.
 # Shape mirrors src/token-store.ts: { "<accountEmail>": "<JSON-encoded TokenSet>" }.
-cat > "$COPY/credentials.json" <<EOF
+cat > "$APP/credentials.json" <<EOF
 {
   "$ACCT": "{\"accountEmail\":\"$ACCT\",\"clientIdUsed\":\"mock-client\",\"environment\":\"dev\",\"accessToken\":\"mock-access-token\",\"refreshToken\":\"mock-refresh-token\",\"accessTokenExpiresAt\":\"2099-01-01T00:00:00.000Z\",\"obtainedAt\":\"2026-01-01T00:00:00.000Z\"}"
 }
 EOF
-chmod 600 "$COPY/credentials.json"
+chmod 600 "$APP/credentials.json"
 
 echo "ACCOUNT $ACCT"
 echo "COPY_READY $COPY"
-echo "MOCK_DB $COPY/$ACCT/mail.db"
+echo "MOCK_DB $APP/accounts/$ACCT/$(basename "$ARTIFACT")"

@@ -3,9 +3,7 @@
  *
  * `createOAuthUnauthorizedResourceResponse` is HTTP-only: it maps an
  * `OAuthError` to a JSON failure response with the right status and, on a 401,
- * the `WWW-Authenticate` challenge. WebSocket-upgrade rejection lives on the
- * attach relay's upgrade guard, so there is no runtime global to
- * exercise here.
+ * the `WWW-Authenticate` challenge.
  */
 
 import { expect, test } from 'bun:test';

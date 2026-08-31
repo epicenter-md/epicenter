@@ -12,8 +12,8 @@
  * a table name.
  */
 
-import { existsSync } from 'node:fs';
-import { type EntityStatus, openBooksDb } from '../db.ts';
+import { type EntityStatus, openBooksDbReadonly } from '../db.ts';
+import type { DbFile } from '../db-file.ts';
 import type { EntityDef, GeneratedColumn } from '../entities.ts';
 
 /** One entity in the browse list: its mirror counts plus the columns to render. */
@@ -51,14 +51,14 @@ export type EntityRowDetail = {
  * not an error, matching `readBooksStatus`.
  */
 export function listEntities({
-	dbPath,
+	mirror,
 	defs,
 }: {
-	dbPath: string;
+	mirror: DbFile;
 	defs: EntityDef[];
 }): { mirrorBuilt: boolean; entities: EntitySummary[] } {
-	if (!existsSync(dbPath)) return { mirrorBuilt: false, entities: [] };
-	const db = openBooksDb(dbPath, { readonly: true });
+	const db = openBooksDbReadonly(mirror);
+	if (db === null) return { mirrorBuilt: false, entities: [] };
 	try {
 		const entities = defs.map((def) => ({
 			...db.entityStatus(def),
@@ -73,17 +73,18 @@ export function listEntities({
 
 /** A page of one entity's rows, newest first. Empty when the mirror is absent. */
 export function pageEntityRows({
-	dbPath,
+	mirror,
 	def,
 	limit,
 	offset,
 }: {
-	dbPath: string;
+	mirror: DbFile;
 	def: EntityDef;
 	limit: number;
 	offset: number;
 }): EntityRowsPage {
-	if (!existsSync(dbPath)) {
+	const db = openBooksDbReadonly(mirror);
+	if (db === null) {
 		return {
 			entity: def.name,
 			columns: def.columns,
@@ -93,7 +94,6 @@ export function pageEntityRows({
 			offset,
 		};
 	}
-	const db = openBooksDb(dbPath, { readonly: true });
 	try {
 		const { rows, total } = db.pageRows(def, { limit, offset });
 		return {
@@ -111,16 +111,16 @@ export function pageEntityRows({
 
 /** One row's detail with its parsed blob, or `null` when the row is unknown. */
 export function getEntityRow({
-	dbPath,
+	mirror,
 	def,
 	id,
 }: {
-	dbPath: string;
+	mirror: DbFile;
 	def: EntityDef;
 	id: string;
 }): EntityRowDetail | null {
-	if (!existsSync(dbPath)) return null;
-	const db = openBooksDb(dbPath, { readonly: true });
+	const db = openBooksDbReadonly(mirror);
+	if (db === null) return null;
 	try {
 		const row = db.getRow(def, id);
 		if (!row) return null;

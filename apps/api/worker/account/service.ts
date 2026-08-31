@@ -3,7 +3,8 @@
  * cross-system transaction. Every step is idempotent and they run in an
  * order that keeps a retry authenticated:
  *
- *   1. authority      the account Durable Object (workspaces, documents,
+ *   (There is no store step. See `routes.ts`.)
+ *   1. blobs          removed-was-authority: the account Durable Object (
  *                     sockets) — never refused by allowance or the wall
  *   2. blobs          the `principals/<id>/blobs/` object prefix
  *   3. billing        the Autumn customer and its Stripe counterpart
@@ -17,11 +18,10 @@
  * route answers 204.
  */
 
-import type { PrincipalId } from '@epicenter/identity';
+import type { PrincipalId } from '@epicenter/principal';
 import { extractErrorMessage } from 'wellcrafted/error';
 
 const DELETION_STEPS = [
-	'authority',
 	'blobs',
 	'billing',
 	'observations',

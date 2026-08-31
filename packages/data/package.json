@@ -1,41 +1,51 @@
 {
 	"name": "@epicenter/data",
 	"version": "0.0.1",
-	"description": "Local-first scalar data protocol and SQLite replica.",
+	"private": true,
+	"description": "The Epicenter store: one document per application, a synchronous surface, and the transport that carries it.",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
-		"./browser": "./src/browser.ts",
-		"./browser-dedicated-worker": "./src/browser-dedicated-worker.ts",
-		"./bun": "./src/bun.ts",
-		"./desktop": "./src/desktop.ts",
-		"./inspection": "./src/inspection.ts",
-		"./desktop-owner": "./src/desktop-owner.ts",
-		"./protocol": "./src/protocol/index.ts"
+		"./definition": "./src/definition/index.ts",
+		"./artifact": "./src/artifact/index.ts",
+		"./artifact/format": "./src/artifact/format.ts",
+		"./artifact/protocol": "./src/artifact/protocol.ts",
+		"./artifact/mirror": "./src/artifact/mirror.ts",
+		"./direct": "./src/direct.ts",
+		"./blobs": "./src/store/blobs.ts",
+		"./flush-on-hide": "./src/store/flush-on-hide.ts",
+		"./blobs/opfs": "./src/store/blobs.opfs.ts",
+		"./memory": "./src/store/memory.ts",
+		"./browser": "./src/store/browser.ts",
+		"./test-locks": "./src/store/test-locks.ts",
+		"./test-opfs": "./src/store/test-opfs.ts",
+		"./sync": "./src/sync/index.ts"
 	},
 	"files": [
 		"src",
 		"!src/**/*.test.ts",
 		"!src/**/*.test-support.ts"
 	],
-	"license": "MIT",
+	"license": "AGPL-3.0-or-later",
 	"scripts": {
-		"evidence:browser": "bun browser-evidence/run.ts --profile smoke",
-		"typecheck": "tsc --noEmit && tsc --noEmit -p browser-evidence/tsconfig.json",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.dom.json && tsc --noEmit -p evidence/browser/durable-store/tsconfig.json",
 		"test": "bun test"
 	},
 	"dependencies": {
 		"@epicenter/field": "workspace:*",
-		"@epicenter/lens": "workspace:*",
+		"@epicenter/principal": "workspace:*",
 		"@epicenter/sqlite": "workspace:*",
+		"@epicenter/sync": "workspace:*",
 		"@sqlite.org/sqlite-wasm": "catalog:",
 		"@y/y": "14.0.0-rc.24",
+		"idb": "^8.0.3",
 		"nanoid": "catalog:",
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
+		"fake-indexeddb": "^6.2.5",
 		"playwright": "^1.61.1",
 		"typescript": "catalog:",
 		"vite": "catalog:"

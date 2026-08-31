@@ -5,31 +5,30 @@
 	"version": "0.0.2",
 	"type": "module",
 	"exports": {
-		".": "./vocab.ts",
-		"./browser": "./vocab.browser.ts"
+		".": "./vocab.ts"
 	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "NODE_ENV=production vite build",
+		"build:epicenter": "bun run scripts/build-epicenter-candidate.ts",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"test": "if find src -name '*.test.ts' -o -name '*.test.tsx' -o -name '*.spec.ts' | grep -q .; then bun test; fi",
+		"test": "bun test",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"deploy": "wrangler deploy"
 	},
 	"dependencies": {
+		"@epicenter/agent": "workspace:*",
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/chat": "workspace:*",
 		"@epicenter/client": "workspace:*",
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/recorder": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/ui": "workspace:*",
-		"@epicenter/data": "workspace:*",
-		"@epicenter/document-sync": "workspace:*",
-		"@epicenter/agent": "workspace:*",
 		"@lucide/svelte": "catalog:",
 		"arktype": "catalog:",
 		"mode-watcher": "^1.1.0",
@@ -38,8 +37,7 @@
 		"transliteration": "^2.6.1",
 		"typebox": "catalog:",
 		"wanakana": "^5.3.1",
-		"wellcrafted": "catalog:",
-		"yjs": "catalog:"
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@epicenter/vite-config": "workspace:*",

@@ -1,0 +1,169 @@
+/**
+ * The host's half of the `~/Epicenter` mirror (ADR-0271).
+ *
+ * The application renders and the host owns the folder. A pass arrives saying
+ * what the workspace holds; this makes the folder match. The host never opens
+ * a store, never decodes a CRDT update, and holds no definition: what it
+ * receives is text an application already rendered.
+ *
+ * It does read files back, in two places, and both are derived-to-derived
+ * rather than file-to-row: the sweep reads NAMES to know what is no longer
+ * justified, and `mirror-index.ts` reads CONTENTS to build `tables.sqlite`
+ * beside them. The seam ADR-0271 guards is narrower than "never read" and
+ * still holds: nothing derived from a file ever reaches a row.
+ *
+ * Three things this module owes.
+ *
+ * **A path cannot escape the folder.** Checked twice, because the two checks
+ * promise different things. Containment is the host's own promise about its
+ * own root and holds whatever the application sends. The row-file grammar is
+ * the application's shape, and refusing anything else is what keeps the folder
+ * to what a render produces.
+ *
+ * **A file is never half-written.** The whole point of the folder is that
+ * something else reads it, and an agent that reads a note mid-write sees a
+ * truncated one. Every write lands in a temporary file and is renamed into
+ * place, which is atomic within a filesystem.
+ *
+ * **A pass that did not finish deletes nothing.** The manifest arrives last
+ * and exactly once. Until it does, files are written and nothing is removed,
+ * so a dropped connection leaves the folder stale rather than gutted.
+ */
+
+import type { Dirent } from 'node:fs';
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, relative, resolve, sep } from 'node:path';
+import { isAppId } from '@epicenter/constants/app-data';
+import { parseRowPath } from '@epicenter/data/artifact/format';
+import {
+	isMirrorPlace,
+	parseMirrorPass,
+} from '@epicenter/data/artifact/protocol';
+import { indexMirrorFolder } from './mirror-index.ts';
+
+/**
+ * The folder one place's files live in, or `undefined` when the request does
+ * not name one.
+ */
+export function mirrorFolderPath({
+	place,
+	dataId,
+	root,
+}: {
+	place: string;
+	dataId: string;
+	root: string;
+}): string | undefined {
+	if (!isMirrorPlace(place)) return undefined;
+	// The same grammar the data root uses for an app directory: dot-separated,
+	// alphanumeric at both ends, so `.` and `..` are refused by construction.
+	if (!isAppId(dataId)) return undefined;
+	return join(root, place, dataId);
+}
+
+/**
+ * The absolute path one file of a pass lives at, or `undefined`.
+ *
+ * Containment first, and it is not decoration. `parseRowPath` splits on `/`
+ * and checks the extension; it does not enforce the address grammar, so
+ * `../x.md` parses as a table named `..`. A grammar check alone would have
+ * admitted it. Resolving and comparing against the folder is what actually
+ * promises the file lands inside.
+ */
+function fileInFolder(folder: string, path: string): string | undefined {
+	if (path !== 'kv.json' && parseRowPath(path) === undefined) return undefined;
+	const target = resolve(folder, path);
+	if (target !== folder && !target.startsWith(folder + sep)) return undefined;
+	return target;
+}
+
+/** Write one file, atomically, staging beside the target so the rename is one. */
+async function writeMirrorFile(
+	absolutePath: string,
+	contents: string,
+): Promise<void> {
+	// Skip a write whose bytes already match. Not a speed optimization: a
+	// rename replaces the inode, so rewriting an unchanged file makes Time
+	// Machine, rclone, and Spotlight see the whole vault as new every time a
+	// pass runs. A read mutates nothing and costs far less than the churn.
+	const existing = await readFile(absolutePath, 'utf8').catch(() => undefined);
+	if (existing === contents) return;
+
+	await mkdir(dirname(absolutePath), { recursive: true });
+	const staged = `${absolutePath}.epicenter-tmp`;
+	try {
+		await writeFile(staged, contents, 'utf8');
+		await rename(staged, absolutePath);
+	} catch (cause) {
+		await rm(staged, { force: true }).catch(() => undefined);
+		throw cause;
+	}
+}
+
+/**
+ * Every path this folder holds that a render is responsible for.
+ *
+ * Names, never contents. Filtered to what a render produces, because a
+ * person's own `README.md` sitting beside their notes is theirs and a sweep
+ * has no business removing it (ADR-0271).
+ *
+ * A folder that is not there yet lists as empty rather than failing: a place
+ * that has never rendered has no stale files by definition.
+ */
+async function listRenderedFiles(absoluteFolder: string): Promise<string[]> {
+	let entries: Dirent[];
+	try {
+		entries = await readdir(absoluteFolder, {
+			recursive: true,
+			withFileTypes: true,
+		});
+	} catch {
+		return [];
+	}
+	return entries
+		.filter((entry) => entry.isFile())
+		.map((entry) =>
+			relative(absoluteFolder, join(entry.parentPath, entry.name)).split(sep),
+		)
+		.map((segments) => segments.join('/'))
+		.filter((path) => path === 'kv.json' || parseRowPath(path) !== undefined);
+}
+
+/**
+ * Apply one batch of a pass to one folder.
+ *
+ * Files are written as they arrive. The manifest, when it arrives, ends the
+ * pass: everything the folder holds that a render is responsible for and the
+ * manifest does not name is a row that no longer exists, and the index is
+ * rebuilt from what is left. Rebuilt last and only after the sweep, so it can
+ * never describe a file that is about to be removed.
+ */
+export async function applyMirrorPass(
+	absoluteFolder: string,
+	ndjson: string,
+): Promise<void> {
+	let manifest: readonly string[] | undefined;
+	for (const line of parseMirrorPass(ndjson)) {
+		if ('manifest' in line) {
+			manifest = line.manifest;
+			continue;
+		}
+		const target = fileInFolder(absoluteFolder, line.path);
+		if (target === undefined) continue;
+		await writeMirrorFile(target, line.contents);
+	}
+	if (manifest === undefined) return;
+
+	const named = new Set(manifest);
+	const survivors: string[] = [];
+	for (const path of await listRenderedFiles(absoluteFolder)) {
+		if (named.has(path)) {
+			survivors.push(path);
+			continue;
+		}
+		await rm(join(absoluteFolder, path), { force: true });
+	}
+	// From what survived, not from a second listing: the sweep just answered
+	// this question and two answers could differ.
+	await indexMirrorFolder(absoluteFolder, survivors);
+}

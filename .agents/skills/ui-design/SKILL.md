@@ -1,6 +1,6 @@
 ---
 name: ui-design
-description: 'Design, explore, implement, polish, redesign, and review Epicenter interfaces from product direction through component-system collapse. Use when co-designing a screen, asking "what do other apps do", comparing UI directions or comparable apps, turning a rough feature idea into a buildable Svelte surface, choosing @epicenter/ui components, changing packages/ui, or replacing class-heavy markup and local interface primitives. Not for a tiny CSS-only repair unless it reveals a broader pattern.'
+description: Design and review Epicenter interfaces while collapsing local UI primitives into the shared component system. Use when co-designing, exploring comparable apps, turning a feature idea into Svelte UI, or changing `packages/ui`, not for a tiny CSS repair.
 metadata:
   author: epicenter
   version: '1.0'
@@ -112,8 +112,16 @@ details that serve the chosen direction.
 - `styling` owns CSS, Tailwind, spacing, wrappers, overflow, and scroll traps.
 - `svelte` owns component structure, runes, lifecycle, and state mechanics.
 - `tanstack-table` owns table state, columns, sorting, and row identity.
-- `web-design-guidelines` owns an explicit external standards or accessibility audit.
 - `writing-voice` owns visible interface copy and tone.
+
+For an explicit external standards or accessibility audit, WebFetch the Vercel
+Web Interface Guidelines and apply them directly, reporting findings as
+`file:line`. Fetch them per review rather than caching a copy here, because the
+upstream rules change and a stale copy would be worse than no copy.
+
+```txt
+https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md
+```
 
 The design decision and component-system collapse stay here even when another
 skill owns their implementation mechanics.

@@ -6,25 +6,23 @@ This folder is a single Cloudflare Worker deployment: `worker/` (Hono code) and 
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed. If you host a modified version, you share your changes. See `apps/self-host` for the self-hosted reference and the trust model below.
 
-Runs on Cloudflare Workers with Durable Objects. The current Yjs 13 path opens
-arbitrary principal-scoped `/api/rooms/:room` actors. Proposed ADR-0145
-replaces that topology with one account authority actor per principal
-(`idFromName(principalId)`, one SQLite database, named workspaces as logical
-namespaces inside it) exposing a Yjs 14 document connection for each open row
-at `/api/workspaces/:workspaceId/tables/:table/rows/:rowId/document`. The
-bearer authenticates the principal; the authority derives deterministically
-from that principal alone, so no catalog, grant, or authorization lookup
-exists and no request can address another principal's state; route-bound row
-addresses and authority-local liveness replace caller-authored room ids.
+Runs on Cloudflare Workers with Durable Objects. Store sync is one WebSocket
+route, `/api/store/v1/sync`, mounted by `mountStoreSyncApp`
+(`packages/server/src/store-sync/`). It resolves one Durable Object per
+(principal, application id), named
+`principals/<principalId>/data/<dataId>`, holding a snapshot plus the
+entries after it (ADR-0220, ADR-0225).
 
-There is no workspace-creation operation and no enrollment operation. Reads
-create no logical state; the first accepted push that binds a new
-`(workspace, replica)` pair creates the workspace row, replica receipt, and
-data in one allowance-checked transaction (ADR-0137's issuance gate, renamed).
-Scalar synchronization lives below
-`/api/workspaces/:workspaceId/records/...`; known replicas synchronize
-economically unconditionally, bounded only by the physical wall below the
-platform's 10 GB object limit.
+The principal is stamped from the resolved bearer and the Durable Object is
+addressed by it, so a client supplies a workspace id and a cursor and nothing
+else. There is no catalog, grant table, or authorization lookup, and no value a
+client can put in the query that reaches another partition: the isolation is
+structural rather than checked. **Being signed in on two devices is the whole of
+the sharing model.** Both devices resolve to one principal, address one
+authority, and converge; nothing is paired, invited, or approved.
+
+The authority reads nothing it stores (ADR-0218). It holds opaque bytes, hands
+them back in order, and imports neither Yjs nor a workspace.
 
 ## Why a hub exists
 
@@ -34,17 +32,31 @@ The hub handles auth, sync relay, and AI. Local servers handle filesystem access
 
 ## Stack and priorities
 
-Hono handles HTTP routing. We originally wanted Elysia: it's faster, the API is more ergonomic, and it runs natively on Bun. But Elysia depends on Bun-specific APIs that don't exist in the Cloudflare Workers runtime, and Workers compatibility was non-negotiable. Hono runs on Cloudflare Workers, Node.js, Deno, Bun, and AWS Lambda, so when the sync room moved to a second runtime (ADR-0066), the route layer came along for free.
+Hono handles HTTP routing. We originally wanted Elysia: it's faster, the API is more ergonomic, and it runs natively on Bun. But Elysia depends on Bun-specific APIs that don't exist in the Cloudflare Workers runtime, and Workers compatibility was non-negotiable. Hono runs on Cloudflare Workers, Node.js, Deno, Bun, and AWS Lambda, so when the server moved to a second runtime (ADR-0066), the route layer came along for free.
 
-Cloudflare Durable Objects are the hosted deployment target. Three things make them a natural fit for Yjs sync rooms:
+Cloudflare Durable Objects are the hosted deployment target. Three things make them a natural fit for a store authority:
 
-- **Single-threaded per object.** Each Room runs in its own isolate. No mutex, no race conditions on CRDT state. The runtime guarantees it.
+- **Single-threaded per object.** Each authority runs in its own isolate. No mutex, no race conditions on the log. The runtime guarantees it.
 - **Built-in SQLite.** The update log lives inside the Durable Object's storage. No external database for sync state, no connection pooling, no cold-start latency from network hops.
-- **WebSocket Hibernation.** Idle connections don't consume compute. A user can leave a tab open for hours and the DO sleeps until the next message arrives. Costs stay proportional to actual sync traffic, not connection count.
+- **WebSocket Hibernation.** Idle connections don't consume compute. A user can leave a tab open for hours and the object sleeps until the next message arrives. Costs stay proportional to actual sync traffic, not connection count. A woken object rebuilds each socket's position from the attachment the socket carries.
 
-Durable Objects are the hosted backend, not the only one. The sync logic is the runtime-agnostic `RoomCore` (`room/core.ts`), and each runtime supplies a backend that satisfies one contract (`room/contracts.ts`): `room/backends/cloudflare/` wraps a Durable Object, `room/backends/bun/` keeps the update log in `bun:sqlite`. Routes, auth, AI, and validation are plain runtime-portable Hono.
+`StoreAuthority` (`packages/server/src/store-sync/authority.ts`) is a thin
+adapter and nothing more. Every rule about who has been sent what lives in
+`@epicenter/data/sync`, so what is deployed here and what the transport's tests
+drive are the same object rather than two that agree today. Routes, auth, AI,
+and validation are plain runtime-portable Hono.
 
-That extraction already happened (ADR-0066), and the self-host story landed on top of it as its own deployable: `apps/self-host` is the single-partition instance, a Bun binary or a Cloudflare Worker that composes no Better Auth and no Postgres (ADR-0075, ADR-0076), so the whole box is one bearer token and a room directory. `apps/api/server.ts` here is this hosted cloud on Bun (local dev and the runtime-parity smoke), booting the same Worker composition against plain Postgres, local `bun:sqlite` room logs, and any S3 endpoint with no Cloudflare account.
+`apps/self-host` is the sibling deployable: the single-partition instance, a Bun
+binary or a Cloudflare Worker that composes no Better Auth and no Postgres
+(ADR-0075, ADR-0076), so the whole box is one bearer token. It is
+community-supported, not Epicenter-operated, and it does not mount store sync
+today. `apps/api/server.ts` here is this hosted cloud on Bun (local dev and the
+runtime-parity smoke), booting the same composition against plain Postgres and
+any S3 endpoint with no Cloudflare account. The surfaces that need Worker-only
+bindings are absent there: store sync and attach ride Durable Objects, the
+dashboard shell comes from `ASSETS`, and billing needs the Autumn secret and the
+after-response drain. `runtime-profile.test.ts` is where that divergence is
+declared and checked against both entries.
 
 Better Auth handles identity. Hosted Epicenter requires Google, GitHub, and Microsoft social sign-in (email/password is disabled in `base-config.ts`), plus an OAuth provider plugin that turns the hub into a standards-compliant OAuth server. Desktop and mobile clients authenticate via OAuth/PKCE flows, get a token, and use it for all subsequent API calls and WebSocket connections.
 
@@ -52,22 +64,22 @@ Better Auth handles identity. Hosted Epicenter requires Google, GitHub, and Micr
 
 Epicenter Cloud is operated by Epicenter, so Epicenter infrastructure is inside
 the trust boundary for hosted data. `BETTER_AUTH_SECRET` signs auth cookies,
-tokens, and OAuth state; it is not a workspace encryption root.
+tokens, and OAuth state; it is not a data encryption root.
 
 Self-hosted deployments move the trust boundary to infrastructure the deployer
 operates. Epicenter never holds or sees data stored in a self-hosted deployment,
 so self-hosting is functionally zero-knowledge against Epicenter.
 
 That confidentiality covers content, not the wire, and it does not erase three
-things a self-hoster should weigh. The relay operator still sees the metadata
-around the bytes (user id, node id, per-room co-presence, dispatched action
-names, message timing, size, and IP); that operator is Epicenter when hosted and
-you when self-hosted, and even a future blind relay keeps seeing this envelope.
-Blobs land wherever `BLOBS_S3_ENDPOINT` points, so renting Epicenter's blob
-service puts your media in Epicenter's R2 even on a self-hosted star; point the
-store at your own S3 to keep media local. And logging in still leans on Google
-OAuth (email/password is disabled in `base-config.ts`), until the first-boot
-local bearer token that removes that dependency lands (ADR-0070). The full
+things a self-hoster should weigh. The operator still sees the metadata around
+the bytes (principal id, application id, message timing, size, and IP);
+that operator is Epicenter when hosted and you when self-hosted, and even a
+future blind server keeps seeing this envelope. Blobs land wherever
+`BLOBS_S3_ENDPOINT` points, so renting Epicenter's blob service puts your media
+in Epicenter's R2 even on a self-hosted instance; point the store at your own S3
+to keep media local. And hosted sign-in leans on social OAuth (email/password is
+disabled in `base-config.ts`); a self-hosted instance uses one operator-supplied
+bearer instead and registers no OAuth app at all (ADR-0071, ADR-0075). The full
 ledger, with the reasoning, is in [docs/trust-model.md](/docs/trust-model.md).
 
 ### Why not zero-knowledge?
@@ -88,15 +100,16 @@ For the full argument:
 
 ```
 Cloudflare Workers
-├── Hono app (src/app.ts)
-│   ├── /auth/*          Better Auth (social OAuth, OAuth provider)
-│   ├── /ai/chat         AI streaming (OpenAI and Gemini via @tanstack/ai)
-│   └── /api/rooms/:room
-│                        Cloud doc sync (WebSocket upgrade or HTTP);
-│                        cross-device dispatch rides the room socket as text frames
+├── Hono app (worker/index.ts)
+│   ├── /auth/*                Better Auth (social OAuth, OAuth provider)
+│   ├── /api/session           the principal projection
+│   ├── /v1/*                  OpenAI-compatible chat and STT gateways
+│   ├── /api/blobs             content-addressed blob store (presigned S3)
+│   ├── /api/billing/*         Autumn (hosted-only, worker/billing/)
+│   └── /api/store/v1/sync     store sync upgrade (mountStoreSyncApp)
 │
-└── Room (Durable Object, SQLite-backed)
-    └── One Yjs document for one authorized sync room
+├── StoreAuthority (Durable Object, SQLite-backed)
+│   └── One opaque log per (principal, application id)
 ```
 
 API keys for AI providers are environment secrets (`wrangler secret put`). They never leave the hub. The client sends a session token, the hub validates it and swaps in the real key before forwarding to the provider.
@@ -148,7 +161,7 @@ bun test             # Run tests
 ```
 
 `smoke:local` is the no-Infisical verification path. It starts `server.dev.ts`,
-runs `apps/api/scripts/smoke.ts`, keeps its server log and room directory under a
+runs `apps/api/scripts/smoke.ts`, keeps its server log and data directory under a
 temporary directory, and skips the blob leg unless `BLOBS_S3_*` points at a
 local S3-compatible store.
 
@@ -192,8 +205,8 @@ bun run db:studio:local  # Open Drizzle Studio (local)
 bun run db:studio:remote # Open Drizzle Studio (remote, via Infisical)
 ```
 
-See `wrangler.jsonc` for Durable Object bindings, KV namespaces, and Hyperdrive (Postgres connection pool) configuration.
+See `wrangler.jsonc` for Durable Object bindings and Hyperdrive (Postgres connection pool) configuration.
 
 ## License
 
-[AGPL-3.0](../../licenses/LICENSE-AGPL-3.0). The apps, the shared server library, and internal glue are AGPL so that anyone hosting a modified version shares their changes. The developer toolkit (`workspace`, `ui`, `filesystem`, `sync`) is MIT. This follows the same pattern as Yjs (MIT core, AGPL y-redis), Liveblocks (Apache clients, AGPL server), and Bitwarden (GPL clients, AGPL server).
+[AGPL-3.0](../../licenses/LICENSE-AGPL-3.0). The apps, the shared server library, and internal glue are AGPL so that anyone hosting a modified version shares their changes. The embeddable toolkit (`data`, `workspace`, `field`, `sqlite`, `sync`, `ui`, `identity`, `chat`, `agent`, `agent-protocol`) is MIT. This follows the same pattern as Yjs (MIT core, AGPL y-redis), Liveblocks (Apache clients, AGPL server), and Bitwarden (GPL clients, AGPL server).

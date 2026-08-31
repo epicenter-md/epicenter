@@ -54,7 +54,7 @@ across the wire (script, CLI, AI, peer) sees actions and nothing else.
   discoverability (`epicenter list <action>`), not a second grammar. The CLI keeps
   one JSON lane, three sources (inline / `@file` / stdin).
 - Coding agents default to scripts that call typed actions, because the typed
-  object literal is the only compile-time-checked input modality in the system and
+  object literal is the only compile-time-checked input form in the system and
   is what agents are best at producing. The CLI is the human path and the
   granular-per-call-approval escape hatch (extends ADR-0009).
 - A script's default read path is query actions (typed, consistent); the

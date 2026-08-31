@@ -12,19 +12,19 @@
 	// here (the row's action button shows that liveness).
 	let { recordingId }: { recordingId: RecordingId } = $props();
 
-	const transcription = $derived(app.recordings.get(recordingId)?.transcription);
+	const recording = $derived(app.recordings.get(recordingId));
 </script>
 
-{#if transcription?.status === 'failed'}
+{#if recording?.transcriptionStatus === 'failed'}
 	<div class="flex max-w-[280px] items-center gap-2">
 		<Badge variant="status.failed">Failed</Badge>
 		<span
 			class="truncate text-muted-foreground text-xs"
-			title={transcription.error}
+			title={recording.transcriptionError ?? undefined}
 		>
-			{transcription.error}
+			{recording.transcriptionError}
 		</span>
 	</div>
-{:else if transcription?.status === 'completed'}
+{:else if recording?.transcriptionStatus === 'completed'}
 	<Badge variant="status.completed">Transcribed</Badge>
 {/if}

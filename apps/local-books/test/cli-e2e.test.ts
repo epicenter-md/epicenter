@@ -1,8 +1,9 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { tempDir } from './helpers.ts';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { booksDbFile } from '../src/db.ts';
+import { tempRoot } from './helpers.ts';
 import { makeInvoice, startMockQbServer } from './mock-qb-server.ts';
 
 const BIN = join(import.meta.dir, '../src/bin.ts');
@@ -19,6 +20,7 @@ function seedTokenFile(file: string, realmId: string): void {
 		refreshTokenExpiresAt: new Date(now + 8726400 * 1000).toISOString(),
 		obtainedAt: new Date(now).toISOString(),
 	};
+	mkdirSync(dirname(file), { recursive: true });
 	writeFileSync(
 		file,
 		JSON.stringify({ [realmId]: JSON.stringify(token) }, null, 2),
@@ -41,11 +43,11 @@ async function runCli(args: string[], env: Record<string, string>) {
 
 test('CLI: `sync --full` then `sync` runs incremental, advances the cursor, no re-pull', async () => {
 	const server = startMockQbServer();
-	const tmp = tempDir();
-	const tokenFile = join(tmp.dir, 'credentials.json');
+	const tmp = tempRoot();
+	const tokenFile = join(tmp.appDir, 'credentials.json');
 	seedTokenFile(tokenFile, server.realmId);
 	const env = {
-		LOCAL_BOOKS_DIR: tmp.dir,
+		EPICENTER_DATA_DIR: tmp.root,
 		LOCAL_BOOKS_TOKEN_FILE: tokenFile,
 		LOCAL_BOOKS_QB_API_BASE: server.apiBase,
 		LOCAL_BOOKS_QB_TOKEN_URL: server.tokenUrl,
@@ -53,7 +55,9 @@ test('CLI: `sync --full` then `sync` runs incremental, advances the cursor, no r
 		// Narrow the realm set to one entity so the e2e stays a single query / cdc.
 		LOCAL_BOOKS_ENTITIES: 'Invoice',
 	};
-	const dbFile = join(tmp.dir, server.realmId, 'books.db');
+	// Opened as a plain SQLite file, the way an agent pointed at the artifact
+	// would: the versioned filename is the only thing that changed for them.
+	const dbFile = booksDbFile(tmp.appDir, server.realmId).path;
 
 	// The realm cursor is one high-water mark for the company, stored in _meta.
 	const realmCursor = (db: Database): string =>

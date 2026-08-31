@@ -1,6 +1,6 @@
 ---
 name: change-proposal
-description: 'Present proposed code changes visually before implementing: before/after diffs, ASCII diagrams, comparison tables. Use when: "show me options for this change", "compare approaches", or a multi-file change needs a before/after comparison before editing. Not for planning questions with no concrete code change on the table.'
+description: Show a proposed code change with before/after diffs, diagrams, or comparison tables. Use when the user asks to compare approaches or wants a visual proposal before a multi-file edit.
 ---
 
 # Change Proposal

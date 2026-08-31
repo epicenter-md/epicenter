@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import FolderIcon from '@lucide/svelte/icons/folder';
@@ -58,6 +59,7 @@
 			<div class="truncate text-sm font-semibold">Matter</div>
 			<div class="truncate text-xs text-muted-foreground">Markdown workbench</div>
 		</div>
+		<LightSwitch variant="ghost" />
 		<Sidebar.Trigger tooltip="Toggle navigation" />
 	</Sidebar.Header>
 

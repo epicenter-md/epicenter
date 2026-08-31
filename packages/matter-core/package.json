@@ -2,6 +2,7 @@
 	"name": "@epicenter/matter-core",
 	"description": "Matter's engine: parse a typed markdown folder, classify conformance, resolve references, and project to read-only SQLite. Disk is the source; the mirror is a projection.",
 	"version": "0.0.1",
+	"private": true,
 	"type": "module",
 	"sideEffects": false,
 	"exports": {

@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-	createInstanceSetting,
-	loadInstanceSetting,
-} from './instance-setting.js';
+import { createInstanceSetting } from './instance-setting.js';
 
 const HOSTED = 'https://api.epicenter.so';
 const KEY = 'app.instance';
@@ -124,34 +121,5 @@ describe('createInstanceSetting', () => {
 		expect(() =>
 			setting.write({ baseURL: 'https://my.box', token: 'tok' }),
 		).not.toThrow();
-	});
-});
-
-describe('loadInstanceSetting', () => {
-	test('pre-loads the async snapshot and forwards writes', async () => {
-		let stored: string | null = JSON.stringify({
-			baseURL: 'https://my.box',
-			token: 'tok',
-		});
-		const setting = await loadInstanceSetting({
-			defaultBaseURL: HOSTED,
-			read: async () => stored,
-			write: async (serialized) => {
-				stored = serialized;
-			},
-		});
-		expect(setting.read()).toEqual({ baseURL: 'https://my.box', token: 'tok' });
-		await setting.clear();
-		expect(stored).toBeNull();
-		expect(setting.read()).toEqual({ baseURL: HOSTED });
-	});
-
-	test('ADR-0071 invariant holds for the async loader', async () => {
-		const setting = await loadInstanceSetting({
-			defaultBaseURL: HOSTED,
-			read: async () => JSON.stringify({ baseURL: 'https://my.box' }),
-			write: async () => {},
-		});
-		expect(setting.read()).toEqual({ baseURL: HOSTED });
 	});
 });

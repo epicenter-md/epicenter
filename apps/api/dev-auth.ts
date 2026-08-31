@@ -23,7 +23,7 @@
  */
 
 import { Principal } from '@epicenter/auth';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import {
 	type CloudEnv,
 	OAuthError,

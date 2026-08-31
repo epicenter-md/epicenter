@@ -1,6 +1,7 @@
 {
 	"name": "@epicenter/sync",
 	"version": "0.3.0",
+	"private": true,
 	"description": "WebSocket subprotocol auth for Epicenter: the bearer-in-subprotocol handshake shared by client and server.",
 	"keywords": [
 		"epicenter",
@@ -16,10 +17,13 @@
 	"homepage": "https://epicenter.so",
 	"exports": {
 		".": "./src/index.ts",
-		"./auth-subprotocol": "./src/auth-subprotocol.ts"
+		"./auth-subprotocol": "./src/auth-subprotocol.ts",
+		"./store-route": "./src/store-route.ts",
+		"./generations-route": "./src/generations-route.ts"
 	},
-	"license": "MIT",
+	"license": "AGPL-3.0-or-later",
 	"scripts": {
+		"test": "bun test",
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {

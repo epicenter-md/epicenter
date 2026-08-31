@@ -26,10 +26,6 @@ export function createSettingsView(
 		set: settings.set,
 		getDefault: settings.getDefault,
 		reset: settings.reset,
-		get loadError() {
-			invalidate();
-			return settings.loadError;
-		},
 		subscribe: settings.subscribe,
 	};
 }

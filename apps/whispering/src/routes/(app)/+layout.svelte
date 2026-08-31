@@ -15,18 +15,23 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { onDestroy } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
+	import { createLogger } from 'wellcrafted/logger';
 	import { auth } from '#platform/auth';
 	import DictationIndicator from '#platform/dictation-indicator';
-	import { whisperingPlatform } from '#platform/whispering';
-	import { log } from '$lib/report';
+	import { whisperingDependencies } from '$lib/whispering/dependencies';
 	import WhisperingUiSessionProvider from '$lib/whispering/WhisperingUiSessionProvider.svelte';
 	import { createWhisperingUiSessionOpening } from '$lib/whispering/ui-session-opening';
-	import { openWhisperingUiSession } from '$lib/whispering/ui-session';
+	import {
+		openWhisperingUiSession,
+		WhisperingUiSessionError,
+	} from '$lib/whispering/ui-session';
 	import AppEffects from './_components/AppEffects.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import ContentShell from './_components/ContentShell.svelte';
 	import GlobalDialogs from './_components/GlobalDialogs.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
+
+	const log = createLogger('whispering/app-layout');
 
 	let { children } = $props();
 
@@ -40,15 +45,12 @@
 	// reload. Unmount/HMR aborts an in-flight acquisition; after fulfillment,
 	// this route owner drains shell, query, and app resources together.
 	const owner = createWhisperingUiSessionOpening((signal) =>
-		openWhisperingUiSession(whisperingPlatform, signal),
+		openWhisperingUiSession(whisperingDependencies, signal),
 	);
 	const opening = owner.opening;
 	const dispose = () =>
 		void owner[Symbol.asyncDispose]().catch((cause) => {
-			log.warn(
-				cause instanceof Error ? cause : new Error(String(cause)),
-				'Whispering UI session teardown failed',
-			);
+			log.warn(WhisperingUiSessionError.TeardownFailed({ cause }));
 		});
 	onDestroy(dispose);
 </script>

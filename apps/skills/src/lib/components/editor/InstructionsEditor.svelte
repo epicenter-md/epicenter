@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { getSkillsApp } from '$lib/context.js';
+		import { getSkills } from '$lib/context.js';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { skillId }: { skillId: string } = $props();
-	const skills = getSkillsApp();
+	const skills = getSkills();
 
-	const lease = $derived(skills.tables.skills.openDocument(skillId));
-	$effect(() => {
-		const openedLease = lease;
-		return () =>
-			void openedLease.then(
-				(opened) => opened[Symbol.asyncDispose](),
-				() => undefined,
-			);
-	});
+	// The skill's markdown: a nested type on the row, live on the one document
+	// this store holds (ADR-0295), so nothing loads and there is no
+	// half-hydrated state to bind to. Undefined means the row is gone, which
+	// renders as nothing rather than as an empty file it could then save over.
+	const content = $derived(
+		skills.data.tables.skills.get(skillId)?.body,
+	);
 </script>
 
-{#await lease then opened}
-	<CodeMirrorEditor document={opened} />
-{/await}
+{#if content !== undefined}
+	{#key skillId}
+		<CodeMirrorEditor {content} />
+	{/key}
+{/if}

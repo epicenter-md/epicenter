@@ -4,14 +4,14 @@ import { formatRelative, resolveCompany } from './context.ts';
 
 /** Report token state and the per-entity mirror state (cursor, counts). */
 export async function runStatus(args: ParsedArgs): Promise<number> {
-	const { data: company, error } = resolveCompany(args);
+	const { data: company, error } = await resolveCompany(args);
 	if (error !== null) {
 		console.error(error);
 		return 1;
 	}
-	const { config, realmId, store } = company;
+	const { config, realmId, mirror, store } = company;
 
-	const status = await readBooksStatus({ config, realmId, store });
+	const status = await readBooksStatus({ config, realmId, mirror, store });
 	const now = Date.now();
 
 	console.log(`Company ID:   ${status.realmId}`);
@@ -30,14 +30,32 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 		);
 	}
 
-	if (!status.mirrorBuilt) {
+	// Retained earlier versions are inventory, not a fault: they are reported in
+	// both branches because the interesting case is exactly the one where the
+	// current copy is missing and an older one is still sitting beside it.
+	const retained = status.predecessors.length;
+	const predecessorLine =
+		retained === 0
+			? null
+			: `Retained:     ${retained} earlier ${retained === 1 ? 'copy' : 'copies'} from a previous version (${status.predecessors.map((v) => `v${v}`).join(', ')})`;
+
+	if (status.mirror === 'empty') {
 		console.log(`Local copy:   not built yet. Run "local-books sync --full".`);
+		if (predecessorLine) console.log(predecessorLine);
 		return 0;
 	}
+	// The artifact carries its corpus version in the filename, so print the path:
+	// pointing an agent or `sqlite3` at the file is the whole reason someone runs
+	// `status`, and the name changes when the version does.
+	const building =
+		status.mirror === 'building'
+			? '  (building: no full pull has finished)'
+			: '';
+	console.log(`Local copy:   ${status.mirrorPath}${building}`);
+	if (predecessorLine) console.log(predecessorLine);
 
 	// The cursor is one high-water mark for the whole company (CDC's contract), so
 	// it is shown once at the realm level, not repeated per entity.
-	console.log(`Schema:        v${status.schemaVersion}`);
 	console.log(
 		`Synced through:${status.cdcCursor ? ` ${status.cdcCursor}` : ' -'}`,
 	);

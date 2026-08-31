@@ -20,6 +20,9 @@ export function createMemoryTokenStore(): TokenStore {
 		async get(realmId) {
 			return map.get(realmId) ?? null;
 		},
+		async listRealms() {
+			return [...map.keys()].sort();
+		},
 		async set(token) {
 			map.set(token.realmId, token);
 		},
@@ -61,4 +64,19 @@ export const sampleGrant = {
 export function tempDir(): { dir: string; cleanup: () => void } {
 	const dir = mkdtempSync(join(tmpdir(), 'local-books-'));
 	return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+/**
+ * A throwaway Epicenter root and the Local Books directory below it. Tests that
+ * drive the binary pass `EPICENTER_DATA_DIR: root`, which is the only override
+ * there is now that no app computes an application-data path of its own
+ * (ADR-0201), and seed fixtures at `appDir` because that is where the app looks.
+ */
+export function tempRoot(): {
+	root: string;
+	appDir: string;
+	cleanup: () => void;
+} {
+	const { dir, cleanup } = tempDir();
+	return { root: dir, appDir: join(dir, 'apps', 'local-books'), cleanup };
 }

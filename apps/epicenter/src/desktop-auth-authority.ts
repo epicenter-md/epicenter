@@ -2,10 +2,10 @@ import {
 	type AuthFetch,
 	type AuthState,
 	assertStrongToken,
+	type ConnectionStatus,
 	createInstanceCredentialAuthority,
 	createOAuthCredentialAuthority,
 	createSerializedPersistedAuthStorage,
-	type InstanceConnectionStatus,
 	normalizeInstanceUrl,
 } from '@epicenter/auth';
 import { createOAuthClient } from '@epicenter/auth/oauth-launchers';
@@ -21,13 +21,7 @@ const CALLBACK_TIMEOUT_MS = 10 * 60 * 1_000;
 
 export type DesktopAuthBootSnapshot = {
 	state: AuthState;
-	deployment:
-		| { kind: 'hosted'; baseURL: string }
-		| {
-				kind: 'self-hosted';
-				baseURL: string;
-				connectionStatus: InstanceConnectionStatus;
-		  };
+	connection: { baseURL: string; status: ConnectionStatus };
 	networkEligible: boolean;
 };
 
@@ -111,7 +105,7 @@ export function createDesktopAuthAuthority({
 	);
 	const bootSnapshot = {
 		state: authority.snapshot.state,
-		deployment: { kind: 'hosted', baseURL: EPICENTER_API_URL },
+		connection: { baseURL: EPICENTER_API_URL, status: 'connected' as const },
 		networkEligible: authority.snapshot.networkEligible,
 	} satisfies DesktopAuthBootSnapshot;
 
@@ -265,10 +259,9 @@ function createSelfHostedDesktopAuthority({
 	);
 	const bootSnapshot = {
 		state: authority.snapshot.state,
-		deployment: {
-			kind: 'self-hosted',
+		connection: {
 			baseURL: record.deployment.baseURL,
-			connectionStatus: authority.snapshot.connectionStatus,
+			status: authority.snapshot.connectionStatus,
 		},
 		networkEligible: authority.snapshot.networkEligible,
 	} satisfies DesktopAuthBootSnapshot;

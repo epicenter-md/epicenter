@@ -1,8 +1,8 @@
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { pushToTalk } from '../operations/push-to-talk';
 import { watchManualRecordingEnded } from '../operations/recording';
 import { createWhisperingQueries } from '../queries';
 import { createWhisperingQueryRuntime } from '../queries/client';
-import { createRecipes } from '../state/recipes.svelte';
 import { createRecordings } from '../state/recordings.svelte';
 import { createSettingsView } from '../state/settings.svelte';
 import {
@@ -16,7 +16,7 @@ function createWhisperingUiSession(core: WhisperingApp) {
 		...core,
 		settings: createSettingsView(core.settings),
 		recordings: createRecordings(core),
-		recipes: createRecipes(core),
+		recipes: core.recipes,
 	};
 	const queryRuntime = createWhisperingQueryRuntime();
 	const queries = createWhisperingQueries(app, queryRuntime);
@@ -44,6 +44,16 @@ function createWhisperingUiSession(core: WhisperingApp) {
 }
 
 export type WhisperingUiSession = ReturnType<typeof createWhisperingUiSession>;
+
+export const WhisperingUiSessionError = defineErrors({
+	TeardownFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Whispering UI session teardown failed',
+		cause,
+	}),
+});
+export type WhisperingUiSessionError = InferErrors<
+	typeof WhisperingUiSessionError
+>;
 
 export async function openWhisperingUiSession(
 	dependencies: WhisperingAppDependencies,

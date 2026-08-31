@@ -11,7 +11,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import { createInstanceCredentialAuthority } from './instance-credential-authority.js';
 
 const baseURL = 'http://localhost:8788';
@@ -49,7 +49,7 @@ test('offline verification denies a transient bearer grant without losing local 
 	authority[Symbol.dispose]();
 });
 
-test('stale rejection cannot sign out a re-verified static token generation', async () => {
+test('a stale rejection cannot refuse a re-verified static token generation', async () => {
 	const authority = createInstanceCredentialAuthority(
 		{ fetch: async () => sessionResponse() },
 		{ baseURL, token: 'instance-token' },
@@ -72,9 +72,14 @@ test('stale rejection cannot sign out a re-verified static token generation', as
 		throw new Error('Expected re-verified instance authorization to succeed.');
 	}
 
+	// The subject is the generation guard, and it is unchanged. What moved is
+	// where a rejection lands: on the connection, not on the identity. A refused
+	// token leaves the instance principal in place, because the local partition
+	// is addressed by it and the reload gate keys on it.
 	authority.reportRejected(initial.tokenGeneration);
-	expect(authority.snapshot.state.status).toBe('signed-in');
+	expect(authority.snapshot.connectionStatus).toBe('connected');
 	authority.reportRejected(reverified.tokenGeneration);
-	expect(authority.snapshot.state).toEqual({ status: 'signed-out' });
+	expect(authority.snapshot.connectionStatus).toBe('rejected');
+	expect(authority.snapshot.state.status).toBe('signed-in');
 	authority[Symbol.dispose]();
 });

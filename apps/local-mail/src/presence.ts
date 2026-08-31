@@ -5,11 +5,21 @@ import {
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
-import { resolveDataDir } from './paths.ts';
+import { mailDataDir, presenceFilePath } from './paths.ts';
 
 /**
- * The presence record the running `local-mail app` publishes while alive.
+ * The presence record the running `local-mail app` publishes while alive, in a
+ * single global (not per-account) `0600` file at `<dataDir>/runtime.json`
+ * (`presenceFilePath` in `paths.ts`, which owns every name below the app
+ * directory). It exists so a same-machine, same-UID reader (today: the Vite dev
+ * server injecting the bearer; later: a one-shot `sync` routed to the open app)
+ * can find the running host's origin and per-launch bearer.
+ *
+ * This is PRESENCE, not discovery-for-spawn: no reader ever starts the host from
+ * it. A stale file (the host crashed) just points at a dead port, so a reader
+ * gets a connection error, never a spawned daemon. There is no `up`/`down` and
+ * no election.
+ *
  * `bearer` is the per-launch local API credential the web UI presents to `/api`;
  * it is NOT a Gmail token (Bun owns those end to end, in `credentials.json`).
  */
@@ -23,30 +33,15 @@ export type RuntimePresence = {
 };
 
 /**
- * A single global (not per-account) `0600` presence file at
- * `<dataDir>/runtime.json`. It exists so a same-machine, same-UID reader (today:
- * the Vite dev server injecting the bearer; later: a one-shot `sync` routed to
- * the open app) can find the running host's origin and per-launch bearer.
- *
- * This is PRESENCE, not discovery-for-spawn: no reader ever starts the host from
- * it. A stale file (the host crashed) just points at a dead port, so a reader
- * gets a connection error, never a spawned daemon. There is no `up`/`down` and
- * no election.
- */
-export function presenceFilePath(dataDir: string = resolveDataDir()): string {
-	return join(dataDir, 'runtime.json');
-}
-
-/**
  * Write the presence file, mirroring the credential store's file discipline
- * (`token-store.ts`): the bearer is protected by mode, and `LOCAL_MAIL_DIR` can
- * point anywhere, so force `0700` on the dir and `0600` on the file even when
- * either pre-existed with looser permissions (`writeFileSync`'s `mode` option is
- * ignored for an existing file, hence the explicit `chmod`).
+ * (`token-store.ts`): the bearer is protected by mode, and `EPICENTER_DATA_DIR`
+ * can point anywhere, so force `0700` on the dir and `0600` on the file even
+ * when either pre-existed with looser permissions (`writeFileSync`'s `mode`
+ * option is ignored for an existing file, hence the explicit `chmod`).
  */
 export function writePresence(
 	presence: RuntimePresence,
-	dataDir: string = resolveDataDir(),
+	dataDir: string = mailDataDir(),
 ): void {
 	mkdirSync(dataDir, { recursive: true, mode: 0o700 });
 	chmodSync(dataDir, 0o700);
@@ -61,7 +56,7 @@ export function writePresence(
  * throwing (same posture as the token store).
  */
 export function readPresence(
-	dataDir: string = resolveDataDir(),
+	dataDir: string = mailDataDir(),
 ): RuntimePresence | null {
 	try {
 		const parsed: unknown = JSON.parse(
@@ -87,7 +82,7 @@ export function readPresence(
  * remove it on a crash, and a stale file is harmless (it names a dead port), so
  * the next launch simply overwrites it.
  */
-export function clearPresence(dataDir: string = resolveDataDir()): void {
+export function clearPresence(dataDir: string = mailDataDir()): void {
 	try {
 		rmSync(presenceFilePath(dataDir));
 	} catch {

@@ -83,7 +83,7 @@ export const BASE_AUTH_CONFIG = {
 			trustedProviders: ['google'],
 			// Let a signed-in user link a provider whose email differs from their
 			// account email (a work Google, a work Microsoft, an Apple private
-			// relay), so one human keeps one Epicenter identity and one workspace
+			// relay), so one human keeps one Epicenter identity and one
 			// partition instead of fragmenting into separate, unmergeable users.
 			// This ONLY relaxes the explicit `/link-social` flow, which runs a full
 			// OAuth ceremony proving the user controls the provider; it does NOT

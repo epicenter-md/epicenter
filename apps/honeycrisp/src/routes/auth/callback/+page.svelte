@@ -2,6 +2,7 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import { auth } from '#platform/auth';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	let errorMessage = $state<string | null>(null);
 
@@ -12,7 +13,7 @@
 				errorMessage = error.message;
 				return;
 			}
-			await goto('/', { replaceState: true });
+			await goto(resolve('/account'), { replaceState: true });
 		})();
 	});
 </script>

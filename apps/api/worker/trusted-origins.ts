@@ -9,28 +9,23 @@ import { APPS, localUrl, prodOrigins } from '@epicenter/constants/apps';
  */
 
 /**
- * Pinned Chrome extension origin for the tab-manager.
- *
- * Stable across all installs because `apps/tab-manager/wxt.config.ts`
- * pins the manifest `key`. Allowlisting this exact origin replaces an
- * earlier `chrome-extension://*` wildcard that defeated CSRF protection.
- */
-const TAB_MANAGER_CHROME_EXTENSION_ORIGIN =
-	'chrome-extension://mkbnicfhpacdofmoocppnjjmdfmkkgda';
-
-/**
  * Production origins trusted on every Epicenter cloud deployment: each app's
- * canonical origin (and aliases), the pinned browser extension, and the Tauri
- * webview origin.
+ * canonical origin (and aliases), plus the Tauri webview origin.
  *
- * Adding an app to `APPS` auto-extends this. Browser extensions are added
- * explicitly with their pinned origin: Chrome via the WXT `key`, Firefox via
- * `browser_specific_settings.gecko.id` plus AMO signing (required, no
- * exceptions; self-distributed XPIs get a random per-install UUID).
+ * Adding an app to `APPS` auto-extends this.
+ *
+ * No browser extension is trusted. Tab Manager's pinned
+ * `chrome-extension://` origin used to sit here and outlived the extension:
+ * `trustedOrigins` gates Better Auth's `callbackURL` / `redirectTo`
+ * allow-list, not just cookie CSRF, so an origin nothing can serve from is
+ * production trust granted to nobody. Should an extension ever return, add it
+ * with a pinned origin (Chrome via the WXT `key`, Firefox via
+ * `browser_specific_settings.gecko.id` plus AMO signing, required, no
+ * exceptions; self-distributed XPIs get a random per-install UUID) rather than
+ * a wildcard, which is what defeated CSRF protection the first time.
  */
 const PRODUCTION_TRUSTED_ORIGINS: readonly string[] = [
 	'tauri://localhost',
-	TAB_MANAGER_CHROME_EXTENSION_ORIGIN,
 	...Object.values(APPS).flatMap(prodOrigins),
 ];
 

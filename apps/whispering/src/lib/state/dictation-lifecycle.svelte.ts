@@ -1,4 +1,9 @@
-import type { AnyTaggedError } from 'wellcrafted/error';
+import {
+	type AnyTaggedError,
+	defineErrors,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { createLogger } from 'wellcrafted/logger';
 import type { VadState } from '$lib/constants/audio';
 import type { DeliveryReach } from '$lib/operations/delivery';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
@@ -46,6 +51,29 @@ export type DictationFailure = {
 	tier: DictationFailureTier;
 	error: AnyTaggedError;
 };
+
+const log = createLogger('whispering/dictation-lifecycle');
+
+/**
+ * The one failure this lifecycle logs. `markFailed` is the funnel every
+ * dictation failure passes through, and the tier says where it happened.
+ */
+export const DictationLifecycleError = defineErrors({
+	DictationFailed: ({
+		tier,
+		cause,
+	}: {
+		tier: DictationFailureTier;
+		cause: AnyTaggedError;
+	}) => ({
+		message: `Dictation failed (${tier})`,
+		tier,
+		cause,
+	}),
+});
+export type DictationLifecycleError = InferErrors<
+	typeof DictationLifecycleError
+>;
 
 // How long a clean delivery's checkmark flashes before the outcome retires to
 // `none`. Sub-second: the transcribed text landing is the real receipt, so this
@@ -147,6 +175,19 @@ function createDictationLifecycle() {
 		 * resets it. Transient, not a held state: the pill glances it (manual), the
 		 * notification path fires it, and the recordings row is the durable record. */
 		markFailed(failure: DictationFailure): void {
+			// Log here rather than at each call site, because this is the funnel every
+			// failure already passes through, so a new failure path cannot be added
+			// without one. Nothing else writes the cause down: the pill renders the
+			// tier's label and drops the error, and the OS notification carries the
+			// message but only if notifications are permitted and seen. Without this
+			// line a failed dictation leaves no trace to read afterwards.
+			//
+			log.warn(
+				DictationLifecycleError.DictationFailed({
+					tier: failure.tier,
+					cause: failure.error,
+				}),
+			);
 			clearDeliveredTimer();
 			outcome = { kind: 'failed', ...failure };
 		},

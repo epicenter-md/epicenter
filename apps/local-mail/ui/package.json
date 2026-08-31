@@ -33,6 +33,7 @@
 	"dependencies": {
 		"@epicenter/constants": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
+		"arkregex": "catalog:",
 		"dompurify": "^3.4.10",
 		"hono": "catalog:"
 	},

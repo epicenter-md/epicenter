@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
+import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/principal';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import type {
+	AuthClient,
 	AuthFetch,
-	InstanceConnectionStatus,
-	SyncAuthClient,
+	ConnectionStatus,
 } from './auth-contract.js';
 import { createInstanceTokenAuth } from './instance-token-auth.js';
 
@@ -28,12 +28,9 @@ function json(value: unknown, status = 200) {
 /** Let the construction-time `/api/session` check settle. */
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-/** Narrow to the self-hosted deployment's connection channel. */
-function connection(auth: SyncAuthClient) {
-	if (auth.deployment.kind !== 'self-hosted') {
-		throw new Error('expected a self-hosted deployment');
-	}
-	return auth.deployment.connection;
+/** Read the selected server's connection channel. */
+function connection(auth: AuthClient) {
+	return auth.connection;
 }
 
 describe('createInstanceTokenAuth', () => {
@@ -67,7 +64,7 @@ describe('createInstanceTokenAuth', () => {
 	test('a real instance (instance principal) sees no principal change across boot', async () => {
 		// The self-host box resolves every valid bearer to INSTANCE_PRINCIPAL_ID
 		// (ADR-0075), so the optimistic boot identity and the verified identity
-		// match: no `null -> instance` flip, so `reloadOnPrincipalChange` never
+		// match: no `null -> instance` flip, so `reloadOnAuthChange` never
 		// reloads the page mid-session. This is the IndexedDB-race fix.
 		const seen: string[] = [];
 		const fetch: AuthFetch = async () => json(sessionBody('instance'));
@@ -89,11 +86,17 @@ describe('createInstanceTokenAuth', () => {
 		expect(seen.every((p) => p === INSTANCE_PRINCIPAL_ID)).toBe(true);
 	});
 
-	test('boots signed-out when /api/session rejects the token (401)', async () => {
+	test('a refused token at boot rejects the CONNECTION and leaves the state alone', async () => {
+		// This asserted `signed-out` and that was a boot loop. The authority boots
+		// optimistically signed-in as the instance principal, so signed-in ->
+		// signed-out is a principal change, `reloadOnAuthChange` reloads, and the
+		// next boot is optimistic again: a self-hosted box whose token was rotated
+		// span at one `/api/session` round trip forever.
 		const fetch: AuthFetch = async () => json({}, 401);
 		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
 		await flush();
-		expect(auth.state.status).toBe('signed-out');
+		expect(auth.state.status).toBe('signed-in');
+		expect(connection(auth).status).toBe('rejected');
 	});
 
 	test('fetch attaches the bearer to the instance origin and resolves relative paths', async () => {
@@ -131,7 +134,7 @@ describe('createInstanceTokenAuth', () => {
 		expect(new Headers(cross?.init?.headers).has('authorization')).toBe(false);
 	});
 
-	test('a 401 on a resource call moves a signed-in client to signed-out', async () => {
+	test('a 401 on a resource call rejects the connection and keeps the principal', async () => {
 		const fetch: AuthFetch = async (input) =>
 			String(input).endsWith('/api/session')
 				? json(sessionBody())
@@ -141,7 +144,10 @@ describe('createInstanceTokenAuth', () => {
 		expect(auth.state.status).toBe('signed-in');
 
 		await auth.fetch('/api/blobs');
-		expect(auth.state.status).toBe('signed-out');
+		// The token was refused, not the person. Keeping the principal is what
+		// keeps the local partition addressable and the reload gate quiet.
+		expect(auth.state.status).toBe('signed-in');
+		expect(connection(auth).status).toBe('rejected');
 	});
 
 	test('openWebSocket carries the bearer as an Epicenter subprotocol', async () => {
@@ -194,8 +200,8 @@ describe('createInstanceTokenAuth', () => {
 		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
 		await flush();
 		// An unreachable instance leaves the optimistic identity: the self-hoster
-		// keeps their principal-scoped local workspace offline (the deployment's
-		// connection channel, not `state`, carries the "unreachable" signal).
+		// keeps their principal-scoped local workspace offline (the connection
+		// channel, not `state`, carries the "unreachable" signal).
 		expect(auth.state).toEqual({
 			status: 'signed-in',
 			principalId: INSTANCE_PRINCIPAL_ID,
@@ -223,11 +229,10 @@ describe('createInstanceTokenAuth', () => {
 		});
 	});
 
-	test('deployment names the self-hosted instance', async () => {
+	test('connection names the self-hosted instance', async () => {
 		const fetch: AuthFetch = async () => json(sessionBody());
 		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
-		expect(auth.deployment.kind).toBe('self-hosted');
-		expect(auth.deployment.baseURL).toBe(baseURL);
+		expect(auth.connection.baseURL).toBe(baseURL);
 	});
 
 	test('connection reports connecting at boot then connected on a 200', async () => {
@@ -242,8 +247,8 @@ describe('createInstanceTokenAuth', () => {
 		const fetch: AuthFetch = async () => json({}, 401);
 		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
 		await flush();
-		expect(auth.state.status).toBe('signed-out');
 		expect(connection(auth).status).toBe('rejected');
+		expect(auth.state.status).toBe('signed-in');
 	});
 
 	test('connection is unreachable when the instance is offline', async () => {
@@ -262,7 +267,7 @@ describe('createInstanceTokenAuth', () => {
 			return json(sessionBody());
 		};
 		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
-		const seen: InstanceConnectionStatus[] = [];
+		const seen: ConnectionStatus[] = [];
 		connection(auth).onChange((s) => seen.push(s));
 		await flush();
 		expect(connection(auth).status).toBe('unreachable');
@@ -285,10 +290,10 @@ describe('createInstanceTokenAuth', () => {
 		expect(connection(auth).status).toBe('connected');
 
 		await auth.fetch('/api/blobs');
-		// A rejected token always drops `state` to signed-out, not just at boot: the
-		// signed-in account UI relies on this coupling to skip rejected-token copy
-		// (the sign-in panel owns it) and surface only `unreachable`.
-		expect(auth.state.status).toBe('signed-out');
+		// The coupling this used to assert (a rejected token also drops `state`)
+		// was the boot loop. The rejected-token copy moves to the signed-in panel,
+		// beside the `unreachable` notice that already lives there.
+		expect(auth.state.status).toBe('signed-in');
 		expect(connection(auth).status).toBe('rejected');
 	});
 });

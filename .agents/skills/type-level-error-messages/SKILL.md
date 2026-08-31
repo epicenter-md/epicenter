@@ -1,6 +1,6 @@
 ---
 name: type-level-error-messages
-description: Make compile-time errors readable by branding constraint-violation types as template literal messages with a U+200B zero-width-space suffix. Use when writing helper functions that constrain object keys, string shapes, or other literal-type inputs and you want the TypeScript error tooltip to read as an English sentence pointing at the offending value.
+description: Make TypeScript errors readable with template-literal constraint messages. Use when constraining literal object keys or string shapes and the error should point to the offending value.
 metadata:
   author: epicenter
   version: '1.0'

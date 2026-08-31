@@ -1,9 +1,16 @@
 /**
- * Read the skill catalog and classify what a description claims.
+ * Read the routing surfaces and classify what they claim.
  *
  * Three scripts need the same two primitives: enumerate `<skills>/*\/SKILL.md`
  * and pull one frontmatter field out of it. This module owns both so the
  * frontmatter parser has one definition rather than one copy per script.
+ *
+ * A skill description is not the only surface that routes. `AGENTS.md` is
+ * loaded before any description is weighed and names skills directly, so it
+ * claims phrases too, and a live probe obeys it: an `AGENTS.md` sentence
+ * sending overflow reports to `documentation` beat `styling`'s own description
+ * 3 times out of 3. This module owns that surface as well, so a script that
+ * asks who claims a phrase can see both.
  *
  * `classifyClaim` exists because substring matching over-reports. Descriptions
  * in this repository carry near-miss clauses ("For a broad \"simplify this\"
@@ -25,6 +32,46 @@ export type SkillEntry = {
 	/** Absolute path to the skill's `SKILL.md`. */
 	skillPath: string;
 };
+
+/**
+ * The always-on files an agent carries before it weighs a single description.
+ *
+ * Nested `AGENTS.md` files are deliberately out of scope: they load for work
+ * inside their own directory, not for every task in the repository.
+ */
+export const ALWAYS_ON_FILES = ['AGENTS.md', 'CLAUDE.md'] as const;
+
+export type AlwaysOnEntry = {
+	/** Repository-relative path, in `ALWAYS_ON_FILES` order. */
+	path: string;
+	contents: string;
+};
+
+/** Read every always-on file the repository actually has. */
+export async function readAlwaysOnInstructions(
+	root: string,
+): Promise<AlwaysOnEntry[]> {
+	const entries: AlwaysOnEntry[] = [];
+
+	for (const path of ALWAYS_ON_FILES) {
+		const contents = await readFile(join(root, path), 'utf8').catch(
+			(error: unknown) => {
+				if (
+					error instanceof Error &&
+					'code' in error &&
+					error.code === 'ENOENT'
+				)
+					return null;
+				throw error;
+			},
+		);
+		if (contents === null) continue;
+
+		entries.push({ path, contents });
+	}
+
+	return entries;
+}
 
 /**
  * What a description does with a phrase.

@@ -1,5 +1,6 @@
 import type { BlobId } from '@epicenter/blobs';
 import type { DeviceAcquisitionOutcome } from '@epicenter/recorder';
+import { createLogger } from 'wellcrafted/logger';
 import { manualRecorderConfig } from '#platform/manual-recorder-config';
 import { reportRecordingMicLevel } from '#platform/recording-mic-level';
 import { goto } from '$app/navigation';
@@ -10,7 +11,7 @@ import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { playSoundIfEnabled } from '$lib/operations/sound';
 import { prewarmOnDeviceModel } from '$lib/operations/transcribe';
-import { log, report } from '$lib/report';
+import { report } from '$lib/report';
 import {
 	RecorderError,
 	type RecordingEndedReason,
@@ -21,6 +22,8 @@ import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import type { WhisperingApp } from '$lib/whispering/app';
+
+const log = createLogger('whispering/recording');
 
 /**
  * Surface the outcome of acquiring a recording device. A clean success is
@@ -127,7 +130,7 @@ function isVadRecordingActive() {
 export async function startManualRecording(
 	app: WhisperingApp,
 ): Promise<BlobId | null> {
-	app.settings.set('settings.recording.trigger', 'manual');
+	app.settings.set('recordingTrigger', 'manual');
 	// A new dictation is starting: clear any lingering failed/delivered state so
 	// the pill follows this attempt, not the last one.
 	dictationLifecycle.reset();
@@ -233,7 +236,7 @@ export async function cancelRecording(app: WhisperingApp) {
 	// means across the manual and VAD recorders.
 	//
 	// Cancel aborts whichever capture is live, without touching
-	// `settings.recording.trigger`: the chosen trigger (manual vs VAD) is a deliberate
+	// `recordingTrigger`: the chosen trigger (manual vs VAD) is a deliberate
 	// preference, not
 	// something a cancel keystroke should flip, so cancelling in VAD mode leaves
 	// you in VAD mode, idle and ready to listen again. This is also the global
@@ -305,7 +308,7 @@ function cancelPendingVadResume() {
 }
 
 export async function startVadRecording(app: WhisperingApp) {
-	app.settings.set('settings.recording.trigger', 'vad');
+	app.settings.set('recordingTrigger', 'vad');
 	// A new dictation session is starting: clear any lingering terminal state.
 	dictationLifecycle.reset();
 	// A capture just started, so leave the import overlay if it was open (see
@@ -408,7 +411,7 @@ export function toggleVadRecording(app: WhisperingApp) {
 /**
  * Select a capture surface from the homepage tabs or the header dropdown.
  * `import` opens the transient import overlay without touching
- * `settings.recording.trigger`; `manual`/`vad` close the overlay and switch the durable
+ * `recordingTrigger`; `manual`/`vad` close the overlay and switch the durable
  * trigger. Either way, a live capture on a different surface is stopped first so
  * two captures never overlap (`import` keeps neither recorder, so both stop).
  */
@@ -423,8 +426,8 @@ export async function selectCaptureSurface(
 		captureSurface.showImport();
 	} else {
 		captureSurface.dismissImport();
-		if (app.settings.get('settings.recording.trigger') !== surface) {
-			app.settings.set('settings.recording.trigger', surface);
+		if (app.settings.get('recordingTrigger') !== surface) {
+			app.settings.set('recordingTrigger', surface);
 		}
 	}
 

@@ -1,6 +1,6 @@
 ---
 name: radical-options
-description: "Use when a task seems trapped inside the current abstraction, an abstraction feels poorly designed, a proposed change looks like a band-aid, a fix keeps spreading across layers, or the user asks to think bigger, reconsider the whole unit, redesign from scratch, mentally inline, go up a level, or consider radical options. Forces a higher-level pass before editing: identify the largest relevant unit, state the current path, invent the cleanest from-scratch option, inline suspicious layers, find asymmetric deletions, and choose the option that makes the system easiest to explain."
+description: Compare a current approach with a cleaner design from first principles before editing. Use when an abstraction feels wrong, a fix becomes a band-aid, or complexity spreads across layers.
 ---
 
 # Radical Options
@@ -18,8 +18,8 @@ migration strategy. Use [one-sentence-test](../one-sentence-test/SKILL.md) to
 name the system before auditing it. Use
 [asymmetric-wins](../asymmetric-wins/SKILL.md) for the refuse-one-shape-to-
 delete-a-code-family decision. Use
-[first-read-review](../first-read-review/SKILL.md) when the problem is
-mostly first-read clarity.
+[post-implementation-review](../post-implementation-review/SKILL.md) "First-Read
+Pass" when the problem is mostly first-read clarity.
 
 ## The Ritual
 

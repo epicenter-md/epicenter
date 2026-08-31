@@ -2,7 +2,7 @@
  * Home's local transcription model administration.
  *
  * Epicenter has exactly one **active** local transcription model per device.
- * The host owns it; this is the surface that administers it (ADR-0180): which
+ * The host owns it; Home is the window that administers it (ADR-0180): which
  * model is active, downloading and deleting model files, and when the host
  * drops the resident model. Applications ask for transcription and never for a
  * model, so this store is the only place in the product where a model is chosen.

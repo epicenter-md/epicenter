@@ -2,18 +2,18 @@
 
 # Claude-specific notes
 
-Claude leads the mission: make the in-scope calls, choose what evidence is
-enough, and decide how to verify the result. Codex is an optional second agent,
-reached through the literal `/codex:rescue` command (the
-`openai/codex-plugin-cc` plugin is installed). Use it when a bounded search,
-diff or history read, focused edit, verification pass, or independent check
-would help. Give it one job and the inputs it needs.
+Codex is the primary continuity, judgment, execution, testing, and integration
+owner for repository work. When the user explicitly asks for a Claude consult,
+Claude is an advisory review lane: read the seeded context, explore related
+repository evidence read-only when needed, and return tradeoffs, objections,
+missing invariants, risks, and a strong recommendation.
 
-What comes back is evidence, not a verdict. Read it against the code and use
-your judgment: a confident Codex answer that conflicts with what you have seen
-is a reason to look again, not a reason to defer.
+A consult must not edit files, create a worktree, commit, publish, or become a
+second executor. The starting paths in the consult brief are investigation
+seeds, not a narrow boundary. Codex decides which feedback is valid and owns
+any resulting changes.
 
 `/codex:review`, `/codex:adversarial-review`, `/codex:transfer`,
-`/codex:status`, `/codex:result`, and `/codex:cancel` are user-invoked and you
-cannot call them. Suggest one when a second pass or a Codex handoff would help,
-and relay what it returns faithfully before adding your own read.
+`/codex:status`, `/codex:result`, and `/codex:cancel` remain user-invoked and
+cannot be called automatically. Use them only when the user explicitly asks
+for that separate Codex-plugin workflow.

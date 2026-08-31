@@ -67,14 +67,13 @@ type KeyProvider = {
 	apiKeyConfigKey: SecretKey;
 	/**
 	 * The settings key holding this provider's model selection. Constrained to
-	 * the leaf shape `settings.transcription.${string}.model`, not a precise union of the
-	 * cloud keys: a precise union here would make `typeof PROVIDERS` reference a
-	 * type derived from itself (`satisfies Record<..., TranscriptionProvider>`
-	 * closes the loop). The real guard is the call site
-	 * `settings.get(provider.modelSettingKey)`, which rejects keys absent from
-	 * the settings schema.
+	 * the shape `transcription<Provider>Model` rather than a precise union of
+	 * the cloud keys: a precise union here would make `typeof PROVIDERS`
+	 * reference a type derived from itself (`satisfies Record<...>` closes the
+	 * loop). The real guard is the call site `settings.get(modelSettingKey)`,
+	 * which rejects a key the workspace does not declare.
 	 */
-	modelSettingKey: `settings.transcription.${string}.model`;
+	modelSettingKey: `transcription${string}Model`;
 	/** Device config key for the endpoint override; null when not configurable. */
 	endpointConfigKey: DeviceConfigKey | null;
 	/**
@@ -108,7 +107,7 @@ type EndpointProvider = {
  * (the platform "star", ADR-0068/0069/0070) this install is bonded to. Unlike a
  * `key` provider it carries no key or endpoint config; the transport is the
  * signed-in session's audience-scoped fetch (`auth.fetch`), resolved in the
- * dispatcher against `auth.deployment.baseURL` (the hosted cloud by default, or a self-host
+ * dispatcher against `auth.connection.baseURL` (the hosted cloud by default, or a self-host
  * instance if the user pointed there), and the gateway pins its own house model
  * server-side (ADR-0100). So the only fact this entry holds is the single `model`
  * string the wire requires. "Configured" means signed in, not "has a key" (see
@@ -152,7 +151,7 @@ export const PROVIDERS = {
 		description: 'Industry-standard Whisper API',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
 		apiKeyConfigKey: 'providers.openai.apiKey',
-		modelSettingKey: 'settings.transcription.openai.model',
+		modelSettingKey: 'transcriptionOpenaiModel',
 		endpointConfigKey: 'providers.openai.endpoint',
 		modelsDoc: {
 			label: 'OpenAI docs',
@@ -186,7 +185,7 @@ export const PROVIDERS = {
 		description: 'Lightning-fast cloud transcription',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
 		apiKeyConfigKey: 'providers.groq.apiKey',
-		modelSettingKey: 'settings.transcription.groq.model',
+		modelSettingKey: 'transcriptionGroqModel',
 		endpointConfigKey: 'providers.groq.endpoint',
 		modelsDoc: {
 			label: 'Groq docs',
@@ -215,7 +214,7 @@ export const PROVIDERS = {
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
 		apiKeyConfigKey: 'providers.elevenlabs.apiKey',
 		endpointConfigKey: null,
-		modelSettingKey: 'settings.transcription.elevenlabs.model',
+		modelSettingKey: 'transcriptionElevenlabsModel',
 		modelsDoc: {
 			label: 'ElevenLabs docs',
 			href: 'https://elevenlabs.io/docs/capabilities/speech-to-text',
@@ -249,7 +248,7 @@ export const PROVIDERS = {
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
 		apiKeyConfigKey: 'providers.deepgram.apiKey',
 		endpointConfigKey: null,
-		modelSettingKey: 'settings.transcription.deepgram.model',
+		modelSettingKey: 'transcriptionDeepgramModel',
 		modelsDoc: null,
 		defaultModel: 'nova-3',
 		models: [
@@ -291,7 +290,7 @@ export const PROVIDERS = {
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
 		apiKeyConfigKey: 'providers.mistral.apiKey',
 		endpointConfigKey: null,
-		modelSettingKey: 'settings.transcription.mistral.model',
+		modelSettingKey: 'transcriptionMistralModel',
 		modelsDoc: {
 			label: 'Mistral docs',
 			href: 'https://mistral.ai/news/voxtral/',

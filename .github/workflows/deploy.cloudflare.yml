@@ -51,7 +51,7 @@ jobs:
       # For a `deploy` the URL is the {"type":"deploy"} entry's first target
       # (`.targets[0]`), which is exactly what wrangler-action set deployment-url to.
       #
-      # Unlike the preview workflow's fault-tolerant loop, these are three separate
+      # Unlike the preview workflow's fault-tolerant loop, these are two separate
       # fail-fast steps (`set -euo pipefail`, no `if: always()`): a failed production
       # deploy MUST fail the job so the Discord alert fires, and keeping the steps
       # separate shows which app failed. URL extraction is best-effort (`|| true`), so
@@ -60,20 +60,12 @@ jobs:
       # Token asymmetry is deliberate: production uses the full-scope
       # CLOUDFLARE_API_TOKEN (it needs Zone > Workers Routes > Edit for the custom
       # domains), NOT the least-privilege preview token.
-      - name: Deploy Whispering
-        id: whispering
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          set -euo pipefail
-          outdir="$(mktemp -d)"
-          WRANGLER_OUTPUT_FILE_DIRECTORY="${outdir}" \
-            bunx --no-install wrangler --cwd apps/whispering deploy
-          # wrangler writes one NDJSON file; its {"type":"deploy"} line carries the
-          # deployment URLs in .targets. wrangler-action published .targets[0]; match it.
-          url="$(jq -rs 'map(select(.type=="deploy")) | last | .targets[0] // empty' "${outdir}"/*.json || true)"
-          echo "deployment-url=${url}" >> "${GITHUB_OUTPUT}"
+      # Whispering is not deployed from here. ADR-0227 refused its hosted web
+      # runtime and `apps/whispering/wrangler.jsonc` went with it. Removing the
+      # step does not tear down whatever is already serving
+      # whispering.epicenter.so: Cloudflare keeps the last deployed version, so
+      # this stops republishing rather than taking anything down. ADR-0227 says
+      # what would reopen it.
 
       - name: Deploy Landing
         id: landing
@@ -108,7 +100,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| App | URL |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|-----|" >> $GITHUB_STEP_SUMMARY
-          echo "| Whispering | ${{ steps.whispering.outputs.deployment-url }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Landing | ${{ steps.landing.outputs.deployment-url }} |" >> $GITHUB_STEP_SUMMARY
           echo "| API | ${{ steps.api.outputs.deployment-url }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -129,11 +120,6 @@ jobs:
               "title": "Deployment ${{ job.status }}",
               "color": $STATUS_COLOR,
               "fields": [
-                {
-                  "name": "Whispering",
-                  "value": "${{ steps.whispering.outputs.deployment-url }}",
-                  "inline": true
-                },
                 {
                   "name": "Landing",
                   "value": "${{ steps.landing.outputs.deployment-url }}",

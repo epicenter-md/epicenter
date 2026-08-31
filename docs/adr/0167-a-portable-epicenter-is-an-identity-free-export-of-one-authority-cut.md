@@ -1,7 +1,8 @@
 # 0167. A portable Epicenter is an identity-free export of one authority cut
 
-- **Status:** Proposed
+- **Status:** Superseded
 - **Date:** 2026-07-20
+- **Superseded by:** [ADR-0267](0267-a-workspace-exports-and-imports-as-a-legible-folder-structured-artifact.md) at the artifact representation: rich documents are legible text files through their codec, not binary `document_update_v2` updates embedded in SQLite.
 - **Amends:** [ADR-0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md) and [ADR-0162](0162-epicenter-home-owns-relational-inspection-applications-receive-no-sql.md)
 
 ## Context

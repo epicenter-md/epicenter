@@ -1,6 +1,8 @@
 # Honeycrisp
 
-Honeycrisp is a local-first notes app. Folder and note metadata live as canonical SQLite rows. Each note body is a Yjs document that can sync and merge independently.
+Honeycrisp is a local-first notes app. The whole database is one Yjs document:
+folders and notes are rows in it, and each note's prose is a rich-text type
+nested on its note row, merging per character.
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
 
@@ -10,45 +12,75 @@ Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL
 
 ### Layout
 
-Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note list → editor. SSR is disabled; the app runs entirely in the browser as a static site.
+Single-SPA SvelteKit app with `/device` and `/account` destinations. Both use
+the same three-pane layout: sidebar (folders) → note list → editor. SSR is
+disabled; the app runs entirely in the browser as a static site.
 
 ### Data layer
 
-Honeycrisp defines one inert Lens over `so.epicenter.honeycrisp` and opens it through a runtime the build selects:
+Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and opens it as a store the app owns:
 
 ```txt
-honeycrispLens
-  shared isomorphic definition: namespace and release-local row lenses
-
-openHoneycrispBrowserEpicenter()   this origin's own replica, plus its own sync
-openDesktopEpicenter()             the desktop Epicenter host's replica
+resolveLocalGeneration()                                  which number, once
+openLocalDatabase(generation)                             local database
+openAccountDatabase({ auth, generation })                 account replica
+data.tables.notes.list()                                  synchronous from here on
 ```
 
-Which one a build gets is fixed at build time by the `#platform/application`
-seam, never detected at runtime (ADR-0190). The web SPA and the standalone
-desktop bundle both own their storage, so both open the first. Only the build
-Epicenter serves opens the second, and its folders, notes, and note documents
-then live in the host's shared `epicenter.sqlite3` alongside every other trusted
-surface, kept apart by the namespace. A person can run both desktop Honeycrisps;
-they are two databases and nothing moves between them.
+The definition names the application and the route names which exact generation
+of it (ADR-0229, ADR-0292). `/device` and `/account` resolve a number and
+redirect; `/device/[generation]` and `/account/[generation]` open it. Each route
+owns one store, and nothing falls back to the other route's
+data.
+The scalar document shape is the shared `app`/`kv`/`tables:<name>` grammar in
+[ADR-0257](../../docs/adr/0257-the-application-document-has-named-kv-and-table-roots.md).
 
-The Svelte app chooses its authority once at boot. Signed out, it opens the device database. Signed in, it opens the account database and attaches the account transport. Row changes invalidate app-owned reactive arrays; the state layer refreshes them through the async table API.
+Every build opens its own store, with no platform seam, and reaches one
+authority per signed-in account (ADR-0225/0226). The desktop host serves
+Honeycrisp's bundle and brokers its credential; it owns none of its data.
 
-This was a clean break from the legacy root-Yjs and IndexedDB model. Honeycrisp does not probe, import, restore, or delete legacy data. The old database is untouched and unreachable from the new app.
+**Reads are synchronous after opening.** A route opens its store by replaying a
+durable log into one `Y.Doc`, then `data.tables.notes.list()` returns rows, not
+a promise. An account route may wait for a fresh replica's first binding while
+the device route remains independently usable.
+
+**Nothing polls and nothing refreshes.** `data.tables.notes.subscribe(...)` reports which
+rows a commit touched, and it fires for a local write, for prose typed into a
+note, and for bytes that arrived from another device alike (ADR-0221). The state
+modules re-read on that signal; there is no generation counter and no manual
+refresh anywhere.
 
 ### Rich-text editing
 
-Each note row owns one document. `NoteBodyPane.svelte` opens it through `honeycrisp.openNoteDocument(noteId)`, reads the application-owned `body` root, and disposes the handle when the pane unmounts. ProseMirror binds to that Yjs 14 type through `@y/prosemirror`.
+A note's prose is the `body` rich field on its note row, declared
+`field.type()` and minted with the row. `NoteBodyPane.svelte` reaches it through
+`notes.openBody(noteId)` and hands the type straight to ProseMirror through
+`@y/prosemirror`. Nothing is awaited and nothing is loaded: the type is in the
+document the store already holds.
 
-User edits extract the title, preview, and word count and write them back to the note row with an explicit `updatedAt`. Binding-origin transactions do not update metadata, so opening or remotely hydrating a note does not make it look newly edited.
+`openBody` also subscribes to that field's own edit signal and writes the
+note's `title`, `preview`, and `updatedAt` back onto the row, coalesced to one
+write per burst. The store writes no derived fields and no timestamps
+(ADR-0297), so this is Honeycrisp's job; `close` stops it.
 
 ### Soft deletion
 
-Normal deletion is soft deletion: the note row gets a `deletedAt` timestamp and appears in Recently Deleted. Permanent deletion removes the canonical row and revokes its document lease.
+Normal deletion is soft deletion: the note row gets a `deletedAt` timestamp and appears in Recently Deleted. Permanent deletion removes the row, and its prose goes with it: the whole nested subtree is reclaimed in the same removal.
 
-### Auth
+### Auth and sync
 
-Google sign-in is optional. The app opens immediately against device storage. A principal change reloads the page so the next boot can choose the account or device runtime. There is no legacy sign-in migration or restore prompt.
+The device destination works completely signed out. The account destination
+requires sign-in and shows its own gate; it never silently shows device data.
+Signing in opens the account replica and attaches sync, and that is the whole
+of the sharing model. Every device signed into one account dials one authority
+(`principals/<id>/data/so.epicenter.honeycrisp`) and converges; there is
+nothing to pair, invite, or approve.
+
+`src/lib/sync.ts` is Honeycrisp's entire share of the transport: a URL.
+Reconnecting on close, reconnecting when the client is stuck behind a gap,
+putting the cursor in the URL and watching for a submission nobody answers are
+all the library's, because every one of them is correctness rather than
+transport (ADR-0222).
 
 ---
 
@@ -63,25 +95,32 @@ Google sign-in is optional. The app opens immediately against device storage. A 
 |---|---|
 | `id` | `string` (runtime-minted) |
 | `name` | `string` |
-| `icon` | `string` (optional) |
+| `icon` | `string \| null` |
 | `sortOrder` | `number` |
 
 **`notes`**
 | Field | Type |
 |---|---|
 | `id` | `string` (runtime-minted) |
-| `folderId` | `FolderId` (optional) |
+| `folderId` | `string \| null` |
 | `title` | `string` |
 | `preview` | `string` |
 | `pinned` | `boolean` |
-| `createdAt` | `InstantString` |
-| `updatedAt` | `InstantString` |
-| `deletedAt` | `InstantString` (optional, soft delete) |
-| `wordCount` | `number` (optional) |
+| `createdAt` | `string.date.iso` |
+| `updatedAt` | `string.date.iso` |
+| `deletedAt` | `string.date.iso \| null` (soft delete) |
+| `wordCount` | `number \| null` |
 
-Each note's body lives in a row-owned document opened by `honeycrisp.openNoteDocument(noteId)`. The editor owns the `body` root name and the handle's lifecycle.
+A data definition has no optional fields: a field has to be one type through the CRDT
+attribute, the exported frontmatter value and the row alike, and "absent" is not a
+type. So what would have been optional is nullable, and the application writes
+or recovers `null` explicitly.
 
-Honeycrisp currently has no workspace KV schema. View selection, sorting, and URL state live in the Svelte state layer.
+Each note's prose lives at the `body` root inside that note's document. The
+application names the root and picks its format; Epicenter allocates the
+container with the row, collects it with the row, and never looks inside.
+
+Honeycrisp has no KV schema. View selection, sorting, and URL state live in the Svelte state layer.
 
 ---
 
@@ -107,15 +146,25 @@ bun install
 bun dev:honeycrisp
 ```
 
-This starts the desktop app on port 5175 alongside the local API on `localhost:8787`, which auth and sync expect. `bun dev:honeycrisp:ui` runs the browser UI without the API or Tauri shell.
+This starts the browser UI on port 5175 alongside the local API on `localhost:8787`, which auth and sync expect. `bun dev:honeycrisp:ui` runs the UI alone, without the API.
+
+To run Honeycrisp the way it ships, start the host: `bun dev:epicenter`. Honeycrisp has no desktop shell of its own.
+
+### Checking it actually works
+
+```bash
+bun run --cwd apps/honeycrisp evidence:runs   # against a running dev:web
+```
+
+Drives the real app in a real browser: make a note, type prose into it, reload,
+and assert both survived. The reload is the point, since the page holds an
+in-memory SQLite and IndexedDB holds what has to outlive it.
 
 ### Manual two-client check
 
-To exercise two independent browser replicas, open the Honeycrisp web UI in two
-isolated browser profiles. Point both at one self-hosted authority that includes
-the UI origin in `TRUSTED_BROWSER_ORIGINS`. Do not use two ordinary tabs in one
-profile: they share a storage partition, so the second owner is refused by
-design (ADR-0177).
+Open the Honeycrisp web UI in two isolated browser profiles and sign both into
+the same account. Do not use two ordinary tabs in one profile: they share a
+storage partition (ADR-0177), so they are one device rather than two.
 
 ---
 
@@ -126,8 +175,8 @@ design (ADR-0177).
 - `@y/y` 14: row-owned note body documents
 - [Tailwind CSS](https://tailwindcss.com): styling
 - [Better Auth](https://better-auth.com): authentication
-- `@epicenter/data`: canonical SQLite rows, values, and local row documents
-- `@epicenter/document-sync`: network synchronization for open row documents
+- `@epicenter/data`: the store, its transport, and the data-definition vocabulary
+- `@epicenter/sync`: the bearer-in-subprotocol handshake the upgrade uses
 - `@epicenter/svelte`: auth and browser lifecycle helpers
 - `@epicenter/ui`: shadcn-svelte component library
 

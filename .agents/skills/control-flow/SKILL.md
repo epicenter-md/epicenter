@@ -1,6 +1,6 @@
 ---
 name: control-flow
-description: 'Control flow: early returns, guard clauses, linearizing nested logic. Use for "flatten these conditions", "too many nested ifs", "linearize this try-catch", or handlers mixing throw and return. For a broad "simplify this" pass over a diff or package, use collapse-pass instead.'
+description: Linearize complex control flow with early returns, guard clauses, nested ifs, and natural-language conditions. Use when flattening nested conditions, linearizing try/catch logic, or separating mixed throw-and-return handlers, not for a broad "simplify this" pass over a diff or package, which belongs to collapse-pass.
 metadata:
   author: epicenter
   version: '1.0'

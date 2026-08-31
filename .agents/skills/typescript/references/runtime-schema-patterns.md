@@ -47,7 +47,7 @@ Both behave similarly in TypeScript, but only the `?` syntax converts correctly 
 Two shapes coexist in the codebase, picked by what owns the brand at runtime:
 
 - **Workspace table IDs**: pure type alias + `generate*` factory. The brand lives only in the type system; `field.string<Id>()` carries it through the TypeBox schema. No runtime validator object.
-- **Arktype-validated IDs** (auth user IDs, persisted-state schemas, HTTP route inputs): validator-first + `as*` helper. The arktype `Type` and the inferred type share one PascalCase name.
+- **Arktype-validated IDs** (auth user IDs, persisted-state schemas, HTTP route inputs): type-first + validator + `as*` helper. The branded type and the arktype `Type` share one PascalCase name.
 
 ## Workspace Table IDs: Pure Type Alias + Generator
 
@@ -84,31 +84,66 @@ const id = generateId() as string as SavedTabId;
 
 The `generate*` prefix means "new ID from scratch." The `create*` prefix means "assemble from inputs" (e.g., `createTabCompositeId(deviceId, tabId)`).
 
-See the `workspace-api` skill for the full schema/migration rules.
+See the `arktype` skill for the expression strings a workspace declares fields with. A
+workspace is release-local and never migrates user data, so there are no migration
+rules to follow.
 
-## Arktype-Validated IDs: Validator First, Type Inferred, Optional `as*` Helper
+## Arktype-Validated IDs: Type First, Validator Annotated, Optional `as*` Helper
 
-For IDs that flow through an **arktype** schema at a runtime boundary (auth user IDs read off Better Auth sessions, persisted-state schemas, HTTP route inputs), declare the validator first and derive the type via `.infer`. Both share one PascalCase name. Add a small `as*` helper for branding known-string values without scattering raw `as` casts.
+For IDs that flow through an **arktype** schema at a runtime boundary (auth user IDs read off Better Auth sessions, persisted-state schemas, HTTP route inputs), declare the type first and annotate the validator to it. Both share one PascalCase name. Add a small `as*` helper for branding known-string values without scattering raw `as` casts.
 
 ```typescript
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
-// 1. VALIDATOR: declared first; brand lives inside `.as<>()`.
-export const UserId = type('string').as<string & Brand<'UserId'>>();
+// 1. TYPE: declared first. The brand is written once, here.
+export type UserId = string & Brand<'UserId'>;
 
-// 2. TYPE: derived from the validator. One source of truth.
-export type UserId = typeof UserId.infer;
+// 2. VALIDATOR: annotated to the type, so the schema conforms to the brand.
+export const UserId = type('string').as<UserId>();
 
 // 3. AS HELPER: shorthand for `value as UserId` at trusted call sites.
 export const asUserId = (value: string): UserId => value as UserId;
 ```
 
-TypeScript keeps value space and type space separate, so the same identifier `UserId` is the arktype `Type` in value positions and the inferred branded type in type positions. There is no runtime ambiguity and no import collision. See `docs/articles/arktype-values-and-types-should-share-the-name.md`.
+TypeScript keeps value space and type space separate, so the same identifier `UserId` is the arktype `Type` in value positions and the branded type in type positions. There is no runtime ambiguity and no import collision. See `docs/articles/arktype-values-and-types-should-share-the-name.md`.
 
-### Why Validator First
+### Why Type First
 
-Declaring the validator first and deriving the type via `typeof UserId.infer` makes the validator the single source of truth. If you change the brand or the underlying primitive, you update one place and the type follows. Declaring the type first and re-passing it into `type('string').as<UserId>()` works but encodes the same shape twice and risks drift.
+The name survives into composition. Hover a type-first brand in value position and TypeScript prints `Type<UserId, {}>`; the validator-first form prints `Type<string & Brand<"UserId">, {}>`, because `typeof UserId.infer` resolves through arktype's distillation and loses the alias. Every schema built from the brand inherits that: a type-first field shows as `id: UserId` in the composed row type, a validator-first one as `id: string & Brand<"UserId">`. Type positions expand either way, so this is a value-side difference.
+
+The exported type is also a constraint you state rather than a consequence of the validator chain. Add a `.pipe()` to a validator-first declaration and `typeof UserId.infer` silently becomes the morph's output type, and every consumer follows it. Type-first pins the type and makes the validator conform.
+
+Both orders write `string` twice, and `.as<castTo>()` is unconstrained in either (`type('number').as<UserId>()` compiles). Neither is a reason to pick one.
+
+### Derive What Arktype Computes, Declare What You Supply
+
+One question decides the order, and the expression already answers it: **does the type appear as a type argument you typed?**
+
+| You wrote | Who owns the type | Order |
+| --- | --- | --- |
+| `.as<T>()` | you, `T` is your input | declare the type, annotate the validator to it |
+| `type({...})` | arktype, from the fields | derive with `typeof X.infer` |
+| `.pipe(fn)` | arktype, from `fn`'s return type | derive with `typeof X.infer` |
+
+```typescript
+// Supplied: `Brand<'UserId'>` appears nowhere in `type('string')`. Arktype cannot
+// compute it, so you hand it in. Reading it back with `.infer` is a round trip.
+export type UserId = string & Brand<'UserId'>;
+export const UserId = type('string').as<UserId>();
+
+// Computed from fields: you never state the object, arktype assembles it.
+export const AuthUser = type({ id: UserId, email: 'string', 'image?': 'string | null' });
+export type AuthUser = typeof AuthUser.infer;
+
+// Computed from a function: the output type comes from the arrow's return type.
+export const PollVote = type({ post_id: 'string' }).pipe((row) => ({ id: row.post_id, ...row }));
+export type PollVote = typeof PollVote.infer;
+```
+
+Branded primitives are not an exception to `derive-types-before-you-declare-them.md`; they are the same rule pointing the other way, because `.as<T>()` is an input rather than a derivation. The question also settles cases the repo has not hit yet: `.narrow()` supplies nothing new, so derive.
+
+See `docs/articles/derive-types-before-you-declare-them.md`.
 
 ### Branding a Known-String Value
 
@@ -127,14 +162,16 @@ const userId = c.var.user.id as UserId;
 
 For genuinely untyped boundaries (parsing `unknown` JSON, network input) use the validator's `.assert(value)` or schema-level validation (e.g., `PersistedAuth.assert(...)`). That throws on shape mismatch; the `as*` helper trusts the compiler.
 
+`as*` never validates. The prefix borrows Rust's `as_` convention: free, unchecked, the same bytes viewed at a higher abstraction. The day a helper needs a runtime check it stops being `as*` and becomes a validator or a parse.
+
 ### When Each Part Is Needed
 
 | Origin of the value                         | Parts                                            |
 | ------------------------------------------- | ------------------------------------------------ |
 | Minted fresh into a workspace table         | Type alias + `generate*` (no validator)          |
-| Received as a typed string (auth, URL, DB)  | Validator + Type + `as*` helper                  |
-| Received as `unknown` at a network boundary | Validator + Type (validate via arktype schema)   |
-| Set from an external source, never minted   | Validator + Type (with `as*` helper if branded)  |
+| Received as a typed string (auth, URL, DB)  | Type + Validator + `as*` helper                  |
+| Received as `unknown` at a network boundary | Type + Validator (validate via arktype schema)   |
+| Set from an external source, never minted   | Type + Validator (with `as*` helper if branded)  |
 
 ### Schema Body Reads Cleanly
 
@@ -167,12 +204,10 @@ export const UserId = (value: string): UserId => value as UserId;
 export const UserIdSchema = type('string').as<UserId>();
 ```
 
-This is rejected in favor of the validator-first pattern because:
+This is rejected in favor of the type-first pattern because:
 
 1. It exports three symbols per ID and forces an `XxxSchema` alias that contradicts the shared-name idiom.
 2. Every schema body has to read `id: UserIdSchema` instead of `id: UserId`.
 3. The same name (`UserId`) serves two unrelated runtime behaviors (typed cast vs. arktype validator), splitting reader intent.
 
-The validator-first + `as*` helper pattern keeps the arktype schema name unified and pushes brand-casting into a clearly named function.
-
-See the `workspace-api` skill for the full workspace file structure and rules.
+The type-first + `as*` helper pattern keeps the arktype schema name unified and pushes brand-casting into a clearly named function. Note what survives from the old pattern: the type is still declared first. What changes is that the validator takes the shared name and the cast moves to `asUserId`.

@@ -1,6 +1,6 @@
 ---
 name: tanstack-table
-description: TanStack Table UI state patterns for @tanstack/svelte-table, @tanstack/table-core, createTable, ColumnDef, FlexRender, renderComponent, sorting, filtering, pagination, row identity, and local table markup composition. Use when building or reviewing Svelte data tables, not Epicenter workspace storage tables.
+description: Apply TanStack Table UI-state patterns for Svelte data tables, including columns, rendering, sorting, filtering, pagination, and row identity. Use when building or reviewing data-table UI, not Epicenter workspace storage tables.
 metadata:
   author: epicenter
   version: '1.0'
@@ -17,7 +17,7 @@ metadata:
 
 When TanStack Table adapter APIs, row models, controlled state, sorting, filtering, pagination, or Svelte rendering helpers affect correctness, ask DeepWiki a narrow question against `TanStack/table`. Verify against the installed `@tanstack/svelte-table` and `@tanstack/table-core` versions.
 
-This skill is for UI table state. Use `workspace-api` for Epicenter CRDT table storage and migrations.
+This skill is for UI table state. Use `yjs` for Epicenter store table storage, and `svelte` for reading rows into a component.
 
 ## Local API Baseline
 

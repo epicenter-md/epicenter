@@ -1,6 +1,7 @@
 <script lang="ts">
-	import type { AuthClient, InstanceSetting } from '@epicenter/auth';
-	import type { Epicenter, SyncStatus } from '@epicenter/data';
+	import type { InstanceSetting } from '@epicenter/auth';
+	import type { ReactiveAuthClient } from '@epicenter/auth/svelte';
+	import type { Snippet } from 'svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
@@ -40,15 +41,10 @@
 	 */
 	type AccountPopoverProps = {
 		/**
-		 * The app's auth client (from `createAppAuthClient()`). Its `deployment`
-		 * is the one runtime owner of the hosted vs self-hosted fact; every
-		 * display decision here branches on it, never on the persisted setting.
+		 * The app's auth client (from `createAppAuthClient()`). Its connection
+		 * supplies the selected server and live connection status.
 		 */
-		auth: AuthClient;
-		/**
-		 * Scalar Data sync surface. Omit it when the app has no replicated data.
-		 */
-		dataSync?: Pick<Epicenter, 'syncStatus' | 'subscribeSyncStatus'>;
+		auth: ReactiveAuthClient;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;
 		/**
@@ -73,8 +69,8 @@
 		onForgetDevice?: () => void | Promise<void>;
 		/**
 		 * Self-host instance connect: what the settings modal needs to persist a
-		 * different deployment choice. The setting handle is write-path only here;
-		 * everything displayed reads `auth.deployment`. Required: this popover is
+		 * different server choice. The setting handle owns the write path and the
+		 * default-server distinction. Required: this popover is
 		 * the app's only auth surface (ADR-0088), so every app injects its
 		 * instance setting here.
 		 */
@@ -84,18 +80,19 @@
 			/** The shared instance setting handle this app injected. */
 			setting: InstanceSetting;
 		};
+		/** Optional replacement for the compact account icon trigger. */
+		trigger?: Snippet<[{ props: Record<string, unknown> }]>;
 	};
 
 	let {
 		auth,
-		dataSync,
 		syncNoun,
 		onForgetDevice,
 		disabledReason,
 		instanceConnect,
+		trigger,
 	}: AccountPopoverProps = $props();
 
-	let syncStatus = $state.raw<SyncStatus>();
 	let popoverOpen = $state(false);
 	let instanceModalOpen = $state(false);
 	// Set for one close only, when the "configure instance" link hands off to the
@@ -111,24 +108,27 @@
 	const accountCacheKey = $derived(
 		auth.state.status === 'signed-out' ? null : auth.state.principalId,
 	);
-	// Which star this account lives on: a self-hosted deployment names the box,
-	// and the host IS the identity there. The instance principal has no email.
+	// A non-default server names a self-hosted box. The instance principal has no
+	// email, so the box host is the account label there.
+	const selfHosted = $derived(!instanceConnect.setting.isDefault());
 	const selfHostHost = $derived(
-		auth.deployment.kind === 'self-hosted'
-			? new URL(auth.deployment.baseURL).host
-			: undefined,
+		selfHosted ? new URL(auth.connection.baseURL).host : undefined,
 	);
 	// Optimistic boot (ADR-0075) leaves a self-host user signed-in even when the box
 	// is unreachable, so they usually never see the sign-in panel's connection copy.
-	// Surface the unreachable state here instead. `auth.state` still says signed-in
-	// (local identity is known); this line only explains that the
-	// configured server is offline in this runtime, and local work is unaffected, so
-	// it reads muted. A `rejected` token is not handled here: it drops `state` to
-	// signed-out (see `createInstanceTokenAuth`), which reveals the sign-in panel
-	// that owns the rejected-token copy, so this signed-in surface never sees it.
+	// Surface both refusals here instead. `auth.state` says signed-in either way,
+	// because the instance principal is what addresses the local partition and a
+	// refused token does not change who you are; local work is unaffected, so this
+	// reads muted.
+	//
+	// The `rejected` arm used to be unreachable: a refused token also dropped
+	// `state` to signed-out, which revealed the sign-in panel. That coupling was a
+	// boot loop, because signed-in -> signed-out is a principal change and the
+	// reload gate reloads on it. Rejection is a connection fact now, and this is
+	// the surface that owns its words.
 	const instanceNotice = $derived.by(() => {
-		if (auth.deployment.kind !== 'self-hosted') return null;
-		switch (auth.deployment.connection.status) {
+		if (!selfHosted) return null;
+		switch (auth.connection.status) {
 			case 'unreachable':
 				return `Can't reach ${selfHostHost}. You're working locally; sync resumes when it's back.`;
 			case 'rejected':
@@ -170,72 +170,28 @@
 		() => accountProfileQueryClient,
 	);
 
-	$effect(() => {
-		if (!dataSync) {
-			syncStatus = undefined;
-			return;
-		}
-		syncStatus = dataSync.syncStatus;
-		const unsubscribe = dataSync.subscribeSyncStatus((status) => {
-			syncStatus = status;
-		});
-		return unsubscribe;
-	});
-
 	// The sync phase copy and dot tone are decided once here: the popover's
 	// sync line renders the dot beside its label (the legend), the trigger
 	// reuses the same dot, and the tooltip adds the action hint. Dot tones
 	// are theme tokens (success connected, warning pulse in flight, muted
 	// offline, destructive failed).
-	const syncDisplay = $derived.by(() => {
-		if (!syncStatus) return undefined;
-		switch (syncStatus.state) {
-			case 'idle':
-				return {
-					label: 'Synced',
-					dot: 'bg-success',
-					tooltip: 'Synced',
-				};
-			case 'syncing':
-				return {
-					label: 'Syncing…',
-					dot: 'bg-warning animate-pulse',
-					tooltip: 'Syncing…',
-				};
-			case 'offline':
-				return {
-					label: 'Offline',
-					dot: 'bg-muted-foreground',
-					tooltip: 'Offline. Sync will retry automatically',
-				};
-			case 'authentication-required':
-				return {
-					label: 'Sign in required',
-					dot: 'bg-destructive',
-					tooltip: 'Sign in to resume syncing',
-				};
-			case 'local':
-				return {
-					label: 'Local only',
-					dot: 'bg-muted-foreground',
-					tooltip: 'Stored on this device',
-				};
-		}
-	});
-
 	const tooltip = $derived.by(() => {
 		if (disabledReason) return disabledReason;
-		if (!isSignedIn)
-			return syncDisplay ? 'Sign in to sync across devices' : 'Sign in';
-		return syncDisplay ? `Account · ${syncDisplay.tooltip}` : 'Account';
+		if (!isSignedIn) return 'Sign in';
+		return 'Account';
 	});
-	// The dot is presence for sync: it appears only when a signed-in account
-	// has a sync surface attached. Signed out renders a dimmed glyph instead
-	// of a nudge dot; local-only is a valid resting state, not a notification.
+	// The dot is presence for work in flight, and nothing else now.
+	//
+	// It used to be presence for SYNC, reading a status this popover was handed.
+	// That status was the superseded stack's, and the store's transport reports a
+	// different thing entirely (connected, attempts, why it last reconnected), so
+	// this is not a port waiting to be finished: it is a surface to design once
+	// somebody decides what a person should be told about a transport that
+	// reconnects on its own.
 	const triggerDot = $derived.by(() => {
 		if (!isSignedIn) return undefined;
 		if (signOut.isPending) return 'bg-warning animate-pulse';
-		return syncDisplay?.dot;
+		return undefined;
 	});
 
 	function openInstanceModal() {
@@ -271,21 +227,25 @@
 <Popover.Root bind:open={popoverOpen}>
 	<Popover.Trigger>
 		{#snippet child({ props })}
-			<Button {...props} variant="ghost" size="icon-sm" {tooltip}>
-				<!-- Identity glyph stays fixed; the sync dot sits at its
-				     bottom-right like a presence badge (top-right would read
-				     as a notification). -->
-				<span class="relative">
-					<CircleUser
-						class="size-4 {isSignedIn ? '' : 'text-muted-foreground'}"
-					/>
-					{#if triggerDot}
-						<span
-							class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full {triggerDot}"
-						></span>
-					{/if}
-				</span>
-			</Button>
+			{#if trigger}
+				{@render trigger({ props })}
+			{:else}
+				<Button {...props} variant="ghost" size="icon-sm" {tooltip}>
+					<!-- Identity glyph stays fixed; the sync dot sits at its
+					     bottom-right like a presence badge (top-right would read
+					     as a notification). -->
+					<span class="relative">
+						<CircleUser
+							class="size-4 {isSignedIn ? '' : 'text-muted-foreground'}"
+						/>
+						{#if triggerDot}
+							<span
+								class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full {triggerDot}"
+							></span>
+						{/if}
+					</span>
+				</Button>
+			{/if}
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content
@@ -317,16 +277,6 @@
 				{#if disabledReason}
 					<p class="text-xs text-muted-foreground">{disabledReason}</p>
 				{/if}
-				{#if dataSync && syncDisplay}
-					<!-- Same dot as the trigger, beside its meaning: this line is
-					     the legend for the trigger's presence badge. -->
-					<div
-						class="border-t pt-3 flex items-center gap-1.5 text-xs text-muted-foreground"
-					>
-						<span class="size-2 shrink-0 rounded-full {syncDisplay.dot}"></span>
-						<span>Sync: {syncDisplay.label}</span>
-					</div>
-				{/if}
 				<div class="border-t pt-3 flex gap-2">
 					{#if selfHostHost}
 						<Button
@@ -354,9 +304,9 @@
 				{#if onForgetDevice}
 					<div class="border-t pt-3">
 						<Button
-							variant="ghost"
+							variant="ghost-destructive"
 							size="sm"
-							class="w-full justify-start text-destructive hover:text-destructive"
+							class="w-full justify-start"
 							onclick={forgetDevice}
 							disabled={forgettingDevice || accountLocked}
 						>
@@ -372,10 +322,11 @@
 			</div>
 		{:else}
 			<div class="p-4">
-				<SignInPanel
-					{auth}
-					{syncNoun}
-					{disabledReason}
+					<SignInPanel
+						{auth}
+						{syncNoun}
+						isSelfHosted={selfHosted}
+						{disabledReason}
 					onConfigure={openInstanceModal}
 				/>
 			</div>

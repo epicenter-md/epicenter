@@ -36,13 +36,13 @@ A `/goal` that invokes this skill should be 5-10 lines. The skill carries the ri
 ### Signal-based pass
 
 ```
-/goal Run a collapse pass on the workspace runtime.
+/goal Run a collapse pass on the store runtime.
 
   Load skill: collapse-pass.
-  Scope: packages/workspace, packages/svelte-utils
+  Scope: packages/data, packages/svelte
   Stop condition: three consecutive no-finding files
   Citation: optional
-  Starting target: packages/workspace
+  Starting target: packages/data
 
   Begin.
 ```
@@ -50,13 +50,13 @@ A `/goal` that invokes this skill should be 5-10 lines. The skill carries the ri
 ### Exhaustive pass
 
 ```
-/goal Run a collapse pass on the published CLI surface.
+/goal Run a collapse pass on the hosted API surface.
 
   Load skill: collapse-pass.
-  Scope: packages/cli, apps/api
+  Scope: packages/server, apps/api
   Stop condition: queue empty
   Citation: optional
-  Starting target: packages/cli
+  Starting target: packages/server
 
   Begin.
 ```

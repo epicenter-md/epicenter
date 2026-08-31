@@ -39,7 +39,7 @@
 
 {#if applications !== null}
 	{#await applications}
-		<Loading class="h-full" label="Loading applications" />
+		<Loading class="h-full" label="Loading apps" />
 	{:then list}
 		<div class="grid gap-3 p-3">
 			{#if launcher.failure}
@@ -48,7 +48,7 @@
 					<Alert.Description>{launcher.failure}</Alert.Description>
 				</Alert.Root>
 			{/if}
-			<Item.Group class="gap-1.5" aria-label="Applications">
+			<Item.Group class="gap-1.5" aria-label="Apps">
 				{#each list as application (application.id)}
 					<Item.Button
 						variant="outline"
@@ -64,7 +64,7 @@
 		</div>
 	{:catch error}
 		<Alert.Root variant="destructive" class="m-3 w-auto">
-			<Alert.Title>Could not load applications</Alert.Title>
+			<Alert.Title>Could not load apps</Alert.Title>
 			<Alert.Description>
 				{error instanceof Error ? error.message : String(error)}
 			</Alert.Description>
@@ -73,10 +73,10 @@
 {:else}
 	<Empty.Root class="h-full border-0">
 		<Empty.Header>
-			<Empty.Title>Applications open on the desktop</Empty.Title>
+			<Empty.Title>Apps open on the desktop</Empty.Title>
 			<Empty.Description>
-				This Home is showing the session from a browser. Applications open in
-				their own windows on the machine running Epicenter.
+				This Home is showing the session from a browser. Apps open in their own
+				windows on the machine running Epicenter.
 			</Empty.Description>
 		</Empty.Header>
 	</Empty.Root>

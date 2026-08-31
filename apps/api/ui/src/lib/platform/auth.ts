@@ -1,4 +1,4 @@
-import { createSameOriginCookieAuth } from '@epicenter/svelte/auth';
+import { createSameOriginCookieAuth } from '@epicenter/auth/svelte';
 
 // The dashboard is served by the API at the same origin (api.epicenter.so/dashboard),
 // so it authenticates with the first-party Better Auth session cookie rather than

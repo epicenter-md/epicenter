@@ -1,14 +1,14 @@
 {
 	"name": "@epicenter/auth",
 	"version": "0.1.1",
+	"private": true,
 	"type": "module",
 	"description": "Framework-agnostic auth core for Epicenter.",
 	"exports": {
 		".": "./src/index.ts",
 		"./desktop": "./src/desktop-broker-auth.ts",
-		"./node": "./src/node.ts",
 		"./oauth-launchers": "./src/oauth-launchers/index.ts",
-		"./oauth-launchers/tauri": "./src/oauth-launchers/tauri.ts"
+		"./svelte": "./src/svelte/auth.svelte.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
@@ -16,36 +16,25 @@
 	},
 	"dependencies": {
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/identity": "workspace:*",
+		"@epicenter/principal": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
-		"env-paths": "^3.0.0",
 		"oauth4webapi": "catalog:",
 		"wellcrafted": "catalog:"
 	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:",
+		"svelte": "catalog:"
+	},
+	"license": "AGPL-3.0-or-later",
 	"peerDependencies": {
-		"@tauri-apps/api": "^2",
-		"@tauri-apps/plugin-deep-link": "^2",
-		"@tauri-apps/plugin-opener": "^2"
+		"svelte": "^5"
 	},
 	"peerDependenciesMeta": {
-		"@tauri-apps/api": {
-			"optional": true
-		},
-		"@tauri-apps/plugin-deep-link": {
-			"optional": true
-		},
-		"@tauri-apps/plugin-opener": {
+		"svelte": {
 			"optional": true
 		}
-	},
-	"devDependencies": {
-		"@tauri-apps/api": "catalog:",
-		"@tauri-apps/plugin-deep-link": "catalog:",
-		"@tauri-apps/plugin-opener": "catalog:",
-		"@types/bun": "catalog:",
-		"typescript": "catalog:"
-	},
-	"license": "AGPL-3.0-or-later"
+	}
 }

@@ -1,6 +1,6 @@
 ---
 name: typescript
-description: 'TypeScript project conventions: derived types, type placement, acronym casing, imports, generics, factories, and runtime schema patterns. Use when editing `.ts` files, defining exported types, reviewing type names, or organizing type tests.'
+description: Apply project conventions for TypeScript types, imports, generics, factories, and runtime schemas. Use when editing `.ts` files or reviewing TypeScript design and tests.
 metadata:
   author: epicenter
   version: '2.0'

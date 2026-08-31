@@ -1,27 +1,63 @@
 <script lang="ts">
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
+	import type { SyncConnectionStatus } from '@epicenter/data/sync';
 	import * as Collapsible from '@epicenter/ui/collapsible';
+	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { auth } from '#platform/auth';
 	import { instanceSetting } from '#platform/instance';
-	import { getHoneycrispApp } from '$lib/context.js';
-	import { runHoneycrispMutation } from '$lib/mutation.js';
+	import { getHoneycrisp } from '$lib/app.svelte.js';
+	import { navigation } from '$lib/navigation.svelte.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
+	import StoreSwitcher from './StoreSwitcher.svelte';
 
-	const honeycrisp = getHoneycrispApp();
+	let {
+		syncStatus,
+		storeLabel,
+		otherStoreLabel,
+		otherStoreHref,
+	}: {
+		syncStatus?: () => SyncConnectionStatus | undefined;
+		storeLabel: 'On this device' | 'Across your devices';
+		otherStoreLabel: 'On this device' | 'Across your devices';
+		otherStoreHref: '/device' | '/account';
+	} = $props();
+
+	const honeycrisp = getHoneycrisp();
+	let sync = $state.raw<SyncConnectionStatus | undefined>(undefined);
+
+	$effect(() => {
+		if (syncStatus === undefined) {
+			sync = undefined;
+			return;
+		}
+		sync = syncStatus();
+		const timer = setInterval(() => {
+			sync = syncStatus();
+		}, 1_000);
+		return () => clearInterval(timer);
+	});
+
 </script>
 
 <Sidebar.Root>
 	<Sidebar.Header>
 		<div class="flex items-center justify-between px-2 py-1">
-			<span class="text-sm font-semibold">Honeycrisp</span>
+			<div class="flex min-w-0 items-center gap-1">
+				<span class="text-sm font-semibold">Honeycrisp</span>
+				<StoreSwitcher
+					label={storeLabel}
+					otherLabel={otherStoreLabel}
+					otherHref={otherStoreHref}
+				/>
+			</div>
 			<div class="flex items-center gap-1">
+				<LightSwitch variant="ghost" />
 				<AccountPopover
 					{auth}
-					dataSync={honeycrisp}
 					syncNoun="notes"
 					instanceConnect={{ appName: 'Honeycrisp', setting: instanceSetting }}
 				/>
@@ -31,8 +67,8 @@
 		<div class="px-2 pb-1">
 			<Sidebar.Input
 				placeholder="Search notes…"
-				value={honeycrisp.state.view.searchQuery}
-				oninput={(e) => honeycrisp.state.view.setSearchQuery(e.currentTarget.value)}
+				value={navigation.query}
+				oninput={(e) => navigation.setQuery(e.currentTarget.value)}
 			/>
 		</div>
 	</Sidebar.Header>
@@ -43,26 +79,26 @@
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={honeycrisp.state.view.selectedFolderId === null && !honeycrisp.state.view.isRecentlyDeletedView}
-							onclick={() => honeycrisp.state.view.selectFolder(null)}
+							isActive={navigation.folderId === null && !navigation.isDeletedView}
+							onclick={() => navigation.selectFolder(null)}
 						>
 							<FileTextIcon class="size-4" />
 							<span>All Notes</span>
 							<span class="ml-auto text-xs text-muted-foreground">
-								{honeycrisp.state.notes.all.length}
+								{honeycrisp.notes.all.length}
 							</span>
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={honeycrisp.state.view.isRecentlyDeletedView && honeycrisp.state.view.selectedFolderId === null}
-							onclick={() => honeycrisp.state.view.selectRecentlyDeleted()}
+							isActive={navigation.isDeletedView && navigation.folderId === null}
+							onclick={() => navigation.selectRecentlyDeleted()}
 						>
 							<TrashIcon class="size-4" />
 							<span>Recently Deleted</span>
-							{#if honeycrisp.state.notes.deleted.length > 0}
+							{#if honeycrisp.notes.deleted.length > 0}
 								<span class="ml-auto text-xs text-muted-foreground">
-									{honeycrisp.state.notes.deleted.length}
+									{honeycrisp.notes.deleted.length}
 								</span>
 							{/if}
 						</Sidebar.MenuButton>
@@ -79,10 +115,7 @@
 				<Sidebar.GroupAction
 					title="New Folder"
 					onclick={() =>
-						runHoneycrispMutation(
-							honeycrisp.state.folders.create(),
-							'Could not create folder',
-						)}
+						honeycrisp.folders.create()}
 				>
 					<PlusIcon />
 					<span class="sr-only">New Folder</span>
@@ -90,7 +123,7 @@
 				<Collapsible.Content>
 					<Sidebar.GroupContent>
 						<Sidebar.Menu>
-							{#each honeycrisp.state.folders.all as folder (folder.id)}
+							{#each honeycrisp.folders.all as folder (folder.id)}
 								<FolderMenuItem {folder} />
 							{:else}
 								<Sidebar.MenuItem>
@@ -105,6 +138,20 @@
 			</Sidebar.Group>
 		</Collapsible.Root>
 	</Sidebar.Content>
+
+	<Sidebar.Footer>
+		{#if sync}
+			<div
+				class="text-muted-foreground px-2 pb-1 text-[11px] tabular-nums"
+				title="Whether this device is connected and caught up with your other devices."
+			>
+				{sync.connected ? 'Synced' : 'Offline'} · {sync.cursor} changes received
+				{#if !sync.connected && sync.attempts > 0}
+					· {sync.attempts} failed {sync.attempts === 1 ? 'retry' : 'retries'}
+				{/if}
+			</div>
+		{/if}
+	</Sidebar.Footer>
 
 	<Sidebar.Rail />
 </Sidebar.Root>

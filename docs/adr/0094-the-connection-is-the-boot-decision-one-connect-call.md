@@ -1,7 +1,8 @@
 # 0094. The connection is the boot decision: one connect call
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-02
+- **Superseded by:** [ADR-0232](0232-a-page-lifetime-is-one-auth-generation-and-a-permanently-denied-sync-stops-for-good.md): the `model.connect(toConnection(auth, nodeId))` mechanism died with the workspace stack (ADR-0227), and `toConnection` is deleted. The principle, that the boot-time auth snapshot is the one connection decision, carries forward there in store terms.
 
 ## Context
 

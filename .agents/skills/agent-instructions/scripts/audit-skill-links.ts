@@ -22,7 +22,7 @@
  *     a filename extension. That skips the remaining placeholders.
  *   - `http:`, `https:`, `mailto:`, and bare `#anchor` targets are skipped.
  *   - A relative target resolves against the linking file's directory, so
- *     `../workspace-api/references/x.md` resolves the same way a reader's
+ *     `../svelte/references/x.md` resolves the same way a reader's
  *     editor resolves it.
  *   - A leading `/` resolves against the repo root.
  *

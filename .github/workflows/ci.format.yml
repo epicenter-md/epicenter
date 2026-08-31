@@ -1,3 +1,19 @@
+# The authoritative merge gate. `bun run check` is the same gate locally, so a
+# green local run predicts a green PR; this job exists to run it on hardware
+# nobody can forget to use.
+#
+# The workflow invokes that script directly, so the local and hosted gates
+# cannot drift.
+#
+# Deliberately NOT in this gate:
+#   - Formatting. ci.autofix.yml runs `bun run format` and pushes the fix, so
+#     failing here would only tell a contributor what a bot is already doing.
+#     `bun run check` still runs `format:check` locally, before the push.
+#   - `bun run check:doc-hygiene`. Its ADR-staleness rule is time-based, so a
+#     PR that touched nothing can go red on a calendar day. It stays an explicit
+#     review command (see 91c4a87c1b), not a merge blocker.
+#   - Runtime parity and Gmail drift. Those need Docker, Postgres, S3, or a live
+#     Google endpoint; they keep their own workflows on their own triggers.
 name: Code quality
 
 on:
@@ -29,29 +45,5 @@ jobs:
           bun-version-file: 'package.json'
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      # Errors only, as GitHub annotations: the warning debt stays visible in
-      # local `bun run lint:check`, not in every CI log. Exit semantics are
-      # unchanged (warnings never fail either command).
-      - name: Lint check
-        run: bun run lint:ci
-      - name: Type check
-        run: bun run typecheck
-      # Rejects backtick-wrapped repo-rooted file paths in living docs that are
-      # not tracked. Excludes specs, articles, skills, agent prompts, and
-      # ignore-file-marked docs. See scripts/check-doc-paths.ts.
-      - name: Check doc file references
-        run: bun run check:doc-paths
-      # Rejects floating specs (latest, *, dist-tags) in the bun catalog. A
-      # catalog entry IS the version pin; a floating one reintroduces lockfile
-      # drift that only surfaces as a frozen-install failure here, days later,
-      # on whoever opens the next PR. See scripts/check-catalog-pins.ts.
-      - name: Check catalog pins
-        run: bun run check:catalog-pins
-      # The Biome plugin at scripts/biome/c-json-errors.grit rejects ad-hoc
-      # c.json({ ... }, 4xx/5xx) error literals as part of `bun run lint:ci`
-      # above; no separate step is needed.
-      # Rejects wire URL path literals hardcoded outside
-      # packages/constants/src/{api,oauth}-routes.ts. See
-      # scripts/check-api-paths.ts for the rule and its exclusions.
-      - name: Reject hardcoded API path literals
-        run: bun run check:api-paths
+      - name: Canonical gate
+        run: bun run check

@@ -1,5 +1,4 @@
 import type { ParsedArgs } from '../cli.ts';
-import { recordCompany } from '../companies.ts';
 import { loadConfig } from '../config.ts';
 import { runAuthorizationFlow } from '../oauth.ts';
 import { createFileTokenStore } from '../token-store.ts';
@@ -12,10 +11,7 @@ import { formatRelative } from './context.ts';
 export async function runAuth(args: ParsedArgs): Promise<number> {
 	// No `realm` override: `auth` connects whatever company the browser logs into
 	// and takes the realmId from the OAuth callback, so `--realm` does not apply.
-	const config = loadConfig({
-		dataDir: args.dataDir,
-		environment: args.environment,
-	});
+	const config = loadConfig({ environment: args.environment });
 
 	// Credentials are resolved lazily inside the flow by their environment-qualified
 	// names (ADR-0108); a missing keyset returns a MissingCredentials error naming
@@ -35,8 +31,10 @@ export async function runAuth(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
+	// The store is the only record that this company is connected: it is keyed by
+	// realmId, so writing the token is what makes `sync` and `status` find it
+	// without `--realm` (ADR-0201).
 	await store.set(token);
-	recordCompany(config.dataDir, token.realmId);
 
 	const now = Date.now();
 	console.log(`Connected company ${token.realmId} (${config.environment}).`);

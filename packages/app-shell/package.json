@@ -29,15 +29,13 @@
 		"@lucide/svelte": "catalog:",
 		"@standard-schema/spec": "catalog:",
 		"@tanstack/svelte-query": "catalog:",
+		"@y/y": "14.0.0-rc.24",
 		"arktype": "catalog:",
-		"wellcrafted": "catalog:",
-		"yjs": "catalog:"
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@epicenter/field": "workspace:*",
-		"@epicenter/identity": "workspace:*",
 		"@types/bun": "catalog:",
-		"fake-indexeddb": "^6.2.5",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
 		"typescript": "catalog:"

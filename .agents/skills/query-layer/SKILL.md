@@ -51,6 +51,9 @@ The query layer is the reactive bridge between UI components and the service lay
 
 Use `resultQueryOptions` and `resultMutationOptions` at one hook call site when a Result-returning function needs to enter TanStack's data/error channels and no imperative API or shared query identity is needed.
 
+The adapters unwrap internally (`Ok.data` is returned, `Err.error` is thrown).
+Pass the Result-returning function; do not `unwrap` first.
+
 Use `defineQuery` and `defineMutation` in shared `$lib/queries` modules.
 
 Queries expose `.options`, `.fetch()`, and `.ensure()`. They are not callable.

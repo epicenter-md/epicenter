@@ -1,92 +1,86 @@
-import type { Epicenter } from '@epicenter/data';
-import { openBrowserEpicenter } from '@epicenter/data/browser';
-import { type SkillsData, skillsLens } from '@epicenter/skills';
+/**
+ * One page lifetime's Skills runtime: the opened document and the state bound
+ * to it. The root owns it, provides it through context, and disposes it.
+ *
+ * Skills is device-only, and that is the whole composition (ADR-0233). There is
+ * no auth client in this build and therefore no account replica: a skill
+ * library lives on the device that edits it, and there is exactly one ready
+ * shape, `{ data }`. If Skills ever signs in, this is where the second document
+ * appears, beside the first rather than instead of it.
+ */
+
+import type { DataOf } from '@epicenter/data';
+import { readArtifact } from '@epicenter/data/artifact';
+import {
+	importGeneration,
+	type LocalStore,
+	listLocalGenerations,
+	openDatabase,
+} from '@epicenter/data/browser';
+import { skillsDefinition } from '@epicenter/skills';
 import { createSkillsState } from './state/skills-state.svelte.js';
 
-export type SkillsDependencies = {
-	openEpicenter(): Promise<Epicenter>;
-	reportBackgroundError(cause: unknown): void;
-};
-
-export type SkillsApplication = SkillsData & {
-	state: ReturnType<typeof createSkillsState>;
+export type SkillsRuntime = {
+	/** The device-owned document, open for the whole page lifetime. */
+	readonly data: DataOf<typeof skillsDefinition, LocalStore>;
+	readonly state: ReturnType<typeof createSkillsState>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
-/** Inert browser dependencies. Storage opens only when the root calls open. */
-export const skillsBrowser: Pick<SkillsDependencies, 'openEpicenter'> = {
-	openEpicenter: openBrowserEpicenter,
-};
-
-/** Open one fully acquired and hydrated standalone Skills application. */
-export async function openSkillsApplication(
-	{ openEpicenter, reportBackgroundError }: SkillsDependencies,
-	{ signal }: { signal?: AbortSignal } = {},
-): Promise<SkillsApplication> {
-	let runtime: Epicenter | undefined;
-	let state: ReturnType<typeof createSkillsState> | undefined;
-	let released = false;
-	let releasePromise: Promise<void> | undefined;
-	const release = (): Promise<void> => {
-		releasePromise ??= (async () => {
-			released = true;
-			signal?.removeEventListener('abort', onAbort);
-			const failures: unknown[] = [];
-			try {
-				state?.[Symbol.dispose]();
-			} catch (cause) {
-				failures.push(cause);
-			}
-			try {
-				await runtime?.[Symbol.asyncDispose]();
-			} catch (cause) {
-				failures.push(cause);
-			}
-			if (failures.length > 0) {
-				throw new AggregateError(failures, 'Skills application cleanup failed');
-			}
-		})();
-		return releasePromise;
-	};
-	const aborted = Promise.withResolvers<never>();
-	const onAbort = () => {
-		aborted.reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
-		void release().catch(reportBackgroundError);
-	};
-	signal?.addEventListener('abort', onAbort, { once: true });
-	const untilAbort = <TValue>(work: Promise<TValue>): Promise<TValue> =>
-		signal ? Promise.race([work, aborted.promise]) : work;
+/**
+ * Open one Skills generation, hydrated and ready to read synchronously.
+ *
+ * The only asynchronous thing in this application. Opening a store is real
+ * I/O: an IndexedDB checkpoint, a WASM compile, and the replay of a durable
+ * log. Everything after it is a property access on a document already in
+ * memory, which is why nothing below this line returns a promise.
+ */
+export async function openSkillsRuntime({
+	signal,
+}: {
+	signal?: AbortSignal;
+} = {}): Promise<SkillsRuntime> {
+	signal?.throwIfAborted();
+	const opened = await openDatabase(skillsDefinition, {
+		generation: await resolveLocalGeneration(),
+	});
+	if (opened.error !== null) throw opened.error;
+	const data = opened.data;
 
 	try {
 		signal?.throwIfAborted();
-		const opened = await untilAbort(
-			openEpicenter().then(async (opened) => {
-				runtime = opened;
-				if (released) await opened[Symbol.asyncDispose]();
-				return opened;
-			}),
-		);
-		signal?.throwIfAborted();
-		const skills = opened.bind(skillsLens);
-		state = createSkillsState({
-			skills,
-		});
-		await untilAbort(state.whenReady);
-		signal?.throwIfAborted();
+		const state = createSkillsState({ data });
+		let disposed = false;
 		return Object.freeze({
-			...skills,
+			data,
 			state,
-			[Symbol.asyncDispose]: release,
+			async [Symbol.asyncDispose]() {
+				if (disposed) return;
+				disposed = true;
+				state[Symbol.dispose]();
+				await data[Symbol.asyncDispose]();
+			},
 		});
 	} catch (cause) {
-		try {
-			await release();
-		} catch (releaseCause) {
-			throw new AggregateError(
-				[cause, releaseCause],
-				'Skills application acquisition and cleanup failed',
-			);
-		}
+		await data[Symbol.asyncDispose]().catch(() => undefined);
 		throw cause;
 	}
+}
+
+/**
+ * The generation this device opens, creating one if it holds none.
+ *
+ * A generation is an address (ADR-0292) and importing is the only way one comes
+ * into being (ADR-0293), so "a new local database here" is an import of an
+ * empty folder.
+ */
+async function resolveLocalGeneration(): Promise<number> {
+	const held = await listLocalGenerations(skillsDefinition.id);
+	const newest = held.at(-1);
+	if (newest !== undefined) return newest;
+	const state = readArtifact(new Map(), skillsDefinition);
+	if (state.error !== null) throw state.error;
+	const created = await importGeneration(skillsDefinition, state.data);
+	if (created.error !== null) throw created.error;
+	return created.data.generation;
 }

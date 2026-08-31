@@ -6,9 +6,9 @@
  */
 
 import { expect, test } from 'bun:test';
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { tempDir } from './helpers.ts';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { tempRoot } from './helpers.ts';
 import { startMockQbServer } from './mock-qb-server.ts';
 
 const BIN = join(import.meta.dir, '../src/bin.ts');
@@ -16,6 +16,7 @@ const BIN = join(import.meta.dir, '../src/bin.ts');
 /** Seed a token-file entry good for an hour (the mock accepts any bearer). */
 function seedTokenFile(file: string, realmId: string): void {
 	const now = Date.now();
+	mkdirSync(dirname(file), { recursive: true });
 	writeFileSync(
 		file,
 		JSON.stringify({
@@ -48,11 +49,11 @@ async function runCli(args: string[], env: Record<string, string>) {
 
 test('sync --full then query: grill the mirror the pipeline produced', async () => {
 	const server = startMockQbServer();
-	const tmp = tempDir();
-	const tokenFile = join(tmp.dir, 'credentials.json');
+	const tmp = tempRoot();
+	const tokenFile = join(tmp.appDir, 'credentials.json');
 	seedTokenFile(tokenFile, server.realmId);
 	const env = {
-		LOCAL_BOOKS_DIR: tmp.dir,
+		EPICENTER_DATA_DIR: tmp.root,
 		LOCAL_BOOKS_TOKEN_FILE: tokenFile,
 		LOCAL_BOOKS_QB_API_BASE: server.apiBase,
 		LOCAL_BOOKS_QB_TOKEN_URL: server.tokenUrl,

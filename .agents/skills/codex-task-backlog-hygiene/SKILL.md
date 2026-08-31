@@ -1,6 +1,6 @@
 ---
 name: codex-task-backlog-hygiene
-description: Audit Codex desktop tasks as ownership, preserve explicitly desired but unowned outcomes in a repository-local BACKLOG.md, and archive completed or superseded Codex chats without losing their history. Use when active Codex tasks have accumulated, the user asks which Codex tasks can be archived, completed Codex or Claude delegations make task ownership unclear, or a project needs a repeatable Codex task-closing pass. Do not use for generic issue trackers, repository TODO triage, or project-management backlogs without Codex task cleanup.
+description: Audit Codex tasks and preserve unowned outcomes in `BACKLOG.md` while closing completed or superseded chats. Use when Codex task ownership or archive state needs cleanup, not generic issue-tracker or project-backlog work.
 ---
 
 # Codex Task Backlog Hygiene

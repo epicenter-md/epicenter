@@ -27,6 +27,7 @@
 		"./app.css": "./src/app.css"
 	},
 	"scripts": {
+		"test": "bun test",
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {
@@ -65,5 +66,5 @@
 		"vaul-svelte": "^1.0.0-next.7",
 		"wellcrafted": "catalog:"
 	},
-	"license": "MIT"
+	"license": "AGPL-3.0-or-later"
 }

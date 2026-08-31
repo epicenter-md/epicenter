@@ -10,8 +10,8 @@ Load this when tuning description routing, comparing skill versions, diagnosing 
 - [Baseline](#baseline)
 - [Assertions](#assertions)
 - [Run The Harness](#run-the-harness)
+- [Routing Surfaces](#routing-surfaces)
 - [Output Quality Eval](#output-quality-eval)
-- [Skill Content Checklist](#skill-content-checklist)
 - [Script Requirements](#script-requirements)
 - [Failure Modes](#failure-modes)
 - [Concrete Examples](#concrete-examples)
@@ -77,13 +77,19 @@ Avoid brittle phrase matching. Assertions should check outcomes, not exact wordi
 ## Run The Harness
 
 `scripts/run-trigger-eval.ts` runs a stored corpus of should-trigger and
-near-miss prompts. The corpus lives at `evals/routing.json` and currently covers
-the two boundaries where a wrong pick costs the most: the review/simplification
-cluster, where several skills legitimately overlap, and the
-consultation/delegation/handoff cluster, where the wrong choice burns a whole
-session. Each case carries a prompt, the anchor phrases that prompt contains,
-the skill that should own it (`null` for a near miss), and the skills that must
-not answer.
+near-miss prompts. Each case carries a prompt, the anchor phrases that prompt
+contains, the skill that should own it (`null` for a near miss), and the skills
+that must not answer. Two corpora ship:
+
+```txt
+evals/routing.json         the default. Covers the two boundaries where a wrong
+                           pick costs the most: the review/simplification
+                           cluster, where several skills legitimately overlap,
+                           and the Claude enlistment/handoff cluster,
+                           where the wrong choice burns a whole session.
+evals/always-on-gate.json  the always-on surface itself, not any one skill.
+                           Pass it with --corpus. See Routing Surfaces below.
+```
 
 ```bash
 bun run agent-instructions/scripts/run-trigger-eval.ts
@@ -120,12 +126,11 @@ silent skip.
 
 `--live` drives the Claude CLI, so it can only measure Claude-routed cases. A
 case carrying `"router": "codex"` is reported as `NOT MEASURED` and left out of
-the pass count. `consult-claude` and `delegate-claude` are written for a Codex
-session in their own descriptions, so a Claude probe answering them picks a
-neighbour every time; that is a category error in the measurement, not a defect
-in the description. Measuring those needs a Codex-side probe that does not exist
-yet. Do not edit a description on the strength of a probe that could not have
-routed to it.
+the pass count. `consult-claude` is written for a Codex session, so a Claude
+probe answering it picks a neighbour every time; that is a category error in
+the measurement, not a defect in the description. Measuring it needs a
+Codex-side probe that does not exist yet. Do not edit a description on the
+strength of a probe that could not have routed to it.
 
 Routing varies between runs, so re-run rather than trusting one pass, as
 [Prompt Set](#prompt-set) says. `--runs <n>` does that per case and reports a
@@ -138,15 +143,71 @@ bun run agent-instructions/scripts/run-trigger-eval.ts --live \
   --model claude-opus-5 --effort high --out run-opus5-high.json
 ```
 
-The result file records the model, effort, runs per case, whether the budget was
-exhausted, and which cases went unmeasured, so a stale or partial file cannot be
-mistaken for a clean one. Other flags: `--case <id>` to run one case, `--strict`
-to turn the offline pass into a gate, `--json` for machine reading.
+The result file records the model, the effort, the runs per case, whether the
+budget was exhausted, which cases went unmeasured, and a digest of the always-on
+instructions, so a stale or partial file cannot be mistaken for a clean one.
+`--verify-runs <dir>` reads that digest back and reports whether a stored run
+still describes the working tree, which is the question to settle before quoting
+any rate from `evals/runs/`. Other flags: `--case <id>` to run one case,
+`--strict` to turn the offline pass into a gate, `--json` for machine reading.
 
 Extend the corpus when a routing bug shows up in real use. A case is only valid
 when each anchor appears verbatim in its prompt and every named skill exists;
 `bun test scripts/run-trigger-eval.test.ts` enforces both, so a renamed skill
 cannot leave a case silently measuring nothing.
+
+## Routing Surfaces
+
+Descriptions are not the only thing that routes. In the Claude Code probe used
+here, `AGENTS.md` is present before a description is weighed and it names skills
+outright, so it claims phrases too. A probe obeyed it: an `AGENTS.md` sentence
+sending overflow reports to `documentation` beat `styling`'s own description 3
+times out of 3. That is why the run record carries an `instructions` digest next
+to `model` and `effort`. Two result files can disagree with no description edit
+between them.
+
+Measure the gate by running one corpus against two worktrees that differ only in
+`AGENTS.md`, never by editing the file under a running probe: each probe re-reads
+it from disk at spawn. `evals/always-on-gate.json` is the corpus for the gate
+itself, split into phrases a description already owns and phrases none does.
+
+The historical A/B over that corpus, 5 runs per case, reported one asymmetry:
+
+```txt
+no description owns the phrase  -> the gate decides the route
+a description owns the phrase   -> the gate changes nothing
+```
+
+Deleting the gate moved a phrase nothing claimed by 100 points ("anything before
+I stage this" went from `post-implementation-review` 5/5 to `standalone-commits`
+5/5) and moved a phrase `greenfield-clean-breaks` owns by 0 points (5/5 either
+way). These stored records are stale and do not preserve complete arm snapshots,
+so they are context for the hypothesis rather than independently replayable
+proof. Repeat the comparison in isolated worktrees before relying on a rate.
+
+A third arm then shortened the gate instead of deleting it, dropping the
+owned-phrase triggers and three sentences naming skills that own their own
+phrases. The owned phrases did not move, as the asymmetry predicts. The orphan
+phrases did: "clean up" fell from 4/5 to 2/5 and "challenge" from 1/5 to 0/5,
+even though the shortened gate still named "clean up" outright.
+
+So gate influence is not the sum of its clauses. A shorter paragraph pulled less
+toward the skill it still named, which makes **deleting an inert clause a
+candidate rather than a free deletion**. That arm changed two things at once, so
+which half cost the strength is still unknown.
+
+What this supports when writing always-on instructions:
+
+- A gate clause naming a phrase some description already claims does not change
+  that phrase's route. `audit-routing-collisions.ts` reports it as a second
+  claimant, which makes it a deletion candidate, not a proven-free deletion.
+- A gate clause is the only thing that routes a broad intent no description
+  claims. Those are the clauses that carry the paragraph.
+- Any edit to the gate is a routing change. Measure it across two worktrees the
+  way a description edit gets measured.
+
+None of this says the gate routes *well*. It shows the gate causes the route;
+the repository's intent decides whether that route is the right one.
 
 ## Output Quality Eval
 
@@ -170,38 +231,18 @@ Run each case against the right baseline: no skill for a new skill, previous ver
 
 Human feedback still matters. Save concise notes when the output is technically valid but unhelpful, overbroad, or not in the user's voice.
 
-## Skill Content Checklist
-
-Before expanding a draft, confirm the skill states:
-
-- Job to be done.
-- Required inputs or prerequisites.
-- Ordered workflow.
-- Output format or final artifact.
-- Guardrails and forbidden actions.
-- Final checks.
-
-Classify the skill as a process, tool workflow, convention, or domain pattern. If one skill needs multiple classifications with different trigger situations, consider splitting it.
-
 ## Script Requirements
 
-Use scripts when repeated code execution is more reliable than asking the agent to recreate the logic each time. Good candidates include validators, parsers, format converters, scaffolding, or output summarizers.
+`SKILL.md` states the shape a script takes here. Two things it does not carry:
 
-Scripts should be:
+- A script that changes files or external state is idempotent or dry-run
+  capable, because an agent will re-run it after a partial failure.
+- Bun inline dependency auto-install is not reliable inside this monorepo. An
+  existing parent `node_modules` changes whether inline imports auto-install, so
+  state the prerequisite or take an explicit workspace dependency.
 
-- Referenced with paths relative to the skill directory.
-- Listed in `SKILL.md` before the agent needs them.
-- Self-contained when practical.
-- Non-interactive, with input through flags, environment variables, stdin, or files.
-- Equipped with concise `--help` output.
-- Structured on stdout, with diagnostics on stderr.
-- Clear about exit codes.
-- Idempotent or dry-run capable when changing files or external state.
-- Bounded in output, with full output written to a file when needed.
-
-In this repository, prefer `bun`, `bun run`, and `bun x`. Pin versions when command behavior must be reproducible.
-
-Do not rely blindly on Bun inline dependency auto-install behavior inside this monorepo. Existing parent `node_modules` directories can change whether inline imports auto-install. State prerequisites or use explicit workspace dependencies when needed.
+Prefer `bun`, `bun run`, and `bun x`. Pin versions when command behavior must be
+reproducible.
 
 ## Failure Modes
 
@@ -219,7 +260,7 @@ Do not rely blindly on Bun inline dependency auto-install behavior inside this m
 Should trigger `agent-instructions`:
 
 - "Write a skill for reviewing Svelte accessibility in this repo."
-- "Improve the workspace-api skill description so it triggers less often."
+- "Improve the yjs skill description so it triggers less often."
 - "Should this AGENTS.md rule become a skill or stay global?"
 
 Should not trigger `agent-instructions`:
@@ -272,17 +313,18 @@ If the agent already handles the task well without the skill, cut the skill or n
 
 ## Iteration Loop
 
-1. Run realistic prompts.
-2. Record failures and wasted steps.
-3. Group repeated patterns.
-4. Revise the description first when routing is wrong.
-5. Revise the core workflow when execution is wrong.
-6. Move detail to `references/` only when it is conditionally useful.
-7. Use scripts for deterministic checks when code can verify better than prose.
-8. Re-run validation prompts.
-9. Keep the version with the best validation behavior, even when it is not the latest draft.
+Three rules decide what an iteration changes:
 
-Do not add exhaustive rules to chase one failed prompt. Generalize only from repeated failures or clear project constraints.
+- Wrong skill loaded: revise the description. Right skill, wrong work: revise
+  the body. Editing the body to fix a routing failure changes nothing.
+- Adding an instruction is a hypothesis about behavior, so run the ablation as
+  well as the addition: take the instruction back out and measure again. The
+  gate arms in [Routing Surfaces](#routing-surfaces) are that ablation, and they
+  are the reason the shortest plausible edit turned out not to be free.
+- Keep the version with the best validation behavior, even when it is not the
+  latest draft. The newest edit is not evidence.
+- Do not add exhaustive rules to chase one failed prompt. Generalize only from
+  repeated failures or a clear project constraint.
 
 ## Security And Portability
 
@@ -297,4 +339,5 @@ Audit imported or copied skills before installing or adapting them:
 - When installing skills across agents, prefer symlink installs so there is one source of truth. Use copy mode only when symlinks are impossible, and verify installed state with `skills list` when installation is part of the task.
 - Prefer Vercel CLI behavior over local validators.
 
-Keep repository skills portable. Do not add `agents/openai.yaml`, local validator scripts, generated OpenAI YAML, decorative assets, or unsupported metadata as part of the standard shape.
+An imported skill often arrives carrying its origin host's extras. `SKILL.md`
+lists which ones to strip and why.

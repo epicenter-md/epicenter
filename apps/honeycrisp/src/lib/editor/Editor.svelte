@@ -8,7 +8,6 @@
 		redo,
 		syncPlugin,
 		undo,
-		ySyncPluginKey,
 		yUndoPlugin,
 	} from '@y/prosemirror';
 	import * as Y from '@y/y';
@@ -40,16 +39,8 @@
 		wrappingInputRule,
 	} from 'prosemirror-inputrules';
 	import { keymap } from 'prosemirror-keymap';
+	import { type MarkType, type NodeType } from 'prosemirror-model';
 	import {
-		type MarkSpec,
-		type MarkType,
-		type NodeSpec,
-		type NodeType,
-		Schema,
-	} from 'prosemirror-model';
-	import { schema as basicSchema } from 'prosemirror-schema-basic';
-	import {
-		addListNodes,
 		liftListItem,
 		sinkListItem,
 		splitListItem,
@@ -58,76 +49,12 @@
 	import { EditorState, Plugin, TextSelection } from 'prosemirror-state';
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
-	import {
-		extractNoteMetadata,
-		type NoteMetadata,
-	} from './extract-metadata.js';
 
-	const taskList = {
-		group: 'block',
-		content: 'taskItem+',
-		parseDOM: [{ tag: 'ul.task-list' }],
-		toDOM: () => ['ul', { class: 'task-list' }, 0],
-	} satisfies NodeSpec;
-
-	const taskItem = {
-		content: 'paragraph block*',
-		attrs: { checked: { default: false } },
-		parseDOM: [
-			{
-				tag: 'li.task-item',
-				getAttrs: (dom) => {
-					if (!(dom instanceof HTMLElement)) return false;
-					return { checked: dom.dataset.checked === 'true' };
-				},
-			},
-		],
-		toDOM: (node) => [
-			'li',
-			{
-				class: 'task-item',
-				'data-checked': node.attrs.checked ? 'true' : 'false',
-			},
-			[
-				'label',
-				{ contenteditable: 'false' },
-				[
-					'input',
-					{
-						type: 'checkbox',
-						checked: node.attrs.checked ? 'checked' : undefined,
-					},
-				],
-			],
-			['div', 0],
-		],
-	} satisfies NodeSpec;
-
-	const underline = {
-		parseDOM: [{ tag: 'u' }, { style: 'text-decoration=underline' }],
-		toDOM: () => ['u', 0],
-	} satisfies MarkSpec;
-
-	const strike = {
-		parseDOM: [
-			{ tag: 's' },
-			{ tag: 'del' },
-			{ tag: 'strike' },
-			{ style: 'text-decoration=line-through' },
-		],
-		toDOM: () => ['s', 0],
-	} satisfies MarkSpec;
-
-	const nodes = addListNodes(
-		basicSchema.spec.nodes.append({ taskList, taskItem }),
-		'paragraph block*',
-		'block',
-	);
-
-	const schema = new Schema({
-		nodes,
-		marks: basicSchema.spec.marks.append({ underline, strike }),
-	});
+	// The same instance the Markdown codec and `derive` read through. This view
+	// used to construct its own copy of the identical spec, which meant a node
+	// added here and not there would render into the artifact as nothing, with
+	// no error and no test able to see it (ADR-0289).
+	import { noteSchema as schema } from './schema.js';
 
 	function markActive(state: EditorState, markType: MarkType): boolean {
 		const { from, $from: resolvedFrom, to, empty } = state.selection;
@@ -220,11 +147,9 @@
 	let {
 		yxmlfragment,
 		focusRequest,
-		onContentChange,
 	}: {
 		yxmlfragment: Y.Type;
 		focusRequest: number;
-		onContentChange: (content: NoteMetadata) => void;
 	} = $props();
 
 	let element: HTMLDivElement | undefined = $state();
@@ -346,16 +271,9 @@
 				const newState = this.state.apply(tr);
 				this.updateState(newState);
 				updateActiveFormats(newState);
-				if (!tr.docChanged) return;
-				// Opening or remotely syncing a document is not a local edit. Skipping
-				// binding-origin changes prevents a mere open from advancing updatedAt;
-				// genuine user transactions, including clearing a note, still persist.
-				const isSyncOrigin =
-					tr.getMeta('y-sync-transaction') ||
-					tr.getMeta(ySyncPluginKey) ||
-					tr.getMeta('y-sync-append');
-				if (isSyncOrigin) return;
-				onContentChange(extractNoteMetadata(newState.doc));
+				// A note's title is not pushed from here: `openBody` hangs that write
+				// on the body's own field signal, coalesced, along with `updatedAt`.
+				// There is no preview to push at all any more. The editor only edits.
 			},
 		});
 		configureYProsemirror({ ytype: yxmlfragment })(
@@ -504,7 +422,7 @@
 	 *
 	 * The text fills the full pane width (left-anchored, no reading-measure cap):
 	 * the writing surface uses the whole resizable pane the way the rest of the
-	 * workspace does, rather than floating a narrow column. Line length is
+	 * database does, rather than floating a narrow column. Line length is
 	 * governed by how wide the user drags the pane.
 	 */
 	:global(.ProseMirror) {

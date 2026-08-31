@@ -1,16 +1,16 @@
 # `as*` Helpers Are the Third Part of the Branded-ID Pattern
 
-When a branded ID flows through an arktype schema and into trusted internal call sites, the canonical shape is three exports: the validator, the inferred type, and an `as*` helper that is syntactic sugar for the assertion.
+When a branded ID flows through an arktype schema and into trusted internal call sites, the canonical shape is three exports: the type, a validator annotated to it, and an `as*` helper that is syntactic sugar for the assertion.
 
 ```typescript
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
-// 1. VALIDATOR: declared first, single source of truth.
-export const PrincipalId = type('string').as<string & Brand<'PrincipalId'>>();
+// 1. TYPE: declared first, the single place the brand is written.
+export type PrincipalId = string & Brand<'PrincipalId'>;
 
-// 2. TYPE: derived from the validator.
-export type PrincipalId = typeof PrincipalId.infer;
+// 2. VALIDATOR: annotated to the type.
+export const PrincipalId = type('string').as<PrincipalId>();
 
 // 3. AS HELPER: syntactic sugar for `value as PrincipalId`.
 export const asPrincipalId = (value: string): PrincipalId =>
@@ -31,7 +31,15 @@ export const asPrincipalId = (value: string): PrincipalId =>
 - **Constrained input**: `value: string` rejects accidental `unknown` widenings at compile time.
 - **One assertion**: the function body is the only `as PrincipalId` in the codebase.
 - **Grep-friendly**: `asPrincipalId(` finds every brand-cast site.
-- **Cheap rename**: change the brand or the underlying primitive in the validator and the helper signature follows.
+- **Cheap rename**: change the brand or the underlying primitive in the type and the helper signature follows.
+
+## `as*` Never Validates
+
+The prefix is a promise about cost, borrowed from [Rust's conversion naming](https://rust-lang.github.io/api-guidelines/naming.html): `as_` is free and returns a view of the same value at a different level of abstraction, where `to_` does work and `into_` consumes. `asPrincipalId` is exactly that: no check, no allocation, the same string seen as a partition key.
+
+This is not the functional-programming smart constructor, which validates and can fail. The closest documented analogue is Effect's `Brand.nominal`, the unvalidated sibling of `Brand.refined`. Keeping the two apart is the point of the name.
+
+So the rule the prefix carries: an `as*` helper never grows a runtime check. The day one needs to validate, it stops being an `as*` and becomes a parse that can fail, with a name that says so.
 
 ## Where the Helper Fits
 
@@ -87,10 +95,12 @@ Skip it when:
 
 `as` + the type name, camelCased: `asPrincipalId`, `asFileId`, `asSavedTabId`. The `as` prefix mirrors the runtime assertion and reads naturally: `asPrincipalId(str)` says "treat this string as a PrincipalId."
 
+Not `toPrincipalId`: under the convention the prefix borrows, `to` implies work and a copy, and nothing happens here. Not `unsafePrincipalId` either, which is honest but noisy at every call site; the unchecked part is what `as` already means.
+
 ## Summary
 
-1. **Declare the validator first**: `export const PrincipalId = type('string').as<string & Brand<'PrincipalId'>>()`
-2. **Derive the type**: `export type PrincipalId = typeof PrincipalId.infer`
+1. **Declare the type first**: `export type PrincipalId = string & Brand<'PrincipalId'>`
+2. **Annotate the validator to it**: `export const PrincipalId = type('string').as<PrincipalId>()`
 3. **Add `asXxx` if external strings flow in**: `export const asPrincipalId = (value: string): PrincipalId => value as PrincipalId`
 4. **Document it as syntactic sugar** in the JSDoc
 

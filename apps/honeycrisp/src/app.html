@@ -1,19 +1,22 @@
 <!doctype html>
-<html lang="en" class="style-vega">
+<html lang="en" class="style-vega dark" style="color-scheme: dark">
 	<head>
 		<meta charset="utf-8">
 		<link rel="icon" href="%sveltekit.assets%/favicon.ico">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>Honeycrisp</title>
+		<!--
+			Undoes the dark default before paint for whoever chose light.
+			ModeWatcher ships this same script but injects it through
+			`svelte:head`, which arrives after first paint because this app sets
+			`ssr = false`. Only `light` is tested: `toggleMode` writes `light` or
+			`dark`, and nothing calls `resetMode`, so `system` is never stored.
+		-->
 		<script>
-			const mode = localStorage.getItem('mode-watcher-mode') ?? 'dark';
-			const isLight =
-				mode === 'light' ||
-				(mode === 'system' &&
-					matchMedia('(prefers-color-scheme: light)').matches);
-			document.documentElement.classList.toggle('dark', !isLight);
-			document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';
-			localStorage.setItem('mode-watcher-mode', mode);
+			if (localStorage.getItem('mode-watcher-mode') === 'light') {
+				document.documentElement.classList.remove('dark');
+				document.documentElement.style.colorScheme = 'light';
+			}
 		</script>
 		%sveltekit.head%
 	</head>

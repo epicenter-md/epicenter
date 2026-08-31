@@ -13,11 +13,11 @@
 	} from '$lib/entry-candidates';
 	import { auth } from '$lib/platform/auth';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
-	import { getVocabApp } from '$lib/context';
+	import { getVocabSurface } from '$lib/surface';
 	import DictationButton from './DictationButton.svelte';
 	import ReadingMarkdown from './ReadingMarkdown.svelte';
 
-	const { entries } = getVocabApp();
+	const { entries } = getVocabSurface();
 
 	let {
 		active,
@@ -202,7 +202,7 @@
 		onSignIn={() => void auth.startSignIn()}
 		onUpgrade={() =>
 			void window.open(
-				new URL('/dashboard', auth.deployment.baseURL).toString(),
+					new URL('/dashboard', auth.connection.baseURL).toString(),
 				'_blank',
 				'noopener',
 			)}

@@ -1,24 +1,41 @@
-import type { NonconformingRowError } from '@epicenter/data';
+import type { NonconformingRow } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
-import {
-	type Reference,
-	type Skill,
-	type SkillsData,
-	scanReferences,
-	scanSkills,
-} from '@epicenter/skills';
+import type { Reference, Skill, SkillsData } from '@epicenter/skills';
 
 export type SkillMetadataUpdate = Partial<
 	Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
 >;
 
-export function createSkillsState({ skills }: { skills: SkillsData }) {
+/**
+ * Skills' rows, read straight out of the store.
+ *
+ * There is no `refresh`, no generation counter, and no `await` on a read. The
+ * store's `subscribe` says which rows a commit touched and fires for a local
+ * write and for markdown typed into a row's document alike (ADR-0221), so a
+ * re-read after a mutation is something this module hears about rather than
+ * something every call site remembers. That is also what retired the
+ * generation counter: it existed to discard a stale async scan, and a
+ * synchronous read has no window to be stale in.
+ */
+export function createSkillsState({ data }: { data: SkillsData }) {
 	let skillRows = $state.raw<Skill[]>([]);
 	let referenceRows = $state.raw<Reference[]>([]);
-	let nonconforming = $state.raw<NonconformingRowError[]>([]);
-	let loadError = $state.raw<unknown>(null);
+	let nonconforming = $state.raw<NonconformingRow[]>([]);
 	let selectedSkillId = $state<string | null>(null);
-	let refreshGeneration = 0;
+
+	function read(): void {
+		const skills = data.tables.skills;
+		const references = data.tables.skillReferences;
+		skillRows = skills.rows;
+		referenceRows = references.rows;
+		nonconforming = [...skills.nonconforming, ...references.nonconforming];
+	}
+
+	read();
+	// Registration is synchronous, does no I/O and never fires initially, so the
+	// read above has already seen everything (ADR-0187).
+	const stopSkills = data.tables.skills.subscribe(read);
+	const stopReferences = data.tables.skillReferences.subscribe(read);
 
 	const sortedSkills = $derived(
 		skillRows.toSorted((left, right) => left.name.localeCompare(right.name)),
@@ -36,38 +53,7 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 			: [],
 	);
 
-	async function refresh({ throwOnError = false } = {}): Promise<void> {
-		const generation = ++refreshGeneration;
-		try {
-			const [skillScan, referenceScan] = await Promise.all([
-				scanSkills(skills),
-				scanReferences(skills),
-			]);
-			if (generation !== refreshGeneration) return;
-			skillRows = skillScan.skills;
-			referenceRows = referenceScan.references;
-			nonconforming = [
-				...skillScan.nonconforming,
-				...referenceScan.nonconforming,
-			];
-			loadError = null;
-		} catch (cause) {
-			if (generation === refreshGeneration) loadError = cause;
-			if (throwOnError) throw cause;
-		}
-	}
-
-	let isDisposed = false;
-	const stopSkills = skills.tables.skills.subscribe(() => {
-		if (!isDisposed) void refresh();
-	});
-	const stopSkillReferences = skills.tables.skillReferences.subscribe(() => {
-		if (!isDisposed) void refresh();
-	});
-	const whenReady = refresh({ throwOnError: true });
-
 	return {
-		whenReady,
 		get skills() {
 			return sortedSkills;
 		},
@@ -83,62 +69,62 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 		get nonconforming() {
 			return nonconforming;
 		},
-		get loadError() {
-			return loadError;
-		},
 		selectSkill(id: string | null) {
 			selectedSkillId = id;
 		},
-		async createSkill(name: string): Promise<string> {
-			const skill = await skills.tables.skills.create({
+
+		/** Apply a change, or throw so the caller's toast can present it. */
+		createSkill(name: string): string {
+			const skill = data.tables.skills.create({
 				sourceId: crypto.randomUUID(),
 				name,
 				description: 'TODO: describe when and why to use this skill.',
+				license: null,
+				compatibility: null,
+				metadata: null,
+				allowedTools: null,
 				updatedAt: InstantString.now(),
 			});
-			await refresh();
 			selectedSkillId = skill.id;
 			return skill.id;
 		},
-		async updateSkill(id: string, updates: SkillMetadataUpdate): Promise<void> {
-			const result = await skills.tables.skills.update(id, {
+
+		updateSkill(id: string, updates: SkillMetadataUpdate): void {
+			const { error } = data.tables.skills.update(id, {
 				...updates,
 				updatedAt: InstantString.now(),
 			});
-			await refresh();
-			if (result.error !== null) throw result.error;
+			if (error !== null) throw error;
 		},
-		async deleteSkill(id: string): Promise<void> {
+
+		deleteSkill(id: string): void {
 			for (const reference of referenceRows) {
-				if (reference.skillId === id) {
-					await skills.tables.skillReferences.delete(reference.id);
-				}
+				if (reference.skillId !== id) continue;
+				data.tables.skillReferences.delete(reference.id);
 			}
-			await skills.tables.skills.delete(id);
+			data.tables.skills.delete(id);
 			if (selectedSkillId === id) {
 				selectedSkillId =
 					sortedSkills.find((skill) => skill.id !== id)?.id ?? null;
 			}
-			await refresh();
 		},
-		async createReference(skillId: string, path: string): Promise<string> {
-			const reference = await skills.tables.skillReferences.create({
+
+		createReference(skillId: string, path: string): string {
+			const reference = data.tables.skillReferences.create({
 				skillId,
 				path,
 				updatedAt: InstantString.now(),
 			});
-			await refresh();
 			return reference.id;
 		},
-		async deleteReference(id: string): Promise<void> {
-			await skills.tables.skillReferences.delete(id);
-			await refresh();
+
+		deleteReference(id: string): void {
+			data.tables.skillReferences.delete(id);
 		},
+
 		[Symbol.dispose]() {
-			isDisposed = true;
-			refreshGeneration += 1;
 			stopSkills();
-			stopSkillReferences();
+			stopReferences();
 		},
 	};
 }

@@ -13,15 +13,15 @@
 
 import { expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { openBooksDb } from '../src/db.ts';
-import { tempDir } from './helpers.ts';
+import { booksDbFile, openBooksDb } from '../src/db.ts';
+import { tempRoot } from './helpers.ts';
 
 const BIN = join(import.meta.dir, '../src/bin.ts');
 const REALM = 'r1';
 
-/** Seed a mirror at <dir>/r1/books.db with two live invoices. */
+/** Seed the r1 company's current mirror artifact with two live invoices. */
 function seedMirror(dir: string): void {
-	const db = openBooksDb(join(dir, REALM, 'books.db'));
+	const db = openBooksDb(booksDbFile(dir, REALM));
 	db.raw.exec(`
 		CREATE TABLE invoices (
 			id TEXT PRIMARY KEY, raw TEXT NOT NULL, updated_at TEXT,
@@ -45,11 +45,12 @@ type JsonRpcMessage = {
 /** A live MCP subprocess speaking newline-delimited JSON-RPC over stdio. */
 function startMcp(env: Record<string, string>) {
 	const proc = Bun.spawn([process.execPath, BIN, 'mcp'], {
-		// Neutralize any ambient LOCAL_BOOKS_* from the dev shell so the read-only
-		// gate assertions are deterministic; each test passes what it needs.
+		// Neutralize any ambient data root and LOCAL_BOOKS_* from the dev shell so
+		// the read-only gate assertions are deterministic; each test passes what it
+		// needs.
 		env: {
 			...process.env,
-			LOCAL_BOOKS_DIR: '',
+			EPICENTER_DATA_DIR: '',
 			LOCAL_BOOKS_READ_ONLY: '',
 			LOCAL_BOOKS_TOKEN_FILE: '',
 			...env,
@@ -138,10 +139,10 @@ async function connect(env: Record<string, string>) {
 }
 
 test('mcp: tools/list, query rows, the two error channels, and a clean stream', async () => {
-	const tmp = tempDir();
-	seedMirror(tmp.dir);
+	const tmp = tempRoot();
+	seedMirror(tmp.appDir);
 	const mcp = await connect({
-		LOCAL_BOOKS_DIR: tmp.dir,
+		EPICENTER_DATA_DIR: tmp.root,
 		LOCAL_BOOKS_QB_REALM: REALM,
 	});
 
@@ -220,10 +221,10 @@ test('mcp: tools/list, query rows, the two error channels, and a clean stream', 
 });
 
 test('mcp: read-only mode drops the recategorize write from the catalog', async () => {
-	const tmp = tempDir();
-	seedMirror(tmp.dir);
+	const tmp = tempRoot();
+	seedMirror(tmp.appDir);
 	const mcp = await connect({
-		LOCAL_BOOKS_DIR: tmp.dir,
+		EPICENTER_DATA_DIR: tmp.root,
 		LOCAL_BOOKS_QB_REALM: REALM,
 		LOCAL_BOOKS_READ_ONLY: '1',
 	});

@@ -1,13 +1,34 @@
-/** Canonical conversation document adapter and restart durability tests. */
+/**
+ * What this package promises: the canonical table splices into an application's
+ * own workspace, and a conversation's messages survive a restart of that
+ * application's store.
+ *
+ * The workspace here is a stand-in for a real application's (Vocab's is the live
+ * one), which is the whole point: this package publishes a table shape, not a
+ * workspace id.
+ */
 
 import { expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { AgentMessage } from '@epicenter/agent';
-import { openBunEpicenter } from '@epicenter/data/bun';
+import { defineData, defineTable } from '@epicenter/data/definition';
+import { createMemoryRecord, openMemory } from '@epicenter/data/memory';
 import { InstantString } from '@epicenter/field';
-import { chatLens, createAgentMessageDocumentStore } from './index.js';
+import {
+	conversationsFile,
+	conversationsTable,
+	createAgentMessageStore,
+} from './index.js';
+
+const testDefinition = defineData({
+	id: 'so.epicenter.chat-test',
+	kv: {},
+	tables: {
+		conversations: defineTable({
+			...conversationsTable,
+			file: conversationsFile,
+		}),
+	},
+});
 
 const message: AgentMessage = {
 	id: 'message-1',
@@ -16,43 +37,40 @@ const message: AgentMessage = {
 	parts: [{ type: 'text', text: 'Durable hello' }],
 };
 
-test('the agent store observes writes and survives a runtime restart', async () => {
-	const workspacesRoot = mkdtempSync(join(tmpdir(), 'epicenter-chat-'));
+test('the agent store observes writes and survives a restart', async () => {
+	// One durable record, two runtimes over it: the second is the restart.
+	const record = createMemoryRecord();
 	let rowId: string;
 	try {
 		{
-			await using epicenter = await openBunEpicenter({
-				path: join(workspacesRoot, 'epicenter.sqlite3'),
-			});
-			const handle = epicenter.bind(chatLens);
+			const db = await openMemory(testDefinition, record);
+			await using _db = db;
 			const now = InstantString.fromDate(new Date('2026-07-19T00:00:00.000Z'));
-			const row = await handle.tables.conversations.create({
+			const created = db.tables.conversations.create({
 				title: 'New Chat',
 				model: 'test',
 				createdAt: now,
 				updatedAt: now,
 			});
-			rowId = row.id;
-			await using store = createAgentMessageDocumentStore(
-				await handle.tables.conversations.openDocument(row.id),
-			);
+			rowId = created.id;
+
+			const content = db.tables.conversations.get(rowId);
+			if (content === undefined) throw new Error('the row has no content');
+			using store = createAgentMessageStore(content.messages);
 			let observations = 0;
 			const unobserve = store.observe(() => observations++);
 			store.set(message.id, message);
-			await store.whenDurable();
 			unobserve();
 			expect(observations).toBe(1);
 		}
 
-		await using reopened = await openBunEpicenter({
-			path: join(workspacesRoot, 'epicenter.sqlite3'),
-		});
-		const handle = reopened.bind(chatLens);
-		await using store = createAgentMessageDocumentStore(
-			await handle.tables.conversations.openDocument(rowId),
-		);
+		const db = await openMemory(testDefinition, record);
+		await using _db = db;
+		const content = db.tables.conversations.get(rowId);
+		if (content === undefined) throw new Error('the row has no content');
+		using store = createAgentMessageStore(content.messages);
 		expect([...store.entries()]).toEqual([{ key: message.id, val: message }]);
 	} finally {
-		rmSync(workspacesRoot, { recursive: true, force: true });
+		record.close();
 	}
 });

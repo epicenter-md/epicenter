@@ -1,6 +1,6 @@
 ---
 name: pull-request
-description: Draft and review durable GitHub pull request titles and bodies for Epicenter. Use when creating a PR, running gh pr create, drafting or editing a PR body, writing changelog entries, linking issues, choosing merge strategy, or reviewing PR text. For local commits and branches use the git skill; for issue replies use github-issues. Never include Testing, Test Plan, or Verification sections in PR bodies unless explicitly requested.
+description: Draft and review Epicenter pull request titles and bodies, including changelog and merge details. Use when creating a PR or editing its text, not for local commits, branches, or issue replies.
 ---
 
 # Pull Request Guidelines

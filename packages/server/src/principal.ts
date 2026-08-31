@@ -1,7 +1,7 @@
 /**
  * Server-only derived identifiers built from a `PrincipalId`.
  *
- * `PrincipalId` itself lives in `@epicenter/identity` because it flows through
+ * `PrincipalId` itself lives in `@epicenter/principal` because it flows through
  * `/api/session`, the persisted auth cell, and every client (browser,
  * extension, CLI, daemon). What lives here are the durable strings only
  * a server cares about: Durable Object names, R2 object keys, and the
@@ -21,19 +21,7 @@
  */
 
 import type { BlobId } from '@epicenter/blobs';
-import type { PrincipalId } from '@epicenter/identity';
-
-/** Durable Object name template, single form. */
-
-/**
- * Durable Object name template for one AttachRelay pair (ADR-0115). One DO per
- * `(principalId, hostId)`: the host and every client of that pair route to the
- * same actor, which is the invariant the in-DO {@link createAttachRelay}
- * coordinator needs to see both sockets. The `principalId` segment is the
- * partition, so a client that guesses another principal's `hostId` still lands
- * in its OWN partition's DO (an empty one) and pairs with no host.
- */
-export type AttachHostDoName = `principals/${string}/attach-hosts/${string}`;
+import type { PrincipalId } from '@epicenter/principal';
 
 /**
  * R2 object key template for an opaque-id blob, single form. The BlobId is
@@ -45,13 +33,39 @@ export type BlobR2Key = `principals/${string}/blobs/${string}`;
 /** Common prefix for one partition's blobs, used by the S3 client's list enumeration. */
 export type BlobPrincipalPrefix = `principals/${string}/blobs/`;
 
-/** Durable name of one AttachRelay pair's Cloudflare Durable Object. */
-export function attachHostDoName(
-	principalId: PrincipalId,
-	hostId: string,
-): AttachHostDoName {
-	return `principals/${principalId}/attach-hosts/${hostId}`;
-}
+/**
+ * Durable Object name template for one partition's store of one application.
+ *
+ * One Durable Object per `(principalId, dataId)` rather than per principal,
+ * because ADR-0215 makes an application ONE document and the authority's log is
+ * that document's: two applications sharing a log would interleave positions
+ * neither could read past. The `principalId` segment is the partition, so a
+ * client that names another application's id still lands inside its OWN
+ * partition.
+ *
+ * The application is named by its `dataId`, which is the same identifier the
+ * replica derives its local storage from, so the two halves of one application
+ * cannot come to disagree about which application they are.
+ *
+ * The resource segment is `data` rather than `stores` (ADR-0276). A store is the
+ * runtime object a client holds; what is addressed here is one data definition,
+ * the value of `defineData({ id })`. It is a sibling of `blobs` under the same
+ * partition, which is the whole job `stores` was doing.
+ *
+ * The name carries the GENERATION (ADR-0276, ADR-0292), and that is what makes
+ * the object an exact address rather than a mutable one: a generation is
+ * created once and never mutated in place, so an object at this name holds one
+ * history and a replica that reached it cannot be carrying another's bytes.
+ * The document identity stamp existed to answer that question and is retired
+ * with it.
+ *
+ * Nothing anywhere maps an old name to a new one: the name is derived on both
+ * halves from values they already hold, so a rename strands data rather than
+ * requiring a migration.
+ */
+export type StoreCollectionDoName = `principals/${string}/data/${string}`;
+export type StoreAuthorityDoName =
+	`${StoreCollectionDoName}/generations/${number}`;
 
 /** Durable key of an opaque-id blob's R2 object. */
 export function blobKey(principalId: PrincipalId, blobId: BlobId): BlobR2Key {
@@ -63,4 +77,26 @@ export function blobPrincipalPrefix(
 	principalId: PrincipalId,
 ): BlobPrincipalPrefix {
 	return `principals/${principalId}/blobs/`;
+}
+
+/**
+ * Durable name of one partition's generations ledger for one database.
+ *
+ * The bare name the authority used to hold. It holds numbers now: which
+ * generations exist, which is what makes one addressable at all (ADR-0293).
+ */
+export function storeCollectionName(
+	principalId: PrincipalId,
+	dataId: string,
+): StoreCollectionDoName {
+	return `principals/${principalId}/data/${dataId}`;
+}
+
+/** Durable name of one partition's authority for one database generation. */
+export function storeAuthorityName(
+	principalId: PrincipalId,
+	dataId: string,
+	generation: number,
+): StoreAuthorityDoName {
+	return `principals/${principalId}/data/${dataId}/generations/${generation}`;
 }

@@ -7,8 +7,9 @@
  *
  * The default mode is deterministic and offline. It reads what each skill's
  * `description` says about each anchor phrase and reports four conditions:
- * the expected owner carries no hook for its own phrase, nobody claims the
- * phrase, several skills claim it, or a skill the case forbids claims it.
+ * the expected owner carries no hook for its own phrase, nobody claims a
+ * phrase some skill should own, several skills claim it, or a skill the case
+ * forbids claims it.
  * These are facts about descriptions. They are *not* routing results. A
  * description can carry a near-miss clause that a substring scan cannot weigh
  * (`one-sentence-test` tells the agent to answer plain comprehension questions
@@ -27,23 +28,89 @@
  * The default test suite never invokes it.
  *
  * For a model or effort sweep, run `--live --model X --effort Y --out run-X-Y.json`
- * once per cell and diff the result files. The result file records the model
- * and effort it was produced under so a stale file cannot be mistaken for a
- * fresh one.
+ * once per cell and diff the result files. The result file records the model,
+ * the effort, and a digest of the always-on instructions it was produced under,
+ * so a stale file cannot be mistaken for a fresh one.
  */
 
 import { type ChildProcess, spawn } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { classifyClaim, readSkillCatalog } from './skill-catalog';
+import {
+	classifyClaim,
+	readAlwaysOnInstructions,
+	readSkillCatalog,
+} from './skill-catalog';
+
+export type InstructionFingerprint = {
+	/** One entry per file that exists, in `ALWAYS_ON_FILES` order. */
+	files: { path: string; bytes: number; sha256: string }[];
+	/** Digest over every entry, so one field can decide comparability. */
+	digest: string;
+};
+
+/**
+ * Fingerprint the always-on instruction surface a live run routed under.
+ *
+ * `model` and `effort` are recorded because a result file produced under
+ * different ones is not comparable. The always-on instructions are the third
+ * such variable, and the only one that can change routing without touching a
+ * single description: `AGENTS.md` names skills and conditions directly, and it
+ * is loaded before any description is weighed. Until it is recorded, two
+ * result files that disagree are indistinguishable from two runs of the same
+ * configuration.
+ *
+ * This reads those files and never authors them. It is a digest, not a
+ * declaration, so it cannot become a second place that says what routes what.
+ */
+export async function fingerprintInstructions(
+	root: string,
+): Promise<InstructionFingerprint> {
+	const files = (await readAlwaysOnInstructions(root)).map(
+		({ path, contents }) => ({
+			path,
+			bytes: Buffer.byteLength(contents),
+			sha256: new Bun.CryptoHasher('sha256').update(contents).digest('hex'),
+		}),
+	);
+
+	const combined = files.map((f) => `${f.path}:${f.sha256}`).join('\n');
+
+	return {
+		files,
+		digest: new Bun.CryptoHasher('sha256').update(combined).digest('hex'),
+	};
+}
+
+/** Whether a stored run's numbers still describe the working tree. */
+export type RunComparability = 'comparable' | 'superseded' | 'undigested';
+
+/**
+ * Decide whether a stored run may still be quoted against the current tree.
+ *
+ * The proof this harness exists to serve is that always-on instructions cause
+ * routes, so a stored rate is a fact about the `AGENTS.md` that produced it and
+ * about no other one. `undigested` is its own verdict rather than a failure
+ * because a run recorded before the digest existed is not wrong, it is simply
+ * unable to answer the question.
+ */
+export function compareStoredRun(
+	stored: { instructions?: InstructionFingerprint },
+	current: InstructionFingerprint,
+): RunComparability {
+	if (!stored.instructions) return 'undigested';
+	return stored.instructions.digest === current.digest
+		? 'comparable'
+		: 'superseded';
+}
 
 /**
  * Which agent's routing a case is about.
  *
- * `consult-claude` and `delegate-claude` are written for a Codex session
- * ("Launch and supervise one durable Claude Code session from Codex"), so a
- * Claude probe answering them picks a neighbour every time. That is a category
+ * `consult-claude` is written for a Codex session ("Ask Claude Code for
+ * independent, context-rich design or implementation review"), so a
+ * Claude probe answering it picks a neighbour every time. That is a category
  * error in the measurement, not a defect in the description, and marking the
  * case is how the harness says so instead of reporting a failure it cannot
  * justify.
@@ -71,6 +138,18 @@ export type EvalCase = {
 	cluster?: string;
 	prompt: string;
 	anchors: string[];
+	/**
+	 * Phrases the prompt carries on purpose that belong to a *different* skill.
+	 *
+	 * A hard case is hard because a rival's trigger phrase is sitting in the
+	 * prompt: "simplify this" next to nested ifs, "in one sentence" next to an
+	 * authored rewrite. Those phrases are not anchors, because an anchor is a
+	 * hook the expected owner should carry, and scanning them as one reports the
+	 * boundary working as a defect. Listing them keeps the difficulty visible and
+	 * pins it in place: the corpus validator fails if a rewrite drops one from
+	 * the prompt, which would quietly make the `--live` case easier.
+	 */
+	distractors?: string[];
 	/** Skill that should own this prompt, or null when nothing should trigger. */
 	expect: string | null;
 	forbid: string[];
@@ -91,6 +170,7 @@ const USAGE = `Usage: bun run .agents/skills/agent-instructions/scripts/run-trig
 Default mode is offline and reports description coverage, not routing.
 
   --corpus <file>   corpus JSON (default: ../evals/routing.json)
+  --verify-runs <dir>  report whether stored runs still describe this tree
   --case <id>       run one case (repeatable)
   --strict          exit 1 when the offline pass reports findings
   --json            emit results as JSON on stdout
@@ -196,6 +276,18 @@ export function validateCorpus(
 				);
 		}
 
+		for (const distractor of testCase.distractors ?? []) {
+			// A distractor that left the prompt took the case's difficulty with it.
+			if (!prompt?.toLowerCase().includes(distractor.toLowerCase()))
+				problems.push(
+					`${id}: distractor "${distractor}" does not appear in the prompt`,
+				);
+			if ((anchors ?? []).includes(distractor))
+				problems.push(
+					`${id}: "${distractor}" is both an anchor and a distractor`,
+				);
+		}
+
 		if (testCase.router !== undefined && !ROUTERS.includes(testCase.router))
 			problems.push(`${id}: unknown router: ${testCase.router}`);
 
@@ -238,7 +330,18 @@ export function runLexicalPass(
 				});
 			}
 
-			if (claimants.length === 0) {
+			if (claimants.length > 1) {
+				findings.push({
+					...base,
+					kind: 'AMBIGUOUS',
+					detail: `claimed by ${claimants.join(', ')}`,
+				});
+			} else if (claimants.length === 0 && testCase.expect !== null) {
+				// A case expecting no skill *wants* its phrase unowned, so an
+				// unclaimed phrase there is the passing state rather than a gap.
+				// Only a case naming an owner can be missing one. Ambiguity and
+				// forbidden claims are still reported for near misses, because
+				// over-claiming is how a near miss actually fails.
 				findings.push({
 					...base,
 					kind: 'NO_OWNER',
@@ -246,12 +349,6 @@ export function runLexicalPass(
 						disclaimers.length > 0
 							? `no skill claims it; disclaimed by ${disclaimers.join(', ')}`
 							: 'no skill description mentions it',
-				});
-			} else if (claimants.length > 1) {
-				findings.push({
-					...base,
-					kind: 'AMBIGUOUS',
-					detail: `claimed by ${claimants.join(', ')}`,
 				});
 			}
 
@@ -408,6 +505,33 @@ if (import.meta.main) {
 
 	const scriptDir = dirname(fileURLToPath(import.meta.url));
 	const skillsDir = join(scriptDir, '..', '..');
+	const repoRoot = resolve(skillsDir, '..', '..');
+
+	// Answering "may I still quote this number?" needs no corpus and no quota,
+	// so it runs before the corpus is even loaded.
+	const verifyDir = flagValue(argv, '--verify-runs');
+	if (verifyDir !== undefined) {
+		const current = await fingerprintInstructions(repoRoot);
+		const files = (await readdir(resolve(verifyDir)))
+			.filter((name) => name.endsWith('.json'))
+			.sort();
+
+		let stale = 0;
+		for (const name of files) {
+			const stored = (await Bun.file(resolve(verifyDir, name)).json()) as {
+				instructions?: InstructionFingerprint;
+			};
+			const verdict = compareStoredRun(stored, current);
+			if (verdict !== 'comparable') stale++;
+			console.log(`${verdict}\t${name}`);
+		}
+
+		console.error(
+			`run-trigger-eval: ${files.length - stale}/${files.length} run(s) comparable against instructions=${current.digest.slice(0, 12)}.`,
+		);
+		process.exit(stale > 0 ? 1 : 0);
+	}
+
 	const corpusPath = resolve(
 		flagValue(argv, '--corpus') ??
 			join(scriptDir, '..', 'evals', 'routing.json'),
@@ -483,7 +607,7 @@ if (import.meta.main) {
 	const timeoutMs = Number(flagValue(argv, '--timeout-ms') ?? 120_000);
 	const budgetMs = Number(flagValue(argv, '--budget-ms') ?? 900_000);
 	const runsPerCase = Number(flagValue(argv, '--runs') ?? 1);
-	const cwd = resolve(skillsDir, '..', '..');
+	const cwd = repoRoot;
 
 	// Cases written for a Codex session cannot be judged by a Claude probe.
 	// Dropping them silently would manufacture failures, so name them instead.
@@ -525,6 +649,8 @@ if (import.meta.main) {
 		results.push(summarize(testCase.id, runs));
 	}
 
+	const instructions = await fingerprintInstructions(cwd);
+
 	const run = {
 		mode: 'live' as const,
 		model: model ?? '(cli default)',
@@ -533,6 +659,7 @@ if (import.meta.main) {
 		budgetExhausted,
 		notMeasured: unmeasurable.map((c) => ({ id: c.id, router: c.router })),
 		corpus: corpusPath,
+		instructions,
 		results,
 	};
 
@@ -553,7 +680,7 @@ if (import.meta.main) {
 
 	const failed = results.filter((r) => r.verdict !== 'pass');
 	console.error(
-		`run-trigger-eval: ${results.length - failed.length}/${results.length} clean over ${runsPerCase} run(s) each, model=${run.model} effort=${run.effort}.`,
+		`run-trigger-eval: ${results.length - failed.length}/${results.length} clean over ${runsPerCase} run(s) each, model=${run.model} effort=${run.effort}, instructions=${instructions.digest.slice(0, 12)} (${instructions.files.map((f) => f.path).join(', ') || 'none'}).`,
 	);
 	// An exhausted budget is an incomplete run, not a clean one.
 	process.exit(failed.length > 0 || budgetExhausted ? 1 : 0);

@@ -39,12 +39,12 @@ Out of scope, deliberately:
 ### File layout
 
 ```
-<data-dir>/<realmId>/books.db      # entity tables + _sync_state + _meta
-OS keyring (keyed by realmId)       # OAuth tokens
-<data-dir>/config.json (optional)   # which entities, schedule; user-authored
+<app-dir>/companies/<realmId>/books.db   # entity tables + _sync_state + _meta
+OS keyring (keyed by realmId)            # OAuth tokens
+<app-dir>/config.json (optional)         # which entities, schedule; user-authored
 ```
 
-`<data-dir>` defaults to an OS app-data path (macOS `~/Library/Application Support/local-books`, Linux `~/.local/share/local-books`), overridable by `--data-dir` / `LOCAL_BOOKS_DIR`. Scoping by `realmId` (the QB company id) keeps multiple companies from colliding.
+The app's directory is `<epicenter-root>/apps/local-books`, below the one Epicenter data root that `EPICENTER_DATA_DIR` moves; the app computes no OS application-data path of its own (ADR-0201). Scoping by `realmId` (the QB company id) under `companies/` keeps multiple companies from colliding.
 
 ### Entity tables (one per QB type, e.g. `invoices`)
 

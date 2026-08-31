@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
 	import type { ConversationHandle } from '@epicenter/app-shell/agent-chat';
+	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import type { ConversationId } from '@epicenter/chat';
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
@@ -9,10 +10,7 @@
 	import { instanceSetting } from '$lib/instance';
 	import { auth } from '$lib/platform/auth';
 	import { dictation } from '$lib/state/dictation.svelte';
-	import { getVocabApp } from '$lib/context';
 	import EntriesPanel from './EntriesPanel.svelte';
-
-	const vocab = getVocabApp();
 
 	let {
 		conversations,
@@ -20,14 +18,12 @@
 		onCreate,
 		onSwitch,
 		onPractice,
-		generating,
 	}: {
 		conversations: ConversationHandle[];
 		activeConversationId: ConversationId | null;
 		onCreate: () => void;
 		onSwitch: (conversationId: ConversationId) => void;
 		onPractice: (entryTexts: string[]) => void;
-		generating: boolean;
 	} = $props();
 </script>
 
@@ -37,15 +33,17 @@
 			class="flex items-center justify-between px-2 py-1 group-data-[collapsible=icon]:hidden"
 		>
 			<span class="text-sm font-semibold">Vocab</span>
-			<AccountPopover
-				{auth}
-				dataSync={vocab}
-				syncNoun="conversations"
-				disabledReason={dictation.status !== 'idle'
-					? 'Finish dictating to change your account'
-					: undefined}
-				instanceConnect={{ appName: 'Vocab', setting: instanceSetting }}
-			/>
+			<div class="flex items-center gap-1">
+				<LightSwitch variant="ghost" />
+				<AccountPopover
+					{auth}
+					syncNoun="conversations"
+					disabledReason={dictation.status !== 'idle'
+						? 'Finish dictating to change your account'
+						: undefined}
+					instanceConnect={{ appName: 'Vocab', setting: instanceSetting }}
+				/>
+			</div>
 		</div>
 		<Sidebar.Menu>
 			<Sidebar.MenuItem>
@@ -90,7 +88,7 @@
 			</Sidebar.GroupContent>
 		</Sidebar.Group>
 
-		<EntriesPanel {onPractice} {generating} />
+		<EntriesPanel {onPractice} />
 	</Sidebar.Content>
 
 	<Sidebar.Rail />

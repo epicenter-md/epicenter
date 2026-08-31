@@ -10,7 +10,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import { type AccountDeletionStep, runAccountDeletion } from './service.js';
 
 const alice = asPrincipalId('alice');
@@ -24,7 +24,6 @@ function recordingSteps(failing?: AccountDeletionStep) {
 	return {
 		calls,
 		steps: {
-			authority: step('authority'),
 			blobs: step('blobs'),
 			billing: step('billing'),
 			observations: step('observations'),
@@ -39,13 +38,7 @@ test('deletion runs every step in order with the auth user last', async () => {
 	expect(await runAccountDeletion(steps, alice)).toEqual({
 		outcome: 'deleted',
 	});
-	expect(calls).toEqual([
-		'authority',
-		'blobs',
-		'billing',
-		'observations',
-		'auth-user',
-	]);
+	expect(calls).toEqual(['blobs', 'billing', 'observations', 'auth-user']);
 });
 
 test('the first failing step stops the sequence and is named for retry', async () => {
@@ -56,13 +49,12 @@ test('the first failing step stops the sequence and is named for retry', async (
 	});
 	// The auth user survives every partial failure, so the retry below can
 	// still authenticate; each step re-runs because steps own idempotency.
-	expect(calls).toEqual(['authority', 'blobs', 'billing']);
+	expect(calls).toEqual(['blobs', 'billing']);
 	const retry = recordingSteps();
 	expect(await runAccountDeletion(retry.steps, alice)).toEqual({
 		outcome: 'deleted',
 	});
 	expect(retry.calls).toEqual([
-		'authority',
 		'blobs',
 		'billing',
 		'observations',

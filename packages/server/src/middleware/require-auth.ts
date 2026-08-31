@@ -7,7 +7,7 @@
  * dashboard, hosted UIs) and external OAuth clients (CLI, Tauri,
  * extension).
  *
- * For routes that are external-clients only (`/api/ai/*`, the attach relay),
+ * For routes that are external-clients only (such as `/api/ai/*`),
  * prefer {@link requireBearerPrincipal}, which skips the cookie attempt.
  *
  * Cookie-vs-bearer is resolved deterministically here, cookie-first: a
@@ -20,7 +20,8 @@
  * JWKS; an instance closes over its env-token resolver instead).
  */
 
-import { Principal } from '@epicenter/auth';
+import type { Principal } from '@epicenter/auth';
+import { asPrincipalId } from '@epicenter/principal';
 import { verifyJwsAccessToken } from 'better-auth/oauth2';
 import { eq } from 'drizzle-orm';
 import type { Context, MiddlewareHandler, Next } from 'hono';
@@ -104,7 +105,7 @@ export async function resolveRequestOAuthPrincipal(
 	}
 	if (!user) return OAuthError.InvalidToken();
 
-	return Ok(Principal.assert(user));
+	return Ok({ id: asPrincipalId(user.id), email: user.email });
 }
 
 /**
@@ -138,7 +139,10 @@ export function requireCookieOrBearerPrincipal(
 			headers: c.req.raw.headers,
 		});
 		if (session) {
-			c.set('principal', Principal.assert(session.user));
+			c.set('principal', {
+				id: asPrincipalId(session.user.id),
+				email: session.user.email,
+			});
 			return next();
 		}
 		const bearer = parseBearer(c.req.header('authorization') ?? null);
@@ -156,7 +160,7 @@ export function requireCookieOrBearerPrincipal(
  * but skips the cookie path, so the route always reports 401 with a
  * standard OAuth `WWW-Authenticate` header instead of the cookie failure
  * path. Use on protected resource routes that should never see a browser
- * cookie (the attach relay, AI chat).
+ * cookie (such as AI chat).
  *
  * A factory that closes over the deployment's {@link ResolveBearerPrincipal}:
  * the cloud passes {@link resolveRequestOAuthPrincipal}, an instance its

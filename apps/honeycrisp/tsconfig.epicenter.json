@@ -1,8 +1,8 @@
 {
 	// Typechecks the `#platform/*` epicenter-host condition. `tsconfig.json`
-	// resolves the default (browser) impls and `tsconfig.tauri.json` the
-	// standalone ones, so the host-served platform files are only checked when
-	// the resolver is flipped here. `bun run typecheck` runs all three.
+	// resolves the default (browser) impls, so the host-served platform files
+	// are only checked when the resolver is flipped here. `bun run typecheck`
+	// runs both.
 	"extends": "./tsconfig.json",
 	"compilerOptions": {
 		"customConditions": ["epicenter-host"]

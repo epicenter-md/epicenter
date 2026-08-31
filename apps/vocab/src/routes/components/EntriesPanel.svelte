@@ -5,18 +5,16 @@
 	import type { Entry } from '@epicenter/vocab';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash';
-	import { getVocabApp } from '$lib/context';
+	import { getVocabSurface } from '$lib/surface';
 
-	const { entries } = getVocabApp();
+	const { entries } = getVocabSurface();
 
 	let {
 		onPractice,
-		generating,
 	}: {
+		/** Open a new conversation built from these entries. The current
+		 * conversation is untouched, so a turn in flight there is irrelevant. */
 		onPractice: (entryTexts: string[]) => void;
-		/** A turn is in flight in the active conversation, so a compiled practice
-		 * turn would be dropped by the loop's guard. Disable the trigger instead. */
-		generating: boolean;
 	} = $props();
 
 	/** The one-way cycle a stage button steps through on each click. */
@@ -104,15 +102,13 @@
 				size="sm"
 				variant="outline"
 				class="w-full"
-				disabled={generating || practiceEntries.length === 0}
-				title={generating
-					? 'Finish the current turn to practice'
-					: filteredEntries.length > PRACTICE_CAP
-						? `Practicing the ${PRACTICE_CAP} newest of ${filteredEntries.length}`
-						: undefined}
+				disabled={practiceEntries.length === 0}
+				title={filteredEntries.length > PRACTICE_CAP
+					? `Practicing the ${PRACTICE_CAP} newest of ${filteredEntries.length}`
+					: undefined}
 				onclick={() => onPractice(practiceEntries.map((entry) => entry.text))}
 			>
-				Practice these ({practiceEntries.length})
+				Practice in a new chat ({practiceEntries.length})
 			</Button>
 		</div>
 

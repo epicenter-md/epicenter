@@ -2,6 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-17
+- **Relates:** [ADR-0212](0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md) and [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md) (`Proposed`), which rely on this record rather than amending it. One Yjs 14 major and runtime-native V2 updates are the premise both argue from. The per-document `stateBytes = 1_048_576` bound is what forces ADR-0212 to keep prose in its own document: measured, one document per application is 3.04 MB and over the bound, while an index of scalars is 0.31 MB and the largest body 30.4 KB.
 - **Amends:** [ADR-0135](0135-row-documents-have-application-owned-roots.md)
 - **Amended by:** [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md) (the per-runtime `DocumentStore` implementations collapse to one owner-side SQLite update log plus one shared attachment over a load/append seam; capture and deletion move to the owner), [ADR-0174](0174-row-documents-project-as-nullable-compact-cells-and-persist-as-bounded-live-chains.md) (every live owner stores a bounded baseline-plus-tail chain while logical artifacts project one compact document cell; an oversized lineage records one terminal address-scoped `too-large` issue). The Yjs-14-only rule and bounds stand.
 

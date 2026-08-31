@@ -1,27 +1,47 @@
 /**
  * Reactive entries state: the user-curated entry pool captured by selection.
  *
- * Backed by `fromTable()` over the `entries` table for reads and the table
- * lens's `create` / `update` / `delete` for writes. Created once per opened
- * application: there is one entry pool per replica, not one per component.
+ * Read straight out of the store. There is no `refresh` and no `await` on a
+ * read: `subscribe` says a commit touched the table and fires for a local
+ * write and for bytes that arrived from another device alike (ADR-0221), so a
+ * re-read after a mutation is something this module hears about rather than
+ * something every call site remembers.
+ *
+ * Bound to ONE document, which is why the surface that chose that document
+ * creates it: an account generation edits the account's pool, a signed-out one
+ * edits the device's, and there is never a second pool alongside.
  */
 
 import { InstantString } from '@epicenter/field';
-import { fromTable } from '@epicenter/svelte';
 import type { Entry, VocabData } from '@epicenter/vocab';
 
-export function createEntriesState(vocab: VocabData) {
-	const entriesView = fromTable(vocab.tables.entries);
+export function createEntriesState({ data }: { data: VocabData }) {
+	let rows = $state.raw<Entry[]>([]);
+
+	function read(): void {
+		rows = data.tables.entries.rows;
+	}
+
+	read();
+	// Registration is synchronous, does no I/O and never fires initially, so the
+	// read above has already seen everything (ADR-0187).
+	const stop = data.tables.entries.subscribe(read);
 
 	/** Every saved entry, newest first. */
 	const entries = $derived(
-		entriesView.all.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt)),
+		rows.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt)),
 	);
 
 	/** Count of entries marked usable, for the sidebar group label. */
 	const usableCount = $derived(
 		entries.filter((entry) => entry.stage === 'usable').length,
 	);
+
+	/** Apply a change, or throw so the caller's toast can present it. */
+	function update(id: string, changes: Partial<Entry>): void {
+		const { error } = data.tables.entries.update(id, changes);
+		if (error !== null) throw error;
+	}
 
 	return {
 		get entries() {
@@ -42,7 +62,7 @@ export function createEntriesState(vocab: VocabData) {
 			const trimmed = text.trim();
 			if (!trimmed) return false;
 			if (entries.some((entry) => entry.text === trimmed)) return false;
-			void vocab.tables.entries.create({
+			data.tables.entries.create({
 				text: trimmed,
 				note: '',
 				stage: 'new',
@@ -53,17 +73,19 @@ export function createEntriesState(vocab: VocabData) {
 
 		/** Change an entry's acquisition stage. */
 		setStage(id: string, stage: Entry['stage']) {
-			void vocab.tables.entries.update(id, { stage });
+			update(id, { stage });
 		},
 
 		/** Edit an entry's note. Note is human-owned: only ever written from user edits. */
 		setNote(id: string, note: string) {
-			void vocab.tables.entries.update(id, { note });
+			update(id, { note });
 		},
 
-		/** Remove an entry from the pool. */
+		/** Remove an entry from the pool. Idempotent over an already-gone row. */
 		remove(id: string) {
-			void vocab.tables.entries.delete(id);
+			data.tables.entries.delete(id);
 		},
+
+		[Symbol.dispose]: stop,
 	};
 }

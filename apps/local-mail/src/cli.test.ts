@@ -2,51 +2,55 @@
  * Local Mail CLI Parser Tests
  *
  * Covers parse-time argument validation that protects command handlers from
- * ambiguous or unsafe flag values.
+ * ambiguous or unsafe flag values, plus the refusals a triage verb and a
+ * discard make before touching anything.
  *
  * Key behaviors:
  * - `--watch` accepts only positive millisecond values
- * - invalid watch intervals fail before the sync loop can start polling
+ * - invalid watch intervals fail before the reconcile loop can start polling
+ * - `discard` refuses without `--all` and creates no durable file
  */
 
 import { expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { modifyExitCode, parseArgs, runCli } from './cli.ts';
+import { appDataDir } from '@epicenter/constants/app-data';
+import { parseArgs, runCli } from './cli.ts';
 import { loadConfig } from './config.ts';
-import { acquireSyncLock } from './lock.ts';
-import type { MessageWriteOutcome } from './modify.ts';
+import { openIntentDb, readPendingSummary } from './intent.ts';
+import { acquireReconcileLock } from './lock.ts';
+import { accountDir } from './paths.ts';
 import { createFileTokenStore } from './token-store.ts';
 import type { TokenSet } from './tokens.ts';
 
 test('--watch rejects unit-suffixed intervals', () => {
-	expect(() => parseArgs(['sync', '--watch=30s'])).toThrow(
+	expect(() => parseArgs(['reconcile', '--watch=30s'])).toThrow(
 		'Invalid --watch interval "30s"',
 	);
 });
 
 test('--watch rejects zero milliseconds', () => {
-	expect(() => parseArgs(['sync', '--watch=0'])).toThrow(
+	expect(() => parseArgs(['reconcile', '--watch=0'])).toThrow(
 		'Invalid --watch interval "0"',
 	);
 });
 
 test('--watch accepts a space-separated interval', () => {
-	const args = parseArgs(['sync', '--watch', '5000']);
+	const args = parseArgs(['reconcile', '--watch', '5000']);
 	expect(args.watch).toBe(true);
 	expect(args.watchIntervalMs).toBe(5000);
 	expect(args.positionals).toEqual([]);
 });
 
 test('--watch space form validates the value instead of swallowing it', () => {
-	expect(() => parseArgs(['sync', '--watch', '30s'])).toThrow(
+	expect(() => parseArgs(['reconcile', '--watch', '30s'])).toThrow(
 		'Invalid --watch interval "30s"',
 	);
 });
 
 test('--watch followed by another flag stays flag-only', () => {
-	const args = parseArgs(['sync', '--watch', '--full']);
+	const args = parseArgs(['reconcile', '--watch', '--full']);
 	expect(args.watch).toBe(true);
 	expect(args.full).toBe(true);
 	expect(args.watchIntervalMs).toBeUndefined();
@@ -88,32 +92,6 @@ test('label parses repeatable label changes and --json', () => {
 	expect(args.json).toBe(true);
 });
 
-test('modifyExitCode is nonzero on any per-id failure or systemic abort', () => {
-	const clean: MessageWriteOutcome = {
-		results: [{ id: 'm1', labelIds: ['INBOX'], folded: true, error: null }],
-		aborted: null,
-	};
-	const perId: MessageWriteOutcome = {
-		results: [
-			{ id: 'm1', labelIds: ['INBOX'], folded: true, error: null },
-			{
-				id: 'm2',
-				labelIds: null,
-				folded: false,
-				error: { name: 'Http', message: 'not found' },
-			},
-		],
-		aborted: null,
-	};
-	const aborted: MessageWriteOutcome = {
-		results: [{ id: 'm1', labelIds: ['INBOX'], folded: true, error: null }],
-		aborted: { name: 'Throttled', message: 'slow down' },
-	};
-	expect(modifyExitCode(clean)).toBe(0);
-	expect(modifyExitCode(perId)).toBe(1);
-	expect(modifyExitCode(aborted)).toBe(1);
-});
-
 test('LOCAL_MAIL_READ_ONLY enables read-only config mode', () => {
 	const previous = process.env.LOCAL_MAIL_READ_ONLY;
 	process.env.LOCAL_MAIL_READ_ONLY = '1';
@@ -126,7 +104,8 @@ test('LOCAL_MAIL_READ_ONLY enables read-only config mode', () => {
 });
 
 test('label honors LOCAL_MAIL_READ_ONLY before resolving labels', async () => {
-	const dir = mkdtempSync(join(tmpdir(), 'local-mail-cli-readonly-test-'));
+	const root = mkdtempSync(join(tmpdir(), 'local-mail-cli-readonly-test-'));
+	const dir = appDataDir(root, 'local-mail');
 	const token: TokenSet = {
 		accountEmail: 'you@example.com',
 		clientIdUsed: 'client-id',
@@ -136,13 +115,13 @@ test('label honors LOCAL_MAIL_READ_ONLY before resolving labels', async () => {
 		obtainedAt: new Date(0).toISOString(),
 	};
 	await createFileTokenStore(join(dir, 'credentials.json')).set(token);
-	const previousDir = process.env.LOCAL_MAIL_DIR;
+	const previousRoot = process.env.EPICENTER_DATA_DIR;
 	const previousAccount = process.env.LOCAL_MAIL_ACCOUNT;
 	const previousTokenFile = process.env.LOCAL_MAIL_TOKEN_FILE;
 	const previousReadOnly = process.env.LOCAL_MAIL_READ_ONLY;
 	const errors: string[] = [];
 	const originalError = console.error;
-	process.env.LOCAL_MAIL_DIR = dir;
+	process.env.EPICENTER_DATA_DIR = root;
 	process.env.LOCAL_MAIL_ACCOUNT = '';
 	process.env.LOCAL_MAIL_TOKEN_FILE = '';
 	process.env.LOCAL_MAIL_READ_ONLY = '1';
@@ -155,8 +134,8 @@ test('label honors LOCAL_MAIL_READ_ONLY before resolving labels', async () => {
 		expect(errors.join('\n')).not.toContain('Unknown Gmail label');
 	} finally {
 		console.error = originalError;
-		if (previousDir === undefined) delete process.env.LOCAL_MAIL_DIR;
-		else process.env.LOCAL_MAIL_DIR = previousDir;
+		if (previousRoot === undefined) delete process.env.EPICENTER_DATA_DIR;
+		else process.env.EPICENTER_DATA_DIR = previousRoot;
 		if (previousAccount === undefined) delete process.env.LOCAL_MAIL_ACCOUNT;
 		else process.env.LOCAL_MAIL_ACCOUNT = previousAccount;
 		if (previousTokenFile === undefined)
@@ -164,21 +143,43 @@ test('label honors LOCAL_MAIL_READ_ONLY before resolving labels', async () => {
 		else process.env.LOCAL_MAIL_TOKEN_FILE = previousTokenFile;
 		if (previousReadOnly === undefined) delete process.env.LOCAL_MAIL_READ_ONLY;
 		else process.env.LOCAL_MAIL_READ_ONLY = previousReadOnly;
-		rmSync(dir, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
 	}
 });
 
 /**
- * Drive `runCli` against a stored account whose sync lock is already held by
- * another owner (the open app or a watch loop), capturing both streams. Proves
- * the one-shot sync yields without opening a session or hitting the network.
+ * Drive `runCli` against a stored account, capturing both streams and the
+ * durable state the run left behind.
+ *
+ * `holdLock` decides whether another owner (the open app, a watch loop) already
+ * has the account's reconcile lock when the command runs. That one flag covers
+ * both halves of every ownership contract here: the busy yield and the path that
+ * actually gets to do the work.
+ *
+ * `seedPending` writes undelivered assertions first, so a test can prove what a
+ * refused command did NOT do to them.
  */
-async function runSyncWithLockHeld(
+async function runCliOnAccount(
 	argv: string[],
-): Promise<{ code: number; stdout: string[]; stderr: string[] }> {
-	const dir = mkdtempSync(join(tmpdir(), 'local-mail-cli-lock-test-'));
+	{
+		holdLock = false,
+		seedPending = 0,
+	}: { holdLock?: boolean; seedPending?: number } = {},
+): Promise<{
+	code: number;
+	stdout: string[];
+	stderr: string[];
+	/** Whether the run left a durable intent store behind. Read here, before the
+	 * temp dir is removed, so a caller cannot assert it vacuously. */
+	intentDbExists: boolean;
+	/** Undelivered assertions after the run, read the same way. */
+	pendingAfter: number;
+}> {
+	const root = mkdtempSync(join(tmpdir(), 'local-mail-cli-lock-test-'));
+	const dir = appDataDir(root, 'local-mail');
+	const accountEmail = 'you@example.com';
 	const token: TokenSet = {
-		accountEmail: 'you@example.com',
+		accountEmail,
 		clientIdUsed: 'client-id',
 		accessToken: 'access-token',
 		refreshToken: 'refresh-token',
@@ -186,14 +187,28 @@ async function runSyncWithLockHeld(
 		obtainedAt: new Date(0).toISOString(),
 	};
 	await createFileTokenStore(join(dir, 'credentials.json')).set(token);
-	const previousDir = process.env.LOCAL_MAIL_DIR;
+
+	if (seedPending > 0) {
+		const intent = openIntentDb({ dataDir: dir, accountEmail });
+		intent.assert(
+			Array.from({ length: seedPending }, (_, i) => ({
+				messageId: `m${i}`,
+				labelId: 'INBOX',
+				want: false,
+			})),
+			'2026-08-01T10:00:00.000Z',
+		);
+		intent.close();
+	}
+
+	const previousRoot = process.env.EPICENTER_DATA_DIR;
 	const previousAccount = process.env.LOCAL_MAIL_ACCOUNT;
 	const previousTokenFile = process.env.LOCAL_MAIL_TOKEN_FILE;
 	const stdout: string[] = [];
 	const stderr: string[] = [];
 	const originalLog = console.log;
 	const originalError = console.error;
-	process.env.LOCAL_MAIL_DIR = dir;
+	process.env.EPICENTER_DATA_DIR = root;
 	process.env.LOCAL_MAIL_ACCOUNT = '';
 	process.env.LOCAL_MAIL_TOKEN_FILE = '';
 	console.log = (message?: unknown) => {
@@ -202,49 +217,125 @@ async function runSyncWithLockHeld(
 	console.error = (message?: unknown) => {
 		stderr.push(String(message));
 	};
-	const held = acquireSyncLock({
-		dataDir: dir,
-		accountEmail: 'you@example.com',
-	});
-	expect(held).not.toBeNull();
+	const held = holdLock
+		? acquireReconcileLock({ dataDir: dir, accountEmail })
+		: null;
+	if (holdLock) expect(held).not.toBeNull();
 	try {
 		const code = await runCli(argv);
-		return { code, stdout, stderr };
+		return {
+			code,
+			stdout,
+			stderr,
+			intentDbExists: existsSync(
+				join(accountDir(dir, accountEmail), 'intent.db'),
+			),
+			pendingAfter: readPendingSummary({ dataDir: dir, accountEmail })
+				.assertions,
+		};
 	} finally {
 		console.log = originalLog;
 		console.error = originalError;
 		held?.release();
-		if (previousDir === undefined) delete process.env.LOCAL_MAIL_DIR;
-		else process.env.LOCAL_MAIL_DIR = previousDir;
+		if (previousRoot === undefined) delete process.env.EPICENTER_DATA_DIR;
+		else process.env.EPICENTER_DATA_DIR = previousRoot;
 		if (previousAccount === undefined) delete process.env.LOCAL_MAIL_ACCOUNT;
 		else process.env.LOCAL_MAIL_ACCOUNT = previousAccount;
 		if (previousTokenFile === undefined)
 			delete process.env.LOCAL_MAIL_TOKEN_FILE;
 		else process.env.LOCAL_MAIL_TOKEN_FILE = previousTokenFile;
-		rmSync(dir, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
 	}
 }
 
-test('sync yields a human note on stdout when another owner holds the lock', async () => {
-	const { code, stdout } = await runSyncWithLockHeld(['sync']);
+test('reconcile yields a human note on stdout when another owner holds the lock', async () => {
+	const { code, stdout } = await runCliOnAccount(['reconcile'], {
+		holdLock: true,
+	});
 	expect(code).toBe(0);
 	// The terminal outcome lands on stdout like the success/failure summaries do.
-	expect(stdout.join('\n')).toContain('already syncing you@example.com');
+	expect(stdout.join('\n')).toContain('already reconciling you@example.com');
 });
 
-test('sync --json yields a structured payload on stdout when the lock is held', async () => {
-	const { code, stdout } = await runSyncWithLockHeld(['sync', '--json']);
+test('reconcile --json yields a structured payload on stdout when the lock is held', async () => {
+	const { code, stdout } = await runCliOnAccount(['reconcile', '--json'], {
+		holdLock: true,
+	});
 	expect(code).toBe(0);
 	// The whole yield must be a single clean JSON value on stdout, not a human
 	// note on stderr: a --json consumer piping stdout has to see it.
 	const payload = JSON.parse(stdout.join('\n'));
-	expect(payload.synced).toBe(false);
-	expect(payload.reason).toBe('sync-owner-active');
+	expect(payload.reconciled).toBe(false);
+	expect(payload.reason).toBe('reconcile-owner-active');
 	expect(payload.message).toContain('you@example.com');
 });
 
+test('discard refuses without --all and leaves no durable file behind', async () => {
+	// Discard is the only thing that drops a recorded change without delivering
+	// it, so it is deliberately not the default shape of the verb. The refusal
+	// also has to be a read-nothing path: asking about an account that never
+	// triaged must not create its intent store (ADR-0198).
+	const { code, stderr, intentDbExists } = await runCliOnAccount(['discard']);
+	expect(code).toBe(1);
+	expect(stderr.join('\n')).toContain('Refusing to discard without --all');
+	expect(intentDbExists).toBe(false);
+});
+
+test('discard --all reports that there was nothing to discard', async () => {
+	const { code, stdout, intentDbExists } = await runCliOnAccount([
+		'discard',
+		'--all',
+	]);
+	expect(code).toBe(0);
+	expect(stdout.join('\n')).toContain('Nothing to discard for you@example.com');
+	expect(intentDbExists).toBe(false);
+});
+
+test('discard --all abandons what is owed when it owns the account', async () => {
+	const { code, stdout, pendingAfter } = await runCliOnAccount(
+		['discard', '--all'],
+		{ seedPending: 3 },
+	);
+	expect(code).toBe(0);
+	expect(stdout.join('\n')).toContain('Discarded 3 undelivered change(s)');
+	expect(pendingAfter).toBe(0);
+});
+
+test('discard --all refuses while a reconciler holds the account, and keeps every assertion', async () => {
+	// The race this closes: a reconciler snapshots the pending set when its drain
+	// starts, so a discard landing mid-pass would delete rows that pass is still
+	// holding and about to send. The report would say the change was abandoned
+	// while Gmail was being told the opposite. Taking the same lock makes the
+	// promise true, and the refusal is loud rather than a silent no-op.
+	const { code, stderr, pendingAfter } = await runCliOnAccount(
+		['discard', '--all'],
+		{ holdLock: true, seedPending: 2 },
+	);
+	// Nonzero, unlike a busy reconcile: nobody discards on your behalf, so this
+	// is work that did not happen rather than work someone else is doing.
+	expect(code).toBe(1);
+	expect(stderr.join('\n')).toContain('Refusing to discard');
+	expect(stderr.join('\n')).toContain('already reconciling you@example.com');
+	expect(pendingAfter).toBe(2);
+});
+
+test('discard --all --json yields the established busy payload when the lock is held', async () => {
+	const { code, stderr, pendingAfter } = await runCliOnAccount(
+		['discard', '--all', '--json'],
+		{ holdLock: true, seedPending: 1 },
+	);
+	expect(code).toBe(1);
+	// Same discriminant and machine token a busy reconcile uses: it is the same
+	// ownership question, so a consumer branches on it the same way.
+	const payload = JSON.parse(stderr.join('\n'));
+	expect(payload.reconciled).toBe(false);
+	expect(payload.reason).toBe('reconcile-owner-active');
+	expect(pendingAfter).toBe(1);
+});
+
 test('status --json resolves the sole stored account and prints JSON', async () => {
-	const dir = mkdtempSync(join(tmpdir(), 'local-mail-cli-test-'));
+	const root = mkdtempSync(join(tmpdir(), 'local-mail-cli-test-'));
+	const dir = appDataDir(root, 'local-mail');
 	const token: TokenSet = {
 		accountEmail: 'you@example.com',
 		clientIdUsed: 'client-id',
@@ -254,12 +345,12 @@ test('status --json resolves the sole stored account and prints JSON', async () 
 		obtainedAt: new Date(0).toISOString(),
 	};
 	await createFileTokenStore(join(dir, 'credentials.json')).set(token);
-	const previousDir = process.env.LOCAL_MAIL_DIR;
+	const previousRoot = process.env.EPICENTER_DATA_DIR;
 	const previousAccount = process.env.LOCAL_MAIL_ACCOUNT;
 	const previousTokenFile = process.env.LOCAL_MAIL_TOKEN_FILE;
 	const logs: string[] = [];
 	const originalLog = console.log;
-	process.env.LOCAL_MAIL_DIR = dir;
+	process.env.EPICENTER_DATA_DIR = root;
 	process.env.LOCAL_MAIL_ACCOUNT = '';
 	process.env.LOCAL_MAIL_TOKEN_FILE = '';
 	console.log = (message?: unknown) => {
@@ -270,13 +361,13 @@ test('status --json resolves the sole stored account and prints JSON', async () 
 		expect(JSON.parse(logs[0] ?? '{}').accountEmail).toBe('you@example.com');
 	} finally {
 		console.log = originalLog;
-		if (previousDir === undefined) delete process.env.LOCAL_MAIL_DIR;
-		else process.env.LOCAL_MAIL_DIR = previousDir;
+		if (previousRoot === undefined) delete process.env.EPICENTER_DATA_DIR;
+		else process.env.EPICENTER_DATA_DIR = previousRoot;
 		if (previousAccount === undefined) delete process.env.LOCAL_MAIL_ACCOUNT;
 		else process.env.LOCAL_MAIL_ACCOUNT = previousAccount;
 		if (previousTokenFile === undefined)
 			delete process.env.LOCAL_MAIL_TOKEN_FILE;
 		else process.env.LOCAL_MAIL_TOKEN_FILE = previousTokenFile;
-		rmSync(dir, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
 	}
 });

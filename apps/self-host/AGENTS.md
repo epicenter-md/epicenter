@@ -1,6 +1,6 @@
 # apps/self-host
 
-Reference single-partition **instance** (ADR-0075, amended by ADR-0092): one operator-supplied bearer (`INSTANCE_TOKEN`), one literal `instance` principal, one `principals/instance` partition. Composes `@epicenter/server` with `createEnvTokenResolver(token)` and `requireBearerPrincipal`. Two runtimes off one composition: an off-Cloudflare Bun entry (`server.ts`, blessed) and a Cloudflare Worker (`worker/index.ts`); they run identically because the operator supplies the secret. "Solo" vs "shared" is only how many people hold the token, never a mode.
+Reference single-partition **instance** (ADR-0075, amended by ADR-0092): one operator-supplied bearer (`INSTANCE_TOKEN`), one literal `instance` principal, one `principals/instance` partition. Composes `@epicenter/server` with `createEnvTokenResolver(token)` and `requireBearerPrincipal`. Two runtimes use one set of library surfaces: an off-Cloudflare Bun entry (`server.ts`, blessed) and a Cloudflare Worker (`worker/index.ts`). They authenticate identically because the operator supplies the secret either way, and `runtime-profile.test.ts` keeps their surfaces in parity. "Solo" vs "shared" is only how many people hold the token, never a mode.
 
 Not operated by Epicenter; framed as a community-supported starting point. Keep the worker entry small (~30 lines) so it stays readable as a reference.
 

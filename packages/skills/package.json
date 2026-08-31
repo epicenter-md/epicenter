@@ -1,6 +1,7 @@
 {
 	"name": "@epicenter/skills",
 	"version": "0.3.0",
+	"private": true,
 	"description": "Agent skill definitions and services for Epicenter workspaces.",
 	"keywords": [
 		"local-first",
@@ -21,13 +22,14 @@
 	},
 	"license": "AGPL-3.0-or-later",
 	"scripts": {
+		"test": "bun test",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
+		"@y/y": "14.0.0-rc.24",
 		"wellcrafted": "catalog:",
-		"typebox": "catalog:",
 		"yaml": "^2.8.0"
 	},
 	"devDependencies": {

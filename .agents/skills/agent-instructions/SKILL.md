@@ -1,6 +1,6 @@
 ---
 name: agent-instructions
-description: Create, revise, place, audit, evaluate, and validate repository agent instructions across AGENTS.md, CLAUDE.md, and `.agents/skills`. Use when adding or moving agent rules, deciding whether guidance belongs globally or in a skill or reference, writing or improving a skill, tuning routing descriptions, validating discovery, or reviewing instruction sprawl and composition.
+description: Design, audit, and validate repository guidance across AGENTS.md, CLAUDE.md, and `.agents/skills`. Use when creating skills, tuning descriptions, or reviewing instruction sprawl and routing.
 ---
 
 # Agent Instructions
@@ -21,8 +21,13 @@ Read [references/composition-audit.md](references/composition-audit.md) when str
 
 Use other skills for their owned domains:
 
+- `dialectic`: settle what a skill is for before this skill settles what using it
+  should feel like.
 - `writing-voice`: user-facing prose, UI text, errors, docs, and tone.
-- Domain skills such as `workspace-api`, `svelte`, or `auth`: package conventions the new skill must encode.
+- `page-writing` and `journal-writing`: authored Vault prose. Loading one inside
+  a skill run is execution, not skill design; this skill's discovery pass does
+  not apply there.
+- Domain skills such as `yjs`, `svelte`, or `auth`: package conventions the new skill must encode.
 - `git`: staging, commits, branch work, and commit messages.
 - `plugin-creator`: Codex plugins, not agent skills.
 - `skill-installer`: installing third-party skills.
@@ -77,24 +82,32 @@ Avoid agent-specific execution-control fields such as `allowed-tools`, hooks,
 and `context: fork` unless the user explicitly targets an agent that supports
 them.
 
-## What Not To Add
+## Keep The Format Open
 
-Keep repository skills portable and boring. Do not add these as part of the standard:
+A skill is a directory with a `SKILL.md`, and `name` plus `description` is the
+whole discovery contract every host reads. What one host adds on top belongs to
+that host's installation, not to a repository skill:
 
 ```txt
-agents/openai.yaml
-scripts/init_skill.py
-scripts/quick_validate.py
-scripts/generate_openai_yaml.py
-references/openai_yaml.md
+agents/openai.yaml               Codex skill-list interface
+references/openai_yaml.md        its field reference
+scripts/generate_openai_yaml.py  its generator
+scripts/init_skill.py            Codex scaffold
+scripts/quick_validate.py        Codex frontmatter validator
 decorative assets
 ```
 
-Those can exist in personal or system skill installations, but they are not the Vercel-backed skill format.
-
-The line is a second *format and discovery* validator, which the Vercel CLI
-already owns. A script that checks something the CLI does not look at, such as
+Carrying those here would tie a portable skill to one host and would stand a
+second format validator next to the Vercel CLI, which already owns format and
+discovery. A script that checks something the CLI does not look at, such as
 whether a Markdown link resolves, is a different job and is fine to keep.
+
+Codex ships its own `skill-creator` under `${CODEX_HOME:-$HOME/.codex}/skills/.system/`,
+and that guide teaches the list above. Treat that directory as host-owned rather
+than a supported persistence point: packaged manifests and installation markers
+show Codex manages it, so a local edit may be regenerated. Guidance that has to
+survive belongs here, or in `~/Code/dotfiles` when it should follow you across
+repositories.
 
 ## Create A Skill
 
@@ -105,17 +118,50 @@ cd /Users/braden/Code/epicenter/.agents/skills
 bun x --package skills skills init <skill-name>
 ```
 
-Then edit `.agents/skills/<skill-name>/SKILL.md` directly.
+Edit `.agents/skills/<skill-name>/SKILL.md` directly, then add the sibling
+symlink from the repository root so Claude sessions discover it in every
+worktree:
 
-Before drafting body content:
+```bash
+cd /Users/braden/Code/epicenter
+ln -s ../../.agents/skills/<skill-name> .claude/skills/<skill-name>
+```
 
-1. Classify the skill as `process`, `tool workflow`, `convention`, or `domain pattern`.
-2. Gather real source material: completed tasks, diffs, review comments, issue threads, runbooks, execution traces, and repeated corrections.
-3. Confirm the task, target users, trigger use cases, supporting references, and whether any repeated fragile work needs a script.
-4. If those answers are missing and cannot be discovered from repo files, ask before drafting.
-5. Write the description before expanding body content.
-6. Ensure the draft states the job to be done, required inputs or prerequisites, ordered workflow, output format, guardrails, and final checks.
-7. Keep the core workflow small and move conditional detail to `references/`.
+Relative, never absolute: an absolute link pins every checkout to one working
+copy. Skip the link only for a skill written for a Codex session, which is why
+`consult-claude` and `codex-task-backlog-hygiene` have none.
+Delete the link in the same change that deletes the skill.
+
+Ground the skill in real source material: completed tasks, diffs, review
+comments, issue threads, runbooks, execution traces, and repeated corrections.
+A skill carries what an agent could not have inferred here, so a section you
+could have written without opening the repository is a section to cut. When the
+task, its triggers, or the failure it prevents cannot be recovered from repo
+files, ask before drafting rather than inventing them.
+
+## Design The Skill From The Interaction
+
+This pass happens while a `SKILL.md` is being written or behaviorally revised.
+A skill run follows that skill's body; it never renders candidate interactions
+unless the body asks for them. A typo-only edit or a clearly settled instruction
+skips this pass; act directly.
+
+1. **Diverge.** Show two or three short candidate interactions that differ on
+   the axis in doubt: turn count, where the agent stops, or what it hands back.
+   When the shape is hard to see in dialogue, render the artifact instead, such
+   as a feed, table, or diagram. For a behavioral revision of a skill with an
+   already recognized interaction, render only the changed one.
+2. **Converge.** Revise one rendering at a time from the human's natural
+   reactions. The human's reaction is design evidence, not a vote that ends the
+   pass. Stop when the human recognizes it: “yes, that one,” or no further
+   corrections. “Fine” is not recognition.
+3. **Extract.** Work backward from the recognized interaction into the trigger,
+   turns, reaction points, stopping condition, output, guardrails, and non-goals.
+   The recognized interaction is the first evaluation case: its prompt and
+   turns become the prompt and assertions in `Evaluate A Skill`.
+
+When the goal itself is unsettled, run `dialectic` first; this pass assumes the
+goal is settled and only the interaction's shape is open.
 
 ## Write The Description First
 
@@ -123,7 +169,7 @@ The description is always loaded and drives selection. It must carry the trigger
 
 Do not add body sections like `When to apply this skill`, `When to load`, `Trigger phrases`, or `Use this skill when...`. Put routing in the frontmatter description; use the body for workflow, guardrails, examples, and final checks.
 
-The body is still not routing-neutral. Rewriting `handoff`'s body while leaving its name and description byte-identical flipped `delegation-hand-off-near-miss` from 3/3 not-loading to 3/3 loading under `--live`, reproducible across several runs each way. The mechanism is not established, and the fix is not to move trigger language into the body: re-run the affected `--live` cases after a substantial body rewrite, and treat a routing change as a real result rather than noise.
+The body is still not routing-neutral. Rewriting `handoff`'s body while leaving its name and description byte-identical flipped `enlistment-hand-off-near-miss` from 3/3 not-loading to 3/3 loading under `--live`, reproducible across several runs each way. The mechanism is not established, and the fix is not to move trigger language into the body: re-run the affected `--live` cases after a substantial body rewrite, and treat a routing change as a real result rather than noise.
 
 Include:
 
@@ -146,6 +192,57 @@ description: Helps with workspace stuff.
 ```
 
 For subtle routing, test 2 or 3 should-trigger prompts and 1 or 2 near-miss should-not-trigger prompts. Do not stuff exact keywords unless the keyword represents a real trigger category.
+
+End with what the skill is not for. `Do not use for...` is the only place a near
+miss can be excluded, because the body loads after routing has already failed.
+
+## Guide Without Over-Steering
+
+A skill is read by something that can already reason. Its job is to land that
+judgment on this codebase, not to replace it with a script. Over-steering is the
+failure where an instruction is so specific it stops generalizing: the agent
+applies it correctly to the case you wrote down and wrongly to the next one.
+
+State the premise the skill runs on once, at the top, and derive the rest from
+it. An agent holding the premise can answer a case you never wrote down. An
+agent holding twenty disconnected rules cannot.
+
+Attach the reason to the rule, in the same sentence. "Never flatten a JWKS fetch
+failure into a 401" is a rule the agent can only obey. "Never flatten it, or a
+transient fault makes clients discard a good token" is a rule the agent can
+extend. A rule whose reason you cannot state in a clause is usually taste, and
+belongs in a reference or nowhere.
+
+Give a criterion, not a threshold. "Keep at 4+ callers" makes the agent count
+instead of think, and then needs three later sections to walk itself back. "Does
+this function earn its name" needs none. Reach for a number only when the number
+is the actual constraint, like a token limit or a timeout.
+
+Bound the rule on both sides. Every instruction has an overshoot and the agent
+will find it, so say what too little looks like as well as too much. Rules
+stated one-sided get applied until they break.
+
+Diagnose an anti-pattern where it happens, not in a list at the end. Name the
+move, then the consequence that makes it wrong. A closing `Anti-Patterns` or
+`Best Practices` section is a second copy of rules already stated; the two
+copies drift to different calibrations, and the agent obeys whichever it read
+last.
+
+Match form to the work. Judgment must be prose, because a bullet strips the
+reason and leaves the verdict. Commands, paths, schemas, and file trees must be
+blocks, because prose hides them. Bulleted judgment is the tell that a skill has
+stopped explaining and started listing.
+
+Say what done means as a property, and name its false positive. "Both of you can
+reason forward from it" is checkable. "The review is complete" is not.
+
+Guide the decisions that matter; leave the route to the agent. Add procedural
+detail when the work's safety or correctness depends on the order, and not
+otherwise.
+
+[dialectic](../dialectic/SKILL.md) is the worked example: compact prose, no
+bullets, every rule carrying its reason. Read it when a skill you are writing
+has turned into a list.
 
 ## Use Progressive Disclosure
 
@@ -178,8 +275,6 @@ Use `scripts/` only for repeated, deterministic, fragile, or error-prone work. S
 
 Use Bun by default in this repository. Translate upstream Agent Skills CLI examples from `npx skills ...` to `bun x --package skills skills ...`. For other npm package commands, preserve the package and use `bun x` or `bunx`, pinning versions when behavior must be reproducible.
 
-Calibrate control to fragility. Be prescriptive for exact commands, migrations, destructive operations, and brittle formats. For batch, destructive, external-state, or high-blast-radius operations, use plan-validate-execute: create the plan, validate it against the source of truth, then execute. For judgment-heavy reviews or design work, give defaults and decision rules rather than rigid scripts.
-
 ## Evaluate A Skill
 
 Do a lightweight eval when creating a new skill, changing trigger descriptions, or revising subtle behavior.
@@ -203,12 +298,18 @@ bun run .agents/skills/agent-instructions/scripts/run-trigger-eval.ts
 ```
 
 The first checks every Markdown link and heading anchor under `.agents/skills`;
-nothing else in the repository does. The second runs the stored trigger corpus.
+nothing else in the repository does. The second runs a stored trigger corpus.
 Its default pass is offline and reports what descriptions claim, which is a
 smoke test on coverage and not evidence about routing; `--live` spawns the
 Claude CLI per case to measure what a model actually loads.
 
-Read [references/evaluation.md](references/evaluation.md) for trigger evals, execution trace review, and security checks.
+Descriptions are not the only surface that routes. In the Claude Code probe used
+here, `AGENTS.md` is present before descriptions are weighed and names skills
+outright; a live A/B showed it decides the route for a broad phrase no
+description claims. Editing it is a routing change with effects past the clause
+you touched, so measure rather than reason about it.
+
+Read [references/evaluation.md](references/evaluation.md) for trigger evals, always-on routing, execution trace review, and security checks.
 
 ## Validate With Vercel CLI
 
@@ -240,19 +341,19 @@ skill appears in the listing.
 
 ## Update A Skill
 
-When updating an existing skill:
+Decide first whether the work updates this skill or becomes a new one, then,
+beyond the edit itself:
 
-1. Read the current `SKILL.md`.
-2. Decide whether this should update the existing skill or become a new skill.
-3. Check whether linked `references/`, `scripts/`, or `assets/` still earn their keep.
-4. Review the description against realistic trigger and near-miss prompts.
-5. Remove stale local-only scaffolding from the guidance.
-6. Validate with the commands in [Validate With Vercel CLI](#validate-with-vercel-cli).
-7. Forward-test subtle behavior with realistic prompts.
+- Re-read the description against realistic trigger and near-miss prompts. An
+  update that changes what a skill does and leaves the description alone has
+  moved the body out from under its own routing.
+- Check whether linked `references/`, `scripts/`, or `assets/` still earn their
+  keep, and delete what the update made dead.
+- Remove local-only scaffolding the guidance has outgrown.
+- Validate with [Validate With Vercel CLI](#validate-with-vercel-cli), and
+  forward-test subtle behavior with realistic prompts.
 
 When the user asks whether a skill needs changes, separate the answer into required fixes, worthwhile small improvements, and things to leave alone.
-
-Ask draft review questions when the scope is uncertain: does this cover the target use cases, is anything missing, and should any section move to `references/`?
 
 Use sharper review questions when the design still feels soft:
 
@@ -261,19 +362,18 @@ Use sharper review questions when the design still feels soft:
 - Which other skill should compose with this instead?
 - What concrete run would prove this skill helped?
 
-## Review Checklist
+## Exit Gate
 
-- The description has concrete triggers and near-miss boundaries.
-- `SKILL.md` contains the core workflow, not a copied source essay.
-- References have clear load conditions.
+Everything above states a rule once. This lists only what has to be *checked*
+before handing the skill over, and nothing already stated:
+
 - `audit-skill-links.ts` reports no dead link or anchor.
-- Scripts are justified, non-interactive, and portable.
-- Required tools are stated as prerequisites; the skill does not imply access to apps, files, connectors, or credentials.
-- Optional frontmatter is intentional: keep cross-agent fields like `license`,
-  `argument-hint`, `disable-model-invocation`, and useful `metadata`; avoid
-  agent-specific execution-control fields unless the target agent supports
-  them.
-- The skill avoids time-sensitive facts unless sourced and necessary.
-- No orphan `CLAUDE.md` files are created; sibling shims only import `@AGENTS.md`.
-- Punctuation follows `writing-voice`: no en dash characters, and em dash characters only when they earn the emphasis.
 - Validation passed with the Vercel `skills` CLI.
+- Required tools are stated as prerequisites. A skill instructs an agent to use
+  tools it already has; it does not grant access to apps, files, connectors, or
+  credentials.
+- No time-sensitive fact appears unless it is sourced and necessary.
+- The `.claude/skills` symlink exists and is relative, or the skill is
+  Codex-routed and deliberately has none.
+- No orphan `CLAUDE.md` file was created; sibling shims only import `@AGENTS.md`.
+- Punctuation follows `writing-voice`: no en dash characters, and em dash characters only when they earn the emphasis.

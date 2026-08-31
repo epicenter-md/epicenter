@@ -6,21 +6,28 @@ Codebase-specific facts that the collapse pass must respect. These strings, shap
 
 These appear in on-disk paths, sync wire format, or schemas other apps validate against. They are part of the durable vocabulary of Epicenter.
 
-### IndexedDB and BroadcastChannel key
+### IndexedDB database name
 
 ```
-"epicenter/{server}/principals/{principalId}/{ydocGuid}"
+"epicenter/{namespace}/private"
+"epicenter/{namespace}/workspace/{principalId}"
 ```
 
-Used by the browser-side workspace runtime (`packages/workspace/src/document/local-yjs-key.ts`). Forward slashes, includes the API origin host as `{server}` so two deployments on the same browser profile don't collide, and partition segment is `principals/{principalId}/` to match the server's URL and R2 shape. Changing the format detaches every existing IndexedDB store from its consumer.
+The durable address of one browser document (`packages/data/src/store/browser.ts`), holding the three relations that have to survive a reload: `updates`, `outbox`, and `cursor`. It reads as ownership (ADR-0233): the application, then the private document or the account whose replica this is. Changing the shape detaches every existing store from its consumer, and what is lost is not the work (the authority still owes it to the device) but the guarantee that a reload sees it.
+
+Three identities meet here and none may stand in for another: the namespace (which application), the principal id (whose replica), and the authority document id (which current Yjs document, kept inside the store because rebuild changes it).
+
+`epicenter-store-{namespace}` and `epicenter-store-{namespace}#{private,workspace}` are the superseded shapes. They are deletion targets at every open, never read.
 
 ### Durable Object name format and URL shape
 
 ```
-"principals/{principalId}/rooms/{roomId}"
+"principals/{principalId}/stores/{namespace}"
 ```
 
-Used by the sync hub to address rooms (`packages/server/src/principal.ts`, `doName()`). Same shape on the wire: `/api/principals/:principalId/rooms/:roomId`. Changing the format breaks the routing contract between client and hub.
+One store authority per principal and application (ADR-0225), named in `packages/server/src/store-sync/route.ts`. Changing the format detaches every authority from its data.
+
+The wire shape is not parallel to it, and that is deliberate: the connect URL is one path, `/api/store/v1/sync?namespace=...&cursor=...` (`packages/sync/src/store-route.ts`). Whose data it is never appears in the query, because it comes from the resolved bearer server-side, so no value a client puts there can reach another partition (ADR-0092). Do not "fix" the asymmetry by moving the principal into the URL.
 
 In the per-user topology `principalId` is the signed-in user's id; in the instance topology it is the literal `INSTANCE_PRINCIPAL_ID` (`'instance'`). The path is uniform across topologies.
 
@@ -30,7 +37,7 @@ Other apps validate inputs against these by name and shape. Renaming a field or 
 
 - `PersistedAuth` (`packages/auth/src/auth-types.ts`)
 - `ApiSessionResponse` (`packages/auth/src/auth-types.ts`)
-- `PrincipalId`, `INSTANCE_PRINCIPAL_ID` (`packages/identity/src/identity.ts`)
+- `PrincipalId`, `INSTANCE_PRINCIPAL_ID` (`packages/principal/src/principal.ts`)
 
 Per-user vs instance partitioning is intentionally NOT in this list: there is no
 `OwnershipRule` engine or discriminated union (the old `perUser` / `instance`
@@ -40,18 +47,18 @@ is one unconditional `principals/<principalId>/` shape in
 decided at the bearer resolver, carries no arktype validator, and never crosses
 the wire as config.
 
-### Identity strings inside documents
+### Root names inside a document
 
-- Y.Doc guid values (workspace identity for sync and persistence)
-- Sync room names
-- Child document GUIDs (deterministic per row, used by materializers and editors)
+An application is one `Y.Doc` whose roots are `tables:{name}` and `kv` (`packages/data/src/store/document.ts`). `Doc.get` is `setIfUndefined`, so it mints on miss, and a root can never be removed: renaming one strands every row under the old name permanently.
+
+A row's document roots (`db.notes.create({...}, { document: ['body'] })`) are named by the application and allocated with the row. Renaming one orphans the prose written into it.
 
 ## Pause and ask before
 
 The collapse pass should stop and surface to the user (not silently proceed) when about to:
 
 - Change any string from the list above
-- Delete a public exported name that has zero in-repo callers but plausible external CLI or SDK consumers (the `@epicenter/cli` binary and the `@epicenter/workspace` published API are the load-bearing examples)
+- Delete a public exported name that has zero in-repo callers but plausible external consumers (the published MIT packages, `@epicenter/workspace` and `@epicenter/field`, are the load-bearing example: they emit to `dist` for toolchains we do not control)
 - Collapse two files where one's JSDoc documents a non-obvious invariant (the JSDoc is the documentation of a contract; losing it loses the contract)
 - Merge packages or move exports across package boundaries
 - Change a function signature that crosses a published package boundary
@@ -62,12 +69,11 @@ The collapse pass should stop and surface to the user (not silently proceed) whe
 Default collapse-pass targets, narrowest to widest:
 
 1. `packages/auth`
-2. `packages/workspace`
-3. `packages/svelte-utils`
-4. `packages/cli`
-5. `apps/api`
+2. `packages/data`
+3. `packages/svelte`
+4. `apps/api`
 
 Out of scope without an explicit pass declaration:
 
-- First-party apps: `apps/whispering`, `apps/tab-manager`, `apps/honeycrisp`, `apps/vocab`. These are owned by separate waves and have their own architecture tests.
+- First-party apps: `apps/honeycrisp`, `apps/whispering`, `apps/vocab`, `apps/local-mail`. These are owned by separate waves and have their own architecture tests.
 - `specs/`, `docs/articles/`, migration history (`*-legacy-*.md`, archived decision docs)

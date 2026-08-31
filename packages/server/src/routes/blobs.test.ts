@@ -8,7 +8,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import { generateBlobId } from '@epicenter/blobs';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId } from '@epicenter/principal';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import { mountBlobsApp } from './blobs.js';

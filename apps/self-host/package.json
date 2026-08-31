@@ -10,6 +10,7 @@
 	"license": "AGPL-3.0-or-later",
 	"scripts": {
 		"dev": "bun --watch server.ts",
+		"test": "bun test",
 		"typecheck": "tsc --noEmit",
 		"typegen": "wrangler types",
 		"deploy": "wrangler deploy",
@@ -18,7 +19,7 @@
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/identity": "workspace:*",
+		"@epicenter/principal": "workspace:*",
 		"@epicenter/server": "workspace:*",
 		"arktype": "catalog:",
 		"hono": "catalog:"

@@ -8,12 +8,20 @@
 	import Settings from './Settings.svelte';
 
 	/**
-	 * Epicenter Home: the shell a person keeps open (ADR-0189).
+	 * Epicenter: an application beside the others, not a shell above them
+	 * (ADR-0209).
 	 *
-	 * Three panes and nothing else. The session is owned here, above the visual
+	 * Three panes and nothing else. Apps launches the crafted views, which the
+	 * OS then switches between. The session is owned here, above the visual
 	 * contents, and `Tabs.Content` hides an inactive pane rather than unmounting
 	 * it, so switching panes never disturbs the live socket, the transcript, or
 	 * an unsent draft.
+	 *
+	 * There is no Data pane. It was the raw view over a replica the host owned,
+	 * and ADR-0226 withdrew what it read: an application on the store writes to
+	 * its own client-owned store, so a reader that wants an application's rows
+	 * has to become a replica of that application's authority. That is a real
+	 * app somebody may build; it is not this one reimported.
 	 */
 
 	const { sessionReady }: { sessionReady: Promise<void> } = $props();

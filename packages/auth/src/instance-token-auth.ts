@@ -1,6 +1,6 @@
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync/auth-subprotocol';
 import type { Logger } from 'wellcrafted/logger';
-import type { AuthFetch, SyncAuthClient } from './auth-contract.js';
+import type { AuthClient, AuthFetch } from './auth-contract.js';
 import { OpenWebSocketDenied } from './auth-errors.js';
 import {
 	type AuthFetchInput,
@@ -44,7 +44,7 @@ export function createInstanceTokenAuth({
 	fetch: fetchImpl = globalThis.fetch.bind(globalThis),
 	WebSocket: WebSocketImpl = globalThis.WebSocket,
 	log,
-}: CreateInstanceTokenAuthConfig): SyncAuthClient {
+}: CreateInstanceTokenAuthConfig): AuthClient {
 	const epicenterOrigin = new URL(baseURL).origin;
 	const authority = createInstanceCredentialAuthority(
 		{ fetch: fetchImpl, log },
@@ -89,16 +89,13 @@ export function createInstanceTokenAuth({
 		get state() {
 			return authority.snapshot.state;
 		},
-		deployment: {
-			kind: 'self-hosted',
+		connection: {
 			baseURL,
-			connection: {
-				get status() {
-					return authority.snapshot.connectionStatus;
-				},
-				onChange(fn) {
-					return authority.onConnectionChange(fn);
-				},
+			get status() {
+				return authority.snapshot.connectionStatus;
+			},
+			onChange(fn) {
+				return authority.onConnectionChange(fn);
 			},
 		},
 		onStateChange(fn) {

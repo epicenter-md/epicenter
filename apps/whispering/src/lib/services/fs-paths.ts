@@ -1,12 +1,21 @@
 /**
- * Tauri path helpers for Whispering's appdata directories.
+ * Where Whispering points a person at files the desktop host owns.
  *
- * Tauri derives this root from `appDataDir()`, i.e.
- * `${dataDir}/${bundleIdentifier}`. With identifier
- * `so.epicenter`, that means:
+ * `appDataDir()` is an IPC call into Tauri's `PathResolver::app_data_dir`, the
+ * same function the native recorder resolves `<root>/blobs` through, so this
+ * names the host's directory rather than computing a second one. With the
+ * `so.epicenter` identifier that is:
  *   macOS:   ~/Library/Application Support/so.epicenter/
  *   Windows: %APPDATA%/so.epicenter/
  *   Linux:   ~/.local/share/so.epicenter/
+ *
+ * It is not the whole rule, and the gap is worth knowing about.
+ * `EPICENTER_DATA_DIR` moves that root; the Bun host and the native recorder
+ * both honour it, Tauri's resolver does not, and a WebView cannot read the
+ * process environment to make up the difference. Under an override this opens
+ * the platform default while the recordings are somewhere else. Closing it is
+ * the same open question as who tells the recorder where blobs live (ADR-0201):
+ * whoever ends up injecting that root injects it here too.
  *
  * This module stays importable from browser builds because routes statically
  * import it while guarding calls with `tauri`; the build-time platform seam

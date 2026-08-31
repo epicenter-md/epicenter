@@ -1,106 +1,93 @@
+/**
+ * Skills runtime tests.
+ *
+ * Skills is device-only, and this is what that means in practice: one
+ * document, opened for the page lifetime, holding work that stays on this
+ * machine and comes back when it reopens (ADR-0233). There is no auth client
+ * in this build and no account replica, so there is exactly one ready shape.
+ *
+ * Key behaviors:
+ * - The runtime opens the device document and nothing else
+ * - A skill and its markdown survive reopening
+ * - An aborted boot rejects with the abort
+ *
+ * `fake-indexeddb` supplies the browser store's storage, the harness the other
+ * runtime tests in this repo use.
+ */
+import 'fake-indexeddb/auto';
+import { installTestLocks } from '@epicenter/data/test-locks';
+
+installTestLocks();
+
 import { expect, test } from 'bun:test';
 
+// The state module IS reactive state, so the runes are shimmed to their
+// non-reactive meaning. These assertions read imperatively: the question is
+// what the document holds, not whether a view recomputed.
 (globalThis as unknown as { $state: unknown }).$state = Object.assign(
 	<TValue>(value: TValue) => value,
 	{ raw: <TValue>(value: TValue) => value },
 );
-(globalThis as unknown as { $derived: unknown }).$derived = <TValue>(
-	value: TValue,
-) => value;
+(globalThis as unknown as { $derived: unknown }).$derived = Object.assign(
+	<TValue>(value: TValue) => value,
+	{ by: <TValue>(derive: () => TValue) => derive() },
+);
 
-const { openSkillsApplication } = await import('./application.js');
+import { skillsDefinition } from '@epicenter/skills';
+import { openSkillsRuntime } from './application.js';
 
-test('a failed Skills open releases its runtime', async () => {
-	const cause = new Error('storage unavailable');
-	let releases = 0;
+async function resetStorage(): Promise<void> {
+	for (const database of await indexedDB.databases()) {
+		const name = database.name;
+		if (name === undefined) continue;
+		await new Promise<void>((resolve, reject) => {
+			const request = indexedDB.deleteDatabase(name);
+			request.onsuccess = () => resolve();
+			request.onerror = () => reject(request.error);
+		});
+	}
+}
 
-	await expect(
-		openSkillsApplication({
-			openEpicenter: async () =>
-				({
-					bind() {
-						return {
-							tables: {
-								skills: {
-									subscribe: () => () => {},
-									scan: () => Promise.reject(cause),
-								},
-								skillReferences: {
-									subscribe: () => () => {},
-									scan: () => new Promise<never>(() => {}),
-								},
-							},
-							values: {},
-						};
-					},
-					async [Symbol.asyncDispose]() {
-						releases += 1;
-					},
-				}) as never,
-			reportBackgroundError() {},
-		}),
-	).rejects.toBe(cause);
+test('the runtime opens the local document and nothing else', async () => {
+	await resetStorage();
+	await using runtime = await openSkillsRuntime();
 
-	expect(releases).toBe(1);
+	expect(runtime.state.skills).toEqual([]);
+
+	const names = (await indexedDB.databases()).map(({ name }) => name);
+	expect(names).toEqual([`epicenter/v2/${skillsDefinition.id}/local/gen/1`]);
 });
 
-test('aborting a pending Skills open rejects and releases its runtime', async () => {
-	const abort = new AbortController();
-	let releases = 0;
-	const opening = openSkillsApplication(
-		{
-			openEpicenter: async () =>
-				({
-					bind() {
-						const table = {
-							subscribe: () => () => {},
-							scan: () => new Promise<never>(() => {}),
-						};
-						return {
-							tables: { skills: table, skillReferences: table },
-							values: {},
-						};
-					},
-					async [Symbol.asyncDispose]() {
-						releases += 1;
-					},
-				}) as never,
-			reportBackgroundError() {},
-		},
-		{ signal: abort.signal },
-	);
+test('a skill and its instructions survive reopening', async () => {
+	await resetStorage();
+	let skillId: string;
+	{
+		await using runtime = await openSkillsRuntime();
+		skillId = runtime.state.createSkill('writing-voice');
+		const held = runtime.data.tables.skills.get(skillId);
+		if (held === undefined) throw new Error('the row has no content');
+		const content = held.body;
+		content.applyDelta(content.change.insert('Write directly.') as never);
+		// The durable flush is asynchronous, so a reopen must wait for it.
+		await runtime.data.store.persistence.flush();
+		expect(runtime.data.store.persistence.get()).toBe('saved');
+	}
 
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	abort.abort();
-	await expect(opening).rejects.toHaveProperty('name', 'AbortError');
-	expect(releases).toBe(1);
+	await using reopened = await openSkillsRuntime();
+	expect(reopened.state.skills.map(({ name }) => name)).toEqual([
+		'writing-voice',
+	]);
+	expect(reopened.data.tables.skills.get(skillId)?.body.toString()).toBe(
+		'Write directly.',
+	);
 });
 
-test('abort wins acquisition and releases a runtime that opens late', async () => {
-	const gate = Promise.withResolvers<void>();
-	const abort = new AbortController();
-	let releases = 0;
-	const opening = openSkillsApplication(
-		{
-			openEpicenter: async () => {
-				await gate.promise;
-				return {
-					bind() {
-						throw new Error('a late runtime must not be bound');
-					},
-					async [Symbol.asyncDispose]() {
-						releases += 1;
-					},
-				} as never;
-			},
-			reportBackgroundError() {},
-		},
-		{ signal: abort.signal },
-	);
+test('an aborted boot rejects with the abort', async () => {
+	await resetStorage();
+	const controller = new AbortController();
+	controller.abort(new Error('root unmounted'));
 
-	abort.abort(new Error('root unmounted'));
-	await expect(opening).rejects.toThrow('root unmounted');
-	gate.resolve();
-	while (releases === 0) await Bun.sleep(1);
-	expect(releases).toBe(1);
+	expect(openSkillsRuntime({ signal: controller.signal })).rejects.toThrow(
+		'root unmounted',
+	);
 });

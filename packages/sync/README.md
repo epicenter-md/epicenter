@@ -1,7 +1,9 @@
 # @epicenter/sync
 
-WebSocket subprotocol auth: the one vocabulary the client and server halves of
-an Epicenter WebSocket handshake must agree on.
+The store transport's connect URL, and the WebSocket subprotocol auth every
+Epicenter upgrade uses. Both halves need them and only one of them is a server:
+a browser replica builds the same URL and has no business importing Hono to
+learn what path to ask for.
 
 A browser `WebSocket` cannot set request headers, so a bearer credential rides
 the subprotocol list instead. The client offers the main subprotocol plus
@@ -43,19 +45,30 @@ const { main, bearer } = parseSubprotocols(
 `isOpenWebSocketDenial` classifies a rejected upgrade so a client can tell an
 auth refusal from a transport failure.
 
+`STORE_SYNC_ROUTE` is where a replica connects:
+
+```typescript
+import { STORE_SYNC_ROUTE } from "@epicenter/sync";
+
+new WebSocket(
+  STORE_SYNC_ROUTE.url(baseURL, { dataId, cursor }),
+  STORE_SYNC_ROUTE.subprotocols(token),
+);
+```
+
+One path (`/api/store/v1/sync`), and the addressing lives in the query: a
+replica says which application `dataId` it is syncing and how far through the
+log it has read. Whose data that is comes from the resolved bearer,
+server-side, so there is no value a client can put in the query that reaches
+another partition (ADR-0092, ADR-0225). `DATA_ID` is the data id
+grammar both halves check against one definition.
+
 ## Scope
 
-This package carries no Yjs, no document framing, and no transport.
-
-The Yjs sync wire protocol it was named for is gone. ADR-0166 replaced the
-room plane with the Epicenter authority, and document synchronization now runs
-over HTTP with no WebSocket at all (ADR-0174). The attach relay (ADR-0115) is
-the only remaining WebSocket surface, and it forwards opaque bytes rather than
-framing document updates.
-
-The name therefore no longer describes the contents. Renaming or folding this
-into `@epicenter/auth` is deferred rather than done quietly, because the
-package is published and the move would cross the MIT/AGPL boundary.
+This package carries no Yjs, no document framing, and no transport. It is the
+addressing and the handshake, and nothing that speaks over them: the rules about
+who has been sent what live in `@epicenter/data/sync`, and the mount that
+answers this route lives in `packages/server/src/store-sync/`.
 
 ## License
 

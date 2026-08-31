@@ -4,9 +4,8 @@ Load this when stress-testing how a *cluster* of skills composes, not a single s
 routing collisions, duplicated bodies, dead links, and unclear roles. Run it
 after extracting or merging a skill, after adding a description trigger, or on a
 cadence over a named cluster (for example the review/simplify cluster:
-`post-implementation-review`, `collapse-pass`, `fresh-context-review`,
-`greenfield-clean-breaks`, `radical-options`, `asymmetric-wins`,
-`first-read-review`, `one-sentence-test`).
+`post-implementation-review`, `collapse-pass`, `greenfield-clean-breaks`,
+`radical-options`, `asymmetric-wins`, `one-sentence-test`).
 
 This complements, does not replace:
 
@@ -46,24 +45,46 @@ claim it. More than one is an over-trigger.
 bun run agent-instructions/scripts/audit-routing-collisions.ts "asymmetric wins"
 ```
 
-The script searches only the `description` field in each skill's frontmatter.
-Exactly one hit = clean routing. Zero hits = no owner. Two or more hits =
-collision. Fix by narrowing every description except the one true owner: do not
-let a hub or manual *open* with a move's name. (This check catches the case where
-a manual was branded "Asymmetric-wins pass" while a dedicated `asymmetric-wins`
-move also existed.)
+Stdout lists every skill description that mentions the phrase, and the verdict
+counts claimants rather than mentions. One claimant = clean routing. Zero = no
+owner. Two or more = collision. Fix a collision by narrowing every description
+except the one true owner: do not let a hub or manual *open* with a move's name.
+(This check catches the case where a manual was branded "Asymmetric-wins pass"
+while a dedicated `asymmetric-wins` move also existed.)
 
-A hit counts the phrase, not the intent. Add `--explain` to see whether each hit
-claims the phrase or routes it elsewhere:
+Descriptions are not the only routing surface, so a phrase can read as clean on
+stdout while two surfaces claim it. Always-on hits print on stderr and
+deliberately leave the claimant count and the exit code alone:
+
+```txt
+clean break -> greenfield-clean-breaks/SKILL.md
+also claimed by AGENTS.md:35, which loads before any description
+```
+
+Read that against the measured asymmetry (`references/evaluation.md`): where a
+description already owns the phrase, the always-on rule does not change its
+route, so the second claimant is a deletion *candidate*. Where the description
+column is empty, the always-on rule is the only thing routing the phrase, and it
+is carrying the paragraph. Neither reading makes a deletion free, since
+shortening the paragraph cost routes it still named.
+
+Every mention is still listed, because the useful answer is usually who routes
+the phrase away. Add `--explain` to annotate each line:
 
 ```bash
 bun run agent-instructions/scripts/audit-routing-collisions.ts --explain "simplify this"
 ```
 
-That phrase reports one hit, which reads as clean routing, but the annotation
-shows `control-flow` only mentions it to send the reader to `collapse-pass`. One
-hit plus `[disclaims]` means the phrase has no owner at all. The flag does not
-change the hit count or the exit code.
+That phrase reports two lines and exits clean: `collapse-pass [claims]` owns it,
+`control-flow [disclaims]` sends it there. That is what a resolved boundary looks
+like, and it is why the verdict counts claims. Resolving a contested phrase adds
+a mention rather than removing one, so a detector counting mentions would flag
+every fix it prompted.
+
+The failure that hides best is the opposite one: every mention disclaims and
+nobody accepts, so the phrase reads as owned until you check. That exits 1 with
+`No skill description claims ...; N route it elsewhere`. Give it an owner or
+stop advertising it.
 
 ### 2. Duplicated bodies
 
@@ -185,7 +206,7 @@ findings.
 A description claiming a phrase people say constantly in conversations that
 should not load the skill ("be brief", "what should we do", "simplify this",
 "can you summarize", "what does X do"). Worst when the skill is sticky or
-heavyweight: caveman's persistent persona fired on a one-off "be brief".
+heavyweight: a persistent persona skill fired on a one-off "be brief".
 
 ```bash
 # scan the whole frontmatter: descriptions can be block scalars spanning lines

@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { type } from 'arktype';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { type BlobId, parseBlobId } from './blob-id.js';
 import {
@@ -18,6 +19,22 @@ const BUN_STAGING_DIRECTORY = 'bun';
 const DEFAULT_CONTENT_TYPE = 'application/octet-stream';
 
 type StoredMetadata = BlobStat;
+
+/**
+ * Parse on-disk metadata at the JSON boundary: `metadata.json` is untrusted
+ * input like any file, so its shape is established here rather than asserted
+ * downstream.
+ */
+const StoredMetadata = type({
+	contentType: 'string',
+	size: 'number',
+}).narrow(
+	(metadata) =>
+		Object.keys(metadata).length === 2 &&
+		Number.isSafeInteger(metadata.size) &&
+		metadata.size >= 0 &&
+		normalizeContentType(metadata.contentType) === metadata.contentType,
+);
 
 type BlobReadError = BlobNotFound | BlobStoreFailed;
 
@@ -55,16 +72,18 @@ export function createBunBlobStore({ directory }: { directory: string }) {
 	): Promise<Result<StoredMetadata, BlobReadError>> {
 		const objectDirectory = blobDirectory(id);
 		try {
-			const value: unknown = JSON.parse(
-				await readFile(join(objectDirectory, METADATA_FILE), 'utf8'),
+			const metadata = StoredMetadata(
+				JSON.parse(
+					await readFile(join(objectDirectory, METADATA_FILE), 'utf8'),
+				),
 			);
-			if (!isStoredMetadata(value)) {
+			if (metadata instanceof type.errors) {
 				return BlobStoreError.BlobStoreFailed({
 					id,
 					cause: new Error('Blob metadata has an invalid shape.'),
 				});
 			}
-			return Ok(value);
+			return Ok(metadata);
 		} catch (cause) {
 			if (isFileSystemError(cause, 'ENOENT')) {
 				try {
@@ -255,30 +274,8 @@ function normalizeContentType(contentType: string): string {
 	return normalized;
 }
 
-function isStoredMetadata(value: unknown): value is StoredMetadata {
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-		return false;
-	}
-	const keys = Object.keys(value).sort();
-	if (keys.length !== 2 || keys[0] !== 'contentType' || keys[1] !== 'size') {
-		return false;
-	}
-	const metadata = value as Record<string, unknown>;
-	return (
-		typeof metadata.contentType === 'string' &&
-		normalizeContentType(metadata.contentType) === metadata.contentType &&
-		typeof metadata.size === 'number' &&
-		Number.isSafeInteger(metadata.size) &&
-		metadata.size >= 0
-	);
-}
-
 function isFileSystemError(cause: unknown, code: string): boolean {
-	return (
-		cause instanceof Error &&
-		'code' in cause &&
-		(cause as Error & { code?: unknown }).code === code
-	);
+	return cause instanceof Error && 'code' in cause && cause.code === code;
 }
 
 async function writeData(path: string, data: PutData): Promise<void> {

@@ -5,16 +5,11 @@
 	"version": "0.0.2",
 	"type": "module",
 	"exports": {
-		".": "./src/lib/workspace/index.ts"
+		".": "./src/lib/data/index.ts"
 	},
 	"imports": {
-		"#platform/application": {
-			"epicenter-host": "./src/lib/application-platform.epicenter-host.ts",
-			"default": "./src/lib/application-platform.browser.ts"
-		},
 		"#platform/auth": {
 			"epicenter-host": "./src/lib/platform/auth.epicenter-host.ts",
-			"tauri": "./src/lib/platform/auth.tauri.ts",
 			"default": "./src/lib/platform/auth.browser.ts"
 		},
 		"#platform/instance": {
@@ -23,17 +18,17 @@
 		}
 	},
 	"scripts": {
-		"dev": "bun run dev:desktop",
+		"dev": "bun run dev:web",
 		"dev:web": "vite dev",
-		"dev:desktop": "tauri dev",
+		"smoke": "bun run build && bun run evidence/smoke.ts",
 		"build": "NODE_ENV=production vite build",
-		"build:epicenter": "EPICENTER_SURFACE=1 bun run build",
+		"build:epicenter": "EPICENTER_HOST=1 bun run build",
 		"preview": "vite preview",
 		"deploy": "wrangler deploy",
 		"prepare": "svelte-kit sync || echo ''",
 		"test": "bun test",
-		"tauri": "tauri",
-		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.tauri.json && svelte-check --tsconfig ./tsconfig.epicenter.json"
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.epicenter.json",
+		"evidence:runs": "bun run evidence/runs-on-the-new-store.ts"
 	},
 	"devDependencies": {
 		"@epicenter/ui": "workspace:*",
@@ -43,9 +38,11 @@
 		"@sveltejs/kit": "catalog:",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/vite": "catalog:",
-		"@tauri-apps/cli": "catalog:",
 		"@types/bun": "catalog:",
+		"@types/markdown-it": "^14.0.0",
+		"fake-indexeddb": "^6.2.5",
 		"mode-watcher": "catalog:",
+		"playwright": "^1.61.1",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
 		"svelte-sonner": "catalog:",
@@ -58,14 +55,12 @@
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/data": "workspace:*",
-		"@epicenter/document-sync": "workspace:*",
 		"@epicenter/field": "workspace:*",
+		"@epicenter/sqlite": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
-		"@tauri-apps/api": "catalog:",
-		"@tauri-apps/plugin-deep-link": "catalog:",
-		"@tauri-apps/plugin-opener": "catalog:",
+		"@epicenter/sync": "workspace:*",
+		"@sqlite.org/sqlite-wasm": "catalog:",
 		"@y/prosemirror": "2.0.0-6",
-		"@y/protocols": "1.0.6-rc.1",
 		"@y/y": "14.0.0-rc.24",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
@@ -73,7 +68,9 @@
 		"date-fns": "catalog:",
 		"prosemirror-commands": "^1.6.0",
 		"prosemirror-inputrules": "^1.4.0",
+		"markdown-it": "^14.0.0",
 		"prosemirror-keymap": "^1.2.0",
+		"prosemirror-markdown": "^1.13.0",
 		"prosemirror-model": "^1.25.0",
 		"prosemirror-schema-basic": "^1.2.0",
 		"prosemirror-schema-list": "^1.4.0",

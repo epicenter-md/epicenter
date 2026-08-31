@@ -1,33 +1,34 @@
-/**
- * Consult Claude Runner Tests
- *
- * Verifies that the consultation runner exposes investigation tools while
- * preserving the fresh, read-only, one-shot execution boundary.
- *
- * Key behaviors:
- * - Claude receives only the intended investigation tools
- * - Plan mode and safe mode enforce a fresh read-only session
- * - High effort, bounded persistence, and browser isolation remain explicit
- */
+import { expect, test } from 'bun:test';
 
-import { describe, expect, test } from 'bun:test';
-import { buildClaudeArgs } from './consult-claude';
+import { laboratorySettings, parseFollowUpOptions, parseNativeAgentId, parseStartOptions } from './consult-claude.js';
 
-describe('buildClaudeArgs', () => {
-	test('configures one fresh high-effort read-only investigation', () => {
-		expect(buildClaudeArgs()).toEqual([
-			'-p',
-			'--safe-mode',
-			'--effort',
-			'high',
-			'--tools',
-			'Read,Glob,Grep,WebFetch,WebSearch',
-			'--permission-mode',
-			'plan',
-			'--no-session-persistence',
-			'--no-chrome',
-			'--output-format',
-			'text',
-		]);
+test('parses an explicit waiting research run', () => {
+	expect(parseStartOptions(['--name', 'store-boundary', '--wait'])).toEqual({
+		name: 'store-boundary',
+		wait: true,
+		dryRun: false,
 	});
+});
+
+test('rejects repeated and unknown options', () => {
+	expect(parseStartOptions(['--wait', '--wait'])).toBeUndefined();
+	expect(parseStartOptions(['--unknown'])).toBeUndefined();
+});
+
+test('captures the native Agent View ID when Claude backgrounds a run', () => {
+	expect(parseNativeAgentId('backgrounded · 500a038f\nclaude attach 500a038f')).toBe('500a038f');
+	expect(parseNativeAgentId('ordinary output')).toBeUndefined();
+});
+
+test('parses a follow-up that can wait for the revised checkpoint', () => {
+	expect(parseFollowUpOptions(['research-42', '--wait'])).toEqual({ id: 'research-42', wait: true });
+	expect(parseFollowUpOptions(['research-42', '--unexpected'])).toBeUndefined();
+});
+
+test('builds a sealed editable laboratory policy', () => {
+	const settings = laboratorySettings();
+	expect(settings.permissions.deny).not.toContain('Edit');
+	expect(settings.permissions.deny).not.toContain('Write');
+	expect(settings.sandbox.network).toEqual({ allowedDomains: [], strictAllowlist: true });
+	expect(settings.worktree).toEqual({ bgIsolation: 'none' });
 });

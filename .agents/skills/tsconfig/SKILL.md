@@ -1,6 +1,6 @@
 ---
 name: tsconfig
-description: 'TypeScript config conventions for this monorepo: the two-base layering, the eight leaf tiers, and the never-redeclare list. Use when adding a package, editing any tsconfig.json, picking a tier for a new app, or debugging module resolution.'
+description: 'TypeScript config conventions for this monorepo: the two-base layering, the seven leaf tiers, and the never-redeclare list. Use when adding a package, editing any tsconfig.json, picking a tier for a new app, or debugging module resolution.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -9,17 +9,18 @@ metadata:
 # tsconfig conventions
 
 Every package here is **source-only `.ts`**: `exports` point at `./src/*.ts`,
-there is no build step, and consumers (Bun, Vite, WXT, Tauri, the Cloudflare
-Worker) operate on raw `.ts`. That single fact decides the whole config.
+there is no build step, and consumers (Bun, Vite, Tauri, the Cloudflare Worker)
+operate on raw `.ts`. That single fact decides the whole config.
 
-**One exception, and it is the audience, not the package.** `packages/app`
-(`@epicenter/app`) is published for toolchains we do not control, so shipping
-source would subject it to a stranger's compiler settings. It emits `.js` and
-`.d.ts` (ADR-0186). Its leaf `tsconfig.json` is an ordinary tier from the table
-below; the emit lives in a **sibling `tsconfig.build.json`** that extends the
-leaf and turns on exactly what emitting needs. Do not add `outDir`,
-`declaration`, or `noEmit: false` to any leaf. If a second package ever earns a
-build, copy that split.
+**The exceptions are the audience, not the package.** `packages/workspace` and
+`packages/field` are published for toolchains we do not control, so shipping
+source would subject them to a stranger's compiler settings. They emit `.js` and
+`.d.ts`, and their `exports` point at `./dist`. Each leaf `tsconfig.json` is an
+ordinary tier from the table below; the emit lives in a **sibling
+`tsconfig.build.json`** that extends the leaf and turns on exactly what emitting
+needs (`noEmit: false`, `outDir`, `rootDir`, `declaration`, `types: []`). Do not
+add `outDir`, `declaration`, or `noEmit: false` to any leaf. If another package
+earns a build, copy that split.
 
 ## The one rule
 
@@ -40,7 +41,7 @@ tsconfig.dom.json    extends base; its ONLY job is lib [ESNext, DOM, DOM.Iterabl
 
 There is no `tsconfig.base.lib.json` and no project `references`. Source-only
 packages never emit, so `composite`/`declaration`/`outDir` have no place in a
-leaf. The one published package that does emit puts them in its own
+leaf. The two published packages that do emit put them in their own
 `tsconfig.build.json` (see above), never in the leaf or a base.
 
 ## Module strategy: one, repo-wide
@@ -50,7 +51,7 @@ leaf. The one published package that does emit puts them in its own
 `NodeNext`** anywhere: nothing in this repo is published as emitted Node ESM,
 and `bundler` resolution already reads package.json `imports`/`exports`.
 
-## The eight leaf tiers
+## The seven leaf tiers
 
 Pick the tier, copy the shape, change nothing else.
 
@@ -63,16 +64,14 @@ Pick the tier, copy the shape, change nothing else.
 | Cloudflare Worker | `"../../tsconfig.base.json"` | `jsx`, `jsxImportSource`, `types`, `include` |
 | Bun app | `"../../tsconfig.base.json"` | `types:["bun"]`, `include` |
 | Astro app | `["../../tsconfig.base.json", "astro/tsconfigs/strict"]` | astro `include`/`exclude` |
-| WXT extension | `["../../tsconfig.dom.json", "./.wxt/tsconfig.json"]` | `customConditions`, `paths`, `include` |
 
-A generated config (`./.svelte-kit/tsconfig.json`, `./.wxt/tsconfig.json`) goes
-**last** in the array so its `lib`/`module` win where they must. Never hand-edit
-a generated config.
+A generated config (`./.svelte-kit/tsconfig.json`) goes **last** in the array so
+its `lib`/`module` win where they must. Never hand-edit a generated config.
 
 The two canonical library shapes in full:
 
 ```jsonc
-// bun library: packages/workspace, filesystem, util, sync, cli, ...
+// bun library: packages/data, workspace, field, sqlite, sync, identity, ...
 {
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
@@ -82,7 +81,7 @@ The two canonical library shapes in full:
 	}
 }
 
-// svelte library: packages/ui, svelte-utils
+// svelte library: packages/ui, packages/svelte
 {
 	"extends": "../../tsconfig.dom.json",
 	"compilerOptions": {

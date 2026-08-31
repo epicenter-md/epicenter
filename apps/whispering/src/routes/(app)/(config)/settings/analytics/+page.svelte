@@ -16,7 +16,7 @@
 			<SectionHeader.Title level={3} class="text-xl tracking-tight"
 				>Analytics</SectionHeader.Title
 			>
-			{#if app.settings.get('settings.analytics.enabled')}
+			{#if app.settings.get('analyticsEnabled')}
 				<Badge
 					variant="outline"
 					class="text-xs text-green-700 dark:text-green-400 border-green-200 dark:border-green-400/30"
@@ -41,7 +41,7 @@
 	<Card.Root>
 		<Card.Content class="py-2">
 			<SettingSwitch
-				key="settings.analytics.enabled"
+				key="analyticsEnabled"
 				label="Share anonymized events"
 				description='We log simple events like "recording started" or "transcription completed". No personal data is attached to any of these events.'
 				onCheckedChange={(checked) => {
@@ -144,7 +144,7 @@
 
 	<!-- Status Footer -->
 	<div class="flex items-center gap-2 text-xs">
-		{#if app.settings.get('settings.analytics.enabled')}
+		{#if app.settings.get('analyticsEnabled')}
 			<div class="flex items-center gap-2 text-green-700 dark:text-green-400">
 				<div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
 				<span class="font-medium">Analytics active</span>
