@@ -3,6 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-08-31
 - **Unbuilt:** The runtime-neutral client, its host binding, and its browser and desktop openers.
+- **Amended by:** [ADR-0307](0307-a-derived-index-is-in-memory-sqlite-rebuilt-on-read.md) at the projection. Withdrawn: the rename of `SqliteDatabase` to `SyncSqliteDatabase`. The projection's medium, trigger, and owner are decided there.
+- **Amended by:** [ADR-0308](0308-an-application-opens-its-own-sqlite-inside-its-own-worker-and-the-handle-is-synchronous.md) at the application handle. Withdrawn: `AppSqliteDatabase` and its asynchronous `run`, `all`, and `transaction`. The handle is the synchronous `SqliteDatabase`, opened inside the application's own worker. `openSqlite(name)` and its refusals stand.
 - **Relates:** [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (the host brokers capabilities without owning application meaning), [ADR-0240](0240-an-application-declares-one-workspace-and-an-opened-runtime-holds-exactly-one-definition.md) (a definition is pure and opening is one call), [ADR-0247](0247-an-app-that-keeps-a-local-copy-of-a-providers-data-owns-its-file-lifecycle.md) (provider copies keep their application-owned schema and lifecycle), and [ADR-0304](0304-application-persistence-is-runtime-selected-and-scoped-by-its-owning-app.md) (the physical storage mappings)
 
 ## Context
