@@ -21,7 +21,9 @@ accident.
 ## Decision
 
 `openData(definition)` and `openSqlite(name)` resolve storage through the current
-runtime while preserving one logical API.
+runtime while preserving one application composition API. They do not imply
+that Epicenter Data's IndexedDB record and an app-owned SQLite file share an
+implementation or lifecycle.
 
 On the web, a dedicated application origin is the outer isolation boundary:
 
@@ -60,8 +62,10 @@ selects native file-backed persistence; a browser build uses browser storage.
 - A dedicated web deployment does not need a redundant physical app-ID folder.
 - A shared-origin host can add the app ID to its physical browser namespace without changing application code.
 - Moving a web app to another origin moves it to another browser storage partition; the stable app ID does not silently migrate those bytes.
-- The platform can use SQLite WASM over OPFS in the browser and native or Bun SQLite on desktop while sharing the `SqliteDatabase` contract.
-- Local Mail's mailbox remains `sqlite/<app-id>/mail`, while an intentionally shared Epicenter Data model remains identified by one `data-id`.
+- The platform can use SQLite WASM over OPFS in the browser and native or Bun SQLite on desktop while sharing the asynchronous `AppSqliteDatabase` contract. The synchronous SQLite contract remains for derived in-memory projections until those consumers migrate.
+- Local Mail's mailbox is `sqlite/mail` within its dedicated origin or
+  `apps/<app-id>/sqlite/mail` on desktop, while an intentionally shared
+  Epicenter Data model remains identified by one `data-id`.
 - Cross-app SQLite sharing is not a supported default. A shared provider surface needs an explicit API or a shared Epicenter Data model.
 
 ## Considered alternatives

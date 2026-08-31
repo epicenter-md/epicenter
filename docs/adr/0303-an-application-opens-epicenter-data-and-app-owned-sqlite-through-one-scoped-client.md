@@ -13,6 +13,11 @@ model; SQLite is an app-owned relational store such as a provider mirror or
 search index. Their meanings and lifecycles differ, but application code should
 not select IndexedDB, OPFS, Bun SQLite, or a native file.
 
+SQLite also appears inside the current store implementation as an in-memory
+projection of Yjs data. That projection is a separate concern from an
+application-owned SQLite database: it is synchronous, derived, and disposable;
+it is not the durable source of Epicenter Data.
+
 The application also needs one stable identity for local storage. Repeating that
 identity in every opener invites path and namespace drift, while inferring it
 from a URL confuses deployment with application identity.
@@ -32,9 +37,37 @@ const mail = await epicenter.openSqlite('mail');
 ```
 
 `openData(definition)` opens the Epicenter Data API declared by the definition.
-`openSqlite(name)` opens a SQLite database private to the application. The
-client verifies that the definition's ID agrees with the client identity and
-derives every physical address from the scoped identity and logical name.
+`openSqlite(name)` opens an `AppSqliteDatabase` private to the application. It
+creates the database if it does not exist and opens it if it does. It does not
+accept a schema, delete an existing database, or run an implicit migration. The
+application bootstraps its schema and owns its migrations explicitly.
+
+The application-owned handle is asynchronous and explicitly closable because a
+browser implementation may run SQLite in a worker over OPFS:
+
+```ts
+type AppSqliteDatabase = {
+	run(sql: string, parameters?: readonly SqliteValue[]): Promise<void>;
+	all<TRow extends SqliteRow>(
+		sql: string,
+		parameters?: readonly SqliteValue[],
+	): Promise<TRow[]>;
+	transaction<TResult>(
+		run: (database: AppSqliteDatabase) => Promise<TResult>,
+	): Promise<TResult>;
+	close(): Promise<void>;
+};
+```
+
+The existing synchronous `SqliteDatabase` contract is renamed to
+`SyncSqliteDatabase` when this clean break is implemented. It is currently used
+by in-memory Yjs projections and historical Bun and server storage paths. The
+target application surface does not depend on it. `AppSqliteDatabase` is not a
+wrapper that turns a projection into durable storage; each runtime adapts its
+own persistent database resource to the application contract.
+
+The client verifies that the definition's ID agrees with the client identity
+and derives every physical address from the scoped identity and logical name.
 
 The public client contains these two openers only. Authentication and native
 desktop capabilities remain separate opt-in packages, even when the host
@@ -52,11 +85,14 @@ fallbacks.
 - Application code has one composition point and no runtime branches for storage.
 - The client is scoped once, so `openSqlite('mail')` cannot accidentally open another app's database.
 - A provider app still owns its schema, ingestion, versioning, readiness, and deletion policy. The platform supplies only the opening mechanism.
+- Closing is explicit application lifecycle. `AsyncDisposable` may become convenience syntax later, but it is not required by the core contract.
 - The API does not promise identical durability across runtimes. It promises one application-facing contract over runtime-specific adapters.
 - Adding another host capability to this client requires evidence that it is universal. Auth and native APIs do not enter by default.
 
 ## Considered alternatives
 
 - **Put `defineData` inside the client constructor.** Rejected because the definition is inert data and has a different lifetime from the runtime binding.
+- **Pass a schema to `openSqlite`.** Rejected because the platform cannot know an app database's schema, migration policy, or rebuild safety.
+- **Use one SQLite contract for projections and app databases.** Rejected because synchronous in-memory projection work and asynchronous persistent browser storage have different execution and lifecycle semantics.
 - **Expose `auth` and `desktop` on every client.** Rejected because most applications do not need either capability and unused authority would become the default API.
 - **Infer the app ID from the URL.** Rejected because URLs are deployment addresses, not stable application identities.
