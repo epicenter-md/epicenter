@@ -384,5 +384,8 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0300](0300-accepted-edits-are-live-immediately-and-persistence-and-sync-are-best-effort.md) | Accepted edits are live immediately, and persistence and sync are best-effort | Accepted (amends 0238; amended by 0302 at the transient delivery queue; relates to 0298 and 0110) |
 | [0301](0301-owed-updates-collapse-into-one-resendable-row-and-the-fold-stops-asking-whether-a-store-syncs.md) | Owed updates collapse into one resendable row, and the fold stops asking whether a store syncs | Accepted (amends 0239 and 0298) |
 | [0302](0302-a-local-edit-is-offered-to-the-authority-once-it-is-durable.md) | A local edit is offered to the authority once it is durable | Accepted (amends 0300 at the transient delivery queue, which is withdrawn) |
+| [0303](0303-an-application-opens-epicenter-data-and-app-owned-sqlite-through-one-scoped-client.md) | An application opens Epicenter Data and app-owned SQLite through one scoped client | Accepted (unbuilt) |
+| [0304](0304-application-persistence-is-runtime-selected-and-scoped-by-its-owning-app.md) | Application persistence is runtime-selected and scoped by its owning app | Accepted (unbuilt) |
+| [0305](0305-the-third-party-app-catalog-is-a-future-epicenter-deployment-plane.md) | The third-party app catalog is a future Epicenter deployment plane | Accepted (unbuilt; amends 0227 at its temporary installed-app refusal) |
 
 When you add an ADR, add its row here.
