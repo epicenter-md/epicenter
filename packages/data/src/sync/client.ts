@@ -345,35 +345,38 @@ export function createSyncClient({
 	 * would produce a snapshot missing data, and a snapshot replaces history
 	 * rather than adding to it, so what it misses is gone for everybody.
 	 *
-	 * The encode is asynchronous by signature rather than by need. The position
-	 * is re-checked after it: state that moved meanwhile
-	 * would stamp newer content with an older position, so the offer is
-	 * dropped instead, and the authority simply asks again.
+	 * The encode is synchronous, and that is what makes this whole function a
+	 * straight line. It used to be a promise, so the position had to be
+	 * re-checked inside the callback: state that moved between the guard and
+	 * the encode would stamp newer content with an older position. Nothing can
+	 * move between two statements, so the guard above is the only guard needed.
 	 */
 	function offerSnapshot(position: number): Result<void, SyncClientError> {
 		if (connection === undefined || position !== cursor) return Ok(undefined);
 		if (engine.hasUnresolvedDependencies()) return Ok(undefined);
-		void engine.encodeSnapshot().then(
-			(bytes) => {
-				if (disposed || connection === undefined || position !== cursor) return;
-				const sender = connection.socket;
-				const chunks = intoChunks(bytes, CHUNK_BYTES);
-				for (const [index, chunk] of chunks.entries()) {
-					sender.send(
-						encodeFrame({
-							kind: 'offer',
-							position,
-							chunk: index,
-							chunks: chunks.length,
-							bytes: chunk,
-						}),
-					);
-				}
-			},
+		let bytes: Uint8Array;
+		try {
+			bytes = engine.encodeSnapshot();
+		} catch {
 			// Best effort by design: a snapshot that could not be built is not
-			// owed, and the authority re-asks while the tail keeps growing.
-			() => undefined,
-		);
+			// owed, and the authority re-asks while the tail keeps growing. The
+			// one throw here is a disposed store, which is not this function's
+			// to report.
+			return Ok(undefined);
+		}
+		const sender = connection.socket;
+		const chunks = intoChunks(bytes, CHUNK_BYTES);
+		for (const [index, chunk] of chunks.entries()) {
+			sender.send(
+				encodeFrame({
+					kind: 'offer',
+					position,
+					chunk: index,
+					chunks: chunks.length,
+					bytes: chunk,
+				}),
+			);
+		}
 		return Ok(undefined);
 	}
 

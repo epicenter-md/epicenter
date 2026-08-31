@@ -230,7 +230,7 @@ async function build(
 		if (head.error !== null) throw head.error;
 		const replaced = authority.replaceSnapshot(
 			head.data,
-			await syncEngineOf(store).encodeSnapshot(),
+			syncEngineOf(store).encodeSnapshot(),
 		);
 		if (replaced.error !== null) throw replaced.error;
 	};

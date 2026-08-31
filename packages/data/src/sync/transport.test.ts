@@ -69,13 +69,8 @@ function expectOk<TValue, TError>(
 }
 
 /** This replica's whole state, as a snapshot carries it. */
-function snapshotOf(replica: { data: Replica['data'] }): Promise<Uint8Array> {
+function snapshotOf(replica: { data: Replica['data'] }): Uint8Array {
 	return syncEngineOf(replica.data).encodeSnapshot();
-}
-
-/** Let fire-and-forget work (a snapshot offer's encode) reach the wire. */
-function pump(): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 /** One row's `content` node, live on the database document (ADR-0295). */
@@ -721,7 +716,6 @@ describe('a socket that dies part way through a chunked transfer', () => {
 		phone.client.flush();
 		wire.settle();
 		// The hub asked for a snapshot; the offer's encode is asynchronous.
-		await pump();
 		wire.settle();
 		// The snapshot is not staged by hand here: a 3 MB paste is past the floor on
 		// its own, so the hub asked the phone for one and the tail is already gone.
@@ -942,7 +936,7 @@ describe('a partial that outlives the socket that opened it', () => {
 		text.applyDelta(text.change.insert('x'.repeat(4_000_000)) as never);
 		phone.client.flush();
 		wire.settle();
-		expectOk(authority.replaceSnapshot(1, await snapshotOf(phone)));
+		expectOk(authority.replaceSnapshot(1, snapshotOf(phone)));
 		const first = expectOk(authority.snapshot());
 		const snapshotChunks = intoChunks(first?.bytes as Uint8Array).length;
 		// Entry 2 is a second paste: two chunks, where the state through 2 is four.
@@ -978,7 +972,7 @@ describe('a partial that outlives the socket that opened it', () => {
 
 		// The authority snapshots at 2 and the tail it covers is gone, so the
 		// snapshot is now the only way this replica can ever converge.
-		expectOk(authority.replaceSnapshot(2, await snapshotOf(phone)));
+		expectOk(authority.replaceSnapshot(2, snapshotOf(phone)));
 		expect(expectOk(authority.since(0, 1_000))).toEqual([]);
 		expect(
 			intoChunks(expectOk(authority.snapshot())?.bytes as Uint8Array),
@@ -1047,7 +1041,7 @@ describe('a partial that outlives the socket that opened it', () => {
 		wire.settle();
 		expect(laptop.client.status().cursor).toBe(1);
 
-		expectOk(authority.replaceSnapshot(2, await snapshotOf(phone)));
+		expectOk(authority.replaceSnapshot(2, snapshotOf(phone)));
 		laptop.connect();
 		wire.settle();
 
@@ -1265,7 +1259,7 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 		// Driven directly rather than by the floor, which a thirty-note document
 		// never reaches. What is under test is what a snapshot DOES, not when the
 		// authority decides to ask for one.
-		expectOk(authority.replaceSnapshot(head, await snapshotOf(phone)));
+		expectOk(authority.replaceSnapshot(head, snapshotOf(phone)));
 
 		expect(expectOk(authority.snapshotPosition())).toBe(head);
 		expect(expectOk(authority.since(0, 1_000))).toEqual([]);
@@ -1288,10 +1282,7 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 
 		// The tail is gone, so this replica can only be served by the snapshot.
 		expectOk(
-			authority.replaceSnapshot(
-				expectOk(authority.head()),
-				await snapshotOf(phone),
-			),
+			authority.replaceSnapshot(expectOk(authority.head()), snapshotOf(phone)),
 		);
 
 		// This work is offline but not unlabelled: the replica already adopted
@@ -1329,10 +1320,7 @@ describe('the authority keeps a snapshot and a tail, not a log', () => {
 			wire.settle();
 		}
 		expectOk(
-			authority.replaceSnapshot(
-				expectOk(authority.head()),
-				await snapshotOf(phone),
-			),
+			authority.replaceSnapshot(expectOk(authority.head()), snapshotOf(phone)),
 		);
 
 		const stored = [
@@ -1407,7 +1395,7 @@ describe('who may replace the snapshot', () => {
 		}
 
 		const head = expectOk(authority.head());
-		const accepted = authority.replaceSnapshot(head, await snapshotOf(phone));
+		const accepted = authority.replaceSnapshot(head, snapshotOf(phone));
 
 		expect(accepted.error).toBeNull();
 		expect(expectOk(authority.snapshotPosition())).toBe(head);
@@ -1443,7 +1431,6 @@ describe('the snapshot path under sustained traffic', () => {
 			phone.client.flush();
 			wire.settle();
 			// A requested snapshot offer encodes asynchronously before it sends.
-			await pump();
 			wire.settle();
 			expect(phone.client.status().inFlight).toBe(false);
 		}
@@ -1827,7 +1814,6 @@ async function fuzz(
 		if (random.chance(0.6)) device.client.flush();
 		if (random.chance(0.5)) wire.settle();
 		// A snapshot offer requested mid-schedule encodes asynchronously.
-		await pump();
 		if (random.chance(0.5)) wire.settle();
 		if (random.chance(0.12)) disconnect(random.below(replicas));
 		if (random.chance(0.25)) connect(random.below(replicas));
@@ -1844,12 +1830,10 @@ async function fuzz(
 		wire.settle();
 	}
 	for (const device of devices) device.client.flush();
-	await pump();
 	wire.settle();
 	// A second pass, because a flush can only carry what the previous settle
 	// delivered, and a device that reconnected last needs one more exchange.
 	for (const device of devices) device.client.flush();
-	await pump();
 	wire.settle();
 
 	return { devices, authority, expected, seen };

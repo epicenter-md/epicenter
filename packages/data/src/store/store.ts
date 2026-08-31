@@ -198,20 +198,23 @@ type SyncEngine = ClientLog & {
 	 * Hear when this replica has authored work the authority has not taken.
 	 *
 	 * Fires when a local update is accepted by the live document, and never for
-	 * bytes that arrived from a peer. The transport may try to deliver that work
-	 * before local persistence succeeds; persistence and delivery are independent
-	 * best-effort paths (ADR-0300).
+	 * bytes that arrived from a peer. It starts the sender's idle timer, and
+	 * the timer is what makes nudging this early correct: the sender waits a
+	 * second before asking what is owed, and by then the flush has landed, so
+	 * it reads durable work rather than accepted work (ADR-0302).
 	 */
 	onLocalWork(listener: () => void): () => void;
 	/**
 	 * This replica's whole state as one update: the database document's
 	 * complete state (ADR-0295).
 	 *
-	 * What a snapshot offer carries. Still asynchronous, because the transport
-	 * awaits it and the shape outlives the reason: it used to read closed row
-	 * documents from storage.
+	 * What a snapshot offer carries, and synchronous like every other read of
+	 * this document. It was a promise for a shape that no longer exists: it
+	 * used to read closed row documents from storage, and ADR-0295 left one
+	 * document, already open, already in memory. Opening is the only
+	 * asynchronous thing this package does.
 	 */
-	encodeSnapshot(): Promise<Uint8Array>;
+	encodeSnapshot(): Uint8Array;
 };
 
 /**
@@ -814,7 +817,7 @@ function createStoreEngine(
 						return () => localWorkListeners.delete(listener);
 					},
 					hasUnresolvedDependencies: () => hasPendingStructs(database),
-					async encodeSnapshot(): Promise<Uint8Array> {
+					encodeSnapshot(): Uint8Array {
 						assertUsable();
 						return new Uint8Array(Y.encodeStateAsUpdateV2(database));
 					},
