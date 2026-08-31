@@ -18,7 +18,6 @@ import type { Result } from 'wellcrafted/result';
 import {
 	type Field,
 	field as genericField,
-	type storageOf,
 } from '../field/index.js';
 
 export const RESERVED_ATTRIBUTE_PREFIX = '!';
@@ -190,7 +189,6 @@ export type DataField = {
 	readonly schema: unknown;
 	readonly check: (value: unknown) => boolean;
 	readonly nullable: boolean;
-	readonly storage: ReturnType<typeof storageOf>;
 	readonly reference: string | null;
 };
 

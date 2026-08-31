@@ -55,7 +55,7 @@
  * carries no marker and matches no meta, so it degrades to raw.
  *
  * Everything public is DERIVED from the one `FIELDS` object below: `Kind`,
- * `recognize`, `storageOf`, `KINDS`, `META_BY_KIND`. Adding a kind is one entry here,
+ * `recognize`, `KINDS`, `META_BY_KIND`. Adding a kind is one entry here,
  * plus its widget in the consuming app's component registry, which the compiler forces.
  *
  * This module also owns the VALUE side of a field schema through `compile` (the single
@@ -161,29 +161,25 @@ const LIST_REFINE = {
 };
 
 /**
- * The single source of the palette, keyed by kind: each entry pairs a kind's closed
- * meta-schema (recognition + boundary validation) with its SQLite storage class.
- * `Kind`, `Storage`, `SchemaOf`, `recognize`, `storageOf`, `KINDS`, and `META_BY_KIND`
- * all derive from this object, so adding a kind is one entry. Key order is NOT a
- * contract: the metas are mutually exclusive, so `recognize` returns the same answer
- * regardless of iteration order. The keyed shape (not an array) is what lets `Kind` be
- * `keyof`, `storageOf` an O(1) lookup, and `SchemaOf<K>` index a single meta without
- * an `Extract`. Each `meta` reads `{ ...discriminators, ...refinements, ...annotations }`.
+ * The single source of the palette, keyed by kind: each entry is a kind's closed
+ * meta-schema, used for recognition and boundary validation. `Kind`, `SchemaOf`,
+ * `recognize`, `KINDS`, and `META_BY_KIND` all derive from this object, so adding a
+ * kind is one entry. Key order is NOT a contract: the metas are mutually exclusive, so
+ * `recognize` returns the same answer regardless of iteration order. The keyed shape
+ * (not an array) is what lets `Kind` be `keyof` and `SchemaOf<K>` index a single meta
+ * without an `Extract`. Each `meta` reads `{ ...discriminators, ...refinements, ...annotations }`.
  */
 const FIELDS = {
 	select: {
-		storage: 'TEXT',
 		meta: Type.Object({ ...enumProps, ...ANNOT }, CLOSED),
 	},
 	url: {
-		storage: 'TEXT',
 		meta: Type.Object(
 			{ type: Type.Literal('string'), format: Type.Literal('uri'), ...ANNOT },
 			CLOSED,
 		),
 	},
 	datetime: {
-		storage: 'TEXT',
 		meta: Type.Object(
 			{
 				type: Type.Literal('string'),
@@ -194,7 +190,6 @@ const FIELDS = {
 		),
 	},
 	instant: {
-		storage: 'TEXT',
 		meta: Type.Object(
 			{
 				type: Type.Literal('string'),
@@ -206,39 +201,33 @@ const FIELDS = {
 		),
 	},
 	date: {
-		storage: 'TEXT',
 		meta: Type.Object(
 			{ type: Type.Literal('string'), format: Type.Literal('date'), ...ANNOT },
 			CLOSED,
 		),
 	},
 	integer: {
-		storage: 'INTEGER',
 		meta: Type.Object(
 			{ type: Type.Literal('integer'), ...NUMBER_REFINE, ...ANNOT },
 			CLOSED,
 		),
 	},
 	number: {
-		storage: 'REAL',
 		meta: Type.Object(
 			{ type: Type.Literal('number'), ...NUMBER_REFINE, ...ANNOT },
 			CLOSED,
 		),
 	},
 	boolean: {
-		storage: 'INTEGER',
 		meta: Type.Object({ type: Type.Literal('boolean'), ...ANNOT }, CLOSED),
 	},
 	string: {
-		storage: 'TEXT',
 		meta: Type.Object(
 			{ type: Type.Literal('string'), ...STRING_REFINE, ...ANNOT },
 			CLOSED,
 		),
 	},
 	reference: {
-		storage: 'TEXT',
 		// A cross-row pointer: a string VALUE (the target row's stem / id) plus the
 		// REFERENCE_KEYWORD marker carrying the target TABLE name. Closed and string-typed,
 		// so it stores, materializes, and value-validates exactly like `string` (the marker
@@ -258,7 +247,6 @@ const FIELDS = {
 		),
 	},
 	multiSelect: {
-		storage: 'TEXT',
 		meta: Type.Object(
 			{
 				type: Type.Literal('array'),
@@ -270,7 +258,6 @@ const FIELDS = {
 		),
 	},
 	tags: {
-		storage: 'TEXT',
 		meta: Type.Object(
 			{
 				type: Type.Literal('array'),
@@ -286,16 +273,12 @@ const FIELDS = {
 	// (see JSON_SCHEMA_KEYWORD); the closed metas forbid the marker, so json stays
 	// mutually exclusive with every other kind regardless of what the payload looks like.
 	json: {
-		storage: 'TEXT',
 		meta: Type.Object({ [JSON_SCHEMA_KEYWORD]: Type.Unknown() }),
 	},
 } as const;
 
 /** The set of field kinds, DERIVED from the palette keys. Includes `json` (the open meta). */
 export type Kind = keyof typeof FIELDS;
-
-/** The SQLite storage classes a kind can map to. */
-type Storage = (typeof FIELDS)[Kind]['storage'];
 
 /** The precise at-rest schema type for one kind, derived from its meta via TypeBox. */
 type SchemaOf<K extends Kind> = Static<(typeof FIELDS)[K]['meta']>;
@@ -369,11 +352,6 @@ export function recognize(schema: unknown): Recognized | null {
 			return { kind, schema } as Recognized;
 	}
 	return null;
-}
-
-/** The SQLite storage class for a kind. Total: every `Kind` is a key of `FIELDS`. */
-export function storageOf(kind: Kind): Storage {
-	return FIELDS[kind].storage;
 }
 
 /**

@@ -11,7 +11,6 @@ export {
 	REFERENCE_KEYWORD,
 	recognize,
 	referenceTargetOf,
-	storageOf,
 } from '../field/index.js';
 export * from './addresses.js';
 export * from './canonical.js';

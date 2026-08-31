@@ -18,7 +18,6 @@ import {
 	type Field,
 	recognize,
 	referenceTargetOf,
-	storageOf,
 } from '../field/index.js';
 
 import { DATA_ADDRESS_CEILINGS, isDataId, isTableName } from './addresses.js';
@@ -291,7 +290,6 @@ function compileTable(
 					? check
 					: (value) => value === null || check(value),
 			nullable: nullableDescriptor !== null,
-			storage: storageOf(base.kind),
 			reference: referenceTargetOf({
 				...base,
 				name: fieldName,

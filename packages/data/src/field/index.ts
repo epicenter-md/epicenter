@@ -22,6 +22,5 @@ export {
 	REFERENCE_KEYWORD,
 	recognize,
 	referenceTargetOf,
-	storageOf,
 } from './field.js';
 export { InstantString } from './instant-string.js';
