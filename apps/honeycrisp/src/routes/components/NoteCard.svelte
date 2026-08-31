@@ -64,7 +64,7 @@
 				</span>
 			</div>
 			<Item.Description class="text-xs">
-				{preview.text || 'No content'}
+				{preview.current || 'No content'}
 			</Item.Description>
 
 			{#if isDeleted}

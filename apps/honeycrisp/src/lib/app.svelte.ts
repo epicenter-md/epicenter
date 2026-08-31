@@ -7,9 +7,13 @@ import {
 	type Note,
 	type NoteId,
 } from '@epicenter/honeycrisp';
-import { fromData, type ReactiveData } from '@epicenter/svelte';
+import {
+	fromData,
+	fromSubscription,
+	type ReactiveData,
+	type Tracked,
+} from '@epicenter/svelte';
 import { createContext } from 'svelte';
-import { createSubscriber } from 'svelte/reactivity';
 import { notePreview, noteTitle } from './editor/prose-text.js';
 import { navigation } from './navigation.svelte.js';
 
@@ -325,19 +329,16 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	 * deliberately not an edit inside a field, so riding it would never
 	 * re-render this at all.
 	 *
-	 * `createSubscriber` ref-counts, so a card that is scrolled out of view
+	 * `fromSubscription` ref-counts, so a card that is scrolled out of view
 	 * detaches and a note nobody is looking at costs nothing.
 	 */
-	function previewOf(id: NoteId): { readonly text: string } {
+	function previewOf(id: NoteId): Tracked<string> {
 		const body = table.get(id)?.content;
-		if (body === undefined) return { text: '' };
-		const subscribe = createSubscriber((update) => table.watch(body, update));
-		return {
-			get text() {
-				subscribe();
-				return notePreview(body);
-			},
-		};
+		if (body === undefined) return { current: '' };
+		return fromSubscription(
+			(update) => table.watch(body, update),
+			() => notePreview(body),
+		);
 	}
 
 	return {

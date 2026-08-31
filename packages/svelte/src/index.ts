@@ -10,6 +10,10 @@ export {
 	type ReactiveTable,
 } from './from-data.svelte.js';
 export {
+	fromSubscription,
+	type Tracked,
+} from './from-subscription.svelte.js';
+export {
 	createPersistedMap,
 	defineEntry,
 	type PersistedMap,
