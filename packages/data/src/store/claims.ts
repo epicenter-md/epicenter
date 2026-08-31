@@ -14,7 +14,7 @@
  * `epicenter/v3/<dataId>/local/gen/<generation>` or
  * `epicenter/v3/<dataId>/account/<base URL>/<principal id>/gen/<generation>`
  * (ADR-0261, ADR-0292), so an
- * application's device document and one account's replica may be
+ * application's local document and one account's replica may be
  * open at once, two accounts' replicas may be open at once, and a second open
  * of any one of them is still refused.
  *

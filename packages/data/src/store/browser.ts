@@ -391,8 +391,8 @@ export async function openIdbBacking(
  * epicenter/v3/<definition id>/account/<base URL>/<principal id>/gen/<generation>
  * ```
  *
- * A browser application keeps one device document and one retained account
- * replica per server identity, and may hold them open at once. The device
+ * A browser application keeps one local document and one retained account
+ * replica per server identity, and may hold them open at once. The local
  * document never joins definition sync and survives every sign-in and
  * sign-out; an account replica is this device's replica of one principal's
  * current generation, retained across sign-out too. The

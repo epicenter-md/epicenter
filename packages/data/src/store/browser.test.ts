@@ -3,10 +3,12 @@ import { field, plainText } from '@epicenter/data/definition';
  * Browser Store Address Tests
  *
  * A browser application keeps one local document and one retained account
- * replica per server identity (ADR-0261). These tests pin the addresses that
- * hold them apart: `epicenter/v3/<dataId>/local` and
- * `epicenter/v3/<dataId>/account/<base URL>/<principal id>`, one IndexedDB
- * database and one open claim each.
+ * replica per server identity (ADR-0261), at an exact generation (ADR-0292).
+ * These tests pin the addresses that hold them apart:
+ * `epicenter/v3/<dataId>/local/gen/<n>` and
+ * `epicenter/v3/<dataId>/account/<base URL>/<principal id>/gen/<n>`, one
+ * IndexedDB database and one open claim per GENERATION rather than per
+ * document.
  *
  * Key behaviors:
  * - The local document and two accounts' replicas open at once, into their
