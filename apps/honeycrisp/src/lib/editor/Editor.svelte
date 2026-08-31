@@ -260,6 +260,7 @@
 			}),
 			attributes: {
 				// The editor owns its own typography (see the style block below);
+				// vocab-check: ignore-next-line (Tailwind's `.prose` class)
 				// it deliberately does not wear the shared `.prose` article styles,
 				// whose 175% line-height and large block margins read as a rendered
 				// document, not a writing surface.
@@ -417,6 +418,7 @@
 	/*
 	 * Editor-owned typography. This is a writing surface, not a rendered
 	 * article, so it sets its own tight rhythm instead of borrowing the shared
+	 * vocab-check: ignore-next-line (Tailwind's `.prose` class)
 	 * `.prose` styles. Tokens are the app's oklch theme variables, used directly
 	 * (they already carry the color function; do not wrap in `hsl()`).
 	 *

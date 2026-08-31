@@ -92,6 +92,7 @@ export function resolveCompletionStateFromConfig({
  *
  * The surface expresses two orthogonal facts through two channels, not one enum:
  * `ready` is the usability axis and drives tone (a not-ready row is a warning, a
+ * vocab-check: ignore-next-line (prose the English word: model-written text)
  * ready row a neutral note), while `summary` is the prose that names the
  * destination when ready or the single missing setup step when not. Only one
  * sentence is ever shown, so where-it-goes and what-is-missing never compete.

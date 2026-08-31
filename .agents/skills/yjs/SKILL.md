@@ -69,8 +69,9 @@ reclaims the row's whole subtree in one operation.
 
 Those two words are the vocabulary. A value is replaced whole on write, so two
 devices writing one converge on a winner. A node is edited in place, so two
-devices editing one both keep every keystroke. `scalar` and `prose` are retired
-names for them and belong in no new code or documentation (ADR-0309).
+devices editing one both keep every keystroke.
+<!-- vocab-check: ignore-next-line (naming what is retired) -->
+Their retired names are `scalar` and `prose`; both belong in no new code or documentation (ADR-0309).
 
 The nesting is not stylistic. `Item.write` calls `findRootTypeKey`, a linear
 scan of `doc.share`, so one root per row makes encoding quadratic in rows

@@ -3,6 +3,7 @@
  * romanizers (ADR-0105).
  *
  * A reading (pinyin over Han, romaji over kana, ...) is a client-side derived
+ * vocab-check: ignore-next-line (prose the English word: what a tutor writes)
  * view over clean message text: the tutor writes plain prose, the message is
  * stored and fed back to the model verbatim, and readings are rendered on top
  * through the `Romanizer`/`Segment`/`<ruby>` seam in `@epicenter/ui/markdown`.
@@ -17,6 +18,7 @@
  * per-character pinyin dictionary). Scripts that under-specify pronunciation
  * (abjads like Arabic and Hebrew hide vowels; Devanagari hides schwa deletion;
  * Thai hides word boundaries and tone) have no useful deterministic romanizer
+ * vocab-check: ignore-next-line (prose the English word)
  * and get no automatic reading; the tutor's prose can still explain the sound.
  */
 

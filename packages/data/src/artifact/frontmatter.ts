@@ -4,6 +4,7 @@
  * One block of YAML above the body, carrying the row's raw stored fields. The
  * emitter is deliberately a subset of YAML chosen for exact round-trips:
  * every string is emitted as a JSON string (a valid YAML double-quoted
+ * vocab-check: ignore-next-line (YAML's word for a plain node)
  * scalar), numbers, booleans, and null emit bare, and compound values emit as
  * JSON (valid YAML flow style). Nothing bare can ever be re-read as another
  * type, so `"007"` and `"no"` survive as the strings they are; the artifact

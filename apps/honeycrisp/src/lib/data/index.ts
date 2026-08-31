@@ -33,7 +33,7 @@ export type NoteId = string;
 export type FolderId = string;
 
 /**
- * A note's prose as a ProseMirror node, read headlessly.
+ * A note's body as a ProseMirror node, read headlessly.
  *
  * A note nobody has typed into has an empty body, and an empty fragment is not
  * a valid ProseMirror document: `fragmentToPm` refuses it outright. What that

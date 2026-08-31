@@ -25,7 +25,7 @@ import { rowAt, typeAt } from '../raw-document.js';
 const DAY = {
 	/** Notes whose value fields change: renames, tags, dates. */
 	fieldEdits: 20,
-	/** Characters typed into prose. ProseMirror dispatches roughly per keystroke. */
+	/** Characters typed into the node. ProseMirror dispatches roughly per keystroke. */
 	charsTyped: 2000,
 };
 

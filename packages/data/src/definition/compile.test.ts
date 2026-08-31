@@ -130,12 +130,14 @@ describe('data definitions', () => {
 		expect(result.error?.name).toBe('Malformed');
 	});
 
+	// vocab-check: ignore-next-line (names the deleted `scalars` declaration key)
 	test('the old scalar wrapper and type list are not compatibility paths', () => {
 		const result = parseData({
 			id: 'so.epicenter.old-table-shape',
 			kv: {},
 			tables: {
 				notes: {
+					// vocab-check: ignore-next-line (the deleted key, as a payload)
 					scalars: { title: field.string() },
 					types: ['content'],
 					content: {},

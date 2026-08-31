@@ -4,7 +4,7 @@
  * The promise this app makes about a person's data: what comes out is a folder
  * of Markdown files they can read in any vault tool, and what goes back in is
  * the store they left. Proven against the real definition and the real
- * ProseMirror codec, not a stand-in, because the codec is where the prose can
+ * ProseMirror codec, not a stand-in, because the codec is where the body can
  * actually be lost.
  */
 import { expect, test } from 'bun:test';

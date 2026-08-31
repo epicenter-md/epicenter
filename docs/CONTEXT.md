@@ -156,9 +156,9 @@ shapes, see `docs/adr/`.
   replaced whole on write, so two devices writing one converge on a winner. A
   node is edited in place, so two devices editing one both keep every
   keystroke. Two devices editing different fields both keep their edit either
-  way. `scalar` and `prose` are retired names for these two: a `tags` array is
-  a value though it is not scalar, and a node holds whatever its table's codec
-  says, which is often not prose.
+  way.
+  <!-- vocab-check: ignore-next-line (the glossary entry that retires them) -->
+  The retired names for these two are `scalar` and `prose`. Both described the shape instead of the behaviour: a `tags` array is a value though it is not scalar, and a node holds whatever its table's codec says, which is often not prose.
 - **Whole-value replacement**: an array or object field is one value, so a
   concurrent write replaces all of it and one addition is lost (ADR-0228). This
   is chosen, not missing. A collection several devices append to concurrently

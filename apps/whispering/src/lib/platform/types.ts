@@ -15,6 +15,7 @@ import type { KeyBinding } from '$lib/utils/key-binding';
 import type { WhisperingApp } from '$lib/whispering/app';
 
 /**
+ * vocab-check: ignore-next-line (prose the English word)
  * Why a binding cannot be assigned, as structured data rather than prose. The
  * backends and the reach router return this; the recorder renders it to a message
  * (with the command titles it has on hand) at the one place a

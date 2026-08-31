@@ -4,8 +4,6 @@
 - **Date:** 2026-08-31
 - **Supersedes:** [ADR-0299](0299-a-row-is-its-scalars-and-one-content-node.md). The shape it decided is unchanged and restated here in the settled words. Its context, its four refusals, and its per-row byte measurements stand and are not repeated.
 - **Relates:** [ADR-0228](0228-a-field-is-one-value-and-a-collection-several-devices-append-to-is-a-table.md) (the merge law this names), [ADR-0244](0244-epicenter-speaks-of-apps-and-windows-not-surfaces.md) (the prior vocabulary decision, and the one this record fixes a gap in), [ADR-0296](0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md) (settled "rich fields" the same way and swept only itself)
-<!-- doc-path-check: ignore-next-line (this record is what commissions the file) -->
-- **Unbuilt:** `scripts/check-vocabulary.ts` and its entry in `check:structure`.
 
 ## Context
 
@@ -49,16 +47,18 @@ the only thing that turns one into the text below the fence.
 Say **shared type** only when the sentence is about Yjs itself. Say **node**
 everywhere the sentence is about a row.
 
-`scalar`, `prose`, and `column` are retired from the store's vocabulary as of
-this record. `column` has had no referent since ADR-0269 deleted the SQL
-projection; Drizzle schemas and table UI keep the word, because those are
-columns.
+`scalar` and `prose` are retired from the store's vocabulary as of this record.
+So is `column`, which has had no referent since ADR-0269 deleted the SQL
+projection, though only the first two are machine-checked: Drizzle schemas,
+table UI, the append-only log's one real SQLite column, and two app-owned
+mirrors all have real columns, so a ban would be mostly exceptions.
 
-<!-- doc-path-check: ignore-next-line (this record is what commissions the file) -->
 **`bun run check` fails on a retired word.** `scripts/check-vocabulary.ts` runs
 inside `check:structure`, so the check is added in `package.json` and nowhere
-else. A naming decision is landed when that check passes, not when this record
-is written.
+else. `scalar` is refused nearly everywhere; `prose` is an ordinary English word
+and is refused only where the store's vocabulary lives, which the script lists.
+A naming decision is landed when that check passes, not when this record is
+written.
 
 ## Consequences
 

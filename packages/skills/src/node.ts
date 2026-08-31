@@ -272,7 +272,7 @@ function readContent(table: SkillsTable, rowId: string): string {
 }
 
 function referenceKey(skillId: string, path: string): string {
-	return `${skillId} ${path}`;
+	return `${skillId}\u0000${path}`;
 }
 
 function isNotFound(cause: unknown): boolean {
