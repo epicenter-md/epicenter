@@ -56,6 +56,11 @@ waits a second after being nudged before asking what is owed and a flush is a
 microtask. It costs exactly one thing: a device whose storage is refusing
 writes stops syncing until storage recovers.
 
+That cost is currently paid in silence. `persistence.get()` reports `blocked`,
+and no application reads it, so a device with refused writes keeps accepting
+edits, sends none of them, and says nothing. The store is doing what it decided
+to do; the surface that would make it visible does not exist yet.
+
 ## The one column you have to understand
 
 Almost every query in this directory turns on `authoritySeq`, and it is

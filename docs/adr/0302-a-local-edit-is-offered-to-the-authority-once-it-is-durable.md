@@ -35,7 +35,14 @@ already lost its durability guarantee.
 
 **The sender reads the durable outbox and nothing on top of it.** A local edit
 is offered to the authority once it is durable. A blocked flush leaves nothing
-new to send, and the persistence status already says so.
+new to send, and `persistence.get()` reports `blocked` while that is true.
+
+That report currently reaches nobody. No application reads it: the only
+consumer outside this package is `persistOnHide` calling `flush()`
+(`apps/honeycrisp/src/lib/databases.ts`). So the honest statement of this
+decision is that a blocked device stops syncing SILENTLY, and the surface that
+would make it visible is unbuilt. That surface is the price of this record, and
+it is owed rather than paid.
 
 **Acceptance and the nudge do not move.** A local transaction still updates the
 live document and the UI synchronously, `onLocalWork` still fires at acceptance
