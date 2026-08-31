@@ -389,9 +389,11 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0305](0305-the-third-party-app-catalog-is-a-future-epicenter-deployment-plane.md) | The third-party app catalog is a future Epicenter deployment plane | Accepted (unbuilt; amends 0227 at its temporary installed-app refusal) |
 | [0306](0306-borrowed-data-is-disposable-and-a-persons-own-data-is-not.md) | Borrowed data is disposable and a person's own data is not | Accepted |
 | [0307](0307-a-derived-index-is-in-memory-sqlite-rebuilt-on-read.md) | A derived index is in-memory SQLite, rebuilt on read | Accepted (unbuilt; amends 0303 at the projection and withdraws the `SyncSqliteDatabase` rename) |
-| [0308](0308-an-application-opens-its-own-sqlite-inside-its-own-worker-and-the-handle-is-synchronous.md) | An application opens its own SQLite inside its own worker, and the handle is synchronous | Accepted (unbuilt; amends 0303 at `AppSqliteDatabase` and 0304 at its ADR-0275 citation) |
+| [0308](0308-an-application-opens-its-own-sqlite-inside-its-own-worker-and-the-handle-is-synchronous.md) | An application opens its own SQLite inside its own worker, and the handle is synchronous | Superseded by 0312 (Tauri IPC has no blocking path) |
 | [0309](0309-a-field-holds-a-value-or-a-node-and-the-retired-words-fail-the-build.md) | A field holds a value or a node, and the retired words fail the build | Accepted (supersedes 0299 at its vocabulary; check unbuilt) |
 | [0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md) | An application's provider credential is a labeled secret, and the browser keeps none | Accepted (unbuilt; amends 0227 at its hosted-web refusal) |
 | [0311](0311-a-table-is-a-held-projection-and-everything-cheaper-than-rebuilding-is-read-through.md) | A table is a held projection, and everything cheaper than rebuilding is read through | Accepted (amends 0221 at nothing it decided; reopens 0077) |
+| [0312](0312-a-sqlite-handle-is-all-run-and-batch-and-a-transaction-never-crosses-a-process-boundary.md) | A SQLite handle is all, run, and batch, and a transaction never crosses a process boundary | Accepted (unbuilt; supersedes 0308; amends 0303 and 0304) |
+| [0312](0312-a-data-definition-ships-as-typescript-and-a-host-that-needs-one-imports-it.md) | A data definition ships as TypeScript, and a host that needs one imports it | Accepted (unbuilt; amends 0296 at its optional codec and 0210 at the declaration's file) |
 
 When you add an ADR, add its row here.

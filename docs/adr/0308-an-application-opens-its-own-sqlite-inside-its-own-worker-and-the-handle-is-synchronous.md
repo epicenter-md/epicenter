@@ -1,6 +1,7 @@
 # 0308. An application opens its own SQLite inside its own worker, and the handle is synchronous
 
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [ADR-0312](0312-a-sqlite-handle-is-all-run-and-batch-and-a-transaction-never-crosses-a-process-boundary.md). Tauri's IPC has no blocking path, so the synchronous handle this record decided is unreachable on the desktop target. Its reasoning about shipping work to the data survives there as `batch`.
 - **Date:** 2026-08-31
 - **Unbuilt:** the browser opener, its OPFS VFS installation, and the first application worker. The Bun path already exists inside each app.
 - **Amends:** [ADR-0303](0303-an-application-opens-epicenter-data-and-app-owned-sqlite-through-one-scoped-client.md) at the application handle. Withdrawn: `AppSqliteDatabase` and its asynchronous `run`, `all`, and `transaction`. `openSqlite(name)`, its scoping, its refusal to accept a schema, and its refusal to migrate all stand.
