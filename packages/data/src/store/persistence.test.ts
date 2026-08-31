@@ -203,7 +203,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		expectOk(replica.db.kv.update({ theme: 'dark' }));
 		expect(replica.db.kv.get('theme')).toBe('dark');
 
-		// A row's content node: an edit keeps writing prose while blocked. The
+		// A row's content node: an edit keeps writing text while blocked. The
 		// type is live on the document the store already holds, so a blocked
 		// engine never blocks acceptance.
 		const content = replica.db.tables.notes.get(made.id)?.content;

@@ -37,7 +37,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from '@y/y';
 
-import { putRow, rowAt, type ScalarType } from './raw-document.js';
+import { putRow, rowAt, type ValuesType } from './raw-document.js';
 
 const EMPTY_STATE_VECTOR = new Uint8Array(
 	Y.encodeStateVector(new Y.Doc({ gc: true })),
@@ -97,7 +97,7 @@ function receiverSurvives(
 	}
 }
 
-/** A document shaped like a real one: rows with fields, and prose. */
+/** A document shaped like a real one: rows with fields, and node text. */
 function sample(rows: number): Uint8Array {
 	const doc = new Y.Doc({ gc: true });
 	const root = doc.get('notes');
@@ -133,7 +133,7 @@ function incrementOverSeed(): { seed: Uint8Array; increment: Uint8Array } {
 	const root = doc.get('notes');
 	doc.transact(() => {
 		for (let index = 0; index < 20; index += 1) {
-			const row: ScalarType = new Y.Type();
+			const row: ValuesType = new Y.Type();
 			putRow(root, `r${index}`, row);
 			row.setAttr('title', `note ${index}`);
 		}

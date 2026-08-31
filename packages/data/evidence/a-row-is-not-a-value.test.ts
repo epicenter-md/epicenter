@@ -69,14 +69,14 @@ describe('a row is a read, not a value', () => {
 		expect(laptop.stored().tables).toEqual(phone.stored().tables);
 	});
 
-	test('a scalar is a snapshot and the content node is not', async () => {
+	test('a value is a snapshot and the content node is not', async () => {
 		const { phone, id } = await convergedPair();
 		const held = phone.tables.notes.get(id);
 
 		phone.tables.notes.update(id, { title: 'Errands' });
 		held?.content.insert(0, ['and eggs, ']);
 
-		// The scalar was copied out when it was read, so the held row still says
+		// The value was copied out when it was read, so the held row still says
 		// what it said. The content node is the container itself, so the edit is
 		// visible through the same object.
 		expect(held?.title).toBe('Groceries');
@@ -88,8 +88,8 @@ describe('a row is a read, not a value', () => {
 		const { phone, id } = await convergedPair();
 		const row = phone.rowFile('notes', id);
 		if (row === undefined) throw new Error('the row is gone');
-		// Faithful and untyped: every stored scalar, and the live content node beside
-		// them for a codec. The scalars alone are what a value comparison wants.
+		// Faithful and untyped: every stored value, and the live content node beside
+		// them for a codec. The values alone are what a value comparison wants.
 		const { content: _content, ...fields } = row;
 		expect(fields).toEqual({ id, title: 'Groceries' });
 	});

@@ -231,7 +231,7 @@ and is why experiment 5 could not have existed alongside it.
 ## What a randomised schedule found that scenarios did not
 
 `src/sync/transport.test.ts` runs a seeded fuzz: three replicas, random creates,
-updates, deletes and prose, random disconnects and reconnects, snapshots firing
+updates, deletes and node edits, random disconnects and reconnects, snapshots firing
 throughout, checked against a model held outside the system. It failed 63 of 150
 seeds on its first run and found two defects no written scenario reached.
 

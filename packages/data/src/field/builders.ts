@@ -84,7 +84,7 @@ function string<T extends string = string>(
 }
 
 /**
- * Cross-row reference field: a string column that points at a row in another table.
+ * Cross-row reference field: a string value that points at a row in another table.
  *
  * - `field.reference('pages')` -> `TUnsafe<string>`, `Static<>` = `string`.
  * - `field.reference<PageId>('pages')` -> `TUnsafe<PageId>`, `Static<>` = `PageId`.
@@ -92,7 +92,7 @@ function string<T extends string = string>(
  *   `field.string<'draft'>()` is: a literal subtype is not enforced at runtime.
  *
  * The VALUE is the target row's stem / id; the `table` argument is recorded in the
- * at-rest schema under {@link REFERENCE_KEYWORD} so `recognize` classifies the column as
+ * at-rest schema under {@link REFERENCE_KEYWORD} so `recognize` classifies the field as
  * kind `reference` and recovers its target. This composes the two existing tricks:
  * `Type.Unsafe` carries the brand on `Static<>` (as in {@link string}) while the marker
  * rides on the emitted wire-form (as in {@link json}). It is ALWAYS `TUnsafe` (even
@@ -101,7 +101,7 @@ function string<T extends string = string>(
  * `Value.Check` ignores it); whether the target ROW exists is cross-table integrity,
  * enforced outside this leaf.
  *
- * The brand is type-safe at the call site; the `table` STRING is not (the column is
+ * The brand is type-safe at the call site; the `table` STRING is not (the field is
  * authored before its workspace knows the full table set), so a dangling target is caught
  * at workspace construction, not here.
  */
@@ -258,7 +258,7 @@ export const jsonValue: TUnsafe<JsonValue> = Type.Unsafe<JsonValue>(Type.Any());
  *
  * No JSON-safety gate lives here (that would pull the workspace's `ColumnError` into the
  * leaf): a non-JSON inner (e.g. `Type.Date`) flows through as `TUnsafe<Date>` and is caught
- * by `FlatJsonTSchema` at the `defineTable` boundary, where column safety belongs.
+ * by `FlatJsonTSchema` at the `defineTable` boundary, where field safety belongs.
  */
 type TJson<S extends TSchema> = TUnsafe<Static<S>> & {
 	// Keep the real wire marker visible to schema-aware type consumers while

@@ -23,7 +23,7 @@ import { rowAt, typeAt } from '../raw-document.js';
 
 /** One day of use, as transactions a real editor would dispatch. */
 const DAY = {
-	/** Notes whose scalar fields change: renames, tags, dates. */
+	/** Notes whose value fields change: renames, tags, dates. */
 	fieldEdits: 20,
 	/** Characters typed into prose. ProseMirror dispatches roughly per keystroke. */
 	charsTyped: 2000,
@@ -111,7 +111,7 @@ function simulate(days: number, policy: Policy) {
 				const container = typeAt(row, '!doc');
 				const text =
 					container === undefined ? undefined : typeAt(container, 'editor');
-				if (text === undefined) throw new Error('the row has no prose');
+				if (text === undefined) throw new Error('the row has no text');
 				text.applyDelta(text.change.retain(10).insert('a') as never);
 			});
 		}

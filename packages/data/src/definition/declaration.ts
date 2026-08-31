@@ -1,7 +1,7 @@
 /**
  * What an application declares, and what that declaration reads as.
  *
- * All vocabulary and no behaviour. A definition names scalar fields directly
+ * All vocabulary and no behaviour. A definition names value fields directly
  * on each table and reserves one content codec beside them; the lens at the
  * bottom turns that declaration into the types an application writes.
  *
@@ -62,8 +62,8 @@ export type ContentError = InferErrors<typeof ContentError>;
 /**
  * How one table's content node becomes text, and back (ADR-0296).
  *
- * A row is its scalars and ONE live node. The platform owns the file: it
- * writes the scalars as frontmatter by field name and joins this below the
+ * A row is its values and ONE live node. The platform owns the file: it
+ * writes the values as frontmatter by field name and joins this below the
  * fence, and it reverses both. The table owns what its node MEANS, which is
  * this and nothing else.
  *
@@ -98,8 +98,8 @@ export const CONTENT_FIELD = 'content';
 /**
  * One table's declaration, as the inert definition carries it.
  *
- * Every top-level key except `content` is a scalar field. A scalar holds a JSON
- * value: replaced whole on write, last write wins, and written to the file's
+ * Every top-level key except `content` is a value field: it holds one JSON
+ * value, replaced whole on write, last write wins, and written to the file's
  * frontmatter under its own field name. The content is the row's one live node:
  * edited in place, merging internally, and written below the fence through the
  * codec declared here.
@@ -110,7 +110,7 @@ export const CONTENT_FIELD = 'content';
  * has content and whose table declares nothing to write it with.
  */
 export type TableDeclaration = {
-	/** Scalar field descriptors live directly on the table. */
+	/** Value field descriptors live directly on the table. */
 	readonly [key: string]: unknown;
 	/** How this table's content node becomes text, and back. */
 	readonly content?: ContentCodec;
@@ -200,8 +200,8 @@ type FieldsOut<TFields extends FieldMap> = {
 };
 
 /**
- * One table's scalar values: what `update` may patch, and what a row's
- * frontmatter carries. Every top-level schema except `content` is a scalar.
+ * One table's values: what `update` may patch, and what a row's
+ * frontmatter carries. Every top-level schema except `content` is a value.
  *
  * The content node is absent because a node is not assignable: writing one
  * over a row's attribute deletes the old subtree, so a peer that edited it
@@ -224,7 +224,7 @@ type TableValues<T extends TableDeclaration> = {
 };
 
 /**
- * One row: its id, its scalars, and its one live node.
+ * One row: its id, its values, and its one live node.
  *
  * What `get` returns, what `create` returns, and what the export writes. No
  * conditional and no optionality: every row has a node, minted with it,
@@ -238,7 +238,7 @@ export type RowOf<T extends TableDeclaration> = {
 } & TableValues<T>;
 
 /**
- * What `create` takes: the scalars, and the node if the caller built one.
+ * What `create` takes: the values, and the node if the caller built one.
  *
  * The node is OPTIONAL, and that is what keeps a programmatic `create` from
  * having to build an empty one it does not care about: an omitted node is

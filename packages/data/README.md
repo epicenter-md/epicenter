@@ -169,7 +169,7 @@ const note = data.tables.notes.get(id);
 ### Reacting
 
 `subscribe` fires once per commit and means this table's SHAPE changed: a row
-added, a row removed, or a row's scalars edited. It fires for a local write and
+added, a row removed, or a row's values edited. It fires for a local write and
 for bytes from another device alike, and after every `onCommitted` listener has
 run, so a composed follower is already marked dirty by the time a subscriber
 reads through it.
@@ -206,12 +206,12 @@ save a caller a handful of property reads and cost machinery to do it.
 
 ## The shape of the data
 
-One scalar `Y.Doc` per application is persisted under the application log name
+One `Y.Doc` per application is persisted under the application log name
 `app`. Its current top-level roots are the bare named root `kv` and one
 `tables:<name>` root for each declared table. This is the physical storage
 grammar; it is not a promise that an older or unknown writer could not have
 left another root behind. The current model mints no other root kind, so
-dumping `doc.share` reads as a description of the application's current scalar
+dumping `doc.share` reads as a description of the application's whole current
 state.
 
 ```txt
@@ -242,7 +242,7 @@ converges (ADR-0216).
 ### Rich content
 
 A row's rich content is a nested `Y.Type` on the row, declared like any other
-field (ADR-0295, ADR-0296). It is in the same document as the scalars, so there
+field (ADR-0295, ADR-0296). It is in the same document as the values, so there
 is nothing to open, nothing to await, and nothing to dispose:
 
 ```ts
@@ -269,7 +269,7 @@ type ContentCodec = {
 };
 ```
 
-The platform owns the file, writing the scalars as frontmatter under their own
+The platform owns the file, writing the values as frontmatter under their own
 field names and joining the encoded node beneath the fence, and reversing both.
 The table owns what its node MEANS, and there is no default: a node carries a
 sequence and attributes at once, so rendering one as text round-trips a keyed
@@ -285,7 +285,7 @@ shaped.
 | Where | Granularity |
 | --- | --- |
 | two fields of one row | independent, both survive |
-| one scalar field | last write wins, converged |
+| one value field | last write wins, converged |
 | one array or object field | last write wins on the WHOLE value |
 | the content node | per character |
 | any composed index | a cache derived from the CRDT |

@@ -136,7 +136,7 @@ function rowType(root: Y.Type, rowId: string): RowType | undefined {
  */
 type RowType = Y.Type<{ attrs: Record<string, JsonValue> }>;
 
-/** What `createRow` admits: scalar values, plus the caller's content node. */
+/** What `createRow` admits: values, plus the caller's content node. */
 export type RowInput = Record<string, JsonValue | Y.Type>;
 
 /** Whether this table holds a row at this address. */
@@ -164,7 +164,7 @@ export function readRow(root: Y.Type, rowId: string): JsonObject | undefined {
 		// The content node is a nested type, not a value (ADR-0299). Read through
 		// the live attributes rather than through the declaration, so a nested type
 		// an older release wrote is still not mistaken
-		// for JSON: what a scalar read owes is every value, and a type is not one.
+		// for JSON: what a value read owes is every value, and a type is not one.
 		if (value instanceof Y.Type) continue;
 		payload[name] = value as JsonValue;
 	}
@@ -229,16 +229,16 @@ export function createRow(
 	root: Y.Type,
 	rowId: string,
 	/**
-	 * The scalars, and the content node if the caller built one.
+	 * The values, and the content node if the caller built one.
 	 *
-	 * A `Y.Type` at `content` is integrated there; anything else is a scalar.
+	 * A `Y.Type` at `content` is integrated there; anything else is a value.
 	 * An omitted node is minted empty, so a table whose rows are created
 	 * programmatically never has to think about it.
 	 */
 	fields: RowInput,
 ): void {
 	refuseReservedFields(fields, true);
-	const scalars: JsonObject = {};
+	const values: JsonObject = {};
 	let given: Y.Type | undefined;
 	for (const [name, value] of Object.entries(fields)) {
 		if (name === CONTENT_FIELD) {
@@ -251,7 +251,7 @@ export function createRow(
 			continue;
 		}
 		if (!(value instanceof Y.Type)) {
-			scalars[name] = value as JsonValue;
+			values[name] = value as JsonValue;
 			continue;
 		}
 		// A row holds one node, at one reserved key. A node anywhere else would be
@@ -289,11 +289,11 @@ export function createRow(
 		}
 		if (readRowContent(root, rowId) === undefined) {
 			throw new Error(
-				`existing row '${rowId}' has no live content node; repair it before writing scalar fields`,
+				`existing row '${rowId}' has no live content node; repair it before writing value fields`,
 			);
 		}
 	}
-	fill(row, scalars);
+	fill(row, values);
 }
 
 /**
@@ -366,13 +366,13 @@ function refuseReservedFields(fields: RowInput, allowContent = false): void {
 /**
  * Take one row off its table. Returns whether there was a row to take.
  *
- * The whole subtree goes with the attribute: every scalar field AND every type
+ * The whole subtree goes with the attribute: every value field AND every type
  * field's nested type. Deleting a nested type reclaims what is under it
  * (`evidence/invariants.test.ts`), so what remains is one deleted map key,
  * measured at 2.0 items and 44.5 bytes (`evidence/bench/tombstones.ts`).
  *
  * There is nothing else to retire. A row's content node is IN here now
- * (ADR-0295), so deletion is one removal in one document rather than a scalar
+ * (ADR-0295), so deletion is one removal in one document rather than a value
  * removal composed with a durable tombstone on a second address.
  *
  * ADR-0212 chose the other model: clear every field and set a reserved

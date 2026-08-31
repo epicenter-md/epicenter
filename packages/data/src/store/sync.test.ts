@@ -107,7 +107,7 @@ describe('the local log holds each update once', () => {
 	});
 
 	test("content written into a row's node owes it, like any local work", () => {
-		// Prose reaches storage through the document's own update listener
+		// A node edit reaches storage through the document's own update listener
 		// rather than through a store verb, so it is the one local write that
 		// could plausibly be missed.
 		const author = open();
@@ -254,7 +254,7 @@ describe('the cursor is a log position, and never a state vector', () => {
 });
 
 describe("a row's content node is one type both devices edit", () => {
-	test('two devices typing into one note both keep their prose', () => {
+	test('two devices typing into one note both keep their text', () => {
 		// The race the old separate row-document model spent a name-addressed root
 		// closing. A nested type is addressed by the struct that created it, so what makes
 		// this safe is that it is minted ONCE, in the transaction that mints its

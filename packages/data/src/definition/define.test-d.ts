@@ -19,9 +19,9 @@ import { plainText } from './content.js';
 import { defineData, defineTable, field } from './index.js';
 
 /**
- * A scalar cannot take a name a row already has.
+ * A value cannot take a name a row already has.
  *
- * Every row holds an `id` and a `content` node (ADR-0299), so a scalar at
+ * Every row holds an `id` and a `content` node (ADR-0299), so a value at
  * either name would collide with the row's own field: `RowOf` intersects the
  * two, and the field would read as an impossible type rather than as a
  * mistake. `parseData` refuses it too; this pins the half that fires while the
@@ -31,7 +31,7 @@ import { defineData, defineTable, field } from './index.js';
  * makes the error land on the field instead of on the object around it.
  *
  * This replaced a pin for a rule that no longer exists: a name declared as
- * both a scalar and the content key. When `types` was deleted, that pin kept
+ * both a value and the content key. When `types` was deleted, that pin kept
  * passing, because its `@ts-expect-error` absorbed the excess-property error
  * for `types` itself. Probed to confirm: with `types` removed entirely and an
  * unrelated key in its place, the expectation was still satisfied. A pin that

@@ -13,8 +13,8 @@
  * deleted. What is left validates `kv`, which is the one field map an
  * application still writes inline.
  *
- * A table's scalar fields are top-level keys. The reserved `content` key is the
- * only non-field key, and `id` cannot be claimed by a scalar.
+ * A table's value fields are top-level keys. The reserved `content` key is the
+ * only non-field key, and `id` cannot be claimed by a value.
  */
 
 import type { TSchema } from 'typebox';
@@ -34,7 +34,7 @@ type ReservedRowKey<K extends string> = Lowercase<K> extends 'id'
 	: never;
 
 /**
- * The scalar fields of one table, with a declared default refused at the field and
+ * The value fields of one table, with a declared default refused at the field and
  * a reserved name refused at the key.
  *
  * `defineTable` applies this to all top-level table keys except `content`, and

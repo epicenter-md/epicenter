@@ -94,9 +94,9 @@ describe('a read is a property access on a plain object', () => {
 		expect(db.tables.notes.get('nope')).toBeUndefined();
 	});
 
-	test('every scalar verb is synchronous; only a document open is a load', async () => {
+	test('every value verb is synchronous; only a document open is a load', async () => {
 		// One in-memory application document over a synchronous SQLite boundary,
-		// so no scalar read or write has I/O to await. The one asynchronous verb
+		// so no value read or write has I/O to await. The one asynchronous verb
 		// is the data opener, which is a load by decision (ADR-0248).
 		const made = note();
 		for (const value of [
@@ -381,7 +381,7 @@ describe("a row's content node lives on the row (ADR-0295)", () => {
 		expect(db.tables.notes.get(made.id)).toBeUndefined();
 	});
 
-	test('content is a live node on the row, never a JSON scalar', () => {
+	test('content is a live node on the row, never a JSON value', () => {
 		// `get` carries it and `stored()` cannot: the faithful read answers in
 		// JSON, and a nested type is not one. That is the whole reason the
 		// exporter reads through `store.rowFile` rather than through `stored`.
@@ -687,15 +687,15 @@ describe('a subscription says a table changed', () => {
 		);
 	});
 
-	test("prose written into a row's content node is NOT a table commit", () => {
+	test("text written into a row's content node is NOT a table commit", () => {
 		// The refusal a table signal is drawn around. A row's content node is
 		// nested on the row (ADR-0295), so a keystroke modifies the field and
 		// nothing shallower. `deliver` reads what a transaction changed
 		// DIRECTLY, and counts only the table root (a row added or removed) and
-		// a row (its scalars), so the bubble that used to wake every list in the
+		// a row (its values), so the bubble that used to wake every list in the
 		// application at typing frequency does not happen.
 		//
-		// What a listener that wants prose uses instead is `watch`, which is
+		// What a listener that wants node edits uses instead is `watch`, which is
 		// scoped to the one field.
 		const made = note();
 		const { seen } = record(db.tables.notes);
@@ -706,9 +706,9 @@ describe('a subscription says a table changed', () => {
 		expect(seen).toEqual([]);
 	});
 
-	test('editing a row scalar IS a table commit', () => {
+	test('editing a row value IS a table commit', () => {
 		// The other side of the depth rule, and the reason it is two levels
-		// rather than one: a scalar lives on the ROW, not on the table root, so
+		// rather than one: a value lives on the ROW, not on the table root, so
 		// a rule that counted only the root would leave a renamed note showing
 		// its old title in every list.
 		const made = note();
@@ -1168,7 +1168,7 @@ describe('a content node carries its own change signal (ADR-0297)', () => {
 		expect(fired).toBe(1);
 	});
 
-	test('a scalar write on the same row does not fire it', () => {
+	test('a value write on the same row does not fire it', () => {
 		// Why the signal is scoped to the FIELD rather than to the row. An
 		// application hangs its own `updatedAt` write on this, and a row-scoped
 		// signal would fire on the write it caused, so every application would
@@ -1213,7 +1213,7 @@ describe('a content node carries its own change signal (ADR-0297)', () => {
 			content.applyDelta(content.change.insert('a') as never);
 			content.applyDelta(content.change.insert('b') as never);
 		});
-		// No 'table': prose is not a table event. The phase ORDER is still the
+		// No 'table': a node edit is not a table event. The phase ORDER is still the
 		// contract, which is what a commit touching both halves shows.
 		expect(order).toEqual(['committed', 'field']);
 
@@ -1288,7 +1288,7 @@ describe('the store manages no timestamps (ADR-0297)', () => {
 		});
 		const data = await openMemory(plain);
 		const made = data.tables.notes.create({ title: 'Groceries' });
-		// Its id, its declared scalar, and the node every row has. No timestamp,
+		// Its id, its declared value, and the node every row has. No timestamp,
 		// which is the claim: the store stamps nothing (ADR-0297).
 		expect(Object.keys(made).sort()).toEqual(['content', 'id', 'title']);
 	});

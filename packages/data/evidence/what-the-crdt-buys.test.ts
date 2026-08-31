@@ -8,14 +8,14 @@
  *
  * The answer splits cleanly, and not where you would guess.
  *
- * - **Scalar fields get last-writer-wins already.** A Yjs map discards one of
+ * - **Value fields get last-writer-wins already.** A Yjs map discards one of
  *   two concurrent writes to the same key, exactly as a plain timestamped table
  *   would, and the survivor is chosen by clientID ordering rather than by who
  *   edited last. It is a coin flip, not a merge.
- * - **Prose genuinely merges.** Two concurrent insertions into one string both
+ * - **A node genuinely merges.** Two concurrent insertions into one string both
  *   survive, interleaved correctly. No last-writer-wins scheme can do this.
  *
- * So for a row's scalars the CRDT provides a marginally different tie-break and
+ * So for a row's values the CRDT provides a marginally different tie-break and
  * charges the whole tombstone machine for it. Pinned because "we need a CRDT
  * for rows" is an assumption nobody re-examines once it is in the walls.
  */
@@ -23,7 +23,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from '@y/y';
 
-import { putRow, rowAt, type ScalarType } from './raw-document.js';
+import { putRow, rowAt, type ValuesType } from './raw-document.js';
 
 function sync(a: Y.Doc, b: Y.Doc): void {
 	const fromA = Y.encodeStateAsUpdateV2(a, Y.encodeStateVector(b));
@@ -37,13 +37,13 @@ function pair() {
 	const phone = new Y.Doc({ gc: true });
 	const laptop = new Y.Doc({ gc: true });
 	phone.transact(() => {
-		const row: ScalarType = new Y.Type();
+		const row: ValuesType = new Y.Type();
 		putRow(phone.get('notes'), 'n1', row);
 		row.setAttr('title', 'original');
 		row.setAttr('tags', ['a']);
 	});
 	sync(phone, laptop);
-	const row = (doc: Y.Doc): ScalarType => {
+	const row = (doc: Y.Doc): ValuesType => {
 		const found = rowAt(doc.get('notes'), 'n1');
 		if (found === undefined) throw new Error('the row is gone');
 		return found;
@@ -51,7 +51,7 @@ function pair() {
 	return { phone, laptop, row };
 }
 
-describe('a row of scalars', () => {
+describe('a row of values', () => {
 	test('DIFFERENT fields merge, which a per-field table also does', () => {
 		const { phone, laptop, row } = pair();
 		phone.transact(() => row(phone).setAttr('title', 'from phone'));
@@ -98,7 +98,7 @@ describe('a row of scalars', () => {
 	});
 });
 
-describe('prose, where a CRDT does something nothing else can', () => {
+describe('a node, where a CRDT does something nothing else can', () => {
 	test('two concurrent insertions BOTH survive, interleaved correctly', () => {
 		const phone = new Y.Doc({ gc: true });
 		const laptop = new Y.Doc({ gc: true });
@@ -130,8 +130,8 @@ describe('prose, where a CRDT does something nothing else can', () => {
 				(text(doc).toJSON() as unknown as { children?: unknown }).children,
 			);
 		expect(content(phone)).toBe(content(laptop));
-		// Both edits are present in one string. This is the thing a row's scalar
-		// fields never get, and the reason prose has to stay a CRDT whatever
+		// Both edits are present in one string. This is the thing a row's value
+		// fields never get, and the reason a node has to stay a CRDT whatever
 		// happens to rows.
 		expect(content(phone)).toContain('beautiful');
 		expect(content(phone)).toContain('!!!');

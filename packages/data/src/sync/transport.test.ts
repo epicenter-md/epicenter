@@ -372,7 +372,7 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		expect(laptop.titles()).toEqual([]);
 	});
 
-	test("prose written into a row's content node replicates with the row", async () => {
+	test("text written into a row's content node replicates with the row", async () => {
 		const { wire, phone, laptop } = setup();
 		phone.connect();
 		laptop.connect();
@@ -999,7 +999,7 @@ describe('a partial that outlives the socket that opened it', () => {
 		return { wire, authority, phone, laptop, note, snapshotChunks };
 	}
 
-	async function readProse(replica: Replica, rowId: string) {
+	async function readNodeText(replica: Replica, rowId: string) {
 		return editorOf(replica, rowId).length;
 	}
 
@@ -1015,7 +1015,7 @@ describe('a partial that outlives the socket that opened it', () => {
 		laptop.disconnect();
 		wire.settle();
 		expect(laptop.client.status().cursor).toBe(1);
-		expect(await readProse(laptop, note.id)).toBe(4_000_000);
+		expect(await readNodeText(laptop, note.id)).toBe(4_000_000);
 
 		// The authority snapshots at 2 and the tail it covers is gone, so the
 		// snapshot is now the only way this replica can ever converge.
@@ -1037,7 +1037,7 @@ describe('a partial that outlives the socket that opened it', () => {
 		// belongs to a socket and is rebuilt on attach and detach, so nothing
 		// survives to collide; and a reassembly failure is reported rather than
 		// swallowed, so even a collision that did happen asks to be reconnected.
-		expect(await readProse(laptop, note.id)).toBe(7_000_000);
+		expect(await readNodeText(laptop, note.id)).toBe(7_000_000);
 		expect(laptop.client.status().needsResync).toBe(false);
 		expect(laptop.client.status().lastError).toBeUndefined();
 	});
@@ -1092,7 +1092,7 @@ describe('a partial that outlives the socket that opened it', () => {
 		laptop.connect();
 		wire.settle();
 
-		expect(await readProse(laptop, note.id)).toBe(7_000_000);
+		expect(await readNodeText(laptop, note.id)).toBe(7_000_000);
 		expect(laptop.client.status().cursor).toBe(2);
 		expect(laptop.titles()).toEqual(['a big paste']);
 	});
@@ -1699,7 +1699,7 @@ describe('two devices whose databases disagree', () => {
 		});
 		expect(upgradedNotes.ids()).toHaveLength(1);
 
-		// CONTROL: the new column really is there now, which is exactly what the
+		// CONTROL: the new field really is there now, which is exactly what the
 		// old relation was missing. A drop that failed to recreate fails here.
 		expect(
 			expectOk(upgradedNotes.create({ title: 'Bread', pinned: true })).pinned,
@@ -1807,7 +1807,7 @@ async function fuzz(
 	/** Which rows each device owns, so nothing ever writes to another's row. */
 	const owned = devices.map(() => [] as string[]);
 	const online = devices.map(() => false);
-	const seen = { creates: 0, updates: 0, deletes: 0, drops: 0, prose: 0 };
+	const seen = { creates: 0, updates: 0, deletes: 0, drops: 0, nodeEdits: 0 };
 
 	const connect = (index: number) => {
 		if (online[index]) return;
@@ -1850,12 +1850,12 @@ async function fuzz(
 			expected.delete(rowId);
 			seen.deletes += 1;
 		} else {
-			// Prose, which is the one thing that reaches storage without going
+			// A node edit, which is the one thing that reaches storage without going
 			// through a store verb.
 			const rowId = mine[random.below(mine.length)] as string;
 			const text = editorOf(device, rowId);
 			text.applyDelta(text.change.insert('x') as never);
-			seen.prose += 1;
+			seen.nodeEdits += 1;
 		}
 
 		if (random.chance(0.6)) device.client.flush();
@@ -1910,7 +1910,7 @@ describe('random schedules, and everyone still agrees', () => {
 			expect(seen.creates).toBeGreaterThan(10);
 			expect(seen.deletes).toBeGreaterThan(0);
 			expect(seen.drops).toBeGreaterThan(0);
-			expect(seen.prose).toBeGreaterThan(0);
+			expect(seen.nodeEdits).toBeGreaterThan(0);
 			expect(wanted.length).toBeGreaterThan(10);
 		});
 	}

@@ -95,7 +95,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		await using restored = await openMemory(store);
 		expect(syncEngineOf(restored).applyRemote(state).error).toBeNull();
 
-		// Every scalar, at the same id, read through the same lens.
+		// Every value, at the same id, read through the same lens.
 		expect(restored.tables.notes.rows).toHaveLength(1);
 		expect(restored.tables.folders.rows).toHaveLength(1);
 		expect(restored.kv.get('theme')).toBe('dark');
@@ -107,7 +107,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		// faithful read is what it should have been asserted against all along.
 		expect(restored.stored().tables).toEqual(data.stored().tables);
 
-		// And the prose, through the codec, `---` fence and all.
+		// And the body text, through the codec, `---` fence and all.
 		expect(restored.tables.notes.get(note.id)?.content.toString()).toBe(
 			'buy milk\n\n---\nnot a fence',
 		);

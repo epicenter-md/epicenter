@@ -23,7 +23,7 @@ const store = defineData({
 	},
 });
 
-/** Write prose into one row's live `content` node. */
+/** Write text into one row's live `content` node. */
 function type(
 	data: {
 		tables: {
@@ -57,7 +57,7 @@ function parsed(definition: Parameters<typeof parseData>[0]) {
 }
 
 describe('renderRow is the unit (ADR-0271)', () => {
-	test('one row becomes one file: fields on top, prose underneath', async () => {
+	test('one row becomes one file: fields on top, body text underneath', async () => {
 		await using data = await openMemory(store);
 		const made = data.tables.notes.create({ title: 'Groceries' });
 		type(data, made.id, 'buy milk');
@@ -86,7 +86,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 	});
 
 	test('a table with an empty content node renders frontmatter alone', async () => {
-		const scalarOnly = defineData({
+		const valuesOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
 			tables: {
@@ -96,11 +96,11 @@ describe('renderRow is the unit (ADR-0271)', () => {
 				}),
 			},
 		});
-		await using data = await openMemory(scalarOnly);
+		await using data = await openMemory(valuesOnly);
 		const made = data.tables.folders.create({ name: 'Inbox' });
 
 		const rendered = expectOk(
-			await renderRow(data, parsed(scalarOnly), 'folders', made.id),
+			await renderRow(data, parsed(valuesOnly), 'folders', made.id),
 		);
 		expect(rendered.contents).toBe(
 			['---', 'name: "Inbox"', '---', ''].join('\n'),
@@ -108,7 +108,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 	});
 
 	test('a content node with attributes is not treated as empty without a codec', async () => {
-		const scalarOnly = defineData({
+		const valuesOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
 			tables: {
@@ -118,7 +118,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 				}),
 			},
 		});
-		await using data = await openMemory(scalarOnly);
+		await using data = await openMemory(valuesOnly);
 		const made = data.tables.folders.create({ name: 'Inbox' });
 		const row = data.tables.folders.get(made.id);
 		if (row === undefined) throw new Error('the row has no content');
@@ -127,7 +127,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 		const rendered = expectErr(
 			await renderRow(
 				data,
-				parsed(JSON.parse(JSON.stringify(scalarOnly))),
+				parsed(JSON.parse(JSON.stringify(valuesOnly))),
 				'folders',
 				made.id,
 			),
@@ -188,7 +188,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 			theme: 'dark',
 		});
 
-		// The row is one file: its id is the path, its scalars the frontmatter
+		// The row is one file: its id is the path, its values the frontmatter
 		// (strings always quoted, so every value re-reads as itself), and its
 		// content node to the content (ADR-0268, ADR-0296).
 		expect(files.get(`notes/${made.id}.md`)).toBe(
@@ -254,7 +254,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 	});
 
 	test('a table with an empty content node exports frontmatter-only files', async () => {
-		const scalarOnly = defineData({
+		const valuesOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
 			tables: {
@@ -264,10 +264,10 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 				}),
 			},
 		});
-		await using data = await openMemory(scalarOnly);
+		await using data = await openMemory(valuesOnly);
 		const made = data.tables.folders.create({ name: 'Inbox' });
 
-		const files = await collect(renderArtifact(data, scalarOnly));
+		const files = await collect(renderArtifact(data, valuesOnly));
 		expect(files.get(`folders/${made.id}.md`)).toBe(
 			['---', 'name: "Inbox"', '---', ''].join('\n'),
 		);

@@ -21,7 +21,7 @@ import {
 	tableRoot,
 	tableRootName,
 } from '../src/store/document.js';
-import { asScalars, putRow, rowAt, type ScalarType } from './raw-document.js';
+import { asValues, putRow, rowAt, type ValuesType } from './raw-document.js';
 
 /** Exchange everything each side is missing, both directions. */
 function sync(a: Y.Doc, b: Y.Doc): void {
@@ -45,13 +45,13 @@ function attrs(type: Y.Type | undefined): Record<string, unknown> {
 describe('the database document has one named root grammar', () => {
 	test('uses kv and tables:<name> without a nested tables root', () => {
 		const document = createDatabaseDocument();
-		const kv = asScalars(kvRoot(document));
+		const kv = asValues(kvRoot(document));
 		const pages = tableRoot(document, 'pages');
 		const folders = tableRoot(document, 'folders');
 
 		document.transact(() => {
 			kv.setAttr('theme', 'dark');
-			const page: ScalarType = new Y.Type();
+			const page: ValuesType = new Y.Type();
 			page.setAttr('title', 'A page');
 			putRow(pages, 'page-1', page);
 			putRow(folders, 'folder-1', new Y.Type());
@@ -81,8 +81,8 @@ describe('identity: a root is addressed by name, a nested type by struct', () =>
 		const laptop = new Y.Doc({ gc: true });
 		phone.get('kv');
 		laptop.get('kv');
-		phone.transact(() => asScalars(phone.get('kv')).setAttr('theme', 'dark'));
-		laptop.transact(() => asScalars(laptop.get('kv')).setAttr('fontSize', 22));
+		phone.transact(() => asValues(phone.get('kv')).setAttr('theme', 'dark'));
+		laptop.transact(() => asValues(laptop.get('kv')).setAttr('fontSize', 22));
 		sync(phone, laptop);
 
 		expect(attrs(phone.get('kv'))).toEqual({ theme: 'dark', fontSize: 22 });
@@ -101,7 +101,7 @@ describe('identity: a root is addressed by name, a nested type by struct', () =>
 			[laptop, 'fontSize', 22],
 		] as const) {
 			doc.transact(() => {
-				const container: ScalarType = new Y.Type();
+				const container: ValuesType = new Y.Type();
 				putRow(doc.get('settings'), 'app', container);
 				container.setAttr(key, value);
 			});
@@ -120,13 +120,13 @@ describe('identity: a root is addressed by name, a nested type by struct', () =>
 		const phone = new Y.Doc({ gc: true });
 		const laptop = new Y.Doc({ gc: true });
 		phone.transact(() => {
-			const row: ScalarType = new Y.Type();
+			const row: ValuesType = new Y.Type();
 			putRow(phone.get('notes'), 'n1', row);
 			row.setAttr('title', 'original');
 		});
 		sync(phone, laptop);
 
-		const rowOf = (doc: Y.Doc): ScalarType => {
+		const rowOf = (doc: Y.Doc): ValuesType => {
 			const found = rowAt(doc.get('notes'), 'n1');
 			if (found === undefined) throw new Error('the row is gone');
 			return found;
@@ -148,8 +148,8 @@ describe('a state vector cannot express deletion', () => {
 		// "have I caught up" is a question a state vector cannot answer.
 		const kept = new Y.Doc({ gc: true });
 		kept.transact(() => {
-			asScalars(kept.get('notes')).setAttr('x', 1);
-			asScalars(kept.get('notes')).setAttr('y', 2);
+			asValues(kept.get('notes')).setAttr('x', 1);
+			asValues(kept.get('notes')).setAttr('y', 2);
 		});
 		const removed = new Y.Doc({ gc: true });
 		Y.applyUpdateV2(removed, Y.encodeStateAsUpdateV2(kept));
@@ -171,8 +171,8 @@ describe('a state vector cannot express deletion', () => {
 		// against. What is unavailable is the INFERENCE, not the data.
 		const kept = new Y.Doc({ gc: true });
 		kept.transact(() => {
-			asScalars(kept.get('notes')).setAttr('x', 1);
-			asScalars(kept.get('notes')).setAttr('y', 2);
+			asValues(kept.get('notes')).setAttr('x', 1);
+			asValues(kept.get('notes')).setAttr('y', 2);
 		});
 		const removed = new Y.Doc({ gc: true });
 		Y.applyUpdateV2(removed, Y.encodeStateAsUpdateV2(kept));
@@ -194,7 +194,7 @@ describe('delivery: what the transport must guarantee', () => {
 		// it. No throw, no event, no public reader, empty document.
 		// `hasUnresolvedDependencies()` in the store exists because of this.
 		const origin = new Y.Doc({ gc: true });
-		let row!: ScalarType;
+		let row!: ValuesType;
 		origin.transact(() => {
 			row = new Y.Type();
 			putRow(origin.get('notes'), 'n1', row);
@@ -226,7 +226,7 @@ describe('delivery: what the transport must guarantee', () => {
 	});
 
 	test('an editing chain inside one type buffers the same way', () => {
-		// The prose shape. Same silence, so an editor's updates are subject to it.
+		// The node shape. Same silence, so an editor's updates are subject to it.
 		const origin = new Y.Doc({ gc: true });
 		const text = origin.get('editor', 'text');
 		origin.transact(() =>
@@ -319,7 +319,7 @@ describe('deletion against a concurrent write, and against a later one', () => {
 		const phone = new Y.Doc({ gc: true });
 		const laptop = new Y.Doc({ gc: true });
 		phone.transact(() => {
-			const row: ScalarType = new Y.Type();
+			const row: ValuesType = new Y.Type();
 			putRow(phone.get('tables:notes'), 'row1', row);
 			row.setAttr('title', 'hello');
 		});
@@ -344,7 +344,7 @@ describe('deletion against a concurrent write, and against a later one', () => {
 		const phone = new Y.Doc({ gc: true });
 		const laptop = new Y.Doc({ gc: true });
 		phone.transact(() => {
-			const row: ScalarType = new Y.Type();
+			const row: ValuesType = new Y.Type();
 			putRow(phone.get('tables:notes'), 'row2', row);
 			row.setAttr('title', 'hi');
 		});
@@ -389,7 +389,7 @@ describe('reclamation: what deletion actually returns', () => {
 			const root = doc.get('notes');
 			doc.transact(() => {
 				for (let index = 0; index < 200; index += 1) {
-					const row: ScalarType = new Y.Type();
+					const row: ValuesType = new Y.Type();
 					putRow(root, `r${String(index).padStart(23, '0')}`, row);
 					row.setAttr('!presence', 'present');
 					row.setAttr('title', 'x'.repeat(200));
@@ -447,7 +447,7 @@ describe('claims a record got wrong, kept so they stay wrong', () => {
 		// identity the moment they are not.
 		const origin = new Y.Doc({ gc: true });
 		origin.transact(() =>
-			asScalars(origin.get('editor', 'text')).setAttr('a', 1),
+			asValues(origin.get('editor', 'text')).setAttr('a', 1),
 		);
 		const replica = new Y.Doc({ gc: true });
 		Y.applyUpdateV2(replica, Y.encodeStateAsUpdateV2(origin));

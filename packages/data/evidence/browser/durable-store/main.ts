@@ -89,13 +89,13 @@ Object.assign(globalThis, {
 		return { ok: true };
 	},
 
-	/** Create a note AND write prose into its content node, then wait for durability. */
-	async write(title: string, prose: string) {
+	/** Create a note AND write text into its content node, then wait for durability. */
+	async write(title: string, text: string) {
 		const db = bound();
 		const made = db.tables.notes.create({ title });
 		const content = db.tables.notes.get(made.id)?.content;
 		if (content === undefined) return { error: 'the row has no content' };
-		content.applyDelta(content.change.insert(prose) as never);
+		content.applyDelta(content.change.insert(text) as never);
 		await db.persistence.flush();
 		return {
 			id: made.id,
@@ -103,16 +103,16 @@ Object.assign(globalThis, {
 		};
 	},
 
-	/** Everything this store can see right now, prose and all. */
+	/** Everything this store can see right now, node text and all. */
 	async read() {
 		const db = bound();
 		const listed = db.tables.notes;
-		const notes: { title: string; prose: string }[] = [];
+		const notes: { title: string; text: string }[] = [];
 		for (const row of listed.rows) {
 			// Through the CRDT, not through a cache the harness keeps.
 			notes.push({
 				title: row.title,
-				prose: JSON.stringify(
+				text: JSON.stringify(
 					db.tables.notes.get(row.id)?.content.toJSON() ?? null,
 				),
 			});

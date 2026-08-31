@@ -13,7 +13,7 @@ import { field, plainText } from '@epicenter/data/definition';
  * that was wrong once about the storage axis is worth checking on the join axis.
  *
  * The workload is a vault that has been USED, not one that was just created:
- * 986 notes with 2.8 KB prose bodies (the real vault's shape, the same corpus
+ * 986 notes with 2.8 KB body text (the real vault's shape, the same corpus
  * `never-compact.ts` and `memory.ts` build), then N days of typing, renaming,
  * deleting and creating on top. History behind the current state is the entire
  * point; a freshly created vault cannot distinguish the two designs at all.
@@ -37,7 +37,7 @@ import { field, plainText } from '@epicenter/data/definition';
  *     resident replica's whole document in the same heap as the arriving one.
  *   - EVERY CASE CARRIES A CONTROL THAT FAILS IF THE TEST IS NOT LIVE. The
  *     arriving replica must END UP WITH THE VAULT: its live row count, and one
- *     named note's title and full prose body read back out of its content node.
+ *     named note's title and full body text read back out of its content node.
  *     A run that transferred nothing would otherwise post the best numbers on
  *     the table. There is also a negative control at the bottom, an arrival
  *     given an empty payload, which must FAIL that verification.
@@ -174,7 +174,7 @@ type BuildReport = {
 	liveRows: number;
 	canaryTitle: string;
 	/** Read back off the RESIDENT replica, so the arrival is compared to a peer. */
-	canaryProse: string;
+	canaryText: string;
 	buildMs: number;
 };
 
@@ -330,7 +330,7 @@ async function build(
 	const ids = db.tables.notes.ids();
 	const canary = db.tables.notes.get(canaryId);
 	if (canary === undefined) throw new Error('the canary row is gone');
-	const canaryProse = bodyOf(canaryId).toString();
+	const canaryText = bodyOf(canaryId).toString();
 
 	return {
 		payload,
@@ -347,7 +347,7 @@ async function build(
 			snapshotPosition: snapshot.data?.position ?? 0,
 			liveRows: ids.length,
 			canaryTitle: canary.title ?? '',
-			canaryProse,
+			canaryText,
 		},
 	};
 }
@@ -390,7 +390,7 @@ function unpackPayload(packed: Uint8Array): Uint8Array[] {
 type Expectation = {
 	liveRows: number;
 	canaryTitle: string;
-	canaryProse: string;
+	canaryText: string;
 };
 
 async function apply(
@@ -418,22 +418,22 @@ async function apply(
 	// The control. Bytes moving is not the claim; the vault arriving is.
 	const rows = db.tables.notes;
 	const canary = rows.rows.find((row) => row.title === expectation.canaryTitle);
-	let prose: string | undefined;
+	let text: string | undefined;
 	if (canary !== undefined) {
-		prose = db.tables.notes.get(canary.id)?.content.toString();
+		text = db.tables.notes.get(canary.id)?.content.toString();
 	}
 	// Guarding the guard: an expectation of an empty string would be satisfied by
 	// a replica that received nothing, which is the exact run this control exists
 	// to catch.
 	const expectationIsReal =
-		expectation.canaryProse.includes(CANARY_MARKER) &&
-		expectation.canaryProse.length > BODY_CHARS;
+		expectation.canaryText.includes(CANARY_MARKER) &&
+		expectation.canaryText.length > BODY_CHARS;
 	const verified =
 		expectationIsReal &&
 		rows.rows.length === expectation.liveRows &&
 		rows.nonconforming.length === 0 &&
 		canary !== undefined &&
-		prose === expectation.canaryProse &&
+		text === expectation.canaryText &&
 		!syncEngineOf(store).hasUnresolvedDependencies();
 
 	return {
@@ -443,7 +443,7 @@ async function apply(
 		verified,
 		saw: `${rows.rows.length} rows and ${rows.nonconforming.length} nonconforming, canary ${
 			canary === undefined ? 'MISSING' : 'present'
-		}, prose ${prose === undefined ? 'MISSING' : `${prose.length} chars`}, unresolved dependencies ${syncEngineOf(store).hasUnresolvedDependencies()}`,
+		}, text ${text === undefined ? 'MISSING' : `${text.length} chars`}, unresolved dependencies ${syncEngineOf(store).hasUnresolvedDependencies()}`,
 	};
 }
 
@@ -499,7 +499,7 @@ try {
 		`runtime  bun ${Bun.version} (${process.platform}/${process.arch})`,
 	);
 	console.log(
-		`corpus   ${NOTES} notes with ${BODY_CHARS / 1000} KB prose bodies, then N days of use`,
+		`corpus   ${NOTES} notes with ${BODY_CHARS / 1000} KB body text, then N days of use`,
 	);
 	console.log(
 		`a day    ${DAY.charsTyped} characters typed, ${DAY.fieldEdits} field edits, ${DAY.notesDeleted} notes deleted, ${DAY.notesCreated} created`,
@@ -519,7 +519,7 @@ try {
 				JSON.stringify({
 					liveRows: built.liveRows,
 					canaryTitle: built.canaryTitle,
-					canaryProse: built.canaryProse,
+					canaryText: built.canaryText,
 				} satisfies Expectation),
 			]);
 			rows.push({ build: built, applied });
@@ -605,7 +605,7 @@ try {
 		console.log(`  ${held ? 'held  ' : 'FAILED'}  ${label}`);
 	report(
 		rows.every((row) => row.applied.verified),
-		"every arrival ended up with the vault: the right live row count, the canary note's title, and its whole prose body read back out of its content node and compared to the resident replica's",
+		"every arrival ended up with the vault: the right live row count, the canary note's title, and its whole body text read back out of its content node and compared to the resident replica's",
 	);
 	report(
 		rows.every((row) => row.applied.appliedEntries === row.build.entries),
@@ -649,7 +649,7 @@ try {
 			JSON.stringify({
 				liveRows: emptyExpectation.liveRows,
 				canaryTitle: emptyExpectation.canaryTitle,
-				canaryProse: emptyExpectation.canaryProse,
+				canaryText: emptyExpectation.canaryText,
 			} satisfies Expectation),
 		]);
 		report(

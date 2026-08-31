@@ -19,7 +19,7 @@ import {
 	putRow,
 	putType,
 	rowAt,
-	type ScalarType,
+	type ValuesType,
 	typeAt,
 } from './raw-document.js';
 
@@ -41,7 +41,7 @@ function rowsOf(doc: Y.Doc): Y.Type {
 
 function create(doc: Y.Doc, rowId: string, title: string): void {
 	doc.transact(() => {
-		const row: ScalarType = new Y.Type();
+		const row: ValuesType = new Y.Type();
 		putRow(rowsOf(doc), rowId, row);
 		putType(row, CONTENT, new Y.Type());
 		row.setAttr(PRESENCE, 'present');
@@ -215,7 +215,7 @@ describe('what the two models really differ on', () => {
 
 describe("a row's content node under a concurrent delete", () => {
 	for (const model of ['clear-and-flag', 'drop'] as const) {
-		test(`${model}: prose written concurrently does not revive the row`, () => {
+		test(`${model}: text written concurrently does not revive the row`, () => {
 			const { laptop, phone, rowId } = pair();
 			const container = rowAt(rowsOf(phone), rowId);
 			if (container === undefined) throw new Error('the row is gone');

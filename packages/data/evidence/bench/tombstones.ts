@@ -28,7 +28,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as Y from '@y/y';
 
-import { putRow, rowAt, type ScalarType } from '../raw-document.js';
+import { putRow, rowAt, type ValuesType } from '../raw-document.js';
 
 const RECORDING = {
 	audioBlobId: 'blob_01JQ8ZXY3M4N5P6Q7R8S9T0V',
@@ -109,7 +109,7 @@ function buildDoc({ live, dead, pattern }: Case): Y.Doc {
 	const id = () => `r${String(minted++).padStart(23, '0')}`;
 
 	const create = (key: string) => {
-		const row: ScalarType = new Y.Type();
+		const row: ValuesType = new Y.Type();
 		putRow(root, key, row);
 		row.setAttr('!presence', 'present');
 		for (const [field, value] of Object.entries(RECORDING)) {
@@ -372,7 +372,7 @@ try {
 		for (const key of source.attrKeys()) {
 			const row = rowAt(source, String(key));
 			if (row === undefined) continue;
-			const fresh: ScalarType = new Y.Type();
+			const fresh: ValuesType = new Y.Type();
 			putRow(root, String(key), fresh);
 			for (const field of row.attrKeys()) {
 				fresh.setAttr(field, row.getAttr(field) ?? null);

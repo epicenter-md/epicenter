@@ -283,7 +283,7 @@ describe('a write syncs without anyone remembering to say so', () => {
 		expect(laptop.titles()).toEqual([]);
 	});
 
-	test("prose written into a row's content node syncs on the same timer", () => {
+	test("text written into a row's content node syncs on the same timer", () => {
 		const { wire, clock, phone, laptop } = setup();
 		phone.connection.start();
 		laptop.connection.start();

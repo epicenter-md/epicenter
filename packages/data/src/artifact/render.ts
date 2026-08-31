@@ -134,7 +134,7 @@ export type RenderedRow = {
  * already holds (ADR-0295). The signature stays a promise so the mirror and
  * the whole-artifact generator did not have to change shape around it.
  *
- * Everything scalar comes from the faithful read, never from `get` or `list`.
+ * Everything value comes from the faithful read, never from `get` or `list`.
  * A table handle reads through the declaration and narrows to the fields it
  * names, so rendering through the lens would drop a value an older release
  * wrote: the row still conforms, so it is not reported as nonconforming, and
@@ -158,7 +158,7 @@ export async function renderRow(
 	if (!(content instanceof Y.Type)) {
 		return RenderError.MalformedRow({ table, rowId });
 	}
-	// The scalars ARE the frontmatter, by field name. The platform writes them,
+	// The values ARE the frontmatter, by field name. The platform writes them,
 	// because the name is already the durable key in the document and a second
 	// name on disk would be a second copy of an identifier.
 	const fields: JsonObject = {};

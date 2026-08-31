@@ -431,7 +431,7 @@ describe('the rejection lane: unsupported shapes match no meta', () => {
 			{ anyOf: [{ type: 'string' }, { type: 'integer' }] },
 		],
 		[
-			'a date-or-instant union (input schema, not a column kind)',
+			'a date-or-instant union (input schema, not a field kind)',
 			atRest(Type.Union([field.date(), field.instant()])),
 		],
 		[

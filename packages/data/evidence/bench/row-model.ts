@@ -21,7 +21,7 @@
  */
 import * as Y from '@y/y';
 
-import { putRow, rowAt, type ScalarType } from '../raw-document.js';
+import { putRow, rowAt, type ValuesType } from '../raw-document.js';
 
 const FIELDS = {
 	title: 'A note title of typical length',
@@ -116,7 +116,7 @@ const NESTED: Shape = {
 			[laptop, 'date', 'laptop'],
 		] as const) {
 			doc.transact(() => {
-				const row: ScalarType = new Y.Type();
+				const row: ValuesType = new Y.Type();
 				putRow(doc.get('notes'), 'n1', row);
 				row.setAttr(key, value);
 			});

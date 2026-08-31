@@ -109,7 +109,7 @@ describe('data definitions', () => {
 		expect(notes?.conformance({ title: 'x' }).issues).toEqual([]);
 	});
 
-	test("a scalar cannot be called 'content', because every row already has one", () => {
+	test("a value cannot be called 'content', because every row already has one", () => {
 		// The compile-time half is `ValidateFields`, which puts the sentence on
 		// the offending key. This is the runtime half, for a definition that
 		// arrived as JSON and never met `defineTable`.
@@ -121,7 +121,7 @@ describe('data definitions', () => {
 		expect(result.error?.name).toBe('Malformed');
 	});
 
-	test("a scalar cannot be called 'id', because every row already has one", () => {
+	test("a value cannot be called 'id', because every row already has one", () => {
 		const result = parseData({
 			id: 'so.epicenter.collide-id',
 			kv: {},
@@ -188,7 +188,7 @@ describe('data definitions', () => {
 			),
 		);
 		expect(result.error).toBeNull();
-		// The codec is gone and the scalars survive: a husk is parseable, and
+		// The codec is gone and the values survive: a husk is parseable, and
 		// what a missing codec costs is paid at the artifact boundary.
 		expect(result.data?.tables.get('notes')?.content).toBeUndefined();
 		expect([

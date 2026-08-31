@@ -23,24 +23,24 @@ import type * as Y from '@y/y';
 import type { JsonValue } from '../src/definition/json.js';
 
 /**
- * A type whose attributes are scalar values: a row, a kv root, any JSON-valued bag.
+ * A type whose attributes are values: a row, a kv root, any JSON-valued bag.
  *
  * The same declaration `document.ts` makes for a row, under the declaration's
  * own word for a JSON-valued attribute. A variable typed with this needs no
  * cast to read or write one, which is where nearly every cast in evidence came
  * from.
  */
-export type ScalarType = Y.Type<{ attrs: Record<string, JsonValue> }>;
+export type ValuesType = Y.Type<{ attrs: Record<string, JsonValue> }>;
 
 /**
- * Read a type as a bag of scalars.
+ * Read a type as a bag of values.
  *
  * `Y.Doc.get` and the root helpers in `src/store/document.js` all hand back an
  * unconfigured type, so this is where a test states the shape of one it is
  * about to fill with JSON. A root holding ROWS is not this: see `rowAt`.
  */
-export function asScalars(type: Y.Type): ScalarType {
-	return type as ScalarType;
+export function asValues(type: Y.Type): ValuesType {
+	return type as ValuesType;
 }
 
 /**
@@ -52,8 +52,8 @@ export function asScalars(type: Y.Type): ScalarType {
  * whose attributes are themselves types, has no expressible configuration. A
  * ROW's does, which is why everything downstream of this line is typed.
  */
-export function rowAt(root: Y.Type, rowId: string): ScalarType | undefined {
-	return root.getAttr(rowId as never) as ScalarType | undefined;
+export function rowAt(root: Y.Type, rowId: string): ValuesType | undefined {
+	return root.getAttr(rowId as never) as ValuesType | undefined;
 }
 
 /** Put a row at this address, minting nothing. */
@@ -64,9 +64,9 @@ export function putRow(root: Y.Type, rowId: string, row: Y.Type): void {
 /**
  * Hang a nested type on a row, under one attribute name.
  *
- * Separate from writing a scalar for the same reason `rowAt` needs a cast: the
- * value is a `Y.Type`, which no attribute configuration can describe. Keeping
- * it its own verb means a scalar write stays honest.
+ * Separate from writing a value for the same reason `rowAt` needs a cast: the
+ * attribute is a `Y.Type`, which no attribute configuration can describe.
+ * Keeping it its own verb means a value write stays honest.
  */
 export function putType(row: Y.Type, name: string, type: Y.Type): void {
 	row.setAttr(name as never, type as never);

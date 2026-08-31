@@ -17,9 +17,9 @@
  *   - **CONTROL: a different name must see nothing.** If a second store opened
  *     under another name found the first one's notes, this would be measuring a
  *     page that never reloaded, or a read of the wrong record.
- *   - **CONTROL: prose, not just rows.** Prose lives inside the row's document,
- *     so a run that restored rows and lost documents would otherwise read as a
- *     pass.
+ *   - **CONTROL: node text, not just values.** A row's node is a nested subtree
+ *     inside the one document, so a run that restored a row's values and lost
+ *     its node would otherwise read as a pass.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -64,7 +64,7 @@ const server = Bun.serve({
 const origin = `http://localhost:${server.port}`;
 
 type Reading = {
-	notes: { title: string; prose: string }[];
+	notes: { title: string; text: string }[];
 	durability: { healthy: boolean };
 	pressure?: { items: number; liveRows: number; itemsPerLiveRow: number };
 };
@@ -90,7 +90,7 @@ try {
 	await page.goto(origin);
 	await page.waitForFunction('typeof globalThis.open === "function"');
 
-	console.log('1. write two notes with prose, then reload the page');
+	console.log('1. write two notes with text, then reload the page');
 	const opened = await page.evaluate('globalThis.open("vault")');
 	check(
 		'the store opened',
@@ -114,11 +114,11 @@ try {
 		after.notes.map((note) => note.title).join(', '),
 	);
 	check(
-		'their prose survived too',
+		'their text survived too',
 		after.notes.every(
 			(note) =>
-				note.prose.includes('milk and eggs') ||
-				note.prose.includes('a note about notes'),
+				note.text.includes('milk and eggs') ||
+				note.text.includes('a note about notes'),
 		),
 	);
 	check('the durable log reports healthy', after.durability.healthy === true);

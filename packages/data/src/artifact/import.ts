@@ -171,12 +171,12 @@ export function readArtifact(
  * Put one file's row into the document.
  *
  * One transaction. The codec reads the body into a fresh content node, and
- * `createRow` integrates it beside the frontmatter scalars in the transaction
+ * `createRow` integrates it beside the frontmatter values in the transaction
  * that mints the row.
  *
  * It used to be three writes: mint an empty row so the codec could be handed
  * ATTACHED types, read them back, let the codec fill them and return the
- * scalars, then write those. That existed because ADR-0296 measured a detached
+ * values, then write those. That existed because ADR-0296 measured a detached
  * `Y.Type` as unable to survive more than one write. The measurement does not
  * depend on detachment (the same `insert` pair throws on an attached type) and
  * does not hold for a Markdown conversion, which round trips through a
@@ -240,7 +240,7 @@ function admitRow({
 	}
 
 	try {
-		// One transaction: the row is minted, its scalars filled, and the node
+		// One transaction: the row is minted, its values filled, and the node
 		// the codec built integrated, together.
 		database.transact(() => {
 			createRow(root, rowId, fields);

@@ -48,7 +48,7 @@ const CANDIDATES: { key: Candidate; label: string }[] = [
 	{ key: 'hydrate', label: 'applyUpdateV2 into a throwaway Doc' },
 ];
 
-/** Notes with prose bodies, which is the shape a real vault has. */
+/** Notes with body text, which is the shape a real vault has. */
 function build(rows: number): Uint8Array {
 	const doc = new Y.Doc({ gc: true });
 	const root = doc.get('notes');

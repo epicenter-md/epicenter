@@ -74,7 +74,7 @@ export type Conformance = {
 export type ParsedTable = {
 	name: string;
 	/**
-	 * The scalar fields, compiled. The content node is NOT here: it holds no
+	 * The value fields, compiled. The content node is NOT here: it holds no
 	 * JSON value, so it has no schema to check a payload against and nothing a
 	 * conformance read could report.
 	 */

@@ -13,13 +13,13 @@
  *   1. The metas are MUTUALLY EXCLUSIVE. A `url` schema carries `format:'uri'`,
  *      which the bare-`string` meta forbids; an `instant` schema carries the exact
  *      UTC pattern, which the broad `datetime` meta forbids; a `select` schema
- *      carries `enum`, which every scalar meta forbids; a `multiSelect`'s items
+ *      carries `enum`, which every closed meta forbids; a `multiSelect`'s items
  *      carry `enum`, which the `tags` item meta forbids. So at most one meta
  *      matches any legal schema, which means `recognize` needs no priority order
  *      and cannot be ambiguous.
  *   2. TYPOS DIE AT THE BOUNDARY. `{type:'strng'}` or `{type:'string', minLgth:1}`
  *      matches no meta, so `recognize` returns null and the field degrades to a raw
- *      column instead of silently rendering as `string`.
+ *      field instead of silently rendering as `string`.
  *
  * Every meta reads `{ ...discriminators, ...refinements, ...annotations }`: three
  * buckets with one rule, only the DISCRIMINATORS differ across kinds.
@@ -80,17 +80,17 @@ const CLOSED = { additionalProperties: false } as const;
  * arbitrary-JSON payload cell. It is a non-standard keyword, so `Value.Check` and
  * `Schema.Compile` ignore it, which is the whole trick: `field.json(inner)` spreads the
  * payload's OWN keywords (which DO validate) alongside this marker (which is invisible to
- * validation but visible to `recognize`). The closed scalar metas forbid it via
+ * validation but visible to `recognize`). The closed metas forbid it via
  * `additionalProperties:false`, so a marker can only ever land on the `json` kind.
  */
 export const JSON_SCHEMA_KEYWORD = 'x-json-schema';
 
 /**
  * The `reference` kind's discriminator: a marker keyword whose VALUE is the name of the
- * table this column points at. Like {@link JSON_SCHEMA_KEYWORD} it is a non-standard
+ * table this field points at. Like {@link JSON_SCHEMA_KEYWORD} it is a non-standard
  * keyword, so `Value.Check` and `Schema.Compile` ignore it: a reference cell validates as a
  * plain string (the row stem / id), while `recognize` reads the marker to classify the
- * column as `reference` and to recover its target. The closed scalar metas forbid it via
+ * field as `reference` and to recover its target. The closed metas forbid it via
  * `additionalProperties:false`, so the marker can only ever land on the `reference` kind,
  * which is what keeps `reference` mutually exclusive with the bare `string` kind: a plain
  * string carries no marker (so it is never a reference) and a reference always carries one
@@ -120,7 +120,7 @@ const ANNOT = {
  * The closed-set discriminant: a non-empty `enum` of STRINGS, optionally pinned to
  * `type:'string'`. Shared by the `select` meta and the `multiSelect` item meta, so
  * the two recognize the same closed-set shape. `enum` is REQUIRED here, which is
- * what keeps `select` mutually exclusive from the scalar kinds (they forbid `enum`).
+ * what keeps `select` mutually exclusive from the closed kinds (they forbid `enum`).
  *
  * The optional `type` accepts both the blessed `field.select` wire-form
  * (`{enum:[...]}`, no `type`, what `Type.Enum` emits) and a `type:'string'`-pinned
@@ -283,7 +283,7 @@ const FIELDS = {
 	},
 	// The one OPEN meta: a json schema carries the payload's OWN keywords (spread by
 	// field.json), so it cannot be closed. Recognition keys off the marker's PRESENCE
-	// (see JSON_SCHEMA_KEYWORD); the closed scalar metas forbid the marker, so json stays
+	// (see JSON_SCHEMA_KEYWORD); the closed metas forbid the marker, so json stays
 	// mutually exclusive with every other kind regardless of what the payload looks like.
 	json: {
 		storage: 'TEXT',

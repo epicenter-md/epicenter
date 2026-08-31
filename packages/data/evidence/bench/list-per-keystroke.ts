@@ -12,15 +12,15 @@
  *
  * The question this answers is narrower and decidable. Honeycrisp sorts notes
  * by `updatedAt` and writes `{ title, updatedAt }` back to the row from a
- * coalescer hung on the prose signal, so a keystroke in an open note produces
- * TWO commits: the prose edit, and the derived row write. The list must wake
+ * coalescer hung on the node signal, so a keystroke in an open note produces
+ * TWO commits: the node edit, and the derived row write. The list must wake
  * for the second one under any design, because the note it names has just
  * moved to the top.
  *
  * So the fine signal does not spare the list a wake-up. It halves them:
  *
  *   three signals   the list re-derives once per keystroke  (the row write)
- *   one signal      the list re-derives twice               (prose, then row)
+ *   one signal      the list re-derives twice               (node, then row)
  *
  * What that costs is a number, and this is the number.
  *
@@ -88,7 +88,7 @@ console.log(
 	'filter'.padStart(9),
 	'sort'.padStart(9),
 	'one derive'.padStart(12),
-	'prose'.padStart(13),
+	'node'.padStart(13),
 	'row write'.padStart(11),
 	'| 3 sig'.padStart(11),
 	'1 sig'.padStart(9),
@@ -136,7 +136,7 @@ for (const size of SIZES) {
 	const derive = ms(() => {
 		visibleNotes(db);
 	}, 20);
-	const prose = ms(() => {
+	const nodeEdit = ms(() => {
 		content.insert(content.length, 'x');
 	}, 200);
 	const rowWrite = ms(() => {
@@ -146,8 +146,8 @@ for (const size of SIZES) {
 		});
 	}, 200);
 
-	const threeSignals = prose + rowWrite + derive;
-	const oneSignal = prose + rowWrite + derive * 2;
+	const threeSignals = nodeEdit + rowWrite + derive;
+	const oneSignal = nodeEdit + rowWrite + derive * 2;
 
 	console.log(
 		String(size).padStart(7),
@@ -155,7 +155,7 @@ for (const size of SIZES) {
 		`${(filtered - rowsOnly).toFixed(2)} ms`.padStart(9),
 		`${(derive - filtered).toFixed(2)} ms`.padStart(9),
 		`${derive.toFixed(2)} ms`.padStart(12),
-		`${prose.toFixed(3)} ms`.padStart(13),
+		`${nodeEdit.toFixed(3)} ms`.padStart(13),
 		`${rowWrite.toFixed(3)} ms`.padStart(11),
 		`| ${threeSignals.toFixed(1)} ms`.padStart(11),
 		`${oneSignal.toFixed(1)} ms`.padStart(9),
