@@ -57,9 +57,23 @@ An application's SQLite handle has three verbs and no transaction callback:
 ```ts
 const mail = await epicenter.openSqlite('mail');
 
-await mail.all(sql, params);      // read anything
-await mail.run(sql, params);      // one statement, atomic by itself
-await mail.batch(statements);     // many statements, one transaction
+// READ anything you like. no lock involved.
+const inbox = await mail.all(
+  'SELECT id, subject FROM messages WHERE read = 0 ORDER BY at DESC LIMIT 50'
+);
+
+// ONE write. SQLite wraps a bare statement in its own transaction,
+// so this is already atomic by itself.
+await mail.run('UPDATE messages SET read = 1 WHERE id = ?', [id]);
+
+// MANY writes, all-or-nothing.
+await mail.batch([
+  { sql: 'UPDATE messages SET read = 1 WHERE id = ?', params: [id] },
+  { sql: 'UPDATE _meta SET v = ? WHERE k = ?', params: [now, 'touched'] },
+]);
+// -> { changes: [1, 1] }
+
+// there is no mail.transaction(). see above.
 ```
 
 `batch` is the primitive; `run` is a batch of one, and SQLite already wraps a
@@ -100,6 +114,23 @@ into one. It stays in `db.ts`, in the process that owns the file.
 
 **The three roles are fixed.** Rust owns windows and touches no database. Bun
 owns files, locks, and SQLite. The WebView owns pixels and asks for things.
+
+```txt
+  Tauri (Rust) ....... a shell. windows, menus, tray. NO DATABASE.
+   |
+   +-- WebView ....... the UI. asks for things. holds no lock.
+   |     mail.all(...) / mail.run(...) / mail.batch([...])
+   |            |
+   |          HTTP
+   |            v
+   +-- Bun sidecar ... the backend. owns files, locks, SQLite.
+         bun:sqlite  [locked] ---- ~/.../mail.sqlite
+                                         ^
+                    sqlite3 ------------ |
+                    the CLI ------------ |  the same bytes,
+                    MCP ---------------- |  one mailbox
+                    a coding agent ----- +
+```
 
 ## Consequences
 

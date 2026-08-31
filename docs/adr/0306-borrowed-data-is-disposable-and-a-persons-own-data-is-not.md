@@ -20,7 +20,23 @@ family per app.
 ## Decision
 
 **Borrowed data may be thrown away at any time. A person's own data may never
-be.** The classification decides what code exists:
+be.**
+
+```txt
+  a person's own data              borrowed data
+  -------------------              -------------
+  a note they wrote                40,000 Gmail messages
+  authored HERE                    authored by a provider
+  lost = gone forever              lost = fetch it again
+       |                                |
+       v                                v
+  migration, repair,               none of them. a shape change
+  backup, export                   is a new filename.
+```
+
+Every expensive problem in storage exists because losing the bytes would be a
+tragedy. For a copy that can be re-fetched it is an inconvenience, so all of it
+deletes. The classification decides what code exists:
 
 | | a person's own data | borrowed data |
 | --- | --- | --- |

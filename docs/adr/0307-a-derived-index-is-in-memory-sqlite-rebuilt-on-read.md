@@ -24,6 +24,36 @@ it to Epicenter Data.
 **A derived index is an in-memory SQLite database, invalidated by any commit and
 rebuilt whole on the next read.**
 
+```txt
+  you edit  -> stale = true      (cost: nothing)
+  you edit  -> stale = true      (already true, still nothing)
+  ... 500 more edits ...
+
+  you search -> stale? YES -> drop everything, rebuild from the
+                              document, stale = false, answer
+  you search -> stale? NO  -> answer            (cost: nothing)
+```
+
+One rebuild between two searches, not one per keystroke. An application
+nobody searches never builds an index at all. The whole of it:
+
+```ts
+let stale = true;
+store.subscribe(() => { stale = true; });
+
+function query(sql) {
+  if (stale) { rebuild(); stale = false; }
+  return db.all(sql);
+}
+
+function rebuild() {
+  db = new Sqlite(':memory:');            // the previous one is dropped whole
+  for (const table of definition.tables)
+    for (const row of store.list(table))
+      db.run('INSERT ...', row);
+}
+```
+
 - **In memory, never durable.** It is not written to OPFS, to IndexedDB, or to a
   file. It is rebuilt from the document at every launch, which is work the store
   already does when it replays the log.
