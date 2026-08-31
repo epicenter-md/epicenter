@@ -7,7 +7,7 @@
  * because ADR-0267's layout put a row's fields and its document in two
  * separate trees correlated by coordinates. ADR-0268 collapsed that layout
  * into one file per row; this is the code catching up to it. A row's fields
- * and its prose go in the same file, so they are read in the same function
+ * and its content node go in the same file, so they are read in the same function
  * and never rejoined.
  *
  * **The platform owns the format; the table owns the mapping** (ADR-0296).
@@ -46,7 +46,7 @@ export const RenderError = defineErrors({
 	/**
 	 * The table declares a content node and no codec to write it with, so this
 	 * row's body has nowhere to go. Fatal for the row: a file that quietly
-	 * lacks its prose feeds a restore that would delete that prose everywhere.
+	 * lacks its content node feeds a restore that would delete that node everywhere.
 	 *
 	 * Unreachable through `defineTable`, whose parameter type refuses it. It is
 	 * reachable through a definition that arrived as JSON, which cannot carry a

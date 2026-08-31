@@ -583,7 +583,7 @@ function createStoreEngine(
 		//   deeper            a row's content node. NOT a table event.
 		//
 		// The third line is the whole point. A row's content node is nested on the
-		// row (ADR-0295), so before this every prose keystroke bubbled to the
+		// row (ADR-0295), so before this every keystroke inside a node bubbled to the
 		// table root and woke every list in the application. `changed` holds only
 		// what a transaction modified DIRECTLY, so the bubble never happens and
 		// the depth test is a parent lookup rather than a walk.

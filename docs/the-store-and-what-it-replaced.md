@@ -197,7 +197,7 @@ the caller omits `content`.
 Deleting the row removes that node with the row. There is no second document
 address or document lifecycle for an editor to manage.
 
-**Whether prose belongs in a document at all is a per-application decision.**
+**Whether rich content belongs in a node at all is a per-application decision.**
 Honeycrisp's notes do (a person types them a character at a time, so per-
 character merging is the point). Whispering's transcripts do NOT: they are
 machine-produced, replaced wholesale, and rendered in a list.
@@ -387,7 +387,7 @@ table.
 
 **Per-character merging exists in exactly one place: the row's content node.**
 `row.content` is a live `Y.Type`, so two people typing in it merge at the
-character. That is the whole reason prose lives there rather than in a
+character. That is the whole reason a node lives there rather than in a
 `string` field, and the reason a machine-produced transcript does not need to.
 
 **The projection has different granularity, and it does not matter.** The
@@ -515,7 +515,7 @@ indefinitely without hurting anyone, and `raw` still holds it.
 
 1. Rewrite the workspace: arktype strings, nullable-with-default, no optionals, no
    objects, defaults inline. Settings to `kv`.
-2. Decide whether prose belongs in the row's `content` node or in an ordinary
+2. Decide whether the value belongs in the row's `content` node or in an ordinary
    scalar field.
 3. Replace `openEpicenter` with `openLocal(workspace)` (and `openAccount(workspace,
    { principalId })` for a signed-in replica, per ADR-0233).

@@ -64,7 +64,7 @@ export const ImportError = defineErrors({
 	}),
 	/**
 	 * A row file carries a body and its table declares no codec to read it
-	 * with, so the prose has nowhere to go. Fatal rather than dropped: losing
+	 * with, so the content node has nowhere to go. Fatal rather than dropped: losing
 	 * a body on import is the failure ADR-0268 exists to prevent, arriving
 	 * from the other direction.
 	 */
@@ -98,7 +98,7 @@ export type ImportError = InferErrors<typeof ImportError>;
  * Read a whole artifact into the one document that IS the database.
  *
  * One value, because there is one document (ADR-0295). What this used to
- * return was a list, because a row's prose was an independent document at a
+ * return was a list, because a row's content node was an independent document at a
  * derived address and a mint uploaded each one separately (ADR-0286); the
  * addresses are gone and so is the list.
  *

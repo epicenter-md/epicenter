@@ -55,7 +55,7 @@ export function createHoneycrisp({ data }: { data: HoneycrispData }) {
 	const reactiveData = fromData(data);
 	// Folders takes the whole database because deleting one re-parents the notes
 	// that were in it, which is a write to the other table. Notes takes its own
-	// table: prose is watched through the table that hands out the type, so
+	// table: a node is watched through the table that hands out the type, so
 	// nothing in it reaches across any more.
 	const folders = createFolders(reactiveData);
 	const notes = createNotes(reactiveData.tables.notes);
@@ -273,7 +273,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	 * Open this note's prose for the editor to bind to, and keep the row's
 	 * derived fields moving while it is open.
 	 *
-	 * Synchronous, and there is nothing left to await: the prose is a nested
+	 * Synchronous, and there is nothing left to await: the content is a nested
 	 * type on the row, in the one document this store already holds
 	 * (ADR-0295). `undefined` means this note is no longer here.
 	 *
@@ -324,7 +324,8 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	 * hundred characters rather than walking the note (`prose-text.ts`). The
 	 * subscription is the row's OWN field signal, so a card re-renders when its
 	 * note's body changes and not when any other note's does. That is what the
-	 * per-field signal is for, and it is the ONLY signal that carries prose:
+	 * per-field signal is for, and it is the ONLY signal that carries a node's
+	 * content:
 	 * the table subscription the list already has reports the table's shape and
 	 * deliberately not an edit inside a field, so riding it would never
 	 * re-render this at all.

@@ -213,7 +213,7 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 * The scope is the whole reason it exists: the store writes no derived
 	 * fields (ADR-0297), so an application hangs its own write on an edit, and
 	 * a row-scoped signal would fire on the write it caused. It is also the
-	 * only way to hear prose, because `subscribe` above reports this table's
+	 * only way to hear a node's content, because `subscribe` above reports this table's
 	 * shape and deliberately not an edit inside a field.
 	 *
 	 * Fires once per commit, on the same flush every other subscriber's

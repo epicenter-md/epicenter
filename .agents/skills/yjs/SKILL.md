@@ -70,7 +70,7 @@ The nesting is not stylistic. `Item.write` calls `findRootTypeKey`, a linear
 scan of `doc.share`, so one root per row makes encoding quadratic in rows
 (5,417 ms for 20,000 rows against 13 ms nested).
 
-There are no independent row documents. A row's prose used to live in its own
+There are no independent row documents. A row's content node used to live in its own
 top-level document at a derived address, with a document manager, a tombstone
 table and an `openDocument` verb (ADR-0248); ADR-0295 collapsed all of it into
 the row. Advice naming `documents.ts`, `openDocument`, `_tombstones`, or
@@ -105,7 +105,7 @@ The distinction is forced by the library. Delivery routes off
 `transaction.changed`, which Yjs fills with the types a transaction modified
 DIRECTLY, so a keystroke in a body puts the BODY's type there; its parent is
 the row, not the table root. Nothing bubbles to the table. A surface that
-watches a table for prose changes sees nothing.
+watches a table for changes inside a node sees nothing.
 
 ## Owner-Side Persistence
 
@@ -160,7 +160,7 @@ makes it worth having.
 What does not belong in a feature:
 
 - **Constructing the layout.** A feature does not decide which attribute a row
-  keeps its prose under. It asks the table for the row and reads the declared
+  keeps its content node under. It asks the table for the row and reads the declared
   field.
 - **Casting into shape.** `as Y.Type` outside `packages/data/src/store/` means
   something is reading a document the store owns without going through it.

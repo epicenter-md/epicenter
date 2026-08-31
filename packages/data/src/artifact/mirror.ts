@@ -71,7 +71,7 @@
  * 71 ms per thousand rows back when each one also had to hydrate its own
  * document. Rendering only the rows a signal names costs about 0.1 ms, and the
  * store names them now, so the half this once waited for has landed. What
- * still blocks it is the other half: prose inside a content node never reaches
+ * still blocks it is the other half: an edit inside a content node never reaches
  * this signal. The manifest is what would make an incremental pass safe once
  * that half is answered: a partial content signal would cost one row's
  * contents being stale, and could never lose a deletion or miss a new row,

@@ -107,7 +107,7 @@ fields without opening another document; editors bind the row's live node.
 | two devices, different fields of one row | both survive |
 | two devices, one scalar field | last write wins |
 | two devices, one array or object field | last write wins on the WHOLE value |
-| two devices, prose in a row's content node | per character |
+| two devices, an edit inside a row's content node | per character |
 
 The third row is a decision, not a gap (ADR-0228). A field is one value, which
 is one sentence of semantics instead of a per-field CRDT type system. The cost

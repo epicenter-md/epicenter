@@ -179,7 +179,7 @@ them: re-reading with `rows` walks a document already in memory and is always
 correct. What they buy is the caller holding a projection of the rows, which
 rebuilds only what moved instead of everything.
 
-It deliberately does NOT fire for prose typed inside a row's content node. The
+It deliberately does NOT fire for an edit inside a row's content node. The
 node is nested on its row, so counting it here would wake every list in the
 application at typing frequency. `data.tables.notes.watch(node, listener)` is the signal for
 that, scoped to the one node, and it is delivered last so a listener that writes
