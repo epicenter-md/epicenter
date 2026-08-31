@@ -26,11 +26,24 @@ import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
-
+import type { Logger } from 'wellcrafted/logger';
 import { openIdbBacking } from './browser.js';
 import { createRow, readRow, tableRoot } from './document.js';
 import { createSqliteDurablePort, replay } from './log.js';
-import type { DurableOp, DurablePort, DurableSnapshot } from './persistence.js';
+import {
+	createPersistenceController,
+	type DurableOp,
+	type DurablePort,
+	type DurableSnapshot,
+} from './persistence.js';
+
+const silent: Logger = {
+	error: () => undefined,
+	warn: () => undefined,
+	info: () => undefined,
+	debug: () => undefined,
+	trace: () => undefined,
+};
 
 /**
  * One durable record a test can commit to, close, and open again.
@@ -336,6 +349,60 @@ for (const engine of ENGINES) {
 			// being stamped and the third append never being sent at all.
 			expect(loaded.outbox.map((entry) => entry.id)).toEqual([merged]);
 			expect(valueOf(loaded.updates)).toBe('v2');
+		});
+
+		test("the controller's mirror agrees with the record it mirrors", async () => {
+			// The sender never reads storage. `coalesce` is synchronous over an
+			// asynchronous port, so `durableOutbox()` returns a RAM mirror that
+			// `succeeded()` advances by hand, in JavaScript, using the same rules
+			// the port applies in its own dialect. That is two implementations of
+			// one question, and the rest of this file pins the two PORTS against
+			// each other without ever pinning the mirror against them.
+			//
+			// So: drive one controller through every op kind, then ask both. What
+			// the sender believes is owed has to be what a fresh open would find.
+			const record = await engine.create(`mirror-${counter}`);
+			const opened = await record.reopen();
+			const controller = createPersistenceController({
+				port: opened.port,
+				loaded: opened.loaded,
+				log: silent,
+			});
+
+			const written = chain(4);
+			const ids: number[] = [];
+			for (const bytes of written) {
+				nextId += 1;
+				ids.push(nextId);
+				controller.enqueue([
+					{ kind: 'append', id: nextId, bytes, authoritySeq: undefined },
+				]);
+			}
+			// The first two land with the authority; the last two collapse into
+			// one owed row above every id it replaces.
+			controller.enqueue([
+				{ kind: 'ack', throughId: ids[1] as number, authoritySeq: 12 },
+			]);
+			nextId += 1;
+			const merged = nextId;
+			controller.enqueue([
+				{
+					kind: 'mergeOwed',
+					replaces: ids.slice(2),
+					id: merged,
+					bytes: new Uint8Array(
+						Y.mergeUpdatesV2(written.slice(2) as Uint8Array<ArrayBuffer>[]),
+					),
+				},
+			]);
+			await controller.persistence.flush();
+
+			const believed = controller.durableOutbox().map((entry) => entry.id);
+			const { loaded } = await record.reopen();
+			expect(believed).toEqual(loaded.outbox.map((entry) => entry.id));
+			expect(believed).toEqual([merged]);
+			expect(controller.durableCursor()).toBe(loaded.cursor);
+			expect(loaded.cursor).toBe(12);
 		});
 
 		test('a batch is all or nothing', async () => {
