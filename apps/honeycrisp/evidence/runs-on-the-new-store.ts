@@ -10,9 +10,9 @@
  * app. This drives the real application in a real browser and says that.
  *
  * The reload is the point. It is what separates "the store works" from "the
- * store is durable", and on this arrangement those are genuinely different
- * questions: the page holds an in-memory SQLite and a worker holds the OPFS
- * file, so anything that survives came back out of the worker.
+ * store is durable", and those are genuinely different questions: the live Yjs
+ * document dies with the page, so anything still there afterwards came back out
+ * of IndexedDB (ADR-0280). There is no worker and no OPFS file.
  */
 import { chromium } from 'playwright';
 

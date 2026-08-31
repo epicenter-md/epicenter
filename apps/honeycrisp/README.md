@@ -155,8 +155,8 @@ bun run --cwd apps/honeycrisp evidence:runs   # against a running dev:web
 ```
 
 Drives the real app in a real browser: make a note, type prose into it, reload,
-and assert both survived. The reload is the point, since the page holds an
-in-memory SQLite and IndexedDB holds what has to outlive it.
+and assert both survived. The reload is the point: the live Yjs document dies
+with the page, and IndexedDB holds what has to outlive it.
 
 ### Manual two-client check
 

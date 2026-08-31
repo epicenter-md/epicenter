@@ -4,9 +4,9 @@ import { defaultClientConditions, defineConfig, mergeConfig } from 'vite';
 
 const isEpicenterHost = process.env.EPICENTER_HOST === '1';
 
-// The SAH-pool OPFS VFS needs no cross-origin isolation, so this config
-// sets no COOP/COEP headers; production static hosting and the Tauri
-// WebView serve the same header-free pages as dev.
+// No COOP/COEP headers anywhere: the store's durable record is IndexedDB
+// (ADR-0280), so nothing here needs cross-origin isolation. Production static
+// hosting and the Tauri WebView serve the same header-free pages as dev.
 export default defineConfig(
 	mergeConfig(
 		// Honeycrisp is the app where "runs in a Tauri WebView" and "the desktop

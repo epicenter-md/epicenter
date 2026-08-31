@@ -3,8 +3,8 @@
  *
  * The store, the transport that carries it, and the vocabulary a data
  * definition is declared in. Openers live at their own entry points, because
- * one imports `bun:sqlite` and the other imports a WASM build, and neither
- * belongs in a barrel the other has to load.
+ * one imports `bun:sqlite` and the other imports `idb`, and neither belongs in
+ * a barrel the other has to load.
  *
  * The entry points: `.` for the surface, `./definition` for inert schema
  * vocabulary, `./browser` for the opener, `./sync` for the transport,

@@ -20,8 +20,9 @@ import type { SqliteDatabase, SqliteRow, SqliteValue } from './index.js';
  * from the file-backed Bun adapter.
  *
  * `transaction` does not nest, and this adapter does not pretend it does. No
- * production caller nests (the store's projection rebuild is the only
- * browser-reachable transaction), OO1 itself throws loudly on a nested
+ * production caller nests, and in a browser there is barely a caller at all:
+ * the store keeps its durable record in IndexedDB and loads no SQLite
+ * (ADR-0280). OO1 itself throws loudly on a nested
  * `BEGIN`, and OO1 ships a native `savepoint()` for the day nesting earns
  * itself. The hand-rolled `SAVEPOINT epicenter_nested_*` emulation that used
  * to live here served zero callers.

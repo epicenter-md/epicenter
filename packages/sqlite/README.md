@@ -11,13 +11,15 @@ One adapter per runtime answers the contract:
 | --- | --- | --- |
 | `./bun` | `bun:sqlite` | `@epicenter/data`'s Bun store |
 | `./durable-object` | a Durable Object's SQL storage | `@epicenter/server`'s replica and authority |
-| `./browser` | sqlite.org's WASM build | `apps/sync-lab` |
+| `./browser` | sqlite.org's WASM build | `apps/sync-lab`, for now |
 
 The browser adapter is the odd one, and deliberately so. The browser store
-keeps its durable facts directly in IndexedDB and loads no SQLite at all, so
-nothing in `@epicenter/data` opens this adapter on its own. It exists because
-the projection takes a handle from its caller rather than initializing WASM
-itself, which keeps that initialization where the application can see it.
+keeps its durable facts directly in IndexedDB and loads no SQLite at all
+(ADR-0280), so nothing in `@epicenter/data` opens this adapter on its own, and
+its only consumer today is a throwaway lab. Its intended consumer is an
+application's derived index: in-memory, rebuilt on read, and initialized by the
+application rather than by this package, so the WASM load stays where the
+application can see it (ADR-0307).
 
 Schema and transaction invariants belong to the consuming package. The client
 store lives in `@epicenter/data`; server authority storage lives in

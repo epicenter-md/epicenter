@@ -6,7 +6,7 @@
  * This exists because the answer was NO and nothing would have caught it.
  * Epicenter serves every application from one origin (ADR-0118), so honeycrisp
  * and whispering are two windows on `http://127.0.0.1:39131`. The store's
- * durable record is SQLite over an OPFS pool, and a pool takes exclusive
+ * durable record was SQLite over an OPFS pool then, and a pool takes exclusive
  * access handles for all of its files when it installs. One pool shared across
  * the origin therefore let the first record anyone opened lock out every other
  * record in every other window:

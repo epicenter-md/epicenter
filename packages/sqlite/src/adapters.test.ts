@@ -119,7 +119,7 @@ for (const [name, open] of adapters) {
 }
 
 test('browser SQLite OO1: a nested transaction is refused loudly, and the outer work survives', () => {
-	// Nesting has no production caller (the store's projection rebuild is the
+	// Nesting has no production caller (the browser store loads no SQLite; the
 	// only browser-reachable transaction, never nested), so the adapter does
 	// not emulate it. OO1's own refusal is the honest answer, and the outer
 	// transaction is still the caller's to complete: catching the refusal and
