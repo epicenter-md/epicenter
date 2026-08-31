@@ -392,5 +392,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0308](0308-an-application-opens-its-own-sqlite-inside-its-own-worker-and-the-handle-is-synchronous.md) | An application opens its own SQLite inside its own worker, and the handle is synchronous | Accepted (unbuilt; amends 0303 at `AppSqliteDatabase` and 0304 at its ADR-0275 citation) |
 | [0309](0309-a-field-holds-a-value-or-a-node-and-the-retired-words-fail-the-build.md) | A field holds a value or a node, and the retired words fail the build | Accepted (supersedes 0299 at its vocabulary; check unbuilt) |
 | [0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md) | An application's provider credential is a labeled secret, and the browser keeps none | Accepted (unbuilt; amends 0227 at its hosted-web refusal) |
+| [0311](0311-a-table-is-a-held-projection-and-everything-cheaper-than-rebuilding-is-read-through.md) | A table is a held projection, and everything cheaper than rebuilding is read through | Accepted (amends 0221 at nothing it decided; reopens 0077) |
 
 When you add an ADR, add its row here.
