@@ -8,8 +8,9 @@ faster than their content.
 ### 1. Assuming Raw "Last Write Wins" Means Timestamps
 
 It doesn't. Raw Yjs conflict ordering can use clientID, not wall-clock time.
-Design document state around this or use single-writer keys. Scalar row and KV
-conflicts belong to the SQLite row plane, not a Yjs LWW wrapper.
+Design document state around this or use single-writer keys. A value field and
+a KV attribute both resolve by Yjs map LWW inside the one application document;
+there is no second plane that decides it.
 
 ### 2. Using Y.Array Position for User-Controlled Order
 

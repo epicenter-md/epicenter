@@ -61,10 +61,16 @@ converges to unexpected state or grows faster than its content.
 ## One Document Per Application
 
 An application is ONE `Y.Doc`. Roots are `tables:<name>` and `kv`. A row is a
-nested `Y.Type` attribute on its table root, a scalar field is a JSON attribute
-on the row, and the content node is a nested `Y.Type` at the row's reserved
-`content` key (ADR-0295, ADR-0299). Holding the attribute is what it means to exist; removing it is what
-deletion does, and it reclaims the row's whole subtree in one operation.
+nested `Y.Type` attribute on its table root, a field holding a **value** is a
+JSON attribute on the row, and the one field holding a **node** is a nested
+`Y.Type` at the row's reserved `content` key (ADR-0295, ADR-0309). Holding the
+attribute is what it means to exist; removing it is what deletion does, and it
+reclaims the row's whole subtree in one operation.
+
+Those two words are the vocabulary. A value is replaced whole on write, so two
+devices writing one converge on a winner. A node is edited in place, so two
+devices editing one both keep every keystroke. `scalar` and `prose` are retired
+names for them and belong in no new code or documentation (ADR-0309).
 
 The nesting is not stylistic. `Item.write` calls `findRootTypeKey`, a linear
 scan of `doc.share`, so one root per row makes encoding quadratic in rows
@@ -77,7 +83,7 @@ the row. Advice naming `documents.ts`, `openDocument`, `_tombstones`, or
 "hydrate the row's document" is describing a design that no longer exists.
 
 ```typescript
-// Scalars are attributes on the row, written through the table.
+// Values are attributes on the row, written through the table.
 db.tables.notes.update(noteId, { title, pinned: true });
 
 // The content node is ON the row, read synchronously with everything else.
@@ -92,7 +98,7 @@ must be a table name the database declares: reading an unknown ROW through
 ## Three Signals, And Which One Fires
 
 - `table.subscribe` fires when a table's SHAPE changes: a row added, removed,
-  or a scalar edited. It does NOT fire for an edit inside a content node. It
+  or a value edited. It does NOT fire for an edit inside a content node. It
   hands the listener the ROW IDS the commit touched, so a consumer holding a
   projection rebuilds only what moved; a consumer that just re-reads may
   ignore them.
@@ -185,7 +191,7 @@ ROW's shape is declared). Everything downstream of that line is typed.
 - `packages/data/evidence/invariants.test.ts`: the library behaviour this design rests on, pinned against the installed rc
 - `packages/data/src/sync/`: the Yjs 14 wire (frames, connection, client, authority)
 - [ADR-0295](../../../docs/adr/0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md): one document per application, and a row holds its rich content (supersedes ADR-0248)
-- [ADR-0299](../../../docs/adr/0299-a-row-is-its-scalars-and-one-content-node.md): a row is its scalars and one content node, and the table declares what the node means
+- [ADR-0309](../../../docs/adr/0309-a-field-holds-a-value-or-a-node-and-the-retired-words-fail-the-build.md): a row is its id, its values, and one node at `content`; the table declares what the node means
 - [ADR-0221](../../../docs/adr/0221-a-table-names-the-rows-a-commit-touched-and-says-so-after-the-projection-commits.md): what `subscribe` reports and when it fires
 - [ADR-0146](../../../docs/adr/0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md): Yjs 14-only persistence decision
 - [ADR-0159](../../../docs/adr/0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md): one owner-side SQLite update log and shared attachment seam

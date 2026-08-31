@@ -51,8 +51,6 @@ the wire as config.
 
 An application is one `Y.Doc` whose roots are `tables:{name}` and `kv` (`packages/data/src/store/document.ts`). `Doc.get` is `setIfUndefined`, so it mints on miss, and a root can never be removed: renaming one strands every row under the old name permanently.
 
-A row's document roots (`db.notes.create({...}, { document: ['body'] })`) are named by the application and allocated with the row. Renaming one orphans the prose written into it.
-
 ## Pause and ask before
 
 The collapse pass should stop and surface to the user (not silently proceed) when about to:

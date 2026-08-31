@@ -1,8 +1,8 @@
 # Honeycrisp App
 
 Local-first notes SPA. Folders and notes are rows in one Yjs document, and each
-note's prose is a rich field on its note row inside that same document
-(ADR-0295). The one application running on the store today, so it is also the
+note's body is the node on its note row inside that same document
+(ADR-0295, ADR-0309). The one application running on the store today, so it is also the
 reference for how an app is built.
 
 Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0295](../../docs/adr/0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) (a database is one Yjs document and a row holds its rich content), [ADR-0292](../../docs/adr/0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) (a database opens an exact generation cache-first), [ADR-0261](../../docs/adr/0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md) (a retained replica is qualified by its application, server URL, and verified principal), [ADR-0256](../../docs/adr/0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md) (automatic folding is current; manual workspace compaction is deferred).
