@@ -89,12 +89,17 @@ Inside the application document only `Doc.get` mints, and every key reaching it
 must be a table name the database declares: reading an unknown ROW through
 `getAttr` costs nothing, while a misspelled TABLE name costs a permanent root.
 
-## Two Signals, And Which One Fires
+## Three Signals, And Which One Fires
 
 - `table.subscribe` fires when a table's SHAPE changes: a row added, removed,
-  or a scalar edited. It does NOT fire for an edit inside a content node.
+  or a scalar edited. It does NOT fire for an edit inside a content node. It
+  hands the listener the ROW IDS the commit touched, so a consumer holding a
+  projection rebuilds only what moved; a consumer that just re-reads may
+  ignore them.
 - `table.watch(node)` fires for edits inside one content node, keyed by the
   node's own identity.
+- `kv.subscribe` fires when any declared key changes, and carries nothing.
+  There are ten keys, so naming them would buy nothing.
 
 The distinction is forced by the library. Delivery routes off
 `transaction.changed`, which Yjs fills with the types a transaction modified
