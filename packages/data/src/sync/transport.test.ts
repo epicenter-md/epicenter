@@ -197,6 +197,7 @@ function openReplica(
 
 	return {
 		label,
+		sqlite,
 		data,
 		db,
 		bound,
@@ -233,6 +234,8 @@ function openReplica(
 
 type Replica = {
 	label: string;
+	/** This device's durable record, for the few tests that assert on rows. */
+	sqlite: ReturnType<typeof createBunSqliteAdapter>;
 	/** The whole opened handle: one object since the store stopped nesting. */
 	data: ReturnType<typeof createAccountStore>;
 	db: DataView<typeof database>;
@@ -460,6 +463,50 @@ describe('the ack is what makes a refusal visible', () => {
 		wire.settle();
 		expect(expectOk(authority.head())).toBe(0);
 		expect(phone.titles()).toEqual([]);
+	});
+
+	test('an offline backlog past the merge threshold converges on one dial', () => {
+		const { wire, phone, laptop } = setup();
+		laptop.connect();
+
+		// Every other offline test in this file writes two rows, so until this
+		// one the collapse in ADR-0301 had never fired end to end: the merge
+		// needs more owed rows than the threshold, and no socket to have taken
+		// any of them.
+		for (let index = 0; index < 80; index += 1) {
+			expectOk(phone.db.tables.notes.create({ title: `plane ${index}` }));
+		}
+		phone.client.flush();
+		wire.settle();
+		expect(laptop.titles()).toEqual([]);
+
+		const rowCount = () =>
+			phone.sqlite.all<{ rows: number }>(
+				'SELECT COUNT(*) AS rows FROM _updates',
+			)[0]?.rows ?? 0;
+		const owedCount = () =>
+			phone.sqlite.all<{ rows: number }>(
+				'SELECT COUNT(*) AS rows FROM _updates WHERE authoritySeq IS NULL',
+			)[0]?.rows ?? 0;
+
+		// The merge fired, and this is the control: without it the chain is one
+		// row per edit and this assertion is what fails.
+		expect(rowCount()).toBeLessThan(80);
+		// Collapsed and still owed. A merge changes what carries the bytes,
+		// never whether the authority has them.
+		expect(owedCount()).toBe(rowCount());
+		expect(phone.client.cursor()).toBe(0);
+
+		phone.connect();
+		phone.client.flush();
+		wire.settle();
+
+		// Every edit made on the plane is on the other device, none of them
+		// individually addressable by the time they left.
+		expect(laptop.titles().length).toBe(80);
+		expect(laptop.titles()).toContain('plane 0');
+		expect(laptop.titles()).toContain('plane 79');
+		expect(owedCount()).toBe(0);
 	});
 
 	test('a replica that never hears an ack still owes the work after reconnecting', () => {
