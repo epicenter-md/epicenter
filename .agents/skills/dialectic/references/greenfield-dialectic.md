@@ -1,40 +1,62 @@
 # Greenfield dialectic
 
-This is a model interaction for redesigning a way of working. The agent starts
-with an uncompromising vision of the whole experience, then changes that vision
-when the human exposes a deeper crux.
+This reference shows the agent proposing an uncompromising vision of the whole
+interaction, then changing its shape when the human reveals a deeper crux.
 
 ## Human
 
-The current review process makes me read a huge amount before I can tell what I
-actually need to decide. Can you dialectic the redesign? I want the cleanest
-version of how this should work.
+I keep giving an assistant messy discussions and asking what I need to know. It
+keeps giving me a retrospective summary, a bunch of explanation, and then a
+question at the end. By the time I get there I have lost the thing I was trying
+to understand. I want the cleanest version of how this interaction should work,
+not another description of the failure.
 
 ## Agent
 
-> **A person should meet the proposed decision before its history. The review
-> makes one whole vision and its point of uncertainty visible, then changes that
-> vision in response to the person’s reaction.**
+> **When you ask for a dialectic, the assistant should put the strongest whole
+> vision it can see in front of you before explaining the material that led
+> there. You react to that vision; the assistant turns your reaction into a
+> changed vision. The conversation keeps presenting futures you can recognize,
+> reject, or redirect until one is right.**
 
-The open question is whether one whole proposed answer is the right surface,
-or whether the review must sometimes put two serious visions beside each other
-so the person can feel the difference between them.
+```txt
+your messy material
+        ↓
+one whole greenfield vision
+        ↓
+your reaction to the vision
+        ↓
+the next, changed vision
+```
+
+The history remains available as pressure on the vision. It never becomes the
+main thing you have to read.
 
 ## Human
 
-The first part is right, I think, or at least it is pointing at something I
-recognize. But I do not want the system to always choose one answer for me. I
-sometimes need to see the collision itself, because I do not know what I think
-until I can feel the difference between the options. And the answer cannot just
-be a polished claim. I need to see how the proposed way of working would
-actually feel from my side.
+Yes, that is much closer. But I do not know if it should always be one vision.
+Sometimes the whole reason I cannot tell what I think is that there are two
+strong ways of seeing it, and choosing one too early hides the thing I need to
+react to. Also, I am going to give you a long, repetitive, half-formed response
+most of the time. I do not want you to answer in the same shape. I want you to
+figure out what actually changed and put that in front of me.
 
 ## Agent
 
-> **Show the fewest serious visions needed to make the choice recognizable. Each
-> must make the human experience and refusal clear; the next turn keeps or
-> changes them only where the reaction reveals a stronger whole.**
+> **The assistant should present the smallest set of uncompromising visions
+> needed to expose the real choice: one when a stronger account exists, several
+> when their collision is the point. Your meandering reaction is compressed into
+> the next whole vision, while every other sentence stays subordinate to making
+> that vision recognizable and correctable.**
 
-The remaining crux is whether the vision should describe the ideal experience
-with inherited constraints suspended, or whether some current constraint is
-part of the thing being redesigned.
+```txt
+vision A  ↔  vision B
+              ↓
+       your reaction
+              ↓
+      stronger whole vision
+```
+
+The unresolved question is whether the assistant is still allowed to explain
+the collision after showing the visions, or whether explanation should appear
+only when the vision itself cannot yet be judged.
