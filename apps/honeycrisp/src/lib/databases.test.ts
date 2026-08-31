@@ -6,8 +6,8 @@ installTestLocks();
 import { expect, mock, test } from 'bun:test';
 import type { AuthClient } from '@epicenter/auth';
 import { createGeneration } from '@epicenter/data/browser';
+import { InstantString } from '@epicenter/data/field';
 import { encodeFrame } from '@epicenter/data/sync';
-import { InstantString } from '@epicenter/field';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
 import {
 	openAccountDatabase,

@@ -8,7 +8,7 @@
  * ONCE here when the contract loads. "Field" is the source noun (the user defines a
  * folder's fields); SQLite is the one consumer that turns fields into table columns.
  *
- * The palette is the shared `@epicenter/field` vocabulary: the SAME kinds the workspace
+ * The palette is the shared `@epicenter/matter-core/field` vocabulary: the SAME kinds the workspace
  * authors through `field.*`, so `recognize` and `compile` round-trip matter's `matter.json`
  * over one wire-form. `json` is a kind (an arbitrary-JSON payload, marker-discriminated),
  * so matter renders it too. Matter's substrate policy keeps the emptiness axis outside
@@ -17,7 +17,7 @@
  * shape is outside the palette and degrades to raw, and the per-kind widgets in
  * `components/fields/` map each `Kind` to its editor.
  *
- * The acceptance rule is the meta-schema in `@epicenter/field`: a field whose stored
+ * The acceptance rule is the meta-schema in `@epicenter/matter-core/field`: a field whose stored
  * shape is a legal palette member becomes a typed Field; a field OUTSIDE the palette (a
  * typo, an unmarked object, a nullable wrapper) is recorded in `untyped` and shown raw,
  * rather than erroring the whole contract. Only WHOLE-FILE junk (bad JSON, a non-object
@@ -34,13 +34,13 @@
  * exists only because the SQLite projection's FTS5 index exists.
  */
 
-import { compile, type Field, recognize, storageOf } from '@epicenter/field';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result, trySync } from 'wellcrafted/result';
+import { compile, type Field, recognize, storageOf } from '../field/index.js';
 import { parseViews, type ViewError, type ViewSpec } from './view';
 
 /** Why a stored `matter.json` could not be read into a usable contract at all. */

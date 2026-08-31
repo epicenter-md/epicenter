@@ -30,29 +30,6 @@ The monorepo uses consistent script naming conventions.
 - `test` runs only `*.test.ts`; `bench` runs only `*.bench.ts`. A file is
   one or the other : never both. Benchmarks print reports; tests assert.
 
-## The declaration build gate
-
-`@epicenter/field` and `@epicenter/workspace` export `./dist` only, because their
-declarations are published and then typechecked inside a stranger's project
-(ADR-0186). Every in-repo consumer therefore resolves them through
-`node_modules` to build output, so a test that reaches either one is testing
-the last build rather than the working tree.
-
-Root `test` runs `build:declarations` first for exactly that reason. It is one
-gate rather than a `pretest` in each affected package, and it is not redundant
-with `postinstall`: `postinstall` makes `dist` fresh once, and an edit after
-that is invisible until something rebuilds.
-
-Two things follow. Running one package's tests directly (`bun test <path>`, or
-`bun run --cwd packages/workspace test`) does **not** rebuild, so build first when
-the change is in `field` or `workspace`. And a module both clients depend on for
-correctness earns a test inside its own package, where the import is source:
-`packages/workspace/src/workspace.test.ts` is the worked example.
-
-Do not fix this with a `development` or `bun` export condition. In-repo tests
-and published consumers would then run different code, which is the same
-problem in a place nobody looks.
-
 ## Dev Scripts
 
 Start apps from the repo root, not by cd-ing into the app. Root

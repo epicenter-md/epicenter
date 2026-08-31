@@ -1,6 +1,6 @@
 /**
  * The Kind -> Field component map: the UI layer's half of the contract whose
- * model half is `recognize` (schema -> Kind) in `@epicenter/field`. Keeping them separate
+ * model half is `recognize` (schema -> Kind) in `@epicenter/matter-core/field`. Keeping them separate
  * is the point: the model layer derives the kind and stays free of component imports;
  * this layer maps the kind to a widget.
  *
@@ -14,7 +14,7 @@
  * widget, so `Kind` is exactly the renderable set.
  */
 
-import type { FieldOf, Kind } from '@epicenter/field';
+import type { FieldOf, Kind } from '@epicenter/matter-core/field';
 import type { Component } from 'svelte';
 import BooleanField from './BooleanField.svelte';
 import DateField from './DateField.svelte';
@@ -67,7 +67,7 @@ const WIDGETS = {
  * runtime correlation (`WIDGETS[someKind]` is the union of all widgets, none of which
  * provably accepts an arbitrary cell). Widening the `satisfies`-checked map to the base
  * {@link FieldComponent} is the cast at the UI-DISPATCH boundary; the field pipeline has
- * exactly one other, `recognize`'s at the model boundary in `@epicenter/field`. It is sound by
+ * exactly one other, `recognize`'s at the model boundary in `@epicenter/matter-core/field`. It is sound by
  * the indexing invariant above. JsonEditor is the one wider component because it also owns
  * the INVALID repair lane's JSON text surface.
  */

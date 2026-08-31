@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { Field } from '@epicenter/field';
 import { expectOk } from 'wellcrafted/testing';
+import type { Field } from '../field/index.js';
 import { validateContract } from './contract';
 import { describeExpected } from './expected';
 

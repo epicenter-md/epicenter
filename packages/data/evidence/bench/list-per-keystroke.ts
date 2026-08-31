@@ -42,7 +42,7 @@ import {
 	field,
 	plainText,
 } from '@epicenter/data/definition';
-import { InstantString } from '@epicenter/field';
+import { InstantString } from '../../src/field/index.js';
 import { openMemory } from '../../src/store/memory.js';
 
 const definition = defineData({
@@ -66,7 +66,9 @@ const BODY =
 	);
 
 /** The application's own derive, reproduced: what the list reads per wake-up. */
-function visibleNotes(db: Awaited<ReturnType<typeof openMemory<typeof definition>>>) {
+function visibleNotes(
+	db: Awaited<ReturnType<typeof openMemory<typeof definition>>>,
+) {
 	return db.tables.notes.rows
 		.filter((note) => note.deletedAt === null)
 		.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

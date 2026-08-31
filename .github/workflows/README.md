@@ -68,14 +68,13 @@ We use [changesets](https://github.com/changesets/changesets) to version and pub
 | `packages/filesystem` | `@epicenter/filesystem` | yes |
 | `packages/skills` | `@epicenter/skills` | yes |
 | `packages/ui` | `@epicenter/ui` | yes |
-| `packages/field` | `@epicenter/field` | yes |
 | `packages/identity` | `@epicenter/identity` | yes |
 | `packages/svelte-utils` | `@epicenter/svelte` | yes (see note) |
 | `packages/constants` | `@epicenter/constants` | no (private) |
 
 ### Fixed version group
 
-The framework closure shares one version number, configured via the `fixed` array in `.changeset/config.json`: `sync`, `skills`, `field`, and `identity`. When any one of them changes, all of them bump together. This keeps the ecosystem coherent: if you install `@epicenter/sync@0.3.0`, you know `@epicenter/identity@0.3.0` is the matching release.
+The framework closure shares one version number, configured via the `fixed` array in `.changeset/config.json`: `sync`, `skills`, and `identity`. When any one of them changes, all of them bump together. This keeps the ecosystem coherent: if you install `@epicenter/sync@0.3.0`, you know `@epicenter/identity@0.3.0` is the matching release.
 
 Packages published outside that group (`workspace`, `filesystem`, `ui`, `svelte`) version independently.
 

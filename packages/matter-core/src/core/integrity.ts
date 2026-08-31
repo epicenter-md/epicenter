@@ -27,7 +27,7 @@
  * folded into it.
  */
 
-import { type Field, referenceTargetOf } from '@epicenter/field';
+import { type Field, referenceTargetOf } from '../field/index.js';
 import type { Cell, Extra } from './conformance';
 import type { Contract } from './contract';
 import { type Row, stemOf } from './parse';

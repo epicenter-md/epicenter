@@ -7,6 +7,7 @@
 	"sideEffects": false,
 	"exports": {
 		".": "./src/index.ts",
+		"./field": "./src/field/index.ts",
 		"./fs": "./src/load/fs.ts"
 	},
 	"files": [
@@ -19,7 +20,7 @@
 		"test": "bun test"
 	},
 	"dependencies": {
-		"@epicenter/field": "workspace:*",
+		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
 		"yaml": "^2.8.0"
 	},

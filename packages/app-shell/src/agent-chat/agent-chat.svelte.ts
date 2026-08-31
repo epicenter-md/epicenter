@@ -61,7 +61,7 @@ import {
 	createAgentMessageStore,
 } from '@epicenter/chat';
 import { createOpenAiAgentEngine } from '@epicenter/client';
-import { InstantString } from '@epicenter/field';
+import { InstantString } from '@epicenter/data/field';
 import { bindAgentConversation } from '@epicenter/svelte';
 import type * as Y from '@y/y';
 import { SvelteMap } from 'svelte/reactivity';

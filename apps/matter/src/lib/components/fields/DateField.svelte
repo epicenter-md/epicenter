@@ -1,6 +1,6 @@
 <script lang="ts">
 	import TextCell from './TextCell.svelte';
-	import type { FieldOf } from '@epicenter/field';
+	import type { FieldOf } from '@epicenter/matter-core/field';
 	import type { FieldProps } from './field-props';
 
 	// Calendar dates are edited as ISO text for now. The schema validator keeps this

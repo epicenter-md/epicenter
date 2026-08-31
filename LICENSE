@@ -32,7 +32,6 @@ anyone who forks and distributes a modified binary shares the changes back.
     packages/client          @epicenter/client
     packages/constants       @epicenter/constants
     packages/data            @epicenter/data
-    packages/field           @epicenter/field
     packages/identity        @epicenter/identity
     packages/matter-core     @epicenter/matter-core
     packages/recorder        @epicenter/recorder

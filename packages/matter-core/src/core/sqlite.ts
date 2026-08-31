@@ -32,7 +32,7 @@
  * text fields are full-text queryable.
  */
 
-import { type Field, storageOf } from '@epicenter/field';
+import { type Field, storageOf } from '../field/index.js';
 import type { RowConformance } from './conformance';
 import type { Contract } from './contract';
 import { stemOf } from './parse';

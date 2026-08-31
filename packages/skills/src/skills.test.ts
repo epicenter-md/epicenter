@@ -19,12 +19,12 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineData, defineTable } from '@epicenter/data/definition';
+import { InstantString } from '@epicenter/data/field';
 import {
 	createMemoryRecord,
 	type MemoryRecord,
 	openMemory,
 } from '@epicenter/data/memory';
-import { InstantString } from '@epicenter/field';
 import { expectOk } from 'wellcrafted/testing';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
 import { type SkillsData, skillsDefinition } from './workspace.js';

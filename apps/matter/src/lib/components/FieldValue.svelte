@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
-	import type { Kind } from '@epicenter/field';
+	import type { Kind } from '@epicenter/matter-core/field';
 
 	let { kind, value }: { kind: Kind; value: unknown } = $props();
 

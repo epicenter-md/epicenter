@@ -6,7 +6,7 @@
 	import * as Popover from '@epicenter/ui/popover';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
-	import type { FieldOf } from '@epicenter/field';
+	import type { FieldOf } from '@epicenter/matter-core/field';
 	import { isMissing } from '@epicenter/matter-core';
 	import FieldMissing from './FieldMissing.svelte';
 	import type { FieldProps } from './field-props';

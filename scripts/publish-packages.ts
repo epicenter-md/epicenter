@@ -41,19 +41,6 @@ type Package = { dir: string; name: string; version: string };
 const root = process.cwd();
 const dryRun = process.argv.includes('--dry-run');
 
-async function buildCompiledDeclarations(): Promise<void> {
-	const build = Bun.spawn(['bun', 'run', 'build:declarations'], {
-		cwd: root,
-		stdout: 'inherit',
-		stderr: 'inherit',
-	});
-	await build.exited;
-	if (build.exitCode !== 0) {
-		console.error('compiled declaration build failed');
-		process.exit(1);
-	}
-}
-
 /** Discover every publishable (non-private) package under packages/. */
 async function discoverPackages(): Promise<Package[]> {
 	const packages: Package[] = [];
@@ -162,8 +149,6 @@ async function isAlreadyPublished(pkg: Package): Promise<boolean> {
 	const data = (await res.json()) as { versions?: Record<string, unknown> };
 	return Boolean(data.versions?.[pkg.version]);
 }
-
-await buildCompiledDeclarations();
 
 const packages = await discoverPackages();
 if (packages.length === 0) {

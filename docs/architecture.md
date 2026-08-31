@@ -208,6 +208,6 @@ ADR-0227 was executed as a clean break, so the applications that had not moved
 are broken on purpose and their data on the old stack is gone: `apps/whispering`,
 `apps/vocab`, `apps/skills`, `apps/epicenter`, `packages/chat`,
 `packages/skills`, and `packages/app-shell`'s agent chat. Green:
-`packages/data`, `packages/field`, `packages/sync`, `packages/sqlite`,
+`packages/data`, `packages/sync`, `packages/sqlite`,
 `packages/svelte-utils`, `apps/api`, `apps/self-host`, `apps/honeycrisp`, and
 `apps/sync-lab`.

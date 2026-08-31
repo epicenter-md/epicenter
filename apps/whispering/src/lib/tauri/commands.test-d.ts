@@ -41,8 +41,9 @@ import type {
  *     does not satisfy the constraint 'true'.
  *
  * Copied rather than shared. It is four lines of the canonical spelling with no
- * semantics of its own, and the two other copies live in `@epicenter/field` and
- * `apps/whispering`, which do not otherwise reach into each other for test
+ * semantics of its own, and the three copies live in `packages/data/src/field`,
+ * `packages/data/src/definition`, and `apps/whispering`, which do not
+ * otherwise reach into each other for test
  * utilities. `wellcrafted/testing` exports this pair as of the release after
  * 0.44.0; import it from there once the catalog moves and these go.
  */

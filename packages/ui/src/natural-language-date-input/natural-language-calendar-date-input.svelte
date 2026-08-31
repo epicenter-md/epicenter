@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import type { CalendarDateString } from '@epicenter/field';
+	import type { CalendarDateString } from './date-strings.js';
 	import type { IanaTimeZone } from './iana-time-zone.js';
 
 	export type CalendarDateChoice = {

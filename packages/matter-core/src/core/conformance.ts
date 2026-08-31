@@ -19,7 +19,7 @@
  * palette is not a typed field, so its value also surfaces here as an extra.
  */
 
-import type { Field } from '@epicenter/field';
+import type { Field } from '../field/index.js';
 import type { ContractField } from './contract';
 import type { Row } from './parse';
 

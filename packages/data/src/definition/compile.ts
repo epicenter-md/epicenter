@@ -9,22 +9,19 @@
  * Nothing an application writes points at this file. It is the boundary
  * between what was declared and what the engine holds.
  */
+
+import type { TSchema } from 'typebox';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { Ok, type Result } from 'wellcrafted/result';
 import {
 	compile as compileField,
 	type Field,
 	recognize,
 	referenceTargetOf,
 	storageOf,
-} from '@epicenter/field';
-import type { TSchema } from 'typebox';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+} from '../field/index.js';
 
-import {
-	DATA_ADDRESS_CEILINGS,
-	isDataId,
-	isTableName,
-} from './addresses.js';
+import { DATA_ADDRESS_CEILINGS, isDataId, isTableName } from './addresses.js';
 import { canonicalJson } from './canonical.js';
 import {
 	CONTENT_FIELD,
@@ -281,7 +278,7 @@ function compileTable(
 			return DataDefinitionParseError.UnrecognizedField({
 				table: tableName,
 				field: fieldName,
-				reason: 'expected a closed @epicenter/field descriptor',
+				reason: 'expected a closed @epicenter/data/field descriptor',
 			});
 		}
 		const check = compileField(base.schema);

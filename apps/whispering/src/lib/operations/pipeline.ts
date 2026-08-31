@@ -1,5 +1,5 @@
 import type { BlobId } from '@epicenter/blobs';
-import { InstantString } from '@epicenter/field';
+import { InstantString } from '@epicenter/data/field';
 import {
 	deliverTranscriptionResult,
 	type TranscriptionSource,

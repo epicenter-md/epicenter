@@ -12,7 +12,7 @@
  * edits the device's, and there is never a second pool alongside.
  */
 
-import { InstantString } from '@epicenter/field';
+import { InstantString } from '@epicenter/data/field';
 import type { Entry, VocabData } from '@epicenter/vocab';
 
 export function createEntriesState({ data }: { data: VocabData }) {

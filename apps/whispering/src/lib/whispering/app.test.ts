@@ -24,7 +24,7 @@ import { installTestLocks } from '@epicenter/data/test-locks';
 installTestLocks();
 
 import { expect, test } from 'bun:test';
-import { InstantString } from '@epicenter/field';
+import { InstantString } from '@epicenter/data/field';
 
 // The recipes domain IS reactive state, so the runes are shimmed to their
 // non-reactive meaning (the pattern the other runtime tests use). These

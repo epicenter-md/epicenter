@@ -16,7 +16,7 @@
 	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import type { Kind } from '@epicenter/field';
+	import type { Kind } from '@epicenter/matter-core/field';
 	import {
 		type Cell,
 		type ReferenceVerdict,

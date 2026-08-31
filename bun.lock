@@ -93,7 +93,6 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/field": "workspace:*",
         "@epicenter/matter-core": "workspace:*",
         "@epicenter/server": "workspace:*",
         "@epicenter/skills": "workspace:*",
@@ -129,7 +128,6 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/field": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/sync": "workspace:*",
@@ -307,7 +305,6 @@
         "@codemirror/search": "^6.6.0",
         "@codemirror/state": "^6.6.0",
         "@codemirror/view": "^6.41.0",
-        "@epicenter/field": "workspace:*",
         "@epicenter/matter-core": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@lezer/common": "^1.5.1",
@@ -392,7 +389,6 @@
         "@codemirror/language": "^6.12.2",
         "@codemirror/state": "^6.6.0",
         "@codemirror/view": "^6.41.0",
-        "@epicenter/field": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@lucide/svelte": "catalog:",
@@ -441,7 +437,6 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/field": "workspace:*",
         "@epicenter/recorder": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
@@ -481,7 +476,6 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/field": "workspace:*",
         "@epicenter/recorder": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -607,7 +601,6 @@
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
-        "@epicenter/field": "workspace:*",
         "@types/bun": "catalog:",
         "svelte": "catalog:",
         "svelte-check": "catalog:",
@@ -663,7 +656,6 @@
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
-        "@epicenter/field": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -703,7 +695,6 @@
       "name": "@epicenter/data",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/field": "workspace:*",
         "@epicenter/principal": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",
@@ -722,23 +713,11 @@
         "vite": "catalog:",
       },
     },
-    "packages/field": {
-      "name": "@epicenter/field",
-      "version": "0.3.0",
-      "dependencies": {
-        "typebox": "catalog:",
-        "wellcrafted": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/matter-core": {
       "name": "@epicenter/matter-core",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/field": "workspace:*",
+        "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "yaml": "^2.8.0",
       },
@@ -801,7 +780,6 @@
       "devDependencies": {
         "@cloudflare/vitest-pool-workers": "^0.20.3",
         "@cloudflare/workers-types": "^4.20260405.1",
-        "@epicenter/field": "workspace:*",
         "@types/bun": "catalog:",
         "@types/pg": "^8.18.0",
         "miniflare": "^5.20260801.1-alpha",
@@ -814,7 +792,6 @@
       "version": "0.3.0",
       "dependencies": {
         "@epicenter/data": "workspace:*",
-        "@epicenter/field": "workspace:*",
         "@y/y": "14.0.0-rc.24",
         "wellcrafted": "catalog:",
         "yaml": "^2.8.0",
@@ -862,7 +839,6 @@
       "name": "@epicenter/ui",
       "version": "0.3.0",
       "dependencies": {
-        "@epicenter/field": "workspace:*",
         "@fontsource-variable/geist": "^5.2.9",
         "@fontsource-variable/geist-mono": "^5.2.8",
         "@lucide/svelte": "^1.7.0",
@@ -1229,8 +1205,6 @@
     "@epicenter/data": ["@epicenter/data@workspace:packages/data"],
 
     "@epicenter/epicenter": ["@epicenter/epicenter@workspace:apps/epicenter"],
-
-    "@epicenter/field": ["@epicenter/field@workspace:packages/field"],
 
     "@epicenter/honeycrisp": ["@epicenter/honeycrisp@workspace:apps/honeycrisp"],
 

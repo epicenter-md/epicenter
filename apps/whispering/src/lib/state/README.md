@@ -37,7 +37,7 @@ app.settings.set('settings.recording.trigger', 'vad');
 Recording metadata backed by structural workspace row ids. The app namespace maintains the cache, owns row/blob consistency (`storeAudio`, `create` cleanup, `delete`, the audio workflows, and the `uploadedAt` marker), and refreshes after local writes or installed remote record changes; this module only makes its reads reactive. Use `$lib/queries/audio` for availability query identity and `services.blobSources` for playback.
 
 ```typescript
-import { InstantString } from '@epicenter/field';
+import { InstantString } from '@epicenter/data/field';
 
 import { getWhisperingApp } from '$lib/whispering/context';
 

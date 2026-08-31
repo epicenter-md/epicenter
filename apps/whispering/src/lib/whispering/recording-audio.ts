@@ -6,7 +6,7 @@ import type {
 	BlobStoreFailed,
 	RemoteBlobNotFound,
 } from '@epicenter/blobs';
-import { InstantString } from '@epicenter/field';
+import { InstantString } from '@epicenter/data/field';
 import {
 	defineErrors,
 	extractErrorMessage,

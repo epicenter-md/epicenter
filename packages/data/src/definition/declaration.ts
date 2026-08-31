@@ -10,15 +10,16 @@
  * "I could not tell". A definition that arrived as JSON never comes through
  * here: it reaches `parseData` as `unknown` and is checked in `compile.ts`.
  */
-import {
-	type Field,
-	field as genericField,
-	type storageOf,
-} from '@epicenter/field';
+
 import type * as Y from '@y/y';
 import { type Static, type TSchema, Type } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
+import {
+	type Field,
+	field as genericField,
+	type storageOf,
+} from '../field/index.js';
 
 export const RESERVED_ATTRIBUTE_PREFIX = '!';
 export const KV_ROOT = 'kv';

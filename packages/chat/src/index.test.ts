@@ -11,8 +11,8 @@
 import { expect, test } from 'bun:test';
 import type { AgentMessage } from '@epicenter/agent';
 import { defineData } from '@epicenter/data/definition';
+import { InstantString } from '@epicenter/data/field';
 import { createMemoryRecord, openMemory } from '@epicenter/data/memory';
-import { InstantString } from '@epicenter/field';
 import { conversationsTable, createAgentMessageStore } from './index.js';
 
 const testDefinition = defineData({

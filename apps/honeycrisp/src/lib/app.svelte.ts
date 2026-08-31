@@ -1,5 +1,5 @@
 import type { RowAbsentError } from '@epicenter/data';
-import { InstantString } from '@epicenter/field';
+import { InstantString } from '@epicenter/data/field';
 import {
 	deleteHoneycrispFolder,
 	type FolderId,

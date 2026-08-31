@@ -21,8 +21,8 @@
  * wrapper, not the Field).
  */
 
-import type { Field } from '@epicenter/field';
 import type { MissingCell, OkCell } from '@epicenter/matter-core';
+import type { Field } from '@epicenter/matter-core/field';
 
 /**
  * Commit a new value for this cell's field. The {@link ModeledCell} wrapper binds

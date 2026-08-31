@@ -15,7 +15,7 @@
  * when a violation is formatted or serialized, never stored in the integrity model.
  */
 
-import type { Field, Kind } from '@epicenter/field';
+import type { Field, Kind } from '../field/index.js';
 
 /**
  * The serializable description of a field's accepted value. Every kind reduces to its `kind`

@@ -21,7 +21,7 @@
  * the boundary instead of being silently ignored.
  */
 
-import type { Kind } from '@epicenter/field';
+import type { Kind } from '../field/index.js';
 import type { ContractField } from './contract';
 import type { Row } from './parse';
 import type { StemQuery } from './query';

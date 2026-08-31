@@ -21,7 +21,7 @@
  * is a render projection, not data".
  */
 
-import type { Field } from '@epicenter/field';
+import type { Field } from '../field/index.js';
 import type {
 	LocatedUnreadableFile,
 	TableAssessment,

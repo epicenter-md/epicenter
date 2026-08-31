@@ -6,8 +6,8 @@ import {
 	BlobStoreError,
 	generateBlobId,
 } from '@epicenter/blobs';
+import { InstantString } from '@epicenter/data/field';
 import { openMemory } from '@epicenter/data/memory';
-import { InstantString } from '@epicenter/field';
 import type { Result } from 'wellcrafted/result';
 import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk as expectResult } from 'wellcrafted/testing';

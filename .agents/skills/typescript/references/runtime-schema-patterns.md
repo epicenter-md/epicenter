@@ -55,7 +55,7 @@ For any ID that lives in a `defineTable` schema, declare the brand as a **type a
 
 ```typescript
 import type { Brand } from 'wellcrafted/brand';
-import { field } from '@epicenter/field';
+import { field } from '@epicenter/data/field';
 import { defineTable, generateId, nullable } from '@epicenter/workspace';
 
 // 1. Type alias: brand-only, no runtime symbol

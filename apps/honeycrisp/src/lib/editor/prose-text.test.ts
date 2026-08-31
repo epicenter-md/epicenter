@@ -7,8 +7,8 @@
  * a list would read.
  */
 import { expect, test } from 'bun:test';
+import { InstantString } from '@epicenter/data/field';
 import { openMemory } from '@epicenter/data/memory';
-import { InstantString } from '@epicenter/field';
 import { pmToFragment } from '@y/prosemirror';
 import { honeycrispDefinition } from '../data/index.js';
 import { parseNoteBody } from './markdown.js';
