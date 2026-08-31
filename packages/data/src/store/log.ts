@@ -1,9 +1,15 @@
 /**
- * The CRDT's durable bytes: an append log with an acknowledged-prefix fold.
+ * The CRDT's durable bytes over SQLite: the append log, the fold, and the
+ * vocabulary both ports share.
  *
- * A syncing store reads its owed suffix and cursor from the same records. A
- * local-only store has no authority positions. Everything else, such as an
- * index or an export, is a follower an application composes over the document.
+ * One relation answers every question. What is owed is the rows where
+ * `authoritySeq` is NULL, the cursor is `MAX(authoritySeq)`, and the next id
+ * is `MAX(id)`; none of the three is stored beside the bytes it describes,
+ * because two copies of one fact can disagree and a derived one cannot
+ * (ADR-0298). `../README.md` has the table that makes that column readable.
+ *
+ * Everything else, an index or an export, is a follower an application
+ * composes over the document rather than a relation kept here.
  */
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import * as Y from '@y/y';
@@ -18,13 +24,34 @@ import type {
 export type { OutboxEntry } from './persistence.js';
 
 /**
- * How many appends a document's chain holds before it folds into one baseline.
+ * How many rows gather before they collapse, on either side of the column.
  *
- * A syncing store folds only the acknowledged prefix, so owed appends remain
- * individually addressable for their acknowledgement. The current threshold
- * is 64: folding on every acknowledgement re-encodes the whole document too
- * often. In `transport.test.ts`, threshold 64 takes about 7.5 seconds; forcing
- * threshold 1 takes about 20 seconds and times out one case.
+ * One number, two collapses (ADR-0301): acknowledged rows fold into one
+ * baseline by whole-document re-encode, and owed rows merge into one
+ * resendable row. Neither is a prefix rule; both are questions about the row.
+ *
+ * ## Why 64, and why not more
+ *
+ * The instinct is that folding is the expensive part, so a bigger number
+ * means less work. Measured against the real IndexedDB port, that is backwards
+ * (`evidence/browser/port-cost`):
+ *
+ * ```txt
+ *   the commit that folds        a cold open
+ *    160 KB doc     4.1 ms         64 rows      1.8 ms
+ *   1554 KB doc     6.6 ms       1000 rows     55.6 ms
+ *   6381 KB doc    15.8 ms       4000 rows    558.4 ms
+ * ```
+ *
+ * Folding is cheap even on a large document. A long chain is not, and almost
+ * all of that cost is the Yjs replay rather than storage, so it is charged on
+ * every launch. Raising this number trades a handful of cheap folds for a
+ * slower open every single time the application starts.
+ *
+ * The floor is real too. `transport.test.ts` drives a thousand sends with no
+ * idle gap: threshold 64 finishes in about 7.5 seconds, threshold 1 takes
+ * about 20 and times out one case, because re-encoding the whole document per
+ * acknowledgement is the cost the number exists to amortize.
  */
 export const SNAPSHOT_FOLD_THRESHOLD = 64;
 
