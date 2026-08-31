@@ -94,8 +94,6 @@ export type ParsedTable = {
 };
 
 export type ParsedDataDefinition = {
-	/** The immutable, serialized declaration this compiler result represents. */
-	readonly definition: DataDefinition;
 	id: string;
 	title?: string;
 	kv: ParsedTable;
@@ -125,7 +123,7 @@ const parsed = new WeakMap<
  * parse. There used to be a `clearDataDefinitionCache` for that, exported and
  * called by nothing, including the tests it named. Nothing mutates a
  * definition: they are module-level constants built from `field.*`, and the
- * parse freezes its own canonical copy. An escape hatch for an unreachable
+ * parse keeps its own canonical string. An escape hatch for an unreachable
  * hazard mostly advertises that the hazard is reachable.
  */
 export function parseData(
@@ -230,10 +228,8 @@ function compileDefinition(
 				: result.data,
 		);
 	}
-	const definition = freeze(JSON.parse(canonical) as DataDefinition);
 	return Ok(
 		Object.freeze({
-			definition,
 			id,
 			...(title === undefined ? {} : { title }),
 			kv: compiledKv,
@@ -253,7 +249,13 @@ function compileTable(
 		});
 	const compiled = new Map<string, DataField>();
 	for (const [fieldName, descriptor] of Object.entries(declaration)) {
-		if (fieldName === CONTENT_FIELD) continue;
+		// A table's `content` is the codec for its rows' live node, not a field,
+		// so it never compiles as one. On a ROW and only there: kv holds settings
+		// rather than rows, so it has no node, and a setting a person happens to
+		// call `content` is an ordinary field. Skipping it for kv too would drop
+		// the key at compile and leave `kv.get` answering `undefined` for a value
+		// the document is holding, with `nonconforming` reporting nothing.
+		if (tableName !== KV_ROOT && fieldName === CONTENT_FIELD) continue;
 		const invalid = fieldNameProblem(tableName, fieldName);
 		if (invalid !== undefined) return invalid;
 		if (!isPlainObject(descriptor)) {
@@ -363,9 +365,6 @@ function fieldNameProblem(
 	if (
 		fieldName.startsWith(RESERVED_ATTRIBUTE_PREFIX) ||
 		fieldName.toLowerCase() === 'id' ||
-		// Reserved on a ROW, and only there: kv holds settings rather than rows,
-		// so it has no node and nothing to collide with.
-		(tableName !== KV_ROOT && fieldName === CONTENT_FIELD) ||
 		!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName)
 	) {
 		return DataDefinitionParseError.Malformed({
@@ -391,11 +390,4 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 		return false;
 	const prototype = Object.getPrototypeOf(value);
 	return prototype === Object.prototype || prototype === null;
-}
-
-function freeze<T>(value: T): T {
-	if (typeof value !== 'object' || value === null) return value;
-	if (Object.isFrozen(value)) return value;
-	for (const child of Object.values(value)) freeze(child);
-	return Object.freeze(value);
 }

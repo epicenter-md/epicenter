@@ -162,6 +162,12 @@ describe('data definitions', () => {
 			tables: { notes: { title: field.string(), content: {} } },
 		});
 		expect(result.error).toBeNull();
+		// The FIELD, not just the parse. Asserting `error` alone passed for the
+		// whole of the flattening, while the table loop skipped `content` for
+		// every root including this one: the key compiled away, `kv.get` answered
+		// `undefined` for a value the document was holding, and `nonconforming`
+		// reported nothing. A pin that cannot see its subject deleted is not one.
+		expect([...(result.data?.kv.fields.keys() ?? [])]).toEqual(['content']);
 	});
 
 	test('a serialized codec husk compiles as no codec', () => {
