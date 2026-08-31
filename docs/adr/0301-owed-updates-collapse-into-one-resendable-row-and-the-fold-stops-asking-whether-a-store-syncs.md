@@ -85,10 +85,19 @@ never fires for it and it folds everything, which is what it did before.
   costs the same open as a short one.
 - An acknowledgement stamps at most one merged row plus whatever accumulated
   since, rather than every append made while offline.
-- The durable record learns one fact about the socket: whether a submission is
-  outstanding. That is a new edge in a direction that was deliberately empty,
-  and it is the price of the rest. It is one boolean, and offline it is
-  constantly false.
+- The durable record learns nothing about the socket, which is better than
+  this record originally priced. The guard is `lastCoalescedId`, the highest id
+  the sender has ever been handed: a row above it has never been in any
+  submission, so replacing it is unconditionally safe. A monotone counter
+  rather than a flag, because a flag gets stuck set when a socket dies
+  mid-submission, which would disable merging in exactly the offline case the
+  merge exists for.
+- The storage epoch goes to `v3` and pre-existing local records are stranded
+  (`STORE_GENERATION`, `packages/data/src/store/browser.ts`). A `v2` local
+  store wrote its own appends with a NULL position, and NULL now means owed on
+  every store kind, so those rows read under this shape would be offered to a
+  sender that does not exist. The value changed rather than the schema, which
+  is exactly the migration the address scheme exists to refuse (ADR-0292).
 - Merging is a write that does not exist today: roughly one merged row per
   threshold of appends, against the appends it deletes.
 - `mergeUpdatesV2` compacts less than a whole-document re-encode, so an owed

@@ -12,7 +12,7 @@
 - **Unbuilt:** all of it, and now permanently. Nothing here shipped.
 - **Amended by:** [ADR-0282](0282-the-authority-hydrates-the-document-and-one-object-per-document-bounds-the-blast-radius.md) at three stated reasons, not at its decision. Withdrawn: refusal at the door, "128 MB per isolate, shared" as the mechanism, and request count as the argument against per-generation. The granularity stands on blast radius, measured.
 - **Amended by:** [ADR-0283](0283-a-generations-collection-is-a-ledger-that-allocates-admits-and-sweeps.md) at the address surface, which moves under `/api` and gains explicit non-existence.
-- **Amended by:** [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses-from-one-snapshot.md) at bulk bootstrap, which uses one complete envelope before the incremental socket.
+- **Amended by:** [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) at bulk bootstrap, which uses one complete envelope before the incremental socket.
 - **Amended by:** [ADR-0293](0293-a-generation-is-created-by-importing-a-folder-and-the-ledger-row-is-its-existence.md) at the envelope's surviving role in bulk generation transfer.
 - **Amended by:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) at the object granularity and the per-row HTTP surface: one object holds one database, not one document per row. This record's own refused alternative, one object per generation, is the chosen shape there.
 

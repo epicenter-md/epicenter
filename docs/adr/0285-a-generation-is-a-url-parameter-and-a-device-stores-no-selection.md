@@ -4,8 +4,13 @@
 - **Date:** 2026-08-29
 - **Amends:** [ADR-0281](0281-a-generation-is-a-whole-database-and-a-device-chooses-which-one-it-holds.md) at where the choice lives. Held-and-chosen is unchanged and every held generation is still fully live; what is withdrawn is the local ledger database, the stored selection, and the in-app switch.
 - **Amends:** [ADR-0280](0280-a-browser-stores-durable-record-is-a-chain-of-updates-in-indexeddb-folded-on-idle.md) at the Web Lock. One database per generation makes the lock a per-generation lock, which is where `record.ts`'s one-writer assumption actually needs it.
-- **Unbuilt:** all of it.
-- **Amended by:** [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses-from-one-snapshot.md) at the cache-first opener and generation-level bootstrap.
+- The route half is built: `/device`, `/device/[generation]`, `/account`, and
+  `/account/[generation]` exist, resolve the newest held generation, and
+  redirect to the number (`apps/honeycrisp/src/routes/`,
+  `apps/honeycrisp/src/lib/databases.ts`). The local ledger database and the
+  in-app switch this record withdrew were never built, which is what the
+  original `Unbuilt: all of it` line meant and no longer says.
+- **Amended by:** [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) at the cache-first opener and generation-level bootstrap, and at the ADDRESS. The two lines below predate the storage epoch and put `local`/`account` before the data id; the scheme in ADR-0292 is the live one.
 
 ## Context
 

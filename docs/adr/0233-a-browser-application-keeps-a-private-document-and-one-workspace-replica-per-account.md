@@ -23,6 +23,8 @@
   (one authority per principal and application, which this record mirrors on
   the device).
 
+- **Amended by:** [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) at the address. Every address this record prints predates the generation segment and the storage epoch, and the word `device` became `local`. What stands is the shape: one document that never joins account sync, plus one retained replica per account.
+
 ## Context
 
 Honeycrisp opened one browser store for every generation, signed in or not.
