@@ -13,14 +13,13 @@ type PrincipalId = Extract<
 >['principalId'];
 
 import { type BrowserData, type LocalData } from '@epicenter/data';
-import { emptyDatabase } from '@epicenter/data/artifact';
 import { attachMirror } from '@epicenter/data/artifact/mirror';
 import {
 	type AddressedDocument,
 	GENERATIONS_ROUTE,
-	importGeneration,
+	createGeneration,
 	type LocalDocument,
-	listLocalGenerations,
+	newestGeneration,
 	openDatabase,
 } from '@epicenter/data/browser';
 import { persistOnHide } from '@epicenter/data/flush-on-hide';
@@ -241,13 +240,10 @@ async function openAccountReplica({
  * failure rather than opening something.
  */
 export async function resolveLocalGeneration(): Promise<number> {
-	const held = await listLocalGenerations(honeycrispDefinition.id);
-	const newest = held.at(-1);
+	const newest = await newestGeneration(honeycrispDefinition.id);
 	if (newest !== undefined) return newest;
 
-	const state = emptyDatabase(honeycrispDefinition);
-	if (state.error !== null) throw state.error;
-	const created = await importGeneration(honeycrispDefinition, state.data);
+	const created = await createGeneration(honeycrispDefinition);
 	if (created.error !== null) throw created.error;
 	return created.data.generation;
 }
@@ -265,11 +261,10 @@ export async function resolveAccountGeneration(
 	auth: AuthClient,
 	principalId: PrincipalId,
 ): Promise<number> {
-	const held = await listLocalGenerations(honeycrispDefinition.id, {
+	const newest = await newestGeneration(honeycrispDefinition.id, {
 		baseURL: auth.connection.baseURL,
 		principalId,
 	});
-	const newest = held.at(-1);
 	if (newest !== undefined) return newest;
 
 	const listed = await auth.fetch(
@@ -291,9 +286,7 @@ export async function resolveAccountGeneration(
 	// An EMPTY list is a first run, not a refusal, and the distinction is the
 	// listing itself: a failed one already threw above. What a device must not
 	// do is invent a generation because it could not SEE what the account has.
-	const state = emptyDatabase(honeycrispDefinition);
-	if (state.error !== null) throw state.error;
-	const created = await importGeneration(honeycrispDefinition, state.data, {
+	const created = await createGeneration(honeycrispDefinition, {
 		account: {
 			baseURL: auth.connection.baseURL,
 			principalId,

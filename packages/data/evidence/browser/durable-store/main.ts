@@ -10,11 +10,10 @@ import {
 	field,
 	plainText,
 } from '@epicenter/data/definition';
-import * as Y from '@y/y';
 
 import {
-	importGeneration,
-	listLocalGenerations,
+	createGeneration,
+	newestGeneration,
 	openDatabase,
 } from '../../../src/store/browser.js';
 import type { LocalData } from '../../../src/store/store.js';
@@ -70,15 +69,11 @@ Object.assign(globalThis, {
 		// The local database: this probe proves durability, and a device-owned
 		// generation is the one that never has a sync story to confound it.
 		//
-		// Imported on first use, because a generation number is an address and
-		// opening never invents one (ADR-0292). Importing an empty state is
-		// what "create a new database on this device" is, and the second open
-		// of the same page finds a cache hit and imports nothing.
-		if ((await listLocalGenerations(workspace.id)).length === 0) {
-			const empty = new Y.Doc({ gc: true });
-			const state = new Uint8Array(Y.encodeStateAsUpdateV2(empty));
-			empty.destroy();
-			const created = await importGeneration(workspace, state);
+		// Created on first use, because a generation number is an address and
+		// opening never invents one (ADR-0292). The second open of the same
+		// page finds a cache hit and creates nothing.
+		if ((await newestGeneration(workspace.id)) === undefined) {
+			const created = await createGeneration(workspace);
 			if (created.error !== null) return { error: created.error.message };
 		}
 		const opened = await openDatabase(workspace, { generation: 1 });

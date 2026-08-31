@@ -5,8 +5,7 @@ installTestLocks();
 
 import { expect, mock, test } from 'bun:test';
 import type { AuthClient } from '@epicenter/auth';
-import { emptyDatabase } from '@epicenter/data/artifact';
-import { importGeneration } from '@epicenter/data/browser';
+import { createGeneration } from '@epicenter/data/browser';
 import { encodeFrame } from '@epicenter/data/sync';
 import { InstantString } from '@epicenter/field';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
@@ -174,14 +173,12 @@ function connectingAuth(principalId: string) {
 	return { auth, dials };
 }
 
-/** Import an empty generation into this account, the way a first run does. */
+/** Create an empty generation in this account, the way a first run does. */
 async function importEmptyAccountGeneration(auth: AuthClient): Promise<void> {
-	const state = emptyDatabase(honeycrispDefinition);
-	if (state.error !== null) throw state.error;
 	const principalId =
 		auth.state.status === 'signed-out' ? undefined : auth.state.principalId;
 	if (principalId === undefined) throw new Error('signed out');
-	const created = await importGeneration(honeycrispDefinition, state.data, {
+	const created = await createGeneration(honeycrispDefinition, {
 		account: {
 			baseURL: auth.connection.baseURL,
 			principalId,

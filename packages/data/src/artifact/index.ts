@@ -30,7 +30,6 @@
  * (ADR-0272).
  */
 export {
-	emptyDatabase,
 	type ImportError,
 	readArtifact,
 } from './import.js';

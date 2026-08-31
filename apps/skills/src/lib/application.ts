@@ -10,11 +10,10 @@
  */
 
 import { type LocalData } from '@epicenter/data';
-import { emptyDatabase } from '@epicenter/data/artifact';
 import {
-	importGeneration,
+	createGeneration,
 	type LocalDocument,
-	listLocalGenerations,
+	newestGeneration,
 	openDatabase,
 } from '@epicenter/data/browser';
 import { skillsDefinition } from '@epicenter/skills';
@@ -75,12 +74,9 @@ export async function openSkillsRuntime({
  * empty folder.
  */
 async function resolveLocalGeneration(): Promise<number> {
-	const held = await listLocalGenerations(skillsDefinition.id);
-	const newest = held.at(-1);
+	const newest = await newestGeneration(skillsDefinition.id);
 	if (newest !== undefined) return newest;
-	const state = emptyDatabase(skillsDefinition);
-	if (state.error !== null) throw state.error;
-	const created = await importGeneration(skillsDefinition, state.data);
+	const created = await createGeneration(skillsDefinition);
 	if (created.error !== null) throw created.error;
 	return created.data.generation;
 }

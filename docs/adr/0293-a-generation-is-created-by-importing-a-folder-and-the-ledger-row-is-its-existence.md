@@ -7,7 +7,7 @@
 - **Relates:** [ADR-0289](0289-the-folder-is-where-a-generation-is-minted-from-not-a-surface-kept-current-for-its-own-sake.md), [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md), [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md), [ADR-0296](0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md)
 - **Unbuilt:** the ledger's tombstone-sever-sweep half. `DELETE` is not
   implemented and a generation is never removed, which is the safe half to be
-  missing. Everything else is built: `importGeneration` posts one whole state,
+  missing. Everything else is built: `createGeneration` posts one whole state,
   `GenerationsLedger` allocates and admits, and the blob is stored in the
   generation's own authority as its first snapshot.
 

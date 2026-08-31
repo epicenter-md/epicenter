@@ -95,25 +95,6 @@ export const ImportError = defineErrors({
 export type ImportError = InferErrors<typeof ImportError>;
 
 /**
- * The bytes of a database with nothing in it yet.
- *
- * A generation comes into being by importing a folder (ADR-0293), and the
- * first one is an import of a folder with no files in it. That is not a
- * special case worth a second code path, so this IS `readArtifact` over an
- * empty map; what it adds is the name.
- *
- * The name is the point. Every production caller of `readArtifact` today
- * passes `new Map()`, and `readArtifact(new Map(), definition)` at a call site
- * reads as importing when what it means is minting. The folder-reading path
- * stays `readArtifact`, for the restore this is not.
- */
-export function emptyDatabase(
-	definition: DataDefinition,
-): Result<Uint8Array, ImportError> {
-	return readArtifact(new Map(), definition);
-}
-
-/**
  * Read a whole artifact into the one document that IS the database.
  *
  * One value, because there is one document (ADR-0295). What this used to

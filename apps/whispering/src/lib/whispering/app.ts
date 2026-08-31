@@ -1,5 +1,4 @@
 import type { AuthClient } from '@epicenter/auth';
-import { emptyDatabase } from '@epicenter/data/artifact';
 
 /** The principal half of an account address, as the auth client states it. */
 type PrincipalId = Extract<
@@ -11,9 +10,9 @@ import { type BrowserData, type LocalData } from '@epicenter/data';
 import {
 	type AddressedDocument,
 	GENERATIONS_ROUTE,
-	importGeneration,
+	createGeneration,
 	type LocalDocument,
-	listLocalGenerations,
+	newestGeneration,
 	openDatabase,
 } from '@epicenter/data/browser';
 import {
@@ -326,12 +325,9 @@ async function openAccountRuntime({
  * empty folder. Newest rather than latest-by-time: the number IS the order.
  */
 async function resolveLocalGeneration(): Promise<number> {
-	const held = await listLocalGenerations(whisperingDefinition.id);
-	const newest = held.at(-1);
+	const newest = await newestGeneration(whisperingDefinition.id);
 	if (newest !== undefined) return newest;
-	const state = emptyDatabase(whisperingDefinition);
-	if (state.error !== null) throw state.error;
-	const created = await importGeneration(whisperingDefinition, state.data);
+	const created = await createGeneration(whisperingDefinition);
 	if (created.error !== null) throw created.error;
 	return created.data.generation;
 }
@@ -347,11 +343,10 @@ async function resolveAccountGeneration(
 	auth: AuthClient,
 	principalId: PrincipalId,
 ): Promise<number> {
-	const held = await listLocalGenerations(whisperingDefinition.id, {
+	const newest = await newestGeneration(whisperingDefinition.id, {
 		baseURL: auth.connection.baseURL,
 		principalId,
 	});
-	const newest = held.at(-1);
 	if (newest !== undefined) return newest;
 	const listed = await auth.fetch(
 		GENERATIONS_ROUTE.collection(
@@ -372,9 +367,7 @@ async function resolveAccountGeneration(
 	// first generation is an import of an empty folder (ADR-0293), which is the
 	// only way one ever comes into being; what a device must not do is invent
 	// one because it could not SEE what the account has.
-	const state = emptyDatabase(whisperingDefinition);
-	if (state.error !== null) throw state.error;
-	const created = await importGeneration(whisperingDefinition, state.data, {
+	const created = await createGeneration(whisperingDefinition, {
 		account: {
 			baseURL: auth.connection.baseURL,
 			principalId,

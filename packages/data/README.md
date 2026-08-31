@@ -10,7 +10,7 @@ The package has one definition entrypoint and four runtime entrypoints:
 | --- | --- |
 | `@epicenter/data` | the opened data surface |
 | `@epicenter/data/definition` | `defineData`, `parseData`, and the field descriptor vocabulary |
-| `@epicenter/data/browser` | `openDatabase(definition, { generation, account? })`, and `importGeneration` |
+| `@epicenter/data/browser` | `openDatabase(definition, { generation, account? })`, plus `newestGeneration` and `createGeneration` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 | `@epicenter/data/artifact` | `renderRow` and `renderArtifact` out, `readArtifact` back in: the folder a person keeps |
 | `@epicenter/data/memory` | `openMemory(definition)` and `createMemoryRecord()`, test support |

@@ -33,13 +33,12 @@ installTestLocks();
 import { describe, expect, test } from 'bun:test';
 import { defineData, defineTable } from '@epicenter/data/definition';
 import { asPrincipalId } from '@epicenter/principal';
-import * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
 import { expectErr, expectOk as expectOkResult } from 'wellcrafted/testing';
 
 import {
 	type DatabaseAccount,
-	importGeneration,
+	createGeneration,
 	openDatabase,
 } from './browser.js';
 import { openMemory } from './memory.js';
@@ -91,14 +90,6 @@ const accountAddress = (
 ) =>
 	`epicenter/v3/${dataId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}/gen/${generation}`;
 
-/** One empty database's whole state: what importing an empty folder produces. */
-function emptyState(): Uint8Array {
-	const doc = new Y.Doc({ gc: true });
-	const bytes = new Uint8Array(Y.encodeStateAsUpdateV2(doc));
-	doc.destroy();
-	return bytes;
-}
-
 /**
  * An account port that serves one generation and assigns numbers locally.
  *
@@ -130,7 +121,7 @@ function accountFor(
 
 /** Create generation 1 on this device, then open it: the ordinary first run. */
 async function openLocalData(definition: ReturnType<typeof databaseFor>) {
-	await importGeneration(definition, emptyState());
+	await createGeneration(definition);
 	return openDatabase(definition, { generation: GEN });
 }
 
@@ -140,7 +131,7 @@ async function openAccountData(
 	baseURL = CLOUD,
 ) {
 	const account = accountFor(principalId, baseURL);
-	await importGeneration(definition, emptyState(), { account });
+	await createGeneration(definition, { account });
 	return openDatabase(definition, { generation: GEN, account });
 }
 
@@ -278,14 +269,14 @@ describe('one local document and one account replica per account', () => {
 		// different address and the old one is an older copy (ADR-0292).
 		const database = databaseFor('generations');
 		const account = accountFor(ALICE);
-		await importGeneration(database, emptyState(), { account });
+		await createGeneration(database, { account });
 		const first = expectOk(
 			await openDatabase(database, { generation: 1, account }),
 		);
 		first.tables.notes.create({ title: 'in generation one' });
 		await first[Symbol.asyncDispose]();
 
-		await importGeneration(database, emptyState(), {
+		await createGeneration(database, {
 			account: accountFor(ALICE),
 		});
 		const names = await databaseNames();

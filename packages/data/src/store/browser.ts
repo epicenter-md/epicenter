@@ -49,6 +49,7 @@ import * as Y from '@y/y';
 import { type DBSchema, deleteDB, type IDBPDatabase, openDB } from 'idb';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { claimDocument, releaseDocument } from './claims.js';
+import { createDatabaseDocument } from './document.js';
 import {
 	copyBytes,
 	NO_AUTHORITY,
@@ -801,10 +802,10 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
  * generation is created once and never mutated in place, so a second write
  * here would be a caller confusing import with sync.
  *
- * Not exported. Both call sites are `importGeneration` below, and the split is
+ * Not exported. Both call sites are `createGeneration` below, and the split is
  * the two halves of one operation rather than a surface: without a number
  * there is nothing to write under, and choosing the number is what
- * `importGeneration` is for.
+ * `createGeneration` is for.
  */
 async function writeGeneration({
 	dataId,
@@ -853,13 +854,20 @@ async function writeGeneration({
 }
 
 /**
- * Bring one generation into being from a whole database state (ADR-0293).
+ * Bring one generation into being (ADR-0293).
  *
- * The second half of an import, and the split is where ADR-0293's diagram puts
- * it: the CLIENT parses the folder with the application's own codecs and
- * builds one Yjs document (`readArtifact`), and this takes the state that came
- * out and gives it a number and an address. Keeping the parse outside means an
- * opener does not carry the artifact layer, and it is the same call either way.
+ * `from` is a whole database state, and OMITTING it mints an empty one. That
+ * is not a second code path: an empty database is what a folder with no files
+ * in it reads as, so the default is the value rather than a branch. It used to
+ * be a named helper in the artifact layer, `emptyDatabase`, whose own comment
+ * said the name was the point; making it the default is the version where the
+ * name does not have to be said.
+ *
+ * The split with the artifact layer is where ADR-0293's diagram puts it: the
+ * CLIENT parses the folder with the application's own codecs and builds one
+ * Yjs document (`readArtifact`), and this takes the state that came out and
+ * gives it a number and an address. Keeping the parse outside means an opener
+ * does not carry the artifact layer, and it is the same call either way.
  *
  * **The client never chooses the number.** With an account the authority
  * assigns it: the state is posted whole, stored whole, and the ledger row is
@@ -877,19 +885,24 @@ async function writeGeneration({
  * happened: higher means the import landed and that is its number, unchanged
  * means it did not.
  */
-export async function importGeneration(
+export async function createGeneration(
 	definition: DataDefinition,
-	state: Uint8Array,
-	{ account }: { account?: DatabaseAccount } = {},
+	{
+		from,
+		account,
+	}: { from?: Uint8Array; account?: DatabaseAccount } = {},
 ): Promise<
 	Result<{ generation: number }, StoreError | DataDefinitionParseError>
 > {
 	const { data: parsed, error: parseError } = parseData(definition);
 	if (parseError !== null) return Err(parseError);
 
+	const state =
+		from ??
+		new Uint8Array(Y.encodeStateAsUpdateV2(createDatabaseDocument()));
+
 	if (account === undefined) {
-		const held = await listLocalGenerations(parsed.id);
-		const generation = (held.at(-1) ?? 0) + 1;
+		const generation = (await newestGeneration(parsed.id) ?? 0) + 1;
 		const { error } = await writeGeneration({
 			dataId: parsed.id,
 			generation,
@@ -968,30 +981,44 @@ async function postGeneration(
 }
 
 /**
- * Every generation of this database this device holds, ascending (ADR-0292).
+ * The newest generation of this database this device holds, or `undefined`
+ * (ADR-0292).
  *
- * Parsed rather than sorted, because `gen/9` sorts above `gen/10`. Used to
- * assign the next number for a device-owned import, and to answer "which
- * generations does this device have" without a second index to keep true.
+ * Newest is the HIGHEST number, not the latest timestamp: the number is the
+ * order. Parsed rather than sorted, because `gen/9` sorts above `gen/10`.
+ *
+ * Singular because that is the whole of what anyone asks. An application
+ * resolves the one to open, and `createGeneration` takes the next number after
+ * it. The plural this replaced was list-then-`at(-1)` at every call site,
+ * including the one inside this file.
+ *
+ * `dataId` rather than a definition, so this stays a question with no error
+ * channel. A device that holds none and a device that cannot name an address
+ * both answer the same way, and the honest answer is "none".
+ *
+ * The account argument is what a generation is held UNDER, not what kind of
+ * store it is: both a device's own generations and its replicas of an
+ * account's are on this disk, and this counts either.
  */
-export async function listLocalGenerations(
+export async function newestGeneration(
 	dataId: string,
 	account?: { baseURL: string; principalId: PrincipalId },
-): Promise<number[]> {
+): Promise<number | undefined> {
 	const located = generationPrefix(dataId, account);
 	// An account with no address holds nothing addressable, so there is nothing
 	// here to find. `openDatabase` refuses the same input loudly; this one is a
 	// question about what is on disk and the honest answer is "none".
-	if (located.error !== null) return [];
+	if (located.error !== null) return undefined;
 	const { prefix } = located.data;
 	const names = (await indexedDB.databases())
 		.map(({ name }) => name)
 		.filter((name): name is string => name !== undefined);
-	const generations: number[] = [];
+	let newest: number | undefined;
 	for (const name of names) {
 		if (!name.startsWith(prefix)) continue;
 		const parsed = Number(name.slice(prefix.length));
-		if (isGeneration(parsed)) generations.push(parsed);
+		if (!isGeneration(parsed)) continue;
+		if (newest === undefined || parsed > newest) newest = parsed;
 	}
-	return generations.sort((left, right) => left - right);
+	return newest;
 }
