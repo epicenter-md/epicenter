@@ -13,29 +13,41 @@
  * erroring is itself an error.
  */
 
-import { Ok } from 'wellcrafted/result';
 import { plainText } from './content.js';
 
 import { defineData, defineTable, field } from './index.js';
 
 /**
- * A name is a scalar or a type field, never both.
+ * A scalar cannot take a name a row already has.
  *
- * `RowOf` intersects the two buckets, so a collision reads as a `Static<>`
- * intersected with a `Y.Type`: an impossible field rather than a reported
+ * Every row holds an `id` and a `content` node (ADR-0299), so a scalar at
+ * either name would collide with the row's own field: `RowOf` intersects the
+ * two, and the field would read as an impossible type rather than as a
  * mistake. `parseData` refuses it too; this pins the half that fires while the
  * declaration is being written.
  *
- * The expected type at the offending element IS the explanation, which is what
- * makes the error land on `'title'` instead of on the object around it.
+ * The expected type at the offending KEY is the explanation, which is what
+ * makes the error land on the field instead of on the object around it.
+ *
+ * This replaced a pin for a rule that no longer exists: a name declared as
+ * both a scalar and a type field. When `types` was deleted, that pin kept
+ * passing, because its `@ts-expect-error` absorbed the excess-property error
+ * for `types` itself. Probed to confirm: with `types` removed entirely and an
+ * unrelated key in its place, the expectation was still satisfied. A pin that
+ * cannot tell you what it is pinning is the failure this file exists to catch.
  */
 defineTable({
-	scalars: { title: field.string() },
-	// @ts-expect-error 'title' is already a scalar of this table
-	types: ['title'],
-	file: {
-		serialize: () => ({ data: {}, content: '' }),
-		deserialize: () => Ok({}) as never,
+	scalars: {
+		// @ts-expect-error 'content' is reserved: every row already has one
+		content: field.string(),
+	},
+	content: plainText(),
+});
+
+defineTable({
+	scalars: {
+		// @ts-expect-error 'id' is reserved: every row already has one
+		id: field.string(),
 	},
 	content: plainText(),
 });
@@ -46,10 +58,11 @@ defineTable({
  * `parseData` refuses one at runtime too (`DeclarationDefault`), and this is
  * the compile-time half of that rule, for both buckets a definition has.
  *
- * Pinned because the rule is carried by a conditional type keyed on the
- * literal string `scalars`. Rename the key and the check does not fail, it
- * stops applying, silently: that is exactly what happened to the table half
- * when the declaration went from one `fields` bag to two buckets.
+ * Through `defineTable` rather than a table literal handed to `defineData`. A
+ * literal is refused for having no brand, and that refusal fires FIRST: the
+ * table half of this pin used to sit on a bare literal, and it passed with the
+ * default removed entirely, so it was testing the door rather than the
+ * default. The kv half below is genuine, because `kv` takes a bare field map.
  *
  * The default has to be spread in rather than passed to the builder. Every
  * builder returns a fixed schema type (`field.string(opts)` is `TString`
@@ -57,6 +70,14 @@ defineTable({
  * check can see it. Only a schema whose OWN type carries `default` is caught
  * here; the rest is `parseData`'s to refuse.
  */
+defineTable({
+	scalars: {
+		// @ts-expect-error a default belongs to the application, not the schema
+		title: { ...field.string(), default: 'untitled' },
+	},
+	content: plainText(),
+});
+
 /**
  * A table has one door, and a bare literal is not it.
  *
@@ -87,7 +108,9 @@ defineData({
 		theme: { ...field.string(), default: 'light' },
 	},
 	tables: {
-		// @ts-expect-error a default belongs to the application, not the schema
-		items: { scalars: { title: { ...field.string(), default: 'untitled' } } },
+		items: defineTable({
+			scalars: { title: field.string() },
+			content: plainText(),
+		}),
 	},
 });
