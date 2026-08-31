@@ -148,9 +148,9 @@ export type PersistenceController = {
 	/** The public status surface, frozen for the store to expose. */
 	persistence: PersistenceCapability;
 	/**
-	 * What the durable engine has confirmed. The sync sender reads THIS, never
-	 * the live document and never the queue: a local edit is offered to the
-	 * authority only once it is durable (ADR-0238).
+	 * What the durable engine has confirmed. The sync sender combines this with
+	 * its transient in-memory delivery queue; this mirror is still required to
+	 * recover locally persisted work after a restart.
 	 */
 	durableOutbox(): readonly OutboxEntry[];
 	/**
@@ -162,11 +162,6 @@ export type PersistenceController = {
 	 * idempotent.
 	 */
 	durableCursor(): number;
-	/**
-	 * Hear that a flush durably grew the outbox: the moment the transport has
-	 * something it may send.
-	 */
-	onOutboxGrew(listener: () => void): () => void;
 };
 
 export function createPersistenceController({
@@ -192,7 +187,6 @@ export function createPersistenceController({
 	let cursor = loaded.cursor;
 
 	const statusListeners = new Set<() => void>();
-	const outboxGrewListeners = new Set<() => void>();
 	/** Callers awaiting `flush()`, resolved whenever the controller settles. */
 	let settled: (() => void)[] = [];
 
@@ -241,7 +235,6 @@ export function createPersistenceController({
 	 * transport if any of it is now owed to the authority.
 	 */
 	function succeeded(batch: readonly DurableOp[]): void {
-		let outboxGrew = false;
 		for (const op of batch) {
 			switch (op.kind) {
 				case 'append': {
@@ -249,7 +242,6 @@ export function createPersistenceController({
 					// is the same test the port runs against the column.
 					if (op.authoritySeq === undefined) {
 						outbox.push({ id: op.id, bytes: op.bytes });
-						outboxGrew = true;
 					} else if (op.authoritySeq > cursor) {
 						cursor = op.authoritySeq;
 					}
@@ -264,7 +256,6 @@ export function createPersistenceController({
 					break;
 			}
 		}
-		if (outboxGrew) notify(outboxGrewListeners);
 	}
 
 	function failed(batch: readonly DurableOp[], cause: unknown): void {
@@ -352,9 +343,5 @@ export function createPersistenceController({
 		}),
 		durableOutbox: () => outbox,
 		durableCursor: () => cursor,
-		onOutboxGrew(listener: () => void): () => void {
-			outboxGrewListeners.add(listener);
-			return () => outboxGrewListeners.delete(listener);
-		},
 	};
 }

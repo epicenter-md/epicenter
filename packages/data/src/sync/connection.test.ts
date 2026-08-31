@@ -377,7 +377,7 @@ describe('a socket that dies is dialled again from the replica own cursor', () =
 		expect(phone.connection.status().lastReconnect).toBe('closed');
 	});
 
-	test('every dial asks from what this replica has durably applied', () => {
+	test('every dial asks from what this replica has applied', () => {
 		const { wire, clock, phone, laptop } = setup();
 		phone.connection.start();
 		laptop.connection.start();
@@ -395,7 +395,7 @@ describe('a socket that dies is dialled again from the replica own cursor', () =
 		//
 		// Not zero on the second. A reconnect that asked from the start would
 		// work, and would re-download everything on every wobble; it resumes
-		// from the durable cursor instead.
+		// from the applied cursor instead.
 		expect(laptop.dialledFrom).toEqual([0, 1]);
 	});
 

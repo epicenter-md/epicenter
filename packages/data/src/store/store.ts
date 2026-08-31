@@ -94,9 +94,10 @@ const localOrigin = Object.freeze({ kind: 'epicenter-local' });
 /**
  * One `applyRemote` call, carried on the transaction that applies it.
  *
- * Bytes that arrived from a peer are durable but are not local work, so the
+ * Bytes that arrived from a peer are remote work, not local work. The
  * listener must not append them: `applyRemote` persists what it RECEIVED,
- * never what the document emitted in response. The listener parks the
+ * when persistence succeeds, never what the document emitted in response.
+ * The listener parks the
  * transaction here on its way past, and `applyRemote` delivers from it once
  * the append is enqueued, so the notification still lands after acceptance
  * without anything having to be remembered between two calls.
@@ -165,9 +166,9 @@ type SyncEngine = ClientLog & {
 	 * Apply bytes from a peer. Never republished as local work.
 	 *
 	 * The bytes are accepted live immediately; the durable append and the
-	 * `advanceTo` bookmark join the persistence queue as ADJACENT OPS in one
-	 * atomic flush batch, so durable state can never hold a cursor ahead of
-	 * the bytes it accounts for (ADR-0231, carried by ADR-0238).
+	 * `advanceTo` bookmark join the persistence queue as adjacent ops. A failed
+	 * persistence attempt leaves the live document usable and simply causes a
+	 * later reconnect to re-deliver the entry.
 	 *
 	 * The Result's one error is `ApplyFailed`: bytes this document cannot
 	 * decode, which is a property of the bytes and leaves the store usable.
@@ -189,14 +190,12 @@ type SyncEngine = ClientLog & {
 	 */
 	hasUnresolvedDependencies(): boolean;
 	/**
-	 * Hear when this replica has durable authored work the authority has not
-	 * taken.
+	 * Hear when this replica has authored work the authority has not taken.
 	 *
-	 * Fires when a flush durably grows the outbox, and never for bytes that
-	 * arrived from a peer. It exists so that nothing has to remember to say
-	 * so: the transport's idle timer only starts when it is told work was
-	 * made, and a caller that forgets leaves that work sitting in the outbox
-	 * until some unrelated write happens to start the timer.
+	 * Fires when a local update is accepted by the live document, and never for
+	 * bytes that arrived from a peer. The transport may try to deliver that work
+	 * before local persistence succeeds; persistence and delivery are independent
+	 * best-effort paths (ADR-0300).
 	 */
 	onLocalWork(listener: () => void): () => void;
 	/**
@@ -323,12 +322,12 @@ export function createLocalStore<const TDatabase extends DataDefinition>(
 /**
  * Open a store that is one replica of an authority's current document.
  *
- * Every local commit joins the outbox until the authority acknowledges it,
- * and the replica verbs (`sync`, `applyRemote`, `onLocalWork`,
+ * Every local commit enters transient delivery immediately and remains in
+ * the durable outbox when persistence succeeds until the authority
+ * acknowledges it. The replica verbs (`sync`, `applyRemote`, `onLocalWork`,
  * `hasUnresolvedDependencies`) exist. The two constructors share one private
- * engine because the obligation is one ordered queue: authored bytes and
- * their outbox claim are adjacent ops in one atomic flush batch, so durable
- * state can never hold a write locally and unowed (ADR-0238). A wrapper
+ * engine because the durable obligation is one ordered queue: authored bytes
+ * and their outbox claim are adjacent ops in one atomic flush batch. A wrapper
  * subscribing from outside would commit the obligation in a second batch and
  * break exactly that.
  */
@@ -449,6 +448,8 @@ function createStoreEngine(
 	 */
 	const typeListeners = new Map<Y.Type, Set<() => void>>();
 	const localWorkListeners = new Set<() => void>();
+	/** Local work that can be sent before its persistence attempt succeeds. */
+	let localOutbox: { id: number; bytes: Uint8Array }[] = [];
 	const committedListeners = new Set<() => void>();
 
 	/**
@@ -572,11 +573,6 @@ function createStoreEngine(
 		}
 	}
 
-	// The transport's nudge fires when a flush durably grows the outbox, not
-	// when a commit is accepted: the sender reads only the durable outbox, so
-	// nudging earlier would wake it to find nothing sendable (ADR-0238).
-	controller.onOutboxGrew(() => notify(localWorkListeners));
-
 	// Hydrate BEFORE the listener exists, so replaying the record cannot append
 	// what it just read. Ordering rather than an origin to ignore, and the
 	// ordering is backstopped: a replay that reached the listener would carry
@@ -621,11 +617,17 @@ function createStoreEngine(
 			// already holds the change, so what a subscriber would read is true
 			// whatever the durable engine later does with the bytes.
 			try {
+				const id = mintId();
+				const bytes = copyBytes(update);
+				if (replication === 'remote') {
+					localOutbox.push({ id, bytes });
+					notify(localWorkListeners);
+				}
 				controller.enqueue([
 					{
 						kind: 'append',
-						id: mintId(),
-						bytes: copyBytes(update),
+						id,
+						bytes,
 						// What an append this device authored owes the authority:
 						// nothing yet, on either store kind, because neither has a
 						// position for bytes the authority has not seen. On a local
@@ -882,18 +884,25 @@ function createStoreEngine(
 		const handle: ClientLog = {
 			coalesce(): { id: number; bytes: Uint8Array } | undefined {
 				assertUsable();
-				// The DURABLE outbox, and nothing on top of it. A local edit is
-				// offered to the authority only once it is durable (ADR-0238): the
-				// queue's contents are not here, so a blocked flush simply leaves
-				// nothing new to send.
-				//
-				// There is no session overlay of what was acknowledged. While an
-				// `ack` op waits behind a blocked flush its entries are still owed
-				// on disk and go out again, which is redundant upload and nothing
-				// worse: the authority already holds them and an update is
-				// idempotent, so re-delivery is the safe direction. One truth about
-				// what is owed, and it is the one that survives a restart.
-				const entries = controller.durableOutbox();
+				// The durable outbox supplies work from a previous process. The
+				// transient outbox supplies work accepted in this process before its
+				// persistence attempt succeeds. The same update can be in both, so
+				// remove transient entries that have since become durable, then
+				// combine the remaining work by local id.
+				const durableEntries = controller.durableOutbox();
+				const durableIds = new Set(durableEntries.map((entry) => entry.id));
+				localOutbox = localOutbox.filter((entry) => !durableIds.has(entry.id));
+				const entriesById = new Map<
+					number,
+					{ id: number; bytes: Uint8Array }
+				>();
+				for (const entry of durableEntries) {
+					entriesById.set(entry.id, entry);
+				}
+				for (const entry of localOutbox) {
+					entriesById.set(entry.id, entry);
+				}
+				const entries = [...entriesById.values()].sort((a, b) => a.id - b.id);
 				const last = entries.at(-1);
 				if (last === undefined) return undefined;
 				// One document, so one merge (ADR-0295). Every unsent entry belongs
@@ -920,6 +929,7 @@ function createStoreEngine(
 			},
 			acknowledge(throughId: number, authoritySeq: number): void {
 				assertUsable();
+				localOutbox = localOutbox.filter((entry) => entry.id > throughId);
 				// One op for what used to be two. Dropping the outbox and moving
 				// the cursor were the same fact reported twice: these bytes reached
 				// the authority's log, at this position. If it never lands and the
@@ -930,9 +940,10 @@ function createStoreEngine(
 			},
 			cursor(): number {
 				assertUsable();
-				// The DURABLE position, which is the only one there is. It can lag
-				// the document behind a blocked flush, and a reconnect then dials
-				// from behind and re-receives entries this document already holds.
+				// The durable position recovered by the store. The live client may
+				// have a newer in-memory position after delivery, while a blocked
+				// flush leaves this one behind and a restart re-receives entries the
+				// document already holds.
 				// That costs a bounded re-download and changes nothing, because an
 				// update is idempotent.
 				return controller.durableCursor();

@@ -22,7 +22,7 @@
  * ## What this owns
  *
  * - The cursor goes into every dial, read fresh, so a reconnect is always a
- *   catch-up from what this replica durably holds.
+ *   catch-up from what this replica has applied.
  * - Attach on open, feed on message, detach on close.
  * - Reconnect when the socket closes, with backoff.
  * - Reconnect when the client reports `needsResync`, which is the repair for a
@@ -73,7 +73,7 @@ export type SyncAttempt = {
 	 * what makes a reconnect a catch-up rather than a fresh start. At boot
 	 * that is exactly what the durable record recovered; mid-session it may
 	 * run ahead of a blocked durable copy, and a restart then re-fetches from
-	 * the durable cursor, which is safe because an update is idempotent
+	 * the applied cursor, which is safe because an update is idempotent
 	 * (ADR-0238).
 	 */
 	readonly cursor: number;

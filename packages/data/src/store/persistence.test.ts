@@ -1,9 +1,8 @@
 import { field, plainText } from '@epicenter/data/definition';
 /**
- * The optimistic persistence boundary (ADR-0238): acceptance is live and
- * cannot fail for storage reasons; durability is an ordered queue flushed
- * whole; sync sends only what is durable; restart recovers exactly the
- * durable prefix.
+ * The optimistic persistence boundary (ADR-0238, amended by ADR-0300):
+ * acceptance is live, persistence is an ordered best-effort queue, and sync
+ * may attempt accepted work before the durable prefix catches up.
  *
  * These tests reach the SQLite file directly, like `sync.test.ts`, because
  * the properties under test are properties of the durable record's shape.
@@ -297,14 +296,15 @@ describe('acceptance is live, durability is a visible debt', () => {
 	});
 });
 
-describe('sync reads only durable facts', () => {
-	test('coalesce offers nothing while the appends are still in memory', () => {
+describe('sync can use accepted work before persistence settles', () => {
+	test('coalesce offers accepted work while persistence is blocked', () => {
 		const replica = openFailable();
 		replica.gate.failing = true;
 		expectOk(replica.db.tables.notes.create({ title: 'not yet durable' }));
 
-		// The live document holds the edit; the sender must not see it.
-		expect(syncEngineOf(replica.store).coalesce()).toBeUndefined();
+		// The live document and transient delivery queue hold the edit even
+		// though the durable engine refused it.
+		expect(syncEngineOf(replica.store).coalesce()?.id).toBe(1);
 
 		replica.gate.failing = false;
 		expectOk(replica.db.tables.notes.create({ title: 'now everything lands' }));
@@ -313,7 +313,7 @@ describe('sync reads only durable facts', () => {
 		expect(merged?.id).toBe(2);
 	});
 
-	test('onLocalWork fires when the outbox durably grows, not at acceptance', () => {
+	test('onLocalWork fires at acceptance, not after persistence', () => {
 		const replica = openFailable();
 		let nudges = 0;
 		syncEngineOf(replica.store).onLocalWork(() => {
@@ -322,11 +322,27 @@ describe('sync reads only durable facts', () => {
 
 		replica.gate.failing = true;
 		expectOk(replica.db.tables.notes.create({ title: 'accepted' }));
-		expect(nudges).toBe(0);
+		expect(nudges).toBe(1);
 
 		replica.gate.failing = false;
 		expectOk(replica.db.tables.notes.create({ title: 'flushed' }));
-		expect(nudges).toBe(1);
+		expect(nudges).toBe(2);
+	});
+
+	test('an acknowledged in-memory edit need not wait for local storage', () => {
+		const replica = openFailable();
+		replica.gate.failing = true;
+		expectOk(replica.db.tables.notes.create({ title: 'server accepted' }));
+
+		const sent = syncEngineOf(replica.store).coalesce();
+		if (sent === undefined) throw new Error('nothing to send');
+		syncEngineOf(replica.store).acknowledge(sent.id, 1);
+
+		// The authority accepted it even though this process could not save it.
+		// The transient delivery queue can retire it independently; a restart
+		// would recover it from the authority by re-reading from the old cursor.
+		expect(syncEngineOf(replica.store).coalesce()).toBeUndefined();
+		expect(replica.store.persistence.get()).toBe('blocked');
 	});
 
 	test('a remote update is live at once, and its cursor waits for the bytes', async () => {

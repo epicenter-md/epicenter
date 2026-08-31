@@ -381,5 +381,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0296](0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md) | Rich content is a declared field and a table owns its file codec | Superseded by 0299 at the codec's signature; its file layout stands |
 | [0297](0297-the-store-manages-no-timestamps.md) | The store manages no timestamps | Accepted (Unbuilt) |
 | [0299](0299-a-row-is-its-scalars-and-one-content-node.md) | A row is its scalars and one content node | Accepted (supersedes 0296 at the codec's signature; amends 0295) |
+| [0300](0300-accepted-edits-are-live-immediately-and-persistence-and-sync-are-best-effort.md) | Accepted edits are live immediately, and persistence and sync are best-effort | Accepted (amends 0238; relates to 0298 and 0110) |
 
 When you add an ADR, add its row here.
