@@ -90,9 +90,15 @@ export const honeycrispDefinition = defineData({
 			icon: field.nullable(field.string()),
 			// A folder's body, if it ever has one, is text. Nothing writes there
 			// today, so its file is its frontmatter and nothing below the fence.
-			// That is a capability sitting unused rather than a field standing
-			// empty: the day a folder wants a description, writing into
-			// `folder.content` exports, imports, and merges with no change here.
+			//
+			// Declared anyway because structure is mint-time only. A nested node
+			// is integrated in the transaction that mints its row, and lazily on
+			// two devices it loses a subtree, so a row cannot grow one later and
+			// the store offers no verb that would repair one that lacks it. The
+			// day a folder wants a description, writing into `folder.content`
+			// exports, imports, and merges with no change here and no pass over
+			// the folders that already exist. That is what the empty node buys:
+			// not a body today, the right to grow one without a migration.
 			content: plainText(),
 		}),
 		notes: defineTable({
