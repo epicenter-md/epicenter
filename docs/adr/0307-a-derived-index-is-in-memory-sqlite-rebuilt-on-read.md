@@ -48,9 +48,10 @@ function query(sql) {
 
 function rebuild() {
   db = new Sqlite(':memory:');            // the previous one is dropped whole
-  for (const table of definition.tables)
-    for (const row of store.list(table))
+  db.transaction(() => {
+    for (const row of store.tables.notes.rows)
       db.run('INSERT ...', row);
+  });
 }
 ```
 
@@ -82,9 +83,27 @@ moment is always safe.
   sqlite-wasm on the main thread is measured and working
   (`packages/data/evidence/browser/sync-access-handle.ts`).
 - The cost is one full rebuild after a burst of edits, paid by the first reader.
-  This is only acceptable while a rebuild is fast. Measure it before relying on
-  it: if a rebuild at the intended row count exceeds roughly one second, this
-  record is the wrong shape and should be superseded rather than patched.
+  **Measured** (`evidence/bench/index-rebuild.ts`, 28 samples per cell, Apple
+  Silicon, `bun:sqlite`):
+
+  ```txt
+    rows     Y.Doc walk    SQLite insert    total
+    10,000     36-53 ms       10-12 ms       ~60 ms
+    40,000    208-251 ms      45-59 ms      ~270 ms
+  ```
+
+  Linear, and roughly 3.7x under the one-second threshold this record set for
+  itself. **The browser number is an extrapolation, not a measurement:**
+  sqlite-wasm is typically 2 to 4 times slower on inserts, and inserts are only
+  a fifth of the cost, so 40k in a WebView is expected around 400 to 450 ms.
+  The margin there is about 2x rather than 3.7x. A browser bench would settle it.
+- **The walk dominates, and SQLite is not the cost.** `ids()` over the same rows
+  is 13 ms at 40k, so of the ~210 ms walk only about 13 ms is touching the
+  document; the rest is `conformRow` validation and materializing a row object
+  and a live content handle per row. If a rebuild ever has to be faster, the
+  lever is a validation-skipping bulk read on the store, never a faster INSERT.
+- A working vault carries tombstones from lifetime deletions that a freshly
+  built corpus does not, which would push the walk up by some unmeasured amount.
 - Promotion into `@epicenter/data` requires evidence, meaning three applications
   that grew the same index, not one that might.
 - ADR-0226's withdrawal stands where it was made: no host-side reader sees an
