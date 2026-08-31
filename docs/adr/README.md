@@ -380,7 +380,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) | A database is one Yjs document and a row holds its rich content | Accepted (Unbuilt) |
 | [0296](0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md) | Rich content is a declared field and a table owns its file codec | Superseded by 0299 at the codec's signature; its file layout stands |
 | [0297](0297-the-store-manages-no-timestamps.md) | The store manages no timestamps | Accepted (Unbuilt) |
-| [0299](0299-a-row-is-its-scalars-and-one-content-node.md) | A row is its scalars and one content node | Accepted (supersedes 0296 at the codec's signature; amends 0295) |
+| [0299](0299-a-row-is-its-scalars-and-one-content-node.md) | A row is its scalars and one content node | Superseded by 0309 at its vocabulary; the shape it decided stands |
 | [0300](0300-accepted-edits-are-live-immediately-and-persistence-and-sync-are-best-effort.md) | Accepted edits are live immediately, and persistence and sync are best-effort | Accepted (amends 0238; amended by 0302 at the transient delivery queue; relates to 0298 and 0110) |
 | [0301](0301-owed-updates-collapse-into-one-resendable-row-and-the-fold-stops-asking-whether-a-store-syncs.md) | Owed updates collapse into one resendable row, and the fold stops asking whether a store syncs | Accepted (amends 0239 and 0298) |
 | [0302](0302-a-local-edit-is-offered-to-the-authority-once-it-is-durable.md) | A local edit is offered to the authority once it is durable | Accepted (amends 0300 at the transient delivery queue, which is withdrawn) |
@@ -390,5 +390,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0306](0306-borrowed-data-is-disposable-and-a-persons-own-data-is-not.md) | Borrowed data is disposable and a person's own data is not | Accepted |
 | [0307](0307-a-derived-index-is-in-memory-sqlite-rebuilt-on-read.md) | A derived index is in-memory SQLite, rebuilt on read | Accepted (unbuilt; amends 0303 at the projection and withdraws the `SyncSqliteDatabase` rename) |
 | [0308](0308-an-application-opens-its-own-sqlite-inside-its-own-worker-and-the-handle-is-synchronous.md) | An application opens its own SQLite inside its own worker, and the handle is synchronous | Accepted (unbuilt; amends 0303 at `AppSqliteDatabase` and 0304 at its ADR-0275 citation) |
+| [0309](0309-a-field-holds-a-value-or-a-node-and-the-retired-words-fail-the-build.md) | A field holds a value or a node, and the retired words fail the build | Accepted (supersedes 0299 at its vocabulary; check unbuilt) |
 
 When you add an ADR, add its row here.

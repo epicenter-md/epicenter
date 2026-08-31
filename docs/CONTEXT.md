@@ -103,7 +103,7 @@ shapes, see `docs/adr/`.
   chat brain) streams tokens from an OpenAI-compatible endpoint (ADR-0050),
   over the inference seam. _Store sync_ carries one application's whole
   document through its authority as opaque bytes, over one socket, and covers
-  prose and rows alike; there is no separate document plane and no awareness or
+  nodes and rows alike; there is no separate document plane and no awareness or
   presence. _Invoke_ (the agent's hands) is local to the host that owns the tool process, unless a future product
   re-earns a direct URL-addressed box surface.
 - **Infisical project**: the owner and access-control boundary. Each secret-using
@@ -143,7 +143,7 @@ shapes, see `docs/adr/`.
 - **Database document**: the one Yjs document a database is (ADR-0295),
   persisted under the log name `app`. Its top-level roots are the bare named
   root `kv` and one `tables:<name>` root per declared table (ADR-0257). A row is
-  nested under its table, and a row's rich content is nested under the row.
+  nested under its table, and a row's node is nested under the row.
   There is no second document and no address that reaches one.
 - **Table root**: the `tables:<name>` root holding one table's rows. Every
   top-level root says what kind of thing it is, so a table genuinely named `kv`
@@ -151,9 +151,14 @@ shapes, see `docs/adr/`.
 - **Row**: a nested `Y.Type` held as an attribute on its table root. Holding it
   is what existing means, and there is no second fact that can disagree. Its id
   is minted and never reused.
-- **Field**: one attribute on a row type. A scalar field holds one JSON value;
-  the content node holds a nested `Y.Type`. Two devices editing different
-  fields both keep their edit; one scalar field is last-write-wins.
+- **Field**: one attribute on a row type. It holds either a **value** or a
+  **node**, and that is the only division worth naming (ADR-0309). A value is
+  replaced whole on write, so two devices writing one converge on a winner. A
+  node is edited in place, so two devices editing one both keep every
+  keystroke. Two devices editing different fields both keep their edit either
+  way. `scalar` and `prose` are retired names for these two: a `tags` array is
+  a value though it is not scalar, and a node holds whatever its table's codec
+  says, which is often not prose.
 - **Whole-value replacement**: an array or object field is one value, so a
   concurrent write replaces all of it and one addition is lost (ADR-0228). This
   is chosen, not missing. A collection several devices append to concurrently
@@ -169,7 +174,7 @@ shapes, see `docs/adr/`.
 - **Content codec**: the `content: { encode, decode }` every table declares
   (ADR-0299). `encode` takes the node and returns the text below the fence;
   `decode` takes that text and returns a fresh node. The platform owns the
-  file, writing the scalars as frontmatter under their own field names, so no
+  file, writing the values as frontmatter under their own field names, so no
   row shape ever reaches a codec author. There is no default: a node carries a
   sequence and attributes at once, so rendering one as text round-trips a keyed
   log into one literal string that prints identically. `plainText()` is a codec

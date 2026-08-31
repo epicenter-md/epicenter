@@ -1,6 +1,7 @@
 # 0299. A row is its scalars and one content node
 
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [ADR-0309](0309-a-field-holds-a-value-or-a-node-and-the-retired-words-fail-the-build.md). The shape decided here is unchanged and is restated there in the settled vocabulary: a row is its `id`, its values, and one node at `content`. Withdrawn: the words `scalars` and `prose` for the two kinds of field, including this record's own title.
 - **Date:** 2026-08-30
 - **Supersedes:** [ADR-0296](0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md) at the codec's signature and at how rich content is declared. Its content rules are retained: one `<table>/<rowId>.md` per row, scalars as frontmatter, codec output as the body, `kv.json` beside them.
 - **Amends:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) by fixing the count at one.
