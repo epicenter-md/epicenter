@@ -11,7 +11,7 @@ import { field } from '@epicenter/data/definition';
  * (ADR-0268).
  */
 
-import type { DataView } from '@epicenter/data';
+import type { DataView, PersistenceCapability } from '@epicenter/data';
 import {
 	type ContentCodec,
 	defineData,
@@ -120,8 +120,22 @@ export const honeycrispDefinition = defineData({
 	},
 });
 
-/** The typed view of one opened Honeycrisp data handle. */
-export type HoneycrispData = DataView<typeof honeycrispDefinition>;
+/**
+ * The typed view of one opened Honeycrisp data handle, plus its durability.
+ *
+ * The view and exactly one document capability, rather than the whole opened
+ * document. `persistence` is here because the application RENDERS it: whether
+ * this device is still keeping a copy is a fact a person is shown, so it
+ * belongs to the state layer beside the rows.
+ *
+ * Everything else on the document stays with the route that opened it. Sync
+ * attachment, `onCommitted`, and disposal are lifecycle, and widening this to
+ * the full handle would hand every component a `Symbol.asyncDispose` it must
+ * not call.
+ */
+export type HoneycrispData = DataView<typeof honeycrispDefinition> & {
+	readonly persistence: PersistenceCapability;
+};
 
 export type Folder = RowOf<typeof honeycrispDefinition.tables.folders>;
 export type Note = RowOf<typeof honeycrispDefinition.tables.notes>;

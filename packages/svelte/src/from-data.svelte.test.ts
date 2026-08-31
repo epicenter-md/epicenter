@@ -3,6 +3,14 @@ import { expect, mock, test } from 'bun:test';
 type SubscriberControl = {
 	activate(): void;
 	deactivate(): void;
+	/**
+	 * How many times a read announced itself to this subscriber.
+	 *
+	 * Without it the harness cannot see tracking at all: `activate` drives the
+	 * subscription directly, so a getter that forgot to call its subscriber
+	 * still looks correct. This counts the call the getter is supposed to make.
+	 */
+	tracked: number;
 };
 
 const subscriberControls: SubscriberControl[] = [];
@@ -25,12 +33,16 @@ mock.module('svelte/reactivity', () => ({
 				stop?.();
 				stop = undefined;
 			},
+			tracked: 0,
 		};
 		subscriberControls.push(control);
 		// These tests read getters imperatively, outside a Svelte effect. The
 		// real createSubscriber is also a no-op for those reads; tests activate
-		// the simulated effect explicitly through this control.
-		return () => {};
+		// the simulated effect explicitly through this control. Counting the
+		// call is what makes a MISSING one visible.
+		return () => {
+			control.tracked += 1;
+		};
 	},
 }));
 
@@ -115,6 +127,37 @@ function createFakeKv<TValues>(initial: TValues) {
 	};
 }
 
+/**
+ * A stand-in for the store's persistence capability: the change-deduped
+ * status feed, with a counter so a test can see that a read paid for one
+ * `get` and not a subscription.
+ */
+function createFakePersistence(initial: 'saved' | 'pending' | 'blocked') {
+	let status = initial;
+	const listeners = new Set<() => void>();
+	const calls = { get: 0, subscribe: 0 };
+	return {
+		calls,
+		set(next: typeof status) {
+			if (next === status) return;
+			status = next;
+			for (const listener of listeners) listener();
+		},
+		handle: {
+			get() {
+				calls.get += 1;
+				return status;
+			},
+			subscribe(listener: () => void) {
+				calls.subscribe += 1;
+				listeners.add(listener);
+				return () => listeners.delete(listener);
+			},
+			flush: async () => undefined,
+		},
+	};
+}
+
 type Note = { id: string; title: string };
 type Folder = { id: string; name: string };
 
@@ -123,18 +166,35 @@ function setup() {
 	const notes = createFakeTable<Note>([{ id: 'n1', title: 'first' }]);
 	const folders = createFakeTable<Folder>([]);
 	const kv = createFakeKv({ theme: 'dark' });
+	const persistence = createFakePersistence('saved');
 	const reactive = fromData({
 		tables: { notes: notes.handle, folders: folders.handle },
 		kv: kv.handle,
 		// Passed through untouched, so the fake just runs it.
 		transact: <TResult,>(run: () => TResult) => run(),
 		watch: () => () => undefined,
+		persistence: persistence.handle,
 	});
-	// One subscriber per table plus one for kv, created in declaration order.
-	const [notesControl, foldersControl] = subscriberControls;
-	if (notesControl === undefined || foldersControl === undefined)
-		throw new Error('expected one subscriber control per table');
-	return { notes, folders, kv, reactive, notesControl, foldersControl };
+	// One subscriber per table, one for kv, one for persistence, created in
+	// declaration order.
+	const [notesControl, foldersControl, , persistenceControl] =
+		subscriberControls;
+	if (
+		notesControl === undefined ||
+		foldersControl === undefined ||
+		persistenceControl === undefined
+	)
+		throw new Error('expected one subscriber control per tracked read');
+	return {
+		notes,
+		folders,
+		kv,
+		persistence,
+		reactive,
+		notesControl,
+		foldersControl,
+		persistenceControl,
+	};
 }
 
 test('mirrors the declared table names and preserves their row types', () => {
@@ -211,4 +271,36 @@ test('kv get passes through and reflects writes', () => {
 	expect(reactive.kv.get('theme')).toBe('light');
 	reactive.kv.update({ theme: 'dark' });
 	expect(reactive.kv.get('theme')).toBe('dark');
+});
+
+test('persistence status reads through, and tracks only once something reads it', () => {
+	const { reactive, persistence, persistenceControl } = setup();
+
+	// Wrapping subscribes to nothing and reads nothing, the same law the
+	// tables hold: a store nobody renders the status of costs no subscription.
+	expect(persistence.calls.get).toBe(0);
+	expect(persistence.calls.subscribe).toBe(0);
+
+	expect(reactive.persistence.get()).toBe('saved');
+	expect(persistence.calls.get).toBe(1);
+
+	// A simulated effect reading it attaches the store subscription; the value
+	// is read through afterwards rather than served from a snapshot.
+	persistenceControl.activate();
+	expect(persistence.calls.subscribe).toBe(1);
+	persistence.set('blocked');
+	expect(reactive.persistence.get()).toBe('blocked');
+	expect(persistence.calls.get).toBe(2);
+
+	// The read ANNOUNCED itself both times. This is the assertion that fails if
+	// the getter stops calling its subscriber, which is the whole of what this
+	// wrapper adds: without it the value is still correct and never re-renders.
+	expect(persistenceControl.tracked).toBe(2);
+});
+
+test('flush passes through untouched', async () => {
+	const { reactive } = setup();
+	// Not a read, so the adapter has no business wrapping it: the capability's
+	// own function is the one that must be reachable.
+	await expect(reactive.persistence.flush()).resolves.toBeUndefined();
 });

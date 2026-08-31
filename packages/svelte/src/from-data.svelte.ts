@@ -2,10 +2,10 @@
  * A Svelte 5 reactivity adapter over one opened data handle's declared shape.
  *
  * `fromData(data)` mirrors the declaration exactly: `tables.<name>` and
- * `kv`, with the names and row types the definition declares. It earns its
- * existence by adding reactivity, not by renaming anything, and the rule is
- * one sentence: every read verb tracks the table's invalidation signal, and
- * every write verb passes through unchanged.
+ * `kv`, with the names and row types the definition declares, plus
+ * `persistence`. It earns its existence by adding reactivity, not by renaming
+ * anything, and the rule is one sentence: every read verb tracks its own
+ * invalidation signal, and every write verb passes through unchanged.
  *
  * Reads track. `rows`, `nonconforming`, and `get()` read
  * through a `createSubscriber` per table, so a read inside `$derived` or an
@@ -91,11 +91,39 @@ type AdaptableKv = {
 	subscribe(listener: () => void): () => void;
 };
 
-/** What `fromData` needs from opened data: the declared view, no store. */
+/**
+ * The persistence status feed: a read and the signal that invalidates it.
+ *
+ * Structural like the rest, and a SLICE: `flush()` is not named here because
+ * this adapter does not touch it, and `ReactiveData` hands back the caller's
+ * own type, so it survives.
+ */
+type AdaptablePersistence = {
+	get(): unknown;
+	subscribe(listener: () => void): () => void;
+};
+
+/**
+ * What `fromData` needs from opened data: the declared view, plus the one
+ * store capability that is shaped like one.
+ *
+ * `persistence` is the single thing here that is not the declaration. It earns
+ * the exception the same way tables and kv do: a `get()` and a `subscribe()`
+ * that already dedupes by value, reporting local state about this document.
+ * Every application that renders it would otherwise hand-roll the identical
+ * `$state.raw` plus `$effect`, which is the definition of a missing adapter
+ * property rather than a pattern to teach.
+ *
+ * The boundary that stays is the one about MEANING, not about ownership: sync
+ * is a fact about a socket somewhere else, and its status is a pull-only
+ * getter that a consumer has to poll, so this adapter cannot hold it honestly
+ * and does not pretend to.
+ */
 type AdaptableData = {
 	tables: Record<string, AdaptableTable>;
 	kv: AdaptableKv;
 	transact<TResult>(run: () => TResult): TResult;
+	persistence: AdaptablePersistence;
 };
 
 /**
@@ -126,6 +154,15 @@ export type ReactiveData<TData extends AdaptableData> = {
 	 * subscriptions a single write does, once instead of once per write.
 	 */
 	transact: TData['transact'];
+	/**
+	 * The same capability, with `get()` reactive. `flush()` and `subscribe()`
+	 * pass through.
+	 *
+	 * Read it and render the answer; do not mirror it. The store is already the
+	 * one place this fact lives, and a second copy in application state is the
+	 * shape that has to be kept in step with the first.
+	 */
+	readonly persistence: TData['persistence'];
 };
 
 /** Adapt one opened data handle's `tables` and `kv` into Svelte reactivity. */
@@ -143,7 +180,41 @@ export function fromData<TData extends AdaptableData>(
 		),
 		kv: reactiveKv(data.kv),
 		transact: data.transact,
+		persistence: reactivePersistence(data.persistence),
 	}) as ReactiveData<TData>;
+}
+
+/**
+ * One persistence capability, `get()` reactive.
+ *
+ * The store notifies only on a CHANGE (`persistence.ts` compares against the
+ * last status before telling anyone), so a thousand failed flushes in a row
+ * wake a reader once. That is what makes rendering the status directly
+ * cheaper than reacting to it: there is no event stream to debounce, only a
+ * value to display.
+ */
+function reactivePersistence<TPersistence extends AdaptablePersistence>(
+	persistence: TPersistence,
+): TPersistence {
+	const subscribe = createSubscriber((update) => persistence.subscribe(update));
+	// Descriptors for the same reason a table needs them, and it is not
+	// hypothetical here either: a capability may carry getters, and a spread
+	// would invoke them at wrap time.
+	return Object.freeze(
+		Object.defineProperties(
+			{},
+			{
+				...Object.getOwnPropertyDescriptors(persistence),
+				get: {
+					enumerable: true,
+					value: () => {
+						subscribe();
+						return persistence.get();
+					},
+				},
+			},
+		),
+	) as TPersistence;
 }
 
 function reactiveTable<TTable extends AdaptableTable>(
