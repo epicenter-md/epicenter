@@ -42,6 +42,33 @@ screen, which nobody has instrumented.
 
 **A table is HELD. Everything cheaper to rebuild than to hold is read through.**
 
+```txt
+ ┌─ THE TRUTH ─ one Y.Doc, per opened database ───────────────────┐
+ │                                                                 │
+ │   tables:notes   → n1 ⟨title⟩⟨pinned⟩⟨content ▓▓▓ a node⟩        │
+ │                    n2 ⟨title⟩⟨pinned⟩⟨content ▓▓▓⟩               │
+ │   tables:folders → f1 ⟨name⟩                                    │
+ │   kv             → ⟨theme⟩⟨fontSize⟩                            │
+ └─────────────────────────────────────────────────────────────────┘
+        │                │                │              │
+        ▼                ▼                ▼              ▼
+ ┌───────────┐   ┌───────────┐   ┌─────────────┐  ┌─────────────┐
+ │ SvelteMap │   │ SvelteMap │   │     kv      │  │ persistence │
+ │   notes   │   │  folders  │   │   NO MAP    │  │   NO MAP    │
+ │           │   │           │   │             │  │             │
+ │ n1 → {…}  │   │ f1 → {…}  │   │ get(key) =  │  │ get() =     │
+ │ n2 → {…}  │   │           │   │  ONE attr   │  │  one enum   │
+ │           │   │           │   │  + ONE check│  │  from a     │
+ │ own seed  │   │ own seed  │   │             │  │  closure    │
+ │ own sub   │   │ own sub   │   │ create-     │  │ create-     │
+ │           │   │           │   │ Subscriber  │  │ Subscriber  │
+ └───────────┘   └───────────┘   └─────────────┘  └─────────────┘
+        │                │                │              │
+        └────────────────┴────────────────┴──────────────┘
+                              ▼
+                the screen reads all of it synchronously
+```
+
 One rule decides every surface, and it says no more often than yes:
 
 | surface | cost to answer a read | held? |
@@ -71,6 +98,45 @@ become free; the object stays alive, the updates stop, and the next reader is
 served rows from before it looked away. Stale is worse than absent, so it dies
 with the document it mirrors and with nothing else.
 
+```ts
+function reactiveTable(table) {
+  const rows = new SvelteMap();
+  for (const id of table.ids()) {          // SEED, once, eagerly
+    const row = table.get(id);
+    if (row !== undefined) rows.set(id, row);
+  }
+
+  table.subscribe((rowIds) => {            // PATCH, forever
+    for (const id of rowIds) {
+      const row = table.get(id);
+      row === undefined ? rows.delete(id) : rows.set(id, row);
+    }
+  });
+
+  return {
+    ...table,                              // create / update / delete / watch
+    get rows() { return [...rows.values()]; },  // iterate → tracks every key
+    get(id)   { return rows.get(id); },         // one key → tracks that key
+  };
+}
+```
+
+Nothing here calls `createSubscriber`. The map is the signal.
+
+A keystroke, end to end:
+
+```txt
+  type one character into n1's content node
+     │
+     ├─▶ 🔔 the node's own signal      the editor and the preview update.
+     │                                 no map is touched. kv is not touched.
+     │
+     └─▶ the app writes { title, updatedAt } back to n1
+              └─▶ 🔔 the notes table, naming ["n1"]
+                       └─▶ get("n1") → build → rows.set("n1", {…})   2 µs
+                           n2 untouched · folders untouched · kv untouched
+```
+
 **`kv` and `persistence` keep `createSubscriber` and hold nothing.** Ten keys
 and one enum are the rule saying no, not an exception to it.
 
@@ -86,11 +152,19 @@ and one enum are the rule saying no, not an exception to it.
 - The projection can be wrong in exactly one way: a missed eviction serves a
   stale row. `packages/svelte/src/from-data.svelte.test.ts` fails on it when
   the patch is removed, which is the only reason this is safe to hold.
-- Reads must happen inside a reactive context. `const v = app.kv.get('theme')`
-  at component init is a snapshot forever, because `createSubscriber` is a
-  no-op outside effect tracking. This is ordinary Svelte 5 semantics and it
-  applies to `$state` identically, but the compiler cannot warn through a
-  getter, so the failure is a correct value that never updates.
+- Reads must happen inside a reactive context. `createSubscriber` is a no-op
+  outside effect tracking (`if (effect_tracking())` guards its whole body), so
+  what must be inside the context is the CALL, not the value:
+
+  ```svelte
+  const v = app.kv.get('theme');             ❌ frozen at init, forever
+  {app.kv.get('theme')}                      ✅ the call is in the render effect
+  const v = $derived(app.kv.get('theme'));   ✅ $derived re-runs the call
+  ```
+
+  The same is true of `app.tables.notes.rows`, and of `$state`. The compiler
+  cannot warn through a getter, so the failure is a correct value that never
+  updates: no error, no wrong pixel, until something changes and nothing moves.
 - `kv.get(key)` was changed to read one attribute and check one field rather
   than conform the whole object. That is what makes the rule above a size
   argument rather than a kind argument: after it, both surfaces cost exactly
