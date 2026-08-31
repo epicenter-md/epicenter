@@ -173,6 +173,25 @@ export function createPersistedMap<
 		map.set(key, readKey(key));
 	}
 
+	/**
+	 * Keys whose last write to storage did not land.
+	 *
+	 * `set` accepts into memory whether or not storage takes it, because a
+	 * person's edit is not storage's to veto. That leaves this map ahead of
+	 * localStorage, which is fine and intended, and it is only safe while
+	 * nothing reads storage back over the top of it.
+	 *
+	 * Something did. The `focus` listener re-reads every key, so a refused
+	 * write used to disappear on the next tab switch: typed, accepted,
+	 * rendered, and then silently replaced by the older value still on disk,
+	 * with no error and no trace. That is the one outcome this whole shape
+	 * exists to avoid.
+	 *
+	 * This is the only record that a write failed. Nothing else knows, so it
+	 * is not a copy of anything and cannot fall out of step with anything.
+	 */
+	const unwritten = new Set<string>();
+
 	// Cross-tab sync: ONE listener for all keys, filtered by prefix.
 	// Listeners are never removed: this function assumes singleton/module-scope usage.
 	// localStorage is hardcoded (not a `storage` option) because this `storage`
@@ -182,12 +201,20 @@ export function createPersistedMap<
 		if (!e.key?.startsWith(prefix)) return;
 		const key = e.key.slice(prefix.length);
 		if (!isDefinitionKey(key)) return;
+		// A `storage` event is another tab deliberately writing, which is new
+		// information and supersedes whatever this tab could not save. Ordinary
+		// last-writer-wins, and the same rule as if our write had landed first.
+		unwritten.delete(key);
 		map.set(key, parseRawValue(key, e.newValue));
 	});
 
 	// Same-tab sync: ONE listener for all keys.
 	window.addEventListener('focus', () => {
 		for (const key of definitionKeys) {
+			// A re-read carries no news. It is the same bytes this tab already
+			// declined to overwrite, so letting it win would discard a person's
+			// edit to restore a value nobody chose.
+			if (unwritten.has(key)) continue;
 			map.set(key, readKey(key));
 		}
 	});
@@ -204,7 +231,12 @@ export function createPersistedMap<
 		) {
 			try {
 				window.localStorage.setItem(storageKey(key), JSON.stringify(value));
+				unwritten.delete(key);
 			} catch (error) {
+				// Reported, never thrown, and never a reason to refuse the edit.
+				// What changes is that this key is now known to be ahead of
+				// storage, so nothing may read storage back over it.
+				unwritten.add(key);
 				onUpdateError?.(key, error);
 			}
 			map.set(key, value);
