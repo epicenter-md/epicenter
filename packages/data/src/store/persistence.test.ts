@@ -76,7 +76,7 @@ function expectOk<TValue, TError>(
 function openFailable() {
 	const raw = new Database(':memory:');
 	const sqlite = createBunSqliteAdapter(raw);
-	const inner = createSqliteDurablePort({ sqlite, syncs: true });
+	const inner = createSqliteDurablePort({ sqlite });
 	const gate = { failing: false };
 	/** Every batch the engine accepted, for tests that pin op ordering. */
 	const batches: DurableOp[][] = [];
@@ -116,7 +116,7 @@ function openFailable() {
 
 /** Reopen over the same durable sqlite: the restart. */
 function reopen(sqlite: ReturnType<typeof createBunSqliteAdapter>) {
-	const port = createSqliteDurablePort({ sqlite, syncs: true });
+	const port = createSqliteDurablePort({ sqlite });
 	const { store, view } = createAccountStoreOverPort({
 		definition: parsed(),
 		durable: port,
@@ -245,7 +245,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 		// store never waits for it. Reads follow acceptance.
 		const raw = new Database(':memory:');
 		const sqlite = createBunSqliteAdapter(raw);
-		const inner = createSqliteDurablePort({ sqlite, syncs: true });
+		const inner = createSqliteDurablePort({ sqlite });
 		const release: (() => void)[] = [];
 		const { store, view } = createAccountStoreOverPort({
 			definition: parsed(),
@@ -293,6 +293,52 @@ describe('acceptance is live, durability is a visible debt', () => {
 		).toEqual([1, 2, 3]);
 		const restarted = reopen(sqlite);
 		expect(titles(restarted.db)).toEqual(['a', 'b', 'c']);
+	});
+});
+
+describe('owed work collapses so an offline chain stays bounded (ADR-0301)', () => {
+	test('owed appends past the threshold merge into one row', () => {
+		const replica = openFailable();
+		// A device with no connection: nothing is ever coalesced, so nothing is
+		// ever acknowledged, and under the old rule every one of these rows was
+		// unfoldable forever.
+		for (let i = 0; i < 80; i += 1) {
+			expectOk(replica.db.tables.notes.create({ title: `note ${i}` }));
+		}
+
+		// Far fewer rows than edits, and every one of them still owed: a merge
+		// changes what carries the bytes, never whether the authority has them.
+		const owed = replica.durableOutboxIds();
+		expect(owed.length).toBeLessThan(80);
+		expect(replica.durableCursor()).toBe(0);
+
+		// And the document is intact across a restart, which is the only thing
+		// the merge is allowed to preserve.
+		const restarted = reopen(replica.sqlite);
+		expect(restarted.db.tables.notes.rows.length).toBe(80);
+	});
+
+	test('work already handed to the sender is not replaced under it', () => {
+		const replica = openFailable();
+		for (let i = 0; i < 10; i += 1) {
+			expectOk(replica.db.tables.notes.create({ title: `early ${i}` }));
+		}
+		// The sender takes what exists. Everything at or below this id is now
+		// named by a submission that may still be in flight.
+		const sent = syncEngineOf(replica.store).coalesce();
+		if (sent === undefined) throw new Error('nothing to send');
+
+		for (let i = 0; i < 80; i += 1) {
+			expectOk(replica.db.tables.notes.create({ title: `later ${i}` }));
+		}
+
+		// The rows the sender was handed are untouched, so the acknowledgement
+		// it is waiting on can still name them.
+		const owed = replica.durableOutboxIds();
+		expect(owed.filter((id) => id <= sent.id).length).toBe(10);
+		syncEngineOf(replica.store).acknowledge(sent.id, 7);
+		expect(replica.durableCursor()).toBe(7);
+		expect(replica.durableOutboxIds().every((id) => id > sent.id)).toBe(true);
 	});
 });
 

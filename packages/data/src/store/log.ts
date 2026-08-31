@@ -87,14 +87,10 @@ export const NO_AUTHORITY = 0;
  * is a property of an append rather than a copy of one, and the same bytes
  * stop being written twice on every local edit.
  */
-export function readOutbox(
-	sqlite: SqliteDatabase,
-	syncs: boolean,
-): OutboxEntry[] {
-	// A store with no authority owes nobody. Its appends carry no position
-	// because none exists, which would otherwise read as owed, and nothing
-	// would ever read the result: there is no sender.
-	if (!syncs) return [];
+export function readOutbox(sqlite: SqliteDatabase): OutboxEntry[] {
+	// A store with no authority owes nobody, and it says so in the column
+	// rather than in a constructor argument: its own appends record
+	// `NO_AUTHORITY`, so NULL means owed on every store kind (ADR-0301).
 	return sqlite
 		.all<SqliteRow & { id: number; bytes: Uint8Array }>(
 			'SELECT id, bytes FROM _updates WHERE authoritySeq IS NULL ORDER BY id',
@@ -176,32 +172,23 @@ export function replay(updates: readonly StoredUpdate[]): Y.Doc {
 }
 
 /**
- * Append one update, and collapse the chain when it has grown long enough.
+ * How many rows a fold would collapse, asked without reading one of them.
  *
- * Runs inside a transaction the caller owns, so everything the caller writes
- * alongside it commits or fails with these bytes. Collapse replaces the whole
- * chain with one baseline that carries the same state, so what it deletes is
- * superseded rather than lost.
+ * The distinction this exists to make is the whole cost of the fold's gate.
+ * `foldable` below selects `bytes`, and the row it always selects is the
+ * BASELINE, which is the whole document. Asking "is the chain long enough
+ * yet?" with that list in hand read a document-sized blob for every append
+ * that was not the sixty-fourth, which is to say for almost every append. A
+ * count answers the same question and touches no blob, so the gate stops
+ * scaling with the document and the threshold stops being a number you cannot
+ * afford to raise.
  */
-export function appendUpdate({
-	sqlite,
-	id,
-	update,
-	authoritySeq,
-	syncs,
-}: {
-	sqlite: SqliteDatabase;
-	id: number;
-	update: Uint8Array;
-	authoritySeq: number | undefined;
-	/** Whether owed appends have to stay individually addressable. */
-	syncs: boolean;
-}): void {
-	sqlite.run(
-		'INSERT INTO _updates (id, bytes, authoritySeq) VALUES (?, ?, ?)',
-		[id, new Uint8Array(update), authoritySeq ?? null],
+function foldableCount(sqlite: SqliteDatabase): number {
+	return (
+		sqlite.all<SqliteRow & { rows: number }>(
+			'SELECT COUNT(*) AS rows FROM _updates WHERE authoritySeq IS NOT NULL',
+		)[0]?.rows ?? 0
 	);
-	fold(sqlite, syncs);
 }
 
 /**
@@ -213,47 +200,40 @@ export function appendUpdate({
  * Ids are stable now, so what it collapses is a question of what still has to
  * be addressable.
  *
- * A store that SYNCS folds only the acknowledged prefix. Owed appends stay
- * exactly where they are, because the sender offers them individually and an
- * acknowledgement names them by id. That works because an ack covers
- * `id <= throughId` and every later append takes a higher id, so what the
- * authority holds is always a prefix and what is owed is always a suffix.
+ * What it collapses is a question about the ROW, not about the store
+ * (ADR-0301). An acknowledged row can be replaced by a whole-document
+ * re-encode, which is the strongest compaction available and the only one that
+ * realizes `gc: true`. An owed row cannot: the authority has not seen those
+ * bytes, and a whole document is not a delta it could be offered. Owed rows
+ * collapse by merging instead, which `mergeOwed` does.
  *
- * A store that does not sync folds everything, because nothing reads its owed
- * work: there is no sender to offer it to. Whether a store syncs is a static
- * fact known when it opens (ADR-0239, "a store's kind is its sync value"), so
- * it is a constructor argument rather than a value repeated into every row.
- * It used to be the latter, as a `0` sentinel on the column, which cost every
- * local append a redundant constant and made `authoritySeq` three-valued in a
- * way that would have collided the day a log position started at zero.
+ * The store's kind used to be the question, as a constructor argument
+ * (ADR-0239). It stopped being one when a local store started recording
+ * `NO_AUTHORITY` on its own appends: a store with no authority then holds no
+ * owed rows at all, so it folds everything here without being told to, and
+ * NULL means owed and nothing else.
  */
-function fold(sqlite: SqliteDatabase, syncs: boolean): void {
-	const foldable = syncs
-		? sqlite.all<StoredUpdate>(
-				'SELECT id AS seq, bytes FROM _updates WHERE authoritySeq IS NOT NULL ORDER BY id',
-			)
-		: readUpdates(sqlite);
-	if (foldable.length < SNAPSHOT_FOLD_THRESHOLD) return;
+function fold(sqlite: SqliteDatabase): void {
+	if (foldableCount(sqlite) < SNAPSHOT_FOLD_THRESHOLD) return;
+	const foldable = sqlite.all<StoredUpdate>(
+		'SELECT id AS seq, bytes FROM _updates WHERE authoritySeq IS NOT NULL ORDER BY id',
+	);
 
 	const through = foldable.at(-1)?.seq;
 	if (through === undefined) return;
 	// Read before the delete, because the rows carrying it are the rows about
-	// to go. The baseline inherits the highest position it replaced, so on a
-	// syncing store it is not owed and is never offered back; on a store that
-	// does not sync there is no position and none is invented.
-	const position = syncs
-		? (sqlite.all<SqliteRow & { seq: number | null }>(
-				'SELECT MAX(authoritySeq) AS seq FROM _updates',
-			)[0]?.seq ?? null)
-		: NO_AUTHORITY;
+	// to go. The baseline inherits the highest position it replaced, so it is
+	// never owed and never offered back. On a store with no authority every
+	// row already carries `NO_AUTHORITY`, so the maximum IS `NO_AUTHORITY` and
+	// nothing has to special-case it.
+	const position =
+		sqlite.all<SqliteRow & { seq: number | null }>(
+			'SELECT MAX(authoritySeq) AS seq FROM _updates',
+		)[0]?.seq ?? NO_AUTHORITY;
 	const compacted = replay(foldable);
 	try {
 		const baseline = new Uint8Array(Y.encodeStateAsUpdateV2(compacted));
-		sqlite.run(
-			syncs
-				? 'DELETE FROM _updates WHERE authoritySeq IS NOT NULL'
-				: 'DELETE FROM _updates',
-		);
+		sqlite.run('DELETE FROM _updates WHERE authoritySeq IS NOT NULL');
 		sqlite.run(
 			'INSERT INTO _updates (id, bytes, authoritySeq) VALUES (?, ?, ?)',
 			[through, baseline, position],
@@ -269,13 +249,10 @@ function fold(sqlite: SqliteDatabase, syncs: boolean): void {
  * The store hydrates its one document from `updates`, seeds its durable mirror
  * from the rest, and never reads this file again outside a flush (ADR-0238).
  */
-export function loadDurableSnapshot(
-	sqlite: SqliteDatabase,
-	syncs: boolean,
-): DurableSnapshot {
+export function loadDurableSnapshot(sqlite: SqliteDatabase): DurableSnapshot {
 	return {
 		updates: readUpdates(sqlite).map((stored) => copyBytes(stored.bytes)),
-		outbox: readOutbox(sqlite, syncs),
+		outbox: readOutbox(sqlite),
 		cursor: readCursor(sqlite),
 		lastId: readLastId(sqlite),
 	};
@@ -290,38 +267,43 @@ export function loadDurableSnapshot(
  */
 export function createSqliteDurablePort({
 	sqlite,
-	syncs,
 }: {
 	sqlite: SqliteDatabase;
-	/**
-	 * Whether this store has an authority to owe work to.
-	 *
-	 * The fold's only question. A static fact at open (ADR-0239), so it lives
-	 * here rather than being repeated into every append as a sentinel.
-	 */
-	syncs: boolean;
 }): DurablePort & { load(): DurableSnapshot } {
 	applyStoreSchema(sqlite);
 	return {
-		load: () => loadDurableSnapshot(sqlite, syncs),
+		load: () => loadDurableSnapshot(sqlite),
 		commit(ops: readonly DurableOp[]): void {
 			sqlite.transaction(() => {
 				for (const op of ops) {
 					switch (op.kind) {
 						case 'append':
-							appendUpdate({
-								sqlite,
-								id: op.id,
-								update: op.bytes,
-								authoritySeq: op.authoritySeq,
-								syncs,
-							});
+							sqlite.run(
+								'INSERT INTO _updates (id, bytes, authoritySeq) VALUES (?, ?, ?)',
+								[op.id, new Uint8Array(op.bytes), op.authoritySeq ?? null],
+							);
 							break;
 						case 'ack':
 							acknowledge(sqlite, op.throughId, op.authoritySeq);
 							break;
+						case 'mergeOwed':
+							for (const replaced of op.replaces) {
+								sqlite.run('DELETE FROM _updates WHERE id = ?', [replaced]);
+							}
+							sqlite.run(
+								'INSERT INTO _updates (id, bytes, authoritySeq) VALUES (?, ?, NULL)',
+								[op.id, new Uint8Array(op.bytes)],
+							);
+							break;
 					}
 				}
+				// Once, after the whole batch, which is what the IndexedDB port has
+				// always done and what this one only appeared to do. Folding per
+				// append made a 25-append flush ask the same question 25 times and
+				// answer it 24 times with "not yet". Folding after the acks also
+				// means a batch that acknowledges work can collapse it in the same
+				// transaction, rather than leaving it for whatever writes next.
+				fold(sqlite);
 			});
 		},
 	};

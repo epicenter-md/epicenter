@@ -203,7 +203,6 @@ export type BrowserBacking = {
  */
 export async function openIdbBacking(
 	address: string,
-	syncs: boolean,
 ): Promise<Result<BrowserBacking, StoreError>> {
 	return tryAsync({
 		try: async () => {
@@ -227,9 +226,10 @@ export async function openIdbBacking(
 				if (id > lastId) lastId = id;
 				stored.push({ id, bytes: copyBytes(row.bytes) });
 				if (row.authoritySeq === null) {
-					// A store with no authority owes nobody, and nothing would read
-					// the result: there is no sender.
-					if (syncs) outbox.push({ id, bytes: copyBytes(row.bytes) });
+					// NULL means owed, on every store kind (ADR-0301). A store with
+					// no authority records `NO_AUTHORITY` on its own appends, so it
+					// reaches this branch for nothing and needs no flag to say so.
+					outbox.push({ id, bytes: copyBytes(row.bytes) });
 				} else if (row.authoritySeq > cursor) {
 					cursor = row.authoritySeq;
 				}
@@ -265,40 +265,63 @@ export async function openIdbBacking(
 								grew = true;
 								break;
 							}
-							case 'ack': {
-								// One statement's worth of work, spread over a walk because
-								// the store is keyed by id and the predicate is "still
-								// owed". The SQL port writes the same thing as one UPDATE.
-								let at = await updates.openCursor(
-									IDBKeyRange.upperBound(op.throughId),
+							case 'mergeOwed': {
+								for (const replaced of op.replaces) {
+									void updates.delete(replaced);
+								}
+								void updates.put(
+									{ bytes: copyBytes(op.bytes), authoritySeq: null },
+									op.id,
 								);
-								while (at !== null) {
-									if (at.value.authoritySeq === null) {
-										await at.update({
-											...at.value,
-											authoritySeq: op.authoritySeq,
-										});
-										grew = true;
-									}
-									at = await at.continue();
+								chain = chain - op.replaces.length + 1;
+								break;
+							}
+							case 'ack': {
+								// One statement's worth of work, and the shape it takes here
+								// is what a keyed object store makes cheap. A cursor walk
+								// costs one round trip PER ROW to advance, which is what
+								// made a wide ack -- a device reconnecting with a day of
+								// offline work owed -- the slowest thing this port does.
+								// Reading the range in two requests and issuing the stamps
+								// without awaiting them costs two round trips for the whole
+								// batch instead of one per row.
+								//
+								// The reads are the price: the range includes the baseline,
+								// so a wide ack holds one document in memory while it runs.
+								// That is bounded by the document rather than by the
+								// backlog, and it is paid once per ack rather than per row.
+								// `evidence/browser/port-cost` measures both shapes.
+								const range = IDBKeyRange.upperBound(op.throughId);
+								const [keys, rows] = await Promise.all([
+									updates.getAllKeys(range),
+									updates.getAll(range),
+								]);
+								for (const [index, key] of keys.entries()) {
+									const row = rows[index];
+									if (row === undefined || row.authoritySeq !== null) continue;
+									void updates.put(
+										{ ...row, authoritySeq: op.authoritySeq },
+										key,
+									);
+									grew = true;
 								}
 								break;
 							}
 						}
 					}
 
-					// The same fold the SQL engine applies, with the same one
-					// question: a store that syncs collapses only the acknowledged
-					// prefix, because the sender offers owed appends individually
-					// and an ack names them by id. A store that does not sync
-					// collapses everything, because nothing reads its owed work.
+					// The same fold the SQL engine applies, and the same question:
+					// an acknowledged row may be replaced by a whole-document
+					// re-encode, an owed row may not (ADR-0301). A store with no
+					// authority holds no owed rows, so it collapses everything here
+					// without being told which kind it is.
 					if (grew && chain >= SNAPSHOT_FOLD_THRESHOLD) {
 						const foldable: { id: number; bytes: Uint8Array }[] = [];
 						let position: number | null = null;
 						let at = await updates.openCursor();
 						while (at !== null) {
 							const row = at.value;
-							if (!syncs || row.authoritySeq !== null) {
+							if (row.authoritySeq !== null) {
 								foldable.push({ id: at.key as number, bytes: row.bytes });
 								if (
 									row.authoritySeq !== null &&
@@ -327,10 +350,7 @@ export async function openIdbBacking(
 							// The baseline inherits the highest position it replaced, so
 							// on a syncing store it is not owed and is never offered back.
 							void updates.put(
-								{
-									bytes: baseline,
-									authoritySeq: syncs ? position : NO_AUTHORITY,
-								},
+								{ bytes: baseline, authoritySeq: position ?? NO_AUTHORITY },
 								through,
 							);
 							chain = chain - foldable.length + 1;
@@ -355,8 +375,8 @@ export async function openIdbBacking(
  * (ADR-0261, amending ADR-0233):
  *
  * ```text
- * epicenter/v2/<definition id>/local/gen/<generation>
- * epicenter/v2/<definition id>/account/<base URL>/<principal id>/gen/<generation>
+ * epicenter/v3/<definition id>/local/gen/<generation>
+ * epicenter/v3/<definition id>/account/<base URL>/<principal id>/gen/<generation>
  * ```
  *
  * A browser application keeps one device document and one retained account
@@ -393,8 +413,15 @@ export async function openIdbBacking(
  * document they belonged to and kept a `tombstones` store beside them; a
  * database is one document now, so those rows are a shape this reader cannot
  * honestly interpret. Stranding them is the answer, not a migration.
+ *
+ * `v3` is the owed-row collapse (ADR-0301). A `v2` local store wrote its own
+ * appends with a NULL position, which now means "owed to an authority" on
+ * every store kind; read under this shape those rows would be offered to a
+ * sender that does not exist and would take the weaker of the two folds
+ * forever. The value changed rather than the schema, which is exactly the
+ * migration this address scheme exists to refuse.
  */
-const STORE_GENERATION = 'v2';
+const STORE_GENERATION = 'v3';
 
 /**
  * Normalize the server identity before it becomes durable local state.
@@ -429,8 +456,8 @@ function canonicalBaseURL(raw: string): string | undefined {
  * (ADR-0292).
  *
  * ```txt
- * epicenter/v2/<dataId>/local/gen/
- * epicenter/v2/<dataId>/account/<baseURL>/<principalId>/gen/
+ * epicenter/v3/<dataId>/local/gen/
+ * epicenter/v3/<dataId>/account/<baseURL>/<principalId>/gen/
  * ```
  *
  * The PREFIX rather than an address, because both callers want it: one appends
@@ -631,7 +658,7 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	const { error: claimError } = await claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 
-	const opened = await openIdbBacking(address, account !== undefined);
+	const opened = await openIdbBacking(address);
 	if (opened.error !== null) {
 		releaseDocument(address);
 		return Err(opened.error);
@@ -683,7 +710,7 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 		// a later boot would read, and a snapshot assembled here would be a
 		// second answer to that question.
 		backing.close();
-		const reopened = await openIdbBacking(address, true);
+		const reopened = await openIdbBacking(address);
 		if (reopened.error !== null) {
 			releaseDocument(address);
 			return Err(reopened.error);
@@ -792,7 +819,7 @@ async function writeGeneration({
 	const { error: claimError } = await claimDocument(address);
 	if (claimError !== null) return Err(claimError);
 	try {
-		const opened = await openIdbBacking(address, account !== undefined);
+		const opened = await openIdbBacking(address);
 		if (opened.error !== null) return Err(opened.error);
 		const backing = opened.data;
 		try {

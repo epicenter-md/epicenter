@@ -4,8 +4,8 @@ import { field, plainText } from '@epicenter/data/definition';
  *
  * A browser application keeps one local document and one retained account
  * replica per server identity (ADR-0261). These tests pin the addresses that
- * hold them apart: `epicenter/v2/<dataId>/local` and
- * `epicenter/v2/<dataId>/account/<base URL>/<principal id>`, one IndexedDB
+ * hold them apart: `epicenter/v3/<dataId>/local` and
+ * `epicenter/v3/<dataId>/account/<base URL>/<principal id>`, one IndexedDB
  * database and one open claim each.
  *
  * Key behaviors:
@@ -80,14 +80,14 @@ function expectOk<TValue, TError>(
 const GEN = 1;
 
 const localAddress = (dataId: string, generation = GEN) =>
-	`epicenter/v2/${dataId}/local/gen/${generation}`;
+	`epicenter/v3/${dataId}/local/gen/${generation}`;
 const accountAddress = (
 	dataId: string,
 	baseURL: string,
 	principalId: string,
 	generation = GEN,
 ) =>
-	`epicenter/v2/${dataId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}/gen/${generation}`;
+	`epicenter/v3/${dataId}/account/${encodeURIComponent(baseURL)}/${encodeURIComponent(principalId)}/gen/${generation}`;
 
 /** One empty database's whole state: what importing an empty folder produces. */
 function emptyState(): Uint8Array {
@@ -433,11 +433,13 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		// The clean break, and the mechanism is the ADDRESS (ADR-0231's
 		// supersession, restated by `STORE_GENERATION`). A `v1` record keyed its
 		// updates by the document they belonged to and kept a `tombstones` store
-		// beside them; a database is one document now (ADR-0295), so those rows
-		// are a shape this reader cannot honestly interpret. It does not detect
-		// and wipe them. It does not address them.
-		expect(localAddress('so.epicenter.x')).toContain('/v2/');
-		expect(accountAddress('so.epicenter.x', CLOUD, ALICE)).toContain('/v2/');
+		// beside them; a database is one document now (ADR-0295). A `v2` record
+		// wrote a local store's own appends with a NULL position, which now means
+		// "owed to an authority" on every store kind (ADR-0301). Neither is a
+		// shape this reader can honestly interpret. It does not detect and wipe
+		// them. It does not address them.
+		expect(localAddress('so.epicenter.x')).toContain('/v3/');
+		expect(accountAddress('so.epicenter.x', CLOUD, ALICE)).toContain('/v3/');
 	});
 
 	test('a v1 record at the same logical address is not opened', async () => {

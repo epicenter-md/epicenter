@@ -45,6 +45,32 @@ export type DurableOp =
 			kind: 'ack';
 			throughId: number;
 			authoritySeq: number;
+	  }
+	| {
+			/**
+			 * Owed appends collapse into one resendable row (ADR-0301).
+			 *
+			 * An acknowledged row folds by whole-document re-encode; an owed row
+			 * cannot, because the authority has never seen those bytes and a whole
+			 * document is not a delta it could be offered. Owed rows merge instead,
+			 * which keeps an offline device's chain bounded by the threshold rather
+			 * than by how long it stayed offline.
+			 */
+			kind: 'mergeOwed';
+			/** The owed rows these bytes replace. */
+			replaces: readonly number[];
+			/**
+			 * The new row, and it is ABOVE every existing id on purpose.
+			 *
+			 * An acknowledgement stamps `id <= throughId`. A merged row that
+			 * inherited the lowest id it replaced would be stamped by an
+			 * acknowledgement for a submission that did not carry all of its bytes,
+			 * marking unsent work as sent and losing it in silence. Above the range,
+			 * no earlier acknowledgement can name it, so a merge that races a
+			 * submission costs a redelivery the authority absorbs by idempotence.
+			 */
+			id: number;
+			bytes: Uint8Array;
 	  };
 
 /**
@@ -254,6 +280,15 @@ export function createPersistenceController({
 					outbox = outbox.filter((entry) => entry.id > op.throughId);
 					if (op.authoritySeq > cursor) cursor = op.authoritySeq;
 					break;
+				case 'mergeOwed': {
+					// Still owed, still in order: the replacement carries the bytes of
+					// everything it replaces and takes a higher id, so appending it
+					// after the filter keeps the mirror sorted without a sort.
+					const replaced = new Set(op.replaces);
+					outbox = outbox.filter((entry) => !replaced.has(entry.id));
+					outbox.push({ id: op.id, bytes: op.bytes });
+					break;
+				}
 			}
 		}
 	}

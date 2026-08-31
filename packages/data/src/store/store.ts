@@ -26,7 +26,12 @@ import {
 	tableRoot,
 	updateRow,
 } from './document.js';
-import { copyBytes, createSqliteDurablePort, NO_AUTHORITY } from './log.js';
+import {
+	copyBytes,
+	createSqliteDurablePort,
+	NO_AUTHORITY,
+	SNAPSHOT_FOLD_THRESHOLD,
+} from './log.js';
 import {
 	createPersistenceController,
 	type DurablePort,
@@ -287,11 +292,12 @@ function parsedDatabaseOrThrow(
 }
 
 /** Build the engine options for a synchronous SQLite durable engine. */
-function overSqlite<TDatabase extends DataDefinition>(
-	{ definition, sqlite, ...rest }: CreateStoreOptions<TDatabase>,
-	syncs: boolean,
-): StoreEngineOptions {
-	const port = createSqliteDurablePort({ sqlite, syncs });
+function overSqlite<TDatabase extends DataDefinition>({
+	definition,
+	sqlite,
+	...rest
+}: CreateStoreOptions<TDatabase>): StoreEngineOptions {
+	const port = createSqliteDurablePort({ sqlite });
 	return {
 		definition: parsedDatabaseOrThrow(definition),
 		durable: port,
@@ -312,7 +318,7 @@ function overSqlite<TDatabase extends DataDefinition>(
 export function createLocalStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
 ): LocalData<TDatabase> {
-	const { store, view } = createStoreEngine(overSqlite(options, false), 'none');
+	const { store, view } = createStoreEngine(overSqlite(options), 'none');
 	return Object.freeze({
 		...(view as DataView<TDatabase>),
 		...store,
@@ -334,10 +340,7 @@ export function createLocalStore<const TDatabase extends DataDefinition>(
 export function createAccountStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
 ): AccountData<TDatabase> {
-	const { store, view } = createStoreEngine(
-		overSqlite(options, true),
-		'remote',
-	);
+	const { store, view } = createStoreEngine(overSqlite(options), 'remote');
 	return Object.freeze({
 		...(view as DataView<TDatabase>),
 		...store,
@@ -450,6 +453,17 @@ function createStoreEngine(
 	const localWorkListeners = new Set<() => void>();
 	/** Local work that can be sent before its persistence attempt succeeds. */
 	let localOutbox: { id: number; bytes: Uint8Array }[] = [];
+	/**
+	 * The highest id `coalesce` has ever handed to the sender.
+	 *
+	 * The whole in-flight question, answered without the store learning
+	 * anything about the socket (ADR-0301). A row above this has never been
+	 * included in any submission, so no acknowledgement now in flight can name
+	 * it and replacing it is unconditionally safe. It is monotone, so unlike a
+	 * flag it cannot get stuck set when a socket dies mid-submission, which is
+	 * exactly the offline case the merge exists to fix.
+	 */
+	let lastCoalescedId = 0;
 	const committedListeners = new Set<() => void>();
 
 	/**
@@ -628,19 +642,64 @@ function createStoreEngine(
 						kind: 'append',
 						id,
 						bytes,
-						// What an append this device authored owes the authority:
-						// nothing yet, on either store kind, because neither has a
-						// position for bytes the authority has not seen. On a local
-						// store nothing ever reads it, since there is no sender, and
-						// the port folds its chain whole rather than asking.
-						authoritySeq: undefined,
+						// What an append this device authored owes the authority, and
+						// the two answers are different facts rather than one fact
+						// with a missing case (ADR-0301). A replica owes these bytes
+						// and has no position for them yet, which is `undefined` and
+						// records as NULL. A local store owes nobody, ever, so it
+						// records `NO_AUTHORITY` and its rows never read as owed.
+						//
+						// That is what lets the fold choose by row instead of by
+						// store kind: NULL means owed, on every store, and nothing
+						// else means it.
+						authoritySeq: replication === 'remote' ? undefined : NO_AUTHORITY,
 					},
 				]);
+				mergeOwedIfLong();
 			} finally {
 				deliver(transaction);
 			}
 		},
 	);
+
+	/**
+	 * Collapse owed appends into one resendable row (ADR-0301).
+	 *
+	 * Only rows above `lastCoalescedId`, which are the ones no submission has
+	 * ever named. That is what makes this safe without the store knowing
+	 * whether a socket is busy: offline, `coalesce` is never called, so every
+	 * append qualifies and the chain of a device with no connection is bounded
+	 * by the threshold rather than by how long it stayed offline.
+	 *
+	 * A collapse and never an accumulator. Rewriting the merged row on every
+	 * edit would write every owed byte per keystroke, which is the cost the
+	 * fold's threshold exists to avoid; new appends land as their own rows and
+	 * collapse again when enough of them gather.
+	 *
+	 * The transient queue is kept in step here rather than left to `coalesce`,
+	 * because the merged bytes have to stay sendable while the merge itself is
+	 * only queued (ADR-0300).
+	 */
+	function mergeOwedIfLong(): void {
+		if (replication !== 'remote') return;
+		const owed = controller
+			.durableOutbox()
+			.filter((entry) => entry.id > lastCoalescedId);
+		if (owed.length < SNAPSHOT_FOLD_THRESHOLD) return;
+		const id = mintId();
+		const bytes = new Uint8Array(
+			Y.mergeUpdatesV2(
+				owed.map((entry) =>
+					copyBytes(entry.bytes),
+				) as Uint8Array<ArrayBuffer>[],
+			),
+		);
+		const replaces = owed.map((entry) => entry.id);
+		const replaced = new Set(replaces);
+		localOutbox = localOutbox.filter((entry) => !replaced.has(entry.id));
+		localOutbox.push({ id, bytes });
+		controller.enqueue([{ kind: 'mergeOwed', replaces, id, bytes }]);
+	}
 
 	/**
 	 * The one gate every verb passes: a disposed store throws, it never
@@ -925,6 +984,7 @@ function createStoreEngine(
 									) as Uint8Array<ArrayBuffer>[],
 								),
 							);
+				if (last.id > lastCoalescedId) lastCoalescedId = last.id;
 				return { id: last.id, bytes };
 			},
 			acknowledge(throughId: number, authoritySeq: number): void {

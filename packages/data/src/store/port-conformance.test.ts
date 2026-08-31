@@ -52,7 +52,7 @@ const sqliteEngine: Engine = {
 		// One database for the record's life, reopened through a new port, which
 		// is the same shape `memory.ts` uses to model a close and a reopen.
 		const sqlite = createBunSqliteAdapter(new Database(':memory:'));
-		const open = () => createSqliteDurablePort({ sqlite, syncs: true });
+		const open = () => createSqliteDurablePort({ sqlite });
 		return {
 			commit: async (ops) => {
 				await open().commit(ops);
@@ -70,7 +70,7 @@ const indexedDbEngine: Engine = {
 	async create(label: string): Promise<Record> {
 		const address = `conformance/${label}`;
 		const open = async () => {
-			const opened = await openIdbBacking(address, true);
+			const opened = await openIdbBacking(address);
 			if (opened.error !== null) throw opened.error;
 			return opened.data;
 		};
@@ -252,6 +252,90 @@ for (const engine of ENGINES) {
 			expect(loaded.outbox.map((entry) => entry.id)).toEqual([owed.id]);
 			// The point of the fold: fewer rows than were written.
 			expect(loaded.updates.length).toBeLessThan(71);
+		});
+
+		test('merged owed work replays the same and leaves one owed row', async () => {
+			const record = await engine.create(`merge-${counter}`);
+			// Three owed appends, no authority position on any of them, which is
+			// what an offline replica accumulates.
+			const written = chain(3);
+			const numbered = written.map((bytes) => {
+				nextId += 1;
+				return {
+					kind: 'append' as const,
+					id: nextId,
+					bytes,
+					authoritySeq: undefined,
+				};
+			});
+			await record.commit(numbered);
+
+			// The merge the store would enqueue: the same bytes, one row, at an
+			// id above every one it replaces.
+			nextId += 1;
+			const merged = nextId;
+			await record.commit([
+				{
+					kind: 'mergeOwed',
+					replaces: numbered.map((op) => op.id),
+					id: merged,
+					bytes: new Uint8Array(
+						Y.mergeUpdatesV2(written as Uint8Array<ArrayBuffer>[]),
+					),
+				},
+			]);
+
+			const { loaded } = await record.reopen();
+			// Same document, and still owed: a merge changes what carries the
+			// bytes, never whether the authority has them.
+			expect(valueOf(loaded.updates)).toBe('v2');
+			expect(loaded.outbox.map((entry) => entry.id)).toEqual([merged]);
+			expect(loaded.cursor).toBe(0);
+		});
+
+		test('an ack naming replaced ids redelivers rather than losing work', async () => {
+			const record = await engine.create(`merge-race-${counter}`);
+			// The race the id rule exists for. A submission goes out naming ids
+			// through the second append; before its acknowledgement lands, a
+			// third append arrives and a merge collapses all three.
+			const written = chain(3);
+			const numbered = written.map((bytes) => {
+				nextId += 1;
+				return {
+					kind: 'append' as const,
+					id: nextId,
+					bytes,
+					authoritySeq: undefined,
+				};
+			});
+			await record.commit(numbered);
+			const sentThrough = (numbered[1] as { id: number }).id;
+
+			nextId += 1;
+			const merged = nextId;
+			await record.commit([
+				{
+					kind: 'mergeOwed',
+					replaces: numbered.map((op) => op.id),
+					id: merged,
+					bytes: new Uint8Array(
+						Y.mergeUpdatesV2(written as Uint8Array<ArrayBuffer>[]),
+					),
+				},
+			]);
+
+			// The stale acknowledgement arrives. It names ids that no longer
+			// exist, so it stamps nothing.
+			await record.commit([
+				{ kind: 'ack', throughId: sentThrough, authoritySeq: 9 },
+			]);
+
+			const { loaded } = await record.reopen();
+			// Still owed, so it goes out again: a redelivery the authority
+			// absorbs by idempotence. The failure this refuses is the merged row
+			// being stamped and the third append never being sent at all.
+			expect(loaded.outbox.map((entry) => entry.id)).toEqual([merged]);
+			expect(valueOf(loaded.updates)).toBe('v2');
 		});
 
 		test('a batch is all or nothing', async () => {

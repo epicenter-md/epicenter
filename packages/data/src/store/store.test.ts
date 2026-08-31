@@ -1018,9 +1018,7 @@ describe('a document store owes nobody (ADR-0233)', () => {
 			// authority position, because no authority will ever give them one,
 			// and the port answers with an empty outbox rather than offering
 			// them: a store that does not sync has no sender to offer them to.
-			expect(
-				createSqliteDurablePort({ sqlite, syncs: false }).load().outbox,
-			).toEqual([]);
+			expect(createSqliteDurablePort({ sqlite }).load().outbox).toEqual([]);
 			expect(
 				sqlite.all<{ count: number }>(
 					'SELECT COUNT(*) AS count FROM _updates',
