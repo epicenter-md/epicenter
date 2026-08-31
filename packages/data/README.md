@@ -98,10 +98,17 @@ data.tables.notes.watch(type, listener)           // one live type's content cha
 data.transact(() => { ... })                      // several writes, one commit
 ```
 
-Settings live on `data.kv`, which has `get()`, `update(patch)`, and `subscribe`.
-There is no id and no `create`, because there is exactly one and it always exists.
-Missing fields remain nonconforming. Applications compose initialization and
-recovery values explicitly from `error.conforming`.
+Settings live on `data.kv`, which has `get(key)`, `update(patch)`,
+`nonconforming`, and `subscribe`. There is no id and no `create`, because there
+is exactly one and it always exists.
+
+Reads are per KEY and the signal is not: `get('theme')` returns that one value
+and `undefined` covers both "never written" and "written as something this
+declaration cannot read", while `subscribe` fires when ANY declared key
+changes. The invalidation is deliberately a superset of what moved (ADR-0187),
+so a reader re-reads and finds the same answer rather than missing one. A
+default belongs to the application, not the declaration:
+`kv.get('theme') ?? APPLICATION_DEFAULTS.theme`.
 
 The row owns its content node, and the database document owns its lifetime.
 `data.transact(() => { ... })` groups direct table and KV operations into one
