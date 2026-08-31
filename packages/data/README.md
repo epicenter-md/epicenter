@@ -168,11 +168,16 @@ const note = data.tables.notes.get(id);
 
 ### Reacting
 
-`subscribe` is a ping, once per commit, and it means this table's SHAPE
-changed: a row added, a row removed, or a row's scalars edited. It fires for a
-local write and for bytes from another device alike, and after every
-`onCommitted` listener has run, so a composed follower is already marked dirty
-by the time a subscriber reads through it.
+`subscribe` fires once per commit and means this table's SHAPE changed: a row
+added, a row removed, or a row's scalars edited. It fires for a local write and
+for bytes from another device alike, and after every `onCommitted` listener has
+run, so a composed follower is already marked dirty by the time a subscriber
+reads through it.
+
+It hands the listener the row ids the commit touched. A caller may ignore
+them: re-reading with `rows` walks a document already in memory and is always
+correct. What they buy is the caller holding a projection of the rows, which
+rebuilds only what moved instead of everything.
 
 It deliberately does NOT fire for prose typed inside a row's content node. The
 node is nested on its row, so counting it here would wake every list in the
@@ -187,11 +192,17 @@ generation counter to keep and no `refresh()` to remember:
 ```ts
 function read() { /* the read above */ }
 read();
-const stop = data.tables.notes.subscribe(read);
+const stop = data.tables.notes.subscribe(() => read());
+
+// or, holding a projection keyed by row id:
+const stop = data.tables.notes.subscribe((rowIds) => {
+	for (const id of rowIds) rebuild(id);
+});
 ```
 
 `data.kv.subscribe` takes a listener with no arguments. KV is one value at a
-name-addressed root, so there are no ids to carry.
+name-addressed root holding a handful of keys, so naming which one moved would
+save a caller a handful of property reads and cost machinery to do it.
 
 ## The shape of the data
 

@@ -192,9 +192,6 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 *
 	 * Fires after the commit is accepted, on the same flush as KV's and after
 	 * `onCommitted`, so a composed follower is dirty before any subscriber
-	 * reads. Naming the rows again is one lookup away if something ever wants
-	 * them: a commit's changed types ARE the rows, and
-	 * `evidence/delta-names-the-row.test.ts` still proves the ids are there.
 	 */
 	subscribe(listener: TableListener): () => void;
 	/**
@@ -417,9 +414,11 @@ export type KvHandle<TValues = JsonObject> = {
 	/**
 	 * Hear when any declared key changes, whoever changed it.
 	 *
-	 * The same shape a table's has: a ping, and "something here moved, re-read"
-	 * is the complete message. A caller re-reads with `get()`, which is a
-	 * property access on a document already in memory.
+	 * A ping, and "something here moved, re-read" is the complete message. It
+	 * carries nothing, unlike a table's, and the difference is the size rather
+	 * than the kind: naming which of ten keys moved saves a caller ten property
+	 * accesses on a document already in memory, so it would be machinery in
+	 * exchange for nothing.
 	 *
 	 * Fires after the commit is durable, on the same flush as a table's, so a
 	 * listener observes one settled commit, and a composed follower that marks

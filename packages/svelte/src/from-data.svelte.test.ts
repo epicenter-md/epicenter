@@ -289,8 +289,9 @@ test('kv get passes through and reflects writes', () => {
 test('persistence status reads through, and tracks only once something reads it', () => {
 	const { reactive, persistence, persistenceControl } = setup();
 
-	// Wrapping subscribes to nothing and reads nothing, the same law the
-	// tables hold: a store nobody renders the status of costs no subscription.
+	// Wrapping subscribes to nothing and reads nothing. Not the law the tables
+	// hold any more: they seed and subscribe at wrap time. One enum is not
+	// worth holding, so this one stays read-through.
 	expect(persistence.calls.get).toBe(0);
 	expect(persistence.calls.subscribe).toBe(0);
 

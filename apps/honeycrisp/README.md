@@ -44,11 +44,13 @@ durable log into one `Y.Doc`, then `data.tables.notes.rows` returns rows, not
 a promise. An account route may wait for a fresh replica's first binding while
 the device route remains independently usable.
 
-**Nothing polls and nothing refreshes.** `data.tables.notes.subscribe(...)` reports which
-rows a commit touched, and it fires for a local write, for prose typed into a
-note, and for bytes that arrived from another device alike (ADR-0221). The state
-modules re-read on that signal; there is no generation counter and no manual
-refresh anywhere.
+**Nothing polls and nothing refreshes.** `data.tables.notes.subscribe(...)`
+reports which rows a commit touched, for a local write and for bytes that
+arrived from another device alike (ADR-0221). It does NOT fire for prose typed
+into a note: that reaches the list only because this app hangs its own
+`title`/`updatedAt` write on the prose signal, and that write is a row change
+like any other. The state modules re-read on the signal; there is no generation
+counter and no manual refresh anywhere.
 
 ### Rich-text editing
 

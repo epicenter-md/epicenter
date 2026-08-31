@@ -20,6 +20,44 @@ This package is part of the Epicenter monorepo and is used internally. To use it
 
 ## Available Utilities
 
+### `fromData`
+
+Adapts one opened `@epicenter/data` handle into Svelte reactivity, mirroring
+the declaration: `tables.<name>`, `kv`, and `persistence`, with the same verbs
+and the same types. Reads are reactive; writes pass through unchanged.
+
+A table is HELD as a `SvelteMap` projection keyed by row id, seeded when
+`fromData` is called and patched with the row ids each commit names, because
+building a row out of CRDT structs costs about two microseconds and rebuilding
+ten thousand of them per keystroke does not. `kv` and `persistence` stay
+read-through: ten keys and one enum are not worth holding.
+
+Nothing is disposed by hand. The projection and its subscription live as long
+as the document they mirror, deliberately: one detached from its source stays
+alive and stops being true.
+
+```ts
+const app = fromData(data);
+const active = $derived(app.tables.notes.rows.filter((n) => !n.deletedAt));
+const note = app.tables.notes.get(id);   // wakes only when THAT row moves
+app.persistence.get() === 'blocked';     // this device stopped saving
+```
+
+### `fromSubscription`
+
+One value read through a subscription, kept fresh. The four lines every
+adapter in this repo used to write by hand, written once, so the announce
+cannot be forgotten: forget it and the value stays correct and never updates
+again.
+
+```ts
+const preview = fromSubscription(
+  (update) => table.watch(body, update),
+  () => notePreview(body),
+);
+preview.current;
+```
+
 ### `createPersistedState`
 
 Creates a persisted state object tied to local storage, accessible through `.value`. This utility ensures your state survives page refreshes and synchronizes across browser tabs.

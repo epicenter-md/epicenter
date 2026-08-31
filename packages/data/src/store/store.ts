@@ -433,7 +433,8 @@ function createStoreEngine(
 	let nextId = loaded.lastId + 1;
 	const mintId = (): number => nextId++;
 	/**
-	 * Who is watching each table, keyed by its ROOT. A ping, not a payload.
+	 * Who is watching each table, keyed by its ROOT, and what it is handed: the
+	 * ids `touchedRows` collected for that root since the last delivery.
 	 *
 	 * By root rather than by name, because a commit arrives as changed types and
 	 * a subscriber arrives holding the root its handle was built on: keying by
@@ -1281,9 +1282,10 @@ function createStoreEngine(
 			 * Hear that this table's SHAPE changed: a row added, a row removed, or
 			 * a row's scalars edited. Not an edit inside its content node.
 			 *
-			 * A ping, not a payload. `deliver` decides what counts, by depth
-			 * against the table root, so nothing is registered on the document
-			 * here and there is no listener lifecycle to keep in step.
+			 * `deliver` decides WHO hears, by depth against the table root; the
+			 * root's own delta decides WHAT they are handed. Both are attached
+			 * and dropped with the subscription, so a table nobody watches
+			 * registers nothing on the document.
 			 */
 			subscribe(listener: TableListener): () => void {
 				return subscribeTable(root, listener);

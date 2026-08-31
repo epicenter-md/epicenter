@@ -3,6 +3,23 @@
 - **Status:** Accepted
 - **Date:** 2026-06-27
 
+- **The adapter holds a projection again.** `fromData` keeps a `SvelteMap` of
+  parsed rows per table, seeded when it is called and patched with the row ids
+  each commit names. That inverts this record's headline, and it was driven by
+  a measurement this record did not have: reading every row costs about two
+  microseconds each, so a list over ten thousand notes paid roughly twenty
+  milliseconds per keystroke
+  (`packages/data/evidence/bench/list-per-keystroke.ts`).
+- **What this record got right is unresolved rather than refuted.** Its
+  argument is about LAYER, not about caching: parse cost belongs to the table,
+  where every consumer gets it, rather than to one framework's adapter. That is
+  still the better place. The reason it is not there is mechanical: the memo
+  here was keyed by a stored value's object reference, and Yjs 14 mutates a
+  row's type in place rather than replacing it, so reference identity no longer
+  detects a change. A table-level memo would have to be invalidated by the same
+  delta that now names the rows, which is a real design and nobody has written
+  it.
+
 ## Context
 
 `fromTable` (in `@epicenter/svelte`) adapts a workspace `Table` into reactive

@@ -14,6 +14,14 @@
   `packages/data/evidence/bench/subscription.ts`,
   `packages/data/src/store/store.test.ts`.
 
+- **Amended in the shape it delivers.** The ids are what stands: `subscribe`
+  hands the listener the rows a commit touched, collected from the table root's
+  own `'delta'` and delivered after the commit settles, exactly as this record
+  says. What is gone is everything they used to arrive inside. There is no
+  `createInvalidationDispatcher`, no `TableInvalidation`, and no `{scope}` arm;
+  a listener is handed a `readonly string[]`. That family was deleted with
+  `@epicenter/lens` and did not come back with the ids.
+
 ## Context
 
 The store had no subscription. `list()` was a snapshot and nothing told a reader

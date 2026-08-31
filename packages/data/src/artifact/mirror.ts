@@ -55,9 +55,9 @@
  * database document by anyone. It is the complete one, and it names nothing: a
  * pass knows the folder is stale and never which file.
  *
- * `table.subscribe` names the table a commit touched but not the rows, and it
- * is INCOMPLETE for a mirror: it reports a change to the table's shape and not
- * an edit inside a row's content node. That is deliberate, and `store.ts` says so at
+ * `table.subscribe` names the rows a commit touched, and it is INCOMPLETE for
+ * a mirror anyway: it reports a change to the table's shape and not an edit
+ * inside a row's content node. That is deliberate, and `store.ts` says so at
  * the verb. Delivery routes off `transaction.changed`, which Yjs fills with
  * the types a transaction modified DIRECTLY, so a keystroke in a body puts the
  * body's own type there; its parent is the row, not the table root, and the
@@ -65,15 +65,15 @@
  * saw a word anybody typed.
  *
  * So a whole render is not waiting on a signal that does not exist; it is
- * refusing to depend on one that names a table rather than a row, and could
- * not name the edit that matters most here anyway.
+ * refusing to depend on one that cannot name the edit that matters most here.
  *
  * The cost is honest: every pass re-serializes every row, measured at roughly
  * 71 ms per thousand rows back when each one also had to hydrate its own
- * document. Rendering only the rows a signal names costs about 0.1 ms, and
- * what it needs is for the store to name the row again, which the delta still
- * carries (`evidence/delta-names-the-row.test.ts`). The manifest is what makes
- * that safe when it lands: a partial content signal would cost one row's
+ * document. Rendering only the rows a signal names costs about 0.1 ms, and the
+ * store names them now, so the half this once waited for has landed. What
+ * still blocks it is the other half: prose inside a content node never reaches
+ * this signal. The manifest is what would make an incremental pass safe once
+ * that half is answered: a partial content signal would cost one row's
  * contents being stale, and could never lose a deletion or miss a new row,
  * because the manifest is enumerated from current state and depends on no
  * signal.

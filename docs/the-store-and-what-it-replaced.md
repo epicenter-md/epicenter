@@ -81,8 +81,10 @@ and the point-reads driven by an invalidation payload. It was good code solving
 a problem that no longer exists.
 
 **New:** `db.notes.subscribe(listener)` fires once per commit with the ROW IDS
-that commit touched (ADR-0221), and fires for a local write, for prose typed
-into a row's document, and for bytes that arrived from another device alike.
+that commit touched (ADR-0221), for a local write and for bytes that arrived
+from another device alike. Prose typed inside a row's content node is NOT a
+table commit: it has its own signal, `watch(node, listener)`, because routing
+it here would wake every list in the application at typing frequency.
 It fires after every `onCommitted` listener has run, so a composed follower
 (like the SQL projection) is already marked dirty by the time a subscriber
 reads through it (ADR-0241).

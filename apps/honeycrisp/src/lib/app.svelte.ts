@@ -47,9 +47,9 @@ import { navigation } from './navigation.svelte.js';
  *
  * One instance per mounted route generation, created by the route's provider
  * and reached through `getHoneycrisp`, never a module-global singleton.
- * Nothing here needs disposing: the adapter's subscriptions are ref-counted
- * to the effects that read them, so they detach when the consuming
- * components unmount.
+ * Nothing here needs disposing, and not because anything is ref-counted: the
+ * adapter holds each table's projection and its subscription for as long as
+ * the document is open, and both die with it.
  */
 export function createHoneycrisp({ data }: { data: HoneycrispData }) {
 	const reactiveData = fromData(data);
@@ -320,7 +320,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	/**
 	 * One note's preview, read live off its prose and never stored.
 	 *
-	 * A card calls this once and renders `.text`; the reader slices the first
+	 * A card calls this once and renders `.current`; the reader slices the first
 	 * hundred characters rather than walking the note (`prose-text.ts`). The
 	 * subscription is the row's OWN field signal, so a card re-renders when its
 	 * note's body changes and not when any other note's does. That is what the

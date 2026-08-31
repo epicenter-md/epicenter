@@ -278,7 +278,7 @@ value with `set(id, next)`.
 
 | Data Shape | Use | Example |
 |---|---|---|
-| Epicenter store table rows | `fromWorkspace` reactive tables | notes, folders |
+| Epicenter store table rows | `fromData` reactive tables | notes, folders |
 | Browser API keyed data | `new SvelteMap()` + listeners | media devices, windows |
 | Primitive value | `$state(value)` | `$state(false)`, `$state('')`, `$state(0)` |
 | Replace-only sequential data without IDs | `$state.raw<T[]>([])` | terminal history, command history |
@@ -293,18 +293,19 @@ TanStack Table into an infinite loop. See
 # Reactive Table State Pattern
 
 Store reads are synchronous and return plain JSON, so the source of truth is a
-re-read, not a long-lived reactive collection. `fromWorkspace` from
+re-read, not a long-lived reactive collection. `fromData` from
 `@epicenter/svelte` packages that re-read once: it mirrors an opened
 workspace's declared `tables`/`kv` and makes every read verb reactive
 (`rows`, `nonconforming`, `list`, `get`, `ids`, `document`), while `create`,
-`update`, and `delete` pass through unchanged. The invalidation it rides fires
-after the projection commits (ADR-0221) for a local write, for prose typed
-into a row's document, and for bytes that arrived from another device alike.
+`update`, and `delete` pass through unchanged. The signal it rides names the
+rows a commit touched (ADR-0221) and fires for a local write and for bytes that
+arrived from another device alike. Prose typed inside a row's content node is
+not a table commit; `watch(node, listener)` is its signal.
 
 ```typescript
 // Root of the surface: adapt the chosen document once, then layer app state.
-const workspace = fromWorkspace(data);
-const table = workspace.tables.notes;
+const app = fromData(data);
+const table = app.tables.notes;
 
 // Derived views: filtering and sorting are cached here, not in the getter.
 const all = $derived(table.rows.filter((note) => note.deletedAt === null));
@@ -320,15 +321,22 @@ return {
 ```
 
 There is no `refresh`, no generation counter, no `await` on a read, and no
-`Symbol.dispose`: the adapter's subscriptions are ref-counted to the effects
-that read them, so they detach when the consuming components unmount, and a
-declared table nothing reads never subscribes at all. A read inside
-`$derived` or a template tracks; a read in an event handler is fresh and
-untracked. Do not hand-roll `db.<table>.subscribe(listener)` feeding
-`$state.raw` for table reads; that pattern is what the adapter replaced.
+`Symbol.dispose`. A table is HELD: `fromData` seeds a `SvelteMap` projection
+keyed by row id when it is called, patches it with the ids each commit names,
+and never tears it down, so the projection and its subscription die with the
+document. That is not ref-counting, and the difference matters: a projection
+detached from its source stays alive and stops being true. `kv` and
+`persistence` are read-through on `createSubscriber` instead, because ten keys
+and one enum are not worth holding.
 
-Adapter: `packages/svelte/src/from-workspace.svelte.ts`. Full app
-exemplar: `apps/honeycrisp/src/lib/honeycrisp/notes.svelte.ts`.
+A read inside `$derived` or a template tracks; a read in an event handler is
+fresh and untracked. Do not hand-roll `db.<table>.subscribe(listener)` feeding
+`$state.raw` for table reads; that pattern is what the adapter replaced. For
+one value off a source that is not a table, use `fromSubscription(subscribe,
+read)`.
+
+Adapter: `packages/svelte/src/from-data.svelte.ts`. Full app exemplar:
+`apps/honeycrisp/src/lib/app.svelte.ts`.
 
 See the `typescript` skill for iterator helpers (`.toArray()`, `.filter()`, `.find()` on `IteratorObject`).
 
