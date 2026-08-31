@@ -25,8 +25,8 @@ defineData({ id, title, kv, tables })
   pure JSON: one durable data domain; no storage, network, or framework
 
 openDatabase(definition, { generation, account? })
-  sqlite-wasm in the page, three durable relations in IndexedDB,
-  one database per document (ADR-0261)
+  one Yjs document in the page, one IndexedDB object store of updates,
+  one database per generation (ADR-0261, ADR-0292)
 
 data.tables.notes.rows
   synchronous from here on

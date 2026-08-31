@@ -43,24 +43,28 @@ opened.tables.notes.update(id, { title: 'Draft' }); // no await
 An inert data definition names the store it opens (ADR-0229), so there is one call and one
 name: the definition id is the document, the file, the folder and the authority
 address. Nothing takes a path or a database name. In a browser the durable
-address is derived from that definition id and the document named below rather
-than supplied (ADR-0261), so a declaration still cannot open a store it does
-not name. The runtime that comes back holds exactly this one definition for
+address is derived from that definition id, the document named below, and the
+generation the caller asked for rather than supplied (ADR-0261, ADR-0292), so
+a declaration still cannot open a store it does not name. The runtime that comes back holds exactly this one definition for
 its whole life (ADR-0240); a newer declaration reads the same durable data by
 closing it and opening the next one.
 
-In a browser the caller also names which durable document it means and whose it
-is (ADR-0261). An application keeps one local document that never joins
-account sync, and one retained replica per account:
+In a browser the caller also names which durable document it means, whose it
+is (ADR-0261), and which generation of it (ADR-0292). An application keeps one
+local document that never joins account sync, and one retained replica per
+account:
 
 ```text
-epicenter/<definitionId>/device
-epicenter/<definitionId>/account/<base URL>/<principal id>
+epicenter/v3/<dataId>/local/gen/<n>
+epicenter/v3/<dataId>/account/<base URL>/<principal id>/gen/<n>
 ```
 
-That address is the IndexedDB database name, so a data discard or
-supersession can reach exactly one account's replica and never the
-local document or another account's. An account replica cannot be opened
+That address is the IndexedDB database name, so there is one database per
+GENERATION rather than per document, and a data discard or supersession can
+reach exactly one account's replica at one generation and never the local
+document, another account's, or another generation of the same one. `v3` is
+the storage epoch: bumping it strands every existing record instead of
+migrating it, which is how the record's shape is allowed to change. An account replica cannot be opened
 without an account: the argument is a union with nowhere to omit one, and an
 empty id is refused with `StoreError.Unaddressable` rather than addressed.
 
