@@ -13,8 +13,7 @@ import type { PrincipalId } from '@epicenter/principal';
  * explaining that it lived there so an MIT toolkit and the AGPL auth client
  * could share one definition across a license firewall. Every consumer was
  * this package or downstream of it, the firewall is gone, and the
- * `packages/workspace` the docstring named as the other sharer had stopped
- * existing well before that.
+ * `packages/data`, the store package that owns the shared data definition.
  */
 export type AuthState =
 	| { status: 'signed-out' }

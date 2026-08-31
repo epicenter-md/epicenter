@@ -18,13 +18,13 @@ disabled; the app runs entirely in the browser as a static site.
 
 ### Data layer
 
-Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and opens it as a store the app owns:
+Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/data/index.ts`) and opens it as a store the app owns:
 
 ```txt
 resolveLocalGeneration()                                  which number, once
 openLocalDatabase(generation)                             local database
 openAccountDatabase({ auth, generation })                 account replica
-data.tables.notes.list()                                  synchronous from here on
+data.tables.notes.rows                                    synchronous from here on
 ```
 
 The definition names the application and the route names which exact generation
@@ -40,7 +40,7 @@ authority per signed-in account (ADR-0225/0226). The desktop host serves
 Honeycrisp's bundle and brokers its credential; it owns none of its data.
 
 **Reads are synchronous after opening.** A route opens its store by replaying a
-durable log into one `Y.Doc`, then `data.tables.notes.list()` returns rows, not
+durable log into one `Y.Doc`, then `data.tables.notes.rows` returns rows, not
 a promise. An account route may wait for a fresh replica's first binding while
 the device route remains independently usable.
 
@@ -52,15 +52,15 @@ refresh anywhere.
 
 ### Rich-text editing
 
-A note's prose is the `body` rich field on its note row, declared
-`field.type()` and minted with the row. `NoteBodyPane.svelte` reaches it through
-`notes.openBody(noteId)` and hands the type straight to ProseMirror through
+A note's prose is the `content` node on its note row, declared with a content
+codec and minted with the row. `NoteBodyPane.svelte` reaches it through
+`notes.openContent(noteId)` and hands the type straight to ProseMirror through
 `@y/prosemirror`. Nothing is awaited and nothing is loaded: the type is in the
 document the store already holds.
 
-`openBody` also subscribes to that field's own edit signal and writes the
-note's `title`, `preview`, and `updatedAt` back onto the row, coalesced to one
-write per burst. The store writes no derived fields and no timestamps
+`openContent` also subscribes to that node's own edit signal and writes the
+note's `title` and `updatedAt` back onto the row, coalesced to one write per
+burst. The store writes no derived fields and no timestamps
 (ADR-0297), so this is Honeycrisp's job; `close` stops it.
 
 ### Soft deletion
@@ -96,7 +96,6 @@ transport (ADR-0222).
 | `id` | `string` (runtime-minted) |
 | `name` | `string` |
 | `icon` | `string \| null` |
-| `sortOrder` | `number` |
 
 **`notes`**
 | Field | Type |
@@ -104,19 +103,18 @@ transport (ADR-0222).
 | `id` | `string` (runtime-minted) |
 | `folderId` | `string \| null` |
 | `title` | `string` |
-| `preview` | `string` |
 | `pinned` | `boolean` |
 | `createdAt` | `string.date.iso` |
 | `updatedAt` | `string.date.iso` |
 | `deletedAt` | `string.date.iso \| null` (soft delete) |
-| `wordCount` | `number \| null` |
+| `content` | live `Y.Type` (Markdown codec) |
 
 A data definition has no optional fields: a field has to be one type through the CRDT
 attribute, the exported frontmatter value and the row alike, and "absent" is not a
 type. So what would have been optional is nullable, and the application writes
 or recovers `null` explicitly.
 
-Each note's prose lives at the `body` root inside that note's document. The
+Each note's prose lives at the `content` root inside that note's document. The
 application names the root and picks its format; Epicenter allocates the
 container with the row, collects it with the row, and never looks inside.
 

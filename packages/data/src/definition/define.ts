@@ -13,29 +13,33 @@
  * deleted. What is left validates `kv`, which is the one field map an
  * application still writes inline.
  *
- * That duplication is also what drifted: `ValidateTable` dispatched on the key
- * `fields` for a day after the declaration renamed it to `scalars`, and because
- * a conditional type answering "no" is a legal answer, nothing failed and
- * nothing said anything. A rule enforced in one place cannot go stale in the
- * other one.
+ * A table's scalar fields are top-level keys. The reserved `content` key is the
+ * only non-field key, and `id` cannot be claimed by a scalar.
  */
+
+import type { TSchema } from 'typebox';
 import { parseData } from './compile.js';
 import type {
+	CONTENT_FIELD,
 	ContentCodec,
 	DeclaredMark,
 	DeclaredTable,
 	FieldMap,
-	ReservedRowField,
 } from './declaration.js';
 
 type RejectDefault<T> = T extends { default: unknown } ? never : T;
 
+type ReservedRowKey<K extends string> = Lowercase<K> extends 'id'
+	? `'${K}' is reserved: every row already has an id and a content node`
+	: never;
+
 /**
- * The scalars of one bucket, with a declared default refused at the field and
+ * The scalar fields of one table, with a declared default refused at the field and
  * a reserved name refused at the key.
  *
- * `defineTable` applies this to a table's `scalars` and `defineData` applies it
- * to `kv`, which are the two places a field map is authored.
+ * `defineTable` applies this to all top-level table keys except `content`, and
+ * `defineData` applies it to `kv`, which are the two places field maps are
+ * authored.
  *
  * The reserved-name arm is what replaced a mapped type over the type-field
  * TUPLE that carried its error sentence in the element position. A row has one
@@ -43,9 +47,25 @@ type RejectDefault<T> = T extends { default: unknown } ? never : T;
  * search, and the message lands on the offending field.
  */
 type ValidateFields<T extends FieldMap> = {
-	[K in keyof T]: K extends ReservedRowField
-		? `'${K & string}' is reserved: every row already has an id and a content node`
+	[K in keyof T]: K extends string
+		? ReservedRowKey<K> extends never
+			? RejectDefault<T[K]>
+			: ReservedRowKey<K>
 		: RejectDefault<T[K]>;
+};
+
+type ValidateTable<T extends { readonly content: ContentCodec }> = {
+	[K in keyof T]: K extends typeof CONTENT_FIELD
+		? T[K] extends ContentCodec
+			? T[K]
+			: ContentCodec
+		: T[K] extends TSchema
+			? K extends string
+				? ReservedRowKey<K> extends never
+					? RejectDefault<T[K]>
+					: ReservedRowKey<K>
+				: RejectDefault<T[K]>
+			: never;
 };
 
 /**
@@ -62,15 +82,11 @@ type ValidateFields<T extends FieldMap> = {
  * `DataDefinition` holds every table under one shape, so it cannot be generic
  * over each table's fields.
  */
-export function defineTable<const TScalars extends FieldMap>(table: {
-	scalars: TScalars & ValidateFields<TScalars>;
-	content: ContentCodec;
-}): DeclaredMark & { scalars: TScalars; content: ContentCodec } {
+export function defineTable<
+	const TTable extends { readonly content: ContentCodec },
+>(table: TTable & ValidateTable<TTable>): DeclaredMark & TTable {
 	// The brand is a phantom: declared, never assigned, and asserted here.
-	return table as unknown as DeclaredMark & {
-		scalars: TScalars;
-		content: ContentCodec;
-	};
+	return table as unknown as DeclaredMark & TTable;
 }
 
 export function defineData<
@@ -83,13 +99,12 @@ export function defineData<
 >(
 	data: TData & {
 		kv: ValidateFields<TData['kv']>;
-		// Deferred on purpose. Naming `DeclaredTable` directly here would
-		// contextually type every table literal with `types?: readonly string[]`,
-		// and that context reaches INTO `defineTable`'s inference: a table with no
-		// `types` would resolve `TTypes` to the constraint instead of the empty
-		// default, and the codec rule would then demand a `file` for a table that
-		// declares no type field. A conditional defers, so the brand is checked
-		// without the shape being pushed inward.
+		// Per table, so the refusal lands on the table that is missing the
+		// brand. A plain `{ [table: string]: DeclaredTable }` refuses the same
+		// bare literal, but the error reports the whole `tables` object rather
+		// than the one element, which is the difference between naming the
+		// mistake and pointing at the neighbourhood. Same reason `ValidateFields`
+		// maps over its keys.
 		tables: {
 			[N in keyof TData['tables']]: TData['tables'][N] extends DeclaredTable
 				? TData['tables'][N]

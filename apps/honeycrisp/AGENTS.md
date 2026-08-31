@@ -90,10 +90,10 @@ only the default one is checked by an editor.
   somebody typed.
 - Do not add a `#platform/*` seam for storage. Every build opens its own store;
   a seam there is the thing ADR-0226 refused.
-- Do not write a note's `title`, `preview`, or `updatedAt` from anywhere but
-  `notes.openBody`'s subscription. The store writes no derived fields and no
-  timestamps (ADR-0297), so those three are Honeycrisp's, hung on the body's
-  own edit signal and coalesced. A second writer would fight it.
-- Do not leave `openBody`'s `close` uncalled. Nothing is loaded any more, so
+- Do not write a note's `title` or `updatedAt` from anywhere but
+	  `notes.openContent`'s subscription. The store writes no derived fields and no
+	  timestamps (ADR-0297), so those are Honeycrisp's, hung on the content node's
+	  own edit signal and coalesced. A second writer would fight it.
+- Do not leave `openContent`'s `close` uncalled. Nothing is loaded any more, so
   there is no document to leak; what leaks is the derivation subscription, and
   two of them on one note write the row twice per keystroke.

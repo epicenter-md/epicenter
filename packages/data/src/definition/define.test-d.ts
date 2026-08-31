@@ -4,8 +4,9 @@
  * Each rule here is also enforced at runtime by `parseData`. They are pinned
  * because a rule carried by a type can stop applying instead of failing:
  * `ValidateTable` dispatched on the key `fields` for a day after the
- * declaration renamed it to `scalars`, and nothing said so. That whole type is
- * gone now — a table reaches `defineData` branded, so `defineTable` is the one
+ * table fields are now top-level keys, so nothing needs a second wrapper or a
+ * public list of content names. That whole type is gone now — a table reaches
+ * `defineData` branded, so `defineTable` is the one
  * place a table is checked — and these pins are what would notice if the one
  * remaining door stopped checking.
  *
@@ -30,25 +31,25 @@ import { defineData, defineTable, field } from './index.js';
  * makes the error land on the field instead of on the object around it.
  *
  * This replaced a pin for a rule that no longer exists: a name declared as
- * both a scalar and a type field. When `types` was deleted, that pin kept
+ * both a scalar and the content key. When `types` was deleted, that pin kept
  * passing, because its `@ts-expect-error` absorbed the excess-property error
  * for `types` itself. Probed to confirm: with `types` removed entirely and an
  * unrelated key in its place, the expectation was still satisfied. A pin that
  * cannot tell you what it is pinning is the failure this file exists to catch.
  */
 defineTable({
-	scalars: {
-		// @ts-expect-error 'content' is reserved: every row already has one
-		content: field.string(),
-	},
-	content: plainText(),
+	// @ts-expect-error content is reserved for the table's codec
+	content: field.string(),
 });
 
 defineTable({
-	scalars: {
-		// @ts-expect-error 'id' is reserved: every row already has one
-		id: field.string(),
-	},
+	// @ts-expect-error every table declares its content codec
+	title: field.string(),
+});
+
+defineTable({
+	// @ts-expect-error 'id' is reserved: every row already has one
+	id: field.string(),
 	content: plainText(),
 });
 
@@ -71,10 +72,8 @@ defineTable({
  * here; the rest is `parseData`'s to refuse.
  */
 defineTable({
-	scalars: {
-		// @ts-expect-error a default belongs to the application, not the schema
-		title: { ...field.string(), default: 'untitled' },
-	},
+	// @ts-expect-error a default belongs to the application, not the schema
+	title: { ...field.string(), default: 'untitled' },
 	content: plainText(),
 });
 
@@ -97,7 +96,7 @@ defineData({
 	kv: {},
 	tables: {
 		// @ts-expect-error a table is authored with `defineTable`
-		notes: { scalars: { title: field.string() } },
+		notes: { title: field.string() },
 	},
 });
 
@@ -109,7 +108,7 @@ defineData({
 	},
 	tables: {
 		items: defineTable({
-			scalars: { title: field.string() },
+			title: field.string(),
 			content: plainText(),
 		}),
 	},

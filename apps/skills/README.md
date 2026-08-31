@@ -2,9 +2,8 @@
 
 A local browser editor for Epicenter agent skills. Records live in the Browser
 workspace runtime's canonical OPFS store. Instructions and reference bodies are
-row-owned Yjs documents in the workspace contract. The browser row-document
-channel is still a deliberate runtime stub, so metadata works but the text
-editors remain blocked until that channel lands.
+the `content` nodes on their owning rows in the workspace document. CodeMirror
+binds directly to those live nodes.
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo.
 AGPL-3.0 licensed.
@@ -21,13 +20,13 @@ being silently deleted or migrated.
 The app uses runtime-owned structural record IDs. Each valid skill and reference
 also carries a stable `sourceId` in its JSON payload for domain-level references.
 Deleting a skill explicitly deletes its currently conforming reference records.
-Deleting a row also removes its rich content, which is nested under it.
+Deleting a row also removes its content node, which is nested under it.
 
 Instructions and reference bodies are rich fields on their owning rows:
 
 ```ts
-skills.skills.content(skillId)?.types.content;
-skills.skillReferences.content(referenceId)?.types.content;
+skills.data.tables.skills.get(skillId)?.content;
+skills.data.tables.skillReferences.get(referenceId)?.content;
 ```
 
 Application code never constructs addresses, authority identities, or providers.

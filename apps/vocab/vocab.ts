@@ -17,7 +17,12 @@ import type { AgentMessage } from '@epicenter/agent';
 import { conversationsTable } from '@epicenter/chat';
 import type { ServableModel } from '@epicenter/constants/ai-providers';
 import type { DataView } from '@epicenter/data';
-import { defineData, type RowOf } from '@epicenter/data/definition';
+import {
+	defineData,
+	defineTable,
+	plainText,
+	type RowOf,
+} from '@epicenter/data/definition';
 
 /**
  * Vocab runs a single model. It is an app constant, not a per-conversation
@@ -79,14 +84,15 @@ export type VocabMessage = AgentMessage;
  * it; understood: you comprehend it; usable: you can produce it). `note` is
  * human-owned: no code path machine-writes it.
  */
-const entriesTable = {
+const entriesTable = defineTable({
 	text: field.string(),
 	note: field.string(),
 	stage: field.select(['new', 'understood', 'usable']),
 	// Validation-only rather than `string.date.parse`: a parsing form would hand
 	// back a `Date` that could not round-trip through the projection.
 	createdAt: field.instant(),
-} as const;
+	content: plainText(),
+});
 
 /**
  * The isomorphic Vocab workspace.
@@ -96,10 +102,10 @@ const entriesTable = {
  * composing a chat table: the conversations are Vocab's, not a workspace id another
  * application owns.
  *
- * Conversation transcripts are not rows: each conversation row owns a document
- * holding one {@link VocabMessage} per key (ADR-0046). The open client tab
+ * Conversation transcripts are not scalar fields: each conversation row owns a
+ * content node holding one {@link VocabMessage} per key (ADR-0046). The open client tab
  * answers in-process (ADR-0043): it streams the live turn in component state
- * and writes each finished message into that document.
+ * and writes each finished message into that content node.
  *
  * `showReadings` is `kv` rather than a `settings` row, and that is a
  * correctness fix rather than tidiness. It used to be a row at a chosen id, so
@@ -118,7 +124,7 @@ export const vocabDefinition = defineData({
 	},
 	tables: {
 		conversations: conversationsTable,
-		entries: { scalars: entriesTable },
+		entries: entriesTable,
 	},
 });
 

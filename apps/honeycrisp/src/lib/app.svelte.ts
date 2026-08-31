@@ -279,9 +279,9 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 	 * that subscription; the pane holds exactly one note open at a time, and the
 	 * type itself outlives it either way.
 	 */
-	function openBody(id: NoteId) {
-		const body = table.get(id)?.content;
-		if (body === undefined) return undefined;
+	function openContent(id: NoteId) {
+		const content = table.get(id)?.content;
+		if (content === undefined) return undefined;
 		// Coalesced to one write per animation-frame-ish burst, because a
 		// keystroke is a commit and writing the row on each one would write a row
 		// per character. Reading the title itself is cheap now (`noteTitle` slices
@@ -291,7 +291,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 		// writes during sustained typing, and a person who stops typing and
 		// closes the tab should not lose their title to a pending timer.
 		let queued: ReturnType<typeof setTimeout> | undefined;
-		const stop = table.watch(body, () => {
+		const stop = table.watch(content, () => {
 			if (queued !== undefined) return;
 			queued = setTimeout(() => {
 				queued = undefined;
@@ -299,13 +299,13 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 				// the edit that queued this. `update` refuses an absent row, which
 				// is exactly the drop this wants.
 				table.update(id, {
-					title: noteTitle(body),
+					title: noteTitle(content),
 					updatedAt: InstantString.now(),
 				});
 			}, 0);
 		});
 		return {
-			body,
+			content,
 			close: () => {
 				stop();
 				if (queued !== undefined) clearTimeout(queued);
@@ -345,7 +345,7 @@ function createNotes(table: ReactiveData<HoneycrispData>['tables']['notes']) {
 		 * Exposed as a verb so the raw `tables` never has to be. The editor pane
 		 * wanted this one call and was given the whole store shape to make it.
 		 */
-		openBody,
+		openContent,
 		previewOf,
 		get all() {
 			return all;

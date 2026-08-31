@@ -6,7 +6,7 @@
   <p align="center"><strong>Local-first apps over a store you own.</strong></p>
   <p align="center">An app's whole data set is one CRDT document on your machine, complete enough to work with the network off. Sign in on a second device and the two converge. No server holds the only copy, and no app owns your storage.</p>
   <p align="center"><a href="apps/honeycrisp">Honeycrisp</a>, a local-first notes app, is the app built on it today.</p>
-  <p align="center">Run the apps freely under AGPL-3.0; build on the developer toolkit freely under MIT. <a href="#license">What that means</a>.</p>
+  <p align="center">Run the apps freely under AGPL-3.0-or-later. <a href="#license">What that means</a>.</p>
 </p>
 
 <p align="center">
@@ -17,7 +17,7 @@
     <img alt="Apps license: AGPL-3.0" src="https://img.shields.io/badge/apps-AGPL--3.0-blue?style=flat-square" />
   </a>
   <a href="#license">
-    <img alt="Toolkit license: MIT" src="https://img.shields.io/badge/toolkit-MIT-brightgreen?style=flat-square" />
+    <img alt="Packages license: AGPL-3.0-or-later" src="https://img.shields.io/badge/packages-AGPL--3.0--or--later-blue?style=flat-square" />
   </a>
   <a href="https://go.epicenter.so/discord" target="_blank">
     <img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20us-5865F2?style=flat-square&logo=discord&logoColor=white" />
@@ -26,7 +26,6 @@
 
 <p align="center">
   <a href="#the-store">The Store</a> |
-  <a href="#build-with-the-toolkit">Toolkit</a> |
   <a href="#status">Status</a> |
   <a href="#trust-boundaries">Trust</a> |
   <a href="#repo-map">Repo Map</a> |
@@ -49,19 +48,18 @@ a nested type on the row, not a second document with an address of its own.
 
 ```typescript
 import { openDevice } from '@epicenter/data/browser';
-import { defineData, field } from '@epicenter/data/definition';
+import { defineData, defineTable, field, plainText } from '@epicenter/data/definition';
 
 const notesDefinition = defineData({
 	id: 'com.example.notes',
 	kv: {},
 	tables: {
-		notes: {
-			fields: {
-				title: field.string(),
-				pinned: field.boolean(),
-				folderId: field.nullable(field.string()),
-			},
-		},
+		notes: defineTable({
+			title: field.string(),
+			pinned: field.boolean(),
+			folderId: field.nullable(field.string()),
+			content: plainText(),
+		}),
 	},
 });
 
@@ -70,7 +68,7 @@ const { data } = await openDevice(notesDefinition);  // the only await
 
 const note = data.tables.notes.create({ title: 'Hello', pinned: false, folderId: null });
 
-const listed = data.tables.notes.list();          // synchronous: { rows, nonconforming }
+const listed = data.tables.notes.rows;             // synchronous flat rows
 const stop = data.tables.notes.subscribe(read);   // fires with the row ids a commit touched
 ```
 
@@ -80,8 +78,8 @@ release-local and never migrates your data. A row it cannot read is reported
 beside the rows it can, with the reason and the raw values intact, and an
 ordinary write repairs it.
 
-Prose merges per character in a rich field. Declare it with `field.type()`,
-reach it with `data.tables.notes.content(note.id)`, and bind it to the editor;
+Prose merges per character in the row's `content` node. Declare its codec with
+`content: plainText()` and reach it with `data.tables.notes.get(note.id)?.content`;
 Epicenter never looks inside. The database document's `kv`/`tables:<name>` shape
 is recorded in
 [ADR-0257](docs/adr/0257-the-application-document-has-named-kv-and-table-roots.md)
@@ -94,10 +92,6 @@ approved.
 
 [Read the data package docs](packages/data/README.md) | [What it replaced, and why](docs/the-store-and-what-it-replaced.md)
 
-## Build With The Toolkit
-
-The developer toolkit is MIT: build anything on it, including closed-source and commercial products, and you own what you build, with no obligation back to Epicenter. [`@epicenter/data`](packages/data) and [`@epicenter/ui`](packages/ui) are the packages meant to leave this repo. They are pre-1.0 and tuned for our own apps, so treat them as fork-and-own rather than a stability-guaranteed SDK for now.
-
 ## Status
 
 There is one runtime: a desktop SPA in a WebView, over a store the client owns.
@@ -108,11 +102,9 @@ installed apps, for now.
 [Honeycrisp](apps/honeycrisp) is the app running on the store, and its
 README is the worked example.
 
-Whispering, vocab, skills, and the Epicenter host do not compile right now. The
-superseded data stack was deleted before they were migrated, deliberately: the
-new store has no row-document HTTP path and no multi-process observation
-carrier, so there was nowhere for them to move until those refusals landed. Data
-they held on the old stack is accepted as lost; there is no importer.
+Whispering, vocab, skills, and the Epicenter host now compile against the store.
+The superseded data stack was deleted before they were migrated, deliberately,
+so old data is not imported into the new model.
 
 [Matter](apps/matter) edits user-owned Markdown folders directly and keeps a
 disposable `matter.sqlite` query mirror beside them. [Local
@@ -144,7 +136,7 @@ Signed-in sync sends your data to a trusted server that reads it in plaintext. O
 | [Local Books](apps/local-books), [Local Mail](apps/local-mail) | Run, separately | Headless CLI mirrors that pull QuickBooks and Gmail into local SQLite. |
 | [API](apps/api) | Hosted infrastructure | Personal cloud Worker. Owns the store authority binding, hosted-only billing, and the dashboard. |
 | [Self-host](apps/self-host) | Reference deployable | Community-supported single-partition instance without hosted billing. |
-| [Whispering](apps/whispering), [vocab](apps/vocab), [skills](apps/skills), [Epicenter](apps/epicenter) | Do not compile | Awaiting migration onto the store. See [Status](#status). |
+| [Whispering](apps/whispering), [vocab](apps/vocab), [skills](apps/skills), [Epicenter](apps/epicenter) | Compile | Migrated onto the store. |
 | Other app folders | Research and prototypes | Useful history and experiments, not the current product lineup. |
 
 ### Packages
@@ -153,11 +145,11 @@ These packages carry the main architecture.
 
 | Package | Role | License |
 | --- | --- | --- |
-| [`@epicenter/data`](packages/data) | The store: one Yjs document per application, a synchronous surface over it, and the transport that carries it. | MIT |
-| [`@epicenter/data/definition`](packages/data/src/definition) | The inert data-definition vocabulary: JSON field descriptors, row addresses, and nonconformance. | MIT |
-| [`@epicenter/sqlite`](packages/sqlite) | Neutral embedded-SQLite driver with Browser, Bun, and Durable Object adapters. It owns no product schema. | MIT |
-| [`@epicenter/sync`](packages/sync) | The WebSocket subprotocol vocabulary both halves of a handshake must agree on. | MIT |
-| [`@epicenter/ui`](packages/ui) | Shared Svelte component library used by multiple apps. | MIT |
+| [`@epicenter/data`](packages/data) | The store: one Yjs document per application, a synchronous surface over it, and the transport that carries it. | AGPL-3.0-or-later |
+| [`@epicenter/data/definition`](packages/data/src/definition) | The inert data-definition vocabulary: JSON field descriptors, row addresses, and nonconformance. | AGPL-3.0-or-later |
+| [`@epicenter/sqlite`](packages/sqlite) | Neutral embedded-SQLite driver with Browser, Bun, and Durable Object adapters. It owns no product schema. | AGPL-3.0-or-later |
+| [`@epicenter/sync`](packages/sync) | The WebSocket subprotocol vocabulary both halves of a handshake must agree on. | AGPL-3.0-or-later |
+| [`@epicenter/ui`](packages/ui) | Shared Svelte component library used by multiple apps. | AGPL-3.0-or-later |
 | [`@epicenter/server`](packages/server) | Shared Hono server library composed by the hosted API and the self-host reference deployable. | AGPL-3.0-or-later |
 
 ## Architecture
@@ -207,7 +199,7 @@ Every app starts from the repo root. `bun dev:<app>` runs every process the app 
 | `bun dev:posthog-reverse-proxy` | PostHog reverse proxy Worker | wrangler default |
 | `bun dev:self-host` | Self-host server (needs `INSTANCE_TOKEN`) | 8787 |
 
-`bun dev:whispering`, `bun dev:vocab`, `bun dev:skills`, and `bun dev:epicenter` still exist, but those apps do not compile until they are migrated onto the store.
+`bun dev:whispering`, `bun dev:vocab`, `bun dev:skills`, and `bun dev:epicenter` still exist, and those apps compile against the store.
 
 The API needs local Postgres and Infisical; see [apps/api/README.md](apps/api/README.md). Rust is needed for Tauri apps such as Honeycrisp and Matter. Local Books and Local Mail run their own multi-process dev flows; their READMEs document them.
 
@@ -243,13 +235,9 @@ Contributors coordinate in [Discord](https://go.epicenter.so/discord).
 
 ## License
 
-Epicenter uses a two-tier split by how you use the code:
-
-- Everything is [AGPL-3.0-or-later](licenses/LICENSE-AGPL-3.0). An MIT toolkit tier existed until 2026-08 and was dissolved; versions already published to npm under MIT stay MIT for those versions.
-- [AGPL-3.0](licenses/LICENSE-AGPL-3.0) or later for code we ship or run: every app, the shared server library, and the rest of the internal packages.
-- There is no proprietary tier today. Revenue is intended to come from hosting and services, not from selling closed licenses.
-
-Every dependency of the toolkit packages is MIT-compatible, enforced by `bun run check:licenses`. The license split follows the same broad pattern as Plausible and PostHog for hosted open-source services, and Yjs for MIT core libraries with copyleft server pieces.
+Everything is [AGPL-3.0-or-later](licenses/LICENSE-AGPL-3.0). An MIT toolkit
+tier existed until 2026-08 and was dissolved; versions already published under
+MIT stay MIT for those versions.
 
 See the root [LICENSE](LICENSE), [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAINABILITY.md), and the [licensing strategy](docs/licensing/licensing-strategy.md) for the full model.
 

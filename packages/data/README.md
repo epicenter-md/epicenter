@@ -90,7 +90,7 @@ data.tables.notes.rows                            // Row[], read through the dec
 data.tables.notes.nonconforming                   // rows this release cannot read
 data.tables.notes.ids()                           // string[], sorted, unconformed
 data.tables.notes.subscribe(listener)             // this table's SHAPE changed
-data.watch(type, listener)                        // one live type's content changed
+data.tables.notes.watch(type, listener)           // one live type's content changed
 data.transact(() => { ... })                      // several writes, one commit
 ```
 
@@ -99,7 +99,7 @@ There is no id and no `create`, because there is exactly one and it always exist
 Missing fields remain nonconforming. Applications compose initialization and
 recovery values explicitly from `error.conforming`.
 
-Row document lifecycle is owned by the table that owns the row.
+The row owns its content node, and the database document owns its lifetime.
 `data.transact(() => { ... })` groups direct table and KV operations into one
 accepted and durable transaction.
 
@@ -164,7 +164,7 @@ by the time a subscriber reads through it.
 
 It deliberately does NOT fire for prose typed inside a row's content node. The
 node is nested on its row, so counting it here would wake every list in the
-application at typing frequency. `data.watch(node, listener)` is the signal for
+application at typing frequency. `data.tables.notes.watch(node, listener)` is the signal for
 that, scoped to the one node, and it is delivered last so a listener that writes
 is writing against a settled commit.
 
@@ -225,7 +225,7 @@ is nothing to open, nothing to await, and nothing to dispose:
 ```ts
 const note = data.tables.notes.get(id);
 const body = note?.content;                  // the live node, read off the row
-const stop = body && data.watch(body, onEdit);
+const stop = body && data.tables.notes.watch(body, onEdit);
 ```
 
 `watch` takes the type rather than an address, because a caller holding one has
@@ -290,17 +290,18 @@ domain: closed JSON field descriptors, with no storage or lifecycle
 ships a newer definition and reads the same durable data through it.
 
 ```ts
-import { defineData, field } from '@epicenter/data/definition';
+import { defineData, defineTable, field, plainText } from '@epicenter/data/definition';
 
 export const notesDefinition = defineData({
 	id: 'com.example.notes',
 	kv: { theme: field.select(['light', 'dark']) },
 	tables: {
-		notes: {
+		notes: defineTable({
 			title: field.string(),
 			folderId: field.nullable(field.string()),
 			createdAt: field.instant(),
-		},
+			content: plainText(),
+		}),
 	},
 });
 ```

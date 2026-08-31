@@ -32,7 +32,7 @@ const workspaces = {
 		kv: {},
 		tables: {
 			notes: defineTable({
-				scalars: { title: field.string() },
+				title: field.string(),
 				content: plainText(),
 			}),
 		},
@@ -42,7 +42,7 @@ const workspaces = {
 		kv: {},
 		tables: {
 			notes: defineTable({
-				scalars: { title: field.string() },
+				title: field.string(),
 				content: plainText(),
 			}),
 		},
@@ -94,7 +94,7 @@ Object.assign(globalThis, {
 		return { ok: true };
 	},
 
-	/** Create a note AND write prose into its type field, then wait for durability. */
+	/** Create a note AND write prose into its content node, then wait for durability. */
 	async write(title: string, prose: string) {
 		const db = bound();
 		const made = db.tables.notes.create({ title });

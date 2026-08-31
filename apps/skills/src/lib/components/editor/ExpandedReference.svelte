@@ -5,10 +5,10 @@
 	let { id }: { id: string } = $props();
 	const skills = getSkills();
 
-	// Same shape as InstructionsEditor: the body is a nested type on the row
+	// Same shape as InstructionsEditor: the content is a nested type on the row
 	// (ADR-0295), so there is nothing to open and nothing to dispose.
 	const content = $derived(
-		skills.data.tables.skillReferences.get(id)?.body,
+		skills.data.tables.skillReferences.get(id)?.content,
 	);
 </script>
 

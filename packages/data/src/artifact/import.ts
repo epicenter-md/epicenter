@@ -5,7 +5,7 @@
  * The mirror of `renderArtifact`, and deliberately the same kind of thing: a
  * pure function over the public vocabulary, composed outside the store. It
  * rebuilds the database's one Yjs document from every row file, mints each
- * row with its type fields, and hands the table's codec the parsed
+ * row with its content node, and hands the table's codec the parsed
  * frontmatter and the body beneath it.
  *
  * Producing bytes rather than writing them is what keeps import honest about
@@ -17,7 +17,7 @@
  *
  * It fails closed, for the same reason the export does not: what comes out of
  * here replaces a store, so a file it could not read is a refusal rather than
- * a row quietly left out. `deserialize` runs once per row for every database
+ * a row quietly left out. `decode` runs once per row for every database
  * that will ever exist, because import is the only way a generation comes
  * into being (ADR-0293), which is rare in frequency and absolute in role.
  */
@@ -46,7 +46,7 @@ import { parseRowPath } from './layout.js';
 export const ImportError = defineErrors({
 	/**
 	 * The definition handed to the import could not be compiled, so there are
-	 * no codecs to deserialize through. The export refuses the same way.
+	 * no codecs to decode through. The export refuses the same way.
 	 */
 	MalformedDefinition: ({ reason }: { reason: string }) => ({
 		message: `The data definition could not be compiled: ${reason}`,
@@ -73,7 +73,7 @@ export const ImportError = defineErrors({
 		table,
 		rowId,
 	}),
-	/** The table's own `deserialize` refused or threw on this file. */
+	/** The table's own `decode` refused or threw on this file. */
 	RowUnreadable: ({
 		table,
 		rowId,
@@ -189,9 +189,9 @@ export function readArtifact(
 /**
  * Put one file's row into the document.
  *
- * One transaction. The codec reads the whole file into a row, type fields
- * included and already built, and `createRow` integrates them beside the
- * scalars in the transaction that mints the row.
+ * One transaction. The codec reads the body into a fresh content node, and
+ * `createRow` integrates it beside the frontmatter scalars in the transaction
+ * that mints the row.
  *
  * It used to be three writes: mint an empty row so the codec could be handed
  * ATTACHED types, read them back, let the codec fill them and return the

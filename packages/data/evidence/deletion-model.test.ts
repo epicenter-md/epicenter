@@ -24,7 +24,7 @@ import {
 } from './raw-document.js';
 
 const PRESENCE = '!presence';
-const DOCUMENT = '!doc';
+const CONTENT = 'content';
 
 type Model = 'clear-and-flag' | 'drop';
 
@@ -43,7 +43,7 @@ function create(doc: Y.Doc, rowId: string, title: string): void {
 	doc.transact(() => {
 		const row: ScalarType = new Y.Type();
 		putRow(rowsOf(doc), rowId, row);
-		putType(row, DOCUMENT, new Y.Type());
+		putType(row, CONTENT, new Y.Type());
 		row.setAttr(PRESENCE, 'present');
 		row.setAttr('title', title);
 	});
@@ -78,7 +78,10 @@ function read(doc: Y.Doc, rowId: string): Record<string, unknown> | undefined {
 	if (row.getAttr(PRESENCE) !== 'present') return undefined;
 	const payload: Record<string, unknown> = {};
 	for (const name of row.attrKeys()) {
-		if (!name.startsWith('!')) payload[name] = row.getAttr(name);
+		const value = row.getAttr(name);
+		if (!name.startsWith('!') && !(value instanceof Y.Type)) {
+			payload[name] = value;
+		}
 	}
 	return payload;
 }
@@ -210,14 +213,14 @@ describe('what the two models really differ on', () => {
 	});
 });
 
-describe('a row document under a concurrent delete', () => {
+describe("a row's content node under a concurrent delete", () => {
 	for (const model of ['clear-and-flag', 'drop'] as const) {
 		test(`${model}: prose written concurrently does not revive the row`, () => {
 			const { laptop, phone, rowId } = pair();
 			const container = rowAt(rowsOf(phone), rowId);
 			if (container === undefined) throw new Error('the row is gone');
-			const text = typeAt(container, DOCUMENT);
-			if (text === undefined) throw new Error('the row has no document');
+			const text = typeAt(container, CONTENT);
+			if (text === undefined) throw new Error('the row has no content node');
 
 			remove(laptop, rowId, model);
 			phone.transact(() => {

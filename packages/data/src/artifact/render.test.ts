@@ -10,25 +10,26 @@ import * as Y from '@y/y';
 import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openMemory } from '../store/memory.js';
-import type { TypedTableHandle } from '../store/store.js';
 import { type RenderedRow, renderArtifact, renderRow } from './render.js';
-
-type NoteFields = (typeof store)['tables']['notes'];
 
 const store = defineData({
 	id: 'so.epicenter.honeycrisp',
 	kv: { theme: field.string() },
 	tables: {
 		notes: defineTable({
-			scalars: { title: field.string() },
+			title: field.string(),
 			content: plainText(),
 		}),
 	},
 });
 
-/** Write prose into one row's `content` type field. */
+/** Write prose into one row's live `content` node. */
 function type(
-	data: { tables: { notes: TypedTableHandle<NoteFields> } },
+	data: {
+		tables: {
+			notes: { get(rowId: string): { content: Y.Type } | undefined };
+		};
+	},
 	rowId: string,
 	text: string,
 ): void {
@@ -84,13 +85,13 @@ describe('renderRow is the unit (ADR-0271)', () => {
 		expect(rendered.contents).toBeUndefined();
 	});
 
-	test('a table with no type content renders frontmatter alone', async () => {
+	test('a table with an empty content node renders frontmatter alone', async () => {
 		const scalarOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
 			tables: {
 				folders: defineTable({
-					scalars: { name: field.string() },
+					name: field.string(),
 					content: plainText(),
 				}),
 			},
@@ -106,6 +107,34 @@ describe('renderRow is the unit (ADR-0271)', () => {
 		);
 	});
 
+	test('a content node with attributes is not treated as empty without a codec', async () => {
+		const scalarOnly = defineData({
+			id: 'so.epicenter.honeycrisp',
+			kv: {},
+			tables: {
+				folders: defineTable({
+					name: field.string(),
+					content: plainText(),
+				}),
+			},
+		});
+		await using data = await openMemory(scalarOnly);
+		const made = data.tables.folders.create({ name: 'Inbox' });
+		const row = data.tables.folders.get(made.id);
+		if (row === undefined) throw new Error('the row has no content');
+		row.content.setAttr('format', 'markdown');
+
+		const rendered = expectErr(
+			await renderRow(
+				data,
+				parsed(JSON.parse(JSON.stringify(scalarOnly))),
+				'folders',
+				made.id,
+			),
+		);
+		expect(rendered.name).toBe('UncodedRow');
+	});
+
 	test('a codec that throws is a refusal, not an escaping exception', async () => {
 		// The contract is a Result. A codec that throws is a case a person needs
 		// told, not a stack trace mid-write.
@@ -114,7 +143,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					scalars: { title: field.string() },
+					title: field.string(),
 					content: {
 						encode: () => {
 							throw new Error('the codec exploded');
@@ -161,7 +190,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 
 		// The row is one file: its id is the path, its scalars the frontmatter
 		// (strings always quoted, so every value re-reads as itself), and its
-		// type content the content (ADR-0268, ADR-0296).
+		// content node to the content (ADR-0268, ADR-0296).
 		expect(files.get(`notes/${made.id}.md`)).toBe(
 			['---', 'title: "Groceries"', '---', '', 'buy milk', ''].join('\n'),
 		);
@@ -193,7 +222,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					scalars: { title: field.string() },
+					title: field.string(),
 					content: {
 						// Poisoned for ONE row, so the loop has both to carry.
 						encode: (node) => {
@@ -224,13 +253,13 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 		expect(seen.ok).not.toContain(`notes/${bad.id}.md`);
 	});
 
-	test('a table with no type content exports frontmatter-only files', async () => {
+	test('a table with an empty content node exports frontmatter-only files', async () => {
 		const scalarOnly = defineData({
 			id: 'so.epicenter.honeycrisp',
 			kv: {},
 			tables: {
 				folders: defineTable({
-					scalars: { name: field.string() },
+					name: field.string(),
 					content: plainText(),
 				}),
 			},

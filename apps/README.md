@@ -24,12 +24,12 @@ openDatabase(definition, { generation, account? })
   sqlite-wasm in the page, three durable relations in IndexedDB,
   one database per document (ADR-0261)
 
-data.tables.notes.list()
+data.tables.notes.rows
   synchronous from here on
 ```
 
 Opening the store is the only asynchronous thing the application does.
-`data.tables.notes.list()` returns rows, not a promise, and
+`data.tables.notes.rows` returns rows synchronously, and
 `data.tables.notes.subscribe(...)`
 reports which rows a commit touched, for a local write and for bytes from
 another device alike (ADR-0221). Nothing polls, and there is no generation
@@ -88,10 +88,6 @@ cannot obtain; storage does not, because it does not differ.
 `honeycrisp` is the surface built on the store, and its
 [README](honeycrisp/README.md) is the worked example.
 
-`whispering`, `vocab`, `skills`, and `epicenter` do not compile. The superseded
-data stack was deleted before they were migrated, deliberately, because the
-reverse order is impossible: there was nowhere for them to move until the
-refusals landed (ADR-0227). Data those apps held on the old stack is accepted as
-lost; there is no importer and there will not be one. What `vocab` and `skills`
-should look like on the store is an open design question, not a deletion nobody
-got to.
+`whispering`, `vocab`, `skills`, and `epicenter` now compile against the store.
+The superseded data stack was deleted before they were migrated, deliberately,
+so old data is not imported into the new model (ADR-0227).

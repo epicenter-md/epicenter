@@ -87,8 +87,8 @@ test('a store exports to Markdown files and imports back whole', async () => {
 	await using restored = await openMemory(honeycrispDefinition);
 	expect(syncEngineOf(restored).applyRemote(state).error).toBeNull();
 
-	// Through the faithful read: a row carries its live types now, and two
-	// documents' types are never equal objects. The claim is about the record.
+	// Through the faithful read: a row carries its live content node now, and two
+	// documents' nodes are never equal objects. The claim is about the record.
 	expect(restored.stored().tables).toEqual(data.stored().tables);
 
 	// And the prose came back as the same Markdown, through the real codec. One

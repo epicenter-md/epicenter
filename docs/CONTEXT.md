@@ -179,7 +179,7 @@ shapes, see `docs/adr/`.
   document and no second address to retire. No tombstone and no revive path
   (ADR-0219).
 - **Nonconforming row**: a row this release's declaration cannot read. A view, not
-  damage. `list()` returns `{ rows, nonconforming }`, and each failure carries
+  damage. `rows` and `nonconforming` are separate reads, and each failure carries
   its `address`, machine-readable `issues`, the `conforming` survivors, and the
   unmodified `raw`.
 - **Healing**: repairing a nonconforming row with an ordinary `update`, because

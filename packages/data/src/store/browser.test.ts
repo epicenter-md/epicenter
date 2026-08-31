@@ -50,7 +50,7 @@ function databaseFor(label: string) {
 		kv: {},
 		tables: {
 			notes: defineTable({
-				scalars: { title: field.string() },
+				title: field.string(),
 				content: plainText(),
 			}),
 		},
@@ -249,8 +249,8 @@ describe('one local document and one account replica per account', () => {
 			[() => openAccountData(database, ALICE), "kept alice's"],
 			[() => openAccountData(database, BOB), "kept bob's"],
 		];
-		for (const [openDocument, title] of owners) {
-			const opened = expectOk(await openDocument());
+		for (const [openData, title] of owners) {
+			const opened = expectOk(await openData());
 			opened.tables.notes.create({ title });
 			await opened[Symbol.asyncDispose]();
 		}
@@ -563,7 +563,7 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 		// rather than a programmer error. The store this half-opened must
 		// release its address, or the application can never start.
 		const refused = await openDatabase(
-			{ dataId: database.id, tables: { notes: { scalars: {} } } } as never,
+			{ dataId: database.id, tables: { notes: {} } } as never,
 			{ generation: GEN },
 		);
 		expect(refused.error).not.toBeNull();
@@ -587,8 +587,8 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 	});
 });
 
-describe("a row's type content survives a reopen (ADR-0295)", () => {
-	test('what was typed into a type field comes back attached', async () => {
+describe("a row's content node survives a reopen (ADR-0295)", () => {
+	test('what was typed into a content node comes back attached', async () => {
 		const database = databaseFor('richfield');
 		let rowId!: string;
 		{

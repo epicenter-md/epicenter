@@ -199,16 +199,21 @@ function compileDefinition(
 			});
 		}
 		foldedNames.set(folded, tableName);
-		if (
-			!isPlainObject(declaration) ||
-			!isPlainObject((declaration as TableDeclaration).scalars)
-		) {
+		if (!isPlainObject(declaration)) {
 			return DataDefinitionParseError.Malformed({
-				reason: `table '${tableName}' must declare a scalars object`,
+				reason: `table '${tableName}' must declare a flat field map`,
 			});
 		}
 		const table = declaration as TableDeclaration;
-		const result = compileTable(tableName, table.scalars);
+		if (
+			!(CONTENT_FIELD in table) ||
+			(!isContentCodec(table.content) && !isSerializedCodecHusk(table.content))
+		) {
+			return DataDefinitionParseError.Malformed({
+				reason: `table '${tableName}' must declare a content codec`,
+			});
+		}
+		const result = compileTable(tableName, table);
 		if (result.error !== null) return result;
 		// A codec is behavior beside the data core (ADR-0266), so a definition
 		// that arrived serialized carries its functions stripped and compiles as
@@ -240,14 +245,15 @@ function compileDefinition(
 
 function compileTable(
 	tableName: string,
-	scalars: unknown,
+	declaration: unknown,
 ): Result<ParsedTable, DataDefinitionParseError> {
-	if (!isPlainObject(scalars))
+	if (!isPlainObject(declaration))
 		return DataDefinitionParseError.Malformed({
-			reason: `table '${tableName}' does not declare scalars`,
+			reason: `table '${tableName}' does not declare a flat field map`,
 		});
 	const compiled = new Map<string, DataField>();
-	for (const [fieldName, descriptor] of Object.entries(scalars)) {
+	for (const [fieldName, descriptor] of Object.entries(declaration)) {
+		if (fieldName === CONTENT_FIELD) continue;
 		const invalid = fieldNameProblem(tableName, fieldName);
 		if (invalid !== undefined) return invalid;
 		if (!isPlainObject(descriptor)) {
@@ -374,6 +380,10 @@ function isContentCodec(value: unknown): value is ContentCodec {
 	return (
 		typeof codec?.encode === 'function' && typeof codec.decode === 'function'
 	);
+}
+
+function isSerializedCodecHusk(value: unknown): boolean {
+	return isPlainObject(value) && Object.keys(value).length === 0;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

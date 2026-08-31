@@ -11,7 +11,7 @@ export type SkillMetadataUpdate = Partial<
  *
  * There is no `refresh`, no generation counter, and no `await` on a read. The
  * store's `subscribe` says which rows a commit touched and fires for a local
- * write and for markdown typed into a row's document alike (ADR-0221), so a
+ * write and for markdown typed into a row's content node alike (ADR-0221), so a
  * re-read after a mutation is something this module hears about rather than
  * something every call site remembers. That is also what retired the
  * generation counter: it existed to discard a stale async scan, and a

@@ -1,16 +1,16 @@
-import { field } from '@epicenter/data/definition';
+import { defineTable, field } from '@epicenter/data/definition';
 import * as Y from '@y/y';
 /**
  * The canonical conversation shape every chat surface shares: the fields a
- * `conversations` table declares, the id vocabulary, its file codec, and the
+ * `conversations` table declares, the id vocabulary, its content codec, and the
  * adapter that presents one conversation's message field as the agent loop's
  * store.
  *
  * Inert, and deliberately so. Nothing here opens a document, mints an address,
  * or knows which document a conversation lives in. An application splices
  * {@link conversationsTable} into its own workspace under its own id,
- * opens its own document (device or account, ADR-0233), and hands the row's
- * `messages` field to {@link createAgentMessageStore}. Vocab has always worked this
+ * opens its own database document (device or account, ADR-0233), and hands the row's
+ * `content` node to {@link createAgentMessageStore}. Vocab has always worked this
  * way and said so; the `chatLens` that used to sit beside the table was a
  * declaration no application ever bound, kept alive by its own test, and a
  * standalone declaration is a standalone document, which is exactly what a
@@ -63,17 +63,15 @@ export const asConversationId = (value: string): ConversationId =>
  * });
  * ```
  */
-export const conversationsTable = {
-	scalars: {
-		title: field.string(),
-		model: field.string(),
-		// Validation-only rather than `string.date.parse`: a field has to be one
-		// type through the CRDT attribute, the projection column and the row
-		// alike, and a parsing form would hand back a `Date` that could not
-		// round-trip.
-		createdAt: field.instant(),
-		updatedAt: field.instant(),
-	},
+export const conversationsTable = defineTable({
+	title: field.string(),
+	model: field.string(),
+	// Validation-only rather than `string.date.parse`: a field has to be one
+	// type through the CRDT attribute, the projection column and the row
+	// alike, and a parsing form would hand back a `Date` that could not
+	// round-trip.
+	createdAt: field.instant(),
+	updatedAt: field.instant(),
 	/**
 	 * The conversation's finished messages, as a keyed log (ADR-0295, ADR-0296).
 	 *
@@ -133,7 +131,7 @@ export const conversationsTable = {
 			return Ok(messages);
 		},
 	},
-} as const;
+});
 
 /** One conversation row, as a read hands it back. */
 export type Conversation = RowOf<typeof conversationsTable>;
@@ -142,14 +140,14 @@ export type Conversation = RowOf<typeof conversationsTable>;
 export type ConversationsTable = TypedTableHandle<typeof conversationsTable>;
 
 /**
- * Present one conversation's `messages` field as the agent loop's by-id store.
+ * Present one conversation's `content` node as the agent loop's by-id store.
  *
  * An adapter and nothing more: it opens nothing and releases nothing. The type
  * is live on the database's one document (ADR-0295), so its lifetime is the
  * row's; durability is the store's write-behind and propagation is the
  * ordinary transport.
  *
- * @param messages The row's `messages` field, from `table.get(id)?.messages`.
+ * @param messages The row's `content` node, from `table.get(id)?.content`.
  */
 export function createAgentMessageStore(messages: Y.Type): AgentMessageStore {
 	return {

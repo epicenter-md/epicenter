@@ -58,15 +58,15 @@ transport, and `./projection` for the SQL follower. The openers are separate
 because one imports `bun:sqlite` and the other a WASM build, and neither belongs
 in a barrel the other has to load.
 
-`@epicenter/server` is AGPL and the core packages above it are MIT. Moving code
-across that line is a relicensing act; see
+`@epicenter/server` and the core packages above it are AGPL. See
 [`licensing strategy`](licensing/licensing-strategy.md).
 
-## An application has one scalar document
+## An application has one database document
 
-One scalar `Y.Doc` per application is persisted under the application log name
-`app` (ADR-0257). Its current top-level roots are the bare named root `kv` and
-one `tables:<name>` root for each declared table.
+One database `Y.Doc` per application is persisted under the application log
+name `app` (ADR-0257). Its current top-level roots are the bare named root
+`kv` and one `tables:<name>` root for each declared table. Each table declares
+ordinary scalar fields and one required `content` codec.
 
 ```text
 Y.Doc "app"
@@ -83,27 +83,22 @@ A row is an attribute on its table root rather than a root of its own. That is
 not a style choice: `Item.write` scans `doc.share` linearly, so one root per row
 makes encoding quadratic, measured at 5,417 ms against 13 ms at 20,000 rows.
 Deletion removes the row's attribute outright and the whole subtree goes with
-it, which leaves one deleted map key rather than a permanent corpse.
+it, which leaves one deleted map key rather than a permanent corpse. The row is
+flat at the public API: `id`, its scalar fields, and one live `content` node.
 
-## Prose is a plane beside the row, not a field in it
+## Content is one live node on the row
 
-Each row owns one independent Yjs document at its derived address,
-`{dataId}/{tableName}/{rowId}` (ADR-0248). The application names roots
-inside it and Epicenter never looks inside one. Opening is a load, awaited,
-and the handle that comes back is fully hydrated:
+The `content` codec only maps that node to and from the artifact body:
 
 ```ts
-const { data: handle } = await data.tables.notes.openDocument(noteId);
-const body = handle?.get('body'); // a Y.Type an editor binds to directly
-handle?.[Symbol.dispose]();
+const row = data.tables.notes.get(noteId);
+row?.title;
+row?.content; // the live Y.Type an editor binds to directly
 ```
 
-Roots are minted by name on first use, which is safe in an independent
-document: a top-level root is addressed by its name, so two devices
-first-opening one note converge with both writes retained. Deleting the row
-durably retires the document address in the same atomic step, so a late write
-cannot resurrect it. Lists and previews read scalar fields and never hydrate
-rich documents.
+Storage mints an empty `content` node when a row is created without one, and
+deleting the row removes the node with the row. Lists and previews read scalar
+fields without opening another document; editors bind the row's live node.
 
 ## What granularity an edit has
 
@@ -112,7 +107,7 @@ rich documents.
 | two devices, different fields of one row | both survive |
 | two devices, one scalar field | last write wins |
 | two devices, one array or object field | last write wins on the WHOLE value |
-| two devices, prose in a row's document | per character |
+| two devices, prose in a row's content node | per character |
 
 The third row is a decision, not a gap (ADR-0228). A field is one value, which
 is one sentence of semantics instead of a per-field CRDT type system. The cost
@@ -130,7 +125,7 @@ Nothing copies a database, runs an upcaster, or reinterprets an old write.
 Prevention is not available and asking for it is the wrong axis. A declaration is
 release-local and rows arrive from NEWER releases, so no discipline in this
 release stops a future one retyping a field. What exists instead is the material
-to heal: `list()` returns `{ rows, nonconforming }`, each failure carries its
+to heal: `rows` and `nonconforming` are separate table reads, each failure carries its
 `address`, machine-readable `issues`, the `conforming` survivors and the
 unmodified `raw`, a composed SQL projection stores nonconforming rows raw so
 SQL can still show them, and repair is an ordinary `update` because a patch
@@ -155,9 +150,10 @@ const { data, error } = await openDatabase(honeycrispDefinition, {
 });
 if (error !== null) throw error;
 
-const listed = data.tables.notes.list();          // { rows, nonconforming }
+const rows = data.tables.notes.rows;
+const nonconforming = data.tables.notes.nonconforming;
 data.tables.notes.update(noteId, { title: 'x' }); // a transaction
-data.tables.notes.subscribe((rowIds) => { ... }); // the ids a commit touched
+data.tables.notes.subscribe(() => { ... });       // a table commit touched
 ```
 
 `subscribe` names the rows a commit touched (ADR-0221), so a view refreshes

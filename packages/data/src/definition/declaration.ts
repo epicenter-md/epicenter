@@ -1,9 +1,9 @@
 /**
  * What an application declares, and what that declaration reads as.
  *
- * All vocabulary and no behaviour. A definition names two buckets per table
- * and a bag of settings beside them; the lens at the bottom turns that
- * declaration into the types an application writes.
+ * All vocabulary and no behaviour. A definition names scalar fields directly
+ * on each table and reserves one content codec beside them; the lens at the
+ * bottom turns that declaration into the types an application writes.
  *
  * Every type here is a LOOKUP. None asks whether its argument is a
  * declaration, because the parameter says so, and none can answer `never` for
@@ -94,19 +94,14 @@ export type ContentCodec = {
  */
 export const CONTENT_FIELD = 'content';
 
-/** What a table may not call a scalar, because a row already has it. */
-export type ReservedRowField = 'id' | typeof CONTENT_FIELD;
-
 /**
  * One table's declaration, as the inert definition carries it.
  *
- * TWO BUCKETS, and every table declares both. A scalar holds a JSON value:
- * replaced whole on write, last write wins, and written to the file's
- * frontmatter under its own field name. The content is the row's one live
- * node: edited in place, merging internally, and written below the fence
- * through the codec declared here. They are different in every operation, so
- * the declaration says so rather than hiding it in a marker for the type
- * system to rediscover.
+ * Every top-level key except `content` is a scalar field. A scalar holds a JSON
+ * value: replaced whole on write, last write wins, and written to the file's
+ * frontmatter under its own field name. The content is the row's one live node:
+ * edited in place, merging internally, and written below the fence through the
+ * codec declared here.
  *
  * `content` is optional HERE and required at the authoring call. A definition
  * that arrived as JSON cannot carry a function, so the serialized form has no
@@ -114,8 +109,8 @@ export type ReservedRowField = 'id' | typeof CONTENT_FIELD;
  * has content and whose table declares nothing to write it with.
  */
 export type TableDeclaration = {
-	/** The fields holding a JSON value, by name. */
-	readonly scalars: FieldMap;
+	/** Scalar field descriptors live directly on the table. */
+	readonly [key: string]: unknown;
 	/** How this table's content node becomes text, and back. */
 	readonly content?: ContentCodec;
 };
@@ -138,11 +133,8 @@ declare const DECLARED: unique symbol;
 /**
  * The mark alone, without the shape.
  *
- * `defineTable` returns this intersected with the LITERAL types it inferred,
- * never with `TableDeclaration`. Intersecting the wide form in would drag its
- * index signature along, and `ScalarsOf` mapping over
- * `keyof (FieldMap & { title: TString })` reads the index member too and
- * resolves every row field to `unknown`.
+ * `defineTable` returns this intersected with the literal types it inferred,
+ * never with `TableDeclaration`, so the row lens sees the exact field keys.
  */
 export type DeclaredMark = { readonly [DECLARED]: true };
 
@@ -207,8 +199,8 @@ type FieldsOut<TFields extends FieldMap> = {
 };
 
 /**
- * One table's scalar fields: what `update` may patch, and what a row's
- * frontmatter carries.
+ * One table's scalar values: what `update` may patch, and what a row's
+ * frontmatter carries. Every top-level schema except `content` is a scalar.
  *
  * The content node is absent because a node is not assignable: writing one
  * over a row's attribute deletes the old subtree, so a peer that edited it
@@ -216,7 +208,19 @@ type FieldsOut<TFields extends FieldMap> = {
  * exists, and stating it as a signature is what keeps it from being a comment
  * somebody has to obey.
  */
-export type ScalarsOf<T extends TableDeclaration> = FieldsOut<T['scalars']>;
+type TableFields<T extends TableDeclaration> = {
+	[K in keyof T as K extends string
+		? K extends typeof CONTENT_FIELD
+			? never
+			: T[K] extends TSchema
+				? K
+				: never
+		: never]: T[K] extends TSchema ? T[K] : never;
+};
+
+type TableValues<T extends TableDeclaration> = {
+	[K in keyof TableFields<T>]: Static<TableFields<T>[K]>;
+};
 
 /**
  * One row: its id, its scalars, and its one live node.
@@ -230,7 +234,7 @@ export type ScalarsOf<T extends TableDeclaration> = FieldsOut<T['scalars']>;
 export type RowOf<T extends TableDeclaration> = {
 	id: string;
 	content: Y.Type;
-} & ScalarsOf<T>;
+} & TableValues<T>;
 
 /**
  * What `create` takes: the scalars, and the node if the caller built one.
@@ -245,7 +249,7 @@ export type RowOf<T extends TableDeclaration> = {
  * across them; `createRow` refuses an integrated node rather than letting
  * either happen.
  */
-export type CreateRowOf<T extends TableDeclaration> = ScalarsOf<T> & {
+export type CreateRowOf<T extends TableDeclaration> = TableValues<T> & {
 	content?: Y.Type;
 };
 

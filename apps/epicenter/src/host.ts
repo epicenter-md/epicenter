@@ -252,7 +252,7 @@ export async function createHomeHost(
 		});
 
 	// The transcript lives for the session and no longer (ADR-0226). It used to
-	// be a row document in a store the host owned, which is exactly the
+	// be live row content in a store the host owned, which is exactly the
 	// application data a host must not hold; a host that wants a durable
 	// transcript needs a document of its own, and that is a product decision
 	// nobody has made.
@@ -396,7 +396,7 @@ export async function createHomeHost(
  * The loop's message store, held in memory for one session.
  *
  * The agent loop wants somewhere to put a finished message and something to
- * hear when one lands. It used to be a row document in a store the host owned;
+ * hear when one lands. It used to be live row content in a store the host owned;
  * the host owns no application data now (ADR-0226), so the transcript lives as
  * long as the session that produced it and no longer.
  */

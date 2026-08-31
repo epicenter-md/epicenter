@@ -12,7 +12,7 @@ const { data: skills, error } = await openDatabase(skillsDefinition, {
 	generation,
 });
 if (error !== null) return handle(error);
-const { rows } = skills.tables.skills.list();
+const rows = skills.tables.skills.rows;
 ```
 
 ## Data model
@@ -27,7 +27,7 @@ Each skill and reference row carries a `content` rich field. A skill's holds its
 instructions; a reference's holds its Markdown body:
 
 ```ts
-const content = skills.skills.content(skill.id)?.types.content;
+const content = skills.tables.skills.get(skill.id)?.content;
 content?.insert(0, ['# Instructions']);
 ```
 

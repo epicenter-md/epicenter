@@ -23,7 +23,7 @@ const database = defineData({
 	kv: {},
 	tables: {
 		notes: defineTable({
-			scalars: { title: field.string() },
+			title: field.string(),
 			content: plainText(),
 		}),
 	},

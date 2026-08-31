@@ -7,16 +7,15 @@
  * one sentence: every read verb tracks the table's invalidation signal, and
  * every write verb passes through unchanged.
  *
- * Reads track. `list()`, `rows`, `nonconforming`, `get()`, and `ids()` read
+ * Reads track. `rows`, `nonconforming`, and `get()` read
  * through a `createSubscriber` per table, so a read inside `$derived` or an
  * effect re-runs when a commit touches that table, whoever committed it: a
  * local write and bytes that arrived from another device alike (ADR-0221).
- * `content()` is not one of them, deliberately. It hands back the row's live
- * nested Yjs types, which carry their own field-scoped `subscribe` (ADR-0296):
- * an editor binds the type directly and hears every keystroke, local or
- * remote, without a table signal in the path. Routing it through this
- * adapter's per-table subscriber would fire the whole list on every character.
- * `stored()` is not made reactive either, and for the opposite reason: its
+ * A row's `content` node is not made reactive by this adapter, deliberately. It
+ * carries its own field-scoped `subscribe` (ADR-0296): an editor binds the type
+ * directly and hears every keystroke, local or remote, without a table signal in
+ * the path. Routing it through this adapter's per-table subscriber would fire
+ * the whole list on every character. `stored()` is not made reactive either, and for the opposite reason: its
  * caller is a mirror rendering files off its own commit subscription, and it
  * has no template that would track.
  *
@@ -72,14 +71,10 @@ import { createSubscriber } from 'svelte/reactivity';
  * `TableHandle`; constraining on the shared read surface accepts every typed
  * handle while `ReactiveTable<TTable>` preserves the caller's exact type.
  *
- * **Every read verb is here, and that is now a rule the handle can keep.**
- * `create`, `update`, `delete`, `watch` and `subscribe` pass through the spread
- * untouched; they are writes or their own feeds. Nothing else is left. The
- * store used to carry `content`, `stored` and `ids` beside these, none of which
- * this adapter tracked and two of which an application could reach — which is
- * how two Skills editors came to wrap a non-reactive `content()` in `$derived`
- * and render nothing when a row arrived late. Those verbs are off the public
- * handle now, so "on the handle" and "reactive" mean the same thing.
+ * **Every reactive read verb is here.** `create`, `update`, `delete`, `watch` and
+ * `subscribe` pass through the spread untouched; they are writes or their own
+ * feeds. The row's live `content` node is intentionally a direct row property,
+ * not a second table read surface.
  */
 type AdaptableTable = {
 	readonly rows: unknown[];
@@ -106,10 +101,8 @@ type AdaptableData = {
 /**
  * One table, same verbs and types, reads reactive.
  *
- * Nothing is added any more. `rows` and `nonconforming` used to be this
- * adapter's own inventions over `list()`, because a template should not
- * destructure a tuple to iterate; the store grew them, so this wraps rather
- * than extends.
+ * Nothing is added any more. `rows` and `nonconforming` are the store's own
+ * reads, so this wraps rather than extends.
  */
 export type ReactiveTable<TTable extends AdaptableTable> = TTable;
 

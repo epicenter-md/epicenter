@@ -15,6 +15,7 @@ import {
 	deleteRow,
 	hasRow,
 	readRow,
+	readRowContent,
 	tableRoot,
 	updateRow,
 } from './document.js';
@@ -36,6 +37,55 @@ describe('createRow mints, and it is the only thing that does', () => {
 		document.transact(() => createRow(notes, 'a', { title: 'hello' }));
 		document.transact(() => createRow(notes, 'a', { pinned: true }));
 		expect(readRow(notes, 'a')).toEqual({ title: 'hello', pinned: true });
+	});
+
+	test('creating over an existing row cannot replace its content node', () => {
+		const { document, notes } = table();
+		document.transact(() => createRow(notes, 'a', {}));
+		const replacement = new Y.Type();
+
+		expect(() =>
+			document.transact(() => createRow(notes, 'a', { content: replacement })),
+		).toThrow(/cannot replace the content node/);
+		expect(readRowContent(notes, 'a')).toBeDefined();
+		expect(replacement.doc).toBeNull();
+	});
+
+	test('creating over an existing row refuses one without content', () => {
+		const { document, notes } = table();
+		document.transact(() => createRow(notes, 'a', {}));
+		const row = notes.getAttr('a') as unknown;
+		if (!(row instanceof Y.Type)) throw new Error('row was not created');
+		document.transact(() => row.deleteAttr('content'));
+
+		expect(() =>
+			document.transact(() => createRow(notes, 'a', { title: 'hello' })),
+		).toThrow(/has no live content node/);
+	});
+
+	test('invalid content does not leave a partially minted row', () => {
+		const { document, notes } = table();
+
+		expect(() =>
+			document.transact(() =>
+				createRow(notes, 'a', { content: 'body' as never }),
+			),
+		).toThrow(/reserved for the row's live content node/);
+		expect(hasRow(notes, 'a')).toBe(false);
+		expect([...notes.attrKeys()]).toEqual([]);
+	});
+
+	test('an integrated content node does not leave a partially minted row', () => {
+		const { document, notes } = table();
+		const other = createDatabaseDocument();
+		const integrated = new Y.Type();
+		other.get('content').setAttr('node', integrated);
+
+		expect(() =>
+			document.transact(() => createRow(notes, 'a', { content: integrated })),
+		).toThrow(/already belongs to a document/);
+		expect(hasRow(notes, 'a')).toBe(false);
+		expect([...notes.attrKeys()]).toEqual([]);
 	});
 });
 
@@ -64,7 +114,7 @@ describe('updateRow cannot bring a row into existence', () => {
 
 	test('a deleted row stays deleted, which is what the split is for', () => {
 		// The resurrection path, closed. `deriveOnCommit` writes `updatedAt`
-		// whenever a row's document commits, so on a device whose row was deleted
+		// whenever a row's content node commits, so on a device whose row was deleted
 		// elsewhere a minting write would create a NEW nested type at the same
 		// key — new data, which nothing in Yjs can refuse
 		// (`evidence/invariants.test.ts`). This is that write, dropped.

@@ -46,7 +46,7 @@ const database = defineData({
 	kv: {},
 	tables: {
 		notes: defineTable({
-			scalars: { title: field.string() },
+			title: field.string(),
 			content: plainText(),
 		}),
 	},
@@ -78,7 +78,7 @@ function pump(): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** One row's `content` type field, live on the database document (ADR-0295). */
+/** One row's `content` node, live on the database document (ADR-0295). */
 function editorOf(replica: Replica, rowId: string) {
 	const content = replica.db.tables.notes.get(rowId);
 	if (content === undefined) throw new Error('the table holds no such row');
@@ -374,7 +374,7 @@ describe('two replicas converge through a log of opaque bytes', () => {
 		expect(laptop.titles()).toEqual([]);
 	});
 
-	test('prose written into a row document replicates with the row', async () => {
+	test("prose written into a row's content node replicates with the row", async () => {
 		const { wire, phone, laptop } = setup();
 		phone.connect();
 		laptop.connect();
@@ -1469,7 +1469,8 @@ const newerDatabase = defineData({
 	kv: {},
 	tables: {
 		notes: defineTable({
-			scalars: { title: field.string(), pinned: field.boolean() },
+			title: field.string(),
+			pinned: field.boolean(),
 			content: plainText(),
 		}),
 	},
@@ -1481,11 +1482,11 @@ const twoTableDatabase = defineData({
 	kv: {},
 	tables: {
 		notes: defineTable({
-			scalars: { title: field.string() },
+			title: field.string(),
 			content: plainText(),
 		}),
 		tasks: defineTable({
-			scalars: { label: field.string() },
+			label: field.string(),
 			content: plainText(),
 		}),
 	},

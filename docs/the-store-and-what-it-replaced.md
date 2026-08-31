@@ -11,9 +11,9 @@ It is an explanation of intent.
 
 ## The one change everything else follows from
 
-**An application has ONE scalar Yjs document, replayed in full before any
-handle exists, and the surface over it is synchronous.** Rich row content lives
-in independently loaded row documents. (ADR-0215, amended by ADR-0248)
+**An application has ONE Yjs document, replayed in full before any handle
+exists, and the surface over it is synchronous.** Each row owns one nested live
+content node at `row.content`; scalar fields remain ordinary row values.
 
 The old stack was many documents behind a process boundary: a replica owned by a
 worker or a desktop host, reached over a message port or HTTP. Every read was a
@@ -150,10 +150,10 @@ Two behaviour changes worth knowing:
 **Old:** an application could choose a row id (`create(rowId, fields)`).
 **New:** ids are minted, always, 24 characters (ADR-0206).
 
-This is a correctness decision, not ergonomics. A row is a nested container
-addressed by the operation that created it, so two devices creating the same
-chosen id produce two containers and map LWW discards one **with every field in
-it**. A minted id makes that unreachable.
+This is a correctness decision, not ergonomics. A row is a record with one
+content node, addressed by the operation that created it, so two devices
+creating the same chosen id produce two records and map LWW discards one
+**with every field in it**. A minted id makes that unreachable.
 
 Consequences you will hit:
 
@@ -181,22 +181,19 @@ data.kv.update({ theme: 'dark' });  // merges; other keys untouched
 
 ---
 
-## Prose and row documents
+## Prose and row content
 
-**Old:** `await table.openDocument(id)` returned a lease the app polled on an
-interval to pull remote changes; an interim shape nested the document inside
-the row and handed it out synchronously.
+**Old:** rich content was opened through a separate row-document lease and
+polled for remote changes.
 
-**New:** each row owns one independent Yjs document at its derived address
-(ADR-0248). `await data.tables.notes.openDocument(id)` resolves to a fully
-hydrated handle; `handle.get('body')` is a live `Y.Type` an editor binds to
-directly, remote edits arrive through the one store connection, and disposing
-the handle lets the store unload the document.
+**New:** `data.tables.notes.get(id)`, `rows`, and `create` return one flat row.
+The row's `content` property is its live `Y.Type`, so an editor binds directly
+to `row.content`; remote edits arrive through the store's one connection.
+Creating a row always mints and persists exactly one content node, even when
+the caller omits `content`.
 
-No root is reserved at create: a top-level root is addressed by its name, so
-two devices first-opening one note converge with both writes retained.
-Deleting the row durably retires the document address in the same atomic
-step.
+Deleting the row removes that node with the row. There is no second document
+address or document lifecycle for an editor to manage.
 
 **Whether prose belongs in a document at all is a per-application decision.**
 Honeycrisp's notes do (a person types them a character at a time, so per-
@@ -209,14 +206,17 @@ machine-produced, replaced wholesale, and rendered in a list.
 
 **Old:** TypeBox, `defineTable({ fields: { title: field.string() } })`.
 
-**New:** pure JSON, closed field descriptors, and application-owned recovery
-values (ADR-0255).
+**New:** ordinary scalar field descriptors at the table's top level, one
+required `content` codec, pure JSON definitions, and application-owned
+recovery values (ADR-0255).
 
 ```ts
+import { defineData, field, plainText } from '@epicenter/data/definition';
+
 export const definition = defineData({
   id: 'so.epicenter.honeycrisp',
   kv: { theme: field.select(['light', 'dark']) },
-  tables: { notes: { title: field.string(), folderId: field.nullable(field.string()) } },
+  tables: { notes: { title: field.string(), folderId: field.nullable(field.string()), content: plainText() } },
 });
 ```
 
@@ -336,8 +336,8 @@ of one row offline both keep their edit:
 
 ```txt
 phone:  update(id, { title: 'phone renamed it' })
-laptop: update(id, { body:  'laptop rewrote the body' })
-after sync -> title: 'phone renamed it', body: 'laptop rewrote the body'
+laptop: update(id, { pinned: true })
+after sync -> title: 'phone renamed it', pinned: true
 ```
 
 That is the same property that makes an old release safe to write with: it
@@ -383,9 +383,9 @@ collection?** One device at a time, or one place in the UI: an array field is
 right. Several devices, concurrently, each adding their own element: it is a
 table.
 
-**Per-character merging exists in exactly one place: a row document.**
-`document(id).get('body')` is a live `Y.Type`, so two people typing in it merge
-at the character. That is the whole reason prose lives there rather than in a
+**Per-character merging exists in exactly one place: the row's content node.**
+`row.content` is a live `Y.Type`, so two people typing in it merge at the
+character. That is the whole reason prose lives there rather than in a
 `string` field, and the reason a machine-produced transcript does not need to.
 
 **The projection has different granularity, and it does not matter.** The
@@ -397,7 +397,7 @@ cache derived from the CRDT, so it never affects what merges with what.
 | two fields of one row | independent, both survive |
 | one scalar field | last write wins, converged |
 | one array or object field | last write wins on the WHOLE value (kept, see above) |
-| a row document | per character |
+| a row's content node | per character |
 | the SQL projection | a composed cache; rebuilt whole at the next read |
 
 ---
@@ -513,15 +513,16 @@ indefinitely without hurting anyone, and `raw` still holds it.
 
 1. Rewrite the workspace: arktype strings, nullable-with-default, no optionals, no
    objects, defaults inline. Settings to `kv`.
-2. Decide per field whether prose belongs in a row document or the row.
+2. Decide whether prose belongs in the row's `content` node or in an ordinary
+   scalar field.
 3. Replace `openEpicenter` with `openLocal(workspace)` (and `openAccount(workspace,
    { principalId })` for a signed-in replica, per ADR-0233).
 4. Replace `scan` + `refresh` + generations with `read()` + `subscribe(read)`.
 5. Drop `await` from every read and every mutation; destructure `{ data, error }`.
 6. Delete chosen-id machinery; move anything that needed a stable name to `kv`.
-7. Replace document leases and polling with `document(id).get(root)`, naming
-   roots at `create`.
+7. Bind editors to the flat row's `content` node. Do not create a second row
+   document or content address.
 8. Add a `dial` if the application syncs, and delete every `nudge`.
-9. Decide what the application does with `list().nonconforming`. Showing it,
+9. Decide what the application does with `rows().nonconforming`. Showing it,
    healing it, and ignoring it are all legitimate; dropping it silently is the
    one option the store went out of its way to prevent.

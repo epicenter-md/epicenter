@@ -30,16 +30,13 @@ An application that wants recency declares an ordinary field and writes it:
 
 ```ts
 notes: defineTable({
-  fields: {
-    title:     field.string(),
-    updatedAt: field.instant(),   // an ordinary field; nobody stamps it but you
-    body:      field.type(),
-  },
-  file: { serialize, deserialize },
+  title:     field.string(),
+  updatedAt: field.instant(),   // an ordinary field; nobody stamps it but you
+  content:   noteMarkdownCodec,
 })
 ```
 
-**A rich field exposes a change signal scoped to itself**, so an application can
+**A content node exposes a change signal scoped to itself**, so an application can
 hang its own write on an edit without reaching into Yjs observers. The signal is
 scoped to the field rather than the row: a row-scoped signal would fire on the
 write it caused, and every application would have to break its own loop.

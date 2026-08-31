@@ -37,7 +37,7 @@ import { field, plainText } from '@epicenter/data/definition';
  *     resident replica's whole document in the same heap as the arriving one.
  *   - EVERY CASE CARRIES A CONTROL THAT FAILS IF THE TEST IS NOT LIVE. The
  *     arriving replica must END UP WITH THE VAULT: its live row count, and one
- *     named note's title and full prose body read back out of its row document.
+ *     named note's title and full prose body read back out of its content node.
  *     A run that transferred nothing would otherwise post the best numbers on
  *     the table. There is also a negative control at the bottom, an arrival
  *     given an empty payload, which must FAIL that verification.
@@ -99,7 +99,7 @@ const benchDatabase = defineData({
 	kv: {},
 	tables: {
 		notes: defineTable({
-			scalars: { title: field.string() },
+			title: field.string(),
 			content: plainText(),
 		}),
 	},
@@ -241,7 +241,7 @@ async function build(
 		sinceSend = 0;
 		await send();
 	};
-	/** One row's type field, live on the one document (ADR-0295). */
+	/** One row's content node, live on the one document (ADR-0295). */
 	const bodyOf = (id: string) => {
 		const content = db.tables.notes.get(id)?.content;
 		if (content === undefined) throw new Error('the row has no content');
@@ -605,7 +605,7 @@ try {
 		console.log(`  ${held ? 'held  ' : 'FAILED'}  ${label}`);
 	report(
 		rows.every((row) => row.applied.verified),
-		"every arrival ended up with the vault: the right live row count, the canary note's title, and its whole prose body read back out of its row document and compared to the resident replica's",
+		"every arrival ended up with the vault: the right live row count, the canary note's title, and its whole prose body read back out of its content node and compared to the resident replica's",
 	);
 	report(
 		rows.every((row) => row.applied.appliedEntries === row.build.entries),

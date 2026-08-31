@@ -44,7 +44,7 @@ export const RenderError = defineErrors({
 		reason,
 	}),
 	/**
-	 * The table declares type content and no codec to write it with, so this
+	 * The table declares a content node and no codec to write it with, so this
 	 * row's body has nowhere to go. Fatal for the row: a file that quietly
 	 * lacks its prose feeds a restore that would delete that prose everywhere.
 	 *
@@ -53,12 +53,18 @@ export const RenderError = defineErrors({
 	 * function, and that is exactly the case a silent empty body would ruin.
 	 */
 	UncodedRow: ({ table, rowId }: { table: string; rowId: string }) => ({
-		message: `Table '${table}' declares type content and no file codec to write '${rowId}' with`,
+		message: `Table '${table}' declares a content node and no file codec to write '${rowId}' with`,
+		table,
+		rowId,
+	}),
+	/** The faithful row is malformed: it does not own the required content node. */
+	MalformedRow: ({ table, rowId }: { table: string; rowId: string }) => ({
+		message: `Row '${table}/${rowId}' has no live content node to write`,
 		table,
 		rowId,
 	}),
 	/**
-	 * The table's own `serialize` threw on this row. Contained rather than
+	 * The table's own `encode` threw on this row. Contained rather than
 	 * allowed to escape: a codec that throws is a case a person needs told,
 	 * not a stack trace in the middle of their data being written to disk.
 	 */
@@ -81,7 +87,7 @@ export type RenderError = InferErrors<typeof RenderError>;
 
 /**
  * The slice of opened data a render reads: the faithful reads, and each
- * table's type content. Structural on purpose, so any typed or untyped view
+ * table's content node. Structural on purpose, so any typed or untyped view
  * satisfies it.
  */
 /**
@@ -124,7 +130,7 @@ export type RenderedRow = {
  * Render one row to its file.
  *
  * Synchronous work behind an async signature, because nothing here loads
- * anything any more: a row's type content is in the one document the store
+ * anything any more: a row's content node is in the one document the store
  * already holds (ADR-0295). The signature stays a promise so the mirror and
  * the whole-artifact generator did not have to change shape around it.
  *
@@ -149,6 +155,9 @@ export async function renderRow(
 		return Ok({ path, contents: undefined });
 	}
 	const { id: _id, content, ...values } = row;
+	if (!(content instanceof Y.Type)) {
+		return RenderError.MalformedRow({ table, rowId });
+	}
 	// The scalars ARE the frontmatter, by field name. The platform writes them,
 	// because the name is already the durable key in the document and a second
 	// name on disk would be a second copy of an identifier.
@@ -157,7 +166,7 @@ export async function renderRow(
 		if (!(value instanceof Y.Type)) fields[name] = value as JsonValue;
 	}
 
-	const node = content instanceof Y.Type ? content : undefined;
+	const node = content;
 	const codec = definition.tables.get(table)?.content;
 	if (codec === undefined) {
 		// A definition that arrived as JSON carries no codec, and a row whose
@@ -165,7 +174,7 @@ export async function renderRow(
 		// which is the whole of what it is (ADR-0296). A node WITH content and no
 		// codec has a body it cannot write, and writing the file without it is
 		// the data loss this refuses.
-		if (node !== undefined && node.length > 0) {
+		if (node.length > 0 || [...node.attrKeys()].length > 0) {
 			return RenderError.UncodedRow({ table, rowId });
 		}
 		return Ok({ path, contents: rowFile(fields, undefined) });
@@ -174,10 +183,7 @@ export async function renderRow(
 	try {
 		return Ok({
 			path,
-			contents: rowFile(
-				fields,
-				node === undefined ? undefined : codec.encode(node),
-			),
+			contents: rowFile(fields, codec.encode(node)),
 		});
 	} catch (cause) {
 		return RenderError.BodyUnwritable({ table, rowId, cause });

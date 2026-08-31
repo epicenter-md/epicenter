@@ -441,7 +441,7 @@ function createStoreEngine(
 	/** The one KV root, taken once so a commit can be checked against it. */
 	const kvRootType = kvRoot(database);
 	/**
-	 * Who is watching each type field, by the type itself.
+	 * Who is watching each row's content node, by the node itself.
 	 *
 	 * Keyed by the live type rather than by a row and field name, because that
 	 * is what a commit names: `changedParentTypes` holds types, and a lookup
@@ -515,7 +515,7 @@ function createStoreEngine(
 	 * delivered from.
 	 *
 	 * Phase order is a contract: `onCommitted` listeners first, then KV, then
-	 * tables, then type fields, so a follower that marks itself dirty in the
+	 * tables, then content nodes, so a follower that marks itself dirty in the
 	 * first phase is dirty before any subscriber reads.
 	 */
 	function deliver(transaction: Y.Transaction): void {
@@ -526,9 +526,9 @@ function createStoreEngine(
 		//
 		//   the table root    a row was added or removed
 		//   a row             one of its scalars changed
-		//   deeper            a type field's own content. NOT a table event.
+		//   deeper            a row's content node. NOT a table event.
 		//
-		// The third line is the whole point. A row's type field is nested on the
+		// The third line is the whole point. A row's content node is nested on the
 		// row (ADR-0295), so before this every prose keystroke bubbled to the
 		// table root and woke every list in the application. `changed` holds only
 		// what a transaction modified DIRECTLY, so the bubble never happens and
@@ -787,7 +787,7 @@ function createStoreEngine(
 		 * Untyped is the point: reaching for this means giving up the lens, and
 		 * the absent row types are what makes that visible at the call site.
 		 *
-		 * A row's type content is not here, and cannot be: a nested `Y.Type` is
+		 * A row's content node is not here, and cannot be: a nested `Y.Type` is
 		 * not a JSON value, so no faithful read of stored VALUES can carry one.
 		 * An export reaches it through `content` and the table's own file codec
 		 * (ADR-0296).
@@ -801,7 +801,7 @@ function createStoreEngine(
 			return { tables, kv: storedKv() };
 		},
 		/**
-		 * One row as the exporter reads it: faithful scalars, live types.
+		 * One row as the exporter reads it: faithful scalars and its live content node.
 		 *
 		 * Deliberately not through a table handle. `readRow` returns every
 		 * stored key including ones this release no longer declares, and no
@@ -1074,7 +1074,14 @@ function createStoreEngine(
 			rowId: string,
 			payload: JsonObject,
 		): Result<Row, NonconformingRow> {
-			const { conforming, issues } = table.conformance(payload);
+			const { conforming, issues: fieldIssues } = table.conformance(payload);
+			const issues = [...fieldIssues];
+			if (readRowContent(root, rowId) === undefined) {
+				issues.push({
+					field: 'content',
+					message: 'content is missing or is not a live Yjs node',
+				});
+			}
 			return issues.length === 0
 				? Ok({ id: rowId, ...conforming })
 				: Err({
@@ -1092,7 +1099,12 @@ function createStoreEngine(
 		/** One row as an application reads it: the scalars, and the live node. */
 		function withContent(row: Row): Row {
 			const content = readRowContent(root, row.id);
-			return content === undefined ? row : { ...row, content };
+			if (content === undefined) {
+				throw new Error(
+					`row '${row.id}' passed conformance without a live content node`,
+				);
+			}
+			return { ...row, content };
 		}
 
 		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
@@ -1136,7 +1148,7 @@ function createStoreEngine(
 			},
 			delete(rowId: string): void {
 				// One removal (ADR-0295). Taking the row's nested type off the root
-				// takes its type fields with it, so there is no second address to
+				// takes its content node with it, so there is no second address to
 				// retire and nothing to compose this write with.
 				transact(() => {
 					deleteRow(root, rowId);
@@ -1166,7 +1178,7 @@ function createStoreEngine(
 			},
 			/**
 			 * Hear that this table's SHAPE changed: a row added, a row removed, or
-			 * a row's scalars edited. Not an edit inside a type field.
+			 * a row's scalars edited. Not an edit inside its content node.
 			 *
 			 * A ping, not a payload. `deliver` decides what counts, by depth
 			 * against the table root, so nothing is registered on the document

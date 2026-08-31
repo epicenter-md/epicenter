@@ -2,7 +2,7 @@
  * A row is a read, not a value. Pinned, because nothing in the type says so.
  *
  * `get` hands back a plain object literal, and plain objects are comparable,
- * cloneable and serializable. This one is not: a type field on it IS the
+ * cloneable and serializable. This one is not: the content node on it IS the
  * container in the document (ADR-0296, amended), so the object is half snapshot
  * and half handle. TypeScript cannot express "do not clone me", so the contract
  * lives here instead of in a signature.
@@ -33,7 +33,7 @@ const database = defineData({
 	kv: {},
 	tables: {
 		notes: defineTable({
-			scalars: { title: field.string() },
+			title: field.string(),
 			content: plainText(),
 		}),
 	},
@@ -69,7 +69,7 @@ describe('a row is a read, not a value', () => {
 		expect(laptop.stored().tables).toEqual(phone.stored().tables);
 	});
 
-	test('a scalar is a snapshot and a type field is not', async () => {
+	test('a scalar is a snapshot and the content node is not', async () => {
 		const { phone, id } = await convergedPair();
 		const held = phone.tables.notes.get(id);
 
@@ -77,7 +77,7 @@ describe('a row is a read, not a value', () => {
 		held?.content.insert(0, ['and eggs, ']);
 
 		// The scalar was copied out when it was read, so the held row still says
-		// what it said. The type field is the container itself, so the edit is
+		// what it said. The content node is the container itself, so the edit is
 		// visible through the same object.
 		expect(held?.title).toBe('Groceries');
 		expect(phone.tables.notes.get(id)?.title).toBe('Errands');
@@ -88,9 +88,9 @@ describe('a row is a read, not a value', () => {
 		const { phone, id } = await convergedPair();
 		const row = phone.rowFile('notes', id);
 		if (row === undefined) throw new Error('the row is gone');
-		// Faithful and untyped: every stored scalar, and the live types beside
+		// Faithful and untyped: every stored scalar, and the live content node beside
 		// them for a codec. The scalars alone are what a value comparison wants.
-		const { content: _body, ...scalars } = row;
-		expect(scalars).toEqual({ id, title: 'Groceries' });
+		const { content: _content, ...fields } = row;
+		expect(fields).toEqual({ id, title: 'Groceries' });
 	});
 });

@@ -5,10 +5,10 @@
  *
  * The conversation list is a `conversations` table the app spliced into its own
  * workspace shape (@epicenter/chat), in whichever document the app's root
- * chose for this generation (ADR-0233); each row's turns live at the `messages`
- * root inside that row's own document. A handle registry mirrors the table:
+ * chose for this generation (ADR-0233); each row's turns live in its `content`
+ * node on that database document. A handle registry mirrors the table:
  * {@link createAgentChatState} opens a handle for every row and disposes one
- * whose row is gone. Each handle binds that row's messages to the loop through
+ * whose row is gone. Each handle binds that row's content node to the loop through
  * `bindAgentConversation`; the loop streams the live turn into component state
  * and writes each finished message into the document the moment the turn ends.
  * The live turn never enters the CRDT, and the loop dies with the tab.

@@ -81,15 +81,13 @@ export const honeycrispDefinition = defineData({
 	kv: {},
 	tables: {
 		folders: defineTable({
-			scalars: {
-				name: field.string(),
-				// Nullable rather than optional. A data definition has no optional
-				// fields on purpose: a field has to be one type through the CRDT
-				// attribute, the exported frontmatter value and the row alike, and
-				// "absent" is not one. Application recovery supplies a value at read
-				// time and never writes it as part of the definition (ADR-0255).
-				icon: field.nullable(field.string()),
-			},
+			name: field.string(),
+			// Nullable rather than optional. A data definition has no optional
+			// fields on purpose: a field has to be one type through the CRDT
+			// attribute, the exported frontmatter value and the row alike, and
+			// "absent" is not one. Application recovery supplies a value at read
+			// time and never writes it as part of the definition (ADR-0255).
+			icon: field.nullable(field.string()),
 			// A folder's body, if it ever has one, is text. Nothing writes there
 			// today, so its file is its frontmatter and nothing below the fence.
 			// That is a capability sitting unused rather than a field standing
@@ -98,21 +96,19 @@ export const honeycrispDefinition = defineData({
 			content: plainText(),
 		}),
 		notes: defineTable({
-			scalars: {
-				folderId: field.nullable(field.string()),
-				title: field.string(),
-				pinned: field.boolean(),
-				// Validation-only rather than `string.date.parse`: a field has to be
-				// one type through the CRDT attribute, the exported frontmatter value
-				// and the row alike, and a parsing form would hand back a `Date` that
-				// could not round-trip.
-				// Ordinary fields nobody stamps but Honeycrisp (ADR-0297). The store
-				// stopped holding an opinion about time, so `openBody` is what moves
-				// `updatedAt`, and `create` is what sets `createdAt`.
-				createdAt: field.instant(),
-				updatedAt: field.instant(),
-				deletedAt: field.nullable(field.instant()),
-			},
+			folderId: field.nullable(field.string()),
+			title: field.string(),
+			pinned: field.boolean(),
+			// Validation-only rather than `string.date.parse`: a field has to be
+			// one type through the CRDT attribute, the exported frontmatter value
+			// and the row alike, and a parsing form would hand back a `Date` that
+			// could not round-trip.
+			// Ordinary fields nobody stamps but Honeycrisp (ADR-0297). The store
+			// stopped holding an opinion about time, so `openContent` is what moves
+			// `updatedAt`, and `create` is what sets `createdAt`.
+			createdAt: field.instant(),
+			updatedAt: field.instant(),
+			deletedAt: field.nullable(field.instant()),
 			content: noteMarkdown,
 		}),
 	},
@@ -127,18 +123,18 @@ export type Note = RowOf<typeof honeycrispDefinition.tables.notes>;
 /**
  * Delete a folder after re-parenting the notes that were in it.
  *
- * Synchronous, and one pass rather than a stream: `list()` reads the CRDT that
+ * Synchronous, and one pass rather than a stream: `rows` reads the CRDT that
  * is already in memory. A failed note update stops before the folder goes, so
  * the operation can be retried without knowingly leaving a dangling folder id.
  *
- * A note that vanished between the `list()` and its own update is skipped
+ * A note that vanished between the `rows` read and its own update is skipped
  * rather than raised: it is no longer in this folder, which is the outcome the
  * caller wanted, and another device deleting a note mid-pass is ordinary in a
  * synced document. Every other refusal means a declaration and this code
  * disagree, and that throws.
  *
  * A note this release cannot read is re-parented too, through its `raw`
- * payload. `list()` returns those separately, and skipping them would leave a
+ * payload. `nonconforming` returns those separately, and skipping them would leave a
  * note pointing at a folder that no longer exists while reporting success —
  * which is the silent damage nonconformance is supposed not to cause. An
  * `update` validates only the values it is given, so setting `folderId` on an

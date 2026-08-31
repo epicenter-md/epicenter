@@ -114,7 +114,7 @@ rather than workerd, so it estimates the isolate rather than reading it; a
 workerd probe is the remaining refinement, and it can only move this number by a
 constant.
 
-## Amendment, 2026-08-30: the row carries its rich fields
+## Amendment, 2026-08-30: the row carries its content node
 
 The decision above is unchanged. A database is still one Yjs document, a row is
 still a nested `Y.Type` under its table root, and a rich field is still a
@@ -123,15 +123,15 @@ nested type on the row. What moved is only how an application reaches one.
 **`table.content(rowId)` is deleted.** It returned `{ types, subscribe }`, and
 it existed because `readRow` cannot return a nested type: the scalar read owes
 JSON and a type is not one. That is a fact about `readRow`, and this record let
-it become a fact about the API. `get` merges the types onto the row before
-handing it over, so a caller writes `note.body` rather than
-`content(id)?.types.body`, and `RowOf` names it.
+it become a fact about the API. `get` places the content node on the flat row
+before handing it over, so a caller writes `note.content`, and `RowOf` names
+it.
 
 Three things followed, and each is worth recording because each was a defect
 this shape had been hiding:
 
 - **`RowOf` had been lying.** It included rich fields while `get` never
-  returned them, so `note.body` typechecked and was `undefined`. Corrected on
+  returned them, so `note.content` typechecked and was `undefined`. Corrected on
   2026-08-29 by removing them from the type; corrected properly here by adding
   them to the value.
 - **`content` was not reactive and looked like it was.** `fromData` made
@@ -145,8 +145,8 @@ this shape had been hiding:
   rather than a handle because it must return keys this release no longer
   declares and rows it cannot conform, and a handle is a lens.
 
-**What survives of `content` is one verb.** `watch(rowId, field, listener)` is
-the field-scoped change signal, and it is the half that earned a wrapper: a
+**What survives of `content` is one verb.** `watch(node, listener)` is the
+content-scoped change signal, and it is the half that earned a wrapper: a
 `Y.Type` has its own `on('delta')`, but the store defers delivery to the commit
 flush, so a listener that writes is writing against a settled commit. That
 ordering is what Honeycrisp's `updatedAt` write depends on. `RowContent` is

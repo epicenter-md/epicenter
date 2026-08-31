@@ -39,21 +39,13 @@ That's the `epicenter` CLI. Karpathy's monthly health check becomes a script you
 Schemas are typed and enforced at runtime, not just documented:
 
 ```typescript
-import { field } from "@epicenter/field";
-import { createWorkspace, defineTable } from "@epicenter/workspace";
+import { defineTable, field, plainText } from "@epicenter/data/definition";
 
 const notes = defineTable({
-  id: field.string(),
   title: field.string(),
-  content: field.string(),
   tags: field.tags(),
   folder: field.select(["raw", "wiki", "outputs"]),
-});
-
-const workspace = createWorkspace({
-  id: "second-brain",
-  tables: { notes },
-  kv: {},
+  content: plainText(),
 });
 ```
 
@@ -69,4 +61,4 @@ But I have a phone and a laptop. I want to search my notes by date and tag, not 
 
 The markdown files are still there. You can still grep them. You can still open them in Obsidian. The CRDT layer is invisible until you need it:and then it's exactly what you needed.
 
-If you want to look at the code: [github.com/EpicenterHQ/epicenter](https://github.com/EpicenterHQ/epicenter). The workspace library is at [packages/workspace](https://github.com/EpicenterHQ/epicenter/tree/main/packages/workspace). The developer toolkit is MIT; the apps and sync server are AGPL. Fork it, break it, build your own second brain on top of it.
+If you want to look at the code: [github.com/EpicenterHQ/epicenter](https://github.com/EpicenterHQ/epicenter). The data package is at [packages/data](https://github.com/EpicenterHQ/epicenter/tree/main/packages/data). Everything in this repository is AGPL-3.0-or-later; versions published under the former MIT tier remain MIT. Fork it, break it, build your own second brain on top of it.

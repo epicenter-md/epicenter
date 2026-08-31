@@ -34,9 +34,7 @@ export {
 	field,
 	type KvOf,
 	RESERVED_ATTRIBUTE_PREFIX,
-	type ReservedRowField,
 	type RowOf,
-	type ScalarsOf,
 	type TableDeclaration,
 } from './declaration.js';
 export { defineData, defineTable } from './define.js';

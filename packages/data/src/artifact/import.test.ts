@@ -31,19 +31,17 @@ const store = defineData({
 	kv: { theme: field.string() },
 	tables: {
 		folders: defineTable({
-			scalars: { name: field.string() },
+			name: field.string(),
 			content: plainText(),
 		}),
 		notes: defineTable({
-			scalars: {
-				title: field.string(),
-				code: field.string(),
-				flag: field.string(),
-				pinned: field.boolean(),
-				count: field.number(),
-				tags: field.tags(),
-				folderId: field.nullable(field.string()),
-			},
+			title: field.string(),
+			code: field.string(),
+			flag: field.string(),
+			pinned: field.boolean(),
+			count: field.number(),
+			tags: field.tags(),
+			folderId: field.nullable(field.string()),
 			// The faithful codec: everything the store holds goes above the fence
 			// and comes back off it, so a key an older release wrote survives the
 			// round trip. The `id` is the path, not a field.
@@ -103,8 +101,8 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(restored.kv.get('theme')).toBe('dark');
 		expect(restored.stored().kv).toEqual(data.stored().kv);
 		// Compared through `stored()` rather than `rows`, and the reason is the
-		// claim itself. A row carries its live types now, and two documents'
-		// types are never equal: they are different objects with different client
+		// claim itself. A row carries its live content node now, and two documents'
+		// nodes are never equal: they are different objects with different client
 		// ids. "Imports back whole" is a statement about the RECORD, so the
 		// faithful read is what it should have been asserted against all along.
 		expect(restored.stored().tables).toEqual(data.stored().tables);
@@ -197,7 +195,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 				kv: {},
 				tables: {
 					notes: defineTable({
-						scalars: { title: field.string() },
+						title: field.string(),
 						content: plainText(),
 					}),
 				},
@@ -216,7 +214,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					scalars: { title: field.string() },
+					title: field.string(),
 					content: {
 						encode: (node) => node.toString(),
 						decode: () => {
@@ -241,7 +239,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					scalars: { title: field.string() },
+					title: field.string(),
 					content: {
 						encode: (node) => node.toString(),
 						decode: () => ContentError.Unreadable({ reason: 'no title line' }),
@@ -269,7 +267,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					scalars: { title: field.string() },
+					title: field.string(),
 					// Hands back ONE node for every row, which is the mistake.
 					content: {
 						encode: (node) => node.toString(),

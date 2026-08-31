@@ -57,7 +57,7 @@
  *
  * `table.subscribe` names the table a commit touched but not the rows, and it
  * is INCOMPLETE for a mirror: it reports a change to the table's shape and not
- * an edit inside a type field. That is deliberate, and `store.ts` says so at
+ * an edit inside a row's content node. That is deliberate, and `store.ts` says so at
  * the verb. Delivery routes off `transaction.changed`, which Yjs fills with
  * the types a transaction modified DIRECTLY, so a keystroke in a body puts the
  * body's own type there; its parent is the row, not the table root, and the

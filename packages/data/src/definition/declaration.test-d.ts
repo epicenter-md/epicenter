@@ -3,9 +3,16 @@ import type {
 	DateTimeString,
 	InstantString,
 } from '@epicenter/field';
+import type * as Y from '@y/y';
 import type { Static } from 'typebox';
 import { plainText } from './content.js';
-import { defineData, defineTable, field, type RowOf } from './index.js';
+import {
+	type CreateRowOf,
+	defineData,
+	defineTable,
+	field,
+	type RowOf,
+} from './index.js';
 
 /**
  * A failed assertion carries both sides, so the error names what moved.
@@ -42,9 +49,7 @@ const definition = defineData({
 	},
 	tables: {
 		items: defineTable({
-			scalars: {
-				status: field.select(['draft', 'published']),
-			},
+			status: field.select(['draft', 'published']),
 			content: plainText(),
 		}),
 	},
@@ -77,3 +82,16 @@ export type _NullableStatic = Expect<
 export type _RowStatusStatic = Expect<
 	Equal<Item['status'], 'draft' | 'published'>
 >;
+export type _RowIdIsString = Expect<Equal<Item['id'], string>>;
+export type _RowContentIsLiveType = Expect<Equal<Item['content'], Y.Type>>;
+
+declare const content: Y.Type;
+const createWithoutContent: CreateRowOf<typeof definition.tables.items> = {
+	status: 'draft',
+};
+const createWithContent: CreateRowOf<typeof definition.tables.items> = {
+	status: 'published',
+	content,
+};
+void createWithoutContent;
+void createWithContent;

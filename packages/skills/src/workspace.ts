@@ -23,27 +23,25 @@ import {
 	type RowOf,
 } from '@epicenter/data/definition';
 
-const skillsTable = {
-	scalars: {
-		sourceId: field.string(),
-		name: field.string(),
-		description: field.string(),
-		// Nullable rather than optional. A data definition has no optional
-		// fields on purpose: a field has to be one type through the CRDT attribute,
-		// the projection column and the row alike, and "absent" is not a SQL type.
-		license: field.nullable(field.string()),
-		compatibility: field.nullable(field.string()),
-		// Opaque passthrough: whatever the frontmatter carried besides the fields
-		// above, round-tripped on export. `unknown` values rather than a recursive
-		// JSON type because the store's write gate already refuses anything that is
-		// not finite JSON, and a second declaration of that rule would be the one
-		// that goes stale.
-		metadata: field.nullable(field.json(jsonValue)),
-		allowedTools: field.nullable(field.string()),
-		// Validation-only rather than `string.date.parse`: a parsing form would hand
-		// back a `Date` that could not round-trip through the projection.
-		updatedAt: field.instant(),
-	},
+const skillsTable = defineTable({
+	sourceId: field.string(),
+	name: field.string(),
+	description: field.string(),
+	// Nullable rather than optional. A data definition has no optional
+	// fields on purpose: a field has to be one type through the CRDT attribute,
+	// the projection column and the row alike, and "absent" is not a SQL type.
+	license: field.nullable(field.string()),
+	compatibility: field.nullable(field.string()),
+	// Opaque passthrough: whatever the frontmatter carried besides the fields
+	// above, round-tripped on export. `unknown` values rather than a recursive
+	// JSON type because the store's write gate already refuses anything that is
+	// not finite JSON, and a second declaration of that rule would be the one
+	// that goes stale.
+	metadata: field.nullable(field.json(jsonValue)),
+	allowedTools: field.nullable(field.string()),
+	// Validation-only rather than `string.date.parse`: a parsing form would hand
+	// back a `Date` that could not round-trip through the projection.
+	updatedAt: field.instant(),
 	/**
 	 * The markdown a person edits: this row's one live node (ADR-0295).
 	 *
@@ -53,14 +51,12 @@ const skillsTable = {
 	 * fence, in both directions, and this package writes nothing to say so.
 	 */
 	content: plainText(),
-} as const;
+});
 
-const referencesTable = {
-	scalars: {
-		skillId: field.string(),
-		path: field.string(),
-		updatedAt: field.instant(),
-	},
+const referencesTable = defineTable({
+	skillId: field.string(),
+	path: field.string(),
+	updatedAt: field.instant(),
 	/**
 	 * The markdown a person edits: this row's one live node (ADR-0295).
 	 *
@@ -70,19 +66,15 @@ const referencesTable = {
 	 * fence, in both directions, and this package writes nothing to say so.
 	 */
 	content: plainText(),
-} as const;
+});
 
 export const skillsDefinition = defineData({
 	id: 'so.epicenter.skills',
 	title: 'Skills',
 	kv: {},
 	tables: {
-		skills: defineTable({
-			...skillsTable,
-		}),
-		skillReferences: defineTable({
-			...referencesTable,
-		}),
+		skills: skillsTable,
+		skillReferences: referencesTable,
 	},
 });
 

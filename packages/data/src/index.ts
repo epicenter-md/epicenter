@@ -6,10 +6,10 @@
  * one imports `bun:sqlite` and the other imports a WASM build, and neither
  * belongs in a barrel the other has to load.
  *
- * The entry points: `.` for the surface, `./browser` for the opener, `./sync`
- * for the transport, `./export` for the artifact a person keeps, `./engine`
- * for the construction seam test fixtures build on, and `./memory` for test
- * support. The superseded stack that used to answer at `./legacy` was deleted
+ * The entry points: `.` for the surface, `./definition` for inert schema
+ * vocabulary, `./browser` for the opener, `./sync` for the transport,
+ * `./artifact` for the files a person keeps, `./direct` for the construction
+ * seam, and `./memory` for test support. The superseded stack that used to answer at `./legacy` was deleted
  * along with its consumers (ADR-0227), so a developer arriving here finds one
  * store rather than a choice between two.
  *

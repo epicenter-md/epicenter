@@ -3,6 +3,8 @@ import { report } from '$lib/report';
 import type { Recording } from '$lib/state/recordings.svelte';
 import type { WhisperingApp } from '$lib/whispering/app';
 
+type RecordingDeletionTarget = Pick<Recording, 'id' | 'uploadedAt'>;
+
 /**
  * Confirm and run the app's recording deletion workflow. The copy escalates
  * when any selected recording has an online copy, since deletion then removes
@@ -10,7 +12,7 @@ import type { WhisperingApp } from '$lib/whispering/app';
  */
 export function deleteRecordingsWithConfirmation(
 	app: WhisperingApp,
-	toDelete: Recording | Recording[],
+	toDelete: RecordingDeletionTarget | RecordingDeletionTarget[],
 	{ onSuccess }: { onSuccess?: () => void } = {},
 ) {
 	const arr = Array.isArray(toDelete) ? toDelete : [toDelete];

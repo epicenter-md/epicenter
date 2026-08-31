@@ -17,7 +17,6 @@ import type {
 	JsonValue,
 	KvOf,
 	RowOf,
-	ScalarsOf,
 	TableDeclaration,
 } from '@epicenter/data/definition';
 import type { PrincipalId } from '@epicenter/principal';
@@ -29,16 +28,16 @@ import type { NonconformingRow, RowAbsentError } from './errors.js';
 import type { PersistenceCapability } from './persistence.js';
 
 /**
- * One row, as an application reads it: the id, the scalars, and the live types.
+ * One row, as an application reads it: the id, the scalar snapshots, and the
+ * live `content` node.
  *
- * A type field is here rather than behind a second verb (ADR-0296, amended).
- * `readRow` cannot return one, so the handle merges what `readRowTypes` finds
- * before handing the row over; what a caller gets is one object with `body` on
- * it, not a row plus a bag to go and fetch.
+ * The row's `content` node is here rather than behind a second verb
+ * (ADR-0299). `readRow` reads the scalar snapshot and `readRowContent` reads
+ * the live node before the handle hands one flat object to the caller.
  *
  * **The two halves have different lifetimes, and that is forced rather than
  * chosen.** A scalar is a snapshot: it was copied out of the document when you
- * read, and a later commit does not change it. A type field is a reference: it
+ * read, and a later commit does not change it. The content node is a reference: it
  * IS the container in the document, so an edit through it is an edit to the
  * store, and a peer's edit shows up in it without anyone re-reading.
  *
@@ -66,7 +65,7 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 * unreachable rather than merely unlikely. Anything an application wants to
 	 * name goes in `kv`, which lives at a name-addressed root.
 	 *
-	 * A type field IS passed here, already built (ADR-0296, amended). The type
+	 * A content node IS passed here, already built (ADR-0296, amended). The node
 	 * is integrated in this transaction, which is what removes the concurrency:
 	 * a nested type is addressed by the struct that created it, so two devices
 	 * minting one at the same attribute key would lose a subtree, and a minted
@@ -76,7 +75,7 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 * share one body, silently; `createRow` refuses rather than allowing it.
 	 *
 	 * The return is the row `get` would give you: the id, the scalars, and the
-	 * INTEGRATED types. Read back rather than echoed, because a type you passed
+	 * INTEGRATED content node. Read back rather than echoed, because a node you passed
 	 * in was detached and reads as empty until it is integrated here, and one
 	 * you omitted was minted for you.
 	 *
@@ -117,10 +116,10 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 */
 	update(rowId: string, fields: TPatch): Result<void, RowAbsentError>;
 	/**
-	 * Take one row off the table, type content and all (ADR-0295).
+	 * Take one row off the table, its content node and all (ADR-0295).
 	 *
 	 * One removal in one document. Deleting the row's nested type reclaims
-	 * every scalar attribute and every type field's subtree with it, so there
+	 * every scalar attribute and the content node's subtree with it, so there
 	 * is no second address to retire and no crash point between two halves.
 	 *
 	 * Returns nothing: deleting an address that holds no row is a no-op fact
@@ -138,9 +137,9 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 */
 	ids(): string[];
 	/**
-	 * Every row this declaration reads whole, with its live types.
+	 * Every row this declaration reads whole, with its live content node.
 	 *
-	 * A member rather than `list().rows`, because every consumer destructured
+	 * A member rather than a nested list result, because every consumer destructured
 	 * that tuple and three applications then re-exposed each half as its own
 	 * getter. This is the shape they were all rebuilding.
 	 */
@@ -158,7 +157,7 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 * Hear when this table's SHAPE changes: a row added, a row removed, or a
 	 * row's scalars edited.
 	 *
-	 * NOT an edit inside a row's type field. A type field is nested on its row
+	 * NOT an edit inside a row's content node. The content node is nested on its row
 	 * (ADR-0295), so counting it here would wake every list in the application
 	 * on every keystroke; `watch` below is the signal for that, scoped to
 	 * the one type. The store decides by depth against the table root, so the
@@ -169,7 +168,7 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 * turned out to read them: the one live subscriber discards the argument,
 	 * the mirror refuses the signal and renders everything (ADR-0271), and the
 	 * consumer the ids were kept for reads `updatedAt` off the index through
-	 * A caller re-reads with `list()`, which walks a document already in
+	 * A caller re-reads with `rows`, which walks a document already in
 	 * memory.
 	 *
 	 * Fires after the commit is accepted, on the same flush as KV's and after
@@ -183,7 +182,7 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 	 * Hear edits to ONE live type of this table, local or remote.
 	 *
 	 * Takes the type rather than an address, because the caller is already
-	 * holding it: a type field is read off its row (ADR-0295), and rendering it
+	 * holding it: the content node is read off its row (ADR-0295), and rendering it
 	 * needs the type anyway. Naming an address instead looked the same object
 	 * up a second time and could disagree with the first, handing back a dead
 	 * subscription for a row deleted in between.
@@ -214,7 +213,7 @@ export type TableHandle<TRow = Row, TInput = RowInput, TPatch = JsonObject> = {
 export type TypedTableHandle<TFields extends TableDeclaration> = TableHandle<
 	RowOf<TFields>,
 	CreateRowOf<TFields>,
-	Partial<ScalarsOf<TFields>>
+	Partial<Pick<RowOf<TFields>, Exclude<keyof RowOf<TFields>, 'id' | 'content'>>>
 >;
 
 /**
@@ -497,7 +496,7 @@ export type DataDocument = {
 	stored(): StoredData;
 	/**
 	 * One row exactly as the exporter needs it: every stored scalar, and the
-	 * live types beside them.
+	 * the live content node beside them.
 	 *
 	 * The narrow form of `stored()`, and the artifact layer's only per-row read.
 	 * It is on the STORE rather than on a table handle because it is not a

@@ -66,7 +66,7 @@ test('a skill and its instructions survive reopening', async () => {
 		skillId = runtime.state.createSkill('writing-voice');
 		const held = runtime.data.tables.skills.get(skillId);
 		if (held === undefined) throw new Error('the row has no content');
-		const content = held.body;
+		const content = held.content;
 		content.applyDelta(content.change.insert('Write directly.') as never);
 		// The durable flush is asynchronous, so a reopen must wait for it.
 		await runtime.data.persistence.flush();
@@ -77,7 +77,7 @@ test('a skill and its instructions survive reopening', async () => {
 	expect(reopened.state.skills.map(({ name }) => name)).toEqual([
 		'writing-voice',
 	]);
-	expect(reopened.data.tables.skills.get(skillId)?.body.toString()).toBe(
+	expect(reopened.data.tables.skills.get(skillId)?.content.toString()).toBe(
 		'Write directly.',
 	);
 });

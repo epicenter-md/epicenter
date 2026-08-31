@@ -7,10 +7,10 @@ import * as Y from '@y/y';
 
 /**
  * A database's document: one per database, holding every table's rows and
- * every row's type content (ADR-0295).
+ * every row's content node (ADR-0295).
  *
  * There is no second document and no address that reaches one. A row is a
- * nested type on its table root, and a type field is a nested type on the row,
+ * nested type on its table root, and the content node is nested on the row,
  * so what used to be N documents multiplexed over one connection is one
  * document with one identity, one socket, one stored blob.
  */
@@ -136,7 +136,7 @@ function rowType(root: Y.Type, rowId: string): RowType | undefined {
  */
 type RowType = Y.Type<{ attrs: Record<string, JsonValue> }>;
 
-/** What `createRow` admits: scalars, plus type fields the caller built. */
+/** What `createRow` admits: scalar values, plus the caller's content node. */
 export type RowInput = Record<string, JsonValue | Y.Type>;
 
 /** Whether this table holds a row at this address. */
@@ -161,9 +161,9 @@ export function readRow(root: Y.Type, rowId: string): JsonObject | undefined {
 		if (name.startsWith(RESERVED_ATTRIBUTE_PREFIX)) continue;
 		const value = row.getAttr(name);
 		if (value === undefined) continue;
-		// A type field is a nested type, not a value (ADR-0295). Read through the
-		// live attributes rather than through the declaration, so a type field an
-		// older release wrote and this one no longer names is still not mistaken
+		// The content node is a nested type, not a value (ADR-0299). Read through
+		// the live attributes rather than through the declaration, so a nested type
+		// an older release wrote is still not mistaken
 		// for JSON: what a scalar read owes is every value, and a type is not one.
 		if (value instanceof Y.Type) continue;
 		payload[name] = value as JsonValue;
@@ -237,26 +237,37 @@ export function createRow(
 	 */
 	fields: RowInput,
 ): void {
-	refuseReservedFields(fields);
-	const existing = rowType(root, rowId);
-	const row = existing ?? mintRow(root, rowId);
+	refuseReservedFields(fields, true);
 	const scalars: JsonObject = {};
 	let given: Y.Type | undefined;
 	for (const [name, value] of Object.entries(fields)) {
+		if (name === CONTENT_FIELD) {
+			if (!(value instanceof Y.Type)) {
+				throw new TypeError(
+					`'${CONTENT_FIELD}' is reserved for the row's live content node`,
+				);
+			}
+			given = value;
+			continue;
+		}
 		if (!(value instanceof Y.Type)) {
 			scalars[name] = value as JsonValue;
 			continue;
 		}
-		if (name !== CONTENT_FIELD) {
-			// A row holds one node, at one reserved key. A node anywhere else
-			// would be unreachable through every read verb and unwritable by
-			// every codec, so this is a programmer error rather than a value.
-			throw new Error(
-				`'${name}' cannot hold a node: a row's one node is at '${CONTENT_FIELD}'`,
-			);
-		}
-		given = value;
+		// A row holds one node, at one reserved key. A node anywhere else would be
+		// unreachable through every read verb and unwritable by every codec, so this
+		// is a programmer error rather than a value.
+		throw new Error(
+			`'${name}' cannot hold a node: a row's one node is at '${CONTENT_FIELD}'`,
+		);
 	}
+	const existing = rowType(root, rowId);
+	if (existing === undefined && given !== undefined && given.doc !== null) {
+		throw new Error(
+			`the content given for row '${rowId}' already belongs to a document; build a fresh node per row`,
+		);
+	}
+	const row = existing ?? mintRow(root, rowId);
 	if (existing === undefined) {
 		// **Integrated exactly once, in the transaction that mints the row.**
 		// Root types converge by name; nested ones do not, so two devices
@@ -269,12 +280,18 @@ export function createRow(
 		// holding the SAME node, so two rows would share it and edits to either
 		// would appear in both, silently. `doc` is non-null exactly when a node
 		// has been integrated, so refusing here makes that unrepresentable.
-		if (given !== undefined && given.doc !== null) {
+		row.setAttr(CONTENT_FIELD, (given ?? new Y.Type()) as never);
+	} else {
+		if (given !== undefined) {
 			throw new Error(
-				`the content given for row '${rowId}' already belongs to a document; build a fresh node per row`,
+				`cannot replace the content node for existing row '${rowId}'; edit the live node instead`,
 			);
 		}
-		row.setAttr(CONTENT_FIELD, (given ?? new Y.Type()) as never);
+		if (readRowContent(root, rowId) === undefined) {
+			throw new Error(
+				`existing row '${rowId}' has no live content node; repair it before writing scalar fields`,
+			);
+		}
 	}
 	fill(row, scalars);
 }
@@ -332,11 +349,15 @@ function fill(row: RowType, fields: JsonObject): void {
 	}
 }
 
-function refuseReservedFields(fields: RowInput): void {
+function refuseReservedFields(fields: RowInput, allowContent = false): void {
 	for (const name of Object.keys(fields)) {
-		if (name.startsWith(RESERVED_ATTRIBUTE_PREFIX)) {
+		if (
+			name.startsWith(RESERVED_ATTRIBUTE_PREFIX) ||
+			name === 'id' ||
+			(name === CONTENT_FIELD && !allowContent)
+		) {
 			throw new TypeError(
-				`Field '${name}' is reserved for the row store's internal attributes`,
+				`Field '${name}' is reserved: every row already has an id and a content node`,
 			);
 		}
 	}
@@ -350,7 +371,7 @@ function refuseReservedFields(fields: RowInput): void {
  * (`evidence/invariants.test.ts`), so what remains is one deleted map key,
  * measured at 2.0 items and 44.5 bytes (`evidence/bench/tombstones.ts`).
  *
- * There is nothing else to retire. A row's type content is IN here now
+ * There is nothing else to retire. A row's content node is IN here now
  * (ADR-0295), so deletion is one removal in one document rather than a scalar
  * removal composed with a durable tombstone on a second address.
  *

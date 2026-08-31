@@ -5,9 +5,8 @@
  *
  * The one thing typecheck and the unit suites cannot judge: that a person can
  * open the app, make a note, type prose into it, reload, and find both still
- * there. Prose is the half that matters here, because it moved from a row's
- * own Yjs document into a nested type on the row (ADR-0295) and the editor
- * binding did not change a line.
+ * there. Prose is the half that matters here, because it lives in the row's
+ * nested `content` node on the database document (ADR-0295).
  */
 import { chromium } from 'playwright';
 

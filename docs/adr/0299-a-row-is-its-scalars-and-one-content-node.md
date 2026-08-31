@@ -42,7 +42,9 @@ type ContentCodec = {
 };
 
 notes: defineTable({
-  scalars: { title, pinned, createdAt },
+  title: field.string(),
+  pinned: field.boolean(),
+  createdAt: field.instant(),
   content: markdown(noteSchema),
 })
 ```
@@ -77,8 +79,9 @@ newer release syncs rows this one cannot name.
 ## Consequences
 
 The node is **always present**, minted with the row, whether or not anything
-writes to it. `RowOf<T>` is `{ id, content: Y.Type } & ScalarsOf<T>` with no
-conditional and no optionality anywhere in the lens.
+writes to it. `RowOf<T>` is `{ id, content: Y.Type }` intersected with the
+static values of every top-level scalar field, with no conditional and no
+optionality anywhere in the lens.
 
 Benched against `@y/y` directly, three arms over identical rows (no node, an
 unwritten node, a written node):
@@ -104,7 +107,8 @@ What this deletes: `RowFileCodec`, `RowFileCodecOf`, `RowValues`, `RowFile`,
 carrying its error sentence in the element position, now a reserved-key
 comparison), the duplicate-type-name check, `defineData`'s throw for a table
 with type content and no codec, `packages/skills`'s generic codec factory, and
-both assertions.
+both assertions. The public table shape is one flat map: there is no `scalars`
+wrapper and no `types` array.
 
 The rule that a table with rich content must declare a codec stops being
 enforced and starts being true: a codec is part of declaring a table.

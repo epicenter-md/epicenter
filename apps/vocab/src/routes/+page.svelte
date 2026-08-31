@@ -20,7 +20,7 @@
 	// The one place the document choice is made (ADR-0233): portable work goes
 	// to the account replica when this generation has one, and to the device
 	// document otherwise. Everything below reads `data` and never asks again.
-	const data = runtime.account?.data ?? runtime.deviceData;
+	const data = runtime.account?.data ?? runtime.localData;
 
 	const entries = createEntriesState({ data });
 	setVocabSurface({ entries });
@@ -41,7 +41,7 @@
 
 	// How this screen renders is a fact about this screen, so it comes off the
 	// DEVICE document whether or not an account is open.
-	const settings = createSettingsState({ deviceData: runtime.deviceData });
+	const settings = createSettingsState({ localData: runtime.localData });
 
 	onDestroy(() => {
 		chat[Symbol.dispose]();

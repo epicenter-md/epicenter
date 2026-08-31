@@ -10,7 +10,7 @@
 
 import { expect, test } from 'bun:test';
 import type { AgentMessage } from '@epicenter/agent';
-import { defineData, defineTable } from '@epicenter/data/definition';
+import { defineData } from '@epicenter/data/definition';
 import { createMemoryRecord, openMemory } from '@epicenter/data/memory';
 import { InstantString } from '@epicenter/field';
 import { conversationsTable, createAgentMessageStore } from './index.js';
@@ -19,9 +19,7 @@ const testDefinition = defineData({
 	id: 'so.epicenter.chat-test',
 	kv: {},
 	tables: {
-		conversations: defineTable({
-			...conversationsTable,
-		}),
+		conversations: conversationsTable,
 	},
 });
 
@@ -49,9 +47,9 @@ test('the agent store observes writes and survives a restart', async () => {
 			});
 			rowId = created.id;
 
-			const content = db.tables.conversations.get(rowId);
-			if (content === undefined) throw new Error('the row has no content');
-			using store = createAgentMessageStore(content.content);
+			const row = db.tables.conversations.get(rowId);
+			if (row === undefined) throw new Error('the row has no content');
+			using store = createAgentMessageStore(row.content);
 			let observations = 0;
 			const unobserve = store.observe(() => observations++);
 			store.set(message.id, message);
@@ -61,9 +59,9 @@ test('the agent store observes writes and survives a restart', async () => {
 
 		const db = await openMemory(testDefinition, record);
 		await using _db = db;
-		const content = db.tables.conversations.get(rowId);
-		if (content === undefined) throw new Error('the row has no content');
-		using store = createAgentMessageStore(content.content);
+		const row = db.tables.conversations.get(rowId);
+		if (row === undefined) throw new Error('the row has no content');
+		using store = createAgentMessageStore(row.content);
 		expect([...store.entries()]).toEqual([{ key: message.id, val: message }]);
 	} finally {
 		record.close();

@@ -23,7 +23,7 @@ import type * as Y from '@y/y';
 import type { JsonValue } from '../src/definition/json.js';
 
 /**
- * A type whose attributes are scalars: a row, a kv root, any JSON-valued bag.
+ * A type whose attributes are scalar values: a row, a kv root, any JSON-valued bag.
  *
  * The same declaration `document.ts` makes for a row, under the declaration's
  * own word for a JSON-valued attribute. A variable typed with this needs no

@@ -27,11 +27,9 @@ const database = defineData({
 	kv: { theme: field.select(['light', 'dark']), fontSize: field.number() },
 	tables: {
 		notes: defineTable({
-			scalars: {
-				title: field.string(),
-				tags: field.tags(),
-				date: field.nullable(field.string()),
-			},
+			title: field.string(),
+			tags: field.tags(),
+			date: field.nullable(field.string()),
 			content: plainText(),
 		}),
 	},
@@ -99,7 +97,7 @@ describe('a read is a property access on a plain object', () => {
 	test('every scalar verb is synchronous; only a document open is a load', async () => {
 		// One in-memory application document over a synchronous SQLite boundary,
 		// so no scalar read or write has I/O to await. The one asynchronous verb
-		// is `openDocument`, which is a load by decision (ADR-0248).
+		// is the data opener, which is a load by decision (ADR-0248).
 		const made = note();
 		for (const value of [
 			db.tables.notes.get(made.id),
@@ -236,11 +234,9 @@ describe('a nonconforming row is reported, never repaired', () => {
 		kv: {},
 		tables: {
 			notes: defineTable({
-				scalars: {
-					title: field.string(),
-					tags: field.string(),
-					date: field.nullable(field.string()),
-				},
+				title: field.string(),
+				tags: field.string(),
+				date: field.nullable(field.string()),
 				content: plainText(),
 			}),
 		},
@@ -365,19 +361,19 @@ describe('two replicas converge', () => {
 	});
 });
 
-describe("a row's type content lives on the row (ADR-0295)", () => {
+describe("a row's content node lives on the row (ADR-0295)", () => {
 	test('an absent row has no content, which is a fact not a failure', () => {
 		expect(db.tables.notes.get('nope')).toBeUndefined();
 	});
 
-	test('a type field is minted with its row and is empty', () => {
+	test('a content node is minted with its row and is empty', () => {
 		const made = note();
 		const content = db.tables.notes.get(made.id);
 		expect(content?.content).toBeDefined();
 		expect(content?.content.length).toBe(0);
 	});
 
-	test('deleting the row takes its type content with it', () => {
+	test('deleting the row takes its content node with it', () => {
 		const made = note();
 		const content = db.tables.notes.get(made.id)?.content;
 		content?.applyDelta(content.change.insert('milk') as never);
@@ -385,7 +381,7 @@ describe("a row's type content lives on the row (ADR-0295)", () => {
 		expect(db.tables.notes.get(made.id)).toBeUndefined();
 	});
 
-	test('a type field is a live type on the row, never a JSON scalar', () => {
+	test('content is a live node on the row, never a JSON scalar', () => {
 		// `get` carries it and `stored()` cannot: the faithful read answers in
 		// JSON, and a nested type is not one. That is the whole reason the
 		// exporter reads through `store.rowFile` rather than through `stored`.
@@ -395,10 +391,10 @@ describe("a row's type content lives on the row (ADR-0295)", () => {
 		expect(db.tables.notes.get(made.id)?.content).toBeDefined();
 	});
 
-	test('an content writing into its own type field cannot touch the row', () => {
+	test('content written into its own node cannot touch the row', () => {
 		// Bound to the ROW itself, a ProseMirror schema whose doc node declares
 		// attributes would overwrite the row's fields and sync that; measured in
-		// ADR-0215. A type field is a type nested UNDER the row, so its
+		// ADR-0215. The content node is nested UNDER the row, so its
 		// attributes are its own.
 		const made = note();
 		db.tables.notes
@@ -407,7 +403,7 @@ describe("a row's type content lives on the row (ADR-0295)", () => {
 		expect(db.tables.notes.get(made.id)?.title).toBe('Groceries');
 	});
 
-	test('a type field rides the whole state and comes back attached', async () => {
+	test('the content node rides the whole state and comes back attached', async () => {
 		const made = note();
 		const content = db.tables.notes.get(made.id)?.content;
 		content?.applyDelta(content.change.insert('milk and eggs') as never);
@@ -607,15 +603,13 @@ describe('a subscription says a table changed', () => {
 				kv: {},
 				tables: {
 					notes: defineTable({
-						scalars: {
-							title: field.string(),
-							tags: field.tags(),
-							date: field.nullable(field.string()),
-						},
+						title: field.string(),
+						tags: field.tags(),
+						date: field.nullable(field.string()),
 						content: plainText(),
 					}),
 					folders: defineTable({
-						scalars: { name: field.string() },
+						name: field.string(),
 						content: plainText(),
 					}),
 				},
@@ -655,8 +649,8 @@ describe('a subscription says a table changed', () => {
 		);
 	});
 
-	test("prose written into a row's type field is NOT a table commit", () => {
-		// The refusal a table signal is drawn around. A row's type field is
+	test("prose written into a row's content node is NOT a table commit", () => {
+		// The refusal a table signal is drawn around. A row's content node is
 		// nested on the row (ADR-0295), so a keystroke modifies the field and
 		// nothing shallower. `deliver` reads what a transaction changed
 		// DIRECTLY, and counts only the table root (a row added or removed) and
@@ -819,11 +813,9 @@ describe('kv survives a declaration upgrade (ADR-0240)', () => {
 				},
 				tables: {
 					notes: defineTable({
-						scalars: {
-							title: field.string(),
-							tags: field.tags(),
-							date: field.nullable(field.string()),
-						},
+						title: field.string(),
+						tags: field.tags(),
+						date: field.nullable(field.string()),
 						content: plainText(),
 					}),
 				},
@@ -848,11 +840,11 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		kv: { theme: field.select(['light', 'dark']) },
 		tables: {
 			notes: defineTable({
-				scalars: { title: field.string() },
+				title: field.string(),
 				content: plainText(),
 			}),
 			scratch: defineTable({
-				scalars: { body: field.string() },
+				body: field.string(),
 				content: plainText(),
 			}),
 		},
@@ -862,7 +854,7 @@ describe('an undeclared table waits in the CRDT (ADR-0240)', () => {
 		kv: {},
 		tables: {
 			notes: defineTable({
-				scalars: { title: field.string() },
+				title: field.string(),
 				content: plainText(),
 			}),
 		},
@@ -921,7 +913,8 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 		kv: {},
 		tables: {
 			notes: defineTable({
-				scalars: { title: field.string(), preview: field.string() },
+				title: field.string(),
+				preview: field.string(),
 				content: plainText(),
 			}),
 		},
@@ -931,7 +924,7 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 		kv: {},
 		tables: {
 			notes: defineTable({
-				scalars: { title: field.string() },
+				title: field.string(),
 				content: plainText(),
 			}),
 		},
@@ -971,18 +964,18 @@ describe('stored() is the faithful read (ADR-0267)', () => {
 
 describe('foreign bytes have exactly one door', () => {
 	// The store's updateV2 listener treats any unrecognized origin as an
-	// application writing through a live type, which is only correct for a
-	// LOCAL transaction. An application holds a type field and a type field
+	// application writing through a live content node, which is only correct for a
+	// LOCAL transaction. An application holds a content node and a content node
 	// exposes `.doc`, so the branch is guarded by `transaction.local` rather
 	// than by convention: `applyUpdateV2` forces it to false and a local
 	// `transact` defaults it to true. This test also pins `transaction.local`
-	// itself: if an rc removed the field, every application write into a type
-	// field would take the throw and the suite fails loudly.
+	// itself: if an rc removed the field, every application write into a content
+	// node would take the throw and the suite fails loudly.
 	test('a direct Y.applyUpdateV2 on the live document throws instead of forging authored work', () => {
 		const made = note({ title: 'mine' });
 		const live = db.tables.notes.get(made.id)?.content.doc;
 		if (live === null || live === undefined) {
-			throw new Error('the type field is not attached to a document');
+			throw new Error('the content node is not attached to a document');
 		}
 
 		const stranger = new Y.Doc({ gc: true });
@@ -1126,7 +1119,7 @@ describe('an unusable store throws, and never dresses up as a read outcome', () 
 	});
 });
 
-describe('a type field carries its own change signal (ADR-0297)', () => {
+describe('a content node carries its own change signal (ADR-0297)', () => {
 	test('an edit to the field reaches its subscriber', () => {
 		const made = note();
 		const content = db.tables.notes.get(made.id)?.content;
@@ -1229,10 +1222,8 @@ describe('the store manages no timestamps (ADR-0297)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					scalars: {
-						title: field.string(),
-						updatedAt: field.instant(),
-					},
+					title: field.string(),
+					updatedAt: field.instant(),
 					content: plainText(),
 				}),
 			},
@@ -1254,7 +1245,7 @@ describe('the store manages no timestamps (ADR-0297)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					scalars: { title: field.string() },
+					title: field.string(),
 					content: plainText(),
 				}),
 			},

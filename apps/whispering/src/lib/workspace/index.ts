@@ -28,13 +28,19 @@ import { field } from '@epicenter/data/definition';
  */
 
 import type { DataView } from '@epicenter/data';
-import { defineData, type KvOf, type RowOf } from '@epicenter/data/definition';
+import {
+	defineData,
+	defineTable,
+	type KvOf,
+	plainText,
+	type RowOf,
+} from '@epicenter/data/definition';
 
 /** Runtime-minted structural row ids. */
 export type RecordingId = string;
 export type RecipeId = string;
 
-const recordingsTable = {
+const recordingsTable = defineTable({
 	/**
 	 * Opaque local and remote identity for this recording's immutable audio.
 	 *
@@ -63,9 +69,10 @@ const recordingsTable = {
 	transcriptionStatus: field.string(),
 	transcriptionCompletedAt: field.nullable(field.instant()),
 	transcriptionError: field.nullable(field.string()),
-} as const;
+	content: plainText(),
+});
 
-const recipesTable = {
+const recipesTable = defineTable({
 	/**
 	 * No `sourceId`. It existed because the old store let an application choose
 	 * a row id and a recipe needed a portable one; the store now refuses chosen
@@ -75,7 +82,8 @@ const recipesTable = {
 	name: field.string(),
 	instructions: field.string(),
 	icon: field.nullable(field.string()),
-} as const;
+	content: plainText(),
+});
 
 /**
  * A shortcut, as two fields.
@@ -179,8 +187,8 @@ export const whisperingDefinition = defineData({
 	title: 'Whispering',
 	kv: settingsKv,
 	tables: {
-		recordings: { scalars: recordingsTable },
-		recipes: { scalars: recipesTable },
+		recordings: recordingsTable,
+		recipes: recipesTable,
 	},
 });
 
@@ -188,7 +196,11 @@ export const whisperingDefinition = defineData({
 export type WhisperingData = DataView<typeof whisperingDefinition>;
 
 export type Recording = RowOf<typeof recordingsTable>;
-export type Recipe = RowOf<typeof recipesTable>;
+/** The scalar recipe projection used by the picker and editor. */
+export type Recipe = Pick<
+	RowOf<typeof recipesTable>,
+	'id' | 'name' | 'instructions' | 'icon'
+>;
 /**
  * The settings values an application composes after a read.
  *

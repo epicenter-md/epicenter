@@ -16,9 +16,9 @@ import type { VocabRuntime } from '../runtime.js';
 const APPLICATION_DEFAULTS = { showReadings: true } as const;
 
 export function createSettingsState({
-	deviceData,
+	localData,
 }: {
-	deviceData: VocabRuntime['deviceData'];
+	localData: VocabRuntime['localData'];
 }) {
 	function read(): boolean {
 		// One key, one fallback. `get` answers `undefined` for a key never
@@ -27,14 +27,14 @@ export function createSettingsState({
 		// whole-object `Result` read and a `{ ...APPLICATION_DEFAULTS,
 		// ...error.conforming }` merge, in both apps, to arrive here.
 		return (
-			deviceData.kv.get('showReadings') ?? APPLICATION_DEFAULTS.showReadings
+			localData.kv.get('showReadings') ?? APPLICATION_DEFAULTS.showReadings
 		);
 	}
 
 	let showReadings = $state.raw(read());
 	// Registration is synchronous, does no I/O and never fires initially, so the
 	// read above has already seen everything (ADR-0187).
-	const stop = deviceData.kv.subscribe(() => {
+	const stop = localData.kv.subscribe(() => {
 		showReadings = read();
 	});
 
@@ -45,7 +45,7 @@ export function createSettingsState({
 		},
 		/** Flip it. A schema failure is reported by the next read, not this write. */
 		toggleReadings(): void {
-			deviceData.kv.update({ showReadings: !showReadings });
+			localData.kv.update({ showReadings: !showReadings });
 		},
 		[Symbol.dispose]: stop,
 	};

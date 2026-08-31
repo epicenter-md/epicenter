@@ -1,7 +1,7 @@
 /**
  * What a detached `Y.Type` can and cannot do, pinned.
  *
- * A codec builds its own type field and hands it to `create` (ADR-0296, as
+ * A codec builds its own content node and hands it to `create` (ADR-0296, as
  * amended), so what a detached type is safe for is now a correctness
  * constraint on every codec anyone writes. This file is that constraint, in
  * executable form, because `@y/y` is an RC and the amendment is only as good as

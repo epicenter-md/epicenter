@@ -14,12 +14,10 @@ const authored = defineData({
 	},
 	tables: {
 		notes: defineTable({
-			scalars: {
-				title: field.string(),
-				status: field.select(['draft', 'published']),
-				tags: field.multiSelect(['work', 'personal']),
-				publishedAt: field.nullable(field.instant()),
-			},
+			title: field.string(),
+			status: field.select(['draft', 'published']),
+			tags: field.multiSelect(['work', 'personal']),
+			publishedAt: field.nullable(field.instant()),
 			content: plainText(),
 		}),
 	},
@@ -100,7 +98,7 @@ describe('data definitions', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					scalars: { title: field.string() },
+					title: field.string(),
 					content: plainText(),
 				}),
 			},
@@ -118,7 +116,40 @@ describe('data definitions', () => {
 		const result = parseData({
 			id: 'so.epicenter.collide',
 			kv: {},
-			tables: { notes: { scalars: { content: field.string() } } },
+			tables: { notes: { content: field.string() } },
+		});
+		expect(result.error?.name).toBe('Malformed');
+	});
+
+	test("a scalar cannot be called 'id', because every row already has one", () => {
+		const result = parseData({
+			id: 'so.epicenter.collide-id',
+			kv: {},
+			tables: { notes: { id: field.string(), content: {} } },
+		});
+		expect(result.error?.name).toBe('Malformed');
+	});
+
+	test('the old scalar wrapper and type list are not compatibility paths', () => {
+		const result = parseData({
+			id: 'so.epicenter.old-table-shape',
+			kv: {},
+			tables: {
+				notes: {
+					scalars: { title: field.string() },
+					types: ['content'],
+					content: {},
+				},
+			},
+		});
+		expect(result.error?.name).toBe('UnrecognizedField');
+	});
+
+	test('a table without the reserved content key is malformed', () => {
+		const result = parseData({
+			id: 'so.epicenter.missing-content',
+			kv: {},
+			tables: { notes: { title: field.string() } },
 		});
 		expect(result.error?.name).toBe('Malformed');
 	});
@@ -128,7 +159,7 @@ describe('data definitions', () => {
 		const result = parseData({
 			id: 'so.epicenter.kvcontent',
 			kv: { content: field.string() },
-			tables: { notes: { scalars: { title: field.string() } } },
+			tables: { notes: { title: field.string(), content: {} } },
 		});
 		expect(result.error).toBeNull();
 	});
@@ -138,7 +169,7 @@ describe('data definitions', () => {
 		// round-tripped through JSON loses its functions, and that husk must be
 		// parseable, because an app bundle's `database.json` is read for its id.
 		const authored = defineTable({
-			scalars: { title: field.string() },
+			title: field.string(),
 			content: plainText(),
 		});
 		const result = parseData(
@@ -165,7 +196,8 @@ describe('data definitions', () => {
 			kv: {},
 			tables: {
 				notes: {
-					scalars: { title: { type: field.string(), default: 'untitled' } },
+					title: { type: field.string(), default: 'untitled' },
+					content: {},
 				},
 			},
 		});
@@ -178,7 +210,7 @@ describe('data definitions', () => {
 			kv: {},
 			tables: {
 				rows: defineTable({
-					scalars: { payload: field.json(field.select(['a', 'b'])) },
+					payload: field.json(field.select(['a', 'b'])),
 					content: plainText(),
 				}),
 			},

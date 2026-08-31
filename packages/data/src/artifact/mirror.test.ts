@@ -29,7 +29,7 @@ const store = defineData({
 	kv: { theme: field.string() },
 	tables: {
 		notes: defineTable({
-			scalars: { title: field.string() },
+			title: field.string(),
 			content: plainText(),
 		}),
 	},
@@ -148,8 +148,8 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		expect(latest(manifests)).toEqual(['kv.json']);
 	});
 
-	test('a type-field edit reaches the file, with nothing derived to trigger it', async () => {
-		// The signal the collapse restored (ADR-0295). A type field is a nested
+	test('a content-node edit reaches the file, with nothing derived to trigger it', async () => {
+		// The signal the collapse restored (ADR-0295). The content node is nested
 		// type on the row, so a keystroke bubbles through `changedParentTypes`
 		// to the table root and the store's commit listener hears it. Before the
 		// collapse a content edit reached `onCommitted` only by way of a derived
@@ -231,7 +231,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 			kv: {},
 			tables: {
 				notes: defineTable({
-					scalars: { title: field.string() },
+					title: field.string(),
 					content: {
 						encode: (node) => {
 							if (explode) throw new Error('the codec exploded');
