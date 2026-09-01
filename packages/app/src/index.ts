@@ -20,6 +20,11 @@
  * it to.
  */
 
+import {
+	isDatabaseName,
+	isProtocolAppId,
+	isSecretLabel,
+} from './protocol.js';
 import type { DataDefinition } from '@epicenter/data/definition';
 import type { LocalData } from '@epicenter/data';
 import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
@@ -129,15 +134,11 @@ export type EpicenterHandle = {
 	readonly secrets: SecretStore;
 };
 
-const APP_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/;
-const DATABASE_NAME = /^[a-z][a-z0-9_-]*$/;
-const ACCOUNT_ID = /^[A-Za-z0-9._-]+$/;
-
 /** Create one handle whose every capability is scoped to `appId`. */
 export function createEpicenter(
 	options: CreateEpicenterOptions,
 ): EpicenterHandle {
-	if (!APP_ID.test(options.appId)) {
+	if (!isProtocolAppId(options.appId)) {
 		throw new Error(
 			AppError.InvalidAppId({ appId: options.appId }).error.message,
 		);
@@ -150,7 +151,7 @@ export function createEpicenter(
 			return binding.openData(definition);
 		},
 		openSqlite(name: string) {
-			if (!DATABASE_NAME.test(name)) {
+			if (!isDatabaseName(name)) {
 				return Promise.resolve(
 					AppError.InvalidDatabaseName({ databaseName: name }),
 				);
@@ -159,19 +160,19 @@ export function createEpicenter(
 		},
 		secrets: Object.freeze({
 			put(accountId: string, value: string) {
-				if (!ACCOUNT_ID.test(accountId)) {
+				if (!isSecretLabel(accountId)) {
 					return Promise.resolve(SecretError.InvalidAccountId({ accountId }));
 				}
 				return binding.secrets.put(accountId, value);
 			},
 			get(accountId: string) {
-				if (!ACCOUNT_ID.test(accountId)) {
+				if (!isSecretLabel(accountId)) {
 					return Promise.resolve(SecretError.InvalidAccountId({ accountId }));
 				}
 				return binding.secrets.get(accountId);
 			},
 			delete(accountId: string) {
-				if (!ACCOUNT_ID.test(accountId)) {
+				if (!isSecretLabel(accountId)) {
 					return Promise.resolve(SecretError.InvalidAccountId({ accountId }));
 				}
 				return binding.secrets.delete(accountId);

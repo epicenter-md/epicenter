@@ -31,31 +31,12 @@ import { isAbsolute, join } from 'node:path';
 export const EPICENTER_BUNDLE_IDENTIFIER = 'so.epicenter';
 
 /**
- * The one grammar for an app id, shared with catalog admission.
- *
- * An app id names an application surface and its application-owned data root,
- * and two issuers name into that one space: admission issues one when it
- * accepts a folder, while the composition root issues ids for the engines it
- * composes. An admitted app commonly uses the same reverse-domain value for
- * its default data id (ADR-0210), but application identity and data identity
- * remain separate concepts at the data and sync boundaries. The grammar has
- * one definition because application roots share one identifier space; a
- * second copy of this pattern is how they would drift apart.
- *
- * Dots are admitted because an admitted app's id *is* its reverse-domain
- * data id, and bare labels stay legal so the composed ids (`local-mail`,
- * `local-books`) keep the directories they already own.
- *
- * The first and last character must be alphanumeric, and that is load-bearing
- * rather than tidy: {@link appDataDir} joins an id onto the one data root, so a
- * grammar admitting `.` or `..` would hand a caller a path out of the root, and
- * one admitting a leading dot would let an app hide as a dotfile.
+ * Re-exported so that everything naming an app directory reads one grammar,
+ * and so the page-side half of the storage protocol can import it without
+ * pulling `node:os` in behind it.
  */
-const APP_ID_PATTERN = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/;
-
-export function isAppId(value: string): boolean {
-	return APP_ID_PATTERN.test(value);
-}
+export { isAppId } from './app-id.js';
+import { isAppId } from './app-id.js';
 
 /**
  * App ids the composition root has already spent, which admission therefore

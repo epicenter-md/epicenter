@@ -11,6 +11,8 @@ import {
 	APP_STORAGE_PATH,
 	type AppStorageRequest,
 	type AppStorageResponse,
+	isDatabaseName,
+	isSecretLabel,
 	type SqliteStatement,
 } from '@epicenter/app/protocol';
 import { getProfileVia } from '@epicenter/auth';
@@ -706,7 +708,7 @@ function parseAppStorageRequest(
 		(kind === 'secret-put' || kind === 'secret-get' || kind === 'secret-delete') &&
 		typeof input.accountId === 'string'
 	) {
-		if (!isAccountId(input.accountId)) return undefined;
+		if (!isSecretLabel(input.accountId)) return undefined;
 		if (kind === 'secret-put' && typeof input.value !== 'string') return undefined;
 		return kind === 'secret-put'
 			? { kind, appId: input.appId, accountId: input.accountId, value: input.value as string }
@@ -756,14 +758,6 @@ function parseSqliteStatement(value: unknown):
 
 function isSqliteValue(value: unknown): boolean {
 	return value === null || typeof value === 'string' || typeof value === 'number';
-}
-
-function isDatabaseName(value: string): boolean {
-	return /^[a-z][a-z0-9_-]*$/.test(value);
-}
-
-function isAccountId(value: string): boolean {
-	return /^[A-Za-z0-9._-]+$/.test(value);
 }
 
 function tokensMatch(candidate: string, expected: string): boolean {
