@@ -8,6 +8,13 @@ import { field, plainText } from '@epicenter/data/definition';
  * branch once "worked" in a simulation where nothing was ever delivered, so
  * every test that claims something arrived asserts on the RECEIVING replica's
  * rows, never on a counter kept by the harness.
+ *
+ * The second rule is newer and less obvious: where a test is about what
+ * survives a crash it asserts on the DURABLE reading, not the in-memory one.
+ * A durable cursor ahead of its bytes converges anyway while the process
+ * lives, so every convergence assertion in this file passes while it is
+ * happening. `durableCursorNeverLeads` is that rule as a predicate, checked
+ * every round of both fuzzes.
  */
 
 import { Database } from 'bun:sqlite';
@@ -261,6 +268,58 @@ function setup(snapshotFloorBytes?: number) {
 	const phone = openReplica('phone', hub, wire);
 	const laptop = openReplica('laptop', hub, wire);
 	return { wire, sqlite, authority, hub, phone, laptop };
+}
+
+/**
+ * Put bytes no replica can apply into the authority's log.
+ *
+ * The only way a replica's cursor pins while the log keeps moving, and the
+ * authority is the right place to do it from: it never reads what it stores, so
+ * garbage takes a position exactly like an update does, and the replica that
+ * cannot apply it is the one that finds out (ADR-0298).
+ */
+function poison(
+	hub: ReturnType<typeof createSyncHub>,
+	submission: number,
+	bytes: Uint8Array,
+): void {
+	const writer: HubConnection = { cursor: 0, send: () => undefined };
+	hub.join(writer);
+	hub.receive(
+		writer,
+		encodeFrame({ kind: 'push', submission, chunk: 0, chunks: 1, bytes }),
+	);
+	hub.leave(writer);
+}
+
+/**
+ * The rule every cursor write has to obey: durable may lag, never lead.
+ *
+ * Lagging is designed and costs an idempotent re-application, because a blocked
+ * flush leaves the durable position behind the applied one and a restart simply
+ * re-receives entries the document already holds. Leading is the failure with
+ * no recovery: the position survives a crash, the bytes do not, and the replica
+ * resumes past entries it never read with nothing reporting it.
+ *
+ * Asserted continuously rather than at the end, because it is transient by
+ * nature. Every convergence assertion in this file passes while it is violated,
+ * and a `needsResync` reconnect repairs the in-memory state before any of them
+ * run.
+ */
+function durableCursorNeverLeads(replicas: Replica[]): void {
+	for (const replica of replicas) {
+		const durable = syncEngineOf(replica.data).cursor();
+		const applied = replica.client.status().cursor;
+		// Compared as a pair so a failure names the replica and both positions;
+		// `toBeLessThanOrEqual` alone reports two bare numbers.
+		if (durable > applied) {
+			expect({ replica: replica.label, durable, applied }).toEqual({
+				replica: replica.label,
+				durable: applied,
+				applied,
+			});
+		}
+	}
 }
 
 /** A floor low enough that ordinary test traffic reaches the snapshot path. */
@@ -1291,29 +1350,20 @@ describe('an entry that will not apply is loud, not silent', () => {
 
 describe('an ack naming a position this replica never received through', () => {
 	/**
-	 * The one place an ack can be ahead of its replica, and it needs no dropped
-	 * frame to get there.
+	 * A replica pinned behind the log, with the log still moving.
 	 *
 	 * An ack is an entry frame with the payload elided: it names a position and
 	 * expects the replica to move its cursor there using bytes it already holds.
 	 * That is sound only while the position is the next one, which the hub
-	 * arranges by delivering everything below it to the same socket first. A
-	 * poison entry breaks the arrangement from the other side: the replica
-	 * refuses to apply it, so its cursor pins while the log keeps moving, and the
-	 * ack for a submission still in flight then names a position several entries
-	 * ahead.
+	 * arranges by delivering everything below it to the same socket first.
 	 *
-	 * On the client, retiring the outbox and moving the cursor are one write,
-	 * because the cursor IS `MAX(authoritySeq)` (ADR-0301). So an ack acted on
-	 * here stamps the durable cursor past entries that were never applied. While
-	 * the process lives that is invisible, because the in-memory cursor is still
-	 * correct and `needsResync` is about to repair it. A restart inside that
-	 * window reads the durable cursor, dials from it, and the skipped entries are
-	 * gone with nothing reporting it.
+	 * A poison entry breaks the arrangement from the replica's side. It refuses
+	 * to apply, so its cursor pins while the log keeps moving, and an ack for a
+	 * submission still in flight then names a position several entries ahead.
+	 * Nothing here drops a frame or reorders one; this is what an ordered wire
+	 * and a working authority produce on their own.
 	 *
-	 * These assertions are on the DURABLE cursor and the DURABLE outbox for that
-	 * reason. Every in-memory reading was already correct while the bytes were
-	 * being lost.
+	 * Returns with the phone pinned at 1 and the log at 3.
 	 */
 	function pinnedBehindTheLog() {
 		const { wire, authority, hub, phone, laptop } = setup();
@@ -1328,33 +1378,21 @@ describe('an ack naming a position this replica never received through', () => {
 
 		// Entry 2: bytes no replica can apply. The authority stores them without
 		// an opinion, and the phone pins at 1 rather than walking past them.
-		const writer: HubConnection = { cursor: 0, send: () => undefined };
-		hub.join(writer);
-		hub.receive(
-			writer,
-			encodeFrame({
-				kind: 'push',
-				submission: 1,
-				chunk: 0,
-				chunks: 1,
-				bytes: new Uint8Array([1, 2, 3, 4, 5, 6]),
-			}),
-		);
+		poison(hub, 1, new Uint8Array([1, 2, 3, 4, 5, 6]));
 		wire.settle();
 		expect(phone.client.status().lastError?.name).toBe('Unapplyable');
 
-		// Entry 3: more ordinary work, which the phone now reads as a gap. The log
-		// is at 3 and the phone is at 1.
+		// Entry 3: more ordinary work, which the phone now reads as a gap.
 		expectOk(laptop.db.tables.notes.create({ title: 'Milk' }));
 		laptop.client.flush();
 		wire.settle();
 		expect(phone.client.status().cursor).toBe(1);
 		expect(expectOk(authority.head())).toBe(3);
 
-		return { wire, phone, laptop };
+		return { wire, hub, phone, laptop };
 	}
 
-	test('the durable cursor does not move, and the work stays owed', () => {
+	test('the durable cursor stays put and the work stays owed', () => {
 		const { wire, phone } = pinnedBehindTheLog();
 
 		// The phone authors its own work while pinned. The authority takes it at
@@ -1363,43 +1401,88 @@ describe('an ack naming a position this replica never received through', () => {
 		phone.client.flush();
 		wire.settle();
 
-		const status = phone.client.status();
-		expect(status.lastError?.name).toBe('Gap');
-		expect((status.lastError as { expected?: number }).expected).toBe(2);
-		expect((status.lastError as { received?: number }).received).toBe(4);
-		expect(status.needsResync).toBe(true);
+		const stuck = phone.client.status();
+		// Reported against the replica's real position, not the ack's own, which
+		// is what makes the reconnect ask for entry 2 rather than entry 4.
+		expect(stuck.lastError?.name).toBe('Gap');
+		expect((stuck.lastError as { expected?: number }).expected).toBe(2);
+		expect((stuck.lastError as { received?: number }).received).toBe(4);
 
-		// The refusal, and the whole point of the suite. Recording acceptance at 4
-		// would durably claim entries 2 and 3 had been read.
+		// The DURABLE readings, because every in-memory one was already correct
+		// while the bytes were being lost. Acting on the ack would stamp the owed
+		// rows at 4, and the cursor IS `MAX(authoritySeq)` (ADR-0301), so that one
+		// write claims entries 2 and 3 were read.
 		expect(syncEngineOf(phone.data).cursor()).toBe(1);
 		expect(syncEngineOf(phone.data).coalesce()).not.toBeUndefined();
 	});
 
-	test('a restart inside the window dials from the entries it still needs', () => {
+	test('a restart inside the window dials from the entries it still needs', async () => {
 		const { wire, phone } = pinnedBehindTheLog();
 
 		expectOk(phone.db.tables.notes.create({ title: 'Eggs' }));
 		phone.client.flush();
 		wire.settle();
 
-		// The crash the durable stamp turns into loss: nothing in memory survives,
-		// and the only thing that decides where this device resumes is the row it
-		// wrote down. Dialing from 4 would skip entry 3 forever and walk silently
-		// past the poison at 2 that the design spends real effort making loud.
-		const restarted = openReplica(
-			'phone',
-			createSyncHub({ authority: openAuthority().authority, batch: 8 }),
-			wire,
-			database,
-			phone.sqlite,
-		);
+		// The crash that turns a durable stamp into loss. Nothing in memory
+		// survives, so the only thing deciding where this device resumes is the
+		// row it wrote down. Dialing from 4 skips entry 3 forever AND walks
+		// silently past the poison at 2 that the design spends real effort making
+		// loud, which is the failure this whole suite exists for.
+		const restarted = await phone.upgrade(database);
 		expect(restarted.client.cursor()).toBe(1);
-		// And it still owes the work the ack was answering, so nothing authored
-		// before the crash is dropped either.
+		// And it still owes what the ack was answering, so the work authored
+		// before the crash is not dropped either.
 		expect(syncEngineOf(restarted.data).coalesce()).not.toBeUndefined();
 	});
 
-	test('CONTROL: an ack at the next position is taken, and the outbox clears', () => {
+	test('an ack behind the cursor is refused too, after a snapshot jumped past it', () => {
+		// The third arm, and the reason the check is `!==` rather than `>`. A
+		// snapshot is the ONE licensed cursor jump, so it can carry a replica past
+		// a submission that is still in flight; the ack then names a position
+		// BELOW the cursor. Acting on it happened to be harmless, but only because
+		// stamping under `MAX(authoritySeq)` cannot move it. That is a property of
+		// the fold's arithmetic, not a rule anything stated, and a fold that ever
+		// stopped taking the maximum would turn it into a silent cursor rewind.
+		const { wire, phone } = setup();
+		phone.connect();
+		wire.settle();
+
+		expectOk(phone.db.tables.notes.create({ title: 'Eggs' }));
+		phone.client.flush();
+		const outstanding = phone.client.status().inFlightSubmission;
+		expect(outstanding).toBeDefined();
+
+		// A snapshot at 9 arrives before the ack does. It covers everything at or
+		// before it, so the jump is legitimate and the cursor lands at 9.
+		expectOk(
+			phone.client.receive(
+				encodeFrame({
+					kind: 'snapshot',
+					position: 9,
+					chunk: 0,
+					chunks: 1,
+					bytes: snapshotOf(phone),
+				}),
+			),
+		);
+		expect(phone.client.status().cursor).toBe(9);
+
+		const answer = phone.client.receive(
+			encodeFrame({
+				kind: 'ack',
+				submission: outstanding as number,
+				seq: 4,
+			}),
+		);
+
+		expect(answer.error?.name).toBe('Gap');
+		expect(phone.client.status().needsResync).toBe(true);
+		expect(phone.client.status().cursor).toBe(9);
+	});
+
+	test('CONTROL: an ack at the next position is taken and the outbox clears', () => {
+		// Without this the guard could refuse EVERY ack and the tests above would
+		// still pass, while the replica never retired a single row.
 		const { wire, phone } = setup();
 		phone.connect();
 		expectOk(phone.db.tables.notes.create({ title: 'Eggs' }));
@@ -1407,9 +1490,68 @@ describe('an ack naming a position this replica never received through', () => {
 		wire.settle();
 
 		expect(phone.client.status().lastError).toBeUndefined();
+		expect(phone.client.status().needsResync).toBe(false);
 		expect(syncEngineOf(phone.data).cursor()).toBe(1);
 		expect(syncEngineOf(phone.data).coalesce()).toBeUndefined();
 	});
+
+	/**
+	 * The same conjunction on schedules nobody designed.
+	 *
+	 * The four tests above assert a sequence someone imagined, so they can only
+	 * hold the shape that was imagined. What actually has to be true is narrower
+	 * and applies at every instant: a replica may not durably record a position
+	 * it has not read through. `durableCursorNeverLeads` is that sentence, and
+	 * these schedules vary everything the deterministic tests fix in place.
+	 *
+	 * The big fuzz below cannot reach this state at all. Every byte it generates
+	 * is a real update, so no replica is ever pinned, so no ack is ever ahead.
+	 * That is exactly why this one exists and why it injects bytes that will not
+	 * apply.
+	 */
+	for (const seed of [3, 19, 2024, 55555]) {
+		test(`seed ${seed}: a pinned replica never records a position it skipped`, () => {
+			const random = createRandom(seed);
+			const { wire, authority, hub, phone, laptop } = setup();
+			phone.connect();
+			laptop.connect();
+
+			let poisoned = false;
+			/** The conjunction itself: pinned behind the log, and still pushing. */
+			let sawPinnedWithWorkInFlight = false;
+			for (let round = 0; round < 40; round += 1) {
+				const author = random.chance(0.5) ? phone : laptop;
+				expectOk(author.db.tables.notes.create({ title: `r${round}` }));
+				// Whether a submission is still in flight when the next ack lands is
+				// the whole variable, so flushing is a coin toss rather than a step.
+				if (random.chance(0.7)) author.client.flush();
+				// Poison once, at a position the schedule chooses rather than one
+				// this test picked.
+				if (!poisoned && random.chance(0.15)) {
+					poison(hub, round + 100, new Uint8Array([7, 7, 7, 7]));
+					poisoned = true;
+				}
+				if (random.chance(0.6)) wire.settle();
+				if (random.chance(0.2)) phone.disconnect();
+				if (random.chance(0.3)) phone.connect();
+				const state = phone.client.status();
+				if (state.inFlight && state.cursor < expectOk(authority.head())) {
+					sawPinnedWithWorkInFlight = true;
+				}
+				durableCursorNeverLeads([phone, laptop]);
+			}
+
+			wire.settle();
+			durableCursorNeverLeads([phone, laptop]);
+			// CONTROLS. A schedule that poisoned nothing, or that poisoned the log
+			// while the phone happened to be idle, satisfies every assertion above
+			// while exercising none of the path this fuzz is for. The second is the
+			// conjunction itself: an ack can only be ahead of a replica that is
+			// behind the log AND waiting on a submission.
+			expect(poisoned).toBe(true);
+			expect(sawPinnedWithWorkInFlight).toBe(true);
+		});
+	}
 });
 
 describe('the authority keeps a snapshot and a tail, not a log', () => {
@@ -1987,6 +2129,11 @@ async function fuzz(
 		if (random.chance(0.5)) wire.settle();
 		if (random.chance(0.12)) disconnect(random.below(replicas));
 		if (random.chance(0.25)) connect(random.below(replicas));
+		// Checked every round rather than at the end. A durable cursor ahead of
+		// its bytes converges anyway while the process lives, so the final
+		// assertions below cannot see it: a snapshot path stamping five positions
+		// ahead of what it applied passed this entire file.
+		durableCursorNeverLeads(devices);
 	}
 
 	// Everyone comes back and everything drains. A replica reporting `needsResync`
