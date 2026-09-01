@@ -16,6 +16,7 @@ import {
 	type SqliteStatement,
 } from '@epicenter/app/protocol';
 import { getProfileVia } from '@epicenter/auth';
+import type { PendingCallback } from '@epicenter/local-mail/authorization-return';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
 import { epicenterFolderRoot, isAppId } from '@epicenter/constants/app-data';
@@ -50,6 +51,8 @@ import {
 	BUILT_IN_ROUTES,
 	LOCAL_BLOB_REMOTE_ROUTES,
 	LOCAL_BLOB_ROUTE,
+	MAIL_CALLBACK_ROUTE,
+	MAIL_PENDING_CALLBACK_ROUTE,
 	MIRROR_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
@@ -97,6 +100,13 @@ export type HomeServerOptions = {
 
 const SESSION_COOKIE = 'epicenter_session';
 const MAX_BROWSER_SESSIONS = 32;
+/**
+ * What the person's browser shows once Google has answered. It carries no
+ * script, so it needs no hash in the policy, and it says nothing about what
+ * happened: whether the account connected is decided in the Mail window, which
+ * is where the person is about to look.
+ */
+const MAIL_CALLBACK_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Local Mail</title></head><body><p>Google has answered. You can close this tab and return to Epicenter.</p></body></html>`;
 const SESSION_SHELL = `<!doctype html><html><head><meta charset="utf-8"><title>Epicenter</title><script>window.__EPICENTER_SESSION_READY__.then(() => window.location.reload())</script></head><body></body></html>`;
 
 export function createHomeServer({
@@ -121,6 +131,11 @@ export function createHomeServer({
 	const activeUrl = validateOrigin(origin);
 	const activeHost = activeUrl.host;
 	const sessionHashes = new Set<string>();
+	// The single callback Google has delivered and Local Mail has not collected
+	// yet. One slot rather than a queue: a person authorizes one account at a
+	// time, and a stale callback is a spent code, so the latest is the only one
+	// worth keeping.
+	let pendingMailCallback: string | null = null;
 	const hostPages = {
 		home: injectAuthBootstrap(staticAssets.homePage, desktopAuth.bootSnapshot),
 		...PLACEHOLDER_PAGES,
@@ -257,6 +272,26 @@ export function createHomeServer({
 			return c.html(hostPages[builtInRoute.id]);
 		});
 	}
+	// Google's answer, arriving in the person's own browser.
+	//
+	// This is the one route on the origin a browser outside the WebView is
+	// expected to reach, so it is deliberately unguarded: a browser following a
+	// redirect carries no session cookie, and there is nothing here to protect.
+	// The host holds an opaque URL for one collection and reads nothing out of
+	// it. The code is worthless without the PKCE verifier, which never leaves
+	// the Mail window, and a forged callback fails that window's `state` check.
+	//
+	// Only a request carrying `code` or `error` is a callback. Anything else is
+	// the WebView loading its own client route, and falls through to the SPA.
+	app.get(MAIL_CALLBACK_ROUTE.pattern, (c, next) => {
+		const url = new URL(c.req.url);
+		const isCallback =
+			url.searchParams.has('code') || url.searchParams.has('error');
+		if (!isCallback) return next();
+		pendingMailCallback = url.toString();
+		c.header('cache-control', 'no-store');
+		return c.html(MAIL_CALLBACK_PAGE);
+	});
 	// One contained asset tree each, with the document served from memory so
 	// every client route lands on the stamped page.
 	for (const application of servedApps) {
@@ -284,6 +319,15 @@ export function createHomeServer({
 	app.get('/apps/*', (c) => c.text('Not Found', 404));
 
 	app.use(APPLICATIONS_ROUTE.pattern, requireBrowserSession);
+	app.use('/api/mail/*', requireBrowserSession);
+	// Taking is destructive, because one authorization is redeemable once and a
+	// second reader would be redeeming a code Google has already spent.
+	app.get(MAIL_PENDING_CALLBACK_ROUTE.pattern, (c) => {
+		const callback = pendingMailCallback;
+		pendingMailCallback = null;
+		if (callback === null) return c.body(null, 204);
+		return c.json({ callbackUrl: callback } satisfies PendingCallback);
+	});
 	app.use('/api/home/*', requireBrowserSession);
 	app.use('/api/local-blobs/*', requireBrowserSession);
 	app.use(`${APP_STORAGE_PATH}/*`, requirePrivateBroker);

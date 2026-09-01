@@ -266,6 +266,7 @@
         "@epicenter/app": "workspace:*",
         "@epicenter/local-mail": "workspace:*",
         "@tanstack/svelte-query": "catalog:",
+        "@tauri-apps/plugin-opener": "catalog:",
         "arkregex": "catalog:",
         "dompurify": "^3.4.10",
       },

@@ -2332,6 +2332,14 @@ mod tests {
                 include_str!("../tauri.conf.json"),
                 "home-model-administration-production",
             ),
+            (
+                include_str!("../tauri.dev.conf.json"),
+                "mail-gmail-authorization-development",
+            ),
+            (
+                include_str!("../tauri.conf.json"),
+                "mail-gmail-authorization-production",
+            ),
         ] {
             let config: serde_json::Value = serde_json::from_str(encoded).unwrap();
             let selected = config["app"]["security"]["capabilities"]
@@ -2378,6 +2386,47 @@ mod tests {
             );
             let permissions = capability["permissions"].as_array().unwrap();
             assert!(permissions.contains(&serde_json::json!("allow-launch-application")));
+        }
+    }
+
+    /// Google refuses a custom URI scheme for a Desktop OAuth client, so Local
+    /// Mail's consent screen has to open in the person's own browser and return
+    /// to the host's loopback socket. Opening it is the only native verb the
+    /// Mail window holds, and it is scoped to the one endpoint that verb exists
+    /// for: this is a grant nobody may widen into a general "open any link"
+    /// power for an app window without deciding to.
+    #[test]
+    fn only_the_mail_window_may_open_google_and_only_google() {
+        for encoded in [
+            include_str!("../capabilities/mail-gmail-authorization-development.json"),
+            include_str!("../capabilities/mail-gmail-authorization-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            assert_eq!(
+                capability["windows"],
+                serde_json::json!(["mail"]),
+                "the Gmail consent grant belongs to the Mail window alone"
+            );
+            assert_eq!(
+                capability["permissions"],
+                serde_json::json!([{
+                    "identifier": "opener:allow-open-url",
+                    "allow": [{ "url": "https://accounts.google.com/*" }]
+                }]),
+                "opening Google is the whole grant, and Google is its whole scope"
+            );
+        }
+    }
+
+    /// The Mail window's grant is its own capability rather than a line in the
+    /// shared app slice, so no other window inherits it.
+    #[test]
+    fn no_app_window_inherits_the_gmail_consent_grant() {
+        for encoded in APP_WINDOW_CAPABILITIES {
+            assert!(
+                !encoded.contains("opener:"),
+                "the shared app slice must not carry an opener grant"
+            );
         }
     }
 

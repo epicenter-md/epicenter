@@ -64,6 +64,8 @@ import {
 	BUILT_IN_ROUTES,
 	HOME_ROUTE,
 	HONEYCRISP_ROUTE,
+	MAIL_CALLBACK_ROUTE,
+	MAIL_PENDING_CALLBACK_ROUTE,
 	MAIL_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
@@ -1042,6 +1044,92 @@ describe('createHomeServer', () => {
 				});
 				expect(outcome).toBe('refused');
 			}
+		} finally {
+			await server.stop(true);
+		}
+	});
+});
+
+describe("Local Mail's desktop authorization callback", () => {
+	test('takes what Google delivered to the browser and hands it to the window once', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host);
+		const origin = server.url.origin;
+		try {
+			// Nothing has arrived, so the window is told there is nothing.
+			const empty = await fetch(MAIL_PENDING_CALLBACK_ROUTE.url(origin), {
+				headers: authenticatedHeaders(server),
+			});
+			expect(empty.status).toBe(204);
+
+			// Google answers in the person's own browser, which carries no
+			// session cookie and must still be served.
+			const callback = `${MAIL_CALLBACK_ROUTE.url(origin)}?code=the-code&state=the-state`;
+			const delivered = await fetch(callback);
+			expect(delivered.status).toBe(200);
+			expect(await delivered.text()).toContain('close this tab');
+
+			const collected = await fetch(MAIL_PENDING_CALLBACK_ROUTE.url(origin), {
+				headers: authenticatedHeaders(server),
+			});
+			expect(collected.status).toBe(200);
+			expect(await collected.json()).toEqual({ callbackUrl: callback });
+
+			// One authorization is redeemable once, so a second read finds
+			// nothing rather than a code Google has already spent.
+			const again = await fetch(MAIL_PENDING_CALLBACK_ROUTE.url(origin), {
+				headers: authenticatedHeaders(server),
+			});
+			expect(again.status).toBe(204);
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('an error Google reports is a callback too', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host);
+		const origin = server.url.origin;
+		try {
+			const denied = `${MAIL_CALLBACK_ROUTE.url(origin)}?error=access_denied&state=the-state`;
+			expect((await fetch(denied)).status).toBe(200);
+			const collected = await fetch(MAIL_PENDING_CALLBACK_ROUTE.url(origin), {
+				headers: authenticatedHeaders(server),
+			});
+			expect(await collected.json()).toEqual({ callbackUrl: denied });
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('without a code it is the WebView loading its own route, and the SPA is served', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host);
+		const origin = server.url.origin;
+		try {
+			const page = await fetch(MAIL_CALLBACK_ROUTE.url(origin), {
+				headers: authenticatedHeaders(server),
+			});
+			expect(page.status).toBe(200);
+			expect(await page.text()).not.toContain('close this tab');
+
+			const collected = await fetch(MAIL_PENDING_CALLBACK_ROUTE.url(origin), {
+				headers: authenticatedHeaders(server),
+			});
+			expect(collected.status).toBe(204);
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('collecting requires a browser session, so only a window may read it', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host);
+		const origin = server.url.origin;
+		try {
+			await fetch(`${MAIL_CALLBACK_ROUTE.url(origin)}?code=the-code`);
+			const unauthenticated = await fetch(MAIL_PENDING_CALLBACK_ROUTE.url(origin));
+			expect(unauthenticated.status).toBe(401);
 		} finally {
 			await server.stop(true);
 		}

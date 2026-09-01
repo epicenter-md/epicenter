@@ -6,9 +6,9 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import MailIcon from '@lucide/svelte/icons/mail';
 	import { toast } from 'svelte-sonner';
-	import { rememberAuthorization } from '$lib/connect';
 	import { hasGmailIdentity } from '$lib/identity';
 	import { mail } from '$lib/mail';
+	import { gmailAuthorization } from '#platform/gmail-authorization';
 
 	let { loading, onConnected }: {
 		loading: boolean;
@@ -22,13 +22,15 @@
 		starting = true;
 		try {
 			const request = await mail.beginConnect();
-			rememberAuthorization(request);
-			// Leaving the page IS the flow. Nothing is held here across the
-			// redirect except the verifier, and the landing route redeems it.
-			window.location.assign(request.authorizeUrl);
+			// The web build leaves the page here and never comes back to this
+			// line; the desktop build waits and answers with where Google sent
+			// the person. Either way the request stays in hand.
+			const callbackUrl = await gmailAuthorization.authorize(request);
+			await mail.finishConnect(request, callbackUrl);
 		} catch (error) {
-			starting = false;
 			toast.error(error instanceof Error ? error.message : String(error));
+		} finally {
+			starting = false;
 			onConnected();
 		}
 	}
@@ -51,7 +53,7 @@
 			<Empty.Content>
 				{#if hasGmailIdentity()}
 					<Button onclick={connect} disabled={starting}>
-						{starting ? 'Opening Google' : 'Connect Gmail'}
+						{starting ? 'Waiting for Google' : 'Connect Gmail'}
 					</Button>
 				{:else}
 					<p class="text-sm text-muted-foreground">

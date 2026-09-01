@@ -8,6 +8,10 @@
 		"#platform/epicenter": {
 			"epicenter-host": "./src/lib/platform/epicenter.epicenter-host.ts",
 			"default": "./src/lib/platform/epicenter.browser.ts"
+		},
+		"#platform/gmail-authorization": {
+			"epicenter-host": "./src/lib/platform/gmail-authorization.epicenter-host.ts",
+			"default": "./src/lib/platform/gmail-authorization.browser.ts"
 		}
 	},
 	"scripts": {
@@ -15,7 +19,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.epicenter-host.json"
 	},
 	"devDependencies": {
 		"@epicenter/ui": "workspace:*",
@@ -39,6 +43,7 @@
 		"@epicenter/app": "workspace:*",
 		"@epicenter/local-mail": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
+		"@tauri-apps/plugin-opener": "catalog:",
 		"arkregex": "catalog:",
 		"dompurify": "^3.4.10"
 	},

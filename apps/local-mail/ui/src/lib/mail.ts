@@ -28,6 +28,7 @@ import {
 	startConnect,
 } from '@epicenter/local-mail/accounts';
 import { assertMessageLabels } from '@epicenter/local-mail/assert';
+import { CALLBACK_PATH } from '@epicenter/local-mail/authorization-return';
 import type { AuthorizationRequest } from '@epicenter/local-mail/oauth';
 import { overlayOf } from '@epicenter/local-mail/mailbox';
 import { claimReconcile } from '@epicenter/local-mail/reconcile-claim';
@@ -54,7 +55,10 @@ function app(): Promise<MailApp> {
 
 /** Where Google sends a person back to, on this application's own route. */
 export function redirectUri(): string {
-	return new URL('connected', `${window.location.origin}${base()}/`).toString();
+	return new URL(
+		CALLBACK_PATH,
+		`${window.location.origin}${base()}/`,
+	).toString();
 }
 
 /** The path this build is served under: `/apps/mail` on the desktop, `/` on the web. */

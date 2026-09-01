@@ -104,6 +104,66 @@ rather than any branch in application code.
   it, and a browser tab has neither, so the web build syncs while a person is
   looking at it.
 
+### Connecting an account, on each build
+
+A third difference, and the one with the most machinery behind it: where Google
+sends a person back to.
+
+The web build leaves the page. The tab goes to Google, Google returns it to
+`connected`, and the page that comes back reads the PKCE verifier out of
+`sessionStorage` and redeems the code. That is the whole flow.
+
+The desktop build cannot do that, for two reasons that meet in the middle. An
+Epicenter app window admits navigation only to the host's loopback origin, so
+Google's consent screen cannot open inside it. And Google refuses a custom URI
+scheme for a Desktop OAuth client, admitting only a loopback redirect, so there
+is no `epicenter://` address to hand it. The consent screen therefore opens in
+the person's own browser, and Google answers on the host's socket rather than in
+the WebView that started the exchange.
+
+```
+Mail WebView                    Epicenter host          person's browser        Google
+     |                                |                        |                  |
+ click Connect                        |                        |                  |
+     |  openUrl(accounts.google.com)  |                        |                  |
+     |------------- Tauri opener ----------------------------->|                  |
+     |                                |                        |--- consent ----->|
+     |  GET /api/mail/pending-callback|                        |                  |
+     |------------------------------->| 204, nothing yet       |                  |
+     |<-------------------------------|                        |                  |
+     |            (poll)              |  GET /apps/mail/connected?code=...         |
+     |                                |<-----------------------|<--- redirect ----|
+     |                                | holds the URL          |                  |
+     |                                |----------------------->| "close this tab" |
+     |  GET /api/mail/pending-callback|                        |                  |
+     |------------------------------->| 200 { callbackUrl }    |                  |
+     |<-------------------------------| and forgets it         |                  |
+     |                                |                        |                  |
+ redeem the code with the verifier held here, and put the refresh token
+ in `epicenter.secrets`
+```
+
+**The host is a letterbox, not a party to the exchange.** It holds one opaque
+URL for one collection and reads nothing out of it. The verifier never leaves
+the Mail window, so the window is the only thing that can redeem the code, and
+the refresh token goes straight to `epicenter.secrets` from there (ADR-0310).
+
+One grant makes it work, and it is narrow. The Mail window holds
+`opener:allow-open-url` scoped to `https://accounts.google.com/*`, and nothing
+else native: see `apps/epicenter/src-tauri/capabilities/mail-gmail-authorization-*.json`.
+The callback route is deliberately unguarded, because a browser following a
+redirect carries no session cookie, and a forged callback fails the window's
+`state` check anyway.
+
+`src/authorization-return.ts` owns both paths, because the host routes one and
+both builds read the other, and a string spelled twice is how they drift.
+
+**Register both loopback ports.** Google matches a redirect URI exactly, so the
+OAuth client needs `http://127.0.0.1:39130/apps/mail/connected` for the release
+build and `http://127.0.0.1:39131/apps/mail/connected` for the development one,
+plus `http://localhost:5177/connected` for `bun dev` against the standalone web
+build.
+
 ### The registry does not synchronize yet
 
 ADR-0310 describes an account list that reaches a person's other devices while

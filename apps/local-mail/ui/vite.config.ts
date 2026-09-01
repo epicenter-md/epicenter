@@ -1,6 +1,6 @@
-import { defaultClientConditions, defineConfig, type Plugin } from 'vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
+import { defaultClientConditions, defineConfig, type Plugin } from 'vite';
 
 // Two builds from one source. Under `EPICENTER_HOST=1` the SPA is served by
 // Epicenter below `/apps/mail/` and reaches the host's SQLite files and
