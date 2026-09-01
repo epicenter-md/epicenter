@@ -48,7 +48,7 @@ export type PendingSummary = {
 
 export type IntentStore = ReturnType<typeof openIntentStore>;
 
-export function openIntentStore(intent: AppSqliteDatabase, accountId: string) {
+export function openIntentStore(intent: AppSqliteDatabase, sub: string) {
 	const { all, batch } = sqliteHandle(intent);
 
 	/**
@@ -61,21 +61,20 @@ export function openIntentStore(intent: AppSqliteDatabase, accountId: string) {
 	 */
 	async function nextSeq(): Promise<number> {
 		const [counter] = await all<{ value: string | null }>(
-			`SELECT value FROM intent_meta WHERE account_id = ? AND key = 'next_seq'`,
-			[accountId],
+			`SELECT value FROM intent_meta WHERE sub = ? AND key = 'next_seq'`,
+			[sub],
 		);
 		const [highest] = await all<{ seq: number | null }>(
-			`SELECT max(seq) AS seq FROM label_intents WHERE account_id = ?`,
-			[accountId],
+			`SELECT max(seq) AS seq FROM label_intents WHERE sub = ?`,
+			[sub],
 		);
 		const stored = Number(counter?.value);
-		const fromCounter =
-			Number.isSafeInteger(stored) && stored > 0 ? stored : 1;
+		const fromCounter = Number.isSafeInteger(stored) && stored > 0 ? stored : 1;
 		return Math.max(fromCounter, (highest?.seq ?? 0) + 1);
 	}
 
 	return {
-		accountId,
+		sub,
 
 		/**
 		 * Record opinions, one fresh sequence per pair, in one batch.
@@ -94,14 +93,14 @@ export function openIntentStore(intent: AppSqliteDatabase, accountId: string) {
 				seq += 1;
 				return {
 					sql: `INSERT INTO label_intents
-					        (account_id, message_id, label_id, want, seq, asserted_at)
+					        (sub, message_id, label_id, want, seq, asserted_at)
 					      VALUES (?, ?, ?, ?, ?, ?)
-					      ON CONFLICT(account_id, message_id, label_id) DO UPDATE SET
+					      ON CONFLICT(sub, message_id, label_id) DO UPDATE SET
 					        want = excluded.want,
 					        seq = excluded.seq,
 					        asserted_at = excluded.asserted_at`,
 					parameters: [
-						accountId,
+						sub,
 						assertion.messageId,
 						assertion.labelId,
 						assertion.want ? 1 : 0,
@@ -113,10 +112,10 @@ export function openIntentStore(intent: AppSqliteDatabase, accountId: string) {
 			await batch([
 				...statements,
 				{
-					sql: `INSERT INTO intent_meta (account_id, key, value)
+					sql: `INSERT INTO intent_meta (sub, key, value)
 					      VALUES (?, 'next_seq', ?)
-					      ON CONFLICT(account_id, key) DO UPDATE SET value = excluded.value`,
-					parameters: [accountId, String(seq)] as const,
+					      ON CONFLICT(sub, key) DO UPDATE SET value = excluded.value`,
+					parameters: [sub, String(seq)] as const,
 				},
 			]);
 			return assertions.length;
@@ -128,8 +127,8 @@ export function openIntentStore(intent: AppSqliteDatabase, accountId: string) {
 				oldest_asserted_at: string | null;
 			}>(
 				`SELECT count(*) AS assertions, min(asserted_at) AS oldest_asserted_at
-				 FROM label_intents WHERE account_id = ?`,
-				[accountId],
+				 FROM label_intents WHERE sub = ?`,
+				[sub],
 			);
 			return {
 				assertions: row?.assertions ?? 0,
@@ -146,8 +145,8 @@ export function openIntentStore(intent: AppSqliteDatabase, accountId: string) {
 				seq: number;
 			}>(
 				`SELECT message_id, label_id, want, seq FROM label_intents
-				 WHERE account_id = ? ORDER BY seq`,
-				[accountId],
+				 WHERE sub = ? ORDER BY seq`,
+				[sub],
 			);
 			return rows.map((row) => ({
 				messageId: row.message_id,
@@ -169,9 +168,9 @@ export function openIntentStore(intent: AppSqliteDatabase, accountId: string) {
 			const changes = await batch(
 				retirements.map((retirement) => ({
 					sql: `DELETE FROM label_intents
-					      WHERE account_id = ? AND message_id = ? AND label_id = ? AND seq = ?`,
+					      WHERE sub = ? AND message_id = ? AND label_id = ? AND seq = ?`,
 					parameters: [
-						accountId,
+						sub,
 						retirement.messageId,
 						retirement.labelId,
 						retirement.seq,
@@ -193,8 +192,8 @@ export function openIntentStore(intent: AppSqliteDatabase, accountId: string) {
 		async discardAll(): Promise<number> {
 			const [changes] = await batch([
 				{
-					sql: `DELETE FROM label_intents WHERE account_id = ?`,
-					parameters: [accountId],
+					sql: `DELETE FROM label_intents WHERE sub = ?`,
+					parameters: [sub],
 				},
 			]);
 			return changes ?? 0;

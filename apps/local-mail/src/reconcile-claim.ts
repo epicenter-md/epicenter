@@ -28,13 +28,13 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 /** Proof the holder is this account's reconciler for the length of one pass. */
 export type ReconcileClaim = {
-	readonly accountId: string;
+	readonly sub: string;
 };
 
 export const ReconcileClaimError = defineErrors({
-	Busy: ({ accountId }: { accountId: string }) => ({
+	Busy: ({ sub }: { sub: string }) => ({
 		message: 'A reconcile pass is already running for this account.',
-		accountId,
+		sub,
 	}),
 });
 export type ReconcileClaimError = InferErrors<typeof ReconcileClaimError>;
@@ -55,16 +55,16 @@ export type HeldClaim = {
 
 const claimed = new Set<string>();
 
-/** Take the claim for `accountId`, or report that a pass is already running. */
+/** Take the claim for `sub`, or report that a pass is already running. */
 export function claimReconcile(
-	accountId: string,
+	sub: string,
 ): Result<HeldClaim, ReconcileClaimError> {
-	if (claimed.has(accountId)) {
-		return ReconcileClaimError.Busy({ accountId });
+	if (claimed.has(sub)) {
+		return ReconcileClaimError.Busy({ sub });
 	}
-	claimed.add(accountId);
+	claimed.add(sub);
 	return Ok({
-		claim: { accountId },
-		release: () => claimed.delete(accountId),
+		claim: { sub },
+		release: () => claimed.delete(sub),
 	});
 }

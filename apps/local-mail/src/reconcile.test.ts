@@ -23,12 +23,11 @@ import { assertMessageLabels } from './assert.ts';
 import { DEFAULT_MAIL_CONFIG } from './config.ts';
 import { GmailApiError, type GmailClient } from './gmail-client.ts';
 import type { IntentStore } from './intent-store.ts';
-import { overlayOf, type Mailbox } from './mailbox.ts';
-import { claimReconcile } from './reconcile-claim.ts';
-import { type ReconcileDeps, reconcileAccount } from './reconcile.ts';
-import type { GmailLabel, GmailMessage, HistoryPage } from './schema.ts';
 import { openIntentStore } from './intent-store.ts';
-import { openMailbox } from './mailbox.ts';
+import { type Mailbox, openMailbox, overlayOf } from './mailbox.ts';
+import { type ReconcileDeps, reconcileAccount } from './reconcile.ts';
+import { claimReconcile } from './reconcile-claim.ts';
+import type { GmailLabel, GmailMessage, HistoryPage } from './schema.ts';
 import { openTestSession, type TestSession } from './session.test-support.ts';
 
 const ACCOUNT_ID = 'account-one';
@@ -174,7 +173,7 @@ async function setup(
 			client,
 			config: DEFAULT_MAIL_CONFIG,
 			now: () => NOW,
-			accountId: ACCOUNT_ID,
+			sub: ACCOUNT_ID,
 		},
 		session,
 		mailbox: session.mailbox,
@@ -189,7 +188,7 @@ async function setup(
  * below reach the write path the only way production does.
  */
 async function pass(deps: ReconcileDeps, readOnly = false) {
-	const taken = claimReconcile(deps.accountId);
+	const taken = claimReconcile(deps.sub);
 	if (taken.error !== null) {
 		throw new Error('the test could not become the reconcile owner');
 	}
@@ -313,7 +312,9 @@ describe('drain', () => {
 		const client = fakeGmail(
 			new Map([['m1', { data: message('m1', ['INBOX']) }]]),
 		);
-		const { deps, intents, cleanup } = await setup(client, [message('m1', ['TRASH'])]);
+		const { deps, intents, cleanup } = await setup(client, [
+			message('m1', ['TRASH']),
+		]);
 		try {
 			await intents.assert(
 				[{ messageId: 'm1', labelId: 'TRASH', want: false }],
@@ -861,14 +862,14 @@ describe('ownership', () => {
 				new Date(NOW).toISOString(),
 			);
 
-			const first = claimReconcile(deps.accountId);
+			const first = claimReconcile(deps.sub);
 			expect(first.error).toBeNull();
 			if (first.error !== null) throw first.error;
 
 			// The second owner is refused, so it never obtains the capability a pass
 			// requires. There is no other way in: `reconcileAccount` has no overload
 			// that skips the claim.
-			const second = claimReconcile(deps.accountId);
+			const second = claimReconcile(deps.sub);
 			expect(second.error?.name).toBe('Busy');
 
 			// Nothing reached Gmail on the refused path, and the change is still owed.
@@ -884,7 +885,7 @@ describe('ownership', () => {
 			expect(owned.delivery.delivered).toBe(1);
 			first.data.release();
 
-			const third = claimReconcile(deps.accountId);
+			const third = claimReconcile(deps.sub);
 			expect(third.error).toBeNull();
 			third.data?.release();
 		} finally {
@@ -949,7 +950,7 @@ describe('across a restart', () => {
 			client: offline,
 			config: DEFAULT_MAIL_CONFIG,
 			now: () => NOW,
-			accountId: ACCOUNT_ID,
+			sub: ACCOUNT_ID,
 		};
 
 		expect(
@@ -982,18 +983,15 @@ describe('across a restart', () => {
 		const online = fakeGmail(
 			new Map([['m1', { data: message('m1', ['UNREAD']) }]]),
 		);
-		const restarted = openMailbox(session.mailboxDatabase, ACCOUNT_ID);
-		const restartedIntents = openIntentStore(
-			session.intentDatabase,
-			ACCOUNT_ID,
-		);
+		const restarted = openMailbox(session.mailboxDatabase);
+		const restartedIntents = openIntentStore(session.localDatabase, ACCOUNT_ID);
 		const secondDeps: ReconcileDeps = {
 			mailbox: restarted,
 			intents: restartedIntents,
 			client: online,
 			config: DEFAULT_MAIL_CONFIG,
 			now: () => NOW,
-			accountId: ACCOUNT_ID,
+			sub: ACCOUNT_ID,
 		};
 
 		// The change was still owed when the new handles opened.

@@ -2,8 +2,8 @@ import { expect, test } from 'bun:test';
 import { createTestAppSqlite } from './app-sqlite.test-support.ts';
 import { openIntentStore } from './intent-store.ts';
 import { openMailbox, overlayOf } from './mailbox.ts';
-import type { GmailLabel, GmailMessage } from './schema.ts';
-import { MAIL_CACHE_SCHEMA, MAIL_INTENT_SCHEMA } from './storage.ts';
+import type { GmailMessage } from './schema.ts';
+import { LOCAL_SCHEMA, MAIL_CACHE_SCHEMA } from './storage.ts';
 
 const AT = '2026-08-31T00:00:00.000Z';
 
@@ -28,39 +28,17 @@ function message(
 	} as GmailMessage;
 }
 
-const LABELS: GmailLabel[] = [
-	{ id: 'INBOX', name: 'INBOX', type: 'system' },
-	{ id: 'TRASH', name: 'TRASH', type: 'system' },
-] as unknown as GmailLabel[];
-
 async function openBoth() {
 	const mail = createTestAppSqlite();
 	const intent = createTestAppSqlite();
 	for (const statement of MAIL_CACHE_SCHEMA) await mail.run(statement);
-	for (const statement of MAIL_INTENT_SCHEMA) await intent.run(statement);
+	for (const statement of LOCAL_SCHEMA) await intent.run(statement);
 	return { mail, intent };
 }
 
-test('two accounts share one database and never one row', async () => {
-	const { mail } = await openBoth();
-	const one = openMailbox(mail, 'account-one');
-	const two = openMailbox(mail, 'account-two');
-
-	await one.ingestFullPullPage([message('m1', ['INBOX'])], AT);
-	await one.ingestLabels(LABELS, AT);
-	await two.ingestFullPullPage([message('m2', ['INBOX'])], AT);
-
-	expect(await one.counts()).toEqual({ messages: 1, labels: 2 });
-	expect(await two.counts()).toEqual({ messages: 1, labels: 0 });
-	expect((await one.listMessages({ limit: 10, offset: 0 })).map((m) => m.id)).toEqual([
-		'm1',
-	]);
-	expect(await two.hasMessage('m1')).toBe(false);
-});
-
 test('the overlay decides the page, so an archived message leaves it at once', async () => {
 	const { mail, intent } = await openBoth();
-	const mailbox = openMailbox(mail, 'account-one');
+	const mailbox = openMailbox(mail);
 	const intents = openIntentStore(intent, 'account-one');
 	await mailbox.ingestFullPullPage(
 		[message('m1', ['INBOX']), message('m2', ['INBOX'])],
@@ -68,7 +46,10 @@ test('the overlay decides the page, so an archived message leaves it at once', a
 	);
 
 	// Gmail has not been told, and the inbox page must not show it anyway.
-	await intents.assert([{ messageId: 'm1', labelId: 'INBOX', want: false }], AT);
+	await intents.assert(
+		[{ messageId: 'm1', labelId: 'INBOX', want: false }],
+		AT,
+	);
 	const overlay = overlayOf(await intents.pending());
 	const inbox = await mailbox.listMessages({
 		labelId: 'INBOX',
@@ -79,7 +60,10 @@ test('the overlay decides the page, so an archived message leaves it at once', a
 	expect(inbox.map((m) => m.id)).toEqual(['m2']);
 
 	// The same overlay adds a label Gmail does not have yet.
-	await intents.assert([{ messageId: 'm2', labelId: 'STARRED', want: true }], AT);
+	await intents.assert(
+		[{ messageId: 'm2', labelId: 'STARRED', want: true }],
+		AT,
+	);
 	const starred = await mailbox.listMessages({
 		labelId: 'STARRED',
 		limit: 10,
@@ -92,7 +76,7 @@ test('the overlay decides the page, so an archived message leaves it at once', a
 
 test('trash is hidden from every view except trash, before Gmail hears about it', async () => {
 	const { mail, intent } = await openBoth();
-	const mailbox = openMailbox(mail, 'account-one');
+	const mailbox = openMailbox(mail);
 	const intents = openIntentStore(intent, 'account-one');
 	await mailbox.ingestFullPullPage(
 		[message('m1', ['INBOX']), message('m2', ['INBOX'])],
@@ -118,32 +102,41 @@ test('trash is hidden from every view except trash, before Gmail hears about it'
 	).toEqual(['m1']);
 });
 
-test('a cache reset cannot reach the durable intent store', async () => {
+test('throwing the cache away cannot reach the durable intent store', async () => {
 	const { mail, intent } = await openBoth();
-	const mailbox = openMailbox(mail, 'account-one');
+	const mailbox = openMailbox(mail);
 	const intents = openIntentStore(intent, 'account-one');
 	await mailbox.ingestFullPullPage([message('m1', ['INBOX'])], AT);
 	await mailbox.finishFullPull('900', AT);
-	await intents.assert([{ messageId: 'm1', labelId: 'INBOX', want: false }], AT);
+	await intents.assert(
+		[{ messageId: 'm1', labelId: 'INBOX', want: false }],
+		AT,
+	);
 
-	await mailbox.reset();
+	// Clearing a cache is unlinking its file and opening a new one (ADR-0319).
+	// The durable store cannot go with it, and not because anything here is
+	// careful: it is a different file, and no handle reaches across.
+	const replacement = createTestAppSqlite();
+	for (const statement of MAIL_CACHE_SCHEMA) await replacement.run(statement);
+	const reopened = openMailbox(replacement);
 
-	expect(await mailbox.counts()).toEqual({ messages: 0, labels: 0 });
-	expect(await mailbox.readCacheState()).toEqual({
+	expect(await reopened.counts()).toEqual({ messages: 0, labels: 0 });
+	expect(await reopened.readCacheState()).toEqual({
 		historyId: null,
 		lastFullPullAt: null,
 		lastSyncedAt: null,
 	});
-	expect(await intents.summary()).toEqual({
-		assertions: 1,
-		oldestAssertedAt: AT,
-	});
+	expect((await intents.summary()).assertions).toBe(1);
+	replacement.close();
 });
 
 test('an older delivery cannot retire a newer assertion', async () => {
 	const { intent } = await openBoth();
 	const intents = openIntentStore(intent, 'account-one');
-	await intents.assert([{ messageId: 'm1', labelId: 'INBOX', want: false }], AT);
+	await intents.assert(
+		[{ messageId: 'm1', labelId: 'INBOX', want: false }],
+		AT,
+	);
 	const inFlight = (await intents.pending())[0];
 	if (inFlight === undefined) throw new Error('expected one assertion');
 
@@ -162,16 +155,22 @@ test('an older delivery cannot retire a newer assertion', async () => {
 test('the sequence stays monotonic across an emptied table', async () => {
 	const { intent } = await openBoth();
 	const intents = openIntentStore(intent, 'account-one');
-	await intents.assert([{ messageId: 'm1', labelId: 'INBOX', want: false }], AT);
+	await intents.assert(
+		[{ messageId: 'm1', labelId: 'INBOX', want: false }],
+		AT,
+	);
 	const first = (await intents.pending())[0]?.seq ?? 0;
 	await intents.discardAll();
-	await intents.assert([{ messageId: 'm2', labelId: 'INBOX', want: false }], AT);
+	await intents.assert(
+		[{ messageId: 'm2', labelId: 'INBOX', want: false }],
+		AT,
+	);
 	expect((await intents.pending())[0]?.seq).toBeGreaterThan(first);
 });
 
 test('a history batch folds labels and advances the cursor together', async () => {
 	const { mail } = await openBoth();
-	const mailbox = openMailbox(mail, 'account-one');
+	const mailbox = openMailbox(mail);
 	await mailbox.ingestFullPullPage(
 		[message('m1', ['INBOX', 'UNREAD']), message('m2', ['INBOX'])],
 		AT,
@@ -201,7 +200,7 @@ test('a history batch folds labels and advances the cursor together', async () =
 
 test('a full pull sweeps what the pass did not touch', async () => {
 	const { mail } = await openBoth();
-	const mailbox = openMailbox(mail, 'account-one');
+	const mailbox = openMailbox(mail);
 	await mailbox.ingestFullPullPage([message('m1', ['INBOX'])], AT);
 	await mailbox.finishFullPull('900', AT);
 

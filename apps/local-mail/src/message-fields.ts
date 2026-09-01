@@ -15,8 +15,8 @@ import type { GmailMessage } from './schema.ts';
  * What these functions promise is part of what the cache stores: `subject`,
  * `sender`, and `body_text` are columns filled from here. Changing what one of
  * them extracts means every row already stored disagrees with every row stored
- * after, and the answer is `mailbox.reset()` and a fresh pull, which is what
- * makes this data disposable (ADR-0306).
+ * after, and the answer is unlinking this account's mail file and pulling
+ * again, which is what makes this data disposable (ADR-0306).
  */
 
 /** Pull a header value by name (case-insensitive, per RFC 5322). Gmail nests

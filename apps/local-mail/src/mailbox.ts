@@ -1,9 +1,12 @@
 /**
- * One account's slice of the disposable mail cache.
+ * One account's disposable mail cache, which is one file.
  *
- * Every statement here carries `accountId`, so two connected accounts share one
- * database and never one row. The handle is asynchronous and has no transaction
- * callback (ADR-0312), so anything that has to be all-or-nothing is one `batch`.
+ * No statement here names an account, because the file is the scope
+ * (ADR-0319). A second connected account is a second file with a second
+ * handle, so a query cannot reach it, and clearing this one is unlinking a
+ * file rather than deleting rows out of a shared one. The handle is
+ * asynchronous and has no transaction callback (ADR-0312), so anything that
+ * has to be all-or-nothing is one `batch`.
  *
  * **The effective-label overlay is a parameter, not a view.** The previous
  * design attached the durable intent store to the mirror connection and defined
@@ -17,7 +20,8 @@
  */
 
 import type { AppSqliteDatabase } from '@epicenter/app';
-import { sqliteHandle, type Statement } from './handle.ts';
+import { type Statement, sqliteHandle } from './handle.ts';
+import type { LabelIntent } from './intent-store.ts';
 import {
 	bodyHtml,
 	bodyText,
@@ -25,7 +29,6 @@ import {
 	headerValue,
 } from './message-fields.ts';
 import type { GmailLabel, GmailMessage } from './schema.ts';
-import type { LabelIntent } from './intent-store.ts';
 
 export type CacheState = {
 	historyId: string | null;
@@ -114,21 +117,20 @@ export function effectiveLabels(
 
 export type Mailbox = ReturnType<typeof openMailbox>;
 
-export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
+export function openMailbox(mail: AppSqliteDatabase) {
 	const { all, run, batch } = sqliteHandle(mail);
 
 	function upsertMessageStatement(message: GmailMessage, syncedAt: string) {
 		return {
-			sql: `INSERT INTO messages (account_id, id, resource, subject, sender, body_text, synced_at)
-			      VALUES (?, ?, ?, ?, ?, ?, ?)
-			      ON CONFLICT(account_id, id) DO UPDATE SET
+			sql: `INSERT INTO messages (id, resource, subject, sender, body_text, synced_at)
+			      VALUES (?, ?, ?, ?, ?, ?)
+			      ON CONFLICT(id) DO UPDATE SET
 			        resource = excluded.resource,
 			        subject = excluded.subject,
 			        sender = excluded.sender,
 			        body_text = excluded.body_text,
 			        synced_at = excluded.synced_at`,
 			parameters: [
-				accountId,
 				message.id,
 				JSON.stringify(message),
 				headerValue(message, 'Subject'),
@@ -155,8 +157,8 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 		syncedAt: string,
 	): Promise<{ statement: Statement; changed: boolean } | undefined> {
 		const [row] = await all<{ resource: string }>(
-			`SELECT resource FROM messages WHERE account_id = ? AND id = ?`,
-			[accountId, messageId],
+			`SELECT resource FROM messages WHERE id = ?`,
+			[messageId],
 		);
 		if (row === undefined) return undefined;
 		const parsed = JSON.parse(row.resource) as GmailMessage & {
@@ -166,11 +168,10 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 		return {
 			statement: {
 				sql: `UPDATE messages SET resource = ?, synced_at = ?
-				      WHERE account_id = ? AND id = ?`,
+				      WHERE id = ?`,
 				parameters: [
 					JSON.stringify({ ...parsed, labelIds: [...labelIds] }),
 					syncedAt,
-					accountId,
 					messageId,
 				],
 			},
@@ -180,9 +181,9 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 
 	function setMetaStatement(key: string, value: string) {
 		return {
-			sql: `INSERT INTO cache_meta (account_id, key, value) VALUES (?, ?, ?)
-			      ON CONFLICT(account_id, key) DO UPDATE SET value = excluded.value`,
-			parameters: [accountId, key, value] as const,
+			sql: `INSERT INTO cache_meta (key, value) VALUES (?, ?)
+			      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			parameters: [key, value] as const,
 		};
 	}
 
@@ -250,12 +251,9 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 	}
 
 	return {
-		accountId,
-
 		async readCacheState(): Promise<CacheState> {
 			const rows = await all<{ key: string; value: string | null }>(
-				`SELECT key, value FROM cache_meta WHERE account_id = ?`,
-				[accountId],
+				`SELECT key, value FROM cache_meta`,
 			);
 			const meta = new Map(rows.map((row) => [row.key, row.value]));
 			return {
@@ -267,23 +265,16 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 
 		async counts(): Promise<{ messages: number; labels: number }> {
 			const [messages, labels] = await Promise.all([
-				all<{ n: number }>(
-					`SELECT count(*) AS n FROM messages WHERE account_id = ?`,
-					[accountId],
-				),
-				all<{ n: number }>(
-					`SELECT count(*) AS n FROM labels WHERE account_id = ?`,
-					[accountId],
-				),
+				all<{ n: number }>(`SELECT count(*) AS n FROM messages`),
+				all<{ n: number }>(`SELECT count(*) AS n FROM labels`),
 			]);
 			return { messages: messages[0]?.n ?? 0, labels: labels[0]?.n ?? 0 };
 		},
 
 		async hasMessage(id: string): Promise<boolean> {
-			const rows = await all(
-				`SELECT 1 AS present FROM messages WHERE account_id = ? AND id = ?`,
-				[accountId, id],
-			);
+			const rows = await all(`SELECT 1 AS present FROM messages WHERE id = ?`, [
+				id,
+			]);
 			return rows.length > 0;
 		},
 
@@ -292,10 +283,10 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 		): Promise<{ id: string; name: string | null } | null> {
 			const rows = await all<{ id: string; name: string | null }>(
 				`SELECT id, name FROM labels
-				 WHERE account_id = ? AND (id = ? OR name = ?)
+				 WHERE id = ? OR name = ?
 				 ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, id
 				 LIMIT 1`,
-				[accountId, label, label, label],
+				[label, label, label],
 			);
 			return rows[0] ?? null;
 		},
@@ -322,8 +313,8 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 			offset: number;
 			overlay?: LabelOverlay;
 		}): Promise<MessageSummary[]> {
-			const where = ['account_id = ?'];
-			const parameters: (string | number | null)[] = [accountId];
+			const where: string[] = [];
+			const parameters: (string | number | null)[] = [];
 			if (labelId !== undefined) {
 				const carries = hasEffectiveLabel(labelId, overlay);
 				where.push(carries.sql);
@@ -350,7 +341,7 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 				label_ids: string | null;
 			}>(
 				`SELECT id, thread_id, subject, sender, snippet, internal_date, label_ids
-				 FROM messages WHERE ${where.join(' AND ')}
+				 FROM messages${where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''}
 				 ORDER BY internal_date DESC
 				 LIMIT ? OFFSET ?`,
 				parameters,
@@ -375,8 +366,8 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 			}>(
 				`SELECT id, thread_id, subject, sender, snippet, internal_date,
 				        label_ids, body_text, resource
-				 FROM messages WHERE account_id = ? AND id = ?`,
-				[accountId, id],
+				 FROM messages WHERE id = ?`,
+				[id],
 			);
 			const row = rows[0];
 			if (row === undefined) return null;
@@ -408,9 +399,8 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 
 		async listLabels(): Promise<LabelSummary[]> {
 			return all(
-				`SELECT id, name, type FROM labels WHERE account_id = ?
+				`SELECT id, name, type FROM labels
 				 ORDER BY type, name`,
-				[accountId],
 			);
 		},
 
@@ -435,21 +425,15 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 		): Promise<void> {
 			await batch([
 				{
-					sql: `DELETE FROM labels WHERE account_id = ?`,
-					parameters: [accountId],
+					sql: `DELETE FROM labels`,
 				},
 				...labels.map((label) => ({
-					sql: `INSERT INTO labels (account_id, id, resource, synced_at)
-					      VALUES (?, ?, ?, ?)
-					      ON CONFLICT(account_id, id) DO UPDATE SET
+					sql: `INSERT INTO labels (id, resource, synced_at)
+					      VALUES (?, ?, ?)
+					      ON CONFLICT(id) DO UPDATE SET
 					        resource = excluded.resource,
 					        synced_at = excluded.synced_at`,
-					parameters: [
-						accountId,
-						label.id,
-						JSON.stringify(label),
-						syncedAt,
-					] as const,
+					parameters: [label.id, JSON.stringify(label), syncedAt] as const,
 				})),
 			]);
 		},
@@ -459,14 +443,11 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 		 * `historyId` baseline read BEFORE page one, so changes made during the
 		 * pull replay idempotently instead of disappearing behind a later cursor.
 		 */
-		async finishFullPull(
-			historyId: string,
-			syncedAt: string,
-		): Promise<number> {
+		async finishFullPull(historyId: string, syncedAt: string): Promise<number> {
 			const changes = await batch([
 				{
-					sql: `DELETE FROM messages WHERE account_id = ? AND synced_at < ?`,
-					parameters: [accountId, syncedAt],
+					sql: `DELETE FROM messages WHERE synced_at < ?`,
+					parameters: [syncedAt],
 				},
 				setMetaStatement('history_id', historyId),
 				setMetaStatement('last_full_pull_at', syncedAt),
@@ -531,39 +512,14 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 					upsertMessageStatement(message, syncedAt),
 				),
 				...messagesToDelete.map((id) => ({
-					sql: `DELETE FROM messages WHERE account_id = ? AND id = ?`,
-					parameters: [accountId, id] as const,
+					sql: `DELETE FROM messages WHERE id = ?`,
+					parameters: [id] as const,
 				})),
 				...folds.map((fold) => fold.statement),
 				setMetaStatement('history_id', newHistoryId),
 				setMetaStatement('last_synced_at', syncedAt),
 			]);
 			return { labelsChanged: folds.filter((fold) => fold.changed).length };
-		},
-
-		/**
-		 * Throw this account's copy of Gmail away.
-		 *
-		 * Cache tables only. The durable intent store is a different database and
-		 * is not reachable from here, which is the mechanical half of ADR-0306's
-		 * promise: a reset cannot take a person's undelivered triage with it, not
-		 * because this function is careful but because it holds no handle to it.
-		 */
-		async reset(): Promise<void> {
-			await batch([
-				{
-					sql: `DELETE FROM messages WHERE account_id = ?`,
-					parameters: [accountId],
-				},
-				{
-					sql: `DELETE FROM labels WHERE account_id = ?`,
-					parameters: [accountId],
-				},
-				{
-					sql: `DELETE FROM cache_meta WHERE account_id = ?`,
-					parameters: [accountId],
-				},
-			]);
 		},
 	};
 }

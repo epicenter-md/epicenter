@@ -2,23 +2,25 @@
  * One account's mailbox and intent store over in-memory databases, for tests.
  *
  * The two databases are separate here for the same reason they are separate in
- * production: a cache reset must not be able to reach a person's undelivered
- * triage. A fixture that shared one database would make that promise untestable.
+ * production: the mail copy is one file per account and the durable file is one
+ * per device, so a fixture that shared one database would make the cache reset
+ * promise untestable and would let a mail statement reach a row it cannot reach
+ * for real (ADR-0319).
  */
 
 import type { AppSqliteDatabase } from '@epicenter/app';
 import { createTestAppSqlite } from './app-sqlite.test-support.ts';
-import { openIntentStore, type IntentStore } from './intent-store.ts';
-import { openMailbox, type Mailbox } from './mailbox.ts';
-import { MAIL_CACHE_SCHEMA, MAIL_INTENT_SCHEMA } from './storage.ts';
+import { type IntentStore, openIntentStore } from './intent-store.ts';
+import { type Mailbox, openMailbox } from './mailbox.ts';
+import { LOCAL_SCHEMA, MAIL_CACHE_SCHEMA } from './storage.ts';
 
 export type TestSession = {
-	accountId: string;
+	sub: string;
 	mailbox: Mailbox;
 	intents: IntentStore;
 	/** The two databases, for a test that reopens handles over them. */
 	mailboxDatabase: AppSqliteDatabase;
-	intentDatabase: AppSqliteDatabase;
+	localDatabase: AppSqliteDatabase;
 	/**
 	 * One row straight out of the cache, for a test that wants to see what
 	 * landed rather than what a read model says about it.
@@ -31,24 +33,24 @@ export type TestSession = {
 };
 
 export async function openTestSession(
-	accountId = 'account-one',
+	sub = 'account-one',
 ): Promise<TestSession> {
 	const mail = createTestAppSqlite();
-	const intent = createTestAppSqlite();
+	const local = createTestAppSqlite();
 	for (const sql of MAIL_CACHE_SCHEMA) {
 		const applied = await mail.run(sql);
 		if (applied.error !== null) throw applied.error;
 	}
-	for (const sql of MAIL_INTENT_SCHEMA) {
-		const applied = await intent.run(sql);
+	for (const sql of LOCAL_SCHEMA) {
+		const applied = await local.run(sql);
 		if (applied.error !== null) throw applied.error;
 	}
 	return {
-		accountId,
+		sub,
 		mailboxDatabase: mail,
-		intentDatabase: intent,
-		mailbox: openMailbox(mail, accountId),
-		intents: openIntentStore(intent, accountId),
+		localDatabase: local,
+		mailbox: openMailbox(mail),
+		intents: openIntentStore(local, sub),
 		async row<TRow>(
 			sql: string,
 			parameters: readonly (string | number | null)[] = [],
@@ -59,7 +61,7 @@ export async function openTestSession(
 		},
 		close: () => {
 			mail.close();
-			intent.close();
+			local.close();
 		},
 	};
 }

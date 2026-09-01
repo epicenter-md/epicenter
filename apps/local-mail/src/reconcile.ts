@@ -56,16 +56,16 @@ import { type SyncDeps, type SyncOutcome, syncMailbox } from './sync.ts';
  * `openSession` in `accounts.ts` builds one, and it is the only thing that
  * does. It was declared twice for a while, once here and once there under the
  * name `MailSession`, with identical fields; the tell was a caller writing
- * `{ ...openSession(app, id), accountId }` over a spread that already carried
- * `accountId`.
+ * `{ ...openSession(app, id), sub }` over a spread that already carried
+ * `sub`.
  *
- * `accountId` is on it so the claim can be checked against the work: a surface
+ * `sub` is on it so the claim can be checked against the work: a surface
  * serving several connected accounts holds several claims, and handing the
  * wrong one to a pass would authorize a write to a mailbox nobody claimed.
  */
 export type ReconcileDeps = SyncDeps & {
 	intents: IntentStore;
-	accountId: string;
+	sub: string;
 };
 
 /**
@@ -331,13 +331,13 @@ export async function reconcileAccount(
 		claim: ReconcileClaim;
 	},
 ): Promise<ReconcileOutcome> {
-	if (claim.accountId !== deps.accountId) {
+	if (claim.sub !== deps.sub) {
 		// A programming error, not a runtime condition: some caller took one
 		// account's claim and pointed the pass at another's mailbox. Throwing is
 		// the only honest answer, because continuing would write to Gmail under an
 		// ownership claim nobody holds.
 		throw new Error(
-			`Reconcile claim is for ${claim.accountId}, but the pass is for ${deps.accountId}.`,
+			`Reconcile claim is for ${claim.sub}, but the pass is for ${deps.sub}.`,
 		);
 	}
 	const delivery = await drain(deps, { readOnly });

@@ -12,9 +12,12 @@
 
 import { expect, test } from 'bun:test';
 
+import { createTestAppSqlite } from './app-sqlite.test-support.ts';
+import { openMailbox } from './mailbox.ts';
 import type { GmailMessage } from './schema.ts';
 import { openTestSession, type TestSession } from './session.test-support.ts';
 import { readMailStatus, type StatusDeps } from './status.ts';
+import { MAIL_CACHE_SCHEMA } from './storage.ts';
 
 const AT = '2026-08-31T00:00:00.000Z';
 
@@ -80,13 +83,19 @@ test('undelivered triage stays visible after the cache is thrown away', async ()
 			AT,
 		);
 
-		await session.mailbox.reset();
-
-		const status = await readMailStatus(sessionFor(session));
+		// The cache is thrown away by unlinking its file, so what a person sees
+		// afterwards is a status read against a fresh empty one (ADR-0319).
+		const replacement = createTestAppSqlite();
+		for (const statement of MAIL_CACHE_SCHEMA) await replacement.run(statement);
+		const status = await readMailStatus({
+			...sessionFor(session),
+			mailbox: openMailbox(replacement),
+		});
 		expect(status.cache).toBe('empty');
 		// Reporting zero here would hide a person's own work at exactly the moment
 		// it is most easily lost.
 		expect(status.pending).toEqual({ assertions: 1, oldestAssertedAt: AT });
+		replacement.close();
 	} finally {
 		session.close();
 	}
