@@ -23,7 +23,7 @@ type SqliteModule = {
 	};
 };
 
-const databases = new Map<string, Promise<Database>>();
+const databases = new Map<string, Promise<AppSqliteDatabase>>();
 
 /** Open one persistent SQLite database in this origin's OPFS. */
 export function createBrowserSqliteFactory(): (
@@ -34,10 +34,12 @@ export function createBrowserSqliteFactory(): (
 		const key = `${appId}/${name}`;
 		let opened = databases.get(key);
 		if (opened === undefined) {
-			opened = openOpfsDatabase(databaseFilename(appId, name));
+			opened = openOpfsDatabase(databaseFilename(appId, name)).then(
+				(database) => createAsyncDatabase(database),
+			);
 			databases.set(key, opened);
 		}
-		return createAsyncDatabase(await opened);
+		return opened;
 	};
 }
 

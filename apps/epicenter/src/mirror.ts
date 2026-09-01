@@ -8,9 +8,8 @@
  *
  * It does read files back, in two places, and both are derived-to-derived
  * rather than file-to-row: the sweep reads NAMES to know what is no longer
- * justified, and `mirror-index.ts` reads CONTENTS to build `tables.sqlite`
- * beside them. The seam ADR-0271 guards is narrower than "never read" and
- * still holds: nothing derived from a file ever reaches a row.
+ * justified. The seam ADR-0271 guards is narrower than "never read" and still
+ * holds: nothing derived from a file ever reaches a row.
  *
  * Three things this module owes.
  *
@@ -31,7 +30,17 @@
  */
 
 import type { Dirent } from 'node:fs';
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import {
+	cp,
+	mkdtemp,
+	mkdir,
+	readFile,
+	readdir,
+	rename,
+	rm,
+	writeFile,
+} from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { isAppId } from '@epicenter/constants/app-data';
 import { parseRowPath } from '@epicenter/data/artifact/format';
@@ -136,9 +145,9 @@ async function listRenderedFiles(absoluteFolder: string): Promise<string[]> {
  *
  * Files are written as they arrive. The manifest, when it arrives, ends the
  * pass: everything the folder holds that a render is responsible for and the
- * manifest does not name is a row that no longer exists, and the index is
- * rebuilt from what is left. Rebuilt last and only after the sweep, so it can
- * never describe a file that is about to be removed.
+ * manifest does not name is a row that no longer exists. A complete pass is
+ * staged before the live folder is replaced, so a failed pass never leaves a
+ * half-swept folder.
  */
 export async function applyMirrorPass(
 	absoluteFolder: string,
@@ -148,6 +157,7 @@ export async function applyMirrorPass(
 	try {
 		let manifest: readonly string[] | undefined;
 		let complete = true;
+		const files: { path: string; contents: string }[] = [];
 		for (const line of parseMirrorPass(ndjson)) {
 			if ('manifest' in line) {
 				if (manifest !== undefined) complete = false;
@@ -155,16 +165,76 @@ export async function applyMirrorPass(
 				continue;
 			}
 			if (manifest !== undefined) complete = false;
-			const target = fileInFolder(absoluteFolder, line.path);
-			if (target === undefined) continue;
-			await writeMirrorFile(target, line.contents);
+			if (fileInFolder(absoluteFolder, line.path) !== undefined) {
+				files.push(line);
+			}
 		}
-		if (manifest === undefined || !complete) return;
+		if (manifest === undefined || !complete) {
+			for (const file of files) {
+				const target = fileInFolder(absoluteFolder, file.path);
+				if (target !== undefined) await writeMirrorFile(target, file.contents);
+			}
+			return;
+		}
 
 		const named = new Set(manifest);
-		for (const path of await listRenderedFiles(absoluteFolder)) {
-			if (named.has(path)) continue;
-			await rm(join(absoluteFolder, path), { force: true });
+		const stale = (await listRenderedFiles(absoluteFolder)).filter(
+			(path) => !named.has(path),
+		);
+		if (stale.length === 0) {
+			for (const file of files) {
+				const target = fileInFolder(absoluteFolder, file.path);
+				if (target !== undefined) await writeMirrorFile(target, file.contents);
+			}
+			return;
+		}
+
+		await mkdir(dirname(absoluteFolder), { recursive: true });
+		const stagedFolder = await mkdtemp(`${absoluteFolder}.epicenter-stage-`);
+		let installed = false;
+		try {
+			try {
+				await cp(absoluteFolder, stagedFolder, {
+					recursive: true,
+					force: true,
+					verbatimSymlinks: true,
+				});
+			} catch (cause) {
+				if (!(cause instanceof Error && 'code' in cause && cause.code === 'ENOENT')) {
+					throw cause;
+				}
+			}
+			for (const file of files) {
+				const target = fileInFolder(stagedFolder, file.path);
+				if (target !== undefined) await writeMirrorFile(target, file.contents);
+			}
+			for (const path of stale) {
+				await rm(join(stagedFolder, path), { force: true });
+			}
+
+			const previousFolder = `${absoluteFolder}.epicenter-previous-${randomUUID()}`;
+			let movedExisting = false;
+			try {
+				try {
+					await rename(absoluteFolder, previousFolder);
+					movedExisting = true;
+				} catch (cause) {
+					if (!(cause instanceof Error && 'code' in cause && cause.code === 'ENOENT')) {
+						throw cause;
+					}
+				}
+				await rename(stagedFolder, absoluteFolder);
+				installed = true;
+			} catch (cause) {
+				if (movedExisting) await rename(previousFolder, absoluteFolder);
+				throw cause;
+			} finally {
+				if (movedExisting) {
+					await rm(previousFolder, { recursive: true, force: true });
+				}
+			}
+		} finally {
+			if (!installed) await rm(stagedFolder, { recursive: true, force: true });
 		}
 	} finally {
 		await release();

@@ -13,22 +13,24 @@ export type BunAppStorage = {
 
 /** Open and retain one owner-local handle per scoped application database. */
 export function createBunAppStorage(root: string): BunAppStorage {
-	const opened = new Map<string, Database>();
+	const opened = new Map<string, Promise<AppSqliteDatabase>>();
 	return {
-		async open(appId, name) {
+		open(appId, name) {
 			if (!isAppId(appId)) throw new Error('Invalid application id.');
 			const key = `${appId}/${name}`;
-			let database = opened.get(key);
-			if (database === undefined) {
+			const existing = opened.get(key);
+			if (existing !== undefined) return existing;
+			const opening = (async () => {
 				const directory = join(appDataDir(root, appId), 'sqlite');
 				await mkdir(directory, { recursive: true });
-				database = new Database(join(directory, `${name}.sqlite`), {
+				const database = new Database(join(directory, `${name}.sqlite`), {
 					create: true,
 				});
 				database.run('PRAGMA busy_timeout = 5000');
-				opened.set(key, database);
-			}
-			return createAsyncHandle(database);
+				return createAsyncHandle(database);
+			})();
+			opened.set(key, opening);
+			return opening;
 		},
 	};
 }
