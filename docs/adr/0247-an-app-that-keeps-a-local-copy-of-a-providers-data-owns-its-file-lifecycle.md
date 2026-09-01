@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-18
 - **Amends:** [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md) at the clause placing the primitive in `@epicenter/sqlite/bun-mirror`. Its decision about how a version names a file, what opening does, who decides readiness, and what deletion may reach is unchanged and now lives in each app.
-- **Relates:** [ADR-0227](0227-the-runtime-is-a-desktop-spa-in-a-webview-over-a-client-owned-store.md) (the store and its projection stay in `@epicenter/data`; this record is about the copies that are not the store)
+- **Relates:** [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md) (the store and its projection stay in `@epicenter/data`; this record is about the copies that are not the store)
 
 ## Context
 

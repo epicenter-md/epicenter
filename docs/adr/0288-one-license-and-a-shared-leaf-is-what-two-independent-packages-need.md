@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-29
 - **Supersedes:** the MIT tier described in `docs/licensing/licensing-strategy.md`. That document is rewritten rather than deleted: its threat model, contributor posture, prior art, and proprietary template all survive, and the procedure for reintroducing MIT is recorded there.
-- **Relates:** [ADR-0197](0197-one-sqlite-file-per-app-and-the-driver-contract-is-a-package.md) and [ADR-0247](0247-matter-owns-its-own-file-lifecycle.md), which record a deliberate relicensing and its reversal.
+- **Relates:** [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md) and [ADR-0247](0247-an-app-that-keeps-a-local-copy-of-a-providers-data-owns-its-file-lifecycle.md), which record a deliberate relicensing and its reversal.
 
 ## Context
 

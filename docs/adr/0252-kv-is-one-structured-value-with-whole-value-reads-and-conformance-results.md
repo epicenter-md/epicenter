@@ -4,7 +4,7 @@
 - **Date:** 2026-08-19
 - **Provisional number.** The merge owner reconciles this number against other
   open ADRs before merge.
-- **Relates:** [ADR-0125](0125-fields-validate-present-values-and-table-lenses-own-presence.md),
+- **Relates:** [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md),
   [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md),
   and [ADR-0251](0251-one-transaction-coordinator-backs-direct-operations-and-explicit-compositions.md).
 - **Amended by:** [ADR-0253](0253-schema-lenses-interpret-stored-json-on-read-and-writes-admit-storage-valid-facts.md) at KV write admission. `kv.update` writes supplied storage-valid values and returns no schema Result; `kv.get` remains the conformance boundary.

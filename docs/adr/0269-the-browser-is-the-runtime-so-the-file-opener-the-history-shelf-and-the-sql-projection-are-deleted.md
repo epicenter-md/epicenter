@@ -5,7 +5,7 @@
 - **Amends:** [ADR-0229](0229-a-lens-names-the-store-it-opens-and-opening-is-one-call.md) at the set of openers: `open` answers at `@epicenter/data/browser` and nowhere else, and the memory opener is named test support rather than a second runtime.
 - **Amends:** [ADR-0214](0214-one-sqlite-file-holds-the-update-log-and-the-projection-and-history-lives-outside-the-crdt.md) by deleting its history half: `history.sqlite3` and the `_history` relation are gone, and collapse simply supersedes.
 - **Amends:** [ADR-0241](0241-a-store-is-truth-plus-debts-and-sql-is-a-composed-follower.md) at the shipped follower: SQL is still a composed follower and never a store verb, but the package no longer ships one.
-- **Relates:** [ADR-0226](0226-the-host-serves-bundles-and-brokers-credentials-and-owns-no-application-data.md) and [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md) (the runtime bet this record spends), [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) (what a person reads instead of SQL).
+- **Relates:** [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) and [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md) (the runtime bet this record spends), [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) (what a person reads instead of SQL).
 
 ## Context
 
