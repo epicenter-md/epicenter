@@ -117,7 +117,6 @@ async function openApp(options: { refuse?: 'put' | 'delete' } = {}) {
 				mailboxes.get(sub)?.close();
 				mailboxes.delete(sub);
 			},
-			folder: { local: 'local', account: 'account' },
 		},
 		identity: IDENTITY,
 		config: DEFAULT_MAIL_CONFIG,

@@ -102,7 +102,7 @@ page immediately and the page still comes back full.
 
 | Module | What it owns |
 | --- | --- |
-| `storage.ts` | the app id, the mirror folders, both schemas, and how each is opened |
+| `storage.ts` | the app id, both schemas, and how each kind of file is opened |
 | `accounts.ts` | the registry, connect, remove, and one account's session |
 | `handle.ts` | the one way both stores read and write their database |
 | `mailbox.ts` | one account's disposable cache, which is one file, and the overlay |

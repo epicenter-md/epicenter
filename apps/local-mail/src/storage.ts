@@ -26,6 +26,12 @@ import { type SqliteHandle, sqliteHandle } from './handle.ts';
  * mail, and would buy no atomicity, because the write path never crosses them:
  * the effective-label overlay is applied at read time.
  *
+ * **Nothing is mirrored to `~/Epicenter`.** That folder is how a person opens
+ * their own data as files, and none of this is theirs to export: the mail copy
+ * is Gmail's, and ADR-0306 refuses backup and export for a provider copy. The
+ * two folder names this module used to claim were also keyed by a data id that
+ * no longer exists, since Local Mail holds no Epicenter Data.
+ *
  * **The partition key is the Google subject.** Reconnecting an account lands on
  * its own rows by arithmetic rather than by lookup, so no id is allocated and
  * none can be allocated twice.
@@ -35,18 +41,6 @@ export const LOCAL_MAIL_APP_ID = 'so.epicenter.local-mail';
 
 /** The durable file. One per device, never per account, never unlinked. */
 export const LOCAL_DATABASE = 'local';
-
-/**
- * The two mirror folders Local Mail claims under its data id (ADR-0315).
- *
- * `local` is this machine's view and `account` is whichever account the person
- * is currently showing. Switching which account `account` represents replaces
- * that folder's contents, so it asks first: see `account-switch.ts`.
- */
-export const LOCAL_MAIL_FOLDERS = {
-	local: 'local',
-	account: 'account',
-} as const;
 
 /** One account's borrowed copy. The name is derived, so nothing allocates it. */
 export function mailDatabaseName(sub: string): string {
@@ -60,7 +54,6 @@ export type LocalMailStorage = {
 	mail(sub: string): Promise<AppSqliteDatabase>;
 	/** Unlink one account's borrowed copy and forget the handle to it. */
 	forgetMail(sub: string): Promise<void>;
-	folder: typeof LOCAL_MAIL_FOLDERS;
 };
 
 /**
@@ -102,7 +95,6 @@ export async function openLocalMailStorage(
 			const gone = await epicenter.deleteSqlite(mailDatabaseName(sub));
 			if (gone.error !== null) throw gone.error;
 		},
-		folder: LOCAL_MAIL_FOLDERS,
 	};
 }
 
