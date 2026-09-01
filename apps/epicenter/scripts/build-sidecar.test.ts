@@ -35,6 +35,7 @@ function freePort(): number {
 	});
 	const { port } = probe;
 	probe.stop(true);
+	if (port === undefined) throw new Error('The OS handed out no port.');
 	return port;
 }
 
