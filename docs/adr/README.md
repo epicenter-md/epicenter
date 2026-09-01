@@ -403,5 +403,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0319](0319-local-mail-is-device-local-and-its-storage-splits-by-lifetime.md) | Local Mail is device-local, and its storage splits by lifetime | Accepted (amends 0310 at the synchronizing registry) |
 | [0320](0320-removing-an-account-settles-what-it-owes-before-anything-is-deleted.md) | Removing an account settles what it owes before anything is deleted | Accepted |
 | [0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md) | App-owned storage is named SQLite files an application opens and deletes, and nothing else | Accepted (amends 0312 at the handle lifecycle) |
+| [0322](0322-a-person-keeps-applications-current-and-a-hidden-window-is-the-same-window.md) | A person keeps applications current, and a hidden window is the same window | Accepted (unbuilt; amends 0273 at who chooses) |
 
 When you add an ADR, add its row here.

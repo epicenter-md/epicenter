@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-27
+- **Amended by:** [ADR-0322](0322-a-person-keeps-applications-current-and-a-hidden-window-is-the-same-window.md) at the clause this left open. It decided that starting a window hidden is the ability to add; ADR-0322 decides who chooses, where the answer lives, and that turning on the first application offers the login item without which the choice does not reach what it was made for.
 - **Amends:** [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md) at two points. The one runtime stands; a window may run without being shown, and the client-owned store is what an app MAY use rather than what makes it an app.
 - **Amends:** [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) at what the host brokers: an application's own third-party secrets, several per application, and one callback route the host owns so no application registers one.
 - **Relates:** [ADR-0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (a hidden window crosses no process boundary, so it introduces no new surface), [ADR-0043](0043-an-agent-answers-where-its-capability-lives.md) ("Epicenter runs no per-user answering worker", which this keeps true), [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) (the folder namespace), [ADR-0201](0201-epicenter-owns-one-app-data-root-and-an-app-partitions-its-one-directory-by-a-stable-authority-identifier.md) (the data namespace).
