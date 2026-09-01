@@ -16,14 +16,16 @@ import {
 	type SqliteStatement,
 } from '@epicenter/app/protocol';
 import { getProfileVia } from '@epicenter/auth';
-import type { PendingCallback } from '@epicenter/local-mail/authorization-return';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
 import { epicenterFolderRoot, isAppId } from '@epicenter/constants/app-data';
 import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
+import type { PendingCallback } from '@epicenter/local-mail/authorization-return';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
+import type { AppSecretOwner } from './app-secrets.ts';
+import type { BunAppStorage } from './app-storage.ts';
 import { type Application, listApplications } from './applications.ts';
 import type { DesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
@@ -37,9 +39,6 @@ import {
 	MirrorFolderBusyError,
 	mirrorFolderPath,
 } from './mirror.ts';
-import type { BunAppStorage } from './app-storage.ts';
-import type { AppSecretOwner } from './app-secrets.ts';
-import { admitData } from './trusted-definitions.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
@@ -58,6 +57,7 @@ import {
 	SESSION_STREAM_ROUTE,
 } from './routes.ts';
 import type { EpicenterStaticAssets } from './static-assets.ts';
+import { admitData } from './trusted-definitions.ts';
 
 export type HomeServerEvent = {
 	type: 'snapshot';
@@ -140,19 +140,27 @@ export function createHomeServer({
 		home: injectAuthBootstrap(staticAssets.homePage, desktopAuth.bootSnapshot),
 		...PLACEHOLDER_PAGES,
 	};
-	const servedApps = staticAssets.applications.map(
-		(application) => ({
-			id: application.id,
-			page: injectAuthBootstrap(application.page, desktopAuth.bootSnapshot),
-			resolve: application.resolve,
-		}),
-	);
-	const csp = contentSecurityPolicy(
-		[
-			...Object.values(hostPages),
-			...servedApps.map(({ page }) => page),
-			SESSION_SHELL,
-		].join('\n'),
+	const servedApps = staticAssets.applications.map((application) => ({
+		id: application.id,
+		page: injectAuthBootstrap(application.page, desktopAuth.bootSnapshot),
+		resolve: application.resolve,
+	}));
+	// One text for every policy: an inline script's hash has to be admitted
+	// wherever that document may be served, and only the reachable origins
+	// differ between applications.
+	const everyPage = [
+		...Object.values(hostPages),
+		...servedApps.map(({ page }) => page),
+		SESSION_SHELL,
+	].join('\n');
+	const csp = contentSecurityPolicy(everyPage);
+	const applicationCsp = new Map(
+		servedApps
+			.filter(({ id }) => APPLICATION_CONNECT_ORIGINS[id] !== undefined)
+			.map(({ id }) => [
+				id,
+				contentSecurityPolicy(everyPage, APPLICATION_CONNECT_ORIGINS[id]),
+			]),
 	);
 	const deploymentFetch = createDesktopAuthorityFetch(desktopAuth);
 	const { upgradeWebSocket, websocket } = createBunWebSocket();
@@ -296,12 +304,19 @@ export function createHomeServer({
 	// every client route lands on the stamped page.
 	for (const application of servedApps) {
 		const prefix = `/apps/${application.id}/`;
+		// The session shell is the host's own document and keeps the host's own
+		// policy; only this application's page carries the wider one.
+		const widened = applicationCsp.get(application.id);
+		const servePage = (c: Context) => {
+			if (widened !== undefined) c.header('content-security-policy', widened);
+			return c.html(application.page);
+		};
 		app.get(`${prefix}*`, async (c) => {
 			const pathname = new URL(c.req.url).pathname;
 			if (pathname === prefix || pathname === `${prefix}index.html`) {
 				c.header('cache-control', 'no-store');
 				if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
-				return c.html(application.page);
+				return servePage(c);
 			}
 			const asset = await application.resolve(pathname);
 			if (!asset) return c.text('Not Found', 404);
@@ -311,7 +326,7 @@ export function createHomeServer({
 					? c.html(SESSION_SHELL)
 					: c.text('Unauthorized', 401);
 			}
-			if (asset.isDocument) return c.html(application.page);
+			if (asset.isDocument) return servePage(c);
 			c.header('content-type', asset.contentType);
 			return c.body(asset.file.stream());
 		});
@@ -351,7 +366,10 @@ export function createHomeServer({
 			if (request.kind === 'secret-get') {
 				if (appSecrets === undefined) return c.text('Unavailable', 503);
 				const value = await appSecrets.get(request.appId, request.accountId);
-				return c.json({ kind: request.kind, value } satisfies AppStorageResponse);
+				return c.json({
+					kind: request.kind,
+					value,
+				} satisfies AppStorageResponse);
 			}
 			if (request.kind === 'secret-delete') {
 				if (appSecrets === undefined) return c.text('Unavailable', 503);
@@ -744,13 +762,21 @@ function parseAppStorageRequest(
 		return { kind, appId: input.appId, name: input.name, statements };
 	}
 	if (
-		(kind === 'secret-put' || kind === 'secret-get' || kind === 'secret-delete') &&
+		(kind === 'secret-put' ||
+			kind === 'secret-get' ||
+			kind === 'secret-delete') &&
 		typeof input.accountId === 'string'
 	) {
 		if (!isSecretLabel(input.accountId)) return undefined;
-		if (kind === 'secret-put' && typeof input.value !== 'string') return undefined;
+		if (kind === 'secret-put' && typeof input.value !== 'string')
+			return undefined;
 		return kind === 'secret-put'
-			? { kind, appId: input.appId, accountId: input.accountId, value: input.value as string }
+			? {
+					kind,
+					appId: input.appId,
+					accountId: input.accountId,
+					value: input.value as string,
+				}
 			: { kind, appId: input.appId, accountId: input.accountId };
 	}
 	return undefined;
@@ -766,13 +792,19 @@ async function runAppStatements(
 	switch (request.kind) {
 		case 'sqlite-run': {
 			const database = await storage.open(request.appId, request.name);
-			const result = await database.run(request.statement.sql, request.statement.parameters);
+			const result = await database.run(
+				request.statement.sql,
+				request.statement.parameters,
+			);
 			if (result.error !== null) throw result.error;
 			return { kind: request.kind, changes: result.data.changes };
 		}
 		case 'sqlite-all': {
 			const database = await storage.open(request.appId, request.name);
-			const result = await database.all(request.statement.sql, request.statement.parameters);
+			const result = await database.all(
+				request.statement.sql,
+				request.statement.parameters,
+			);
 			if (result.error !== null) throw result.error;
 			return { kind: request.kind, rows: result.data };
 		}
@@ -786,17 +818,32 @@ async function runAppStatements(
 }
 
 function parseSqliteStatement(value: unknown):
-	| { sql: string; parameters?: readonly import('@epicenter/sqlite').SqliteValue[] }
+	| {
+			sql: string;
+			parameters?: readonly import('@epicenter/sqlite').SqliteValue[];
+	  }
 	| undefined {
-	if (typeof value !== 'object' || value === null || !('sql' in value)) return undefined;
-	if (typeof value.sql !== 'string' || value.sql.trim() === '') return undefined;
-	if (!('parameters' in value) || value.parameters === undefined) return { sql: value.sql };
-	if (!Array.isArray(value.parameters) || value.parameters.some((item) => !isSqliteValue(item))) return undefined;
-	return { sql: value.sql, parameters: value.parameters as import('@epicenter/sqlite').SqliteValue[] };
+	if (typeof value !== 'object' || value === null || !('sql' in value))
+		return undefined;
+	if (typeof value.sql !== 'string' || value.sql.trim() === '')
+		return undefined;
+	if (!('parameters' in value) || value.parameters === undefined)
+		return { sql: value.sql };
+	if (
+		!Array.isArray(value.parameters) ||
+		value.parameters.some((item) => !isSqliteValue(item))
+	)
+		return undefined;
+	return {
+		sql: value.sql,
+		parameters: value.parameters as import('@epicenter/sqlite').SqliteValue[],
+	};
 }
 
 function isSqliteValue(value: unknown): boolean {
-	return value === null || typeof value === 'string' || typeof value === 'number';
+	return (
+		value === null || typeof value === 'string' || typeof value === 'number'
+	);
 }
 
 function tokensMatch(candidate: string, expected: string): boolean {
@@ -805,7 +852,36 @@ function tokensMatch(candidate: string, expected: string): boolean {
 	return timingSafeEqual(a, b);
 }
 
-function contentSecurityPolicy(page: string): string {
+/**
+ * Origins an application's own document may reach, beyond this one.
+ *
+ * The default is nothing: `connect-src 'self'` plus the IPC endpoints, so an
+ * application talks to the host and to no one else. Tauri's `security.csp`
+ * does not reach these windows at all, because it is injected into assets
+ * Tauri's own protocol serves and every application here is served over
+ * `http://127.0.0.1`. This header is the only policy the WebView enforces.
+ *
+ * Mail is the one entry. The host holds no Gmail token and proxies no Gmail
+ * request (ADR-0226), so the WebView redeems Google's authorization code and
+ * calls the Gmail API itself. `accounts.google.com` is deliberately absent:
+ * consent happens in the person's own browser through the opener, never in
+ * this WebView.
+ *
+ * Widening one entry widens one application. The policy is a response header
+ * and every application document is served its own, which is the same scoping
+ * the capability files apply to native commands.
+ */
+const APPLICATION_CONNECT_ORIGINS: Record<string, readonly string[]> = {
+	[BUILT_IN_ROUTES.mail.id]: [
+		'https://oauth2.googleapis.com',
+		'https://gmail.googleapis.com',
+	],
+};
+
+function contentSecurityPolicy(
+	page: string,
+	connectOrigins: readonly string[] = [],
+): string {
 	const scriptHashes = [
 		...page.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi),
 	]
@@ -825,7 +901,9 @@ function contentSecurityPolicy(page: string): string {
 		// refuses the compile and the recording trigger dies mid-boot.
 		`script-src 'self' 'wasm-unsafe-eval' ${scriptHashes.join(' ')}`,
 		"style-src 'self' 'unsafe-inline'",
-		"connect-src 'self' ipc: http://ipc.localhost",
+		["connect-src 'self' ipc: http://ipc.localhost", ...connectOrigins].join(
+			' ',
+		),
 		"img-src 'self' data: blob:",
 		"media-src 'self' data: blob:",
 		"worker-src 'self' blob:",

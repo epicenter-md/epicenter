@@ -35,6 +35,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentEngine, EngineChunk } from '@epicenter/agent';
+import { APP_STORAGE_PATH } from '@epicenter/app/protocol';
 import {
 	type BlobRemote,
 	BlobRemoteError,
@@ -43,16 +44,15 @@ import {
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
 import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
+import localMailDatabase from '@epicenter/local-mail/database';
+import { LOCAL_MAIL_APP_ID } from '@epicenter/local-mail/storage';
 import { Ok } from 'wellcrafted/result';
-import { COMPILED_APPLICATIONS } from './applications.ts';
-import { APP_STORAGE_PATH } from '@epicenter/app/protocol';
-import type { BunAppStorage } from './app-storage.ts';
 import {
 	type AppSecretOwner,
 	createProcessMemoryAppSecrets,
 } from './app-secrets.ts';
-import localMailDatabase from '@epicenter/local-mail/database';
-import { LOCAL_MAIL_APP_ID } from '@epicenter/local-mail/storage';
+import type { BunAppStorage } from './app-storage.ts';
+import { COMPILED_APPLICATIONS } from './applications.ts';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
@@ -752,6 +752,50 @@ describe('createHomeServer', () => {
 		}
 	});
 
+	test('only Mail reaches Google, and only from its own document', async () => {
+		await using host = await createTestHost({
+			engine: scriptedEngine([[]]),
+		});
+		const server = await serveHost(host);
+		const origin = server.url.origin;
+		const connectSrc = async (url: string) => {
+			const response = await fetch(url, {
+				headers: authenticatedHeaders(server),
+			});
+			return (
+				cspDirectives(response.headers.get('content-security-policy')).get(
+					'connect-src',
+				) ?? []
+			);
+		};
+		try {
+			// The host holds no Gmail token and proxies no Gmail request, so the
+			// token exchange and the API calls happen in this WebView.
+			const mail = await connectSrc(MAIL_ROUTE.url(origin));
+			expect(mail).toEqual([
+				"'self'",
+				'ipc:',
+				'http://ipc.localhost',
+				'https://oauth2.googleapis.com',
+				'https://gmail.googleapis.com',
+			]);
+			// Consent happens in the person's own browser, through the opener.
+			expect(mail).not.toContain('https://accounts.google.com');
+
+			// A client route inside Mail is the same document and keeps the same
+			// reach; an asset it loads runs under the document's policy anyway.
+			expect(await connectSrc(`${origin}/apps/mail/connected`)).toEqual(mail);
+
+			// Nothing else on this origin gained an inch.
+			const closed = ["'self'", 'ipc:', 'http://ipc.localhost'];
+			expect(await connectSrc(HOME_ROUTE.url(origin))).toEqual(closed);
+			expect(await connectSrc(WHISPERING_ROUTE.url(origin))).toEqual(closed);
+			expect(await connectSrc(HONEYCRISP_ROUTE.url(origin))).toEqual(closed);
+		} finally {
+			await server.stop(true);
+		}
+	});
+
 	test('the account broker requires the browser session and grants no bearer', async () => {
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
 		const server = await serveHost(host);
@@ -1128,7 +1172,9 @@ describe("Local Mail's desktop authorization callback", () => {
 		const origin = server.url.origin;
 		try {
 			await fetch(`${MAIL_CALLBACK_ROUTE.url(origin)}?code=the-code`);
-			const unauthenticated = await fetch(MAIL_PENDING_CALLBACK_ROUTE.url(origin));
+			const unauthenticated = await fetch(
+				MAIL_PENDING_CALLBACK_ROUTE.url(origin),
+			);
 			expect(unauthenticated.status).toBe(401);
 		} finally {
 			await server.stop(true);
@@ -1838,7 +1884,10 @@ describe('mirror routes (ADR-0271)', () => {
 			const wrote = await fetch(url, {
 				method: 'PUT',
 				body: pass([
-					{ path: 'notes/abc.md', contents: '---\npinned: true\n---\n\n# A note\n' },
+					{
+						path: 'notes/abc.md',
+						contents: '---\npinned: true\n---\n\n# A note\n',
+					},
 					{ path: 'notes/def.md', contents: '---\npinned: false\n---\n' },
 					{ path: 'kv.json', contents: '{}' },
 					{ manifest: ['notes/abc.md', 'notes/def.md', 'kv.json'] },
@@ -1904,9 +1953,9 @@ describe('mirror routes (ADR-0271)', () => {
 				},
 			);
 			expect(mixed.status).toBe(204);
-			expect(
-				await Bun.file(join(folderRoot, 'local/escape.md')).exists(),
-			).toBe(false);
+			expect(await Bun.file(join(folderRoot, 'local/escape.md')).exists()).toBe(
+				false,
+			);
 			expect(
 				await Bun.file(
 					join(folderRoot, 'local/so.epicenter.honeycrisp/notes/ok.md'),
@@ -1920,7 +1969,6 @@ describe('mirror routes (ADR-0271)', () => {
 		}
 	});
 });
-
 
 describe('the application storage owner', () => {
 	async function post(server: TestServer, body: unknown) {
