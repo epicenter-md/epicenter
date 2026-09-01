@@ -1,4 +1,4 @@
-# 0312. A data definition ships as TypeScript, and a host that needs one imports it
+# 0313. A data definition ships as TypeScript, and a host that needs one imports it
 
 - **Status:** Accepted
 - **Unbuilt:** all of it. `database.json` is still written by app builds and still read by `apps/epicenter/src/static-assets.ts`.
