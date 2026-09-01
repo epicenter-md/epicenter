@@ -83,8 +83,10 @@ export const mail = {
 		return connected.data;
 	},
 
-	disconnect: async (accountId: string): Promise<void> =>
-		disconnectAccount(await app(), accountId),
+	disconnect: async (accountId: string): Promise<void> => {
+		const forgotten = await disconnectAccount(await app(), accountId);
+		if (forgotten.error !== null) throw new Error(forgotten.error.message);
+	},
 
 	status: async (accountId: string) =>
 		readMailStatus(openSession(await app(), accountId)),

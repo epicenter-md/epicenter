@@ -77,8 +77,17 @@ export function createTokenManager({
 			expiresAt: refreshed.data.accessTokenExpiresAt,
 		};
 		// Google rotates on its own schedule, so store back whatever is current.
+		// A failed write is reported rather than swallowed: this access token
+		// works, but the refresh token that earns the next one would exist only in
+		// memory, and the next session would present one Google has already
+		// replaced and ask for re-consent with nothing to explain it.
 		if (refreshed.data.refreshToken !== stored.data) {
-			await secrets.put(accountId, refreshed.data.refreshToken);
+			const kept = await secrets.put(accountId, refreshed.data.refreshToken);
+			if (kept.error !== null) {
+				return OAuthError.ReauthRequired({
+					reason: `the rotated credential could not be stored (${kept.error.message})`,
+				});
+			}
 		}
 		return Ok(refreshed.data.accessToken);
 	}

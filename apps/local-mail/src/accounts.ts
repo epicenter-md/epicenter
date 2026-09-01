@@ -13,7 +13,7 @@
  * subject must land on the row it already has are all decided in this file.
  */
 
-import type { EpicenterHandle } from '@epicenter/app';
+import type { EpicenterHandle, SecretError } from '@epicenter/app';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
 	accountByProvider,
@@ -110,6 +110,12 @@ export function startConnect(
  * with a fresh credential. Minting a second row would orphan the first row's
  * cache and intent partitions behind an id nothing reaches, and would show one
  * mailbox twice.
+ *
+ * **A credential that did not store is a failed connection.** The secret owner
+ * can refuse: a locked keychain, a host with no Rust parent. Returning `Ok`
+ * anyway would leave a row in synced data and an account in the switcher whose
+ * first synchronization asks for re-consent with nothing to explain why, so the
+ * error arm carries `SecretError` as well.
  */
 export async function finishConnect(
 	app: MailApp,
@@ -117,7 +123,7 @@ export async function finishConnect(
 		request,
 		callbackUrl,
 	}: { request: AuthorizationRequest; callbackUrl: URL },
-): Promise<Result<ConnectedAccount, OAuthError>> {
+): Promise<Result<ConnectedAccount, OAuthError | SecretError>> {
 	const authorized = await completeAuthorization({
 		config: app.config,
 		identity: app.identity,
@@ -150,7 +156,15 @@ export async function finishConnect(
 		accounts.update(accountId, { email: authorized.data.email });
 	}
 
-	await app.epicenter.secrets.put(accountId, authorized.data.refreshToken);
+	const kept = await app.epicenter.secrets.put(
+		accountId,
+		authorized.data.refreshToken,
+	);
+	// The row stays on a refusal. It is either the row this account already had,
+	// or a new one whose partitions are empty; deleting it here would throw away
+	// a person's earlier undelivered triage to report a keychain failure.
+	// Connecting again lands on the same row and stores the credential again.
+	if (kept.error !== null) return kept;
 
 	const row = accounts.get(accountId);
 	return Ok({
@@ -165,7 +179,13 @@ export async function finishConnect(
 /**
  * Disconnect one account: forget the credential, the mail, and the row.
  *
- * The durable intent store is left alone on purpose, and that is the one
+ * **The credential goes first, and a refusal stops the disconnect.** There is
+ * no `secrets.list` (ADR-0310), so the account row is the only thing that knows
+ * this credential exists. Deleting the row after a failed delete would strand
+ * it in the keychain with nothing left that can name it, which is the one way
+ * this design produces garbage it can never collect.
+ *
+ * The durable intent store is left alone on purpose, and that is the other
  * surprising line here. Undelivered triage is a person's own act, and
  * disconnecting is not a statement that they take it back; reconnecting the
  * same subject lands on the same `accountId` and the assertions are still
@@ -174,10 +194,12 @@ export async function finishConnect(
 export async function disconnectAccount(
 	app: MailApp,
 	accountId: string,
-): Promise<void> {
-	await app.epicenter.secrets.delete(accountId);
+): Promise<Result<void, SecretError>> {
+	const forgotten = await app.epicenter.secrets.delete(accountId);
+	if (forgotten.error !== null) return forgotten;
 	await openMailbox(app.storage.mail, accountId).reset();
 	app.storage.accounts.delete(accountId);
+	return Ok(undefined);
 }
 
 /** Everything one account's work needs, composed once. */
