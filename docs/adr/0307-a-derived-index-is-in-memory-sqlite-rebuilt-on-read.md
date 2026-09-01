@@ -4,7 +4,7 @@
 - **Date:** 2026-08-31
 - **Unbuilt:** the index itself. No application composes one yet, and the first one belongs in an application rather than in `@epicenter/data`.
 - **Amends:** [ADR-0303](0303-an-application-opens-epicenter-data-and-app-owned-sqlite-through-one-scoped-client.md) at two bounded points. Withdrawn: that `SqliteDatabase` is renamed to `SyncSqliteDatabase`; the name stands. Sharpened: the projection's medium, trigger, and owner, which ADR-0303 described but did not decide.
-- **Relates:** [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (which withdrew the queryable projection over a host replica; this restores a narrower, app-local one), [ADR-0247](0247-an-app-that-keeps-a-local-copy-of-a-providers-data-owns-its-file-lifecycle.md) (which defines a projection as rebuilt whole and therefore unable to be silently wrong), [ADR-0223](0223-a-page-holds-the-store-and-only-three-small-relations-have-to-survive.md) (the store needs a synchronous handle, not synchronous durability), and [ADR-0306](0306-borrowed-data-is-disposable-and-a-persons-own-data-is-not.md) (the disposability this inherits)
+- **Relates:** [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (which withdrew the queryable projection over a host replica; this restores a narrower, app-local one), [ADR-0247](0247-an-app-that-keeps-a-local-copy-of-a-providers-data-owns-its-file-lifecycle.md) (which defines a projection as rebuilt whole and therefore unable to be silently wrong), [ADR-0223](0223-a-page-holds-the-store-and-only-three-small-relations-have-to-survive.md) (the store needs a synchronous handle, not synchronous durability), [ADR-0306](0306-borrowed-data-is-disposable-and-a-persons-own-data-is-not.md) (the disposability this inherits), and [ADR-0311](0311-a-table-is-a-held-projection-and-everything-cheaper-than-rebuilding-is-read-through.md) (the held table this reads from)
 
 ## Context
 
@@ -49,7 +49,11 @@ function query(sql) {
 function rebuild() {
   db = new Sqlite(':memory:');            // the previous one is dropped whole
   db.transaction(() => {
-    for (const row of store.tables.notes.rows)
+    // The HELD table (ADR-0311), not `store.tables.notes.rows`. The held map
+    // already has every row built and conformed, so this walk is a map
+    // iteration. Reading the store directly re-conforms all of them and costs
+    // four times as much, for identical rows.
+    for (const row of data.notes.rows)
       db.run('INSERT ...', row);
   });
 }
@@ -100,8 +104,13 @@ moment is always safe.
 - **The walk dominates, and SQLite is not the cost.** `ids()` over the same rows
   is 13 ms at 40k, so of the ~210 ms walk only about 13 ms is touching the
   document; the rest is `conformRow` validation and materializing a row object
-  and a live content handle per row. If a rebuild ever has to be faster, the
-  lever is a validation-skipping bulk read on the store, never a faster INSERT.
+  and a live content handle per row.
+- **So the index reads the held table, not the store.** ADR-0311 holds every
+  built row in a map and patches only the rows a commit names, which is the same
+  conformance work paid once instead of per read. A rebuild over that map is the
+  13 ms walk plus the insert rather than the 270 ms measured here. The numbers
+  above are the floor for an index built the naive way, and they are the reason
+  not to build one that way.
 - A working vault carries tombstones from lifetime deletions that a freshly
   built corpus does not, which would push the walk up by some unmeasured amount.
 - Promotion into `@epicenter/data` requires evidence, meaning three applications
