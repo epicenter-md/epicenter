@@ -30,7 +30,9 @@
 		"typecheck": "tsc --noEmit && tsc --noEmit -p test-support/tsconfig.json"
 	},
 	"dependencies": {
+		"@epicenter/app": "workspace:*",
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/data": "workspace:*",
 		"@hono/standard-validator": "catalog:",
 		"@modelcontextprotocol/sdk": "catalog:",
 		"arktype": "catalog:",

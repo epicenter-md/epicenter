@@ -31,6 +31,7 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@epicenter/app": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
 		"arkregex": "catalog:",
