@@ -16,8 +16,8 @@ The package has one definition entrypoint and four runtime entrypoints:
 | `@epicenter/data/memory` | `openMemory(definition)` and `createMemoryRecord()`, test support |
 
 The browser opener is the only one a person's data lands in. A memory opener
-imports `bun:sqlite` and the browser opener imports a WASM build, so neither
-belongs in a barrel the other has to load. That is the whole reason the openers
+imports `bun:sqlite` and the browser opener imports `idb`, so neither belongs in
+a barrel the other has to load. That is the whole reason the openers
 live at their own entry points rather than on `@epicenter/data`.
 
 ## Opening is the only asynchronous thing

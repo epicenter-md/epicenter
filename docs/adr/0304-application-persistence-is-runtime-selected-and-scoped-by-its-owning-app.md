@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-31
 - **Unbuilt:** The unified browser and Tauri storage openers described here.
+- **Amended by:** [ADR-0314](0314-an-app-is-one-directory-and-installation-is-a-rename.md), which extends the per-app layout to the app's bundle and its blobs. The `data/<data-id>/` and `sqlite/<store-name>` paths this record fixed are unchanged.
 - **Amended by:** [ADR-0312](0312-a-sqlite-handle-is-all-run-and-batch-and-a-transaction-never-crosses-a-process-boundary.md) at two bounded points. Withdrawn: the citation of ADR-0275 as the intended browser SQLite medium, which is superseded; Epicenter Data's browser medium is IndexedDB. Narrowed: the platform's role in browser SQLite is opening only. The address layout stands. (ADR-0308 held this amendment first; ADR-0312 supersedes it and carries it forward.)
 - **Relates:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) (browser replicas are origin-local), [ADR-0247](0247-an-app-that-keeps-a-local-copy-of-a-providers-data-owns-its-file-lifecycle.md) (provider copies remain app-owned), [ADR-0275](0275-a-browser-stores-durable-record-is-sqlite-over-opfs-in-a-worker.md) (the intended browser SQLite medium), and [ADR-0303](0303-an-application-opens-epicenter-data-and-app-owned-sqlite-through-one-scoped-client.md) (the application API)
 

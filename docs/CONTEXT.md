@@ -198,8 +198,9 @@ shapes, see `docs/adr/`.
   no top-level `tables` container; its subscriber takes no ids because kv is one
   value.
 - **SQL projection**: a composed follower, never a store verb (ADR-0241). It
-  rebuilds from the live document at the next read, so it never serves rows
-  the document has moved past. The package shipped one and no application ever
+  rebuilds at the next read after a change, from the held table rather than the
+  document (ADR-0307, ADR-0311), so it never serves rows the document has moved
+  past. The package shipped one and no application ever
   composed it; it was deleted, and inspecting data outside the app is reading
   the export (ADR-0268, ADR-0269).
 - **`subscribe`**: a table's change notification, carrying the row ids a commit

@@ -32,12 +32,14 @@ independent changes.
 | | old | new |
 | --- | --- | --- |
 | one row | `await table.get(id)` | `data.tables.notes.get(id)` |
-| all rows | `await table.scan()` | `data.tables.notes.list()` |
+| all rows | `await table.scan()` | `data.tables.notes.rows` |
+| unreadable rows | (dropped silently) | `data.tables.notes.nonconforming` |
 | ids | (part of scan) | `data.tables.notes.ids()` |
 | SQL | a separate inspection surface | a composed follower, and nothing composes one: reading data outside the app is reading the export (ADR-0241, ADR-0268, ADR-0269) |
 
-`list()` returns `{ rows, nonconforming }`, plainly: a row the current declaration
-cannot read is REPORTED, never dropped and never repaired (ADR-0125), and
+`rows` and `nonconforming` are two reads over the same table, plainly: a row the
+current declaration cannot read is REPORTED, never dropped and never repaired
+(ADR-0125), and
 nothing in a read can fail, so there is no `Result` to unwrap. A disposed
 store throws `StoreUnusableError` instead of dressing up as a read outcome
 (ADR-0237); storage falling behind is neither, and reports through
@@ -96,9 +98,8 @@ let rows = $state.raw<Note[]>([]);
 let unreadable = $state.raw<NonconformingRow[]>([]);
 
 function read() {
-  const listed = db.notes.list();
-  rows = listed.rows;
-  unreadable = listed.nonconforming;   // not dropped
+  rows = db.notes.rows;
+  unreadable = db.notes.nonconforming;   // not dropped
 }
 read();
 const stop = db.notes.subscribe(read);
@@ -106,7 +107,7 @@ const stop = db.notes.subscribe(read);
 
 The line people are tempted to skip is the one that matters: discard
 `nonconforming` and rows a person wrote are simply missing from the screen
-with nothing to explain why. `list()` used to return a `Result` too, and
+with nothing to explain why. The read used to return a `Result` too, and
 `.data?.rows ?? []` turned an operational failure into "you have never
 written one of these"; a disposed store now throws `StoreUnusableError`
 instead, so that mistake is no longer expressible (ADR-0237).
@@ -462,7 +463,7 @@ A failed read is not an absence. It carries everything an app, a person, or an
 agent needs to act:
 
 ```ts
-for (const issue of db.notes.list().nonconforming) {
+for (const issue of db.notes.nonconforming) {
   issue.id          // the structural row id
   issue.issues      // [{ field: 'n', message: 'n must be a number (was a string)' }]
   issue.conforming  // { id, title }              what survived
@@ -483,7 +484,7 @@ A derived index built over the store (ADR-0307) can SHOW nonconforming rows,
 because it reads what is stored. It cannot FIND them: an index carries the
 declared fields and no conformance marker, and it cannot re-run the
 declaration's checks. The typed read is the only thing that knows which rows
-failed, so a repair surface identifies them with `list().nonconforming` and may
+failed, so a repair surface identifies them with `nonconforming` and may
 then use an index to display or group them.
 
 One thing the projection does NOT promise, worth knowing before building on

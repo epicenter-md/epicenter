@@ -51,12 +51,15 @@ refused was a hosted surface that reached a host-owned replica instead.
 +---------------------------------------------------------------------------+
 ```
 
-`@epicenter/data` has one definition entry point and five runtime entry points:
-`.` for the opened data surface, `./definition` for `defineData` and
-`parseData`, `./bun` and `./browser` for the two openers, `./sync` for the
-transport, and `./projection` for the SQL follower. The openers are separate
-because one imports `bun:sqlite` and the other a WASM build, and neither belongs
-in a barrel the other has to load.
+`@epicenter/data` splits by what a caller has to load: `.` for the opened data
+surface, `./definition` for `defineData` and `parseData`, `./browser` for the
+one opener a person's data lands in, `./memory` for test support, `./sync` for
+the transport, `./direct` for the construction seam, and `./artifact` for the
+files a person keeps. The openers are separate because the memory opener imports
+`bun:sqlite` and the browser opener imports `idb`, and neither belongs in a
+barrel the other has to load. There is no `./projection`: the packaged SQL
+follower was deleted (ADR-0269), and a derived index is now app-owned, in
+memory, and rebuilt on read (ADR-0307).
 
 `@epicenter/server` and the core packages above it are AGPL. See
 [`licensing strategy`](licensing/licensing-strategy.md).
@@ -127,9 +130,10 @@ release-local and rows arrive from NEWER releases, so no discipline in this
 release stops a future one retyping a field. What exists instead is the material
 to heal: `rows` and `nonconforming` are separate table reads, each failure carries its
 `address`, machine-readable `issues`, the `conforming` survivors and the
-unmodified `raw`, a composed SQL projection stores nonconforming rows raw so
-SQL can still show them, and repair is an ordinary `update` because a patch
-validates only the values it supplies.
+unmodified `raw`, and repair is an ordinary `update` because a patch validates
+only the values it supplies. A derived index cannot help here: it is built from
+rows that conformed, so a repair surface finds its subjects through
+`nonconforming` rather than through SQL.
 
 ```text
 durable JSON stays unchanged
