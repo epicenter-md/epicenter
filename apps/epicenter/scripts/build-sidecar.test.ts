@@ -1,10 +1,17 @@
 /**
  * Epicenter Bun Host Packaging Tests
  *
- * Verifies the compiled Bun child runs without a system Bun on PATH, accepts
- * only the fixed production boot contract, finds packaged Home and Whispering
- * assets through the Rust-supplied resource path, and exits when the parent
- * pipe closes.
+ * Verifies the compiled Bun child runs without a system Bun on PATH, refuses a
+ * production boot on any port but the fixed one, finds packaged Home and
+ * Whispering assets through the Rust-supplied resource path, and exits when the
+ * parent pipe closes.
+ *
+ * The serving half boots in development mode on a port the OS hands out, not in
+ * production mode on 39130. Binding the real production port made this test
+ * fail whenever a developer had Epicenter open, reporting it as "compiled host
+ * exited before readiness", and it bought nothing: the host binds whatever port
+ * the boot frame names, so the number under test is the contract, not the
+ * behaviour. The contract is asserted directly below instead.
  */
 
 import { expect, test } from 'bun:test';
@@ -18,6 +25,18 @@ import {
 } from '../src/sidecar-runtime.ts';
 
 const appDir = join(import.meta.dir, '..');
+
+/** A port the OS is willing to give us, released before the caller binds it. */
+function freePort(): number {
+	const probe = Bun.serve({
+		hostname: '127.0.0.1',
+		port: 0,
+		fetch: () => new Response(),
+	});
+	const { port } = probe;
+	probe.stop(true);
+	return port;
+}
 
 async function hostTargetTriple(): Promise<string> {
 	const process = Bun.spawn(['rustc', '-vV'], { stdout: 'pipe' });
@@ -61,7 +80,7 @@ async function readReady(
 	}
 }
 
-test('compiled production host serves packaged apps and exits on parent EOF', async () => {
+test('compiled host refuses a mis-bound production boot, serves packaged apps, and exits on parent EOF', async () => {
 	const build = Bun.spawn(['bun', 'run', 'build:desktop'], {
 		cwd: appDir,
 		stdout: 'pipe',
@@ -79,15 +98,40 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 		`epicenter-host-${triple}`,
 	);
 	const dataDir = mkdtempSync(join(tmpdir(), 'epicenter-compiled-host-'));
-	const sidecar = Bun.spawn([binary, '--runtime-mode=production'], {
+
+	// The production boot contract, proven against the compiled binary rather
+	// than only against `parseBootFrame`: production is pinned to one port, and
+	// a parent offering another gets a refusal instead of a stray listener.
+	const misbound = Bun.spawn([binary, '--runtime-mode=production'], {
+		env: { EPICENTER_DATA_DIR: dataDir, PATH: '' },
+		stdin: 'pipe',
+		stdout: 'pipe',
+		stderr: 'pipe',
+	});
+	misbound.stdin.write(
+		`${JSON.stringify({
+			type: 'boot',
+			protocolVersion: SIDECAR_PROTOCOL_VERSION,
+			token: 'compiled_test_token',
+			port: PRODUCTION_PORT + 1,
+			authCell: null,
+		})}\n`,
+	);
+	await misbound.stdin.flush();
+	misbound.stdin.end();
+	expect(await misbound.exited).not.toBe(0);
+	expect(await new Response(misbound.stderr).text()).toContain(
+		`Production must bind port ${PRODUCTION_PORT}`,
+	);
+
+	const port = freePort();
+	const sidecar = Bun.spawn([binary, '--runtime-mode=development'], {
 		env: {
-			EPICENTER_DEV_PORT: '49152',
 			EPICENTER_DATA_DIR: dataDir,
 			EPICENTER_APPS_DIST: join(appDir, 'dist'),
 			EPICENTER_INFERENCE_URL: 'http://127.0.0.1:1/v1',
 			EPICENTER_INFERENCE_MODEL: 'unused-model',
 			PATH: '',
-			PORT: '49153',
 		},
 		stdin: 'pipe',
 		stdout: 'pipe',
@@ -99,7 +143,7 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 				type: 'boot',
 				protocolVersion: SIDECAR_PROTOCOL_VERSION,
 				token: 'compiled_test_token',
-				port: PRODUCTION_PORT,
+				port,
 				authCell: null,
 			})}\n`,
 		);
@@ -107,9 +151,9 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 		expect(await readReady(sidecar.stdout, sidecar.stderr)).toEqual({
 			type: 'ready',
 			protocolVersion: SIDECAR_PROTOCOL_VERSION,
-			port: PRODUCTION_PORT,
+			port,
 		});
-		const origin = `http://127.0.0.1:${PRODUCTION_PORT}`;
+		const origin = `http://127.0.0.1:${port}`;
 		const bootstrap = await fetch(`${origin}/_epicenter/bootstrap`, {
 			method: 'POST',
 			headers: {
@@ -148,10 +192,10 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 
 		const replacement = Bun.serve({
 			hostname: '127.0.0.1',
-			port: PRODUCTION_PORT,
+			port,
 			fetch: () => new Response(),
 		});
-		expect(replacement.port).toBe(PRODUCTION_PORT);
+		expect(replacement.port).toBe(port);
 		await replacement.stop(true);
 	} finally {
 		sidecar.kill();
