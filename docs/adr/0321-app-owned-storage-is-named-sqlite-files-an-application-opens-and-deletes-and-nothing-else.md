@@ -27,12 +27,28 @@ surface, and what is not in it.
 **App-owned storage is named SQLite files an application opens and deletes.
 That is the whole surface, and the delete verb completes it.**
 
-**`epicenter.sqlite.delete(name)`, shaped exactly like `secrets.delete`.** No
+**`epicenter.deleteSqlite(name)`, shaped exactly like `secrets.delete`.** No
 list, because the application's own rows are the only thing that knows a name
 exists. Deleting closes and evicts the owner's handle first, so the connection
 never outlives the file. An application still cannot close a handle on its own,
 because a close with no deletion is a lifecycle an application has no reason to
 manage.
+
+It sits beside `openSqlite(name)` rather than under a `sqlite` namespace,
+because a namespace would rename the verb that ADR-0312, ADR-0316, and ADR-0319
+each pin by name, to buy symmetry with `secrets`. "Shaped like `secrets.delete`"
+is about the semantics: no enumeration, idempotent, and the thing that knows the
+name is the application's own row.
+
+**A handle held past a deletion is a name, not a connection, and what it does
+next is the leaf's answer.** The browser leaf closes the connection, so every
+later call on that handle fails. The desktop leaf's handle is a pair of strings
+that the owner resolves per statement, so a later call opens the name again and
+finds an empty database. Neither is wrong and one boundary cannot make them
+agree: a message-per-statement handle has nothing to invalidate. What the
+platform promises is that the file is gone and the owner holds no connection to
+it. **An application that deletes a database drops what it built over it**,
+which is a rule the application can keep and the platform cannot.
 
 **The platform ships no app-owned key-value store, and none is missing.** Both
 key-value shaped things this repository has are transaction participants:
@@ -79,6 +95,9 @@ no meaning to enforce.
 - An application that wants convenience over its own bookkeeping rows writes it,
   and the first two callers already have. A third caller hand-rolling the same
   helper is when to extract one, not before.
+- An application issues `openSqlite` and `deleteSqlite` for one name in
+  sequence, never concurrently. The owner holds one connection per name and an
+  open arriving mid-deletion would recreate the file the deletion is unlinking.
 
 ## Considered alternatives
 

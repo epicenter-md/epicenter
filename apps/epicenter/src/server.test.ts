@@ -44,7 +44,6 @@ import {
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
 import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
-import localMailDatabase from '@epicenter/local-mail/database';
 import { LOCAL_MAIL_APP_ID } from '@epicenter/local-mail/storage';
 import { Ok } from 'wellcrafted/result';
 import {
@@ -1980,34 +1979,28 @@ describe('the application storage owner', () => {
 		});
 	}
 
-	test('admits a data id this release imports and refuses one it does not', async () => {
+	test('refuses every data id, because this release imports none', async () => {
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
 		const server = await serveHost(host);
 		try {
-			const admitted = await post(server, {
+			// `TRUSTED_DEFINITIONS` is empty on purpose (ADR-0319): Local Mail held
+			// the only row until its account registry moved into its own SQLite,
+			// and the next application earns one when it opens through the scoped
+			// handle. The route still answers, and what it answers is that there is
+			// no such data here.
+			const unknown = await post(server, {
 				kind: 'data-open',
 				appId: LOCAL_MAIL_APP_ID,
-				dataId: localMailDatabase.id,
+				dataId: LOCAL_MAIL_APP_ID,
 			});
-			expect(admitted.status).toBe(200);
-			expect(await admitted.json()).toEqual({ kind: 'data-open' });
+			expect(unknown.status).toBe(404);
 
-			// The release ships no such data id.
-			const unknown = await post(server, {
+			const absent = await post(server, {
 				kind: 'data-open',
 				appId: LOCAL_MAIL_APP_ID,
 				dataId: 'so.epicenter.absent',
 			});
-			expect(unknown.status).toBe(404);
-
-			// A data id this release does ship, asked for by an application that
-			// does not own it.
-			const borrowed = await post(server, {
-				kind: 'data-open',
-				appId: 'so.epicenter.other',
-				dataId: localMailDatabase.id,
-			});
-			expect(borrowed.status).toBe(404);
+			expect(absent.status).toBe(404);
 		} finally {
 			await server.stop(true);
 		}

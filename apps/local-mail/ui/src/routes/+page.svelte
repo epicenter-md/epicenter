@@ -36,15 +36,15 @@
 	}));
 	let selectedAccount = $state<string | null>(null);
 	// Default to the first account once loaded, and re-resolve if the current
-	// selection disappears, which is what disconnecting one looks like.
+	// selection disappears, which is what removing one looks like.
 	$effect(() => {
 		const list = accountsQuery.data ?? [];
 		if (list.length === 0) {
 			selectedAccount = null;
 			return;
 		}
-		if (!selectedAccount || !list.some((a) => a.accountId === selectedAccount)) {
-			selectedAccount = list[0]?.accountId ?? null;
+		if (!selectedAccount || !list.some((a) => a.sub === selectedAccount)) {
+			selectedAccount = list[0]?.sub ?? null;
 		}
 	});
 

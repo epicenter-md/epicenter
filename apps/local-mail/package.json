@@ -15,7 +15,6 @@
 		"./assert": "./src/assert.ts",
 		"./authorization-return": "./src/authorization-return.ts",
 		"./config": "./src/config.ts",
-		"./database": "./src/database.ts",
 		"./handle": "./src/handle.ts",
 		"./mailbox": "./src/mailbox.ts",
 		"./oauth": "./src/oauth.ts",

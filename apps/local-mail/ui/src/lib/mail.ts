@@ -17,22 +17,24 @@
  */
 
 import {
+	type ConnectedAccount,
 	createMailApp,
-	disconnectAccount,
+	discardPending,
 	finishConnect,
 	listAccounts,
-	type ConnectedAccount,
 	type MailApp,
 	openSession,
+	pendingCount,
 	recordSynced,
+	removeAccount,
 	startConnect,
 } from '@epicenter/local-mail/accounts';
 import { assertMessageLabels } from '@epicenter/local-mail/assert';
 import { CALLBACK_PATH } from '@epicenter/local-mail/authorization-return';
-import type { AuthorizationRequest } from '@epicenter/local-mail/oauth';
 import { overlayOf } from '@epicenter/local-mail/mailbox';
-import { claimReconcile } from '@epicenter/local-mail/reconcile-claim';
+import type { AuthorizationRequest } from '@epicenter/local-mail/oauth';
 import { reconcileAccount } from '@epicenter/local-mail/reconcile';
+import { claimReconcile } from '@epicenter/local-mail/reconcile-claim';
 import { readMailStatus } from '@epicenter/local-mail/status';
 import { openLocalMailStorage } from '@epicenter/local-mail/storage';
 import { gmailIdentity } from './identity';
@@ -82,26 +84,50 @@ export const mail = {
 		request: AuthorizationRequest,
 		callbackUrl: URL,
 	): Promise<ConnectedAccount> => {
-		const connected = await finishConnect(await app(), { request, callbackUrl });
+		const connected = await finishConnect(await app(), {
+			request,
+			callbackUrl,
+		});
 		if (connected.error !== null) throw new Error(connected.error.message);
 		return connected.data;
 	},
 
-	disconnect: async (accountId: string): Promise<void> => {
-		const forgotten = await disconnectAccount(await app(), accountId);
-		if (forgotten.error !== null) throw new Error(forgotten.error.message);
+	/** What Gmail has not been told about yet, which is what removal turns on. */
+	pending: async (sub: string): Promise<number> =>
+		pendingCount(await app(), sub),
+
+	/** Abandon this account's undelivered triage. A thing to mean on purpose. */
+	discard: async (sub: string): Promise<number> =>
+		discardPending(await app(), sub),
+
+	/**
+	 * Remove one account from this device.
+	 *
+	 * Refuses while the account owes Gmail anything, and answers with the count
+	 * so a caller can offer the two answers that exist: deliver first, or
+	 * discard. Nothing is deleted on the refusal (ADR-0320).
+	 */
+	remove: async (
+		sub: string,
+	): Promise<{ removed: true } | { removed: false; pending: number }> => {
+		const gone = await removeAccount(await app(), sub);
+		if (gone.error === null) return { removed: true };
+		if (gone.error.name === 'OwesWork') {
+			return { removed: false, pending: gone.error.pending };
+		}
+		throw new Error(gone.error.message);
 	},
 
-	status: async (accountId: string) =>
-		readMailStatus(openSession(await app(), accountId)),
+	status: async (sub: string) =>
+		readMailStatus(await openSession(await app(), sub)),
 
-	labels: async (accountId: string) => {
-		const session = openSession(await app(), accountId);
+	labels: async (sub: string) => {
+		const session = await openSession(await app(), sub);
 		return { labels: await session.mailbox.listLabels() };
 	},
 
 	messages: async (
-		accountId: string,
+		sub: string,
 		query: {
 			label?: string;
 			search?: string;
@@ -109,7 +135,7 @@ export const mail = {
 			offset?: number;
 		} = {},
 	) => {
-		const session = openSession(await app(), accountId);
+		const session = await openSession(await app(), sub);
 		const overlay = overlayOf(await session.intents.pending());
 		return {
 			messages: await session.mailbox.listMessages({
@@ -122,8 +148,8 @@ export const mail = {
 		};
 	},
 
-	message: async (accountId: string, id: string) => {
-		const session = openSession(await app(), accountId);
+	message: async (sub: string, id: string) => {
+		const session = await openSession(await app(), sub);
 		const overlay = overlayOf(await session.intents.pending());
 		return session.mailbox.getMessageDetail(id, overlay);
 	},
@@ -134,20 +160,20 @@ export const mail = {
 	 * A busy claim is not a failure: whoever holds it is delivering and pulling,
 	 * so there is nothing new to say and nothing to invalidate.
 	 */
-	reconcile: async (accountId: string) => {
+	reconcile: async (sub: string) => {
 		const opened = await app();
-		const taken = claimReconcile(accountId);
+		const taken = claimReconcile(sub);
 		if (taken.error !== null) {
 			return { reconciled: false as const, message: taken.error.message };
 		}
 		const { claim, release } = taken.data;
 		try {
-			const outcome = await reconcileAccount(openSession(opened, accountId), {
+			const outcome = await reconcileAccount(await openSession(opened, sub), {
 				forceFull: false,
 				readOnly: false,
 				claim,
 			});
-			if (outcome.pull.failure === null) recordSynced(opened, accountId);
+			if (outcome.pull.failure === null) await recordSynced(opened, sub);
 			return outcome;
 		} finally {
 			release();
@@ -159,13 +185,13 @@ export const mail = {
 	 * this resolves; the reconciler delivers it to Gmail later.
 	 */
 	assert: async (
-		accountId: string,
+		sub: string,
 		input: { ids: string[]; addLabels?: string[]; removeLabels?: string[] },
 	) => {
 		// A session already satisfies `AssertDeps`; rebuilding it field by field
 		// here was three chances to hand the act path a different account's store.
 		const recorded = await assertMessageLabels({
-			deps: openSession(await app(), accountId),
+			deps: await openSession(await app(), sub),
 			input: {
 				ids: input.ids,
 				addLabels: input.addLabels ?? [],

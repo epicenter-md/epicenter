@@ -49,7 +49,7 @@
 		label: cache,
 	});
 	const selectedEmail = $derived(
-		accounts.find((account) => account.accountId === selectedAccount)?.email ??
+		accounts.find((account) => account.sub === selectedAccount)?.email ??
 			null,
 	);
 	const numberFmt = new Intl.NumberFormat();
@@ -83,8 +83,8 @@
 						value={selectedAccount ?? ''}
 						onValueChange={onSelectAccount}
 					>
-						{#each accounts as account (account.accountId)}
-							<DropdownMenu.RadioItem value={account.accountId}>
+						{#each accounts as account (account.sub)}
+							<DropdownMenu.RadioItem value={account.sub}>
 								<span class="truncate font-mono text-xs">{account.email}</span>
 							</DropdownMenu.RadioItem>
 						{/each}

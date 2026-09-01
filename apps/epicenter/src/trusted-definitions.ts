@@ -20,8 +20,6 @@
  */
 
 import type { DataDefinition } from '@epicenter/data/definition';
-import localMailDatabase from '@epicenter/local-mail/database';
-import { LOCAL_MAIL_APP_ID } from '@epicenter/local-mail/storage';
 
 /** One release-shipped definition and the application allowed to open it. */
 export type TrustedDefinition = {
@@ -30,9 +28,17 @@ export type TrustedDefinition = {
 	definition: DataDefinition;
 };
 
-export const TRUSTED_DEFINITIONS: readonly TrustedDefinition[] = [
-	{ appId: LOCAL_MAIL_APP_ID, definition: localMailDatabase },
-];
+/**
+ * Empty, and expected to be (ADR-0319).
+ *
+ * Local Mail held the only row until ADR-0318's test was run on each of its
+ * artifacts and answered no four times, which moved its account registry into
+ * the application's own SQLite. Honeycrisp earns a row the day it opens through
+ * the scoped handle rather than its own instance seam, and Local Mail earns one
+ * the day it holds a preference, which is the first artifact it would own that
+ * answers yes. A table between consumers is a table, not rot.
+ */
+export const TRUSTED_DEFINITIONS: readonly TrustedDefinition[] = [];
 
 /**
  * The definition `appId` may open under `dataId`, or nothing.

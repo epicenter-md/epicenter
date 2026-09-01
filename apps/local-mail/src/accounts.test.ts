@@ -1,34 +1,37 @@
 /**
- * Connecting and disconnecting, and what happens when the secret owner refuses.
+ * Connecting and removing, and what happens when the secret owner refuses.
  *
- * The registry, the credential, and the two SQLite partitions are addressed by
- * one `accountId`, so the tests that matter here are the ones about identity
- * (a reconnected subject must land on the row it already has) and about the
- * secret owner failing (a row without a credential must not read as connected).
+ * The registry, the credential, and the two SQLite files are addressed by one
+ * `sub`, which nothing here allocates, so the tests that matter are the ones
+ * about identity (a reconnected subject lands on its own rows by arithmetic)
+ * and about an owner refusing (a row without a credential must not read as
+ * connected, and a removal that cannot finish must leave everything standing).
  */
 
 import { expect, test } from 'bun:test';
-import type { LocalData } from '@epicenter/data';
-import { openMemory } from '@epicenter/data/memory';
+import type {
+	AppSqliteDatabase,
+	EpicenterHandle,
+	SecretStore,
+} from '@epicenter/app';
 import { Ok } from 'wellcrafted/result';
-import type { EpicenterHandle, SecretStore } from '@epicenter/app';
 import {
 	createMailApp,
-	disconnectAccount,
+	discardPending,
 	finishConnect,
 	listAccounts,
 	openSession,
+	pendingCount,
+	removeAccount,
 } from './accounts.ts';
 import { createTestAppSqlite } from './app-sqlite.test-support.ts';
 import { DEFAULT_MAIL_CONFIG } from './config.ts';
-import database from './database.ts';
-import { openMailbox } from './mailbox.ts';
-import { openIntentStore } from './intent-store.ts';
 import type { AuthorizationRequest } from './oauth.ts';
 import {
 	LOCAL_MAIL_APP_ID,
+	LOCAL_SCHEMA,
 	MAIL_CACHE_SCHEMA,
-	MAIL_INTENT_SCHEMA,
+	mailDatabaseName,
 } from './storage.ts';
 
 const IDENTITY = { clientId: 'client-id-123', clientSecret: 'client-secret' };
@@ -76,31 +79,44 @@ function secretStore(options: { refuse?: 'put' | 'delete' } = {}) {
 	return { secrets, held };
 }
 
+/**
+ * The application over in-memory databases, with one mail file per subject.
+ *
+ * `deleted` records what `forgetMail` unlinked, because on this fixture the
+ * unlink is the only observable half of it: an in-memory database has no path,
+ * so what a test can check is that the application asked for the right name and
+ * stopped holding the handle.
+ */
 async function openApp(options: { refuse?: 'put' | 'delete' } = {}) {
-	const data = await openMemory(database);
-	const mail = createTestAppSqlite();
-	const intent = createTestAppSqlite();
-	for (const sql of MAIL_CACHE_SCHEMA) await mail.run(sql);
-	for (const sql of MAIL_INTENT_SCHEMA) await intent.run(sql);
+	const local = createTestAppSqlite();
+	for (const sql of LOCAL_SCHEMA) await local.run(sql);
+	const mailboxes = new Map<string, ReturnType<typeof createTestAppSqlite>>();
+	const deleted: string[] = [];
+	async function mail(sub: string): Promise<AppSqliteDatabase> {
+		const existing = mailboxes.get(sub);
+		if (existing !== undefined) return existing;
+		const opened = createTestAppSqlite();
+		for (const sql of MAIL_CACHE_SCHEMA) await opened.run(sql);
+		mailboxes.set(sub, opened);
+		return opened;
+	}
+
 	const { secrets, held } = secretStore(options);
 	const epicenter = {
 		appId: LOCAL_MAIL_APP_ID,
-		openData: async () => Ok(data),
-		openSqlite: async () => Ok(mail),
 		secrets,
 	} as unknown as EpicenterHandle;
 
 	const app = createMailApp({
 		epicenter,
 		storage: {
-			// `openMemory` hands back an ACCOUNT store and the handle's `openData`
-			// promises a LOCAL one. Nothing here touches `sync`, so the cast is
-			// about the fixture rather than about the difference; the difference
-			// itself is a real gap and is recorded on `openData`.
-			data: data as unknown as LocalData<typeof database>,
+			local,
 			mail,
-			intent,
-			accounts: data.tables.accounts,
+			forgetMail: async (sub) => {
+				deleted.push(mailDatabaseName(sub));
+				mailboxes.get(sub)?.close();
+				mailboxes.delete(sub);
+			},
 			folder: { local: 'local', account: 'account' },
 		},
 		identity: IDENTITY,
@@ -110,11 +126,12 @@ async function openApp(options: { refuse?: 'put' | 'delete' } = {}) {
 	return {
 		app,
 		held,
+		local,
+		deleted,
 		mail,
-		intent,
 		close: () => {
-			mail.close();
-			intent.close();
+			local.close();
+			for (const database of mailboxes.values()) database.close();
 		},
 	};
 }
@@ -181,12 +198,13 @@ test('reconnecting one Google subject lands on the row it already has', async ()
 		second.stop(true);
 		if (again.error !== null) throw again.error;
 
-		// One row, not two: a second row would orphan the first account's cache
-		// and intent partitions behind an id nothing reaches.
-		expect(again.data.accountId).toBe(first.data.accountId);
-		expect(listAccounts(opened.app)).toHaveLength(1);
-		expect(listAccounts(opened.app)[0]?.email).toBe('new@example.com');
-		expect(opened.held.get(first.data.accountId)).toBe('refresh-2');
+		// One row, not two, and the key is Google's subject rather than anything
+		// this application allocated, so a second row is not expressible.
+		expect(again.data.sub).toBe(first.data.sub);
+		expect(again.data.sub).toBe('google-sub-1');
+		expect(await listAccounts(opened.app)).toHaveLength(1);
+		expect((await listAccounts(opened.app))[0]?.email).toBe('new@example.com');
+		expect(opened.held.get(first.data.sub)).toBe('refresh-2');
 	} finally {
 		opened.close();
 	}
@@ -210,7 +228,7 @@ test('a credential that did not store is a failed connection', async () => {
 	}
 });
 
-test('a credential that would not delete stops the disconnect', async () => {
+test('a credential that would not delete stops the removal', async () => {
 	const opened = await openApp();
 	const server = googleServing('google-sub-1', 'you@example.com', 'refresh-1');
 	const tokenUrl = `http://127.0.0.1:${server.port}/token`;
@@ -218,29 +236,31 @@ test('a credential that would not delete stops the disconnect', async () => {
 	try {
 		const connected = await finishConnect(opened.app, authorization(tokenUrl));
 		if (connected.error !== null) throw connected.error;
-		const { accountId } = connected.data;
+		const { sub } = connected.data;
 
 		// There is no `secrets.list`, so the row is the only thing that knows this
 		// credential exists. Removing it after a failed delete would strand the
 		// credential where nothing can ever name it again.
 		const refusing = await openApp({ refuse: 'delete' });
 		refusing.app.storage = opened.app.storage;
-		const stopped = await disconnectAccount(refusing.app, accountId);
+		const stopped = await removeAccount(refusing.app, sub);
 		expect(stopped.error?.name).toBe('StorageFailed');
-		expect(listAccounts(opened.app)).toHaveLength(1);
+		expect(await listAccounts(opened.app)).toHaveLength(1);
+		expect(opened.deleted).toEqual([]);
 		refusing.close();
 
-		const gone = await disconnectAccount(opened.app, accountId);
+		const gone = await removeAccount(opened.app, sub);
 		expect(gone.error).toBeNull();
-		expect(listAccounts(opened.app)).toEqual([]);
+		expect(await listAccounts(opened.app)).toEqual([]);
 		expect(opened.held.size).toBe(0);
+		expect(opened.deleted).toEqual(['mail-google-sub-1']);
 	} finally {
 		server.stop(true);
 		opened.close();
 	}
 });
 
-test('disconnecting clears the cache and leaves undelivered triage alone', async () => {
+test('removal refuses while Gmail has not been told, and deletes nothing', async () => {
 	const opened = await openApp();
 	const server = googleServing('google-sub-1', 'you@example.com', 'refresh-1');
 	const tokenUrl = `http://127.0.0.1:${server.port}/token`;
@@ -248,11 +268,10 @@ test('disconnecting clears the cache and leaves undelivered triage alone', async
 	try {
 		const connected = await finishConnect(opened.app, authorization(tokenUrl));
 		if (connected.error !== null) throw connected.error;
-		const { accountId } = connected.data;
+		const { sub } = connected.data;
 
-		const mailbox = openMailbox(opened.mail, accountId);
-		const intents = openIntentStore(opened.intent, accountId);
-		await mailbox.ingestFullPullPage(
+		const session = await openSession(opened.app, sub);
+		await session.mailbox.ingestFullPullPage(
 			[
 				{
 					id: 'm1',
@@ -264,29 +283,79 @@ test('disconnecting clears the cache and leaves undelivered triage alone', async
 			],
 			'2026-07-01T00:00:00.000Z',
 		);
-		await intents.assert(
+		await session.intents.assert(
 			[{ messageId: 'm1', labelId: 'INBOX', want: false }],
 			'2026-07-01T00:00:00.000Z',
 		);
+		expect(await pendingCount(opened.app, sub)).toBe(1);
 
-		const gone = await disconnectAccount(opened.app, accountId);
+		// Delivering needs the credential that removal destroys, so removal that
+		// owes anything deletes nothing at all (ADR-0320).
+		const refused = await removeAccount(opened.app, sub);
+		expect(refused.error).toMatchObject({ name: 'OwesWork', pending: 1 });
+		expect(await listAccounts(opened.app)).toHaveLength(1);
+		expect(opened.held.size).toBe(1);
+		expect(opened.deleted).toEqual([]);
+		expect((await session.mailbox.counts()).messages).toBe(1);
+
+		// The person chose to abandon the work rather than deliver it.
+		expect(await discardPending(opened.app, sub)).toBe(1);
+		const gone = await removeAccount(opened.app, sub);
 		expect(gone.error).toBeNull();
-		expect((await mailbox.counts()).messages).toBe(0);
-		// Disconnecting is not a statement that a person takes their triage back.
-		expect((await intents.summary()).assertions).toBe(1);
+		expect(await listAccounts(opened.app)).toEqual([]);
+		expect(opened.held.size).toBe(0);
+		expect(opened.deleted).toEqual(['mail-google-sub-1']);
+		expect(await pendingCount(opened.app, sub)).toBe(0);
 	} finally {
 		server.stop(true);
 		opened.close();
 	}
 });
 
-test('a session is scoped to the account it was opened for', async () => {
+test('two accounts are two mail files, and neither reads the other', async () => {
 	const opened = await openApp();
 	try {
-		const session = openSession(opened.app, 'account-one');
-		expect(session.accountId).toBe('account-one');
-		expect(session.mailbox.accountId).toBe('account-one');
-		expect(session.intents.accountId).toBe('account-one');
+		const one = await openSession(opened.app, 'sub-one');
+		const two = await openSession(opened.app, 'sub-two');
+		expect(one.sub).toBe('sub-one');
+		expect(two.sub).toBe('sub-two');
+		expect(one.intents.sub).toBe('sub-one');
+
+		const page = (id: string) =>
+			[
+				{
+					id,
+					threadId: 't1',
+					labelIds: ['INBOX'],
+					internalDate: '1700000000000',
+					payload: { headers: [] },
+				},
+			] as never;
+		await one.mailbox.ingestFullPullPage(
+			page('m1'),
+			'2026-07-01T00:00:00.000Z',
+		);
+		await two.mailbox.ingestFullPullPage(
+			page('m2'),
+			'2026-07-01T00:00:00.000Z',
+		);
+
+		// Each account's rows went to its own database, so a statement in one
+		// cannot name a row in the other. What makes that true in production is
+		// the owner's one-file-per-name mapping, which `app-storage.test.ts`
+		// pins; what this checks is that the application asks for two names.
+		expect(await one.mailbox.hasMessage('m1')).toBe(true);
+		expect(await one.mailbox.hasMessage('m2')).toBe(false);
+		expect(await two.mailbox.hasMessage('m1')).toBe(false);
+		expect((await one.mailbox.counts()).messages).toBe(1);
+
+		// The intents share one durable file, so there the scope is a column.
+		await one.intents.assert(
+			[{ messageId: 'm1', labelId: 'INBOX', want: false }],
+			'2026-07-01T00:00:00.000Z',
+		);
+		expect((await one.intents.summary()).assertions).toBe(1);
+		expect((await two.intents.summary()).assertions).toBe(0);
 	} finally {
 		opened.close();
 	}

@@ -8,18 +8,25 @@ reconciler per account.
 It is a first-party Epicenter application and nothing else (ADR-0317). There is
 no CLI, no MCP server, no HTTP API, and no standalone Bun or Tauri runtime. The
 human workflow is the application: connect an account, look at the mailbox,
-triage it, reconcile, and disconnect.
+triage it, reconcile, and remove it.
 
-## Three concerns, three owners
+## Four artifacts, and none of them are Epicenter Data
 
 | | What it is | Where it lives | If you lose it |
 | --- | --- | --- | --- |
-| which accounts are connected | a person's own data | Epicenter Data | reconnect each account |
-| the mail itself | borrowed data | `openSqlite('mail')`, disposable | nothing but quota; re-pull |
+| which accounts are connected | a fact about this device | `openSqlite('local')`, durable | reconnect each account |
+| undelivered triage | a person's own act | `openSqlite('local')`, durable | real work, unrecoverably |
+| the mail itself | borrowed data | `openSqlite('mail-<sub>')`, one per account | nothing but quota; re-pull |
 | the credential | a secret | the host's keychain, never synchronized | reconnect that account |
-| undelivered triage | a person's own act | `openSqlite('intent')`, durable | real work, unrecoverably |
 
-All four are reached through one scoped handle (ADR-0316):
+Run ADR-0318's test on each one and it answers no four times: Gmail is the
+authority for the copy, undelivered triage is a command addressed to Gmail, the
+credential is Google's, and which accounts are connected is a fact about this
+machine because the credential that makes a connection real cannot leave it. So
+Local Mail holds no Epicenter Data at all (ADR-0319). A preference would be the
+first artifact to answer yes, and there is not one yet.
+
+Everything is reached through one scoped handle (ADR-0316):
 
 ```ts
 const epicenter = createEpicenter({
@@ -28,16 +35,34 @@ const epicenter = createEpicenter({
 });
 ```
 
-**The account id is the row id Epicenter Data minted.** Google's `sub` is
-recorded beside it as `providerAccountId`, because Google documents `sub` as
-stable while an address may change; the address is display metadata. Every mail
-row, every intent row, and every secret is keyed by the Epicenter row id, so a
-renamed mailbox moves nothing and an email address is never a path segment.
+**The key is Google's subject, and nothing allocates it.** Every mail file,
+every intent row, and every secret is addressed by `sub`, which Google returns
+identically on every connection, so reconnecting an account lands on its own
+rows by arithmetic rather than by lookup. An earlier design minted a row id for
+each account and keyed the stores by it, which meant removal deleted the only
+name those rows had; deriving the key removes that failure rather than guarding
+against it. The address is display metadata and is refreshed on each connection.
 
-**Two SQLite databases, because their deletion policies differ.** `mail` may be
-cleared and pulled again at any moment (ADR-0306). `intent` holds triage a
-person performed that Gmail has not been told about, and nothing can rebuild it.
-`mailbox.reset()` holds no handle to `intent` and cannot reach it.
+**The split is by lifetime, not by concern.**
+
+```txt
+<epicenter-data-root>/apps/so.epicenter.local-mail/sqlite/
+├── local.sqlite            durable, kilobytes, migrated, never unlinked
+│     accounts, label_intents, intent_meta
+└── mail-<sub>.sqlite       borrowed, gigabytes, unlinked routinely
+      cache_meta, messages, labels
+```
+
+`local` holds the only irreplaceable bytes. A mail file is a copy Gmail still
+has, so clearing one is an unlink rather than a delete of millions of rows
+followed by a `VACUUM`, corruption costs one account's re-pull instead of
+everything, and a statement in a mail file cannot reach another account's mail
+because the file is the scope.
+
+The schema version lives in `PRAGMA user_version` and never in a filename. The
+same integer means opposite things: in `local.sqlite` it is a migration cursor,
+and in a mail file it is a demolition trigger, so a build that wants a shape the
+file does not have closes it, unlinks it, and pulls Gmail again.
 
 ## The write model
 
@@ -77,12 +102,11 @@ page immediately and the page still comes back full.
 
 | Module | What it owns |
 | --- | --- |
-| `database.ts` | the account registry's Epicenter Data definition |
-| `storage.ts` | the app id, the mirror folders, and both SQLite schemas |
-| `accounts.ts` | the registry, connect, disconnect, and one account's session |
+| `storage.ts` | the app id, the mirror folders, both schemas, and how each is opened |
+| `accounts.ts` | the registry, connect, remove, and one account's session |
 | `handle.ts` | the one way both stores read and write their database |
-| `mailbox.ts` | one account's slice of the disposable cache, and the overlay |
-| `intent-store.ts` | one account's slice of the durable assertions |
+| `mailbox.ts` | one account's disposable cache, which is one file, and the overlay |
+| `intent-store.ts` | one account's slice of the durable assertions, keyed by `sub` |
 | `assert.ts` | the act path: entirely local, resolves label names to ids |
 | `reconcile.ts` | the one Gmail writer: drain, then pull |
 | `reconcile-claim.ts` | who may run a pass, and what that does not promise |

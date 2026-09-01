@@ -3,38 +3,40 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 export type AccountFolderSwitchError = {
 	name: 'AccountFolderSwitchNeedsConsent';
 	message: string;
-	currentAccountId: string;
-	requestedAccountId: string;
+	currentSub: string;
+	requestedSub: string;
 };
 
 /** App-owned state for replacing the account represented by the `account` folder. */
 export type AccountFolderSwitch = {
-	request(accountId: string, consented?: boolean): Result<void, AccountFolderSwitchError>;
+	request(
+		sub: string,
+		consented?: boolean,
+	): Result<void, AccountFolderSwitchError>;
 	current(): string | null;
 };
 
 export function createAccountFolderSwitch(
-	initialAccountId: string | null = null,
+	initialSub: string | null = null,
 ): AccountFolderSwitch {
-	let currentAccountId = initialAccountId;
+	let currentSub = initialSub;
 	return {
-		request(accountId, consented = false) {
-			if (currentAccountId === null || currentAccountId === accountId) {
-				currentAccountId = accountId;
+		request(sub, consented = false) {
+			if (currentSub === null || currentSub === sub) {
+				currentSub = sub;
 				return Ok(undefined);
 			}
 			if (!consented) {
 				return Err({
 					name: 'AccountFolderSwitchNeedsConsent',
-					message:
-						`The account folder currently shows ${currentAccountId}. Switching to ${accountId} will replace that folder with the new account's mirror. Confirm to continue.`,
-					currentAccountId,
-					requestedAccountId: accountId,
+					message: `The account folder currently shows ${currentSub}. Switching to ${sub} will replace that folder with the new account's mirror. Confirm to continue.`,
+					currentSub,
+					requestedSub: sub,
 				});
 			}
-			currentAccountId = accountId;
+			currentSub = sub;
 			return Ok(undefined);
 		},
-		current: () => currentAccountId,
+		current: () => currentSub,
 	};
 }
