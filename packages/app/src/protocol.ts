@@ -2,10 +2,10 @@
  * Messages exchanged by an application handle and the trusted desktop owner.
  *
  * Three concerns cross this seam and only three: opening the application's
- * declared data, running statements against an application-owned SQLite file,
- * and holding one labeled secret. Every message names the application, because
- * the owner scopes everything it does by that identity rather than by the
- * socket it arrived on.
+ * declared data, running statements against an application-owned SQLite file or
+ * deleting one, and holding one labeled secret. Every message names the
+ * application, because the owner scopes everything it does by that identity
+ * rather than by the socket it arrived on.
  *
  * `data-open` carries the definition's IDENTITY, never the definition. The
  * owner imports first-party definition modules from its own release (ADR-0313)
@@ -65,41 +65,46 @@ export type AppStorageRequest =
 			kind: 'data-open';
 			appId: string;
 			dataId: string;
-		}
+	  }
 	| {
 			kind: 'sqlite-run';
 			appId: string;
 			name: string;
 			statement: SqliteStatement;
-		}
+	  }
 	| {
 			kind: 'sqlite-all';
 			appId: string;
 			name: string;
 			statement: SqliteStatement;
-		}
+	  }
 	| {
 			kind: 'sqlite-batch';
 			appId: string;
 			name: string;
 			statements: readonly SqliteStatement[];
-		}
+	  }
+	| {
+			kind: 'sqlite-delete';
+			appId: string;
+			name: string;
+	  }
 	| {
 			kind: 'secret-put';
 			appId: string;
 			accountId: string;
 			value: string;
-		}
+	  }
 	| {
 			kind: 'secret-get';
 			appId: string;
 			accountId: string;
-		}
+	  }
 	| {
 			kind: 'secret-delete';
 			appId: string;
 			accountId: string;
-		};
+	  };
 
 export type AppStorageResponse =
 	/**
@@ -111,6 +116,7 @@ export type AppStorageResponse =
 	| { kind: 'sqlite-run'; changes: number }
 	| { kind: 'sqlite-all'; rows: readonly Record<string, unknown>[] }
 	| { kind: 'sqlite-batch'; changes: readonly number[] }
+	| { kind: 'sqlite-delete' }
 	| { kind: 'secret-put' }
 	| { kind: 'secret-get'; value: string | null }
 	| { kind: 'secret-delete' };
@@ -120,6 +126,7 @@ const RESPONSE_KINDS: readonly AppStorageResponse['kind'][] = [
 	'sqlite-run',
 	'sqlite-all',
 	'sqlite-batch',
+	'sqlite-delete',
 	'secret-put',
 	'secret-get',
 	'secret-delete',

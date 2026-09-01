@@ -1,10 +1,6 @@
 import { expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
-import {
-	AppError,
-	createEpicenter,
-	type EpicenterBinding,
-} from './index.js';
+import { AppError, createEpicenter, type EpicenterBinding } from './index.js';
 
 function bindingFor(calls: string[]): EpicenterBinding {
 	return {
@@ -16,6 +12,10 @@ function bindingFor(calls: string[]): EpicenterBinding {
 				all: async () => Ok([]),
 				batch: async (statements) => Ok({ changes: statements.map(() => 1) }),
 			});
+		},
+		deleteSqlite: async (name) => {
+			calls.push(`delete:${name}`);
+			return Ok(undefined);
 		},
 		secrets: {
 			put: async () => Ok(undefined),
@@ -51,6 +51,22 @@ test('refuses invalid database names before reaching the owner', async () => {
 	const result = await epicenter.openSqlite('../mail');
 	expect(result.error?.name).toBe('InvalidDatabaseName');
 	expect(calls).toEqual([]);
+});
+
+test('deleting takes the same name check as opening', async () => {
+	const calls: string[] = [];
+	const epicenter = createEpicenter({
+		appId: 'so.epicenter.test',
+		binding: bindingFor(calls),
+	});
+
+	const refused = await epicenter.deleteSqlite('../mail');
+	expect(refused.error?.name).toBe('InvalidDatabaseName');
+	expect(calls).toEqual([]);
+
+	const deleted = await epicenter.deleteSqlite('mail');
+	expect(deleted.error).toBeNull();
+	expect(calls).toEqual(['delete:mail']);
 });
 
 test('refuses an account id that is not one label', async () => {

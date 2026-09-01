@@ -26,14 +26,28 @@ test('application SQLite is scoped, async, and batch is atomic', async () => {
 		{ sql: 'INSERT INTO missing VALUES (?)', parameters: ['never'] },
 	]);
 	expect(failed.error).not.toBeNull();
-	const afterFailure = await first.all<{ id: string }>('SELECT id FROM messages');
+	const afterFailure = await first.all<{ id: string }>(
+		'SELECT id FROM messages',
+	);
 	expect(afterFailure.data).toEqual([{ id: 'one' }]);
 
 	const isolated = await second.all('SELECT name FROM sqlite_master');
 	expect(isolated.data).toEqual([]);
 	await second.run('CREATE TABLE only_here (id TEXT)');
-	const mailPath = join(root, 'apps', 'so.epicenter.mail', 'sqlite', 'mail.sqlite');
-	const otherPath = join(root, 'apps', 'so.epicenter.other', 'sqlite', 'mail.sqlite');
+	const mailPath = join(
+		root,
+		'apps',
+		'so.epicenter.mail',
+		'sqlite',
+		'mail.sqlite',
+	);
+	const otherPath = join(
+		root,
+		'apps',
+		'so.epicenter.other',
+		'sqlite',
+		'mail.sqlite',
+	);
 	expect(Bun.file(mailPath).size).toBeGreaterThan(0);
 	expect(Bun.file(otherPath).size).toBeGreaterThan(0);
 });
@@ -51,5 +65,35 @@ test('an open that failed is not remembered', async () => {
 
 	await rm(appDir);
 	const opened = await storage.open('so.epicenter.mail', 'mail');
-	expect((await opened.run('CREATE TABLE recovered (id TEXT)')).error).toBeNull();
+	expect(
+		(await opened.run('CREATE TABLE recovered (id TEXT)')).error,
+	).toBeNull();
+});
+
+test('deleting a database closes it, removes the file, and forgets the name', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'epicenter-app-storage-'));
+	const storage = createBunAppStorage(root);
+	const path = join(root, 'apps', 'so.epicenter.mail', 'sqlite', 'mail.sqlite');
+
+	const before = await storage.open('so.epicenter.mail', 'mail');
+	await before.run('CREATE TABLE messages (id TEXT)');
+	await before.run('INSERT INTO messages VALUES (?)', ['one']);
+	expect(await Bun.file(path).exists()).toBe(true);
+
+	await storage.delete('so.epicenter.mail', 'mail');
+	expect(await Bun.file(path).exists()).toBe(false);
+	// The closed handle stays closed: an application holding it past a deletion
+	// is holding a connection to a file that is gone, and must be told so.
+	expect((await before.all('SELECT id FROM messages')).error).not.toBeNull();
+
+	// Opening the same name again is a new, empty database rather than the
+	// evicted handle.
+	const after = await storage.open('so.epicenter.mail', 'mail');
+	expect((await after.all('SELECT name FROM sqlite_master')).data).toEqual([]);
+});
+
+test('deleting a database that was never created succeeds', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'epicenter-app-storage-'));
+	const storage = createBunAppStorage(root);
+	await storage.delete('so.epicenter.mail', 'never');
 });

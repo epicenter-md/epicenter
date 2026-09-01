@@ -20,16 +20,12 @@
  * it to.
  */
 
-import {
-	isDatabaseName,
-	isProtocolAppId,
-	isSecretLabel,
-} from './protocol.js';
-import type { DataDefinition } from '@epicenter/data/definition';
 import type { LocalData } from '@epicenter/data';
+import type { DataDefinition } from '@epicenter/data/definition';
 import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
+import { isDatabaseName, isProtocolAppId, isSecretLabel } from './protocol.js';
 
 export const AppError = defineErrors({
 	InvalidAppId: ({ appId }: { appId: string }) => ({
@@ -74,7 +70,8 @@ export type SecretError = InferErrors<typeof SecretError>;
 /**
  * All `run`, `all`, and `batch` (ADR-0312). A transaction never crosses this
  * boundary, so `batch` is how several statements become one, and there is no
- * `close`: the owner holds the handle for the life of the application.
+ * `close`: the owner holds the handle for the life of the application, and the
+ * only thing that ends that life is `deleteSqlite` (ADR-0321).
  */
 export type AppSqliteDatabase = {
 	run(
@@ -113,6 +110,7 @@ export type EpicenterBinding = {
 		definition: TDefinition,
 	): Promise<Result<LocalData<TDefinition>, AppError>>;
 	openSqlite(name: string): Promise<Result<AppSqliteDatabase, AppError>>;
+	deleteSqlite(name: string): Promise<Result<void, AppError>>;
 	secrets: SecretStore;
 };
 
@@ -128,6 +126,16 @@ export type EpicenterHandle = {
 		definition: TDefinition,
 	): Promise<Result<LocalData<TDefinition>, AppError>>;
 	openSqlite(name: string): Promise<Result<AppSqliteDatabase, AppError>>;
+	/**
+	 * Delete one database this application named, and close the owner's handle
+	 * to it (ADR-0321).
+	 *
+	 * There is no `list`, for the same reason `secrets` has none: the
+	 * application's own rows are the only thing that knows a name exists. A name
+	 * that was never created deletes successfully, because the caller asked for
+	 * it to be gone and it is.
+	 */
+	deleteSqlite(name: string): Promise<Result<void, AppError>>;
 	readonly secrets: SecretStore;
 };
 
@@ -154,6 +162,14 @@ export function createEpicenter(
 				);
 			}
 			return binding.openSqlite(name);
+		},
+		deleteSqlite(name: string) {
+			if (!isDatabaseName(name)) {
+				return Promise.resolve(
+					AppError.InvalidDatabaseName({ databaseName: name }),
+				);
+			}
+			return binding.deleteSqlite(name);
 		},
 		secrets: Object.freeze({
 			put(accountId: string, value: string) {

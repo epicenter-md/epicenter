@@ -377,6 +377,10 @@ export function createHomeServer({
 				return c.json({ kind: request.kind } satisfies AppStorageResponse);
 			}
 			if (appStorage === undefined) return c.text('Unavailable', 503);
+			if (request.kind === 'sqlite-delete') {
+				await appStorage.delete(request.appId, request.name);
+				return c.json({ kind: request.kind } satisfies AppStorageResponse);
+			}
 			return c.json(await runAppStatements(appStorage, request));
 		} catch {
 			return c.text('Application storage failed', 500);
@@ -748,6 +752,11 @@ function parseAppStorageRequest(
 		return statement === undefined || !isDatabaseName(input.name)
 			? undefined
 			: { kind, appId: input.appId, name: input.name, statement };
+	}
+	if (kind === 'sqlite-delete' && typeof input.name === 'string') {
+		return isDatabaseName(input.name)
+			? { kind, appId: input.appId, name: input.name }
+			: undefined;
 	}
 	if (kind === 'sqlite-batch' && typeof input.name === 'string') {
 		if (!isDatabaseName(input.name) || !Array.isArray(input.statements)) {

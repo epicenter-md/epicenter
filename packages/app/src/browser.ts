@@ -11,30 +11,35 @@
  */
 
 import { Ok, tryAsync } from 'wellcrafted/result';
+import { createBrowserSqliteOwner } from './browser-sqlite.js';
+import { openClientOwnedData } from './client-owned-data.js';
 import {
 	AppError,
 	type AppSqliteDatabase,
 	type EpicenterBinding,
 	type SecretStore,
 } from './index.js';
-import { createBrowserSqliteFactory } from './browser-sqlite.js';
-import { openClientOwnedData } from './client-owned-data.js';
 
-type BrowserSqliteFactory = (
-	appId: string,
-	name: string,
-) => Promise<AppSqliteDatabase>;
+type BrowserSqliteOwner = {
+	open(appId: string, name: string): Promise<AppSqliteDatabase>;
+	delete(appId: string, name: string): Promise<void>;
+};
 
 export function createBrowserBinding(options: {
 	appId: string;
-	sqlite?: BrowserSqliteFactory;
+	sqlite?: BrowserSqliteOwner;
 }): EpicenterBinding {
-	const sqlite = options.sqlite ?? createBrowserSqliteFactory();
+	const sqlite = options.sqlite ?? createBrowserSqliteOwner();
 	return {
 		openData: openClientOwnedData,
 		openSqlite: (name) =>
 			tryAsync({
-				try: () => sqlite(options.appId, name),
+				try: () => sqlite.open(options.appId, name),
+				catch: (cause) => AppError.StorageFailed({ cause }),
+			}),
+		deleteSqlite: (name) =>
+			tryAsync({
+				try: () => sqlite.delete(options.appId, name),
 				catch: (cause) => AppError.StorageFailed({ cause }),
 			}),
 		secrets: createTabMemorySecrets(),

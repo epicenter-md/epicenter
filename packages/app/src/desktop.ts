@@ -17,7 +17,8 @@
  *
  * **SQLite is a Bun-owned file.** The owner maps `(appId, name)` to a path
  * below the one Epicenter data root; the application sends statements and never
- * sees the path.
+ * sees the path. Deleting one is the same round trip, and the owner closes its
+ * handle before it unlinks, because the application cannot (ADR-0321).
  *
  * **A secret is a keychain entry.** The owner hands it to Rust over the private
  * sidecar pipe, which is the only thing on this machine that names a keyring
@@ -26,6 +27,7 @@
 
 import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { Ok, type Result } from 'wellcrafted/result';
+import { openClientOwnedData } from './client-owned-data.js';
 import {
 	AppError,
 	type AppSqliteDatabase,
@@ -33,7 +35,6 @@ import {
 	SecretError,
 	type SecretStore,
 } from './index.js';
-import { openClientOwnedData } from './client-owned-data.js';
 import {
 	APP_STORAGE_PATH,
 	type AppStorageRequest,
@@ -64,6 +65,12 @@ export function createDesktopBinding(
 			return openClientOwnedData(definition);
 		},
 		openSqlite: async (name) => Ok(createOwnedSqlite(request, appId, name)),
+		deleteSqlite: (name) =>
+			unwrap(
+				request({ kind: 'sqlite-delete', appId, name }),
+				'sqlite-delete',
+				() => undefined,
+			),
 		secrets: createKeychainSecrets(request, appId),
 	};
 }
@@ -188,6 +195,8 @@ function unwrap<TKind extends AppStorageResponse['kind'], TValue>(
 	return pending.then((outcome) => {
 		if (outcome.error !== null) return outcome;
 		if (outcome.data.kind !== kind) return AppError.InvalidResponse();
-		return Ok(read(outcome.data as Extract<AppStorageResponse, { kind: TKind }>));
+		return Ok(
+			read(outcome.data as Extract<AppStorageResponse, { kind: TKind }>),
+		);
 	});
 }
