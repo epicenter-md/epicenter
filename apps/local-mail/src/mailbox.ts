@@ -17,6 +17,7 @@
  */
 
 import type { AppSqliteDatabase } from '@epicenter/app';
+import { sqliteHandle, type Statement } from './handle.ts';
 import {
 	bodyHtml,
 	bodyText,
@@ -114,35 +115,7 @@ export function effectiveLabels(
 export type Mailbox = ReturnType<typeof openMailbox>;
 
 export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
-	async function all<TRow extends Record<string, unknown>>(
-		sql: string,
-		parameters: readonly (string | number | null)[],
-	): Promise<TRow[]> {
-		const rows = await mail.all(sql, parameters);
-		if (rows.error !== null) throw rows.error;
-		return rows.data as unknown as TRow[];
-	}
-
-	async function run(
-		sql: string,
-		parameters: readonly (string | number | null)[] = [],
-	): Promise<number> {
-		const result = await mail.run(sql, parameters);
-		if (result.error !== null) throw result.error;
-		return result.data.changes;
-	}
-
-	async function batch(
-		statements: readonly {
-			sql: string;
-			parameters?: readonly (string | number | null)[];
-		}[],
-	): Promise<number[]> {
-		if (statements.length === 0) return [];
-		const result = await mail.batch(statements);
-		if (result.error !== null) throw result.error;
-		return result.data.changes;
-	}
+	const { all, run, batch } = sqliteHandle(mail);
 
 	function upsertMessageStatement(message: GmailMessage, syncedAt: string) {
 		return {
@@ -163,6 +136,45 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 				bodyText(message),
 				syncedAt,
 			] as const,
+		};
+	}
+
+	/**
+	 * Fold a new label set into one stored row, as a statement plus a verdict.
+	 *
+	 * Returned rather than executed, because its two callers commit differently:
+	 * a fold after a delivery is one write on its own, and a history batch folds
+	 * several inside the batch that also advances the cursor. The read has to
+	 * happen outside either, since the handle has no transaction callback to read
+	 * within (ADR-0312); a row that moves between the read and the write
+	 * converges on the next pass, which is already how a missed patch behaves.
+	 */
+	async function foldLabels(
+		messageId: string,
+		labelIds: readonly string[],
+		syncedAt: string,
+	): Promise<{ statement: Statement; changed: boolean } | undefined> {
+		const [row] = await all<{ resource: string }>(
+			`SELECT resource FROM messages WHERE account_id = ? AND id = ?`,
+			[accountId, messageId],
+		);
+		if (row === undefined) return undefined;
+		const parsed = JSON.parse(row.resource) as GmailMessage & {
+			labelIds?: string[];
+		};
+		const previous = Array.isArray(parsed.labelIds) ? parsed.labelIds : [];
+		return {
+			statement: {
+				sql: `UPDATE messages SET resource = ?, synced_at = ?
+				      WHERE account_id = ? AND id = ?`,
+				parameters: [
+					JSON.stringify({ ...parsed, labelIds: [...labelIds] }),
+					syncedAt,
+					accountId,
+					messageId,
+				],
+			},
+			changed: !sameLabelSet(previous, labelIds),
 		};
 	}
 
@@ -286,16 +298,6 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 				[accountId, label, label, label],
 			);
 			return rows[0] ?? null;
-		},
-
-		async recentMessages(
-			limit: number,
-		): Promise<{ subject: string | null; sender: string | null }[]> {
-			return all(
-				`SELECT subject, sender FROM messages WHERE account_id = ?
-				 ORDER BY internal_date DESC LIMIT ?`,
-				[accountId, limit],
-			);
 		},
 
 		/**
@@ -485,27 +487,10 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 			labelIds: readonly string[],
 			syncedAt: string,
 		): Promise<{ found: boolean; changed: boolean }> {
-			const rows = await all<{ resource: string }>(
-				`SELECT resource FROM messages WHERE account_id = ? AND id = ?`,
-				[accountId, messageId],
-			);
-			const row = rows[0];
-			if (row === undefined) return { found: false, changed: false };
-			const parsed = JSON.parse(row.resource) as GmailMessage & {
-				labelIds?: string[];
-			};
-			const previous = Array.isArray(parsed.labelIds) ? parsed.labelIds : [];
-			await run(
-				`UPDATE messages SET resource = ?, synced_at = ?
-				 WHERE account_id = ? AND id = ?`,
-				[
-					JSON.stringify({ ...parsed, labelIds: [...labelIds] }),
-					syncedAt,
-					accountId,
-					messageId,
-				],
-			);
-			return { found: true, changed: !sameLabelSet(previous, labelIds) };
+			const fold = await foldLabels(messageId, labelIds, syncedAt);
+			if (fold === undefined) return { found: false, changed: false };
+			await run(fold.statement.sql, fold.statement.parameters);
+			return { found: true, changed: fold.changed };
 		},
 
 		/**
@@ -531,27 +516,14 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 			newHistoryId: string;
 			syncedAt: string;
 		}): Promise<{ labelsChanged: number }> {
-			const patched: {
-				messageId: string;
-				resource: string;
-				changed: boolean;
-			}[] = [];
+			const folds: { statement: Statement; changed: boolean }[] = [];
 			for (const patch of labelPatches) {
-				const rows = await all<{ resource: string }>(
-					`SELECT resource FROM messages WHERE account_id = ? AND id = ?`,
-					[accountId, patch.messageId],
+				const fold = await foldLabels(
+					patch.messageId,
+					patch.labelIds,
+					syncedAt,
 				);
-				const row = rows[0];
-				if (row === undefined) continue;
-				const parsed = JSON.parse(row.resource) as GmailMessage & {
-					labelIds?: string[];
-				};
-				const previous = Array.isArray(parsed.labelIds) ? parsed.labelIds : [];
-				patched.push({
-					messageId: patch.messageId,
-					resource: JSON.stringify({ ...parsed, labelIds: patch.labelIds }),
-					changed: !sameLabelSet(previous, patch.labelIds),
-				});
+				if (fold !== undefined) folds.push(fold);
 			}
 
 			await batch([
@@ -562,20 +534,11 @@ export function openMailbox(mail: AppSqliteDatabase, accountId: string) {
 					sql: `DELETE FROM messages WHERE account_id = ? AND id = ?`,
 					parameters: [accountId, id] as const,
 				})),
-				...patched.map((patch) => ({
-					sql: `UPDATE messages SET resource = ?, synced_at = ?
-					      WHERE account_id = ? AND id = ?`,
-					parameters: [
-						patch.resource,
-						syncedAt,
-						accountId,
-						patch.messageId,
-					] as const,
-				})),
+				...folds.map((fold) => fold.statement),
 				setMetaStatement('history_id', newHistoryId),
 				setMetaStatement('last_synced_at', syncedAt),
 			]);
-			return { labelsChanged: patched.filter((patch) => patch.changed).length };
+			return { labelsChanged: folds.filter((fold) => fold.changed).length };
 		},
 
 		/**

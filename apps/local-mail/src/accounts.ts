@@ -15,27 +15,70 @@
 
 import type { EpicenterHandle, SecretError } from '@epicenter/app';
 import { Ok, type Result } from 'wellcrafted/result';
-import {
-	accountByProvider,
-	type AccountRecord,
-	registerAccount,
-} from './account-registry.ts';
+import type { LocalData } from '@epicenter/data';
+import type database from './database.ts';
 import {
 	DEFAULT_MAIL_CONFIG,
 	type GmailClientIdentity,
 	type MailConfig,
 } from './config.ts';
-import { createGmailClient, type GmailClient } from './gmail-client.ts';
-import { openIntentStore, type IntentStore } from './intent-store.ts';
-import { openMailbox, type Mailbox } from './mailbox.ts';
+import { createGmailClient } from './gmail-client.ts';
+import { openIntentStore } from './intent-store.ts';
+import { openMailbox } from './mailbox.ts';
 import {
 	type AuthorizationRequest,
 	beginAuthorization,
 	completeAuthorization,
 	type OAuthError,
 } from './oauth.ts';
+import type { ReconcileDeps } from './reconcile.ts';
 import type { LocalMailStorage } from './storage.ts';
 import { createTokenManager } from './token-manager.ts';
+
+/**
+ * The account registry: which accounts are connected, as a person's own data.
+ *
+ * The row id Epicenter Data mints IS `accountId`. Everything else keys off it:
+ * the secret holding the refresh token, every row in the mail cache, and every
+ * row in the durable intent store. Three consequences follow, and all three are
+ * the point.
+ *
+ * **Google's `sub` is provider identity, not the key.** It is recorded as
+ * `providerAccountId` because Google documents it as stable for the life of the
+ * account while an email address may change. An address is display metadata,
+ * and it is not a path segment, a filename, or a partition key.
+ *
+ * **Deleting the mailbox does not sign anybody out.** The cache is disposable
+ * (ADR-0306), so an account list living inside it would disappear with the
+ * first reset.
+ *
+ * ADR-0310 also says this registry synchronizes while its credentials do not.
+ * That half is unbuilt: `openData` opens a device-local document today, so this
+ * list does not reach a person's other devices. See `openClientOwnedData`.
+ */
+export type AccountRegistry = LocalData<typeof database>['tables']['accounts'];
+export type AccountRecord = Parameters<AccountRegistry['create']>[0];
+export type AccountRow = ReturnType<AccountRegistry['get']>;
+
+/**
+ * The row already recorded for one Google subject, or nothing.
+ *
+ * Reconnecting an account a person already has must land on the SAME row:
+ * minting a second one would orphan the first account's cache and intent rows
+ * behind an id nothing reaches, and would show the same mailbox twice.
+ */
+export function accountByProvider(
+	accounts: AccountRegistry,
+	{
+		provider,
+		providerAccountId,
+	}: { provider: 'gmail'; providerAccountId: string },
+): { id: string } | undefined {
+	return accounts.rows.find(
+		(row) =>
+			row.provider === provider && row.providerAccountId === providerAccountId,
+	);
+}
 
 export type ConnectedAccount = {
 	accountId: string;
@@ -43,15 +86,6 @@ export type ConnectedAccount = {
 	email: string;
 	connectedAt: string;
 	lastSyncedAt: string | null;
-};
-
-export type MailSession = {
-	accountId: string;
-	mailbox: Mailbox;
-	intents: IntentStore;
-	client: GmailClient;
-	config: MailConfig;
-	now: () => number;
 };
 
 export type MailApp = {
@@ -143,13 +177,13 @@ export async function finishConnect(
 	});
 	const accountId =
 		existing?.id ??
-		registerAccount(accounts, {
+		accounts.create({
 			provider: 'gmail',
 			providerAccountId: authorized.data.providerAccountId,
 			email: authorized.data.email,
 			connectedAt,
 			lastSyncedAt: null,
-		});
+		}).id;
 	if (existing !== undefined) {
 		// The address is display metadata and may have changed since the last
 		// connection; the subject is what said this is the same account.
@@ -203,7 +237,7 @@ export async function disconnectAccount(
 }
 
 /** Everything one account's work needs, composed once. */
-export function openSession(app: MailApp, accountId: string): MailSession {
+export function openSession(app: MailApp, accountId: string): ReconcileDeps {
 	const tokens = createTokenManager({
 		config: app.config,
 		identity: app.identity,

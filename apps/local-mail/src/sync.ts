@@ -78,15 +78,15 @@ export function decideMode({
  * because a visible window and a hidden synchronization worker writing the same
  * database is the supported desktop arrangement (ADR-0317).
  */
-export const MirrorWriteError = defineErrors({
-	MirrorBusy: ({ cause }: { cause: unknown }) => ({
-		message: `The mirror is locked by another writer (${extractErrorMessage(cause)}). Nothing was lost; the next sync pass retries.`,
+export const CacheWriteError = defineErrors({
+	CacheBusy: ({ cause }: { cause: unknown }) => ({
+		message: `The mail cache is locked by another writer (${extractErrorMessage(cause)}). Nothing was lost; the next sync pass retries.`,
 		cause,
 	}),
 });
-export type MirrorWriteError = InferErrors<typeof MirrorWriteError>;
+export type CacheWriteError = InferErrors<typeof CacheWriteError>;
 
-export type SyncFailure = GmailClientError | MirrorWriteError;
+export type SyncFailure = GmailClientError | CacheWriteError;
 
 function isSqliteBusy(cause: unknown): boolean {
 	const code = (cause as { code?: unknown } | null)?.code;
@@ -291,9 +291,9 @@ async function incrementalPoll(
 			labelPatches.push({ messageId: id, labelIds: action.labelIds });
 			continue;
 		}
-		// An upsert, or a label patch aimed at a row the mirror lacks: full
+		// An upsert, or a label patch aimed at a row the cache lacks: full
 		// pulls exclude SPAM/TRASH, so the sweep can evict a row that a later
-		// patch targets (untrash), and refetching converges the mirror.
+		// patch targets (untrash), and refetching converges the cache.
 		const fetched = await client.getMessage(id);
 		if (fetched.error) {
 			if (fetched.error.name === 'Http' && fetched.error.status === 404) {
@@ -409,7 +409,7 @@ export async function syncMailbox(
 			decision.mode,
 			decision.reason,
 			cursorBefore,
-			MirrorWriteError.MirrorBusy({ cause }).error,
+			CacheWriteError.CacheBusy({ cause }).error,
 		);
 	}
 }

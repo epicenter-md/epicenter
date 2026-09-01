@@ -13,9 +13,9 @@ import { type SyncDeps, type SyncOutcome, syncMailbox } from './sync.ts';
  *     drain  ->  pull
  *
  * Drain delivers the durable assertions in the intent store, folding each accepted
- * response into the mirror and retiring the assertion it proved. Pull is the
+ * response into the cache and retiring the assertion it proved. Pull is the
  * existing sync pass, unchanged. The order is the point: delivering after a pull
- * would leave a window where the mirror says one thing, the intent store says
+ * would leave a window where the cache says one thing, the intent store says
  * another, and Gmail has heard neither.
  *
  * Who may run a pass is the account claim (`reconcile-claim.ts`), and a pass
@@ -50,14 +50,21 @@ import { type SyncDeps, type SyncOutcome, syncMailbox } from './sync.ts';
  * still lands.
  */
 
+/**
+ * Everything one account's work needs.
+ *
+ * `openSession` in `accounts.ts` builds one, and it is the only thing that
+ * does. It was declared twice for a while, once here and once there under the
+ * name `MailSession`, with identical fields; the tell was a caller writing
+ * `{ ...openSession(app, id), accountId }` over a spread that already carried
+ * `accountId`.
+ *
+ * `accountId` is on it so the claim can be checked against the work: a surface
+ * serving several connected accounts holds several claims, and handing the
+ * wrong one to a pass would authorize a write to a mailbox nobody claimed.
+ */
 export type ReconcileDeps = SyncDeps & {
 	intents: IntentStore;
-	/**
-	 * The account this pass is for. It exists so the claim can be checked against
-	 * the work: a surface that serves several accounts at once holds several
-	 * claims, and handing the wrong one to a pass would authorize a write to a
-	 * mailbox nobody claimed.
-	 */
 	accountId: string;
 };
 
@@ -176,7 +183,7 @@ async function drain(
 	 * Deliver a set of assertions through one Gmail call, and answer whether the
 	 * pass may continue.
 	 *
-	 * On success the returned message is folded into the mirror BEFORE the
+	 * On success the returned message is folded into the cache BEFORE the
 	 * assertions are retired, so the fact lands before the overlay standing in for
 	 * it disappears; a crash between the two redelivers, and label writes are
 	 * idempotent.
@@ -232,7 +239,7 @@ async function drain(
 		// it optional because a thin `history.list` message really does lack it, not
 		// because a mutation response may decline to say.
 		//
-		// Skipping the fold here would leave the mirror asserting labels Gmail no
+		// Skipping the fold here would leave the cache asserting labels Gmail no
 		// longer has while the assertion that proved otherwise is retired one line
 		// below. The pull normally papers over that, but the pull is exactly what
 		// fails when anything is wrong, so the stale fact would resurface in the

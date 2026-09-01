@@ -17,52 +17,54 @@
  * the same moment. What protects that is not a claim but the shape of the work:
  * a label modify and a trash transition are idempotent at Gmail, an assertion is
  * retired only against the sequence a delivery actually proved, and a cache
- * write that loses the database lock reports `MirrorBusy` and retries on the
+ * write that loses the database lock reports `CacheBusy` and retries on the
  * next pass. A cross-surface lock would need a durable owner with a lease and a
  * recovery story for a window that closed mid-pass, and nothing has asked for
  * one.
  */
+
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { Ok, type Result } from 'wellcrafted/result';
 
 /** Proof the holder is this account's reconciler for the length of one pass. */
 export type ReconcileClaim = {
 	readonly accountId: string;
 };
 
-export type ReconcileClaimBusy = {
-	name: 'ReconcileClaimBusy';
-	message: string;
-	accountId: string;
+export const ReconcileClaimError = defineErrors({
+	Busy: ({ accountId }: { accountId: string }) => ({
+		message: 'A reconcile pass is already running for this account.',
+		accountId,
+	}),
+});
+export type ReconcileClaimError = InferErrors<typeof ReconcileClaimError>;
+
+/**
+ * What a caller holds for the length of one pass: the proof, and the way to
+ * give it back.
+ *
+ * The release is not a method on the claim. A claim is passed to
+ * `reconcileAccount`, and a release travelling with it is a release the callee
+ * could call; keeping them apart means `finally` at the call site is the only
+ * place a pass can end.
+ */
+export type HeldClaim = {
+	claim: ReconcileClaim;
+	release: () => void;
 };
 
 const claimed = new Set<string>();
 
-/**
- * Take the claim for `accountId`, or report that a pass is already running.
- *
- * The release is what the caller holds rather than a method on the claim, so
- * `finally` is the only place it can be spelled and a claim cannot outlive the
- * pass by being passed around.
- */
+/** Take the claim for `accountId`, or report that a pass is already running. */
 export function claimReconcile(
 	accountId: string,
-):
-	| { claim: ReconcileClaim; release: () => void; error: null }
-	| { claim: null; release: null; error: ReconcileClaimBusy } {
+): Result<HeldClaim, ReconcileClaimError> {
 	if (claimed.has(accountId)) {
-		return {
-			claim: null,
-			release: null,
-			error: {
-				name: 'ReconcileClaimBusy',
-				message: 'A reconcile pass is already running for this account.',
-				accountId,
-			},
-		};
+		return ReconcileClaimError.Busy({ accountId });
 	}
 	claimed.add(accountId);
-	return {
+	return Ok({
 		claim: { accountId },
 		release: () => claimed.delete(accountId),
-		error: null,
-	};
+	});
 }

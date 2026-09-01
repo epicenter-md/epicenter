@@ -136,15 +136,17 @@ export const mail = {
 		if (taken.error !== null) {
 			return { reconciled: false as const, message: taken.error.message };
 		}
+		const { claim, release } = taken.data;
 		try {
-			const outcome = await reconcileAccount(
-				{ ...openSession(opened, accountId), accountId },
-				{ forceFull: false, readOnly: false, claim: taken.claim },
-			);
+			const outcome = await reconcileAccount(openSession(opened, accountId), {
+				forceFull: false,
+				readOnly: false,
+				claim,
+			});
 			if (outcome.pull.failure === null) recordSynced(opened, accountId);
 			return outcome;
 		} finally {
-			taken.release();
+			release();
 		}
 	},
 
@@ -156,13 +158,10 @@ export const mail = {
 		accountId: string,
 		input: { ids: string[]; addLabels?: string[]; removeLabels?: string[] },
 	) => {
-		const session = openSession(await app(), accountId);
+		// A session already satisfies `AssertDeps`; rebuilding it field by field
+		// here was three chances to hand the act path a different account's store.
 		const recorded = await assertMessageLabels({
-			deps: {
-				mailbox: session.mailbox,
-				intents: session.intents,
-				now: session.now,
-			},
+			deps: openSession(await app(), accountId),
 			input: {
 				ids: input.ids,
 				addLabels: input.addLabels ?? [],

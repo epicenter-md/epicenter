@@ -197,10 +197,10 @@ async function pass(deps: ReconcileDeps, readOnly = false) {
 		return await reconcileAccount(deps, {
 			forceFull: false,
 			readOnly,
-			claim: taken.claim,
+			claim: taken.data.claim,
 		});
 	} finally {
-		taken.release();
+		taken.data.release();
 	}
 }
 
@@ -863,30 +863,30 @@ describe('ownership', () => {
 
 			const first = claimReconcile(deps.accountId);
 			expect(first.error).toBeNull();
+			if (first.error !== null) throw first.error;
 
 			// The second owner is refused, so it never obtains the capability a pass
 			// requires. There is no other way in: `reconcileAccount` has no overload
 			// that skips the claim.
 			const second = claimReconcile(deps.accountId);
-			expect(second.error?.name).toBe('ReconcileClaimBusy');
+			expect(second.error?.name).toBe('Busy');
 
 			// Nothing reached Gmail on the refused path, and the change is still owed.
 			expect(client.modifyCalls).toEqual([]);
 			expect(await intents.pending()).toHaveLength(1);
 
 			// The holder can still run, and the release hands ownership on.
-			if (first.claim === null) throw new Error('expected the first claim');
 			const owned = await reconcileAccount(deps, {
 				forceFull: false,
 				readOnly: false,
-				claim: first.claim,
+				claim: first.data.claim,
 			});
 			expect(owned.delivery.delivered).toBe(1);
-			first.release();
+			first.data.release();
 
 			const third = claimReconcile(deps.accountId);
 			expect(third.error).toBeNull();
-			third.release?.();
+			third.data?.release();
 		} finally {
 			cleanup();
 		}
@@ -901,16 +901,16 @@ describe('ownership', () => {
 		const { deps, cleanup } = await setup(client);
 		try {
 			const other = claimReconcile('another-account');
-			if (other.claim === null) throw new Error('expected a claim');
+			if (other.error !== null) throw other.error;
 			expect(
 				reconcileAccount(deps, {
 					forceFull: false,
 					readOnly: false,
-					claim: other.claim,
+					claim: other.data.claim,
 				}),
 			).rejects.toThrow('another-account');
 			expect(client.modifyCalls).toEqual([]);
-			other.release();
+			other.data.release();
 		} finally {
 			cleanup();
 		}

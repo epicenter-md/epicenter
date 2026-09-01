@@ -812,7 +812,7 @@ describe('syncMailbox: INCREMENTAL', () => {
 });
 
 describe('syncMailbox: concurrent writers', () => {
-	test('a cache locked past the busy timeout reports MirrorBusy instead of throwing', async () => {
+	test('a cache locked past the busy timeout reports CacheBusy instead of throwing', async () => {
 		// The desktop runs a visible window and a hidden synchronization worker
 		// over one database (ADR-0317), so a write that loses the lock is an
 		// operational condition rather than a bug. What it must not do is take the
@@ -846,7 +846,7 @@ describe('syncMailbox: concurrent writers', () => {
 		};
 
 		const outcome = await syncMailbox(deps, { forceFull: true });
-		expect(outcome.failure?.name).toBe('MirrorBusy');
+		expect(outcome.failure?.name).toBe('CacheBusy');
 		expect(outcome.cursorAfter).toBe(outcome.cursorBefore);
 		expect((await mailbox.readCacheState()).historyId).toBeNull();
 

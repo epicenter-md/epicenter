@@ -1,7 +1,7 @@
 import type { AppSqliteDatabase, EpicenterHandle } from '@epicenter/app';
 import type { LocalData } from '@epicenter/data';
 import database from './database.ts';
-import type { AccountRegistry } from './account-registry.ts';
+import type { AccountRegistry } from './accounts.ts';
 
 /**
  * Local Mail's three storage concerns, opened through one scoped handle.

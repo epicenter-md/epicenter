@@ -21,6 +21,7 @@
  */
 
 import type { AppSqliteDatabase } from '@epicenter/app';
+import { sqliteHandle } from './handle.ts';
 
 /** One row of the map: this message should, or should not, carry this label. */
 export type LabelIntent = {
@@ -48,26 +49,7 @@ export type PendingSummary = {
 export type IntentStore = ReturnType<typeof openIntentStore>;
 
 export function openIntentStore(intent: AppSqliteDatabase, accountId: string) {
-	async function all<TRow extends Record<string, unknown>>(
-		sql: string,
-		parameters: readonly (string | number | null)[],
-	): Promise<TRow[]> {
-		const rows = await intent.all(sql, parameters);
-		if (rows.error !== null) throw rows.error;
-		return rows.data as unknown as TRow[];
-	}
-
-	async function batch(
-		statements: readonly {
-			sql: string;
-			parameters?: readonly (string | number | null)[];
-		}[],
-	): Promise<number[]> {
-		if (statements.length === 0) return [];
-		const result = await intent.batch(statements);
-		if (result.error !== null) throw result.error;
-		return result.data.changes;
-	}
+	const { all, batch } = sqliteHandle(intent);
 
 	/**
 	 * The next sequence to hand out.

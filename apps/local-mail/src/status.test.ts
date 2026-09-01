@@ -11,10 +11,10 @@
  */
 
 import { expect, test } from 'bun:test';
-import type { MailSession } from './accounts.ts';
+
 import type { GmailMessage } from './schema.ts';
 import { openTestSession, type TestSession } from './session.test-support.ts';
-import { readMailStatus } from './status.ts';
+import { readMailStatus, type StatusDeps } from './status.ts';
 
 const AT = '2026-08-31T00:00:00.000Z';
 
@@ -28,13 +28,9 @@ function message(id: string): GmailMessage {
 	} as GmailMessage;
 }
 
-/** The status surface reads only these three, so only these are supplied. */
-function sessionFor(session: TestSession): MailSession {
-	return {
-		accountId: session.accountId,
-		mailbox: session.mailbox,
-		intents: session.intents,
-	} as MailSession;
+/** The status surface reads only these two, and its type says so. */
+function sessionFor(session: TestSession): StatusDeps {
+	return { mailbox: session.mailbox, intents: session.intents };
 }
 
 test('a cache with nothing pulled reports empty', async () => {
@@ -43,7 +39,6 @@ test('a cache with nothing pulled reports empty', async () => {
 		const status = await readMailStatus(sessionFor(session));
 		expect(status.cache).toBe('empty');
 		expect(status.rows).toEqual({ messages: 0, labels: 0 });
-		expect(status.historyId).toBeNull();
 		expect(status.pending).toEqual({ assertions: 0, oldestAssertedAt: null });
 	} finally {
 		session.close();
@@ -69,8 +64,6 @@ test('a cursor written by a finished pull reports ready', async () => {
 		await session.mailbox.finishFullPull('900', AT);
 		const status = await readMailStatus(sessionFor(session));
 		expect(status.cache).toBe('ready');
-		expect(status.historyId).toBe('900');
-		expect(status.lastFullPullAt).toBe(AT);
 		expect(status.lastSyncedAt).toBe(AT);
 	} finally {
 		session.close();

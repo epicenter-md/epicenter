@@ -14,11 +14,10 @@
  * thrown away and pulled again.
  */
 
-import type { PendingSummary } from './intent-store.ts';
-import type { MailSession } from './accounts.ts';
+import type { IntentStore, PendingSummary } from './intent-store.ts';
+import type { Mailbox } from './mailbox.ts';
 
 export type MailStatus = {
-	accountId: string;
 	/**
 	 * How much of this account's cache can be trusted. `empty` is nothing
 	 * pulled; `building` is a cache whose history cursor has never been set, so
@@ -26,8 +25,6 @@ export type MailStatus = {
 	 * `ready` is a cursor written by `finishFullPull`, after every page landed.
 	 */
 	cache: 'empty' | 'building' | 'ready';
-	historyId: string | null;
-	lastFullPullAt: string | null;
 	lastSyncedAt: string | null;
 	rows: { messages: number; labels: number };
 	/**
@@ -38,26 +35,35 @@ export type MailStatus = {
 	pending: PendingSummary;
 };
 
+/**
+ * The slice a status read touches.
+ *
+ * Declared rather than taking the whole session, for the same reason
+ * `assert.ts` declares `LabelDirectory`: naming what a function reaches is what
+ * says it reaches nothing else. A `ReconcileDeps` satisfies this structurally,
+ * so every caller hands one over unchanged.
+ */
+export type StatusDeps = {
+	mailbox: Mailbox;
+	intents: IntentStore;
+};
+
 export async function readMailStatus({
-	accountId,
 	mailbox,
 	intents,
-}: MailSession): Promise<MailStatus> {
+}: StatusDeps): Promise<MailStatus> {
 	const pending = await intents.summary();
 	const [state, rows] = await Promise.all([
 		mailbox.readCacheState(),
 		mailbox.counts(),
 	]);
 	return {
-		accountId,
 		cache:
 			state.historyId !== null
 				? 'ready'
 				: rows.messages === 0
 					? 'empty'
 					: 'building',
-		historyId: state.historyId,
-		lastFullPullAt: state.lastFullPullAt,
 		lastSyncedAt: state.lastSyncedAt,
 		rows,
 		pending,
