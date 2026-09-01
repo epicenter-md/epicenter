@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createBunAppStorage } from './app-storage.ts';
@@ -36,4 +36,20 @@ test('application SQLite is scoped, async, and batch is atomic', async () => {
 	const otherPath = join(root, 'apps', 'so.epicenter.other', 'sqlite', 'mail.sqlite');
 	expect(Bun.file(mailPath).size).toBeGreaterThan(0);
 	expect(Bun.file(otherPath).size).toBeGreaterThan(0);
+});
+
+test('an open that failed is not remembered', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'epicenter-app-storage-'));
+	const storage = createBunAppStorage(root);
+
+	// A file where the application's directory belongs, so `mkdir` fails the
+	// way a locked or full disk would, and clears the same way.
+	const appDir = join(root, 'apps', 'so.epicenter.mail');
+	await mkdir(join(root, 'apps'), { recursive: true });
+	await Bun.write(appDir, 'in the way');
+	await expect(storage.open('so.epicenter.mail', 'mail')).rejects.toThrow();
+
+	await rm(appDir);
+	const opened = await storage.open('so.epicenter.mail', 'mail');
+	expect((await opened.run('CREATE TABLE recovered (id TEXT)')).error).toBeNull();
 });

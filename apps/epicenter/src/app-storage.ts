@@ -30,6 +30,11 @@ export function createBunAppStorage(root: string): BunAppStorage {
 				database.run('PRAGMA busy_timeout = 5000');
 				return createAsyncHandle(database);
 			})();
+			// A rejected open holds no `Database`, so forgetting it is safe, and
+			// keeping it would answer every later open of this name with a
+			// failure that has already passed: one momentary `mkdir` refusal
+			// would otherwise last as long as the host process.
+			opening.catch(() => opened.delete(key));
 			opened.set(key, opening);
 			return opening;
 		},

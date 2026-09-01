@@ -37,6 +37,11 @@ export function createBrowserSqliteFactory(): (
 			opened = openOpfsDatabase(databaseFilename(appId, name)).then(
 				(database) => createAsyncDatabase(database),
 			);
+			// A rejected open holds no database, so forgetting it is safe, and
+			// keeping it would answer every later open with a failure that has
+			// already passed. Pinned in the Bun leaf, which holds the same rule
+			// and can be driven from a test; OPFS cannot be opened in one.
+			opened.catch(() => databases.delete(key));
 			databases.set(key, opened);
 		}
 		return opened;
