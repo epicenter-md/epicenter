@@ -1873,6 +1873,10 @@ mod tests {
             parse_application_id("honeycrisp"),
             Some(Application::Compiled(BuiltInApp::Honeycrisp))
         ));
+        assert!(matches!(
+            parse_application_id("mail"),
+            Some(Application::Compiled(BuiltInApp::Mail))
+        ));
 
         // Every well-formed non-reserved ID resolves to the app-window path,
         // including ones no generation ever admitted. That is the ownership
@@ -1880,7 +1884,18 @@ mod tests {
         // only offers IDs from the list Bun served it, and an ID that names no
         // member opens a window Bun answers with 404. Re-deriving membership
         // here would be a second catalog with a second answer.
-        for accepted in ["hello-http", "a", "notes2", "x-y-z", "0-", "never-admitted"] {
+        for accepted in [
+            "hello-http",
+            "a",
+            "notes2",
+            "x-y-z",
+            "0-a",
+            // An admitted app's id is its reverse-domain data id, so dots are
+            // part of the grammar rather than a hole in it (ADR-0210).
+            "so.epicenter.local-mail",
+            "hello.http",
+            "never-admitted",
+        ] {
             assert!(
                 matches!(parse_application_id(accepted), Some(Application::Admitted(id)) if id == accepted),
                 "expected {accepted:?} to resolve to the app-window path"
@@ -1891,15 +1906,20 @@ mod tests {
             "",
             "Hello",
             "hello_http",
-            "hello.http",
             "hello/http",
             "..",
             "hello http",
             "héllo",
-            // Reserved windows Home does not list: the shell itself, and
-            // placeholder documents with nothing behind them to open.
+            // An edge must be alphanumeric. `appDataDir` joins an id onto the
+            // one data root, so a grammar admitting a `.` or `-` edge would
+            // hand a caller a path out of it (`packages/constants/src/app-id.ts`).
+            "0-",
+            "-zero",
+            ".hidden",
+            "trailing.",
+            // Reserved windows Home does not list: the shell itself, and a
+            // placeholder document with nothing behind it to open.
             "home",
-            "mail",
             "books",
         ] {
             assert!(
