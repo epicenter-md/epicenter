@@ -5,6 +5,7 @@
 - **Unbuilt:** `epicenter.secrets`, both of its leaves, and Local Mail's browser build.
 - **Amends:** [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md) at one clause. Withdrawn: "a browser tab is not a target, so a native capability seam collapses to its `tauri` leaf and the `default` leaf is deleted rather than maintained." Shipped code already contradicts it: `apps/honeycrisp` carries a `wrangler.jsonc`, a `deploy` script, a `default` browser leaf for `#platform/auth`, and a browser-arm typecheck. A browser build is a target again, and a deliberately reduced one. The one desktop runtime, the client-owned store, and every other refusal in ADR-0227 stand.
 - **Relates:** [ADR-0273](0273-an-epicenter-app-is-an-spa-with-a-namespace-and-background-work-is-a-hidden-window.md) (the host holds several third-party secrets per application behind one host-owned callback, and background work is a hidden window), [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md) (one handle, identical in every runtime, differences as typed failures), [ADR-0306](0306-borrowed-data-is-disposable-and-a-persons-own-data-is-not.md) (why the account list cannot live in the mailbox), and [ADR-0304](0304-application-persistence-is-runtime-selected-and-scoped-by-its-owning-app.md) (the scoping shape this reuses)
+- **Relates:** [ADR-0316](0316-an-application-creates-one-scoped-epicenter-handle.md) (the application-facing handle that carries this capability)
 
 ## Context
 

@@ -22,7 +22,7 @@
  *     also run INTERLEAVED, which is what the record's loop does and the only
  *     number a first reader actually waits on.
  *   - Two indexes are measured, because they differ by more than noise:
- *       scalar   the row's fields only
+ *       value    the row's fields only
  *       content  the fields plus `content.toString()`, which is what a
  *                full-text index over note bodies has to have
  *   - Untransacted insert is measured once per size as a control, not per
@@ -157,7 +157,7 @@ function check(db: Database, size: number, withContent: boolean): void {
 		if ((bytes.b ?? 0) < size * BODY.length)
 			throw new Error(`indexed ${bytes.b} body bytes, expected the whole corpus`);
 	} else if (bytes.b !== null) {
-		throw new Error('the scalar index carried bodies it was not given');
+		throw new Error('the value index carried bodies it was not given');
 	}
 }
 

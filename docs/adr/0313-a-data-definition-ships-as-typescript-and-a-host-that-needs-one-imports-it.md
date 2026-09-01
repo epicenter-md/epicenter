@@ -6,6 +6,7 @@
 - **Amends:** [ADR-0296](0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md) at its reason for an optional codec. Its decision that a table owns its file codec is unchanged; what is withdrawn is the carve-out that a definition arriving as JSON cannot carry one.
 - **Amends:** [ADR-0210](0210-an-installed-app-declares-its-name-and-the-namespace-it-owns.md) at the file a declaration arrives in. The declaration itself, and the refusal of a permission grant, an installed-app registry, and publisher identity, are unchanged.
 - **Relates:** [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md) (superseded by ADR-0227; its refusal to read application source is what this record reverses, for first-party members only), [ADR-0305](0305-the-third-party-app-catalog-is-a-future-epicenter-deployment-plane.md) (which says admission and artifact trust need their own decision before a third-party plane ships, and this is not that decision), [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md) and [ADR-0240](0240-an-application-declares-one-workspace-and-an-opened-runtime-holds-exactly-one-definition.md) (a definition is inert and holds no storage or lifecycle, which stays true)
+- **Relates:** [ADR-0316](0316-an-application-creates-one-scoped-epicenter-handle.md) (the application opens this definition through its scoped handle)
 
 ## Context
 
