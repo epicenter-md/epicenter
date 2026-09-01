@@ -400,8 +400,8 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0316](0316-an-application-creates-one-scoped-epicenter-handle.md) | An application creates one scoped Epicenter handle | Accepted (amends 0303 at the constructor name and application-facing handle) |
 | [0317](0317-local-mail-is-an-epicenter-application-without-a-standalone-cli.md) | Local Mail is an Epicenter application without a standalone CLI | Accepted (unbuilt: the desktop hidden synchronization worker; deletes the standalone runtime and human CLI) |
 | [0318](0318-epicenter-data-is-what-epicenter-is-the-authority-for-and-a-foreign-write-is-a-command.md) | Epicenter Data is what Epicenter is the authority for, and a foreign write is a command | Accepted (amends 0306's classification test) |
-| [0319](0319-local-mail-is-device-local-and-its-storage-splits-by-lifetime.md) | Local Mail is device-local, and its storage splits by lifetime | Accepted (unbuilt; amends 0310 at the synchronizing registry) |
-| [0320](0320-removing-an-account-settles-what-it-owes-before-anything-is-deleted.md) | Removing an account settles what it owes before anything is deleted | Accepted (unbuilt) |
-| [0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md) | App-owned storage is named SQLite files an application opens and deletes, and nothing else | Accepted (unbuilt: the delete verb; amends 0312 at the handle lifecycle) |
+| [0319](0319-local-mail-is-device-local-and-its-storage-splits-by-lifetime.md) | Local Mail is device-local, and its storage splits by lifetime | Accepted (amends 0310 at the synchronizing registry) |
+| [0320](0320-removing-an-account-settles-what-it-owes-before-anything-is-deleted.md) | Removing an account settles what it owes before anything is deleted | Accepted |
+| [0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md) | App-owned storage is named SQLite files an application opens and deletes, and nothing else | Accepted (amends 0312 at the handle lifecycle) |
 
 When you add an ADR, add its row here.

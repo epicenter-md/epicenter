@@ -2,7 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-01
-- **Unbuilt:** the delete verb. The refusal of an app-owned key-value surface is
+- **Built.** `deleteSqlite` exists in both leaves and the host owner, and Local
+  Mail is its first caller. The refusal of an app-owned key-value surface is
   built by not existing, and `cache_meta` and `intent_meta` are already the shape
   this record decides.
 - **Amends:** [ADR-0312](0312-a-sqlite-handle-is-all-run-and-batch-and-a-transaction-never-crosses-a-process-boundary.md) at one refusal. It refuses a `close()` on the handle, because the connection's lifetime belongs to the process that opened it and never to the page. That refusal is narrowed rather than withdrawn: an application still cannot close a handle, and deleting a database closes it as part of deleting it. The three verbs, the absent transaction callback, and the process boundary all stand.

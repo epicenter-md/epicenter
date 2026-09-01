@@ -16,6 +16,7 @@
 	import MessageList from '$lib/components/MessageList.svelte';
 	import StatusBar from '$lib/components/StatusBar.svelte';
 	import ConnectPanel from '$lib/components/ConnectPanel.svelte';
+	import RemoveAccountDialog from '$lib/components/RemoveAccountDialog.svelte';
 	import { mail } from '$lib/mail';
 
 	// Default to the inbox: this is a triage surface, and the inbox is the queue.
@@ -25,6 +26,12 @@
 	// Page-owned so the `l` key can open the detail pane's Labels menu.
 	let labelsOpen = $state(false);
 	let shortcutsOpen = $state(false);
+	// The account a person asked to remove, which is what opens the dialog that
+	// decides what removing it costs.
+	let removing = $state<{ sub: string; email: string } | null>(null);
+	// Connecting from the menu is the same flow the empty state runs, so the
+	// panel owns it and this only says whether it is on screen.
+	let connecting = $state(false);
 
 	const queryClient = useQueryClient();
 
@@ -176,15 +183,21 @@
 	// opposed to this label or search view simply matching none. Drives which
 	// empty state the list shows: "reconcile" against "no match".
 	const mirrorEmpty = $derived((status.data?.rows.messages ?? 0) === 0);
-	const reconcileError = $derived(
-		reconcile.error?.message ??
-			(reconcile.data && 'delivery' in reconcile.data
-				? (reconcile.data.delivery.failure?.message ??
-					reconcile.data.pull.failure?.message ??
-					null)
-				: null) ??
-			null,
+	const reconcileFailure = $derived(
+		reconcile.data && 'delivery' in reconcile.data
+			? (reconcile.data.delivery.failure ?? reconcile.data.pull.failure ?? null)
+			: null,
 	);
+	const reconcileError = $derived(
+		reconcile.error?.message ?? reconcileFailure?.message ?? null,
+	);
+	/**
+	 * Google stopped honouring this account's grant, which is the one state
+	 * where an account outlives its credential (ADR-0320). Nobody chose it, so
+	 * it is shown rather than offered, and signing in again lands on the same
+	 * account and delivers what was waiting.
+	 */
+	const signInExpired = $derived(reconcileFailure?.name === 'ReauthRequired');
 
 	// Keep the selection valid: default to the first row, and re-resolve when a
 	// filter change drops the current selection out of the list.
@@ -291,17 +304,29 @@
 		}}
 		reconciling={reconcile.isPending}
 		{reconcileError}
+		{signInExpired}
+		onSignIn={() => (connecting = true)}
 		onReconcile={() => {
 			if (selectedAccount) reconcile.mutate();
 		}}
+		onConnectAnother={() => (connecting = true)}
+		onRemoveAccount={() => {
+			const account = (accountsQuery.data ?? []).find(
+				(candidate) => candidate.sub === selectedAccount,
+			);
+			if (account) removing = { sub: account.sub, email: account.email };
+		}}
 	/>
 
-	{#if (accountsQuery.data ?? []).length === 0}
+	{#if (accountsQuery.data ?? []).length === 0 || connecting}
 		<ConnectPanel
 			loading={accountsQuery.isPending}
+			another={connecting}
 			onConnected={() => {
+				connecting = false;
 				queryClient.invalidateQueries({ queryKey: ['accounts'] });
 			}}
+			onCancel={() => (connecting = false)}
 		/>
 	{:else}
 	<div class="flex min-h-0 flex-1">
@@ -337,6 +362,18 @@
 	</div>
 	{/if}
 </div>
+
+<RemoveAccountDialog
+	account={removing}
+	onClose={() => (removing = null)}
+	onRemoved={() => {
+		// The switcher re-resolves to whatever is left, and to nothing when this
+		// was the last account, which is the connect panel again.
+		selectedAccount = null;
+		selectedId = null;
+		queryClient.invalidateQueries({ queryKey: ['accounts'] });
+	}}
+/>
 
 <Dialog.Root open={shortcutsOpen} onOpenChange={(open) => (shortcutsOpen = open)}>
 	<Dialog.Content class="max-w-sm">

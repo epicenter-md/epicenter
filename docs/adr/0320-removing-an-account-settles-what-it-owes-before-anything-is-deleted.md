@@ -2,10 +2,12 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-01
-- **Unbuilt:** all of it. `disconnectAccount` deletes the credential, resets the
-  cache, and deletes the account row while leaving the account's undelivered
-  assertions behind. `mail.disconnect` exposes it and no component calls it, so
-  no person-facing control reaches it.
+- **Built.** One verb, the deliver-or-discard question, the hold until the count
+  reads zero, reachability order, and the inflicted sign-in-expired state all
+  exist, and the account menu reaches them. What this replaced:
+  `disconnectAccount` deleted the credential, reset the cache, and deleted the
+  account row while leaving the account's undelivered assertions behind under an
+  id nothing could produce again, and no person-facing control reached it.
 - **Relates:** [ADR-0319](0319-local-mail-is-device-local-and-its-storage-splits-by-lifetime.md) (the storage this operates on), [ADR-0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md) (the credential is the only artifact nothing else can name), [ADR-0318](0318-epicenter-data-is-what-epicenter-is-the-authority-for-and-a-foreign-write-is-a-command.md) (undelivered triage is a command, and a command is owed to its authority), and [ADR-0306](0306-borrowed-data-is-disposable-and-a-persons-own-data-is-not.md) (which artifacts are disposable)
 
 ## Context

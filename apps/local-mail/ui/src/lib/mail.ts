@@ -24,7 +24,7 @@ import {
 	listAccounts,
 	type MailApp,
 	openSession,
-	pendingCount,
+	pendingWork,
 	recordSynced,
 	removeAccount,
 	startConnect,
@@ -93,8 +93,7 @@ export const mail = {
 	},
 
 	/** What Gmail has not been told about yet, which is what removal turns on. */
-	pending: async (sub: string): Promise<number> =>
-		pendingCount(await app(), sub),
+	pending: async (sub: string) => pendingWork(await app(), sub),
 
 	/** Abandon this account's undelivered triage. A thing to mean on purpose. */
 	discard: async (sub: string): Promise<number> =>

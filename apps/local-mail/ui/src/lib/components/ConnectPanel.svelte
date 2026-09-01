@@ -10,10 +10,19 @@
 	import { mail } from '$lib/mail';
 	import { gmailAuthorization } from '#platform/gmail-authorization';
 
-	let { loading, onConnected }: {
+	let { loading, another = false, onConnected, onCancel }: {
 		loading: boolean;
+		/**
+		 * Whether this is the person's first account or one more.
+		 *
+		 * The same flow either way, because connecting a second account is not a
+		 * different act. What changes is that there is a mailbox to go back to.
+		 */
+		another?: boolean;
 		/** Called when an account may have appeared, so the list re-reads. */
 		onConnected: () => void;
+		/** Leave without connecting. Only reachable when there is a mailbox behind this. */
+		onCancel?: () => void;
 	} = $props();
 
 	let starting = $state(false);
@@ -43,7 +52,9 @@
 		<Empty.Root>
 			<Empty.Header>
 				<Empty.Media variant="icon"><MailIcon /></Empty.Media>
-				<Empty.Title>Connect a Gmail account</Empty.Title>
+				<Empty.Title>
+					{another ? 'Connect another Gmail account' : 'Connect a Gmail account'}
+				</Empty.Title>
 				<Empty.Description>
 					Local Mail keeps a copy of your mail on this machine and delivers your
 					triage back to Gmail. Your credential stays in this device's secure
@@ -52,9 +63,16 @@
 			</Empty.Header>
 			<Empty.Content>
 				{#if hasGmailIdentity()}
-					<Button onclick={connect} disabled={starting}>
-						{starting ? 'Waiting for Google' : 'Connect Gmail'}
-					</Button>
+					<div class="flex items-center gap-2">
+						<Button onclick={connect} disabled={starting}>
+							{starting ? 'Waiting for Google' : 'Connect Gmail'}
+						</Button>
+						{#if another && onCancel}
+							<Button variant="ghost" onclick={onCancel} disabled={starting}>
+								Cancel
+							</Button>
+						{/if}
+					</div>
 				{:else}
 					<p class="text-sm text-muted-foreground">
 						This build has no Google OAuth client compiled in. Set

@@ -2,9 +2,11 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-01
-- **Unbuilt:** all of it. The application mints an `accountId` row in Epicenter
-  Data, partitions one shared `mail.sqlite` by an `account_id` column, and keeps
-  a separate `intent.sqlite`.
+- **Built.** The subject is the partition key, the two lifetimes are two kinds
+  of file, `user_version` carries the shape, and `TRUSTED_DEFINITIONS` is empty.
+  What this replaced: a minted `accountId` row in Epicenter Data, one shared
+  `mail.sqlite` partitioned by an `account_id` column, and a separate
+  `intent.sqlite`.
 - **Amends:** [ADR-0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md) at the account registry's home and at its synchronization, which are both withdrawn. Its obligations table row "which accounts are connected | a person's own data | Epicenter Data, synchronizes" is replaced by a table in the application's own durable SQLite, which does not synchronize: the credential cannot, so a row on a device holding no credential lists an account that device cannot read. Its rejection of "the account list in the application's own SQLite" is withdrawn with its premise. That rejection reasoned that ADR-0306 makes the file deletable at any moment, so clearing a cache would sign a person out of every account. Splitting storage by lifetime dissolves it: the registry lives in the file that is never unlinked, beside the durable triage, and a cache reset unlinks a different file. The labeled secret, the absent `secrets.list`, the browser leaf that keeps nothing, and "deleting the mailbox does not sign anybody out" all stand, and the last one is now true by the layout rather than by which store holds the list.
 - **Relates:** [ADR-0318](0318-epicenter-data-is-what-epicenter-is-the-authority-for-and-a-foreign-write-is-a-command.md) (the classification test this record applies), [ADR-0306](0306-borrowed-data-is-disposable-and-a-persons-own-data-is-not.md) (the obligations each class carries), [ADR-0304](0304-application-persistence-is-runtime-selected-and-scoped-by-its-owning-app.md) (the application-scoped directory), and [ADR-0317](0317-local-mail-is-an-epicenter-application-without-a-standalone-cli.md) (Local Mail's one application lifecycle)
 
