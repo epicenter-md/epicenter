@@ -1854,11 +1854,7 @@ describe('the application storage owner', () => {
 				dataId: localMailDatabase.id,
 			});
 			expect(admitted.status).toBe(200);
-			expect(await admitted.json()).toEqual({
-				kind: 'data-open',
-				dataId: localMailDatabase.id,
-				title: localMailDatabase.title,
-			});
+			expect(await admitted.json()).toEqual({ kind: 'data-open' });
 
 			// The release ships no such data id.
 			const unknown = await post(server, {

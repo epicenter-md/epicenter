@@ -71,9 +71,6 @@ export const SecretError = defineErrors({
 });
 export type SecretError = InferErrors<typeof SecretError>;
 
-export type AppSqliteRow = SqliteRow;
-export type AppSqliteValue = SqliteValue;
-
 /**
  * All `run`, `all`, and `batch` (ADR-0312). A transaction never crosses this
  * boundary, so `batch` is how several statements become one, and there is no

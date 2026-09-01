@@ -102,7 +102,12 @@ export type AppStorageRequest =
 		};
 
 export type AppStorageResponse =
-	| { kind: 'data-open'; dataId: string; title: string }
+	/**
+	 * Admission, and nothing else. It carried the id and the title back and no
+	 * caller read either: the answer to "may I open this" is that the owner
+	 * answered at all.
+	 */
+	| { kind: 'data-open' }
 	| { kind: 'sqlite-run'; changes: number }
 	| { kind: 'sqlite-all'; rows: readonly Record<string, unknown>[] }
 	| { kind: 'sqlite-batch'; changes: readonly number[] }

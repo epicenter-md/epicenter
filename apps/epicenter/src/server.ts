@@ -295,13 +295,8 @@ export function createHomeServer({
 		// release does not ship is a 404 rather than a 400: the message was
 		// well formed and the answer is that there is no such data here.
 		if (request.kind === 'data-open') {
-			const definition = admitData(request);
-			if (definition === undefined) return c.text('Not Found', 404);
-			return c.json({
-				kind: 'data-open',
-				dataId: definition.id,
-				title: definition.title ?? definition.id,
-			} satisfies AppStorageResponse);
+			if (admitData(request) === undefined) return c.text('Not Found', 404);
+			return c.json({ kind: 'data-open' } satisfies AppStorageResponse);
 		}
 		try {
 			if (request.kind === 'secret-put') {

@@ -17,13 +17,7 @@ function ownerFor(
 const DEFINITION = { id: 'so.epicenter.test', title: 'Test' };
 
 test('opening data sends the definition identity, not the definition', async () => {
-	const owner = ownerFor((request) =>
-		Response.json({
-			kind: request.kind,
-			dataId: 'so.epicenter.test',
-			title: 'Test',
-		}),
-	);
+	const owner = ownerFor((request) => Response.json({ kind: request.kind }));
 	const binding = createDesktopBinding({
 		appId: 'so.epicenter.test',
 		baseURL: 'http://127.0.0.1:1',

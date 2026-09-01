@@ -33,7 +33,7 @@ import {
 	SecretError,
 	type SecretStore,
 } from './index.js';
-import { openClientOwnedData } from './browser.js';
+import { openClientOwnedData } from './client-owned-data.js';
 import {
 	APP_STORAGE_PATH,
 	type AppStorageRequest,
@@ -110,7 +110,7 @@ function createOwnedSqlite(
 ): AppSqliteDatabase {
 	return {
 		run: (sql, parameters) =>
-			expect(
+			unwrap(
 				request({
 					kind: 'sqlite-run',
 					appId,
@@ -124,7 +124,7 @@ function createOwnedSqlite(
 			sql: string,
 			parameters?: readonly SqliteValue[],
 		) =>
-			expect(
+			unwrap(
 				request({
 					kind: 'sqlite-all',
 					appId,
@@ -135,7 +135,7 @@ function createOwnedSqlite(
 				(response) => response.rows as TRow[],
 			),
 		batch: (statements) =>
-			expect(
+			unwrap(
 				request({ kind: 'sqlite-batch', appId, name, statements }),
 				'sqlite-batch',
 				(response) => ({ changes: [...response.changes] }),
@@ -180,7 +180,7 @@ function createKeychainSecrets(
 }
 
 /** Unwrap one response, refusing an owner that answered about something else. */
-function expect<TKind extends AppStorageResponse['kind'], TValue>(
+function unwrap<TKind extends AppStorageResponse['kind'], TValue>(
 	pending: Promise<Result<AppStorageResponse, AppError>>,
 	kind: TKind,
 	read: (response: Extract<AppStorageResponse, { kind: TKind }>) => TValue,

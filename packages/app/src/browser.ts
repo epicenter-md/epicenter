@@ -10,14 +10,7 @@
  * derive is a key anything in the origin can derive.
  */
 
-import {
-	createGeneration,
-	newestGeneration,
-	openDatabase,
-} from '@epicenter/data/browser';
-import type { DataDefinition } from '@epicenter/data/definition';
-import type { LocalData } from '@epicenter/data';
-import { Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Ok, tryAsync } from 'wellcrafted/result';
 import {
 	AppError,
 	type AppSqliteDatabase,
@@ -25,6 +18,7 @@ import {
 	type SecretStore,
 } from './index.js';
 import { createBrowserSqliteFactory } from './browser-sqlite.js';
+import { openClientOwnedData } from './client-owned-data.js';
 
 type BrowserSqliteFactory = (
 	appId: string,
@@ -47,40 +41,8 @@ export function createBrowserBinding(options: {
 	};
 }
 
-/**
- * Open the newest generation of this definition's client-owned store, minting
- * one when the machine has never held it.
- *
- * Shared with the desktop leaf, because a person's Epicenter Data is
- * client-owned in every runtime: the host serves bundles and brokers
- * capabilities, and owns no application data (ADR-0226, ADR-0227).
- */
-export async function openClientOwnedData<TDefinition extends DataDefinition>(
-	definition: TDefinition,
-): Promise<Result<LocalData<TDefinition>, AppError>> {
-	const generation = await newestGeneration(definition.id);
-	if (generation === undefined) {
-		const created = await createGeneration(definition);
-		if (created.error !== null) {
-			return AppError.StorageFailed({ cause: created.error });
-		}
-		return openGeneration(definition, created.data.generation);
-	}
-	return openGeneration(definition, generation);
-}
-
-async function openGeneration<TDefinition extends DataDefinition>(
-	definition: TDefinition,
-	generation: number,
-): Promise<Result<LocalData<TDefinition>, AppError>> {
-	const opened = await openDatabase(definition, { generation });
-	return opened.error === null
-		? Ok(opened.data)
-		: AppError.StorageFailed({ cause: opened.error });
-}
-
 /** In memory, for the life of the tab, permanently rather than provisionally. */
-export function createTabMemorySecrets(): SecretStore {
+function createTabMemorySecrets(): SecretStore {
 	const values = new Map<string, string>();
 	return {
 		put: async (accountId, value) => {
@@ -94,5 +56,3 @@ export function createTabMemorySecrets(): SecretStore {
 		},
 	};
 }
-
-export type { BrowserSqliteFactory };
