@@ -3,8 +3,8 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import type { AppConfig } from './config.ts';
-import type { MailDb, RealmState } from './db.ts';
+import type { MailConfig } from './config.ts';
+import type { CacheState, Mailbox } from './mailbox.ts';
 import type { GmailClient, GmailClientError } from './gmail-client.ts';
 import type { GmailMessage, HistoryRecord } from './schema.ts';
 
@@ -16,7 +16,7 @@ type ModeDecision = { mode: SyncMode; reason: string };
 
 type ModeInputs = {
 	forceFull: boolean;
-	realmState: RealmState;
+	cacheState: CacheState;
 	now: number;
 	historySafeWindowDays: number;
 	fullBackstopDays: number;
@@ -33,21 +33,21 @@ type ModeInputs = {
  */
 export function decideMode({
 	forceFull,
-	realmState,
+	cacheState,
 	now,
 	historySafeWindowDays,
 	fullBackstopDays,
 }: ModeInputs): ModeDecision {
-	if (forceFull) return { mode: 'FULL', reason: 'forced (--full)' };
+	if (forceFull) return { mode: 'FULL', reason: 'forced' };
 
-	if (!realmState.historyId)
+	if (!cacheState.historyId)
 		return { mode: 'FULL', reason: 'no cursor (first run)' };
-	if (!realmState.lastSyncedAt) {
+	if (!cacheState.lastSyncedAt) {
 		return { mode: 'FULL', reason: 'cursor present but no recorded sync time' };
 	}
 
 	const sinceLastSyncDays =
-		(now - Date.parse(realmState.lastSyncedAt)) / DAY_MS;
+		(now - Date.parse(cacheState.lastSyncedAt)) / DAY_MS;
 	if (sinceLastSyncDays > historySafeWindowDays) {
 		return {
 			mode: 'FULL',
@@ -55,9 +55,9 @@ export function decideMode({
 		};
 	}
 
-	if (!realmState.lastFullPullAt)
+	if (!cacheState.lastFullPullAt)
 		return { mode: 'FULL', reason: 'no recorded full pull' };
-	const fullAgeDays = (now - Date.parse(realmState.lastFullPullAt)) / DAY_MS;
+	const fullAgeDays = (now - Date.parse(cacheState.lastFullPullAt)) / DAY_MS;
 	if (fullAgeDays > fullBackstopDays) {
 		return {
 			mode: 'FULL',
@@ -72,11 +72,11 @@ export function decideMode({
 }
 
 /**
- * A concurrent writer (another sync pass in a second process) held the mirror
- * lock past the 5s busy timeout. The failed transaction rolled back whole, so
- * the cursor did not advance and the next pass retries the same window; this
- * is a reportable outcome, not a crash, because a watch loop and an MCP host
- * syncing the same mirror is a supported arrangement.
+ * A concurrent writer held the cache's lock past the busy timeout. The failed
+ * batch rolled back whole, so the cursor did not advance and the next pass
+ * retries the same window. It is a reportable outcome rather than a crash,
+ * because a visible window and a hidden synchronization worker writing the same
+ * database is the supported desktop arrangement (ADR-0317).
  */
 export const MirrorWriteError = defineErrors({
 	MirrorBusy: ({ cause }: { cause: unknown }) => ({
@@ -108,9 +108,9 @@ export type SyncOutcome = {
 };
 
 export type SyncDeps = {
-	db: MailDb;
+	mailbox: Mailbox;
 	client: GmailClient;
-	config: AppConfig;
+	config: MailConfig;
 	now: () => number;
 	log?: (message: string) => void;
 };
@@ -150,7 +150,7 @@ async function fullPull(
 	deps: SyncDeps,
 	syncedAt: string,
 ): Promise<{ upserted: number; failure: GmailClientError | null }> {
-	const { db, client } = deps;
+	const { mailbox, client } = deps;
 	const log = deps.log ?? (() => {});
 	let upserted = 0;
 	let pageToken: string | undefined;
@@ -180,7 +180,7 @@ async function fullPull(
 			}
 		}
 
-		db.ingestFullPullPage(messages, syncedAt);
+		await mailbox.ingestFullPullPage(messages, syncedAt);
 		upserted += messages.length;
 		log(
 			`full pull: page ${page}, ${messages.length} messages (${upserted} total)`,
@@ -192,7 +192,7 @@ async function fullPull(
 
 	const labels = await client.listLabels();
 	if (labels.error) return { upserted, failure: labels.error };
-	db.ingestLabels(labels.data, syncedAt);
+	await mailbox.ingestLabels(labels.data, syncedAt);
 
 	return { upserted, failure: null };
 }
@@ -245,7 +245,7 @@ function foldHistoryRecords(
  * Incremental refresh: paginate `history.list` from `cursorBefore`, fold every
  * record into a final per-message action, fetch full content for anything
  * that needs it, then apply the whole batch and advance the cursor in one
- * transaction (`db.applyHistoryBatch`). A `messages.get` 404 for a message
+ * batch (`mailbox.applyHistoryBatch`). A `messages.get` 404 for a message
  * flagged `upsert` (added, then permanently deleted before we fetched it) is
  * folded into a delete rather than failing the pass. Any other failure aborts
  * without advancing the cursor, so the next pass re-pulls the same window.
@@ -255,7 +255,7 @@ async function incrementalPoll(
 	cursorBefore: string,
 	syncedAt: string,
 ): Promise<SyncOutcome> {
-	const { db, client } = deps;
+	const { mailbox, client } = deps;
 	const log = deps.log ?? (() => {});
 	const records: HistoryRecord[] = [];
 	let newHistoryId = cursorBefore;
@@ -287,7 +287,7 @@ async function incrementalPoll(
 			messagesToDelete.push(id);
 			continue;
 		}
-		if (action.kind === 'labelPatch' && db.hasMessage(id)) {
+		if (action.kind === 'labelPatch' && (await mailbox.hasMessage(id))) {
 			labelPatches.push({ messageId: id, labelIds: action.labelIds });
 			continue;
 		}
@@ -316,10 +316,10 @@ async function incrementalPoll(
 			`labels.list failed during incremental refresh: ${labels.error.message}`,
 		);
 	} else {
-		db.ingestLabels(labels.data, syncedAt);
+		await mailbox.ingestLabels(labels.data, syncedAt);
 	}
 
-	const { labelsChanged } = db.applyHistoryBatch({
+	const { labelsChanged } = await mailbox.applyHistoryBatch({
 		messagesToUpsert,
 		messagesToDelete,
 		labelPatches,
@@ -348,28 +348,27 @@ export async function syncMailbox(
 	deps: SyncDeps,
 	{ forceFull }: { forceFull: boolean },
 ): Promise<SyncOutcome> {
-	const { db, config, now } = deps;
+	const { mailbox, config, now } = deps;
 	const log = deps.log ?? (() => {});
 
-	const realmState = db.readRealmState();
+	const cacheState = await mailbox.readCacheState();
 	const nowMs = now();
 	const decision = decideMode({
 		forceFull,
-		realmState,
+		cacheState,
 		now: nowMs,
 		historySafeWindowDays: config.historySafeWindowDays,
 		fullBackstopDays: config.fullBackstopDays,
 	});
-	const cursorBefore = realmState.historyId;
+	const cursorBefore = cacheState.historyId;
 	const syncedAt = new Date(nowMs).toISOString();
 	let fullReason = decision.reason;
 	log(`sync: ${decision.mode} (${decision.reason})`);
 
-	// SQLITE_BUSY past the busy timeout throws out of the MailDb mutations;
-	// map it to a failed outcome here so a lock lost to a concurrent writer
-	// reports like any other failed pass instead of killing the process (CLI
-	// watch) or corrupting into a protocol error (MCP). Anything else keeps
-	// throwing: it is a bug, not an operational condition.
+	// SQLITE_BUSY past the busy timeout throws out of the cache writes; map it
+	// to a failed outcome so a lock lost to a concurrent writer reports like any
+	// other failed pass instead of taking the surface down with it. Anything
+	// else keeps throwing: it is a bug, not an operational condition.
 	try {
 		if (decision.mode === 'INCREMENTAL' && cursorBefore) {
 			const outcome = await incrementalPoll(deps, cursorBefore, syncedAt);
@@ -390,7 +389,10 @@ export async function syncMailbox(
 			return failedOutcome('FULL', fullReason, cursorBefore, failure, upserted);
 		}
 
-		const messagesDeleted = db.finishFullPull(profile.data.historyId, syncedAt);
+		const messagesDeleted = await mailbox.finishFullPull(
+			profile.data.historyId,
+			syncedAt,
+		);
 		return {
 			mode: 'FULL',
 			reason: fullReason,

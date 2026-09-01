@@ -136,6 +136,7 @@
 		"dev:honeycrisp": "bun run --filter @epicenter/api --filter @epicenter/honeycrisp dev",
 		"dev:honeycrisp:ui": "bun run --cwd apps/honeycrisp dev:web",
 		"dev:landing": "bun run --cwd apps/landing dev",
+		"dev:local-mail": "bun run --cwd apps/local-mail/ui dev",
 		"dev:matter": "bun run --cwd apps/matter dev",
 		"dev:matter:ui": "bun run --cwd apps/matter dev:web",
 		"dev:posthog-reverse-proxy": "bun run --cwd apps/posthog-reverse-proxy dev",

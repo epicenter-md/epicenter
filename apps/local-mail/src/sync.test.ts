@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { RealmState } from './db.ts';
+import type { CacheState } from './mailbox.ts';
 import { decideMode } from './sync.ts';
 
 const NOW = Date.parse('2026-07-01T00:00:00.000Z');
@@ -12,7 +12,7 @@ const base = {
 	fullBackstopDays: 30,
 };
 
-function state(over: Partial<RealmState>): RealmState {
+function state(over: Partial<CacheState>): CacheState {
 	return {
 		historyId: null,
 		lastFullPullAt: null,
@@ -26,7 +26,7 @@ describe('decideMode', () => {
 		const decision = decideMode({
 			...base,
 			forceFull: true,
-			realmState: state({
+			cacheState: state({
 				historyId: '100',
 				lastSyncedAt: daysAgo(1),
 				lastFullPullAt: daysAgo(1),
@@ -38,7 +38,7 @@ describe('decideMode', () => {
 
 	test('first run (no history cursor) is FULL', () => {
 		expect(
-			decideMode({ ...base, forceFull: false, realmState: state({}) }).mode,
+			decideMode({ ...base, forceFull: false, cacheState: state({}) }).mode,
 		).toBe('FULL');
 	});
 
@@ -47,7 +47,7 @@ describe('decideMode', () => {
 			decideMode({
 				...base,
 				forceFull: false,
-				realmState: state({ historyId: '100', lastSyncedAt: null }),
+				cacheState: state({ historyId: '100', lastSyncedAt: null }),
 			}).mode,
 		).toBe('FULL');
 	});
@@ -56,7 +56,7 @@ describe('decideMode', () => {
 		const decision = decideMode({
 			...base,
 			forceFull: false,
-			realmState: state({
+			cacheState: state({
 				historyId: '100',
 				lastSyncedAt: daysAgo(1),
 				lastFullPullAt: daysAgo(2),
@@ -69,7 +69,7 @@ describe('decideMode', () => {
 		const decision = decideMode({
 			...base,
 			forceFull: false,
-			realmState: state({
+			cacheState: state({
 				historyId: '100',
 				lastSyncedAt: daysAgo(6),
 				lastFullPullAt: daysAgo(6),
@@ -83,7 +83,7 @@ describe('decideMode', () => {
 		const decision = decideMode({
 			...base,
 			forceFull: false,
-			realmState: state({
+			cacheState: state({
 				historyId: '100',
 				lastSyncedAt: daysAgo(1),
 				lastFullPullAt: daysAgo(31),
@@ -97,7 +97,7 @@ describe('decideMode', () => {
 		const decision = decideMode({
 			...base,
 			forceFull: false,
-			realmState: state({
+			cacheState: state({
 				historyId: '100',
 				lastSyncedAt: daysAgo(1),
 				lastFullPullAt: null,

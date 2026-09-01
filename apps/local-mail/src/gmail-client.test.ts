@@ -14,21 +14,17 @@
 
 import { expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
-import type { AppConfig } from './config.ts';
+import type { MailConfig } from './config.ts';
 import { createGmailClient } from './gmail-client.ts';
 import type { TokenManager } from './token-manager.ts';
 
-const config: AppConfig = {
-	dataDir: '/tmp/local-mail-gmail-client-test',
+const config: MailConfig = {
 	apiBase: 'http://127.0.0.1:0',
 	authorizeUrl: 'http://127.0.0.1:0/auth',
 	tokenUrl: 'http://127.0.0.1:0/token',
 	historySafeWindowDays: 5,
 	fullBackstopDays: 30,
 	pageSize: 100,
-	credentialsPath: '/tmp/local-mail-gmail-client-test/credentials.json',
-	account: null,
-	readOnly: false,
 };
 
 const tokens: TokenManager = {

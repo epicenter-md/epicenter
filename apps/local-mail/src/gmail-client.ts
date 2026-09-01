@@ -2,7 +2,7 @@ import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { AppConfig } from './config.ts';
+import type { MailConfig } from './config.ts';
 import {
 	type GmailLabel,
 	type GmailMessage,
@@ -125,7 +125,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  *   back to a full sync. https://developers.google.com/gmail/api/guides/sync
  */
 export function createGmailClient(deps: {
-	config: AppConfig;
+	config: MailConfig;
 	tokens: TokenManager;
 	log?: (message: string) => void;
 }) {

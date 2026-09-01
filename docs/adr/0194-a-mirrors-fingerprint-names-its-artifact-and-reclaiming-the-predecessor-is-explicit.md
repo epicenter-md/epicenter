@@ -12,6 +12,7 @@ Local Books and Local Mail each keep a SQLite mirror of an external authority,
 and each decides at open time whether the file on disk still matches the code
 about to read it. Local Mail compares a hand-stamped `SCHEMA_VERSION` and, on
 mismatch, unlinks `mail.db` plus its `-wal` and `-shm` sidecars and reopens
+<!-- doc-path-check: ignore-next-line -->
 (`apps/local-mail/src/db.ts:186`). An in-progress Local Books experiment
 replaced the hand-stamped constant with a declaration fingerprint but kept the
 same in-place shape: compare a `_meta` row, then drop every table it finds in
@@ -22,6 +23,7 @@ mirror from five call sites, one of which is a single-row recategorize
 write-back, so a declaration edit means whichever site opens first erases the
 corpus. Local Mail's unlink runs while `status` and `query` may hold read-only
 handles that the sync lock deliberately does not cover
+<!-- doc-path-check: ignore-next-line -->
 (`apps/local-mail/src/lock.ts`). The repository already refuses this shape
 elsewhere: `packages/sqlite/src/index.ts` defines `StorageUpgradeRequiredError`
 precisely so that a generic SQLite adapter never repairs or recreates a file

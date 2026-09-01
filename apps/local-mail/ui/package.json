@@ -1,6 +1,6 @@
 {
 	"name": "@epicenter/local-mail-ui",
-	"description": "Local Mail triage SPA, served same-origin by `local-mail app`",
+	"description": "Local Mail: the Epicenter application, built for the host and for the web.",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
@@ -18,7 +18,6 @@
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"devDependencies": {
-		"@epicenter/local-mail": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@lucide/svelte": "catalog:",
 		"@sveltejs/adapter-static": "catalog:",
@@ -38,11 +37,10 @@
 	},
 	"dependencies": {
 		"@epicenter/app": "workspace:*",
-		"@epicenter/constants": "workspace:*",
+		"@epicenter/local-mail": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
 		"arkregex": "catalog:",
-		"dompurify": "^3.4.10",
-		"hono": "catalog:"
+		"dompurify": "^3.4.10"
 	},
 	"license": "AGPL-3.0-or-later"
 }

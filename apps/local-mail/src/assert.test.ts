@@ -13,12 +13,9 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { type AssertDeps, assertMessageLabels } from './assert.ts';
-import { type MailDb, openMailDb } from './db.ts';
-import { openIntentDb } from './intent.ts';
+import type { Mailbox } from './mailbox.ts';
+import { openTestSession } from './session.test-support.ts';
 import type { GmailMessage } from './schema.ts';
 
 const ACTED_AT = '2026-08-01T12:00:00.000Z';
@@ -34,24 +31,19 @@ function message(id: string, labelIds: string[]): GmailMessage {
 	};
 }
 
-function setup(
+async function setup(
 	messages: GmailMessage[] = [message('m1', ['INBOX', 'UNREAD'])],
-): {
+): Promise<{
 	deps: AssertDeps;
-	/** The mirror behind `deps.labels`, for the one test that needs to change
+	/** The cache behind `deps.mailbox`, for the one test that needs to change
 	 * Gmail's facts underneath an act. */
-	db: MailDb;
+	mailbox: Mailbox;
 	cleanup: () => void;
-} {
-	const dir = mkdtempSync(join(tmpdir(), 'local-mail-assert-'));
-	const db = openMailDb({ dataDir: dir, accountEmail: 'you@example.com' });
-	const intent = openIntentDb({
-		dataDir: dir,
-		accountEmail: 'you@example.com',
-	});
+}> {
+	const session = await openTestSession();
 	const syncedAt = '2026-08-01T00:00:00.000Z';
-	db.ingestFullPullPage(messages, syncedAt);
-	db.ingestLabels(
+	await session.mailbox.ingestFullPullPage(messages, syncedAt);
+	await session.mailbox.ingestLabels(
 		[
 			{ id: 'INBOX', name: 'INBOX', type: 'system' },
 			{ id: 'UNREAD', name: 'UNREAD', type: 'system' },
@@ -61,13 +53,13 @@ function setup(
 		syncedAt,
 	);
 	return {
-		deps: { db, intent, now: () => Date.parse(ACTED_AT) },
-		db,
-		cleanup: () => {
-			intent.close();
-			db.close();
-			rmSync(dir, { recursive: true, force: true });
+		deps: {
+			mailbox: session.mailbox,
+			intents: session.intents,
+			now: () => Date.parse(ACTED_AT),
 		},
+		mailbox: session.mailbox,
+		cleanup: session.close,
 	};
 }
 
@@ -87,16 +79,16 @@ const act = (
 	});
 
 describe('assertMessageLabels', () => {
-	test('archiving a mirrored inbox message records one assertion', () => {
-		const { deps, cleanup } = setup();
+	test('archiving a mirrored inbox message records one assertion', async () => {
+		const { deps, cleanup } = await setup();
 		try {
-			const { data, error } = act(deps, {
+			const { data, error } = await act(deps, {
 				ids: ['m1'],
 				removeLabels: ['INBOX'],
 			});
 			expect(error).toBeNull();
 			expect(data).toEqual({ asserted: 1 });
-			expect(deps.intent.pending()).toMatchObject([
+			expect(await deps.intents.pending()).toMatchObject([
 				{ messageId: 'm1', labelId: 'INBOX', want: false },
 			]);
 		} finally {
@@ -104,19 +96,19 @@ describe('assertMessageLabels', () => {
 		}
 	});
 
-	test('an inverse act overwrites the pending one at a newer sequence', () => {
-		const { deps, cleanup } = setup();
+	test('an inverse act overwrites the pending one at a newer sequence', async () => {
+		const { deps, cleanup } = await setup();
 		try {
-			act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
-			const first = deps.intent.pending()[0];
+			await act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
+			const first = (await deps.intents.pending())[0];
 
-			const { data } = act(deps, { ids: ['m1'], addLabels: ['INBOX'] });
+			const { data } = await act(deps, { ids: ['m1'], addLabels: ['INBOX'] });
 
 			// One row, not two, and not zero: the store keeps the latest answer for
 			// the pair, and the newer sequence is what invalidates the retirement of
 			// any delivery still carrying the older one.
 			expect(data).toEqual({ asserted: 1 });
-			const pending = deps.intent.pending();
+			const pending = await deps.intents.pending();
 			expect(pending).toHaveLength(1);
 			expect(pending[0]).toMatchObject({ labelId: 'INBOX', want: true });
 			expect(pending[0]?.seq).toBeGreaterThan(first?.seq ?? 0);
@@ -125,16 +117,16 @@ describe('assertMessageLabels', () => {
 		}
 	});
 
-	test('an act the mirror already agrees with is still recorded', () => {
-		const { deps, cleanup } = setup();
+	test('an act the mirror already agrees with is still recorded', async () => {
+		const { deps, cleanup } = await setup();
 		try {
 			// The mirror says INBOX is present. It can be wrong in both directions:
 			// stale against Gmail, or simply not yet folded from a delivery this
 			// machine already sent. Judging the act redundant against it would throw
 			// the user's choice away on the strength of a guess.
-			const { data } = act(deps, { ids: ['m1'], addLabels: ['INBOX'] });
+			const { data } = await act(deps, { ids: ['m1'], addLabels: ['INBOX'] });
 			expect(data).toEqual({ asserted: 1 });
-			expect(deps.intent.pending()).toMatchObject([
+			expect(await deps.intents.pending()).toMatchObject([
 				{ messageId: 'm1', labelId: 'INBOX', want: true },
 			]);
 		} finally {
@@ -142,15 +134,15 @@ describe('assertMessageLabels', () => {
 		}
 	});
 
-	test('a stale mirror does not stop the user from asserting the opposite', () => {
+	test('a stale mirror does not stop the user from asserting the opposite', async () => {
 		// Gmail has moved on (the message was un-archived elsewhere) but this
 		// mirror still shows the pre-change facts. The user, looking at some other
 		// view or simply at reality, asks for INBOX off, and that has to be kept.
-		const { deps, cleanup } = setup([message('m1', [])]);
+		const { deps, cleanup } = await setup([message('m1', [])]);
 		try {
-			const { data } = act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
+			const { data } = await act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
 			expect(data).toEqual({ asserted: 1 });
-			expect(deps.intent.pending()).toMatchObject([
+			expect(await deps.intents.pending()).toMatchObject([
 				{ messageId: 'm1', labelId: 'INBOX', want: false },
 			]);
 		} finally {
@@ -158,11 +150,11 @@ describe('assertMessageLabels', () => {
 		}
 	});
 
-	test('label names resolve to ids at act time', () => {
-		const { deps, cleanup } = setup();
+	test('label names resolve to ids at act time', async () => {
+		const { deps, cleanup } = await setup();
 		try {
-			act(deps, { ids: ['m1'], addLabels: ['Altered Trajectories'] });
-			expect(deps.intent.pending()).toMatchObject([
+			await act(deps, { ids: ['m1'], addLabels: ['Altered Trajectories'] });
+			expect(await deps.intents.pending()).toMatchObject([
 				{ messageId: 'm1', labelId: 'Label_7', want: true },
 			]);
 		} finally {
@@ -170,88 +162,80 @@ describe('assertMessageLabels', () => {
 		}
 	});
 
-	test('system labels resolve with an empty mirror label table', () => {
+	test('system labels resolve with an empty mirror label table', async () => {
 		// Before the first pull, and for the whole window after a mirror rebuild,
 		// the mirrored label table is empty. Gmail's system ids are protocol
 		// constants, so triage keeps working: refusing to archive because the
 		// disposable copy has not been repopulated would be refusing a concrete id.
-		const dir = mkdtempSync(join(tmpdir(), 'local-mail-assert-'));
-		const account = { dataDir: dir, accountEmail: 'you@example.com' };
-		const db = openMailDb(account);
-		const intent = openIntentDb(account);
+		const session = await openTestSession();
 		try {
-			expect(db.listLabels()).toEqual([]);
+			expect(await session.mailbox.listLabels()).toEqual([]);
 			const deps: AssertDeps = {
-				db,
-				intent,
+				mailbox: session.mailbox,
+				intents: session.intents,
 				now: () => Date.parse(ACTED_AT),
 			};
 
-			const archived = act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
+			const archived = await act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
 			expect(archived.error).toBeNull();
-			const trashed = act(deps, {
+			const trashed = await act(deps, {
 				ids: ['m1'],
 				addLabels: ['TRASH'],
 				removeLabels: ['UNREAD', 'STARRED'],
 			});
 			expect(trashed.error).toBeNull();
 
-			expect(intent.pending().map((i) => [i.labelId, i.want])).toEqual([
+			expect(
+				(await session.intents.pending()).map((i) => [i.labelId, i.want]),
+			).toEqual([
 				['INBOX', false],
 				['TRASH', true],
 				['UNREAD', false],
 				['STARRED', false],
 			]);
 		} finally {
-			intent.close();
-			db.close();
-			rmSync(dir, { recursive: true, force: true });
+			session.close();
 		}
 	});
 
-	test('a custom label is still mailbox data, so an unknown one is still refused', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'local-mail-assert-'));
-		const account = { dataDir: dir, accountEmail: 'you@example.com' };
-		const db = openMailDb(account);
-		const intent = openIntentDb(account);
+	test('a custom label is still mailbox data, so an unknown one is still refused', async () => {
+		const session = await openTestSession();
 		try {
 			const deps: AssertDeps = {
-				db,
-				intent,
+				mailbox: session.mailbox,
+				intents: session.intents,
 				now: () => Date.parse(ACTED_AT),
 			};
-			// `Label_7` looks like a Gmail custom id, but only the mirror can say
-			// whether this account has it, and right now the mirror knows nothing.
+			// `Label_7` looks like a Gmail custom id, but only the cache can say
+			// whether this account has it, and right now the cache knows nothing.
 			expect(
-				act(deps, { ids: ['m1'], addLabels: ['Label_7'] }).error?.name,
+				(await act(deps, { ids: ['m1'], addLabels: ['Label_7'] })).error?.name,
 			).toBe('UnknownLabel');
 			expect(
-				act(deps, { ids: ['m1'], addLabels: ['Altered Trajectories'] }).error
-					?.name,
+				(await act(deps, { ids: ['m1'], addLabels: ['Altered Trajectories'] }))
+					.error?.name,
 			).toBe('UnknownLabel');
-			expect(intent.pending()).toEqual([]);
+			expect(await session.intents.pending()).toEqual([]);
 		} finally {
-			intent.close();
-			db.close();
-			rmSync(dir, { recursive: true, force: true });
+			session.close();
 		}
 	});
 
-	test('an unknown label name is refused and records nothing', () => {
-		const { deps, cleanup } = setup();
+	test('an unknown label name is refused and records nothing', async () => {
+		const { deps, cleanup } = await setup();
 		try {
-			const { error } = act(deps, { ids: ['m1'], addLabels: ['Nope'] });
+			const { error } = await act(deps, { ids: ['m1'], addLabels: ['Nope'] });
 			expect(error?.name).toBe('UnknownLabel');
-			expect(deps.intent.pending()).toEqual([]);
+			expect(await deps.intents.pending()).toEqual([]);
 		} finally {
 			cleanup();
 		}
 	});
 
-	test('one act cannot both add and remove the same label', () => {
-		const { deps, cleanup } = setup();
+	test('one act cannot both add and remove the same label', async () => {
+		const { deps, cleanup } = await setup();
 		try {
-			const byId = act(deps, {
+			const byId = await act(deps, {
 				ids: ['m1'],
 				addLabels: ['Label_7'],
 				removeLabels: ['Label_7'],
@@ -260,44 +244,44 @@ describe('assertMessageLabels', () => {
 
 			// Caught after resolution, so spelling one side as a display name does
 			// not sneak past it.
-			const byName = act(deps, {
+			const byName = await act(deps, {
 				ids: ['m1'],
 				addLabels: ['Altered Trajectories'],
 				removeLabels: ['Label_7'],
 			});
 			expect(byName.error?.name).toBe('ContradictoryLabel');
-			expect(deps.intent.pending()).toEqual([]);
+			expect(await deps.intents.pending()).toEqual([]);
 		} finally {
 			cleanup();
 		}
 	});
 
-	test('read-only refuses before anything is recorded', () => {
-		const { deps, cleanup } = setup();
+	test('read-only refuses before anything is recorded', async () => {
+		const { deps, cleanup } = await setup();
 		try {
-			const { error } = act(
+			const { error } = await act(
 				deps,
 				{ ids: ['m1'], removeLabels: ['INBOX'] },
 				true,
 			);
 			expect(error?.name).toBe('ReadOnly');
-			expect(deps.intent.pending()).toEqual([]);
+			expect(await deps.intents.pending()).toEqual([]);
 		} finally {
 			cleanup();
 		}
 	});
 
-	test('an act over several ids snapshots exactly those ids', () => {
-		const { deps, cleanup } = setup([
+	test('an act over several ids snapshots exactly those ids', async () => {
+		const { deps, cleanup } = await setup([
 			message('m1', ['INBOX']),
 			message('m2', ['INBOX']),
 			message('m3', ['INBOX']),
 		]);
 		try {
-			act(deps, { ids: ['m1', 'm2'], removeLabels: ['INBOX'] });
+			await act(deps, { ids: ['m1', 'm2'], removeLabels: ['INBOX'] });
 			// m3 arrived in the same view and the same thread; it was not acted on,
 			// so nothing about it is owed.
-			expect(deps.intent.pending().map((i) => i.messageId)).toEqual([
+			expect((await deps.intents.pending()).map((i) => i.messageId)).toEqual([
 				'm1',
 				'm2',
 			]);
@@ -306,49 +290,49 @@ describe('assertMessageLabels', () => {
 		}
 	});
 
-	test('an id the mirror has never seen is recorded like any other', () => {
-		const { deps, cleanup } = setup();
+	test('an id the mirror has never seen is recorded like any other', async () => {
+		const { deps, cleanup } = await setup();
 		try {
-			const { data } = act(deps, { ids: ['ghost'], removeLabels: ['INBOX'] });
+			const { data } = await act(deps, { ids: ['ghost'], removeLabels: ['INBOX'] });
 			expect(data).toEqual({ asserted: 1 });
 		} finally {
 			cleanup();
 		}
 	});
 
-	test("Gmail's per-direction label cap is enforced here, not only at MCP", () => {
-		const { deps, cleanup } = setup();
+	test("Gmail's per-direction label cap is enforced here, not only at MCP", async () => {
+		const { deps, cleanup } = await setup();
 		try {
 			const labels = Array.from({ length: 101 }, (_, i) => `Label_${i}`);
 			// The cap is checked before label resolution, so it does not depend on
 			// the mirror knowing these names: an assertion no `messages.modify` could
 			// ever carry is refused rather than made durable.
-			const added = act(deps, { ids: ['m1'], addLabels: labels });
+			const added = await act(deps, { ids: ['m1'], addLabels: labels });
 			expect(added.error?.name).toBe('TooManyLabels');
 			expect(added.error?.message).toContain('at most 100 labels added');
 
-			const removed = act(deps, { ids: ['m1'], removeLabels: labels });
+			const removed = await act(deps, { ids: ['m1'], removeLabels: labels });
 			expect(removed.error?.name).toBe('TooManyLabels');
 			expect(removed.error?.message).toContain('at most 100 labels removed');
 
-			expect(deps.intent.pending()).toEqual([]);
+			expect(await deps.intents.pending()).toEqual([]);
 		} finally {
 			cleanup();
 		}
 	});
 
-	test('repeating an act that the mirror agrees with never shrinks what is owed', () => {
-		const { deps, db, cleanup } = setup();
+	test('repeating an act that the mirror agrees with never shrinks what is owed', async () => {
+		const { deps, mailbox, cleanup } = await setup();
 		try {
-			act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
+			await act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
 			// Pretend the reconciler delivered it and the pull folded Gmail's answer,
 			// but the retirement has not happened yet. The mirror now agrees with the
 			// pending assertion, which is exactly when a cancellation rule would fire.
-			db.patchMessageLabels('m1', ['UNREAD'], '2026-08-01T12:00:01.000Z');
-			act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
-			act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
+			await mailbox.patchMessageLabels('m1', ['UNREAD'], '2026-08-01T12:00:01.000Z');
+			await act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
+			await act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
 
-			expect(deps.intent.pending()).toMatchObject([
+			expect(await deps.intents.pending()).toMatchObject([
 				{ messageId: 'm1', labelId: 'INBOX', want: false },
 			]);
 		} finally {
@@ -356,18 +340,22 @@ describe('assertMessageLabels', () => {
 		}
 	});
 
-	test('empty and oversized acts are refused', () => {
-		const { deps, cleanup } = setup();
+	test('empty and oversized acts are refused', async () => {
+		const { deps, cleanup } = await setup();
 		try {
-			expect(act(deps, { ids: [], removeLabels: ['INBOX'] }).error?.name).toBe(
+			expect((await act(deps, { ids: [], removeLabels: ['INBOX'] })).error?.name).toBe(
 				'NoMessageIds',
 			);
-			expect(act(deps, { ids: ['m1'] }).error?.name).toBe('EmptyLabelMutation');
+			expect((await act(deps, { ids: ['m1'] })).error?.name).toBe(
+				'EmptyLabelMutation',
+			);
 			expect(
-				act(deps, {
-					ids: Array.from({ length: 501 }, (_, i) => `m${i}`),
-					removeLabels: ['INBOX'],
-				}).error?.name,
+				(
+					await act(deps, {
+						ids: Array.from({ length: 501 }, (_, i) => `m${i}`),
+						removeLabels: ['INBOX'],
+					})
+				).error?.name,
 			).toBe('TooManyMessageIds');
 		} finally {
 			cleanup();

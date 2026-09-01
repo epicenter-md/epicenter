@@ -1,19 +1,19 @@
-// The `/api` wire shapes, derived from the typed `hc` client (which infers them
-// from the Hono routes in `apps/local-mail/src/http/api.ts`). This used to be a
-// hand-copy kept in sync by hand; deriving it means a server response-shape
-// change surfaces here, and then in the components, as a type error rather than
-// a silent drift.
+// The shapes the components render, derived from Local Mail's own modules
+// rather than hand-copied. A change to a read model surfaces here, and then in
+// the components, as a type error rather than a silent drift.
 
-import type { api } from './api';
+import type { mail } from './mail';
 
-export type MailboxStatus = Awaited<ReturnType<typeof api.status>>;
+export type MailboxStatus = Awaited<ReturnType<typeof mail.status>>;
 
 export type MailLabel = Awaited<
-	ReturnType<typeof api.labels>
+	ReturnType<typeof mail.labels>
 >['labels'][number];
 
 export type MessageSummary = Awaited<
-	ReturnType<typeof api.messages>
+	ReturnType<typeof mail.messages>
 >['messages'][number];
 
-export type MessageDetail = Awaited<ReturnType<typeof api.message>>;
+export type MessageDetail = NonNullable<Awaited<ReturnType<typeof mail.message>>>;
+
+export type { ConnectedAccount } from './mail';

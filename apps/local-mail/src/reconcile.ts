@@ -1,7 +1,7 @@
 import type { Result } from 'wellcrafted/result';
 import type { GmailClientError } from './gmail-client.ts';
-import type { IntentDb, LabelIntent } from './intent.ts';
-import type { ReconcileLock } from './lock.ts';
+import type { IntentStore, LabelIntent } from './intent-store.ts';
+import type { ReconcileClaim } from './reconcile-claim.ts';
 import type { GmailMessage } from './schema.ts';
 import { type SyncDeps, type SyncOutcome, syncMailbox } from './sync.ts';
 
@@ -12,20 +12,19 @@ import { type SyncDeps, type SyncOutcome, syncMailbox } from './sync.ts';
  *
  *     drain  ->  pull
  *
- * Drain delivers the durable assertions in `intent.db`, folding each accepted
+ * Drain delivers the durable assertions in the intent store, folding each accepted
  * response into the mirror and retiring the assertion it proved. Pull is the
  * existing sync pass, unchanged. The order is the point: delivering after a pull
  * would leave a window where the mirror says one thing, the intent store says
  * another, and Gmail has heard neither.
  *
- * Who may run a pass is the account lock (`lock.ts`), and a pass ASKS FOR IT
- * rather than trusting the caller to have taken one: `reconcileAccount` requires
- * a `ReconcileLock`, which only `acquireReconcileLock` can produce and only for
- * one named account. That is the same lock the sync loop already took, widened
- * from "one puller" to "one writer", and moved out of convention into the
- * signature: a delivery landing between two pages of a pull, or a second process
- * writing behind the first one's back, is refused by the type rather than by
- * every call site remembering.
+ * Who may run a pass is the account claim (`reconcile-claim.ts`), and a pass
+ * ASKS FOR IT rather than trusting the caller to have taken one:
+ * `reconcileAccount` requires a `ReconcileClaim`, which only `claimReconcile`
+ * can produce and only for one named account. A delivery landing between two
+ * pages of a pull is refused by the type rather than by every call site
+ * remembering. What the claim does not cover, and why, is written down where it
+ * is minted.
  *
  * Failure handling has exactly two shapes, and no state is persisted for either:
  *
@@ -52,14 +51,14 @@ import { type SyncDeps, type SyncOutcome, syncMailbox } from './sync.ts';
  */
 
 export type ReconcileDeps = SyncDeps & {
-	intent: IntentDb;
+	intents: IntentStore;
 	/**
-	 * The account this pass is for. It exists so the lock can be checked against
-	 * the work: a process that serves several accounts at once (the desktop host)
-	 * holds several locks, and handing the wrong one to a pass would authorize a
-	 * write to a mailbox nobody claimed.
+	 * The account this pass is for. It exists so the claim can be checked against
+	 * the work: a surface that serves several accounts at once holds several
+	 * claims, and handing the wrong one to a pass would authorize a write to a
+	 * mailbox nobody claimed.
 	 */
-	accountEmail: string;
+	accountId: string;
 };
 
 /**
@@ -157,7 +156,7 @@ async function drain(
 	deps: ReconcileDeps,
 	{ readOnly }: { readOnly: boolean },
 ): Promise<DeliveryOutcome> {
-	const pending = deps.intent.pending();
+	const pending = await deps.intents.pending();
 	if (readOnly || pending.length === 0) {
 		return {
 			pending: pending.length,
@@ -216,7 +215,7 @@ async function drain(
 				// Retire first: only a row that actually left the store is reported as
 				// discarded, so a pair re-asserted mid-flight (whose sequence no longer
 				// matches) is not announced as dropped when it is in fact still owed.
-				if (deps.intent.retire([assertion]) === 1) {
+				if ((await deps.intents.retire([assertion])) === 1) {
 					discarded.push({
 						messageId: assertion.messageId,
 						labelId: assertion.labelId,
@@ -238,12 +237,12 @@ async function drain(
 		// below. The pull normally papers over that, but the pull is exactly what
 		// fails when anything is wrong, so the stale fact would resurface in the
 		// inbox and the user would watch their archive come back.
-		deps.db.patchMessageLabels(
+		await deps.mailbox.patchMessageLabels(
 			message.id,
 			message.labelIds ?? [],
 			new Date(deps.now()).toISOString(),
 		);
-		delivered += deps.intent.retire(covered);
+		delivered += await deps.intents.retire(covered);
 		return true;
 	}
 
@@ -297,7 +296,7 @@ async function drain(
 		// Read back rather than subtracted: a pair re-asserted mid-pass is still
 		// owed even though its predecessor was delivered, and the store is the
 		// only thing that knows.
-		retained: deps.intent.pending().length,
+		retained: (await deps.intents.pending()).length,
 		failure,
 	};
 }
@@ -313,25 +312,25 @@ export async function reconcileAccount(
 	{
 		forceFull,
 		readOnly,
-		lock,
+		claim,
 	}: {
 		forceFull: boolean;
 		readOnly: boolean;
 		/**
-		 * Proof the caller is this account's one reconciler. Required, and only
-		 * `acquireReconcileLock` can produce one, so there is no way to reach the
-		 * Gmail write path without having become the owner first.
+		 * Proof the caller is this account's reconciler for this pass. Required,
+		 * and only `claimReconcile` can produce one, so there is no way to reach
+		 * the Gmail write path without having become the owner first.
 		 */
-		lock: ReconcileLock;
+		claim: ReconcileClaim;
 	},
 ): Promise<ReconcileOutcome> {
-	if (lock.accountEmail !== deps.accountEmail) {
-		// A programming error, not a runtime condition: some caller acquired one
-		// account's lock and pointed the pass at another's mirror. Throwing is the
-		// only honest answer, because continuing would write to Gmail under an
+	if (claim.accountId !== deps.accountId) {
+		// A programming error, not a runtime condition: some caller took one
+		// account's claim and pointed the pass at another's mailbox. Throwing is
+		// the only honest answer, because continuing would write to Gmail under an
 		// ownership claim nobody holds.
 		throw new Error(
-			`Reconcile lock is for ${lock.accountEmail}, but the pass is for ${deps.accountEmail}.`,
+			`Reconcile claim is for ${claim.accountId}, but the pass is for ${deps.accountId}.`,
 		);
 	}
 	const delivery = await drain(deps, { readOnly });
@@ -355,11 +354,12 @@ function interruptibleSleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * Run passes until the signal aborts, for a headless owner (`local-mail
- * reconcile --watch`). The first pass honors `forceFull`; every later pass is
- * incremental, since the cursor has advanced. The desktop host runs its own loop
- * instead, because it also has to answer a local act's wake, which a fixed
- * interval cannot.
+ * Run passes until the signal aborts.
+ *
+ * The desktop's hidden synchronization worker runs this; a browser build runs it
+ * while the application is open, which is the whole of the difference between
+ * the two (ADR-0310). The first pass honors `forceFull`; every later pass is
+ * incremental, since the cursor has advanced.
  */
 export async function runReconcileLoop(
 	deps: ReconcileDeps,
@@ -367,9 +367,9 @@ export async function runReconcileLoop(
 		forceFull: boolean;
 		readOnly: boolean;
 		intervalMs: number;
-		/** Held for the whole loop, not per pass: a watch loop is one owner for its
+		/** Held for the whole loop, not per pass: a loop is one owner for its
 		 * lifetime, and releasing between passes would let a second writer in. */
-		lock: ReconcileLock;
+		claim: ReconcileClaim;
 		/** Aborting the signal stops the loop after the current pass or sleep. */
 		signal: AbortSignal;
 		/** Called after each pass with its outcome and 1-based pass number. */
@@ -381,7 +381,7 @@ export async function runReconcileLoop(
 		const outcome = await reconcileAccount(deps, {
 			forceFull: opts.forceFull && pass === 0,
 			readOnly: opts.readOnly,
-			lock: opts.lock,
+			claim: opts.claim,
 		});
 		pass += 1;
 		opts.onPass(outcome, pass);

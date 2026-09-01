@@ -19,17 +19,19 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { assertMessageLabels } from './assert.ts';
-import type { AppConfig } from './config.ts';
-import { type MailDb, openMailDb } from './db.ts';
+import { DEFAULT_MAIL_CONFIG } from './config.ts';
 import { GmailApiError, type GmailClient } from './gmail-client.ts';
-import { type IntentDb, openIntentDb } from './intent.ts';
-import { acquireReconcileLock } from './lock.ts';
+import type { IntentStore } from './intent-store.ts';
+import { overlayOf, type Mailbox } from './mailbox.ts';
+import { claimReconcile } from './reconcile-claim.ts';
 import { type ReconcileDeps, reconcileAccount } from './reconcile.ts';
 import type { GmailLabel, GmailMessage, HistoryPage } from './schema.ts';
+import { openIntentStore } from './intent-store.ts';
+import { openMailbox } from './mailbox.ts';
+import { openTestSession, type TestSession } from './session.test-support.ts';
+
+const ACCOUNT_ID = 'account-one';
 
 const NOW = Date.parse('2026-08-01T12:00:00.000Z');
 
@@ -41,21 +43,6 @@ function message(id: string, labelIds: string[]): GmailMessage {
 		snippet: `snippet ${id}`,
 		internalDate: '1700000000000',
 		payload: { headers: [{ name: 'Subject', value: `Subject ${id}` }] },
-	};
-}
-
-function config(dataDir: string): AppConfig {
-	return {
-		dataDir,
-		apiBase: 'http://localhost:0',
-		authorizeUrl: 'http://localhost:0/auth',
-		tokenUrl: 'http://localhost:0/token',
-		historySafeWindowDays: 5,
-		fullBackstopDays: 30,
-		pageSize: 100,
-		credentialsPath: join(dataDir, 'credentials.json'),
-		account: null,
-		readOnly: false,
 	};
 }
 
@@ -99,7 +86,8 @@ const MIRRORED_LABELS: GmailLabel[] = [
 function fakeGmail(
 	results: Map<string, WriteResult>,
 	hooks: {
-		onWrite?: (id: string) => void;
+		/** Awaited, so a racing act can be a real (asynchronous) act. */
+		onWrite?: (id: string) => void | Promise<void>;
 		onModify?: (body: {
 			addLabelIds: string[];
 			removeLabelIds: string[];
@@ -113,8 +101,8 @@ function fakeGmail(
 		'error' in result
 			? { data: null, error: result.error }
 			: { data: result.data, error: null };
-	const lookup = (id: string) => {
-		hooks.onWrite?.(id);
+	const lookup = async (id: string) => {
+		await hooks.onWrite?.(id);
 		const result = results.get(id);
 		if (!result) return GmailApiError.Http({ status: 404, body: 'not found' });
 		return answer(result);
@@ -128,7 +116,7 @@ function fakeGmail(
 			modifyCalls.push({ id, ...body });
 			const scripted = hooks.onModify?.(body);
 			if (scripted) {
-				hooks.onWrite?.(id);
+				await hooks.onWrite?.(id);
 				return answer(scripted);
 			}
 			return lookup(id);
@@ -162,68 +150,70 @@ function fakeGmail(
 	};
 }
 
-function setup(
+async function setup(
 	client: GmailClient,
 	messages: GmailMessage[] = [message('m1', ['INBOX', 'UNREAD'])],
-): { deps: ReconcileDeps; db: MailDb; intent: IntentDb; cleanup: () => void } {
-	const dir = mkdtempSync(join(tmpdir(), 'local-mail-reconcile-'));
-	const db = openMailDb({ dataDir: dir, accountEmail: 'you@example.com' });
-	const intent = openIntentDb({
-		dataDir: dir,
-		accountEmail: 'you@example.com',
-	});
+): Promise<{
+	deps: ReconcileDeps;
+	session: TestSession;
+	mailbox: Mailbox;
+	intents: IntentStore;
+	cleanup: () => void;
+}> {
+	const session = await openTestSession(ACCOUNT_ID);
 	const syncedAt = new Date(NOW).toISOString();
-	db.ingestFullPullPage(messages, syncedAt);
-	db.ingestLabels(MIRRORED_LABELS, syncedAt);
+	await session.mailbox.ingestFullPullPage(messages, syncedAt);
+	await session.mailbox.ingestLabels(MIRRORED_LABELS, syncedAt);
 	// A cursor plus a recent sync keeps the pull phase INCREMENTAL, so these
 	// tests exercise delivery rather than a full backfill.
-	db.finishFullPull('1', syncedAt);
+	await session.mailbox.finishFullPull('1', syncedAt);
 	return {
 		deps: {
-			db,
-			intent,
+			mailbox: session.mailbox,
+			intents: session.intents,
 			client,
-			config: config(dir),
+			config: DEFAULT_MAIL_CONFIG,
 			now: () => NOW,
-			accountEmail: 'you@example.com',
+			accountId: ACCOUNT_ID,
 		},
-		db,
-		intent,
-		cleanup: () => {
-			intent.close();
-			db.close();
-			rmSync(dir, { recursive: true, force: true });
-		},
+		session,
+		mailbox: session.mailbox,
+		intents: session.intents,
+		cleanup: session.close,
 	};
 }
 
 /**
- * One pass, as a real owner runs one: take the account's reconcile lock, deliver
- * under it, release. A pass cannot be called without the capability, so the
- * tests below reach the write path the only way production does. Ownership
- * itself is tested in its own block; here it is setup.
+ * One pass, as a real owner runs one: take the account's claim, deliver under
+ * it, release. A pass cannot be called without the capability, so the tests
+ * below reach the write path the only way production does.
  */
 async function pass(deps: ReconcileDeps, readOnly = false) {
-	const lock = acquireReconcileLock({
-		dataDir: deps.config.dataDir,
-		accountEmail: deps.accountEmail,
-	});
-	if (!lock) throw new Error('the test could not become the reconcile owner');
+	const taken = claimReconcile(deps.accountId);
+	if (taken.error !== null) {
+		throw new Error('the test could not become the reconcile owner');
+	}
 	try {
-		return await reconcileAccount(deps, { forceFull: false, readOnly, lock });
+		return await reconcileAccount(deps, {
+			forceFull: false,
+			readOnly,
+			claim: taken.claim,
+		});
 	} finally {
-		lock.release();
+		taken.release();
 	}
 }
 
-/** Gmail's facts for one message, straight out of the mirror column, with no
+/** Gmail's facts for one message, straight out of the cache column, with no
  * intent overlay: what the reconciler folded, not what a reader would see. */
-function mirroredLabels(db: MailDb, id: string): string[] {
-	const row = db.raw
-		.query<{ label_ids: string | null }, [string]>(
-			`SELECT label_ids FROM messages WHERE id = ?`,
-		)
-		.get(id);
+async function mirroredLabels(
+	session: TestSession,
+	id: string,
+): Promise<string[]> {
+	const row = await session.row<{ label_ids: string | null }>(
+		`SELECT label_ids FROM messages WHERE id = ?`,
+		[id],
+	);
 	return JSON.parse(row?.label_ids ?? '[]') as string[];
 }
 
@@ -232,9 +222,9 @@ describe('drain', () => {
 		const client = fakeGmail(
 			new Map([['m1', { data: message('m1', ['STARRED']) }]]),
 		);
-		const { deps, intent, cleanup } = setup(client);
+		const { deps, intents, cleanup } = await setup(client);
 		try {
-			intent.assert(
+			await intents.assert(
 				[
 					{ messageId: 'm1', labelId: 'INBOX', want: false },
 					{ messageId: 'm1', labelId: 'UNREAD', want: false },
@@ -258,7 +248,7 @@ describe('drain', () => {
 				retained: 0,
 				failure: null,
 			});
-			expect(intent.pending()).toEqual([]);
+			expect(await intents.pending()).toEqual([]);
 		} finally {
 			cleanup();
 		}
@@ -268,18 +258,23 @@ describe('drain', () => {
 		const client = fakeGmail(
 			new Map([['m1', { data: message('m1', ['UNREAD']) }]]),
 		);
-		const { deps, db, cleanup } = setup(client);
+		const { deps, session, cleanup } = await setup(client);
 		try {
-			deps.intent.assert(
+			await deps.intents.assert(
 				[{ messageId: 'm1', labelId: 'INBOX', want: false }],
 				new Date(NOW).toISOString(),
 			);
 			await pass(deps);
 			// The overlay is gone and the fact took its place, so the row never
 			// flickers back into the inbox between the two writes.
-			expect(mirroredLabels(db, 'm1')).toEqual(['UNREAD']);
+			expect(await mirroredLabels(session, 'm1')).toEqual(['UNREAD']);
 			expect(
-				db.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+				await deps.mailbox.listMessages({
+					labelId: 'INBOX',
+					limit: 10,
+					offset: 0,
+					overlay: overlayOf(await deps.intents.pending()),
+				}),
 			).toEqual([]);
 		} finally {
 			cleanup();
@@ -290,9 +285,9 @@ describe('drain', () => {
 		const client = fakeGmail(
 			new Map([['m1', { data: message('m1', ['TRASH']) }]]),
 		);
-		const { deps, intent, cleanup } = setup(client);
+		const { deps, intents, cleanup } = await setup(client);
 		try {
-			intent.assert(
+			await intents.assert(
 				[
 					{ messageId: 'm1', labelId: 'UNREAD', want: false },
 					{ messageId: 'm1', labelId: 'TRASH', want: true },
@@ -308,7 +303,7 @@ describe('drain', () => {
 			expect(client.modifyCalls).toEqual([
 				{ id: 'm1', addLabelIds: [], removeLabelIds: ['UNREAD'] },
 			]);
-			expect(intent.pending()).toEqual([]);
+			expect(await intents.pending()).toEqual([]);
 		} finally {
 			cleanup();
 		}
@@ -318,9 +313,9 @@ describe('drain', () => {
 		const client = fakeGmail(
 			new Map([['m1', { data: message('m1', ['INBOX']) }]]),
 		);
-		const { deps, intent, cleanup } = setup(client, [message('m1', ['TRASH'])]);
+		const { deps, intents, cleanup } = await setup(client, [message('m1', ['TRASH'])]);
 		try {
-			intent.assert(
+			await intents.assert(
 				[{ messageId: 'm1', labelId: 'TRASH', want: false }],
 				new Date(NOW).toISOString(),
 			);
@@ -351,12 +346,12 @@ describe('drain', () => {
 			order.push('untrash');
 			return untrashed(id);
 		};
-		const { deps, intent, db, cleanup } = setup(client, [
+		const { deps, intents, session, cleanup } = await setup(client, [
 			message('m1', ['TRASH']),
 		]);
 		client.results.set('m1', { data: message('m1', ['INBOX', 'UNREAD']) });
 		try {
-			intent.assert(
+			await intents.assert(
 				[
 					{ messageId: 'm1', labelId: 'TRASH', want: false },
 					{ messageId: 'm1', labelId: 'INBOX', want: false },
@@ -372,8 +367,8 @@ describe('drain', () => {
 			]);
 			expect(delivery).toMatchObject({ pending: 2, delivered: 2, retained: 0 });
 			// Both wishes held: out of Trash, and out of the inbox.
-			expect(mirroredLabels(db, 'm1')).toEqual(['UNREAD']);
-			expect(intent.pending()).toEqual([]);
+			expect(await mirroredLabels(session, 'm1')).toEqual(['UNREAD']);
+			expect(await intents.pending()).toEqual([]);
 		} finally {
 			cleanup();
 		}
@@ -392,10 +387,10 @@ describe('drain', () => {
 			order.push('trash');
 			return trashed(id);
 		};
-		const { deps, intent, cleanup } = setup(client);
+		const { deps, intents, cleanup } = await setup(client);
 		client.results.set('m1', { data: message('m1', ['TRASH']) });
 		try {
-			intent.assert(
+			await intents.assert(
 				[
 					{ messageId: 'm1', labelId: 'TRASH', want: true },
 					{ messageId: 'm1', labelId: 'STARRED', want: true },
@@ -415,27 +410,28 @@ describe('drain', () => {
 	});
 
 	test('a re-assert during the untrash keeps the newer wish and still delivers the labels', async () => {
-		let intent: IntentDb | undefined;
+		let store: IntentStore | undefined;
 		let reasserted = false;
 		const client = fakeGmail(
 			new Map([['m1', { data: message('m1', ['INBOX']) }]]),
 			{
-				onWrite: () => {
+				onWrite: async () => {
 					// The user changes their mind about trash while the untrash is on the
 					// wire; the archive they also asked for is untouched by that.
 					if (reasserted) return;
 					reasserted = true;
-					intent?.assert(
+					await store?.assert(
 						[{ messageId: 'm1', labelId: 'TRASH', want: true }],
 						new Date(NOW).toISOString(),
 					);
 				},
 			},
 		);
-		const created = setup(client, [message('m1', ['TRASH'])]);
-		intent = created.intent;
+		const created = await setup(client, [message('m1', ['TRASH'])]);
+		const { intents } = created;
+		store = intents;
 		try {
-			intent.assert(
+			await intents.assert(
 				[
 					{ messageId: 'm1', labelId: 'TRASH', want: false },
 					{ messageId: 'm1', labelId: 'INBOX', want: false },
@@ -449,7 +445,7 @@ describe('drain', () => {
 			// The untrash proved the old sequence and retires nothing; the archive is
 			// unrelated and lands.
 			expect(delivery).toMatchObject({ pending: 2, delivered: 1, retained: 1 });
-			expect(intent.pending()).toMatchObject([
+			expect(await intents.pending()).toMatchObject([
 				{ messageId: 'm1', labelId: 'TRASH', want: true },
 			]);
 		} finally {
@@ -473,9 +469,9 @@ describe('drain', () => {
 						}
 					: { data: message('m1', ['INBOX']) },
 		});
-		const { deps, intent, cleanup } = setup(client);
+		const { deps, intents, cleanup } = await setup(client);
 		try {
-			intent.assert(
+			await intents.assert(
 				Array.from({ length: 101 }, (_, i) => ({
 					messageId: 'm1',
 					labelId: `Label_${i}`,
@@ -494,7 +490,7 @@ describe('drain', () => {
 				discarded: [],
 				retained: 0,
 			});
-			expect(intent.pending()).toEqual([]);
+			expect(await intents.pending()).toEqual([]);
 		} finally {
 			cleanup();
 		}
@@ -504,13 +500,13 @@ describe('drain', () => {
 		// The whole point of sequencing, driven through the public act path rather
 		// than the store: the user archives, the drain picks it up, and the undo
 		// lands while that delivery is on the wire.
-		let undo: (() => void) | null = null;
+		let undo: (() => Promise<void>) | null = null;
 		const client = fakeGmail(
 			new Map([['m1', { data: message('m1', ['UNREAD']) }]]),
 			{ onWrite: () => undo?.() },
 		);
-		const created = setup(client);
-		const { deps, intent, db, cleanup } = created;
+		const created = await setup(client);
+		const { deps, intents, session, cleanup } = created;
 		try {
 			const archive = () =>
 				assertMessageLabels({
@@ -525,10 +521,10 @@ describe('drain', () => {
 					readOnly: false,
 				});
 
-			expect(archive().error).toBeNull();
-			undo = () => {
+			expect((await archive()).error).toBeNull();
+			undo = async () => {
 				undo = null;
-				expect(unarchive().error).toBeNull();
+				expect((await unarchive()).error).toBeNull();
 			};
 
 			const first = await pass(deps);
@@ -545,11 +541,16 @@ describe('drain', () => {
 				delivered: 0,
 				retained: 1,
 			});
-			expect(mirroredLabels(db, 'm1')).toEqual(['UNREAD']);
+			expect(await mirroredLabels(session, 'm1')).toEqual(['UNREAD']);
 			expect(
-				db
-					.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 })
-					.map((r) => r.id),
+				(
+					await deps.mailbox.listMessages({
+						labelId: 'INBOX',
+						limit: 10,
+						offset: 0,
+						overlay: overlayOf(await deps.intents.pending()),
+					})
+				).map((r) => r.id),
 			).toEqual(['m1']);
 
 			// The next pass delivers the undo. That second call is the redundant
@@ -564,8 +565,8 @@ describe('drain', () => {
 				removeLabelIds: [],
 			});
 			expect(second.delivery).toMatchObject({ delivered: 1, retained: 0 });
-			expect(intent.pending()).toEqual([]);
-			expect(mirroredLabels(db, 'm1')).toEqual(['INBOX', 'UNREAD']);
+			expect(await intents.pending()).toEqual([]);
+			expect(await mirroredLabels(session, 'm1')).toEqual(['INBOX', 'UNREAD']);
 		} finally {
 			cleanup();
 		}
@@ -586,9 +587,9 @@ describe('drain', () => {
 						}
 					: { data: message('m1', ['UNREAD']) },
 		});
-		const { deps, intent, db, cleanup } = setup(client);
+		const { deps, intents, session, cleanup } = await setup(client);
 		try {
-			intent.assert(
+			await intents.assert(
 				[
 					{ messageId: 'm1', labelId: 'INBOX', want: false },
 					{ messageId: 'm1', labelId: 'Label_gone', want: true },
@@ -625,9 +626,9 @@ describe('drain', () => {
 					reason: expect.stringContaining('Invalid label: Label_gone'),
 				},
 			]);
-			expect(intent.pending()).toEqual([]);
+			expect(await intents.pending()).toEqual([]);
 			// The archive really landed; only the impossible label was dropped.
-			expect(mirroredLabels(db, 'm1')).toEqual(['UNREAD']);
+			expect(await mirroredLabels(session, 'm1')).toEqual(['UNREAD']);
 		} finally {
 			cleanup();
 		}
@@ -647,9 +648,9 @@ describe('drain', () => {
 					: { error: GmailApiError.Throttled({ retries: 5 }).error };
 			},
 		});
-		const { deps, intent, cleanup } = setup(client);
+		const { deps, intents, cleanup } = await setup(client);
 		try {
-			intent.assert(
+			await intents.assert(
 				[
 					{ messageId: 'm1', labelId: 'INBOX', want: false },
 					{ messageId: 'm1', labelId: 'STARRED', want: true },
@@ -665,7 +666,7 @@ describe('drain', () => {
 				discarded: [],
 				retained: 2,
 			});
-			expect(intent.pending()).toHaveLength(2);
+			expect(await intents.pending()).toHaveLength(2);
 		} finally {
 			cleanup();
 		}
@@ -681,12 +682,12 @@ describe('drain', () => {
 				['m2', { data: message('m2', []) }],
 			]),
 		);
-		const { deps, intent, cleanup } = setup(client, [
+		const { deps, intents, cleanup } = await setup(client, [
 			message('m1', ['INBOX']),
 			message('m2', ['INBOX']),
 		]);
 		try {
-			intent.assert(
+			await intents.assert(
 				[
 					{ messageId: 'm1', labelId: 'INBOX', want: false },
 					{ messageId: 'm2', labelId: 'INBOX', want: false },
@@ -716,7 +717,7 @@ describe('drain', () => {
 			]);
 			// Nothing about the refusal is written down: the store holds wishes, not
 			// a dead-letter queue, and the report above is the whole record of it.
-			expect(intent.pending()).toEqual([]);
+			expect(await intents.pending()).toEqual([]);
 		} finally {
 			cleanup();
 		}
@@ -729,12 +730,12 @@ describe('drain', () => {
 				['m2', { data: message('m2', []) }],
 			]),
 		);
-		const { deps, intent, cleanup } = setup(client, [
+		const { deps, intents, cleanup } = await setup(client, [
 			message('m1', ['INBOX']),
 			message('m2', ['INBOX']),
 		]);
 		try {
-			intent.assert(
+			await intents.assert(
 				[
 					{ messageId: 'm1', labelId: 'INBOX', want: false },
 					{ messageId: 'm2', labelId: 'INBOX', want: false },
@@ -753,7 +754,7 @@ describe('drain', () => {
 				retained: 2,
 			});
 			expect(delivery.failure?.name).toBe('Throttled');
-			expect(intent.pending()).toHaveLength(2);
+			expect(await intents.pending()).toHaveLength(2);
 			// The pull still runs: a failure to write is not a reason to stop reading.
 			expect(pull.failure).toBeNull();
 		} finally {
@@ -763,9 +764,9 @@ describe('drain', () => {
 
 	test('read-only mode delivers nothing and keeps every assertion', async () => {
 		const client = fakeGmail(new Map([['m1', { data: message('m1', []) }]]));
-		const { deps, intent, cleanup } = setup(client);
+		const { deps, intents, cleanup } = await setup(client);
 		try {
-			intent.assert(
+			await intents.assert(
 				[{ messageId: 'm1', labelId: 'INBOX', want: false }],
 				new Date(NOW).toISOString(),
 			);
@@ -780,7 +781,7 @@ describe('drain', () => {
 				retained: 1,
 				failure: null,
 			});
-			expect(intent.pending()).toHaveLength(1);
+			expect(await intents.pending()).toHaveLength(1);
 			// Reads keep working in read-only mode, so the pull still happens.
 			expect(pull.failure).toBeNull();
 		} finally {
@@ -790,7 +791,7 @@ describe('drain', () => {
 
 	test('a pass with nothing pending calls no write endpoint at all', async () => {
 		const client = fakeGmail(new Map());
-		const { deps, cleanup } = setup(client);
+		const { deps, cleanup } = await setup(client);
 		try {
 			const { delivery } = await pass(deps);
 			expect(delivery).toEqual({
@@ -817,25 +818,30 @@ describe("folding Gmail's answer", () => {
 		const client = fakeGmail(
 			new Map([['m1', { data: { id: 'm1', threadId: 't-m1' } }]]),
 		);
-		const { deps, db, intent, cleanup } = setup(client, [
+		const { deps, session, intents, cleanup } = await setup(client, [
 			message('m1', ['INBOX']),
 		]);
 		try {
-			intent.assert(
+			await intents.assert(
 				[{ messageId: 'm1', labelId: 'INBOX', want: false }],
 				new Date(NOW).toISOString(),
 			);
 
 			const outcome = await pass(deps);
 			expect(outcome.delivery.delivered).toBe(1);
-			expect(intent.pending()).toEqual([]);
+			expect(await intents.pending()).toEqual([]);
 
 			// Gmail's answer, folded: the message carries nothing now.
-			expect(mirroredLabels(db, 'm1')).toEqual([]);
+			expect(await mirroredLabels(session, 'm1')).toEqual([]);
 			// And with the assertion retired there is no overlay left to hide the row,
 			// so this is the whole of what keeps it out of the inbox.
 			expect(
-				db.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+				await deps.mailbox.listMessages({
+					labelId: 'INBOX',
+					limit: 10,
+					offset: 0,
+					overlay: overlayOf(await deps.intents.pending()),
+				}),
 			).toEqual([]);
 		} finally {
 			cleanup();
@@ -845,83 +851,66 @@ describe("folding Gmail's answer", () => {
 
 describe('ownership', () => {
 	test('a second reconciler cannot run while the first holds the account', async () => {
-		// The one-writer rule is the capability, not a convention. `reconcileAccount`
-		// takes a `ReconcileLock` that only `acquireReconcileLock` can mint, so a
-		// would-be second reconciler has nothing to pass it: the refusal happens at
-		// acquisition, before any Gmail call is even reachable.
 		const client = fakeGmail(
 			new Map([['m1', { data: message('m1', ['UNREAD']) }]]),
 		);
-		const { deps, intent, cleanup } = setup(client);
+		const { deps, intents, cleanup } = await setup(client);
 		try {
-			intent.assert(
+			await intents.assert(
 				[{ messageId: 'm1', labelId: 'INBOX', want: false }],
 				new Date(NOW).toISOString(),
 			);
 
-			const first = acquireReconcileLock({
-				dataDir: deps.config.dataDir,
-				accountEmail: deps.accountEmail,
-			});
-			expect(first).not.toBeNull();
+			const first = claimReconcile(deps.accountId);
+			expect(first.error).toBeNull();
 
 			// The second owner is refused, so it never obtains the capability a pass
 			// requires. There is no other way in: `reconcileAccount` has no overload
-			// that skips the lock.
-			const second = acquireReconcileLock({
-				dataDir: deps.config.dataDir,
-				accountEmail: deps.accountEmail,
-			});
-			expect(second).toBeNull();
+			// that skips the claim.
+			const second = claimReconcile(deps.accountId);
+			expect(second.error?.name).toBe('ReconcileClaimBusy');
 
 			// Nothing reached Gmail on the refused path, and the change is still owed.
 			expect(client.modifyCalls).toEqual([]);
-			expect(intent.pending()).toHaveLength(1);
+			expect(await intents.pending()).toHaveLength(1);
 
 			// The holder can still run, and the release hands ownership on.
+			if (first.claim === null) throw new Error('expected the first claim');
 			const owned = await reconcileAccount(deps, {
 				forceFull: false,
 				readOnly: false,
-				// biome-ignore lint/style/noNonNullAssertion: asserted non-null above.
-				lock: first!,
+				claim: first.claim,
 			});
 			expect(owned.delivery.delivered).toBe(1);
-			first?.release();
+			first.release();
 
-			const third = acquireReconcileLock({
-				dataDir: deps.config.dataDir,
-				accountEmail: deps.accountEmail,
-			});
-			expect(third).not.toBeNull();
-			third?.release();
+			const third = claimReconcile(deps.accountId);
+			expect(third.error).toBeNull();
+			third.release?.();
 		} finally {
 			cleanup();
 		}
 	});
 
-	test("one account's lock cannot authorize a pass over another's mirror", async () => {
-		// The desktop host holds one lock per connected account, so "has a lock" is
-		// not the same question as "has THIS account's lock". Crossing them would
-		// write to a mailbox nobody claimed, which is a programming error rather
-		// than a runtime condition, so the pass refuses loudly.
+	test("one account's claim cannot authorize a pass over another's mailbox", async () => {
+		// A surface serving several connected accounts holds one claim each, so
+		// "has a claim" is not the same question as "has THIS account's claim".
+		// Crossing them would write to a mailbox nobody claimed, which is a
+		// programming error rather than a runtime condition.
 		const client = fakeGmail(new Map());
-		const { deps, cleanup } = setup(client);
+		const { deps, cleanup } = await setup(client);
 		try {
-			const other = acquireReconcileLock({
-				dataDir: deps.config.dataDir,
-				accountEmail: 'someone-else@example.com',
-			});
-			expect(other).not.toBeNull();
+			const other = claimReconcile('another-account');
+			if (other.claim === null) throw new Error('expected a claim');
 			expect(
 				reconcileAccount(deps, {
 					forceFull: false,
 					readOnly: false,
-					// biome-ignore lint/style/noNonNullAssertion: asserted non-null above.
-					lock: other!,
+					claim: other.claim,
 				}),
-			).rejects.toThrow('someone-else@example.com');
+			).rejects.toThrow('another-account');
 			expect(client.modifyCalls).toEqual([]);
-			other?.release();
+			other.release();
 		} finally {
 			cleanup();
 		}
@@ -933,42 +922,53 @@ describe('across a restart', () => {
 		// The product headline, end to end: archive on a plane, quit, reopen on the
 		// ground, and the archive reaches Gmail. Everything else in this file tests
 		// one seam; this tests that the seams hold across the only event the design
-		// exists to survive, which is the process going away between the act and
+		// exists to survive, which is the surface going away between the act and
 		// the delivery.
-		const dir = mkdtempSync(join(tmpdir(), 'local-mail-restart-'));
-		const account = { dataDir: dir, accountEmail: 'you@example.com' };
+		//
+		// A restart is modelled as two sets of handles over the same two databases,
+		// because that is exactly what it is: the databases are what survives, and
+		// `openMailbox` and `openIntentStore` hold no state of their own.
+		const session = await openTestSession(ACCOUNT_ID);
 		const syncedAt = new Date(NOW).toISOString();
+		await session.mailbox.ingestFullPullPage(
+			[message('m1', ['INBOX', 'UNREAD'])],
+			syncedAt,
+		);
+		await session.mailbox.ingestLabels(MIRRORED_LABELS, syncedAt);
+		await session.mailbox.finishFullPull('1', syncedAt);
 
-		// Session one: offline. Every Gmail call fails with a network error, which
+		// Session one: offline. Every Gmail write fails with a network error, which
 		// is systemic, so nothing may be retired and nothing may be written down
 		// about the failure.
 		const offline = fakeGmail(new Map());
 		offline.modifyMessage = async () =>
 			GmailApiError.Network({ cause: new Error('offline') });
-		const firstDb = openMailDb(account);
-		const firstIntent = openIntentDb(account);
-		firstDb.ingestFullPullPage([message('m1', ['INBOX', 'UNREAD'])], syncedAt);
-		firstDb.ingestLabels(MIRRORED_LABELS, syncedAt);
-		firstDb.finishFullPull('1', syncedAt);
 		const firstDeps: ReconcileDeps = {
-			db: firstDb,
-			intent: firstIntent,
+			mailbox: session.mailbox,
+			intents: session.intents,
 			client: offline,
-			config: config(dir),
+			config: DEFAULT_MAIL_CONFIG,
 			now: () => NOW,
-			accountEmail: account.accountEmail,
+			accountId: ACCOUNT_ID,
 		};
 
 		expect(
-			assertMessageLabels({
-				deps: firstDeps,
-				input: { ids: ['m1'], addLabels: [], removeLabels: ['INBOX'] },
-				readOnly: false,
-			}).error,
+			(
+				await assertMessageLabels({
+					deps: firstDeps,
+					input: { ids: ['m1'], addLabels: [], removeLabels: ['INBOX'] },
+					readOnly: false,
+				})
+			).error,
 		).toBeNull();
 		// The act is already true for every reader, before Gmail has heard.
 		expect(
-			firstDb.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+			await session.mailbox.listMessages({
+				labelId: 'INBOX',
+				limit: 10,
+				offset: 0,
+				overlay: overlayOf(await session.intents.pending()),
+			}),
 		).toEqual([]);
 
 		const offlinePass = await pass(firstDeps);
@@ -977,28 +977,27 @@ describe('across a restart', () => {
 		expect(offlinePass.delivery.failure).not.toBeNull();
 		expect(offlinePass.delivery.discarded).toEqual([]);
 
-		// The process goes away with the change undelivered.
-		firstIntent.close();
-		firstDb.close();
-
-		// Session two: a fresh open of both files, as a new process would do, and
-		// Gmail is reachable again.
+		// Session two: fresh handles over the same durable databases, as a new
+		// window would open, and Gmail is reachable again.
 		const online = fakeGmail(
 			new Map([['m1', { data: message('m1', ['UNREAD']) }]]),
 		);
-		const secondDb = openMailDb(account);
-		const secondIntent = openIntentDb(account);
+		const restarted = openMailbox(session.mailboxDatabase, ACCOUNT_ID);
+		const restartedIntents = openIntentStore(
+			session.intentDatabase,
+			ACCOUNT_ID,
+		);
 		const secondDeps: ReconcileDeps = {
-			db: secondDb,
-			intent: secondIntent,
+			mailbox: restarted,
+			intents: restartedIntents,
 			client: online,
-			config: config(dir),
+			config: DEFAULT_MAIL_CONFIG,
 			now: () => NOW,
-			accountEmail: account.accountEmail,
+			accountId: ACCOUNT_ID,
 		};
 
-		// The change was still owed when the new process opened the store.
-		expect(secondIntent.summary().assertions).toBe(1);
+		// The change was still owed when the new handles opened.
+		expect((await restartedIntents.summary()).assertions).toBe(1);
 
 		const landed = await pass(secondDeps);
 		expect(landed.delivery.delivered).toBe(1);
@@ -1007,15 +1006,18 @@ describe('across a restart', () => {
 		expect(online.modifyCalls).toEqual([
 			{ id: 'm1', addLabelIds: [], removeLabelIds: ['INBOX'] },
 		]);
-		// Gmail's own answer is now the mirror's fact, and nothing is overlaid on
+		// Gmail's own answer is now the cache's fact, and nothing is overlaid on
 		// it any more, so the reader's answer is unchanged by the delivery.
-		expect(mirroredLabels(secondDb, 'm1')).toEqual(['UNREAD']);
+		expect(await mirroredLabels(session, 'm1')).toEqual(['UNREAD']);
 		expect(
-			secondDb.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+			await restarted.listMessages({
+				labelId: 'INBOX',
+				limit: 10,
+				offset: 0,
+				overlay: overlayOf(await restartedIntents.pending()),
+			}),
 		).toEqual([]);
 
-		secondIntent.close();
-		secondDb.close();
-		rmSync(dir, { recursive: true, force: true });
+		session.close();
 	});
 });

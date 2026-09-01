@@ -7,6 +7,7 @@
 ## Context
 
 Local Mail's mirror is about to be redeclared under ADR-0197: the hand-stamped
+<!-- doc-path-check: ignore-next-line -->
 `SCHEMA_VERSION` in `apps/local-mail/src/db.ts` goes away, and the stored shape
 becomes a reviewed declaration whose fingerprint names the file. That turns the
 column set from something that accretes into something decided once, and it puts
@@ -22,6 +23,7 @@ the name of the format the app never fetches
 columns sit beside it (`subject`, `sender`, `body_text`) while `thread_id`,
 `snippet`, `label_ids`, and `internal_date` are SQLite generated columns and
 `To`, `Date`, and the HTML body are recomputed on every read
+<!-- doc-path-check: ignore-next-line -->
 (`apps/local-mail/src/db.ts`, `apps/local-mail/src/message-fields.ts`). The split
 is defensible but nothing recorded why it falls there, so the next column has no
 test to pass.
@@ -128,6 +130,7 @@ In Local Mail the column holding the parsed `messages.get(format=full)` payload
 is named `resource`. `raw` is Gmail's own term for a precisely different thing:
 `format=raw` returns the base64url RFC 5322 message, which this app never
 fetches. A column named `raw` holding a parsed resource is a false statement in
+<!-- doc-path-check: ignore-next-line -->
 the schema, and it has already leaked into prose (`apps/local-mail/src/db.ts` and
 `apps/local-mail/src/message-fields.ts` both describe deriving HTML "from `raw`",
 meaning the parsed JSON).

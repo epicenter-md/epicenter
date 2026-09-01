@@ -19,6 +19,7 @@
 ADR-0197 settled what a mirror artifact is called and left one input undecided
 on purpose: "the caller passes the directory it already computed". Both apps
 compute that directory themselves, and each computes a whole OS application-data
+<!-- doc-path-check: ignore-next-line -->
 root to do it. `apps/local-mail/src/paths.ts` resolves
 `~/Library/Application Support/local-mail` from `LOCAL_MAIL_DIR` or the platform
 default; `apps/local-books/src/paths.ts` resolves
@@ -322,6 +323,7 @@ else's directory.
 
 Generic cross-app SQL is the specific thing refused, because it is the one that
 looks free. Both apps already expose read-only SQL over their own mirror
+<!-- doc-path-check: ignore-next-line -->
 (`queryMail` in `apps/local-mail/src/query.ts`, `queryBooks` in
 `apps/local-books/src/books/query.ts`). Each is the *owning* app's surface over
 the file that app wrote, offered to the person who owns the machine. Widening
@@ -340,6 +342,7 @@ Cross-app use has exactly two forms, and both are already built:
   `report`, `status`, and `recategorize` cores in `apps/local-books/src/books/`
   are this shape, and its `mcp` verb (ADR-0073) is the same cores re-exposed to
   a foreign caller without a rewrite; Local Mail's read models behind
+<!-- doc-path-check: ignore-next-line -->
   `apps/local-mail/src/http/api.ts` are the same. A caller gets projected rows
   with a meaning the owner promises to keep, not a file whose layout it must
   reverse-engineer. What a verb hands back is data, never a location: paths are

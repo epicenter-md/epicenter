@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer';
 import type { GmailMessage } from './schema.ts';
 
 /**
@@ -8,16 +7,16 @@ import type { GmailMessage } from './schema.ts';
  * serve two purposes: `bodyText` is the searchable plain text stored at ingest,
  * and `bodyHtml` is the `text/html` part the detail read derives from the stored
  * resource for rich rendering (unsanitized: see its own doc). Pure functions
- * over `GmailMessage`, so `db.ts` calls them once at ingest and the SQLite file
- * never re-derives them. Kept out of `schema.ts` (which stays only the TypeBox
- * wire shapes) and out of the `db.ts` closure (which owns the open handle and
- * its prepared statements): this is email-format decoding, not wire validation
- * and not SQLite lifecycle, so it has one home of its own.
+ * over `GmailMessage`, so `mailbox.ts` calls them once at ingest and the cache
+ * never re-derives them. Kept out of `schema.ts`, which stays only the TypeBox
+ * wire shapes, and out of `mailbox.ts`, which owns the statements: this is
+ * email-format decoding, not wire validation and not storage lifecycle.
  *
- * What these functions promise is part of the mirror's corpus contract: `subject`,
- * `sender`, and `body_text` are stored columns filled from here, so changing what
- * one of them extracts means bumping `MIRROR_VERSION` in `db.ts`, which names a
- * new artifact and buys a full rebuild (ADR-0197).
+ * What these functions promise is part of what the cache stores: `subject`,
+ * `sender`, and `body_text` are columns filled from here. Changing what one of
+ * them extracts means every row already stored disagrees with every row stored
+ * after, and the answer is `mailbox.reset()` and a fresh pull, which is what
+ * makes this data disposable (ADR-0306).
  */
 
 /** Pull a header value by name (case-insensitive, per RFC 5322). Gmail nests
@@ -52,13 +51,25 @@ type GmailMessagePart = {
 /** The MIME types a reader would show as the message body. */
 const BODY_MIME_TYPES = new Set(['text/plain', 'text/html']);
 
+/**
+ * Decode Gmail's base64url body part.
+ *
+ * `atob` and `TextDecoder` rather than `Buffer`, because this module runs in a
+ * page. `atob` yields one byte per code unit, so the bytes are lifted back out
+ * by code point before UTF-8 decoding; going straight to a string would mangle
+ * every non-ASCII message.
+ */
 function decodeBase64Url(data: string): string | null {
 	try {
 		const normalized = data
 			.replace(/-/g, '+')
 			.replace(/_/g, '/')
 			.padEnd(Math.ceil(data.length / 4) * 4, '=');
-		return Buffer.from(normalized, 'base64').toString('utf8');
+		const binary = atob(normalized);
+		const bytes = Uint8Array.from(binary, (character) =>
+			character.charCodeAt(0),
+		);
+		return new TextDecoder('utf-8').decode(bytes);
 	} catch {
 		return null;
 	}

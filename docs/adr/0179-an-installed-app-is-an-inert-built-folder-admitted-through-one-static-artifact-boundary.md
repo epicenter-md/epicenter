@@ -24,6 +24,7 @@ system is the most powerful thing Epicenter could do on a user's machine, it
 happens outside the runtime authority floor ADR-0153 spent its length defining,
 and it is not needed to serve static files.
 
+<!-- doc-path-check: ignore-next-line -->
 The running code already moved. `apps/epicenter/scripts/publish-app-catalog.ts`
 promotes finished `dist/` trees and states in its own header that it does not
 install dependencies or run build scripts. The accepted decision and the

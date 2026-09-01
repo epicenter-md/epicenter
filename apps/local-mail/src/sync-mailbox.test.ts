@@ -6,28 +6,12 @@
  * an expired cursor.
  */
 
-import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import type { AppConfig } from './config.ts';
-import { type MailDb, openMailDb } from './db.ts';
+import { DEFAULT_MAIL_CONFIG, type MailConfig } from './config.ts';
 import { GmailApiError, type GmailClient } from './gmail-client.ts';
 import type { GmailMessage, HistoryPage } from './schema.ts';
+import { openTestSession, type TestSession } from './session.test-support.ts';
 import { syncMailbox } from './sync.ts';
-
-function tempDb(): { db: MailDb; cleanup: () => void } {
-	const dir = mkdtempSync(join(tmpdir(), 'local-mail-sync-test-'));
-	const db = openMailDb({ dataDir: dir, accountEmail: 'you@example.com' });
-	return {
-		db,
-		cleanup: () => {
-			db.close();
-			rmSync(dir, { recursive: true, force: true });
-		},
-	};
-}
 
 function message(id: string, over: Partial<GmailMessage> = {}): GmailMessage {
 	return {
@@ -97,35 +81,26 @@ function createFakeGmailClient(seed: {
 	};
 }
 
-const config: AppConfig = {
-	dataDir: '/tmp/local-mail-test',
-	apiBase: 'http://localhost:0',
-	authorizeUrl: 'http://localhost:0/auth',
-	tokenUrl: 'http://localhost:0/token',
-	historySafeWindowDays: 5,
-	fullBackstopDays: 30,
-	pageSize: 100,
-	credentialsPath: '/tmp/local-mail-test/credentials.json',
-	account: null,
-	readOnly: false,
-};
+const config: MailConfig = DEFAULT_MAIL_CONFIG;
 
 describe('syncMailbox: FULL pull', () => {
 	test('first run pulls every message, labels, and records the profile historyId as cursor', async () => {
-		const { db, cleanup } = tempDb();
-		const mailbox = new Map([
+		const session = await openTestSession();
+		const { mailbox } = session;
+		const cleanup = session.close;
+		const remote = new Map([
 			['m1', message('m1')],
 			['m2', message('m2')],
 		]);
 		const client = createFakeGmailClient({
-			mailbox,
+			mailbox: remote,
 			historyPages: [],
 			profileHistoryId: '1000',
 			labels: [{ id: 'INBOX', name: 'INBOX', type: 'system' }],
 		});
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
 			{ forceFull: false },
 		);
 
@@ -133,22 +108,22 @@ describe('syncMailbox: FULL pull', () => {
 		expect(outcome.failure).toBeNull();
 		expect(outcome.messagesUpserted).toBe(2);
 		expect(outcome.cursorAfter).toBe('1000');
-		expect(db.readRealmState().historyId).toBe('1000');
+		expect((await mailbox.readCacheState()).historyId).toBe('1000');
 
-		const row = db.raw
-			.query<{ id: string }, [string]>(`SELECT id FROM messages WHERE id = ?`)
-			.get('m1');
+		const row = await session.row<{ id: string }>(`SELECT id FROM messages WHERE id = ?`, ['m1']);
 		expect(row?.id).toBe('m1');
 		cleanup();
 	});
 
 	test('full pull reads the profile baseline before listing page 1', async () => {
-		const { db, cleanup } = tempDb();
-		const mailbox = new Map([['m1', message('m1')]]);
+		const session = await openTestSession();
+		const { mailbox } = session;
+		const cleanup = session.close;
+		const remote = new Map([['m1', message('m1')]]);
 		const order: string[] = [];
 		const client: GmailClient = {
 			...createFakeGmailClient({
-				mailbox,
+				mailbox: remote,
 				historyPages: [],
 				profileHistoryId: '1000',
 			}),
@@ -158,12 +133,12 @@ describe('syncMailbox: FULL pull', () => {
 			},
 			async listMessageIds(pageToken) {
 				order.push(`listMessageIds:${pageToken ?? 'first'}`);
-				return { data: { ids: [...mailbox.keys()] }, error: null };
+				return { data: { ids: [...remote.keys()] }, error: null };
 			},
 		};
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
 			{ forceFull: false },
 		);
 
@@ -173,15 +148,17 @@ describe('syncMailbox: FULL pull', () => {
 	});
 
 	test('messages.get concurrency stays at or under 8 during a full pull', async () => {
-		const { db, cleanup } = tempDb();
+		const session = await openTestSession();
+		const { mailbox } = session;
+		const cleanup = session.close;
 		const ids = Array.from({ length: 20 }, (_, i) => `m${i}`);
-		const mailbox = new Map(ids.map((id) => [id, message(id)]));
+		const remote = new Map(ids.map((id) => [id, message(id)]));
 		let active = 0;
 		let highWater = 0;
 		const release = Promise.withResolvers<void>();
 		const client: GmailClient = {
 			...createFakeGmailClient({
-				mailbox,
+				mailbox: remote,
 				historyPages: [],
 				profileHistoryId: '1000',
 			}),
@@ -190,7 +167,7 @@ describe('syncMailbox: FULL pull', () => {
 				highWater = Math.max(highWater, active);
 				await release.promise;
 				active -= 1;
-				const found = mailbox.get(id);
+				const found = remote.get(id);
 				if (!found)
 					return GmailApiError.Http({ status: 404, body: 'not found' });
 				return { data: found, error: null };
@@ -198,7 +175,7 @@ describe('syncMailbox: FULL pull', () => {
 		};
 
 		const syncing = syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
 			{ forceFull: true },
 		);
 		while (highWater < 8) await Bun.sleep(1);
@@ -212,13 +189,15 @@ describe('syncMailbox: FULL pull', () => {
 	});
 
 	test('messages.get failure in a full-pull page bounds calls and leaves the cursor unchanged', async () => {
-		const { db, cleanup } = tempDb();
+		const session = await openTestSession();
+		const { mailbox } = session;
+		const cleanup = session.close;
 		const ids = Array.from({ length: 100 }, (_, i) => `m${i}`);
-		const mailbox = new Map(ids.map((id) => [id, message(id)]));
+		const remote = new Map(ids.map((id) => [id, message(id)]));
 		let getMessageCalls = 0;
 		const client: GmailClient = {
 			...createFakeGmailClient({
-				mailbox,
+				mailbox: remote,
 				historyPages: [],
 				profileHistoryId: '1000',
 			}),
@@ -227,7 +206,7 @@ describe('syncMailbox: FULL pull', () => {
 				if (id === 'm1') {
 					return GmailApiError.Http({ status: 500, body: 'boom' });
 				}
-				const found = mailbox.get(id);
+				const found = remote.get(id);
 				if (!found)
 					return GmailApiError.Http({ status: 404, body: 'not found' });
 				return { data: found, error: null };
@@ -235,33 +214,35 @@ describe('syncMailbox: FULL pull', () => {
 		};
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
 			{ forceFull: true },
 		);
 
 		expect(outcome.failure?.name).toBe('Http');
 		expect(outcome.cursorAfter).toBeNull();
-		expect(db.readRealmState().historyId).toBeNull();
+		expect((await mailbox.readCacheState()).historyId).toBeNull();
 		expect(getMessageCalls).toBeLessThanOrEqual(8);
 		cleanup();
 	});
 
 	test('full pull deletes rows absent from the listed mailbox', async () => {
-		const { db, cleanup } = tempDb();
-		db.ingestFullPullPage(
+		const session = await openTestSession();
+		const { mailbox } = session;
+		const cleanup = session.close;
+		await mailbox.ingestFullPullPage(
 			[message('kept'), message('stale')],
 			'2026-06-30T00:00:00.000Z',
 		);
-		db.finishFullPull('500', '2026-06-30T00:00:00.000Z');
-		const mailbox = new Map([['kept', message('kept')]]);
+		await mailbox.finishFullPull('500', '2026-06-30T00:00:00.000Z');
+		const remote = new Map([['kept', message('kept')]]);
 		const client = createFakeGmailClient({
-			mailbox,
+			mailbox: remote,
 			historyPages: [],
 			profileHistoryId: '1000',
 		});
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
 			{ forceFull: true },
 		);
 
@@ -269,40 +250,37 @@ describe('syncMailbox: FULL pull', () => {
 		expect(outcome.messagesUpserted).toBe(1);
 		expect(outcome.messagesDeleted).toBe(1);
 		expect(
-			db.raw
-				.query<{ n: number }, []>(
-					`SELECT count(*) AS n FROM messages WHERE id = 'stale'`,
-				)
-				.get()?.n,
+			(await session.row<{ n: number }>(`SELECT count(*) AS n FROM messages WHERE id = 'stale'`, []))?.n,
 		).toBe(0);
 		expect(
-			db.raw
-				.query<{ n: number }, []>(
-					`SELECT count(*) AS n FROM messages WHERE id = 'kept'`,
-				)
-				.get()?.n,
+			(await session.row<{ n: number }>(`SELECT count(*) AS n FROM messages WHERE id = 'kept'`, []))?.n,
 		).toBe(1);
 		cleanup();
 	});
 });
 
 describe('syncMailbox: INCREMENTAL', () => {
-	function seededDb(): { db: MailDb; cleanup: () => void } {
-		const { db, cleanup } = tempDb();
-		db.ingestFullPullPage([message('existing')], '2026-06-30T00:00:00.000Z');
-		db.ingestLabels(
+	async function seededDb(): Promise<TestSession> {
+		const session = await openTestSession();
+		await session.mailbox.ingestFullPullPage(
+			[message('existing')],
+			'2026-06-30T00:00:00.000Z',
+		);
+		await session.mailbox.ingestLabels(
 			[{ id: 'INBOX', name: 'INBOX', type: 'system' }],
 			'2026-06-30T00:00:00.000Z',
 		);
-		db.finishFullPull('500', '2026-06-30T00:00:00.000Z');
-		return { db, cleanup };
+		await session.mailbox.finishFullPull('500', '2026-06-30T00:00:00.000Z');
+		return session;
 	}
 
 	test('messagesAdded fetches and upserts full content', async () => {
-		const { db, cleanup } = seededDb();
-		const mailbox = new Map([['new-msg', message('new-msg')]]);
+		const session = await seededDb();
+		const { mailbox } = session;
+		const cleanup = session.close;
+		const remote = new Map([['new-msg', message('new-msg')]]);
 		const client = createFakeGmailClient({
-			mailbox,
+			mailbox: remote,
 			historyPages: [
 				{
 					historyId: '501',
@@ -320,22 +298,22 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
 			{ forceFull: false },
 		);
 
 		expect(outcome.mode).toBe('INCREMENTAL');
 		expect(outcome.messagesUpserted).toBe(1);
 		expect(outcome.cursorAfter).toBe('501');
-		const row = db.raw
-			.query<{ id: string }, [string]>(`SELECT id FROM messages WHERE id = ?`)
-			.get('new-msg');
+		const row = await session.row<{ id: string }>(`SELECT id FROM messages WHERE id = ?`, ['new-msg']);
 		expect(row?.id).toBe('new-msg');
 		cleanup();
 	});
 
 	test('incremental pass refreshes labels once and advances the cursor', async () => {
-		const { db, cleanup } = seededDb();
+		const session = await seededDb();
+		const { mailbox } = session;
+		const cleanup = session.close;
 		const client = createFakeGmailClient({
 			mailbox: new Map(),
 			historyPages: [
@@ -366,23 +344,23 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
 			{ forceFull: false },
 		);
 
 		expect(outcome.failure).toBeNull();
 		expect(outcome.cursorAfter).toBe('502');
 		expect(client.calls.listLabels()).toBe(1);
-		const label = db.raw
-			.query<{ name: string }, [string]>(`SELECT name FROM labels WHERE id = ?`)
-			.get('Label_1');
+		const label = await session.row<{ name: string }>(`SELECT name FROM labels WHERE id = ?`, ['Label_1']);
 		expect(label?.name).toBe('Work');
 		cleanup();
 	});
 
 	test('incremental pass refreshes labels even when all referenced labels are known', async () => {
-		const { db, cleanup } = seededDb();
-		db.ingestLabels(
+		const session = await seededDb();
+		const { mailbox } = session;
+		const cleanup = session.close;
+		await mailbox.ingestLabels(
 			[
 				{ id: 'INBOX', name: 'INBOX', type: 'system' },
 				{ id: 'IMPORTANT', name: 'Old important', type: 'system' },
@@ -419,21 +397,21 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
 			{ forceFull: false },
 		);
 
 		expect(outcome.failure).toBeNull();
 		expect(client.calls.listLabels()).toBe(1);
-		const label = db.raw
-			.query<{ name: string }, [string]>(`SELECT name FROM labels WHERE id = ?`)
-			.get('IMPORTANT');
+		const label = await session.row<{ name: string }>(`SELECT name FROM labels WHERE id = ?`, ['IMPORTANT']);
 		expect(label?.name).toBe('IMPORTANT');
 		cleanup();
 	});
 
 	test('referenced label absent from labels.list refreshes once per pass and terminates', async () => {
-		const { db, cleanup } = seededDb();
+		const session = await seededDb();
+		const { mailbox } = session;
+		const cleanup = session.close;
 		const client = createFakeGmailClient({
 			mailbox: new Map(),
 			historyPages: [
@@ -462,11 +440,11 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const first = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
 			{ forceFull: false },
 		);
 		const second = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:01:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:01:00.000Z') },
 			{ forceFull: false },
 		);
 
@@ -479,7 +457,9 @@ describe('syncMailbox: INCREMENTAL', () => {
 	});
 
 	test('labels.list failure logs and still advances the cursor', async () => {
-		const { db, cleanup } = seededDb();
+		const session = await seededDb();
+		const { mailbox } = session;
+		const cleanup = session.close;
 		const logs: string[] = [];
 		const client: GmailClient & {
 			calls: { getMessage: () => number; listLabels: () => number };
@@ -515,7 +495,7 @@ describe('syncMailbox: INCREMENTAL', () => {
 
 		const outcome = await syncMailbox(
 			{
-				db,
+				mailbox,
 				client,
 				config,
 				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
@@ -531,7 +511,9 @@ describe('syncMailbox: INCREMENTAL', () => {
 	});
 
 	test('a label change on a mirrored message patches labelIds without a messages.get call', async () => {
-		const { db, cleanup } = seededDb();
+		const session = await seededDb();
+		const { mailbox } = session;
+		const cleanup = session.close;
 		const client = createFakeGmailClient({
 			mailbox: new Map(), // empty: a fetch here would 404 and evict the row
 			historyPages: [
@@ -558,24 +540,22 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
 			{ forceFull: false },
 		);
 
 		expect(outcome.failure).toBeNull();
 		expect(outcome.labelsPatched).toBe(1);
 		expect(client.calls.getMessage()).toBe(0);
-		const row = db.raw
-			.query<{ label_ids: string }, [string]>(
-				`SELECT label_ids FROM messages WHERE id = ?`,
-			)
-			.get('existing');
+		const row = await session.row<{ label_ids: string }>(`SELECT label_ids FROM messages WHERE id = ?`, ['existing']);
 		expect(JSON.parse(row?.label_ids ?? '[]')).toEqual(['INBOX', 'IMPORTANT']);
 		cleanup();
 	});
 
 	test('an idempotent history echo of already-current labels reports labelsPatched 0', async () => {
-		const { db, cleanup } = seededDb();
+		const session = await seededDb();
+		const { mailbox } = session;
+		const cleanup = session.close;
 		// The seeded row already carries exactly ['INBOX']; a labelsAdded echo of
 		// the same set (the shape the reconciler's fold produces, then Gmail replays
 		// through history) touches the row but changes nothing material.
@@ -605,7 +585,7 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
 			{ forceFull: false },
 		);
 
@@ -616,12 +596,14 @@ describe('syncMailbox: INCREMENTAL', () => {
 	});
 
 	test('a labels echo in a different order is not counted as a material change', async () => {
-		const { db, cleanup } = tempDb();
-		db.ingestFullPullPage(
+		const session = await openTestSession();
+		const { mailbox } = session;
+		const cleanup = session.close;
+		await mailbox.ingestFullPullPage(
 			[message('existing', { labelIds: ['INBOX', 'IMPORTANT'] })],
 			'2026-06-30T00:00:00.000Z',
 		);
-		db.finishFullPull('500', '2026-06-30T00:00:00.000Z');
+		await mailbox.finishFullPull('500', '2026-06-30T00:00:00.000Z');
 		const client = createFakeGmailClient({
 			mailbox: new Map(),
 			historyPages: [
@@ -648,7 +630,7 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
 			{ forceFull: false },
 		);
 
@@ -658,12 +640,14 @@ describe('syncMailbox: INCREMENTAL', () => {
 	});
 
 	test('labelsRemoved for an unmirrored message refetches it (untrash after a full-pull sweep)', async () => {
-		const { db, cleanup } = seededDb();
-		const mailbox = new Map([
+		const session = await seededDb();
+		const { mailbox } = session;
+		const cleanup = session.close;
+		const remote = new Map([
 			['untrashed', message('untrashed', { labelIds: ['INBOX'] })],
 		]);
 		const client = createFakeGmailClient({
-			mailbox,
+			mailbox: remote,
 			historyPages: [
 				{
 					historyId: '504',
@@ -688,7 +672,7 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
 			{ forceFull: false },
 		);
 
@@ -696,17 +680,15 @@ describe('syncMailbox: INCREMENTAL', () => {
 		expect(client.calls.getMessage()).toBe(1);
 		expect(outcome.messagesUpserted).toBe(1);
 		expect(outcome.cursorAfter).toBe('504');
-		const row = db.raw
-			.query<{ subject: string | null }, [string]>(
-				`SELECT subject FROM messages WHERE id = ?`,
-			)
-			.get('untrashed');
+		const row = await session.row<{ subject: string | null }>(`SELECT subject FROM messages WHERE id = ?`, ['untrashed']);
 		expect(row?.subject).toBe('Subject untrashed');
 		cleanup();
 	});
 
 	test('a refetch for an unmirrored label patch that 404s leaves no row and still advances the cursor', async () => {
-		const { db, cleanup } = seededDb();
+		const session = await seededDb();
+		const { mailbox } = session;
+		const cleanup = session.close;
 		const client = createFakeGmailClient({
 			mailbox: new Map(), // getMessage 404s: gone again before we fetched
 			historyPages: [
@@ -733,24 +715,22 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
 			{ forceFull: false },
 		);
 
 		expect(outcome.failure).toBeNull();
 		expect(client.calls.getMessage()).toBe(1);
 		expect(outcome.cursorAfter).toBe('504');
-		const row = db.raw
-			.query<{ n: number }, []>(
-				`SELECT count(*) AS n FROM messages WHERE id = 'gone'`,
-			)
-			.get();
+		const row = await session.row<{ n: number }>(`SELECT count(*) AS n FROM messages WHERE id = 'gone'`, []);
 		expect(row?.n).toBe(0);
 		cleanup();
 	});
 
 	test('messagesDeleted physically removes the row', async () => {
-		const { db, cleanup } = seededDb();
+		const session = await seededDb();
+		const { mailbox } = session;
+		const cleanup = session.close;
 		const client = createFakeGmailClient({
 			mailbox: new Map(),
 			historyPages: [
@@ -770,22 +750,20 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
 			{ forceFull: false },
 		);
 
 		expect(outcome.messagesDeleted).toBe(1);
-		const row = db.raw
-			.query<{ n: number }, []>(
-				`SELECT count(*) AS n FROM messages WHERE id = 'existing'`,
-			)
-			.get();
+		const row = await session.row<{ n: number }>(`SELECT count(*) AS n FROM messages WHERE id = 'existing'`, []);
 		expect(row?.n).toBe(0);
 		cleanup();
 	});
 
 	test('a no-history-key page (nothing changed) advances the cursor to the same value without touching rows', async () => {
-		const { db, cleanup } = seededDb();
+		const session = await seededDb();
+		const { mailbox } = session;
+		const cleanup = session.close;
 		const client = createFakeGmailClient({
 			mailbox: new Map(),
 			historyPages: [{ historyId: '500', history: undefined }],
@@ -793,7 +771,7 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
 			{ forceFull: false },
 		);
 
@@ -804,11 +782,13 @@ describe('syncMailbox: INCREMENTAL', () => {
 	});
 
 	test('an expired cursor (404) mid-pass falls back to FULL within the same call', async () => {
-		const { db, cleanup } = seededDb();
-		const mailbox = new Map([['fresh', message('fresh')]]);
+		const session = await seededDb();
+		const { mailbox } = session;
+		const cleanup = session.close;
+		const remote = new Map([['fresh', message('fresh')]]);
 		const client: GmailClient = {
 			...createFakeGmailClient({
-				mailbox,
+				mailbox: remote,
 				historyPages: [],
 				profileHistoryId: '9000',
 			}),
@@ -818,7 +798,7 @@ describe('syncMailbox: INCREMENTAL', () => {
 		};
 
 		const outcome = await syncMailbox(
-			{ db, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
 			{ forceFull: false },
 		);
 
@@ -826,18 +806,32 @@ describe('syncMailbox: INCREMENTAL', () => {
 		expect(outcome.reason).toBe('historyId expired mid-pass');
 		expect(outcome.failure).toBeNull();
 		expect(outcome.cursorAfter).toBe('9000');
-		expect(db.readRealmState().historyId).toBe('9000');
+		expect((await mailbox.readCacheState()).historyId).toBe('9000');
 		cleanup();
 	});
 });
 
 describe('syncMailbox: concurrent writers', () => {
-	test('a mirror locked past the busy timeout reports MirrorBusy instead of throwing', async () => {
-		const { db, cleanup } = tempDb();
-		// Shrink the production 5s timeout so the test fails fast.
-		db.raw.exec('PRAGMA busy_timeout = 50;');
-		const rival = new Database(db.raw.filename);
-		rival.exec('BEGIN IMMEDIATE;');
+	test('a cache locked past the busy timeout reports MirrorBusy instead of throwing', async () => {
+		// The desktop runs a visible window and a hidden synchronization worker
+		// over one database (ADR-0317), so a write that loses the lock is an
+		// operational condition rather than a bug. What it must not do is take the
+		// surface down or advance the cursor.
+		const session = await openTestSession();
+		const { mailbox } = session;
+		let locked = true;
+		const busy = Object.assign(new Error('database is locked'), {
+			code: 'SQLITE_BUSY',
+		});
+		const guarded = {
+			...mailbox,
+			ingestFullPullPage: async (
+				...args: Parameters<typeof mailbox.ingestFullPullPage>
+			) => {
+				if (locked) throw busy;
+				return mailbox.ingestFullPullPage(...args);
+			},
+		};
 
 		const client = createFakeGmailClient({
 			mailbox: new Map([['m1', message('m1')]]),
@@ -845,7 +839,7 @@ describe('syncMailbox: concurrent writers', () => {
 			profileHistoryId: '1000',
 		});
 		const deps = {
-			db,
+			mailbox: guarded,
 			client,
 			config,
 			now: () => Date.parse('2026-07-01T00:00:00.000Z'),
@@ -854,13 +848,13 @@ describe('syncMailbox: concurrent writers', () => {
 		const outcome = await syncMailbox(deps, { forceFull: true });
 		expect(outcome.failure?.name).toBe('MirrorBusy');
 		expect(outcome.cursorAfter).toBe(outcome.cursorBefore);
+		expect((await mailbox.readCacheState()).historyId).toBeNull();
 
 		// The lock released: the very next pass succeeds against the same handle.
-		rival.exec('ROLLBACK;');
-		rival.close();
+		locked = false;
 		const retry = await syncMailbox(deps, { forceFull: true });
 		expect(retry.failure).toBeNull();
-		expect(db.readRealmState().historyId).toBe('1000');
-		cleanup();
+		expect((await mailbox.readCacheState()).historyId).toBe('1000');
+		session.close();
 	});
 });

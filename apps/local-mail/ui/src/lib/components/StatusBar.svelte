@@ -6,10 +6,9 @@
 	import AlertTriangleIcon from '@lucide/svelte/icons/triangle-alert';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
 	import ClockIcon from '@lucide/svelte/icons/clock';
-	import LockIcon from '@lucide/svelte/icons/lock';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+		import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { relativeTime } from '$lib/format';
-	import type { MailboxStatus } from '$lib/types';
+	import type { ConnectedAccount, MailboxStatus } from '$lib/types';
 
 	let {
 		status,
@@ -21,9 +20,9 @@
 		onReconcile,
 	}: {
 		status: MailboxStatus | undefined;
-		/** Every connected account the host serves. One account renders as plain
-		 * text; several render as a switcher. */
-		accounts: string[];
+		/** Every account this person has connected. One renders as plain text;
+		 * several render as a switcher. */
+		accounts: ConnectedAccount[];
 		/** The account currently in view (null only before the list has loaded). */
 		selectedAccount: string | null;
 		onSelectAccount: (account: string) => void;
@@ -38,17 +37,21 @@
 	const pending = $derived(status?.pending.assertions ?? 0);
 	const oldestPending = $derived(status?.pending.oldestAssertedAt ?? null);
 
-	// The mirror chip is the one canonical mirror-state surface.
-	const mirror = $derived(status?.mirror ?? 'empty');
+	// The cache chip is the one canonical cache-state surface.
+	const cache = $derived(status?.cache ?? 'empty');
 	const chip = $derived({
 		tone:
-			mirror === 'ready'
+			cache === 'ready'
 				? 'bg-emerald-500'
-				: mirror === 'building'
+				: cache === 'building'
 					? 'bg-amber-500'
 					: 'bg-muted-foreground',
-		label: mirror,
+		label: cache,
 	});
+	const selectedEmail = $derived(
+		accounts.find((account) => account.accountId === selectedAccount)?.email ??
+			null,
+	);
 	const numberFmt = new Intl.NumberFormat();
 </script>
 
@@ -68,7 +71,7 @@
 							class="h-7 min-w-0 gap-1.5 px-2 font-mono text-xs text-muted-foreground"
 							tooltip="Switch account"
 						>
-							<span class="truncate">{selectedAccount ?? 'Select account'}</span>
+							<span class="truncate">{selectedEmail ?? 'Select account'}</span>
 							<ChevronsUpDownIcon class="size-3.5 shrink-0" />
 						</Button>
 					{/snippet}
@@ -80,24 +83,24 @@
 						value={selectedAccount ?? ''}
 						onValueChange={onSelectAccount}
 					>
-						{#each accounts as account (account)}
-							<DropdownMenu.RadioItem value={account}>
-								<span class="truncate font-mono text-xs">{account}</span>
+						{#each accounts as account (account.accountId)}
+							<DropdownMenu.RadioItem value={account.accountId}>
+								<span class="truncate font-mono text-xs">{account.email}</span>
 							</DropdownMenu.RadioItem>
 						{/each}
 					</DropdownMenu.RadioGroup>
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
-		{:else if selectedAccount}
+		{:else if selectedEmail}
 			<span class="truncate font-mono text-xs text-muted-foreground">
-				{selectedAccount}
+				{selectedEmail}
 			</span>
 		{/if}
 	</div>
 
 	<div class="flex items-center gap-3 text-xs text-muted-foreground">
 		{#if status}
-			<span class="flex items-center gap-1.5" title="Mirror state">
+			<span class="flex items-center gap-1.5" title="Cache state">
 				<span class="size-2 rounded-full {chip.tone}"></span>
 				<span class="capitalize">{chip.label}</span>
 			</span>
@@ -114,14 +117,6 @@
 				>
 					<ClockIcon class="size-3" />
 					{pending} pending · {relativeTime(oldestPending)}
-				</span>
-			{/if}
-			{#if status.readOnly}
-				<span
-					class="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 font-medium text-amber-500"
-					title="LOCAL_MAIL_READ_ONLY is set: Gmail writes are disabled"
-				>
-					<LockIcon class="size-3" /> read-only
 				</span>
 			{/if}
 		{/if}

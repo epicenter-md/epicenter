@@ -1,6 +1,6 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { IntentDb, LabelAssertion } from './intent.ts';
+import type { IntentStore, LabelAssertion } from './intent-store.ts';
 import { GMAIL_SYSTEM_LABEL_IDS } from './schema.ts';
 
 /**
@@ -128,12 +128,12 @@ export type AssertLabelsOutcome = {
 export type LabelDirectory = {
 	findLabelByIdOrExactName(
 		label: string,
-	): { id: string; name: string | null } | null;
+	): Promise<{ id: string; name: string | null } | null>;
 };
 
 export type AssertDeps = {
-	db: LabelDirectory;
-	intent: IntentDb;
+	mailbox: LabelDirectory;
+	intents: IntentStore;
 	/** The act's clock. Injected like every other clock here, and stamped onto
 	 * each assertion so a status surface can report how long the oldest
 	 * undelivered change has waited. */
@@ -152,17 +152,17 @@ export type AssertDeps = {
  * mailbox data, so they still resolve against the mirror and an unknown one is
  * still refused.
  */
-function resolveLabelIds(
+async function resolveLabelIds(
 	directory: LabelDirectory,
 	labels: string[],
-): Result<string[], AssertLabelsError> {
+): Promise<Result<string[], AssertLabelsError>> {
 	const resolved: string[] = [];
 	for (const label of labels) {
 		if (GMAIL_SYSTEM_LABEL_IDS.has(label)) {
 			resolved.push(label);
 			continue;
 		}
-		const row = directory.findLabelByIdOrExactName(label);
+		const row = await directory.findLabelByIdOrExactName(label);
 		if (!row) return AssertLabelsError.UnknownLabel({ label });
 		resolved.push(row.id);
 	}
@@ -174,7 +174,7 @@ function resolveLabelIds(
  * outcome because no id can fail: the act is a local write, and delivery is
  * somebody else's pass.
  */
-export function assertMessageLabels({
+export async function assertMessageLabels({
 	deps,
 	input,
 	readOnly,
@@ -186,7 +186,7 @@ export function assertMessageLabels({
 	 * The core owns this invariant, not the CLI, MCP, or HTTP surface.
 	 */
 	readOnly: boolean;
-}): Result<AssertLabelsOutcome, AssertLabelsError> {
+}): Promise<Result<AssertLabelsOutcome, AssertLabelsError>> {
 	if (readOnly) return AssertLabelsError.ReadOnly();
 	if (input.ids.length === 0) return AssertLabelsError.NoMessageIds();
 	if (input.ids.length > MAX_MESSAGES_PER_ACT) {
@@ -208,7 +208,7 @@ export function assertMessageLabels({
 		});
 	}
 
-	const { data: resolved, error } = resolveLabelIds(deps.db, [
+	const { data: resolved, error } = await resolveLabelIds(deps.mailbox, [
 		...input.addLabels,
 		...input.removeLabels,
 	]);
@@ -236,7 +236,7 @@ export function assertMessageLabels({
 	}
 
 	return Ok({
-		asserted: deps.intent.assert(
+		asserted: await deps.intents.assert(
 			assertions,
 			new Date(deps.now()).toISOString(),
 		),

@@ -24,5 +24,5 @@ application can see it (ADR-0307).
 Schema and transaction invariants belong to the consuming package. The client
 store lives in `@epicenter/data`; server authority storage lives in
 `@epicenter/server`. An app that keeps a local copy of a provider's data owns
-its own file lifecycle: see `apps/local-mail/src/db-file.ts` and
+its own file lifecycle: see `apps/local-mail/src/mailbox.ts` and
 `apps/local-books/src/db-file.ts`.

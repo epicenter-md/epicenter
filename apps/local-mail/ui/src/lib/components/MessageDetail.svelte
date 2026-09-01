@@ -20,7 +20,7 @@
 		planToggle,
 		type TriageAction,
 	} from '$lib/actions';
-	import { api } from '$lib/api';
+	import { mail } from '$lib/mail';
 	import { fullDate, labelDisplayName } from '$lib/format';
 	import type { MailLabel } from '$lib/types';
 	import MessageBody from './MessageBody.svelte';
@@ -28,7 +28,6 @@
 	let {
 		id,
 		account,
-		readOnly,
 		labels,
 		busy,
 		labelsOpen,
@@ -36,10 +35,9 @@
 		onLabelsOpenChange,
 	}: {
 		id: string | null;
-		/** The account whose mirror this message is read from; the detail fetch is
+		/** The account whose cache this message is read from; the detail fetch is
 		 * scoped to it. Null only before the account list has loaded. */
 		account: string | null;
-		readOnly: boolean;
 		labels: MailLabel[];
 		/** True while an act is in flight (the page owns the mutation). */
 		busy: boolean;
@@ -59,7 +57,7 @@
 	// rather than the previous account's cached message flashing through.
 	const message = createQuery(() => ({
 		queryKey: ['message', id ?? '', account ?? ''],
-		queryFn: () => api.message(account as string, id as string),
+		queryFn: () => mail.message(account as string, id as string),
 		enabled: id !== null && account !== null,
 	}));
 
@@ -92,8 +90,8 @@
 		size="sm"
 		variant="outline"
 		onclick={onClick}
-		disabled={busy || readOnly}
-		tooltip={readOnly ? 'Read-only mode (LOCAL_MAIL_READ_ONLY)' : label}
+		disabled={busy}
+		tooltip={label}
 	>
 		<Icon class="size-3.5" />
 		<span>{label}</span>
@@ -170,16 +168,14 @@
 			)}
 
 			<DropdownMenu.Root open={labelsOpen} onOpenChange={onLabelsOpenChange}>
-				<DropdownMenu.Trigger disabled={busy || readOnly}>
+				<DropdownMenu.Trigger disabled={busy}>
 					{#snippet child({ props })}
 						<Button
 							{...props}
 							size="sm"
 							variant="outline"
-							disabled={busy || readOnly}
-							tooltip={readOnly
-								? 'Read-only mode (LOCAL_MAIL_READ_ONLY)'
-								: 'Add or remove existing Gmail labels'}
+							disabled={busy}
+							tooltip="Add or remove existing Gmail labels"
 						>
 							<TagIcon class="size-3.5" />
 							<span>Labels</span>

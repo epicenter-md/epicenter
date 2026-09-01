@@ -15,7 +15,8 @@
 	import MessageDetail from '$lib/components/MessageDetail.svelte';
 	import MessageList from '$lib/components/MessageList.svelte';
 	import StatusBar from '$lib/components/StatusBar.svelte';
-	import { api } from '$lib/api';
+	import ConnectPanel from '$lib/components/ConnectPanel.svelte';
+	import { mail } from '$lib/mail';
 
 	// Default to the inbox: this is a triage surface, and the inbox is the queue.
 	let selectedLabel = $state<string | null>('INBOX');
@@ -27,41 +28,39 @@
 
 	const queryClient = useQueryClient();
 
-	// The connected accounts the host serves under this one origin. The switcher
-	// picks one; every read and write below is scoped to it and keyed by it.
+	// The accounts this person has connected. The switcher picks one; every read
+	// and write below is scoped to its Epicenter row id and keyed by it.
 	const accountsQuery = createQuery(() => ({
 		queryKey: ['accounts'],
-		queryFn: () => api.accounts(),
+		queryFn: () => mail.accounts(),
 	}));
 	let selectedAccount = $state<string | null>(null);
 	// Default to the first account once loaded, and re-resolve if the current
-	// selection disappears (an account list can only change across a restart, but
-	// this keeps the selection valid without special-casing the first load).
+	// selection disappears, which is what disconnecting one looks like.
 	$effect(() => {
-		const list = accountsQuery.data?.accounts ?? [];
+		const list = accountsQuery.data ?? [];
 		if (list.length === 0) {
 			selectedAccount = null;
 			return;
 		}
-		if (!selectedAccount || !list.includes(selectedAccount)) {
-			selectedAccount = list[0] ?? null;
+		if (!selectedAccount || !list.some((a) => a.accountId === selectedAccount)) {
+			selectedAccount = list[0]?.accountId ?? null;
 		}
 	});
 
-	// The only query that polls. Status is now the health surface: the pending
-	// count, the age of the oldest, and the host loop's current failure all change
-	// without anyone touching the page, and a failed pass at 3am has no click to
-	// ride in on. Matched to the host's own reconcile interval, so a clean pass and
-	// the reading of it move together.
+	// The only query that polls. Status is the health surface: the pending count
+	// and the age of the oldest change without anyone touching the page. Matched
+	// to the reconcile interval, so a clean pass and the reading of it move
+	// together.
 	const status = createQuery(() => ({
 		queryKey: ['status', selectedAccount],
-		queryFn: () => api.status(selectedAccount as string),
+		queryFn: () => mail.status(selectedAccount as string),
 		enabled: selectedAccount !== null,
 		refetchInterval: 30_000,
 	}));
 	const labels = createQuery(() => ({
 		queryKey: ['labels', selectedAccount],
-		queryFn: () => api.labels(selectedAccount as string),
+		queryFn: () => mail.labels(selectedAccount as string),
 		enabled: selectedAccount !== null,
 	}));
 	const messages = createQuery(() => {
@@ -72,13 +71,13 @@
 		};
 		return {
 			queryKey: ['messages', selectedAccount, query],
-			queryFn: () => api.messages(selectedAccount as string, query),
+			queryFn: () => mail.messages(selectedAccount as string, query),
 			enabled: selectedAccount !== null,
 		};
 	});
 
 	const reconcile = createMutation(() => ({
-		mutationFn: () => api.reconcile(selectedAccount as string),
+		mutationFn: () => mail.reconcile(selectedAccount as string),
 		onSuccess: (outcome) => {
 			// The host yields busy when another owner holds this account's
 			// reconciler; that owner delivers and pulls, so this is a note, not a
@@ -118,9 +117,9 @@
 		onError: (error: Error) => toast.error(error.message),
 	}));
 
-	/** Re-read what the server now says. Every triage act lands in the server's
-	 * durable intent store, and the read models overlay it, so a plain refetch
-	 * already shows the act; there is nothing to project in browser memory. */
+	/** Re-read. Every triage act lands in the durable intent store and the read
+	 * models overlay it, so a plain refetch already shows the act; there is
+	 * nothing to project in browser memory. */
 	function invalidateReads(): void {
 		queryClient.invalidateQueries({ queryKey: ['messages'] });
 		queryClient.invalidateQueries({ queryKey: ['message'] });
@@ -136,7 +135,7 @@
 	type ActVars = { id: string; action: TriageAction; undoable: boolean };
 	const act = createMutation(() => ({
 		mutationFn: (v: ActVars) =>
-			api.assert(selectedAccount as string, {
+			mail.assert(selectedAccount as string, {
 				ids: [v.id],
 				addLabels: v.action.addLabels,
 				removeLabels: v.action.removeLabels,
@@ -159,7 +158,6 @@
 	}));
 
 	function runOn(id: string, action: TriageAction, undoable: boolean): void {
-		if (readOnly) return;
 		act.mutate({ id, action, undoable });
 	}
 	/** Dispatch a planned action against the current selection. */
@@ -168,21 +166,16 @@
 		runOn(selectedId, action, true);
 	}
 
-	// The list is exactly what the server returned. There is no client-side
-	// projection: the server already composed Gmail's facts with this machine's
-	// undelivered triage before it filtered and paged, so the page cannot
-	// disagree with the CLI or an agent about what is in the inbox.
+	// The list is exactly what the read model returned. There is no client-side
+	// projection: the overlay composed Gmail's facts with this machine's
+	// undelivered triage before the query filtered and paged, so the page cannot
+	// disagree with a background pass about what is in the inbox.
 	const labelList = $derived(labels.data?.labels ?? []);
 	const messageList = $derived(messages.data?.messages ?? []);
-	const readOnly = $derived(status.data?.readOnly ?? false);
-	// True when the mirror holds no messages at all (nothing pulled yet), as
-	// opposed to this label/search view simply matching none. Drives which empty
-	// state the list shows: "reconcile" vs "no match".
+	// True when the cache holds no messages at all (nothing pulled yet), as
+	// opposed to this label or search view simply matching none. Drives which
+	// empty state the list shows: "reconcile" against "no match".
 	const mirrorEmpty = $derived((status.data?.rows.messages ?? 0) === 0);
-	// This tab's own reconcile first, then whatever the host's background loop
-	// last reported. The loop is where a pass usually fails (nobody is watching
-	// when the token expires), so without the second half the status line would
-	// read healthy while nothing is reaching Gmail.
 	const reconcileError = $derived(
 		reconcile.error?.message ??
 			(reconcile.data && 'delivery' in reconcile.data
@@ -190,7 +183,6 @@
 					reconcile.data.pull.failure?.message ??
 					null)
 				: null) ??
-			status.data?.lastFailure ??
 			null,
 	);
 
@@ -252,8 +244,6 @@
 			return;
 		}
 
-		// Action keys obey the same read-only gate as the buttons.
-		if (readOnly) return;
 		if (e.key === 'e') {
 			keyToggle('inbox');
 			e.preventDefault();
@@ -292,7 +282,7 @@
 <div class="flex h-full flex-col">
 	<StatusBar
 		status={status.data}
-		accounts={accountsQuery.data?.accounts ?? []}
+		accounts={accountsQuery.data ?? []}
 		{selectedAccount}
 		onSelectAccount={(account) => {
 			selectedAccount = account;
@@ -306,6 +296,14 @@
 		}}
 	/>
 
+	{#if (accountsQuery.data ?? []).length === 0}
+		<ConnectPanel
+			loading={accountsQuery.isPending}
+			onConnected={() => {
+				queryClient.invalidateQueries({ queryKey: ['accounts'] });
+			}}
+		/>
+	{:else}
 	<div class="flex min-h-0 flex-1">
 		<LabelRail
 			labels={labelList}
@@ -329,7 +327,6 @@
 			<MessageDetail
 				id={selectedId}
 				account={selectedAccount}
-				{readOnly}
 				labels={labelList}
 				busy={act.isPending}
 				{labelsOpen}
@@ -338,6 +335,7 @@
 			/>
 		{/key}
 	</div>
+	{/if}
 </div>
 
 <Dialog.Root open={shortcutsOpen} onOpenChange={(open) => (shortcutsOpen = open)}>

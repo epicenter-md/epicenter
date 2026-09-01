@@ -1,363 +1,227 @@
 /**
- * Gmail OAuth Connect Flow Tests
+ * The authorization-code and PKCE flow, without a browser and without a
+ * loopback server.
  *
- * Exercises the interactive authorization-code + PKCE path without opening a
- * browser: the test captures the generated consent URL, sends the loopback
- * callback by hand, and serves mock Google token/profile endpoints.
- *
- * Key behaviors:
- * - Consent URL requests gmail.modify
- * - Token exchange authenticates the desktop client with form parameters
- * - The connected Gmail profile supplies the token-store account key
+ * What is pinned here: the consent URL asks for the mailbox and the identity,
+ * the exchange authenticates with form parameters rather than a header, the
+ * account is identified by Google's stable subject rather than its address, a
+ * grant with no refresh token is refused rather than stored, and a revoked
+ * grant asks for re-consent instead of a retry.
  */
 
 import { expect, test } from 'bun:test';
-import { type AppConfig, loadConfig } from './config.ts';
+import { DEFAULT_MAIL_CONFIG, type MailConfig } from './config.ts';
 import {
-	redeemRefreshToken,
-	refreshAccessToken,
-	runAuthorizationFlow,
+	beginAuthorization,
+	completeAuthorization,
+	refreshAccess,
 } from './oauth.ts';
-import type { TokenSet } from './tokens.ts';
 
-// The credential resolver reads the BYO Google OAuth keyset from the
-// environment. These tests assert the resolved client id against `clientIdUsed`,
-// so seed it unconditionally to a known value rather than inheriting whatever
-// the ambient environment holds.
-process.env.GMAIL_CLIENT_ID = 'client-id-123';
-process.env.GMAIL_CLIENT_SECRET = 'client-secret-456';
+const IDENTITY = { clientId: 'client-id-123', clientSecret: 'client-secret-456' };
+const REDIRECT = 'http://127.0.0.1:39130/apps/mail/connected';
+const NOW = () => Date.parse('2026-07-01T00:00:00.000Z');
 
-let configId = 0;
-
-function config(overrides: Partial<AppConfig>): AppConfig {
-	const dataDir =
-		overrides.dataDir ??
-		`/tmp/local-mail-oauth-test-${process.pid}-${configId}`;
-	configId += 1;
+function config(overrides: Partial<MailConfig> = {}): MailConfig {
 	return {
-		dataDir,
-		apiBase: 'http://127.0.0.1:0',
-		authorizeUrl: 'http://127.0.0.1:0/auth',
-		tokenUrl: 'http://127.0.0.1:0/token',
-		historySafeWindowDays: 5,
-		fullBackstopDays: 30,
-		pageSize: 100,
-		credentialsPath: `${dataDir}/credentials.json`,
-		account: null,
-		readOnly: false,
+		...DEFAULT_MAIL_CONFIG,
+		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 		...overrides,
 	};
 }
 
-async function waitFor<T>(read: () => T | null): Promise<T> {
-	for (let i = 0; i < 100; i += 1) {
-		const value = read();
-		if (value !== null) return value;
-		await Bun.sleep(5);
-	}
-	throw new Error('timed out waiting for test value');
+/**
+ * An id_token the way a client reads one back from the token endpoint.
+ *
+ * Unsigned on purpose. OpenID Connect lets a client that obtained the token
+ * directly from the token endpoint skip signature validation, which is exactly
+ * this flow, so what a test has to get right is the claim set.
+ *
+ * `exp` is anchored to the wall clock rather than to `NOW`, because the library
+ * checks it against the real one. `NOW` is the application's injected clock and
+ * governs only what the returned expiry reads as.
+ */
+function idToken(claims: Record<string, unknown>): string {
+	const encode = (value: unknown) =>
+		Buffer.from(JSON.stringify(value)).toString('base64url');
+	const issued = Math.floor(Date.now() / 1000);
+	return `${encode({ alg: 'RS256' })}.${encode({
+		iss: 'https://accounts.google.com',
+		aud: IDENTITY.clientId,
+		exp: issued + 3600,
+		iat: issued,
+		...claims,
+	})}.signature`;
 }
 
-test('runAuthorizationFlow exchanges a PKCE callback and stores the connected Gmail account', async () => {
-	const tokenRequests: URLSearchParams[] = [];
-	const tokenAuthHeaders: (string | null)[] = [];
-	const tokenServer = Bun.serve({
-		hostname: '127.0.0.1',
-		port: 0,
-		async fetch(request) {
-			const body = await request.text();
-			tokenRequests.push(new URLSearchParams(body));
-			tokenAuthHeaders.push(request.headers.get('authorization') ?? '');
-			return Response.json(
-				{
-					token_type: 'Bearer',
-					access_token: 'access-token-123',
-					refresh_token: 'refresh-token-123',
-					expires_in: 3600,
-				},
-				{ headers: { 'content-type': 'application/json' } },
-			);
-		},
-	});
-	const apiServer = Bun.serve({
-		hostname: '127.0.0.1',
-		port: 0,
-		fetch(request) {
-			expect(request.headers.get('authorization')).toBe(
-				'Bearer access-token-123',
-			);
-			return Response.json({
-				historyId: '1000',
-				emailAddress: 'you@example.com',
-			});
-		},
-	});
+function tokenServer(
+	handler: (request: Request) => Response | Promise<Response>,
+) {
+	return Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: handler });
+}
 
-	let authorizeUrl: string | null = null;
-	const flow = runAuthorizationFlow(
-		config({
-			apiBase: `http://127.0.0.1:${apiServer.port}`,
-			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-			tokenUrl: `http://127.0.0.1:${tokenServer.port}/token`,
-		}),
-		{
-			now: () => Date.parse('2026-07-01T00:00:00.000Z'),
-			openBrowser: (url) => {
-				authorizeUrl = url;
-			},
-			timeoutMs: 5000,
-		},
-	);
+/** The URL Google would send the person back to, given a consent URL. */
+function callbackFor(authorizeUrl: string, code = 'auth-code-123'): URL {
+	const state = new URL(authorizeUrl).searchParams.get('state') ?? '';
+	const callback = new URL(REDIRECT);
+	callback.searchParams.set('code', code);
+	callback.searchParams.set('state', state);
+	return callback;
+}
 
-	const url = new URL(await waitFor(() => authorizeUrl));
+test('the consent URL asks for the mailbox and the identity', async () => {
+	const request = await beginAuthorization({
+		config: config(),
+		identity: IDENTITY,
+		redirectUri: REDIRECT,
+	});
+	const url = new URL(request.authorizeUrl);
+
 	expect(url.searchParams.get('scope')).toBe(
-		'https://www.googleapis.com/auth/gmail.modify',
+		'https://www.googleapis.com/auth/gmail.modify openid email',
 	);
 	expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+	// Without both of these Google returns no refresh token on a reconnect, and
+	// background synchronization stops at the first expiry.
 	expect(url.searchParams.get('access_type')).toBe('offline');
-
-	const redirectUri = url.searchParams.get('redirect_uri');
-	const state = url.searchParams.get('state');
-	expect(redirectUri).not.toBeNull();
-	expect(state).not.toBeNull();
-	await fetch(
-		`${redirectUri}?code=auth-code-123&state=${state}&iss=https%3A%2F%2Faccounts.google.com`,
-	);
-
-	const { data: token, error } = await flow;
-	expect(error).toBeNull();
-	expect(token?.accountEmail).toBe('you@example.com');
-	expect(token?.refreshToken).toBe('refresh-token-123');
-	expect(token?.clientIdUsed).toBe('client-id-123');
-
-	const request = tokenRequests[0];
-	expect(request?.get('grant_type')).toBe('authorization_code');
-	expect(request?.get('client_id')).toBe('client-id-123');
-	expect(request?.get('client_secret')).toBe('client-secret-456');
-	expect(tokenAuthHeaders[0]).toBe('');
-	expect(request?.get('code_verifier')).toBeTruthy();
-
-	tokenServer.stop(true);
-	apiServer.stop(true);
+	expect(url.searchParams.get('prompt')).toBe('consent');
+	expect(url.searchParams.get('redirect_uri')).toBe(REDIRECT);
+	expect(request.codeVerifier.length).toBeGreaterThan(20);
 });
 
-test('production config derives the authorization issuer from accounts.google.com', () => {
-	expect(new URL(loadConfig().authorizeUrl).origin).toBe(
-		'https://accounts.google.com',
-	);
-});
-
-test('runAuthorizationFlow reports OAuth error details from the token endpoint', async () => {
-	const tokenServer = Bun.serve({
-		hostname: '127.0.0.1',
-		port: 0,
-		fetch() {
-			return Response.json(
-				{
-					error: 'invalid_client',
-					error_description: 'The OAuth client was not found.',
-				},
-				{ status: 401 },
-			);
-		},
+test('the account is identified by Googles subject, and the address is metadata', async () => {
+	const bodies: URLSearchParams[] = [];
+	const authHeaders: (string | null)[] = [];
+	const server = tokenServer(async (request) => {
+		bodies.push(new URLSearchParams(await request.text()));
+		authHeaders.push(request.headers.get('authorization'));
+		return Response.json({
+			token_type: 'Bearer',
+			access_token: 'access-token-123',
+			refresh_token: 'refresh-token-123',
+			expires_in: 3600,
+			id_token: idToken({ sub: 'google-sub-1', email: 'you@example.com' }),
+		});
+	});
+	const settings = config({ tokenUrl: `http://127.0.0.1:${server.port}/token` });
+	const request = await beginAuthorization({
+		config: settings,
+		identity: IDENTITY,
+		redirectUri: REDIRECT,
 	});
 
-	let authorizeUrl: string | null = null;
-	const flow = runAuthorizationFlow(
-		config({
-			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-			tokenUrl: `http://127.0.0.1:${tokenServer.port}/token`,
+	const result = await completeAuthorization({
+		config: settings,
+		identity: IDENTITY,
+		request,
+		callbackUrl: callbackFor(request.authorizeUrl),
+		now: NOW,
+	});
+
+	expect(result.error).toBeNull();
+	expect(result.data).toEqual({
+		providerAccountId: 'google-sub-1',
+		email: 'you@example.com',
+		refreshToken: 'refresh-token-123',
+		accessToken: 'access-token-123',
+		accessTokenExpiresAt: '2026-07-01T01:00:00.000Z',
+	});
+	expect(bodies[0]?.get('client_id')).toBe(IDENTITY.clientId);
+	expect(bodies[0]?.get('client_secret')).toBe(IDENTITY.clientSecret);
+	expect(bodies[0]?.get('code_verifier')).toBe(request.codeVerifier);
+	expect(authHeaders[0]).toBeNull();
+	server.stop(true);
+});
+
+test('a grant with no refresh token is refused rather than stored', async () => {
+	// Nothing could sync later, so connecting has to fail here rather than
+	// succeed and go quiet at the first expiry.
+	const server = tokenServer(() =>
+		Response.json({
+			token_type: 'Bearer',
+			access_token: 'access-token-123',
+			expires_in: 3600,
+			id_token: idToken({ sub: 'google-sub-1', email: 'you@example.com' }),
 		}),
-		{
-			now: () => Date.parse('2026-07-01T00:00:00.000Z'),
-			openBrowser: (url) => {
-				authorizeUrl = url;
-			},
-			timeoutMs: 5000,
-		},
 	);
-
-	const url = new URL(await waitFor(() => authorizeUrl));
-	const redirectUri = url.searchParams.get('redirect_uri');
-	const state = url.searchParams.get('state');
-	expect(redirectUri).not.toBeNull();
-	expect(state).not.toBeNull();
-	await fetch(
-		`${redirectUri}?code=auth-code-123&state=${state}&iss=https%3A%2F%2Faccounts.google.com`,
-	);
-
-	const { data, error } = await flow;
-	expect(data).toBeNull();
-	expect(error?.message).toContain('invalid_client');
-	expect(error?.message).toContain('The OAuth client was not found.');
-	expect(error?.message).toContain('HTTP 401');
-
-	tokenServer.stop(true);
-});
-
-test('refreshAccessToken uses a newly returned refresh token when Google rotates it', async () => {
-	const tokenServer = Bun.serve({
-		hostname: '127.0.0.1',
-		port: 0,
-		fetch() {
-			return Response.json({
-				token_type: 'Bearer',
-				access_token: 'rotated-access-token',
-				refresh_token: 'rotated-refresh-token',
-				expires_in: 3600,
-			});
-		},
+	const settings = config({ tokenUrl: `http://127.0.0.1:${server.port}/token` });
+	const request = await beginAuthorization({
+		config: settings,
+		identity: IDENTITY,
+		redirectUri: REDIRECT,
 	});
 
-	const { data: token, error } = await refreshAccessToken(
-		config({
-			tokenUrl: `http://127.0.0.1:${tokenServer.port}/token`,
+	const result = await completeAuthorization({
+		config: settings,
+		identity: IDENTITY,
+		request,
+		callbackUrl: callbackFor(request.authorizeUrl),
+		now: NOW,
+	});
+
+	expect(result.error?.name).toBe('IdentityMissing');
+	expect(result.error?.message).toContain('refresh token');
+	server.stop(true);
+});
+
+test('a denied authorization is reported as denial, not as a transport failure', async () => {
+	const settings = config();
+	const request = await beginAuthorization({
+		config: settings,
+		identity: IDENTITY,
+		redirectUri: REDIRECT,
+	});
+	const callback = new URL(REDIRECT);
+	callback.searchParams.set('error', 'access_denied');
+	callback.searchParams.set('state', request.state);
+
+	const result = await completeAuthorization({
+		config: settings,
+		identity: IDENTITY,
+		request,
+		callbackUrl: callback,
+		now: NOW,
+	});
+
+	expect(result.error?.name).toBe('AuthorizationDenied');
+});
+
+test('refreshing keeps the token Google did not rotate', async () => {
+	const server = tokenServer(() =>
+		Response.json({
+			token_type: 'Bearer',
+			access_token: 'fresh-access-token',
+			expires_in: 3600,
 		}),
-		{
-			accountEmail: 'you@example.com',
-			clientIdUsed: 'client-id-123',
-			accessToken: 'stale',
-			accessTokenExpiresAt: new Date(0).toISOString(),
-			refreshToken: 'old-refresh-token',
-			obtainedAt: new Date(0).toISOString(),
-		},
-		() => Date.parse('2026-07-01T00:00:00.000Z'),
 	);
-
-	expect(error).toBeNull();
-	expect(token?.accessToken).toBe('rotated-access-token');
-	expect(token?.refreshToken).toBe('rotated-refresh-token');
-	tokenServer.stop(true);
-});
-
-test('refreshAccessToken maps invalid_grant to ReauthRequired', async () => {
-	const tokenServer = Bun.serve({
-		hostname: '127.0.0.1',
-		port: 0,
-		fetch() {
-			return Response.json({ error: 'invalid_grant' }, { status: 400 });
-		},
+	const result = await refreshAccess({
+		config: config({ tokenUrl: `http://127.0.0.1:${server.port}/token` }),
+		identity: IDENTITY,
+		refreshToken: 'refresh-token-123',
+		now: NOW,
 	});
 
-	const { data, error } = await refreshAccessToken(
-		config({
-			tokenUrl: `http://127.0.0.1:${tokenServer.port}/token`,
-		}),
-		{
-			accountEmail: 'you@example.com',
-			clientIdUsed: 'client-id-123',
-			accessToken: 'stale',
-			accessTokenExpiresAt: new Date(0).toISOString(),
-			refreshToken: 'dead-refresh-token',
-			obtainedAt: new Date(0).toISOString(),
-		},
-		() => Date.parse('2026-07-01T00:00:00.000Z'),
-	);
-
-	expect(data).toBeNull();
-	expect(error?.name).toBe('ReauthRequired');
-	expect(error?.message).toBe('Re-authentication required: invalid_grant.');
-	tokenServer.stop(true);
+	expect(result.data).toEqual({
+		accessToken: 'fresh-access-token',
+		accessTokenExpiresAt: '2026-07-01T01:00:00.000Z',
+		refreshToken: 'refresh-token-123',
+	});
+	server.stop(true);
 });
 
-test('redeemRefreshToken performs the grant now and reads the account email from the profile', async () => {
-	const tokenRequests: URLSearchParams[] = [];
-	const tokenServer = Bun.serve({
-		hostname: '127.0.0.1',
-		port: 0,
-		async fetch(request) {
-			tokenRequests.push(new URLSearchParams(await request.text()));
-			// Google's refresh grants often omit refresh_token; the seeded one
-			// must survive via the fallback.
-			return Response.json({
-				token_type: 'Bearer',
-				access_token: 'redeemed-access-token',
-				expires_in: 3600,
-			});
-		},
-	});
-	const apiServer = Bun.serve({
-		hostname: '127.0.0.1',
-		port: 0,
-		fetch(request) {
-			expect(request.headers.get('authorization')).toBe(
-				'Bearer redeemed-access-token',
-			);
-			return Response.json({
-				historyId: '1000',
-				emailAddress: 'profile@example.com',
-			});
-		},
+test('a revoked grant asks for re-consent', async () => {
+	const server = tokenServer(() =>
+		Response.json(
+			{ error: 'invalid_grant', error_description: 'Token has been expired.' },
+			{ status: 400 },
+		),
+	);
+	const result = await refreshAccess({
+		config: config({ tokenUrl: `http://127.0.0.1:${server.port}/token` }),
+		identity: IDENTITY,
+		refreshToken: 'refresh-token-123',
+		now: NOW,
 	});
 
-	const { data: token, error } = await redeemRefreshToken(
-		config({
-			apiBase: `http://127.0.0.1:${apiServer.port}`,
-			tokenUrl: `http://127.0.0.1:${tokenServer.port}/token`,
-		}),
-		'seed-refresh-token',
-		() => Date.parse('2026-07-01T00:00:00.000Z'),
-	);
-
-	expect(error).toBeNull();
-	expect(token?.accountEmail).toBe('profile@example.com');
-	expect(token?.refreshToken).toBe('seed-refresh-token');
-	expect(token?.accessToken).toBe('redeemed-access-token');
-	expect(tokenRequests[0]?.get('grant_type')).toBe('refresh_token');
-	expect(tokenRequests[0]?.get('refresh_token')).toBe('seed-refresh-token');
-
-	tokenServer.stop(true);
-	apiServer.stop(true);
-});
-
-test('refreshAccessToken refuses a token minted by a different OAuth client, before any network call', async () => {
-	const token: TokenSet = {
-		accountEmail: 'you@example.com',
-		clientIdUsed: 'the-original-client',
-		accessToken: 'stale',
-		accessTokenExpiresAt: new Date(0).toISOString(),
-		refreshToken: 'a-refresh-token',
-		obtainedAt: new Date(0).toISOString(),
-	};
-
-	// tokenUrl points at port 0: any attempted request would throw, so a
-	// clean ClientIdMismatch also proves the guard fires before the network.
-	const { data, error } = await refreshAccessToken(config({}), token, () =>
-		Date.parse('2026-07-01T00:00:00.000Z'),
-	);
-
-	expect(data).toBeNull();
-	expect(error?.name).toBe('ClientIdMismatch');
-	expect(error?.message).toContain('the-original-client');
-	expect(error?.message).toContain('client-id-123');
-});
-
-test('refreshAccessToken fails loudly when the Gmail keyset is missing', async () => {
-	// Missing credentials fail before any network call. Clear the keyset so the
-	// test holds regardless of the ambient environment.
-	const savedId = process.env.GMAIL_CLIENT_ID;
-	const savedSecret = process.env.GMAIL_CLIENT_SECRET;
-	delete process.env.GMAIL_CLIENT_ID;
-	delete process.env.GMAIL_CLIENT_SECRET;
-	try {
-		const token: TokenSet = {
-			accountEmail: 'you@example.com',
-			clientIdUsed: 'prod-client',
-			accessToken: 'stale',
-			accessTokenExpiresAt: new Date(0).toISOString(),
-			refreshToken: 'a-refresh-token',
-			obtainedAt: new Date(0).toISOString(),
-		};
-		const { data, error } = await refreshAccessToken(config({}), token, () =>
-			Date.parse('2026-07-01T00:00:00.000Z'),
-		);
-		expect(data).toBeNull();
-		expect(error?.name).toBe('MissingCredentials');
-		expect(error?.message).toContain('GMAIL_CLIENT_ID');
-	} finally {
-		if (savedId === undefined) delete process.env.GMAIL_CLIENT_ID;
-		else process.env.GMAIL_CLIENT_ID = savedId;
-		if (savedSecret === undefined) delete process.env.GMAIL_CLIENT_SECRET;
-		else process.env.GMAIL_CLIENT_SECRET = savedSecret;
-	}
+	expect(result.error?.name).toBe('ReauthRequired');
+	server.stop(true);
 });

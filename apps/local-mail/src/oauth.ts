@@ -1,3 +1,21 @@
+/**
+ * Google OAuth for an application that is a page, not a process.
+ *
+ * The previous flow stood up a Bun loopback server, waited for Google to call
+ * it, and shut it down. There is no Bun process any more (ADR-0317), so the
+ * flow is the one a page performs: build the authorization URL, leave, and come
+ * back to a redirect URI on this application's own route. What used to be a
+ * server's lifetime is now two calls with the PKCE verifier carried between
+ * them by the caller.
+ *
+ * **The account identity Google issues is `sub`, not the address.** Google
+ * documents `sub` as stable for the life of the account while an email address
+ * may change, so `sub` is recorded as `providerAccountId` and the address is
+ * display metadata. Neither is Local Mail's own account id: that is the row id
+ * Epicenter Data minted, which is what `epicenter.secrets` is keyed by and what
+ * every mail and intent row is partitioned by.
+ */
+
 import * as oauth from 'oauth4webapi';
 import {
 	defineErrors,
@@ -5,26 +23,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { AppConfig } from './config.ts';
-import { createGmailClient } from './gmail-client.ts';
-import {
-	type GmailCredentials,
-	gmailCredentialSource,
-	persistGmailProviderCredentials,
-	resolveGmailCredentials,
-} from './gmail-credentials.ts';
-import {
-	type TokenGrantError,
-	type TokenSet,
-	tokenSetFromGrant,
-} from './tokens.ts';
-
-/**
- * Google OAuth2 built on `oauth4webapi` (the same client `@epicenter/auth` and
- * `apps/local-books` use). `connect` runs an authorization-code + PKCE loopback
- * flow once, stores the resulting refresh token, and the refresh grant keeps it
- * alive after that.
- */
+import type { GmailClientIdentity, MailConfig } from './config.ts';
 
 export const OAuthError = defineErrors({
 	MissingCredentials: ({ reason }: { reason: string }) => ({
@@ -56,47 +55,54 @@ export const OAuthError = defineErrors({
 		error,
 		description,
 	}),
-	Timeout: ({ ms }: { ms: number }) => ({
-		message: `Timed out after ${ms}ms waiting for the OAuth callback.`,
-		ms,
-	}),
-	ProfileLookupFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Could not read the connected Gmail profile: ${extractErrorMessage(cause)}`,
-		cause,
+	IdentityMissing: ({ reason }: { reason: string }) => ({
+		message: `Google did not identify the connected account: ${reason}.`,
+		reason,
 	}),
 	ReauthRequired: ({ reason }: { reason: string }) => ({
 		message: `Re-authentication required: ${reason}.`,
 		reason,
 	}),
-	ClientIdMismatch: ({
-		stored,
-		configured,
-	}: {
-		stored: string;
-		configured: string;
-	}) => ({
-		message:
-			`The stored token was minted by OAuth client ${stored}, but the configured OAuth client is now ${configured}. ` +
-			'Refreshing through a different client fails as invalid_grant; restore the original client id or run "local-mail connect" again.',
-		stored,
-		configured,
-	}),
 });
 export type OAuthError = InferErrors<typeof OAuthError>;
 
-type GrantResult = Promise<Result<TokenSet, OAuthError | TokenGrantError>>;
+/**
+ * `gmail.modify` for the mailbox, and `openid email` for the two things that
+ * name the account: the stable subject and the address to show.
+ */
+const SCOPES = [
+	'https://www.googleapis.com/auth/gmail.modify',
+	'openid',
+	'email',
+].join(' ');
 
-type AuthorizationFlowOptions = {
-	now: () => number;
-	openBrowser?: (url: string) => void;
-	log?: (message: string) => void;
-	timeoutMs?: number;
+/** What a page has to hold across the redirect to finish the exchange. */
+export type AuthorizationRequest = {
+	authorizeUrl: string;
+	state: string;
+	codeVerifier: string;
+	redirectUri: string;
 };
 
-const GMAIL_MODIFY_SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
+/** What Google told us about the account, plus the credential to keep. */
+export type AuthorizedAccount = {
+	/** Google's `sub`: stable for the life of the account. */
+	providerAccountId: string;
+	email: string;
+	refreshToken: string;
+	accessToken: string;
+	accessTokenExpiresAt: string;
+};
+
+/** A live access token and the refresh token that is now current. */
+export type RefreshedAccess = {
+	accessToken: string;
+	accessTokenExpiresAt: string;
+	refreshToken: string;
+};
 
 /** Hand-built server metadata; Google's OAuth endpoints are known constants. */
-function authServer(config: AppConfig): oauth.AuthorizationServer {
+function authServer(config: MailConfig): oauth.AuthorizationServer {
 	return {
 		// Google hosts the authorization issuer at accounts.google.com while the
 		// token endpoint lives at oauth2.googleapis.com. The callback may include
@@ -109,7 +115,7 @@ function authServer(config: AppConfig): oauth.AuthorizationServer {
 }
 
 /** Allow http for a mock token endpoint in tests. */
-function httpOptions(config: AppConfig) {
+function httpOptions(config: MailConfig) {
 	return {
 		[oauth.allowInsecureRequests]:
 			new URL(config.tokenUrl).protocol === 'http:',
@@ -117,147 +123,74 @@ function httpOptions(config: AppConfig) {
 }
 
 /**
- * Resolve the Gmail OAuth client lazily at the connect/refresh site rather than
- * eagerly in `loadConfig`, so credential-free verbs never read app identity.
+ * Compose the URL to send a person to, and the two values to hold until they
+ * come back.
+ *
+ * `prompt=consent` with `access_type=offline` is what makes Google issue a
+ * refresh token rather than assuming the last one is still held. Without it a
+ * reconnect returns an access token only, and background synchronization
+ * silently stops working at the first expiry.
  */
-function loadGmailCredentials(
-	config: AppConfig,
-): Result<GmailCredentials, OAuthError> {
-	try {
-		return Ok(resolveGmailCredentials(gmailCredentialSource(config.dataDir)));
-	} catch (cause) {
-		return OAuthError.MissingCredentials({
-			reason: extractErrorMessage(cause),
-		});
-	}
-}
-
-function buildAuthorizeUrl(
-	config: AppConfig,
-	{
-		state,
-		codeChallenge,
-		redirectUri,
-		clientId,
-	}: {
-		state: string;
-		codeChallenge: string;
-		redirectUri: string;
-		clientId: string;
-	},
-): string {
+export async function beginAuthorization({
+	config,
+	identity,
+	redirectUri,
+}: {
+	config: MailConfig;
+	identity: GmailClientIdentity;
+	redirectUri: string;
+}): Promise<AuthorizationRequest> {
+	const state = oauth.generateRandomState();
+	const codeVerifier = oauth.generateRandomCodeVerifier();
+	const codeChallenge = await oauth.calculatePKCECodeChallenge(codeVerifier);
 	const url = new URL(config.authorizeUrl);
-	url.searchParams.set('client_id', clientId);
+	url.searchParams.set('client_id', identity.clientId);
 	url.searchParams.set('response_type', 'code');
-	url.searchParams.set('scope', GMAIL_MODIFY_SCOPE);
+	url.searchParams.set('scope', SCOPES);
 	url.searchParams.set('redirect_uri', redirectUri);
 	url.searchParams.set('state', state);
 	url.searchParams.set('code_challenge', codeChallenge);
 	url.searchParams.set('code_challenge_method', 'S256');
 	url.searchParams.set('access_type', 'offline');
 	url.searchParams.set('prompt', 'consent');
-	return url.toString();
-}
-
-function defaultOpenBrowser(url: string): void {
-	if (process.platform !== 'darwin') return;
-	try {
-		Bun.spawn(['open', url], { stdout: 'ignore', stderr: 'ignore' });
-	} catch {
-		// Non-fatal: the consent URL is printed for manual paste.
-	}
-}
-
-async function fetchAccountEmail(
-	config: AppConfig,
-	grant: oauth.TokenEndpointResponse,
-): Promise<Result<string, OAuthError>> {
-	const accessToken =
-		typeof grant.access_token === 'string' ? grant.access_token : null;
-	if (!accessToken) {
-		return OAuthError.ProfileLookupFailed({
-			cause: new Error('token response did not include access_token'),
-		});
-	}
-	const client = createGmailClient({
-		config,
-		tokens: {
-			getValidAccessToken: async () => Ok(accessToken),
-			forceRefresh: async () => Ok(accessToken),
-		},
-	});
-	const { data, error } = await client.getProfile();
-	if (error) return OAuthError.ProfileLookupFailed({ cause: error });
-	if (!data.emailAddress) {
-		return OAuthError.ProfileLookupFailed({
-			cause: new Error('profile response did not include emailAddress'),
-		});
-	}
-	return Ok(data.emailAddress);
-}
-
-export async function runAuthorizationFlow(
-	config: AppConfig,
-	options: AuthorizationFlowOptions,
-): GrantResult {
-	// Resolve the OAuth keyset lazily; this is the connect path's only
-	// app-identity read. Destructured so the narrowing survives the awaits.
-	const { data: credentials, error: credentialsError } =
-		loadGmailCredentials(config);
-	if (credentialsError) return { data: null, error: credentialsError };
-	const { clientId, clientSecret } = credentials;
-
-	const state = oauth.generateRandomState();
-	const codeVerifier = oauth.generateRandomCodeVerifier();
-	const codeChallenge = await oauth.calculatePKCECodeChallenge(codeVerifier);
-	const timeoutMs = options.timeoutMs ?? 5 * 60 * 1000;
-	const log = options.log ?? (() => {});
-	const { promise: callback, resolve } = Promise.withResolvers<URL | null>();
-
-	const server = Bun.serve({
-		hostname: '127.0.0.1',
-		port: 0,
-		fetch(request) {
-			const url = new URL(request.url);
-			if (url.pathname !== '/oauth/callback') {
-				return new Response('Not found', { status: 404 });
-			}
-			setTimeout(() => resolve(url), 0);
-			return new Response(
-				'<html><body><h2>Local Mail connected.</h2><p>You can close this window and return to the terminal.</p></body></html>',
-				{ headers: { 'content-type': 'text/html' } },
-			);
-		},
-	});
-	const redirectUri = `http://127.0.0.1:${server.port}/oauth/callback`;
-	const authorizeUrl = buildAuthorizeUrl(config, {
+	return {
+		authorizeUrl: url.toString(),
 		state,
-		codeChallenge,
+		codeVerifier,
 		redirectUri,
-		clientId,
-	});
-	log('Opening your browser to authorize Gmail access.');
-	log(`If it does not open, visit:\n  ${authorizeUrl}`);
-	(options.openBrowser ?? defaultOpenBrowser)(authorizeUrl);
+	};
+}
 
-	const timeout = new Promise<URL | null>((resolveTimeout) => {
-		setTimeout(() => resolveTimeout(null), timeoutMs);
-	});
-	const callbackUrl = await Promise.race([callback, timeout]);
-	server.stop(true);
-	if (!callbackUrl) return OAuthError.Timeout({ ms: timeoutMs });
-
+/** Redeem the code Google sent back, and read who it belongs to. */
+export async function completeAuthorization({
+	config,
+	identity,
+	request,
+	callbackUrl,
+	now,
+}: {
+	config: MailConfig;
+	identity: GmailClientIdentity;
+	request: AuthorizationRequest;
+	callbackUrl: URL;
+	now: () => number;
+}): Promise<Result<AuthorizedAccount, OAuthError>> {
 	const as = authServer(config);
-	const client: oauth.Client = { client_id: clientId };
+	const client: oauth.Client = { client_id: identity.clientId };
 	try {
-		const params = oauth.validateAuthResponse(as, client, callbackUrl, state);
+		const params = oauth.validateAuthResponse(
+			as,
+			client,
+			callbackUrl,
+			request.state,
+		);
 		const response = await oauth.authorizationCodeGrantRequest(
 			as,
 			client,
-			oauth.ClientSecretPost(clientSecret),
+			oauth.ClientSecretPost(identity.clientSecret),
 			params,
-			redirectUri,
-			codeVerifier,
+			request.redirectUri,
+			request.codeVerifier,
 			httpOptions(config),
 		);
 		const grant = await oauth.processAuthorizationCodeResponse(
@@ -265,19 +198,28 @@ export async function runAuthorizationFlow(
 			client,
 			response,
 		);
-		const { data: accountEmail, error } = await fetchAccountEmail(
-			config,
-			grant,
-		);
-		if (error) return { data: null, error };
-		const { data: token, error: tokenError } = tokenSetFromGrant(grant, {
-			accountEmail,
-			clientIdUsed: clientId,
-			now: options.now(),
+		const claims = oauth.getValidatedIdTokenClaims(grant);
+		if (claims === undefined) {
+			return OAuthError.IdentityMissing({ reason: 'no id_token was returned' });
+		}
+		const email = typeof claims.email === 'string' ? claims.email : null;
+		if (email === null) {
+			return OAuthError.IdentityMissing({
+				reason: 'the id_token carried no email claim',
+			});
+		}
+		if (typeof grant.refresh_token !== 'string') {
+			return OAuthError.IdentityMissing({
+				reason: 'Google returned no refresh token, so nothing could sync later',
+			});
+		}
+		return Ok({
+			providerAccountId: claims.sub,
+			email,
+			refreshToken: grant.refresh_token,
+			accessToken: grant.access_token,
+			accessTokenExpiresAt: expiryOf(grant, now()),
 		});
-		if (tokenError) return { data: null, error: tokenError };
-		persistGmailProviderCredentials(config.dataDir, credentials);
-		return Ok(token);
 	} catch (cause) {
 		if (cause instanceof oauth.AuthorizationResponseError) {
 			return OAuthError.AuthorizationDenied({
@@ -289,33 +231,48 @@ export async function runAuthorizationFlow(
 	}
 }
 
-async function requestRefreshGrant({
+/**
+ * Exchange the stored refresh token for a live access token.
+ *
+ * Google may omit `refresh_token` when the one it holds stays valid, so the
+ * caller's token is threaded through as the answer in that case; the returned
+ * `refreshToken` is always the one to store next.
+ */
+export async function refreshAccess({
 	config,
-	clientId,
-	clientSecret,
+	identity,
 	refreshToken,
+	now,
 }: {
-	config: AppConfig;
-	clientId: string;
-	clientSecret: string;
+	config: MailConfig;
+	identity: GmailClientIdentity;
 	refreshToken: string;
-}): Promise<Result<oauth.TokenEndpointResponse, OAuthError>> {
+	now: () => number;
+}): Promise<Result<RefreshedAccess, OAuthError>> {
 	const as = authServer(config);
-	const client: oauth.Client = { client_id: clientId };
+	const client: oauth.Client = { client_id: identity.clientId };
 	try {
 		const response = await oauth.refreshTokenGrantRequest(
 			as,
 			client,
-			oauth.ClientSecretPost(clientSecret),
+			oauth.ClientSecretPost(identity.clientSecret),
 			refreshToken,
 			httpOptions(config),
 		);
-		return Ok(await oauth.processRefreshTokenResponse(as, client, response));
+		const grant = await oauth.processRefreshTokenResponse(as, client, response);
+		return Ok({
+			accessToken: grant.access_token,
+			accessTokenExpiresAt: expiryOf(grant, now()),
+			refreshToken:
+				typeof grant.refresh_token === 'string'
+					? grant.refresh_token
+					: refreshToken,
+		});
 	} catch (cause) {
-		// Google's OAuth-style error responses (a dead grant: revoked, or a
-		// Testing-mode client's 7-day test-user refresh token expired) throw
-		// `ResponseBodyError` rather than returning an error value; `invalid_grant`
-		// is the one case worth distinguishing (needs re-consent, not a retry).
+		// A dead grant (revoked, or a Testing-mode client's seven-day test-user
+		// expiry) arrives as an OAuth-style error rather than a returned value.
+		// `invalid_grant` is the one worth distinguishing: it needs re-consent,
+		// not a retry.
 		if (
 			cause instanceof oauth.ResponseBodyError &&
 			cause.error === 'invalid_grant'
@@ -326,76 +283,8 @@ async function requestRefreshGrant({
 	}
 }
 
-export async function refreshAccessToken(
-	config: AppConfig,
-	token: TokenSet,
-	now: () => number,
-): GrantResult {
-	const { data: credentials, error: credentialsError } =
-		loadGmailCredentials(config);
-	if (credentialsError) return { data: null, error: credentialsError };
-	// A refresh token is bound to the client that minted it; refreshing through a
-	// different client id (the environment's key was rotated) dies as a bare
-	// invalid_grant, so name the drift here instead of letting it masquerade as a
-	// revoked token.
-	if (token.clientIdUsed !== credentials.clientId) {
-		return OAuthError.ClientIdMismatch({
-			stored: token.clientIdUsed,
-			configured: credentials.clientId,
-		});
-	}
-	const { data: grant, error } = await requestRefreshGrant({
-		config,
-		clientId: credentials.clientId,
-		clientSecret: credentials.clientSecret,
-		refreshToken: token.refreshToken,
-	});
-	if (error) return { data: null, error };
-	persistGmailProviderCredentials(config.dataDir, credentials);
-	// Rotation: Google may omit refresh_token when the old one stays valid.
-	return tokenSetFromGrant(grant, {
-		accountEmail: token.accountEmail,
-		clientIdUsed: token.clientIdUsed,
-		now: now(),
-		fallbackRefreshToken: token.refreshToken,
-	});
-}
-
-/**
- * Headless bootstrap: turn a bare refresh token into a full, verified
- * `TokenSet` by performing the refresh grant right away and reading the
- * account email off the Gmail profile. Seeding used to store a fabricated
- * placeholder token under an operator-typed email; a typo minted a mirror
- * under a wrong identity and a dead refresh token was only discovered on the
- * first sync. Redeeming at seed time makes both impossible.
- */
-export async function redeemRefreshToken(
-	config: AppConfig,
-	refreshToken: string,
-	now: () => number,
-): GrantResult {
-	const { data: credentials, error: credentialsError } =
-		loadGmailCredentials(config);
-	if (credentialsError) return { data: null, error: credentialsError };
-	const { data: grant, error } = await requestRefreshGrant({
-		config,
-		clientId: credentials.clientId,
-		clientSecret: credentials.clientSecret,
-		refreshToken,
-	});
-	if (error) return { data: null, error };
-	const { data: accountEmail, error: profileError } = await fetchAccountEmail(
-		config,
-		grant,
-	);
-	if (profileError) return { data: null, error: profileError };
-	const { data: token, error: tokenError } = tokenSetFromGrant(grant, {
-		accountEmail,
-		clientIdUsed: credentials.clientId,
-		now: now(),
-		fallbackRefreshToken: refreshToken,
-	});
-	if (tokenError) return { data: null, error: tokenError };
-	persistGmailProviderCredentials(config.dataDir, credentials);
-	return Ok(token);
+/** Google returns a relative lifetime; a stored token needs an absolute one. */
+function expiryOf(grant: oauth.TokenEndpointResponse, now: number): string {
+	const seconds = typeof grant.expires_in === 'number' ? grant.expires_in : 0;
+	return new Date(now + seconds * 1000).toISOString();
 }

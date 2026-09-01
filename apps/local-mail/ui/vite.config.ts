@@ -1,25 +1,19 @@
-import { readPresence } from '@epicenter/local-mail/presence';
+import { defaultClientConditions, defineConfig, type Plugin } from 'vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
-import { defaultClientConditions, defineConfig, type Plugin } from 'vite';
 
+// Two builds from one source. Under `EPICENTER_HOST=1` the SPA is served by
+// Epicenter below `/apps/mail/` and reaches the host's SQLite files and
+// credential store; otherwise it is a standalone static build over IndexedDB,
+// OPFS, and a credential that lives as long as the tab (ADR-0310).
 const isEpicenterHost = process.env.EPICENTER_HOST === '1';
 
-// The SPA is same-origin with the API. In production `local-mail app` serves the
-// built SPA and `/api` from one loopback origin, injecting the per-launch bearer
-// into the HTML as `window.__LOCAL_MAIL__`. In dev, Vite serves the SPA and
-// proxies `/api` to the running host; the proxy injects that host's bearer, read
-// from its `0600` presence file, on every proxied request (SvelteKit's dev HTML
-// pipeline bypasses Vite's `transformIndexHtml`, so the prod HTML-injection path
-// is not reproducible in dev; proxy-side injection is the spec's dev handoff).
-// The dev SPA carries no bearer of its own and no credential is typed by a human.
 const SPA_DEV_PORT = 5177;
 
 /**
- * Deny framing on every dev response, matching the prod host, so a cross-origin
- * page cannot frame the (proxy-authenticated) dev SPA and clickjack a triage
- * write. A `configureServer` middleware, because SvelteKit's dev page responses
- * bypass Vite's `server.headers`.
+ * Deny framing on every dev response so a cross-origin page cannot frame the
+ * dev SPA and clickjack a triage write. A `configureServer` middleware, because
+ * SvelteKit's dev page responses bypass Vite's `server.headers`.
  */
 function denyFramingInDev(): Plugin {
 	return {
@@ -35,47 +29,15 @@ function denyFramingInDev(): Plugin {
 	};
 }
 
-export default defineConfig(({ command }) => {
-	// Read the running host's presence once, at config load. Prefer its origin as
-	// the proxy target (so an ephemeral host port just works); fall back to
-	// LOCAL_MAIL_PORT (default 4177) when the host is not up yet. Start the host
-	// first: if presence is absent, /api calls are unauthenticated until Vite is
-	// restarted, and a host restart rotates the bearer (restart Vite to pick it up).
-	const presence = command === 'serve' ? readPresence() : null;
-	const target =
-		presence?.origin ??
-		`http://127.0.0.1:${Number(process.env.LOCAL_MAIL_PORT) || 4177}`;
-	return {
-		plugins: [sveltekit(), tailwindcss(), denyFramingInDev()],
-		resolve: {
-			// Build-time platform DI over `#platform/epicenter`. Custom conditions
-			// REPLACE Vite's defaults, so the spread is load-bearing.
-			...(isEpicenterHost && {
-				conditions: ['epicenter-host', ...defaultClientConditions],
-			}),
-		},
-		server: {
-			port: SPA_DEV_PORT,
-			strictPort: true,
-			proxy: {
-				'/api': {
-					target,
-					// Rewrite Host to the target so the host's Host check passes, and
-					// inject the host's per-launch bearer so the dev SPA authenticates
-					// without carrying a credential itself.
-					changeOrigin: true,
-					configure: (proxy) => {
-						proxy.on('proxyReq', (proxyReq) => {
-							if (presence?.bearer) {
-								proxyReq.setHeader(
-									'authorization',
-									`Bearer ${presence.bearer}`,
-								);
-							}
-						});
-					},
-				},
-			},
-		},
-	};
+export default defineConfig({
+	plugins: [sveltekit(), tailwindcss(), denyFramingInDev()],
+	resolve: {
+		// Build-time platform DI over `#platform/epicenter`. The spread is
+		// load-bearing: custom conditions REPLACE Vite's defaults, so a seam
+		// mistake fails at build time rather than at a person's runtime.
+		...(isEpicenterHost && {
+			conditions: ['epicenter-host', ...defaultClientConditions],
+		}),
+	},
+	server: { port: SPA_DEV_PORT, strictPort: true },
 });
