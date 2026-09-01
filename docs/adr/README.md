@@ -396,5 +396,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0312](0312-a-sqlite-handle-is-all-run-and-batch-and-a-transaction-never-crosses-a-process-boundary.md) | A SQLite handle is all, run, and batch, and a transaction never crosses a process boundary | Accepted (unbuilt; supersedes 0308; amends 0303 and 0304) |
 | [0313](0313-a-data-definition-ships-as-typescript-and-a-host-that-needs-one-imports-it.md) | A data definition ships as TypeScript, and a host that needs one imports it | Accepted (unbuilt; amends 0296 at its optional codec and 0210 at the declaration's file) |
 | [0314](0314-an-app-is-one-directory-and-installation-is-a-rename.md) | An app is one directory, and installation is a rename | Accepted (unbuilt; supersedes 0179 at the catalog's shape; amends 0304 at the bundle and blobs) |
+| [0315](0315-the-folder-is-keyed-by-data-id-and-the-segment-under-it-is-the-applications.md) | The folder is keyed by data id, and the segment under it is the application's | Accepted (unbuilt; amends 0271 at the layout and the closed set, and 0314 at the human folder) |
 
 When you add an ADR, add its row here.

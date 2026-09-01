@@ -68,9 +68,12 @@ id, the name, and the version. The definition is bundled into the app's own
 JavaScript and imported by the app (ADR-0313). ADR-0179's inert-folder rule
 holds, and holds more strongly than it did.
 
-**The human folder is untouched.** `~/Epicenter/<place>/<data-id>/<table>/<row>.md`
-stays as it is. `local` remains an address meaning this machine, and `account`
-remains a view of whoever is signed in.
+**The human folder is untouched by this record.** It was touched by the next
+one: [ADR-0315](0315-the-folder-is-keyed-by-data-id-and-the-segment-under-it-is-the-applications.md)
+keys it by data id and hands the segment under it to the application, for the
+same reason this record gives the machinery root: one directory per thing.
+`local` remains an address meaning this machine, and `account` remains a view
+of whoever is signed in.
 
 ## Consequences
 
