@@ -1289,6 +1289,129 @@ describe('an entry that will not apply is loud, not silent', () => {
 	});
 });
 
+describe('an ack naming a position this replica never received through', () => {
+	/**
+	 * The one place an ack can be ahead of its replica, and it needs no dropped
+	 * frame to get there.
+	 *
+	 * An ack is an entry frame with the payload elided: it names a position and
+	 * expects the replica to move its cursor there using bytes it already holds.
+	 * That is sound only while the position is the next one, which the hub
+	 * arranges by delivering everything below it to the same socket first. A
+	 * poison entry breaks the arrangement from the other side: the replica
+	 * refuses to apply it, so its cursor pins while the log keeps moving, and the
+	 * ack for a submission still in flight then names a position several entries
+	 * ahead.
+	 *
+	 * On the client, retiring the outbox and moving the cursor are one write,
+	 * because the cursor IS `MAX(authoritySeq)` (ADR-0301). So an ack acted on
+	 * here stamps the durable cursor past entries that were never applied. While
+	 * the process lives that is invisible, because the in-memory cursor is still
+	 * correct and `needsResync` is about to repair it. A restart inside that
+	 * window reads the durable cursor, dials from it, and the skipped entries are
+	 * gone with nothing reporting it.
+	 *
+	 * These assertions are on the DURABLE cursor and the DURABLE outbox for that
+	 * reason. Every in-memory reading was already correct while the bytes were
+	 * being lost.
+	 */
+	function pinnedBehindTheLog() {
+		const { wire, authority, hub, phone, laptop } = setup();
+		phone.connect();
+		laptop.connect();
+
+		// Entry 1: ordinary work, and the phone takes it.
+		expectOk(laptop.db.tables.notes.create({ title: 'Groceries' }));
+		laptop.client.flush();
+		wire.settle();
+		expect(phone.client.status().cursor).toBe(1);
+
+		// Entry 2: bytes no replica can apply. The authority stores them without
+		// an opinion, and the phone pins at 1 rather than walking past them.
+		const writer: HubConnection = { cursor: 0, send: () => undefined };
+		hub.join(writer);
+		hub.receive(
+			writer,
+			encodeFrame({
+				kind: 'push',
+				submission: 1,
+				chunk: 0,
+				chunks: 1,
+				bytes: new Uint8Array([1, 2, 3, 4, 5, 6]),
+			}),
+		);
+		wire.settle();
+		expect(phone.client.status().lastError?.name).toBe('Unapplyable');
+
+		// Entry 3: more ordinary work, which the phone now reads as a gap. The log
+		// is at 3 and the phone is at 1.
+		expectOk(laptop.db.tables.notes.create({ title: 'Milk' }));
+		laptop.client.flush();
+		wire.settle();
+		expect(phone.client.status().cursor).toBe(1);
+		expect(expectOk(authority.head())).toBe(3);
+
+		return { wire, phone, laptop };
+	}
+
+	test('the durable cursor does not move, and the work stays owed', () => {
+		const { wire, phone } = pinnedBehindTheLog();
+
+		// The phone authors its own work while pinned. The authority takes it at
+		// 4 and says so, which is three past where this replica actually is.
+		expectOk(phone.db.tables.notes.create({ title: 'Eggs' }));
+		phone.client.flush();
+		wire.settle();
+
+		const status = phone.client.status();
+		expect(status.lastError?.name).toBe('Gap');
+		expect((status.lastError as { expected?: number }).expected).toBe(2);
+		expect((status.lastError as { received?: number }).received).toBe(4);
+		expect(status.needsResync).toBe(true);
+
+		// The refusal, and the whole point of the suite. Recording acceptance at 4
+		// would durably claim entries 2 and 3 had been read.
+		expect(syncEngineOf(phone.data).cursor()).toBe(1);
+		expect(syncEngineOf(phone.data).coalesce()).not.toBeUndefined();
+	});
+
+	test('a restart inside the window dials from the entries it still needs', () => {
+		const { wire, phone } = pinnedBehindTheLog();
+
+		expectOk(phone.db.tables.notes.create({ title: 'Eggs' }));
+		phone.client.flush();
+		wire.settle();
+
+		// The crash the durable stamp turns into loss: nothing in memory survives,
+		// and the only thing that decides where this device resumes is the row it
+		// wrote down. Dialing from 4 would skip entry 3 forever and walk silently
+		// past the poison at 2 that the design spends real effort making loud.
+		const restarted = openReplica(
+			'phone',
+			createSyncHub({ authority: openAuthority().authority, batch: 8 }),
+			wire,
+			database,
+			phone.sqlite,
+		);
+		expect(restarted.client.cursor()).toBe(1);
+		// And it still owes the work the ack was answering, so nothing authored
+		// before the crash is dropped either.
+		expect(syncEngineOf(restarted.data).coalesce()).not.toBeUndefined();
+	});
+
+	test('CONTROL: an ack at the next position is taken, and the outbox clears', () => {
+		const { wire, phone } = setup();
+		phone.connect();
+		expectOk(phone.db.tables.notes.create({ title: 'Eggs' }));
+		phone.client.flush();
+		wire.settle();
+
+		expect(phone.client.status().lastError).toBeUndefined();
+		expect(syncEngineOf(phone.data).cursor()).toBe(1);
+		expect(syncEngineOf(phone.data).coalesce()).toBeUndefined();
+	});
+});
+
 describe('the authority keeps a snapshot and a tail, not a log', () => {
 	test('a snapshot replaces the entries it covers, and storage stops growing', async () => {
 		const { wire, authority, phone, laptop } = setup();

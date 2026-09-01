@@ -432,25 +432,46 @@ export function createSyncClient({
 					) {
 						return Ok(undefined);
 					}
-					// The authority relays to every other socket before it answers this
-					// one, and a socket delivers in order, so everything below this
-					// position has already been applied. Checking rather than assuming
-					// is the point: if it is ever false the ordering assumption is
-					// wrong, and a cursor that advanced anyway would skip real entries.
-					if (frame.seq === cursor + 1) {
-						cursor = frame.seq;
-					} else if (frame.seq > cursor + 1) {
-						lastError = SyncClientError.Gap({
+					// An ack is an entry frame with the payload elided: it names a
+					// position, and this replica is expected to move its cursor there
+					// while supplying the bytes from its own outbox. That elision is
+					// only sound while the position really is the next one. The
+					// authority relays to every other socket before it answers this one
+					// and a socket delivers in order, so it is, by construction. This
+					// is a check rather than an assumption because the construction can
+					// fail: an entry this replica could not apply pins the cursor while
+					// the log moves on, and the ack for a submission still in flight
+					// then names a position the replica never received through.
+					//
+					// A position that skipped entries must not be recorded as if it had
+					// not. There is no way to take half of what follows: `acknowledge`
+					// retires the owed rows and moves the cursor in one write, because
+					// the cursor IS `MAX(authoritySeq)` (ADR-0301). So this refuses the
+					// whole ack. The rows stay owed, `attach` clears the stale
+					// `outstanding`, the reconnect catches up from the real cursor, the
+					// submission re-sends, and the authority absorbs one duplicate
+					// entry that the next fold reclaims. That is the same recovery a
+					// lost ack, a dead socket, and an entry gap already use.
+					//
+					// `!==` rather than `>`, so a position at or below the cursor is
+					// refused too. It reaches here when a snapshot jumped the cursor
+					// past this submission while it was in flight. Stamping below
+					// `MAX(authoritySeq)` cannot move the cursor, so acting on it was
+					// harmless, but "harmless" was a property of the fold's arithmetic
+					// rather than of anything stated here.
+					if (frame.seq !== cursor + 1) {
+						const gap = SyncClientError.Gap({
 							expected: cursor + 1,
 							received: frame.seq,
-						}).error;
+						});
+						lastError = gap.error;
 						needsResync = true;
+						return gap;
 					}
+					cursor = frame.seq;
 					// One call for what used to be two. Moving the cursor and
 					// retiring the owed appends were the same fact reported twice:
-					// these bytes reached the log, at this position. The gap check
-					// above stays a check, because a position that skipped entries
-					// must not be recorded as if it had not.
+					// these bytes reached the log, at this position.
 					engine.acknowledge(outstanding.throughId, frame.seq);
 					if (connection !== undefined) connection.outstanding = undefined;
 					owed = 0;

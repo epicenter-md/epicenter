@@ -62,6 +62,19 @@ export type PushFrame = {
  * `webSocketMessage` without closing the socket, so a client with no ack cannot
  * distinguish "stored" from "vanished", and a client that cannot distinguish
  * them will drop the work either way.
+ *
+ * **This is an entry frame with the payload elided.** It names a position in
+ * the same log an `entry` names, and the replica that receives it moves its
+ * cursor there while supplying the bytes from its own outbox, because it
+ * authored them and holds them already. The elision is what makes the frame
+ * nine bytes instead of the update it stands for.
+ *
+ * The position is only trustworthy because the hub delivers everything below it
+ * to the same socket first, and a socket delivers in order. A replica must
+ * therefore verify that the position really is the next one before recording
+ * it. That check is not defensive tidiness: a poison entry pins a replica's
+ * cursor while the log moves on, so an ack for a submission still in flight can
+ * name a position the replica never received through.
  */
 export type AckFrame = { kind: 'ack'; submission: number; seq: number };
 
