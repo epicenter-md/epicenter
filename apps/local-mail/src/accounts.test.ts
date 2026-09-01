@@ -21,7 +21,7 @@ import {
 	finishConnect,
 	listAccounts,
 	openSession,
-	pendingCount,
+	pendingWork,
 	removeAccount,
 } from './accounts.ts';
 import { createTestAppSqlite } from './app-sqlite.test-support.ts';
@@ -287,7 +287,7 @@ test('removal refuses while Gmail has not been told, and deletes nothing', async
 			[{ messageId: 'm1', labelId: 'INBOX', want: false }],
 			'2026-07-01T00:00:00.000Z',
 		);
-		expect(await pendingCount(opened.app, sub)).toBe(1);
+		expect((await pendingWork(opened.app, sub)).assertions).toBe(1);
 
 		// Delivering needs the credential that removal destroys, so removal that
 		// owes anything deletes nothing at all (ADR-0320).
@@ -305,7 +305,7 @@ test('removal refuses while Gmail has not been told, and deletes nothing', async
 		expect(await listAccounts(opened.app)).toEqual([]);
 		expect(opened.held.size).toBe(0);
 		expect(opened.deleted).toEqual(['mail-google-sub-1']);
-		expect(await pendingCount(opened.app, sub)).toBe(0);
+		expect((await pendingWork(opened.app, sub)).assertions).toBe(0);
 	} finally {
 		server.stop(true);
 		opened.close();
@@ -315,6 +315,15 @@ test('removal refuses while Gmail has not been told, and deletes nothing', async
 test('two accounts are two mail files, and neither reads the other', async () => {
 	const opened = await openApp();
 	try {
+		// Connected first, because a session for an account this device does not
+		// hold is refused rather than answered with an empty mailbox.
+		for (const sub of ['sub-one', 'sub-two']) {
+			await opened.local.run(
+				`INSERT INTO accounts (sub, email, connected_at, last_synced_at)
+				 VALUES (?, ?, ?, NULL)`,
+				[sub, `${sub}@example.com`, '2026-07-01T00:00:00.000Z'],
+			);
+		}
 		const one = await openSession(opened.app, 'sub-one');
 		const two = await openSession(opened.app, 'sub-two');
 		expect(one.sub).toBe('sub-one');
@@ -357,6 +366,31 @@ test('two accounts are two mail files, and neither reads the other', async () =>
 		expect((await one.intents.summary()).assertions).toBe(1);
 		expect((await two.intents.summary()).assertions).toBe(0);
 	} finally {
+		opened.close();
+	}
+});
+
+test('a session does not outlive the account it was opened for', async () => {
+	const opened = await openApp();
+	const server = googleServing('google-sub-1', 'you@example.com', 'refresh-1');
+	const tokenUrl = `http://127.0.0.1:${server.port}/token`;
+	opened.app.config = { ...DEFAULT_MAIL_CONFIG, tokenUrl };
+	try {
+		const connected = await finishConnect(opened.app, authorization(tokenUrl));
+		if (connected.error !== null) throw connected.error;
+		const { sub } = connected.data;
+		await openSession(opened.app, sub);
+		expect(opened.app.sessions.has(sub)).toBe(true);
+
+		const gone = await removeAccount(opened.app, sub);
+		expect(gone.error).toBeNull();
+
+		// Holding one past the removal would be a mailbox over a file that is
+		// gone, and on the desktop a write through it would recreate that file.
+		expect(opened.app.sessions.has(sub)).toBe(false);
+		await expect(openSession(opened.app, sub)).rejects.toThrow(/No account/);
+	} finally {
+		server.stop(true);
 		opened.close();
 	}
 });

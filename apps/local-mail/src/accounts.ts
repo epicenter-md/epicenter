@@ -32,7 +32,7 @@ import {
 } from './config.ts';
 import { createGmailClient } from './gmail-client.ts';
 import { sqliteHandle } from './handle.ts';
-import { openIntentStore } from './intent-store.ts';
+import { openIntentStore, type PendingSummary } from './intent-store.ts';
 import { openMailbox } from './mailbox.ts';
 import {
 	type AuthorizationRequest,
@@ -81,6 +81,16 @@ export type MailApp = {
 	identity: GmailClientIdentity;
 	epicenter: EpicenterHandle;
 	now: () => number;
+	/**
+	 * One live session per connected account, for the life of the application.
+	 *
+	 * Held here rather than rebuilt per call because a session now opens a file
+	 * and verifies its shape, and because removal has to be able to reach the
+	 * sessions it invalidates. A caller that kept one from before a removal is
+	 * holding a mailbox over a file that is gone; on the desktop, writing
+	 * through it would recreate the file the removal unlinked.
+	 */
+	readonly sessions: Map<string, Promise<ReconcileDeps>>;
 };
 
 export function createMailApp({
@@ -96,7 +106,7 @@ export function createMailApp({
 	config?: MailConfig;
 	now?: () => number;
 }): MailApp {
-	return { epicenter, storage, identity, config, now };
+	return { epicenter, storage, identity, config, now, sessions: new Map() };
 }
 
 type AccountRow = {
@@ -195,13 +205,18 @@ export async function finishConnect(
 	);
 }
 
-/** What one account still owes Gmail, which is what removal turns on. */
-export async function pendingCount(app: MailApp, sub: string): Promise<number> {
-	const [row] = await sqliteHandle(app.storage.local).all<{ n: number }>(
-		`SELECT count(*) AS n FROM label_intents WHERE sub = ?`,
-		[sub],
-	);
-	return row?.n ?? 0;
+/**
+ * What one account still owes Gmail, which is what removal turns on.
+ *
+ * Straight at the durable file: this is what a person is asked about before a
+ * removal, and asking must not open the mail file the removal is about to
+ * unlink.
+ */
+export function pendingWork(
+	app: MailApp,
+	sub: string,
+): Promise<PendingSummary> {
+	return openIntentStore(app.storage.local, sub).summary();
 }
 
 /**
@@ -248,6 +263,12 @@ export async function removeAccount(
 	// credential does not stop it. It would deliver into a mail file this is
 	// unlinking and record a sync against a row this is deleting.
 	//
+	// The claim is held within one surface, which is all it ever promised
+	// (`reconcile-claim.ts`). A second window has its own, so removing here
+	// cannot exclude a pass running there. One window is the shape this
+	// application has today, and a claim that crossed windows would be a
+	// different mechanism than the one that exists.
+	//
 	// It does not close the window between counting what is owed and deleting
 	// it. A triage act does not take this claim, deliberately, because a person
 	// pressing `e` should never wait on a network pass, so an assertion recorded
@@ -261,7 +282,7 @@ export async function removeAccount(
 	if (taken.error !== null) return taken;
 	const { release } = taken.data;
 	try {
-		const owed = await pendingCount(app, sub);
+		const owed = (await pendingWork(app, sub)).assertions;
 		if (owed > 0) {
 			return Err(AccountError.OwesWork({ sub, pending: owed }).error);
 		}
@@ -269,6 +290,13 @@ export async function removeAccount(
 		const forgotten = await app.epicenter.secrets.delete(sub);
 		if (forgotten.error !== null) return forgotten;
 
+		// The session goes before the file it holds, so nothing composed over
+		// this account survives the account. A session still opening is awaited
+		// rather than only dropped: it holds an `openSqlite` that would land
+		// after the unlink and recreate the file (ADR-0321).
+		const opening = app.sessions.get(sub);
+		app.sessions.delete(sub);
+		await opening?.catch(() => undefined);
 		await app.storage.forgetMail(sub);
 		await sqliteHandle(app.storage.local).batch([
 			{ sql: `DELETE FROM label_intents WHERE sub = ?`, parameters: [sub] },
@@ -281,26 +309,50 @@ export async function removeAccount(
 	}
 }
 
-/** Everything one account's work needs, composed once. */
-export async function openSession(
-	app: MailApp,
-	sub: string,
-): Promise<ReconcileDeps> {
-	const tokens = createTokenManager({
-		config: app.config,
-		identity: app.identity,
-		secrets: app.epicenter.secrets,
-		accountId: sub,
-		now: app.now,
+/**
+ * Everything one account's work needs, composed once and held.
+ *
+ * **A session for an account this device has not connected is refused.** The
+ * mail file's name is derived from the subject, so opening a session for a
+ * removed account would create an empty file for a mailbox nobody can read,
+ * and every read through it would answer as though the account were merely
+ * empty. Asking the registry first turns a stale caller into an error it can
+ * report instead of a mailbox that quietly says nothing is there.
+ */
+export function openSession(app: MailApp, sub: string): Promise<ReconcileDeps> {
+	const existing = app.sessions.get(sub);
+	if (existing !== undefined) return existing;
+	const opening = (async () => {
+		const [row] = await sqliteHandle(app.storage.local).all<{ sub: string }>(
+			`SELECT sub FROM accounts WHERE sub = ?`,
+			[sub],
+		);
+		if (row === undefined) {
+			throw new Error(`No account is connected on this device for ${sub}.`);
+		}
+		const tokens = createTokenManager({
+			config: app.config,
+			identity: app.identity,
+			secrets: app.epicenter.secrets,
+			accountId: sub,
+			now: app.now,
+		});
+		return {
+			sub,
+			mailbox: openMailbox(await app.storage.mail(sub)),
+			intents: openIntentStore(app.storage.local, sub),
+			client: createGmailClient({ config: app.config, tokens }),
+			config: app.config,
+			now: app.now,
+		};
+	})();
+	// Evict this open, not whatever is under the key when it fails: a slow
+	// failure must not take a healthy session opened after it.
+	opening.catch(() => {
+		if (app.sessions.get(sub) === opening) app.sessions.delete(sub);
 	});
-	return {
-		sub,
-		mailbox: openMailbox(await app.storage.mail(sub)),
-		intents: openIntentStore(app.storage.local, sub),
-		client: createGmailClient({ config: app.config, tokens }),
-		config: app.config,
-		now: app.now,
-	};
+	app.sessions.set(sub, opening);
+	return opening;
 }
 
 /** Record that a pass reached Gmail, on this device's own registry row. */

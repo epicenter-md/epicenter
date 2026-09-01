@@ -81,7 +81,10 @@ export async function openLocalMailStorage(
 		const existing = mailboxes.get(sub);
 		if (existing !== undefined) return existing;
 		const opened = openBorrowed(epicenter, mailDatabaseName(sub));
-		opened.catch(() => mailboxes.delete(sub));
+		// This open, not whatever is under the key when it fails.
+		opened.catch(() => {
+			if (mailboxes.get(sub) === opened) mailboxes.delete(sub);
+		});
 		mailboxes.set(sub, opened);
 		return opened;
 	}
@@ -90,7 +93,12 @@ export async function openLocalMailStorage(
 		local,
 		mail: opening,
 		forgetMail: async (sub) => {
+			// Settle an open already in flight before unlinking. ADR-0321 makes
+			// sequencing the application's invariant to keep: an `openSqlite`
+			// landing after the `deleteSqlite` recreates the file this removed.
+			const inflight = mailboxes.get(sub);
 			mailboxes.delete(sub);
+			await inflight?.catch(() => undefined);
 			const gone = await epicenter.deleteSqlite(mailDatabaseName(sub));
 			if (gone.error !== null) throw gone.error;
 		},
