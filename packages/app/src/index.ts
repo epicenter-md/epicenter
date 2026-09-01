@@ -1,19 +1,30 @@
-/** The one application-owned handle for Epicenter capabilities. */
+/**
+ * The one application-owned handle for Epicenter capabilities (ADR-0316).
+ *
+ * An application creates `epicenter` once, with its declared application id,
+ * and reaches its data, its relational stores, and its secrets through it. It
+ * never selects IndexedDB, OPFS, Bun SQLite, a native path, a keychain, or a
+ * host IPC mechanism, because none of those names appear on this surface.
+ *
+ * **The runtime arrives as a binding, chosen at build time.** There is no
+ * `typeof window` test here and there must not be one: the desktop build runs
+ * in a WebView, so a runtime sniff cannot tell it apart from a browser tab,
+ * and the two differ in exactly the ways that matter (a keychain, a Bun-owned
+ * file). Applications select the leaf through the `#platform/*` condition the
+ * repository already uses for auth and instance seams; a build that forgot to
+ * fails to resolve rather than silently running the wrong owner.
+ *
+ * Runtime differences are typed failures, never branches (ADR-0181). A browser
+ * build has no keychain, so its secret leaf answers from tab memory and forgets
+ * everything on close; the application handles that because a `Result` obliges
+ * it to.
+ */
 
-import {
-	createBrowserBinding,
-} from './browser.js';
-import { createDesktopBinding } from './desktop.js';
-import {
-	APP_STORAGE_PATH,
-	type AppStorageRequest,
-	type AppStorageResponse,
-} from './protocol.js';
 import type { DataDefinition } from '@epicenter/data/definition';
 import type { LocalData } from '@epicenter/data';
 import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+import type { Result } from 'wellcrafted/result';
 
 export const AppError = defineErrors({
 	InvalidAppId: ({ appId }: { appId: string }) => ({
@@ -23,6 +34,11 @@ export const AppError = defineErrors({
 	InvalidDatabaseName: ({ databaseName }: { databaseName: string }) => ({
 		message: `The SQLite database name '${databaseName}' is not valid.`,
 		databaseName,
+	}),
+	/** This release does not ship the data id the application asked to open. */
+	UnknownData: ({ dataId }: { dataId: string }) => ({
+		message: `No first-party data definition in this release declares '${dataId}'.`,
+		dataId,
 	}),
 	StorageFailed: ({ cause }: { cause: unknown }) => ({
 		message: 'The application storage owner failed.',
@@ -53,6 +69,11 @@ export type SecretError = InferErrors<typeof SecretError>;
 export type AppSqliteRow = SqliteRow;
 export type AppSqliteValue = SqliteValue;
 
+/**
+ * All `run`, `all`, and `batch` (ADR-0312). A transaction never crosses this
+ * boundary, so `batch` is how several statements become one, and there is no
+ * `close`: the owner holds the handle for the life of the application.
+ */
 export type AppSqliteDatabase = {
 	run(
 		sql: string,
@@ -70,6 +91,15 @@ export type AppSqliteDatabase = {
 	): Promise<Result<{ changes: number[] }, AppError>>;
 };
 
+/**
+ * Three verbs and no enumeration (ADR-0310).
+ *
+ * There is no way to ask whether this runtime keeps a secret across a session,
+ * and that absence is the design: a browser build answers `null` from `get`
+ * after a reload, which is the same answer a new desktop device gives, and the
+ * application already has to handle it. A `durable` flag would be a platform
+ * test wearing a capability's clothes.
+ */
 export type SecretStore = {
 	put(accountId: string, value: string): Promise<Result<void, SecretError>>;
 	get(accountId: string): Promise<Result<string | null, SecretError>>;
@@ -86,8 +116,8 @@ export type EpicenterBinding = {
 
 export type CreateEpicenterOptions = {
 	appId: string;
-	/** Runtime bindings are supplied by the desktop or browser entrypoint. */
-	binding?: EpicenterBinding;
+	/** The runtime leaf, resolved by the application's build condition. */
+	binding: EpicenterBinding;
 };
 
 export type EpicenterHandle = {
@@ -108,14 +138,11 @@ export function createEpicenter(
 	options: CreateEpicenterOptions,
 ): EpicenterHandle {
 	if (!APP_ID.test(options.appId)) {
-		throw new Error(AppError.InvalidAppId({ appId: options.appId }).error.message);
+		throw new Error(
+			AppError.InvalidAppId({ appId: options.appId }).error.message,
+		);
 	}
-	const browserWindow = typeof window === 'undefined' ? undefined : window;
-	const binding =
-		options.binding ??
-		(browserWindow === undefined
-			? createDesktopBinding({ appId: options.appId })
-			: createBrowserBinding({ appId: options.appId }));
+	const { binding } = options;
 
 	return Object.freeze({
 		appId: options.appId,
@@ -124,11 +151,13 @@ export function createEpicenter(
 		},
 		openSqlite(name: string) {
 			if (!DATABASE_NAME.test(name)) {
-				return Promise.resolve(AppError.InvalidDatabaseName({ databaseName: name }));
+				return Promise.resolve(
+					AppError.InvalidDatabaseName({ databaseName: name }),
+				);
 			}
 			return binding.openSqlite(name);
 		},
-		secrets: {
+		secrets: Object.freeze({
 			put(accountId: string, value: string) {
 				if (!ACCOUNT_ID.test(accountId)) {
 					return Promise.resolve(SecretError.InvalidAccountId({ accountId }));
@@ -147,118 +176,6 @@ export function createEpicenter(
 				}
 				return binding.secrets.delete(accountId);
 			},
-		},
+		}),
 	});
-}
-
-export function createHttpBinding(options: {
-	appId: string;
-	baseURL?: string;
-	fetch?: typeof globalThis.fetch;
-}): EpicenterBinding {
-	const request = createHttpRequest(options);
-	return {
-		openData: async () =>
-			AppError.StorageFailed({
-				cause: new Error('Desktop data opening is owned by the host binding.'),
-			}),
-		openSqlite: async (name) =>
-			createHttpSqlite(request, options.appId, name),
-		secrets: createHttpSecrets(request, options.appId),
-	};
-}
-
-function createHttpRequest({
-	baseURL = globalThis.location?.origin,
-	fetch: fetchImplementation = globalThis.fetch,
-}: {
-	baseURL?: string;
-	fetch?: typeof globalThis.fetch;
-}) {
-	if (!baseURL || !fetchImplementation) {
-		throw new Error('An HTTP application binding needs an origin and fetch.');
-	}
-	return async function request(
-		message: AppStorageRequest,
-	): Promise<Result<AppStorageResponse, AppError>> {
-		try {
-				const response = await fetchImplementation(`${baseURL}${APP_STORAGE_PATH}`, {
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify(message),
-				});
-				if (!response.ok) {
-					return AppError.ProtocolFailed({ status: response.status });
-				}
-				const body: unknown = await response.json();
-				if (!isStorageResponse(body)) return AppError.InvalidResponse();
-				return Ok(body);
-		} catch (cause) {
-			return AppError.StorageFailed({ cause });
-		}
-	};
-}
-
-function createHttpSqlite(
-	request: ReturnType<typeof createHttpRequest>,
-	appId: string,
-	name: string,
-): Promise<Result<AppSqliteDatabase, AppError>> {
-	const database = {
-		run: (sql: string, parameters?: readonly SqliteValue[]) =>
-			mapRequest(request({ kind: 'sqlite-run', appId, name, statement: { sql, parameters } }), 'sqlite-run', (response) => ({ changes: response.changes })),
-		all: <TRow extends SqliteRow>(sql: string, parameters?: readonly SqliteValue[]) =>
-			mapRequest(request({ kind: 'sqlite-all', appId, name, statement: { sql, parameters } }), 'sqlite-all', (response) => response.rows as TRow[]),
-		batch: (statements: readonly { sql: string; parameters?: readonly SqliteValue[] }[]) =>
-			mapRequest(request({ kind: 'sqlite-batch', appId, name, statements }), 'sqlite-batch', (response) => ({ changes: [...response.changes] })),
-	};
-	return Promise.resolve(Ok(database));
-}
-
-function createHttpSecrets(
-	request: ReturnType<typeof createHttpRequest>,
-	appId: string,
-): SecretStore {
-	return {
-		put: async (accountId, value) => {
-			const result = await request({ kind: 'secret-put', appId, accountId, value });
-			return result.error === null
-				? Ok(undefined)
-				: SecretError.StorageFailed({ cause: result.error });
-		},
-		get: async (accountId) => {
-			const result = await request({ kind: 'secret-get', appId, accountId });
-			if (result.error !== null) return SecretError.StorageFailed({ cause: result.error });
-			return result.data.kind === 'secret-get'
-				? Ok(result.data.value)
-				: SecretError.StorageFailed({ cause: AppError.InvalidResponse().error });
-		},
-		delete: async (accountId) => {
-			const result = await request({ kind: 'secret-delete', appId, accountId });
-			return result.error === null
-				? Ok(undefined)
-				: SecretError.StorageFailed({ cause: result.error });
-		},
-	};
-}
-
-function mapRequest<TKind extends AppStorageResponse['kind'], TValue>(
-	result: Promise<Result<AppStorageResponse, AppError>>,
-	kind: TKind,
-	map: (response: Extract<AppStorageResponse, { kind: TKind }>) => TValue,
-): Promise<Result<TValue, AppError>> {
-	return result.then((outcome) => {
-		if (outcome.error !== null) return outcome;
-		if (outcome.data.kind !== kind) return AppError.InvalidResponse();
-		return Ok(map(outcome.data as Extract<AppStorageResponse, { kind: TKind }>));
-	});
-}
-
-function isStorageResponse(value: unknown): value is AppStorageResponse {
-	return (
-		typeof value === 'object' &&
-		value !== null &&
-		'kind' in value &&
-		['sqlite-run', 'sqlite-all', 'sqlite-batch', 'secret-put', 'secret-get', 'secret-delete'].includes(String(value.kind))
-	);
 }

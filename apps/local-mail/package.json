@@ -13,7 +13,8 @@
 	],
 	"exports": {
 		"./http/api": "./src/http/api.ts",
-		"./presence": "./src/presence.ts"
+		"./presence": "./src/presence.ts",
+		"./storage": "./src/storage.ts"
 	},
 	"scripts": {
 		"connect": "bun run src/bin.ts connect",

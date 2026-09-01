@@ -52,3 +52,15 @@ test('refuses invalid database names before reaching the owner', async () => {
 	expect(result.error?.name).toBe('InvalidDatabaseName');
 	expect(calls).toEqual([]);
 });
+
+test('refuses an account id that is not one label', async () => {
+	const epicenter = createEpicenter({
+		appId: 'so.epicenter.test',
+		binding: bindingFor([]),
+	});
+
+	const put = await epicenter.secrets.put('../other', 'token');
+	expect(put.error?.name).toBe('InvalidAccountId');
+	const read = await epicenter.secrets.get('a/b');
+	expect(read.error?.name).toBe('InvalidAccountId');
+});

@@ -1,4 +1,18 @@
-/** Messages exchanged by an application handle and a trusted desktop owner. */
+/**
+ * Messages exchanged by an application handle and the trusted desktop owner.
+ *
+ * Three concerns cross this seam and only three: opening the application's
+ * declared data, running statements against an application-owned SQLite file,
+ * and holding one labeled secret. Every message names the application, because
+ * the owner scopes everything it does by that identity rather than by the
+ * socket it arrived on.
+ *
+ * `data-open` carries the definition's IDENTITY, never the definition. The
+ * owner imports first-party definition modules from its own release (ADR-0313)
+ * and answers whether this release ships that data id and whether the asking
+ * application owns it. It does not receive a serialized declaration, and there
+ * is no JSON spelling of one to receive.
+ */
 
 import type { SqliteValue } from '@epicenter/sqlite';
 
@@ -10,6 +24,11 @@ export type SqliteStatement = {
 };
 
 export type AppStorageRequest =
+	| {
+			kind: 'data-open';
+			appId: string;
+			dataId: string;
+		}
 	| {
 			kind: 'sqlite-run';
 			appId: string;
@@ -46,6 +65,7 @@ export type AppStorageRequest =
 		};
 
 export type AppStorageResponse =
+	| { kind: 'data-open'; dataId: string; title: string }
 	| { kind: 'sqlite-run'; changes: number }
 	| { kind: 'sqlite-all'; rows: readonly Record<string, unknown>[] }
 	| { kind: 'sqlite-batch'; changes: readonly number[] }
@@ -53,17 +73,21 @@ export type AppStorageResponse =
 	| { kind: 'secret-get'; value: string | null }
 	| { kind: 'secret-delete' };
 
-export function isAppStorageResponse(value: unknown): value is AppStorageResponse {
+const RESPONSE_KINDS: readonly AppStorageResponse['kind'][] = [
+	'data-open',
+	'sqlite-run',
+	'sqlite-all',
+	'sqlite-batch',
+	'secret-put',
+	'secret-get',
+	'secret-delete',
+];
+
+export function isAppStorageResponse(
+	value: unknown,
+): value is AppStorageResponse {
 	if (typeof value !== 'object' || value === null || !('kind' in value)) {
 		return false;
 	}
-	const kind = value.kind;
-	return (
-		kind === 'sqlite-run' ||
-		kind === 'sqlite-all' ||
-		kind === 'sqlite-batch' ||
-		kind === 'secret-put' ||
-		kind === 'secret-get' ||
-		kind === 'secret-delete'
-	);
+	return RESPONSE_KINDS.includes(value.kind as AppStorageResponse['kind']);
 }

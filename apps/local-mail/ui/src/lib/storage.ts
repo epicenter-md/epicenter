@@ -1,6 +1,2 @@
-import { createEpicenter } from '@epicenter/app';
-
-/** Local Mail's browser-scoped storage capability. Semantic Gmail calls remain in `api.ts`. */
-export const epicenter = createEpicenter({
-	appId: 'so.epicenter.local-mail',
-});
+/** Local Mail's scoped storage capability. Semantic Gmail calls stay app-owned. */
+export { epicenter } from '#platform/epicenter';

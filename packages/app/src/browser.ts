@@ -1,5 +1,15 @@
 /// <reference lib="dom" />
 
+/**
+ * The standalone browser leaf: IndexedDB data, origin-owned SQLite, and
+ * secrets that live exactly as long as the tab (ADR-0310).
+ *
+ * This is the reduced build. It has no keychain and no host, so it holds no
+ * credential across a reload, deliberately and permanently: not `localStorage`,
+ * not IndexedDB, and not encrypted in the page, because a key the page can
+ * derive is a key anything in the origin can derive.
+ */
+
 import {
 	createGeneration,
 	newestGeneration,
@@ -21,39 +31,45 @@ type BrowserSqliteFactory = (
 	name: string,
 ) => Promise<AppSqliteDatabase>;
 
-/** Browser binding: IndexedDB data, origin-owned SQLite, and tab memory secrets. */
 export function createBrowserBinding(options: {
 	appId: string;
 	sqlite?: BrowserSqliteFactory;
 }): EpicenterBinding {
-	const secrets = new Map<string, string>();
 	const sqlite = options.sqlite ?? createBrowserSqliteFactory();
 	return {
-		openData: openBrowserData,
-		openSqlite: async (name) => {
-			const result = await tryAsync({
+		openData: openClientOwnedData,
+		openSqlite: (name) =>
+			tryAsync({
 				try: () => sqlite(options.appId, name),
 				catch: (cause) => AppError.StorageFailed({ cause }),
-			});
-			return result;
-		},
-		secrets: createMemorySecrets(secrets),
+			}),
+		secrets: createTabMemorySecrets(),
 	};
 }
 
-async function openBrowserData<TDefinition extends DataDefinition>(
+/**
+ * Open the newest generation of this definition's client-owned store, minting
+ * one when the machine has never held it.
+ *
+ * Shared with the desktop leaf, because a person's Epicenter Data is
+ * client-owned in every runtime: the host serves bundles and brokers
+ * capabilities, and owns no application data (ADR-0226, ADR-0227).
+ */
+export async function openClientOwnedData<TDefinition extends DataDefinition>(
 	definition: TDefinition,
 ): Promise<Result<LocalData<TDefinition>, AppError>> {
 	const generation = await newestGeneration(definition.id);
 	if (generation === undefined) {
 		const created = await createGeneration(definition);
-		if (created.error !== null) return AppError.StorageFailed({ cause: created.error });
-		return openBrowserGeneration(definition, created.data.generation);
+		if (created.error !== null) {
+			return AppError.StorageFailed({ cause: created.error });
+		}
+		return openGeneration(definition, created.data.generation);
 	}
-	return openBrowserGeneration(definition, generation);
+	return openGeneration(definition, generation);
 }
 
-async function openBrowserGeneration<TDefinition extends DataDefinition>(
+async function openGeneration<TDefinition extends DataDefinition>(
 	definition: TDefinition,
 	generation: number,
 ): Promise<Result<LocalData<TDefinition>, AppError>> {
@@ -63,7 +79,9 @@ async function openBrowserGeneration<TDefinition extends DataDefinition>(
 		: AppError.StorageFailed({ cause: opened.error });
 }
 
-function createMemorySecrets(values: Map<string, string>): SecretStore {
+/** In memory, for the life of the tab, permanently rather than provisionally. */
+export function createTabMemorySecrets(): SecretStore {
+	const values = new Map<string, string>();
 	return {
 		put: async (accountId, value) => {
 			values.set(accountId, value);
