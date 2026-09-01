@@ -246,9 +246,17 @@ export async function removeAccount(
 	// The account's claim, for the same reason a pass takes it: a reconciler
 	// already running holds an access token in memory, so destroying the
 	// credential does not stop it. It would deliver into a mail file this is
-	// unlinking and record a sync against a row this is deleting. Holding the
-	// claim is also what closes the window between counting what is owed and
-	// deleting it, because an act cannot be recorded by a pass that cannot run.
+	// unlinking and record a sync against a row this is deleting.
+	//
+	// It does not close the window between counting what is owed and deleting
+	// it. A triage act does not take this claim, deliberately, because a person
+	// pressing `e` should never wait on a network pass, so an assertion recorded
+	// between the count and the commit is deleted without anyone choosing that.
+	// The window is one person's own two hands, and the interface only reaches
+	// this from a dialog they are looking at. Narrowing it further means either
+	// making every keystroke contend with the reconciler, or deleting by the
+	// sequence the count observed, which would leave an assertion behind under
+	// an account row that is gone: the orphan ADR-0319 exists to prevent.
 	const taken = claimReconcile(sub);
 	if (taken.error !== null) return taken;
 	const { release } = taken.data;
