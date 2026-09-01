@@ -1401,12 +1401,16 @@ describe('an ack naming a position this replica never received through', () => {
 		phone.client.flush();
 		wire.settle();
 
-		const stuck = phone.client.status();
-		// Reported against the replica's real position, not the ack's own, which
-		// is what makes the reconnect ask for entry 2 rather than entry 4.
-		expect(stuck.lastError?.name).toBe('Gap');
-		expect((stuck.lastError as { expected?: number }).expected).toBe(2);
-		expect((stuck.lastError as { received?: number }).received).toBe(4);
+		// One assertion, because `name: 'Gap'` alone cannot fail here: entry 3
+		// already reported a gap before the ack arrived. Only `received` tells the
+		// two apart, and `expected: 2` is the substance: the gap is reported
+		// against the replica's real position, not the ack's own, which is what
+		// sends the reconnect after entry 2 rather than entry 4.
+		expect(phone.client.status().lastError).toMatchObject({
+			name: 'Gap',
+			expected: 2,
+			received: 4,
+		});
 
 		// The DURABLE readings, because every in-memory one was already correct
 		// while the bytes were being lost. Acting on the ack would stamp the owed
