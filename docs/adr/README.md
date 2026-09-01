@@ -387,7 +387,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0303](0303-an-application-opens-epicenter-data-and-app-owned-sqlite-through-one-scoped-client.md) | An application opens Epicenter Data and app-owned SQLite through one scoped client | Accepted (unbuilt; amended by 0307 at the projection and the withdrawn rename, and by 0312 at the withdrawn `AppSqliteDatabase`) |
 | [0304](0304-application-persistence-is-runtime-selected-and-scoped-by-its-owning-app.md) | Application persistence is runtime-selected and scoped by its owning app | Accepted (unbuilt; amended by 0312 at its superseded ADR-0275 citation, and by 0314 at the per-app layout) |
 | [0305](0305-the-third-party-app-catalog-is-a-future-epicenter-deployment-plane.md) | The third-party app catalog is a future Epicenter deployment plane | Accepted (unbuilt; amends 0227 at its temporary installed-app refusal) |
-| [0306](0306-borrowed-data-is-disposable-and-a-persons-own-data-is-not.md) | Borrowed data is disposable and a person's own data is not | Accepted |
+| [0306](0306-borrowed-data-is-disposable-and-a-persons-own-data-is-not.md) | Borrowed data is disposable and a person's own data is not | Accepted (classification test amended by 0318) |
 | [0307](0307-a-derived-index-is-in-memory-sqlite-rebuilt-on-read.md) | A derived index is in-memory SQLite, rebuilt on read | Accepted (unbuilt; amends 0303 at the projection and withdraws the `SyncSqliteDatabase` rename) |
 | [0308](0308-an-application-opens-its-own-sqlite-inside-its-own-worker-and-the-handle-is-synchronous.md) | An application opens its own SQLite inside its own worker, and the handle is synchronous | Superseded by 0312 (Tauri IPC has no blocking path) |
 | [0309](0309-a-field-holds-a-value-or-a-node-and-the-retired-words-fail-the-build.md) | A field holds a value or a node, and the retired words fail the build | Accepted (supersedes 0299 at its vocabulary; check unbuilt) |
@@ -399,5 +399,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0315](0315-the-folder-is-keyed-by-data-id-and-the-segment-under-it-is-the-applications.md) | The folder is keyed by data id, and the segment under it is the application's | Accepted (unbuilt; amends 0271 at the layout and the closed set, and 0314 at the human folder) |
 | [0316](0316-an-application-creates-one-scoped-epicenter-handle.md) | An application creates one scoped Epicenter handle | Accepted (unbuilt; amends 0303 at the constructor name and application-facing handle) |
 | [0317](0317-local-mail-is-an-epicenter-application-without-a-standalone-cli.md) | Local Mail is an Epicenter application without a standalone CLI | Accepted (unbuilt; deletes the standalone runtime and human CLI) |
+| [0318](0318-epicenter-data-is-what-epicenter-is-the-authority-for-and-a-foreign-write-is-a-command.md) | Epicenter Data is what Epicenter is the authority for, and a foreign write is a command | Accepted (amends 0306's classification test) |
 
 When you add an ADR, add its row here.
