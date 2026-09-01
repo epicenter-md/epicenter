@@ -10,6 +10,7 @@
 
 import { join } from 'node:path';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
+import { createBunAppStorage } from './app-storage.ts';
 import {
 	type AgentEngine,
 	createBunBlobRemote,
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
 		const blobs = createBunBlobStore({
 			directory: join(dataRoot, 'blobs'),
 		});
+		const appStorage = createBunAppStorage(dataRoot);
 		// Identity is immutable per process generation, so remote availability
 		// is a boot-time fact: a signed-in generation composes the streaming
 		// remote over the authority's own deployment fetch, a signed-out one
@@ -106,6 +108,7 @@ async function main(): Promise<void> {
 			blobs,
 			desktopAuth: auth,
 			blobRemote,
+			appStorage,
 		});
 
 		server = Bun.serve({

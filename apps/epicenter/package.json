@@ -25,6 +25,7 @@
 	},
 	"dependencies": {
 		"@epicenter/agent": "workspace:*",
+		"@epicenter/app": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/blobs": "workspace:*",
 		"@epicenter/client": "workspace:*",
@@ -32,6 +33,7 @@
 		"@epicenter/data": "workspace:*",
 		"@epicenter/matter-core": "workspace:*",
 		"@epicenter/server": "workspace:*",
+		"@epicenter/sqlite": "workspace:*",
 		"@epicenter/skills": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@epicenter/ui": "workspace:*",

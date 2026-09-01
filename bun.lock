@@ -88,6 +88,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/agent": "workspace:*",
+        "@epicenter/app": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/blobs": "workspace:*",
         "@epicenter/client": "workspace:*",
@@ -96,6 +97,7 @@
         "@epicenter/matter-core": "workspace:*",
         "@epicenter/server": "workspace:*",
         "@epicenter/skills": "workspace:*",
+        "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/whispering": "workspace:*",

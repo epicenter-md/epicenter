@@ -7,10 +7,16 @@
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { AgentToolDefinition } from '@epicenter/agent';
+import {
+	APP_STORAGE_PATH,
+	type AppStorageRequest,
+	type AppStorageResponse,
+	type SqliteStatement,
+} from '@epicenter/app/protocol';
 import { getProfileVia } from '@epicenter/auth';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
-import { epicenterFolderRoot } from '@epicenter/constants/app-data';
+import { epicenterFolderRoot, isAppId } from '@epicenter/constants/app-data';
 import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
@@ -24,6 +30,7 @@ import {
 	parseHomeCommand,
 } from './host.ts';
 import { applyMirrorPass, mirrorFolderPath } from './mirror.ts';
+import type { BunAppStorage } from './app-storage.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
@@ -74,6 +81,8 @@ export type HomeServerOptions = {
 	 * credential or a destination URL.
 	 */
 	blobRemote: BlobRemote | null;
+	/** Bun owner for app-scoped SQLite files. */
+	appStorage?: BunAppStorage;
 };
 
 const SESSION_COOKIE = 'epicenter_session';
@@ -88,6 +97,7 @@ export function createHomeServer({
 	blobs,
 	desktopAuth,
 	blobRemote,
+	appStorage,
 }: HomeServerOptions) {
 	if (launchToken === '') {
 		throw new Error('Epicenter refuses to serve without a launch token.');
@@ -269,6 +279,18 @@ export function createHomeServer({
 	app.use(APPLICATIONS_ROUTE.pattern, requireBrowserSession);
 	app.use('/api/home/*', requireBrowserSession);
 	app.use('/api/local-blobs/*', requireBrowserSession);
+	app.use(`${APP_STORAGE_PATH}/*`, requirePrivateBroker);
+	app.post(APP_STORAGE_PATH, async (c) => {
+		if (appStorage === undefined) return c.text('Unavailable', 503);
+		const request = parseAppStorageRequest(await readJsonObject(c.req.raw));
+		if (request === undefined) return c.text('Bad Request', 400);
+		try {
+			const response = await handleAppStorageRequest(appStorage, request);
+			return c.json(response);
+		} catch {
+			return c.text('Application storage failed', 500);
+		}
+	});
 	// The same gate the blob routes carry, for the same reason: these write and
 	// delete real files and list a workspace's row ids, and the only caller is
 	// a rendering WebView that already holds the session it was bootstrapped
@@ -605,6 +627,104 @@ function validateOrigin(origin: string): URL {
 
 function tokenHash(token: string): string {
 	return createHash('sha256').update(token).digest('base64url');
+}
+
+function parseAppStorageRequest(
+	input: Record<string, unknown> | null,
+): AppStorageRequest | undefined {
+	if (
+		input === null ||
+		typeof input.kind !== 'string' ||
+		typeof input.appId !== 'string' ||
+		!isAppId(input.appId)
+	) {
+		return undefined;
+	}
+	const kind = input.kind;
+	if (
+		(kind === 'sqlite-run' || kind === 'sqlite-all') &&
+		typeof input.name === 'string'
+	) {
+		const statement = parseSqliteStatement(input.statement);
+		return statement === undefined || !isDatabaseName(input.name)
+			? undefined
+			: { kind, appId: input.appId, name: input.name, statement };
+	}
+	if (kind === 'sqlite-batch' && typeof input.name === 'string') {
+		if (!isDatabaseName(input.name) || !Array.isArray(input.statements)) {
+			return undefined;
+		}
+		const statements: SqliteStatement[] = [];
+		for (const value of input.statements) {
+			const statement = parseSqliteStatement(value);
+			if (statement === undefined) return undefined;
+			statements.push(statement);
+		}
+		return { kind, appId: input.appId, name: input.name, statements };
+	}
+	if (
+		(kind === 'secret-put' || kind === 'secret-get' || kind === 'secret-delete') &&
+		typeof input.accountId === 'string'
+	) {
+		if (!isAccountId(input.accountId)) return undefined;
+		if (kind === 'secret-put' && typeof input.value !== 'string') return undefined;
+		return kind === 'secret-put'
+			? { kind, appId: input.appId, accountId: input.accountId, value: input.value as string }
+			: { kind, appId: input.appId, accountId: input.accountId };
+	}
+	return undefined;
+}
+
+async function handleAppStorageRequest(
+	storage: BunAppStorage,
+	request: AppStorageRequest,
+): Promise<AppStorageResponse> {
+	switch (request.kind) {
+		case 'secret-put':
+		case 'secret-get':
+		case 'secret-delete':
+			throw new Error('Desktop secrets are wired by the secure host owner.');
+		case 'sqlite-run': {
+			const database = await storage.open(request.appId, request.name);
+			const result = await database.run(request.statement.sql, request.statement.parameters);
+			if (result.error !== null) throw result.error;
+			return { kind: request.kind, changes: result.data.changes };
+		}
+		case 'sqlite-all': {
+			const database = await storage.open(request.appId, request.name);
+			const result = await database.all(request.statement.sql, request.statement.parameters);
+			if (result.error !== null) throw result.error;
+			return { kind: request.kind, rows: result.data };
+		}
+		case 'sqlite-batch': {
+			const database = await storage.open(request.appId, request.name);
+			const result = await database.batch(request.statements);
+			if (result.error !== null) throw result.error;
+			return { kind: request.kind, changes: result.data.changes };
+		}
+	}
+}
+
+function parseSqliteStatement(value: unknown):
+	| { sql: string; parameters?: readonly import('@epicenter/sqlite').SqliteValue[] }
+	| undefined {
+	if (typeof value !== 'object' || value === null || !('sql' in value)) return undefined;
+	if (typeof value.sql !== 'string' || value.sql.trim() === '') return undefined;
+	if (!('parameters' in value) || value.parameters === undefined) return { sql: value.sql };
+	if (!Array.isArray(value.parameters) || value.parameters.some((item) => !isSqliteValue(item))) return undefined;
+	return { sql: value.sql, parameters: value.parameters as import('@epicenter/sqlite').SqliteValue[] };
+}
+
+function isSqliteValue(value: unknown): boolean {
+	return value === null || typeof value === 'string' || typeof value === 'number';
+}
+
+function isDatabaseName(value: string): boolean {
+	return /^[a-z][a-z0-9_-]*$/.test(value);
+}
+
+function isAccountId(value: string): boolean {
+	return /^[A-Za-z0-9._-]+$/.test(value);
 }
 
 function tokensMatch(candidate: string, expected: string): boolean {

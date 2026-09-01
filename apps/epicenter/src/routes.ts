@@ -10,6 +10,7 @@
  */
 
 import { LOCAL_BLOB_PATH } from '@epicenter/blobs/webview';
+import { APP_STORAGE_PATH } from '@epicenter/app/protocol';
 import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
 
 const stripTrailing = (value: string) => value.replace(/\/+$/, '');
@@ -75,6 +76,7 @@ export const LOCAL_BLOB_ROUTE = {
  * third-party app would buy.
  */
 export const MIRROR_ROUTE = route(`${MIRROR_PATH}/:dataId/:folder`);
+export const APP_STORAGE_ROUTE = route(APP_STORAGE_PATH);
 /**
  * Host-owned remote copy operations for one local blob. The id is the only
  * input: no route accepts a destination URL, transfer header, or body, so the
