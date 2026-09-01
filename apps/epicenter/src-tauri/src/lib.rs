@@ -1085,7 +1085,7 @@ fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
         .env("EPICENTER_APPS_DIST", apps_dist(app)?)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::from(log.try_clone()?));
+        .stderr(host_stderr(&log)?);
 
     let mut child = command
         .spawn()
@@ -1144,6 +1144,23 @@ fn apps_dist(_app: &DesktopAppHandle) -> Result<PathBuf> {
 #[cfg(not(debug_assertions))]
 fn apps_dist(app: &DesktopAppHandle) -> Result<PathBuf> {
     Ok(app.path().resource_dir()?.join("apps-dist"))
+}
+
+/// Where the Bun host's own output goes.
+///
+/// A release writes it to `host.log`, which is where a person is asked to look
+/// when something has already gone wrong. A development run writes it to the
+/// terminal that started `tauri dev`, because that is the only place anyone is
+/// actually watching: a host that fails in development wrote its reason to a
+/// file nobody opened, so every failure looked silent.
+#[cfg(debug_assertions)]
+fn host_stderr(_log: &File) -> Result<Stdio> {
+    Ok(Stdio::inherit())
+}
+
+#[cfg(not(debug_assertions))]
+fn host_stderr(log: &File) -> Result<Stdio> {
+    Ok(Stdio::from(log.try_clone()?))
 }
 
 #[cfg(debug_assertions)]
@@ -1646,6 +1663,9 @@ fn append_parent_log(app: &DesktopAppHandle, message: &str) {
     if let Ok(mut file) = open_log_file(app) {
         let _ = writeln!(file, "[tauri-host] {message}");
     }
+    // The same line on the development terminal, beside the host's own output.
+    #[cfg(debug_assertions)]
+    eprintln!("[tauri-host] {message}");
 }
 
 fn log_path(app: &DesktopAppHandle) -> Result<PathBuf> {
