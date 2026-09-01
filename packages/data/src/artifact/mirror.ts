@@ -84,7 +84,7 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import type { DataDefinition } from '../definition/index.js';
 import { rowPath } from './layout.js';
-import { MIRROR_PATH, type MirrorPlace, mirrorLine } from './protocol.js';
+import { MIRROR_PATH, mirrorLine } from './protocol.js';
 import {
 	type RenderableData,
 	type RenderError,
@@ -116,13 +116,13 @@ export type MirrorSinkError = InferErrors<typeof MirrorSinkError>;
 
 /** The absolute same-origin URL one place's folder is written through. */
 function mirrorFolderUrl({
-	place,
+	folder,
 	dataId,
 }: {
-	place: MirrorPlace;
+	folder: string;
 	dataId: string;
 }): string {
-	return `${MIRROR_PATH}/${encodeURIComponent(place)}/${encodeURIComponent(dataId)}`;
+	return `${MIRROR_PATH}/${encodeURIComponent(dataId)}/${encodeURIComponent(folder)}`;
 }
 
 export type MirrorSink = {
@@ -142,15 +142,15 @@ export type MirrorSink = {
  * network, which is the whole of what makes the caller testable.
  */
 export function createMirrorSink({
-	place,
+	folder,
 	dataId,
 	fetch: httpFetch = globalThis.fetch,
 }: {
-	place: MirrorPlace;
+	folder: string;
 	dataId: string;
 	fetch?: typeof globalThis.fetch;
 }): MirrorSink {
-	const url = mirrorFolderUrl({ place, dataId });
+	const url = mirrorFolderUrl({ folder, dataId });
 	return {
 		async send(ndjson) {
 			const { data: response, error } = await tryAsync({
@@ -217,9 +217,9 @@ function failedPath(error: RenderError): string | undefined {
 export function attachMirror({
 	data,
 	definition,
-	place,
+	folder,
 	sink = createMirrorSink({
-		place,
+		folder,
 		dataId: definition.id,
 		fetch: globalThis.fetch,
 	}),
@@ -230,7 +230,7 @@ export function attachMirror({
 	data: MirrorableData;
 	/** The authored definition, whose codecs the render serializes through. */
 	definition: DataDefinition;
-	place: MirrorPlace;
+	folder: string;
 	/** Injected so a test drives this without a host and without a network. */
 	sink?: MirrorSink;
 	log: Logger;
@@ -325,4 +325,4 @@ export function attachMirror({
 // An application needs the verb and the word for which folder it is writing.
 // The wire format itself is the host's business and this package's, and both
 // read it from `./protocol.js` directly.
-export type { MirrorPlace } from './protocol.js';
+export type { MirrorFolder } from './protocol.js';

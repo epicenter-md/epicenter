@@ -9,18 +9,16 @@
  */
 
 import { expect, test } from 'bun:test';
-import { Database } from 'bun:sqlite';
 import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { applyMirrorPass, mirrorFolderPath } from './mirror.ts';
-import { MIRROR_INDEX_FILE } from './mirror-index.ts';
 
 const ROOT = '/Users/person/Epicenter';
 const APP = 'so.epicenter.honeycrisp';
 
-const folder = (place: string, dataId: string) =>
-	mirrorFolderPath({ place, dataId, root: ROOT });
+const folder = (folder: string, dataId: string) =>
+	mirrorFolderPath({ folder, dataId, root: ROOT });
 
 const file = (path: string, contents: string) =>
 	`${JSON.stringify({ path, contents })}\n`;
@@ -30,15 +28,14 @@ function scratch(): string {
 	return mkdtempSync(join(tmpdir(), 'epicenter-mirror-'));
 }
 
-test('a folder resolves under its place and application', () => {
-	expect(folder('local', APP)).toBe(`${ROOT}/local/${APP}`);
-	expect(folder('account', APP)).toBe(`${ROOT}/account/${APP}`);
+test('a folder resolves under its data id and application folder', () => {
+	expect(folder('local', APP)).toBe(`${ROOT}/${APP}/local`);
+	expect(folder('account', APP)).toBe(`${ROOT}/${APP}/account`);
 });
 
-test('a place that is not one of the two is refused', () => {
-	// The top level says where data lives and there are exactly two answers.
-	expect(folder('accounts', APP)).toBeUndefined();
-	expect(folder('on-this-device', APP)).toBeUndefined();
+test('a folder is one safe application-owned path segment', () => {
+	expect(folder('account/subfolder', APP)).toBeUndefined();
+	expect(folder('on-this-device', APP)).toBe(`${ROOT}/${APP}/on-this-device`);
 	expect(folder('', APP)).toBeUndefined();
 	expect(folder('..', APP)).toBeUndefined();
 });
@@ -52,7 +49,7 @@ test('a data id that could not name an app directory is refused', () => {
 
 test('a file cannot climb out of its folder', async () => {
 	const root = scratch();
-	const target = join(root, 'account', APP);
+	const target = join(root, APP, 'account');
 	// `../x.md` and `./x.md` both SPLIT into two segments, so a grammar check
 	// alone admits them. Containment is what actually refuses them.
 	await applyMirrorPass(
@@ -65,7 +62,7 @@ test('a file cannot climb out of its folder', async () => {
 			manifest(['notes/ok.md']),
 	);
 	expect(readdirSync(join(target, 'notes'))).toEqual(['ok.md']);
-	expect(readdirSync(join(root, 'account'))).toEqual([APP]);
+	expect(readdirSync(root)).toEqual([APP]);
 });
 
 test('only the files a render produces are accepted', async () => {
@@ -80,7 +77,7 @@ test('only the files a render produces are accepted', async () => {
 			file('.DS_Store', 'no') +
 			manifest(['notes/abc.md', 'kv.json']),
 	);
-	expect(readdirSync(root).sort()).toEqual(['kv.json', 'notes', MIRROR_INDEX_FILE]);
+	expect(readdirSync(root).sort()).toEqual(['kv.json', 'notes']);
 	expect(readdirSync(join(root, 'notes'))).toEqual(['abc.md']);
 });
 
@@ -157,25 +154,4 @@ test('a line the host cannot read costs that line, not the pass', async () => {
 			manifest(['notes/a.md', 'notes/b.md']),
 	);
 	expect(readdirSync(join(root, 'notes'))).toEqual(['b.md']);
-});
-
-test('the index is rebuilt from what survived the sweep', async () => {
-	const root = scratch();
-	await applyMirrorPass(
-		root,
-		file('notes/a.md', '---\ntitle: "kept"\n---\n') +
-			file('notes/b.md', '---\ntitle: "gone"\n---\n') +
-			manifest(['notes/a.md', 'notes/b.md']),
-	);
-	await applyMirrorPass(root, manifest(['notes/a.md']));
-
-	const database = new Database(join(root, MIRROR_INDEX_FILE), { readonly: true });
-	try {
-		const rows = database.query('SELECT path, title FROM notes').all();
-		// Never a row for the file the same pass removed: the index is rebuilt
-		// after the sweep, so it cannot describe something about to disappear.
-		expect(rows).toEqual([{ path: 'notes/a.md', title: 'kept' }]);
-	} finally {
-		database.close();
-	}
 });

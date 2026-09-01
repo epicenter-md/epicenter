@@ -91,7 +91,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		await using _mirror = attachMirror({
 			data,
 			definition: store,
-			place: 'account',
+			folder: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
@@ -109,7 +109,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		await using _mirror = attachMirror({
 			data,
 			definition: store,
-			place: 'account',
+			folder: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
@@ -132,7 +132,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		await using _mirror = attachMirror({
 			data,
 			definition: store,
-			place: 'account',
+			folder: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
@@ -161,7 +161,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		await using _mirror = attachMirror({
 			data,
 			definition: store,
-			place: 'account',
+			folder: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
@@ -183,7 +183,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		await using _mirror = attachMirror({
 			data,
 			definition: store,
-			place: 'account',
+			folder: 'account',
 			sink,
 			log: silent,
 			idleMs: 20,
@@ -205,7 +205,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		const mirror = attachMirror({
 			data,
 			definition: store,
-			place: 'account',
+			folder: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
@@ -248,7 +248,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		await using _mirror = attachMirror({
 			data,
 			definition: throwing,
-			place: 'account',
+			folder: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
@@ -276,7 +276,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		await using _mirror = attachMirror({
 			data,
 			definition: broken,
-			place: 'account',
+			folder: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
@@ -295,7 +295,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		await using _mirror = attachMirror({
 			data,
 			definition: store,
-			place: 'account',
+			folder: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,
@@ -321,7 +321,7 @@ describe('attachMirror states a whole store (ADR-0271)', () => {
 		await using _mirror = attachMirror({
 			data,
 			definition: store,
-			place: 'account',
+			folder: 'account',
 			sink,
 			log: silent,
 			idleMs: 1,

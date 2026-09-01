@@ -46,7 +46,6 @@ import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
 import { Ok } from 'wellcrafted/result';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
-import { MIRROR_INDEX_FILE } from './mirror-index.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
@@ -1713,15 +1712,15 @@ describe('mirror routes (ADR-0271)', () => {
 	const pass = (lines: object[]) =>
 		lines.map((line) => `${JSON.stringify(line)}\n`).join('');
 
-	test('a pass writes the folder, sweeps it, and indexes it', async () => {
+	test('a pass writes and sweeps the application folder', async () => {
 		const folderRoot = mkdtempSync(join(tmpdir(), 'mirror-route-test-'));
 		const previousRoot = process.env.EPICENTER_FOLDER_DIR;
 		process.env.EPICENTER_FOLDER_DIR = folderRoot;
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
 		const server = await serveHost(host);
 		const origin = server.url.origin;
-		const url = `${origin}${MIRROR_PATH}/local/so.epicenter.honeycrisp`;
-		const folder = join(folderRoot, 'local/so.epicenter.honeycrisp');
+		const url = `${origin}${MIRROR_PATH}/so.epicenter.honeycrisp/local`;
+		const folder = join(folderRoot, 'so.epicenter.honeycrisp/local');
 		try {
 			// Session-gated like every other domain API on this origin: this route
 			// writes and deletes real files under a person's home directory.
@@ -1742,7 +1741,6 @@ describe('mirror routes (ADR-0271)', () => {
 			expect(await Bun.file(join(folder, 'notes/abc.md')).text()).toContain(
 				'# A note',
 			);
-			expect(await Bun.file(join(folder, MIRROR_INDEX_FILE)).exists()).toBe(true);
 
 			// A second pass that no longer names one row takes its file with it.
 			const swept = await fetch(url, {
@@ -1761,7 +1759,7 @@ describe('mirror routes (ADR-0271)', () => {
 		}
 	});
 
-	test('a place or a data id the render never produces is refused', async () => {
+	test('a folder or data id the render never produces is refused', async () => {
 		const folderRoot = mkdtempSync(join(tmpdir(), 'mirror-route-test-'));
 		const previousRoot = process.env.EPICENTER_FOLDER_DIR;
 		process.env.EPICENTER_FOLDER_DIR = folderRoot;
@@ -1770,9 +1768,9 @@ describe('mirror routes (ADR-0271)', () => {
 		const origin = server.url.origin;
 		try {
 			const refused = [
-				`${MIRROR_PATH}/elsewhere/so.epicenter.honeycrisp`,
-				`${MIRROR_PATH}/on-this-device/so.epicenter.honeycrisp`,
-				`${MIRROR_PATH}/local/..%2F..%2Fetc`,
+				`${MIRROR_PATH}/so.epicenter.honeycrisp/notes/abc.md`,
+				`${MIRROR_PATH}/so.epicenter.honeycrisp/..%2F..%2Fetc`,
+				`${MIRROR_PATH}/..%2Fetc/notes`,
 				`${MIRROR_PATH}/local/so.epicenter.honeycrisp/notes/abc.md`,
 			];
 			for (const path of refused) {

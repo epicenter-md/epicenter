@@ -35,30 +35,32 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promise
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { isAppId } from '@epicenter/constants/app-data';
 import { parseRowPath } from '@epicenter/data/artifact/format';
-import {
-	isMirrorPlace,
-	parseMirrorPass,
-} from '@epicenter/data/artifact/protocol';
-import { indexMirrorFolder } from './mirror-index.ts';
+import { parseMirrorPass } from '@epicenter/data/artifact/protocol';
+
+export class MirrorFolderBusyError extends Error {
+	override readonly name = 'MirrorFolderBusy';
+}
 
 /**
- * The folder one place's files live in, or `undefined` when the request does
- * not name one.
+ * The folder a data id's files live in, or `undefined` when the request does
+ * not name one. Folder names are one application-owned path segment.
  */
 export function mirrorFolderPath({
-	place,
+	folder,
 	dataId,
 	root,
 }: {
-	place: string;
+	folder: string;
 	dataId: string;
 	root: string;
 }): string | undefined {
-	if (!isMirrorPlace(place)) return undefined;
-	// The same grammar the data root uses for an app directory: dot-separated,
-	// alphanumeric at both ends, so `.` and `..` are refused by construction.
+	if (!isSafeFolder(folder)) return undefined;
 	if (!isAppId(dataId)) return undefined;
-	return join(root, place, dataId);
+	return join(root, dataId, folder);
+}
+
+function isSafeFolder(value: string): boolean {
+	return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) && value !== '.' && value !== '..';
 }
 
 /**
@@ -142,28 +144,45 @@ export async function applyMirrorPass(
 	absoluteFolder: string,
 	ndjson: string,
 ): Promise<void> {
-	let manifest: readonly string[] | undefined;
-	for (const line of parseMirrorPass(ndjson)) {
-		if ('manifest' in line) {
-			manifest = line.manifest;
-			continue;
+	const release = await claimMirrorFolder(absoluteFolder);
+	try {
+		let manifest: readonly string[] | undefined;
+		let complete = true;
+		for (const line of parseMirrorPass(ndjson)) {
+			if ('manifest' in line) {
+				if (manifest !== undefined) complete = false;
+				manifest = line.manifest;
+				continue;
+			}
+			if (manifest !== undefined) complete = false;
+			const target = fileInFolder(absoluteFolder, line.path);
+			if (target === undefined) continue;
+			await writeMirrorFile(target, line.contents);
 		}
-		const target = fileInFolder(absoluteFolder, line.path);
-		if (target === undefined) continue;
-		await writeMirrorFile(target, line.contents);
-	}
-	if (manifest === undefined) return;
+		if (manifest === undefined || !complete) return;
 
-	const named = new Set(manifest);
-	const survivors: string[] = [];
-	for (const path of await listRenderedFiles(absoluteFolder)) {
-		if (named.has(path)) {
-			survivors.push(path);
-			continue;
+		const named = new Set(manifest);
+		for (const path of await listRenderedFiles(absoluteFolder)) {
+			if (named.has(path)) continue;
+			await rm(join(absoluteFolder, path), { force: true });
 		}
-		await rm(join(absoluteFolder, path), { force: true });
+	} finally {
+		await release();
 	}
-	// From what survived, not from a second listing: the sweep just answered
-	// this question and two answers could differ.
-	await indexMirrorFolder(absoluteFolder, survivors);
+}
+
+async function claimMirrorFolder(absoluteFolder: string): Promise<() => Promise<void>> {
+	const lock = `${absoluteFolder}.epicenter-lock`;
+	await mkdir(dirname(lock), { recursive: true });
+	try {
+		await mkdir(lock);
+	} catch (cause) {
+		if (cause instanceof Error && 'code' in cause && cause.code === 'EEXIST') {
+			throw new MirrorFolderBusyError(`Mirror folder is already claimed: ${absoluteFolder}`);
+		}
+		throw cause;
+	}
+	return async () => {
+		await rm(lock, { recursive: true, force: true });
+	};
 }

@@ -29,7 +29,11 @@ import {
 	type HomeSessionSnapshot,
 	parseHomeCommand,
 } from './host.ts';
-import { applyMirrorPass, mirrorFolderPath } from './mirror.ts';
+import {
+	applyMirrorPass,
+	MirrorFolderBusyError,
+	mirrorFolderPath,
+} from './mirror.ts';
 import type { BunAppStorage } from './app-storage.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
@@ -330,14 +334,17 @@ export function createHomeServer({
 	 */
 	app.put(MIRROR_ROUTE.pattern, async (c) => {
 		const folder = mirrorFolderPath({
-			place: c.req.param('place') ?? '',
 			dataId: c.req.param('dataId') ?? '',
+			folder: c.req.param('folder') ?? '',
 			root: folderRoot,
 		});
 		if (folder === undefined) return c.text('Invalid mirror path', 400);
 		try {
 			await applyMirrorPass(folder, await c.req.text());
-		} catch {
+		} catch (cause) {
+			if (cause instanceof MirrorFolderBusyError) {
+				return c.text('Mirror folder is busy', 409);
+			}
 			// The folder is a convenience over a filesystem that may be full,
 			// read-only, or on a drive someone unplugged. The store is unaffected,
 			// so this is the mirror's failure to report and never the

@@ -117,7 +117,7 @@ async function openLocalReplica(
 	const mirror = attachMirror({
 		data,
 		definition: honeycrispDefinition,
-		place: 'local',
+		folder: 'local',
 		log: mirrorLog,
 	});
 
@@ -202,7 +202,7 @@ async function openAccountReplica({
 	const mirror = attachMirror({
 		data,
 		definition: honeycrispDefinition,
-		place: 'account',
+		folder: 'account',
 		log: mirrorLog,
 	});
 
