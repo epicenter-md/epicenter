@@ -37,7 +37,6 @@ const outDir = new URL('./durable-store-dist/', import.meta.url).pathname;
 await build({
 	root,
 	logLevel: 'error',
-	optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
 	build: { target: 'esnext', outDir, emptyOutDir: true },
 });
 const server = Bun.serve({

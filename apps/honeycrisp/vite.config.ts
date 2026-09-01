@@ -16,7 +16,6 @@ export default defineConfig(
 		// the same build (ADR-0190).
 		workspaceAppViteConfig(APPS.HONEYCRISP, { tauri: !isEpicenterHost }),
 		{
-			optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
 			worker: { format: 'es' },
 			build: { target: 'esnext' },
 			resolve: {

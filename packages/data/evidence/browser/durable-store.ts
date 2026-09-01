@@ -42,7 +42,6 @@ console.log('\nbuilding the probe page\n');
 await build({
 	root,
 	logLevel: 'warn',
-	optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
 	build: { target: 'esnext', outDir, emptyOutDir: true },
 });
 
