@@ -14,7 +14,7 @@ triage it, reconcile, and disconnect.
 
 | | What it is | Where it lives | If you lose it |
 | --- | --- | --- | --- |
-| which accounts are connected | a person's own data | Epicenter Data, synchronizes | reconnect each account |
+| which accounts are connected | a person's own data | Epicenter Data | reconnect each account |
 | the mail itself | borrowed data | `openSqlite('mail')`, disposable | nothing but quota; re-pull |
 | the credential | a secret | the host's keychain, never synchronized | reconnect that account |
 | undelivered triage | a person's own act | `openSqlite('intent')`, durable | real work, unrecoverably |
@@ -79,8 +79,8 @@ page immediately and the page still comes back full.
 | --- | --- |
 | `database.ts` | the account registry's Epicenter Data definition |
 | `storage.ts` | the app id, the mirror folders, and both SQLite schemas |
-| `accounts.ts` | connect, disconnect, and composing one account's session |
-| `account-registry.ts` | the registry's verbs, including "is this subject already here" |
+| `accounts.ts` | the registry, connect, disconnect, and one account's session |
+| `handle.ts` | the one way both stores read and write their database |
 | `mailbox.ts` | one account's slice of the disposable cache, and the overlay |
 | `intent-store.ts` | one account's slice of the durable assertions |
 | `assert.ts` | the act path: entirely local, resolves label names to ids |
@@ -104,8 +104,19 @@ rather than any branch in application code.
   it, and a browser tab has neither, so the web build syncs while a person is
   looking at it.
 
-A new device shows every account asking to be signed in. The account list
-synchronized; the credential did not, by construction.
+### The registry does not synchronize yet
+
+ADR-0310 describes an account list that reaches a person's other devices while
+its credentials do not, so a new device shows every account asking to be signed
+in. That half is unbuilt. `epicenter.openData` opens a device-local document,
+which by its own definition never receives a foreign byte, so today the account
+list is per device and a second device starts empty.
+
+The credential half is real and is the half that matters for safety: a refresh
+token never leaves the device that obtained it. Making the list synchronize
+means opening the account overload of `openDatabase`, which needs the signed-in
+principal the host brokers, and that is a decision about which authority an
+application's own data belongs to.
 
 ## Testing
 

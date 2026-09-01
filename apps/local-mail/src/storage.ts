@@ -9,6 +9,7 @@ import type { AccountRegistry } from './accounts.ts';
  * | | what it is | where it lives |
  * | --- | --- | --- |
  * | which accounts are connected | a person's own data | Epicenter Data |
+ * |  |  | (device-local today; see `accounts.ts`) |
  * | the mail itself | borrowed data | `mail`, disposable |
  * | what this machine still owes Gmail | a person's own act | `intent`, durable |
  *
