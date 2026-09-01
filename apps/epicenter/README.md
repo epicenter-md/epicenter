@@ -50,6 +50,13 @@ so no secret is named twice and the launcher stays one command. Without it the
 build is honest about having no client and says so where a person would click
 Connect.
 
+A release needs the same values or it ships that honest refusal to everyone, so
+`desktop:build:remote` is the packaging command rather than bare `desktop:build`
+(`:remote` means production Infisical, per the suffix convention in the root
+`AGENTS.md`). The client identifies Local Mail to Google and is compiled into
+the bundle by design; the per-account refresh token is the secret, and it never
+leaves the machine's keychain (ADR-0310).
+
 Epicenter opens Home, which is an application beside the others rather than a
 shell above them (ADR-0209). Its Apps pane lists what this build can launch, the
 compiled applications plus the selected catalog generation's members, and
@@ -102,6 +109,9 @@ bun run --cwd apps/epicenter build:desktop
 
 # Package the complete native application
 bun run --cwd apps/epicenter desktop:build
+
+# Package it for release, with Local Mail's Google client compiled in
+bun run --cwd apps/epicenter desktop:build:remote
 
 # Typecheck Home plus every compiled application's platform conditions
 bun run --cwd apps/epicenter typecheck

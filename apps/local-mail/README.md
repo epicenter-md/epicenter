@@ -158,25 +158,43 @@ redirect carries no session cookie, and a forged callback fails the window's
 `src/authorization-return.ts` owns both paths, because the host routes one and
 both builds read the other, and a string spelled twice is how they drift.
 
-**Register both loopback ports.** Google matches a redirect URI exactly, so the
-OAuth client needs `http://127.0.0.1:39130/apps/mail/connected` for the release
-build and `http://127.0.0.1:39131/apps/mail/connected` for the development one,
-plus `http://localhost:5177/connected` for `bun dev` against the standalone web
-build.
+**No redirect URI is registered, and none can be.** The Google client is
+Desktop type, and RFC 8252 section 7.3 requires an authorization server to allow
+any port for a loopback redirect, because a native application takes whatever
+port the operating system gives it. Google honours that: the Desktop client
+creation form has no redirect URI field at all, so `39130`, `39131`, whatever
+`EPICENTER_DEV_PORT` names, and the web build's `localhost:5177` all work with
+nothing configured anywhere. `redirectUri()` deriving the address from
+`window.location.origin` is not a convenience, then; it is the only shape that
+matches what Google will accept.
 
-### The registry does not synchronize yet
+The limit runs the other way. A Desktop client can use loopback and nothing
+else, so if the standalone web build is ever served from a real domain it needs
+its own Web client with that origin registered exactly (ADR-0083).
 
-ADR-0310 describes an account list that reaches a person's other devices while
-its credentials do not, so a new device shows every account asking to be signed
-in. That half is unbuilt. `epicenter.openData` opens a device-local document,
-which by its own definition never receives a foreign byte, so today the account
-list is per device and a second device starts empty.
+**The consent screen is published, and that is what makes a connection last.**
+Refresh-token lifetime follows publishing status, not client type: a client left
+in Testing has its refresh tokens expire after seven days, which looks exactly
+like a bug and is why `refreshAccess` distinguishes `invalid_grant` and asks for
+re-consent instead of retrying. Epicenter's client is In production, so a
+connected account stays connected. A contributor building with their own client
+should publish it too, or expect to reconnect weekly. Note that `gmail.modify`
+is a restricted scope, so distributing to anyone beyond the developer needs
+Google's verification review; unverified builds work but show the
+"Google hasn't verified this app" interstitial.
+
+### The registry does not synchronize, and it is not going to
+
+ADR-0310 described an account list that reaches a person's other devices while
+its credentials do not, so a new device would show every account asking to be
+signed in. ADR-0319 withdrew that. The credential cannot synchronize, so a row
+on a device holding no credential lists an account that device cannot read, and
+an account is connected per device instead.
 
 The credential half is real and is the half that matters for safety: a refresh
-token never leaves the device that obtained it. Making the list synchronize
-means opening the account overload of `openDatabase`, which needs the signed-in
-principal the host brokers, and that is a decision about which authority an
-application's own data belongs to.
+token never leaves the device that obtained it. Nothing Local Mail holds leaves
+the machine, which is also what keeps a restricted Gmail scope out of the
+category that a server would put it in.
 
 ## Testing
 
