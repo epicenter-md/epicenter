@@ -4,8 +4,9 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import { appDataDir, isAppId } from '@epicenter/constants/app-data';
-import type { AppSqliteDatabase } from '@epicenter/app';
+import { AppError, type AppSqliteDatabase } from '@epicenter/app';
 import type { SqliteValue } from '@epicenter/sqlite';
+import { Ok, type Result } from 'wellcrafted/result';
 
 export type BunAppStorage = {
 	open(appId: string, name: string): Promise<AppSqliteDatabase>;
@@ -88,9 +89,9 @@ function toBindings(
 	return [...(parameters ?? [])] as SQLQueryBindings[];
 }
 
-function resultOf<T>(promise: Promise<T>): Promise<import('wellcrafted/result').Result<T, import('@epicenter/app').AppError>> {
+function resultOf<T>(promise: Promise<T>): Promise<Result<T, AppError>> {
 	return promise.then(
-		(data) => ({ data, error: null }),
-		(cause) => import('@epicenter/app').then(({ AppError }) => AppError.StorageFailed({ cause })),
+		(data) => Ok(data),
+		(cause) => AppError.StorageFailed({ cause }),
 	);
 }

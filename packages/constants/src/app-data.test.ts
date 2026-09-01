@@ -186,7 +186,9 @@ test('EPICENTER_FOLDER_DIR wins, and a relative one is refused', () => {
 });
 
 test('an app directory sits under apps/', () => {
-	expect(appDataDir('/root', 'local-mail')).toBe('/root/apps/local-mail');
+	expect(appDataDir('/root', 'so.epicenter.local-mail')).toBe(
+		'/root/apps/so.epicenter.local-mail',
+	);
 	expect(appDataDir('/root', 'local-books')).toBe('/root/apps/local-books');
 });
 

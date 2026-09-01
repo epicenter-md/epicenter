@@ -63,16 +63,20 @@ export function isAppId(value: string): boolean {
  *
  * This is not the set of apps that own a directory: every trusted app owns one
  * (ADR-0201). It is the set of ids that arrive through no catalog, because their
- * apps are composed directly or ship as a standalone CLI, so admission has no
- * other way to know the names are taken. A folder named `local-mail` would
- * otherwise be admitted as a second claimant on the directory Local Mail's
- * credentials and intent store already sit in.
+ * apps are composed directly, so admission has no other way to know the names
+ * are taken.
+ *
+ * One entry, and `local-mail` is deliberately not the second any more. Local
+ * Mail became an Epicenter application and its storage moved under its
+ * reverse-domain application id (ADR-0317), so the bare label reserves a
+ * directory nothing writes to. Reserving a name no owner holds is a claim that
+ * has to be read as true and is not.
  *
  * An app id is deliberately not a surface id: Local Books has no launchable
  * surface at all, and coupling a mailbox's location to a name Home's launcher
  * owns would let a surface rename strand data (ADR-0201).
  */
-export const COMPOSED_APP_IDS = ['local-mail', 'local-books'] as const;
+export const COMPOSED_APP_IDS = ['local-books'] as const;
 
 export type ComposedAppId = (typeof COMPOSED_APP_IDS)[number];
 

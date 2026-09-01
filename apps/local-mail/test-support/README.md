@@ -5,7 +5,7 @@ real Google call, so it is not hermetic and stays out of the offline suite.
 
 The mock-Gmail write harness that used to sit here was deleted with the
 standalone runtime it drove (ADR-0317). What it covered, a triage act being
-visible to the next read and a pass delivering it, is now covered offline in
+visible to the next read and a pass delivering it, is covered offline in
 `src/reconcile.test.ts` against in-memory databases, so nothing here needs a
 throwaway copy of a real mailbox any more.
 
@@ -35,7 +35,7 @@ each drift.
 
 ## Files
 
-| File | What it is |
-| --- | --- |
-| `check-gmail-discovery.ts` | The live drift check above. |
-| `mock-gmail.ts` | A mock Gmail REST server, kept for manual exploration against a fake provider. It is not wired into any script. |
+`check-gmail-discovery.ts` is the only one, and the section above is what it
+does. The mock Gmail server that used to sit beside it read a copied
+`mail.v<version>.db` artifact, and both the artifact and the runtime that made
+one are gone (ADR-0317).
