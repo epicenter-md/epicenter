@@ -94,6 +94,8 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
+        "@epicenter/honeycrisp": "workspace:*",
+        "@epicenter/local-mail": "workspace:*",
         "@epicenter/matter-core": "workspace:*",
         "@epicenter/server": "workspace:*",
         "@epicenter/skills": "workspace:*",
@@ -108,7 +110,6 @@
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
-        "@epicenter/honeycrisp": "workspace:*",
         "@sveltejs/vite-plugin-svelte": "catalog:",
         "@tailwindcss/vite": "catalog:",
         "@tauri-apps/cli": "catalog:",

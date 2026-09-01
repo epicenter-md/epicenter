@@ -43,7 +43,19 @@ export type ParentPipe = {
 	cancel(): Promise<void>;
 };
 
-export type NativeAuthPort = ReturnType<typeof createNativeAuthPort>;
+export type NativePort = ReturnType<typeof createNativeAuthPort>;
+
+/**
+ * The slice of the native port the desktop auth authority uses.
+ *
+ * Declared as a subset rather than the whole port so that adding an operation
+ * for somebody else, such as an application's labeled secret, does not oblige
+ * every auth test double to grow a method it never calls.
+ */
+export type NativeAuthPort = Pick<
+	NativePort,
+	'completed' | 'storeAuth' | 'openAuthUrl' | 'relaunch' | 'onOAuthCallback'
+>;
 
 const BOOT_FRAME_KEYS = [
 	'authCell',
@@ -225,9 +237,14 @@ export function watchParentPipe(
 }
 
 /**
- * Bind the fixed native auth operations to the versioned Rust pipe.
- * The port is deliberately content-blind: it cannot name a keyring entry or
- * invoke arbitrary native commands.
+ * Bind the fixed native operations to the versioned Rust pipe.
+ *
+ * The port names no keyring entry and invokes no arbitrary native command. It
+ * carries the desktop auth cell, an authorization URL to open, a relaunch, and
+ * one labeled application secret. The secret operations send an application id
+ * and an account id, both validated before they reach here; Rust composes the
+ * service and account strings it stores under, so what crosses this pipe stays
+ * a pair of labels rather than an address in the credential store (ADR-0310).
  */
 export function createNativeAuthPort(
 	{ parentPipe }: { parentPipe: ParentPipe },
@@ -241,7 +258,7 @@ export function createNativeAuthPort(
 ) {
 	const pending = new Map<
 		string,
-		{ resolve(): void; reject(error: Error): void }
+		{ resolve(value: string | null): void; reject(error: Error): void }
 	>();
 	const callbackListeners = new Set<(url: string) => void>();
 	let queuedCallback: string | null = null;
@@ -253,10 +270,13 @@ export function createNativeAuthPort(
 	function request(
 		frame:
 			| { type: 'store-auth'; serialized: string | null }
-			| { type: 'open-auth-url'; url: string },
-	): Promise<void> {
+			| { type: 'open-auth-url'; url: string }
+			| { type: 'put-app-secret'; appId: string; accountId: string; value: string }
+			| { type: 'get-app-secret'; appId: string; accountId: string }
+			| { type: 'delete-app-secret'; appId: string; accountId: string },
+	): Promise<string | null> {
 		const requestId = createRequestId();
-		return new Promise<void>((resolve, reject) => {
+		return new Promise<string | null>((resolve, reject) => {
 			pending.set(requestId, { resolve, reject });
 			try {
 				send({ ...frame, requestId });
@@ -282,7 +302,7 @@ export function createNativeAuthPort(
 			);
 		}
 		pending.delete(frame.requestId);
-		if (frame.status === 'ok') request.resolve();
+		if (frame.status === 'ok') request.resolve(frame.value ?? null);
 		else request.reject(new Error(frame.message));
 	}
 
@@ -304,11 +324,20 @@ export function createNativeAuthPort(
 
 	return {
 		completed,
-		storeAuth(serialized: string | null) {
-			return request({ type: 'store-auth', serialized });
+		async storeAuth(serialized: string | null) {
+			await request({ type: 'store-auth', serialized });
 		},
-		openAuthUrl(url: string) {
-			return request({ type: 'open-auth-url', url });
+		async openAuthUrl(url: string) {
+			await request({ type: 'open-auth-url', url });
+		},
+		async putAppSecret(appId: string, accountId: string, value: string) {
+			await request({ type: 'put-app-secret', appId, accountId, value });
+		},
+		getAppSecret(appId: string, accountId: string) {
+			return request({ type: 'get-app-secret', appId, accountId });
+		},
+		async deleteAppSecret(appId: string, accountId: string) {
+			await request({ type: 'delete-app-secret', appId, accountId });
 		},
 		relaunch() {
 			send({ type: 'relaunch' });
@@ -326,12 +355,13 @@ export function createNativeAuthPort(
 }
 
 type NativeFrame =
-	| { type: 'native-result'; requestId: string; status: 'ok' }
+	| { type: 'native-result'; requestId: string; status: 'ok'; value?: string | null }
 	| {
 			type: 'native-result';
 			requestId: string;
 			status: 'error';
 			message: string;
+			value?: undefined;
 	  }
 	| { type: 'oauth-callback'; url: string };
 
@@ -354,11 +384,23 @@ function parseNativeFrame(line: string): NativeFrame {
 		return frame as NativeFrame;
 	}
 	if (frame.type === 'native-result') {
+		// `value` is present only on a read, and only when Rust found an entry.
+		// Absent and `null` both mean "nothing stored", so the read arm accepts
+		// either rather than making Rust choose a spelling.
 		const keys =
 			frame.status === 'error'
 				? ['message', 'requestId', 'status', 'type']
-				: ['requestId', 'status', 'type'];
+				: 'value' in frame
+					? ['requestId', 'status', 'type', 'value']
+					: ['requestId', 'status', 'type'];
 		assertExactKeys(frame, keys);
+		if (
+			'value' in frame &&
+			frame.value !== null &&
+			typeof frame.value !== 'string'
+		) {
+			throw new Error('The native result value must be a string or null.');
+		}
 		if (typeof frame.requestId !== 'string' || frame.requestId === '') {
 			throw new Error('The native result requestId must be non-empty.');
 		}

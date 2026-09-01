@@ -12,21 +12,23 @@
 		"email"
 	],
 	"exports": {
+		"./database": "./src/database.ts",
 		"./http/api": "./src/http/api.ts",
 		"./presence": "./src/presence.ts",
 		"./storage": "./src/storage.ts"
 	},
 	"scripts": {
-		"connect": "bun run src/bin.ts connect",
-		"reconcile": "bun run src/bin.ts reconcile",
-		"status": "bun run src/bin.ts status",
 		"app": "bun run src/bin.ts app",
 		"app:desktop": "tauri dev",
-		"build:sidecar": "bun run scripts/build-sidecar.ts",
 		"build:desktop": "bun run --cwd ui build && bun run build:sidecar",
-		"desktop:build": "tauri build",
-		"tauri": "tauri",
+		"build:epicenter": "EPICENTER_HOST=1 bun run --cwd ui build",
+		"build:sidecar": "bun run scripts/build-sidecar.ts",
 		"check:gmail-drift": "bun run test-support/check-gmail-discovery.ts",
+		"connect": "bun run src/bin.ts connect",
+		"desktop:build": "tauri build",
+		"reconcile": "bun run src/bin.ts reconcile",
+		"status": "bun run src/bin.ts status",
+		"tauri": "tauri",
 		"test": "bun test",
 		"typecheck": "tsc --noEmit && tsc --noEmit -p test-support/tsconfig.json"
 	},

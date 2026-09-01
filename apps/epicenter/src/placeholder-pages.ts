@@ -4,7 +4,7 @@ import type { BuiltInRouteId } from './routes.ts';
 
 type PlaceholderRouteId = Exclude<
 	BuiltInRouteId,
-	'home' | 'whispering' | 'honeycrisp'
+	'home' | 'whispering' | 'honeycrisp' | 'mail'
 >;
 
 function placeholderPage(title: string, status: string): string {
@@ -36,10 +36,6 @@ function placeholderPage(title: string, status: string): string {
 }
 
 export const PLACEHOLDER_PAGES = {
-	mail: placeholderPage(
-		'Mail',
-		'Mail is coming to Epicenter. Its place is reserved, but there is nothing here yet.',
-	),
 	books: placeholderPage(
 		'Books',
 		'Books is coming to Epicenter. Its place is reserved, but there is nothing here yet.',

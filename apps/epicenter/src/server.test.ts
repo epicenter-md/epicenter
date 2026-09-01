@@ -45,6 +45,14 @@ import { desktopBlobUrl } from '@epicenter/blobs/webview';
 import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
 import { Ok } from 'wellcrafted/result';
 import { COMPILED_APPLICATIONS } from './applications.ts';
+import { APP_STORAGE_PATH } from '@epicenter/app/protocol';
+import type { BunAppStorage } from './app-storage.ts';
+import {
+	type AppSecretOwner,
+	createProcessMemoryAppSecrets,
+} from './app-secrets.ts';
+import localMailDatabase from '@epicenter/local-mail/database';
+import { LOCAL_MAIL_APP_ID } from '@epicenter/local-mail/storage';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
@@ -158,6 +166,10 @@ async function serveHost(
 	host: HomeHost,
 	page: string = PAGE,
 	blobRemote: BlobRemote | null = null,
+	owners: {
+		appStorage?: BunAppStorage;
+		appSecrets?: AppSecretOwner;
+	} = {},
 ) {
 	const portProbe = Bun.serve({
 		hostname: '127.0.0.1',
@@ -175,6 +187,7 @@ async function serveHost(
 		blobs: createTestBlobs(),
 		desktopAuth: createTestDesktopAuth(),
 		blobRemote,
+		...owners,
 	});
 	const server = Bun.serve({
 		hostname: '127.0.0.1',
@@ -574,14 +587,19 @@ describe('createHomeServer', () => {
 				applicationPage('Honeycrisp'),
 			);
 
+			// Mail is a compiled application now, so its route owes the stamped
+			// build rather than a placeholder.
+			const mail = await fetch(MAIL_ROUTE.url(server.url.origin), {
+				headers: authenticatedHeaders(server),
+			});
+			const mailPage = await mail.text();
+			expect(mailPage).toContain('id="epicenter-auth-bootstrap"');
+			expect(withoutAuthBootstrap(mailPage)).toBe(applicationPage('Mail'));
+
 			// The page itself, not a phrase inside it: what this route owes is the
 			// release-bundled placeholder rather than an app or a 404, and pinning
 			// a sentence here only means the copy cannot be improved without
 			// editing a test that was never about the copy.
-			const mail = await fetch(MAIL_ROUTE.url(server.url.origin), {
-				headers: authenticatedHeaders(server),
-			});
-			expect(await mail.text()).toBe(PLACEHOLDER_PAGES.mail);
 			const books = await fetch(BOOKS_ROUTE.url(server.url.origin), {
 				headers: authenticatedHeaders(server),
 			});
@@ -643,7 +661,9 @@ describe('createHomeServer', () => {
 				{ headers: authenticatedHeaders(server) },
 			);
 			expect(browserFragment.status).toBe(200);
-			expect(await browserFragment.text()).toContain('<h1>Mail</h1>');
+			expect(withoutAuthBootstrap(await browserFragment.text())).toBe(
+				applicationPage('Mail'),
+			);
 		} finally {
 			await server.stop(true);
 		}
@@ -1809,6 +1829,141 @@ describe('mirror routes (ADR-0271)', () => {
 			if (previousRoot === undefined) delete process.env.EPICENTER_FOLDER_DIR;
 			else process.env.EPICENTER_FOLDER_DIR = previousRoot;
 			rmSync(folderRoot, { recursive: true, force: true });
+		}
+	});
+});
+
+
+describe('the application storage owner', () => {
+	async function post(server: TestServer, body: unknown) {
+		const { cookie, origin } = authenticationFor(server);
+		return fetch(`${server.url.origin}${APP_STORAGE_PATH}`, {
+			method: 'POST',
+			headers: { cookie, origin, 'content-type': 'application/json' },
+			body: JSON.stringify(body),
+		});
+	}
+
+	test('admits a data id this release imports and refuses one it does not', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host);
+		try {
+			const admitted = await post(server, {
+				kind: 'data-open',
+				appId: LOCAL_MAIL_APP_ID,
+				dataId: localMailDatabase.id,
+			});
+			expect(admitted.status).toBe(200);
+			expect(await admitted.json()).toEqual({
+				kind: 'data-open',
+				dataId: localMailDatabase.id,
+				title: localMailDatabase.title,
+			});
+
+			// The release ships no such data id.
+			const unknown = await post(server, {
+				kind: 'data-open',
+				appId: LOCAL_MAIL_APP_ID,
+				dataId: 'so.epicenter.absent',
+			});
+			expect(unknown.status).toBe(404);
+
+			// A data id this release does ship, asked for by an application that
+			// does not own it.
+			const borrowed = await post(server, {
+				kind: 'data-open',
+				appId: 'so.epicenter.other',
+				dataId: localMailDatabase.id,
+			});
+			expect(borrowed.status).toBe(404);
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('holds one labeled secret per application account', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host, PAGE, null, {
+			appSecrets: createProcessMemoryAppSecrets(),
+		});
+		try {
+			const stored = await post(server, {
+				kind: 'secret-put',
+				appId: LOCAL_MAIL_APP_ID,
+				accountId: 'account-one',
+				value: 'refresh-token',
+			});
+			expect(stored.status).toBe(200);
+
+			const read = await post(server, {
+				kind: 'secret-get',
+				appId: LOCAL_MAIL_APP_ID,
+				accountId: 'account-one',
+			});
+			expect(await read.json()).toEqual({
+				kind: 'secret-get',
+				value: 'refresh-token',
+			});
+
+			// Namespaced per application, so the same label under another
+			// application is a different secret rather than the same one.
+			const neighbour = await post(server, {
+				kind: 'secret-get',
+				appId: 'so.epicenter.other',
+				accountId: 'account-one',
+			});
+			expect(await neighbour.json()).toEqual({
+				kind: 'secret-get',
+				value: null,
+			});
+
+			await post(server, {
+				kind: 'secret-delete',
+				appId: LOCAL_MAIL_APP_ID,
+				accountId: 'account-one',
+			});
+			const gone = await post(server, {
+				kind: 'secret-get',
+				appId: LOCAL_MAIL_APP_ID,
+				accountId: 'account-one',
+			});
+			expect(await gone.json()).toEqual({ kind: 'secret-get', value: null });
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('refuses an account id that could name something other than one label', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host, PAGE, null, {
+			appSecrets: createProcessMemoryAppSecrets(),
+		});
+		try {
+			for (const accountId of ['../other', 'a/b', 'a:b', '']) {
+				const refused = await post(server, {
+					kind: 'secret-get',
+					appId: LOCAL_MAIL_APP_ID,
+					accountId,
+				});
+				expect(refused.status).toBe(400);
+			}
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('reports an absent secret owner rather than pretending to hold one', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host);
+		try {
+			const unavailable = await post(server, {
+				kind: 'secret-get',
+				appId: LOCAL_MAIL_APP_ID,
+				accountId: 'account-one',
+			});
+			expect(unavailable.status).toBe(503);
+		} finally {
+			await server.stop(true);
 		}
 	});
 });

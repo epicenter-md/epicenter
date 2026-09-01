@@ -35,6 +35,8 @@ import {
 	mirrorFolderPath,
 } from './mirror.ts';
 import type { BunAppStorage } from './app-storage.ts';
+import type { AppSecretOwner } from './app-secrets.ts';
+import { admitData } from './trusted-definitions.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
@@ -87,6 +89,8 @@ export type HomeServerOptions = {
 	blobRemote: BlobRemote | null;
 	/** Bun owner for app-scoped SQLite files. */
 	appStorage?: BunAppStorage;
+	/** Credential-store owner for one labeled secret per application account. */
+	appSecrets?: AppSecretOwner;
 };
 
 const SESSION_COOKIE = 'epicenter_session';
@@ -102,6 +106,7 @@ export function createHomeServer({
 	desktopAuth,
 	blobRemote,
 	appStorage,
+	appSecrets,
 }: HomeServerOptions) {
 	if (launchToken === '') {
 		throw new Error('Epicenter refuses to serve without a launch token.');
@@ -243,11 +248,7 @@ export function createHomeServer({
 
 	// Home and the release-bundled placeholders: one document each, no asset
 	// tree behind them.
-	for (const builtInRoute of [
-		BUILT_IN_ROUTES.home,
-		BUILT_IN_ROUTES.mail,
-		BUILT_IN_ROUTES.books,
-	]) {
+	for (const builtInRoute of [BUILT_IN_ROUTES.home, BUILT_IN_ROUTES.books]) {
 		app.get(builtInRoute.pattern, (c) => {
 			c.header('cache-control', 'no-store');
 			if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
@@ -285,12 +286,39 @@ export function createHomeServer({
 	app.use('/api/local-blobs/*', requireBrowserSession);
 	app.use(`${APP_STORAGE_PATH}/*`, requirePrivateBroker);
 	app.post(APP_STORAGE_PATH, async (c) => {
-		if (appStorage === undefined) return c.text('Unavailable', 503);
 		const request = parseAppStorageRequest(await readJsonObject(c.req.raw));
 		if (request === undefined) return c.text('Bad Request', 400);
+		// The definition identity is answered from the release's own imported
+		// definitions, so it needs neither owner (ADR-0313). A data id this
+		// release does not ship is a 404 rather than a 400: the message was
+		// well formed and the answer is that there is no such data here.
+		if (request.kind === 'data-open') {
+			const definition = admitData(request);
+			if (definition === undefined) return c.text('Not Found', 404);
+			return c.json({
+				kind: 'data-open',
+				dataId: definition.id,
+				title: definition.title ?? definition.id,
+			} satisfies AppStorageResponse);
+		}
 		try {
-			const response = await handleAppStorageRequest(appStorage, request);
-			return c.json(response);
+			if (request.kind === 'secret-put') {
+				if (appSecrets === undefined) return c.text('Unavailable', 503);
+				await appSecrets.put(request.appId, request.accountId, request.value);
+				return c.json({ kind: request.kind } satisfies AppStorageResponse);
+			}
+			if (request.kind === 'secret-get') {
+				if (appSecrets === undefined) return c.text('Unavailable', 503);
+				const value = await appSecrets.get(request.appId, request.accountId);
+				return c.json({ kind: request.kind, value } satisfies AppStorageResponse);
+			}
+			if (request.kind === 'secret-delete') {
+				if (appSecrets === undefined) return c.text('Unavailable', 503);
+				await appSecrets.delete(request.appId, request.accountId);
+				return c.json({ kind: request.kind } satisfies AppStorageResponse);
+			}
+			if (appStorage === undefined) return c.text('Unavailable', 503);
+			return c.json(await runAppStatements(appStorage, request));
 		} catch {
 			return c.text('Application storage failed', 500);
 		}
@@ -648,6 +676,11 @@ function parseAppStorageRequest(
 		return undefined;
 	}
 	const kind = input.kind;
+	if (kind === 'data-open' && typeof input.dataId === 'string') {
+		return isAppId(input.dataId)
+			? { kind, appId: input.appId, dataId: input.dataId }
+			: undefined;
+	}
 	if (
 		(kind === 'sqlite-run' || kind === 'sqlite-all') &&
 		typeof input.name === 'string'
@@ -682,15 +715,14 @@ function parseAppStorageRequest(
 	return undefined;
 }
 
-async function handleAppStorageRequest(
+async function runAppStatements(
 	storage: BunAppStorage,
-	request: AppStorageRequest,
+	request: Extract<
+		AppStorageRequest,
+		{ kind: 'sqlite-run' | 'sqlite-all' | 'sqlite-batch' }
+	>,
 ): Promise<AppStorageResponse> {
 	switch (request.kind) {
-		case 'secret-put':
-		case 'secret-get':
-		case 'secret-delete':
-			throw new Error('Desktop secrets are wired by the secure host owner.');
 		case 'sqlite-run': {
 			const database = await storage.open(request.appId, request.name);
 			const result = await database.run(request.statement.sql, request.statement.parameters);

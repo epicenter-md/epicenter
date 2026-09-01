@@ -11,6 +11,7 @@
 import { join } from 'node:path';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { createBunAppStorage } from './app-storage.ts';
+import { createNativeAppSecrets } from './app-secrets.ts';
 import {
 	type AgentEngine,
 	createBunBlobRemote,
@@ -74,6 +75,9 @@ async function main(): Promise<void> {
 			directory: join(dataRoot, 'blobs'),
 		});
 		const appStorage = createBunAppStorage(dataRoot);
+		// The credential store is Rust's, reached over the private sidecar pipe.
+		// Bun sends two labels and never a keyring address (ADR-0310).
+		const appSecrets = createNativeAppSecrets(nativeAuthPort);
 		// Identity is immutable per process generation, so remote availability
 		// is a boot-time fact: a signed-in generation composes the streaming
 		// remote over the authority's own deployment fetch, a signed-out one
@@ -109,6 +113,7 @@ async function main(): Promise<void> {
 			desktopAuth: auth,
 			blobRemote,
 			appStorage,
+			appSecrets,
 		});
 
 		server = Bun.serve({

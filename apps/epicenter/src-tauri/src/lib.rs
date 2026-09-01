@@ -60,7 +60,9 @@ mod delivery;
 use delivery::{simulate_copy_keystroke, simulate_enter_keystroke, write_text};
 
 mod keyring_storage;
-use keyring_storage::{read_auth_cell, write_auth_cell};
+use keyring_storage::{
+    delete_app_secret, read_app_secret, read_auth_cell, write_app_secret, write_auth_cell,
+};
 
 pub mod media;
 use media::{pause_playback, resume_playback};
@@ -117,12 +119,12 @@ impl BuiltInApp {
     ///
     /// Every variant here is an app in the product model; this says only which
     /// ones Home offers. Home is absent because you are already looking at it,
-    /// not because it is above the others (ADR-0209). Mail and Books are
-    /// release-bundled placeholder documents with nothing behind them to open.
+    /// not because it is above the others (ADR-0209). Books is a
+    /// release-bundled placeholder document with nothing behind it to open.
     /// All stay reserved IDs the catalog refuses to admit, so "not launchable"
     /// never means "free for someone else to claim".
     const fn is_launchable(self) -> bool {
-        matches!(self, Self::Whispering | Self::Honeycrisp)
+        matches!(self, Self::Whispering | Self::Honeycrisp | Self::Mail)
     }
 
     const fn id(self) -> &'static str {
@@ -193,6 +195,31 @@ enum BunToRustAuthFrame {
         request_id: String,
         url: String,
     },
+    PutAppSecret {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "appId")]
+        app_id: String,
+        #[serde(rename = "accountId")]
+        account_id: String,
+        value: String,
+    },
+    GetAppSecret {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "appId")]
+        app_id: String,
+        #[serde(rename = "accountId")]
+        account_id: String,
+    },
+    DeleteAppSecret {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "appId")]
+        app_id: String,
+        #[serde(rename = "accountId")]
+        account_id: String,
+    },
     Relaunch {},
 }
 
@@ -205,6 +232,16 @@ enum RustToBunAuthFrame<'a> {
         status: &'static str,
         #[serde(skip_serializing_if = "Option::is_none")]
         message: Option<&'a str>,
+    },
+    /// A read that found something, or found nothing. Bun reads both as the
+    /// answer to one correlated request, on the same `native-result` frame the
+    /// void operations use; only a failure carries a message.
+    #[serde(rename = "native-result")]
+    NativeValue {
+        #[serde(rename = "requestId")]
+        request_id: &'a str,
+        status: &'static str,
+        value: Option<&'a str>,
     },
     OauthCallback {
         url: &'a str,
@@ -1243,6 +1280,56 @@ fn handle_auth_frame(
             });
             send_native_result(app, generation, &request_id, result)
         }
+        BunToRustAuthFrame::PutAppSecret {
+            request_id,
+            app_id,
+            account_id,
+            value,
+        } => {
+            let result = write_app_secret(&app_id, &account_id, &value);
+            send_native_result(app, generation, &request_id, result)
+        }
+        BunToRustAuthFrame::GetAppSecret {
+            request_id,
+            app_id,
+            account_id,
+        } => {
+            if request_id.is_empty() {
+                bail!("native requestId must be non-empty");
+            }
+            let state = app.state::<HostState>();
+            match read_app_secret(&app_id, &account_id) {
+                Ok(value) => send_auth_frame(
+                    &state,
+                    generation,
+                    &RustToBunAuthFrame::NativeValue {
+                        request_id: &request_id,
+                        status: "ok",
+                        value: value.as_deref(),
+                    },
+                ),
+                Err(error) => {
+                    let message = error.to_string();
+                    send_auth_frame(
+                        &state,
+                        generation,
+                        &RustToBunAuthFrame::NativeResult {
+                            request_id: &request_id,
+                            status: "error",
+                            message: Some(&message),
+                        },
+                    )
+                }
+            }
+        }
+        BunToRustAuthFrame::DeleteAppSecret {
+            request_id,
+            app_id,
+            account_id,
+        } => {
+            let result = delete_app_secret(&app_id, &account_id);
+            send_native_result(app, generation, &request_id, result)
+        }
         BunToRustAuthFrame::Relaunch {} => app.restart(),
     }
 }
@@ -1773,7 +1860,7 @@ mod tests {
             .filter(|window| window.is_launchable())
             .map(BuiltInApp::id)
             .collect();
-        assert_eq!(launchable, ["whispering", "honeycrisp"]);
+        assert_eq!(launchable, ["whispering", "honeycrisp", "mail"]);
     }
 
     #[test]
