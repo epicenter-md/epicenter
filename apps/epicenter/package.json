@@ -8,7 +8,8 @@
 		".": "./src/host.ts"
 	},
 	"scripts": {
-		"build": "bun run clean:dist && bun run build:home && bun run build:whispering && bun run build:honeycrisp && bun run build:mail",
+		"build": "bun run scripts/with-build-lock.ts bun run build:apps",
+		"build:apps": "bun run clean:dist && bun run build:home && bun run build:whispering && bun run build:honeycrisp && bun run build:mail",
 		"build:desktop": "bun run build && bun run build:sidecar",
 		"build:home": "vite build",
 		"build:honeycrisp": "bun run --cwd ../honeycrisp build:epicenter",
@@ -17,6 +18,7 @@
 		"build:whispering": "bun run --cwd ../whispering build:epicenter",
 		"clean:dist": "bun run scripts/clean-dist.ts",
 		"desktop:build": "tauri build",
+		"desktop:build:remote": "infisical run --silent --env=prod --path=/apps/local-mail --project-config-dir=../api -- tauri build",
 		"dev": "bun run dev:desktop",
 		"dev:desktop": "tauri dev --config src-tauri/tauri.dev.conf.json",
 		"tauri": "tauri",
