@@ -18,7 +18,7 @@
  */
 
 import type { TSchema } from 'typebox';
-import { parseData } from './compile.js';
+import { compileData } from './compile.js';
 import type {
 	CONTENT_FIELD,
 	ContentCodec,
@@ -116,7 +116,7 @@ export function defineData<
 	// fails here, as the programmer error it is, rather than at first open. The
 	// compile is held beside this object, so an opener that later passes the same
 	// definition is a cache hit and never recompiles.
-	const compiled = parseData(data);
+	const compiled = compileData(data);
 	if (compiled.error !== null) {
 		throw new Error(compiled.error.message, { cause: compiled.error });
 	}

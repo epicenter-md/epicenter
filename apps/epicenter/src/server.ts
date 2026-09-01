@@ -39,7 +39,7 @@ import {
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
 } from './routes.ts';
-import type { AppCatalog, EpicenterStaticAssets } from './static-assets.ts';
+import type { EpicenterStaticAssets } from './static-assets.ts';
 
 export type HomeServerEvent = {
 	type: 'snapshot';
@@ -63,8 +63,6 @@ export type HomeServerOptions = {
 	launchToken: string;
 	/** Home's document and every compiled application's release build. */
 	staticAssets: EpicenterStaticAssets;
-	/** Derived trusted app catalog (ADR-0153); absent means no members. */
-	appCatalog?: AppCatalog;
 	/** Canonical device-local bytes shared by every trusted app window. */
 	blobs: BunBlobStore;
 	/** One credential owner for every compiled desktop window. */
@@ -87,7 +85,6 @@ export function createHomeServer({
 	origin,
 	launchToken,
 	staticAssets,
-	appCatalog = { apps: [] },
 	blobs,
 	desktopAuth,
 	blobRemote,
@@ -107,14 +104,7 @@ export function createHomeServer({
 		home: injectAuthBootstrap(staticAssets.homePage, desktopAuth.bootSnapshot),
 		...PLACEHOLDER_PAGES,
 	};
-	// A compiled application and an admitted catalog member are the same thing
-	// to this server: a built SPA below `/apps/<id>/` whose document the host
-	// stamps, gates, and hashes. They differ only in where they came from, so
-	// they are served by one loop rather than by two that have to be kept in
-	// agreement. Their ids cannot collide: an admitted app's id is the data id
-	// it declares and always contains a dot, and every id this host issues
-	// itself is a bare label (ADR-0210).
-	const servedApps = [...staticAssets.applications, ...appCatalog.apps].map(
+	const servedApps = staticAssets.applications.map(
 		(application) => ({
 			id: application.id,
 			page: injectAuthBootstrap(application.page, desktopAuth.bootSnapshot),
@@ -297,12 +287,10 @@ export function createHomeServer({
 		} satisfies HomeSessionResponse),
 	);
 
-	// What Home lists as launchable: compiled applications plus the members of
-	// the selected catalog generation, with no distinction between them crossing
-	// the wire (ADR-0189).
+	// What Home lists as launchable: the release's trusted compiled applications.
 	app.get(APPLICATIONS_ROUTE.pattern, (c) =>
 		c.json({
-			apps: listApplications(appCatalog),
+			apps: listApplications(),
 		} satisfies ApplicationsResponse),
 	);
 

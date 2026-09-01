@@ -5,7 +5,7 @@ import {
 	type JsonValue,
 	type ParsedDataDefinition,
 	type ParsedTable,
-	parseData,
+	compileData,
 } from '@epicenter/data/definition';
 import type { SqliteDatabase } from '@epicenter/sqlite';
 import * as Y from '@y/y';
@@ -290,7 +290,7 @@ export type CreateStoreOptions<TDatabase extends DataDefinition> = {
 function parsedDatabaseOrThrow(
 	definition: DataDefinition,
 ): ParsedDataDefinition {
-	const { data, error } = parseData(definition);
+	const { data, error } = compileData(definition);
 	if (error !== null) throw new Error(error.message, { cause: error });
 	return data;
 }

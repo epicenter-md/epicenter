@@ -31,7 +31,7 @@ import {
 	type DataDefinition,
 	type JsonObject,
 	type ParsedTable,
-	parseData,
+	compileData,
 } from '../definition/index.js';
 import {
 	createDatabaseDocument,
@@ -114,7 +114,7 @@ export function readArtifact(
 	files: ReadonlyMap<string, string>,
 	definition: DataDefinition,
 ): Result<Uint8Array, ImportError> {
-	const parsed = parseData(definition);
+	const parsed = compileData(definition);
 	if (parsed.error !== null) {
 		return ImportError.MalformedDefinition({ reason: parsed.error.message });
 	}

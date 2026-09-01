@@ -1,10 +1,8 @@
 /**
- * Turning a declaration into the compiled form the store reads.
+ * Turning a first-party declaration into the compiled form the store reads.
  *
- * The runtime half of the rules `define.ts` states at the authoring call, and
- * the only half a definition that arrived as JSON ever meets: `parseData`
- * takes `unknown`, so a `database.json` read off disk is admitted or refused
- * here, never typed on the way in.
+ * The runtime half of the rules `define.ts` states at the authoring call.
+ * Definitions arrive from trusted TypeScript modules, not serialized JSON.
  *
  * Nothing an application writes points at this file. It is the boundary
  * between what was declared and what the engine holds.
@@ -111,25 +109,15 @@ const parsed = new WeakMap<
  * every opener would redo that work. It is not here for the milliseconds; it is
  * here so "validate early" does not mean "validate twice".
  *
- * A definition arriving as raw data, an object nobody kept, compiles on arrival
- * and is held until it is collected. A non-object cannot be cached and compiles
- * directly, on its way to the malformed result it earns.
- *
  * Identity keying means a definition MUTATED IN PLACE would read back its old
- * parse. There used to be a `clearDataDefinitionCache` for that, exported and
- * called by nothing, including the tests it named. Nothing mutates a
- * definition: they are module-level constants built from `field.*`, and the
- * parse keeps its own canonical string. An escape hatch for an unreachable
- * hazard mostly advertises that the hazard is reachable.
+ * compile. Definitions are module-level constants built from `field.*` and are
+ * never mutated.
  */
-export function parseData(
-	value: unknown,
+export function compileData(
+	value: DataDefinition,
 ): Result<ParsedDataDefinition, DataDefinitionParseError> {
-	const cacheable = typeof value === 'object' && value !== null;
-	if (cacheable) {
-		const memoised = parsed.get(value);
-		if (memoised !== undefined) return memoised;
-	}
+	const memoised = parsed.get(value);
+	if (memoised !== undefined) return memoised;
 	let canonical: string;
 	try {
 		canonical = canonicalJson(value);
@@ -137,7 +125,7 @@ export function parseData(
 		return DataDefinitionParseError.Malformed({ reason: String(cause) });
 	}
 	const result = compileDefinition(value, canonical);
-	if (cacheable) parsed.set(value, result);
+	parsed.set(value, result);
 	return result;
 }
 
@@ -200,8 +188,7 @@ function compileDefinition(
 		}
 		const table = declaration as TableDeclaration;
 		if (
-			!(CONTENT_FIELD in table) ||
-			(!isContentCodec(table.content) && !isSerializedCodecHusk(table.content))
+			!(CONTENT_FIELD in table) || !isContentCodec(table.content)
 		) {
 			return DataDefinitionParseError.Malformed({
 				reason: `table '${tableName}' must declare a content codec`,
@@ -209,20 +196,10 @@ function compileDefinition(
 		}
 		const result = compileTable(tableName, table);
 		if (result.error !== null) return result;
-		// A codec is behavior beside the data core (ADR-0266), so a definition
-		// that arrived serialized carries its functions stripped and compiles as
-		// no codec at all. That is why "every table declares its content codec"
-		// is enforced at `defineTable`'s parameter type rather than here: this
-		// same function parses an app bundle's `database.json` for its id, and
-		// refusing that would be refusing a definition for missing something
-		// JSON cannot carry. What a missing codec costs is paid at the artifact
-		// boundary, where uncoded content is a refusal in both directions.
-		compiledTables.set(
-			tableName,
-			isContentCodec(table.content)
-				? { ...result.data, content: table.content }
-				: result.data,
-		);
+		compiledTables.set(tableName, {
+			...result.data,
+			content: table.content,
+		});
 	}
 	return Ok(
 		Object.freeze({
@@ -374,10 +351,6 @@ function isContentCodec(value: unknown): value is ContentCodec {
 	return (
 		typeof codec?.encode === 'function' && typeof codec.decode === 'function'
 	);
-}
-
-function isSerializedCodecHusk(value: unknown): boolean {
-	return isPlainObject(value) && Object.keys(value).length === 0;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

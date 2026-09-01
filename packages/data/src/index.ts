@@ -53,7 +53,7 @@ export {
 	defineData,
 	defineTable,
 	field,
-	parseData,
+	compileData,
 	plainText,
 } from './definition/index.js';
 export type { PersistenceCapability } from './store/persistence.js';

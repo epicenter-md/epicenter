@@ -18,7 +18,6 @@ import {
 } from '@epicenter/client';
 import { epicenterDataRoot } from '@epicenter/constants/app-data';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { loadActiveAppCatalog } from './app-catalog.ts';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import {
 	createDesktopAuthAuthority,
@@ -59,7 +58,7 @@ async function main(): Promise<void> {
 		// The one Epicenter root, resolved here rather than received. A desktop
 		// host and a CLI that each computed this path would have to agree on it
 		// exactly, so one TypeScript function owns it and everything else calls
-		// that (ADR-0201). `blobs` and `app-catalog` below it are the host's own
+		// that (ADR-0201). `blobs` below it is the host's own
 		// names, and everything under `apps/` is somebody else's.
 		//
 		// There is no `data/` any more. The host used to open a store there, sync
@@ -68,12 +67,6 @@ async function main(): Promise<void> {
 		// (ADR-0226), and the applications on the store each own their own now
 		// (ADR-0227).
 		const dataRoot = epicenterDataRoot();
-
-		// The selected generation. It is what this process serves for its whole
-		// lifetime; promotions apply at the next restart (ADR-0179).
-		const appCatalog = await loadActiveAppCatalog(
-			join(dataRoot, 'app-catalog'),
-		);
 
 		host = await createHomeHost({ engine, model });
 		const blobs = createBunBlobStore({
@@ -110,7 +103,6 @@ async function main(): Promise<void> {
 			origin,
 			launchToken: boot.token,
 			staticAssets,
-			appCatalog,
 			blobs,
 			desktopAuth: auth,
 			blobRemote,

@@ -53,7 +53,7 @@ export function tableRoot(document: Y.Doc, tableName: string): Y.Type {
  * exist.
  *
  * The tag is legibility rather than safety, and it is worth being clear about
- * that. `parseData` already refuses `kv` as a table name outright, because it
+ * that. `compileData` already refuses `kv` as a table name outright, because it
  * would collide with the `db.kv` handle key, so a table can no more reach the
  * settings root than it can be declared. `tables:kv` is a second guard on a
  * collision the first one already made unreachable.

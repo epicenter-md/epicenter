@@ -3,7 +3,7 @@ import {
 	defineData,
 	defineTable,
 	field,
-	parseData,
+	compileData,
 	plainText,
 } from '@epicenter/data/definition';
 import * as Y from '@y/y';
@@ -52,8 +52,8 @@ async function collect(
 }
 
 /** The parsed definition `renderRow` reads codecs from. */
-function parsed(definition: Parameters<typeof parseData>[0]) {
-	return expectOk(parseData(definition));
+function parsed(definition: Parameters<typeof compileData>[0]) {
+	return expectOk(compileData(definition));
 }
 
 describe('renderRow is the unit (ADR-0271)', () => {
@@ -105,34 +105,6 @@ describe('renderRow is the unit (ADR-0271)', () => {
 		expect(rendered.contents).toBe(
 			['---', 'name: "Inbox"', '---', ''].join('\n'),
 		);
-	});
-
-	test('a content node with attributes is not treated as empty without a codec', async () => {
-		const valuesOnly = defineData({
-			id: 'so.epicenter.honeycrisp',
-			kv: {},
-			tables: {
-				folders: defineTable({
-					name: field.string(),
-					content: plainText(),
-				}),
-			},
-		});
-		await using data = await openMemory(valuesOnly);
-		const made = data.tables.folders.create({ name: 'Inbox' });
-		const row = data.tables.folders.get(made.id);
-		if (row === undefined) throw new Error('the row has no content');
-		row.content.setAttr('format', 'markdown');
-
-		const rendered = expectErr(
-			await renderRow(
-				data,
-				parsed(JSON.parse(JSON.stringify(valuesOnly))),
-				'folders',
-				made.id,
-			),
-		);
-		expect(rendered.name).toBe('UncodedRow');
 	});
 
 	test('a codec that throws is a refusal, not an escaping exception', async () => {

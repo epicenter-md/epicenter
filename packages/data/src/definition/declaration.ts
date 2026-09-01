@@ -8,7 +8,8 @@
  * Every type here is a LOOKUP. None asks whether its argument is a
  * declaration, because the parameter says so, and none can answer `never` for
  * "I could not tell". A definition that arrived as JSON never comes through
- * here: it reaches `parseData` as `unknown` and is checked in `compile.ts`.
+ * here: it reaches `compileData` from a trusted TypeScript module and is
+ * checked in `compile.ts`.
  */
 
 import type * as Y from '@y/y';
@@ -33,10 +34,9 @@ export const RESERVED_TABLE_NAMES: readonly string[] = [KV_ROOT];
  * schema, each asked `extends TSchema` and answered `never` when the guess
  * failed. A wrong answer, silently, rather than an error.
  *
- * Nothing needed it. A definition read from JSON reaches `parseData` as
- * `unknown` and is validated there (`apps/epicenter/src/static-assets.ts` is
- * the one caller that does it), so the serialized shape never had a static
- * form to accommodate. What is declared here is what an author writes.
+ * Nothing needed it. A definition is imported from a first-party TypeScript
+ * module, so the serialized shape never needs a static form to accommodate.
+ * What is declared here is what an author writes.
  */
 export type FieldMap = {
 	readonly [field: string]: TSchema;

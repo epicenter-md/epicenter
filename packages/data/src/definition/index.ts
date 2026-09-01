@@ -20,7 +20,7 @@ export {
 	DataDefinitionParseError,
 	type ParsedDataDefinition,
 	type ParsedTable,
-	parseData,
+	compileData,
 } from './compile.js';
 export { plainText } from './content.js';
 export {

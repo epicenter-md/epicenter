@@ -10,7 +10,7 @@ import { field, plainText } from '@epicenter/data/definition';
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { defineData, defineTable, parseData } from '@epicenter/data/definition';
+import { compileData, defineData, defineTable } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Logger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
@@ -38,7 +38,7 @@ const database = defineData({
 
 /** The parsed form the over-port constructors take (ADR-0240). */
 function parsed() {
-	const { data, error } = parseData(database);
+	const { data, error } = compileData(database);
 	if (error !== null) throw new Error(error.message);
 	return data;
 }

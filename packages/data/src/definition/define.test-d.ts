@@ -1,7 +1,7 @@
 /**
  * Compile-time pins for the refusals in `define.ts`.
  *
- * Each rule here is also enforced at runtime by `parseData`. They are pinned
+ * Each rule here is also enforced at runtime by `compileData`. They are pinned
  * because a rule carried by a type can stop applying instead of failing:
  * `ValidateTable` dispatched on the key `fields` for a day after the
  * table fields are now top-level keys, so nothing needs a second wrapper or a
@@ -24,7 +24,7 @@ import { defineData, defineTable, field } from './index.js';
  * Every row holds an `id` and a `content` node (ADR-0299), so a value at
  * either name would collide with the row's own field: `RowOf` intersects the
  * two, and the field would read as an impossible type rather than as a
- * mistake. `parseData` refuses it too; this pins the half that fires while the
+ * mistake. `compileData` refuses it too; this pins the half that fires while the
  * declaration is being written.
  *
  * The expected type at the offending KEY is the explanation, which is what
@@ -56,7 +56,7 @@ defineTable({
 /**
  * A declared default is refused where it is authored, not at first open.
  *
- * `parseData` refuses one at runtime too (`DeclarationDefault`), and this is
+ * `compileData` refuses one at runtime too (`DeclarationDefault`), and this is
  * the compile-time half of that rule, for both buckets a definition has.
  *
  * Through `defineTable` rather than a table literal handed to `defineData`. A
@@ -69,7 +69,7 @@ defineTable({
  * builder returns a fixed schema type (`field.string(opts)` is `TString`
  * whatever `opts` says), so an annotation handed to one is erased before this
  * check can see it. Only a schema whose OWN type carries `default` is caught
- * here; the rest is `parseData`'s to refuse.
+ * here; the rest is `compileData`'s to refuse.
  */
 defineTable({
 	// @ts-expect-error a default belongs to the application, not the schema

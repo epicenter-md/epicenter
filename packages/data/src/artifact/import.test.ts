@@ -185,29 +185,6 @@ describe('readArtifact (ADR-0267/0268)', () => {
 		expect(refused.name).toBe('MalformedFile');
 	});
 
-	test('a body under a table with no codec refuses, rather than dropping it', async () => {
-		// A definition that arrived as JSON carries no codec, because a function
-		// cannot be serialized (ADR-0266). A body underneath it has nowhere to
-		// go, and dropping it is the data loss this refuses.
-		const husk = JSON.parse(
-			JSON.stringify({
-				id: 'so.epicenter.honeycrisp',
-				kv: {},
-				tables: {
-					notes: defineTable({
-						title: field.string(),
-						content: plainText(),
-					}),
-				},
-			}),
-		) as typeof store;
-		const files = new Map([
-			['notes/aaaa.md', '---\ntitle: "x"\n---\n\nprose\n'],
-		]);
-		const refused = expectErr(readArtifact(files, husk));
-		expect(refused.name).toBe('UncodedBody');
-	});
-
 	test('a codec that throws on a body refuses the whole import', async () => {
 		const breaking = defineData({
 			id: 'so.epicenter.honeycrisp',

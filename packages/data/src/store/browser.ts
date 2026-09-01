@@ -38,7 +38,7 @@ import {
 	type DataDefinition,
 	type DataDefinitionParseError,
 	type ParsedDataDefinition,
-	parseData,
+	compileData,
 } from '@epicenter/data/definition';
 import type { PrincipalId } from '@epicenter/principal';
 import {
@@ -654,7 +654,7 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	// Parsed before anything is claimed or opened: a declaration may arrive as
 	// data, and a refusal here is a boot outcome rather than a programmer
 	// error (ADR-0240).
-	const { data: parsed, error: parseError } = parseData(definition);
+	const { data: parsed, error: parseError } = compileData(definition);
 	if (parseError !== null) return Err(parseError);
 
 	const located = generationPrefix(parsed.id, account);
@@ -894,7 +894,7 @@ export async function createGeneration(
 ): Promise<
 	Result<{ generation: number }, StoreError | DataDefinitionParseError>
 > {
-	const { data: parsed, error: parseError } = parseData(definition);
+	const { data: parsed, error: parseError } = compileData(definition);
 	if (parseError !== null) return Err(parseError);
 
 	const state =

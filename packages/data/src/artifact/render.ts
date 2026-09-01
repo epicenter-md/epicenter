@@ -27,7 +27,7 @@ import {
 	type JsonObject,
 	type JsonValue,
 	type ParsedDataDefinition,
-	parseData,
+	compileData,
 } from '../definition/index.js';
 import type { Row, StoredData } from '../store/store.js';
 import { rowFile } from './frontmatter.js';
@@ -220,7 +220,7 @@ export async function* renderArtifact(
 	data: RenderableData,
 	definition: DataDefinition,
 ): AsyncGenerator<Result<RenderedRow, RenderError>> {
-	const parsed = parseData(definition);
+	const parsed = compileData(definition);
 	if (parsed.error !== null) {
 		yield RenderError.MalformedDefinition({ reason: parsed.error.message });
 		return;

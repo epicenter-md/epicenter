@@ -22,7 +22,6 @@
  */
 
 import { BUILT_IN_ROUTES } from './routes.ts';
-import type { AppCatalog } from './static-assets.ts';
 
 /** One application a person can launch, however the host serves it. */
 export type Application = {
@@ -60,13 +59,9 @@ export const COMPILED_APPLICATIONS: readonly Application[] = [
 ];
 
 /**
- * Compose the one list Home renders. An admitted member can never collide with
- * a compiled application: catalog derivation refuses every reserved built-in ID,
- * so this concatenation needs no deduplication and no precedence rule.
+ * Compose the one list Home renders from the release's trusted application
+ * table. Installed application discovery is deliberately not part of the host.
  */
-export function listApplications(catalog: AppCatalog): Application[] {
-	return [
-		...COMPILED_APPLICATIONS,
-		...catalog.apps.map(({ id, title }) => ({ id, title })),
-	];
+export function listApplications(): Application[] {
+	return [...COMPILED_APPLICATIONS];
 }

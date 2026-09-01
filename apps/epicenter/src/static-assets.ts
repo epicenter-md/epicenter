@@ -1,27 +1,13 @@
 /**
  * Release-built SPA assets exposed by the Bun-owned Epicenter origin.
  *
- * Two serving paths currently coexist (ADR-0153 migration state):
- *
- * - The release layout: `home/index.html` plus one directory per compiled
- *   application, loaded by {@link loadStaticAssets}. Which directories those
- *   are is the release's closed list, passed in rather than discovered, so a
- *   missing build is a boot failure instead of a silently absent application.
- * - The derived app catalog: one directory per app under a host-owned catalog
- *   root, discovered by {@link deriveAppCatalog}. IDs are the direct folder
- *   names, metadata is derived from validated output, and every member is
- *   served below `/apps/<id>/`.
- *
- * Both paths hand back the same `{ id, title, resolve }` shape and use the
- * same contained resolver, so the only structural difference is that a
- * compiled application also carries its own document for the host to gate and
- * stamp. Both resolve every request below one real directory and check again
- * after symlinks are resolved.
+ * The release layout is explicit: `home/index.html` plus one directory per
+ * compiled application. The host loads the closed list supplied by the
+ * composition root; it does not discover or admit application directories.
  */
 
-import { readdir, realpath, stat } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { parseData } from '@epicenter/data/definition';
 import mime from 'mime';
 
 export type StaticAsset = {
@@ -52,32 +38,7 @@ type ServedSpa = {
  * One derived catalog member: enough to list it and serve its static root. Its
  * `id` comes from the database declaration (ADR-0210).
  */
-export type CatalogApp = ServedSpa & {
-	/**
-	 * The compiled `database.json` is no longer carried past admission.
-	 *
-	 * It used to be, so the host could interpret the member's rows: render them
-	 * to markdown, project them to SQLite, and serve them raw. The host owns no
-	 * application data now (ADR-0226), so what a member declares matters at
-	 * admission (it must be a well-formed database declaration) and nowhere
-	 * after. A field with no reader is a field
-	 * that goes stale.
-	 */
-	/**
-	 * The directory it arrived in, which names nothing and is carried only so
-	 * promotion can report which candidate entry was refused.
-	 */
-	directory: string;
-};
-
-/**
- * One compiled application's release build.
- *
- * A compiled application never enters the catalog (ADR-0179), so it declares no
- * database declaration and arrives in no candidate directory. Everything the server does with
- * it, it does identically to an admitted member, which is why both are
- * {@link ServedSpa} and one route loop serves them.
- */
+/** One compiled application's release build. */
 export type CompiledApplicationAssets = ServedSpa;
 
 export type EpicenterStaticAssets = {
@@ -85,94 +46,6 @@ export type EpicenterStaticAssets = {
 	/** Compiled applications, in the order the release declared them. */
 	applications: CompiledApplicationAssets[];
 };
-
-export type AppCatalog = {
-	apps: CatalogApp[];
-};
-
-/**
- * Derive the trusted app catalog from validated build output: one directory
- * per app below `catalogRoot`. The catalog is generated, never authored. A
- * missing root is an empty catalog; an entry that breaks the output contract
- * (a missing `index.html`, a missing or invalid `database.json`, a data id a
- * sibling already claimed, or a root that escapes the catalog directory) is not
- * a catalog member.
- *
- * There is deliberately no reserved-id list. An installed app's id is the
- * id it declares (ADR-0210), so it always contains a dot, and every id
- * this host has already issued is a bare label: the built-in routes and
- * the composed app ids that name a directory under the one data root
- * (ADR-0201). The two sets are disjoint by grammar, so a candidate cannot claim
- * `home` or `local-mail` whatever it declares, and a check for it could never
- * fail. A check that cannot fail is worse than none, because it reads as
- * protection.
- */
-export async function deriveAppCatalog(
-	catalogRoot: string,
-): Promise<AppCatalog> {
-	let root: string;
-	try {
-		root = await realpath(catalogRoot);
-		if (!(await stat(root)).isDirectory()) return { apps: [] };
-	} catch {
-		return { apps: [] };
-	}
-
-	const apps: CatalogApp[] = [];
-	const claimed = new Set<string>();
-	const names = (await readdir(root)).sort();
-	for (const name of names) {
-		let appRoot: string;
-		try {
-			appRoot = await requiredContainedDirectory(
-				root,
-				resolve(root, name),
-				`app ${name} root`,
-			);
-		} catch {
-			continue;
-		}
-		const index = await containedFile(appRoot, resolve(appRoot, 'index.html'));
-		if (index.kind !== 'file') continue;
-
-		const declaration = await containedFile(
-			appRoot,
-			resolve(appRoot, 'database.json'),
-		);
-		if (declaration.kind !== 'file') continue;
-		// Admission still requires a well-formed database declaration. Its id is
-		// what addresses this member everywhere else (ADR-0210).
-		let declared: unknown;
-		try {
-			declared = JSON.parse(await Bun.file(declaration.path).text());
-		} catch {
-			continue;
-		}
-		const { data: database } = parseData(declared);
-		if (database === null) continue;
-
-		// The directory this arrived in is not an identity (ADR-0210), so two
-		// directories may declare one data id. The
-		// filesystem used to refuse that by refusing two directories with one
-		// name; now the first declaration wins and the second is not a member,
-		// which `promoteAppCatalogCandidate` turns into a refused promotion.
-		if (claimed.has(database.id)) continue;
-		claimed.add(database.id);
-
-		apps.push({
-			id: database.id,
-			title: database.title ?? database.id,
-			page: await Bun.file(index.path).text(),
-			directory: name,
-			resolve: createContainedResolver({
-				prefix: `/apps/${database.id}/`,
-				root: appRoot,
-				index: index.path,
-			}),
-		});
-	}
-	return { apps };
-}
 
 /**
  * Load Home's document and the build of every compiled application this
