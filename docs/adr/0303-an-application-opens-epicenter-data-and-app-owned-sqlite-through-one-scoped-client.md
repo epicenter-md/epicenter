@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-31
-- **Unbuilt:** The runtime-neutral client, its host binding, and its browser and desktop openers.
+- **Built**, with one clause read differently than written. The client, both openers, and both runtime leaves exist. `openData` is NOT host-owned in either leaf: the store is client-owned in every runtime (ADR-0226, ADR-0227), and what the desktop leaf asks the host for is admission of the definition identity (ADR-0313). "The host may inject the authoritative application ID and capabilities into the page" reads as a build-time condition rather than a `window` global.
 - **Amended by:** [ADR-0307](0307-a-derived-index-is-in-memory-sqlite-rebuilt-on-read.md) at the projection. Withdrawn: the rename of `SqliteDatabase` to `SyncSqliteDatabase`. The projection's medium, trigger, and owner are decided there.
 - **Amended by:** [ADR-0312](0312-a-sqlite-handle-is-all-run-and-batch-and-a-transaction-never-crosses-a-process-boundary.md) at the application handle. Withdrawn: `AppSqliteDatabase`'s `transaction(run: (db) => Promise<T>)` and its `close()`. Its asynchronous `run` and `all` stand, joined by `batch`. `openSqlite(name)`, its scoping, and its refusals stand. (ADR-0308 held this amendment first and decided a synchronous handle instead; ADR-0312 supersedes it and carries the amendment forward.)
 - **Amended by:** [ADR-0316](0316-an-application-creates-one-scoped-epicenter-handle.md) at the constructor name and application-facing handle. The storage openers, their scoping, and their refusals stand.

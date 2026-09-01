@@ -1,7 +1,7 @@
 # 0313. A data definition ships as TypeScript, and a host that needs one imports it
 
 - **Status:** Accepted
-- **Unbuilt:** all of it. `database.json` is still written by app builds and still read by `apps/epicenter/src/static-assets.ts`.
+- **Built.** `database.json` is gone from every build and every reader. The host's table of imported first-party definitions is `apps/epicenter/src/trusted-definitions.ts`, and it is what `data-open` answers from.
 - **Date:** 2026-08-31
 - **Amends:** [ADR-0296](0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md) at its reason for an optional codec. Its decision that a table owns its file codec is unchanged; what is withdrawn is the carve-out that a definition arriving as JSON cannot carry one.
 - **Amends:** [ADR-0210](0210-an-installed-app-declares-its-name-and-the-namespace-it-owns.md) at the file a declaration arrives in. The declaration itself, and the refusal of a permission grant, an installed-app registry, and publisher identity, are unchanged.

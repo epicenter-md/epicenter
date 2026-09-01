@@ -2,7 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-31
-- **Unbuilt:** The Epicenter-hosted Local Mail application, its desktop hidden synchronization worker, and deletion of the standalone Bun/Tauri runtime and human CLI.
+- **Unbuilt:** the desktop hidden synchronization worker. The hosted application, its migration onto the scoped handle, and the deletion of the standalone Bun/Tauri runtime and human CLI are done; until the hidden window exists, the desktop syncs while the application is open, exactly as the browser build does.
+- **Amends:** [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md) at Local Mail's artifact naming, [ADR-0198](0198-a-durable-local-mail-write-is-a-per-message-label-assertion-in-a-sibling-intent-database.md) at the word "sibling", and [ADR-0199](0199-one-account-reconciler-is-local-mails-only-gmail-writer.md) at the ownership mechanism. Each of those records carries the withdrawal in its own header.
 - **Relates:** [ADR-0082](0082-local-mail-syncs-by-push-free-history-list-polling.md) (the provider synchronization method), [ADR-0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md) (desktop secrets and background synchronization), and [ADR-0316](0316-an-application-creates-one-scoped-epicenter-handle.md) (the application-facing capability handle)
 
 ## Context
