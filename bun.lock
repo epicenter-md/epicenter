@@ -578,6 +578,20 @@
         "typescript": "catalog:",
       },
     },
+    "packages/app": {
+      "name": "@epicenter/app",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/data": "workspace:*",
+        "@epicenter/sqlite": "workspace:*",
+        "@sqlite.org/sqlite-wasm": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/app-shell": {
       "name": "@epicenter/app-shell",
       "version": "0.3.0",
@@ -1184,6 +1198,8 @@
     "@epicenter/api": ["@epicenter/api@workspace:apps/api"],
 
     "@epicenter/api-ui": ["@epicenter/api-ui@workspace:apps/api/ui"],
+
+    "@epicenter/app": ["@epicenter/app@workspace:packages/app"],
 
     "@epicenter/app-shell": ["@epicenter/app-shell@workspace:packages/app-shell"],
 
