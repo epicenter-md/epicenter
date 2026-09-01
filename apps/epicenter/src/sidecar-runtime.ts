@@ -4,6 +4,16 @@
  * lifetime signal. Bun validates that input but never resolves a port itself.
  */
 
+import { extractErrorMessage } from 'wellcrafted/error';
+
+/**
+ * How long the whole shutdown may take before this process leaves anyway.
+ *
+ * Under Rust's fifteen-second readiness timeout, so a host that gives up here
+ * is restarted rather than declared unreachable.
+ */
+const SHUTDOWN_GRACE_MS = 10_000;
+
 export const SIDECAR_PROTOCOL_VERSION = 2;
 export const PRODUCTION_PORT = 39_130;
 
@@ -271,7 +281,12 @@ export function createNativeAuthPort(
 		frame:
 			| { type: 'store-auth'; serialized: string | null }
 			| { type: 'open-auth-url'; url: string }
-			| { type: 'put-app-secret'; appId: string; accountId: string; value: string }
+			| {
+					type: 'put-app-secret';
+					appId: string;
+					accountId: string;
+					value: string;
+			  }
 			| { type: 'get-app-secret'; appId: string; accountId: string }
 			| { type: 'delete-app-secret'; appId: string; accountId: string },
 	): Promise<string | null> {
@@ -355,7 +370,12 @@ export function createNativeAuthPort(
 }
 
 type NativeFrame =
-	| { type: 'native-result'; requestId: string; status: 'ok'; value?: string | null }
+	| {
+			type: 'native-result';
+			requestId: string;
+			status: 'ok';
+			value?: string | null;
+	  }
 	| {
 			type: 'native-result';
 			requestId: string;
@@ -447,25 +467,53 @@ export async function superviseSidecar({
 	parentPipe,
 	protocol,
 	signals = process,
+	report = (message) => {
+		process.stderr.write(`${message}\n`);
+	},
+	exit = (code) => process.exit(code),
+	graceMs = SHUTDOWN_GRACE_MS,
 }: {
 	server: SidecarServer;
 	host: SidecarHost;
 	parentPipe: ParentPipe;
 	protocol?: { completed: Promise<void> };
 	signals?: SignalSource;
+	report?: (message: string) => void;
+	exit?: (code: number) => void;
+	graceMs?: number;
 }): Promise<void> {
-	const shutdownRequested = Promise.withResolvers<void>();
-	const onSignal = () => shutdownRequested.resolve();
+	const shutdownRequested = Promise.withResolvers<string>();
+	const onSignal = () => shutdownRequested.resolve('a termination signal');
 	signals.once('SIGTERM', onSignal);
 	signals.once('SIGINT', onSignal);
 
+	// Named before it is used, because the `finally` below reports it whether
+	// the race resolved or threw, and a shutdown nobody can attribute is the
+	// one that costs an afternoon.
+	let cause = 'an unknown cause';
 	try {
-		await Promise.race([
+		cause = await Promise.race([
 			shutdownRequested.promise,
-			parentPipe.closed,
-			...(protocol ? [protocol.completed] : []),
+			parentPipe.closed.then(() => 'the parent pipe closing'),
+			...(protocol
+				? [protocol.completed.then(() => 'the native protocol completing')]
+				: []),
 		]);
+	} catch (error) {
+		cause = `the native protocol failing: ${extractErrorMessage(error)}`;
+		throw error;
 	} finally {
+		report(`Epicenter host: shutting down after ${cause}.`);
+		// A shutdown that never finishes leaves this process alive and not
+		// listening, which is the worst of both: Rust supervises whether the
+		// child is alive, so a host stranded here looks healthy forever and is
+		// never restarted. Leaving is the recoverable answer.
+		const stranded = setTimeout(() => {
+			report(
+				`Epicenter host: shutdown after ${cause} did not finish within ${graceMs}ms; exiting so the parent can restart it.`,
+			);
+			exit(1);
+		}, graceMs);
 		try {
 			await server.stop(true);
 		} finally {
@@ -475,6 +523,7 @@ export async function superviseSidecar({
 				signals.off('SIGTERM', onSignal);
 				signals.off('SIGINT', onSignal);
 				await parentPipe.cancel();
+				clearTimeout(stranded);
 			}
 		}
 	}

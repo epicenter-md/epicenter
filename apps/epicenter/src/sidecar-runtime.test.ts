@@ -59,7 +59,26 @@ function setup() {
 			events.push('host.dispose');
 		},
 	};
-	return { events, host, parentClosed, parentPipe, server, signals };
+	const reported: string[] = [];
+	const report = (message: string) => {
+		reported.push(message);
+	};
+	const exited: number[] = [];
+	const exit = (code: number) => {
+		exited.push(code);
+	};
+	return {
+		events,
+		exit,
+		exited,
+		host,
+		parentClosed,
+		parentPipe,
+		report,
+		reported,
+		server,
+		signals,
+	};
 }
 
 describe('runtime mode', () => {
@@ -313,37 +332,109 @@ describe('native auth port', () => {
 
 describe('shutdown', () => {
 	test('SIGTERM stops the server, disposes the host, and releases stdin in order', async () => {
-		const { events, host, parentPipe, server, signals } = setup();
+		const {
+			events,
+			exit,
+			exited,
+			host,
+			parentPipe,
+			report,
+			reported,
+			server,
+			signals,
+		} = setup();
 		const supervised = superviseSidecar({
 			server,
 			host,
 			parentPipe,
 			signals,
+			report,
+			exit,
 		});
 
 		signals.emit('SIGTERM');
 		await supervised;
 
 		expect(events).toEqual(['server.stop:true', 'host.dispose', 'pipe.cancel']);
+		// A shutdown nobody can attribute is the one that costs an afternoon.
+		expect(reported).toEqual([
+			'Epicenter host: shutting down after a termination signal.',
+		]);
+		expect(exited).toEqual([]);
 	});
 
 	test('parent-pipe EOF performs the same complete shutdown', async () => {
-		const { events, host, parentClosed, parentPipe, server, signals } = setup();
+		const {
+			events,
+			host,
+			parentClosed,
+			parentPipe,
+			report,
+			reported,
+			server,
+			signals,
+		} = setup();
 		const supervised = superviseSidecar({
 			server,
 			host,
 			parentPipe,
 			signals,
+			report,
 		});
 
 		parentClosed.resolve();
 		await supervised;
 
 		expect(events).toEqual(['server.stop:true', 'host.dispose', 'pipe.cancel']);
+		expect(reported).toEqual([
+			'Epicenter host: shutting down after the parent pipe closing.',
+		]);
+	});
+
+	test('a shutdown that never finishes leaves rather than stranding the host', async () => {
+		const {
+			events,
+			exit,
+			exited,
+			parentPipe,
+			report,
+			reported,
+			server,
+			signals,
+		} = setup();
+		// The failure this pins: `dispose` hangs, the server is already stopped,
+		// and the process stays alive holding no listening socket. Rust
+		// supervises whether the child is alive, so it never restarts one that
+		// is only half dead, and the window sees connection refused forever.
+		const wedged = {
+			async [Symbol.asyncDispose]() {
+				events.push('host.dispose:hung');
+				await new Promise<void>(() => undefined);
+			},
+		};
+		superviseSidecar({
+			server,
+			host: wedged,
+			parentPipe,
+			signals,
+			report,
+			exit,
+			graceMs: 5,
+		});
+
+		signals.emit('SIGTERM');
+		await Bun.sleep(40);
+
+		expect(events).toEqual(['server.stop:true', 'host.dispose:hung']);
+		expect(exited).toEqual([1]);
+		expect(reported.at(-1)).toBe(
+			'Epicenter host: shutdown after a termination signal did not finish within 5ms; exiting so the parent can restart it.',
+		);
 	});
 
 	test('a protocol failure disposes every owner before it propagates', async () => {
-		const { events, host, parentPipe, server, signals } = setup();
+		const { events, host, parentPipe, report, reported, server, signals } =
+			setup();
 		const failure = Promise.reject(new Error('invalid native frame'));
 		const supervised = superviseSidecar({
 			server,
@@ -351,9 +442,14 @@ describe('shutdown', () => {
 			parentPipe,
 			protocol: { completed: failure },
 			signals,
+			report,
 		});
 
 		await expect(supervised).rejects.toThrow('invalid native frame');
 		expect(events).toEqual(['server.stop:true', 'host.dispose', 'pipe.cancel']);
+		// The rejection still propagates, and the reason still names itself.
+		expect(reported).toEqual([
+			'Epicenter host: shutting down after the native protocol failing: invalid native frame.',
+		]);
 	});
 });
