@@ -9,7 +9,7 @@ The package has one definition entrypoint and four runtime entrypoints:
 | Import | What it gives you |
 | --- | --- |
 | `@epicenter/data` | the opened data surface |
-| `@epicenter/data/definition` | `defineData`, `parseData`, and the field descriptor vocabulary |
+| `@epicenter/data/definition` | `defineData`, `compileData`, and the field descriptor vocabulary |
 | `@epicenter/data/browser` | `openDatabase(definition, { generation, account? })`, plus `newestGeneration` and `createGeneration` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 | `@epicenter/data/artifact` | `renderRow` and `renderArtifact` out, `readArtifact` back in: the folder a person keeps |
@@ -348,7 +348,7 @@ Three rules bite immediately:
    `field.nullable(inner)`
    accepts stored JSON `null`, but a missing field remains nonconforming.
 2. **Definitions do not own defaults.** Initialization and recovery values live
-   in application code. `parseData` rejects a descriptor carrying `default`.
+   in application code. `compileData` rejects a descriptor carrying `default`.
 3. **No transforming fields.** Date, instant, and datetime descriptors preserve
    their string representation, so values round-trip through storage and SQL.
 

@@ -200,7 +200,7 @@ function dataDir({ env, platform, homeDir }: DataRootSystem): string {
  * the result and Epicenter never looks inside it (ADR-0201, ADR-0193).
  *
  * `apps/` is where naming authority changes hands. Above it Epicenter chooses
- * the names (`data`, `blobs`, `app-catalog`, and whatever it adds next); below
+ * the names (`blobs` and whatever it adds next); below
  * it an app does. One segment keeps a host directory added later from landing
  * on an app id, and it is the boundary the host's promise is stated against:
  * everything under `apps/` is somebody else's, all of it, by position.
