@@ -15,8 +15,9 @@
  *
  * `Type.Enum` is the load-bearing choice: in TypeBox v1 it emits the native JSON
  * Schema `enum` keyword, infers `Static` as the literal union, and carries `enum`
- * at the type level, so authoring, recognition, and the SQLite mirror all read
- * one shape with no `Type.Unsafe` and no value-to-tuple gymnastics.
+ * at the type level, so authoring, recognition, and any SQL an application
+ * derives all read one shape with no `Type.Unsafe` and no value-to-tuple
+ * gymnastics.
  *
  * Branding still rides on `Type.Unsafe` for the cases that need a brand the
  * wire-form cannot express: `field.string<Brand>()`, `field.date()`,
@@ -190,7 +191,7 @@ function datetime(opts?: TSchemaOptions): TUnsafe<DateTimeString> {
  * Closed-set field over a fixed list of string members. A typed narrowing of
  * `Type.Enum`: it emits the native `{enum:[...]}` wire-form `recognize`
  * classifies as `select`, infers `Static` as the literal union (`'a' | 'b'`),
- * and keeps the members on the type so the SQLite mirror reads them
+ * and keeps the members on the type so a derived SQL column reads them
  * structurally. String-only by design: a numeric range is an `integer` with
  * `minimum` / `maximum`, not a select.
  *

@@ -4,15 +4,15 @@
  * Run: `bun run evidence/browser/durable-store.ts`
  *
  * `src/store/browser.ts` is a claim about a runtime: that a page can hold the
- * synchronous store over an in-memory SQLite while IndexedDB holds the three
- * relations that have to survive, and that reopening seeds the one from the
- * other. Typecheck cannot judge any of that. This runs it in a real Chromium,
- * in a real page, across a real reload.
+ * synchronous store over a live `Y.Doc` while IndexedDB holds the update chain
+ * that has to survive, and that reopening replays the one from the other.
+ * Typecheck cannot judge any of that. This runs it in a real Chromium, in a
+ * real page, across a real reload.
  *
  * METHOD, and the controls are the point:
  *
  *   - **The reload is real.** `page.reload()`, so the page's memory, its
- *     `Y.Doc` and its in-memory SQLite are all gone. Anything that comes back
+ *     `Y.Doc` and everything derived from it are gone. Anything that comes back
  *     came out of IndexedDB.
  *   - **CONTROL: a different name must see nothing.** If a second store opened
  *     under another name found the first one's notes, this would be measuring a

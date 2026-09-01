@@ -15,9 +15,8 @@
  * durable backing in a browser is the origin private file system, reached
  * through `FileSystemFileHandle.createSyncAccessHandle`.
  *
- * MDN says it is "only available in Dedicated Web Workers", and this repository
- * already behaves as if that is true: `src/browser/worker.ts` installs the OPFS
- * SAH pool inside a worker. Neither is a measurement. This is.
+ * MDN says it is "only available in Dedicated Web Workers". That is not a
+ * measurement. This is.
  *
  * CONTROL: the worker arm must SUCCEED. If both arms report the handle missing,
  * the probe found a browser with no OPFS at all, or an insecure origin, and it
@@ -99,7 +98,7 @@ try {
 	console.log(
 		main.available
 			? '\nA page can hold its own durable log, so no worker is needed for one.'
-			: '\nA durable log lives in a worker, so a page appends to one asynchronously.\nThis says nothing about where the STORE runs: reads come from the Y.Doc in\nmemory, and an in-memory SQLite already satisfies the synchronous handle.',
+			: '\nSQLite cannot hold a durable log from the page, so anything that needs one\nneeds a worker. Epicenter Data does not: its durable record is IndexedDB\n(ADR-0280). This bounds an APP-owned SQLite instead (ADR-0312).',
 	);
 } finally {
 	await browser.close();

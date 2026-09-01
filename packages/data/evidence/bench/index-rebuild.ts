@@ -12,7 +12,7 @@
  * The rebuild, exactly as the record writes it:
  *
  *     db = new Sqlite(':memory:');
- *     for (const row of store.list(table)) db.run('INSERT ...', row);
+ *     for (const row of table.rows) db.run('INSERT ...', row);
  *
  * METHOD:
  *   - The REAL store (`openMemory`), a notes-shaped table, and a content node

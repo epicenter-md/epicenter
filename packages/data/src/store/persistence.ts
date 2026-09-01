@@ -102,7 +102,7 @@ export type DurableSnapshot = {
  * The runtime-native durable engine: apply one batch atomically, or not at
  * all.
  *
- * `commit` may be synchronous (a file SQLite, a Durable Object's storage) or
+ * `commit` may be synchronous (a Durable Object's storage, the memory record) or
  * asynchronous (IndexedDB). The atomicity requirement is absolute either way:
  * a batch that half-commits would let a cursor outrun the bytes it accounts
  * for, which is exactly the corruption ADR-0231 exists to prevent. Ordering

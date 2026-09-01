@@ -6,7 +6,7 @@
  * Each record carries its authority position, so the outbox and cursor are
  * read from that same store and one flush is one atomic transaction (ADR-0238).
  * Every read a person makes
- * (`get`, `list`, `ids`, `document`) comes from the `Y.Doc` already in
+ * (`get`, `rows`, `ids`, `document`) comes from the `Y.Doc` already in
  * memory; SQL, when an application wants it, is a follower it composes over
  * this surface, so opening a store here loads no SQLite at all.
  *

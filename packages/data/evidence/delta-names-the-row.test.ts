@@ -142,12 +142,12 @@ describe("a table root's 'delta' names the rows a commit touched", () => {
 	});
 });
 
-describe('the delta fires before the projection could have been rebuilt', () => {
+describe('the delta fires before a follower could have been rebuilt', () => {
 	test("'delta' precedes afterTransaction, which precedes updateV2", () => {
-		// The hazard the store's buffer exists for. The ids are known while the
-		// SQLite projection still describes the state before the change, so a
-		// subscriber notified here would read a row id that `db.query` cannot
-		// find yet. `store.test.ts` asserts the store actually waits.
+		// The hazard the store's buffer exists for. The ids are known while
+		// anything derived from the document still describes the state before
+		// the change, so a subscriber notified here would read a row id that a
+		// derived index cannot find yet. `store.test.ts` asserts the store waits.
 		const document = new Y.Doc({ gc: true });
 		const notes = document.get('notes');
 		const order: string[] = [];
