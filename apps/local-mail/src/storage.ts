@@ -22,13 +22,13 @@ export type LocalMailStorage = {
 
 /** Compose Local Mail's account registry, cache, and durable intent handles. */
 export async function openLocalMailStorage(
-	epcenter: EpicenterHandle,
+	epicenter: EpicenterHandle,
 ): Promise<LocalMailStorage> {
-	const dataResult = await epcenter.openData(database);
+	const dataResult = await epicenter.openData(database);
 	if (dataResult.error !== null) throw dataResult.error;
-	const mailResult = await epcenter.openSqlite('mail');
+	const mailResult = await epicenter.openSqlite('mail');
 	if (mailResult.error !== null) throw mailResult.error;
-	const intentResult = await epcenter.openSqlite('intent');
+	const intentResult = await epicenter.openSqlite('intent');
 	if (intentResult.error !== null) throw intentResult.error;
 	return {
 		data: dataResult.data,
