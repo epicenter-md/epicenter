@@ -2,6 +2,16 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-30
+- **Amended:** 2026-09-01. The retirement below went unexecuted, and in the gap
+  Local Mail was wired to the very client this ADR refused to reuse:
+  `apps/local-mail/ui/vite.config.ts` mapped `GOOGLE_MAIL_CLIENT_ID` and
+  `GOOGLE_MAIL_CLIENT_SECRET` onto the `VITE_`-prefixed names it reads. Google's
+  inactivity sweep then deleted both clients, dev and prod, and every
+  authorization attempt returned `deleted_client`. Local Mail now has the
+  Desktop-app client this ADR called for, in the same Epicenter Mail project,
+  stored as `VITE_GMAIL_CLIENT_ID`/`VITE_GMAIL_CLIENT_SECRET` under Infisical
+  `/apps/local-mail`; the `/api` pair is retired and the mapping is deleted. The
+  decision stands unchanged.
 
 ## Context
 
