@@ -4,6 +4,7 @@
 - **Date:** 2026-09-01
 - **Unbuilt:** all of it. Local Mail reconciles from its own window today, and the host runs no application code beyond admitting a data definition.
 - **Supersedes:** [ADR-0322](0322-a-person-keeps-applications-current-and-a-hidden-window-is-the-same-window.md) entirely. That record decided a person keeps applications current by having the host start their windows hidden, and it named the one thing it could not settle: whether a hidden WebView keeps running. It does not. Its human half is not carried forward either, because what it rationed turned out to be free.
+- **Amended by:** [ADR-0327](0327-undelivered-work-is-an-outbox-and-that-is-where-a-failure-appears.md), which decides where a pass outcome lands and rescopes the detection sentence below.
 - **Amends:** [ADR-0273](0273-an-epicenter-app-is-an-spa-with-a-namespace-and-background-work-is-a-hidden-window.md) at one decision and one refusal, stated below.
 - **Amends:** [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) at the sentence describing what a host does. It serves bundles, brokers credentials, and now runs a declared slice of first-party application code. Its actual refusal, a second convergent plane, is untouched: nothing here opens a store or serves an authority.
 - **Relates:** [ADR-0313](0313-a-data-definition-ships-as-typescript-and-a-host-that-needs-one-imports-it.md) (the host already executes first-party application code; this extends a moment into a session), [ADR-0043](0043-an-agent-answers-where-its-capability-lives.md) (work answers where its capability lives), [ADR-0317](0317-local-mail-is-an-epicenter-application-without-a-standalone-cli.md) and [ADR-0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md) (both carried this as their remaining unbuilt line), and [ADR-0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md) (the storage the host already owns)
@@ -61,10 +62,17 @@ tab, in a window, or inside the host, and only the binding differs. ADR-0273
 wanted the code to stay the same between being watched and not; that survives,
 transposed from windows to bindings.
 
-**There is one writer, so there is nothing to arbitrate.** Local Mail's reconcile
-claim exists because the writers were a window and a worker. With the host as
-the only writer, a window stops reconciling and starts reading, and its
-Reconcile control becomes a request that the host run a pass now.
+**There is one writer, so there is nothing to arbitrate.** The rule is that a
+window writes what a person meant and the host writes what the provider said.
+Local Mail's triage comes from a hand in a window; its cache and its cursor come
+from Gmail through the reconciler. Wherever a host exists it is the only
+provider-facing writer, and in the browser build, where there is none, the
+window keeps that role and the `#platform` seam carries the difference.
+
+Local Mail's reconcile claim exists because the writers were a window and a
+worker. With one provider-facing writer per runtime, the window stops
+reconciling on a timer and starts reading. Its Reconcile control still runs a
+pass, because that is a person asking for one and needs no new machinery.
 
 **There is no background permission, because there is nothing to ration.**
 ADR-0322 built a manifest field, a settings toggle, a stored answer, and a
@@ -86,9 +94,12 @@ when Epicenter runs.
 
 **The host runs only what this release imports, and an application cannot ask.**
 The table is shaped like `TRUSTED_DEFINITIONS`: an application id and one entry
-function, first-party, compiled in. There is no registration call, no runtime
-request, and no way for an application to detect whether its background half is
-running, so nothing can nag and nothing can be granted.
+function, first-party, compiled in. There is no registration call and no runtime
+request, and no platform surface answers "am I running in the background", so
+nothing can nag and nothing can be granted. An application does of course see
+its own background half's work, because that half writes into the application's
+own storage and the window reads it (ADR-0327); what it cannot do is ask the
+platform about itself.
 
 **A host-side half has no Epicenter Data.** The store is client-owned in every
 runtime (ADR-0226, ADR-0227) and the host does not open one, so the host leaf's

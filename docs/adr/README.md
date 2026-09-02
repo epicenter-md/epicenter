@@ -21,8 +21,10 @@ accepted ADR, the ADR wins.
   one. State the withdrawn scope in both links. Use `Supersedes` when the old
   decision should no longer govern at all.
 - **Concise and outcome-focused.** An ADR is not a spec. State the decision so a
-  reader can act on it without reading the exploration. Link the spec for the
-  deep evidence if it still exists; otherwise cite the git ref.
+  reader can act on it without reading the exploration, which means every
+  reader acts the same way; see [the test a record has to pass](#the-test-a-record-has-to-pass).
+  Link the spec for the deep evidence if it still exists; otherwise cite the git
+  ref.
 - **Status is one of:** `Proposed`, `Accepted`, `Superseded`.
 - **Decisions are born from specs but do not live there.** When a design pass
   settles something durable, harvest it into an ADR and let the spec be deleted.
@@ -68,23 +70,65 @@ merged; only the pre-merge placeholder is negotiable.
 
 ## Context
 
-The forces in play: what was true, what pressure forced a decision. No survey of
-alternatives yet, just why a decision was needed. Two to five sentences.
+What was true before, named the way the code names it, and what broke it. The
+reader should see the old shape well enough to diff it against the decision. No
+survey of alternatives yet.
 
 ## Decision
 
-The single thing we decided, in active voice, present tense. A reader should be
-able to act on this paragraph alone.
+The rule, then the things it changes, named. Bold each rule as one sentence in
+present tense. Under it, name what the rule reaches (the file, the table, the
+function, the field, the string on screen) and the one property this record pins
+on each. When there are more than two things, draw the inventory as a directory
+tree, a table, or a schema line in a `txt` block. A reader should be able to act
+on this section alone, and act the same way as every other reader.
 
 ## Consequences
 
-What becomes true, easier, harder, or deleted as a result. Name the trade-off
-honestly, including what this forecloses.
+What becomes true, easier, harder, or deleted, measured in the unit a reader
+pays in: a syscall, a transaction, a row, bytes, hours, quota. Name the
+trade-off honestly, including what this forecloses.
 
 ## Considered alternatives (optional)
 
 Each option and the one reason it lost. Terse. This is not the spec.
 ```
+
+## The test a record has to pass
+
+A reader who has never opened the code finishes `## Decision` holding the same
+picture the author had. Two readers must not be able to draw two layouts.
+
+Before accepting a draft, underline every noun phrase in `## Decision`. Each
+must be one of:
+
+- a path or a filename,
+- an identifier a reader could grep for,
+- a string a person sees on screen,
+- a cited ADR,
+- a term this record defines in place, with an instance.
+
+A noun that is none of these ("the durable file", "the queue", "the storage
+layer") is a picture the author had and did not draw. Name it or draw it. The
+same rule holds in `## Context` for the shape being replaced, and in
+`## Consequences` for the unit a cost is stated in.
+
+For a decision with an `Unbuilt:` line there is nothing to grep yet. The anchor
+is then the first thing that would exist and the one property that would be true
+of it, stated as concretely as if it already existed. Do not invent a path to
+satisfy the test.
+
+This is not a request for diagrams. [ADR-0297](0297-the-store-manages-no-timestamps.md)
+has none and passes, because `manages`, `stamps()`, and `field.instant()` are
+names. A tree or a table earns its place when it is the inventory of the
+decision, which is why [ADR-0319](0319-local-mail-is-device-local-and-its-storage-splits-by-lifetime.md)'s
+tree lists both files, their tables, and the one lifetime each has. A box drawn
+around an abstract noun is worse than the sentence it replaced.
+
+It is not a request for length either. A rename is one paragraph
+([ADR-0243](0243-a-workspaces-id-is-its-applications-reverse-domain-identifier.md)).
+A storage layout is five rules and a tree (ADR-0319). Each is the shortest
+record in which the reader's picture and the author's are the same.
 
 ## Index
 
@@ -343,7 +387,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0253](0253-schema-lenses-interpret-stored-json-on-read-and-writes-admit-storage-valid-facts.md) | Schema lenses interpret stored JSON on read, and writes admit storage-valid facts | Accepted (provisional number; amends 0120, 0251 and 0252 at write admission and write result channels) |
 | [0259](0259-a-desktop-profile-is-addressed-by-a-server-url-and-principal-pair.md) | A desktop profile is addressed by a server URL and principal pair | Superseded by 0261 |
 | [0260](0260-the-desktop-host-owns-the-profile-registry-and-active-profile.md) | The desktop host owns the profile registry and active profile | Superseded by 0262 |
-| [0261](0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md) | A local account replica is addressed by its application, server URL, and verified principal | Accepted (supersedes 0259; refuses minted profile ids; amends 0233 at the retained replica address) |
+| [0261](0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md) | A local account replica is addressed by its application, server URL, and verified principal | Superseded by 0324 (the server URL and principal leave the address; supersedes 0259; amends 0233 at the retained replica address) |
 | [0262](0262-the-desktop-host-owns-one-active-connection-and-no-connection-registry.md) | The desktop host owns one active connection and no connection registry | Accepted (supersedes 0260; amends 0155 at the selected connection) |
 | [0263](0263-a-connection-is-one-server-at-a-time-and-a-replica-is-derived-from-it.md) | A connection is one server at a time and a replica is derived from it | Accepted (restates 0075, 0092, 0261, and 0262 as one reader-facing contract) |
 | [0264](0264-a-table-declares-its-row-documents-derivation-and-file-codec.md) | A table declares its row document's derivation and file codec, and the store runs the derivation | Accepted (provisional number; supersedes 0128; amends 0135 and 0207) |
@@ -404,6 +448,10 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0320](0320-removing-an-account-settles-what-it-owes-before-anything-is-deleted.md) | Removing an account settles what it owes before anything is deleted | Accepted |
 | [0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md) | App-owned storage is named SQLite files an application opens and deletes, and nothing else | Accepted (amends 0312 at the handle lifecycle) |
 | [0322](0322-a-person-keeps-applications-current-and-a-hidden-window-is-the-same-window.md) | A person keeps applications current, and a hidden window is the same window | Superseded by 0323 (never built; its measurement came back no) |
-| [0323](0323-background-work-runs-in-the-host-and-a-window-is-for-looking-at.md) | Background work runs in the host, and a window is for looking at | Accepted (unbuilt; supersedes 0322; amends 0273 and 0226) |
+| [0323](0323-background-work-runs-in-the-host-and-a-window-is-for-looking-at.md) | Background work runs in the host, and a window is for looking at | Accepted (unbuilt; supersedes 0322; amends 0273 and 0226; amended by 0327) |
+| [0327](0327-undelivered-work-is-an-outbox-and-that-is-where-a-failure-appears.md) | Undelivered work is an outbox, and that is where a failure appears | Accepted (unbuilt; amends 0323 at where an outcome lands) |
+| [0324](0324-a-database-address-is-its-data-id-and-generation-and-the-definition-declares-its-authority.md) | A database address is its data id and generation, and the definition declares its authority | Accepted (provisional number; unbuilt; supersedes 0261; amends 0304 and 0314 at the desktop spelling) |
+| [0325](0325-a-database-is-bound-to-one-authority-and-re-homing-is-export-and-import.md) | A database is bound to one authority, and re-homing is export and import | Accepted (provisional number; unbuilt; amends 0262 at server selection) |
+| [0326](0326-the-deployment-names-the-authority-and-a-person-never-types-one.md) | The deployment names the authority, and a person never types one | Accepted (provisional number; unbuilt in part, gated on 0305; amends 0262 and 0071) |
 
 When you add an ADR, add its row here.
