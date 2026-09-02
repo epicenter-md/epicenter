@@ -127,7 +127,7 @@ test('a rewritten body says what the file says, in the node the row already hold
 	const { data, note } = await seed();
 	const before = data.tables.notes.get(note.id);
 	if (before === undefined) throw new Error('the note has no row');
-	pmToFragment(parseNoteBody('# Old\n\nold prose'), before.content as never);
+	pmToFragment(parseNoteBody('# Old\n\nold text'), before.content as never);
 
 	expectOk(noteFile.rewrite(before.content, MARKDOWN));
 

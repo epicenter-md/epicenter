@@ -1172,9 +1172,9 @@ async function planPush(
  * so a codec whose two readers disagreed would show a plan its own push
  * refuses.
  *
- * The absent codec answers no rather than being unreachable prose:
- * `compileData` refuses a table that declares none, so `ParsedTable.content`
- * is optional in a shape the compiler cannot produce.
+ * The absent codec answers no rather than being unreachable: `compileData`
+ * refuses a table that declares none, so `ParsedTable.content` is optional in
+ * a shape the compiler cannot produce.
  */
 function readsBack(table: ParsedTable, text: string): boolean {
 	const codec = table.content;

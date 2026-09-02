@@ -22,7 +22,7 @@ function sync(a: Y.Doc, b: Y.Doc): void {
 	Y.applyUpdateV2(a, fromB);
 }
 
-/** One block of prose, the shape a ProseMirror paragraph has in the document. */
+/** One block of text, the shape a ProseMirror paragraph has in the document. */
 function block(text: string): Y.Type {
 	const node = new Y.Type();
 	node.insert(0, [text]);
