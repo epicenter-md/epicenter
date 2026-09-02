@@ -2,6 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-22
+- **Amended by:** [ADR-0325](0325-a-database-is-bound-to-one-authority-and-re-homing-is-export-and-import.md) at one clause: "selecting a different server replaces it" is withdrawn, and the surfaces that performed it are deleted. Choosing a server becomes installing a build.
+- **Amended by:** [ADR-0326](0326-the-deployment-names-the-authority-and-a-person-never-types-one.md) at what the host holds: one connection per authority named by an installed bundle, derived from what is installed rather than stored. This record's refusal of a registry, of generated profile ids, and of a credential wallet stands, and is honoured more literally: nothing is remembered.
 - **Restated by:** [ADR-0263](0263-a-connection-is-one-server-at-a-time-and-a-replica-is-derived-from-it.md) as the reader-facing connection and switching contract
 - **Supersedes:** [ADR-0260](0260-the-desktop-host-owns-the-profile-registry-and-active-profile.md)
 - **Amends:** [ADR-0155](0155-epicenter-desktop-auth-is-one-credential-free-window-bun-authority.md) at the selected deployment's identity: the host owns one active connection, not a registry of profiles.

@@ -1,7 +1,8 @@
 # 0305. The third-party app catalog is a future Epicenter deployment plane
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-31
+- **Superseded by:** [ADR-0334](0334-a-deployed-app-is-a-trusted-app-because-deploying-it-was-the-consent.md). The plane preserved here is not built and is not needed: admission, artifact trust, app identity, and capability authority all resolve to one answer, which is that the person deployed it.
 - **Amends:** [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md) at its temporary refusal of third-party installed apps. The one desktop runtime, the client-owned store, and the host's no-application-data boundary remain.
 - **Relates:** [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md) (the static artifact admission model), [ADR-0244](0244-epicenter-speaks-of-apps-and-windows-not-surfaces.md) (app identity and windows), and [ADR-0303](0303-an-application-opens-epicenter-data-and-app-owned-sqlite-through-one-scoped-client.md) (the app-facing runtime contract)
 

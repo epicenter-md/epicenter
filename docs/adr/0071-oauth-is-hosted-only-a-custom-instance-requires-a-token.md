@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-25
+- **Amended by:** [ADR-0326](0326-the-deployment-names-the-authority-and-a-person-never-types-one.md) at the delivery mechanism only. OAuth stays hosted-only and a custom instance still requires a token; what is withdrawn is the persisted `{ baseURL, token }` instance setting a person pastes into, because the base URL becomes a deployment fact and the token becomes sign-in state.
 - **Relates:** [ADR-0070](0070-self-host-adds-no-new-ownership-or-auth-mode.md) (self-host's credential source is the first-boot bearer; this sharpens it at the client), [ADR-0069](0069-epicenter-is-one-runnable-star-plus-services-called-by-url-and-token.md) (the star is the deployment; the instance setting picks which star), [ADR-0053](0053-the-epicenter-bearer-is-an-audience-scoped-credential.md) (the bearer is attached only to the origin that signed in), [ADR-0067](0067-auth-owns-the-session-endpoint-the-data-client-is-owner-scoped.md) (auth owns `/api/session`), [ADR-0092](0092-identity-is-the-partition.md) (custom instance tokens resolve the `instance` principal).
 
 ## Context

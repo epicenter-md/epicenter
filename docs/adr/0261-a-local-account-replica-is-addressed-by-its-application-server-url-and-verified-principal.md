@@ -1,7 +1,8 @@
 # 0261. A local account replica is addressed by its application, server URL, and verified principal
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-22
+- **Superseded by:** [ADR-0324](0324-a-database-address-is-its-data-id-and-generation-and-the-definition-declares-its-authority.md): the server URL and verified principal leave the address entirely. What they distinguished is carried by a definition's declared authority and by a write-once stamp inside the database ([ADR-0325](0325-a-database-is-bound-to-one-authority-and-re-homing-is-export-and-import.md)).
 - **Restated by:** [ADR-0263](0263-a-connection-is-one-server-at-a-time-and-a-replica-is-derived-from-it.md) as the reader-facing connection and replica contract
 - **Supersedes:** [ADR-0259](0259-a-desktop-profile-is-addressed-by-a-server-url-and-principal-pair.md)
 - **Amends:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) at the retained account replica address. The device document, retained-replica, and sign-out rules remain.

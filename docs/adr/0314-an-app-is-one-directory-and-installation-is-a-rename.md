@@ -9,6 +9,7 @@
   its one directory per app stand.
 - **Supersedes:** [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md) at the catalog's shape. Its inert-folder rule is not merely kept but strengthened: a host reads a manifest and executes nothing.
 - **Amends:** [ADR-0304](0304-application-persistence-is-runtime-selected-and-scoped-by-its-owning-app.md) by extending its per-app layout to the app's bundle and its blobs. The `data/<data-id>/` and `sqlite/<store-name>` paths it fixed are unchanged.
+- **Amended by:** [ADR-0324](0324-a-database-address-is-its-data-id-and-generation-and-the-definition-declares-its-authority.md) at the `data/<data-id>/` spelling, which gains a version segment. One directory per app, and installation as a rename, are unchanged and are relied on by [ADR-0326](0326-the-deployment-names-the-authority-and-a-person-never-types-one.md).
 - **Relates:** [ADR-0305](0305-the-third-party-app-catalog-is-a-future-epicenter-deployment-plane.md) (which deferred the plane this describes, and whose admission and artifact-trust questions this does not answer), [ADR-0313](0313-a-data-definition-ships-as-typescript-and-a-host-that-needs-one-imports-it.md) (the definition the host stops reading), [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md) and [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) (the human folder this leaves alone)
 
 ## Context
