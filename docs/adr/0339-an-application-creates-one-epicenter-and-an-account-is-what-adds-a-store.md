@@ -139,6 +139,14 @@ it into the failure channel makes the gate sniff an error to choose between "sig
 in" and "something broke", and a signed-out open refuses with `Unaddressable`,
 which the boot gate reads as a bad link.
 
+The settled value is held in a `$state.raw` written from the promise's `.then`,
+not a `createSubscriber`. A subscriber is for a source with a live read and a
+subscribe pair, and its start function re-runs if every reader goes away and
+returns; a promise settles once, cannot be unsubscribed, and must not be
+forgotten because the last reader navigated away. The auth half of the same
+wrapper does use `createSubscriber`, because an auth client is that kind of
+source, so the two halves differ on purpose.
+
 There is no `app.data`. The opened store is a field on the `ready` variant, so a
 read before the store is open does not compile. A top-level `data` accessor could
 only be a runtime throw, which is a type turned into an invariant, and it cannot
