@@ -24,6 +24,10 @@
 //      the real repo (every ADR so far was born Accepted), so it is exercised
 //      against fixture repos in check-doc-hygiene.test.ts; keep that test green.
 //
+//   3. ADR numbering faults: two records sharing one NNNN, and a spent
+//      `Provisional number` bullet left in a landed record. Both are rules the
+//      ADR README already states and nothing enforced.
+//
 // Exit non-zero if anything is flagged so a review step or CI can gate on it.
 // Run from repo root: bun scripts/check-doc-hygiene.ts
 import { execFileSync } from 'node:child_process';
@@ -131,10 +135,44 @@ for (const name of adrs) {
 	}
 }
 
+// --- Smell 3: ADR bookkeeping that leaked the drafting process -------------
+// Two mechanical faults the README's own rules forbid, both invisible to every
+// other gate because they live in Markdown frontmatter.
+//
+//   a. Two records sharing one NNNN. The number is allocated at merge time, so
+//      a collision means two branches each kept a provisional integer and
+//      nobody reconciled. `ADR-0092` then cites two different decisions and a
+//      reader cannot tell which. Renumbering a merged record is not automatic:
+//      the README pins the citation form once merged, so this reports and a
+//      person decides.
+//   b. A `Provisional number` bullet still in the tree. The README says the
+//      merge reconciles the integer, so the bullet is spent the moment the
+//      record lands. Left behind, it is a drafting note in the header the
+//      reader lands on first.
+const byNumber = new Map<string, string[]>();
+for (const name of adrs) {
+	const num = name.slice(0, 4);
+	byNumber.set(num, [...(byNumber.get(num) ?? []), name]);
+}
+for (const [num, names] of [...byNumber].sort()) {
+	if (names.length < 2) continue;
+	flags.push(
+		`ADR DUPLICATE NUMBER  ${num}\n    -> ${names.join('\n       ')}\n    -> \`ADR-${num}\` cites two decisions. Decide which record keeps the number and renumber the other, updating every citation to it.`,
+	);
+}
+for (const name of adrs) {
+	const path = `${adrDir}/${name}`;
+	if (/^-\s*\*\*Provisional number/im.test(read(path))) {
+		flags.push(
+			`ADR PROVISIONAL NUMBER BULLET  ${path}\n    -> the number was reconciled at merge; delete the bullet.`,
+		);
+	}
+}
+
 // --- Report ----------------------------------------------------------------
 if (flags.length === 0) {
 	console.log(
-		'doc-hygiene: clean (no terminal-status specs, no orphaned/stale Proposed ADRs).',
+		'doc-hygiene: clean (no terminal-status specs, no orphaned/stale Proposed ADRs, no ADR numbering faults).',
 	);
 	process.exit(0);
 }
