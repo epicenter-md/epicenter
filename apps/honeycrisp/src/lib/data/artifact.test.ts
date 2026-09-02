@@ -112,3 +112,42 @@ test('a note with no body text exports as frontmatter alone and still imports', 
 	expect(restored.tables.notes.get(note.id)?.content).toBeDefined();
 	await data[Symbol.asyncDispose]();
 });
+
+/**
+ * `rewrite`, which is the verb a push calls when a person authorizes a body
+ * edit to come home (ADR-0337).
+ *
+ * What these pin is the reason it is a verb at all: the node the row holds
+ * afterwards is the SAME node, so an editor, an undo manager, and a preview
+ * bound to it are still bound. A codec that built a fresh node and let the
+ * platform swap it in would pass a round-trip assertion and detach every one of
+ * them.
+ */
+test('a rewritten body says what the file says, in the node the row already holds', async () => {
+	const { data, note } = await seed();
+	const before = data.tables.notes.get(note.id);
+	if (before === undefined) throw new Error('the note has no row');
+	pmToFragment(parseNoteBody('# Old\n\nold prose'), before.content as never);
+
+	expectOk(noteFile.rewrite(before.content, MARKDOWN));
+
+	const after = data.tables.notes.get(note.id);
+	if (after === undefined) throw new Error('the note lost its row');
+	// The identity claim, which is the whole point. `toBe`, not `toEqual`.
+	expect(after.content).toBe(before.content);
+	expect(noteFile.encode(after.content)).toBe(MARKDOWN);
+	await data[Symbol.asyncDispose]();
+});
+
+test('a rewrite to nothing empties the node without replacing it', async () => {
+	const { data, note } = await seed();
+	const row = data.tables.notes.get(note.id);
+	if (row === undefined) throw new Error('the note has no row');
+	pmToFragment(parseNoteBody(MARKDOWN), row.content as never);
+
+	expectOk(noteFile.rewrite(row.content, ''));
+
+	expect(data.tables.notes.get(note.id)?.content).toBe(row.content);
+	expect(noteFile.encode(row.content)).toBe('');
+	await data[Symbol.asyncDispose]();
+});

@@ -35,7 +35,7 @@ import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
 import type { TypedTableHandle } from '@epicenter/data';
 import { ContentError, type RowOf } from '@epicenter/data/definition';
 import type { Brand } from 'wellcrafted/brand';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 
 export type ConversationId = string & Brand<'ConversationId'>;
 
@@ -105,33 +105,73 @@ export const conversationsTable = defineTable({
 			// it in the transaction that mints the row; nothing reads it before
 			// then, because a detached node reads as empty until it is integrated.
 			const messages = new Y.Type();
-			if (text.trim() === '') return Ok(messages);
-			let entries: unknown;
-			try {
-				entries = JSON.parse(text);
-			} catch (cause) {
-				return ContentError.Unreadable({
-					reason: 'the message log is not JSON',
-					cause,
-				});
-			}
-			if (!Array.isArray(entries)) {
-				return ContentError.Unreadable({
-					reason: 'the message log is not an array of entries',
-				});
-			}
-			for (const entry of entries as { key?: unknown; val?: unknown }[]) {
-				if (typeof entry?.key !== 'string') {
-					return ContentError.Unreadable({
-						reason: 'a message entry carries no id',
-					});
-				}
-				messages.setAttr(entry.key, entry.val);
-			}
+			const entries = messageEntries(text);
+			if (entries.error !== null) return Err(entries.error);
+			for (const entry of entries.data) messages.setAttr(entry.key, entry.val);
 			return Ok(messages);
+		},
+		/**
+		 * The log this node already holds, made to say what the file says
+		 * (ADR-0337).
+		 *
+		 * Attributes, not a sequence: this node's content is entirely in its
+		 * keys, so a `delete(0, length)` would clear nothing and leave every
+		 * message where it was. That is why `rewrite` is the codec's verb and
+		 * not the platform's.
+		 *
+		 * Keys the file no longer names are removed, so a person who deleted a
+		 * message from the file gets a conversation without it rather than one
+		 * where the deletion silently did nothing.
+		 */
+		rewrite: (node: Y.Type, text: string): Result<void, ContentError> => {
+			const entries = messageEntries(text);
+			if (entries.error !== null) return Err(entries.error);
+			const named = new Set(entries.data.map((entry) => entry.key));
+			for (const key of [...node.attrKeys()]) {
+				if (!named.has(String(key))) node.deleteAttr(key as never);
+			}
+			for (const entry of entries.data) node.setAttr(entry.key, entry.val);
+			return Ok(undefined);
 		},
 	},
 });
+
+/**
+ * One file's body read back as the log it encodes, or why it is not one.
+ *
+ * Shared by `decode` and `rewrite` so the two directions agree on what a
+ * message log is: a codec whose reader and rewriter disagreed would accept a
+ * file into a new row and refuse the same file into an existing one.
+ */
+function messageEntries(
+	text: string,
+): Result<{ key: string; val: unknown }[], ContentError> {
+	if (text.trim() === '') return Ok([]);
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch (cause) {
+		return ContentError.Unreadable({
+			reason: 'the message log is not JSON',
+			cause,
+		});
+	}
+	if (!Array.isArray(parsed)) {
+		return ContentError.Unreadable({
+			reason: 'the message log is not an array of entries',
+		});
+	}
+	const entries: { key: string; val: unknown }[] = [];
+	for (const entry of parsed as { key?: unknown; val?: unknown }[]) {
+		if (typeof entry?.key !== 'string') {
+			return ContentError.Unreadable({
+				reason: 'a message entry carries no id',
+			});
+		}
+		entries.push({ key: entry.key, val: entry.val });
+	}
+	return Ok(entries);
+}
 
 /** One conversation row, as a read hands it back. */
 export type Conversation = RowOf<typeof conversationsTable>;

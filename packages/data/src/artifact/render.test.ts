@@ -121,6 +121,7 @@ describe('renderRow is the unit (ADR-0271)', () => {
 							throw new Error('the codec exploded');
 						},
 						decode: () => Ok(new Y.Type()),
+						rewrite: () => Ok(undefined),
 					},
 				}),
 			},
@@ -205,6 +206,7 @@ describe('renderArtifact is renderRow in a loop (ADR-0267/0268)', () => {
 							return text;
 						},
 						decode: () => Ok(new Y.Type()),
+						rewrite: () => Ok(undefined),
 					},
 				}),
 			},

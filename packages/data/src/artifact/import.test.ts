@@ -197,6 +197,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 						decode: () => {
 							throw new Error('the codec exploded');
 						},
+						rewrite: () => Ok(undefined),
 					},
 				}),
 			},
@@ -220,6 +221,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 					content: {
 						encode: (node) => node.toString(),
 						decode: () => ContentError.Unreadable({ reason: 'no title line' }),
+						rewrite: () => Ok(undefined),
 					},
 				}),
 			},
@@ -249,6 +251,7 @@ describe('readArtifact (ADR-0267/0268)', () => {
 					content: {
 						encode: (node) => node.toString(),
 						decode: () => Ok(shared),
+						rewrite: () => Ok(undefined),
 					},
 				}),
 			},

@@ -21,9 +21,15 @@ import type { ContentCodec, ContentError } from './declaration.js';
  * node replays one positional delta when `create` integrates it; a loop of
  * appends silently reverses (`evidence/detached-type.test.ts`).
  *
- * It cannot fail. Any text is a valid node here, which is what makes this the
- * codec for a table whose content is exactly its text, and what makes it the
- * WRONG codec for a table whose node carries attributes: `toString` would
+ * `rewrite` clears the sequence and refills it, on the node the row already
+ * holds. Whole rather than diffed, because this codec's content IS one string
+ * and there is nothing else in the node to preserve: the attributes it never
+ * writes are left exactly where they are, so an application that grows one
+ * later does not lose it to a body edit.
+ *
+ * Neither can fail. Any text is a valid node here, which is what makes this
+ * the codec for a table whose content is exactly its text, and what makes it
+ * the WRONG codec for a table whose node carries attributes: `toString` would
  * render them, `insert` would take the rendering back as one literal string,
  * and the two would print identically while the structure was gone.
  */
@@ -34,6 +40,11 @@ export function plainText(): ContentCodec {
 			const node = new Y.Type();
 			if (text !== '') node.insert(0, [text]);
 			return Ok(node);
+		},
+		rewrite: (node, text): Result<void, ContentError> => {
+			if (node.length > 0) node.delete(0, node.length);
+			if (text !== '') node.insert(0, [text]);
+			return Ok(undefined);
 		},
 	};
 }

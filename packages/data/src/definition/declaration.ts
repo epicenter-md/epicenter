@@ -59,12 +59,12 @@ export const ContentError = defineErrors({
 export type ContentError = InferErrors<typeof ContentError>;
 
 /**
- * How one table's content node becomes text, and back (ADR-0296).
+ * How one table's content node becomes text, and back (ADR-0296, ADR-0329).
  *
  * A row is its values and ONE live node. The platform owns the file: it
  * writes the values as frontmatter by field name and joins this below the
  * fence, and it reverses both. The table owns what its node MEANS, which is
- * this and nothing else.
+ * these three verbs and nothing else.
  *
  * There is no default. A node carries a sequence and attributes at once, so
  * "render it as text" is not a safe fallback: `toString` is a debug rendering,
@@ -73,15 +73,39 @@ export type ContentError = InferErrors<typeof ContentError>;
  * table that declared nothing would round-trip through that silently, so every
  * table states what its content is.
  *
- * A returned node must be fresh. Two rows given one node share it, silently,
- * so `createRow` refuses one that already belongs to a document. **How you
- * fill it matters**: one bulk operation or attribute writes are safe, a loop
- * of positional appends silently reverses, and it reads as empty until
- * `create` integrates it. `evidence/detached-type.test.ts` pins that.
+ * **`decode` mints and `rewrite` edits, and they are not the same verb.**
+ * `decode` builds a node for a row that does not exist yet, and the node it
+ * returns must be fresh: two rows given one node share it, silently, so
+ * `createRow` refuses one that already belongs to a document. **How you fill
+ * it matters**: one bulk operation or attribute writes are safe, a loop of
+ * positional appends silently reverses, and it reads as empty until `create`
+ * integrates it. `evidence/detached-type.test.ts` pins that.
+ *
+ * `rewrite` takes the node a row already holds and makes its content say what
+ * the text says, in place. It is what a push calls when a person authorizes a
+ * body edit to come home (ADR-0337), and it is not derivable from `decode`: a
+ * detached node reads as empty until it is integrated, so there is nothing to
+ * copy across, and only the codec knows whether its content lives in the
+ * node's sequence, its attributes, or both.
+ *
+ * **In place, rather than as a replacement**, which is the whole reason this
+ * is a verb here rather than a store one. Setting a fresh node over the row's
+ * attribute is the lazy-mint case ADR-0296 rules out: two devices doing it
+ * concurrently resolve by attribute LWW and one loses its whole subtree, and
+ * every editor, undo manager, and preview bound to the old node is detached
+ * with it. Editing the node the row already holds keeps the binding, keeps a
+ * peer's concurrent edits mergeable, and is one ordinary commit.
+ *
+ * What `rewrite` does NOT promise is a minimal edit. A codec that clears its
+ * content and refills it is correct and is what all three in this repository
+ * do; a person asked for the file's version to win, and that is what they get.
+ * A real text diff would make the change smaller and the undo step finer, and
+ * it can replace a codec's body later with no change here.
  */
 export type ContentCodec = {
 	readonly encode: (node: Y.Type) => string;
 	readonly decode: (text: string) => Result<Y.Type, ContentError>;
+	readonly rewrite: (node: Y.Type, text: string) => Result<void, ContentError>;
 };
 
 /**
