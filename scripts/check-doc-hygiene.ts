@@ -17,12 +17,12 @@
 //      the header: this corpus routinely declares "**Status**: Implemented" as a
 //      trailing line, so a head-only window would miss the real stragglers.
 //
-//   2. A Proposed ADR that no in-tree spec references. That means its spec was
-//      deleted, i.e. the work landed, so the ADR should be Accepted (or, if the
-//      work was abandoned, superseded). This is a structural signal, not a
-//      heuristic. Age is a secondary, softer signal. This guard never fires on
-//      the real repo (every ADR so far was born Accepted), so it is exercised
-//      against fixture repos in check-doc-hygiene.test.ts; keep that test green.
+//   2. A Proposed ADR that something already depends on. Proposed is the resting
+//      state and age is not a defect, so this does not fire on an old record. It
+//      fires when another ADR reasons from a record that is still soft, or when
+//      the record carries no `Unbuilt:` line, meaning the code it describes
+//      exists. Both are the moment the cost of the record changing stops being
+//      the author's, which is what acceptance is for.
 //
 //   3. ADR numbering faults: two records sharing one NNNN, and a spent
 //      `Provisional number` bullet left in a landed record. Both are rules the
@@ -32,9 +32,6 @@
 // Run from repo root: bun scripts/check-doc-hygiene.ts
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-
-const STALE_DAYS = 21;
-const TODAY = new Date();
 
 // git ls-files: tracked files only, so untracked scratch specs never trip the
 // gate. execFileSync (no shell) passes the '*specs/*.md' pathspec to git
@@ -83,54 +80,38 @@ for (const f of specFiles) {
 	}
 }
 
-// --- Smell 2: orphaned / stale Proposed ADRs -------------------------------
+// --- Smell 2: Proposed ADRs something already depends on ------------------
 const adrDir = 'docs/adr';
-const allSpecText = specFiles.map(read).join('\n');
 const adrs = existsSync(adrDir)
 	? readdirSync(adrDir).filter((n) => /^\d{4}.*\.md$/.test(n))
 	: [];
+const adrTexts = new Map(adrs.map((n) => [n, read(`${adrDir}/${n}`)]));
 for (const name of adrs) {
 	const path = `${adrDir}/${name}`;
 	// ADR status lives in the header block (template line 3); scan only the head
 	// so a "Status: Accepted" mentioned later in prose or alternatives cannot
 	// false-match the spec's own declared status.
-	const adrHead = read(path).split('\n').slice(0, 15).join('\n');
+	const adrHead = (adrTexts.get(name) ?? '')
+		.split('\n')
+		.slice(0, 15)
+		.join('\n');
 	if (!/^\s*-?\s*\**status\**\s*[:=]\s*\**\s*proposed\b/im.test(adrHead))
 		continue;
 	const num = name.slice(0, 4);
-	const base = name.replace(/\.md$/, '');
-	const referenced =
-		allSpecText.includes(base) ||
-		allSpecText.includes(`ADR-${num}`) ||
-		allSpecText.includes(`adr/${num}`);
-	let addDate: string | null = null;
-	try {
-		addDate = execFileSync(
-			'git',
-			[
-				'log',
-				'--diff-filter=A',
-				'-1',
-				'--format=%ad',
-				'--date=short',
-				'--',
-				path,
-			],
-			{ encoding: 'utf8' },
-		).trim();
-	} catch {
-		// No add date (e.g. not yet committed): leave addDate null, skip staleness.
-	}
-	const ageDays = addDate
-		? Math.round((TODAY.getTime() - new Date(addDate).getTime()) / 86400000)
-		: null;
-	if (!referenced) {
-		flags.push(
-			`ADR PROPOSED, ORPHANED  ${path}\n    -> no in-tree spec references it; if the work landed, flip Status to Accepted; if abandoned, supersede it.`,
+	const citers = adrs
+		.filter((other) => other !== name)
+		.filter((other) => (adrTexts.get(other) ?? '').includes(`ADR-${num}`))
+		.map((other) => other.slice(0, 4));
+	const reasons: string[] = [];
+	if (citers.length > 0)
+		reasons.push(`${citers.join(', ')} reason from it while it is still soft`);
+	if (!/^\s*-?\s*\**unbuilt\**\s*[:=]/im.test(adrHead))
+		reasons.push(
+			'it carries no `Unbuilt:` line, so the code it describes exists',
 		);
-	} else if (ageDays !== null && ageDays > STALE_DAYS) {
+	if (reasons.length > 0) {
 		flags.push(
-			`ADR PROPOSED, STALE (${ageDays}d)  ${path}\n    -> still Proposed after ${ageDays} days; flip it to Accepted once the decision is made (add an \`Unbuilt:\` line if nothing implements it yet), or supersede it.`,
+			`ADR PROPOSED, DEPENDED ON  ${path}\n    -> ${reasons.join('; and ')}. Accept it, or fix what depends on it.`,
 		);
 	}
 }
@@ -172,7 +153,7 @@ for (const name of adrs) {
 // --- Report ----------------------------------------------------------------
 if (flags.length === 0) {
 	console.log(
-		'doc-hygiene: clean (no terminal-status specs, no orphaned/stale Proposed ADRs, no ADR numbering faults).',
+		'doc-hygiene: clean (no terminal-status specs, no depended-on Proposed ADRs, no ADR numbering faults).',
 	);
 	process.exit(0);
 }

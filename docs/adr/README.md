@@ -13,13 +13,24 @@ accepted ADR, the ADR wins.
 
 - **One decision per record.** If you are documenting several decisions, write
   several ADRs.
-- **Immutable once accepted.** Do not edit a decision out of an accepted ADR. To
-  change direction, write a new ADR, set its `Supersedes` to the old one, and set
-  the old one's `Superseded by` to the new one. The chain is the history.
+- **`Accepted` is authorized, never self-assigned.** An agent writes `Proposed`,
+  and may edit any `Proposed` record freely: rewrite the decision, replace a name
+  in every place it appears, move a shape that a fact killed down into
+  `## Considered alternatives`, or delete the record. It may flip a status when
+  told which record to flip. It may not conclude that a record is finished, and
+  it does not ask at the end of a session. The record stays `Proposed` and the
+  agent says nothing about status.
+- **Immutable once accepted.** Once a record is `Accepted` its decision is fixed.
+  To change direction, write a new ADR, set its `Supersedes` to the old one, and
+  set the old one's `Superseded by` to the new one. The chain is the history.
+  Immutability protects a record from the future, not from the hour after it was
+  written: a claim revised before it was accepted was a draft, and a draft does
+  not leave a file behind.
 - **Amend without erasing.** When a later ADR changes only one bounded part of
   an accepted decision, set `Amends` on the new ADR and `Amended by` on the old
   one. State the withdrawn scope in both links. Use `Supersedes` when the old
-  decision should no longer govern at all.
+  decision should no longer govern at all. An `Amends` or `Supersedes` link whose
+  target is still `Proposed` is a mistake: edit the target.
 - **Concise and outcome-focused.** An ADR is not a spec. State the decision so a
   reader can act on it without reading the exploration, which means every
   reader acts the same way; see [the test a record has to pass](#the-test-a-record-has-to-pass).
@@ -28,11 +39,13 @@ accepted ADR, the ADR wins.
 - **Status is one of:** `Proposed`, `Accepted`, `Superseded`.
 - **Decisions are born from specs but do not live there.** When a design pass
   settles something durable, harvest it into an ADR and let the spec be deleted.
-- **`Proposed` is a transient state.** Record a decision as `Proposed` while it
-  is still being decided; flip it to `Accepted` when the decision is made. A
-  `Proposed` ADR that no in-tree spec references means its spec was deleted:
-  flip it, or supersede it if abandoned. `bun scripts/check-doc-hygiene.ts`
-  flags orphaned and stale `Proposed` ADRs.
+- **`Proposed` is the resting state.** Most records are `Proposed`, and age is
+  not a defect. A record can sit soft for weeks while it gets better, and one
+  that turns out to have been a bad guess is deleted rather than superseded.
+  `bun scripts/check-doc-hygiene.ts` does not flag a record for being old. It
+  flags a `Proposed` record that another record already reasons from, or whose
+  `Unbuilt` line is empty, because that is a soft claim something has started
+  depending on.
 - **Status answers whether a record governs, never whether it shipped.** An
   accepted decision that nothing implements yet still governs: a later record
   reasoning from it is obeying real law, and demoting it to `Proposed` would
@@ -40,11 +53,49 @@ accepted ADR, the ADR wins.
   which is more precise than a status because it says *what* is missing rather
   than only *that* something is. Delivery state belongs to specs.
 
+## How a record is finalized
+
+There are two populations here, and a reader can tell them apart from the status
+line. `Proposed` is where a decision is still being worked out: soft, editable,
+and safe to be wrong in. `Accepted` is a claim someone read and said yes to, and
+other work is allowed to depend on it.
+
+Acceptance is a sentence, not a file operation:
+
+```txt
+you    "accept 0312 and 0316"
+agent  flips both, commits
+```
+
+The agent performs the edit. It does not choose. It also does not offer: a
+session that ends with "these look solid, accept them?" hands the decision back
+with extra steps and becomes a rubber stamp within a week. What raises the
+question is the hygiene check, which names the records something already reasons
+from:
+
+```txt
+$ bun scripts/check-doc-hygiene.ts
+
+  0312 is Proposed and 0316, 0321 reason from it
+  0314 is Proposed and its Unbuilt line is empty
+```
+
+This costs something, and the cost is stated rather than hidden: between writing
+and acceptance, a record another record cites is still allowed to move. The check
+is what makes that exposure visible instead of leaving every record claiming to
+be settled.
+
+**Records dated before 2026-09-02 keep `Accepted` as inherited status.** For
+those, the word means an agent asserted the decision and later work depended on
+it, which is weaker than what it means now. They are not being re-reviewed; 322
+records is archaeology, and the seam is cheaper than the excavation.
+
 ## Numbering
 
 `NNNN-kebab-decision-as-sentence.md`, zero-padded, monotonically increasing. The
 title is the decision stated as a declarative sentence, so the filename alone
-reads as the conclusion.
+reads as the conclusion. Monotonic is not contiguous: a `Proposed` record that is
+deleted leaves its number unused, and a gap in the sequence is not a fault.
 
 **The number is allocated at merge time, not author time.** It is owned by the
 merge, not the branch. Two branches that each grab "the next number" while

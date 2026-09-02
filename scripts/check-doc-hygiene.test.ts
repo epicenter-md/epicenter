@@ -107,56 +107,51 @@ test('smell 1: a blockquoted terminal-status spec is flagged', () => {
 	});
 });
 
-test('smell 2: an orphaned Proposed ADR (no spec references it) is flagged', () => {
+test('smell 2: an old Proposed ADR nothing depends on is clean', () => {
 	withRepo((dir) => {
 		write(
 			dir,
 			'docs/adr/0001-some-decision.md',
-			'# 0001. Some decision\n\n- **Status:** Proposed\n',
+			'# 0001. Some decision\n\n- **Status:** Proposed\n- **Unbuilt:** all of it\n',
 		);
-		write(dir, 'specs/20260101T000000-x.md', '# X\n\n**Status**: Draft\n');
-		commitAll(dir);
-		const { code, out } = run(dir);
-		expect(code).toBe(1);
-		expect(out).toContain('ADR PROPOSED, ORPHANED');
-	});
-});
-
-test('smell 2: a referenced, fresh Proposed ADR is clean', () => {
-	withRepo((dir) => {
-		write(
-			dir,
-			'docs/adr/0001-some-decision.md',
-			'# 0001. Some decision\n\n- **Status:** Proposed\n',
-		);
-		write(
-			dir,
-			'specs/20260101T000000-x.md',
-			'# X\n\n**Status**: Draft\n\nDecision tracked in 0001-some-decision.\n',
-		);
-		commitAll(dir);
+		// Age is not a defect: Proposed is the resting state.
+		commitAll(dir, '2000-01-01T00:00:00');
 		const { code, out } = run(dir);
 		expect(code).toBe(0);
 		expect(out).toContain('clean');
 	});
 });
 
-test('smell 2: a referenced but stale Proposed ADR (past the window) is flagged', () => {
+test('smell 2: a Proposed ADR another ADR reasons from is flagged', () => {
+	withRepo((dir) => {
+		write(
+			dir,
+			'docs/adr/0001-some-decision.md',
+			'# 0001. Some decision\n\n- **Status:** Proposed\n- **Unbuilt:** all of it\n',
+		);
+		write(
+			dir,
+			'docs/adr/0002-another-decision.md',
+			'# 0002. Another decision\n\n- **Status:** Accepted\n\nFollows from ADR-0001.\n',
+		);
+		commitAll(dir);
+		const { code, out } = run(dir);
+		expect(code).toBe(1);
+		expect(out).toContain('ADR PROPOSED, DEPENDED ON');
+		expect(out).toContain('0002 reason from it');
+	});
+});
+
+test('smell 2: a Proposed ADR with no Unbuilt line is flagged', () => {
 	withRepo((dir) => {
 		write(
 			dir,
 			'docs/adr/0001-some-decision.md',
 			'# 0001. Some decision\n\n- **Status:** Proposed\n',
 		);
-		write(
-			dir,
-			'specs/20260101T000000-x.md',
-			'# X\n\nDecision tracked in 0001-some-decision.\n',
-		);
-		// Backdate the add well past the 21-day staleness window.
-		commitAll(dir, '2000-01-01T00:00:00');
+		commitAll(dir);
 		const { code, out } = run(dir);
 		expect(code).toBe(1);
-		expect(out).toContain('ADR PROPOSED, STALE');
+		expect(out).toContain('no `Unbuilt:` line');
 	});
 });
