@@ -1,7 +1,7 @@
 # 0314. An app is one directory, and installation is a rename
 
 - **Status:** Accepted
-- **Unbuilt:** all of it. `app-catalog/`, its generations, its `current` pointer, and `promoteAppCatalogCandidate` all still exist and still work.
+- **Unbuilt:** all of it, and the shape it replaced is gone too. `app-catalog/`, its generations, its `current` pointer, `promoteAppCatalogCandidate`, and `loadActiveAppCatalog` were deleted rather than superseded, so the host now has neither model: `applications.ts` lists three compiled applications and says installed-application discovery is not part of the host. An application is not yet one directory, and there is no catalog either.
 - **Date:** 2026-08-31
 - **Supersedes:** [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md) at the catalog's shape. Its inert-folder rule is not merely kept but strengthened: a host reads a manifest and executes nothing.
 - **Amends:** [ADR-0304](0304-application-persistence-is-runtime-selected-and-scoped-by-its-owning-app.md) by extending its per-app layout to the app's bundle and its blobs. The `data/<data-id>/` and `sqlite/<store-name>` paths it fixed are unchanged.
