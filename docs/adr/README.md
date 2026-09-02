@@ -130,6 +130,71 @@ It is not a request for length either. A rename is one paragraph
 A storage layout is five rules and a tree (ADR-0319). Each is the shortest
 record in which the reader's picture and the author's are the same.
 
+## What a record does not carry
+
+A record states a rule, what it reaches, what it costs, and why the alternatives
+lost. It does not grade itself and it does not narrate its own drafting. Before
+accepting a draft, delete every sentence that fails one of these:
+
+- **It talks about the record.** Any sentence containing "this record" outside
+  the `Amends` or `Unbuilt` lines. The reader is holding the record; state the
+  rule.
+- **It approves the sentence before it.** Closers such as "which is the point",
+  "and correctly so", "that is the whole cost", "which is the honest reason",
+  "and it does". Delete the clause. If the sentence lost a fact, that fact
+  belongs in its own sentence; if it lost only a verdict, it is gone for good.
+- **Its contrast has one concrete half.** "A syscall rather than a `VACUUM`"
+  compares two mechanisms. "Slow rather than risky" grades one. Keep the first
+  kind, and state the second as the fact it was grading.
+- **It is a drafting note.** "Corrected before merge", "repriced",
+  "re-challenged", "provisional number". Fix the draft. The pull request holds
+  the history; the record holds the decision.
+
+Vocabulary that is usually the author approving the author: `honest`, `legible`,
+`deliberately`, `on purpose`, `by construction`, `earns`. Each is allowed when it
+names a property a reader could check, and suspect otherwise.
+
+## Frontmatter is a header, not a changelog
+
+Before `## Context` a record carries `Status`, `Date`, and at most one line each
+of `Supersedes`, `Superseded by`, `Amends`, `Amended by`, `Unbuilt`, and
+`Relates`. Each line is one sentence naming the bounded scope. The argument for
+why a scope is bounded belongs in the `## Context` of the record doing the
+amending. A `Built` line is not a status and is not kept: what shipped is visible
+in code, and what has not is the `Unbuilt` line.
+
+## Titles
+
+One clause. A title containing "and" is two decisions, or one decision and a
+consequence: write two records, or move the consequence into `## Consequences`.
+The title is what `ls docs/adr | grep` searches, so it carries the noun a reader
+would grep for (`sqlite`, `credential`, `timestamps`) rather than a paraphrase
+of it.
+
+## Keeping a record from going stale
+
+A record is retired by the record that replaces it, in the same change. When a
+decision lands that withdraws part of an older one, both sides of the link are
+written before the new record merges: `Amends` on the new one and `Amended by`
+on the old one, each naming the withdrawn scope. `Supersedes` and `Superseded by`
+are the same discipline when nothing of the old decision survives.
+
+This is the only defense there is. No script can read two records and tell that
+one has quietly replaced the other, so a record that is wrong and still says
+`Accepted` will be obeyed. [ADR-0201](0201-epicenter-owns-one-app-data-root-and-an-app-partitions-its-one-directory-by-a-stable-authority-identifier.md)
+stood for a month describing `intent.db` and `mail.db`, neither of which existed,
+because the records that replaced its layout never linked back to it.
+
+Two habits make the link hard to forget:
+
+- **Name the record you are replacing in `## Context`.** The old shape stated in
+  the code's own words is what makes the new decision read as a diff, and you
+  cannot write that sentence without going to find the record it came from.
+- **Suppressing a path check is a staleness signal.** A
+  `<!-- doc-path-check: ignore-next-line -->` inside an `Accepted` record means
+  it cites a path that does not exist. That is correct for an illustrative
+  example and is otherwise the record telling you it has gone out of date.
+
 ## Index
 
 | ADR                                                                                                                         | Decision                                                                                                                                                                       | Status                                                                                                                          |
