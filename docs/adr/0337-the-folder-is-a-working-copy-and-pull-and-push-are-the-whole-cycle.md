@@ -4,7 +4,7 @@
 - **Date:** 2026-09-02
 - **Amends:** [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) by withdrawing the continuous render and the one-way rule; [ADR-0289](0289-the-folder-is-where-a-generation-is-minted-from-not-a-surface-kept-current-for-its-own-sake.md) by making the folder a working copy rather than only a mint source; [ADR-0329](0329-frontmatter-round-trips-and-the-body-only-renders-out.md) at the return path's mechanism, keeping its rule that values round-trip and a body does not
 - **Relates:** [ADR-0234](0234-the-ark-owns-living-pages-and-markdown-is-an-explicit-checkout.md) (which invented this shape for one table and never generalized it), [ADR-0281](0281-a-generation-is-a-whole-database-and-a-device-chooses-which-one-it-holds.md) (the backup), [ADR-0330](0330-an-agent-uses-the-surfaces-a-person-uses.md) (who edits and who pushes)
-- **Partly built:** `pull`, the manifest, and both host routes, in `packages/data/src/artifact/checkout.ts` and `apps/epicenter/src/checkout.ts`. `diff` and `push` do not exist, and the `AGENTS.md` a pull writes does not either.
+- **Partly built:** all three verbs and the manifest, in `packages/data/src/artifact/checkout.ts` and `apps/epicenter/src/checkout.ts`. What is unbuilt is named at "What a push refuses" below, plus the `AGENTS.md` a pull writes.
 
 ## Context
 
@@ -78,12 +78,12 @@ could resolve against and no address a plan could name; it is pulled so the
 folder is complete to read, and an edit to it is reported rather than applied.
 
 **Absence is unambiguous at push, because the manifest says what was pulled and
-a person chose the moment.** A missing file is a deletion in the plan. Where a
-table names a trash field it lands there, as a value. How a table names one is
-unbuilt; Honeycrisp's is `deletedAt` (`apps/honeycrisp/src/lib/data/index.ts`),
-so a deleted file trashes a note and never removes a row, and until a table can
-name one, a missing file for any other table is refused in the plan. Removing a
-row stays the dialog in
+a person chose the moment.** A missing file is a deletion, and no table can say
+where a deletion goes yet, so every one of them is refused in the plan rather
+than guessed at. Where a table names a trash field it will land there as a
+value; Honeycrisp's would be `deletedAt`
+(`apps/honeycrisp/src/lib/data/index.ts`), so a deleted file trashes a note and
+never removes a row. Removing a row stays the dialog in
 `apps/honeycrisp/src/routes/components/NoteCard.svelte` that reads "This action
 cannot be undone."
 
@@ -102,14 +102,24 @@ and nothing on disk is rewritten to hide that.** Each field has three values:
 push 412 files: 41 values, 1 deletion, 2 conflicts
 
   notes/9f2c.md   status   draft -> shipped
-  notes/8a11.md   deleted  -> trashed
-  notes/4d70.md   title    yours "Q3 plan" / theirs "Q3 planning"   [mine|theirs]
+  notes/4d70.md   title    file "Q3 plan" / store "Q3 planning"   [file|store]
+  notes/8a11.md   refused  the file is gone, and a deletion has nowhere to go
 ```
 
-A body is not merged. An edited body pushes as ADR-0329's whole-value replace
-only while the store's body still hashes to what `pull` rendered; otherwise the
-person picks one. No conflict marker is ever written into a file, no `.orig` is
-left behind, and the unit is always a field.
+A body is not merged. No conflict marker is ever written into a file, no
+`.orig` is left behind, and the unit is always a field.
+
+**What a push refuses**, rather than guessing or silently dropping. A change the
+plan does not carry is a change the re-render at the end would overwrite, so a
+push holding any of these applies nothing at all and a person reads why:
+
+| refusal | why, and what is missing |
+| --- | --- |
+| an edited body | A body renders out and does not read back (ADR-0329). This record said it pushes as a whole-value replace; `ContentCodec` declares `encode` and `decode` and no verb that replaces a live node in place, and giving it a third one is a decision about the definition vocabulary. |
+| a new file | A row id is minted and never chosen (`packages/data/src/store/handles.ts`), because two devices creating one address produce two containers and one loses every field in it. A file cannot say which row it would be. |
+| a missing file | Where a table names a trash field a deletion lands there as a value; no table can name one, which is the interim this record already sets. Adding `trash` to `TableDeclaration` reserves a third key beside `content` (ADR-0309), so it is an ADR rather than a push's business. |
+| an edited `kv.json` | Pulled to read, never pushed, as below. |
+| a removed frontmatter line | "Unset this" and "I did not mean to touch it" are the same signal, and a base cannot tell them apart. Setting the value to `null` says the first one. |
 
 **`pull` refuses a dirty folder**, one whose files no longer match the manifest.
 It shows the unpushed edits, and discarding them is the way past.
@@ -127,9 +137,9 @@ one.
 
 **An agent edits; a person pushes.** `pull` writes an `AGENTS.md` at the folder
 root from `compileData`'s output (`packages/data/src/definition/compile.ts`):
-the tables, their fields and types, and the three rules an agent needs. A
-missing file is a deletion. A body is replaced whole or not at all. An agent
-never pushes. ADR-0330 makes the diff the thing that
+the tables, their fields and types, and the rules an agent needs. Values in the
+frontmatter are what comes back; a body, a new file, and a deleted file do not,
+and the table above is why. An agent never pushes. ADR-0330 makes the diff the thing that
 makes an agent's work reviewable, and an agent that pushes its own work deletes
 the review.
 

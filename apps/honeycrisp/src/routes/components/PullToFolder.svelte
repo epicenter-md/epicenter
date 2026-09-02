@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { WorkingCopyChanges } from '@epicenter/data/artifact/checkout';
+	import type { PushPlan } from '@epicenter/data/artifact/checkout';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import FolderDownIcon from '@lucide/svelte/icons/folder-down';
@@ -37,16 +37,14 @@
 	let outcome = $state<{ tone: 'held' | 'refused'; message: string } | undefined>(
 		undefined,
 	);
-	let unpushed = $state<WorkingCopyChanges | undefined>(undefined);
 	/**
-	 * Whether Honeycrisp recognizes the folder it is about to replace.
+	 * What the folder holds that these notes do not, when a pull refused.
 	 *
-	 * `undefined` means it does not: nobody signed in here wrote these files, or
-	 * the record of what they were is gone. That changes what the dialog can
-	 * honestly say, because without it there is no "changed" to report, only
-	 * "here is what is there".
+	 * The same `PushPlan` the send-back dialog reads, because it is the same
+	 * question asked at the other end. Two comparisons is how a pull comes to
+	 * refuse work a push would have called converged.
 	 */
-	let unpushedBase = $state<{ pulledAt: string } | undefined>(undefined);
+	let unpushed = $state<PushPlan | undefined>(undefined);
 	let running = $state(false);
 
 	async function run(discardEdits: boolean) {
@@ -64,8 +62,7 @@
 			if (error.name === 'WorkingCopyDirty') {
 				// Not an outcome line. The work is the person's, and the only
 				// honest next step is showing them what they are about to lose.
-				unpushed = error.changes;
-				unpushedBase = error.base;
+				unpushed = error.plan;
 				return;
 			}
 			outcome = { tone: 'refused', message: refusal(error) };
@@ -96,11 +93,8 @@
 		}
 	}
 
-	const edited = $derived(
-		unpushed?.rows.filter((row) => !row.missing && !row.added) ?? [],
-	);
-	const removed = $derived(unpushed?.rows.filter((row) => row.missing) ?? []);
-	const added = $derived(unpushed?.rows.filter((row) => row.added) ?? []);
+	const edited = $derived(unpushed?.rows ?? []);
+	const refusals = $derived(unpushed?.refusals ?? []);
 </script>
 
 <div class="flex flex-col gap-1 px-2 pb-1">
@@ -129,24 +123,15 @@
 <AlertDialog.Root
 	open={unpushed !== undefined}
 	onOpenChange={(open) => {
-		if (!open) {
-			unpushed = undefined;
-			unpushedBase = undefined;
-		}
+		if (!open) unpushed = undefined;
 	}}
 >
 	<AlertDialog.Content>
 		<AlertDialog.Header>
 			<AlertDialog.Title>Your folder has changes Honeycrisp does not have</AlertDialog.Title>
 			<AlertDialog.Description>
-				{#if unpushedBase === undefined}
-					Nothing in Honeycrisp wrote these files, so there is no way to tell
-					what changed in them. Saving would replace every one.
-				{:else}
-					Saving replaces every file written last time, so these would go.
-				{/if}
-				There is no way to send an edit back into your notes yet, so copy
-				anything you want to keep out of the folder first.
+				Saving replaces every file written last time, so these would go. Send
+				folder edits back first if you want to keep them.
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 
@@ -155,30 +140,21 @@
 				<li class="flex gap-2">
 					<span class="truncate">{label(row)}</span>
 					<span class="shrink-0 text-muted-foreground">
-						{[row.body ? 'text' : undefined, ...row.values]
-							.filter((name) => name !== undefined)
-							.join(', ')} changed
+						{[
+							...row.values.map((value) => value.name),
+							...row.conflicts.map((conflict) => conflict.name),
+						].join(', ')} changed
 					</span>
 				</li>
 			{/each}
-			{#each removed as row (row.table + row.rowId)}
+			{#each refusals as item (item.path + item.reason + (item.name ?? ''))}
 				<li class="flex gap-2">
-					<span class="truncate">{label(row)}</span>
-					<span class="shrink-0 text-muted-foreground">file deleted</span>
+					<span class="truncate font-mono">{item.path}</span>
+					<span class="shrink-0 text-muted-foreground">
+						{item.name ?? item.reason}
+					</span>
 				</li>
 			{/each}
-			{#each added as row (row.table + row.rowId)}
-				<li class="flex gap-2">
-					<span class="truncate">{label(row)}</span>
-					<span class="shrink-0 text-muted-foreground">not from Honeycrisp</span>
-				</li>
-			{/each}
-			{#if unpushed?.kv}
-				<li class="flex gap-2">
-					<span class="truncate">kv.json</span>
-					<span class="shrink-0 text-muted-foreground">changed</span>
-				</li>
-			{/if}
 		</ul>
 
 		<AlertDialog.Footer>

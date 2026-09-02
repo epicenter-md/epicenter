@@ -39,9 +39,9 @@
 {:else}
 	{#await db.ready}
 		<Loading class="h-dvh" label="Opening your notes…" />
-	{:then { data, syncStatus, pull }}
+	{:then { data, syncStatus, pull, diff, push }}
 		<HoneycrispProvider {data}>
-			<StoreShell {syncStatus} {pull} />
+			<StoreShell {syncStatus} {pull} {diff} {push} />
 		</HoneycrispProvider>
 	{:catch error}
 		<AccountGate {error} />

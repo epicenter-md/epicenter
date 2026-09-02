@@ -13,7 +13,14 @@ type PrincipalId = Extract<
 >['principalId'];
 
 import type { ReplicaData } from '@epicenter/data';
-import { type CheckoutError, pull } from '@epicenter/data/artifact/checkout';
+import {
+	type CheckoutError,
+	type ConflictResolutions,
+	diff,
+	type PushPlan,
+	pull,
+	push,
+} from '@epicenter/data/artifact/checkout';
 import {
 	type DatabaseAccount,
 	eraseGenerations,
@@ -97,6 +104,20 @@ export type AccountDatabase = {
 	pull(options?: {
 		discardEdits?: boolean;
 	}): Promise<Result<{ files: number }, CheckoutError>>;
+	/** What a push would do, changing nothing (ADR-0337). */
+	diff(): Promise<Result<PushPlan, CheckoutError>>;
+	/**
+	 * Send the folder's values back, then re-render.
+	 *
+	 * `plan` is what `diff` said and a person agreed to, and a push that finds
+	 * it is no longer true refuses rather than applying an answer to a question
+	 * that changed. `resolutions` answers the conflicts it named, keyed by
+	 * `conflictKey`.
+	 */
+	push(options: {
+		plan: PushPlan;
+		resolutions?: ConflictResolutions;
+	}): Promise<Result<{ rows: number; values: number }, CheckoutError>>;
 };
 
 type Opened<TDatabase> = TDatabase & AsyncDisposable;
@@ -170,15 +191,17 @@ async function openAccountReplica({
 			return status.denied ? undefined : status;
 		},
 		pull: ({ discardEdits = false } = {}) =>
-			pull({
+			pull({ ...folderArguments(data, generation), discardEdits }),
+		diff: () =>
+			diff({
 				data,
 				definition: honeycrispDefinition,
 				dataId: honeycrispDefinition.id,
-				generation,
 				baseURL: data.baseURL,
 				principalId: data.principalId,
-				discardEdits,
 			}),
+		push: ({ plan, resolutions = {} }) =>
+			push({ ...folderArguments(data, generation), plan, resolutions }),
 		async [Symbol.asyncDispose]() {
 			stopHideFlush();
 			connection[Symbol.dispose]();
@@ -209,6 +232,26 @@ export async function resolveAccountGeneration(
 	});
 	if (resolved.error !== null) throw resolved.error;
 	return resolved.data.generation;
+}
+
+/**
+ * What every folder verb needs, spelled once (ADR-0337).
+ *
+ * The manifest records which store and which generation it was pulled from, so
+ * a caller cannot supply half of that and a component never supplies any of it.
+ */
+function folderArguments(
+	data: ReplicaData<typeof honeycrispDefinition>,
+	generation: number,
+) {
+	return {
+		data,
+		definition: honeycrispDefinition,
+		dataId: honeycrispDefinition.id,
+		generation,
+		baseURL: data.baseURL,
+		principalId: data.principalId,
+	};
 }
 
 /** The account half of every call in this file, spelled once. */

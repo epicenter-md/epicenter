@@ -51,14 +51,17 @@ puts them there by itself (ADR-0337). `PullToFolder.svelte` is the button; the
 verb is `pull` on the object `openAccountDatabase` returns, bound to this store
 and this generation because those are what the manifest records.
 
-A pull refuses a folder holding edits nobody sent back, and shows them. That is
-the one refusal, and discarding is a second deliberate act. It also refuses
+A pull refuses a folder holding edits nobody sent back, and shows them. Sending
+them back or discarding them are both second deliberate acts. It also refuses
 where there is no folder at all, which is every ordinary browser tab: a page
 has no filesystem, and the copy says so rather than offering a retry.
 
-`push` does not exist yet, so an edit in the folder has no way home, and the
-dialog says that rather than naming a verb this app does not have. When push
-lands, that sentence is the one to rewrite.
+`SendFolderEdits.svelte` is the other direction: `diff` shows what a push would
+do, and `push` sends it and re-renders. A push carrying anything it cannot apply
+applies nothing, because the re-render at the end would overwrite whatever it
+left behind. What it cannot apply is listed in ADR-0337 and said in the person's
+words in that component: an edited body, a new file, a deleted file, an edited
+`kv.json`, and a removed frontmatter line.
 
 ## Three builds, one store shape
 

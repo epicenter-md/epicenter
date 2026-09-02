@@ -13,14 +13,19 @@
 	import { navigation } from '$lib/navigation.svelte.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 	import PullToFolder from './PullToFolder.svelte';
+	import SendFolderEdits from './SendFolderEdits.svelte';
 	import type { AccountDatabase } from '$lib/databases.js';
 
 	let {
 		syncStatus,
 		pull,
+		diff,
+		push,
 	}: {
 		syncStatus: () => SyncConnectionStatus | undefined;
 		pull: AccountDatabase['pull'];
+		diff: AccountDatabase['diff'];
+		push: AccountDatabase['push'];
 	} = $props();
 
 	const honeycrisp = getHoneycrisp();
@@ -128,6 +133,7 @@
 
 	<Sidebar.Footer>
 		{#if HAS_FOLDER}
+			<SendFolderEdits {diff} {push} />
 			<PullToFolder {pull} />
 		{/if}
 		{#if sync}

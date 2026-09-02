@@ -16,9 +16,13 @@
 	let {
 		syncStatus,
 		pull,
+		diff,
+		push,
 	}: {
 		syncStatus: () => SyncConnectionStatus | undefined;
 		pull: AccountDatabase['pull'];
+		diff: AccountDatabase['diff'];
+		push: AccountDatabase['push'];
 	} = $props();
 
 	const honeycrisp = getHoneycrisp();
@@ -40,7 +44,7 @@
 />
 
 <SidebarProvider>
-	<HoneycrispSidebar {syncStatus} {pull} />
+	<HoneycrispSidebar {syncStatus} {pull} {diff} {push} />
 
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">
