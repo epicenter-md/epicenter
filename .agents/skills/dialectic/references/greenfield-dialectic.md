@@ -1,62 +1,62 @@
 # Greenfield dialectic
 
-This reference shows the agent proposing an uncompromising vision of the whole
-interaction, then changing its shape when the human reveals a deeper crux.
+This reference shows the agent proposing whole visions of an interaction, then
+changing their shape when the human reveals a deeper crux. Every vision is a
+lived sequence, not a description of a protocol.
 
 ## Human
 
-I keep giving an assistant messy discussions and asking what I need to know. It
-keeps giving me a retrospective summary, a bunch of explanation, and then a
-question at the end. By the time I get there I have lost the thing I was trying
-to understand. I want the cleanest version of how this interaction should work,
-not another description of the failure.
+Second-device setup is bad. I know it is bad. I have a QR code flow half
+designed and I hate it and I cannot say why. I do not want another summary of
+the options.
 
 ## Agent
 
-> **When you ask for a dialectic, the assistant should put the strongest whole
-> vision it can see in front of you before explaining the material that led
-> there. You react to that vision; the assistant turns your reaction into a
-> changed vision. The conversation keeps presenting futures you can recognize,
-> reject, or redirect until one is right.**
+> **You install it on the new laptop and it is already yours. No sign-in screen,
+> no code to type across the room: you open it and your notes are there, because
+> the only thing that ever made a device yours was the account you already used
+> to get the app. The first thing you see is your own work. There is no setup
+> step to fail at, so there is no setup step to design.**
 
-```txt
-your messy material
-        ↓
-one whole greenfield vision
-        ↓
-your reaction to the vision
-        ↓
-the next, changed vision
-```
+Or:
 
-The history remains available as pressure on the vision. It never becomes the
-main thing you have to read.
+> **The new laptop is a guest until you say otherwise. You open it and see
+> nothing, and your old laptop lights up across the desk: a new machine wants
+> in. You approve it there, watch the notes arrive, and close the loop yourself.
+> The pause is the product. It is the one moment you ever find out your work
+> lives somewhere that can be asked for permission.**
+
+The first says setup is a fossil of treating the device as the unit of identity.
+The second says the pause is worth keeping and the QR code was only ever a clumsy
+way to hold it. Which one is right turns on whether you want the person to
+notice the second device at all.
+
+The edge I invented: both assume the person already has an account. If a second
+device can be someone's first contact with the app, neither one survives.
 
 ## Human
 
-Yes, that is much closer. But I do not know if it should always be one vision.
-Sometimes the whole reason I cannot tell what I think is that there are two
-strong ways of seeing it, and choosing one too early hides the thing I need to
-react to. Also, I am going to give you a long, repetitive, half-formed response
-most of the time. I do not want you to answer in the same shape. I want you to
-figure out what actually changed and put that in front of me.
+The second one. But not for the security reason, I do not really care about
+that. I think I like it because it is the only moment anybody finds out sync
+exists. Right now people never learn that, and then they get scared later when
+something moves on its own.
 
 ## Agent
 
-> **The assistant should present the smallest set of uncompromising visions
-> needed to expose the real choice: one when a stronger account exists, several
-> when their collision is the point. Your meandering reaction is compressed into
-> the next whole vision, while every other sentence stays subordinate to making
-> that vision recognizable and correctable.**
+> **Approval is where you teach sync, so it should show the thing it is teaching.
+> The new laptop sits empty and waiting. You approve from the old one, and the
+> notes do not appear finished: they arrive, visibly, one after another, and the
+> old laptop says out loud that it is the one sending them. Thirty seconds, once
+> in a lifetime. From then on, when something moves on its own, the person has
+> already watched it happen and knows what it was.**
 
 ```txt
-vision A  ↔  vision B
-              ↓
-       your reaction
-              ↓
-      stronger whole vision
+empty second device
+        -> you approve, on the device that has the work
+        -> arrival you can watch
+        -> nothing surprises you again
 ```
 
-The unresolved question is whether the assistant is still allowed to explain
-the collision after showing the visions, or whether explanation should appear
-only when the vision itself cannot yet be judged.
+The edge I invented: I made the transfer visible rather than instant, which
+costs real seconds on a slow connection. If that trade is wrong the teaching has
+to happen somewhere else.

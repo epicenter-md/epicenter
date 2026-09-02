@@ -1,40 +1,40 @@
 ---
 name: dialectic
-description: "Make an unsettled model intelligible through the deliberate collision of ambitious articulations. Use when the user asks for a dialectic, wants a full articulation of a model, or wants to understand, correct, or redesign an unsettled product, architecture, codebase, decision, or way of working."
+description: "Make an unsettled model intelligible through the deliberate collision of concrete articulations. Use when the user asks for a dialectic, wants a full articulation of a model, or wants to understand, correct, or redesign an unsettled product, architecture, codebase, decision, or way of working."
 ---
 
 # Dialectic
 
-A dialectic is the deliberate collision of ambitious articulations: visions of
-what should exist and how it should work, often uncompromising greenfield
-clean-break visions that can be built backward from. Their differences,
-consequences, and refusals expose the cruxes that the next articulation must
-resolve. The human and agent trade these visions, and each reaction shows what
-is right, wrong, missing, or newly possible. Through repeated re-articulation,
-the model becomes intelligible or produces a vision the user can recognize and
-say, in effect, “that’s right.”
+A dialectic is the deliberate collision of concrete articulations. Someone
+arrives with a half-formed thing they cannot say, and says it badly anyway. The
+agent returns something confident and specific, and it is wrong in a way that
+can be pointed at. The pointing is the mechanism: the user finds out what they
+meant by having something particular in front of them to be annoyed by. Through
+repeated re-articulation the model becomes intelligible, or produces an account
+the user can recognize and say, in effect, “that’s right.”
 
 Every turn must leave the live articulation or articulations visible. Make the
-main surface the articulation itself: an uncompromising greenfield vision of
-what should exist and how it should work. A block quote is often the right
-surface, but it may contain prose, an ASCII diagram, code, or another direct
-rendering when that makes the vision whole. It may be as expansive as the
-vision requires, but it must contain no history of how it was reached, evidence
-collection, summary of the user's material, or explanation of the answer. Do
-not announce it with self-referential labels such as “my current model” or
-narrate the path that produced it. When multiple accounts are live, keep them
-distinct rather than flattening them into a summary. The user should be able
-to accept, reject, or correct the account itself.
+main surface the articulation itself: a particular situation rendered closely
+enough that the user can point at what is wrong with it. A block quote is often
+the right surface, but it may contain prose, an ASCII diagram, code, or another
+direct rendering when that makes the vision whole. It may be as expansive as the
+vision requires, but leave the user's words entirely: do not return their own
+material to them in better grammar, go to the situation their words were about.
+The surface carries no history of how it was reached, no evidence collection,
+and no explanation of the answer. Do not announce it with self-referential
+labels such as “my current model” or narrate the path that produced it. When
+multiple accounts are live, keep them distinct rather than flattening them into
+a summary. The user should be able to accept, reject, or correct the account
+itself.
 
 ## What an articulation is
 
-An articulation is an uncompromising vision of what should exist and how it
-should work: the cleanest model with inherited constraints suspended. It is the
-account we could build backward from. Keep the model whole. State it plainly
-and efficiently, and allow it to be deliberately oversimplified. It is complete
-in meaning but does not need to be fully justified before it is offered.
-Ambition comes from the scope and consequences of the claim, not from its
-length. It is not a preference label, an implementation option, or a softened
+An articulation is a rendering the user can stand inside and be specifically
+wrong about. It may describe what exists or propose what should exist; that
+difference is secondary. What matters is that it is particular enough to be
+pointed at. Keep the model whole and allow it to be deliberately oversimplified.
+It is complete in meaning but does not need to be justified before it is
+offered. It is not a preference label, an implementation option, or a softened
 summary that hides the disagreement.
 
 > **Describe the people, decisions, handoffs, and lived sequence in human terms,
@@ -42,10 +42,17 @@ summary that hides the disagreement.
 > vision.**
 
 The vision must be enterable, not merely defensible. Render what it would be
-like to inhabit the proposed whole: what the person is trying to do, what they
+like to inhabit the whole: what the person is trying to do, what they
 encounter, what they can now decide or accomplish, and what the system carries
 for them. Human-centric describes the viewpoint from which the model is made
 intelligible, not a checklist of nouns to include.
+
+Reaching that concreteness means inventing material the user never supplied.
+Invent it without hedging, then name the two or three places it came from
+nothing. Those are where the user's reaction is worth the most, because they are
+where the agent had least to go on. Uncertainty never appears inside the
+articulation; it appears after it, as a short line saying what was filled in and
+what would collapse if the guess is wrong.
 
 The agent should make its strongest account, not wait for certainty. A wrong
 articulation is useful because the user's reaction supplies the next evidence.
@@ -132,14 +139,14 @@ useful only when it moves the model forward.
 
 The user's reaction may be meandering, repetitive, partial, or uncertain. Do
 not mirror that shape. Extract the directional evidence, identify the crux, and
-respond with the tightest account that preserves the ambition of the next
+respond with the tightest account that preserves the concreteness of the next
 articulation. Tightness means removing conversational processing, not shrinking
 the vision.
 
 ## Make the collision checkable
 
-State the whole articulation first, then render enough of the proposed future
-for the user to enter it and react to what is actually being proposed. Choose
+State the whole articulation first, then render enough of the situation for the
+user to enter it and react to what is actually being claimed. Choose
 the surface from the subject: show the lived sequence or concrete interaction
 for a workflow or product, proposed code or structural shape for architecture
 or code, and the direct representation that makes another kind of model

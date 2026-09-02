@@ -1,53 +1,51 @@
 # Learning dialectic
 
-This reference shows the agent making an unsettled model intelligible through
-successive articulations. The human is allowed to wander; the agent compresses
-the reaction into a changed account.
+This reference shows the agent making an unsettled model intelligible. Every
+agent turn puts a person in a moment rather than defining an abstraction, and
+names where it filled a gap from nothing.
 
 ## Human
 
-I am trying to understand what a dialectic actually is, and I keep getting
-answers that sound like summaries of the conversation. I know there is
-something about collisions and articulations, but I cannot tell whether the
-dialectic is the process, the thing we produce, or just a fancy way of asking
-questions. I might be mixing together a bunch of different things here.
+I do not get what "authority" means here. I have read the ADR twice. I know one
+side is supposed to be authoritative but I cannot tell what that actually buys
+me, or when it matters.
 
 ## Agent
 
-> **A dialectic is a conversation that keeps replacing its explanation with a
-> stronger articulation of the thing at issue. The human’s reaction reveals
-> where that articulation is still false, incomplete, or pointed at the wrong
-> thing.**
+> **You are on a plane with your laptop, editing a note. Your phone is in your
+> bag, offline, holding the same note from this morning. Neither one is wrong.
+> When you land they meet, and what decides the note is not a winner-picks rule:
+> both edits were always going to survive. Authority is not about which copy is
+> right. It answers a narrower question: who is allowed to hand you a fact you
+> can act on. Your laptop can hold the truth about your note. It cannot hold the
+> truth about whether your subscription is still valid.**
 
-Is the missing distinction whether the articulation is the product, while the
-dialectic is the movement that keeps changing it?
+The edge I invented: I am assuming your confusion is authority against
+correctness, not authority against sync. If it is the second one, this misses.
 
 ## Human
 
-That is closer, but “product” feels wrong because it sounds like we eventually
-make a thing and then we are done. I think the articulation is more like the
-thing we keep putting in front of each other. And maybe the collision is not
-just what finds errors in it. Sometimes I do not know what I mean until I see a
-version that is wrong in a very specific way. So I am not sure whether the
-reaction is evidence about the articulation or whether the reaction is part of
-how the articulation becomes intelligible.
+The plane thing helped but I think I am stuck somewhere else. It is not that I
+cannot tell which one wins. It is that I do not know why there needs to be a
+word for it at all. The note case just works on its own. So what went wrong that
+made somebody invent this.
 
 ## Agent
 
-> **A dialectic makes an unsettled model intelligible by trading whole
-> articulations until one can be recognized. The collision is the movement:
-> each reaction changes the next articulation, rather than merely judging the
-> last one.**
+> **The failure is a lie your own laptop tells you in good faith. You cancel your
+> subscription on the website from your phone. The laptop is asleep in a bag and
+> does not know. You open it, it shows you the paid features, and you use them
+> for an hour. Nothing here is a bug. The laptop reported the last thing it
+> honestly knew. Authority is the name for the fact that some questions have an
+> answer your device is never entitled to give, however recently it checked. The
+> note has no such answer. The subscription does. That line is the whole
+> concept.**
 
 ```txt
-whole articulation
-        ↓
-human collision
-        ↓
-changed articulation
-        ↓
-recognition or another collision
+your note          -> every copy is entitled to speak
+your subscription  -> only the server is entitled to speak
 ```
 
-Is that the right account, or does “until one can be recognized” still make the
-process sound more final than you mean?
+The edge I invented: I am assuming the concept is what is unclear, not the word.
+If "authority" is the wrong name for this and that is what has been snagging
+you, say so and we are in a different conversation.
