@@ -69,9 +69,12 @@ answers `file` or `store` per item; `store` is them saying "keep what is here
 and rewrite that file", which is the discard `pull` already takes for the whole
 folder, at the grain of one file.
 
-Two things have no answer, and both stop the send: a folder nothing ever wrote,
-and a file somebody deleted. A deletion waits on a table naming a trash field
-(ADR-0337), which for Honeycrisp would be `deletedAt`.
+One thing has no answer and stops the send: a folder nothing ever wrote.
+
+Deleting a file deletes the note, for good, without passing through Recently
+Deleted (ADR-0338). Trashing a note through the folder is the other gesture:
+set `deletedAt` in the frontmatter, which is an ordinary value edit. No table
+declares a trash field and none should.
 
 A file an agent wrote becomes a note and **is renamed**, because a note's id is
 minted rather than chosen. That is in the plan before a person agrees to it, and

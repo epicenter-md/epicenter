@@ -109,7 +109,8 @@
 			subject:
 				item.kind === 'value' ||
 				item.kind === 'conflict' ||
-				item.kind === 'body'
+				item.kind === 'body' ||
+				item.kind === 'deletion'
 					? label(item)
 					: item.path,
 			what: went(item),
@@ -124,6 +125,8 @@
 				return `${item.name} changed`;
 			case 'body':
 				return 'the text changed';
+			case 'deletion':
+				return 'the file was deleted, and sending would delete the note';
 			case 'admission':
 				return 'a file that is not a note yet';
 			case 'discard':
@@ -131,7 +134,7 @@
 					.map((note) => note.name ?? note.reason)
 					.join(', ');
 			case 'block':
-				return item.reason === 'no-base' ? 'never written by Honeycrisp' : 'the file is gone';
+				return 'never written by Honeycrisp';
 		}
 	}
 </script>

@@ -2,11 +2,11 @@
  * The working copy in `~/Epicenter`, and the wire it travels on (ADR-0337).
  *
  * **This file is not the design any more.** ADR-0338 is where it is going: a
- * push applies the folder whole after one approval, validates nothing, deletes
- * a row when its file is gone, and reads a removed frontmatter line as `null`.
- * What is here still asks a person `file` or `store` per item and refuses four
- * things the store itself would accept. Read the record before building on the
- * shape below; its `Unbuilt:` line names exactly what has not moved yet.
+ * push applies the folder whole after one approval. What is here validates
+ * nothing, deletes a row when its file is gone, and reads a removed
+ * frontmatter line as `null`, and it still asks a person `file` or `store` per
+ * item. Read the record before building on the shape below; its `Unbuilt:`
+ * line names exactly what has not moved yet.
  *
  * ```txt
  * ~/Epicenter/<data-id>/
@@ -25,10 +25,10 @@
  * **The manifest is the base**, which is what makes those the same question
  * with one answer. `pull` wrote down what it handed over and when, so at push
  * a changed value is an edit and a missing file is a deletion, and there is no
- * watcher, no echo suppression, and no per-file base store to keep. What a
- * deletion cannot yet do is land anywhere, so it is named in the plan rather
- * than guessed at, and a person answers it. `PlanItem` is the whole vocabulary
- * of what a plan can say and what may be answered to it.
+ * watcher, no echo suppression, and no per-file base store to keep. A deletion
+ * lands as a deletion: the row goes, and it does not pass through the
+ * application's trash on the way (ADR-0338). `PlanItem` is the whole
+ * vocabulary of what a plan can say and what may be answered to it.
  *
  * ## Who owns which half
  *
@@ -688,6 +688,15 @@ export type PushableData = RenderableData & {
 					rowId: string,
 					fields: JsonObject,
 				): Result<void, { name: string; message: string }>;
+				/**
+				 * Take the row off the table, its content node and all.
+				 *
+				 * Returns nothing, because deleting an address that holds no row is
+				 * a no-op fact rather than an outcome: another device may have
+				 * deleted the same note between the plan and the push, and the
+				 * result a person asked for is the one they get.
+				 */
+				delete(rowId: string): void;
 			}
 		>
 	>;
@@ -717,6 +726,7 @@ export type PlanItem =
 	| PlannedConflict
 	| PlannedBody
 	| PlannedAdmission
+	| PlannedDeletion
 	| PlannedDiscard
 	| PlannedBlock;
 
@@ -815,6 +825,31 @@ export type PlannedAdmission = {
 };
 
 /**
+ * A file the manifest named and the folder no longer holds, which deletes the
+ * row (ADR-0338).
+ *
+ * The base is what makes this a fact rather than a guess: `pull` wrote down
+ * what it handed over, so a file that is gone is a file somebody removed.
+ * ADR-0337 refused it for want of somewhere to put it, and the answer is that
+ * there is nowhere to put it: **the row is deleted, and it does not pass
+ * through the application's trash on the way.** Trashing a note through the
+ * folder is setting `deletedAt` in the frontmatter, which is an ordinary value
+ * edit. So both gestures exist and they are different, and the copy has to say
+ * which one this is, because every other delete in an application like
+ * Honeycrisp is recoverable and this one is not.
+ *
+ * No trash key on `TableDeclaration`: it would reserve a third key beside `id`
+ * and `content` to teach the platform one application's trash view (ADR-0309,
+ * ADR-0338).
+ */
+export type PlannedDeletion = {
+	readonly kind: 'deletion';
+	readonly path: string;
+	readonly table: string;
+	readonly rowId: string;
+};
+
+/**
  * A file the push cannot carry as it stands, and the re-render will overwrite.
  *
  * One per path rather than one per problem, because they all resolve the same
@@ -859,7 +894,9 @@ export type DiscardReason =
 /**
  * Something no answer resolves, so the push cannot run at all.
  *
- * Two, and each waits on its own record rather than on a better dialog.
+ * One, now that a missing file deletes its row (ADR-0338): a folder nothing
+ * ever wrote is not a plan, because nothing in it can be told from what the
+ * store already has.
  */
 export type PlannedBlock = {
 	readonly kind: 'block';
@@ -867,28 +904,15 @@ export type PlannedBlock = {
 	readonly reason: BlockReason;
 };
 
-export type BlockReason =
-	/**
-	 * Nothing wrote down what this folder holds, so nothing in it can be told
-	 * from what the store already has.
-	 *
-	 * Never pulled, manifest deleted, manifest mangled, or manifest written by
-	 * another account. A pull is what gives this folder a base, and with no
-	 * base there is no `store` answer to give either: every file here might be
-	 * work nobody has ever sent.
-	 */
-	| 'no-base'
-	/**
-	 * The file is gone, which is a deletion, and this table has nowhere to put
-	 * one.
-	 *
-	 * Where a table names a trash field it lands there as a value (ADR-0337).
-	 * No table can name one yet, so every deletion is refused rather than
-	 * guessed at, which is the interim that record names. Not answerable as
-	 * `store` either: the re-render would put the file back, which is the
-	 * resurrecting folder ADR-0337 refused by name.
-	 */
-	| 'file-missing';
+/**
+ * Nothing wrote down what this folder holds, so nothing in it can be told from
+ * what the store already has.
+ *
+ * Never pulled, manifest deleted, manifest mangled, or manifest written by
+ * another account. A pull is what gives this folder a base, and with no base
+ * every file here might be work nobody has ever sent.
+ */
+export type BlockReason = 'no-base';
 
 /** What a push would do, item by item, and what it will not (ADR-0337). */
 export type PushPlan = readonly PlanItem[];
@@ -907,6 +931,7 @@ export function answersFor(item: PlanItem): readonly PlanAnswer[] {
 		case 'discard':
 			return ['store'];
 		case 'value':
+		case 'deletion':
 		case 'block':
 			return [];
 	}
@@ -927,6 +952,7 @@ export function answerKey(item: PlanItem): string {
 		case 'body':
 			return `${item.path}#${CONTENT_FIELD}`;
 		case 'admission':
+		case 'deletion':
 		case 'discard':
 		case 'block':
 			return item.path;
@@ -1029,7 +1055,25 @@ async function planPush(
 
 		const contents = held.files.get(path);
 		if (contents === undefined) {
-			items.push({ kind: 'block', path, reason: 'file-missing' });
+			// The base is what makes this a deletion rather than a guess: `pull`
+			// wrote down that it handed this file over, so its absence is
+			// somebody removing it (ADR-0338).
+			const declared = definition.tables.get(address.table);
+			if (declared === undefined) {
+				// No handle to delete through, and its rows still render
+				// (ADR-0240), so the re-render puts this file back. That is what a
+				// discard is, and it is the honest thing to say about a table this
+				// release no longer declares.
+				discard('table-undeclared');
+				flush();
+				continue;
+			}
+			if ((await renderedRow(data, definition, address)) === undefined) {
+				// The row went while the file did. Both sides already agree, so
+				// there is nothing to say and nothing to delete.
+				continue;
+			}
+			items.push({ kind: 'deletion', path, ...address });
 			continue;
 		}
 		const file = readRowFile(contents);
@@ -1277,7 +1321,7 @@ function samePlan(left: PushPlan, right: PushPlan): boolean {
  * it now costs a person almost nothing: `store` on an item is them saying "let
  * what I have here stand, and rewrite that file", which is the consent `pull`
  * already takes for the whole folder at the grain of one file. What is left
- * unanswerable is {@link PlannedBlock}, both of which wait on their own record.
+ * unanswerable is {@link PlannedBlock}, which is a folder nothing ever wrote.
  *
  * **It takes the plan a person confirmed and checks it is still the plan.** A
  * push that recomputed silently would apply an answer to a conflict whose other
@@ -1339,10 +1383,17 @@ export async function push({
 
 	/** Whether this item is the file's version to apply. */
 	const chosen = (item: PlanItem) => answers[answerKey(item)] === 'file';
-	const outcome = { rows: 0, values: 0, bodies: 0, admitted: [] } as {
+	const outcome = {
+		rows: 0,
+		values: 0,
+		bodies: 0,
+		deleted: 0,
+		admitted: [],
+	} as {
 		rows: number;
 		values: number;
 		bodies: number;
+		deleted: number;
 		admitted: Admitted[];
 	};
 	let failure: { name: string; message: string } | undefined;
@@ -1396,8 +1447,23 @@ export async function push({
 	const ran = trySync({
 		try: () =>
 			data.transact(() => {
-				// Values first, gathered per row, because a row is one write
-				// however many of its fields moved.
+				// Deletions before anything else, so the commit reads in the same
+				// order the overview does: what is gone for good, then what
+				// changed. Nothing else in the plan can name a deleted row, since
+				// every other item is made from a file that is still there.
+				for (const item of plan) {
+					if (item.kind !== 'deletion') continue;
+					const table = data.tables[item.table];
+					if (table === undefined) {
+						broke(`no table '${item.table}'`);
+						continue;
+					}
+					table.delete(item.rowId);
+					outcome.deleted += 1;
+				}
+
+				// Values gathered per row, because a row is one write however many
+				// of its fields moved.
 				const perRow = new Map<
 					string,
 					{ item: PlannedValue | PlannedConflict; fields: JsonObject }
@@ -1532,6 +1598,14 @@ export type PushOutcome = {
 	readonly rows: number;
 	readonly values: number;
 	readonly bodies: number;
+	/**
+	 * Rows deleted because their file is gone (ADR-0338).
+	 *
+	 * Counted separately from `rows`, which is rows a value was written to,
+	 * because this is the one number in here a person cannot undo: a file
+	 * deletion does not pass through the application's trash.
+	 */
+	readonly deleted: number;
 	readonly admitted: readonly Admitted[];
 };
 

@@ -350,13 +350,14 @@ describe('pull refuses a folder holding unpushed edits', () => {
 		});
 		const refused = expectErr(await pullInto(host, data));
 		if (refused.name !== 'WorkingCopyDirty') throw new Error('unreachable');
-		expect(only(refused.plan, 'block')).toEqual({
-			kind: 'block',
+		expect(only(refused.plan, 'deletion')).toEqual({
+			kind: 'deletion',
 			path: `notes/${noteId}.md`,
-			reason: 'file-missing',
+			table: 'notes',
+			rowId: noteId,
 		});
-		// A file nobody pulled is not a block: it is a row waiting to be made,
-		// which is what stops one stray file wedging both directions.
+		// A file nobody pulled is a row waiting to be made, which is what stops
+		// one stray file wedging both directions.
 		expect(only(refused.plan, 'admission')).toEqual({
 			kind: 'admission',
 			path: 'notes/handwritten.md',
@@ -577,9 +578,10 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a deletion blocks and a new file does not', async () => {
-		// The asymmetry is the point. A deletion has nowhere to go and no answer
-		// stands in for one; a new file has two answers and both are honest.
+	test('a deletion deletes and a new file is admitted', async () => {
+		// The manifest is what tells them apart: a file it named and the folder
+		// no longer holds is somebody deleting a note, and one it never named is
+		// a row waiting to be made (ADR-0338).
 		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
 			folder.delete(`notes/${id}.md`);
 			folder.set(
@@ -588,10 +590,11 @@ describe('diff plans what push would do (ADR-0337)', () => {
 			);
 		});
 		const plan = expectOk(await planOf(host, data));
-		expect(only(plan, 'block')).toEqual({
-			kind: 'block',
+		expect(only(plan, 'deletion')).toEqual({
+			kind: 'deletion',
 			path: `notes/${noteId}.md`,
-			reason: 'file-missing',
+			table: 'notes',
+			rowId: noteId,
 		});
 		expect(only(plan, 'admission')).toEqual({
 			kind: 'admission',
@@ -692,7 +695,13 @@ describe('push sends the values back and re-renders', () => {
 		const plan = expectOk(await planOf(host, data));
 
 		const pushed = expectOk(await sendBack(host, data, plan));
-		expect(pushed).toEqual({ rows: 1, values: 1, bodies: 0, admitted: [] });
+		expect(pushed).toEqual({
+			rows: 1,
+			values: 1,
+			bodies: 0,
+			deleted: 0,
+			admitted: [],
+		});
 		expect(data.tables.notes.get(noteId)?.title).toBe('Shopping');
 
 		// The re-render is what makes the folder never dirty after a push, so a
@@ -728,7 +737,13 @@ describe('push sends the values back and re-renders', () => {
 		);
 		// Nothing is written, because answering `store` is writing what is
 		// already there. The re-render is what settles the file.
-		expect(pushed).toEqual({ rows: 0, values: 0, bodies: 0, admitted: [] });
+		expect(pushed).toEqual({
+			rows: 0,
+			values: 0,
+			bodies: 0,
+			deleted: 0,
+			admitted: [],
+		});
 		expect(data.tables.notes.get(noteId)?.title).toBe('Q3 planning');
 		expect(host.folder.get(`notes/${noteId}.md`)).toContain('"Q3 planning"');
 		await data[Symbol.asyncDispose]();
@@ -1007,18 +1022,31 @@ describe('push sends the values back and re-renders', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a deletion stops the send however everything else is answered', async () => {
-		// The one thing left with no answer, and it waits on a table naming a
-		// trash field rather than on a better dialog.
+	test('a deleted file deletes the note, and nothing is asked about it', async () => {
+		// Trashing a note through the folder is setting `deletedAt`, which is an
+		// ordinary value edit. Removing the file is the other gesture, and it
+		// skips Recently Deleted (ADR-0338).
 		const { host, data, noteId } = await edited(['"Groceries"', '"Shopping"']);
 		host.folder.delete(`notes/${noteId}.md`);
 		const plan = expectOk(await planOf(host, data));
+		expect(answersFor(only(plan, 'deletion'))).toEqual([]);
 
-		const refused = expectErr(await sendBack(host, data, plan, takeFile(plan)));
-		expect(refused.name).toBe('PushIncomplete');
-		if (refused.name !== 'PushIncomplete') throw new Error('unreachable');
-		expect(refused.unanswered).toEqual([]);
-		expect(only(refused.plan, 'block').reason).toBe('file-missing');
+		const pushed = expectOk(await sendBack(host, data, plan));
+		expect(pushed.deleted).toBe(1);
+		expect(data.tables.notes.get(noteId)).toBeUndefined();
+		// The re-render writes the folder from the store, so the file stays gone
+		// rather than coming back at the next pull.
+		expect(host.folder.has(`notes/${noteId}.md`)).toBe(false);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a note deleted here and its file deleted there is nothing to say', async () => {
+		// Both sides already agree, so the plan is empty rather than carrying a
+		// deletion that would delete an address holding no row.
+		const { host, data, noteId } = await edited(['"Groceries"', '"Shopping"']);
+		host.folder.delete(`notes/${noteId}.md`);
+		data.tables.notes.delete(noteId);
+		expect(expectOk(await planOf(host, data))).toEqual([]);
 		await data[Symbol.asyncDispose]();
 	});
 

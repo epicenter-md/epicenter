@@ -42,6 +42,16 @@
 	const applied = $derived(
 		plan?.filter((item) => item.kind === 'value') ?? [],
 	);
+	/**
+	 * Notes whose file is gone, which this send deletes for good.
+	 *
+	 * Nothing is asked about them, so they are shown first and shown apart:
+	 * every other delete in Honeycrisp lands in Recently Deleted and this one
+	 * does not.
+	 */
+	const deleting = $derived(
+		plan?.filter((item) => item.kind === 'deletion') ?? [],
+	);
 	/** Everything a person answers, in the order the plan named it. */
 	const asked = $derived(
 		plan?.filter((item) => answersFor(item).length > 0) ?? [],
@@ -70,6 +80,7 @@
 			case 'value':
 			case 'conflict':
 			case 'body':
+			case 'deletion':
 				return title(item);
 			case 'admission':
 			case 'discard':
@@ -152,8 +163,6 @@
 		switch (item.reason) {
 			case 'no-base':
 				return 'Nothing here wrote this folder, so nothing in it can be told apart from what you already have. Save notes as files first.';
-			case 'file-missing':
-				return 'Deleting a file cannot delete a note yet. Put the file back, or delete the note here.';
 		}
 	}
 
@@ -218,9 +227,15 @@
 	function landed(done: {
 		values: number;
 		bodies: number;
+		deleted: number;
 		admitted: readonly unknown[];
 	}): string {
 		const parts: string[] = [];
+		if (done.deleted > 0) {
+			parts.push(
+				`${done.deleted} note${done.deleted === 1 ? '' : 's'} deleted for good`,
+			);
+		}
 		if (done.values > 0) {
 			parts.push(`${done.values} value${done.values === 1 ? '' : 's'}`);
 		}
@@ -284,7 +299,11 @@
 	<AlertDialog.Content class="max-w-xl">
 		<AlertDialog.Header>
 			<AlertDialog.Title>
-				{applied.length} change{applied.length === 1 ? '' : 's'} to send
+				{applied.length + deleting.length} change{applied.length +
+					deleting.length ===
+				1
+					? ''
+					: 's'} to send
 				{#if asked.length > 0}
 					, {asked.length} to decide
 				{/if}
@@ -307,6 +326,19 @@
 								<span class="font-mono">{item.path}</span>
 								<span class="text-muted-foreground"> {blocked(item)}</span>
 							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
+			{#if deleting.length > 0}
+				<div class="space-y-1">
+					<p class="font-medium text-destructive">
+						Deleted for good, not moved to Recently Deleted:
+					</p>
+					<ul class="space-y-1">
+						{#each deleting as item (item.path)}
+							<li class="truncate">{subject(item)}</li>
 						{/each}
 					</ul>
 				</div>
