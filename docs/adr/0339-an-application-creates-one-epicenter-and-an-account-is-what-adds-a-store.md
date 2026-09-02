@@ -71,9 +71,6 @@ type Epicenter<TDefinition extends DataDefinition = never> = {
 			readonly data: Promise<
 				Result<ReplicaData<TDefinition>, StoreError | DataDefinitionParseError>
 			>;
-			importReplica(
-				from: Uint8Array,
-			): Promise<Result<{ generation: number }, StoreError>>;
 			eraseReplica(): Promise<Result<void, StoreError>>;
 		});
 ```
@@ -135,23 +132,25 @@ export, which a browser cannot do yet (ADR-0325). When that changes the surface
 is a read-only `generations.list()` and an exact `generations.open(n)` for a
 rescue, each one existing function made public. Neither is decided here.
 
-**`importReplica` posts the state, writes it locally, and the application
-reloads.** `data` is memoized, so the store a page holds after an import is
-still the one it opened. ADR-0293's "redirect to the generation's URL" becomes a
-document reload, after which `data` resolves the new number by itself. It is
-never retried: a lost response after the authority admitted the state is
-answered by listing and comparing, not by posting again, because a blind retry
-mints a second generation.
+**The handle has no verb that creates a generation, and that is a statement
+about now rather than about the shape.** `createGeneration(definition, { appId,
+from, account })` already takes the bytes and already mints a number; nothing
+outside `resolveGeneration`'s empty-first-run arm calls it, so every account
+holds generation 1 and the second one cannot yet exist. A handle method with no
+caller would be a promise made in a type instead of in prose, so the promise is
+here.
 
-**A device holding an older generation is told a newer one exists.** After
-`data` resolves from a held copy, the handle lists the authority's generations
-in the background and exposes whether a higher number exists, with one action
-that fetches it and reloads. This is ADR-0281's notice, specified there and
-never built, and it becomes load-bearing here: cache-first resolution means a
-second device that holds generation 3 opens 3 on every boot without ever asking
-the authority, and deleting `/account/[generation]` removes the only other way a
-person could reach a newer number. The check runs after the open and never
-delays it, so ADR-0292's refusal of a listing before every open stands.
+**Two things must land together when it does.** An import must end with the
+application reloading, because `data` is memoized and the store a page holds
+after an import is still the one it opened; ADR-0293's "redirect to the
+generation's URL" becomes a document reload, after which `data` resolves the new
+number itself. And a device holding an older generation must be told a newer one
+exists, because cache-first resolution means a second device that holds
+generation 3 opens 3 on every boot without ever asking the authority. That is
+ADR-0281's notice, specified there and never built, and this record is what
+makes it load-bearing: deleting `/account/[generation]` removes the only other
+way a person could reach a newer number. Neither is built here, and shipping an
+import without the notice would strand a device silently.
 
 **Two renames follow from putting `account` on the handle.** `eraseLocalData` is
 `eraseReplica`, because it erases this device's copy and touches nothing at the
