@@ -6,14 +6,12 @@
  *
  * Three capabilities, three owners, and only one of them is the host's.
  *
- * **Data stays client-owned.** The store lives in the WebView, exactly as it
- * does in a browser tab, because the host serves bundles and brokers
- * credentials and owns no application data (ADR-0226, ADR-0227). What the host
- * contributes at `openData` is admission: the application sends its definition
- * IDENTITY, and the owner answers from the first-party definitions its own
- * release imports (ADR-0313). A release that ships an application whose data id
- * nothing declares fails loudly at open, rather than quietly minting a store
- * under an id no host verb can address.
+ * **Data stays client-owned, and the host contributes nothing to it.** The
+ * store lives in the WebView, exactly as it does in a browser tab, because the
+ * host serves bundles and brokers credentials and owns no application data
+ * (ADR-0226, ADR-0227). `openData` is the same call here as in a browser: a
+ * deployed app is a trusted app (ADR-0334), so there is no admission round trip
+ * and no second party whose answer could mean anything.
  *
  * **SQLite is a Bun-owned file.** The owner maps `(appId, name)` to a path
  * below the one Epicenter data root; the application sends statements and never
@@ -57,7 +55,8 @@ export function createDesktopBinding(
 		// No admission round trip. A deployed app is a trusted app (ADR-0334),
 		// and the store is client-owned in every runtime (ADR-0226), so there
 		// was never a second party whose answer could mean anything.
-		openData: async (definition) => openClientOwnedData(definition),
+		openData: async (definition, account) =>
+			openClientOwnedData(definition, account),
 		openSqlite: async (name) => Ok(createOwnedSqlite(request, appId, name)),
 		deleteSqlite: (name) =>
 			unwrap(

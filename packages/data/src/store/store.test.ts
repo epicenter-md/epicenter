@@ -9,16 +9,11 @@ import {
 } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
-import { createSqliteDurablePort } from './log.js';
 import { createMemoryRecord, openMemory } from './memory.js';
 import {
-	type AccountData,
-	type AccountDocument,
 	createAccountStore,
-	createLocalStore,
-	type LocalDocument,
-	StoreUnusableError,
-	type SyncCapability,
+	type Data,
+	type DataDocument,
 	syncEngineOf,
 } from './store.js';
 
@@ -35,7 +30,7 @@ const database = defineData({
 	},
 });
 
-let db: AccountData<typeof database>;
+let db: Data<typeof database>;
 
 beforeEach(async () => {
 	db = await openMemory(database);
@@ -62,7 +57,7 @@ function editorOf(id: string) {
 
 /** Wrap one application-document update the way the wire carries it. */
 
-function exchange(a: AccountDocument, b: AccountDocument) {
+function exchange(a: DataDocument, b: DataDocument) {
 	const fromA = a.encodeStateSince(b.stateVector());
 	const fromB = b.encodeStateSince(a.stateVector());
 	syncEngineOf(b).applyRemote(fromA);
@@ -1039,85 +1034,7 @@ describe('foreign bytes have exactly one door', () => {
 	});
 });
 
-describe('a document store owes nobody (ADR-0233)', () => {
-	test('local commits leave the outbox empty and no replica verb exists', async () => {
-		const { sqlite } = createMemoryRecord();
-		const local = createLocalStore({ definition: database, sqlite });
-		const store = local;
-		try {
-			const made = local.tables.notes.create({
-				title: 'device work',
-				tags: [],
-				date: null,
-			});
-			expect(made.id).toHaveLength(24);
-
-			// The write is durable, but it is owed to nobody. The rows carry no
-			// authority position, because no authority will ever give them one,
-			// and the port answers with an empty outbox rather than offering
-			// them: a store that does not sync has no sender to offer them to.
-			expect(createSqliteDurablePort({ sqlite }).load().outbox).toEqual([]);
-			expect(
-				sqlite.all<{ count: number }>(
-					'SELECT COUNT(*) AS count FROM _updates',
-				)[0]?.count,
-			).toBeGreaterThan(0);
-
-			// Both kinds carry `sync`; the VALUE is the discriminant, so a
-			// device store answers `undefined` rather than omitting the key.
-			expect('sync' in store).toBe(true);
-			expect(store.sync).toBeUndefined();
-			// And the delivery machinery is unreachable: nothing was registered.
-			// @ts-expect-error a device store has no sync engine
-			expect(() => syncEngineOf(store)).toThrow('not a replica');
-		} finally {
-			await local[Symbol.asyncDispose]();
-		}
-	});
-
-	test('the sync VALUE discriminates the two kinds, at the type level too', async () => {
-		// Compile-time pins: `sync !== undefined` must narrow the union in both
-		// directions without an `in`-probe or a cast. The annotations are the
-		// assertions; a shape change fails typecheck before it fails a test.
-		function kindOf(
-			store: LocalDocument | AccountDocument,
-		): 'local' | 'account' {
-			if (store.sync !== undefined) {
-				const capability: SyncCapability = store.sync;
-				void capability;
-				const account: AccountDocument = store;
-				void account;
-				return 'account';
-			}
-			const device: LocalDocument = store;
-			void device;
-			return 'local';
-		}
-
-		const local = createLocalStore({
-			definition: database,
-			sqlite: createMemoryRecord().sqlite,
-		});
-		const account = await openMemory(database);
-		try {
-			expect(kindOf(local)).toBe('local');
-			expect(kindOf(account)).toBe('account');
-		} finally {
-			await local[Symbol.asyncDispose]();
-			await account[Symbol.asyncDispose]();
-		}
-	});
-});
-
-describe('an unusable store throws, and never dresses up as a read outcome', () => {
-	test('using a disposed store throws StoreUnusableError', async () => {
-		const app = await openMemory(database);
-		await app[Symbol.asyncDispose]();
-		expect(() => app.tables.notes.rows).toThrow(StoreUnusableError);
-		expect(() => app.kv.get('theme')).toThrow(StoreUnusableError);
-		expect(() => app.tables.notes.get('anything')).toThrow(StoreUnusableError);
-	});
-
+describe('a store is truth plus debts (ADR-0238)', () => {
 	test('a refused durable flush leaves the store live and reports blocked', async () => {
 		// The withdrawn poison (ADR-0238): storage failing is a visible debt,
 		// never the store's death. The live document is the truth while open.

@@ -20,7 +20,7 @@
  * it to.
  */
 
-import type { LocalData } from '@epicenter/data';
+import type { DatabaseAccount, ReplicaData } from '@epicenter/data';
 import type { DataDefinition } from '@epicenter/data/definition';
 import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
@@ -103,7 +103,8 @@ export type SecretStore = {
 export type EpicenterBinding = {
 	openData<TDefinition extends DataDefinition>(
 		definition: TDefinition,
-	): Promise<Result<LocalData<TDefinition>, AppError>>;
+		account: DatabaseAccount,
+	): Promise<Result<ReplicaData<TDefinition>, AppError>>;
 	openSqlite(name: string): Promise<Result<AppSqliteDatabase, AppError>>;
 	deleteSqlite(name: string): Promise<Result<void, AppError>>;
 	secrets: SecretStore;
@@ -117,9 +118,18 @@ export type CreateEpicenterOptions = {
 
 export type EpicenterHandle = {
 	readonly appId: string;
+	/**
+	 * Open this application's Epicenter Data, as a replica of `account`.
+	 *
+	 * The account is the caller's, because an authority mints every generation
+	 * and the application is what knows which principal it is acting as. There
+	 * is no device-owned overload: a store with no authority is not a shape
+	 * this platform produces.
+	 */
 	openData<TDefinition extends DataDefinition>(
 		definition: TDefinition,
-	): Promise<Result<LocalData<TDefinition>, AppError>>;
+		account: DatabaseAccount,
+	): Promise<Result<ReplicaData<TDefinition>, AppError>>;
 	openSqlite(name: string): Promise<Result<AppSqliteDatabase, AppError>>;
 	/**
 	 * Delete one database this application named, and close the owner's handle
@@ -147,8 +157,11 @@ export function createEpicenter(
 
 	return Object.freeze({
 		appId: options.appId,
-		openData<TDefinition extends DataDefinition>(definition: TDefinition) {
-			return binding.openData(definition);
+		openData<TDefinition extends DataDefinition>(
+			definition: TDefinition,
+			account: DatabaseAccount,
+		) {
+			return binding.openData(definition, account);
 		},
 		openSqlite(name: string) {
 			if (!isDatabaseName(name)) {

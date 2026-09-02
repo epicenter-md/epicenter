@@ -20,7 +20,7 @@
 
 import { isOpenWebSocketDenial } from '@epicenter/sync/auth-subprotocol';
 import { STORE_SYNC_ROUTE } from '@epicenter/sync/store-route';
-import type { AddressedDocument } from '../store/store.js';
+import type { ReplicaDocument } from '../store/store.js';
 import { createSyncConnection, type SyncConnection } from './connection.js';
 
 /**
@@ -44,7 +44,7 @@ export type StoreSocketTransport = {
 
 export type AttachStoreSyncOptions = {
 	/** The open account replica this connection carries. */
-	store: AddressedDocument;
+	store: ReplicaDocument;
 	/** The data id being synced, which addresses the authority. */
 	dataId: string;
 	/**

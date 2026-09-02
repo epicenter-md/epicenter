@@ -73,7 +73,10 @@ test('the host holds no store, and says so rather than pretending', async () => 
 	// A background half that asked for Epicenter Data is asking for something
 	// no runtime gives it here: the store is client-owned (ADR-0226), and this
 	// leaf answers with that rather than minting an empty one.
-	const result = await epicenter.openData({ id: APP } as never);
+	const result = await epicenter.openData(
+		{ id: APP } as never,
+		undefined as never,
+	);
 	expect(result.error?.name).toBe('StorageFailed');
 	const failure = result.error as { cause?: unknown } | null;
 	expect(String(failure?.cause)).toContain('client-owned');

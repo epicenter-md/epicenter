@@ -37,8 +37,8 @@ import type { Result } from 'wellcrafted/result';
 import { expectErr, expectOk as expectOkResult } from 'wellcrafted/testing';
 
 import {
-	type DatabaseAccount,
 	createGeneration,
+	type DatabaseAccount,
 	openDatabase,
 } from './browser.js';
 import { openMemory } from './memory.js';
@@ -80,8 +80,6 @@ function expectOk<TValue, TError>(
 /** The generation every test here works in. One is what an import makes first. */
 const GEN = 1;
 
-const localAddress = (dataId: string, generation = GEN) =>
-	`epicenter/v3/${dataId}/local/gen/${generation}`;
 const accountAddress = (
 	dataId: string,
 	baseURL: string,
@@ -119,12 +117,6 @@ function accountFor(
 	};
 }
 
-/** Create generation 1 on this device, then open it: the ordinary first run. */
-async function openLocalData(definition: ReturnType<typeof databaseFor>) {
-	await createGeneration(definition);
-	return openDatabase(definition, { generation: GEN });
-}
-
 async function openAccountData(
 	definition: ReturnType<typeof databaseFor>,
 	principalId: typeof ALICE | typeof BOB,
@@ -149,26 +141,21 @@ async function databaseNames(): Promise<string[]> {
 		.sort();
 }
 
-describe('one local document and one account replica per account', () => {
-	test('the local document and two accounts open at once, into their own databases', async () => {
+describe('one replica per account', () => {
+	test('two accounts open at once, into their own databases', async () => {
 		const database = databaseFor('pair');
-		const local = expectOk(await openLocalData(database));
 		const alice = expectOk(await openAccountData(database, ALICE));
 		const bob = expectOk(await openAccountData(database, BOB));
 
-		local.tables.notes.create({ title: 'mine alone' });
 		alice.tables.notes.create({ title: "alice's" });
 		bob.tables.notes.create({ title: "bob's" });
-		expect(titles(local)).toEqual(['mine alone']);
 		expect(titles(alice)).toEqual(["alice's"]);
 		expect(titles(bob)).toEqual(["bob's"]);
 
 		const names = await databaseNames();
-		expect(names).toContain(localAddress(database.id));
 		expect(names).toContain(accountAddress(database.id, CLOUD, ALICE));
 		expect(names).toContain(accountAddress(database.id, CLOUD, BOB));
 
-		await local[Symbol.asyncDispose]();
 		await alice[Symbol.asyncDispose]();
 		await bob[Symbol.asyncDispose]();
 	});
@@ -238,7 +225,6 @@ describe('one local document and one account replica per account', () => {
 			>,
 			string,
 		][] = [
-			[() => openLocalData(database), 'kept local work'],
 			[() => openAccountData(database, ALICE), "kept alice's"],
 			[() => openAccountData(database, BOB), "kept bob's"],
 		];
@@ -251,13 +237,10 @@ describe('one local document and one account replica per account', () => {
 		// Retention is the whole reason the account is in the address: coming
 		// back to an account finds that account's replica, not the last one to
 		// have been open.
-		const local = expectOk(await openLocalData(database));
 		const alice = expectOk(await openAccountData(database, ALICE));
 		const bob = expectOk(await openAccountData(database, BOB));
-		expect(titles(local)).toEqual(['kept local work']);
 		expect(titles(alice)).toEqual(["kept alice's"]);
 		expect(titles(bob)).toEqual(["kept bob's"]);
-		await local[Symbol.asyncDispose]();
 		await alice[Symbol.asyncDispose]();
 		await bob[Symbol.asyncDispose]();
 	});
@@ -290,23 +273,13 @@ describe('one local document and one account replica per account', () => {
 		await reopened[Symbol.asyncDispose]();
 	});
 
-	test('a generation this device does not hold is not found, and none is made', async () => {
-		// A number in a URL is an ADDRESS, not an instruction to allocate. The
-		// name-existence trap is the whole reason this is asserted: `openDB` on
-		// a missing name CREATES it, so a shell left behind here would read as a
-		// cache hit on the next open.
-		const database = databaseFor('notfound');
-		const before = await databaseNames();
-
-		const refused = expectErr(await openDatabase(database, { generation: 7 }));
-		expect(refused.name).toBe('GenerationNotFound');
-		expect(await databaseNames()).toEqual(before);
-	});
-
 	test('a generation number that is not one is refused as unaddressable', async () => {
 		const database = databaseFor('badgeneration');
+		const account = accountFor(ALICE, CLOUD);
 		for (const generation of [0, -1, 1.5, Number.NaN]) {
-			const refused = expectErr(await openDatabase(database, { generation }));
+			const refused = expectErr(
+				await openDatabase(database, { generation, account }),
+			);
 			expect(refused.name).toBe('Unaddressable');
 		}
 	});
@@ -316,7 +289,7 @@ describe('one local document and one account replica per account', () => {
 		// whole, writes it in one transaction, and only then returns; a fresh
 		// account database never renders empty while its state is arriving.
 		const database = databaseFor('bootstrap');
-		const author = expectOk(await openLocalData(database));
+		const author = expectOk(await openAccountData(database, ALICE));
 		author.tables.notes.create({ title: 'made elsewhere' });
 		const state = author.encodeStateSince();
 		await author[Symbol.asyncDispose]();
@@ -431,7 +404,6 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		// "owed to an authority" on every store kind (ADR-0301). Neither is a
 		// shape this reader can honestly interpret. It does not detect and wipe
 		// them. It does not address them.
-		expect(localAddress('so.epicenter.x')).toContain('/v3/');
 		expect(accountAddress('so.epicenter.x', CLOUD, ALICE)).toContain('/v3/');
 	});
 
@@ -461,18 +433,21 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 
 	test('the update log folds at the threshold instead of growing forever', async () => {
 		const database = databaseFor('fold');
-		const address = localAddress(database.id);
-		const local = expectOk(await openLocalData(database));
+		const address = accountAddress(database.id, CLOUD, ALICE);
+		const local = expectOk(await openAccountData(database, ALICE));
 		for (let index = 0; index < 70; index += 1) {
 			local.tables.notes.create({ title: `note ${index}` });
+			// Flushed as they land, the way a live store does. `mergeOwed`
+			// reads the DURABLE outbox, so a burst that never reaches disk has
+			// nothing for it to collapse.
+			await local.persistence.flush();
 		}
-		await local.persistence.flush();
 		expect(local.persistence.get()).toBe('saved');
 		await local[Symbol.asyncDispose]();
 
 		expect(await countRows(address, 'updates')).toBeLessThan(70);
 
-		const reopened = expectOk(await openLocalData(database));
+		const reopened = expectOk(await openAccountData(database, ALICE));
 		expect(titles(reopened)).toHaveLength(70);
 		await reopened[Symbol.asyncDispose]();
 	});
@@ -513,7 +488,7 @@ describe('the clean break: storage from before the generation address', () => {
 		const superseded = `epicenter/${database.id}/private`;
 		await seedSupersededDatabase(superseded);
 
-		const local = expectOk(await openLocalData(database));
+		const local = expectOk(await openAccountData(database, ALICE));
 		expect(titles(local)).toEqual([]);
 		// Untouched, and unread. Both halves matter: nothing of it reached the
 		// store, and nothing deleted a person's bytes on their behalf.
@@ -559,25 +534,26 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 		// release its address, or the application can never start.
 		const refused = await openDatabase(
 			{ dataId: database.id, tables: { notes: {} } } as never,
-			{ generation: GEN },
+			{ generation: GEN, account: accountFor(ALICE, CLOUD) },
 		);
 		expect(refused.error).not.toBeNull();
 
-		const after = expectOk(await openLocalData(database));
+		const after = expectOk(await openAccountData(database, ALICE));
 		await after[Symbol.asyncDispose]();
 	});
 
 	test('a corrupt durable record refuses the boot and releases the claim', async () => {
 		const database = databaseFor('corrupt');
-		await seedCorruptChain(localAddress(database.id));
+		await seedCorruptChain(accountAddress(database.id, CLOUD, ALICE));
 
-		const refused = await openDatabase(database, { generation: GEN });
+		const account = accountFor(ALICE, CLOUD);
+		const refused = await openDatabase(database, { generation: GEN, account });
 		expect(refused.data).toBeNull();
 		expect(refused.error?.name).toBe('StorageFailed');
 
 		// The claim went with the refusal: a retry reports the same honest
 		// failure rather than `AlreadyOpen` for the life of the page.
-		const again = await openDatabase(database, { generation: GEN });
+		const again = await openDatabase(database, { generation: GEN, account });
 		expect(again.error?.name).toBe('StorageFailed');
 	});
 });
@@ -587,7 +563,7 @@ describe("a row's content node survives a reopen (ADR-0295)", () => {
 		const database = databaseFor('richfield');
 		let rowId!: string;
 		{
-			const local = expectOk(await openLocalData(database));
+			const local = expectOk(await openAccountData(database, ALICE));
 			rowId = local.tables.notes.create({ title: 'x' }).id;
 			const row = local.tables.notes.get(rowId);
 			if (row === undefined) throw new Error('the row has no content');
@@ -599,7 +575,7 @@ describe("a row's content node survives a reopen (ADR-0295)", () => {
 			await local[Symbol.asyncDispose]();
 		}
 
-		const reopened = expectOk(await openLocalData(database));
+		const reopened = expectOk(await openAccountData(database, ALICE));
 		const content = reopened.tables.notes.get(rowId)?.content;
 		expect(content?.toString()).toContain('buy milk');
 		expect(content?.getAttr('cursor' as never)).toBe(8);

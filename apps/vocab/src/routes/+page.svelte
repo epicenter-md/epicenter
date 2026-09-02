@@ -17,10 +17,9 @@
 
 	const runtime = getVocabRuntime();
 
-	// The one place the document choice is made (ADR-0233): portable work goes
-	// to the account replica when this generation has one, and to the device
-	// document otherwise. Everything below reads `data` and never asks again.
-	const data = runtime.account?.data ?? runtime.localData;
+	// One document, because an account is required. Everything below reads
+	// `data` and never asks which one it is.
+	const data = runtime.account.data;
 
 	const entries = createEntriesState({ data });
 	setVocabSurface({ entries });
@@ -39,9 +38,7 @@
 		},
 	});
 
-	// How this screen renders is a fact about this screen, so it comes off the
-	// DEVICE document whether or not an account is open.
-	const settings = createSettingsState({ localData: runtime.localData });
+	const settings = createSettingsState({ data });
 
 	onDestroy(() => {
 		chat[Symbol.dispose]();

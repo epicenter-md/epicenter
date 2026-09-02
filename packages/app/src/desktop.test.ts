@@ -1,10 +1,11 @@
 import { expect, test } from 'bun:test';
-import type { AppStorageRequest } from './protocol.js';
 import { createDesktopBinding } from './desktop.js';
+import type { AppStorageRequest } from './protocol.js';
 
-function ownerFor(
-	answer: (request: AppStorageRequest) => Response,
-): { calls: AppStorageRequest[]; fetch: typeof globalThis.fetch } {
+function ownerFor(answer: (request: AppStorageRequest) => Response): {
+	calls: AppStorageRequest[];
+	fetch: typeof globalThis.fetch;
+} {
 	const calls: AppStorageRequest[] = [];
 	const fetchImplementation = (async (_url: string, init?: RequestInit) => {
 		const request = JSON.parse(String(init?.body)) as AppStorageRequest;
@@ -15,6 +16,11 @@ function ownerFor(
 }
 
 const DEFINITION = { id: 'so.epicenter.test', title: 'Test' };
+const ACCOUNT = {
+	baseURL: 'https://api.epicenter.so',
+	principalId: 'alice',
+	fetch: async () => new Response(null, { status: 404 }),
+};
 
 test('opening data never reaches the owner', async () => {
 	// No admission round trip exists (ADR-0334): the store is client-owned, so
@@ -26,7 +32,9 @@ test('opening data never reaches the owner', async () => {
 		fetch: owner.fetch,
 	});
 
-	await binding.openData(DEFINITION as never).catch(() => undefined);
+	await binding
+		.openData(DEFINITION as never, ACCOUNT as never)
+		.catch(() => undefined);
 
 	expect(owner.calls).toEqual([]);
 });

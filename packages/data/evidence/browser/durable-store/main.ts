@@ -16,7 +16,7 @@ import {
 	newestGeneration,
 	openDatabase,
 } from '../../../src/store/browser.js';
-import type { LocalData } from '../../../src/store/store.js';
+import type { ReplicaData } from '../../../src/store/store.js';
 
 /**
  * Two namespaces, because a dataId is what makes two stores two stores.
@@ -48,7 +48,20 @@ const workspaces = {
 	}),
 } as const;
 
-type ProbeApplication = LocalData<(typeof workspaces)['vault']>;
+type ProbeApplication = ReplicaData<(typeof workspaces)['vault']>;
+
+/**
+ * The account this probe's store belongs to. Durability is the subject here,
+ * so the authority is never reached: what it supplies is the address.
+ */
+const PROBE_ACCOUNT = {
+	baseURL: 'https://probe.invalid',
+	principalId: 'probe' as never,
+	fetch: (() => {
+		throw new Error('the durability probe never reaches an authority');
+	}) as never,
+	WebSocket: undefined as never,
+};
 
 let db: ProbeApplication | undefined;
 
@@ -66,17 +79,22 @@ Object.assign(globalThis, {
 	async open(name: keyof typeof workspaces) {
 		const workspace = workspaces[name];
 		if (workspace === undefined) return { error: `no workspace named ${name}` };
-		// The local database: this probe proves durability, and a device-owned
-		// generation is the one that never has a sync story to confound it.
+		// A probe account: this proves durability, so the authority never has to
+		// answer. Every store has one now, and the address needs it.
 		//
 		// Created on first use, because a generation number is an address and
 		// opening never invents one (ADR-0292). The second open of the same
 		// page finds a cache hit and creates nothing.
-		if ((await newestGeneration(workspace.id)) === undefined) {
-			const created = await createGeneration(workspace);
+		if ((await newestGeneration(workspace.id, PROBE_ACCOUNT)) === undefined) {
+			const created = await createGeneration(workspace, {
+				account: PROBE_ACCOUNT,
+			});
 			if (created.error !== null) return { error: created.error.message };
 		}
-		const opened = await openDatabase(workspace, { generation: 1 });
+		const opened = await openDatabase(workspace, {
+			generation: 1,
+			account: PROBE_ACCOUNT,
+		});
 		if (opened.error !== null) {
 			const cause = (opened.error as { cause?: unknown }).cause;
 			return {

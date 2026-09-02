@@ -12,15 +12,14 @@ type PrincipalId = Extract<
 	{ principalId: unknown }
 >['principalId'];
 
-import { type BrowserData, type LocalData } from '@epicenter/data';
+import type { ReplicaData } from '@epicenter/data';
 import { attachMirror } from '@epicenter/data/artifact/mirror';
 import {
-	type AddressedDocument,
-	GENERATIONS_ROUTE,
 	createGeneration,
-	type LocalDocument,
+	GENERATIONS_ROUTE,
 	newestGeneration,
 	openDatabase,
+	type ReplicaDocument,
 } from '@epicenter/data/browser';
 import { persistOnHide } from '@epicenter/data/flush-on-hide';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
@@ -80,61 +79,13 @@ function opening<TDatabase>(
 	};
 }
 
-/** What the `/device` route renders once its database is open. */
-export type DeviceDatabase = {
-	readonly data: LocalData<typeof honeycrispDefinition>;
-};
-
-/** What the `/account` route renders once its replica is safe to edit. */
+/** What the notebook route renders once its replica is safe to edit. */
 export type AccountDatabase = {
-	readonly data: BrowserData<typeof honeycrispDefinition>;
+	readonly data: ReplicaData<typeof honeycrispDefinition>;
 	syncStatus(): SyncConnectionStatus | undefined;
 };
 
 type Opened<TDatabase> = TDatabase & AsyncDisposable;
-
-/**
- * Open the local database for the `/device` route.
- *
- * The handle is disposable immediately; a route hands it to
- * `disposeOnUnmount` and never touches the lifetime again.
- */
-export function openLocalDatabase(
-	generation: number,
-): OpeningDatabase<DeviceDatabase> {
-	const opened = openLocalReplica(generation);
-	return opening(opened, opened);
-}
-
-async function openLocalReplica(
-	generation: number,
-): Promise<Opened<DeviceDatabase>> {
-	const { data, error } = await openDatabase(honeycrispDefinition, {
-		generation,
-	});
-	if (error !== null) throw error;
-
-	const mirror = attachMirror({
-		data,
-		definition: honeycrispDefinition,
-		folder: 'local',
-		log: mirrorLog,
-	});
-
-	// A store accepts work live and pays for it afterwards (ADR-0238). Nothing
-	// closes that window when a tab is torn down, and this is the local
-	// database: what is not on disk is not anywhere.
-	const stopHideFlush = persistOnHide(() => data.persistence.flush());
-
-	return {
-		data,
-		async [Symbol.asyncDispose]() {
-			stopHideFlush();
-			await mirror[Symbol.asyncDispose]();
-			await data[Symbol.asyncDispose]();
-		},
-	};
-}
 
 /**
  * Open one account's retained replica of one generation.
@@ -224,28 +175,6 @@ async function openAccountReplica({
 			await data[Symbol.asyncDispose]();
 		},
 	};
-}
-
-/**
- * The generation this device should open, creating one if it holds none.
- *
- * A route resolves this once and redirects to the number; every open below
- * that takes an exact address (ADR-0292). Highest rather than newest-by-time:
- * the number IS the order, and a device holding several holds older copies.
- *
- * Creating one is an import of an empty folder (ADR-0293), which is what "a
- * new database on this device" means when importing is the only way a
- * generation comes into being. There is no other allocation path and there is
- * deliberately no fallback: a route that cannot resolve a number renders a
- * failure rather than opening something.
- */
-export async function resolveLocalGeneration(): Promise<number> {
-	const newest = await newestGeneration(honeycrispDefinition.id);
-	if (newest !== undefined) return newest;
-
-	const created = await createGeneration(honeycrispDefinition);
-	if (created.error !== null) throw created.error;
-	return created.data.generation;
 }
 
 /**

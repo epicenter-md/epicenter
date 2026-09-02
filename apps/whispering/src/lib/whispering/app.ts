@@ -6,14 +6,13 @@ type PrincipalId = Extract<
 	{ principalId: unknown }
 >['principalId'];
 
-import { type BrowserData, type LocalData } from '@epicenter/data';
+import type { ReplicaData } from '@epicenter/data';
 import {
-	type AddressedDocument,
-	GENERATIONS_ROUTE,
 	createGeneration,
-	type LocalDocument,
+	GENERATIONS_ROUTE,
 	newestGeneration,
 	openDatabase,
+	type ReplicaDocument,
 } from '@epicenter/data/browser';
 import {
 	attachStoreSync,
@@ -37,11 +36,8 @@ import {
 
 export type { WhisperingBlobs } from './recording-audio';
 
-/** The device-owned document: this machine's settings, and its work when
- * signed out. */
-export type WhisperingDeviceData = LocalData<typeof whisperingDefinition>;
 /** One account's retained replica of the portable work. */
-export type WhisperingAccountData = BrowserData<typeof whisperingDefinition>;
+export type WhisperingAccountData = ReplicaData<typeof whisperingDefinition>;
 
 /**
  * Failures that reach `reportBackgroundError`: work nobody is awaiting, so the
@@ -187,38 +183,25 @@ export async function openWhisperingApp(
 	{ signal }: { signal?: AbortSignal } = {},
 ): Promise<WhisperingApp> {
 	signal?.throwIfAborted();
-	// An auth state carrying no usable principal id is refused inside
-	// `openDatabase` as `Unaddressable` rather than guessed at.
-	const boot =
-		auth.state.status === 'signed-out'
-			? undefined
-			: { principalId: auth.state.principalId };
-
-	const opened = await openDatabase(whisperingDefinition, {
-		generation: await resolveLocalGeneration(),
-	});
-	if (opened.error !== null) throw opened.error;
-	const localData = opened.data;
-
-	let account: AccountRuntime | undefined;
-	try {
-		signal?.throwIfAborted();
-		if (boot !== undefined) {
-			account = await openAccountRuntime({
-				auth,
-				principalId: boot.principalId,
-				reportBackgroundError,
-				signal,
-			});
-		}
-	} catch (cause) {
-		await localData[Symbol.asyncDispose]().catch(() => undefined);
-		throw cause;
+	// An account is required: a store is one replica of an authority, so a
+	// signed-out generation has no document to fall back to. An auth state
+	// carrying no usable principal id is refused inside `openDatabase` as
+	// `Unaddressable` rather than guessed at.
+	if (auth.state.status === 'signed-out') {
+		throw new Error(
+			'Whispering opens a replica, and that needs a signed-in account.',
+		);
 	}
+	signal?.throwIfAborted();
+	const account = await openAccountRuntime({
+		auth,
+		principalId: auth.state.principalId,
+		reportBackgroundError,
+		signal,
+	});
 
-	// The one place the document choice is made (ADR-0233).
-	const work = account?.data ?? localData;
-	const settingsDomain = createWhisperingSettings({ kv: localData.kv });
+	const work = account.data;
+	const settingsDomain = createWhisperingSettings({ kv: work.kv });
 	const recordingsDomain = createWhisperingRecordings({
 		table: work.tables.recordings,
 		blobs,
@@ -240,7 +223,6 @@ export async function openWhisperingApp(
 			recordingsDomain[Symbol.dispose]();
 			settingsDomain[Symbol.dispose]();
 			await account?.dispose();
-			await localData[Symbol.asyncDispose]();
 		},
 	});
 }
@@ -318,21 +300,6 @@ async function openAccountRuntime({
 }
 
 /**
- * The generation this device opens locally, creating one if it holds none.
- *
- * A generation is an address (ADR-0292) and importing is the only way one comes
- * into being (ADR-0293), so "a new local database here" is an import of an
- * empty folder. Newest rather than latest-by-time: the number IS the order.
- */
-async function resolveLocalGeneration(): Promise<number> {
-	const newest = await newestGeneration(whisperingDefinition.id);
-	if (newest !== undefined) return newest;
-	const created = await createGeneration(whisperingDefinition);
-	if (created.error !== null) throw created.error;
-	return created.data.generation;
-}
-
-/**
  * The account generation this device opens: its own newest copy, or the
  * account's newest.
  *
@@ -398,7 +365,7 @@ type SettingKey = keyof WhisperingSettingValues;
  * is a read, a write names its keys, and application recovery handles missing
  * values without creating a row to hold them.
  */
-function createWhisperingSettings({ kv }: { kv: WhisperingDeviceData['kv'] }) {
+function createWhisperingSettings({ kv }: { kv: WhisperingAccountData['kv'] }) {
 	let values = { ...APPLICATION_DEFAULTS } as WhisperingSettingValues;
 	const listeners = new Set<() => void>();
 	const notify = () => {

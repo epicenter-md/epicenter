@@ -16,7 +16,7 @@
  */
 
 import type { AuthClient } from '@epicenter/auth';
-import type { AddressedDocument } from '@epicenter/data/browser';
+import type { ReplicaDocument } from '@epicenter/data/browser';
 import { attachStoreSync, type SyncConnection } from '@epicenter/data/sync';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
 import { reportBackgroundError } from './report.js';
@@ -36,7 +36,7 @@ export function attachHoneycrispSync({
 	auth,
 	onDenied,
 }: {
-	store: AddressedDocument;
+	store: ReplicaDocument;
 	/**
 	 * The generation this replica holds, which addresses its authority with the
 	 * database id (ADR-0292).

@@ -6,14 +6,13 @@ type PrincipalId = Extract<
 	{ principalId: unknown }
 >['principalId'];
 
-import { type BrowserData, type LocalData } from '@epicenter/data';
+import type { ReplicaData } from '@epicenter/data';
 import {
-	type AddressedDocument,
-	GENERATIONS_ROUTE,
 	createGeneration,
-	type LocalDocument,
+	GENERATIONS_ROUTE,
 	newestGeneration,
 	openDatabase,
+	type ReplicaDocument,
 } from '@epicenter/data/browser';
 import {
 	attachStoreSync,
@@ -40,36 +39,24 @@ export type OpenVocabRuntimeOptions = {
  * composed onto them. The root owns it, provides it through context, and
  * disposes it.
  *
- * Ready surfaces see exactly two shapes: `{ localData }`, and
- * `{ localData, account }`. There is no third: an unbound account replica is a
- * transitional state hidden inside this promise, never a value a surface
- * renders. And there is no default document for WORK: a surface that wants "the
- * conversations and entries this generation edits" writes
- * `runtime.account?.data ?? runtime.localData` itself, once, where the choice
- * is visible.
+ * One shape, because an account is required: `{ account }`, present once the
+ * boot principal's replica is open. An unbound replica is a transitional state
+ * hidden inside this promise, never a value a surface renders.
  *
- * Device-local settings are not part of that choice. `showReadings` is read and
- * written on `localData.kv` in every generation, signed in or out, because how
- * this screen renders is a fact about this screen rather than portable work.
- * Two documents are open and each owns different state; neither owns the same
- * state twice.
+ * The device document this used to open beside it is gone with the device
+ * store. Settings that are facts about this screen rather than portable work
+ * belong in app-owned SQLite (ADR-0321), not in a second Epicenter database.
  */
 export type VocabRuntime = {
-	/**
-	 * The device-owned document, open for every page lifetime (ADR-0233). It
-	 * never syncs, survives every sign-in and sign-out, and holds this device's
-	 * `kv` settings whether or not an account is present.
-	 */
-	readonly localData: LocalData<typeof vocabDefinition>;
 	/**
 	 * The boot principal's retained account replica. Present exactly when the
 	 * boot auth snapshot carried an identity, and always past its bound gate: a
 	 * defined `account` is already a replica stamped into the current authority
 	 * document, which is the whole availability rule a surface needs.
 	 */
-	readonly account?: {
+	readonly account: {
 		/** The account's conversations and entries, offline included once bound. */
-		readonly data: BrowserData<typeof vocabDefinition>;
+		readonly data: ReplicaData<typeof vocabDefinition>;
 		/**
 		 * What sync is doing, or undefined when it is not part of this generation
 		 * anymore: a bound replica whose dials were permanently denied works
@@ -104,56 +91,37 @@ export async function openVocabRuntime({
 	// id is refused inside `openDatabase` as `Unaddressable` rather than
 	// guessed at: a signed-in generation with no account is unavailable, never
 	// quietly the local database.
-	const boot =
-		auth.state.status === 'signed-out'
-			? undefined
-			: { auth, principalId: auth.state.principalId };
-
-	const { data: localData, error: deviceError } = await openDatabase(
-		vocabDefinition,
-		{ generation: await resolveLocalGeneration() },
-	);
-	if (deviceError !== null) throw deviceError;
-
-	let account: AccountRuntime | undefined;
-	try {
-		signal?.throwIfAborted();
-		if (boot !== undefined) {
-			account = await openAccountRuntime({
-				auth: boot.auth,
-				principalId: boot.principalId,
-				signal,
-			});
-		}
-	} catch (cause) {
-		await localData[Symbol.asyncDispose]().catch(() => undefined);
-		throw cause;
+	// An account is required, so a signed-out generation has no runtime to
+	// open rather than a device document to fall back to. The surface gates on
+	// auth before it asks for one.
+	if (auth.state.status === 'signed-out') {
+		throw new Error(
+			'Vocab opens a replica, and that needs a signed-in account.',
+		);
 	}
-
-	const opened = account;
+	signal?.throwIfAborted();
+	const opened = await openAccountRuntime({
+		auth,
+		principalId: auth.state.principalId,
+		signal,
+	});
 	let disposed = false;
 	return Object.freeze({
-		localData,
-		...(opened === undefined
-			? {}
-			: {
-					account: Object.freeze({
-						data: opened.data,
-						syncStatus: opened.syncStatus,
-					}),
-				}),
+		account: Object.freeze({
+			data: opened.data,
+			syncStatus: opened.syncStatus,
+		}),
 		async [Symbol.asyncDispose]() {
 			if (disposed) return;
 			disposed = true;
 			await opened?.dispose();
-			await localData[Symbol.asyncDispose]();
 		},
 	});
 }
 
 /** The account arm plus the disposal only the runtime may run. */
 type AccountRuntime = {
-	data: BrowserData<typeof vocabDefinition>;
+	data: ReplicaData<typeof vocabDefinition>;
 	syncStatus(): SyncConnectionStatus | undefined;
 	dispose(): Promise<void>;
 };
@@ -220,21 +188,6 @@ async function openAccountRuntime({
 		await data[Symbol.asyncDispose]().catch(() => undefined);
 		throw cause;
 	}
-}
-
-/**
- * The generation this device opens locally, creating one if it holds none.
- *
- * A generation is an address (ADR-0292) and importing is the only way one comes
- * into being (ADR-0293), so "a new local database here" is an import of an
- * empty folder.
- */
-async function resolveLocalGeneration(): Promise<number> {
-	const newest = await newestGeneration(vocabDefinition.id);
-	if (newest !== undefined) return newest;
-	const created = await createGeneration(vocabDefinition);
-	if (created.error !== null) throw created.error;
-	return created.data.generation;
 }
 
 /**

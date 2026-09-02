@@ -35,10 +35,10 @@
  */
 
 import {
+	compileData,
 	type DataDefinition,
 	type DataDefinitionParseError,
 	type ParsedDataDefinition,
-	compileData,
 } from '@epicenter/data/definition';
 import type { PrincipalId } from '@epicenter/principal';
 import {
@@ -50,6 +50,7 @@ import { type DBSchema, deleteDB, type IDBPDatabase, openDB } from 'idb';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { claimDocument, releaseDocument } from './claims.js';
 import { createDatabaseDocument } from './document.js';
+import type { DatabaseAccount } from './handles.js';
 import {
 	copyBytes,
 	NO_AUTHORITY,
@@ -64,13 +65,10 @@ import type {
 	OutboxEntry,
 } from './persistence.js';
 import {
-	type AccountDocument,
-	type BrowserData,
 	createAccountStoreOverPort,
-	createLocalStoreOverPort,
+	type DataDocument,
 	type DataView,
-	type LocalData,
-	type LocalDocument,
+	type ReplicaData,
 	StoreError,
 	type UntypedDataView,
 } from './store.js';
@@ -92,10 +90,10 @@ export {
  * one is opening a different address and this one is simply an older copy
  * (ADR-0292). Deleting it is a storage decision, not a correctness one.
  */
-export type { AddressedDocument } from './handles.js';
-// Re-exported so a browser caller's one import site names both kinds beside
-// the openers that produce them.
-export type { AccountDocument, LocalDocument } from './store.js';
+// Re-exported so a browser caller's one import site names the document beside
+// the opener that produces it.
+export type { DatabaseAccount } from './handles.js';
+export type { DataDocument, ReplicaDocument } from './store.js';
 
 /**
  * The durable facts, one object store each (ADR-0238, ADR-0295).
@@ -494,12 +492,9 @@ function canonicalBaseURL(raw: string): string | undefined {
  */
 function generationPrefix(
 	dataId: string,
-	account?: { baseURL: string; principalId: PrincipalId },
-): Result<{ prefix: string; baseURL: string | undefined }, StoreError> {
+	account: { baseURL: string; principalId: PrincipalId },
+): Result<{ prefix: string; baseURL: string }, StoreError> {
 	const root = `epicenter/${STORE_GENERATION}/${dataId}`;
-	if (account === undefined) {
-		return Ok({ prefix: `${root}/local/gen/`, baseURL: undefined });
-	}
 	const baseURL = canonicalBaseURL(account.baseURL);
 	if (baseURL === undefined || account.principalId.trim() === '') {
 		return StoreError.Unaddressable({
@@ -525,33 +520,15 @@ function isGeneration(value: number): boolean {
 	return Number.isSafeInteger(value) && value >= 1;
 }
 
-/**
- * The account half of an address, and how this device reaches its authority.
- *
- * A two-member port rather than an `AuthClient`, for the same reason
- * `attach.ts` takes one: it keeps this file free of the auth package, and an
- * `AuthClient` satisfies it structurally with no adapter. `fetch` is here and
- * not in `attach` because opening a generation this device does not hold is an
- * HTTP request, not a socket (ADR-0292).
- */
-export type DatabaseAccount = {
-	readonly baseURL: string;
-	readonly principalId: PrincipalId;
-	/** A credentialed fetch, waiting on machine work but never on a human. */
-	fetch(input: string | URL, init?: RequestInit): Promise<Response>;
-};
-
 export type OpenDatabaseOptions = {
 	/** The exact generation to open. Never discovered, never defaulted. */
 	generation: number;
 	/**
-	 * The account this generation belongs to, or absent for a device-owned one.
-	 *
-	 * The VALUE is the discriminant, all the way down: it decides the address,
-	 * whether the store carries an outbox, and whether a cache miss can be
-	 * bootstrapped or is simply not here.
+	 * The account this generation belongs to. Required, and there is no second
+	 * shape: an authority mints every generation, so a database with no account
+	 * is not a kind this package can open.
 	 */
-	account?: DatabaseAccount;
+	account: DatabaseAccount;
 };
 
 /**
@@ -603,9 +580,9 @@ async function fetchGeneration(
 /**
  * Open one exact generation of one database, cache-first (ADR-0292).
  *
- * One opener, not two. The stores differ by one key, `sync`, which is already
- * the discriminant the types carry, and the second half of each open was the
- * same address, claim, and hydrate either way.
+ * One opener, and one store. An authority mints every generation, so the
+ * device store this used to fork against is gone, and with it the
+ * `sync === undefined` discriminant and the second address grammar.
  *
  * The sequence, and every step of it is load-bearing:
  *
@@ -616,35 +593,20 @@ async function fetchGeneration(
  *    would read that shell as a hit.
  * 3. On a hit: hydrate and return. The caller attaches a socket afterwards if
  *    it has an account; a cached database stays usable when that fails.
- * 4. On a miss with no account: `GenerationNotFound`. Opening never invents a
- *    local generation, because a number in a URL is an address rather than an
- *    instruction to allocate.
- * 5. On a miss with an account: fetch the generation, write it in one
- *    transaction, hydrate, and only then return. It bootstraps completely or
- *    fails; a fresh account database never renders empty while its state is
- *    still arriving.
+ * 4. On a miss: fetch the generation, write it in one transaction, hydrate,
+ *    and only then return. It bootstraps completely or fails; a fresh database
+ *    never renders empty while its state is still arriving. Opening never
+ *    invents a generation, because a number in a URL is an address rather than
+ *    an instruction to allocate.
  *
  * It resolves once local state is durable enough to hydrate. It never waits on
  * a WebSocket round trip, and it does not attach one.
  */
-export function openDatabase<const TDatabase extends DataDefinition>(
-	definition: TDatabase,
-	options: OpenDatabaseOptions & { account: DatabaseAccount },
-): Promise<
-	Result<BrowserData<TDatabase>, StoreError | DataDefinitionParseError>
->;
-export function openDatabase<const TDatabase extends DataDefinition>(
-	definition: TDatabase,
-	options: OpenDatabaseOptions & { account?: undefined },
-): Promise<Result<LocalData<TDatabase>, StoreError | DataDefinitionParseError>>;
 export async function openDatabase<const TDatabase extends DataDefinition>(
 	definition: TDatabase,
 	{ generation, account }: OpenDatabaseOptions,
 ): Promise<
-	Result<
-		LocalData<TDatabase> | BrowserData<TDatabase>,
-		StoreError | DataDefinitionParseError
-	>
+	Result<ReplicaData<TDatabase>, StoreError | DataDefinitionParseError>
 > {
 	if (!isGeneration(generation)) {
 		return StoreError.Unaddressable({
@@ -681,15 +643,6 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	if (backing.loaded.updates.length === 0) {
 		// A miss. Whatever happens next, the shell this open just created must
 		// not be left behind reading as a hit.
-		if (account === undefined) {
-			backing.close();
-			releaseDocument(address);
-			await deleteIndexedDb(address).catch(() => undefined);
-			return StoreError.GenerationNotFound({
-				dataId: parsed.id,
-				generation,
-			});
-		}
 		const fetched = await fetchGeneration(account, parsed.id, generation);
 		if (fetched.error !== null) {
 			backing.close();
@@ -737,49 +690,30 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	// contained so a corrupt record refuses the boot instead of leaking the
 	// claim and the open connection.
 	let parts: {
-		store: LocalDocument | AccountDocument;
+		store: DataDocument;
 		view: UntypedDataView;
 		definition: ParsedDataDefinition;
 	};
 	try {
-		parts =
-			account === undefined
-				? createLocalStoreOverPort({
-						definition: parsed,
-						durable: held.port,
-						loaded: held.loaded,
-						dispose: () => {
-							held.close();
-							releaseDocument(address);
-						},
-					})
-				: createAccountStoreOverPort({
-						definition: parsed,
-						durable: held.port,
-						loaded: held.loaded,
-						dispose: () => {
-							held.close();
-							releaseDocument(address);
-						},
-					});
+		parts = createAccountStoreOverPort({
+			definition: parsed,
+			durable: held.port,
+			loaded: held.loaded,
+			dispose: () => {
+				held.close();
+				releaseDocument(address);
+			},
+		});
 	} catch (cause) {
 		held.close();
 		releaseDocument(address);
 		return StoreError.StorageFailed({ cause });
 	}
 
-	if (account === undefined || canonicalURL === undefined) {
-		return Ok(
-			Object.freeze({
-				...(parts.view as DataView<TDatabase>),
-				...(parts.store as LocalDocument),
-			}),
-		);
-	}
 	return Ok(
 		Object.freeze({
 			...(parts.view as DataView<TDatabase>),
-			...(parts.store as AccountDocument),
+			...parts.store,
 			baseURL: canonicalURL,
 			principalId: account.principalId,
 		}),
@@ -817,7 +751,7 @@ async function writeGeneration({
 	dataId: string;
 	generation: number;
 	state: Uint8Array;
-	account?: { baseURL: string; principalId: PrincipalId };
+	account: { baseURL: string; principalId: PrincipalId };
 	position?: number;
 }): Promise<Result<void, StoreError>> {
 	if (!isGeneration(generation)) {
@@ -887,10 +821,7 @@ async function writeGeneration({
  */
 export async function createGeneration(
 	definition: DataDefinition,
-	{
-		from,
-		account,
-	}: { from?: Uint8Array; account?: DatabaseAccount } = {},
+	{ from, account }: { from?: Uint8Array; account: DatabaseAccount },
 ): Promise<
 	Result<{ generation: number }, StoreError | DataDefinitionParseError>
 > {
@@ -898,18 +829,7 @@ export async function createGeneration(
 	if (parseError !== null) return Err(parseError);
 
 	const state =
-		from ??
-		new Uint8Array(Y.encodeStateAsUpdateV2(createDatabaseDocument()));
-
-	if (account === undefined) {
-		const generation = (await newestGeneration(parsed.id) ?? 0) + 1;
-		const { error } = await writeGeneration({
-			dataId: parsed.id,
-			generation,
-			state,
-		});
-		return error === null ? Ok({ generation }) : Err(error);
-	}
+		from ?? new Uint8Array(Y.encodeStateAsUpdateV2(createDatabaseDocument()));
 
 	const canonicalURL = canonicalBaseURL(account.baseURL);
 	if (canonicalURL === undefined || account.principalId.trim() === '') {
@@ -1002,7 +922,7 @@ async function postGeneration(
  */
 export async function newestGeneration(
 	dataId: string,
-	account?: { baseURL: string; principalId: PrincipalId },
+	account: { baseURL: string; principalId: PrincipalId },
 ): Promise<number | undefined> {
 	const located = generationPrefix(dataId, account);
 	// An account with no address holds nothing addressable, so there is nothing

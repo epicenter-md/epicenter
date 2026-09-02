@@ -1,11 +1,11 @@
 import {
 	type ConformanceIssue,
+	compileData,
 	type DataDefinition,
 	type JsonObject,
 	type JsonValue,
 	type ParsedDataDefinition,
 	type ParsedTable,
-	compileData,
 } from '@epicenter/data/definition';
 import type { SqliteDatabase } from '@epicenter/sqlite';
 import * as Y from '@y/y';
@@ -55,14 +55,11 @@ import type {
 // every caller already name them through this path.
 import { StoreError, StoreUnusableError } from './errors.js';
 import type {
-	AccountData,
-	AccountDocument,
+	Data,
 	DataDocument,
 	DataView,
 	DocumentPressure,
 	KvHandle,
-	LocalData,
-	LocalDocument,
 	Row,
 	StoredData,
 	SyncCapability,
@@ -73,16 +70,14 @@ import type {
 
 export { StoreError, StoreUnusableError } from './errors.js';
 export type {
-	AccountData,
-	AccountDocument,
-	AddressedDocument,
-	BrowserData,
+	Data,
+	DatabaseAccount,
 	DataDocument,
 	DataView,
 	DocumentPressure,
 	KvHandle,
-	LocalData,
-	LocalDocument,
+	ReplicaData,
+	ReplicaDocument,
 	Row,
 	StoredData,
 	SyncCapability,
@@ -233,7 +228,7 @@ const syncEngines = new WeakMap<SyncCapability, SyncEngine>();
  * Package-internal by convention: exported for the transport and tests, and
  * deliberately absent from the package barrel.
  */
-export function syncEngineOf(store: AccountDocument): SyncEngine {
+export function syncEngineOf(store: DataDocument): SyncEngine {
 	const engine = syncEngines.get(store.sync);
 	if (engine === undefined) {
 		throw new Error(
@@ -311,40 +306,21 @@ function overSqlite<TDatabase extends DataDefinition>({
 }
 
 /**
- * Open a document with no remote authority, the device document of ADR-0233.
- *
- * No commit is owed to anyone, so nothing joins the outbox and none of the
- * replica verbs exists, at the type or at runtime. Without this, a device
- * document enqueued every commit into an outbox that only a sync
- * acknowledgement can drain, so its durable record grew with every write it
- * ever took, forever.
- */
-export function createLocalStore<const TDatabase extends DataDefinition>(
-	options: CreateStoreOptions<TDatabase>,
-): LocalData<TDatabase> {
-	const { store, view } = createStoreEngine(overSqlite(options), 'none');
-	return Object.freeze({
-		...(view as DataView<TDatabase>),
-		...store,
-	});
-}
-
-/**
  * Open a store that is one replica of an authority's current document.
  *
  * Every local commit enters transient delivery immediately and remains in
  * the durable outbox when persistence succeeds until the authority
  * acknowledges it. The replica verbs (`sync`, `applyRemote`, `onLocalWork`,
- * `hasUnresolvedDependencies`) exist. The two constructors share one private
- * engine because the durable obligation is one ordered queue: authored bytes
- * and their outbox claim are adjacent ops in one atomic flush batch. A wrapper
- * subscribing from outside would commit the obligation in a second batch and
- * break exactly that.
+ * `hasUnresolvedDependencies`) always exist, because an account is required
+ * and every store is a replica. The durable obligation is one ordered queue:
+ * authored bytes and their outbox claim are adjacent ops in one atomic flush
+ * batch. A wrapper subscribing from outside would commit the obligation in a
+ * second batch and break exactly that.
  */
 export function createAccountStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
-): AccountData<TDatabase> {
-	const { store, view } = createStoreEngine(overSqlite(options), 'remote');
+): Data<TDatabase> {
+	const { store, view } = createStoreEngine(overSqlite(options));
 	return Object.freeze({
 		...(view as DataView<TDatabase>),
 		...store,
@@ -362,49 +338,22 @@ export function createAccountStore<const TDatabase extends DataDefinition>(
  * deletable replica) before composing what an application sees; the store and
  * the view are one runtime either way, born over one definition.
  */
-export function createLocalStoreOverPort(options: StoreEngineOptions): {
-	store: LocalDocument;
-	view: UntypedDataView;
-	definition: ParsedDataDefinition;
-} {
-	return createStoreEngine(options, 'none');
-}
-
 export function createAccountStoreOverPort(options: StoreEngineOptions): {
-	store: AccountDocument;
+	store: DataDocument;
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 } {
-	return createStoreEngine(options, 'remote');
+	return createStoreEngine(options);
 }
 
-function createStoreEngine(
-	options: StoreEngineOptions,
-	replication: 'none',
-): {
-	store: LocalDocument;
-	view: UntypedDataView;
-	definition: ParsedDataDefinition;
-};
-function createStoreEngine(
-	options: StoreEngineOptions,
-	replication: 'remote',
-): {
-	store: AccountDocument;
-	view: UntypedDataView;
-	definition: ParsedDataDefinition;
-};
-function createStoreEngine(
-	{
-		definition,
-		durable,
-		loaded,
-		dispose = () => undefined,
-		log = createLogger('data/store'),
-	}: StoreEngineOptions,
-	replication: 'none' | 'remote',
-): {
-	store: LocalDocument | AccountDocument;
+function createStoreEngine({
+	definition,
+	durable,
+	loaded,
+	dispose = () => undefined,
+	log = createLogger('data/store'),
+}: StoreEngineOptions): {
+	store: DataDocument;
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 } {
@@ -684,23 +633,19 @@ function createStoreEngine(
 				// idle timer is what makes that safe: it waits a second before
 				// asking what is owed, and a flush is a microtask. By the time
 				// `coalesce` reads the durable outbox the append is in it.
-				if (replication === 'remote') notify(localWorkListeners);
+				notify(localWorkListeners);
 				controller.enqueue([
 					{
 						kind: 'append',
 						id,
 						bytes,
-						// What an append this device authored owes the authority, and
-						// the two answers are different facts rather than one fact
-						// with a missing case (ADR-0301). A replica owes these bytes
-						// and has no position for them yet, which is `undefined` and
-						// records as NULL. A local store owes nobody, ever, so it
-						// records `NO_AUTHORITY` and its rows never read as owed.
-						//
-						// That is what lets the fold choose by row instead of by
-						// store kind: NULL means owed, on every store, and nothing
-						// else means it.
-						authoritySeq: replication === 'remote' ? undefined : NO_AUTHORITY,
+						// What an append this device authored owes the authority
+						// (ADR-0301): these bytes, with no position for them yet,
+						// which is `undefined` and records as NULL. Bytes that
+						// ARRIVED carry `NO_AUTHORITY` instead, so NULL means owed
+						// and nothing else does, which is what lets the fold choose
+						// by row rather than by store kind.
+						authoritySeq: undefined,
 					},
 				]);
 				mergeOwedIfLong();
@@ -729,7 +674,6 @@ function createStoreEngine(
 	 * rows it would have replaced exactly where they were.
 	 */
 	function mergeOwedIfLong(): void {
-		if (replication !== 'remote') return;
 		const owed = controller
 			.durableOutbox()
 			.filter((entry) => entry.id > lastCoalescedId);
@@ -785,95 +729,89 @@ function createStoreEngine(
 	}
 
 	/**
-	 * The delivery machinery, or nothing at all.
-	 *
-	 * Composed rather than always present, so a store with no authority has
-	 * no engine to reach: `syncEngineOf` finds nothing because nothing was
-	 * registered, exactly as `sync: undefined` says at the type.
+	 * The delivery machinery. Every store has it, because every store has an
+	 * authority.
 	 */
-	const syncEngine: SyncEngine | undefined =
-		replication === 'none'
-			? undefined
-			: {
-					...createClientLog(),
-					applyRemote(
-						update: Uint8Array,
-						opts?: { advanceTo?: number },
-					): Result<void, ApplyFailedError> {
-						assertUsable();
-						// One document, so one run of bytes (ADR-0295). The envelope that
-						// used to wrap this is gone with the split it multiplexed: there
-						// is nothing left to address, so the payload IS the update.
-						//
-						// The RECEIVED bytes are what gets persisted, never what the
-						// document emitted in response to them. Measured against
-						// `@y/y@14.0.0-rc.24`: an update whose causal dependencies have
-						// not arrived is buffered into `store.pendingStructs`,
-						// `applyUpdateV2` returns normally, and the document emits NO
-						// `updateV2` event at all. Persisting emitted bytes therefore
-						// writes nothing, while the caller advances its cursor and the
-						// data is lost permanently with every layer reporting success.
-						const received = copyBytes(update);
-						// The origin the listener hands this transaction back through.
-						// Minted per call, so nothing about one apply has to be
-						// remembered beside the store.
-						const applying: RemoteApply = { kind: 'epicenter-remote' };
-						// A refusal is a property of the bytes: nothing already applied is
-						// rolled back (an update is idempotent, so a re-receive after the
-						// refusal re-applies harmlessly), the cursor does not advance, and
-						// the store stays usable.
-						const { error } = trySync({
-							try: () => Y.applyUpdateV2(database, received, applying),
-							catch: (cause) => StoreError.ApplyFailed({ cause }),
-						});
-						if (error !== null) return Err(error);
-						try {
-							// With the bytes, never after them: the bookmark and what it
-							// accounts for are adjacent ops in one atomic flush batch, so
-							// durable state can never hold a cursor ahead of the bytes, and
-							// never bytes wearing a fresh install's cursor (ADR-0231,
-							// carried by ADR-0238's whole-queue flush). The cursor is
-							// derived from the position the append carries, so it cannot
-							// run ahead of it, and a crash before the batch lands
-							// re-receives, which is free because an update is idempotent.
-							controller.enqueue([
-								{
-									kind: 'append',
-									id: mintId(),
-									bytes: received,
-									// The position these bytes came FROM. Bytes that arrived
-									// are never owed, whether or not the caller knew the
-									// position they arrived at.
-									authoritySeq: opts?.advanceTo ?? NO_AUTHORITY,
-								},
-							]);
-						} finally {
-							// After the enqueue, so every listener phase observes one
-							// settled commit. Undefined when the update had missing
-							// dependencies: Yjs buffered it and emitted nothing, so the
-							// document did not change and there is nothing to deliver.
-							if (applying.transaction !== undefined) {
-								deliver(applying.transaction);
-							}
-						}
-						return Ok(undefined);
+	const syncEngine: SyncEngine = {
+		...createClientLog(),
+		applyRemote(
+			update: Uint8Array,
+			opts?: { advanceTo?: number },
+		): Result<void, ApplyFailedError> {
+			assertUsable();
+			// One document, so one run of bytes (ADR-0295). The envelope that
+			// used to wrap this is gone with the split it multiplexed: there
+			// is nothing left to address, so the payload IS the update.
+			//
+			// The RECEIVED bytes are what gets persisted, never what the
+			// document emitted in response to them. Measured against
+			// `@y/y@14.0.0-rc.24`: an update whose causal dependencies have
+			// not arrived is buffered into `store.pendingStructs`,
+			// `applyUpdateV2` returns normally, and the document emits NO
+			// `updateV2` event at all. Persisting emitted bytes therefore
+			// writes nothing, while the caller advances its cursor and the
+			// data is lost permanently with every layer reporting success.
+			const received = copyBytes(update);
+			// The origin the listener hands this transaction back through.
+			// Minted per call, so nothing about one apply has to be
+			// remembered beside the store.
+			const applying: RemoteApply = { kind: 'epicenter-remote' };
+			// A refusal is a property of the bytes: nothing already applied is
+			// rolled back (an update is idempotent, so a re-receive after the
+			// refusal re-applies harmlessly), the cursor does not advance, and
+			// the store stays usable.
+			const { error } = trySync({
+				try: () => Y.applyUpdateV2(database, received, applying),
+				catch: (cause) => StoreError.ApplyFailed({ cause }),
+			});
+			if (error !== null) return Err(error);
+			try {
+				// With the bytes, never after them: the bookmark and what it
+				// accounts for are adjacent ops in one atomic flush batch, so
+				// durable state can never hold a cursor ahead of the bytes, and
+				// never bytes wearing a fresh install's cursor (ADR-0231,
+				// carried by ADR-0238's whole-queue flush). The cursor is
+				// derived from the position the append carries, so it cannot
+				// run ahead of it, and a crash before the batch lands
+				// re-receives, which is free because an update is idempotent.
+				controller.enqueue([
+					{
+						kind: 'append',
+						id: mintId(),
+						bytes: received,
+						// The position these bytes came FROM. Bytes that arrived
+						// are never owed, whether or not the caller knew the
+						// position they arrived at.
+						authoritySeq: opts?.advanceTo ?? NO_AUTHORITY,
 					},
-					onLocalWork(listener: () => void): () => void {
-						localWorkListeners.add(listener);
-						return () => localWorkListeners.delete(listener);
-					},
-					hasUnresolvedDependencies: () => hasPendingStructs(database),
-					encodeSnapshot(): Uint8Array {
-						assertUsable();
-						return new Uint8Array(Y.encodeStateAsUpdateV2(database));
-					},
-				};
+				]);
+			} finally {
+				// After the enqueue, so every listener phase observes one
+				// settled commit. Undefined when the update had missing
+				// dependencies: Yjs buffered it and emitted nothing, so the
+				// document did not change and there is nothing to deliver.
+				if (applying.transaction !== undefined) {
+					deliver(applying.transaction);
+				}
+			}
+			return Ok(undefined);
+		},
+		onLocalWork(listener: () => void): () => void {
+			localWorkListeners.add(listener);
+			return () => localWorkListeners.delete(listener);
+		},
+		hasUnresolvedDependencies: () => hasPendingStructs(database),
+		encodeSnapshot(): Uint8Array {
+			assertUsable();
+			return new Uint8Array(Y.encodeStateAsUpdateV2(database));
+		},
+	};
 
 	// The one view this runtime will ever hold, built over the one definition,
 	// after hydration.
 	const view = buildView();
 
-	const base: DataDocument = {
+	const base: Omit<DataDocument, 'sync'> = {
 		/**
 		 * Everything this application has stored, before its declaration reads
 		 * it (ADR-0267).
@@ -964,17 +902,9 @@ function createStoreEngine(
 			await dispose();
 		},
 	};
-	// Both kinds carry `sync`; the VALUE is the discriminant. A device store
-	// holds `undefined`, a replica holds the frozen capability, and the
-	// delivery machinery is registered against the capability so wrappers
-	// that spread the store (a `discard()` opener) keep the door reachable.
-	if (syncEngine === undefined) {
-		return {
-			store: Object.freeze({ ...base, sync: undefined }),
-			view,
-			definition,
-		};
-	}
+	// The delivery machinery is registered against the capability rather than
+	// the store, so a wrapper that spreads the store (a `discard()` opener)
+	// keeps the door reachable.
 	const sync: SyncCapability = Object.freeze({ replicates: true as const });
 	syncEngines.set(sync, Object.freeze(syncEngine));
 	return { store: Object.freeze({ ...base, sync }), view, definition };

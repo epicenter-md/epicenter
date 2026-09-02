@@ -2,26 +2,28 @@
  * One page lifetime's Skills runtime: the opened document and the state bound
  * to it. The root owns it, provides it through context, and disposes it.
  *
- * Skills is device-only, and that is the whole composition (ADR-0233). There is
- * no auth client in this build and therefore no account replica: a skill
- * library lives on the device that edits it, and there is exactly one ready
- * shape, `{ data }`. If Skills ever signs in, this is where the second document
- * appears, beside the first rather than instead of it.
+ * **This build cannot open one.** Skills was device-only, and the device store
+ * is gone: an authority mints every generation, so a store needs an account and
+ * this build has no auth client. Skills is one of the applications AGENTS.md
+ * lists as broken on purpose until it is rebuilt against the store, and this is
+ * the seam where that rebuild starts: give it auth, and the account it already
+ * takes below is the only thing it is missing.
  */
 
-import { type LocalData } from '@epicenter/data';
+import type { ReplicaData } from '@epicenter/data';
 import {
 	createGeneration,
-	type LocalDocument,
+	type DatabaseAccount,
 	newestGeneration,
 	openDatabase,
+	type ReplicaDocument,
 } from '@epicenter/data/browser';
 import { skillsDefinition } from '@epicenter/skills';
 import { createSkillsState } from './state/skills-state.svelte.js';
 
 export type SkillsRuntime = {
-	/** The device-owned document, open for the whole page lifetime. */
-	readonly data: LocalData<typeof skillsDefinition>;
+	/** This account's replica, open for the whole page lifetime. */
+	readonly data: ReplicaData<typeof skillsDefinition>;
 	readonly state: ReturnType<typeof createSkillsState>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
@@ -35,13 +37,16 @@ export type SkillsRuntime = {
  * memory, which is why nothing below this line returns a promise.
  */
 export async function openSkillsRuntime({
+	account,
 	signal,
 }: {
+	account: DatabaseAccount;
 	signal?: AbortSignal;
-} = {}): Promise<SkillsRuntime> {
+}): Promise<SkillsRuntime> {
 	signal?.throwIfAborted();
 	const opened = await openDatabase(skillsDefinition, {
-		generation: await resolveLocalGeneration(),
+		generation: await resolveGeneration(account),
+		account,
 	});
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
@@ -70,13 +75,13 @@ export async function openSkillsRuntime({
  * The generation this device opens, creating one if it holds none.
  *
  * A generation is an address (ADR-0292) and importing is the only way one comes
- * into being (ADR-0293), so "a new local database here" is an import of an
- * empty folder.
+ * into being (ADR-0293), so "a new database here" is an import of an empty
+ * folder, minted by the account's authority.
  */
-async function resolveLocalGeneration(): Promise<number> {
-	const newest = await newestGeneration(skillsDefinition.id);
+async function resolveGeneration(account: DatabaseAccount): Promise<number> {
+	const newest = await newestGeneration(skillsDefinition.id, account);
 	if (newest !== undefined) return newest;
-	const created = await createGeneration(skillsDefinition);
+	const created = await createGeneration(skillsDefinition, { account });
 	if (created.error !== null) throw created.error;
 	return created.data.generation;
 }

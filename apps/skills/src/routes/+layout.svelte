@@ -18,8 +18,16 @@
 	// Gated rather than skeletoned because there is no useful partial UI: a
 	// route on an unopened store reads an empty table and flashes "no skills
 	// yet" at someone whose skills are about to appear.
+	// Skills has no auth client, and a store is a replica of an account, so
+	// there is nothing to open here yet. The refusal is the boot outcome the
+	// `{:catch}` arm below already renders, rather than a half-open handle.
 	const boot = new AbortController();
-	const opening = openSkillsRuntime({ signal: boot.signal });
+	const opening: Promise<Awaited<ReturnType<typeof openSkillsRuntime>>> =
+		Promise.reject(
+			new Error(
+				'Skills has no account yet. A store is one replica of an authority, so this build opens nothing until Skills signs in.',
+			),
+		);
 	$effect(() => () => boot.abort());
 </script>
 

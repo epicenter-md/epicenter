@@ -10,18 +10,19 @@
  * not. There is one opener because there is one answer.
  *
  * **The store is client-owned everywhere.** The host serves bundles and brokers
- * credentials and owns no application data (ADR-0226, ADR-0227). What the
- * desktop leaf adds is an admission round trip before this call, not a
- * different store after it.
+ * credentials and owns no application data (ADR-0226, ADR-0227). The desktop
+ * leaf adds nothing before this call and nothing after it: a deployed app is a
+ * trusted app (ADR-0334), so both leaves reach the same store the same way.
  */
 
+import type { ReplicaData } from '@epicenter/data';
 import {
 	createGeneration,
+	type DatabaseAccount,
 	newestGeneration,
 	openDatabase,
 } from '@epicenter/data/browser';
 import type { DataDefinition } from '@epicenter/data/definition';
-import type { LocalData } from '@epicenter/data';
 import { Ok, type Result } from 'wellcrafted/result';
 import { AppError } from './index.js';
 
@@ -29,34 +30,31 @@ import { AppError } from './index.js';
  * Open the newest generation of this definition's store, minting one when this
  * machine has never held it.
  *
- * **This opens a LOCAL document, which never receives a foreign byte.** The
- * account registry an application keeps here is therefore device-local: it does
- * not reach an authority and does not appear on a person's other devices.
- * ADR-0310 describes a registry that synchronizes while its credentials do not,
- * and that half is unbuilt. Making it true means opening the account overload
- * of `openDatabase`, which needs the signed-in principal the host brokers, and
- * that is a decision about which authority an application's own data belongs to
- * rather than a change to this function.
+ * The store is a replica of `account`, because an authority mints every
+ * generation. The application supplies the account, since it is what knows
+ * which principal it is acting as.
  */
 export async function openClientOwnedData<TDefinition extends DataDefinition>(
 	definition: TDefinition,
-): Promise<Result<LocalData<TDefinition>, AppError>> {
-	const generation = await newestGeneration(definition.id);
+	account: DatabaseAccount,
+): Promise<Result<ReplicaData<TDefinition>, AppError>> {
+	const generation = await newestGeneration(definition.id, account);
 	if (generation === undefined) {
-		const created = await createGeneration(definition);
+		const created = await createGeneration(definition, { account });
 		if (created.error !== null) {
 			return AppError.StorageFailed({ cause: created.error });
 		}
-		return openGeneration(definition, created.data.generation);
+		return openGeneration(definition, created.data.generation, account);
 	}
-	return openGeneration(definition, generation);
+	return openGeneration(definition, generation, account);
 }
 
 async function openGeneration<TDefinition extends DataDefinition>(
 	definition: TDefinition,
 	generation: number,
-): Promise<Result<LocalData<TDefinition>, AppError>> {
-	const opened = await openDatabase(definition, { generation });
+	account: DatabaseAccount,
+): Promise<Result<ReplicaData<TDefinition>, AppError>> {
+	const opened = await openDatabase(definition, { generation, account });
 	return opened.error === null
 		? Ok(opened.data)
 		: AppError.StorageFailed({ cause: opened.error });

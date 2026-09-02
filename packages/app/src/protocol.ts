@@ -7,11 +7,11 @@
  * application, because the owner scopes everything it does by that identity
  * rather than by the socket it arrived on.
  *
- * The
- * owner imports first-party definition modules from its own release (ADR-0313)
- * and answers whether this release ships that data id and whether the asking
- * application owns it. It does not receive a serialized declaration, and there
- * is no JSON spelling of one to receive.
+ * Opening data is not one of them. The store is client-owned in every runtime
+ * (ADR-0226) and a deployed app is a trusted app (ADR-0334), so `openData`
+ * never crosses this seam. A definition is a TypeScript module a host imports
+ * from its own release (ADR-0313); there is no JSON spelling of one, and this
+ * protocol has no message that would carry it.
  */
 
 import { isAppId } from '@epicenter/constants/app-id';

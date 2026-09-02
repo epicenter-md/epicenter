@@ -34,7 +34,5 @@
 				</Button>
 			{/snippet}
 		</AccountPopover>
-
-		<Link href={resolve('/device')}>Keep working On this device</Link>
 	</div>
 </div>

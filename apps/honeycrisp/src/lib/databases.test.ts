@@ -9,11 +9,7 @@ import { createGeneration } from '@epicenter/data/browser';
 import { InstantString } from '@epicenter/data/field';
 import { encodeFrame } from '@epicenter/data/sync';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
-import {
-	openAccountDatabase,
-	openLocalDatabase,
-	resolveLocalGeneration,
-} from './databases.js';
+import { openAccountDatabase } from './databases.js';
 
 const reloads = mock();
 (globalThis as unknown as { location: unknown }).location = {
@@ -22,7 +18,6 @@ const reloads = mock();
 
 /** The generation every test here works in: the one a fresh device imports. */
 const GEN = 1;
-const LOCAL = `epicenter/v3/${honeycrispDefinition.id}/local/gen/${GEN}`;
 
 async function databaseNames(): Promise<string[]> {
 	const databases = await indexedDB.databases();
@@ -196,60 +191,17 @@ async function until(condition: () => boolean): Promise<void> {
 	throw new Error('timed out');
 }
 
-test('the local opener owns only the local database', async () => {
-	await resetStorage();
-	// Resolving is what creates generation 1 on a device holding none: an
-	// import of an empty folder, which is what "a new database here" means
-	// when importing is the only way a generation comes into being (ADR-0293).
-	expect(await resolveLocalGeneration()).toBe(GEN);
-
-	const first = openLocalDatabase(GEN);
-	(await first.ready).data.tables.notes.create(noteFields('local note'));
-	await first[Symbol.asyncDispose]();
-
-	const second = openLocalDatabase(GEN);
-	expect(titles((await second.ready).data)).toEqual(['local note']);
-	await second[Symbol.asyncDispose]();
-
-	expect(await databaseNames()).toEqual([LOCAL]);
-});
-
-test('resolving twice reuses the generation rather than importing another', async () => {
-	await resetStorage();
-	expect(await resolveLocalGeneration()).toBe(GEN);
-	expect(await resolveLocalGeneration()).toBe(GEN);
-	expect(await databaseNames()).toEqual([LOCAL]);
-});
-
-test('a generation this device does not hold refuses to open', async () => {
-	await resetStorage();
-	// A number in a URL is an address, not an instruction to allocate, so a
-	// route that lands on one nobody made renders a failure.
-	const missing = openLocalDatabase(9);
-	await expect(missing.ready).rejects.toMatchObject({
-		name: 'GenerationNotFound',
-	});
-	await missing[Symbol.asyncDispose]();
-});
-
 test('the account opener owns only the account replica', async () => {
 	await resetStorage();
-	await resolveLocalGeneration();
-	const local = openLocalDatabase(GEN);
-	const localData = (await local.ready).data;
-	localData.tables.notes.create(noteFields('local note'));
-
 	const { auth } = connectingAuth('alice');
 	await importEmptyAccountGeneration(auth);
 	const account = openAccountDatabase({ auth, generation: GEN });
 	const accountData = (await account.ready).data;
 	accountData.tables.notes.create(noteFields('account note'));
 
-	expect(titles(localData)).toEqual(['local note']);
 	expect(titles(accountData)).toEqual(['account note']);
 
 	await account[Symbol.asyncDispose]();
-	await local[Symbol.asyncDispose]();
 });
 
 test('a bound account replica opens from local storage before sync is available', async () => {

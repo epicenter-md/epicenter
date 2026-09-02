@@ -27,8 +27,8 @@ import { defineData, defineTable } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
 import {
-	type AccountDocument,
 	createAccountStore,
+	type DataDocument,
 } from '../../src/store/store.js';
 import {
 	createSyncClient,
@@ -465,7 +465,7 @@ console.log('\n5. the same regime, driven, so the watchdog can be judged');
 	/** How many sockets each side has opened, which is how a recovery is counted. */
 	const dials = { author: 0, reader: 0 };
 
-	function drive(side: 'author' | 'reader', store: AccountDocument) {
+	function drive(side: 'author' | 'reader', store: DataDocument) {
 		return createSyncConnection({
 			store,
 			idleMs: 5,

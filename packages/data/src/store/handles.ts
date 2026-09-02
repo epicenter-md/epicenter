@@ -328,18 +328,8 @@ export type StoredData = {
  * copies own enumerable SYMBOL keys, which is what carries `asyncDispose`
  * across without anyone forwarding it by hand.
  */
-export type LocalData<TDatabase extends DataDefinition> = DataView<TDatabase> &
-	LocalDocument;
-
-/**
- * Data replicated to an authority, which is what makes sync reachable.
- *
- * `syncEngineOf` takes this. Structural typing is what makes that work without
- * a cast: this IS an `AccountDocument`, so every transport signature accepts
- * it unchanged.
- */
-export type AccountData<TDatabase extends DataDefinition> =
-	DataView<TDatabase> & AccountDocument;
+export type Data<TDatabase extends DataDefinition> = DataView<TDatabase> &
+	DataDocument;
 
 /**
  * Account data that knows the server it belongs to.
@@ -349,8 +339,8 @@ export type AccountData<TDatabase extends DataDefinition> =
  * this shape themselves, in two files, and only structural typing kept the two
  * copies interchangeable.
  */
-export type BrowserData<TDatabase extends DataDefinition> =
-	DataView<TDatabase> & AddressedDocument;
+export type ReplicaData<TDatabase extends DataDefinition> =
+	DataView<TDatabase> & ReplicaDocument;
 
 /**
  * One application's KV: the values it keeps exactly one of.
@@ -555,48 +545,30 @@ export type DataDocument = {
 	 * accepting; what is at risk is only what a RESTART would recover.
 	 */
 	readonly persistence: PersistenceCapability;
+	/**
+	 * The app-facing facts of this store's entanglement with its authority.
+	 *
+	 * Always present, because an account is required: a database is minted by
+	 * an authority, so there is no second shape whose `sync` is missing. The
+	 * delivery machinery underneath (applying peer bytes, the outbox, cursors,
+	 * the acknowledgement bookkeeping) is deliberately not public. Only the
+	 * transport drives it, and it reaches it through `syncEngineOf` inside this
+	 * package.
+	 */
+	readonly sync: SyncCapability;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
 /**
- * A device-owned document: a complete store all by itself, which owes its
- * work to nobody and never receives a foreign byte (ADR-0233).
+ * A store that knows the server it belongs to.
  *
- * `sync` is present and `undefined`, deliberately: the discriminant is the
- * VALUE, not the property's absence, so `store.sync === undefined` narrows a
- * `LocalDocument | AccountDocument` without `in`-probing, and a future reader of
- * either
- * object sees the same shape with one honest difference.
+ * The one thing it adds over `DataDocument` is the address its opener stamped
+ * on it. There is no second document kind to discriminate against: an account
+ * is required, so a store with no authority is not a shape this package can
+ * produce. The `ReplicaDocument` this was once a union with is gone with the
+ * device store.
  */
-export type LocalDocument = DataDocument & {
-	readonly sync: undefined;
-};
-
-/**
- * A store that is one replica of an authority's current document.
- *
- * The one thing it adds over `DataDocument` is a concrete `sync` capability:
- * the app-facing facts of this replica's entanglement. The delivery
- * machinery underneath (applying peer bytes, the outbox, cursors, the
- * acknowledgement bookkeeping) is deliberately not public: only the
- * transport drives it, and it reaches it through `syncEngineOf` inside this
- * package. Handing those verbs to applications is how a device document once
- * grew an outbox nothing could ever drain.
- */
-export type AccountDocument = DataDocument & {
-	readonly sync: SyncCapability;
-};
-
-/**
- * An account document that knows its server.
- *
- * Declared once, and now actually once. `browser.ts` and `sync/attach.ts` each
- * kept their own copy of this after the consolidation that this comment
- * claimed: three identical declarations, held together by structural typing,
- * under a sentence saying there was one. A comment cannot enforce an
- * invariant, which is why the other two now import.
- */
-export type AddressedDocument = AccountDocument & {
+export type ReplicaDocument = DataDocument & {
 	/** The canonical server identity this replica belongs to. */
 	readonly baseURL: string;
 	/** The principal asserted by that server for this replica. */
@@ -617,3 +589,19 @@ export type AddressedDocument = AccountDocument & {
  * connection driving the socket and were never here.
  */
 export type SyncCapability = { readonly replicates: true };
+
+/**
+ * The account half of an address, and how this device reaches its authority.
+ *
+ * A two-member port rather than an `AuthClient`, for the same reason
+ * `attach.ts` takes one: it keeps this file free of the auth package, and an
+ * `AuthClient` satisfies it structurally with no adapter. `fetch` is here and
+ * not in `attach` because opening a generation this device does not hold is an
+ * HTTP request, not a socket (ADR-0292).
+ */
+export type DatabaseAccount = {
+	readonly baseURL: string;
+	readonly principalId: PrincipalId;
+	/** A credentialed fetch, waiting on machine work but never on a human. */
+	fetch(input: string | URL, init?: RequestInit): Promise<Response>;
+};
