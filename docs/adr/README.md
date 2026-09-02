@@ -55,6 +55,13 @@ before it lands. Whoever merges first keeps the number; a later branch that
 picked the same one renumbers. The `ADR-NNNN` citation form stays stable once
 merged; only the pre-merge placeholder is negotiable.
 
+**When two records land on one number anyway, the more-cited one keeps it.** It
+has happened three times (0079, 0092, and 0101, reconciled 2026-09-01 to 0331,
+0332, and 0333). The other record takes the next free integer and states where it
+came from in a `Renumbered from` line. Existing `ADR-NNNN` citations are left
+alone, because they already meant the record that kept the number.
+`bun scripts/check-doc-hygiene.ts` fails while a collision is in the tree.
+
 ## Template
 
 ```markdown

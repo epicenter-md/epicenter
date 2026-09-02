@@ -1,7 +1,8 @@
-# 0101. The Privacy & Processing surface owns each pipeline stage's destination
+# 0333. The Privacy & Processing surface owns each pipeline stage's destination
 
 - **Status:** Accepted
 - **Date:** 2026-07-03
+- **Renumbered from 0101 (2026-09-01).** Two branches each kept 0101 as a provisional number and both merged, so `ADR-0101` cited two decisions. The more-cited record keeps the integer and this one took the next free number. Every `ADR-0101` citation elsewhere in the tree means the record that kept it.
 
 ## Context
 

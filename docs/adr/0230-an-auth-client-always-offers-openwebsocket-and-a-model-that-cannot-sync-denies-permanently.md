@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-09
 - **Amended by:** [ADR-0232](0232-a-page-lifetime-is-one-auth-generation-and-a-permanently-denied-sync-stops-for-good.md): the final consequence below pointed at parking and resuming in the sync driver. The `SyncDial` contract did gain a signal (`denied`), but there is no parked state and no resume; a permanently denied connection stops for good and a credential change reloads the app.
-- **Amends:** [ADR-0079](0079-whispering-authenticates-with-an-oauth-bearer-on-every-surface.md) (Whispering authenticates with an OAuth bearer on every surface): its first reason cited a compile error as the thing that stops cookie auth driving sync. The conclusion stands and the mechanism is now a permanent runtime denial.
+- **Amends:** [ADR-0331](0331-whispering-authenticates-with-an-oauth-bearer-on-every-surface.md) (Whispering authenticates with an OAuth bearer on every surface): its first reason cited a compile error as the thing that stops cookie auth driving sync. The conclusion stands and the mechanism is now a permanent runtime denial.
 - **Amends:** [ADR-0155](0155-epicenter-desktop-auth-is-one-credential-free-window-bun-authority.md) (Epicenter desktop auth is one Bun authority with credential-free windows): the application contract is `AuthClient`, not `SyncAuthClient`. Nothing else about the broker projection changes.
 - **Relates:** [ADR-0053](0053-the-epicenter-bearer-is-an-audience-scoped-credential.md) (the bearer is audience-scoped), [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md) and [ADR-0094](0094-the-connection-is-the-boot-decision-one-connect-call.md) (a workspace boots with one `connect(toConnection(auth, nodeId))` call)
 

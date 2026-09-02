@@ -1,7 +1,8 @@
-# 0092. Sign-in migration child-doc guids are derived from the schema
+# 0332. Sign-in migration child-doc guids are derived from the schema
 
 - **Status:** Accepted
 - **Date:** 2026-07-02
+- **Renumbered from 0092 (2026-09-01).** Two branches each kept 0092 as a provisional number and both merged, so `ADR-0092` cited two decisions. The more-cited record keeps the integer and this one took the next free number. Every `ADR-0092` citation elsewhere in the tree means the record that kept it.
 
 ## Context
 
