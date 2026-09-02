@@ -125,8 +125,8 @@ type Opened<TDatabase> = TDatabase & AsyncDisposable;
 /**
  * Open one account's retained replica of one generation.
  *
- * The same shape as the local opener now, and that is the change ADR-0292
- * bought. Opening and becoming safe to edit used to be two moments: a fresh
+ * Opening and becoming safe to edit used to be two moments, and collapsing
+ * them is the change ADR-0292 bought. A fresh
  * replica was unavailable until the authority stamped it with the document it
  * belonged to, so this function carried a readiness promise, a supersession
  * handler, and a discard-and-reload. The generation is the address, a
@@ -192,14 +192,7 @@ async function openAccountReplica({
 		},
 		pull: ({ discardEdits = false } = {}) =>
 			pull({ ...folderArguments(data, generation), discardEdits }),
-		diff: () =>
-			diff({
-				data,
-				definition: honeycrispDefinition,
-				dataId: honeycrispDefinition.id,
-				baseURL: data.baseURL,
-				principalId: data.principalId,
-			}),
+		diff: () => diff(folderArguments(data, generation)),
 		push: ({ plan, resolutions = {} }) =>
 			push({ ...folderArguments(data, generation), plan, resolutions }),
 		async [Symbol.asyncDispose]() {
@@ -237,8 +230,8 @@ export async function resolveAccountGeneration(
 /**
  * What every folder verb needs, spelled once (ADR-0337).
  *
- * The manifest records which store and which generation it was pulled from, so
- * a caller cannot supply half of that and a component never supplies any of it.
+ * The manifest records which store and which generation it was written from,
+ * so a component supplies none of it and this file supplies all of it.
  */
 function folderArguments(
 	data: ReplicaData<typeof honeycrispDefinition>,
@@ -247,10 +240,12 @@ function folderArguments(
 	return {
 		data,
 		definition: honeycrispDefinition,
-		dataId: honeycrispDefinition.id,
-		generation,
-		baseURL: data.baseURL,
-		principalId: data.principalId,
+		store: {
+			dataId: honeycrispDefinition.id,
+			generation,
+			baseURL: data.baseURL,
+			principalId: data.principalId,
+		},
 	};
 }
 

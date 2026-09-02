@@ -87,8 +87,9 @@ test('a checkout is complete, so what it does not name is gone', async () => {
 });
 
 test("a person's own files survive a checkout, and are never handed back", async () => {
-	// The folder root is also where somebody puts a note to themselves, and
-	// where a pull writes the `AGENTS.md` an agent reads. Neither is a row.
+	// The folder root is also where somebody puts a note to themselves. The
+	// `AGENTS.md` a pull generates is not one of those: it is the store's file,
+	// swept like the rest, and its own first line says so.
 	const target = join(scratch(), APP);
 	await writeCheckout(target, file('notes/a.md', 'a'));
 	writeFileSync(join(target, 'README.md'), 'mine');
@@ -101,6 +102,19 @@ test("a person's own files survive a checkout, and are never handed back", async
 		'also mine',
 	);
 	expect(paths(await readCheckout(target))).toEqual(['notes/b.md']);
+});
+
+test("the store's own files are swept, and a person's are not", async () => {
+	const target = join(scratch(), APP);
+	await writeCheckout(
+		target,
+		file('AGENTS.md', 'generated') + file('notes/a.md', 'a'),
+	);
+	writeFileSync(join(target, 'NOTES.md'), 'mine');
+
+	await writeCheckout(target, file('notes/a.md', 'a'));
+	expect(readFileSync(join(target, 'NOTES.md'), 'utf8')).toBe('mine');
+	expect(readdirSync(target).sort()).toEqual(['NOTES.md', 'notes']);
 });
 
 test('the manifest is written and read like any other file, and never parsed', async () => {

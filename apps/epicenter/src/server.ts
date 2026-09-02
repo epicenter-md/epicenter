@@ -124,7 +124,7 @@ export function createHomeServer({
 	}
 	// Resolved once, here, rather than per request. `epicenterFolderRoot` reads
 	// the environment and refuses a relative override by throwing, and a
-	// misconfiguration should stop the boot loudly rather than turn every mirror
+	// misconfiguration should stop the boot loudly rather than turn every folder
 	// pass into a 500 (ADR-0271).
 	const folderRoot = epicenterFolderRoot();
 	const activeUrl = validateOrigin(origin);

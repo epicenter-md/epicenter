@@ -56,6 +56,11 @@ them back or discarding them are both second deliberate acts. It also refuses
 where there is no folder at all, which is every ordinary browser tab: a page
 has no filesystem, and the copy says so rather than offering a retry.
 
+A pull also writes an `AGENTS.md` at the folder root, generated from the
+compiled definition (ADR-0330): the tables, their fields, and which edits come
+back. Every pull replaces it, and it says so on its first line, so a person
+keeping notes to themselves keeps them under another name.
+
 `SendFolderEdits.svelte` is the other direction: `diff` shows what a push would
 do, and `push` sends it and re-renders. A push carrying anything it cannot apply
 applies nothing, because the re-render at the end would overwrite whatever it

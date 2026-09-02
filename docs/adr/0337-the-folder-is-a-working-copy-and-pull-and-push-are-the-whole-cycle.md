@@ -4,7 +4,7 @@
 - **Date:** 2026-09-02
 - **Amends:** [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) by withdrawing the continuous render and the one-way rule; [ADR-0289](0289-the-folder-is-where-a-generation-is-minted-from-not-a-surface-kept-current-for-its-own-sake.md) by making the folder a working copy rather than only a mint source; [ADR-0329](0329-frontmatter-round-trips-and-the-body-only-renders-out.md) at the return path's mechanism, keeping its rule that values round-trip and a body does not
 - **Relates:** [ADR-0234](0234-the-ark-owns-living-pages-and-markdown-is-an-explicit-checkout.md) (which invented this shape for one table and never generalized it), [ADR-0281](0281-a-generation-is-a-whole-database-and-a-device-chooses-which-one-it-holds.md) (the backup), [ADR-0330](0330-an-agent-uses-the-surfaces-a-person-uses.md) (who edits and who pushes)
-- **Partly built:** all three verbs and the manifest, in `packages/data/src/artifact/checkout.ts` and `apps/epicenter/src/checkout.ts`. What is unbuilt is named at "What a push refuses" below, plus the `AGENTS.md` a pull writes.
+- **Built**, in `packages/data/src/artifact/checkout.ts` and `apps/epicenter/src/checkout.ts`: all three verbs, the manifest, and the `AGENTS.md` a pull generates. What is not is named at "What a push refuses" below, and each line there waits on its own record.
 
 ## Context
 
@@ -40,6 +40,7 @@ nothing happens in between.**
 ```txt
 ~/Epicenter/<data-id>/
   .epicenter/manifest.json     what pull handed over, and from where
+  AGENTS.md                    what this folder is, generated from the definition
   kv.json                      the kv root's stored values
   <table>/<row-id>.md          one row, frontmatter and body
 ```

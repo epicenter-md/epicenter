@@ -28,9 +28,11 @@
  * folder that no longer matches it, and the next pull says so.
  *
  * **What a checkout does not name is not the host's to keep.** A checkout is
- * complete by definition, so a row file the application did not send no longer
- * exists. A person's own `README.md` is not one of those: the sweep is filtered
- * to what a checkout produces, and everything else in the folder is theirs.
+ * complete by definition, so a file the application did not send no longer
+ * exists. That is filtered to the four shapes a checkout produces, which
+ * includes the `AGENTS.md` it generates; a person's own `README.md` and the
+ * `drafts/` they keep are not among them and are never written, read back, or
+ * removed here.
  */
 
 import type { Dirent } from 'node:fs';
@@ -45,6 +47,7 @@ import {
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { isAppId } from '@epicenter/constants/app-data';
 import {
+	AGENTS_PATH,
 	type CheckoutFile,
 	checkoutLine,
 	MANIFEST_PATH,
@@ -79,16 +82,19 @@ export function checkoutFolderPath({
 /**
  * Whether a path is one a checkout is responsible for.
  *
- * Three shapes and no others: a row file, `kv.json`, and the manifest. The
- * `AGENTS.md` a pull writes at the folder root is deliberately not one of them
- * (ADR-0337, ADR-0330): it is written like any other file and never swept,
- * because the folder root is also where a person puts their own notes to
- * themselves.
+ * Four shapes and no others: a row file, `kv.json`, the manifest, and the
+ * `AGENTS.md` a pull generates (ADR-0337, ADR-0330). That last one is the
+ * store's file rather than a person's, which is why it is swept like the rest
+ * and why its own first line says every pull replaces it.
+ *
+ * Everything else in the folder is theirs. A `README.md`, a `drafts/` they
+ * keep, a `.git`: none is written, read back, or removed here.
  */
 function isCheckoutPath(path: string): boolean {
 	return (
 		path === 'kv.json' ||
 		path === MANIFEST_PATH ||
+		path === AGENTS_PATH ||
 		parseRowPath(path) !== undefined
 	);
 }
@@ -217,6 +223,10 @@ function manifestLast(left: CheckoutFile, right: CheckoutFile): number {
  * Contents, not names, and that is the whole of the change ADR-0337 makes to
  * the host: the application owns the diff, so it has to see what is on disk.
  * The host still interprets none of it.
+ *
+ * That includes the `AGENTS.md` the application generated, which rides back
+ * unread: the rule here is "everything a checkout produces", and one exception
+ * would be a second rule to keep in step with the other side.
  */
 export async function readCheckout(absoluteFolder: string): Promise<string> {
 	const lines: string[] = [];

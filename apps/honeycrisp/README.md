@@ -158,11 +158,10 @@ To run Honeycrisp the way it ships, start the host: `bun dev:epicenter`. Honeycr
 
 ### Checking it actually works
 
-There is no browser evidence script here. The two that existed drove a fresh
-Chromium at `/device` and `/account` and asserted a note survived a reload;
-both stop at the sign-in gate now, and neither can hold an account. What still
-proves the durability claim is `packages/data/evidence/browser/durable-store/`,
-which drives the store itself across a real reload.
+There is no browser evidence script here. An account is required (ADR-0336), so
+a fresh Chromium meets the sign-in gate and never reaches a note. What proves
+the durability claim is `packages/data/evidence/browser/durable-store/`, which
+drives the store itself across a real reload.
 
 ### Manual two-client check
 

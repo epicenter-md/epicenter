@@ -70,6 +70,33 @@ export const CHECKOUT_PATH = '/api/checkout';
 /** Where the manifest lives inside a working copy. */
 export const MANIFEST_PATH = '.epicenter/manifest.json';
 
+/**
+ * Where the folder explains itself, to a person and to an agent alike.
+ *
+ * `AGENTS.md`, because that is the file an agent already looks for, and at the
+ * folder root because that is where it is working. It is written by every pull
+ * and replaced by every pull, and it says so on its first line: what lives here
+ * is the store's, and a person keeping notes to themselves keeps them under
+ * another name.
+ */
+export const AGENTS_PATH = 'AGENTS.md';
+
+/**
+ * Which store a folder is a working copy of, and which history of it.
+ *
+ * The four facts the manifest records and every later comparison is against,
+ * carried as one value because they are one fact: this folder belongs to that
+ * account's copy of that database at that number. Passed separately they were
+ * four positional strings at three call sites, and a caller could supply half a
+ * provenance.
+ */
+export type CheckoutStore = {
+	readonly dataId: string;
+	readonly generation: number;
+	readonly baseURL: string;
+	readonly principalId: string;
+};
+
 /** One file of a checkout, in either direction. */
 export type CheckoutFile = { readonly path: string; readonly contents: string };
 
@@ -290,7 +317,7 @@ export async function contentHash(text: string): Promise<string> {
  * "clean" is how the one refusal in this module gets bypassed by editing a
  * hidden file.
  */
-export type WorkingCopy = {
+type WorkingCopy = {
 	readonly base: CheckoutManifest | undefined;
 	readonly files: ReadonlyMap<string, string>;
 };
@@ -308,8 +335,8 @@ export type WorkingCopy = {
  * a database to one authority, and this is the same rule one layer out, where
  * the evidence is a file instead of a transaction.
  */
-export async function readWorkingCopy(
-	store: { dataId: string; baseURL: string; principalId: string },
+async function readWorkingCopy(
+	store: CheckoutStore,
 	httpFetch: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<Result<WorkingCopy, CheckoutError>> {
 	const { data: response, error } = await tryAsync({
@@ -379,6 +406,100 @@ function parseManifest(text: string | undefined): CheckoutManifest | undefined {
 }
 
 /**
+ * What this folder is, for whoever opens it (ADR-0337, ADR-0330).
+ *
+ * Generated from the compiled definition rather than written by hand, so the
+ * tables and fields it names are the ones that exist. An agent uses the
+ * surfaces a person uses (ADR-0330), and the surface here is a directory of
+ * text files; what it needs told is which edits come back and which do not,
+ * because the folder cannot show it and a wasted edit is silent.
+ *
+ * The rules are `PushRefusalReason`, one bullet each, plus the fact none of
+ * them states on its own: a push carries its plan whole or applies nothing, so
+ * one stray file wastes every other edit in the folder. If this file and the
+ * plan ever disagree, this file is wrong, because the plan is what runs.
+ *
+ * Nothing here is escaped. A table name and a field name are bare identifiers
+ * and a data id is dot-separated lowercase labels
+ * (`packages/data/src/definition/addresses.ts`), so none of them can hold a
+ * `|` or a backtick.
+ *
+ * It depends on the definition and on nothing else: not the time, not the
+ * manifest, not the rows. Two writes of one definition are byte-identical, and
+ * the host skips a write whose bytes already match, so this file does not churn
+ * a person's folder on every pass.
+ */
+function agentsFile(definition: ParsedDataDefinition): string {
+	const lines = [
+		`# ${definition.id}`,
+		'',
+		'These files are a working copy of a database, written by Epicenter.',
+		'**Every time the application writes this folder it replaces them,',
+		'including this file.** Keep anything of your own under a different name.',
+		'',
+		'## The layout',
+		'',
+		'```txt',
+		'.epicenter/manifest.json   what the last write handed over. Do not edit.',
+		'AGENTS.md                  this file. Generated; do not edit.',
+		'kv.json                    settings. Read only.',
+		'<table>/<row-id>.md        one row: frontmatter, then its text',
+		'```',
+		'',
+		'## What comes back, and what does not',
+		'',
+		'A person sends your edits back by hand, from the application. You never',
+		'do it yourself: the plan they read is what makes your work reviewable.',
+		'',
+		'**A send applies all of its changes or none.** Any one of the things',
+		'below stops the whole send, so a single stray file wastes every other',
+		'edit in the folder until a person clears it.',
+		'',
+		'- **A value in the frontmatter comes back.** Change it in place.',
+		'- **Keep the `---` block**, even when it is empty. Without it the file',
+		'  cannot be read at all.',
+		'- **Do not rename, move, or delete a file.** A file that is gone is a',
+		'  deletion, and a deletion has nowhere to go yet; a file that is new is',
+		'  not a row, because row ids are minted and a name cannot claim one. A',
+		'  rename is both at once.',
+		'- **Do not create files.** Ask for the row to be made in the application,',
+		'  and it will appear here at the next write.',
+		'- **The text under the `---` block does not come back.** Edit it here for',
+		'  your own reading if you must, but it will be replaced and it stops the',
+		'  send while it differs.',
+		'- **Do not remove a frontmatter line.** Write `null` to unset a value.',
+		'- **Do not invent a field name**, and do not write a value that does not',
+		'  fit its field. Both would be accepted by the file and read by nothing.',
+		'- **Do not edit `kv.json`.** It is written for you to read.',
+		'',
+		'## The tables',
+		'',
+	];
+	for (const [name, table] of [...definition.tables].sort(([a], [b]) =>
+		a < b ? -1 : 1,
+	)) {
+		lines.push(`### ${name}/`, '', '| field | type |', '| --- | --- |');
+		for (const field of [...table.fields.values()].sort((a, b) =>
+			a.name < b.name ? -1 : 1,
+		)) {
+			lines.push(
+				`| \`${field.name}\` | ${field.kind}${field.nullable ? ' or null' : ''}${
+					field.reference === null ? '' : ` -> \`${field.reference}\``
+				} |`,
+			);
+		}
+		lines.push(
+			'',
+			table.content === undefined
+				? 'These rows have no text below the frontmatter.'
+				: 'The text below the frontmatter is written out of this row and never read back.',
+			'',
+		);
+	}
+	return `${lines.join('\n').trimEnd()}\n`;
+}
+
+/**
  * Render this store into `~/Epicenter/<data-id>/` and write the manifest
  * (ADR-0337).
  *
@@ -398,20 +519,14 @@ function parseManifest(text: string | undefined): CheckoutManifest | undefined {
 export async function pull({
 	data,
 	definition,
-	dataId,
-	generation,
-	baseURL,
-	principalId,
+	store,
 	discardEdits = false,
 	fetch: httpFetch = globalThis.fetch,
 	now = () => new Date(),
 }: {
 	data: RenderableData;
 	definition: DataDefinition;
-	dataId: string;
-	generation: number;
-	baseURL: string;
-	principalId: string;
+	store: CheckoutStore;
 	/** The person saw the unpushed edits and asked for them to go. */
 	discardEdits?: boolean;
 	fetch?: typeof globalThis.fetch;
@@ -427,7 +542,6 @@ export async function pull({
 			],
 		});
 	}
-	const store = { dataId, baseURL, principalId };
 	if (!discardEdits) {
 		const held = await readWorkingCopy(store, httpFetch);
 		if (held.error !== null) return Err(held.error);
@@ -490,20 +604,20 @@ export async function pull({
 	if (failures.length > 0) return CheckoutError.Unrenderable({ failures });
 
 	const manifest: CheckoutManifest = {
-		baseURL,
-		principalId,
-		dataId,
-		generation,
+		...store,
 		pulledAt: now().toISOString(),
 		rows,
 		kvHash,
 	};
-	files.push({
-		path: MANIFEST_PATH,
-		contents: `${JSON.stringify(manifest, null, 2)}\n`,
-	});
+	files.push(
+		{ path: AGENTS_PATH, contents: agentsFile(parsedDefinition.data) },
+		{
+			path: MANIFEST_PATH,
+			contents: `${JSON.stringify(manifest, null, 2)}\n`,
+		},
+	);
 
-	const { error } = await sendCheckout(dataId, files, httpFetch);
+	const { error } = await sendCheckout(store.dataId, files, httpFetch);
 	return error === null ? Ok({ files: files.length }) : Err(error);
 }
 
@@ -709,16 +823,12 @@ export type PushPlan = {
 export async function diff({
 	data,
 	definition,
-	dataId,
-	baseURL,
-	principalId,
+	store,
 	fetch: httpFetch = globalThis.fetch,
 }: {
 	data: RenderableData;
 	definition: DataDefinition;
-	dataId: string;
-	baseURL: string;
-	principalId: string;
+	store: CheckoutStore;
 	fetch?: typeof globalThis.fetch;
 }): Promise<Result<PushPlan, CheckoutError>> {
 	const parsed = compileData(definition);
@@ -729,10 +839,7 @@ export async function diff({
 			],
 		});
 	}
-	const held = await readWorkingCopy(
-		{ dataId, baseURL, principalId },
-		httpFetch,
-	);
+	const held = await readWorkingCopy(store, httpFetch);
 	if (held.error !== null) return Err(held.error);
 	return Ok(await planPush(data, parsed.data, held.data));
 }
@@ -935,10 +1042,7 @@ function samePlan(left: PushPlan, right: PushPlan): boolean {
 export async function push({
 	data,
 	definition,
-	dataId,
-	generation,
-	baseURL,
-	principalId,
+	store,
 	plan: confirmed,
 	resolutions = {},
 	fetch: httpFetch = globalThis.fetch,
@@ -946,10 +1050,7 @@ export async function push({
 }: {
 	data: PushableData;
 	definition: DataDefinition;
-	dataId: string;
-	generation: number;
-	baseURL: string;
-	principalId: string;
+	store: CheckoutStore;
 	/** What `diff` said and a person agreed to. */
 	plan: PushPlan;
 	resolutions?: ConflictResolutions;
@@ -964,10 +1065,7 @@ export async function push({
 			],
 		});
 	}
-	const held = await readWorkingCopy(
-		{ dataId, baseURL, principalId },
-		httpFetch,
-	);
+	const held = await readWorkingCopy(store, httpFetch);
 	if (held.error !== null) return Err(held.error);
 	const plan = await planPush(data, parsed.data, held.data);
 
@@ -1039,10 +1137,7 @@ export async function push({
 	const pulled = await pull({
 		data,
 		definition,
-		dataId,
-		generation,
-		baseURL,
-		principalId,
+		store,
 		discardEdits: true,
 		fetch: httpFetch,
 		now,

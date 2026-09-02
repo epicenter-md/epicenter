@@ -4,7 +4,7 @@
  * The host is a `fetch` here, because what these pin is the application's
  * half: that a pull hands over every file and a manifest describing exactly
  * those files, that it refuses a folder holding unpushed edits, and that
- * `workingCopyChanges` calls an edit what it is. Whether the bytes reach a
+ * `planPush` calls an edit what it is. Whether the bytes reach a
  * filesystem is `apps/epicenter/src/checkout.test.ts`.
  */
 
@@ -19,6 +19,7 @@ import type * as Y from '@y/y';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openMemory } from '../store/memory.js';
 import {
+	AGENTS_PATH,
 	type CheckoutFile,
 	type CheckoutManifest,
 	checkoutLine,
@@ -27,6 +28,7 @@ import {
 	MANIFEST_PATH,
 	type PushableData,
 	type PushPlan,
+	type PushRefusalReason,
 	pull,
 	push,
 } from './checkout.js';
@@ -45,6 +47,14 @@ const definition = defineData({
 
 const DATA_ID = definition.id;
 const CLOUD = 'https://api.epicenter.so';
+
+/** Which store these files are a working copy of, spelled once. */
+const STORE = {
+	dataId: DATA_ID,
+	generation: 7,
+	baseURL: CLOUD,
+	principalId: 'alice',
+};
 
 /**
  * A host that holds one folder in memory.
@@ -118,10 +128,7 @@ async function pullInto(
 	return pull({
 		data,
 		definition,
-		dataId: DATA_ID,
-		generation: 7,
-		baseURL: CLOUD,
-		principalId: 'alice',
+		store: STORE,
 		fetch: host.fetch,
 		now: () => new Date('2026-09-02T10:00:00.000Z'),
 		...options,
@@ -136,10 +143,11 @@ describe('pull fills the folder and writes the base', () => {
 
 		expect([...host.folder.keys()].sort()).toEqual([
 			MANIFEST_PATH,
+			AGENTS_PATH,
 			'kv.json',
 			`notes/${noteId}.md`,
 		]);
-		expect(pulled.files).toBe(3);
+		expect(pulled.files).toBe(4);
 
 		const manifest = manifestOf(host.folder);
 		expect(manifest).toMatchObject({
@@ -322,9 +330,9 @@ describe('pull refuses a folder holding unpushed edits', () => {
 	});
 
 	test("a person's own file beside their notes is not an edit", async () => {
-		const { host, data } = await pulledThenEdited((folder, _noteId) => {
+		const { host, data } = await pulledThenEdited((folder) => {
 			folder.set('README.md', 'notes about my notes');
-			folder.set('AGENTS.md', 'how to edit these');
+			folder.set('drafts/half-an-idea.txt', 'not a row');
 		});
 		expectOk(await pullInto(host, data));
 		await data[Symbol.asyncDispose]();
@@ -335,7 +343,7 @@ describe('pull refuses a folder holding unpushed edits', () => {
 			folder.set(`notes/${id}.md`, '---\ntitle: "gone"\n---\n');
 		});
 		const pulled = expectOk(await pullInto(host, data, { discardEdits: true }));
-		expect(pulled.files).toBe(3);
+		expect(pulled.files).toBe(4);
 		expect(host.folder.get(`notes/${noteId}.md`)).toContain('"Groceries"');
 		await data[Symbol.asyncDispose]();
 	});
@@ -376,14 +384,7 @@ describe('diff plans what push would do (ADR-0337)', () => {
 	}
 
 	const planOf = (host: ReturnType<typeof fakeHost>, data: PushableData) =>
-		diff({
-			data,
-			definition,
-			dataId: DATA_ID,
-			baseURL: CLOUD,
-			principalId: 'alice',
-			fetch: host.fetch,
-		});
+		diff({ data, definition, store: STORE, fetch: host.fetch });
 
 	test('a value the person changed and the store did not is applied', async () => {
 		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
@@ -444,10 +445,7 @@ describe('diff plans what push would do (ADR-0337)', () => {
 			await push({
 				data,
 				definition,
-				dataId: DATA_ID,
-				generation: 7,
-				baseURL: CLOUD,
-				principalId: 'alice',
+				store: STORE,
 				plan,
 				fetch: host.fetch,
 			}),
@@ -519,14 +517,7 @@ describe('push sends the values back and re-renders', () => {
 	}
 
 	const planOf = (host: ReturnType<typeof fakeHost>, data: PushableData) =>
-		diff({
-			data,
-			definition,
-			dataId: DATA_ID,
-			baseURL: CLOUD,
-			principalId: 'alice',
-			fetch: host.fetch,
-		});
+		diff({ data, definition, store: STORE, fetch: host.fetch });
 
 	const sendBack = (
 		host: ReturnType<typeof fakeHost>,
@@ -538,10 +529,7 @@ describe('push sends the values back and re-renders', () => {
 		push({
 			data,
 			definition,
-			dataId: DATA_ID,
-			generation: 7,
-			baseURL: CLOUD,
-			principalId: 'alice',
+			store: STORE,
 			plan,
 			resolutions,
 			fetch: host.fetch,
@@ -682,6 +670,117 @@ describe('push sends the values back and re-renders', () => {
 		if (stale.name !== 'FolderStale') throw new Error('unreachable');
 		expect(stale.values).toBe(1);
 		expect(data.tables.notes.get(noteId)?.title).toBe('Shopping');
+		await data[Symbol.asyncDispose]();
+	});
+});
+
+describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
+	/**
+	 * A definition with the shapes the generator has to render: a nullable
+	 * field, a reference, and a table whose rows have no text.
+	 */
+	const shapes = defineData({
+		id: 'so.epicenter.shapes',
+		kv: {},
+		tables: {
+			notes: defineTable({
+				title: field.string(),
+				folderId: field.nullable(field.reference('folders')),
+				content: plainText(),
+			}),
+			folders: defineTable({ name: field.string(), content: plainText() }),
+		},
+	});
+
+	async function agentsFor(
+		data: PushableData,
+		of: typeof definition | typeof shapes = definition,
+	) {
+		const host = fakeHost();
+		expectOk(
+			await pull({
+				data,
+				definition: of,
+				store: { ...STORE, dataId: of.id },
+				fetch: host.fetch,
+			}),
+		);
+		return { host, agents: host.folder.get(AGENTS_PATH) as string };
+	}
+
+	test('every table and field the definition declares is in it', async () => {
+		// Derived from the definition rather than compared to a fixture, so the
+		// test says the rule (everything that exists is named) instead of
+		// pinning today's markdown.
+		const data = await openMemory(shapes);
+		const { agents } = await agentsFor(data as unknown as PushableData, shapes);
+		for (const [name, table] of Object.entries(shapes.tables)) {
+			expect(agents).toContain(`### ${name}/`);
+			for (const fieldName of Object.keys(table)) {
+				if (fieldName === 'content') continue;
+				expect(agents).toContain(`\`${fieldName}\``);
+			}
+		}
+		// A nullable reference says both facts, because an agent writing one has
+		// to know it may be null and what it points at.
+		expect(agents).toContain('| `folderId` | reference or null -> `folders` |');
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('every refusal an agent can cause has a line telling it not to', async () => {
+		// The file is the one place an agent learns which of its edits are
+		// wasted, and a push refuses whole, so a missing line costs every other
+		// edit in the folder too.
+		const data = await openMemory(shapes);
+		const { agents } = await agentsFor(data as unknown as PushableData, shapes);
+		const said: Record<PushRefusalReason, string> = {
+			'no-base': 'working copy',
+			'body-changed': 'The text under the `---` block does not come back',
+			'new-file': 'Do not create files',
+			'row-gone': 'in the application',
+			'file-missing': 'Do not rename, move, or delete a file',
+			'kv-changed': 'Do not edit `kv.json`',
+			unreadable: 'Keep the `---` block',
+			'value-removed': 'Do not remove a frontmatter line',
+			'name-unknown': 'Do not invent a field name',
+			'value-invalid': 'does not\n  fit its field',
+			'table-undeclared': 'The tables',
+		};
+		for (const phrase of Object.values(said)) {
+			expect(agents).toContain(phrase);
+		}
+		// And the fact none of the lines states on its own.
+		expect(agents).toContain('applies all of its changes or none');
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('two writes of one definition are byte-identical', async () => {
+		// The host skips a write whose bytes already match, which is what keeps
+		// a pull from making Time Machine and Spotlight see the whole folder as
+		// new. A generated file that carried a timestamp would break that for
+		// every folder, every time.
+		const data = await openMemory(shapes);
+		const first = await agentsFor(data as unknown as PushableData, shapes);
+		const second = await agentsFor(data as unknown as PushableData, shapes);
+		expect(second.agents).toBe(first.agents);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test("its first line is the one a person needs, and it is the store's file", async () => {
+		// Not a person's to keep: it is swept and rewritten like every other
+		// file the store owns, so the first line has to say so before anybody
+		// puts their own words in it.
+		const host = fakeHost();
+		const { data } = await notebook();
+		expectOk(await pullInto(host, data));
+		expect(host.folder.get(AGENTS_PATH)).toContain(
+			'Keep anything of your own under a different name',
+		);
+
+		host.folder.set(AGENTS_PATH, 'my own words');
+		// It is not a row, so nothing plans it and no pull refuses over it.
+		expectOk(await pullInto(host, data));
+		expect(host.folder.get(AGENTS_PATH)).toContain('### notes/');
 		await data[Symbol.asyncDispose]();
 	});
 });
