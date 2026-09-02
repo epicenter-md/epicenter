@@ -68,7 +68,9 @@ type Epicenter<TDefinition extends DataDefinition = never> = {
 	? {}
 	: {
 			readonly account: AuthClient;
-			readonly data: Promise<ReplicaData<TDefinition>>;
+			readonly data: Promise<
+				Result<ReplicaData<TDefinition>, StoreError | DataDefinitionParseError>
+			>;
 			eraseReplica(): Promise<void>;
 		});
 ```
@@ -84,15 +86,31 @@ so omitting the argument yields the smaller type rather than the larger.
 Verbs live under the noun they belong to. `openSqlite` and `deleteSqlite` were
 two verbs sharing a suffix, which is a noun that had not been written down.
 
-**`data` is a lazy getter that memoizes, resolves already syncing, and
-REJECTS.** Reading it starts the open, so an application that never reads it
+**`data` is a lazy getter that memoizes, resolves already syncing, and resolves
+a `Result`.** Reading it starts the open, so an application that never reads it
 pays no Web Lock, no IndexedDB, and no round trip. Sync attaches inside, because
-the account is on the handle. It rejects rather than resolving a `Result`:
-`packages/data` returns `Result` and should, but that type is for a caller who
-branches on the error or composes it onward, and a route does neither. Every
-failure here is terminal and renders one component, and `{#await}` already has a
-failure channel. `openSqlite` keeps its `Result`, because Local Mail genuinely
-branches on it.
+the account is on the handle.
+
+**The error is the store's own, not `AppError.StorageFailed` wrapping it.** An
+application's boot gate switches on the failure's `name` to choose between a
+retry, an erase, and a sign-in; `apps/honeycrisp/src/lib/boot-failure.ts` has
+arms for `AlreadyOpen`, `Unaddressable`, and `BoundElsewhere`. Today
+`openClientOwnedData` flattens all of them into `AppError.StorageFailed({ cause })`,
+so every arm falls through to "Something went wrong" and both repairs disappear.
+`data` resolves `Result<…, StoreError | DataDefinitionParseError>`, which is what
+`openDatabase` and `resolveGeneration` already return. `AppError` was minted for
+the SQLite and secrets owners and is the wrong error for a store `packages/data`
+opens.
+
+**Honeycrisp's openers rejected instead, and the reason leaves with the
+construct that justified it.** The comment in `databases.ts` is exact: a route
+rendering a promise already has `{#await}`'s failure channel, so a `Result` past
+the opener bought a second one, and the account route rendered its gate from four
+arms of which none read the error. The Svelte wrapper removes `{#await}`. Its
+`state` is synchronous tracked state read by `{#if}`, which has no failure
+channel, so a rejection there is data that had to be caught and re-typed as
+`unknown`. A `Result` is that data, already typed. Nothing past the wrapper
+carries a `Result`, and nothing past it throws.
 
 **`openData` leaves the binding.** What a runtime supplies is
 `{ open, delete, secrets }` and nothing else. The Bun host keeps this seam,
@@ -110,6 +128,29 @@ authority (ADR-0325), and `replica` is the word a developer reads unsoftened.
 `secrets.put(accountId, …)` becomes `secrets.put(label, …)` with
 `SecretError.InvalidSecretLabel`, because ADR-0310 calls it a label and
 `epicenter.account` now means something else on the same object.
+
+**The Svelte wrapper has four states, and the data rides on `ready`.**
+`fromEpicenter(epicenter)` answers `signed-out | opening | ready | failed`.
+Signed-out is answered before anything opens, from a single read of
+`account.state` (ADR-0088: a page lifetime is one auth generation), so a person
+who cannot open anything costs no Web Lock, no IndexedDB, and no round trip. It
+is its own state rather than a failure because the route already says so: folding
+it into the failure channel makes the gate sniff an error to choose between "sign
+in" and "something broke", and a signed-out open refuses with `Unaddressable`,
+which the boot gate reads as a bad link.
+
+There is no `app.data`. The opened store is a field on the `ready` variant, so a
+read before the store is open does not compile. A top-level `data` accessor could
+only be a runtime throw, which is a type turned into an invariant, and it cannot
+be read from a `$derived` during `opening` without becoming a render error.
+
+**This record assumes the opened store knows its own address.** The folder verbs
+(ADR-0337) and the sync status a person is shown both need the generation, and
+`ReplicaData` carries `baseURL` and `principalId` but no generation today. With
+the generation resolved inside `data`, an application cannot rebuild it. Putting
+the address and the connection status on the store is a `packages/data` decision
+and belongs in its own record; this one does not govern it and does not work
+without it.
 
 ## Consequences
 
@@ -156,6 +197,16 @@ authority (ADR-0325), and `replica` is the word a developer reads unsoftened.
   `data` rejects for a signed-out person produces an unhandled rejection on any
   route that never reads it, and it claims the Web Lock during module
   evaluation, which a second tab and a hot reload both meet.
+- **Rejecting rather than resolving a `Result`.** Refused. A rejection is
+  `unknown`, so the failed state could not carry a typed error without an
+  assertion, and `data` would be the only verb on a handle whose `sqlite.open`
+  returns a `Result` that fails a different way.
+- **Wrapping the store's failure in `AppError.StorageFailed`.** Refused. It hides
+  the `name` a boot gate switches on under `cause`, which makes every arm the
+  fallback and deletes the erase and retry repairs.
+- **A top-level `data` accessor that throws before the store opens.** Refused. It
+  converts a fact the type could carry into a runtime invariant, and it cannot be
+  read from a `$derived` while opening.
 - **`data` as a method taking the definition.** Refused. An application has one
   definition and it is an import, so the argument is a build-time constant
   arriving at call time, which is the same shape as the app id arriving twice.
