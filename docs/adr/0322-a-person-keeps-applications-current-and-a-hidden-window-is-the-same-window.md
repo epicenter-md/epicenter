@@ -1,8 +1,9 @@
 # 0322. A person keeps applications current, and a hidden window is the same window
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-09-01
-- **Unbuilt:** all of it, and one thing is unmeasured rather than merely unwritten: whether a hidden WebView keeps running on each platform. See "What has to be measured first".
+- **Superseded by:** [ADR-0323](0323-background-work-runs-in-the-host-and-a-window-is-for-looking-at.md) entirely. The measurement this record asked for was run and the answer was no: a hidden window is suspended after about seven minutes. Its human half is not carried forward either. Every part of it, the manifest field, the settings toggle, the stored answer, and the login-item coupling, existed to ration WebView memory, and background work in the host costs nothing to ration.
+- **Never built.** Nothing here shipped.
 - **Amends:** [ADR-0273](0273-an-epicenter-app-is-an-spa-with-a-namespace-and-background-work-is-a-hidden-window.md) at the one clause it left open. It decided that background work is a window nobody is looking at, that an application's code does not change between visible and hidden, and that starting a window hidden is the ability it adds. It did not decide who chooses which applications get one. This does.
 - **Relates:** [ADR-0209](0209-epicenter-is-the-raw-view-beside-its-applications-not-a-shell-above-them.md) (Home renders the surface and calls a host verb, which is the relationship it already has to launching), [ADR-0317](0317-local-mail-is-an-epicenter-application-without-a-standalone-cli.md) and [ADR-0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md) (both carry this as their remaining unbuilt line), and [ADR-0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md) (why the answer is not kept in an application's SQLite)
 
