@@ -5,6 +5,7 @@
 - **Unbuilt:** all of it. Local Mail reconciles from its own window today, and the host runs no application code beyond admitting a data definition.
 - **Supersedes:** [ADR-0322](0322-a-person-keeps-applications-current-and-a-hidden-window-is-the-same-window.md) entirely. That record decided a person keeps applications current by having the host start their windows hidden, and it named the one thing it could not settle: whether a hidden WebView keeps running. It does not. Its human half is not carried forward either, because what it rationed turned out to be free.
 - **Amended by:** [ADR-0327](0327-undelivered-work-is-an-outbox-and-that-is-where-a-failure-appears.md), which decides where a pass outcome lands and rescopes the detection sentence below.
+- **Amended by:** [ADR-0328](0328-epicenter-runs-when-you-log-in-and-pause-is-the-only-control-it-offers.md), which withdraws the per-application "Pause syncing" below. Stopping the work is a machine want, so it is one Pause in the menu bar rather than a feature in each application.
 - **Amends:** [ADR-0273](0273-an-epicenter-app-is-an-spa-with-a-namespace-and-background-work-is-a-hidden-window.md) at one decision and one refusal, stated below.
 - **Amends:** [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) at the sentence describing what a host does. It serves bundles, brokers credentials, and now runs a declared slice of first-party application code. Its actual refusal, a second convergent plane, is untouched: nothing here opens a store or serves an authority.
 - **Relates:** [ADR-0313](0313-a-data-definition-ships-as-typescript-and-a-host-that-needs-one-imports-it.md) (the host already executes first-party application code; this extends a moment into a session), [ADR-0043](0043-an-agent-answers-where-its-capability-lives.md) (work answers where its capability lives), [ADR-0317](0317-local-mail-is-an-epicenter-application-without-a-standalone-cli.md) and [ADR-0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md) (both carried this as their remaining unbuilt line), and [ADR-0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md) (the storage the host already owns)
@@ -81,11 +82,11 @@ of WebView per application. A timer in a process that is already running costs
 nothing, and a permission with no cost behind it is a question asked for no
 reason.
 
-**Turning it off belongs to the application, in the application's own words.**
-"Pause syncing" is a mail feature, and it belongs in Local Mail where a person
-is already thinking about mail. It is not a platform switch, and making it one
-would produce the settings screen people visit once in confusion and never
-again.
+**Turning it off is not a permission and not a per-application feature.** This
+record first placed it in each application, and ADR-0328 withdrew that: nobody
+opens their mail application to stop their laptop from doing work. It is one
+Pause for the machine, in the menu bar, and an account a person is finished with
+is removed instead (ADR-0320).
 
 **Whether Epicenter itself opens at login is unchanged and separate.** It is one
 existing host setting a person controls. This record decides where an
