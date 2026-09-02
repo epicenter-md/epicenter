@@ -1,9 +1,5 @@
 <script lang="ts">
-	import {
-		answerKey,
-		type PlanItem,
-		type PushPlan,
-	} from '@epicenter/data/artifact/checkout';
+	import type { PlanItem, PushPlan } from '@epicenter/data/artifact/checkout';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import FolderDownIcon from '@lucide/svelte/icons/folder-down';
@@ -44,11 +40,17 @@
 	/**
 	 * What the folder holds that these notes do not, when a pull refused.
 	 *
-	 * The same `PushPlan` the send-back dialog reads, because it is the same
-	 * question asked at the other end. Two comparisons is how a pull comes to
-	 * refuse work a push would have called converged.
+	 * A pull refuses two ways and this dialog answers both, because the person
+	 * is deciding the same thing: whether to write over files nobody sent back.
+	 * `plan` is the same `PushPlan` the push dialog reads, and `unwritten` is a
+	 * folder with no base at all, where there is nothing to compare and every
+	 * row-shaped file might be work nobody ever sent (ADR-0338).
 	 */
-	let unpushed = $state<PushPlan | undefined>(undefined);
+	let unpushed = $state<
+		| { readonly kind: 'edited'; readonly plan: PushPlan }
+		| { readonly kind: 'unwritten'; readonly paths: readonly string[] }
+		| undefined
+	>(undefined);
 	let running = $state(false);
 
 	async function run(discardEdits: boolean) {
@@ -66,7 +68,11 @@
 			if (error.name === 'WorkingCopyDirty') {
 				// Not an outcome line. The work is the person's, and the only
 				// honest next step is showing them what they are about to lose.
-				unpushed = error.plan;
+				unpushed = { kind: 'edited', plan: error.plan };
+				return;
+			}
+			if (error.name === 'FolderUnwritten') {
+				unpushed = { kind: 'unwritten', paths: error.unwritten };
 				return;
 			}
 			outcome = { tone: 'refused', message: refusal(error) };
@@ -103,25 +109,31 @@
 	 * A flat list, because the plan is one: this dialog only has to say what
 	 * would go, and the send-back dialog is where each of them is decided.
 	 */
-	const edited = $derived(
-		(unpushed ?? []).map((item) => ({
-			key: answerKey(item),
+	const edited = $derived.by(() => {
+		if (unpushed === undefined) return [];
+		if (unpushed.kind === 'unwritten') {
+			return unpushed.paths.map((path, index) => ({
+				key: `${index}`,
+				subject: path,
+				what: 'nothing here wrote this file',
+			}));
+		}
+		return unpushed.plan.map((item, index) => ({
+			key: `${index}`,
 			subject:
 				item.kind === 'value' ||
-				item.kind === 'conflict' ||
 				item.kind === 'body' ||
 				item.kind === 'deletion'
 					? label(item)
 					: item.path,
 			what: went(item),
-		})),
-	);
+		}));
+	});
 
 	/** What this item is, in the fewest words that say what would be lost. */
 	function went(item: PlanItem): string {
 		switch (item.kind) {
 			case 'value':
-			case 'conflict':
 				return `${item.name} changed`;
 			case 'body':
 				return 'the text changed';
@@ -130,11 +142,7 @@
 			case 'admission':
 				return 'a file that is not a note yet';
 			case 'discard':
-				return item.notes
-					.map((note) => note.name ?? note.reason)
-					.join(', ');
-			case 'block':
-				return 'never written by Honeycrisp';
+				return item.notes.map((note) => note.name ?? note.reason).join(', ');
 		}
 	}
 </script>
@@ -170,10 +178,15 @@
 >
 	<AlertDialog.Content>
 		<AlertDialog.Header>
-			<AlertDialog.Title>Your folder has changes Honeycrisp does not have</AlertDialog.Title>
+			<AlertDialog.Title>
+				{unpushed?.kind === 'unwritten'
+					? 'Your folder holds files Honeycrisp did not write'
+					: 'Your folder has changes Honeycrisp does not have'}
+			</AlertDialog.Title>
 			<AlertDialog.Description>
-				Saving replaces every file written last time, so these would go. Send
-				folder edits back first if you want to keep them.
+				{unpushed?.kind === 'unwritten'
+					? 'Nothing here wrote this folder, so nothing in it can be told apart from your notes. Saving replaces everything in it.'
+					: 'Saving replaces every file written last time, so these would go. Push folder edits back first if you want to keep them.'}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 

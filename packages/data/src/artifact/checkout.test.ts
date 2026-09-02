@@ -22,8 +22,6 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openMemory } from '../store/memory.js';
 import {
 	AGENTS_PATH,
-	answerKey,
-	answersFor,
 	type CheckoutFile,
 	type CheckoutManifest,
 	checkoutLine,
@@ -31,7 +29,6 @@ import {
 	type DiscardReason,
 	diff,
 	MANIFEST_PATH,
-	type PlanAnswers,
 	type PlanItem,
 	type PushableData,
 	type PushPlan,
@@ -212,11 +209,11 @@ describe('pull fills the folder and writes the base', () => {
 		]);
 		const { data } = await notebook();
 		const refused = expectErr(await pullInto(host, data));
-		expect(refused.name).toBe('WorkingCopyDirty');
-		if (refused.name !== 'WorkingCopyDirty') throw new Error('unreachable');
-		expect(refused.plan).toEqual([
-			{ kind: 'block', path: 'drafts/ideas.md', reason: 'no-base' },
-		]);
+		expect(refused.name).toBe('FolderUnwritten');
+		if (refused.name !== 'FolderUnwritten') throw new Error('unreachable');
+		// One fact about the folder, not one refusal per file: the repair for
+		// every one of them is the same pull (ADR-0338).
+		expect(refused.unwritten).toEqual(['drafts/ideas.md']);
 		expect(host.folder.has('drafts/ideas.md')).toBe(true);
 		await data[Symbol.asyncDispose]();
 	});
@@ -231,7 +228,7 @@ describe('pull fills the folder and writes the base', () => {
 		host.folder.set(MANIFEST_PATH, '{"rows":');
 
 		const refused = expectErr(await pullInto(host, data));
-		expect(refused.name).toBe('WorkingCopyDirty');
+		expect(refused.name).toBe('FolderUnwritten');
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -251,12 +248,11 @@ describe('pull fills the folder and writes the base', () => {
 		);
 
 		const refused = expectErr(await pullInto(host, data));
-		expect(refused.name).toBe('WorkingCopyDirty');
-		if (refused.name !== 'WorkingCopyDirty') throw new Error('unreachable');
+		expect(refused.name).toBe('FolderUnwritten');
+		if (refused.name !== 'FolderUnwritten') throw new Error('unreachable');
 		// Not a diff against Alice's base: a manifest naming another account is
 		// no base at all, so every file in the folder is shown whole.
-		expect(refused.plan.every((item) => item.kind === 'block')).toBe(true);
-		expect(refused.plan[0]).toMatchObject({ reason: 'no-base' });
+		expect(refused.unwritten.length).toBeGreaterThan(0);
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -317,6 +313,7 @@ describe('pull refuses a folder holding unpushed edits', () => {
 				name: 'title',
 				store: 'Groceries',
 				file: 'Shopping',
+				storeChanged: false,
 			},
 		]);
 		// The edit is still on disk. A refusal is not a repair (ADR-0281).
@@ -437,6 +434,7 @@ describe('diff plans what push would do (ADR-0337)', () => {
 				name: 'title',
 				store: 'Groceries',
 				file: 'Shopping',
+				storeChanged: false,
 			},
 		]);
 		await data[Symbol.asyncDispose]();
@@ -467,20 +465,24 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('all three differing is a conflict, and push will not guess', async () => {
+	test('all three differing is a value line saying the store moved too', async () => {
+		// The folder wins (ADR-0338), and what a person is owed is being told
+		// the store's value is going. That is `storeChanged`, and it is the same
+		// item kind as any other value: a per-item question here was answered
+		// `store` by clicking through it.
 		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
 			setField(folder, `notes/${id}.md`, '"Groceries"', '"Q3 plan"');
 		});
 		data.tables.notes.update(noteId, { title: 'Q3 planning' });
 		const plan = expectOk(await planOf(host, data));
-		expect(only(plan, 'conflict')).toMatchObject({
+		expect(only(plan, 'value')).toMatchObject({
 			name: 'title',
-			base: 'Groceries',
 			file: 'Q3 plan',
 			store: 'Q3 planning',
+			storeChanged: true,
 		});
 
-		const refused = expectErr(
+		expectOk(
 			await push({
 				data,
 				definition,
@@ -489,12 +491,7 @@ describe('diff plans what push would do (ADR-0337)', () => {
 				fetch: host.fetch,
 			}),
 		);
-		expect(refused.name).toBe('PushIncomplete');
-		if (refused.name !== 'PushIncomplete') throw new Error('unreachable');
-		expect(refused.unanswered).toEqual([`notes/${noteId}.md#title`]);
-		// Nothing was applied, and the folder still holds what the person wrote.
-		expect(data.tables.notes.get(noteId)?.title).toBe('Q3 planning');
-		expect(host.folder.get(`notes/${noteId}.md`)).toContain('"Q3 plan"');
+		expect(data.tables.notes.get(noteId)?.title).toBe('Q3 plan');
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -643,6 +640,7 @@ describe('diff plans what push would do (ADR-0337)', () => {
 				name: 'pinned',
 				store: false,
 				file: null,
+				storeChanged: false,
 			},
 		]);
 		await data[Symbol.asyncDispose]();
@@ -669,7 +667,6 @@ describe('push sends the values back and re-renders', () => {
 		host: ReturnType<typeof fakeHost>,
 		data: PushableData,
 		plan: PushPlan,
-		answers: PlanAnswers = {},
 		now = () => new Date('2026-09-02T11:00:00.000Z'),
 	) =>
 		push({
@@ -677,18 +674,9 @@ describe('push sends the values back and re-renders', () => {
 			definition,
 			store: STORE,
 			plan,
-			answers,
 			fetch: host.fetch,
 			now,
 		});
-
-	/** The one answer this plan asks for, given as `file`. */
-	const takeFile = (plan: PushPlan): PlanAnswers =>
-		Object.fromEntries(
-			plan
-				.filter((item) => answersFor(item).length > 0)
-				.map((item) => [answerKey(item), 'file' as const]),
-		);
 
 	test('an applied value reaches the store, and the folder is clean after', async () => {
 		const { host, data, noteId } = await edited(['"Groceries"', '"Shopping"']);
@@ -711,45 +699,28 @@ describe('push sends the values back and re-renders', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('an answered conflict applies the side the person named', async () => {
+	test('a value the store also moved is applied, and the folder still wins', async () => {
+		// The one place a button was ever genuinely cheaper, and it was still a
+		// hand merge either way (ADR-0338). The overview says the store moved;
+		// the push writes the file's value.
 		const { host, data, noteId } = await edited(['"Groceries"', '"Q3 plan"']);
 		data.tables.notes.update(noteId, { title: 'Q3 planning' });
 		const plan = expectOk(await planOf(host, data));
 
-		expectOk(
-			await sendBack(host, data, plan, {
-				[`notes/${noteId}.md#title`]: 'file',
-			}),
-		);
-		expect(data.tables.notes.get(noteId)?.title).toBe('Q3 plan');
-		await data[Symbol.asyncDispose]();
-	});
-
-	test('answering store keeps the store and rewrites the file', async () => {
-		const { host, data, noteId } = await edited(['"Groceries"', '"Q3 plan"']);
-		data.tables.notes.update(noteId, { title: 'Q3 planning' });
-		const plan = expectOk(await planOf(host, data));
-
-		const pushed = expectOk(
-			await sendBack(host, data, plan, {
-				[`notes/${noteId}.md#title`]: 'store',
-			}),
-		);
-		// Nothing is written, because answering `store` is writing what is
-		// already there. The re-render is what settles the file.
+		const pushed = expectOk(await sendBack(host, data, plan));
 		expect(pushed).toEqual({
-			rows: 0,
-			values: 0,
+			rows: 1,
+			values: 1,
 			bodies: 0,
 			deleted: 0,
 			admitted: [],
 		});
-		expect(data.tables.notes.get(noteId)?.title).toBe('Q3 planning');
-		expect(host.folder.get(`notes/${noteId}.md`)).toContain('"Q3 planning"');
+		expect(data.tables.notes.get(noteId)?.title).toBe('Q3 plan');
+		expect(host.folder.get(`notes/${noteId}.md`)).toContain('"Q3 plan"');
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a push with anything it cannot carry applies nothing at all', async () => {
+	test('a push whose plan stopped being true applies nothing at all', async () => {
 		// Half a push is a folder that matches nothing, and the re-render at the
 		// end would overwrite whatever it left behind.
 		const { host, data, noteId } = await edited(['"Groceries"', '"Shopping"']);
@@ -760,27 +731,27 @@ describe('push sends the values back and re-renders', () => {
 		);
 
 		const refused = expectErr(await sendBack(host, data, plan));
-		expect(refused.name).toBe('PushIncomplete');
+		expect(refused.name).toBe('PlanStale');
 		expect(data.tables.notes.get(noteId)?.title).toBe('Groceries');
 		await data[Symbol.asyncDispose]();
 	});
 
 	test('a plan that stopped being true is refused, and says what is', async () => {
-		// Between the dialog and the click the store moved, so the answer a
-		// person would have given is to a question that changed. The refusal
-		// carries the plan that is true now.
+		// Between the overview and the click the store moved, so the list about
+		// to be applied is not the list somebody read. The refusal carries the
+		// plan that is true now.
 		const { host, data, noteId } = await edited(['"Groceries"', '"Shopping"']);
 		const plan = expectOk(await planOf(host, data));
 		data.tables.notes.update(noteId, { title: 'Moved underneath' });
 
 		const refused = expectErr(await sendBack(host, data, plan));
-		expect(refused.name).toBe('PushIncomplete');
-		if (refused.name !== 'PushIncomplete') throw new Error('unreachable');
-		expect(only(refused.plan, 'conflict')).toMatchObject({
+		expect(refused.name).toBe('PlanStale');
+		if (refused.name !== 'PlanStale') throw new Error('unreachable');
+		expect(only(refused.plan, 'value')).toMatchObject({
 			name: 'title',
-			base: 'Groceries',
 			file: 'Shopping',
 			store: 'Moved underneath',
+			storeChanged: true,
 		});
 		expect(data.tables.notes.get(noteId)?.title).toBe('Moved underneath');
 		await data[Symbol.asyncDispose]();
@@ -805,9 +776,10 @@ describe('push sends the values back and re-renders', () => {
 				name: 'pinned',
 				store: false,
 				file: 'yes',
+				storeChanged: false,
 			},
 		]);
-		expectOk(await sendBack(host, data, plan, takeFile(plan)));
+		expectOk(await sendBack(host, data, plan));
 		expect(data.tables.notes.get(noteId)).toBeUndefined();
 		expect(data.tables.notes.nonconforming[0]?.raw.pinned).toBe('yes');
 		// And the folder was rewritten from the row, so the line survives the
@@ -835,9 +807,10 @@ describe('push sends the values back and re-renders', () => {
 				name: 'titel',
 				store: undefined,
 				file: 'typo',
+				storeChanged: false,
 			},
 		]);
-		expectOk(await sendBack(host, data, plan, takeFile(plan)));
+		expectOk(await sendBack(host, data, plan));
 		expect(data.tables.notes.get(noteId)?.id).toBe(noteId);
 		expect(host.folder.get(`notes/${noteId}.md`)).toContain('titel: "typo"');
 		await data[Symbol.asyncDispose]();
@@ -854,7 +827,7 @@ describe('push sends the values back and re-renders', () => {
 		);
 		const plan = expectOk(await planOf(host, data));
 
-		const pushed = expectOk(await sendBack(host, data, plan, takeFile(plan)));
+		const pushed = expectOk(await sendBack(host, data, plan));
 		expect(pushed.bodies).toBe(1);
 		expect(data.tables.notes.get(noteId)?.content).toBe(before);
 		expect((before as Y.Type).toString()).toContain('and eggs');
@@ -862,7 +835,9 @@ describe('push sends the values back and re-renders', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a body answered store is put back by the re-render', async () => {
+	test('an edited body is rewritten into the node the row already holds', async () => {
+		// The folder wins the text too, and `rewrite` is what keeps an editor
+		// bound to this very note bound after (ADR-0338).
 		const { host, data, noteId } = await edited(['buy milk', 'buy milk']);
 		host.folder.set(
 			`notes/${noteId}.md`,
@@ -870,13 +845,12 @@ describe('push sends the values back and re-renders', () => {
 		);
 		const plan = expectOk(await planOf(host, data));
 
-		const pushed = expectOk(
-			await sendBack(host, data, plan, {
-				[`notes/${noteId}.md#content`]: 'store',
-			}),
-		);
-		expect(pushed.bodies).toBe(0);
-		expect(host.folder.get(`notes/${noteId}.md`)).not.toContain('and eggs');
+		const pushed = expectOk(await sendBack(host, data, plan));
+		expect(pushed.bodies).toBe(1);
+		expect(
+			(data.rowFile('notes', noteId)?.content as Y.Type).toString(),
+		).toContain('and eggs');
+		expect(host.folder.get(`notes/${noteId}.md`)).toContain('and eggs');
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -890,7 +864,7 @@ describe('push sends the values back and re-renders', () => {
 		);
 		const plan = expectOk(await planOf(host, data));
 
-		const pushed = expectOk(await sendBack(host, data, plan, takeFile(plan)));
+		const pushed = expectOk(await sendBack(host, data, plan));
 		expect(pushed.admitted).toEqual([
 			{
 				path: 'notes/q3-plan.md',
@@ -913,7 +887,10 @@ describe('push sends the values back and re-renders', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a new file answered store is swept and never becomes a row', async () => {
+	test("an agent's stray file becomes a note rather than wedging the send", async () => {
+		// The wedge ADR-0337 shipped and ADR-0338 removed: one file nobody
+		// pulled used to stop everything until somebody opened Finder. A person
+		// who wants neither cancels and renames it out of the way.
 		const { host, data } = await edited(['buy milk', 'buy milk']);
 		host.folder.set(
 			'notes/scratch.md',
@@ -921,11 +898,9 @@ describe('push sends the values back and re-renders', () => {
 		);
 		const plan = expectOk(await planOf(host, data));
 
-		const pushed = expectOk(
-			await sendBack(host, data, plan, { 'notes/scratch.md': 'store' }),
-		);
-		expect(pushed.admitted).toEqual([]);
-		expect(data.tables.notes.ids()).toHaveLength(1);
+		const pushed = expectOk(await sendBack(host, data, plan));
+		expect(pushed.admitted).toHaveLength(1);
+		expect(data.tables.notes.ids()).toHaveLength(2);
 		expect(host.folder.has('notes/scratch.md')).toBe(false);
 		await data[Symbol.asyncDispose]();
 	});
@@ -1009,7 +984,7 @@ describe('push sends the values back and re-renders', () => {
 		// the one before this describes rows that are not these rows, and
 		// reading it as a base would call every one of them a deletion.
 		const { host, data } = await edited(['"Groceries"', '"Shopping"']);
-		const plan = expectOk(
+		const refused = expectErr(
 			await diff({
 				data,
 				definition,
@@ -1017,8 +992,9 @@ describe('push sends the values back and re-renders', () => {
 				fetch: host.fetch,
 			}),
 		);
-		expect(plan.every((item) => item.kind === 'block')).toBe(true);
-		expect(plan[0]).toMatchObject({ reason: 'no-base' });
+		expect(refused.name).toBe('FolderUnwritten');
+		if (refused.name !== 'FolderUnwritten') throw new Error('unreachable');
+		expect(refused.unwritten.length).toBeGreaterThan(0);
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -1029,7 +1005,7 @@ describe('push sends the values back and re-renders', () => {
 		const { host, data, noteId } = await edited(['"Groceries"', '"Shopping"']);
 		host.folder.delete(`notes/${noteId}.md`);
 		const plan = expectOk(await planOf(host, data));
-		expect(answersFor(only(plan, 'deletion'))).toEqual([]);
+		expect(only(plan, 'deletion').rowId).toBe(noteId);
 
 		const pushed = expectOk(await sendBack(host, data, plan));
 		expect(pushed.deleted).toBe(1);

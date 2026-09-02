@@ -1,13 +1,5 @@
 <script lang="ts">
-	import {
-		answerKey,
-		answersFor,
-		type PlanAnswers,
-		type PlanItem,
-		type PlannedBlock,
-		type PlannedDiscard,
-		type PushPlan,
-	} from '@epicenter/data/artifact/checkout';
+	import type { PlanItem, PushPlan } from '@epicenter/data/artifact/checkout';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import FolderUpIcon from '@lucide/svelte/icons/folder-up';
@@ -27,143 +19,187 @@
 	 *
 	 * It travels back into `push`, which recomputes its own and refuses if the
 	 * two disagree. A plan is a statement about one instant, and between the
-	 * dialog and the click a file can land or another device can sync; applying
-	 * an answer to a conflict whose other side has moved is the merge nobody
-	 * asked for.
+	 * overview and the click a file can land or an agent can still be working.
 	 */
 	let plan = $state<PushPlan | undefined>(undefined);
-	let answers = $state<PlanAnswers>({});
 	let outcome = $state<{ tone: 'held' | 'refused'; message: string } | undefined>(
 		undefined,
 	);
 	let running = $state(false);
+	let confirm = $state<HTMLButtonElement | null>(null);
 
-	/** Applied outright: the folder moved and the notes did not. */
-	const applied = $derived(
-		plan?.filter((item) => item.kind === 'value') ?? [],
+	/** How many of these changes cannot be put back afterwards. */
+	const irreversible = $derived(
+		plan?.filter((item) => item.kind === 'deletion' || item.kind === 'body')
+			.length ?? 0,
 	);
+
 	/**
-	 * Notes whose file is gone, which this send deletes for good.
+	 * The whole push as one block of plain text.
 	 *
-	 * Nothing is asked about them, so they are shown first and shown apart:
-	 * every other delete in Honeycrisp lands in Recently Deleted and this one
-	 * does not.
+	 * Text rather than a list of components so a person can select it and paste
+	 * it to the agent that made the mess (ADR-0330, ADR-0338). Everything a
+	 * surface would have styled is a word here instead.
 	 */
-	const deleting = $derived(
-		plan?.filter((item) => item.kind === 'deletion') ?? [],
-	);
-	/** Everything a person answers, in the order the plan named it. */
-	const asked = $derived(
-		plan?.filter((item) => answersFor(item).length > 0) ?? [],
-	);
-	/** Nothing answers these, so the send does not run while one stands. */
-	const blocks = $derived(
-		(plan?.filter((item) => item.kind === 'block') ?? []) as PlannedBlock[],
-	);
-	const unanswered = $derived(
-		asked.filter((item) => answers[answerKey(item)] === undefined).length,
-	);
+	const overview = $derived(plan === undefined ? '' : written(plan));
 
-	function title(row: { table: string; rowId: string }): string {
+	/**
+	 * The name a note is known by, whether or not this release can read it.
+	 *
+	 * Trashed notes are in the folder too, so a plan can name one, and `all` is
+	 * filtered to live notes. A note this release cannot read has no title to
+	 * ask for and its raw one is shown where it is a string, which is what the
+	 * note list does.
+	 */
+	function nameOf(row: { table: string; rowId: string }): string {
 		if (row.table !== 'notes') return `${row.table}/${row.rowId}`;
-		const note = honeycrisp.tables.notes.all.find(
+		const note = [...honeycrisp.tables.notes.all, ...honeycrisp.tables.notes.deleted].find(
 			(candidate) => candidate.id === row.rowId,
 		);
-		return note?.title === undefined || note.title === ''
-			? `${row.table}/${row.rowId}`
-			: note.title;
+		if (note !== undefined) return note.title === '' ? 'Untitled' : note.title;
+		const raw = honeycrisp.tables.notes.nonconforming.find(
+			(candidate) => candidate.id === row.rowId,
+		)?.raw.title;
+		return typeof raw === 'string' && raw !== '' ? raw : `notes/${row.rowId}`;
 	}
 
-	/** What one item is about, in the fewest words that still name the file. */
-	function subject(item: PlanItem): string {
-		switch (item.kind) {
-			case 'value':
-			case 'conflict':
-			case 'body':
-			case 'deletion':
-				return title(item);
-			case 'admission':
-			case 'discard':
-			case 'block':
-				return item.path;
-		}
+	/** Whether this note is already in Recently Deleted. */
+	function isTrashed(rowId: string): boolean {
+		return honeycrisp.tables.notes.deleted.some((note) => note.id === rowId);
 	}
 
-	/** What this item is asking, in the person's words. */
-	function question(item: PlanItem): string {
-		switch (item.kind) {
-			case 'conflict':
-				return `${item.name} changed in both places`;
-			case 'body':
-				return item.storeChanged
-					? 'the text changed in the folder and here'
-					: 'the text changed in the folder';
-			case 'admission':
-				return 'a file that is not a note yet';
-			case 'discard':
-				return 'this file cannot be sent as it is';
+	/** One line of the overview: a verb, a name, and what it costs. */
+	type Line = { verb: string; name: string; detail: string };
+
+	/** Everything about to be destroyed, and nothing that can be typed back. */
+	function goneForGood(plan: PushPlan): Line[] {
+		return plan.flatMap((item): Line[] => {
+			if (item.kind === 'deletion') {
+				return [
+					{
+						verb: 'deleted',
+						name: nameOf(item),
+						detail: isTrashed(item.rowId)
+							? 'already in Recently Deleted, and this removes it for good'
+							: 'not moved to Recently Deleted',
+					},
+				];
+			}
+			if (item.kind === 'body') {
+				return [
+					{
+						verb: 'replaced',
+						name: nameOf(item),
+						detail: item.storeChanged
+							? 'you also edited this here since the folder was written, and that text goes too'
+							: '',
+					},
+				];
+			}
+			return [];
+		});
+	}
+
+	/** Everything whose old version is printed beside it. */
+	function changed(plan: PushPlan): Line[] {
+		return plan.flatMap((item): Line[] => {
+			if (item.kind === 'value') {
+				const moved = `${item.name}  ${JSON.stringify(item.store ?? null)} -> ${JSON.stringify(item.file)}`;
+				return [
+					{
+						verb: 'changed',
+						name: nameOf(item),
+						detail: item.storeChanged
+							? `${moved}  (you also changed this here since the folder was written)`
+							: moved,
+					},
+				];
+			}
+			if (item.kind === 'admission') {
+				return [
+					{
+						verb: 'new note',
+						name: item.path,
+						detail: 'renamed to the id it gets',
+					},
+				];
+			}
+			return [];
+		});
+	}
+
+	/** Files the push cannot read, which the re-render writes over. */
+	function rewritten(plan: PushPlan): Line[] {
+		return plan.flatMap((item): Line[] =>
+			item.kind === 'discard'
+				? [
+						{
+							verb: 'unreadable',
+							name: item.path,
+							detail: item.notes.map((note) => why(note.reason)).join('; '),
+						},
+					]
+				: [],
+		);
+	}
+
+	/** What is wrong with a file the push cannot read. */
+	function why(reason: string): string {
+		switch (reason) {
+			case 'row-gone':
+				return 'this note was deleted here after the folder was written';
+			case 'kv-changed':
+				return 'this file is written for you to read and is never sent back';
+			case 'unreadable':
+				return 'the --- block at the top is missing';
+			case 'table-undeclared':
+				return 'this version of Honeycrisp cannot write this kind of file back';
+			case 'body-unreadable':
+				return 'the text under the --- block cannot be read as a note';
 			default:
-				return '';
-		}
-	}
-
-	/** What answering `file` does, said as the thing it does. */
-	function takeFile(item: PlanItem): string {
-		switch (item.kind) {
-			case 'conflict':
-				return `Folder: ${JSON.stringify(item.file)}`;
-			case 'body':
-				return "Use the folder's text";
-			case 'admission':
-				return 'Make it a note';
-			default:
-				return 'Use the folder';
-		}
-	}
-
-	/** What answering `store` does, which is always: the file is rewritten. */
-	function keepStore(item: PlanItem): string {
-		switch (item.kind) {
-			case 'conflict':
-				return `Here: ${JSON.stringify(item.store)}`;
-			case 'body':
-				return 'Keep the text here';
-			case 'admission':
-				return 'Delete the file';
-			default:
-				return 'Overwrite the file';
+				return reason;
 		}
 	}
 
 	/**
-	 * Why one file cannot be sent as it stands.
+	 * The overview, ranked by what is still reachable afterwards (ADR-0338).
 	 *
-	 * Every one of these is a thing the folder can express and the notes cannot
-	 * take, so the honest sentence names the limit rather than apologizing for
-	 * it. Answering keeps what is here and rewrites the file, and a person who
-	 * wants neither closes this, fixes the file, and reads the folder again.
+	 * Not by which region of the file moved: a person scanning this is asking
+	 * whether anything is about to be destroyed. Inside a section it is a fixed
+	 * verb column sorted by the name the note is known by, and a note appears
+	 * twice when two things happened to it, which is what `git status` does for
+	 * a file both staged and modified.
 	 */
-	function why(note: PlannedDiscard['notes'][number]): string {
-		switch (note.reason) {
-			case 'row-gone':
-				return 'This note was deleted here after the folder was written.';
-			case 'kv-changed':
-				return 'This file is written for you to read and is never sent back.';
-			case 'unreadable':
-				return 'The --- block at the top is missing, so nothing in this file can be read.';
-			case 'table-undeclared':
-				return 'This kind of file is not something this version of Honeycrisp knows how to write back.';
-			case 'body-unreadable':
-				return 'The text under the --- block cannot be read as a note.';
-		}
-	}
-
-	/** Why the send cannot run at all while this stands. */
-	function blocked(item: PlannedBlock): string {
-		switch (item.reason) {
-			case 'no-base':
-				return 'Nothing here wrote this folder, so nothing in it can be told apart from what you already have. Save notes as files first.';
-		}
+	function written(plan: PushPlan): string {
+		const sections: [string, Line[]][] = [
+			['Gone for good', goneForGood(plan)],
+			[
+				'Changed. The old value is here, so you can put it back by hand.',
+				changed(plan),
+			],
+			['Rewritten from your notes', rewritten(plan)],
+		];
+		const shown = sections.filter(([, lines]) => lines.length > 0);
+		const verbs = Math.max(
+			...shown.flatMap(([, lines]) => lines.map((line) => line.verb.length)),
+			0,
+		);
+		const names = Math.max(
+			...shown.flatMap(([, lines]) => lines.map((line) => line.name.length)),
+			0,
+		);
+		return shown
+			.map(([heading, lines]) =>
+				[
+					heading,
+					...[...lines]
+						.sort((left, right) => (left.name < right.name ? -1 : 1))
+						.map((line) =>
+							`  ${line.verb.padEnd(verbs)}  ${line.name.padEnd(names)}  ${line.detail}`.trimEnd(),
+						),
+				].join('\n'),
+			)
+			.join('\n\n');
 	}
 
 	async function open() {
@@ -179,7 +215,6 @@
 				outcome = { tone: 'held', message: 'Your folder matches your notes.' };
 				return;
 			}
-			answers = {};
 			plan = data;
 		} catch (cause) {
 			reportBackgroundError(cause);
@@ -194,7 +229,7 @@
 		if (confirmed === undefined) return;
 		running = true;
 		try {
-			const { data, error } = await push({ plan: confirmed, answers });
+			const { data, error } = await push({ plan: confirmed });
 			plan = undefined;
 			outcome =
 				error === null
@@ -204,14 +239,14 @@
 			// The library reports every refusal it plans for as a `Result`, so a
 			// throw here is a bug rather than an outcome. It still cannot leave
 			// the dialog open over a plan that may no longer be true, and it must
-			// not leave a person believing nothing happened: some of the send may
+			// not leave a person believing nothing happened: some of the push may
 			// have landed.
 			reportBackgroundError(cause);
 			plan = undefined;
 			outcome = {
 				tone: 'refused',
 				message:
-					'Something went wrong partway through sending. Read the folder again to see what landed.',
+					'Something went wrong partway through pushing. Read the folder again to see what landed.',
 			};
 		} finally {
 			running = false;
@@ -237,7 +272,7 @@
 			);
 		}
 		if (done.values > 0) {
-			parts.push(`${done.values} value${done.values === 1 ? '' : 's'}`);
+			parts.push(`${done.values} value${done.values === 1 ? '' : 's'} changed`);
 		}
 		if (done.bodies > 0) {
 			parts.push(`${done.bodies} note${done.bodies === 1 ? '' : 's'} rewritten`);
@@ -248,7 +283,7 @@
 		}
 		return parts.length === 0
 			? 'Your folder now matches your notes.'
-			: `${parts.join(', ')} sent back.`;
+			: `${parts.join(', ')}.`;
 	}
 
 	function unavailable(name: string): string {
@@ -257,10 +292,12 @@
 				return 'This copy of Honeycrisp has no Epicenter folder to read.';
 			case 'HostRefused':
 				return 'Your Epicenter folder could not be read. It may be on a drive that is not there, or already being written.';
-			case 'PushIncomplete':
+			case 'FolderUnwritten':
+				return 'Nothing here wrote this folder, so nothing in it can be told apart from what you already have. Save notes as files first.';
+			case 'PlanStale':
 				return 'The folder or your notes changed while you were looking. Read it again.';
 			case 'FolderStale':
-				return 'Your edits reached your notes, and the folder could not be rewritten. Save notes as files to catch it up, and do not send again first: any file that became a note is still there under its old name and would be sent twice.';
+				return 'Your edits reached your notes, and the folder could not be rewritten. Save notes as files to catch it up, and do not push again first: any file that became a note is still there under its old name and would be pushed twice.';
 			default:
 				return 'Your folder could not be read.';
 		}
@@ -277,7 +314,7 @@
 		onclick={open}
 	>
 		<FolderUpIcon class="size-3.5" />
-		{running ? 'Reading folder…' : 'Send folder edits back'}
+		{running ? 'Reading folder…' : 'Push folder edits back'}
 	</Button>
 	{#if outcome}
 		<p
@@ -296,122 +333,41 @@
 		if (!isOpen) plan = undefined;
 	}}
 >
-	<AlertDialog.Content class="max-w-xl">
+	<AlertDialog.Content
+		class="max-w-2xl"
+		onOpenAutoFocus={(event) => {
+			// Enter pushes. bits-ui focuses the first focusable, which is Cancel,
+			// and this dialog's whole shape is one approval of a list a person
+			// just read (ADR-0338).
+			event.preventDefault();
+			confirm?.focus();
+		}}
+	>
 		<AlertDialog.Header>
 			<AlertDialog.Title>
-				{applied.length + deleting.length} change{applied.length +
-					deleting.length ===
-				1
-					? ''
-					: 's'} to send
-				{#if asked.length > 0}
-					, {asked.length} to decide
-				{/if}
+				Push {plan?.length ?? 0} change{plan?.length === 1 ? '' : 's'}{irreversible >
+				0
+					? `, ${irreversible} you cannot get back`
+					: ''}
 			</AlertDialog.Title>
 			<AlertDialog.Description>
-				Nothing is sent until you say so. Everything you decide here is applied
-				together, and the folder is rewritten from your notes afterwards.
+				Everything below is applied together, then the folder is rewritten from
+				your notes. To change any of it: cancel, edit the file, push again.
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 
-		<div class="max-h-72 space-y-3 overflow-y-auto text-xs">
-			{#if blocks.length > 0}
-				<div class="space-y-1">
-					<p class="font-medium text-destructive">
-						These stop the send, and nothing here can answer them:
-					</p>
-					<ul class="space-y-1">
-						{#each blocks as item (item.path)}
-							<li>
-								<span class="font-mono">{item.path}</span>
-								<span class="text-muted-foreground"> {blocked(item)}</span>
-							</li>
-						{/each}
-					</ul>
-				</div>
-			{/if}
-
-			{#if deleting.length > 0}
-				<div class="space-y-1">
-					<p class="font-medium text-destructive">
-						Deleted for good, not moved to Recently Deleted:
-					</p>
-					<ul class="space-y-1">
-						{#each deleting as item (item.path)}
-							<li class="truncate">{subject(item)}</li>
-						{/each}
-					</ul>
-				</div>
-			{/if}
-
-			{#if applied.length > 0}
-				<ul class="space-y-1">
-					{#each applied as item (answerKey(item))}
-						{#if item.kind === 'value'}
-							<li class="flex gap-2">
-								<span class="truncate">{subject(item)}</span>
-								<span class="shrink-0 text-muted-foreground">
-									{item.name}: {JSON.stringify(item.store)} → {JSON.stringify(
-										item.file,
-									)}
-								</span>
-							</li>
-						{/if}
-					{/each}
-				</ul>
-			{/if}
-
-			{#each asked as item (answerKey(item))}
-				{@const key = answerKey(item)}
-				<div class="space-y-1 rounded border p-2">
-					<div class="flex gap-2">
-						<span class="truncate font-medium">{subject(item)}</span>
-						<span class="shrink-0 text-muted-foreground">{question(item)}</span>
-					</div>
-					{#if item.kind === 'discard'}
-						<ul class="text-muted-foreground">
-							{#each item.notes as note (note.reason + (note.name ?? ''))}
-								<li>{why(note)}</li>
-							{/each}
-						</ul>
-					{/if}
-					{#if item.kind === 'admission'}
-						<p class="text-muted-foreground">
-							Notes are named by an id Honeycrisp mints, so making this a note
-							renames the file. There is no third answer: a file shaped like a
-							note either becomes one or is rewritten away.
-						</p>
-					{/if}
-					<div class="flex gap-2">
-						{#if answersFor(item).includes('file')}
-							<Button
-								size="sm"
-								variant={answers[key] === 'file' ? 'default' : 'outline'}
-								onclick={() => (answers = { ...answers, [key]: 'file' })}
-							>
-								{takeFile(item)}
-							</Button>
-						{/if}
-						<Button
-							size="sm"
-							variant={answers[key] === 'store' ? 'default' : 'outline'}
-							onclick={() => (answers = { ...answers, [key]: 'store' })}
-						>
-							{keepStore(item)}
-						</Button>
-					</div>
-				</div>
-			{/each}
-		</div>
+		<pre
+			class="max-h-80 overflow-auto whitespace-pre-wrap font-mono text-xs leading-relaxed">{overview}</pre>
 
 		<AlertDialog.Footer>
-			<AlertDialog.Cancel>Leave the folder alone</AlertDialog.Cancel>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
 			<AlertDialog.Action
+				bind:ref={confirm}
 				class={buttonVariants()}
-				disabled={running || unanswered > 0 || blocks.length > 0}
+				disabled={running}
 				onclick={send}
 			>
-				{unanswered > 0 ? `Decide ${unanswered} first` : 'Send back'}
+				Push all
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>

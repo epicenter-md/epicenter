@@ -16,7 +16,6 @@ import type { ReplicaData } from '@epicenter/data';
 import {
 	type CheckoutError,
 	diff,
-	type PlanAnswers,
 	type PushOutcome,
 	type PushPlan,
 	pull,
@@ -108,16 +107,13 @@ export type AccountDatabase = {
 	/** What a push would do, changing nothing (ADR-0337). */
 	diff(): Promise<Result<PushPlan, CheckoutError>>;
 	/**
-	 * Apply the folder's edits, then re-render.
+	 * Apply the folder, whole, then re-render (ADR-0338).
 	 *
-	 * `plan` is what `diff` said and a person agreed to, and a push that finds
-	 * it is no longer true refuses rather than applying an answer to a question
-	 * that changed. `answers` answers every item it named that admits one,
-	 * keyed by `answerKey`.
+	 * `plan` is what `diff` said and a person approved. A push that finds it is
+	 * no longer true refuses rather than applying a list nobody read.
 	 */
 	push(options: {
 		plan: PushPlan;
-		answers?: PlanAnswers;
 	}): Promise<Result<PushOutcome, CheckoutError>>;
 };
 
@@ -194,8 +190,7 @@ async function openAccountReplica({
 		pull: ({ discardEdits = false } = {}) =>
 			pull({ ...folderArguments(data, generation), discardEdits }),
 		diff: () => diff(folderArguments(data, generation)),
-		push: ({ plan, answers = {} }) =>
-			push({ ...folderArguments(data, generation), plan, answers }),
+		push: ({ plan }) => push({ ...folderArguments(data, generation), plan }),
 		async [Symbol.asyncDispose]() {
 			stopHideFlush();
 			connection[Symbol.dispose]();

@@ -186,27 +186,34 @@ export const CheckoutError = defineErrors({
 		failures,
 	}),
 	/**
-	 * The plan holds something this push cannot carry, so nothing was applied.
+	 * The plan a person approved is no longer the plan, so nothing was applied.
 	 *
-	 * An unanswered item, or one of the two nothing can answer. Either left
-	 * standing would be overwritten by the re-render a successful push ends
-	 * with, which is a person's visible work disappearing without them saying
-	 * so.
+	 * A file landed or the store moved between the overview and the click, and
+	 * an agent may well still be working while the overview is open (ADR-0330).
+	 * A push is one approval of one list, so applying a different list is
+	 * applying a change nobody read.
 	 *
-	 * It also fires when the plan a person confirmed is no longer the plan: a
-	 * file landed, or the store moved. `plan` is what is true now, so a surface
-	 * can show that rather than an apology.
+	 * `plan` is what is true now, so a surface shows that rather than an
+	 * apology.
 	 */
-	PushIncomplete: ({
+	PlanStale: ({ plan }: { plan: PushPlan }) => ({
+		message: `the folder now holds ${plan.length} change(s), which is not the plan that was approved`,
 		plan,
-		unanswered,
-	}: {
-		plan: PushPlan;
-		unanswered: readonly string[];
-	}) => ({
-		message: `${plan.filter((item) => item.kind === 'block').length} change(s) cannot be sent and ${unanswered.length} are unanswered`,
-		plan,
-		unanswered,
+	}),
+	/**
+	 * Nothing wrote this folder, so there is nothing to compare it against.
+	 *
+	 * Never pulled, manifest deleted, manifest mangled, or manifest written by
+	 * another account or another generation (ADR-0281). One fact about the
+	 * folder rather than one refusal per file: the repair for every one of them
+	 * is the same `pull`.
+	 *
+	 * `unwritten` is the row-shaped paths found there anyway, which is what
+	 * makes this a refusal rather than a no-op: a pull would overwrite them.
+	 */
+	FolderUnwritten: ({ unwritten }: { unwritten: readonly string[] }) => ({
+		message: `nothing wrote this folder, and it holds ${unwritten.length} file(s) that look like rows`,
+		unwritten,
 	}),
 	/**
 	 * The values reached the store and the folder could not be rewritten.
@@ -558,8 +565,18 @@ export async function pull({
 		// at the other end: what does this folder hold that the store does not?
 		// Two comparisons is how a pull comes to refuse work a push would have
 		// called converged.
-		const plan = await planPush(data, parsedDefinition.data, held.data);
-		if (plan.length > 0) return CheckoutError.WorkingCopyDirty({ plan });
+		const read = await planPush(data, parsedDefinition.data, held.data);
+		// A folder with no base is its own refusal: with nothing to compare
+		// against, every row-shaped file there might be work nobody has ever
+		// sent, and a pull would write over it. An EMPTY one is the ordinary
+		// first pull and is not refused.
+		if (!read.base) {
+			if (read.unwritten.length > 0) {
+				return CheckoutError.FolderUnwritten({ unwritten: read.unwritten });
+			}
+		} else if (read.plan.length > 0) {
+			return CheckoutError.WorkingCopyDirty({ plan: read.plan });
+		}
 	}
 
 	const files: CheckoutFile[] = [];
@@ -704,40 +721,42 @@ export type PushableData = RenderableData & {
 };
 
 /**
- * One thing a push would do, and how a person may answer it (ADR-0337).
+ * One thing a push does, and nothing it asks (ADR-0338).
  *
  * **Every difference between the folder and the store is one of these, and
- * almost all of them are answerable.** The plan used to be two lists, changes
- * and refusals, and a push holding one refusal applied nothing: an agent
- * writing `notes/scratch.md` or editing one paragraph wedged both directions
- * until somebody opened Finder and deleted the file. What made that necessary
- * was not the refusals, it was that they had no answer, so the re-render at
- * the end of a push would have overwritten work a person could see on disk
- * without them saying so.
+ * the folder wins all of them.** A plan is what a person reads before one
+ * approval, not a list of questions: a person whose agent rewrote the text of
+ * eight notes was asked eight identical questions, and by the fourth was
+ * clicking without reading. To change any of it, cancel, edit the file, and
+ * push again, which is the loop the folder already is.
  *
- * Saying so is the whole fix. `store` is a person answering "let what I have
- * here stand, and rewrite that file", which is `pull`'s `discardEdits` at the
- * grain of one item instead of the whole folder. `file` is the other side,
- * where there is one. What is left with no answer at all is two things nothing
- * can stand in for, and both are {@link PlannedBlock}.
+ * What survives from the answerable draft is the comparison underneath it:
+ * `base` from the manifest, `file` from disk, `store` from the database, per
+ * field. It is what the overview prints, and the reason a value line carries
+ * the store's old value: a value is safe because the old one can be typed
+ * back, and a body's text is not.
  */
 export type PlanItem =
 	| PlannedValue
-	| PlannedConflict
 	| PlannedBody
 	| PlannedAdmission
 	| PlannedDeletion
-	| PlannedDiscard
-	| PlannedBlock;
-
-/** How a person answered one item: whose version wins. */
-export type PlanAnswer = 'file' | 'store';
+	| PlannedDiscard;
 
 /**
- * One value the push would set, with nothing to decide.
+ * One value the push sets, and the one it is replacing.
  *
- * The file moved and the store did not, so there is one version of this value
- * that anybody wrote on purpose.
+ * **Nothing is validated on the way in** (ADR-0338). A name this table does
+ * not declare and a value that does not fit its field are both written, and
+ * the row is then one this release cannot read, which is a state the store
+ * already has a word, a surface, and a record for (ADR-0125, ADR-0240).
+ * Refusing them here made the folder a stricter door than `update`, `create`,
+ * and every sync path.
+ *
+ * A value where all three of base, file, and store differ used to be its own
+ * kind with its own question. It is this, with `storeChanged` true: the folder
+ * still wins, and what a person is owed is being told the store's value is
+ * going, which `store` prints.
  */
 export type PlannedValue = {
 	readonly kind: 'value';
@@ -745,45 +764,32 @@ export type PlannedValue = {
 	readonly table: string;
 	readonly rowId: string;
 	readonly name: string;
-	/** What the store holds now. */
+	/** What the store holds now, and what the overview prints beside it. */
 	readonly store: JsonValue | undefined;
-	/** What the file says. */
+	/** What the file says, and what the push writes. */
 	readonly file: JsonValue;
-};
-
-/**
- * One value the push cannot decide, because all three differ (ADR-0337).
- *
- * The three names are the ADR's: `base` is what the manifest handed over,
- * `file` is what is on disk, `store` is what the database holds now. Not
- * `mine`/`theirs`: that is git's word for a merge whose sides are symmetric,
- * and these are not.
- */
-export type PlannedConflict = {
-	readonly kind: 'conflict';
-	readonly path: string;
-	readonly table: string;
-	readonly rowId: string;
-	readonly name: string;
-	readonly base: JsonValue | undefined;
-	readonly file: JsonValue;
-	readonly store: JsonValue | undefined;
+	/**
+	 * Whether this value moved here too since the folder was written.
+	 *
+	 * The third side of the three-way, kept rather than asked about: with this
+	 * false the store's value is the one the folder was written from, and with
+	 * it true the push is overwriting an edit somebody made on this side.
+	 */
+	readonly storeChanged: boolean;
 };
 
 /**
  * The text under one file's frontmatter changed (ADR-0329, amended by
- * ADR-0337).
+ * ADR-0338).
  *
- * Answered `file`, the table's codec rewrites the node the row already holds
- * so that it says what the file says. Answered `store`, the re-render puts the
- * store's text back and the edit is gone.
+ * The table's codec rewrites the node the row already holds so that it says
+ * what the file says. It is the file's whole text winning rather than a merge,
+ * and no conflict marker is ever written into a file.
  *
- * This is the one item where the two answers are not symmetric in cost, and
- * that is worth being plain about: a value is replaced whole either way, while
- * a body is a live node several things may be bound to and other devices may
- * be editing. `ContentCodec.rewrite` is what keeps that an edit rather than a
- * replacement, and it is still the file's whole text winning rather than a
- * merge. No conflict marker is ever written into a file.
+ * This is the one item a person cannot put back by hand, which is why the
+ * overview ranks it with the deletions: a value is printed beside its
+ * replacement and can be typed back, and `rewrite` clears the node and the
+ * editor's history with it.
  */
 export type PlannedBody = {
 	readonly kind: 'body';
@@ -794,29 +800,26 @@ export type PlannedBody = {
 	 * Whether the row's own text moved here too since the folder was written.
 	 *
 	 * A three-way on the body, coarser than a value's because a hash is all the
-	 * manifest keeps: with this false, answering `file` overwrites nothing
-	 * anybody typed here; with it true, it does, and a person should be told
-	 * before they answer.
+	 * manifest keeps: with this false the push overwrites nothing anybody typed
+	 * here, and with it true it does, which is a sentence the overview owes a
+	 * person before they approve it.
 	 */
 	readonly storeChanged: boolean;
 };
 
 /**
- * A file the manifest never named, which would become a row (ADR-0337).
+ * A file the manifest never named, which becomes a row (ADR-0337).
  *
- * Answered `file`, the push mints a row id, creates the row from the file's
- * frontmatter with its body decoded into the node, and the re-render writes it
- * out at its id. **So the file is renamed**, and there is no way around that:
- * a row id is minted and never chosen
- * (`packages/data/src/store/handles.ts`), because two devices creating one
- * address produce two containers and one loses every field in it. That was
- * refused as rude while it was a silent side effect; it is not rude when the
- * plan says it before a person agrees to it.
+ * The push mints a row id, creates the row from the file's frontmatter with
+ * its body decoded into the node, and the re-render writes it out at its id.
+ * **So the file is renamed**, and there is no way around that: a row id is
+ * minted and never chosen (`packages/data/src/store/handles.ts`), because two
+ * devices creating one address produce two containers and one loses every
+ * field in it. That was refused as rude while it was a silent side effect; it
+ * is not rude when the overview says it before a person approves it.
  *
- * Answered `store`, the file is not a row and the re-render sweeps it, because
- * a row-shaped path the checkout does not name is not the folder's to keep.
- * Those are the only two answers a row-shaped file has, and a person who wants
- * neither cancels and renames it out of the way.
+ * A person who wants neither cancels and renames the file out of the way,
+ * which is the loop the folder already is.
  */
 export type PlannedAdmission = {
 	readonly kind: 'admission';
@@ -891,70 +894,29 @@ export type DiscardReason =
 	 */
 	| 'body-unreadable';
 
-/**
- * Something no answer resolves, so the push cannot run at all.
- *
- * One, now that a missing file deletes its row (ADR-0338): a folder nothing
- * ever wrote is not a plan, because nothing in it can be told from what the
- * store already has.
- */
-export type PlannedBlock = {
-	readonly kind: 'block';
-	readonly path: string;
-	readonly reason: BlockReason;
-};
-
-/**
- * Nothing wrote down what this folder holds, so nothing in it can be told from
- * what the store already has.
- *
- * Never pulled, manifest deleted, manifest mangled, or manifest written by
- * another account. A pull is what gives this folder a base, and with no base
- * every file here might be work nobody has ever sent.
- */
-export type BlockReason = 'no-base';
-
-/** What a push would do, item by item, and what it will not (ADR-0337). */
+/** What a push does, item by item (ADR-0338). */
 export type PushPlan = readonly PlanItem[];
 
 /**
- * The answers one item admits, and none where nothing is asked.
- *
- * The one place the table at the top of {@link PlanItem} is executable.
- */
-export function answersFor(item: PlanItem): readonly PlanAnswer[] {
-	switch (item.kind) {
-		case 'conflict':
-		case 'body':
-		case 'admission':
-			return ['file', 'store'];
-		case 'discard':
-			return ['store'];
-		case 'value':
-		case 'deletion':
-		case 'block':
-			return [];
-	}
-}
-
-/**
- * The key an item's answer is filed under.
+ * Where one item sits in a plan, and the order a person reads it in.
  *
  * The path, plus the field where the item is about one. `content` cannot
- * collide with a field name because the store reserves it (ADR-0309), and a
- * discard is one item per path so it needs no field to be unique.
+ * collide with a field name because the store reserves it (ADR-0309), and
+ * every other kind is one item per path, so it needs no field to be unique.
+ *
+ * It is a sort key rather than an identity: a plan is sorted by it so that
+ * `samePlan` compares two readings of the same folder rather than two
+ * directory listings.
  */
-export function answerKey(item: PlanItem): string {
+function planKey(item: PlanItem): string {
 	switch (item.kind) {
 		case 'value':
-		case 'conflict':
 			return `${item.path}#${item.name}`;
 		case 'body':
 			return `${item.path}#${CONTENT_FIELD}`;
 		case 'admission':
 		case 'deletion':
 		case 'discard':
-		case 'block':
 			return item.path;
 	}
 }
@@ -993,7 +955,10 @@ export async function diff({
 	}
 	const held = await readWorkingCopy(store, httpFetch);
 	if (held.error !== null) return Err(held.error);
-	return Ok(await planPush(data, parsed.data, held.data));
+	const read = await planPush(data, parsed.data, held.data);
+	return read.base
+		? Ok(read.plan)
+		: CheckoutError.FolderUnwritten({ unwritten: read.unwritten });
 }
 
 /**
@@ -1018,17 +983,21 @@ async function planPush(
 	data: RenderableData,
 	definition: ParsedDataDefinition,
 	held: WorkingCopy,
-): Promise<PushPlan> {
+): Promise<Reading> {
 	const items: PlanItem[] = [];
 	const base = held.base;
 
+	// **A folder nothing wrote is not a plan** (ADR-0338). Never pulled,
+	// manifest deleted, manifest mangled, or manifest written by another
+	// account: with no base, every file here might be work nobody has ever
+	// sent, and there is no comparison to print. It is one fact about the
+	// folder rather than one item per file, because the answer to all of them
+	// is the same and it is `pull`.
 	if (base === undefined) {
-		for (const path of held.files.keys()) {
-			if (parseRowPath(path) !== undefined || path === 'kv.json') {
-				items.push({ kind: 'block', path, reason: 'no-base' });
-			}
-		}
-		return items;
+		const unwritten = [...held.files.keys()].filter(
+			(path) => parseRowPath(path) !== undefined || path === 'kv.json',
+		);
+		return { base: false, unwritten };
 	}
 
 	const onDisk = held.files.get('kv.json');
@@ -1068,7 +1037,12 @@ async function planPush(
 				flush();
 				continue;
 			}
-			if ((await renderedRow(data, definition, address)) === undefined) {
+			// `rowFile` rather than `renderedRow`: what is asked here is whether
+			// the row is THERE, and a render also answers `undefined` for a row
+			// that is present and cannot be written (`render.ts`). Under
+			// ADR-0338 an unwritable row is ordinary, and deleting its file
+			// still means delete it.
+			if (data.rowFile(address.table, address.rowId) === undefined) {
 				// The row went while the file did. Both sides already agree, so
 				// there is nothing to say and nothing to delete.
 				continue;
@@ -1133,25 +1107,14 @@ async function planPush(
 			if (same(wrote, wasHandedOver)) continue;
 			if (same(wrote, inStore)) continue;
 
-			if (same(inStore, wasHandedOver)) {
-				items.push({
-					kind: 'value',
-					path,
-					...address,
-					name,
-					store: inStore,
-					file: wrote,
-				});
-				continue;
-			}
 			items.push({
-				kind: 'conflict',
+				kind: 'value',
 				path,
 				...address,
 				name,
-				base: wasHandedOver,
-				file: wrote,
 				store: inStore,
+				file: wrote,
+				storeChanged: !same(inStore, wasHandedOver),
 			});
 		}
 		flush();
@@ -1164,14 +1127,28 @@ async function planPush(
 		items.push(admission(definition, address.table, path, contents));
 	}
 
-	// Sorted, because `push` compares the plan a person confirmed against one
-	// it computes again and a different ORDER would read as a different plan.
-	// Two of the three sources are already deterministic; the third is the
-	// host's directory listing, whose order is the filesystem's business.
-	return items.sort((left, right) =>
-		answerKey(left) < answerKey(right) ? -1 : 1,
-	);
+	// Sorted, because `push` compares the plan a person read against one it
+	// computes again and a different ORDER would read as a different plan. Two
+	// of the three sources are already deterministic; the third is the host's
+	// directory listing, whose order is the filesystem's business.
+	return {
+		base: true,
+		plan: items.sort((left, right) =>
+			planKey(left) < planKey(right) ? -1 : 1,
+		),
+	};
 }
+
+/**
+ * What one reading of the folder found: a plan, or no base to plan against.
+ *
+ * Two shapes rather than a plan holding a refusal, because they are answered
+ * in different places. A plan is read and approved; an unwritten folder is a
+ * sentence and a `pull`.
+ */
+type Reading =
+	| { readonly base: true; readonly plan: PushPlan }
+	| { readonly base: false; readonly unwritten: readonly string[] };
 
 /**
  * Whether this table's codec can read this text, with a throw counted as no.
@@ -1297,58 +1274,46 @@ async function renderedRow(
 	return parseRowFile(rendered.data.contents);
 }
 
-/**
- * How a person answered each item, keyed by `answerKey`.
- *
- * `file` and `store` rather than `mine` and `theirs`, matching the plan and
- * ADR-0337's own table. A map rather than a callback, because it is the state a
- * dialog holds while a person clicks through it, and a callback would make that
- * state unserializable for no gain.
- */
-export type PlanAnswers = Readonly<Record<string, PlanAnswer>>;
-
 /** Whether two plans describe the same change, item for item. */
 function samePlan(left: PushPlan, right: PushPlan): boolean {
 	return JSON.stringify(left) === JSON.stringify(right);
 }
 
 /**
- * Apply the plan a person answered, then re-render so the folder is never
- * dirty after a successful push (ADR-0337).
+ * Apply the folder, whole, then re-render so it is never dirty after a
+ * successful push (ADR-0338).
  *
- * **It carries the plan whole, and every item of it has an answer.** That is
- * the same promise this made when it refused any plan holding a refusal, and
- * it now costs a person almost nothing: `store` on an item is them saying "let
- * what I have here stand, and rewrite that file", which is the consent `pull`
- * already takes for the whole folder at the grain of one file. What is left
- * unanswerable is {@link PlannedBlock}, which is a folder nothing ever wrote.
+ * **One approval, and the folder wins.** There is nothing to answer: a value
+ * goes in whatever it says, a body replaces the text that was there, a new
+ * file becomes a note, and a file that is gone deletes one. To change any of
+ * it, a person cancels, edits the file, and pushes again, which is the loop
+ * the folder already is.
  *
- * **It takes the plan a person confirmed and checks it is still the plan.** A
- * push that recomputed silently would apply an answer to a conflict whose other
- * side had moved since they read it, which is the merge nobody asked for. When
- * it has changed, the refusal carries what is true now, so a surface shows the
- * new plan rather than an apology.
+ * **It takes the plan a person read and checks it is still the plan.** That is
+ * now the only guard, and it is not about consent to an item: an agent may
+ * still be working while the overview is open (ADR-0330), and applying a
+ * different list is applying a change nobody read. When it has changed, the
+ * refusal carries what is true now, so a surface shows the new plan rather
+ * than an apology.
  *
- * One transaction for all of it: the values, the bodies, and the rows a file
- * brought into being. A hundred fields across forty rows is one durable append
- * and one notification per table, and half a push landing is a folder that
- * matches nothing.
+ * One transaction for all of it: the deletions, the values, the bodies, and
+ * the rows a file brought into being. A hundred fields across forty rows is
+ * one durable append and one notification per table, and half a push landing
+ * is a folder that matches nothing.
  */
 export async function push({
 	data,
 	definition,
 	store,
 	plan: confirmed,
-	answers = {},
 	fetch: httpFetch = globalThis.fetch,
 	now = () => new Date(),
 }: {
 	data: PushableData;
 	definition: DataDefinition;
 	store: CheckoutStore;
-	/** What `diff` said and a person agreed to. */
+	/** What `diff` said and a person approved, whole. */
 	plan: PushPlan;
-	answers?: PlanAnswers;
 	fetch?: typeof globalThis.fetch;
 	now?: () => Date;
 }): Promise<Result<PushOutcome, CheckoutError>> {
@@ -1362,27 +1327,16 @@ export async function push({
 	}
 	const held = await readWorkingCopy(store, httpFetch);
 	if (held.error !== null) return Err(held.error);
-	const plan = await planPush(data, parsed.data, held.data);
-
-	const unanswered = [
-		...new Set(
-			plan
-				.filter((item) => answersFor(item).length > 0)
-				.map(answerKey)
-				.filter((key) => answers[key] === undefined),
-		),
-	];
-	const blocked = plan.filter((item) => item.kind === 'block');
-	if (
-		unanswered.length > 0 ||
-		blocked.length > 0 ||
-		!samePlan(plan, confirmed)
-	) {
-		return CheckoutError.PushIncomplete({ plan, unanswered });
+	const read = await planPush(data, parsed.data, held.data);
+	if (!read.base) {
+		return CheckoutError.FolderUnwritten({ unwritten: read.unwritten });
 	}
+	const plan = read.plan;
+	// The one guard left, and it is not about consent to an item: it is that
+	// the list applied is the list somebody read. An agent may still be working
+	// while the overview is open (ADR-0330).
+	if (!samePlan(plan, confirmed)) return CheckoutError.PlanStale({ plan });
 
-	/** Whether this item is the file's version to apply. */
-	const chosen = (item: PlanItem) => answers[answerKey(item)] === 'file';
 	const outcome = {
 		rows: 0,
 		values: 0,
@@ -1413,7 +1367,7 @@ export async function push({
 		node: Y.Type | undefined;
 	}[] = [];
 	for (const item of plan) {
-		if (item.kind !== 'admission' || !chosen(item)) continue;
+		if (item.kind !== 'admission') continue;
 		const file = readRowFile(held.data.files.get(item.path) ?? '');
 		if (file === undefined) {
 			broke(`'${item.path}' could not be read into a row`);
@@ -1466,14 +1420,10 @@ export async function push({
 				// of its fields moved.
 				const perRow = new Map<
 					string,
-					{ item: PlannedValue | PlannedConflict; fields: JsonObject }
+					{ item: PlannedValue; fields: JsonObject }
 				>();
 				for (const item of plan) {
-					if (item.kind !== 'value' && item.kind !== 'conflict') continue;
-					// Answering `store` on a conflict is writing what is already
-					// there. Skipped rather than written, so the commit carries
-					// only what changes.
-					if (item.kind === 'conflict' && !chosen(item)) continue;
+					if (item.kind !== 'value') continue;
 					const held = perRow.get(item.path) ?? { item, fields: {} };
 					held.fields[item.name] = item.file;
 					perRow.set(item.path, held);
@@ -1496,7 +1446,7 @@ export async function push({
 				}
 
 				for (const item of plan) {
-					if (item.kind !== 'body' || !chosen(item)) continue;
+					if (item.kind !== 'body') continue;
 					const node = data.rowFile(item.table, item.rowId)?.[CONTENT_FIELD];
 					const codec = parsed.data.tables.get(item.table)?.content;
 					// Both are defensive: a row with no live node renders as
@@ -1510,7 +1460,7 @@ export async function push({
 					// so an editor bound to this very note is still bound after
 					// (ADR-0338). The text was decoded once at plan time to prove
 					// the codec accepts it; a live node is not JSON, so it could
-					// not travel through the person's decision.
+					// not travel through the plan a person read.
 					const { error } = codec.rewrite(node, bodyOf(held.data, item.path));
 					if (error !== null) {
 						failure ??= error;
