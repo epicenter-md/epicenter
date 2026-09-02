@@ -1,6 +1,13 @@
 /**
  * The working copy in `~/Epicenter`, and the wire it travels on (ADR-0337).
  *
+ * **This file is not the design any more.** ADR-0338 is where it is going: a
+ * push applies the folder whole after one approval, validates nothing, deletes
+ * a row when its file is gone, and reads a removed frontmatter line as `null`.
+ * What is here still asks a person `file` or `store` per item and refuses four
+ * things the store itself would accept. Read the record before building on the
+ * shape below; its `Unbuilt:` line names exactly what has not moved yet.
+ *
  * ```txt
  * ~/Epicenter/<data-id>/
  *   .epicenter/manifest.json     what pull handed over, and from where
