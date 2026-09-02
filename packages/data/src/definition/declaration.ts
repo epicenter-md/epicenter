@@ -94,14 +94,16 @@ export type ContentError = InferErrors<typeof ContentError>;
  * one ordinary commit.
  *
  * **It is not lossless, and the difference is worth knowing exactly**
- * (`evidence/rewriting-a-body.test.ts`). A codec that clears its content and
- * refills it, which is what all three in this repository do, keeps the node
- * and discards what was in it: a peer's keystrokes INSIDE a block this
- * removed are gone with the block, because deleting a nested type reclaims
- * what is under it. What survives is a block the peer added beside the old
- * ones, and two concurrent rewrites concatenate rather than one winning. So
- * this is better than a replacement rather than safe: a replacement would
- * have lost one device's whole node and every binding to it.
+ * (`evidence/rewriting-a-body.test.ts`). The two codecs whose content is a
+ * SEQUENCE clear it and refill it, so they keep the node and discard what was
+ * in it: a peer's keystrokes INSIDE a block this removed are gone with the
+ * block, because deleting a nested type reclaims what is under it. What
+ * survives is a block the peer added beside the old ones, and two concurrent
+ * rewrites concatenate rather than one winning. A codec whose content is in
+ * ATTRIBUTES reconciles by key instead and pays none of that, which is another
+ * way of saying only the codec knows what its node's content is. Either way
+ * this is better than a replacement rather than safe: a replacement would have
+ * lost one device's whole node and every binding to it.
  *
  * What `rewrite` does NOT promise is a minimal edit. A person asked for the
  * file's version to win, and that is what they get. A real text diff would

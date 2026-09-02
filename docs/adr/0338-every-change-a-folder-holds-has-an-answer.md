@@ -153,9 +153,12 @@ nothing and overwriting something they typed here.
   over the socket. Making the rewrite one undoable step is better and needs the
   store to expose the origin it writes under, which is a decision about the
   store's surface.
-- **A rewrite is not a minimal edit, and does not have to be.** All three codecs
-  clear their content and refill it. A real text diff would make the change
-  smaller and the undo step finer; `@y/prosemirror` has `docDiffToDelta` and
+- **A rewrite is not a minimal edit, and does not have to be.** The two codecs
+  whose content is a sequence clear it and refill it; the one whose content is
+  in attributes reconciles by key and is already minimal, which is the same fact
+  that made this the codec's verb. A real text diff would make the sequence case
+  smaller, its undo step finer, and a peer's concurrent keystrokes survivable
+  where the two edits do not overlap; `@y/prosemirror` has `docDiffToDelta` and
   does not export it, and swapping one in later changes a codec's body and
   nothing here.
 - **`AGENTS.md` states consequences rather than prohibitions.** It was a list of
@@ -176,10 +179,11 @@ nothing and overwriting something they typed here.
   it computes again, and one of the three sources feeding it is the host's
   directory listing, whose order is the filesystem's business rather than this
   code's.
-- **The wire moved to `artifact/format`.** This module reaches `@y/y` now, to
-  rewrite a live node, and the host imports the NDJSON format from it; without
-  the split a host that interprets nothing would load a CRDT to concatenate
-  strings, which is the boundary `format.ts` exists to state.
+- **The wire moved to `artifact/wire.ts`**, reached through `artifact/format`.
+  `checkout.ts` reaches `@y/y` now, to rewrite a live node, and the host imports
+  the NDJSON format; without the split a host that interprets nothing would load
+  a CRDT to concatenate strings, which is the boundary `format.ts` exists to
+  state.
 - **The file extension is still `.md` for every table of every application**,
   and `layout.ts` now says why rather than leaving it to look like an oversight.
   The platform owns the file (ADR-0296) and a codec writes a region inside it, so

@@ -869,8 +869,6 @@ export type DiscardReason =
 	 *
 	 * Checked with `decode`, which validates the same text `rewrite` would
 	 * apply, so a person never reads a plan whose own push then refuses it.
-	 * Also how a table that declares no codec at all reports a changed body: a
-	 * definition that arrived as JSON cannot carry one.
 	 */
 	| 'body-unreadable'
 	/**
@@ -1173,6 +1171,10 @@ async function planPush(
  * by decoding it here and rewrites with the same text after a person answers,
  * so a codec whose two readers disagreed would show a plan its own push
  * refuses.
+ *
+ * The absent codec answers no rather than being unreachable prose:
+ * `compileData` refuses a table that declares none, so `ParsedTable.content`
+ * is optional in a shape the compiler cannot produce.
  */
 function readsBack(table: ParsedTable, text: string): boolean {
 	const codec = table.content;
@@ -1224,9 +1226,8 @@ function admission(
 		}
 		if (!field.check(wrote)) notes.push({ reason: 'value-invalid', name });
 	}
-	// An empty body needs no codec: `create` mints an empty node for a row whose
-	// table declares none, which is the case a definition that arrived as JSON
-	// leaves behind (ADR-0296).
+	// Defensive on the codec, which `compileData` refuses a table without: an
+	// empty body needs none, because `create` mints an empty node.
 	if (file.body !== '' && !readsBack(table, file.body)) {
 		notes.push({ reason: 'body-unreadable' });
 	}
