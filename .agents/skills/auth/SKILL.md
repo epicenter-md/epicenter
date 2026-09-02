@@ -1,6 +1,6 @@
 ---
 name: auth
-description: 'Epicenter auth packages: `@epicenter/auth` and the Svelte wrapper at `@epicenter/svelte/auth`, OAuth sessions, identity state, auth-owned fetch/WebSocket, and the reload gate that makes a page lifetime one auth generation. Use when editing Epicenter auth clients, session state, hosted sign-in, or how a route boots from auth.'
+description: 'Epicenter auth packages: `@epicenter/auth` and the Svelte adapter at `@epicenter/auth/svelte`, OAuth sessions, identity state, auth-owned fetch/WebSocket, and the reload gate that makes a page lifetime one auth generation. Use when editing Epicenter auth clients, session state, hosted sign-in, or how a route boots from auth.'
 metadata:
   author: epicenter
   version: '8.0'
@@ -65,16 +65,16 @@ On a self-hosted instance every valid bearer resolves to the literal
 `INSTANCE_PRINCIPAL_ID` (`'instance'`). If you see `owner` anywhere, it is stale
 prose, not a symbol.
 
-## Current Model: one dispatcher, three credential clients
+## Current Model: three credential clients, composed by the app
 
-App clients pick a credential model through one dispatcher,
-`createAppAuthClient(instance, opts)`, which forks on whether a self-host
-`instance.token` is present:
+An app composes the credential model it needs. There is no dispatcher: a build
+was made against one deployment and names it (ADR-0326), so nothing reads an
+instance setting to choose between these.
 
-- `createOAuthAppAuth(...)` — the hosted default (no token). PKCE bearer +
+- `createOAuthAppAuth(...)` — the hosted default. PKCE bearer +
   transparent refresh + a `/api/session` network gate + `openWebSocket`. Every
   cross-origin / native app uses this (web, extension, Tauri).
-- `createInstanceTokenAuth(...)` — a self-hosted star (static `instance.token`).
+- `createInstanceTokenAuth(...)` — a self-hosted star (a static token).
   No OAuth flow, launcher, refresh, or persisted grant; boots optimistically
   `signed-in` as `INSTANCE_PRINCIPAL_ID` and verifies `/api/session` in the
   background (surfacing the result on `connection.status`, which is the only
@@ -107,9 +107,12 @@ const auth = createOAuthAppAuth({
 });
 ```
 
-Apps rarely call these directly: the Svelte wrappers
-(`createHostedBrowserRedirectAuth`, `createHostedDeepLinkAuth` in
-`@epicenter/svelte`) build the launcher and call `createAppAuthClient` for you.
+Apps rarely call `createOAuthAppAuth` directly. `createHostedBrowserRedirectAuth`
+in `@epicenter/auth` packages the convention every hosted web app repeats: the
+persisted-grant key, the issuer, the redirect, the resource, and where PKCE
+state lives. It takes only what varies per app (namespace, client id, the
+hosted API origin) and returns a plain `AuthClient`. A Tauri build keeps its
+own deep-link launcher and uses this for its web build alone (ADR-0078).
 
 The public surface lives in one package plus a Svelte subpath:
 
@@ -117,14 +120,18 @@ The public surface lives in one package plus a Svelte subpath:
   refresh, refresh-token revocation, `/api/session` verification, the network
   gate, authenticated fetch, and WebSocket opening. There is no headless or
   terminal surface: every credential model here is driven by an app.
-- `@epicenter/svelte/auth`: Svelte 5 wrapper. Mirrors `auth.state` and
-  `connection.status` through `createSubscriber` so templates and `$derived`
-  reads are reactive, and re-exports `reloadOnAuthChange`. Its factories
-  return `ReactiveAuthClient`, which is `AuthClient` plus a wellcrafted
+- `@epicenter/auth/svelte`: one adapter, `reactive(auth)`, plus a re-export of
+  `reloadOnAuthChange`. It mirrors `auth.state` and `connection.status`
+  through `createSubscriber` so templates and `$derived` reads are reactive,
+  and returns `ReactiveAuthClient`, which is `AuthClient` plus a wellcrafted
   `Brand`: a component whose reads must track asks for the branded type, and a
   boot-time reader keeps accepting plain `AuthClient`, since the brand is a
   subtype. Handing a raw core client to a component that tracks is a type
   error rather than a silently frozen surface.
+
+  It holds no conventions. A composition that has nothing to do with a
+  framework belongs in `@epicenter/auth`, and a platform leaf is the line that
+  puts the two together: `reactive(createHostedBrowserRedirectAuth({ … }))`.
 
 The API server composes Better Auth like this:
 
@@ -559,8 +566,11 @@ mode flag on it.
 - Do not add `auth.bearerToken` or any token reader. Token reading leaks
   transport details back into app code.
 - Do not reintroduce cookie-vs-bearer app factories. The three credential
-  clients are chosen by `createAppAuthClient`, not by a mode flag; app resources
-  use OAuth access tokens through `createOAuthAppAuth`.
+  clients are separate constructors an app composes, not a mode flag on one;
+  app resources use OAuth access tokens through `createOAuthAppAuth`.
+- Do not put a composition in `@epicenter/auth/svelte`. That subpath holds one
+  adapter, `reactive`. A convention that picks a storage key, an issuer, or a
+  redirect is the same in a plain page and belongs in `@epicenter/auth`.
 - Do not treat `startSignIn()` resolving as signed-in. State is the source of
   truth; `startSignIn` takes no args.
 - Do not clear local workspace data on refresh failure. Move to

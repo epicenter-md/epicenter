@@ -30,12 +30,17 @@ export type ReactiveAuthClient = AuthClient & Brand<'ReactiveAuthClient'>;
  *
  * The whole of what this module does, and the whole of what it should: a
  * client is composed somewhere that has no framework, and this adapts one.
- * There used to be four exported constructors here, one per composition an app
- * happened to use, each of which was a core constructor with this call wrapped
- * around it. That made the framework wrapper the door to conventions that have
- * nothing to do with a framework, so `@epicenter/auth` could not hand a plain
- * page the hosted browser convention and a Svelte app could not wrap a client
- * this module had not anticipated. One function takes any of them.
+ * There used to be three exported constructors here, one per composition an
+ * app happened to use, each of which was a core constructor with this call
+ * wrapped around it. That made the framework wrapper the door to conventions
+ * that have nothing to do with a framework, so `@epicenter/auth` could not
+ * hand a plain page the hosted browser convention and a Svelte app could not
+ * wrap a client this module had not anticipated. One function takes any of
+ * them.
+ *
+ * It spreads the client once and re-declares two getters, so a client whose
+ * OTHER members are live getters loses them. Every client in this package
+ * states the rest as values, which is what makes the spread safe.
  *
  * `createSubscriber` rather than a `$state.raw` shadow, and the difference is
  * not style. It is lazy: the subscription starts only while something is
