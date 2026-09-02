@@ -78,9 +78,29 @@ for (const gap of worst) {
 }
 
 const longest = worst[0]?.seconds ?? 0;
+// The gap that matters most is the one with no beat on the far side of it. A
+// run that was suspended and never resumed has perfectly even gaps and then
+// nothing, which reads as healthy until you ask what time it is now.
+const silence = (Date.now() - Date.parse(last.ticked_at)) / 1000;
+console.log(`silent for       ${silence.toFixed(0)}s since the last beat`);
+
 console.log('\nverdict');
 if (hidden.length === 0) {
 	console.log('  inconclusive: the page never reported itself hidden.');
+} else if (silence > 120) {
+	console.log(
+		`  STOPPED. Nothing for ${silence.toFixed(0)}s, after beating evenly.`,
+	);
+	console.log(
+		'  That is suspension rather than throttling. Reopen the window: if beats',
+	);
+	console.log(
+		'  resume, it was suspended while hidden, and ADR-0322 needs beginActivity',
+	);
+	console.log('  on macOS or the throttling switch on Windows.');
+	console.log(
+		'  If Epicenter was quit or the machine slept, this says nothing.',
+	);
 } else if (longest < 120) {
 	console.log('  RUNS. Throttled at worst, and throttling costs nothing here.');
 } else {
