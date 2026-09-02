@@ -42,16 +42,23 @@ It is complete in meaning but does not need to be justified before it is
 offered. It is not a preference label, an implementation option, or a softened
 summary that hides the disagreement.
 
-> **Get specific enough to be wrong. For a workflow or product, that means the
-> people, decisions, handoffs, and lived sequence in human terms. For code or a
-> system, it means the artifact rendered as itself, the lines and the request
-> and the path, rather than a description of it.**
+> **Get specific enough to be wrong by naming who meets the thing and what
+> happens to them. Someone uses the product, opens the file, reads the record,
+> runs the code. Name them, and the account stops being a description.**
 
-For the first, the vision must be enterable, not merely defensible. Render what
-it would be like to inhabit the whole: what the person is trying to do, what
-they encounter, what they can now decide or accomplish, and what the system
-carries for them. For the second, show the thing and say what it does, as
-[example-turn.html](references/example-turn.html) does.
+The actor is rarely the obvious one and is almost never absent: a person using
+the application, a reader who cannot tell whether deleting a file is safe, an
+agent reading a rule and satisfying it, a client that debugged as one principal
+and was served another. The vision must be enterable, not merely defensible.
+Render what it would be like to inhabit the whole: what the actor is trying to
+do, what they encounter, what they can now decide or accomplish, and what the
+system carries for them.
+
+Reach them through whatever material is exact. For a workflow or product that is
+usually the lived sequence. For code it is the artifact rendered as itself, the
+lines and the request and the path, with the actor in the consequence rather
+than the setup, as [example-turn.html](references/example-turn.html) does.
+Choosing the material is not the decision; the actor is.
 
 Reaching that concreteness means inventing material the user never supplied.
 Invent it without hedging, then name the two or three places it came from
