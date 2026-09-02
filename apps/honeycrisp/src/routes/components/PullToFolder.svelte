@@ -1,5 +1,9 @@
 <script lang="ts">
-	import type { PushPlan } from '@epicenter/data/artifact/checkout';
+	import {
+		answerKey,
+		type PlanItem,
+		type PushPlan,
+	} from '@epicenter/data/artifact/checkout';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import FolderDownIcon from '@lucide/svelte/icons/folder-down';
@@ -93,8 +97,43 @@
 		}
 	}
 
-	const edited = $derived(unpushed?.rows ?? []);
-	const refusals = $derived(unpushed?.refusals ?? []);
+	/**
+	 * One line per thing the folder holds that these notes do not.
+	 *
+	 * A flat list, because the plan is one: this dialog only has to say what
+	 * would go, and the send-back dialog is where each of them is decided.
+	 */
+	const edited = $derived(
+		(unpushed ?? []).map((item) => ({
+			key: answerKey(item),
+			subject:
+				item.kind === 'value' ||
+				item.kind === 'conflict' ||
+				item.kind === 'body'
+					? label(item)
+					: item.path,
+			what: went(item),
+		})),
+	);
+
+	/** What this item is, in the fewest words that say what would be lost. */
+	function went(item: PlanItem): string {
+		switch (item.kind) {
+			case 'value':
+			case 'conflict':
+				return `${item.name} changed`;
+			case 'body':
+				return 'the text changed';
+			case 'admission':
+				return 'a file that is not a note yet';
+			case 'discard':
+				return item.notes
+					.map((note) => note.name ?? note.reason)
+					.join(', ');
+			case 'block':
+				return item.reason === 'no-base' ? 'never written by Honeycrisp' : 'the file is gone';
+		}
+	}
 </script>
 
 <div class="flex flex-col gap-1 px-2 pb-1">
@@ -136,23 +175,10 @@
 		</AlertDialog.Header>
 
 		<ul class="max-h-56 space-y-1 overflow-y-auto text-xs">
-			{#each edited as row (row.table + row.rowId)}
+			{#each edited as item (item.key)}
 				<li class="flex gap-2">
-					<span class="truncate">{label(row)}</span>
-					<span class="shrink-0 text-muted-foreground">
-						{[
-							...row.values.map((value) => value.name),
-							...row.conflicts.map((conflict) => conflict.name),
-						].join(', ')} changed
-					</span>
-				</li>
-			{/each}
-			{#each refusals as item (item.path + item.reason + (item.name ?? ''))}
-				<li class="flex gap-2">
-					<span class="truncate font-mono">{item.path}</span>
-					<span class="shrink-0 text-muted-foreground">
-						{item.name ?? item.reason}
-					</span>
+					<span class="truncate">{item.subject}</span>
+					<span class="shrink-0 text-muted-foreground">{item.what}</span>
 				</li>
 			{/each}
 		</ul>

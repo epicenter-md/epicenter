@@ -15,8 +15,9 @@ type PrincipalId = Extract<
 import type { ReplicaData } from '@epicenter/data';
 import {
 	type CheckoutError,
-	type ConflictResolutions,
 	diff,
+	type PlanAnswers,
+	type PushOutcome,
 	type PushPlan,
 	pull,
 	push,
@@ -107,17 +108,17 @@ export type AccountDatabase = {
 	/** What a push would do, changing nothing (ADR-0337). */
 	diff(): Promise<Result<PushPlan, CheckoutError>>;
 	/**
-	 * Send the folder's values back, then re-render.
+	 * Apply the folder's edits, then re-render.
 	 *
 	 * `plan` is what `diff` said and a person agreed to, and a push that finds
 	 * it is no longer true refuses rather than applying an answer to a question
-	 * that changed. `resolutions` answers the conflicts it named, keyed by
-	 * `conflictKey`.
+	 * that changed. `answers` answers every item it named that admits one,
+	 * keyed by `answerKey`.
 	 */
 	push(options: {
 		plan: PushPlan;
-		resolutions?: ConflictResolutions;
-	}): Promise<Result<{ rows: number; values: number }, CheckoutError>>;
+		answers?: PlanAnswers;
+	}): Promise<Result<PushOutcome, CheckoutError>>;
 };
 
 type Opened<TDatabase> = TDatabase & AsyncDisposable;
@@ -193,8 +194,8 @@ async function openAccountReplica({
 		pull: ({ discardEdits = false } = {}) =>
 			pull({ ...folderArguments(data, generation), discardEdits }),
 		diff: () => diff(folderArguments(data, generation)),
-		push: ({ plan, resolutions = {} }) =>
-			push({ ...folderArguments(data, generation), plan, resolutions }),
+		push: ({ plan, answers = {} }) =>
+			push({ ...folderArguments(data, generation), plan, answers }),
 		async [Symbol.asyncDispose]() {
 			stopHideFlush();
 			connection[Symbol.dispose]();

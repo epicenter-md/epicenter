@@ -19,8 +19,9 @@
  * with one answer. `pull` wrote down what it handed over and when, so at push
  * a changed value is an edit and a missing file is a deletion, and there is no
  * watcher, no echo suppression, and no per-file base store to keep. What a
- * deletion cannot yet do is land anywhere, so it is refused in the plan rather
- * than guessed at; `PushRefusalReason` is the whole list of those.
+ * deletion cannot yet do is land anywhere, so it is named in the plan rather
+ * than guessed at, and a person answers it. `PlanItem` is the whole vocabulary
+ * of what a plan can say and what may be answered to it.
  *
  * ## The wire
  *
@@ -45,18 +46,20 @@
  * reads the folder at all, in service of a one-way rule that is withdrawn, and
  * the narrower refusal is the one that survives.
  */
+import * as Y from '@y/y';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import {
 	compileData,
+	CONTENT_FIELD,
 	type DataDefinition,
 	type JsonObject,
 	type JsonValue,
 	type ParsedDataDefinition,
 } from '../definition/index.js';
 import { parseRowFile } from './frontmatter.js';
-import { parseRowPath } from './layout.js';
+import { parseRowPath, ROW_FILE_EXTENSION, rowPath } from './layout.js';
 import {
 	type RenderableData,
 	RenderError,
@@ -221,9 +224,10 @@ export const CheckoutError = defineErrors({
 	/**
 	 * The plan holds something this push cannot carry, so nothing was applied.
 	 *
-	 * A refusal or an unanswered conflict left standing would be overwritten by
-	 * the re-render a successful push ends with, which is a person's visible
-	 * work disappearing without them saying so.
+	 * An unanswered item, or one of the two nothing can answer. Either left
+	 * standing would be overwritten by the re-render a successful push ends
+	 * with, which is a person's visible work disappearing without them saying
+	 * so.
 	 *
 	 * It also fires when the plan a person confirmed is no longer the plan: a
 	 * file landed, or the store moved. `plan` is what is true now, so a surface
@@ -236,7 +240,7 @@ export const CheckoutError = defineErrors({
 		plan: PushPlan;
 		unanswered: readonly string[];
 	}) => ({
-		message: `${plan.refusals.length} change(s) cannot be sent and ${unanswered.length} conflict(s) are unanswered`,
+		message: `${plan.filter((item) => item.kind === 'block').length} change(s) cannot be sent and ${unanswered.length} are unanswered`,
 		plan,
 		unanswered,
 	}),
@@ -283,7 +287,7 @@ export const CheckoutError = defineErrors({
 	 * refuse work a push would have called converged.
 	 */
 	WorkingCopyDirty: ({ plan }: { plan: PushPlan }) => ({
-		message: `The folder holds ${plan.rows.length + plan.refusals.length} unpushed change(s)`,
+		message: `The folder holds ${plan.length} unpushed change(s)`,
 		plan,
 	}),
 });
@@ -411,13 +415,16 @@ function parseManifest(text: string | undefined): CheckoutManifest | undefined {
  * Generated from the compiled definition rather than written by hand, so the
  * tables and fields it names are the ones that exist. An agent uses the
  * surfaces a person uses (ADR-0330), and the surface here is a directory of
- * text files; what it needs told is which edits come back and which do not,
- * because the folder cannot show it and a wasted edit is silent.
+ * text files; what it needs told is what happens to each kind of edit, because
+ * the folder cannot show it and a wasted edit is silent.
  *
- * The rules are `PushRefusalReason`, one bullet each, plus the fact none of
- * them states on its own: a push carries its plan whole or applies nothing, so
- * one stray file wastes every other edit in the folder. If this file and the
- * plan ever disagree, this file is wrong, because the plan is what runs.
+ * **Consequences rather than prohibitions**, which is what changed when every
+ * item of a plan became answerable. This file used to be a list of things not
+ * to do, because doing any of them stopped the whole send until a person
+ * opened Finder. Now a new file becomes a row, an edited body comes home if a
+ * person says so, and everything else is a file the send rewrites; the honest
+ * thing to say is what each one costs. If this file and the plan ever disagree,
+ * this file is wrong, because the plan is what runs.
  *
  * Nothing here is escaped. A table name and a field name are bare identifiers
  * and a data id is dot-separated lowercase labels
@@ -443,34 +450,43 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'.epicenter/manifest.json   what the last write handed over. Do not edit.',
 		'AGENTS.md                  this file. Generated; do not edit.',
 		'kv.json                    settings. Read only.',
-		'<table>/<row-id>.md        one row: frontmatter, then its text',
+		`<table>/<row-id>${ROW_FILE_EXTENSION}        one row: frontmatter, then its text`,
 		'```',
 		'',
-		'## What comes back, and what does not',
+		'## What happens to what you edit',
 		'',
 		'A person sends your edits back by hand, from the application. You never',
-		'do it yourself: the plan they read is what makes your work reviewable.',
+		'do it yourself: the plan they read is what makes your work reviewable,',
+		'and they answer for every change in it one at a time.',
 		'',
-		'**A send applies all of its changes or none.** Any one of the things',
-		'below stops the whole send, so a single stray file wastes every other',
-		'edit in the folder until a person clears it.',
+		'**A send applies all of its changes or none, and then rewrites this',
+		'whole folder from the database.** So a file the send did not take is a',
+		'file the send overwrites. Nothing here is lost quietly: everything below',
+		'is in the plan a person reads first.',
 		'',
 		'- **A value in the frontmatter comes back.** Change it in place.',
 		'- **Keep the `---` block**, even when it is empty. Without it the file',
-		'  cannot be read at all.',
-		'- **Do not rename, move, or delete a file.** A file that is gone is a',
-		'  deletion, and a deletion has nowhere to go yet; a file that is new is',
-		'  not a row, because row ids are minted and a name cannot claim one. A',
-		'  rename is both at once.',
-		'- **Do not create files.** Ask for the row to be made in the application,',
-		'  and it will appear here at the next write.',
-		'- **The text under the `---` block does not come back.** Edit it here for',
-		'  your own reading if you must, but it will be replaced and it stops the',
-		'  send while it differs.',
+		'  cannot be read at all, and the send rewrites it.',
+		'- **The text under the `---` block comes back if the person agrees.**',
+		'  They see that the text changed and choose between your version and the',
+		'  one in the application; whichever loses is overwritten.',
+		'- **A file you create becomes a row, and is RENAMED.** A row id is minted',
+		'  rather than chosen, so the send makes the row, gives it an id, and',
+		'  writes the file out under that id. Re-read the folder afterwards: the',
+		'  name you gave it is gone. Give it every field its table declares, with',
+		'  a value that fits, or the file cannot become a row and is deleted',
+		'  instead. Copy the frontmatter of a file beside it.',
+		'- **Do not delete, move, or rename a file.** A file that is gone is a',
+		'  deletion, and a deletion has nowhere to go yet: it is the one thing',
+		'  that stops the whole send, and only putting the file back clears it.',
 		'- **Do not remove a frontmatter line.** Write `null` to unset a value.',
+		'  A removed line means "I did not mean to touch it" as much as it means',
+		'  "unset this", so the send rewrites the file instead of guessing.',
 		'- **Do not invent a field name**, and do not write a value that does not',
-		'  fit its field. Both would be accepted by the file and read by nothing.',
-		'- **Do not edit `kv.json`.** It is written for you to read.',
+		'  fit its field. Both would be read by nothing, so the send rewrites the',
+		'  file and the line goes nowhere.',
+		'- **Do not edit `kv.json`.** It is written for you to read, and a send',
+		'  rewrites it.',
 		'',
 		'## The tables',
 		'',
@@ -550,9 +566,7 @@ export async function pull({
 		// Two comparisons is how a pull comes to refuse work a push would have
 		// called converged.
 		const plan = await planPush(data, parsedDefinition.data, held.data);
-		if (plan.rows.length > 0 || plan.refusals.length > 0) {
-			return CheckoutError.WorkingCopyDirty({ plan });
-		}
+		if (plan.length > 0) return CheckoutError.WorkingCopyDirty({ plan });
 	}
 
 	const files: CheckoutFile[] = [];
@@ -664,6 +678,19 @@ export type PushableData = RenderableData & {
 		Record<
 			string,
 			{
+				/**
+				 * Mint a row for a file nobody pulled, with its body already
+				 * decoded.
+				 *
+				 * The node is integrated in this transaction and never again
+				 * (ADR-0296), which is why it is passed rather than written
+				 * afterwards. It THROWS rather than returning, on a reserved name
+				 * or a node that already belongs to a document; `planPush` refuses
+				 * both before a person ever sees the file.
+				 */
+				create(fields: Record<string, JsonValue | Y.Type>): {
+					readonly id: string;
+				};
 				update(
 					rowId: string,
 					fields: JsonObject,
@@ -674,8 +701,46 @@ export type PushableData = RenderableData & {
 	transact<TResult>(run: () => TResult): TResult;
 };
 
-/** One value the push would set, and what it is replacing. */
+/**
+ * One thing a push would do, and how a person may answer it (ADR-0337).
+ *
+ * **Every difference between the folder and the store is one of these, and
+ * almost all of them are answerable.** The plan used to be two lists, changes
+ * and refusals, and a push holding one refusal applied nothing: an agent
+ * writing `notes/scratch.md` or editing one paragraph wedged both directions
+ * until somebody opened Finder and deleted the file. What made that necessary
+ * was not the refusals, it was that they had no answer, so the re-render at
+ * the end of a push would have overwritten work a person could see on disk
+ * without them saying so.
+ *
+ * Saying so is the whole fix. `store` is a person answering "let what I have
+ * here stand, and rewrite that file", which is `pull`'s `discardEdits` at the
+ * grain of one item instead of the whole folder. `file` is the other side,
+ * where there is one. What is left with no answer at all is two things nothing
+ * can stand in for, and both are {@link PlannedBlock}.
+ */
+export type PlanItem =
+	| PlannedValue
+	| PlannedConflict
+	| PlannedBody
+	| PlannedAdmission
+	| PlannedDiscard
+	| PlannedBlock;
+
+/** How a person answered one item: whose version wins. */
+export type PlanAnswer = 'file' | 'store';
+
+/**
+ * One value the push would set, with nothing to decide.
+ *
+ * The file moved and the store did not, so there is one version of this value
+ * that anybody wrote on purpose.
+ */
 export type PlannedValue = {
+	readonly kind: 'value';
+	readonly path: string;
+	readonly table: string;
+	readonly rowId: string;
 	readonly name: string;
 	/** What the store holds now. */
 	readonly store: JsonValue | undefined;
@@ -692,75 +757,93 @@ export type PlannedValue = {
  * and these are not.
  */
 export type PlannedConflict = {
+	readonly kind: 'conflict';
+	readonly path: string;
+	readonly table: string;
+	readonly rowId: string;
 	readonly name: string;
 	readonly base: JsonValue | undefined;
 	readonly file: JsonValue;
 	readonly store: JsonValue | undefined;
 };
 
-/** One row the push would touch. */
-export type PlannedRow = {
+/**
+ * The text under one file's frontmatter changed (ADR-0329, amended by
+ * ADR-0337).
+ *
+ * Answered `file`, the table's codec rewrites the node the row already holds
+ * so that it says what the file says. Answered `store`, the re-render puts the
+ * store's text back and the edit is gone.
+ *
+ * This is the one item where the two answers are not symmetric in cost, and
+ * that is worth being plain about: a value is replaced whole either way, while
+ * a body is a live node several things may be bound to and other devices may
+ * be editing. `ContentCodec.rewrite` is what keeps that an edit rather than a
+ * replacement, and it is still the file's whole text winning rather than a
+ * merge. No conflict marker is ever written into a file.
+ */
+export type PlannedBody = {
+	readonly kind: 'body';
+	readonly path: string;
 	readonly table: string;
 	readonly rowId: string;
-	readonly values: readonly PlannedValue[];
-	readonly conflicts: readonly PlannedConflict[];
+	/**
+	 * Whether the row's own text moved here too since the folder was written.
+	 *
+	 * A three-way on the body, coarser than a value's because a hash is all the
+	 * manifest keeps: with this false, answering `file` overwrites nothing
+	 * anybody typed here; with it true, it does, and a person should be told
+	 * before they answer.
+	 */
+	readonly storeChanged: boolean;
 };
 
 /**
- * Why one change cannot be part of this push.
+ * A file the manifest never named, which would become a row (ADR-0337).
  *
- * Named rather than dropped. A change the plan does not carry is a change the
- * re-render at the end of a push would silently overwrite, so `push` refuses to
- * run while any of these stands; a person reads the reason and decides.
+ * Answered `file`, the push mints a row id, creates the row from the file's
+ * frontmatter with its body decoded into the node, and the re-render writes it
+ * out at its id. **So the file is renamed**, and there is no way around that:
+ * a row id is minted and never chosen
+ * (`packages/data/src/store/handles.ts`), because two devices creating one
+ * address produce two containers and one loses every field in it. That was
+ * refused as rude while it was a silent side effect; it is not rude when the
+ * plan says it before a person agrees to it.
  *
- * `name` is the field it is about, where it is about one.
+ * Answered `store`, the file is not a row and the re-render sweeps it, because
+ * a row-shaped path the checkout does not name is not the folder's to keep.
+ * Those are the only two answers a row-shaped file has, and a person who wants
+ * neither cancels and renames it out of the way.
  */
-export type PushRefusal = {
+export type PlannedAdmission = {
+	readonly kind: 'admission';
 	readonly path: string;
-	readonly name?: string;
-	readonly reason: PushRefusalReason;
+	readonly table: string;
 };
 
-export type PushRefusalReason =
-	/**
-	 * Nothing wrote down what this folder holds, so nothing in it can be told
-	 * from what the store already has.
-	 *
-	 * Never pulled, manifest deleted, manifest mangled, or manifest written by
-	 * another account. A pull is what gives this folder a base.
-	 */
-	| 'no-base'
-	/**
-	 * The text under the frontmatter changed.
-	 *
-	 * A body renders out and does not read back (ADR-0329). Reaching a node
-	 * from text is a whole-value replace that discards the concurrent edits and
-	 * the undo history that made it a node, and `ContentCodec` declares
-	 * `encode` and `decode` and no verb that replaces a live one in place.
-	 * Giving it a third verb is a decision about the definition vocabulary, not
-	 * something a push invents.
-	 */
-	| 'body-changed'
-	/**
-	 * A file the manifest never named.
-	 *
-	 * A row id is minted and never chosen (`packages/data/src/store/handles.ts`),
-	 * because two devices creating one address produce two containers and one
-	 * loses every field in it. So a file cannot say which row it would be, and
-	 * creating one at a minted id would rename the person's file under them.
-	 */
-	| 'new-file'
+/**
+ * A file the push cannot carry as it stands, and the re-render will overwrite.
+ *
+ * One per path rather than one per problem, because they all resolve the same
+ * way: the file is rewritten from the store, whatever is wrong with it. What
+ * is wrong is listed so a person can cancel, fix it, and read the folder
+ * again, which costs nothing.
+ */
+export type PlannedDiscard = {
+	readonly kind: 'discard';
+	readonly path: string;
+	readonly notes: readonly DiscardNote[];
+};
+
+/** One thing wrong with a file, and the field it is about where it has one. */
+export type DiscardNote = {
+	readonly reason: DiscardReason;
+	readonly name?: string;
+};
+
+export type DiscardReason =
 	/** The row was removed from the store after the folder was written. */
 	| 'row-gone'
-	/**
-	 * The file is gone, which is a deletion, and this table has nowhere to put
-	 * one.
-	 *
-	 * Where a table names a trash field it lands there as a value (ADR-0337).
-	 * No table can name one yet, so every deletion is refused rather than
-	 * guessed at, which is the interim that record names.
-	 */
-	| 'file-missing'
 	/** `kv.json` is pulled to read and never pushed (ADR-0337). */
 	| 'kv-changed'
 	/** The frontmatter frame is gone, so nothing here can be read. */
@@ -799,13 +882,102 @@ export type PushRefusalReason =
 	 * Its rows still render (ADR-0240), so they are in the folder and in the
 	 * manifest, and there is no handle to write one through.
 	 */
-	| 'table-undeclared';
+	| 'table-undeclared'
+	/**
+	 * The table's codec refused the text under the fence.
+	 *
+	 * Checked with `decode`, which validates the same text `rewrite` would
+	 * apply, so a person never reads a plan whose own push then refuses it.
+	 * Also how a table that declares no codec at all reports a changed body: a
+	 * definition that arrived as JSON cannot carry one.
+	 */
+	| 'body-unreadable'
+	/**
+	 * A new file whose frontmatter is not a whole row.
+	 *
+	 * A definition declares no defaults on purpose (ADR-0255), and `create`
+	 * does not validate, so a file missing a declared value would mint a row
+	 * the application reads as nonconforming and stops showing. Named per field
+	 * so the fix is mechanical: copy the missing lines from a file beside it.
+	 */
+	| 'row-incomplete';
 
-/** What a push would do, and what it will not (ADR-0337). */
-export type PushPlan = {
-	readonly rows: readonly PlannedRow[];
-	readonly refusals: readonly PushRefusal[];
+/**
+ * Something no answer resolves, so the push cannot run at all.
+ *
+ * Two, and each waits on its own record rather than on a better dialog.
+ */
+export type PlannedBlock = {
+	readonly kind: 'block';
+	readonly path: string;
+	readonly reason: BlockReason;
 };
+
+export type BlockReason =
+	/**
+	 * Nothing wrote down what this folder holds, so nothing in it can be told
+	 * from what the store already has.
+	 *
+	 * Never pulled, manifest deleted, manifest mangled, or manifest written by
+	 * another account. A pull is what gives this folder a base, and with no
+	 * base there is no `store` answer to give either: every file here might be
+	 * work nobody has ever sent.
+	 */
+	| 'no-base'
+	/**
+	 * The file is gone, which is a deletion, and this table has nowhere to put
+	 * one.
+	 *
+	 * Where a table names a trash field it lands there as a value (ADR-0337).
+	 * No table can name one yet, so every deletion is refused rather than
+	 * guessed at, which is the interim that record names. Not answerable as
+	 * `store` either: the re-render would put the file back, which is the
+	 * resurrecting folder ADR-0337 refused by name.
+	 */
+	| 'file-missing';
+
+/** What a push would do, item by item, and what it will not (ADR-0337). */
+export type PushPlan = readonly PlanItem[];
+
+/**
+ * The answers one item admits, and none where nothing is asked.
+ *
+ * The one place the table at the top of {@link PlanItem} is executable.
+ */
+export function answersFor(item: PlanItem): readonly PlanAnswer[] {
+	switch (item.kind) {
+		case 'conflict':
+		case 'body':
+		case 'admission':
+			return ['file', 'store'];
+		case 'discard':
+			return ['store'];
+		case 'value':
+		case 'block':
+			return [];
+	}
+}
+
+/**
+ * The key an item's answer is filed under.
+ *
+ * The path, plus the field where the item is about one. `content` cannot
+ * collide with a field name because the store reserves it (ADR-0309), and a
+ * discard is one item per path so it needs no field to be unique.
+ */
+export function answerKey(item: PlanItem): string {
+	switch (item.kind) {
+		case 'value':
+		case 'conflict':
+			return `${item.path}#${item.name}`;
+		case 'body':
+			return `${item.path}#${CONTENT_FIELD}`;
+		case 'admission':
+		case 'discard':
+		case 'block':
+			return item.path;
+	}
+}
 
 /**
  * What `push` would do, changing nothing (ADR-0337).
@@ -853,112 +1025,203 @@ export async function diff({
  * sides compares identically. Reading the row directly meant guessing which
  * members were nodes, and a JSON object that happened to look like one was
  * dropped and then read as a conflict.
+ *
+ * It changes nothing and reaches nothing live, including for the two items
+ * that would. An admission is checked by DECODING the file, which builds a
+ * detached node and throws it away; a body is checked the same way, because
+ * `decode` validates the text `rewrite` would apply and `rewrite` would edit
+ * the store. That is what lets a plan be JSON a dialog can hold and a push can
+ * compare against, and it is why `push` decodes a second time rather than
+ * carrying a live node through the person's decision.
  */
 async function planPush(
 	data: RenderableData,
 	definition: ParsedDataDefinition,
 	held: WorkingCopy,
 ): Promise<PushPlan> {
-	const rows: PlannedRow[] = [];
-	const refusals: PushRefusal[] = [];
+	const items: PlanItem[] = [];
 	const base = held.base;
 
 	if (base === undefined) {
 		for (const path of held.files.keys()) {
 			if (parseRowPath(path) !== undefined || path === 'kv.json') {
-				refusals.push({ path, reason: 'no-base' });
+				items.push({ kind: 'block', path, reason: 'no-base' });
 			}
 		}
-		return { rows, refusals };
+		return items;
 	}
 
 	const onDisk = held.files.get('kv.json');
 	if (onDisk !== undefined && (await contentHash(onDisk)) !== base.kvHash) {
-		refusals.push({ path: 'kv.json', reason: 'kv-changed' });
+		items.push({
+			kind: 'discard',
+			path: 'kv.json',
+			notes: [{ reason: 'kv-changed' }],
+		});
 	}
 
 	for (const [key, handed] of Object.entries(base.rows)) {
-		const address = parseRowPath(`${key}.md`);
+		const address = parseRowPath(`${key}${ROW_FILE_EXTENSION}`);
 		if (address === undefined) continue;
-		const path = `${key}.md`;
-		const refuse = (reason: PushRefusalReason, name?: string) =>
-			refusals.push({ path, name, reason });
+		const path = rowPath(address.table, address.rowId);
+		// Collected rather than pushed, because everything wrong with one file
+		// resolves the same way and a person should answer for the file once.
+		const notes: DiscardNote[] = [];
+		const discard = (reason: DiscardReason, name?: string) =>
+			notes.push({ reason, name });
+		const flush = () => {
+			if (notes.length > 0) items.push({ kind: 'discard', path, notes });
+		};
 
 		const contents = held.files.get(path);
 		if (contents === undefined) {
-			refuse('file-missing');
+			items.push({ kind: 'block', path, reason: 'file-missing' });
 			continue;
 		}
 		const file = parseRowFile(contents);
 		if (file === undefined) {
-			refuse('unreadable');
+			discard('unreadable');
+			flush();
 			continue;
 		}
-		if ((await contentHash(file.body)) !== handed.bodyHash) {
-			refuse('body-changed');
-			continue;
-		}
-
 		const table = definition.tables.get(address.table);
 		if (table === undefined) {
-			refuse('table-undeclared');
+			discard('table-undeclared');
+			flush();
 			continue;
 		}
-		const stored = await renderedValues(data, definition, address);
+		const stored = await renderedRow(data, definition, address);
 		if (stored === undefined) {
-			refuse('row-gone');
+			discard('row-gone');
+			flush();
 			continue;
 		}
 
-		const values: PlannedValue[] = [];
-		const conflicts: PlannedConflict[] = [];
+		// The body is one item beside the values rather than instead of them.
+		// It used to refuse the row outright, so one edited paragraph hid every
+		// value edit in the same file from the person deciding.
+		const inFile = await contentHash(file.body);
+		if (inFile !== handed.bodyHash) {
+			const inStore = await contentHash(stored.body);
+			if (inStore !== inFile) {
+				const readable = table.content?.decode(file.body);
+				if (readable === undefined || readable.error !== null) {
+					discard('body-unreadable');
+				} else {
+					items.push({
+						kind: 'body',
+						path,
+						...address,
+						storeChanged: inStore !== handed.bodyHash,
+					});
+				}
+			}
+		}
+
 		for (const name of new Set([
 			...Object.keys(handed.values),
 			...Object.keys(file.fields),
 		])) {
-			const inFile = file.fields[name];
-			if (inFile === undefined) {
-				refuse('value-removed', name);
+			const wrote = file.fields[name];
+			if (wrote === undefined) {
+				discard('value-removed', name);
 				continue;
 			}
 			const wasHandedOver = handed.values[name];
-			const inStore = stored[name];
-			if (same(inFile, wasHandedOver)) continue;
-			if (same(inFile, inStore)) continue;
+			const inStore = stored.fields[name];
+			if (same(wrote, wasHandedOver)) continue;
+			if (same(wrote, inStore)) continue;
 
 			const field = table.fields.get(name);
 			if (field === undefined) {
-				refuse('name-unknown', name);
+				discard('name-unknown', name);
 				continue;
 			}
-			if (!field.check(inFile)) {
-				refuse('value-invalid', name);
+			if (!field.check(wrote)) {
+				discard('value-invalid', name);
 				continue;
 			}
 			if (same(inStore, wasHandedOver)) {
-				values.push({ name, store: inStore, file: inFile });
+				items.push({
+					kind: 'value',
+					path,
+					...address,
+					name,
+					store: inStore,
+					file: wrote,
+				});
 				continue;
 			}
-			conflicts.push({
+			items.push({
+				kind: 'conflict',
+				path,
+				...address,
 				name,
 				base: wasHandedOver,
-				file: inFile,
+				file: wrote,
 				store: inStore,
 			});
 		}
-		if (values.length > 0 || conflicts.length > 0) {
-			rows.push({ ...address, values, conflicts });
-		}
+		flush();
 	}
 
-	for (const path of held.files.keys()) {
-		if (parseRowPath(path) === undefined) continue;
-		if (base.rows[path.slice(0, -'.md'.length)] === undefined) {
-			refusals.push({ path, reason: 'new-file' });
-		}
+	for (const [path, contents] of held.files) {
+		const address = parseRowPath(path);
+		if (address === undefined) continue;
+		if (base.rows[`${address.table}/${address.rowId}`] !== undefined) continue;
+		items.push(admission(definition, address.table, path, contents));
 	}
 
-	return { rows, refusals };
+	return items;
+}
+
+/**
+ * A file nobody pulled, as the row it would become or as the reasons it cannot.
+ *
+ * Every declared field has to be there and has to fit, because a definition
+ * declares no defaults (ADR-0255) and `create` does not validate: a file
+ * missing one would mint a row the application reads as nonconforming and
+ * stops showing, which is a person's file disappearing into a store that still
+ * holds it. Checked here, where it is still a file and the fix is a line of
+ * text.
+ */
+function admission(
+	definition: ParsedDataDefinition,
+	tableName: string,
+	path: string,
+	contents: string,
+): PlannedAdmission | PlannedDiscard {
+	const notes: DiscardNote[] = [];
+	const table = definition.tables.get(tableName);
+	if (table === undefined) {
+		return { kind: 'discard', path, notes: [{ reason: 'table-undeclared' }] };
+	}
+	const file = parseRowFile(contents);
+	if (file === undefined) {
+		return { kind: 'discard', path, notes: [{ reason: 'unreadable' }] };
+	}
+	// Undeclared names first, and `id` and `content` are among them: both are
+	// the row's own rather than values (ADR-0309), and `create` THROWS on
+	// either rather than returning, so this is what keeps a hand-written file
+	// from crashing a push.
+	for (const name of Object.keys(file.fields)) {
+		if (!table.fields.has(name)) notes.push({ reason: 'name-unknown', name });
+	}
+	for (const [name, field] of table.fields) {
+		const wrote = file.fields[name];
+		if (wrote === undefined) {
+			notes.push({ reason: 'row-incomplete', name });
+			continue;
+		}
+		if (!field.check(wrote)) notes.push({ reason: 'value-invalid', name });
+	}
+	const readable = table.content?.decode(file.body);
+	if (file.body !== '' && (readable === undefined || readable.error !== null)) {
+		notes.push({ reason: 'body-unreadable' });
+	}
+	return notes.length > 0
+		? { kind: 'discard', path, notes }
+		: { kind: 'admission', path, table: tableName };
 }
 
 /**
@@ -977,17 +1240,19 @@ function same(
 }
 
 /**
- * One row's values as the folder would read them, or `undefined` when the row
- * is gone.
+ * One row's file as the folder would read it, or `undefined` when the row is
+ * gone.
  *
  * Rendered and parsed back rather than read off the row, so the store's side of
- * the comparison made the same trip the other two did.
+ * the comparison made the same trip the other two did. Both halves, because
+ * both are compared now: the values against the manifest's values, and the
+ * body against a hash of what was handed over.
  */
-async function renderedValues(
+async function renderedRow(
 	data: RenderableData,
 	definition: ParsedDataDefinition,
 	address: { table: string; rowId: string },
-): Promise<JsonObject | undefined> {
+): Promise<{ fields: JsonObject; body: string } | undefined> {
 	const rendered = await renderRow(
 		data,
 		definition,
@@ -997,54 +1262,52 @@ async function renderedValues(
 	if (rendered.error !== null || rendered.data.contents === undefined) {
 		return undefined;
 	}
-	return parseRowFile(rendered.data.contents)?.fields;
+	return parseRowFile(rendered.data.contents);
 }
 
 /**
- * How a person answered one conflict, keyed by `conflictKey`.
+ * How a person answered each item, keyed by `answerKey`.
  *
  * `file` and `store` rather than `mine` and `theirs`, matching the plan and
  * ADR-0337's own table. A map rather than a callback, because it is the state a
  * dialog holds while a person clicks through it, and a callback would make that
  * state unserializable for no gain.
  */
-export type ConflictResolutions = Readonly<Record<string, 'file' | 'store'>>;
+export type PlanAnswers = Readonly<Record<string, PlanAnswer>>;
 
-/** The key a resolution is filed under. */
-export function conflictKey(
-	row: { table: string; rowId: string },
-	name: string,
-): string {
-	return `${row.table}/${row.rowId}#${name}`;
-}
-
-/** Whether two plans describe the same change, field for field. */
+/** Whether two plans describe the same change, item for item. */
 function samePlan(left: PushPlan, right: PushPlan): boolean {
 	return JSON.stringify(left) === JSON.stringify(right);
 }
 
 /**
- * Send the folder's values back, then re-render so the folder is never dirty
- * after a successful push (ADR-0337).
+ * Apply the plan a person answered, then re-render so the folder is never
+ * dirty after a successful push (ADR-0337).
  *
- * **It refuses a plan it cannot carry whole.** A refusal left standing is a
- * change the re-render at the end would overwrite, and an unanswered conflict
- * is the same thing with a person's edit on one side of it. Either is data a
- * person can see on disk disappearing without them saying so, which is the one
- * outcome the manifest exists to prevent.
+ * **It carries the plan whole, and every item of it has an answer.** That is
+ * the same promise this made when it refused any plan holding a refusal, and
+ * it now costs a person almost nothing: `store` on an item is them saying "let
+ * what I have here stand, and rewrite that file", which is the consent `pull`
+ * already takes for the whole folder at the grain of one file. What is left
+ * unanswerable is {@link PlannedBlock}, both of which wait on their own record.
  *
  * **It takes the plan a person confirmed and checks it is still the plan.** A
  * push that recomputed silently would apply an answer to a conflict whose other
  * side had moved since they read it, which is the merge nobody asked for. When
  * it has changed, the refusal carries what is true now, so a surface shows the
  * new plan rather than an apology.
+ *
+ * One transaction for all of it: the values, the bodies, and the rows a file
+ * brought into being. A hundred fields across forty rows is one durable append
+ * and one notification per table, and half a push landing is a folder that
+ * matches nothing.
  */
 export async function push({
 	data,
 	definition,
 	store,
 	plan: confirmed,
-	resolutions = {},
+	answers = {},
 	fetch: httpFetch = globalThis.fetch,
 	now = () => new Date(),
 }: {
@@ -1053,10 +1316,10 @@ export async function push({
 	store: CheckoutStore;
 	/** What `diff` said and a person agreed to. */
 	plan: PushPlan;
-	resolutions?: ConflictResolutions;
+	answers?: PlanAnswers;
 	fetch?: typeof globalThis.fetch;
 	now?: () => Date;
-}): Promise<Result<{ rows: number; values: number }, CheckoutError>> {
+}): Promise<Result<PushOutcome, CheckoutError>> {
 	const parsed = compileData(definition);
 	if (parsed.error !== null) {
 		return CheckoutError.Unrenderable({
@@ -1069,62 +1332,123 @@ export async function push({
 	if (held.error !== null) return Err(held.error);
 	const plan = await planPush(data, parsed.data, held.data);
 
-	const unanswered = plan.rows.flatMap((row) =>
-		row.conflicts
-			.filter(
-				(conflict) =>
-					resolutions[conflictKey(row, conflict.name)] === undefined,
-			)
-			.map((conflict) => conflictKey(row, conflict.name)),
-	);
+	const unanswered = [
+		...new Set(
+			plan
+				.filter((item) => answersFor(item).length > 0)
+				.map(answerKey)
+				.filter((key) => answers[key] === undefined),
+		),
+	];
+	const blocked = plan.filter((item) => item.kind === 'block');
 	if (
-		plan.refusals.length > 0 ||
 		unanswered.length > 0 ||
+		blocked.length > 0 ||
 		!samePlan(plan, confirmed)
 	) {
 		return CheckoutError.PushIncomplete({ plan, unanswered });
 	}
 
-	let values = 0;
-	let rows = 0;
+	/** Whether this item is the file's version to apply. */
+	const chosen = (item: PlanItem) => answers[answerKey(item)] === 'file';
+	const outcome = { rows: 0, values: 0, bodies: 0, admitted: [] } as {
+		rows: number;
+		values: number;
+		bodies: number;
+		admitted: Admitted[];
+	};
 	let failure: { name: string; message: string } | undefined;
+	const broke = (message: string) => {
+		failure ??= { name: 'PlanUnapplied', message };
+	};
+
 	data.transact(() => {
-		for (const row of plan.rows) {
-			const fields: JsonObject = {};
-			for (const value of row.values) fields[value.name] = value.file;
-			for (const conflict of row.conflicts) {
-				// Answering `store` is writing what is already there. Skipped
-				// rather than written, so the commit carries only what changes.
-				if (resolutions[conflictKey(row, conflict.name)] === 'file') {
-					fields[conflict.name] = conflict.file;
-				}
-			}
-			const names = Object.keys(fields);
-			if (names.length === 0) continue;
-			// The table is there: `planPush` refused every row whose table this
+		// Values first, gathered per row, because a row is one write however
+		// many of its fields moved.
+		const perRow = new Map<string, { item: PlanItem; fields: JsonObject }>();
+		for (const item of plan) {
+			if (item.kind !== 'value' && item.kind !== 'conflict') continue;
+			// Answering `store` on a conflict is writing what is already there.
+			// Skipped rather than written, so the commit carries only what changes.
+			if (item.kind === 'conflict' && !chosen(item)) continue;
+			const held = perRow.get(item.path) ?? { item, fields: {} };
+			held.fields[item.name] = item.file;
+			perRow.set(item.path, held);
+		}
+		for (const { item, fields } of perRow.values()) {
+			if (item.kind !== 'value' && item.kind !== 'conflict') continue;
+			// The table is there: `planPush` discarded every row whose table this
 			// definition does not declare, and this runs with no await since the
 			// plan was made.
-			const { error } = (
-				data.tables[row.table] as PushableData['tables'][string]
-			).update(row.rowId, fields);
+			const { error } = data.tables[item.table]?.update(item.rowId, fields) ?? {
+				error: { name: 'TableAbsent', message: `no table '${item.table}'` },
+			};
 			if (error !== null) {
 				failure ??= error;
 				continue;
 			}
-			values += names.length;
-			rows += 1;
+			outcome.values += Object.keys(fields).length;
+			outcome.rows += 1;
+		}
+
+		for (const item of plan) {
+			if (item.kind !== 'body' || !chosen(item)) continue;
+			const node = data.rowFile(item.table, item.rowId)?.[CONTENT_FIELD];
+			const codec = parsed.data.tables.get(item.table)?.content;
+			if (!(node instanceof Y.Type) || codec === undefined) {
+				broke(`'${item.path}' has no live node to rewrite`);
+				continue;
+			}
+			// The node the row already holds, edited rather than replaced, so an
+			// editor bound to this very note is still bound after (ADR-0329,
+			// amended). The text was decoded once at plan time to prove the codec
+			// accepts it; a live node is not JSON, so it could not travel through
+			// the person's decision and is built again here.
+			const { error } = codec.rewrite(node, bodyOf(held.data, item.path));
+			if (error !== null) {
+				failure ??= error;
+				continue;
+			}
+			outcome.bodies += 1;
+		}
+
+		for (const item of plan) {
+			if (item.kind !== 'admission' || !chosen(item)) continue;
+			const file = parseRowFile(held.data.files.get(item.path) ?? '');
+			const codec = parsed.data.tables.get(item.table)?.content;
+			const node = file === undefined ? undefined : codec?.decode(file.body);
+			if (file === undefined || node === undefined || node.error !== null) {
+				broke(`'${item.path}' could not be read into a row`);
+				continue;
+			}
+			// The id is minted here and the file is renamed to it by the
+			// re-render below. `create` integrates the node in the transaction
+			// that mints the row, which is the only moment a nested type may
+			// arrive (ADR-0296).
+			const created = data.tables[item.table]?.create({
+				...file.fields,
+				[CONTENT_FIELD]: node.data,
+			});
+			if (created === undefined) {
+				broke(`no table '${item.table}'`);
+				continue;
+			}
+			outcome.admitted.push({
+				path: item.path,
+				table: item.table,
+				rowId: created.id,
+			});
 		}
 	});
-	// Not swallowed. `RowAbsent` is the only thing `update` answers, and
-	// `planPush` read the row a moment ago inside the same synchronous stretch,
-	// so reaching this means an invariant broke rather than a person did
-	// something. The write that landed still stands; what is reported is that
-	// not all of it did.
+	// Not swallowed. Everything above was checked against a plan read a moment
+	// ago inside the same synchronous stretch, so reaching this means an
+	// invariant broke rather than a person did something. The writes that
+	// landed still stand; what is reported is that not all of them did.
 	if (failure !== undefined) {
 		return CheckoutError.Unrenderable({
 			failures: [
 				RenderError.MalformedDefinition({
-					reason: `a planned row could not be written: ${failure.message}`,
+					reason: `a planned change could not be applied: ${failure.message}`,
 				}).error,
 			],
 		});
@@ -1133,7 +1457,7 @@ export async function push({
 	// The folder is re-rendered from the store the push just changed, so what a
 	// person reads next is what is true. `discardEdits` because the plan was
 	// carried whole: every difference this folder held is either applied above
-	// or was the store's value already.
+	// or was answered `store`, which IS the discard.
 	const pulled = await pull({
 		data,
 		definition,
@@ -1143,6 +1467,30 @@ export async function push({
 		now,
 	});
 	return pulled.error === null
-		? Ok({ rows, values })
-		: CheckoutError.FolderStale({ rows, values, cause: pulled.error });
+		? Ok(outcome)
+		: CheckoutError.FolderStale({
+				rows: outcome.rows,
+				values: outcome.values,
+				cause: pulled.error,
+			});
+}
+
+/** One file that became a row, and the id its file is renamed to. */
+export type Admitted = {
+	readonly path: string;
+	readonly table: string;
+	readonly rowId: string;
+};
+
+/** What a push did, in the terms a person is told it in. */
+export type PushOutcome = {
+	readonly rows: number;
+	readonly values: number;
+	readonly bodies: number;
+	readonly admitted: readonly Admitted[];
+};
+
+/** The text under one file's fence, as the folder holds it right now. */
+function bodyOf(held: WorkingCopy, path: string): string {
+	return parseRowFile(held.files.get(path) ?? '')?.body ?? '';
 }

@@ -62,11 +62,21 @@ back. Every pull replaces it, and it says so on its first line, so a person
 keeping notes to themselves keeps them under another name.
 
 `SendFolderEdits.svelte` is the other direction: `diff` shows what a push would
-do, and `push` sends it and re-renders. A push carrying anything it cannot apply
+do, and `push` applies it and re-renders. A push carries its plan whole or
 applies nothing, because the re-render at the end would overwrite whatever it
-left behind. What it cannot apply is listed in ADR-0337 and said in the person's
-words in that component: an edited body, a new file, a deleted file, an edited
-`kv.json`, and a removed frontmatter line.
+left behind, and every item of the plan is answered before it runs. A person
+answers `file` or `store` per item; `store` is them saying "keep what is here
+and rewrite that file", which is the discard `pull` already takes for the whole
+folder, at the grain of one file.
+
+Two things have no answer, and both stop the send: a folder nothing ever wrote,
+and a file somebody deleted. A deletion waits on a table naming a trash field
+(ADR-0337), which for Honeycrisp would be `deletedAt`.
+
+A file an agent wrote becomes a note and **is renamed**, because a note's id is
+minted rather than chosen. That is in the plan before a person agrees to it, and
+in the `AGENTS.md` a pull writes, so an agent knows to re-read the folder after
+a send.
 
 ## Three builds, one store shape
 

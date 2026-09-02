@@ -18,4 +18,4 @@ export {
 	parseRowFile,
 	rowFile,
 } from './frontmatter.js';
-export { parseRowPath, rowPath } from './layout.js';
+export { parseRowPath, ROW_FILE_EXTENSION, rowPath } from './layout.js';

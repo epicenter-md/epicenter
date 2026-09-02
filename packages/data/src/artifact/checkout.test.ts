@@ -10,28 +10,48 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+	ContentError,
 	defineData,
 	defineTable,
 	field,
 	plainText,
 } from '@epicenter/data/definition';
 import type * as Y from '@y/y';
+import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openMemory } from '../store/memory.js';
 import {
 	AGENTS_PATH,
+	answerKey,
+	answersFor,
 	type CheckoutFile,
 	type CheckoutManifest,
 	checkoutLine,
 	contentHash,
 	diff,
 	MANIFEST_PATH,
+	type DiscardReason,
+	type PlanAnswers,
+	type PlanItem,
 	type PushableData,
 	type PushPlan,
-	type PushRefusalReason,
 	pull,
 	push,
 } from './checkout.js';
+
+/** The one item of a plan of this kind, or a failure naming what was there. */
+function only<TKind extends PlanItem['kind']>(
+	plan: PushPlan,
+	kind: TKind,
+): Extract<PlanItem, { kind: TKind }> {
+	const found = plan.filter((item) => item.kind === kind);
+	if (found.length !== 1) {
+		throw new Error(
+			`expected one ${kind} item, found ${found.length} in ${JSON.stringify(plan)}`,
+		);
+	}
+	return found[0] as Extract<PlanItem, { kind: TKind }>;
+}
 
 const definition = defineData({
 	id: 'so.epicenter.honeycrisp',
@@ -194,8 +214,8 @@ describe('pull fills the folder and writes the base', () => {
 		const refused = expectErr(await pullInto(host, data));
 		expect(refused.name).toBe('WorkingCopyDirty');
 		if (refused.name !== 'WorkingCopyDirty') throw new Error('unreachable');
-		expect(refused.plan.refusals).toEqual([
-			{ path: 'drafts/ideas.md', reason: 'no-base' },
+		expect(refused.plan).toEqual([
+			{ kind: 'block', path: 'drafts/ideas.md', reason: 'no-base' },
 		]);
 		expect(host.folder.has('drafts/ideas.md')).toBe(true);
 		await data[Symbol.asyncDispose]();
@@ -235,7 +255,8 @@ describe('pull fills the folder and writes the base', () => {
 		if (refused.name !== 'WorkingCopyDirty') throw new Error('unreachable');
 		// Not a diff against Alice's base: a manifest naming another account is
 		// no base at all, so every file in the folder is shown whole.
-		expect(refused.plan.refusals[0]?.reason).toBe('no-base');
+		expect(refused.plan.every((item) => item.kind === 'block')).toBe(true);
+		expect(refused.plan[0]).toMatchObject({ reason: 'no-base' });
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -287,12 +308,15 @@ describe('pull refuses a folder holding unpushed edits', () => {
 		const refused = expectErr(await pullInto(host, data));
 		expect(refused.name).toBe('WorkingCopyDirty');
 		if (refused.name !== 'WorkingCopyDirty') throw new Error('unreachable');
-		expect(refused.plan.rows).toEqual([
+		expect(refused.plan).toEqual([
 			{
+				kind: 'value',
+				path: `notes/${noteId}.md`,
 				table: 'notes',
 				rowId: noteId,
-				values: [{ name: 'title', store: 'Groceries', file: 'Shopping' }],
-				conflicts: [],
+				name: 'title',
+				store: 'Groceries',
+				file: 'Shopping',
 			},
 		]);
 		// The edit is still on disk. A refusal is not a repair (ADR-0281).
@@ -300,8 +324,8 @@ describe('pull refuses a folder holding unpushed edits', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a changed body is reported without being read', async () => {
-		const { host, data } = await pulledThenEdited((folder, id) => {
+	test('a changed body is unpushed work like any other', async () => {
+		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
 			folder.set(
 				`notes/${id}.md`,
 				`${folder.get(`notes/${id}.md`) as string}and eggs\n`,
@@ -309,7 +333,13 @@ describe('pull refuses a folder holding unpushed edits', () => {
 		});
 		const refused = expectErr(await pullInto(host, data));
 		if (refused.name !== 'WorkingCopyDirty') throw new Error('unreachable');
-		expect(refused.plan.refusals[0]?.reason).toBe('body-changed');
+		expect(only(refused.plan, 'body')).toEqual({
+			kind: 'body',
+			path: `notes/${noteId}.md`,
+			table: 'notes',
+			rowId: noteId,
+			storeChanged: false,
+		});
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -320,12 +350,18 @@ describe('pull refuses a folder holding unpushed edits', () => {
 		});
 		const refused = expectErr(await pullInto(host, data));
 		if (refused.name !== 'WorkingCopyDirty') throw new Error('unreachable');
-		expect(refused.plan.refusals).toEqual(
-			expect.arrayContaining([
-				{ path: `notes/${noteId}.md`, reason: 'file-missing' },
-				{ path: 'notes/handwritten.md', reason: 'new-file' },
-			]),
-		);
+		expect(only(refused.plan, 'block')).toEqual({
+			kind: 'block',
+			path: `notes/${noteId}.md`,
+			reason: 'file-missing',
+		});
+		// A file nobody pulled is not a block: it is a row waiting to be made,
+		// which is what stops one stray file wedging both directions.
+		expect(only(refused.plan, 'discard')).toEqual({
+			kind: 'discard',
+			path: 'notes/handwritten.md',
+			notes: [{ reason: 'row-incomplete', name: 'pinned' }],
+		});
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -354,8 +390,8 @@ describe('pull refuses a folder holding unpushed edits', () => {
 		});
 		const refused = expectErr(await pullInto(host, data));
 		if (refused.name !== 'WorkingCopyDirty') throw new Error('unreachable');
-		expect(refused.plan.refusals).toEqual([
-			{ path: 'kv.json', reason: 'kv-changed' },
+		expect(refused.plan).toEqual([
+			{ kind: 'discard', path: 'kv.json', notes: [{ reason: 'kv-changed' }] },
 		]);
 		await data[Symbol.asyncDispose]();
 	});
@@ -391,13 +427,15 @@ describe('diff plans what push would do (ADR-0337)', () => {
 			setField(folder, `notes/${id}.md`, '"Groceries"', '"Shopping"');
 		});
 		const plan = expectOk(await planOf(host, data));
-		expect(plan.refusals).toEqual([]);
-		expect(plan.rows).toEqual([
+		expect(plan).toEqual([
 			{
+				kind: 'value',
+				path: `notes/${noteId}.md`,
 				table: 'notes',
 				rowId: noteId,
-				values: [{ name: 'title', store: 'Groceries', file: 'Shopping' }],
-				conflicts: [],
+				name: 'title',
+				store: 'Groceries',
+				file: 'Shopping',
 			},
 		]);
 		await data[Symbol.asyncDispose]();
@@ -410,9 +448,11 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		});
 		data.tables.notes.update(noteId, { title: 'Moved on' });
 		const plan = expectOk(await planOf(host, data));
-		expect(plan.rows[0]?.values).toEqual([
-			{ name: 'pinned', store: false, file: true },
-		]);
+		expect(only(plan, 'value')).toMatchObject({
+			name: 'pinned',
+			store: false,
+			file: true,
+		});
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -422,7 +462,7 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		});
 		data.tables.notes.update(noteId, { title: 'Shopping' });
 		const plan = expectOk(await planOf(host, data));
-		expect(plan.rows).toEqual([]);
+		expect(plan).toEqual([]);
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -432,14 +472,12 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		});
 		data.tables.notes.update(noteId, { title: 'Q3 planning' });
 		const plan = expectOk(await planOf(host, data));
-		expect(plan.rows[0]?.conflicts).toEqual([
-			{
-				name: 'title',
-				base: 'Groceries',
-				file: 'Q3 plan',
-				store: 'Q3 planning',
-			},
-		]);
+		expect(only(plan, 'conflict')).toMatchObject({
+			name: 'title',
+			base: 'Groceries',
+			file: 'Q3 plan',
+			store: 'Q3 planning',
+		});
 
 		const refused = expectErr(
 			await push({
@@ -452,43 +490,126 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		);
 		expect(refused.name).toBe('PushIncomplete');
 		if (refused.name !== 'PushIncomplete') throw new Error('unreachable');
-		expect(refused.unanswered).toEqual([`notes/${noteId}#title`]);
+		expect(refused.unanswered).toEqual([`notes/${noteId}.md#title`]);
 		// Nothing was applied, and the folder still holds what the person wrote.
 		expect(data.tables.notes.get(noteId)?.title).toBe('Q3 planning');
 		expect(host.folder.get(`notes/${noteId}.md`)).toContain('"Q3 plan"');
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a body edit is refused, because a body does not read back', async () => {
-		// ADR-0329's whole point, and the reason a push says so rather than
-		// letting the re-render overwrite it.
-		const { host, data } = await pulledThenEdited((folder, id) => {
+	test('a body edit is an item beside the values, not instead of them', async () => {
+		// It used to refuse the row outright, so one edited paragraph hid every
+		// value edit in the same file from the person deciding.
+		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
+			const path = `notes/${id}.md`;
+			folder.set(
+				path,
+				`${(folder.get(path) as string).replace('"Groceries"', '"Shopping"')}and eggs\n`,
+			);
+		});
+		const plan = expectOk(await planOf(host, data));
+		expect(only(plan, 'body')).toMatchObject({
+			path: `notes/${noteId}.md`,
+			storeChanged: false,
+		});
+		expect(only(plan, 'value')).toMatchObject({ name: 'title' });
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a body that moved on both sides says so before it is answered', async () => {
+		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
 			folder.set(
 				`notes/${id}.md`,
 				`${folder.get(`notes/${id}.md`) as string}and eggs\n`,
 			);
 		});
+		const held = data.tables.notes.get(noteId);
+		(held?.content as Y.Type).insert(0, ['typed here too. ']);
 		const plan = expectOk(await planOf(host, data));
-		expect(plan.refusals[0]?.reason).toBe('body-changed');
+		expect(only(plan, 'body').storeChanged).toBe(true);
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a new file and a deletion are refused, each for its own reason', async () => {
+	test('a body the codec cannot read is a file the send rewrites', async () => {
+		// Checked with `decode`, which validates the text `rewrite` would apply,
+		// so a person never reads a plan its own push then refuses.
+		const refusing = defineData({
+			id: 'so.epicenter.honeycrisp',
+			kv: { theme: field.string() },
+			tables: {
+				notes: defineTable({
+					title: field.string(),
+					pinned: field.boolean(),
+					content: {
+						encode: (node) => node.toString(),
+						decode: () => ContentError.Unreadable({ reason: 'not a body' }),
+						rewrite: () => Ok(undefined),
+					},
+				}),
+			},
+		});
+		const host = fakeHost();
+		const data = await openMemory(refusing);
+		const note = data.tables.notes.create({ title: 'x', pinned: false });
+		expectOk(
+			await pull({ data, definition: refusing, store: STORE, fetch: host.fetch }),
+		);
+		host.folder.set(
+			`notes/${note.id}.md`,
+			`${host.folder.get(`notes/${note.id}.md`) as string}\nprose\n`,
+		);
+		const plan = expectOk(
+			await diff({ data, definition: refusing, store: STORE, fetch: host.fetch }),
+		);
+		expect(only(plan, 'discard').notes).toEqual([
+			{ reason: 'body-unreadable' },
+		]);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a deletion blocks and a new file does not', async () => {
+		// The asymmetry is the point. A deletion has nowhere to go and no answer
+		// stands in for one; a new file has two answers and both are honest.
 		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
 			folder.delete(`notes/${id}.md`);
-			folder.set('notes/handwritten.md', '---\ntitle: "mine"\n---\n');
+			folder.set(
+				'notes/handwritten.md',
+				'---\ntitle: "mine"\npinned: false\n---\n\nwritten by hand\n',
+			);
 		});
 		const plan = expectOk(await planOf(host, data));
-		expect(plan.refusals).toEqual(
-			expect.arrayContaining([
-				{ path: `notes/${noteId}.md`, reason: 'file-missing' },
-				{ path: 'notes/handwritten.md', reason: 'new-file' },
-			]),
-		);
+		expect(only(plan, 'block')).toEqual({
+			kind: 'block',
+			path: `notes/${noteId}.md`,
+			reason: 'file-missing',
+		});
+		expect(only(plan, 'admission')).toEqual({
+			kind: 'admission',
+			path: 'notes/handwritten.md',
+			table: 'notes',
+		});
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a deleted frontmatter line is refused rather than read as an unset', async () => {
+	test('a new file missing a value names the lines to add', async () => {
+		// A definition declares no defaults (ADR-0255) and `create` does not
+		// validate, so a file missing one would mint a row the application reads
+		// as nonconforming and stops showing.
+		const { host, data } = await pulledThenEdited((folder) => {
+			folder.set(
+				'notes/handwritten.md',
+				'---\ntitle: "mine"\ncolour: "red"\n---\n',
+			);
+		});
+		const plan = expectOk(await planOf(host, data));
+		expect(only(plan, 'discard').notes).toEqual([
+			{ reason: 'name-unknown', name: 'colour' },
+			{ reason: 'row-incomplete', name: 'pinned' },
+		]);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a deleted frontmatter line rewrites the file rather than reading an unset', async () => {
 		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
 			folder.set(
 				`notes/${id}.md`,
@@ -496,8 +617,12 @@ describe('diff plans what push would do (ADR-0337)', () => {
 			);
 		});
 		const plan = expectOk(await planOf(host, data));
-		expect(plan.refusals).toEqual([
-			{ path: `notes/${noteId}.md`, name: 'pinned', reason: 'value-removed' },
+		expect(plan).toEqual([
+			{
+				kind: 'discard',
+				path: `notes/${noteId}.md`,
+				notes: [{ reason: 'value-removed', name: 'pinned' }],
+			},
 		]);
 		await data[Symbol.asyncDispose]();
 	});
@@ -523,7 +648,7 @@ describe('push sends the values back and re-renders', () => {
 		host: ReturnType<typeof fakeHost>,
 		data: PushableData,
 		plan: PushPlan,
-		resolutions: Record<string, 'file' | 'store'> = {},
+		answers: PlanAnswers = {},
 		now = () => new Date('2026-09-02T11:00:00.000Z'),
 	) =>
 		push({
@@ -531,17 +656,25 @@ describe('push sends the values back and re-renders', () => {
 			definition,
 			store: STORE,
 			plan,
-			resolutions,
+			answers,
 			fetch: host.fetch,
 			now,
 		});
+
+	/** The one answer this plan asks for, given as `file`. */
+	const takeFile = (plan: PushPlan): PlanAnswers =>
+		Object.fromEntries(
+			plan
+				.filter((item) => answersFor(item).length > 0)
+				.map((item) => [answerKey(item), 'file' as const]),
+		);
 
 	test('an applied value reaches the store, and the folder is clean after', async () => {
 		const { host, data, noteId } = await edited(['"Groceries"', '"Shopping"']);
 		const plan = expectOk(await planOf(host, data));
 
 		const pushed = expectOk(await sendBack(host, data, plan));
-		expect(pushed).toEqual({ rows: 1, values: 1 });
+		expect(pushed).toEqual({ rows: 1, values: 1, bodies: 0, admitted: [] });
 		expect(data.tables.notes.get(noteId)?.title).toBe('Shopping');
 
 		// The re-render is what makes the folder never dirty after a push, so a
@@ -558,7 +691,7 @@ describe('push sends the values back and re-renders', () => {
 
 		expectOk(
 			await sendBack(host, data, plan, {
-				[`notes/${noteId}#title`]: 'file',
+				[`notes/${noteId}.md#title`]: 'file',
 			}),
 		);
 		expect(data.tables.notes.get(noteId)?.title).toBe('Q3 plan');
@@ -572,12 +705,12 @@ describe('push sends the values back and re-renders', () => {
 
 		const pushed = expectOk(
 			await sendBack(host, data, plan, {
-				[`notes/${noteId}#title`]: 'store',
+				[`notes/${noteId}.md#title`]: 'store',
 			}),
 		);
 		// Nothing is written, because answering `store` is writing what is
 		// already there. The re-render is what settles the file.
-		expect(pushed).toEqual({ rows: 0, values: 0 });
+		expect(pushed).toEqual({ rows: 0, values: 0, bodies: 0, admitted: [] });
 		expect(data.tables.notes.get(noteId)?.title).toBe('Q3 planning');
 		expect(host.folder.get(`notes/${noteId}.md`)).toContain('"Q3 planning"');
 		await data[Symbol.asyncDispose]();
@@ -610,7 +743,7 @@ describe('push sends the values back and re-renders', () => {
 		const refused = expectErr(await sendBack(host, data, plan));
 		expect(refused.name).toBe('PushIncomplete');
 		if (refused.name !== 'PushIncomplete') throw new Error('unreachable');
-		expect(refused.plan.rows[0]?.conflicts[0]).toMatchObject({
+		expect(only(refused.plan, 'conflict')).toMatchObject({
 			name: 'title',
 			base: 'Groceries',
 			file: 'Shopping',
@@ -630,13 +763,23 @@ describe('push sends the values back and re-renders', () => {
 			'pinned: yes',
 		]);
 		const plan = expectOk(await planOf(host, data));
-		expect(plan.refusals).toEqual([
-			{ path: `notes/${noteId}.md`, name: 'pinned', reason: 'value-invalid' },
+		expect(plan).toEqual([
+			{
+				kind: 'discard',
+				path: `notes/${noteId}.md`,
+				notes: [{ reason: 'value-invalid', name: 'pinned' }],
+			},
 		]);
+		// Unanswered it refuses; answered it rewrites the file and writes
+		// nothing, which is the person saying the line goes nowhere.
 		expect(expectErr(await sendBack(host, data, plan)).name).toBe(
 			'PushIncomplete',
 		);
+		expectOk(
+			await sendBack(host, data, plan, { [`notes/${noteId}.md`]: 'store' }),
+		);
 		expect(data.tables.notes.get(noteId)?.pinned).toBe(false);
+		expect(host.folder.get(`notes/${noteId}.md`)).toContain('pinned: false');
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -650,12 +793,116 @@ describe('push sends the values back and re-renders', () => {
 				`pinned: false\n${line}`,
 			]);
 			const plan = expectOk(await planOf(host, data));
-			expect(plan.refusals[0]).toMatchObject({
+			expect(only(plan, 'discard')).toMatchObject({
 				path: `notes/${noteId}.md`,
-				reason: 'name-unknown',
+				notes: [{ reason: 'name-unknown' }],
 			});
 			await data[Symbol.asyncDispose]();
 		}
+	});
+
+	test('an answered body edit rewrites the note in the node it already has', async () => {
+		// The identity claim lives in the codec's own test; what this pins is
+		// that a push reaches the live node rather than replacing the row's.
+		const { host, data, noteId } = await edited(['buy milk', 'buy milk']);
+		const before = data.tables.notes.get(noteId)?.content;
+		host.folder.set(
+			`notes/${noteId}.md`,
+			`${host.folder.get(`notes/${noteId}.md`) as string}and eggs\n`,
+		);
+		const plan = expectOk(await planOf(host, data));
+
+		const pushed = expectOk(await sendBack(host, data, plan, takeFile(plan)));
+		expect(pushed.bodies).toBe(1);
+		expect(data.tables.notes.get(noteId)?.content).toBe(before);
+		expect((before as Y.Type).toString()).toContain('and eggs');
+		expectOk(await pullInto(host, data));
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a body answered store is put back by the re-render', async () => {
+		const { host, data, noteId } = await edited(['buy milk', 'buy milk']);
+		host.folder.set(
+			`notes/${noteId}.md`,
+			`${host.folder.get(`notes/${noteId}.md`) as string}and eggs\n`,
+		);
+		const plan = expectOk(await planOf(host, data));
+
+		const pushed = expectOk(
+			await sendBack(host, data, plan, {
+				[`notes/${noteId}.md#content`]: 'store',
+			}),
+		);
+		expect(pushed.bodies).toBe(0);
+		expect(host.folder.get(`notes/${noteId}.md`)).not.toContain('and eggs');
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a hand-written file becomes a row, and the re-render renames it', async () => {
+		// A row id is minted and never chosen, so the rename is not avoidable.
+		// What makes it not rude is that the plan named the file first.
+		const { host, data } = await edited(['buy milk', 'buy milk']);
+		host.folder.set(
+			'notes/q3-plan.md',
+			'---\ntitle: "Q3 plan"\npinned: true\n---\n\nship the thing\n',
+		);
+		const plan = expectOk(await planOf(host, data));
+
+		const pushed = expectOk(await sendBack(host, data, plan, takeFile(plan)));
+		expect(pushed.admitted).toEqual([
+			{
+				path: 'notes/q3-plan.md',
+				table: 'notes',
+				rowId: expect.any(String) as unknown as string,
+			},
+		]);
+		const minted = pushed.admitted[0]?.rowId as string;
+		const made = data.tables.notes.get(minted);
+		expect(made?.title).toBe('Q3 plan');
+		expect(made?.pinned).toBe(true);
+		// The body came with it, through the same codec that writes it out.
+		expect((made?.content as Y.Type).toString()).toContain('ship the thing');
+
+		// The name the agent chose is gone, and the row is at its id.
+		expect(host.folder.has('notes/q3-plan.md')).toBe(false);
+		expect(host.folder.get(`notes/${minted}.md`)).toContain('"Q3 plan"');
+		// And the folder is clean, which is what a round trip has to end at.
+		expectOk(await pullInto(host, data));
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a new file answered store is swept and never becomes a row', async () => {
+		const { host, data } = await edited(['buy milk', 'buy milk']);
+		host.folder.set(
+			'notes/scratch.md',
+			'---\ntitle: "scratch"\npinned: false\n---\n',
+		);
+		const plan = expectOk(await planOf(host, data));
+
+		const pushed = expectOk(
+			await sendBack(host, data, plan, { 'notes/scratch.md': 'store' }),
+		);
+		expect(pushed.admitted).toEqual([]);
+		expect(data.tables.notes.ids()).toHaveLength(1);
+		expect(host.folder.has('notes/scratch.md')).toBe(false);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a deletion stops the send however everything else is answered', async () => {
+		// The one thing left with no answer, and it waits on a table naming a
+		// trash field rather than on a better dialog.
+		const { host, data, noteId } = await edited(['"Groceries"', '"Shopping"']);
+		host.folder.delete(`notes/${noteId}.md`);
+		const plan = expectOk(await planOf(host, data));
+
+		const refused = expectErr(
+			await sendBack(host, data, plan, takeFile(plan)),
+		);
+		expect(refused.name).toBe('PushIncomplete');
+		if (refused.name !== 'PushIncomplete') throw new Error('unreachable');
+		expect(refused.unanswered).toEqual([]);
+		expect(only(refused.plan, 'block').reason).toBe('file-missing');
+		await data[Symbol.asyncDispose]();
 	});
 
 	test('the values land and the folder cannot be rewritten, said as its own outcome', async () => {
@@ -727,28 +974,29 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('every refusal an agent can cause has a line telling it not to', async () => {
-		// The file is the one place an agent learns which of its edits are
-		// wasted, and a push refuses whole, so a missing line costs every other
-		// edit in the folder too.
+	test('every outcome an agent can cause has a line saying what it costs', async () => {
+		// The file is the one place an agent learns what happens to each of its
+		// edits, and every one of these is silent in the folder itself.
 		const data = await openMemory(shapes);
 		const { agents } = await agentsFor(data as unknown as PushableData, shapes);
-		const said: Record<PushRefusalReason, string> = {
-			'no-base': 'working copy',
-			'body-changed': 'The text under the `---` block does not come back',
-			'new-file': 'Do not create files',
-			'row-gone': 'in the application',
-			'file-missing': 'Do not rename, move, or delete a file',
+		const said: Record<DiscardReason, string> = {
+			'row-gone': 'rewrites this',
 			'kv-changed': 'Do not edit `kv.json`',
 			unreadable: 'Keep the `---` block',
 			'value-removed': 'Do not remove a frontmatter line',
 			'name-unknown': 'Do not invent a field name',
 			'value-invalid': 'does not\n  fit its field',
 			'table-undeclared': 'The tables',
+			'body-unreadable': 'text under the `---` block comes back',
+			'row-incomplete': 'every field its table declares',
 		};
 		for (const phrase of Object.values(said)) {
 			expect(agents).toContain(phrase);
 		}
+		// The two answerable items whose consequence is not a rewrite, and the
+		// one thing that stops a send whatever else is answered.
+		expect(agents).toContain('becomes a row, and is RENAMED');
+		expect(agents).toContain('Do not delete, move, or rename a file');
 		// And the fact none of the lines states on its own.
 		expect(agents).toContain('applies all of its changes or none');
 		await data[Symbol.asyncDispose]();

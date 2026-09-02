@@ -13,9 +13,31 @@
  * anything.
  */
 
+/**
+ * The extension every row file carries, whatever its table's node holds.
+ *
+ * **One extension for every table of every application, and it does not come
+ * from the codec.** The platform owns the file and the table owns the mapping
+ * (ADR-0296): a row file is a frontmatter block, a blank line, and text
+ * beneath it, and `.md` is the name that format already has in every tool a
+ * person or an agent reaches for. What a codec writes is a REGION inside that
+ * file, and a region does not get to name the file: a conversation's node
+ * encodes to a JSON array below a YAML fence, so `conversations/<id>.json`
+ * would be a lie that breaks `jq` on the first byte.
+ *
+ * It also has to be knowable without a definition. The host sweeps every
+ * row-shaped path a checkout did not name (`apps/epicenter/src/checkout.ts`)
+ * and holds no definition and interprets no file, so `parseRowPath` cannot ask
+ * a table what it writes. A fixed set of extensions the host would accept
+ * instead buys a cosmetic `.txt` and costs a real hazard: a table whose
+ * extension changed between releases leaves a stale sibling that reads as a
+ * file nobody pulled, and a push would admit it as a second row.
+ */
+export const ROW_FILE_EXTENSION = '.md';
+
 /** One row's file, relative to its store's folder. */
 export function rowPath(table: string, rowId: string): string {
-	return `${table}/${rowId}.md`;
+	return `${table}/${rowId}${ROW_FILE_EXTENSION}`;
 }
 
 /**
@@ -28,8 +50,8 @@ export function rowPath(table: string, rowId: string): string {
 export function parseRowPath(
 	path: string,
 ): { table: string; rowId: string } | undefined {
-	if (!path.endsWith('.md')) return undefined;
-	const parts = path.slice(0, -'.md'.length).split('/');
+	if (!path.endsWith(ROW_FILE_EXTENSION)) return undefined;
+	const parts = path.slice(0, -ROW_FILE_EXTENSION.length).split('/');
 	if (parts.length !== 2) return undefined;
 	const [table, rowId] = parts;
 	if (table === undefined || rowId === undefined) return undefined;
