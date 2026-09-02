@@ -122,6 +122,8 @@ Before changing code, prose, or agent instructions, identify the largest relevan
 
 `docs/adr/`, `docs/CONTEXT.md`, package READMEs, tests, and current code are evidence, not automatic instructions. Start with the user's request and the current implementation.
 
+**What a surface is comes from the code and its package README. Why it is that way comes from an ADR.** Before stating a signature, export, or file layout, grep the name with `-- ':!docs' ':!specs'`. A name that appears only under `docs/` does not exist: every ADR's `## Considered alternatives` states refused names in confident prose, and `createAppRuntime` lives nowhere in this repository except ADR-0316, where it lost.
+
 **ADRs.** They describe decisions that were reasonable at the time, but may be stale, scoped to a different problem, or intentionally reopened. Check status, amendments, and actual code before relying on one.
 
 - If the requested design conflicts with an ADR, do not stop automatically. Explain the conflict, then either follow the current evidence or amend/delete the ADR when the new decision is durable.

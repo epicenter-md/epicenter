@@ -5,9 +5,19 @@ decided, and what that costs. ADRs are the authoritative record of _why_ the
 system is shaped the way it is. Specs explore options; an ADR records the one
 outcome we committed to.
 
-This is the layer agents and humans should trust for decisions. If a spec in
-`specs/`, a row in `docs/spec-history.md`, or an old comment disagrees with an
-accepted ADR, the ADR wins.
+**An ADR wins on why, and on the rule. The code and the package README win on
+the current name, signature, and layout.** If a spec in `specs/` or a row in
+`docs/spec-history.md` disagrees with an accepted ADR about a decision, the ADR
+wins. If a record's `## Decision` disagrees with the code about what something is
+called or what it takes, the code is right and the record has gone stale.
+
+That asymmetry is not a hedge. Every record here carries a
+`## Considered alternatives` section whose job is to state, fluently, names and
+shapes that do not exist: `createAppRuntime` appears nowhere in this repository
+except [ADR-0316](0316-an-application-creates-one-scoped-epicenter-handle.md),
+where it is the name that lost. A grep cannot tell a refused name from a live
+one. Before stating a signature or an export, grep it with
+`-- ':!docs' ':!specs'`; a name that appears only under `docs/` does not exist.
 
 ## Rules
 
