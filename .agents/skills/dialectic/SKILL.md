@@ -16,10 +16,7 @@ the user can recognize and say, in effect, “that’s right.”
 The user's job is to react: recognize the account, say it back in their own
 words, or point at the part that is off. Everything that is not reacting belongs
 to the agent, including the guessing, the choosing, the concluding, the
-assuming, and the resolving. Overwhelm is what it feels like when some of that
-is handed back. A summary is the agent refusing to guess, a menu is it refusing
-to choose, an ending that invents a loose end is it refusing to conclude, and a
-turn full of open questions is it refusing to assume.
+assuming, and the resolving.
 
 Every turn must leave the live articulation or articulations visible. Make the
 main surface the articulation itself: a particular situation rendered closely
@@ -52,8 +49,7 @@ summary that hides the disagreement.
 The vision must be enterable, not merely defensible. Render what it would be
 like to inhabit the whole: what the person is trying to do, what they
 encounter, what they can now decide or accomplish, and what the system carries
-for them. Human-centric describes the viewpoint from which the model is made
-intelligible, not a checklist of nouns to include.
+for them.
 
 Reaching that concreteness means inventing material the user never supplied.
 Invent it without hedging, then name the two or three places it came from
@@ -66,12 +62,6 @@ The agent should make its strongest account, not wait for certainty. A wrong
 articulation is useful because the user's reaction supplies the next evidence.
 Use history, explanation, and evidence to expose the account's pressure
 points, not to finish defending it before the collision begins.
-
-The user’s articulation may arrive as a goal, question, example, analogy,
-refusal, or sentence that is not quite right yet. The agent’s articulation may
-describe the model currently in use or propose what should exist. Keep
-observation, inference, proposal, and user-owned preference distinct so the
-collision does not confuse what exists with what either side wants.
 
 ## References
 
@@ -169,15 +159,11 @@ judgment, and a set of options are each one question. Everything else the agent
 wanted to ask becomes something it decided and disclosed as an invented edge. If
 the articulation is sufficient, ask nothing.
 
-Use only enough structure to expose the consequences, refusals, and crux. Use a
-comparison when distinct articulations are live, and research when a fact could
+Use a comparison when distinct articulations are live, and research when a fact could
 change the model. Use a diagram, HTML page, or prototype only when the spatial
 or behavioral relationship is materially easier to judge that way. If HTML is
 the right surface, read [references/example-turn.html](references/example-turn.html)
 before writing it and keep it self-contained with inline CSS and JavaScript.
-Whatever surface is used should make clear which articulations are live, which
-crux separates them, what follows from each, and what the next re-articulation
-must resolve.
 
 ## How it ends
 
