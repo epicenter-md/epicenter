@@ -1,7 +1,8 @@
 # 0279. An application has two databases, and copying a row is the verb
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-28
+- **Superseded by:** [ADR-0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md). One application has one database, so there is no second one to copy a row into. `copy` was never built.
 - **Supersedes:** [ADR-0270](0270-an-application-has-two-workspaces-and-moving-a-row-between-them-is-the-primitive.md). Two of them stay and both stay visible; what changes is the verb. A move is not a primitive, it is a copy and a delete, and the store ships only the first.
 - **Relates:** [ADR-0216](0216-a-name-addressed-location-is-the-only-safe-place-for-a-write-two-devices-both-make.md) (why a chosen id is normally unsafe, and why it is safe here), [ADR-0268](0268-a-row-exports-as-one-markdown-file-and-its-codec-is-mandatory.md) (the codec a copy carries a document through), [ADR-0169](0169-row-references-are-non-enforcing-table-interpretations.md) (what a reference is, and is not).
 - **Unbuilt.**

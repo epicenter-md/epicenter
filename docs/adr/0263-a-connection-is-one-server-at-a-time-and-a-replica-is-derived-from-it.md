@@ -1,7 +1,8 @@
 # 0263. A connection is one server at a time and a replica is derived from it
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-26
+- **Superseded by:** [ADR-0326](0326-the-deployment-names-the-authority-and-a-person-never-types-one.md). Every clause this record restates has since been reversed: the server URL left the replica address (ADR-0324), switching servers became export and import (ADR-0325), and no runtime surface selects a server at all. It was the last record a reader could cite to keep the code those three records withdrew.
 - **Restates:** [ADR-0075](0075-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md), [ADR-0092](0092-identity-is-the-partition.md), [ADR-0261](0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md), and [ADR-0262](0262-the-desktop-host-owns-one-active-connection-and-no-connection-registry.md) as one reader-facing contract
 - **Relates:** [ADR-0071](0071-oauth-is-hosted-only-a-custom-instance-requires-a-token.md), [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md), [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md), [ADR-0232](0232-a-page-lifetime-is-one-auth-generation-and-a-permanently-denied-sync-stops-for-good.md)
 - **Implemented in part:** The app-facing auth contract now exposes one

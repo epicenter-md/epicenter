@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-22
+- **Amended by:** [ADR-0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) at half of one clause. "Sign-out preserves local device and account data" keeps its account half; there is no device data left for it to preserve. Its one-connection rule and its refusal of a registry stand.
 - **Amended by:** [ADR-0325](0325-a-database-is-bound-to-one-authority-and-re-homing-is-export-and-import.md) at one clause: "selecting a different server replaces it" is withdrawn, and the surfaces that performed it are deleted. Choosing a server becomes installing a build.
 - **Amended by:** [ADR-0326](0326-the-deployment-names-the-authority-and-a-person-never-types-one.md) at what the host holds: one connection per authority named by an installed bundle, derived from what is installed rather than stored. This record's refusal of a registry, of generated profile ids, and of a credential wallet stands, and is honoured more literally: nothing is remembered.
 - **Restated by:** [ADR-0263](0263-a-connection-is-one-server-at-a-time-and-a-replica-is-derived-from-it.md) as the reader-facing connection and switching contract

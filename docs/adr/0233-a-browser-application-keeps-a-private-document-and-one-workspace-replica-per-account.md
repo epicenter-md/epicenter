@@ -1,7 +1,8 @@
 # 0233. A browser application keeps a device document and one account replica per account, and auth chooses whether the replica also opens
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-10
+- **Superseded by:** [ADR-0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md). An authority mints every generation, so a database with no server is not a shape this platform produces. The private document, the retained replica, and the sign-out rule all go with it.
 - **Amended by:** [ADR-0259](0259-a-desktop-profile-is-addressed-by-a-server-url-and-principal-pair.md) at the retained account replica address. **Superseded by ADR-0261.** The replica remains retained across sign-out; its client address was `(baseURL, principalId)`.
 - **Amended by:** [ADR-0261](0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md) at the derived connection address. The device document, retained-replica, and sign-out rules remain.
 - **Amended by:** [ADR-0270](0270-an-application-has-two-workspaces-and-moving-a-row-between-them-is-the-primitive.md) at one clause. "Never automatically copied into, merged with, or deleted because of a workspace action" still holds; a deliberate per-row move a person performs now exists, and both workspaces must be visible in one surface rather than at two routes.
@@ -22,7 +23,6 @@
   [ADR-0225](0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md)
   (one authority per principal and application, which this record mirrors on
   the device).
-
 - **Amended by:** [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) at the address. Every address this record prints predates the generation segment and the storage epoch, and the word `device` became `local`. What stands is the shape: one document that never joins account sync, plus one retained replica per account.
 
 ## Context

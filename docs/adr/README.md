@@ -594,5 +594,7 @@ Two habits make the link hard to forget:
 | [0333](0333-privacy-and-processing-owns-each-pipeline-stages-destination.md) | The Privacy & Processing surface owns each pipeline stage's destination | Accepted |
 | [0334](0334-a-deployed-app-is-a-trusted-app-because-deploying-it-was-the-consent.md) | A deployed app is a trusted app, because deploying it was the consent | Accepted (unbuilt; supersedes 0305; amends 0326 at its third-party clauses) |
 | [0335](0335-a-person-is-an-origin-and-an-app-is-a-path-under-it.md) | A person is an origin, and an app is a path under it | Accepted (unbuilt; amends 0326 at its web deployment line) |
+| [0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) | An authority mints every generation, so every store has an account | Accepted (supersedes 0233 and 0279; amends 0324, 0293, and 0262) |
+| [0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md) | The folder is a working copy, and pull and push are the whole cycle | Accepted (unbuilt; amends 0271, 0289, and 0329: the continuous render and the watcher go, pull and push replace them) |
 
 When you add an ADR, add its row here.

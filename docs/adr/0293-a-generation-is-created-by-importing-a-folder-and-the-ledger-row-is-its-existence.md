@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-29
+- **Amended by:** [ADR-0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) at the no-account branch: "the device assigns `n` by reading its own addresses" is withdrawn. A client never chooses the number.
 - **Supersedes:** [ADR-0286](0286-every-generation-is-minted-from-an-artifact-and-compaction-is-an-export-then-an-import.md) and [ADR-0290](0290-a-mint-is-a-foreground-job-the-client-owns-and-it-cannot-outlive-a-page.md) at the upload and publication protocol. The folder as the source, client-owned codecs, and one foreground path are retained.
 - **Amends:** [ADR-0283](0283-a-generations-collection-is-a-ledger-that-allocates-admits-and-sweeps.md) at allocation timing and the request body; [ADR-0287](0287-the-authority-does-not-delete-a-generation-and-erasure-is-an-account-operation.md) at its per-object economics, which no longer apply.
 - **Relates:** [ADR-0289](0289-the-folder-is-where-a-generation-is-minted-from-not-a-surface-kept-current-for-its-own-sake.md), [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md), [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md), [ADR-0296](0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md)

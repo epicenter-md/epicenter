@@ -6,6 +6,7 @@
 - **Amends:** [ADR-0304](0304-application-persistence-is-runtime-selected-and-scoped-by-its-owning-app.md) at its desktop path, which gains a format-version segment; and [ADR-0314](0314-an-app-is-one-directory-and-installation-is-a-rename.md) at the `data/<data-id>/` spelling, which gains the same version segment.
 - **Relates:** [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) (the generation is the address, unchanged), [ADR-0293](0293-a-generation-is-created-by-importing-a-folder-and-the-ledger-row-is-its-existence.md) (who mints the number), [ADR-0318](0318-epicenter-data-is-what-epicenter-is-the-authority-for-and-a-foreign-write-is-a-command.md) (the authority test), [ADR-0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md) (the other storage kind)
 - **Unbuilt:** all of it. `packages/data/src/store/browser.ts` still composes the `v3` address with `local`/`account` segments, Honeycrisp still opens one definition at two bindings, and no desktop code writes `data/` at all.
+- **Amended by:** [ADR-0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) at two clauses, both withdrawn: the `authority: 'none' | 'epicenter'` field a definition declared, and "two notebooks are two data ids". The app segment stands on ADR-0304 alone, which was always the stronger half, and the address grammar is unchanged.
 
 ## Context
 
