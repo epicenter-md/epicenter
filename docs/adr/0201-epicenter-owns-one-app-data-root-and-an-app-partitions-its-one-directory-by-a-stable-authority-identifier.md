@@ -1,8 +1,19 @@
 # 0201. Epicenter owns one app-data root, and an app partitions its one directory by a stable authority identifier
 
-- **Status:** Accepted
+- **Status:** Accepted at the root and the app directory; the partition levels
+  below them are withdrawn. Read the `Amended by` line before building anything
+  from the path in this record.
 - **Date:** 2026-08-02
-- **Provisional number.** ADR-0191, ADR-0192, ADR-0193, ADR-0195, and ADR-0200 are claimed by open branches and are not in this tree. Reconcile this integer at merge time (`docs/adr/README.md`).
+- **Amended by:** [ADR-0314](0314-an-app-is-one-directory-and-installation-is-a-rename.md)
+  and [ADR-0319](0319-local-mail-is-device-local-and-its-storage-splits-by-lifetime.md)
+  at everything below `apps/<app-id>/`. The path stated here,
+  `<root>/apps/<app-id>/<kind>/<partition-id>`, is withdrawn: an app directory
+  now holds `bundle/`, `data/<data-id>/`, `sqlite/<name>.sqlite`, and `blobs/`
+  (ADR-0314), and a partition is a filename rather than a directory
+  (`mail-<sub>.sqlite`, ADR-0319). `intent.db` and `mail.db` no longer exist.
+  What stands: one application-data root per machine, one directory per trusted
+  app named by its id, and the rule that the directory is a place and never an
+  inter-app API.
 - **Amends:** [ADR-0062](0062-local-books-stores-oauth-tokens-in-a-single-0600-file.md) at one clause, the location of the token file, which is now the app directory's root and keeps its `0600` mode and its exclusion from any mirror directory; [ADR-0072](0072-local-books-ships-as-a-standalone-cli-the-daemon-surface-is-deferred.md) at one clause, where a standalone CLI's data lives, leaving its standalone shape and deferred daemon untouched.
 - **Completed by:** [ADR-0202](0202-a-provider-account-belongs-to-the-app-whose-durable-state-it-names-and-epicenter-brokers-none.md), which answers the one question this record left open: who owns the provider grant that names a partition. It amends nothing here.
 - **Corrected 2026-08-03, before merge, at one clause: which apps "an app" is.** A draft of ADR-0202 narrowed it to a closed set of host-composed engines and gave an admitted app (ADR-0179) no directory at all. That narrowing is withdrawn as a product decision, and the rule is restated below at the width it was always written at: **every trusted app Epicenter runs or admits has one place.** Nothing else in this record moves. Both records are unmerged, so this is an edit to an unlanded decision rather than a rewrite of a governing one.
