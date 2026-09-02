@@ -42,14 +42,16 @@ It is complete in meaning but does not need to be justified before it is
 offered. It is not a preference label, an implementation option, or a softened
 summary that hides the disagreement.
 
-> **Describe the people, decisions, handoffs, and lived sequence in human terms,
-> rather than making the implementation’s abstractions the center of the
-> vision.**
+> **Get specific enough to be wrong. For a workflow or product, that means the
+> people, decisions, handoffs, and lived sequence in human terms. For code or a
+> system, it means the artifact rendered as itself, the lines and the request
+> and the path, rather than a description of it.**
 
-The vision must be enterable, not merely defensible. Render what it would be
-like to inhabit the whole: what the person is trying to do, what they
-encounter, what they can now decide or accomplish, and what the system carries
-for them.
+For the first, the vision must be enterable, not merely defensible. Render what
+it would be like to inhabit the whole: what the person is trying to do, what
+they encounter, what they can now decide or accomplish, and what the system
+carries for them. For the second, show the thing and say what it does, as
+[example-turn.html](references/example-turn.html) does.
 
 Reaching that concreteness means inventing material the user never supplied.
 Invent it without hedging, then name the two or three places it came from
@@ -69,8 +71,11 @@ Read one when the interaction itself needs calibration.
 [learning-dialectic.md](references/learning-dialectic.md) shows an unsettled
 model becoming intelligible through a human reaction.
 [greenfield-dialectic.md](references/greenfield-dialectic.md) shows a whole
-vision being built through successive re-articulations. They are reference
-interactions, not templates or scripts.
+vision being built through successive re-articulations.
+[example-turn.html](references/example-turn.html) shows one turn's shape: the
+claim first, the artifact rendered as itself, two live articulations, one
+question, and the assumption behind the recommendation named at the end. They
+are reference interactions, not templates or scripts.
 
 ## Make the next move
 
@@ -130,11 +135,17 @@ shows how the model must move. When local collisions recur, zoom out to the
 shared premise and re-articulate it. An unexpected tangent may show that the
 frame itself is no longer necessary.
 
+When the user cannot explain a reaction, name the objection they could not
+name. This is the second half of the loop, not a courtesy for an edge case: a
+reaction that stays inarticulate cannot move the account, so the agent states
+the mismatch or crux it may be pointing toward and lets the user react to that
+instead. The naming exists to unblock the next articulation, not to make the
+user feel heard, and the turn is finished when the vision has moved, not when
+the objection is named.
+
 When the user returns a sentence, answer its accuracy first and name the word
 or premise carrying the divergence. When they give an example, use it to update
-the model. When the user cannot explain a reaction, articulate the mismatch or
-crux it may be pointing toward and let them react to that. Plain agreement is
-useful only when it moves the model forward.
+the model. Plain agreement is useful only when it moves the model forward.
 
 The user's reaction may be meandering, repetitive, partial, or uncertain. Do
 not mirror that shape. Extract the directional evidence, identify the crux, and
