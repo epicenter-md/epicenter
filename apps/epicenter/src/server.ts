@@ -392,7 +392,6 @@ export function createHomeServer({
 	app.put(MIRROR_ROUTE.pattern, async (c) => {
 		const folder = mirrorFolderPath({
 			dataId: c.req.param('dataId') ?? '',
-			folder: c.req.param('folder') ?? '',
 			root: folderRoot,
 		});
 		if (folder === undefined) return c.text('Invalid mirror path', 400);

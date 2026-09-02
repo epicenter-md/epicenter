@@ -9,7 +9,7 @@ import { createGeneration } from '@epicenter/data/browser';
 import { InstantString } from '@epicenter/data/field';
 import { encodeFrame } from '@epicenter/data/sync';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
-import { openAccountDatabase } from './databases.js';
+import { eraseNotesOnThisDevice, openAccountDatabase } from './databases.js';
 
 const reloads = mock();
 (globalThis as unknown as { location: unknown }).location = {
@@ -174,6 +174,7 @@ async function importEmptyAccountGeneration(auth: AuthClient): Promise<void> {
 		auth.state.status === 'signed-out' ? undefined : auth.state.principalId;
 	if (principalId === undefined) throw new Error('signed out');
 	const created = await createGeneration(honeycrispDefinition, {
+		appId: 'so.epicenter.honeycrisp',
 		account: {
 			baseURL: auth.connection.baseURL,
 			principalId,
@@ -181,14 +182,6 @@ async function importEmptyAccountGeneration(auth: AuthClient): Promise<void> {
 		},
 	});
 	if (created.error !== null) throw created.error;
-}
-
-async function until(condition: () => boolean): Promise<void> {
-	for (let attempt = 0; attempt < 400; attempt += 1) {
-		if (condition()) return;
-		await new Promise((resolve) => setTimeout(resolve, 5));
-	}
-	throw new Error('timed out');
 }
 
 test('the account opener owns only the account replica', async () => {
@@ -266,4 +259,35 @@ test('an account without a principal is refused without opening a store', async 
 	// Disposing something that never opened is a no-op rather than a throw: a
 	// route registers the teardown before it knows which way the open went.
 	await account[Symbol.asyncDispose]();
+});
+
+test("another account's notes are refused, and erasing is what clears them", async () => {
+	await resetStorage();
+	{
+		const { auth } = connectingAuth('alice');
+		await importEmptyAccountGeneration(auth);
+		const account = openAccountDatabase({ auth, generation: GEN });
+		(await account.ready).data.tables.notes.create(noteFields("alice's note"));
+		await account[Symbol.asyncDispose]();
+	}
+
+	// Bob signs into the same machine. The address stopped carrying who owns a
+	// store (ADR-0324), so what refuses him is the binding written inside it
+	// (ADR-0325), and nothing merges Alice's notes into his account.
+	const { auth: bobAuth } = connectingAuth('bob');
+	const refused = openAccountDatabase({ auth: bobAuth, generation: GEN });
+	await expect(refused.ready).rejects.toMatchObject({
+		name: 'BoundElsewhere',
+	});
+	await refused[Symbol.asyncDispose]();
+
+	// And nothing was deleted to say so (ADR-0281). Alice comes back to hers.
+	const { auth: aliceAgain } = connectingAuth('alice');
+	const back = openAccountDatabase({ auth: aliceAgain, generation: GEN });
+	expect(titles((await back.ready).data)).toEqual(["alice's note"]);
+	await back[Symbol.asyncDispose]();
+
+	// The person invokes the erase, and only then is the copy gone.
+	await eraseNotesOnThisDevice();
+	expect(await databaseNames()).toEqual([]);
 });

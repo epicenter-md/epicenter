@@ -3,8 +3,9 @@
 The handle an application reaches its capabilities through: its Epicenter Data,
 its own SQLite files, and its secrets. AGPL-3.0-or-later.
 
-SQLite and secrets are scoped by the application's id. `openData` is not: it is
-addressed by the definition and the account, and `appId` never reaches it.
+Every capability is scoped by the application's id, including `openData`: a
+store's address carries the opening application (ADR-0324), and the handle
+supplies it so an application never writes its own id twice.
 
 `apps/local-mail` is the app that uses this handle today. `apps/honeycrisp` calls
 `openDatabase` from `@epicenter/data/browser` directly and does not import this

@@ -43,13 +43,6 @@
 /** The host path shared by its server and every WebView that renders. */
 export const MIRROR_PATH = '/api/mirror';
 
-/**
- * A folder name is application-owned. The host validates it as one safe path
- * segment; names such as `local` and `account` are app conventions rather than
- * platform vocabulary.
- */
-export type MirrorFolder = string;
-
 /** One line of a pass: a file to write, or the manifest that ends it. */
 export type MirrorLine =
 	| { readonly path: string; readonly contents: string }

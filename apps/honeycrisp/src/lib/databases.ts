@@ -15,25 +15,20 @@ type PrincipalId = Extract<
 import type { ReplicaData } from '@epicenter/data';
 import { attachMirror } from '@epicenter/data/artifact/mirror';
 import {
-	createGeneration,
-	GENERATIONS_ROUTE,
-	newestGeneration,
+	type DatabaseAccount,
+	eraseGenerations,
 	openDatabase,
-	type ReplicaDocument,
+	resolveGeneration,
 } from '@epicenter/data/browser';
 import { persistOnHide } from '@epicenter/data/flush-on-hide';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
-import {
-	Err,
-	isOk,
-	Ok,
-	type Result,
-	tryAsync,
-	trySync,
-} from 'wellcrafted/result';
+import { Err, isOk, Ok, tryAsync, trySync } from 'wellcrafted/result';
 import { mirrorLog, reportBackgroundError } from './report.js';
 import { attachHoneycrispSync } from './sync.js';
+
+/** The application this opens its store as, self-claimed (ADR-0324, ADR-0334). */
+const APP_ID = 'so.epicenter.honeycrisp';
 
 /**
  * A database being opened: one promise to render, and a disposal that waits.
@@ -121,19 +116,17 @@ async function openAccountReplica({
 	generation: number;
 	principalId?: PrincipalId;
 }): Promise<Opened<AccountDatabase>> {
-	if (principalId === undefined) {
-		const error = new Error('Account access requires a signed-in principal');
-		error.name = 'Unaddressable';
-		throw error;
-	}
-
+	// A signed-out auth states no principal, and this hands that fact to the
+	// opener rather than throwing a hand-made `Error` with `Unaddressable`
+	// written onto its `name`. `canonicalBinding` refuses an account that names
+	// no principal before anything is claimed or created, so the refusal a route
+	// sees comes from the one place that decides it. Routes gate on signed-out
+	// before they get here; this is what makes the gate an optimization rather
+	// than the guard.
 	const { data, error } = await openDatabase(honeycrispDefinition, {
+		appId: APP_ID,
 		generation,
-		account: {
-			baseURL: auth.connection.baseURL,
-			principalId,
-			fetch: (input, init) => auth.fetch(input, init),
-		},
+		account: honeycrispAccount(auth, principalId ?? ('' as PrincipalId)),
 	});
 	if (error !== null) throw error;
 
@@ -147,19 +140,17 @@ async function openAccountReplica({
 	}
 	const connection = connectionResult.data;
 
-	// The folder follows the account replica as well as the device database
-	// (ADR-0271). Attached after sync, so a replica that catches up renders what
-	// arrived rather than the state it opened with.
+	// The folder follows the replica (ADR-0271). Attached after sync, so a
+	// replica that catches up renders what arrived rather than the state it
+	// opened with.
 	const mirror = attachMirror({
 		data,
 		definition: honeycrispDefinition,
-		folder: 'account',
 		log: mirrorLog,
 	});
 
-	// Same window as the local database, and it matters here too: durable work
-	// is what a reconnect offers the authority, so a flush that never happened
-	// is work the account never hears about either.
+	// Durable work is what a reconnect offers the authority, so a flush that
+	// never happened is work the account never hears about either.
 	const stopHideFlush = persistOnHide(() => data.persistence.flush());
 
 	return {
@@ -178,53 +169,60 @@ async function openAccountReplica({
 }
 
 /**
- * The account generation this device should open.
+ * The generation this device should open.
  *
- * Cache first, then the account's own list: a device that already holds a copy
- * uses it without waiting for a server, and one that holds none asks which
- * exist. Unlike the local resolver this never CREATES one, because an account
- * generation is the account's and a device arriving second must not invent a
- * history for it.
+ * One call, because the decision is one and it lives in `packages/data`: cache
+ * first, then the account's own list, and a mint only when that list comes back
+ * empty. This app used to hand-roll it, along with a `new Error` carrying a
+ * hand-set `name` so `bootFailure` could recognize the listing failure; the
+ * library's own `GenerationUnavailable` is that name, stated once.
+ *
+ * It REJECTS rather than resolving a `Result`, like every other opener in this
+ * file, because the route it serves renders one component either way.
  */
 export async function resolveAccountGeneration(
 	auth: AuthClient,
 	principalId: PrincipalId,
 ): Promise<number> {
-	const newest = await newestGeneration(honeycrispDefinition.id, {
+	const resolved = await resolveGeneration(honeycrispDefinition, {
+		appId: APP_ID,
+		account: honeycrispAccount(auth, principalId),
+	});
+	if (resolved.error !== null) throw resolved.error;
+	return resolved.data.generation;
+}
+
+/** The account half of every call in this file, spelled once. */
+function honeycrispAccount(
+	auth: AuthClient,
+	principalId: PrincipalId,
+): DatabaseAccount {
+	return {
 		baseURL: auth.connection.baseURL,
 		principalId,
-	});
-	if (newest !== undefined) return newest;
+		fetch: (input, init) => auth.fetch(input, init),
+	};
+}
 
-	const listed = await auth.fetch(
-		GENERATIONS_ROUTE.collection(
-			auth.connection.baseURL,
-			honeycrispDefinition.id,
-		),
-	);
-	if (!listed.ok) {
-		const error = new Error(
-			`The account could not be asked which generations exist (${listed.status})`,
-		);
-		error.name = 'GenerationUnavailable';
-		throw error;
-	}
-	const { generations } = (await listed.json()) as { generations: number[] };
-	const latest = generations.at(-1);
-	if (latest !== undefined) return latest;
-	// An EMPTY list is a first run, not a refusal, and the distinction is the
-	// listing itself: a failed one already threw above. What a device must not
-	// do is invent a generation because it could not SEE what the account has.
-	const created = await createGeneration(honeycrispDefinition, {
-		account: {
-			baseURL: auth.connection.baseURL,
-			principalId,
-			fetch: (input: Request | string | URL, init?: RequestInit) =>
-				auth.fetch(input, init),
-		},
+/**
+ * Erase this device's copy of the notes, whoever they belong to (ADR-0325).
+ *
+ * The one deleting verb this app has outside a note's own dialog, and it exists
+ * because opening refuses rather than repairs: a copy created for another
+ * account stays exactly where it is until a person says otherwise. Nothing
+ * calls this on a schedule, on sign-out, or as a step in a protocol
+ * (ADR-0281).
+ *
+ * It takes every generation, because the refusal is about the address rather
+ * than about one number: erasing only the one that was refused would refuse the
+ * next number down and ask again.
+ */
+export async function eraseNotesOnThisDevice(): Promise<void> {
+	const { error } = await eraseGenerations({
+		appId: APP_ID,
+		dataId: honeycrispDefinition.id,
 	});
-	if (created.error !== null) throw created.error;
-	return created.data.generation;
+	if (error !== null) throw error;
 }
 
 async function disposeQuietly(resource: AsyncDisposable): Promise<void> {

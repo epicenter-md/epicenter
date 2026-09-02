@@ -9,7 +9,9 @@ import { openDatabase } from '@epicenter/data/browser';
 import { skillsDefinition } from '@epicenter/skills';
 
 const { data: skills, error } = await openDatabase(skillsDefinition, {
+	appId: 'so.epicenter.skills',
 	generation,
+	account,
 });
 if (error !== null) return handle(error);
 const rows = skills.tables.skills.rows;

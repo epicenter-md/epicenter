@@ -31,7 +31,8 @@ export function createBrowserBinding(options: {
 }): EpicenterBinding {
 	const sqlite = options.sqlite ?? createBrowserSqliteOwner();
 	return {
-		openData: openClientOwnedData,
+		openData: (definition, account) =>
+			openClientOwnedData(options.appId, definition, account),
 		openSqlite: (name) =>
 			tryAsync({
 				try: () => sqlite.open(options.appId, name),

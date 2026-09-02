@@ -12,14 +12,15 @@
 
 import type { ReplicaData } from '@epicenter/data';
 import {
-	createGeneration,
 	type DatabaseAccount,
-	newestGeneration,
 	openDatabase,
-	type ReplicaDocument,
+	resolveGeneration,
 } from '@epicenter/data/browser';
 import { skillsDefinition } from '@epicenter/skills';
 import { createSkillsState } from './state/skills-state.svelte.js';
+
+/** The application this opens its store as, self-claimed (ADR-0324, ADR-0334). */
+const APP_ID = 'so.epicenter.skills';
 
 export type SkillsRuntime = {
 	/** This account's replica, open for the whole page lifetime. */
@@ -45,7 +46,8 @@ export async function openSkillsRuntime({
 }): Promise<SkillsRuntime> {
 	signal?.throwIfAborted();
 	const opened = await openDatabase(skillsDefinition, {
-		generation: await resolveGeneration(account),
+		appId: APP_ID,
+		generation: await resolveSkillsGeneration(account),
 		account,
 	});
 	if (opened.error !== null) throw opened.error;
@@ -72,16 +74,19 @@ export async function openSkillsRuntime({
 }
 
 /**
- * The generation this device opens, creating one if it holds none.
+ * The generation this device opens, minting one when the account holds none.
  *
  * A generation is an address (ADR-0292) and importing is the only way one comes
  * into being (ADR-0293), so "a new database here" is an import of an empty
  * folder, minted by the account's authority.
  */
-async function resolveGeneration(account: DatabaseAccount): Promise<number> {
-	const newest = await newestGeneration(skillsDefinition.id, account);
-	if (newest !== undefined) return newest;
-	const created = await createGeneration(skillsDefinition, { account });
-	if (created.error !== null) throw created.error;
-	return created.data.generation;
+async function resolveSkillsGeneration(
+	account: DatabaseAccount,
+): Promise<number> {
+	const resolved = await resolveGeneration(skillsDefinition, {
+		appId: APP_ID,
+		account,
+	});
+	if (resolved.error !== null) throw resolved.error;
+	return resolved.data.generation;
 }

@@ -5,8 +5,9 @@
 - **Supersedes:** [ADR-0261](0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md). Addressing a replica by its server URL and verified principal is withdrawn entirely; the facts it put in the address move to a declaration and a stamp.
 - **Amends:** [ADR-0304](0304-application-persistence-is-runtime-selected-and-scoped-by-its-owning-app.md) at its desktop path, which gains a format-version segment; and [ADR-0314](0314-an-app-is-one-directory-and-installation-is-a-rename.md) at the `data/<data-id>/` spelling, which gains the same version segment.
 - **Relates:** [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) (the generation is the address, unchanged), [ADR-0293](0293-a-generation-is-created-by-importing-a-folder-and-the-ledger-row-is-its-existence.md) (who mints the number), [ADR-0318](0318-epicenter-data-is-what-epicenter-is-the-authority-for-and-a-foreign-write-is-a-command.md) (the authority test), [ADR-0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md) (the other storage kind)
-- **Unbuilt:** all of it. `packages/data/src/store/browser.ts` still composes the `v3` address with `local`/`account` segments, Honeycrisp still opens one definition at two bindings, and no desktop code writes `data/` at all.
+- **Built, in the browser.** `packages/data/src/store/browser.ts` composes `epicenter/v4/<app-id>/<data-id>/<n>`, and `openDatabase`, `createGeneration`, and `newestGeneration` each take the opening application's id. The desktop spelling is unbuilt: no desktop code writes `data/` at all.
 - **Amended by:** [ADR-0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) at two clauses, both withdrawn: the `authority: 'none' | 'epicenter'` field a definition declared, and "two notebooks are two data ids". The app segment stands on ADR-0304 alone, which was always the stronger half, and the address grammar is unchanged.
+- **2026-09-02, amended in place at "Where the app id comes from" below.** The original decision put an app id in the address and named no parameter that carries one; that section settles it.
 
 ## Context
 
@@ -75,6 +76,28 @@ device-only notebook at a server stops being a typo the compiler cannot see. The
 optional `account?` parameter disappears from `openDatabase`,
 `newestGeneration`, and `createGeneration`.
 
+**Where the app id comes from: the scoped handle, and it is self-claimed.**
+This record put the opening application in the address and did not say what
+supplies it. `createEpicenter({ appId, binding })` already scopes an
+application's SQLite files and its secrets by that id
+(`packages/app/src/index.ts`), so `openData` fills the segment from the handle
+and an application never writes its own id twice. An application that calls
+`openDatabase` from `@epicenter/data/browser` directly, which
+`apps/honeycrisp/src/lib/databases.ts` does, passes its own id as `appId`.
+
+Nothing verifies it, at either call site.
+[ADR-0334](0334-a-deployed-app-is-a-trusted-app-because-deploying-it-was-the-consent.md)
+decided that "the app id in a broker request is self-claimed, so an app that
+claims another's id reaches that app's SQLite files and its secrets," and this
+segment is on the same footing: it partitions storage by naming and never by
+enforcement. What `isAppId` (`packages/constants/src/app-id.ts`) buys is that a
+claim can never contain a `/` and be read as another application's address.
+
+The opening application's id is not the data id, and `openDatabase` takes both.
+They coincide when an application names its data after itself, which is what
+Honeycrisp does, and that is a coincidence rather than an identity: ADR-0304
+says two applications may name one data id and each keeps its own replica.
+
 **The version segment stays, above the data id, and is shared across
 substrates.** It versions the interpretation of the bytes, not the shape of the
 path: `v2` was the document collapse
@@ -113,8 +136,10 @@ They coincide only when an application names its data after itself.
 - What the address stopped carrying has to be carried somewhere. That is
   [ADR-0325](0325-a-database-is-bound-to-one-authority-and-re-homing-is-export-and-import.md):
   a write-once stamp inside the database, and one refusal at open.
-- Honeycrisp changes with this record: one definition at two bindings becomes two
-  definitions sharing one table declaration, and its two routes open two data ids.
+- Honeycrisp's two routes are one route. That consequence was written for the
+  two-data-ids clause ADR-0336 withdrew; what actually happened is that the
+  device store went, so `/device`, its store switcher, and the boot copy that
+  chose between two notebooks went with it.
 - Permanently device-authoritative *structured* data is app-owned SQLite
   (ADR-0321), not Epicenter Data with `authority: 'none'`. The `'none'` value is
   for a database that is Epicenter Data and has no server yet, not for a second
@@ -133,7 +158,13 @@ They coincide only when an application names its data after itself.
 
 - **Keep the partition segments.** Rejected: they encode a device-wide constant,
   and the isolation they provide is replaced by a stamp plus the refusal in
-  ADR-0325 at a much smaller cost.
+  ADR-0325 at a much smaller cost. Until that stamp lands, two principals on one
+  device share one address, which is the window this record opens and ADR-0325
+  closes.
+- **Verify the app id, or derive it from the bundle.** Rejected, and ADR-0334
+  is why: the enforcement point is the person's own machine, where the code
+  being restrained already runs as them. A check here would be a lock with no
+  door, and this record would be shipping a false invariant.
 - **Version in the leaf (`<n>.v4.sqlite`) or on the data-id directory
   (`<data-id>.v4/`).** Rejected. The leaf spelling cannot exist in a browser,
   where the address has no file extension, so one grammar dies. The data-id

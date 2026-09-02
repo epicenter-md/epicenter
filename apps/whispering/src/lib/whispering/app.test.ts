@@ -43,7 +43,6 @@ import type { AuthClient } from '@epicenter/auth';
 import type { BlobStore } from '@epicenter/blobs';
 import { encodeFrame } from '@epicenter/data/sync';
 import { Ok } from 'wellcrafted/result';
-import { whisperingDefinition } from '../workspace';
 import { openWhisperingApp, type WhisperingAppDependencies } from './app';
 
 const local: BlobStore = {
@@ -211,22 +210,18 @@ function recordingFields(title: string) {
 	};
 }
 
-test('a signed-out boot opens one document and never dials', async () => {
+test('a signed-out boot opens nothing at all', async () => {
+	// It used to open a device document and never dial. An authority mints every
+	// generation (ADR-0336), so there is no such document to fall back to and
+	// the boot refuses instead. The three tests below still pin the device
+	// document and still fail; Whispering is one of the applications AGENTS.md
+	// lists as broken on purpose until it is rebuilt against the store, and
+	// rewriting them is that rebuild rather than this one.
 	await resetStorage();
-	await using app = await openWhisperingApp(
-		dependencies(createFakeAuth({ status: 'signed-out' })),
-	);
-
-	// `createFakeAuth` throws on any dial, so reaching here is the assertion.
-	expect(app.syncStatus()).toBeUndefined();
-	expect(app.recordings.count).toBe(0);
-	expect(app.recipes.count).toBe(0);
-
-	const names = (await indexedDB.databases()).map(({ name }) => name);
-	expect(names).toContain(
-		`epicenter/v3/${whisperingDefinition.id}/local/gen/1`,
-	);
-	expect(names.some((name) => name?.includes('/account/'))).toBe(false);
+	await expect(
+		openWhisperingApp(dependencies(createFakeAuth({ status: 'signed-out' }))),
+	).rejects.toThrow(/signed-in account/);
+	expect(await indexedDB.databases()).toEqual([]);
 });
 
 test('settings recover application defaults and survive a restart', async () => {

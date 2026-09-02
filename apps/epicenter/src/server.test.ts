@@ -1855,8 +1855,8 @@ describe('mirror routes (ADR-0271)', () => {
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
 		const server = await serveHost(host);
 		const origin = server.url.origin;
-		const url = `${origin}${MIRROR_PATH}/so.epicenter.honeycrisp/local`;
-		const folder = join(folderRoot, 'so.epicenter.honeycrisp/local');
+		const url = `${origin}${MIRROR_PATH}/so.epicenter.honeycrisp`;
+		const folder = join(folderRoot, 'so.epicenter.honeycrisp');
 		try {
 			// Session-gated like every other domain API on this origin: this route
 			// writes and deletes real files under a person's home directory.
@@ -1898,7 +1898,7 @@ describe('mirror routes (ADR-0271)', () => {
 		}
 	});
 
-	test('a folder or data id the render never produces is refused', async () => {
+	test('a data id the render never produces is refused', async () => {
 		const folderRoot = mkdtempSync(join(tmpdir(), 'mirror-route-test-'));
 		const previousRoot = process.env.EPICENTER_FOLDER_DIR;
 		process.env.EPICENTER_FOLDER_DIR = folderRoot;
@@ -1908,9 +1908,8 @@ describe('mirror routes (ADR-0271)', () => {
 		try {
 			const refused = [
 				`${MIRROR_PATH}/so.epicenter.honeycrisp/notes/abc.md`,
-				`${MIRROR_PATH}/so.epicenter.honeycrisp/..%2F..%2Fetc`,
-				`${MIRROR_PATH}/..%2Fetc/notes`,
-				`${MIRROR_PATH}/local/so.epicenter.honeycrisp/notes/abc.md`,
+				`${MIRROR_PATH}/..%2F..%2Fetc`,
+				`${MIRROR_PATH}/not_an_app_id`,
 			];
 			for (const path of refused) {
 				const response = await fetch(`${origin}${path}`, {
@@ -1923,7 +1922,7 @@ describe('mirror routes (ADR-0271)', () => {
 			// A file inside the pass that would climb out is refused by the host
 			// without costing the pass its other files.
 			const mixed = await fetch(
-				`${origin}${MIRROR_PATH}/local/so.epicenter.honeycrisp`,
+				`${origin}${MIRROR_PATH}/so.epicenter.honeycrisp`,
 				{
 					method: 'PUT',
 					body: pass([
@@ -1935,12 +1934,12 @@ describe('mirror routes (ADR-0271)', () => {
 				},
 			);
 			expect(mixed.status).toBe(204);
-			expect(await Bun.file(join(folderRoot, 'local/escape.md')).exists()).toBe(
+			expect(await Bun.file(join(folderRoot, 'escape.md')).exists()).toBe(
 				false,
 			);
 			expect(
 				await Bun.file(
-					join(folderRoot, 'local/so.epicenter.honeycrisp/notes/ok.md'),
+					join(folderRoot, 'so.epicenter.honeycrisp/notes/ok.md'),
 				).exists(),
 			).toBe(true);
 		} finally {

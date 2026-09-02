@@ -9,7 +9,14 @@
  */
 
 import { expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import {
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { applyMirrorPass, mirrorFolderPath } from './mirror.ts';
@@ -17,39 +24,33 @@ import { applyMirrorPass, mirrorFolderPath } from './mirror.ts';
 const ROOT = '/Users/person/Epicenter';
 const APP = 'so.epicenter.honeycrisp';
 
-const folder = (folder: string, dataId: string) =>
-	mirrorFolderPath({ folder, dataId, root: ROOT });
+const folder = (dataId: string) => mirrorFolderPath({ dataId, root: ROOT });
 
 const file = (path: string, contents: string) =>
 	`${JSON.stringify({ path, contents })}\n`;
-const manifest = (paths: string[]) => `${JSON.stringify({ manifest: paths })}\n`;
+const manifest = (paths: string[]) =>
+	`${JSON.stringify({ manifest: paths })}\n`;
 
 function scratch(): string {
 	return mkdtempSync(join(tmpdir(), 'epicenter-mirror-'));
 }
 
-test('a folder resolves under its data id and application folder', () => {
-	expect(folder('local', APP)).toBe(`${ROOT}/${APP}/local`);
-	expect(folder('account', APP)).toBe(`${ROOT}/${APP}/account`);
-});
-
-test('a folder is one safe application-owned path segment', () => {
-	expect(folder('account/subfolder', APP)).toBeUndefined();
-	expect(folder('on-this-device', APP)).toBe(`${ROOT}/${APP}/on-this-device`);
-	expect(folder('', APP)).toBeUndefined();
-	expect(folder('..', APP)).toBeUndefined();
+test('a folder is the data id, one segment under the root', () => {
+	// And nothing under that. The `local`/`account` segment went with the device
+	// store: there is one store per data id, so there is one folder.
+	expect(folder(APP)).toBe(`${ROOT}/${APP}`);
 });
 
 test('a data id that could not name an app directory is refused', () => {
-	expect(folder('local', '..')).toBeUndefined();
-	expect(folder('local', '.')).toBeUndefined();
-	expect(folder('local', '')).toBeUndefined();
-	expect(folder('local', 'a/b')).toBeUndefined();
+	expect(folder('..')).toBeUndefined();
+	expect(folder('.')).toBeUndefined();
+	expect(folder('')).toBeUndefined();
+	expect(folder('a/b')).toBeUndefined();
 });
 
 test('a file cannot climb out of its folder', async () => {
 	const root = scratch();
-	const target = join(root, APP, 'account');
+	const target = join(root, APP);
 	// `../x.md` and `./x.md` both SPLIT into two segments, so a grammar check
 	// alone admits them. Containment is what actually refuses them.
 	await applyMirrorPass(
@@ -83,10 +84,16 @@ test('only the files a render produces are accepted', async () => {
 
 test('a write is atomic and leaves no staging file behind', async () => {
 	const root = scratch();
-	await applyMirrorPass(root, file('notes/abc.md', 'one') + manifest(['notes/abc.md']));
+	await applyMirrorPass(
+		root,
+		file('notes/abc.md', 'one') + manifest(['notes/abc.md']),
+	);
 	expect(readFileSync(join(root, 'notes', 'abc.md'), 'utf8')).toBe('one');
 
-	await applyMirrorPass(root, file('notes/abc.md', 'two') + manifest(['notes/abc.md']));
+	await applyMirrorPass(
+		root,
+		file('notes/abc.md', 'two') + manifest(['notes/abc.md']),
+	);
 	expect(readFileSync(join(root, 'notes', 'abc.md'), 'utf8')).toBe('two');
 	expect(readdirSync(join(root, 'notes'))).toEqual(['abc.md']);
 });
@@ -96,10 +103,16 @@ test('a file whose bytes already match is not touched', async () => {
 	// rewriting unchanged bytes makes every backup tool watching the folder
 	// see the whole vault as new on every pass.
 	const root = scratch();
-	await applyMirrorPass(root, file('notes/abc.md', 'same') + manifest(['notes/abc.md']));
+	await applyMirrorPass(
+		root,
+		file('notes/abc.md', 'same') + manifest(['notes/abc.md']),
+	);
 	const before = statSync(join(root, 'notes', 'abc.md'));
 
-	await applyMirrorPass(root, file('notes/abc.md', 'same') + manifest(['notes/abc.md']));
+	await applyMirrorPass(
+		root,
+		file('notes/abc.md', 'same') + manifest(['notes/abc.md']),
+	);
 	const after = statSync(join(root, 'notes', 'abc.md'));
 
 	expect(after.ino).toBe(before.ino);
@@ -114,7 +127,10 @@ test('the manifest is what removes a file, and only the manifest', async () => {
 			file('notes/gone.md', 'b') +
 			manifest(['notes/keep.md', 'notes/gone.md']),
 	);
-	expect(readdirSync(join(root, 'notes')).sort()).toEqual(['gone.md', 'keep.md']);
+	expect(readdirSync(join(root, 'notes')).sort()).toEqual([
+		'gone.md',
+		'keep.md',
+	]);
 
 	await applyMirrorPass(root, manifest(['notes/keep.md']));
 	expect(readdirSync(join(root, 'notes'))).toEqual(['keep.md']);
@@ -126,7 +142,9 @@ test('a pass with no manifest deletes nothing', async () => {
 	const root = scratch();
 	await applyMirrorPass(
 		root,
-		file('notes/a.md', 'a') + file('notes/b.md', 'b') + manifest(['notes/a.md', 'notes/b.md']),
+		file('notes/a.md', 'a') +
+			file('notes/b.md', 'b') +
+			manifest(['notes/a.md', 'notes/b.md']),
 	);
 	await applyMirrorPass(root, file('notes/a.md', 'edited'));
 
@@ -138,7 +156,10 @@ test('a file a person put there is theirs', async () => {
 	const root = scratch();
 	mkdirSync(root, { recursive: true });
 	writeFileSync(join(root, 'README.md'), 'mine');
-	await applyMirrorPass(root, file('notes/a.md', 'a') + manifest(['notes/a.md']));
+	await applyMirrorPass(
+		root,
+		file('notes/a.md', 'a') + manifest(['notes/a.md']),
+	);
 
 	// `README.md` is not a row file, so the sweep has no business with it.
 	expect(readFileSync(join(root, 'README.md'), 'utf8')).toBe('mine');

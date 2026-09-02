@@ -16,7 +16,8 @@ import { installTestOpfs } from './test-opfs.js';
 
 installTestOpfs();
 
-const ADDRESS = 'epicenter/v3/so.epicenter.honeycrisp/local/gen/1';
+const ADDRESS =
+	'epicenter/v4/so.epicenter.honeycrisp/so.epicenter.honeycrisp/1';
 
 let blobs: Blobs;
 let counter = 0;

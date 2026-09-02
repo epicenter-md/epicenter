@@ -118,18 +118,50 @@ export const StoreError = defineErrors({
 		address,
 	}),
 	/**
-	 * A definition replica was asked for without the account that owns it.
+	 * The store was asked for something it cannot name.
 	 *
-	 * A definition replica is retained across sign-out, so its address carries
-	 * the principal it belongs to (ADR-0233). An auth state that cannot supply a
-	 * stable principal id therefore names no definition, and guessing one would
-	 * either open another account's bytes or take edits into storage no account
-	 * can claim afterwards. Unavailable is the honest answer, and only an auth
-	 * change repairs it.
+	 * Three inputs reach this, and they are one refusal because they are one
+	 * sentence: an application id or a generation number that cannot be a
+	 * segment of an address (ADR-0324), and an account that states no server or
+	 * no principal, which is what a replica REPORTS and what ADR-0325 stamps
+	 * inside it. Guessing any of them would open bytes that belong to something
+	 * else, or take edits into a record nothing can claim afterwards.
+	 *
+	 * A route hands over `Number(params.generation)`, so a truncated link
+	 * arrives here rather than as `GenerationNotFound`; conflating them would
+	 * tell a person a generation is missing when what they typed was never a
+	 * generation at all.
 	 */
 	Unaddressable: ({ reason }: { reason: string }) => ({
-		message: `This database has no address: ${reason}`,
+		message: `This database cannot be named: ${reason}`,
 		reason,
+	}),
+	/**
+	 * This device's copy of that generation belongs to a different account
+	 * (ADR-0325).
+	 *
+	 * The one refusal that replaces four address segments. A database records
+	 * the server and the principal it was created for, in the transaction that
+	 * created it, and never rewrites them; opening it as somebody else is
+	 * refused rather than merged, because Yjs converges instead of erroring and
+	 * generation numbers are small integers, so a `7` under one account and a
+	 * `7` under another usually both exist. The failure this prevents is silent
+	 * interleaving of two people's histories, not a crash.
+	 *
+	 * Nothing is deleted as a step in a protocol (ADR-0281). The caller is told,
+	 * and `eraseGenerations` is the verb a person invokes if they want the
+	 * device's copy gone.
+	 */
+	BoundElsewhere: ({
+		dataId,
+		generation,
+	}: {
+		dataId: string;
+		generation: number;
+	}) => ({
+		message: `Generation ${generation} of '${dataId}' on this device belongs to a different account`,
+		dataId,
+		generation,
 	}),
 	/**
 	 * This device holds no copy of the generation asked for, and has no account

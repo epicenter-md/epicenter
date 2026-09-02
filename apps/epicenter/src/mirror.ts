@@ -29,18 +29,18 @@
  * so a dropped connection leaves the folder stale rather than gutted.
  */
 
+import { randomUUID } from 'node:crypto';
 import type { Dirent } from 'node:fs';
 import {
 	cp,
-	mkdtemp,
 	mkdir,
-	readFile,
+	mkdtemp,
 	readdir,
+	readFile,
 	rename,
 	rm,
 	writeFile,
 } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { isAppId } from '@epicenter/constants/app-data';
 import { parseRowPath } from '@epicenter/data/artifact/format';
@@ -52,24 +52,22 @@ export class MirrorFolderBusyError extends Error {
 
 /**
  * The folder a data id's files live in, or `undefined` when the request does
- * not name one. Folder names are one application-owned path segment.
+ * not name one.
+ *
+ * One segment under the root, and the segment is the data id (ADR-0337). The
+ * `local`/`account` segment below it went with the device store: there is one
+ * store per data id, so there is one folder, which is what supersedes
+ * ADR-0315's layout.
  */
 export function mirrorFolderPath({
-	folder,
 	dataId,
 	root,
 }: {
-	folder: string;
 	dataId: string;
 	root: string;
 }): string | undefined {
-	if (!isSafeFolder(folder)) return undefined;
 	if (!isAppId(dataId)) return undefined;
-	return join(root, dataId, folder);
-}
-
-function isSafeFolder(value: string): boolean {
-	return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) && value !== '.' && value !== '..';
+	return join(root, dataId);
 }
 
 /**
@@ -200,7 +198,13 @@ export async function applyMirrorPass(
 					verbatimSymlinks: true,
 				});
 			} catch (cause) {
-				if (!(cause instanceof Error && 'code' in cause && cause.code === 'ENOENT')) {
+				if (
+					!(
+						cause instanceof Error &&
+						'code' in cause &&
+						cause.code === 'ENOENT'
+					)
+				) {
 					throw cause;
 				}
 			}
@@ -219,7 +223,13 @@ export async function applyMirrorPass(
 					await rename(absoluteFolder, previousFolder);
 					movedExisting = true;
 				} catch (cause) {
-					if (!(cause instanceof Error && 'code' in cause && cause.code === 'ENOENT')) {
+					if (
+						!(
+							cause instanceof Error &&
+							'code' in cause &&
+							cause.code === 'ENOENT'
+						)
+					) {
 						throw cause;
 					}
 				}
@@ -241,14 +251,18 @@ export async function applyMirrorPass(
 	}
 }
 
-async function claimMirrorFolder(absoluteFolder: string): Promise<() => Promise<void>> {
+async function claimMirrorFolder(
+	absoluteFolder: string,
+): Promise<() => Promise<void>> {
 	const lock = `${absoluteFolder}.epicenter-lock`;
 	await mkdir(dirname(lock), { recursive: true });
 	try {
 		await mkdir(lock);
 	} catch (cause) {
 		if (cause instanceof Error && 'code' in cause && cause.code === 'EEXIST') {
-			throw new MirrorFolderBusyError(`Mirror folder is already claimed: ${absoluteFolder}`);
+			throw new MirrorFolderBusyError(
+				`Mirror folder is already claimed: ${absoluteFolder}`,
+			);
 		}
 		throw cause;
 	}

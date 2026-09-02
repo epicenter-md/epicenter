@@ -44,19 +44,21 @@ The address is derived synchronously and keeps the storage format epoch, which
 is what lets the record shape change by stranding rather than migrating:
 
 ```txt
-epicenter/v3/<dataId>/local/gen/<n>
-epicenter/v3/<dataId>/account/<encodedBaseURL>/<encodedPrincipalId>/gen/<n>
+epicenter/v4/<appId>/<dataId>/<n>
 ```
 
-The epoch has moved twice since this was written, which is the mechanism
+The epoch has moved three times since this was written, which is the mechanism
 working rather than drifting: ADR-0295 changed the record's shape to reach
-`v2`, and ADR-0301 changed what a NULL position means to reach `v3`. The
-current value lives in `packages/data/src/store/browser.ts`; this record owns
-the scheme, not the number.
+`v2`, ADR-0301 changed what a NULL position means to reach `v3`, and ADR-0324
+took the server and the principal out of the name to reach `v4`. What this
+record decided, that the generation is the last segment and an address rather
+than an instruction to allocate, is unchanged by all three. The current value
+lives in `packages/data/src/store/browser.ts`; this record owns the scheme, not
+the number and not the segments above it.
 
-Both segments are percent-encoded; a base URL contains `://` and may keep a path
-prefix. Enumeration parses the number rather than sorting it, because `gen/9`
-sorts above `gen/10`.
+Enumeration parses the number rather than sorting it, because `9` sorts above
+`10`. The percent-encoding this paragraph used to describe went with the
+segments: nothing in the name contains a `://` any more.
 
 The sequence:
 

@@ -4,7 +4,8 @@
 - **Date:** 2026-09-01
 - **Amends:** [ADR-0262](0262-the-desktop-host-owns-one-active-connection-and-no-connection-registry.md) at one clause. "Selecting a different server replaces it" is withdrawn: choosing a server becomes installing a build, so `selectInstance`, `selectHosted`, the `{ kind: 'self-hosted' }` connection record, and `ACCOUNT_INSTANCE_ROUTE` go with it. Its one-connection rule, its refusal of a saved-connection registry, and its rule that an app cannot choose a server all stand.
 - **Relates:** [ADR-0281](0281-a-generation-is-a-whole-database-and-a-device-chooses-which-one-it-holds.md) (nothing is deleted as a step in a protocol), [ADR-0293](0293-a-generation-is-created-by-importing-a-folder-and-the-ledger-row-is-its-existence.md) (import mints a generation), [ADR-0296](0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md) (codec idempotence), [ADR-0315](0315-the-folder-is-keyed-by-data-id-and-the-segment-under-it-is-the-applications.md) (the folder this reads)
-- **Unbuilt:** the stamp, the refusal at open, the fail-closed export pass, and the deletions listed above. `readArtifact` and `createGeneration` already exist; nothing calls them for re-homing, and no browser deployment can export at all.
+- **Built in the browser:** the binding and the refusal. A generation records `{ baseURL, principalId }` in its own `binding` object store, written by `BrowserBacking.create` in the transaction that writes the first state, and `openDatabase` answers `StoreError.BoundElsewhere` when it does not match. `eraseGenerations` is the person-invoked erase, and Honeycrisp offers it from `AccountGate.svelte`. The word in code is `binding` rather than "stamp": nothing here is a certificate a reader compares against the record it sits in, which is what `identity` was and what ADR-0292 deleted. It collides with `EpicenterBinding` in `packages/app/src/index.ts`, which is a runtime leaf a build selects and has nothing to do with this; the two never meet in one file, and renaming either would cost the word this record's title uses.
+- **Unbuilt:** the desktop half of the binding, the fail-closed export pass, the import verb, and the deletions listed below. `readArtifact` and `createGeneration` already exist; nothing calls them for re-homing, and no browser deployment can export at all.
 
 ## Context
 
@@ -80,9 +81,11 @@ bytes do not.
   `selectInstance`, `selectHosted`, `normalizeInstanceUrl`, and the
   `{ kind: 'self-hosted' }` deployment record in
   `apps/epicenter/src/desktop-auth-authority.ts`. **This is the urgent half.**
-  Those routes are in-place rebinding at host altitude, live today; they are safe
-  only because the current address carries the server URL, so ADR-0324 cannot land
-  while they exist.
+  Those routes are in-place rebinding at host altitude; they were safe only
+  because the address then carried the server URL. **ADR-0324 has landed in the
+  browser**, so the binding written by `BrowserBacking.create` is what makes
+  them safe now: an in-place rebind reaches a record whose binding no longer
+  matches, and the open is refused rather than merged. They are still deleted.
 - The stamp is one comparison at one moment. It is the floor, not an oversight:
   a principal is asserted by a remote party at first sign-in, after local data can
   already exist, so no address can know it in time. Everything a deployment

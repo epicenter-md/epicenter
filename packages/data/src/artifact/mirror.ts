@@ -114,15 +114,9 @@ export const MirrorSinkError = defineErrors({
 });
 export type MirrorSinkError = InferErrors<typeof MirrorSinkError>;
 
-/** The absolute same-origin URL one place's folder is written through. */
-function mirrorFolderUrl({
-	folder,
-	dataId,
-}: {
-	folder: string;
-	dataId: string;
-}): string {
-	return `${MIRROR_PATH}/${encodeURIComponent(dataId)}/${encodeURIComponent(folder)}`;
+/** The absolute same-origin URL one database's folder is written through. */
+function mirrorFolderUrl(dataId: string): string {
+	return `${MIRROR_PATH}/${encodeURIComponent(dataId)}`;
 }
 
 export type MirrorSink = {
@@ -136,21 +130,19 @@ export type MirrorSink = {
 };
 
 /**
- * The sink one place's folder is written through.
+ * The sink one database's folder is written through.
  *
  * `fetch` is injected so a test drives this without a host and without a
  * network, which is the whole of what makes the caller testable.
  */
 export function createMirrorSink({
-	folder,
 	dataId,
 	fetch: httpFetch = globalThis.fetch,
 }: {
-	folder: string;
 	dataId: string;
 	fetch?: typeof globalThis.fetch;
 }): MirrorSink {
-	const url = mirrorFolderUrl({ folder, dataId });
+	const url = mirrorFolderUrl(dataId);
 	return {
 		async send(ndjson) {
 			const { data: response, error } = await tryAsync({
@@ -217,9 +209,7 @@ function failedPath(error: RenderError): string | undefined {
 export function attachMirror({
 	data,
 	definition,
-	folder,
 	sink = createMirrorSink({
-		folder,
 		dataId: definition.id,
 		fetch: globalThis.fetch,
 	}),
@@ -230,7 +220,6 @@ export function attachMirror({
 	data: MirrorableData;
 	/** The authored definition, whose codecs the render serializes through. */
 	definition: DataDefinition;
-	folder: string;
 	/** Injected so a test drives this without a host and without a network. */
 	sink?: MirrorSink;
 	log: Logger;
@@ -321,8 +310,3 @@ export function attachMirror({
 		},
 	};
 }
-
-// An application needs the verb and the word for which folder it is writing.
-// The wire format itself is the host's business and this package's, and both
-// read it from `./protocol.js` directly.
-export type { MirrorFolder } from './protocol.js';

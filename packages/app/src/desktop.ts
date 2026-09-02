@@ -56,7 +56,7 @@ export function createDesktopBinding(
 		// and the store is client-owned in every runtime (ADR-0226), so there
 		// was never a second party whose answer could mean anything.
 		openData: async (definition, account) =>
-			openClientOwnedData(definition, account),
+			openClientOwnedData(appId, definition, account),
 		openSqlite: async (name) => Ok(createOwnedSqlite(request, appId, name)),
 		deleteSqlite: (name) =>
 			unwrap(

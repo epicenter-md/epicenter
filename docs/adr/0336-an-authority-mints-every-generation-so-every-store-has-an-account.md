@@ -29,15 +29,19 @@ reason anyone wanted that was a person using an application before signing in.
 **An authority mints every generation, so every store has an account.**
 
 A person signs in before anything else; that is the first run. There is one
-store kind and one address,
-`epicenter/v3/<data-id>/account/<base URL>/<principal id>/gen/<generation>`
-(`packages/data/src/store/browser.ts`).
+store kind and one address (`packages/data/src/store/browser.ts`).
 
 ```txt
-openDatabase(definition, { generation, account })   account is required
-newestGeneration(dataId, account)                   account is required
-createGeneration(definition, { account })           account is required
+openDatabase(definition, { appId, generation, account })   account is required
+createGeneration(definition, { appId, account })           account is required
 ```
+
+The address that shipped is ADR-0324's `epicenter/v4/<app-id>/<data-id>/<n>`,
+not the `epicenter/v3/<data-id>/account/<base URL>/<principal id>/gen/<n>` this
+record was drafted against, and `newestGeneration({ appId, dataId })` takes no
+account at all. What that changes here is spelling: the account is required to
+OPEN a store either way, and ADR-0325's binding is what carries the two facts
+the address stopped holding.
 
 **Three type names, and each says one thing.** `DataDocument` carries `sync`,
 because every store has it. `Data<T>` is a store with no address, which is what

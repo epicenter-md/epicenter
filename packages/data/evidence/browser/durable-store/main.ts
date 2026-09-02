@@ -11,11 +11,7 @@ import {
 	plainText,
 } from '@epicenter/data/definition';
 
-import {
-	createGeneration,
-	newestGeneration,
-	openDatabase,
-} from '../../../src/store/browser.js';
+import { openDatabase, resolveGeneration } from '../../../src/store/browser.js';
 import type { ReplicaData } from '../../../src/store/store.js';
 
 /**
@@ -50,16 +46,29 @@ const workspaces = {
 
 type ProbeApplication = ReplicaData<(typeof workspaces)['vault']>;
 
+/** The application this probe opens as, which is the address's first segment. */
+const PROBE_APP = 'so.epicenter.durability-probe';
+
 /**
- * The account this probe's store belongs to. Durability is the subject here,
- * so the authority is never reached: what it supplies is the address.
+ * The account this probe's store belongs to (ADR-0325).
+ *
+ * Durability is the subject here, so no real authority is reached. Its `fetch`
+ * is a stub authority rather than a throw, because `resolveGeneration` asks one
+ * which generations exist before it mints: an empty listing is a first run, and
+ * the POST that follows is what assigns the number.
  */
 const PROBE_ACCOUNT = {
 	baseURL: 'https://probe.invalid',
 	principalId: 'probe' as never,
-	fetch: (() => {
-		throw new Error('the durability probe never reaches an authority');
-	}) as never,
+	fetch: (async (_input: string | URL, init?: RequestInit) =>
+		new Response(
+			JSON.stringify(
+				init?.method === 'POST'
+					? { generation: 1, position: 0 }
+					: { generations: [] },
+			),
+			{ headers: { 'content-type': 'application/json' } },
+		)) as never,
 	WebSocket: undefined as never,
 };
 
@@ -79,20 +88,18 @@ Object.assign(globalThis, {
 	async open(name: keyof typeof workspaces) {
 		const workspace = workspaces[name];
 		if (workspace === undefined) return { error: `no workspace named ${name}` };
-		// A probe account: this proves durability, so the authority never has to
-		// answer. Every store has one now, and the address needs it.
-		//
-		// Created on first use, because a generation number is an address and
-		// opening never invents one (ADR-0292). The second open of the same
-		// page finds a cache hit and creates nothing.
-		if ((await newestGeneration(workspace.id, PROBE_ACCOUNT)) === undefined) {
-			const created = await createGeneration(workspace, {
-				account: PROBE_ACCOUNT,
-			});
-			if (created.error !== null) return { error: created.error.message };
-		}
+		// One decision, the same one every application makes: this device's copy
+		// if it holds one, and a mint only because the stub listing is empty
+		// (ADR-0292, ADR-0293). The second open of the same page is a cache hit
+		// and creates nothing, which is what the reload below is checking.
+		const resolved = await resolveGeneration(workspace, {
+			appId: PROBE_APP,
+			account: PROBE_ACCOUNT,
+		});
+		if (resolved.error !== null) return { error: resolved.error.message };
 		const opened = await openDatabase(workspace, {
-			generation: 1,
+			appId: PROBE_APP,
+			generation: resolved.data.generation,
 			account: PROBE_ACCOUNT,
 		});
 		if (opened.error !== null) {

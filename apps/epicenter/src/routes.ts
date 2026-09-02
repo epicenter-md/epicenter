@@ -63,9 +63,9 @@ export const LOCAL_BLOB_ROUTE = {
 /**
  * One pass of the `~/Epicenter` mirror (ADR-0271).
  *
- * A place and a data id name a folder, and nothing below that appears in the
- * URL: a pass carries its files and its manifest in an NDJSON body, so there
- * is no per-file path to route, capture, or validate. That is what the earlier
+ * A data id names a folder, and nothing below that appears in the URL: a pass
+ * carries its files and its manifest in an NDJSON body, so there is no
+ * per-file path to route, capture, or validate. That is what the earlier
  * per-file design cost, and it cost it silently: Hono routes a bare `*` but
  * captures nothing under it, so every write arrived with an empty path.
  *
@@ -78,7 +78,7 @@ export const LOCAL_BLOB_ROUTE = {
  * asking and the id leaves the URL entirely, and that is what a genuinely
  * third-party app would buy.
  */
-export const MIRROR_ROUTE = route(`${MIRROR_PATH}/:dataId/:folder`);
+export const MIRROR_ROUTE = route(`${MIRROR_PATH}/:dataId`);
 export const APP_STORAGE_ROUTE = route(APP_STORAGE_PATH);
 /**
  * Where Google returns a person after Local Mail's consent screen.

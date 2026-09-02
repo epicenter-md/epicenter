@@ -61,14 +61,16 @@ async function resetStorage(): Promise<void> {
 	}
 }
 
-test.skip('the runtime opens the local document and nothing else', async () => {
+test.skip('the runtime opens one store and nothing else', async () => {
 	await resetStorage();
 	await using runtime = await openSkillsRuntime({ account: ACCOUNT });
 
 	expect(runtime.state.skills).toEqual([]);
 
 	const names = (await indexedDB.databases()).map(({ name }) => name);
-	expect(names).toEqual([`epicenter/v3/${skillsDefinition.id}/local/gen/1`]);
+	expect(names).toEqual([
+		`epicenter/v4/so.epicenter.skills/${skillsDefinition.id}/1`,
+	]);
 });
 
 test.skip('a skill and its instructions survive reopening', async () => {

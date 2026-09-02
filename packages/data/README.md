@@ -10,7 +10,7 @@ The package has one definition entrypoint and four runtime entrypoints:
 | --- | --- |
 | `@epicenter/data` | the opened data surface |
 | `@epicenter/data/definition` | `defineData`, `compileData`, and the field descriptor vocabulary |
-| `@epicenter/data/browser` | `openDatabase(definition, { generation, account? })`, plus `newestGeneration` and `createGeneration` |
+| `@epicenter/data/browser` | `openDatabase(definition, { appId, generation, account })`, plus `resolveGeneration`, `createGeneration`, and `eraseGenerations` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 | `@epicenter/data/artifact` | `renderRow` and `renderArtifact` out, `readArtifact` back in: the folder a person keeps |
 | `@epicenter/data/memory` | `openMemory(definition)` and `createMemoryRecord()`, test support |
@@ -25,10 +25,11 @@ live at their own entry points rather than on `@epicenter/data`.
 ```ts
 import { openDatabase } from '@epicenter/data/browser';
 
-// One opener. The presence of `account` is the discriminant, all the way
-// down: it decides the address, whether appends are owed to an authority, and
-// whether a cache miss can be bootstrapped or is simply not here.
+// One opener, and every argument is required. An authority mints every
+// generation (ADR-0336), so there is no shape with the account left out and
+// nothing downstream branches on whether one is present.
 const { data, error } = await openDatabase(honeycrispDefinition, {
+	appId: 'so.epicenter.honeycrisp',
 	generation,
 	account: { baseURL, principalId, fetch },
 });
@@ -42,31 +43,29 @@ opened.tables.notes.update(id, { title: 'Draft' }); // no await
 
 An inert data definition names the store it opens (ADR-0229), so there is one call and one
 name: the definition id is the document, the file, the folder and the authority
-address. Nothing takes a path or a database name. In a browser the durable
-address is derived from that definition id, the document named below, and the
-generation the caller asked for rather than supplied (ADR-0261, ADR-0292), so
-a declaration still cannot open a store it does not name. The runtime that comes back holds exactly this one definition for
-its whole life (ADR-0240); a newer declaration reads the same durable data by
-closing it and opening the next one.
+address. Nothing takes a path or a database name. The runtime that comes back
+holds exactly this one definition for its whole life (ADR-0240); a newer
+declaration reads the same durable data by closing it and opening the next one.
 
-In a browser the caller also names which durable document it means, whose it
-is (ADR-0261), and which generation of it (ADR-0292). An application keeps one
-local document that never joins account sync, and one retained replica per
-account:
+In a browser the caller also names the application doing the opening and which
+generation it means (ADR-0324, ADR-0292):
 
 ```text
-epicenter/v3/<dataId>/local/gen/<n>
-epicenter/v3/<dataId>/account/<base URL>/<principal id>/gen/<n>
+epicenter/v4/<appId>/<dataId>/<n>
 ```
 
 That address is the IndexedDB database name, so there is one database per
-GENERATION rather than per document, and a data discard or supersession can
-reach exactly one account's replica at one generation and never the local
-document, another account's, or another generation of the same one. `v3` is
-the storage epoch: bumping it strands every existing record instead of
-migrating it, which is how the record's shape is allowed to change. An account replica cannot be opened
-without an account: the argument is a union with nowhere to omit one, and an
-empty id is refused with `StoreError.Unaddressable` rather than addressed.
+GENERATION, and two applications naming one data id keep their own replicas
+(ADR-0304). `v4` is the storage epoch: bumping it strands every existing record
+instead of migrating it, which is how the record's shape is allowed to change.
+
+Nothing about WHO owns the store is in that name. A generation records the
+server and the principal it was created for, in the transaction that created
+it, and opening it as anybody else answers `StoreError.BoundElsewhere`
+(ADR-0325). `eraseGenerations` is the verb a person invokes to be rid of a copy
+that is not theirs; nothing erases on its own. A store cannot be opened without
+an account, and one that names no server or principal is refused with
+`StoreError.Unaddressable` rather than addressed.
 
 Opening replays a durable log into one `Y.Doc`. After that every read is a
 property access on a document already in memory, so nothing below returns a
@@ -75,9 +74,9 @@ promise.
 Opening one address twice in a process is refused with
 `StoreError.AlreadyOpen`. Two opens would be two `Y.Doc`s of one document that
 cannot see each other's writes, so they would converge through storage under
-last-writer-wins and quietly lose one side's work. The local document and
-each account's replica are different documents, so any number of them may be
-open at once.
+last-writer-wins and quietly lose one side's work. Two generations, and two
+applications' replicas of one data id, are different addresses, so any number
+of them may be open at once.
 
 ## The surface
 

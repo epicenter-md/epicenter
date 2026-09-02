@@ -8,11 +8,9 @@ type PrincipalId = Extract<
 
 import type { ReplicaData } from '@epicenter/data';
 import {
-	createGeneration,
-	GENERATIONS_ROUTE,
-	newestGeneration,
+	type DatabaseAccount,
 	openDatabase,
-	type ReplicaDocument,
+	resolveGeneration,
 } from '@epicenter/data/browser';
 import {
 	attachStoreSync,
@@ -20,6 +18,10 @@ import {
 	type SyncConnectionStatus,
 } from '@epicenter/data/sync';
 import { vocabDefinition } from '@epicenter/vocab';
+
+/** The application this opens its store as, self-claimed (ADR-0324, ADR-0334). */
+const APP_ID = 'so.epicenter.vocab';
+
 import { reportBackgroundError } from './report.js';
 
 export type OpenVocabRuntimeOptions = {
@@ -145,13 +147,9 @@ async function openAccountRuntime({
 }): Promise<AccountRuntime> {
 	const generation = await resolveAccountGeneration(auth, principalId);
 	const opened = await openDatabase(vocabDefinition, {
+		appId: APP_ID,
 		generation,
-		account: {
-			baseURL: auth.connection.baseURL,
-			principalId,
-			fetch: (input: Request | string | URL, init?: RequestInit) =>
-				auth.fetch(input, init),
-		},
+		account: vocabAccount(auth, principalId),
 	});
 	if (opened.error !== null) throw opened.error;
 	const data = opened.data;
@@ -191,42 +189,29 @@ async function openAccountRuntime({
 }
 
 /**
- * The account generation this device opens: its own newest copy, or the
- * account's newest. Never creates one.
+ * The generation this device opens: its own newest copy, or the account's, and
+ * a mint only when the account holds none (ADR-0292, ADR-0293).
  */
 async function resolveAccountGeneration(
 	auth: AuthClient,
 	principalId: PrincipalId,
 ): Promise<number> {
-	const newest = await newestGeneration(vocabDefinition.id, {
+	const resolved = await resolveGeneration(vocabDefinition, {
+		appId: APP_ID,
+		account: vocabAccount(auth, principalId),
+	});
+	if (resolved.error !== null) throw resolved.error;
+	return resolved.data.generation;
+}
+
+/** The account half of every call in this file, spelled once. */
+function vocabAccount(
+	auth: AuthClient,
+	principalId: PrincipalId,
+): DatabaseAccount {
+	return {
 		baseURL: auth.connection.baseURL,
 		principalId,
-	});
-	if (newest !== undefined) return newest;
-	const listed = await auth.fetch(
-		GENERATIONS_ROUTE.collection(auth.connection.baseURL, vocabDefinition.id),
-	);
-	if (!listed.ok) {
-		throw new Error(
-			`Vocab could not ask your account which entries it holds (${listed.status}).`,
-		);
-	}
-	const { generations } = (await listed.json()) as { generations: number[] };
-	const latest = generations.at(-1);
-	if (latest !== undefined) return latest;
-	// An EMPTY list is a first run, not a refusal, and the distinction is the
-	// listing itself: a failed one already threw above. Creating the account's
-	// first generation is an import of an empty folder (ADR-0293), which is the
-	// only way one ever comes into being; what a device must not do is invent
-	// one because it could not SEE what the account has.
-	const created = await createGeneration(vocabDefinition, {
-		account: {
-			baseURL: auth.connection.baseURL,
-			principalId,
-			fetch: (input: Request | string | URL, init?: RequestInit) =>
-				auth.fetch(input, init),
-		},
-	});
-	if (created.error !== null) throw created.error;
-	return created.data.generation;
+		fetch: (input, init) => auth.fetch(input, init),
+	};
 }
