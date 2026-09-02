@@ -9,9 +9,11 @@
   (the file a store needs),
   [ADR-0177](0177-a-browser-replica-is-owned-by-a-storage-partition-and-origin-pair.md)
   (a WebView is a storage partition and origin pair).
-- Evidence: `packages/data/evidence/browser/sync-access-handle.ts`,
-  `packages/data/evidence/browser/durable-store.ts`,
-  `apps/honeycrisp/evidence/runs-on-the-new-store.ts`.
+- Evidence: `packages/data/evidence/browser/sync-access-handle.ts` and
+  `packages/data/evidence/browser/durable-store/main.ts`. The Honeycrisp
+  browser scripts that drove the same claim through the application are
+  deleted: an account is required (ADR-0336), so a fresh browser context meets
+  the sign-in gate and never reaches a note.
 
 ## Context
 
@@ -89,6 +91,7 @@ The store gains `onCommitted` beside `onLocalWork`. They are not
 interchangeable: the transport must not be nudged by bytes that arrived from a
 peer, and durability must not ignore them.
 
-`evidence/browser/durable-store.ts` runs the whole thing across a real reload
-with three controls, and `apps/honeycrisp/evidence/runs-on-the-new-store.ts`
-does the same through the real application.
+`packages/data/evidence/browser/durable-store/main.ts` runs the whole thing
+across a real reload with three controls. The Honeycrisp script that did the
+same through the real application is deleted, because an account is required
+now (ADR-0336) and a fresh browser context stops at the sign-in gate.

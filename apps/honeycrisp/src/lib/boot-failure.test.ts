@@ -1,82 +1,67 @@
 import { describe, expect, test } from 'bun:test';
-import { bootFailureMessage } from './boot-failure.js';
+import { bootFailure } from './boot-failure.js';
 
 /**
  * The seam between what the store says and what a person reads.
  *
  * The point of these is not the wording, which will change. It is that a boot
  * failure never reaches a person as library vocabulary, and that a failure with
- * a specific repair says the repair rather than "restart".
+ * a specific repair offers that repair rather than the one button that fits
+ * everything.
  */
-describe('bootFailureMessage', () => {
-	test('a refused credential says to sign in again, where signing in is the repair', () => {
-		expect(
-			bootFailureMessage({ name: 'CredentialRefused', message: 'x' }, 'account'),
-		).toMatch(/sign in again/i);
-		// The same failure on the local store has no sign-in to offer, so it
-		// names the repair that exists instead of one that does not.
-		expect(
-			bootFailureMessage({ name: 'CredentialRefused', message: 'x' }, 'local'),
-		).toMatch(/restarting honeycrisp/i);
+describe('bootFailure', () => {
+	test('a link that names nothing sends them to the notes that exist', () => {
+		// A route hands the store `Number(params.generation)`, so a hand-edited
+		// or truncated link arrives as NaN. Trying again reopens the same URL, so
+		// offering a retry is the one answer that cannot work.
+		for (const name of ['Unaddressable', 'GenerationNotFound']) {
+			expect(bootFailure({ name }).repair).toBe('go-to-notes');
+		}
 	});
 
-	test('an address that cannot be built points at the notes that exist, never at a restart', () => {
-		// A route hands the store `Number(params.generation)`, so a hand-edited
-		// or truncated link arrives as NaN. Restarting reopens the same URL, so
-		// naming it as the repair is the one answer that cannot work.
-		for (const store of ['local', 'account'] as const) {
-			const message = bootFailureMessage(
-				{ name: 'Unaddressable', message: 'internal' },
-				store,
-			);
-			expect(message).toMatch(/that link/i);
-			expect(message).not.toMatch(/restart/i);
-		}
+	test('a copy belonging to another account offers the erase and nothing else', () => {
+		// Nothing is deleted as a step in a protocol (ADR-0325, ADR-0281). The
+		// screen is where a person is told they may, and the sentence says both
+		// ways out.
+		const failure = bootFailure({ name: 'BoundElsewhere' });
+		expect(failure.repair).toBe('erase');
+		expect(failure.message).toMatch(/different account/i);
+		expect(failure.message).toMatch(/sign in as that account/i);
 	});
 
 	test('a second window says to close the other one', () => {
 		expect(
-			bootFailureMessage({
+			bootFailure({
 				name: 'AlreadyOpen',
-				message: 'This process already has epicenter/x/local open',
-			}),
+				message: 'This process already has epicenter/v4/x/y/1 open',
+			}).message,
 		).toMatch(/another honeycrisp window/i);
 	});
 
 	test('an unrecognized failure admits it rather than inventing a reason', () => {
-		const error = {
-			name: 'UnknownFailure',
-			message: 'The store could not be opened',
-		};
-		expect(bootFailureMessage(error, 'local')).toMatch(/something went wrong/i);
-		expect(bootFailureMessage(error, 'account')).toMatch(
-			/something went wrong/i,
-		);
-		// When the account copy is the one that failed, it still tells them their
-		// notes are safe, which is the one thing somebody staring at a failed
-		// boot actually wants to know. The local arm cannot say that, because the
-		// copy on this device is the thing that would not open.
-		expect(bootFailureMessage(error, 'account')).toMatch(
-			/still available/i,
-		);
-		expect(bootFailureMessage(error, 'local')).toMatch(
-			/restarting honeycrisp/i,
-		);
+		expect(
+			bootFailure({
+				name: 'UnknownFailure',
+				message: 'The store could not be opened',
+			}).message,
+		).toMatch(/something went wrong/i);
 	});
 
 	test('no arm leaks store vocabulary to a person', () => {
 		const machineWords =
-			/replica|authority|database|document|log|head|dial|socket|struct|principal|projection/i;
+			/replica|authority|database|document|log|head|dial|socket|struct|principal|projection|binding|generation/i;
 		for (const error of [
 			{ name: 'AlreadyOpen' },
 			{ name: 'Unaddressable' },
-			{ name: 'CredentialRefused' },
+			{ name: 'BoundElsewhere' },
+			{ name: 'GenerationNotFound' },
+			{ name: 'GenerationUnavailable' },
 			{ name: 'UnknownFailure' },
 			new Error('boom'),
 			'not an object',
 			null,
 		]) {
-			expect(bootFailureMessage(error)).not.toMatch(machineWords);
+			expect(bootFailure(error).message).not.toMatch(machineWords);
 		}
 	});
 });

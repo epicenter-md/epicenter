@@ -11,28 +11,17 @@
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
-	import StoreSwitcher from './StoreSwitcher.svelte';
 
 	let {
 		syncStatus,
-		storeLabel,
-		otherStoreLabel,
-		otherStoreHref,
 	}: {
-		syncStatus?: () => SyncConnectionStatus | undefined;
-		storeLabel: 'On this device' | 'Across your devices';
-		otherStoreLabel: 'On this device' | 'Across your devices';
-		otherStoreHref: '/device' | '/account';
+		syncStatus: () => SyncConnectionStatus | undefined;
 	} = $props();
 
 	const honeycrisp = getHoneycrisp();
 	let sync = $state.raw<SyncConnectionStatus | undefined>(undefined);
 
 	$effect(() => {
-		if (syncStatus === undefined) {
-			sync = undefined;
-			return;
-		}
 		sync = syncStatus();
 		const timer = setInterval(() => {
 			sync = syncStatus();
@@ -47,11 +36,6 @@
 		<div class="flex items-center justify-between px-2 py-1">
 			<div class="flex min-w-0 items-center gap-1">
 				<span class="text-sm font-semibold">Honeycrisp</span>
-				<StoreSwitcher
-					label={storeLabel}
-					otherLabel={otherStoreLabel}
-					otherHref={otherStoreHref}
-				/>
 			</div>
 			<div class="flex items-center gap-1">
 				<LightSwitch variant="ghost" />

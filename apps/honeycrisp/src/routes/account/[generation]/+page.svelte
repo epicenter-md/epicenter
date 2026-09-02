@@ -38,15 +38,10 @@
 	<AccountGate />
 {:else}
 	{#await db.ready}
-		<Loading class="h-dvh" label="Opening notes across your devices…" />
+		<Loading class="h-dvh" label="Opening your notes…" />
 	{:then { data, syncStatus }}
 		<HoneycrispProvider {data}>
-			<StoreShell
-				storeLabel="Across your devices"
-				otherStoreLabel="On this device"
-				otherStoreHref="/device"
-				{syncStatus}
-			/>
+			<StoreShell {syncStatus} />
 		</HoneycrispProvider>
 	{:catch error}
 		<AccountGate {error} />

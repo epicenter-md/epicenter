@@ -12,26 +12,26 @@ Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL
 
 ### Layout
 
-Single-SPA SvelteKit app with `/device` and `/account` destinations. Both use
-the same three-pane layout: sidebar (folders) → note list → editor. SSR is
-disabled; the app runs entirely in the browser as a static site.
+Single-SPA SvelteKit app with one destination, `/account`. Three panes:
+sidebar (folders) → note list → editor. SSR is disabled; the app runs entirely
+in the browser as a static site.
 
 ### Data layer
 
 Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/data/index.ts`) and opens it as a store the app owns:
 
 ```txt
-resolveLocalGeneration()                                  which number, once
-openLocalDatabase(generation)                             local database
-openAccountDatabase({ auth, generation })                 account replica
+resolveAccountGeneration(auth, principalId)               which number, once
+openAccountDatabase({ auth, generation })                 the store
+eraseNotesOnThisDevice()                                  the one deleting verb
 data.tables.notes.rows                                    synchronous from here on
 ```
 
 The definition names the application and the route names which exact generation
-of it (ADR-0229, ADR-0292). `/device` and `/account` resolve a number and
-redirect; `/device/[generation]` and `/account/[generation]` open it. Each route
-owns one store, and nothing falls back to the other route's
-data.
+of it (ADR-0229, ADR-0292). `/account` resolves a number and redirects;
+`/account/[generation]` opens it. The store lives at
+`epicenter/v4/so.epicenter.honeycrisp/so.epicenter.honeycrisp/<n>`: the opening
+application, the data id, then the number (ADR-0324).
 The document shape is the shared `app`/`kv`/`tables:<name>` grammar in
 [ADR-0257](../../docs/adr/0257-the-application-document-has-named-kv-and-table-roots.md).
 
@@ -39,10 +39,9 @@ Every build opens its own store, with no platform seam, and reaches one
 authority per signed-in account (ADR-0225/0226). The desktop host serves
 Honeycrisp's bundle and brokers its credential; it owns none of its data.
 
-**Reads are synchronous after opening.** A route opens its store by replaying a
-durable log into one `Y.Doc`, then `data.tables.notes.rows` returns rows, not
-a promise. An account route may wait for a fresh replica's first binding while
-the device route remains independently usable.
+**Reads are synchronous after opening.** The route opens its store by replaying
+a durable log into one `Y.Doc`, then `data.tables.notes.rows` returns rows, not
+a promise.
 
 **Nothing polls and nothing refreshes.** `data.tables.notes.subscribe(...)`
 reports which rows a commit touched, for a local write and for bytes that
@@ -71,12 +70,18 @@ Normal deletion is soft deletion: the note row gets a `deletedAt` timestamp and 
 
 ### Auth and sync
 
-The device destination works completely signed out. The account destination
-requires sign-in and shows its own gate; it never silently shows device data.
-Signing in opens the account replica and attaches sync, and that is the whole
-of the sharing model. Every device signed into one account dials one authority
+Signing in comes before the notes, because an authority mints every generation
+(ADR-0336): there is no signed-out notebook to fall back to, and `AccountGate`
+is what a signed-out person meets. Signing in opens the store and attaches
+sync, and that is the whole of the sharing model. Every device signed into one
+account dials one authority
 (`principals/<id>/data/so.epicenter.honeycrisp`) and converges; there is
 nothing to pair, invite, or approve.
+
+A store records the account it was created for and refuses to open as anybody
+else (ADR-0325). When somebody else's notes are still on the device,
+`AccountGate` says so and offers two ways out: sign in as that account, or
+erase this device's copy. Nothing is deleted until a person confirms it.
 
 `src/lib/sync.ts` is Honeycrisp's entire share of the transport: a URL.
 Reconnecting on close, reconnecting when the client is stuck behind a gap,
@@ -88,7 +93,7 @@ transport (ADR-0222).
 
 ## Workspace schema
 
-**Workspace ID:** `epicenter-honeycrisp`
+**Data ID:** `so.epicenter.honeycrisp`
 
 ### Tables
 
@@ -153,13 +158,11 @@ To run Honeycrisp the way it ships, start the host: `bun dev:epicenter`. Honeycr
 
 ### Checking it actually works
 
-```bash
-bun run --cwd apps/honeycrisp evidence:runs   # against a running dev:web
-```
-
-Drives the real app in a real browser: make a note, type text into it, reload,
-and assert both survived. The reload is the point: the live Yjs document dies
-with the page, and IndexedDB holds what has to outlive it.
+There is no browser evidence script here. The two that existed drove a fresh
+Chromium at `/device` and `/account` and asserted a note survived a reload;
+both stop at the sign-in gate now, and neither can hold an account. What still
+proves the durability claim is `packages/data/evidence/browser/durable-store/`,
+which drives the store itself across a real reload.
 
 ### Manual two-client check
 

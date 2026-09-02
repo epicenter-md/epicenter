@@ -5,29 +5,32 @@ note's body is the node on its note row inside that same document
 (ADR-0295, ADR-0309). The one application running on the store today, so it is also the
 reference for how an app is built.
 
-Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0295](../../docs/adr/0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) (a database is one Yjs document and a row holds its rich content), [ADR-0292](../../docs/adr/0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) (a database opens an exact generation cache-first), [ADR-0261](../../docs/adr/0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md) (a retained replica is qualified by its application, server URL, and verified principal), [ADR-0256](../../docs/adr/0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md) (automatic folding is current; manual workspace compaction is deferred).
+Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0295](../../docs/adr/0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) (a database is one Yjs document and a row holds its rich content), [ADR-0292](../../docs/adr/0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) (a database opens an exact generation cache-first), [ADR-0336](../../docs/adr/0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) (an authority mints every generation, so every store has an account), [ADR-0324](../../docs/adr/0324-a-database-address-is-its-data-id-and-generation-and-the-definition-declares-its-authority.md) (the address is the application, the data id, and the generation), [ADR-0256](../../docs/adr/0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md) (automatic folding is current; manual workspace compaction is deferred).
 
 ## A generation is the address, and a route resolves it once
 
 `src/lib/databases.ts` is the only place that opens a store, and every open
-takes an EXACT generation (ADR-0292). `/device` and `/account` resolve one and
-redirect; `/device/[generation]` and `/account/[generation]` open it.
+takes an EXACT generation (ADR-0292). `/account` resolves one and redirects;
+`/account/[generation]` opens it.
 
 ```text
-epicenter/v3/so.epicenter.honeycrisp/local/gen/<n>
-epicenter/v3/so.epicenter.honeycrisp/account/<base URL>/<principal id>/gen/<n>
+epicenter/v4/so.epicenter.honeycrisp/so.epicenter.honeycrisp/<n>
 ```
 
-`resolveLocalGeneration` takes the newest copy this device holds and imports an
-empty one if it holds none; `resolveAccountGeneration` takes the newest local
-copy and otherwise asks the account which exist. Only the local resolver ever
-CREATES one: an account generation is the account's, and a device arriving
-second must not invent a history for it.
+The first segment after the version is the OPENING application and the second
+is the data id (ADR-0324). They are the same string here because Honeycrisp
+names its notes after itself, which is a coincidence and not an identity.
+`APP_ID` in `src/lib/databases.ts` is that first segment, self-claimed, because
+a deployed app is a trusted app (ADR-0334).
+
+`resolveAccountGeneration` takes the newest copy this device holds and otherwise
+asks the account which exist. It creates one only when the account's list comes
+back EMPTY, which is a first run: a device that could not SEE what the account
+has must not invent a history for it.
 
 Opening is cache-first and never waits on a socket. A device holding a copy is
-usable offline; one that holds none of an account's fetches the generation
-whole before returning, so a fresh account never renders empty while its state
-is arriving.
+usable offline; one that holds none fetches the generation whole before
+returning, so a fresh account never renders empty while its state is arriving.
 
 `createHoneycrisp` turns the one route-owned data capability into the reactive
 application object the UI consumes. It adapts that document into
@@ -39,8 +42,7 @@ passed separately by the account route for the sidebar's status line.
 
 A permanent credential refusal costs sync, not the notes: the store opened
 from local state before a socket was attempted, and the sidebar's status line
-goes quiet. It never falls back to device data. Importing between the local
-and account databases is deliberately deferred as a future explicit feature.
+goes quiet.
 
 ## Three builds, one store shape
 
@@ -77,13 +79,13 @@ only the default one is checked by an editor.
   standalone bundle and the hosted build are two stores on one machine, and
   nothing moves between them. Two devices converge by signing into the same
   account, not by copying a file.
-- Do not copy, merge, or promote the local document into an account replica,
-  in either direction. Nothing in sync may name the local document; a copy
-  action, if the product ever wants one, is an explicit application feature.
-- Do not fall back to the local database when an account one cannot open. A
-  signed-in generation with no usable principal says so; one that is missing
-  or unreachable says which, because a retry fixes the second and never the
-  first (`boot-failure.ts`).
+- Do not reintroduce a second notebook. There is one store, because an
+  authority mints every generation (ADR-0336); a signed-out person meets the
+  sign-in gate rather than an empty local notebook, and `bootFailure`
+  writes one set of sentences rather than choosing between two.
+- Do not soften a boot failure into one message. A generation that is missing
+  and one that is unreachable say which, because a retry fixes the second and
+  never the first (`boot-failure.ts`).
 - Do not open a generation the route did not resolve. A number in a URL is an
   address, not an instruction to allocate: `openDatabase` refuses a miss with
   `GenerationNotFound` rather than inventing an empty database at whatever

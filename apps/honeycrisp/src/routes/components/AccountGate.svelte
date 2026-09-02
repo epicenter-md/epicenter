@@ -1,38 +1,120 @@
 <script lang="ts">
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
-	import { Button } from '@epicenter/ui/button';
-	import { Link } from '@epicenter/ui/link';
-	import { resolve } from '$app/paths';
+	import * as AlertDialog from '@epicenter/ui/alert-dialog';
+	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import { extractErrorMessage } from 'wellcrafted/error';
+	import { resolve } from '$app/paths';
 	import { auth } from '#platform/auth';
-	import { bootFailureMessage } from '$lib/boot-failure.js';
+	import { bootFailure } from '$lib/boot-failure.js';
+	import { eraseNotesOnThisDevice } from '$lib/databases.js';
 
 	let { error = undefined }: { error?: unknown } = $props();
+
+	// One decision, made in `bootFailure`: the sentence and the control below it
+	// are the same answer, so nothing here re-reads the error to pick a verb.
+	const failure = $derived(error === undefined ? undefined : bootFailure(error));
+
+	let confirmingErase = $state(false);
+	let erasing = $state(false);
+	/**
+	 * What the erase itself failed with, which is not what brought a person
+	 * here.
+	 *
+	 * Its own state rather than reassigning `error`, because `error` is the
+	 * boot's and the gate keeps saying why they are looking at this screen. The
+	 * usual value is another window holding the notes open, which
+	 * `eraseGenerations` refuses whole rather than half-doing, so this line is
+	 * the only place a person learns nothing was deleted.
+	 */
+	let eraseFailure = $state<string | undefined>(undefined);
+
+	async function erase() {
+		erasing = true;
+		eraseFailure = undefined;
+		try {
+			await eraseNotesOnThisDevice();
+			// Replaced rather than reloaded: this page's URL names the generation
+			// that just stopped existing, and reloading it would meet a miss and a
+			// second failure screen. `/account` resolves what this account has, and
+			// a document navigation is what the layout's reload gate wants anyway.
+			location.replace(resolve('/account'));
+		} catch (cause) {
+			eraseFailure = bootFailure(cause).message;
+		} finally {
+			erasing = false;
+		}
+	}
 </script>
 
 <div class="flex h-dvh items-center justify-center p-6 text-center">
 	<div class="flex max-w-sm flex-col items-center gap-4">
 		<div class="space-y-2">
-			<h1 class="text-lg font-semibold">Across your devices</h1>
+			<h1 class="text-lg font-semibold">Honeycrisp</h1>
 			<p class="text-sm text-muted-foreground">
-				{error
-					? bootFailureMessage(error, 'account')
-					: 'Sign in to open the notes that follow you across your devices.'}
+				{failure?.message ?? 'Sign in to open your notes.'}
 			</p>
-			{#if error}
+			{#if error !== undefined}
 				<p class="text-xs text-muted-foreground/70">{extractErrorMessage(error)}</p>
 			{/if}
 		</div>
 
-		<AccountPopover
-			{auth}
-			syncNoun="notes"
-		>
-			{#snippet trigger({ props })}
-				<Button {...props} size="lg">
-					{error ? 'Reconnect' : 'Sign in to continue'}
+		{#if failure?.repair === 'go-to-notes'}
+			<Button size="lg" onclick={() => location.replace(resolve('/account'))}>
+				Go to your notes
+			</Button>
+		{:else if failure?.repair === 'retry'}
+			<Button size="lg" onclick={() => location.reload()}>Try again</Button>
+		{:else if failure?.repair === 'erase'}
+			<div class="flex flex-col items-center gap-2">
+				<!--
+					Sign OUT, because they are signed in: as the account that cannot
+					open these notes. The popover's signed-in branch offers exactly
+					this, and labelling it "Sign in as that account" would name a
+					button that is not there.
+				-->
+				<AccountPopover {auth} syncNoun="notes">
+					{#snippet trigger({ props })}
+						<Button {...props} size="lg">Switch account</Button>
+					{/snippet}
+				</AccountPopover>
+				<Button
+					variant="ghost"
+					size="sm"
+					disabled={erasing}
+					onclick={() => (confirmingErase = true)}
+				>
+					Erase this device’s copy
 				</Button>
-			{/snippet}
-		</AccountPopover>
+				{#if eraseFailure !== undefined}
+					<p class="text-xs text-destructive">{eraseFailure}</p>
+				{/if}
+			</div>
+		{:else}
+			<AccountPopover {auth} syncNoun="notes">
+				{#snippet trigger({ props })}
+					<Button {...props} size="lg">Sign in to continue</Button>
+				{/snippet}
+			</AccountPopover>
+		{/if}
 	</div>
 </div>
+
+<AlertDialog.Root bind:open={confirmingErase}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Erase this device’s copy?</AlertDialog.Title>
+			<AlertDialog.Description>
+				Every note on this device will be deleted. Whatever had already
+				reached the account they belong to is still there; anything that had
+				not is gone. This action cannot be undone.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action
+				class={buttonVariants({ variant: 'destructive' })}
+				onclick={erase}>Erase</AlertDialog.Action
+			>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>

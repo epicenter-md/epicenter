@@ -31,9 +31,9 @@
 	<AccountGate />
 {:else}
 	{#await resolved}
-		<Loading class="h-dvh" label="Opening notes across your devices…" />
+		<Loading class="h-dvh" label="Opening your notes…" />
 	{:then}
-		<Loading class="h-dvh" label="Opening notes across your devices…" />
+		<Loading class="h-dvh" label="Opening your notes…" />
 	{:catch error}
 		<AccountGate {error} />
 	{/await}

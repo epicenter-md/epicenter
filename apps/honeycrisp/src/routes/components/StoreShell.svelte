@@ -9,16 +9,13 @@
 	import NoteList from './NoteList.svelte';
 	import HoneycrispSidebar from './Sidebar.svelte';
 
+	// Required, not optional. The optional half was for the device store, which
+	// had no sync at all; every store has an authority now (ADR-0336), and this
+	// still answers `undefined` while a connection is denied.
 	let {
-		storeLabel,
-		otherStoreLabel,
-		otherStoreHref,
 		syncStatus,
 	}: {
-		storeLabel: 'On this device' | 'Across your devices';
-		otherStoreLabel: 'On this device' | 'Across your devices';
-		otherStoreHref: '/device' | '/account';
-		syncStatus?: () => SyncConnectionStatus | undefined;
+		syncStatus: () => SyncConnectionStatus | undefined;
 	} = $props();
 
 	const honeycrisp = getHoneycrisp();
@@ -40,12 +37,7 @@
 />
 
 <SidebarProvider>
-	<HoneycrispSidebar
-		{syncStatus}
-		{storeLabel}
-		{otherStoreLabel}
-		{otherStoreHref}
-	/>
+	<HoneycrispSidebar {syncStatus} />
 
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">
