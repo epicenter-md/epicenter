@@ -50,7 +50,7 @@ export type ApiSessionReadError = InferErrors<typeof ApiSessionReadError>;
  * response parsing live here once. The same-origin cookie dashboard is the lone
  * non-bearer reader and keeps its own cookie-credentialed read.
  *
- * `baseURL` should already be normalized (see {@link normalizeInstanceUrl}).
+ * `baseURL` is the deployment's authority origin (ADR-0326), already canonical.
  */
 export async function readApiSession({
 	baseURL,

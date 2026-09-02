@@ -18,7 +18,6 @@ import { asPrincipalId } from '@epicenter/principal';
 import type { AuthFetch } from './auth-contract.ts';
 import {
 	createDesktopBrokerAuth,
-	createDesktopInstanceSetting,
 	readDesktopAuthBootstrap,
 } from './desktop-broker-auth.ts';
 
@@ -153,31 +152,6 @@ test('the self-hosted server projects its boot connection status', () => {
 
 	expect(auth.connection.baseURL).toBe('https://epicenter.example.com');
 	expect(auth.connection.status).toBe('connected');
-});
-
-test('instance writes go to the broker and never touch window storage', async () => {
-	const { calls, fetch } = recordingFetch(
-		() => new Response(null, { status: 202 }),
-	);
-	const setting = createDesktopInstanceSetting({
-		bootstrap,
-		brokerBaseURL: 'http://127.0.0.1:39130',
-		fetch,
-	});
-
-	expect(setting.read()).toEqual({ baseURL: 'https://api.epicenter.so' });
-	expect(setting.isDefault()).toBe(true);
-	await setting.write({
-		baseURL: 'https://epicenter.example.com',
-		token: 'instance_token_1234567890abcdef1234567890abcdef',
-	});
-	await setting.clear();
-
-	expect(calls.map((call) => call.url)).toEqual([
-		'http://127.0.0.1:39130/_epicenter/account/instance',
-		'http://127.0.0.1:39130/_epicenter/account/instance',
-	]);
-	expect(calls[1]?.init?.method).toBe('DELETE');
 });
 
 /**

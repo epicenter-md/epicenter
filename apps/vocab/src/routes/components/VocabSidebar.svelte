@@ -7,7 +7,6 @@
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import MessageSquareTextIcon from '@lucide/svelte/icons/message-square-text';
 	import TrashIcon from '@lucide/svelte/icons/trash';
-	import { instanceSetting } from '$lib/instance';
 	import { auth } from '$lib/platform/auth';
 	import { dictation } from '$lib/state/dictation.svelte';
 	import EntriesPanel from './EntriesPanel.svelte';
@@ -41,7 +40,6 @@
 					disabledReason={dictation.status !== 'idle'
 						? 'Finish dictating to change your account'
 						: undefined}
-					instanceConnect={{ appName: 'Vocab', setting: instanceSetting }}
 				/>
 			</div>
 		</div>

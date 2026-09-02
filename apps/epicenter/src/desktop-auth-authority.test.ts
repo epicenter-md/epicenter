@@ -2,19 +2,20 @@
  * Desktop Auth Authority Tests
  *
  * Verifies the Bun singleton's process-generation boundary without involving
- * WebViews or Tauri. The legacy keyring cell remains readable during the clean
- * break, while every new write uses the deployment-owned desktop record.
+ * WebViews or Tauri. The keychain cell is the serialized credential and
+ * nothing else: the deployment discriminator went with the second deployment
+ * kind (ADR-0325, ADR-0326).
  *
  * Key behaviors:
- * - Legacy persisted auth boots the hosted principal offline
+ * - A stored credential boots the hosted principal offline
  * - Host-owned authorization verifies once and stays outside every WebView
- * - Sign-out persists the next signed-out cell before requesting relaunch
+ * - Sign-out clears the cell before requesting relaunch
  */
 
 import { expect, test } from 'bun:test';
 import { createDesktopAuthAuthority } from './desktop-auth-authority.ts';
 
-const LEGACY_CELL = JSON.stringify({
+const STORED_CELL = JSON.stringify({
 	grant: {
 		accessToken: 'access-1',
 		refreshToken: 'refresh-1',
@@ -23,7 +24,7 @@ const LEGACY_CELL = JSON.stringify({
 	principalId: 'alice',
 });
 
-function setup(authCell: string | null = LEGACY_CELL) {
+function setup(authCell: string | null = STORED_CELL) {
 	const writes: Array<string | null> = [];
 	let relaunches = 0;
 	const authority = createDesktopAuthAuthority({
@@ -59,7 +60,7 @@ function setup(authCell: string | null = LEGACY_CELL) {
 	};
 }
 
-test('legacy keyring cell boots the hosted principal and authorizes after verification', async () => {
+test('a stored cell boots the hosted principal and authorizes after verification', async () => {
 	const { authority } = setup();
 	expect(authority.bootSnapshot.state.status).toBe('signed-in');
 	if (authority.bootSnapshot.state.status !== 'signed-in') {
@@ -78,98 +79,20 @@ test('legacy keyring cell boots the hosted principal and authorizes after verifi
 	});
 });
 
-test('sign-out stores the next hosted cell before requesting relaunch', async () => {
+test('sign-out clears the cell before requesting relaunch', async () => {
 	const runtime = setup();
 	const result = await runtime.authority.signOut();
 	expect(result.error).toBeNull();
-	expect(runtime.writes).toEqual([
-		JSON.stringify({
-			deployment: { kind: 'hosted' },
-			persistedAuth: null,
-		}),
-	]);
+	expect(runtime.writes).toEqual([null]);
 	expect(runtime.relaunches).toBe(1);
 });
 
-test('invalid or non-hosted cells boot hosted signed-out', () => {
+test('an unreadable cell boots signed-out', () => {
 	for (const authCell of [
 		'not-json',
-		JSON.stringify({
-			deployment: { kind: 'self-hosted' },
-			token: 'operator-token',
-		}),
+		'{"deployment":{"kind":"self-hosted"}}',
 	]) {
 		const { authority } = setup(authCell);
 		expect(authority.bootSnapshot.state).toEqual({ status: 'signed-out' });
 	}
-});
-
-test('self-hosted boot keeps the token in Bun and grants it after verification', async () => {
-	const token = 'a'.repeat(43);
-	const writes: Array<string | null> = [];
-	let relaunches = 0;
-	const authority = createDesktopAuthAuthority({
-		authCell: JSON.stringify({
-			deployment: {
-				kind: 'self-hosted',
-				baseURL: 'https://box.example/',
-			},
-			token,
-		}),
-		nativeAuthPort: {
-			completed: new Promise(() => undefined),
-			async storeAuth(serialized) {
-				writes.push(serialized);
-			},
-			async openAuthUrl() {},
-			relaunch() {
-				relaunches += 1;
-			},
-			onOAuthCallback() {
-				return () => false;
-			},
-		},
-		fetch: async (input, init) => {
-			expect(String(input)).toBe('https://box.example/api/session');
-			expect(new Headers(init?.headers).get('authorization')).toBe(
-				`Bearer ${token}`,
-			);
-			return Response.json({ principalId: 'instance' });
-		},
-	});
-
-	expect(authority.bootSnapshot.state.status).toBe('signed-in');
-	if (authority.bootSnapshot.state.status !== 'signed-in') {
-		throw new Error('Expected the self-hosted boot snapshot to be signed in.');
-	}
-	expect(String(authority.bootSnapshot.state.principalId)).toBe('instance');
-	expect({
-		connection: authority.bootSnapshot.connection,
-		networkEligible: authority.bootSnapshot.networkEligible,
-	}).toEqual({
-		connection: {
-			baseURL: 'https://box.example',
-			status: 'connecting',
-		},
-		networkEligible: false,
-	});
-	expect(await authority.authorize()).toEqual({
-		status: 'authorized',
-		accessToken: token,
-		tokenGeneration: 1,
-	});
-	await authority.selectInstance({
-		baseURL: 'next.example/',
-		token: 'b'.repeat(43),
-	});
-	expect(writes).toEqual([
-		JSON.stringify({
-			deployment: {
-				kind: 'self-hosted',
-				baseURL: 'https://next.example',
-			},
-			token: 'b'.repeat(43),
-		}),
-	]);
-	expect(relaunches).toBe(1);
 });

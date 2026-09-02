@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { InstanceSetting } from '@epicenter/auth';
 	import type { ReactiveAuthClient } from '@epicenter/auth/svelte';
 	import type { Snippet } from 'svelte';
 	import { Button } from '@epicenter/ui/button';
@@ -10,7 +9,6 @@
 	import CircleUser from '@lucide/svelte/icons/circle-user';
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import LogOut from '@lucide/svelte/icons/log-out';
-	import Server from '@lucide/svelte/icons/server';
 	import {
 		createMutation,
 		createQuery,
@@ -18,7 +16,6 @@
 	} from '@tanstack/svelte-query';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { resultMutationOptions, resultQueryOptions } from 'wellcrafted/query';
-	import InstanceSettingsModal from './instance-settings-modal.svelte';
 	import SignInPanel from './sign-in-panel.svelte';
 
 	const accountProfileQueryClient = new QueryClient({
@@ -41,7 +38,7 @@
 	 */
 	type AccountPopoverProps = {
 		/**
-		 * The app's auth client (from `createAppAuthClient()`). Its connection
+		 * The app's auth client. Its connection
 		 * supplies the selected server and live connection status.
 		 */
 		auth: ReactiveAuthClient;
@@ -67,19 +64,6 @@
 		 * every caller to remember.
 		 */
 		onForgetDevice?: () => void | Promise<void>;
-		/**
-		 * Self-host instance connect: what the settings modal needs to persist a
-		 * different server choice. The setting handle owns the write path and the
-		 * default-server distinction. Required: this popover is
-		 * the app's only auth surface (ADR-0088), so every app injects its
-		 * instance setting here.
-		 */
-		instanceConnect: {
-			/** The app's display name, woven into the modal's description. */
-			appName: string;
-			/** The shared instance setting handle this app injected. */
-			setting: InstanceSetting;
-		};
 		/** Optional replacement for the compact account icon trigger. */
 		trigger?: Snippet<[{ props: Record<string, unknown> }]>;
 	};
@@ -89,16 +73,10 @@
 		syncNoun,
 		onForgetDevice,
 		disabledReason,
-		instanceConnect,
 		trigger,
 	}: AccountPopoverProps = $props();
 
 	let popoverOpen = $state(false);
-	let instanceModalOpen = $state(false);
-	// Set for one close only, when the "configure instance" link hands off to the
-	// root-mounted modal, so the popover's close-autofocus yields to the dialog's
-	// own focus trap instead of fighting focus back to the now-hidden trigger.
-	let handingOffToModal = false;
 	let forgettingDevice = $state(false);
 	const isSignedIn = $derived(auth.state.status === 'signed-in');
 	// A page-reloading account change (sign in/out, forget device) is unsafe right
@@ -108,35 +86,6 @@
 	const accountCacheKey = $derived(
 		auth.state.status === 'signed-out' ? null : auth.state.principalId,
 	);
-	// A non-default server names a self-hosted box. The instance principal has no
-	// email, so the box host is the account label there.
-	const selfHosted = $derived(!instanceConnect.setting.isDefault());
-	const selfHostHost = $derived(
-		selfHosted ? new URL(auth.connection.baseURL).host : undefined,
-	);
-	// Optimistic boot (ADR-0075) leaves a self-host user signed-in even when the box
-	// is unreachable, so they usually never see the sign-in panel's connection copy.
-	// Surface both refusals here instead. `auth.state` says signed-in either way,
-	// because the instance principal is what addresses the local partition and a
-	// refused token does not change who you are; local work is unaffected, so this
-	// reads muted.
-	//
-	// The `rejected` arm used to be unreachable: a refused token also dropped
-	// `state` to signed-out, which revealed the sign-in panel. That coupling was a
-	// boot loop, because signed-in -> signed-out is a principal change and the
-	// reload gate reloads on it. Rejection is a connection fact now, and this is
-	// the surface that owns its words.
-	const instanceNotice = $derived.by(() => {
-		if (!selfHosted) return null;
-		switch (auth.connection.status) {
-			case 'unreachable':
-				return `Can't reach ${selfHostHost}. You're working locally; sync resumes when it's back.`;
-			case 'rejected':
-				return `${selfHostHost} rejected the saved token. Change the instance to repair sync.`;
-			default:
-				return null;
-		}
-	});
 	// Identity lives on the auth client: `state` carries the principal partition,
 	// and `getProfile()` reads presentational identity (the email) on demand.
 	// TanStack Query owns the reactive cache here, keyed by account, and
@@ -146,7 +95,7 @@
 			resultQueryOptions({
 				queryKey: ['account-profile', accountCacheKey],
 				queryFn: () => auth.getProfile(),
-				enabled: auth.state.status !== 'signed-out' && !selfHostHost,
+				enabled: auth.state.status !== 'signed-out',
 				staleTime: Infinity,
 			}),
 		() => accountProfileQueryClient,
@@ -193,12 +142,6 @@
 		if (signOut.isPending) return 'bg-warning animate-pulse';
 		return undefined;
 	});
-
-	function openInstanceModal() {
-		handingOffToModal = true;
-		popoverOpen = false;
-		instanceModalOpen = true;
-	}
 
 	function forgetDevice() {
 		if (!onForgetDevice) return;
@@ -251,45 +194,16 @@
 	<Popover.Content
 		class="w-80 p-0"
 		align="end"
-		onCloseAutoFocus={(e) => {
-			// The modal is a root-mounted sibling, so it survives this close; let
-			// its focus trap take focus instead of returning it to the hidden
-			// trigger and racing the dialog for it.
-			if (handingOffToModal) {
-				e.preventDefault();
-				handingOffToModal = false;
-			}
-		}}
 	>
 		{#if auth.state.status === 'signed-in'}
 			<div class="p-4 space-y-3">
 				<div class="space-y-1">
-					{#if selfHostHost}
-						<p class="text-sm font-medium">{selfHostHost}</p>
-						<p class="text-xs text-muted-foreground">Self-hosted instance</p>
-						{#if instanceNotice}
-							<p class="text-xs text-muted-foreground">{instanceNotice}</p>
-						{/if}
-					{:else}
-						<p class="text-sm font-medium">{accountLabel}</p>
-					{/if}
+					<p class="text-sm font-medium">{accountLabel}</p>
 				</div>
 				{#if disabledReason}
 					<p class="text-xs text-muted-foreground">{disabledReason}</p>
 				{/if}
 				<div class="border-t pt-3 flex gap-2">
-					{#if selfHostHost}
-						<Button
-							variant="outline"
-							size="sm"
-							class="flex-1"
-							onclick={openInstanceModal}
-							disabled={accountLocked}
-						>
-							<Server class="size-3.5" />
-							Change instance
-						</Button>
-					{/if}
 					<Button
 						variant="ghost"
 						size="sm"
@@ -322,21 +236,9 @@
 			</div>
 		{:else}
 			<div class="p-4">
-					<SignInPanel
-						{auth}
-						{syncNoun}
-						isSelfHosted={selfHosted}
-						{disabledReason}
-					onConfigure={openInstanceModal}
-				/>
+					<SignInPanel {auth} {syncNoun} {disabledReason} />
 			</div>
 		{/if}
 	</Popover.Content>
 </Popover.Root>
 
-<InstanceSettingsModal
-	bind:open={instanceModalOpen}
-	appName={instanceConnect.appName}
-	setting={instanceConnect.setting}
-	{disabledReason}
-/>

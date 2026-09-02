@@ -1,7 +1,3 @@
-export {
-	type CreateAppAuthClientOptions,
-	createAppAuthClient,
-} from './app-auth-client.js';
 export type {
 	AuthClient,
 	AuthFetch,
@@ -20,18 +16,13 @@ export {
 	resolveTargetUrl,
 } from './bearer-fetch.js';
 export {
-	type Instance,
-	InstanceUrlError,
-	normalizeInstanceUrl,
-} from './instance.js';
+	type CreateOAuthAppAuthConfig,
+	createOAuthAppAuth,
+} from './create-oauth-app-auth.js';
 export {
 	createInstanceCredentialAuthority,
 	type InstanceCredentialAuthority,
 } from './instance-credential-authority.js';
-export {
-	createInstanceSetting,
-	type InstanceSetting,
-} from './instance-setting.js';
 // The pure pieces of the single-partition instance bearer (self-host; ADR-0075):
 // `generateInstanceToken` mints a strong token (`gen-token`), `assertStrongToken`
 // is the boot entropy gate. They live here (not `@epicenter/server`) so a token

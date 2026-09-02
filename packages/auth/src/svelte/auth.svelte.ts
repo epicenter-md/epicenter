@@ -3,13 +3,10 @@ import type { Brand } from 'wellcrafted/brand';
 import { createDesktopBrokerAuth as createCoreDesktopBrokerAuth } from '../desktop-broker-auth.js';
 import {
 	type AuthClient,
-	type CreateAppAuthClientOptions,
 	type CreateSameOriginCookieAuthConfig,
-	createAppAuthClient as createCoreAppAuthClient,
 	createSameOriginCookieAuth as createCoreSameOriginCookieAuth,
+	createOAuthAppAuth,
 	createWebStoragePersistedAuthStorage,
-	type Instance,
-	type InstanceSetting,
 } from '../index.js';
 import { createBrowserOAuthLauncher } from '../oauth-launchers/index.js';
 
@@ -80,20 +77,6 @@ function reactiveAuthClient(auth: AuthClient): ReactiveAuthClient {
 }
 
 /**
- * Svelte 5 wrapper around `createAppAuthClient`: the one client-side choke point
- * that turns a persisted `Instance` into a hosted-OAuth or self-host-token
- * client (the branch is internal). Both branches carry a bearer, so the
- * returned reactive client can open the sync socket a signed-in app
- * generation dials with.
- */
-export function createAppAuthClient(
-	instance: Instance,
-	options: CreateAppAuthClientOptions,
-): ReactiveAuthClient {
-	return reactiveAuthClient(createCoreAppAuthClient(instance, options));
-}
-
-/**
  * Svelte 5 wrapper around `createSameOriginCookieAuth` (cookie client for a
  * browser app the API serves from its own origin, e.g. the dashboard). It
  * cannot drive database sync: `openWebSocket` denies permanently, because a
@@ -107,8 +90,6 @@ export function createSameOriginCookieAuth(
 
 /** Options for {@link createHostedBrowserRedirectAuth}: only what varies per app. */
 export type CreateHostedBrowserRedirectAuthOptions = {
-	/** The app's persisted instance setting: hosted default or a self-host token. */
-	instanceSetting: InstanceSetting;
 	/** Namespace for the persisted-auth storage key (`<namespace>.auth.persisted`). */
 	namespace: string;
 	/** This app's hosted OAuth client id (used by both the client and the launcher). */
@@ -135,41 +116,44 @@ export type CreateHostedBrowserRedirectAuthOptions = {
  * close; the real controls are the short access-token TTL, rotating refresh,
  * revocation, and CSP, per ADR-0079), a redirect launcher built from the
  * hosted constants (`${api}/auth` issuer, the `/auth/callback` redirect,
- * `api` as the resource, `sessionStorage` for the PKCE state), and the
- * persisted `Instance` fed to {@link createAppAuthClient}. Each app passes
+ * `api` as the resource, `sessionStorage` for the PKCE state). Each app passes
  * only what varies: its namespace, OAuth client id, the hosted API origin,
  * and an optional SvelteKit base path. The result is a reactive `AuthClient`
  * carrying a bearer, ready for signed-in database sync.
  *
+ * **The authority is `api`, and no runtime surface selects it** (ADR-0326).
+ * This build was made against one deployment and names it; there is no
+ * instance setting to read and no self-host token branch, because pointing an
+ * installed app at another server is what ADR-0325 refuses.
+ *
  * Redirect-only and hosted-only by construction: it owns no Tauri deep-link or
- * extension launcher and no self-host token branch. The self-host path still works
- * because `createAppAuthClient` reads it off the passed `instanceSetting` (a token
- * instance ignores the launcher); this factory only builds the browser launcher
- * the hosted branch needs. A Tauri app keeps its own deep-link launcher and uses
+ * extension launcher. A Tauri app keeps its own deep-link launcher and uses
  * this for its web build alone (ADR-0078).
  */
 export function createHostedBrowserRedirectAuth({
-	instanceSetting,
 	namespace,
 	clientId,
 	api,
 	basePath = '',
 	persistedStorage = window.localStorage,
 }: CreateHostedBrowserRedirectAuthOptions): ReactiveAuthClient {
-	return createAppAuthClient(instanceSetting.read(), {
-		clientId,
-		persistedAuthStorage: createWebStoragePersistedAuthStorage({
-			key: `${namespace}.auth.persisted`,
-			storage: persistedStorage,
-		}),
-		launcher: createBrowserOAuthLauncher({
-			issuer: `${api}/auth`,
+	return reactiveAuthClient(
+		createOAuthAppAuth({
+			baseURL: api,
 			clientId,
-			redirectUri: `${window.location.origin}${basePath}/auth/callback`,
-			resource: api,
-			storage: window.sessionStorage,
+			persistedAuthStorage: createWebStoragePersistedAuthStorage({
+				key: `${namespace}.auth.persisted`,
+				storage: persistedStorage,
+			}),
+			launcher: createBrowserOAuthLauncher({
+				issuer: `${api}/auth`,
+				clientId,
+				redirectUri: `${window.location.origin}${basePath}/auth/callback`,
+				resource: api,
+				storage: window.sessionStorage,
+			}),
 		}),
-	});
+	);
 }
 
 /**

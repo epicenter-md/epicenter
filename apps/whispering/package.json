@@ -30,10 +30,6 @@
 			"epicenter-host": "./src/lib/platform/auth.epicenter-host.ts",
 			"default": "./src/lib/platform/auth.browser.ts"
 		},
-		"#platform/instance": {
-			"epicenter-host": "./src/lib/platform/instance.epicenter-host.ts",
-			"default": "./src/lib/platform/instance.browser.ts"
-		},
 		"#platform/base-path": {
 			"epicenter-host": "./src/lib/platform/base-path.epicenter-host.ts",
 			"default": "./src/lib/platform/base-path.browser.ts"

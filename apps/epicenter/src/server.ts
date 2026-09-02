@@ -41,7 +41,6 @@ import {
 } from './mirror.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
-	ACCOUNT_INSTANCE_ROUTE,
 	ACCOUNT_PROFILE_ROUTE,
 	ACCOUNT_SIGN_IN_ROUTE,
 	ACCOUNT_SIGN_OUT_ROUTE,
@@ -244,30 +243,6 @@ export function createHomeServer({
 	app.post(ACCOUNT_SIGN_OUT_ROUTE.pattern, async (c) => {
 		const result = await desktopAuth.signOut();
 		if (result.error) return c.text('Sign-out failed', 500);
-		return c.body(null, 202);
-	});
-	app.post(ACCOUNT_INSTANCE_ROUTE.pattern, async (c) => {
-		const input = await readJsonObject(c.req.raw);
-		if (
-			input === null ||
-			Object.keys(input).some((key) => key !== 'baseURL' && key !== 'token') ||
-			typeof input.baseURL !== 'string' ||
-			typeof input.token !== 'string'
-		) {
-			return c.text('Bad Request', 400);
-		}
-		try {
-			await desktopAuth.selectInstance({
-				baseURL: input.baseURL,
-				token: input.token,
-			});
-			return c.body(null, 202);
-		} catch {
-			return c.text('Invalid instance', 400);
-		}
-	});
-	app.delete(ACCOUNT_INSTANCE_ROUTE.pattern, async (c) => {
-		await desktopAuth.selectHosted();
 		return c.body(null, 202);
 	});
 

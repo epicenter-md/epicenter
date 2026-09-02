@@ -1,4 +1,3 @@
-import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { Ok } from 'wellcrafted/result';
 import type {
 	AuthClient,
@@ -8,7 +7,6 @@ import type {
 } from './auth-contract.js';
 import { AuthError, OpenWebSocketDenied } from './auth-errors.js';
 import type { Principal } from './auth-types.js';
-import type { InstanceSetting } from './instance-setting.js';
 
 /**
  * Non-secret identity projection a desktop window boots with. The Bun
@@ -163,47 +161,5 @@ export function createDesktopBrokerAuth({
 			}).error;
 		},
 		[Symbol.dispose]() {},
-	};
-}
-
-/**
- * Project the immutable desktop server selection into the shared account UI.
- * Reads expose only the selected URL. Writes ask Bun to persist the next
- * process generation, so the self-hosted bearer never enters a WebView boot
- * snapshot or localStorage.
- */
-export function createDesktopInstanceSetting({
-	bootstrap,
-	brokerBaseURL,
-	fetch: fetchImpl = globalThis.fetch.bind(globalThis),
-}: {
-	bootstrap: DesktopAuthBootstrap;
-	brokerBaseURL: string;
-	fetch?: AuthFetch;
-}): InstanceSetting {
-	const broker = createDesktopBroker({ brokerBaseURL, fetch: fetchImpl });
-	const selected = { baseURL: bootstrap.connection.baseURL };
-	return {
-		read: () => selected,
-		isDefault: () => bootstrap.connection.baseURL === EPICENTER_API_URL,
-		write(next) {
-			if (next.token === undefined) {
-				throw new Error('A self-hosted Epicenter instance requires a token.');
-			}
-			return broker('/_epicenter/account/instance', {
-				baseURL: next.baseURL,
-				token: next.token,
-			});
-		},
-		clear() {
-			return fetchImpl(new URL('/_epicenter/account/instance', brokerBaseURL), {
-				method: 'DELETE',
-				credentials: 'include',
-			}).then((response) => {
-				if (!response.ok) {
-					throw new Error(`Desktop auth broker failed (${response.status}).`);
-				}
-			});
-		},
 	};
 }

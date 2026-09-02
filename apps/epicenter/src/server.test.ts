@@ -55,7 +55,6 @@ import { COMPILED_APPLICATIONS } from './applications.ts';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
-	ACCOUNT_INSTANCE_ROUTE,
 	ACCOUNT_PROFILE_ROUTE,
 	ACCOUNT_SIGN_OUT_ROUTE,
 	BOOKS_ROUTE,
@@ -822,22 +821,6 @@ describe('createHomeServer', () => {
 				headers: { cookie, origin },
 			});
 			expect(signedOut.status).toBe(202);
-
-			const invalidInstance = await fetch(ACCOUNT_INSTANCE_ROUTE.url(origin), {
-				method: 'POST',
-				headers: { cookie, origin, 'content-type': 'application/json' },
-				body: JSON.stringify({
-					baseURL: 'https://box.example',
-					token: 'too-short',
-				}),
-			});
-			expect(invalidInstance.status).toBe(400);
-
-			const hosted = await fetch(ACCOUNT_INSTANCE_ROUTE.url(origin), {
-				method: 'DELETE',
-				headers: { cookie, origin },
-			});
-			expect(hosted.status).toBe(202);
 		} finally {
 			await server.stop(true);
 		}

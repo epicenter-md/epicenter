@@ -8,7 +8,6 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { auth } from '#platform/auth';
-	import { instanceSetting } from '#platform/instance';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
@@ -59,7 +58,6 @@
 				<AccountPopover
 					{auth}
 					syncNoun="notes"
-					instanceConnect={{ appName: 'Honeycrisp', setting: instanceSetting }}
 				/>
 				<Sidebar.Trigger />
 			</div>

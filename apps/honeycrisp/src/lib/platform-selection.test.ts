@@ -71,10 +71,10 @@ describe('storage ownership', () => {
 		expect(Object.keys(imports)).not.toContain('#platform/application');
 	});
 
-	test('the host owns the deployment choice its build reads', async () => {
-		expect(await leafSource('#platform/instance', 'epicenter-host')).toContain(
-			'createDesktopInstanceSetting',
-		);
+	test('no seam selects an authority, and the host build reads the broker', async () => {
+		// The deployment names the authority (ADR-0326), so there is nothing to
+		// select at runtime and no `#platform/instance` to select it with.
+		expect(Object.keys(imports)).not.toContain('#platform/instance');
 		expect(await leafSource('#platform/auth', 'epicenter-host')).toContain(
 			'createDesktopBrokerAuth',
 		);

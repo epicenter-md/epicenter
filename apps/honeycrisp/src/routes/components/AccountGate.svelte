@@ -5,7 +5,6 @@
 	import { resolve } from '$app/paths';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '#platform/auth';
-	import { instanceSetting } from '#platform/instance';
 	import { bootFailureMessage } from '$lib/boot-failure.js';
 
 	let { error = undefined }: { error?: unknown } = $props();
@@ -28,7 +27,6 @@
 		<AccountPopover
 			{auth}
 			syncNoun="notes"
-			instanceConnect={{ appName: 'Honeycrisp', setting: instanceSetting }}
 		>
 			{#snippet trigger({ props })}
 				<Button {...props} size="lg">

@@ -9,7 +9,6 @@
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { NAV_ITEMS } from './nav-items';
 	import { auth } from '#platform/auth';
-	import { instanceSetting } from '#platform/instance';
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 
@@ -80,7 +79,6 @@
 					disabledReason={recordingActive.current
 						? 'Stop recording to change your account'
 						: undefined}
-					instanceConnect={{ appName: 'Whispering', setting: instanceSetting }}
 				/>
 			</Sidebar.MenuItem>
 

@@ -1,12 +1,9 @@
 import {
 	type AuthFetch,
 	type AuthState,
-	assertStrongToken,
 	type ConnectionStatus,
-	createInstanceCredentialAuthority,
 	createOAuthCredentialAuthority,
 	createSerializedPersistedAuthStorage,
-	normalizeInstanceUrl,
 } from '@epicenter/auth';
 import { createOAuthClient } from '@epicenter/auth/oauth-launchers';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
@@ -27,9 +24,16 @@ export type DesktopAuthBootSnapshot = {
 
 /**
  * Own the hosted desktop credential for one immutable process generation.
+ *
  * Windows receive only the boot snapshot and use same-origin account broker
  * operations that never expose a bearer. Account changes persist the next cell
  * and relaunch.
+ *
+ * **One authority, named by this build.** The desktop reaches the authority
+ * its bundle was built against and offers no way to point at another
+ * (ADR-0326). The keychain cell is therefore the serialized credential and
+ * nothing else: it carried a `deployment` discriminator only while a second
+ * kind existed to select, and selecting one is what ADR-0325 refused.
  */
 export function createDesktopAuthAuthority({
 	authCell,
@@ -40,14 +44,6 @@ export function createDesktopAuthAuthority({
 	nativeAuthPort: NativeAuthPort;
 	fetch?: AuthFetch;
 }) {
-	const record = readDesktopRecord(authCell);
-	if ('token' in record) {
-		return createSelfHostedDesktopAuthority({
-			fetch,
-			nativeAuthPort,
-			record,
-		});
-	}
 	const oauthTransaction = new Map<string, string>();
 	let queuedCallback: string | null = null;
 	let callbackWaiter: ((url: string) => void) | null = null;
@@ -80,9 +76,8 @@ export function createDesktopAuthAuthority({
 		{
 			fetch,
 			persistedAuthStorage: createSerializedPersistedAuthStorage({
-				initial: record.persistedAuth,
-				write: (serialized) =>
-					nativeAuthPort.storeAuth(writeHostedRecord(serialized)),
+				initial: authCell,
+				write: (serialized) => nativeAuthPort.storeAuth(serialized),
 			}),
 			launcher: {
 				async startSignIn() {
@@ -150,13 +145,6 @@ export function createDesktopAuthAuthority({
 			if (!result.error) nativeAuthPort.relaunch();
 			return result;
 		},
-		selectInstance(input: { baseURL: string; token: string }) {
-			return selectInstance(nativeAuthPort, input);
-		},
-		async selectHosted() {
-			await nativeAuthPort.storeAuth(writeHostedRecord(null));
-			nativeAuthPort.relaunch();
-		},
 		[Symbol.dispose]() {
 			stopCallbacks();
 			authority[Symbol.dispose]();
@@ -167,148 +155,3 @@ export function createDesktopAuthAuthority({
 export type DesktopAuthAuthority = ReturnType<
 	typeof createDesktopAuthAuthority
 >;
-
-type DesktopAuthRecord =
-	| {
-			deployment: { kind: 'hosted' };
-			persistedAuth: string | null;
-	  }
-	| {
-			deployment: { kind: 'self-hosted'; baseURL: string };
-			token: string;
-	  };
-
-function readDesktopRecord(authCell: string | null): DesktopAuthRecord {
-	if (authCell === null) {
-		return { deployment: { kind: 'hosted' }, persistedAuth: null };
-	}
-	try {
-		const value = JSON.parse(authCell) as unknown;
-		if (
-			typeof value === 'object' &&
-			value !== null &&
-			'deployment' in value &&
-			'persistedAuth' in value
-		) {
-			const record = value as {
-				deployment?: { kind?: unknown };
-				persistedAuth?: unknown;
-			};
-			if (record.deployment?.kind === 'hosted') {
-				return {
-					deployment: { kind: 'hosted' },
-					persistedAuth:
-						record.persistedAuth === null
-							? null
-							: JSON.stringify(record.persistedAuth),
-				};
-			}
-		}
-		if (
-			typeof value === 'object' &&
-			value !== null &&
-			'deployment' in value &&
-			'token' in value
-		) {
-			const record = value as {
-				deployment?: { kind?: unknown; baseURL?: unknown };
-				token?: unknown;
-			};
-			if (
-				record.deployment?.kind === 'self-hosted' &&
-				typeof record.deployment.baseURL === 'string' &&
-				typeof record.token === 'string'
-			) {
-				const normalized = normalizeInstanceUrl(record.deployment.baseURL);
-				if (!normalized.error) {
-					return {
-						deployment: {
-							kind: 'self-hosted',
-							baseURL: normalized.data,
-						},
-						token: assertStrongToken(record.token),
-					};
-				}
-			}
-		}
-		return { deployment: { kind: 'hosted' }, persistedAuth: authCell };
-	} catch {
-		return { deployment: { kind: 'hosted' }, persistedAuth: null };
-	}
-}
-
-function writeHostedRecord(serialized: string | null): string {
-	return JSON.stringify({
-		deployment: { kind: 'hosted' },
-		persistedAuth: serialized === null ? null : JSON.parse(serialized),
-	});
-}
-
-function createSelfHostedDesktopAuthority({
-	fetch,
-	nativeAuthPort,
-	record,
-}: {
-	fetch: AuthFetch;
-	nativeAuthPort: NativeAuthPort;
-	record: Extract<DesktopAuthRecord, { token: string }>;
-}) {
-	const authority = createInstanceCredentialAuthority(
-		{ fetch },
-		{ baseURL: record.deployment.baseURL, token: record.token },
-	);
-	const bootSnapshot = {
-		state: authority.snapshot.state,
-		connection: {
-			baseURL: record.deployment.baseURL,
-			status: authority.snapshot.connectionStatus,
-		},
-		networkEligible: authority.snapshot.networkEligible,
-	} satisfies DesktopAuthBootSnapshot;
-	return {
-		baseURL: record.deployment.baseURL,
-		bootSnapshot,
-		authorize() {
-			return authority.authorize();
-		},
-		reportRejected(tokenGeneration: number) {
-			authority.reportRejected(tokenGeneration);
-		},
-		async startSignIn() {
-			const result = await authority.startSignIn();
-			if (!result.error) nativeAuthPort.relaunch();
-			return result;
-		},
-		async signOut() {
-			await nativeAuthPort.storeAuth(writeHostedRecord(null));
-			nativeAuthPort.relaunch();
-			return Ok(undefined);
-		},
-		selectInstance(input: { baseURL: string; token: string }) {
-			return selectInstance(nativeAuthPort, input);
-		},
-		async selectHosted() {
-			await nativeAuthPort.storeAuth(writeHostedRecord(null));
-			nativeAuthPort.relaunch();
-		},
-		[Symbol.dispose]() {
-			authority[Symbol.dispose]();
-		},
-	};
-}
-
-async function selectInstance(
-	nativeAuthPort: NativeAuthPort,
-	input: { baseURL: string; token: string },
-) {
-	const normalized = normalizeInstanceUrl(input.baseURL);
-	if (normalized.error) throw new Error(normalized.error.message);
-	const token = assertStrongToken(input.token);
-	await nativeAuthPort.storeAuth(
-		JSON.stringify({
-			deployment: { kind: 'self-hosted', baseURL: normalized.data },
-			token,
-		}),
-	);
-	nativeAuthPort.relaunch();
-}
