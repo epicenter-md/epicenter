@@ -431,7 +431,11 @@ describe('the durable facts live in IndexedDB directly (ADR-0238)', () => {
 		}
 	});
 
-	test('the update log folds at the threshold instead of growing forever', async () => {
+	// Owed work only. The strong fold, a whole-document re-encode that realizes
+	// `gc: true`, needs rows the authority has given positions, and nothing
+	// here acknowledges. That case is untested and should not stay that way:
+	// this pins the bound, not the reclamation.
+	test('owed work collapses at the threshold instead of growing forever', async () => {
 		const database = databaseFor('fold');
 		const address = accountAddress(database.id, CLOUD, ALICE);
 		const local = expectOk(await openAccountData(database, ALICE));
