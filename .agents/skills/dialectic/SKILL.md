@@ -88,6 +88,13 @@ comparison, not a menu that gives the synthesis work back to the user. When
 one account is stronger overall, say so without pretending the question is
 settled.
 
+Vary them by where the person is standing and what they are trying to find out,
+never by which mechanism fires. Options that differ by a capability never left
+the implementation: the user reads them and has no reaction, because neither one
+is about them. Enumerating what the system could do is the easy move and it
+produces the weak pair. Ask instead where someone would be, and what they would
+be after, at the moment this matters.
+
 Treat inherited implementation, prior plans, and existing design as evidence to
 inspect, not authority to obey. Push through the user's initial framing by
 articulating what it implies, what it leaves unresolved, and what stronger
@@ -167,8 +174,13 @@ the user to restate one merely to prove comprehension.
 
 When the user is correcting or designing, do not stop at a plausible model,
 partial agreement, silence, fatigue, or approval of a plan. Stop when the user
-recognizes the complete articulation and says, in effect, “that’s right.” Return its shortest honest form. Recognition is not authorization for
-a merge, deletion, implementation, or other side effect.
+recognizes the complete articulation and says, in effect, “that’s right.”
+
+Then stop. Return its shortest honest form and nothing after it. Do not produce
+a remaining question, a next decision, or a small unowned thing to justify one
+more turn. Anything genuinely unresolved was raised while it mattered, not
+harvested at the end. Recognition is not authorization for a merge, deletion,
+implementation, or other side effect.
 
 For an accepted destination, hand it to
 [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) for backward
