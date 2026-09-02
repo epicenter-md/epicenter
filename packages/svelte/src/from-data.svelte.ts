@@ -76,7 +76,14 @@ import { createSubscriber, SvelteMap } from 'svelte/reactivity';
  */
 type AdaptableTable = {
 	readonly rows: unknown[];
-	readonly nonconforming: unknown[];
+	/**
+	 * Typed down to the id, because the projection holds these too.
+	 *
+	 * The one member this adapter reads off a row it cannot read, and the one
+	 * every `NonconformingRow` has whatever failed on it: the structural id is
+	 * not a declared field and cannot fail.
+	 */
+	readonly nonconforming: readonly { readonly id: string }[];
 	ids(): string[];
 	get(rowId: string): unknown;
 	subscribe(listener: (rowIds: readonly string[]) => void): () => void;
@@ -241,25 +248,48 @@ function reactivePersistence<TPersistence extends AdaptablePersistence>(
  * change while a component reading one row wakes only for that row. Nothing
  * here calls `createSubscriber`; the map IS the signal.
  *
- * `nonconforming` passes through and is NOT tracked. Rows this release cannot
- * read are absent from the projection by construction, so there is nothing
- * here to keep current, and the getter still answers correctly whenever it is
- * asked.
+ * **`nonconforming` is held beside `rows`, not passed through.** It used to
+ * be forwarded as the handle's own getter, which reads CRDT state and touches
+ * no signal, so a `$derived` over it was computed once at mount and never
+ * again. That was survivable while the only reader was an empty-state count.
+ * It is not survivable now: a push from the folder validates nothing
+ * (ADR-0338), so an ordinary edit moves a row between the two sets and both
+ * are on screen. One commit, one handler, both maps.
+ *
+ * The second map is filled only from the commits that empty a row out of
+ * `rows`, and it conforms the table once per such commit rather than once per
+ * id. A row leaving the readable projection is the rare case: a delete, or an
+ * edit that broke it.
  */
 function reactiveTable<TTable extends AdaptableTable>(
 	table: TTable,
 ): ReactiveTable<TTable> {
 	const rows = new SvelteMap<string, unknown>();
+	const unreadable = new SvelteMap<string, { readonly id: string }>();
 	for (const rowId of table.ids()) {
 		const row = table.get(rowId);
 		if (row !== undefined) rows.set(rowId, row);
 	}
+	for (const row of table.nonconforming) unreadable.set(row.id, row);
 
 	table.subscribe((rowIds) => {
+		// Conformed at most once for the whole commit, and only if something
+		// left `rows`: `get` collapses "no row here" and "a row this release
+		// cannot read" (ADR-0125), so telling them apart costs one pass and is
+		// worth paying only in the branch where one of the two happened.
+		let cannotRead: Map<string, { readonly id: string }> | undefined;
 		for (const rowId of rowIds) {
 			const row = table.get(rowId);
-			if (row === undefined) rows.delete(rowId);
-			else rows.set(rowId, row);
+			if (row !== undefined) {
+				rows.set(rowId, row);
+				unreadable.delete(rowId);
+				continue;
+			}
+			rows.delete(rowId);
+			cannotRead ??= new Map(table.nonconforming.map((one) => [one.id, one]));
+			const raw = cannotRead.get(rowId);
+			if (raw === undefined) unreadable.delete(rowId);
+			else unreadable.set(rowId, raw);
 		}
 	});
 
@@ -280,6 +310,12 @@ function reactiveTable<TTable extends AdaptableTable>(
 				get: {
 					enumerable: true,
 					value: (rowId: string) => rows.get(rowId),
+				},
+				nonconforming: {
+					enumerable: true,
+					get() {
+						return [...unreadable.values()];
+					},
 				},
 			},
 		),

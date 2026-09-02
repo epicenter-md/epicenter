@@ -59,13 +59,30 @@ import { fromData } from './from-data.svelte.js';
  */
 function createFakeTable<TRow extends { id: string }>(seed: TRow[]) {
 	const rows = new Map<string, TRow>(seed.map((row) => [row.id, row]));
+	/** Rows that are THERE and that this release cannot read (ADR-0125). */
+	const unreadable = new Map<string, { id: string; raw: TRow }>();
 	const listeners = new Set<(rowIds: readonly string[]) => void>();
-	const calls = { rows: 0, get: 0, subscribe: 0 };
+	const calls = { rows: 0, get: 0, subscribe: 0, nonconforming: 0 };
 	const announce = (rowId: string) => {
 		for (const listener of listeners) listener([rowId]);
 	};
 	return {
 		calls,
+		/** The row stays, and stops reading: what a folder push can now cause. */
+		breakRow(rowId: string) {
+			const row = rows.get(rowId);
+			if (row === undefined) return;
+			rows.delete(rowId);
+			unreadable.set(rowId, { id: rowId, raw: row });
+			announce(rowId);
+		},
+		repairRow(rowId: string) {
+			const broken = unreadable.get(rowId);
+			if (broken === undefined) return;
+			unreadable.delete(rowId);
+			rows.set(rowId, broken.raw);
+			announce(rowId);
+		},
 		handle: {
 			create(fields: Omit<TRow, 'id'>) {
 				const row = { id: `row-${rows.size + 1}`, ...fields } as TRow;
@@ -89,14 +106,15 @@ function createFakeTable<TRow extends { id: string }>(seed: TRow[]) {
 				if (removed) announce(rowId);
 			},
 			ids() {
-				return [...rows.keys()].sort();
+				return [...rows.keys(), ...unreadable.keys()].sort();
 			},
 			get rows() {
 				calls.rows += 1;
 				return [...rows.values()];
 			},
 			get nonconforming() {
-				return [];
+				calls.nonconforming += 1;
+				return [...unreadable.values()];
 			},
 			watch() {
 				return () => undefined;
@@ -317,4 +335,43 @@ test('flush passes through untouched', async () => {
 	// Not a read, so the adapter has no business wrapping it: the capability's
 	// own function is the one that must be reachable.
 	await expect(reactive.persistence.flush()).resolves.toBeUndefined();
+});
+
+test('a row that stops reading moves into nonconforming on the commit that broke it', () => {
+	const { notes, reactive } = setup();
+	const table = reactive.tables.notes;
+	expect(table.rows.map((row) => row.id)).toEqual(['n1']);
+	expect(table.nonconforming).toEqual([]);
+
+	// What a folder push can now cause: the row is there and this release
+	// cannot read it (ADR-0125, ADR-0338). Both halves are on screen, so both
+	// halves are held.
+	notes.breakRow('n1');
+	expect(table.rows).toEqual([]);
+	expect(table.get('n1')).toBeUndefined();
+	expect(table.nonconforming.map((row) => row.id)).toEqual(['n1']);
+
+	notes.repairRow('n1');
+	expect(table.rows.map((row) => row.id)).toEqual(['n1']);
+	expect(table.nonconforming).toEqual([]);
+});
+
+test('nonconforming is held, so reading it costs nothing and a commit costs one pass', () => {
+	const { notes, reactive } = setup();
+	const table = reactive.tables.notes;
+	// Seeding paid for one. This is the assertion that fails if the getter goes
+	// back to forwarding the handle's own, which reads CRDT state and touches
+	// no signal: correct on every read, and never re-rendered.
+	const seeded = notes.calls.nonconforming;
+	for (let read = 0; read < 5; read += 1) void table.nonconforming;
+	expect(notes.calls.nonconforming).toBe(seeded);
+
+	// A commit that leaves everything readable pays nothing either: telling
+	// "no row here" from "a row this release cannot read" costs a pass, and
+	// only the commits that empty a row out of `rows` owe it.
+	notes.handle.update('n1', { title: 'renamed' });
+	expect(notes.calls.nonconforming).toBe(seeded);
+
+	notes.breakRow('n1');
+	expect(notes.calls.nonconforming).toBe(seeded + 1);
 });
