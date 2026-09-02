@@ -65,19 +65,13 @@ describe the model currently in use or propose what should exist. Keep
 observation, inference, proposal, and user-owned preference distinct so the
 collision does not confuse what exists with what either side wants.
 
-## Destinations
+## References
 
-The collision can serve understanding or correction. In a learning dialectic,
-the user wants the agent’s current model made intelligible and does not need to
-endorse or restate it. In a greenfield dialectic, the user and agent compare
-ambitious visions of what should exist and how it should work until an accepted
-account emerges.
-
-When the interaction itself needs calibration, read the relevant behavioral
-reference: [learning-dialectic.md](references/learning-dialectic.md) shows a
-model becoming intelligible through a human reaction, and
+Read one when the interaction itself needs calibration.
+[learning-dialectic.md](references/learning-dialectic.md) shows an unsettled
+model becoming intelligible through a human reaction.
 [greenfield-dialectic.md](references/greenfield-dialectic.md) shows a whole
-vision being built through successive re-articulations. These are reference
+vision being built through successive re-articulations. They are reference
 interactions, not templates or scripts.
 
 ## Make the next move
@@ -165,19 +159,18 @@ Whatever surface is used should make clear which articulations are live, which
 crux separates them, what follows from each, and what the next re-articulation
 must resolve.
 
-## End according to the destination
+## How it ends
 
-In a learning dialectic, stop when the user understands the agent’s model well
+When the user is trying to understand, stop when they understand the model well
 enough to reason about it. Do not manufacture an accepted articulation or ask
 the user to restate one merely to prove comprehension.
 
-In a corrective or design dialectic, do not stop at a plausible model, partial
-agreement, silence, fatigue, or approval of a plan. Stop when the user
-recognizes the complete greenfield articulation and says, in effect, “that’s
-right.” Return its shortest honest form. Recognition is not authorization for
+When the user is correcting or designing, do not stop at a plausible model,
+partial agreement, silence, fatigue, or approval of a plan. Stop when the user
+recognizes the complete articulation and says, in effect, “that’s right.” Return its shortest honest form. Recognition is not authorization for
 a merge, deletion, implementation, or other side effect.
 
-For an accepted greenfield destination, hand it to
+For an accepted destination, hand it to
 [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) for backward
 planning. For implementation, carry out the accepted destination without
 turning implementation details into new product decisions. If implementation
