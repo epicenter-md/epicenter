@@ -3,6 +3,7 @@
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
+	import type { AccountDatabase } from '$lib/databases.js';
 	import { navigation } from '$lib/navigation.svelte.js';
 	import CommandPalette from './CommandPalette.svelte';
 	import NoteBodyPane from './NoteBodyPane.svelte';
@@ -14,8 +15,10 @@
 	// still answers `undefined` while a connection is denied.
 	let {
 		syncStatus,
+		pull,
 	}: {
 		syncStatus: () => SyncConnectionStatus | undefined;
+		pull: AccountDatabase['pull'];
 	} = $props();
 
 	const honeycrisp = getHoneycrisp();
@@ -37,7 +40,7 @@
 />
 
 <SidebarProvider>
-	<HoneycrispSidebar {syncStatus} />
+	<HoneycrispSidebar {syncStatus} {pull} />
 
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">

@@ -1,33 +1,32 @@
 /**
  * The store artifact: the legible folder a person keeps, in both
- * directions (ADR-0267, ADR-0268, ADR-0271).
+ * directions (ADR-0267, ADR-0268, ADR-0337).
  *
  * ```txt
- * kv.json              the kv root's stored values
- * <table>/<rowId>.md   one file per row: raw fields as frontmatter, and the
- *                      node through the table's codec as the body
+ * .epicenter/manifest.json   what pull handed over, and from where
+ * kv.json                    the kv root's stored values
+ * <table>/<rowId>.md         one row per file: raw fields as frontmatter, and
+ *                            the node through the table's codec as the body
  * ```
  *
- * The unit is one row and one file. `renderRow` is what the mirror calls for
- * every row a commit touched; `renderArtifact` is that call in a loop, yielded
- * one file at a time, which the mirror runs at boot. `readArtifact` is the
- * other direction, and it is whole-folder by nature because restore replaces a
- * store rather than patching one.
+ * `renderArtifact` yields every file a store renders to, one at a time.
+ * `readArtifact` is the other direction, and it is whole-folder by nature
+ * because a mint replaces a store rather than patching one (ADR-0293). The
+ * per-row function underneath is not exported: nothing outside this package
+ * ever wanted one row, and the caller that did was the mirror.
  *
  * Two pure inverse pairs sit underneath both: `rowPath`/`parseRowPath` for
  * where a row's file lives, and `rowFile`/`parseRowFile` for what is in it.
  * They are NOT re-exported here. They have their own entry point,
  * `@epicenter/data/artifact/format`, because reading a folder is not the same
- * job as holding a store and the host that indexes these files has no business
+ * job as holding a store and the host that writes these files has no business
  * loading a CRDT to parse a string. Offering them here too made that boundary
  * advisory: the heavy path stayed available, so nothing enforced the split.
  *
- * Both directions are composed on the public surface and neither is a store
- * verb. Writing the files out and reading them back in belongs to whoever
- * owns a filesystem, which is the host (ADR-0271): the files land in
- * `~/Epicenter`, written continuously, and reading them back is restore,
- * which points at any folder and takes its destination as an argument
- * (ADR-0272).
+ * The verbs that move a whole folder are not here either. They are
+ * `@epicenter/data/artifact/checkout`, because `pull` composes this layer with
+ * an HTTP route the host serves, and a caller that wants to render a row
+ * should not be handed one that talks to a filesystem it may not have.
  */
 export {
 	type ImportError,
@@ -38,5 +37,4 @@ export {
 	RenderError,
 	type RenderedRow,
 	renderArtifact,
-	renderRow,
 } from './render.js';

@@ -4,7 +4,7 @@
 - **Date:** 2026-09-02
 - **Amends:** [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) by withdrawing the continuous render and the one-way rule; [ADR-0289](0289-the-folder-is-where-a-generation-is-minted-from-not-a-surface-kept-current-for-its-own-sake.md) by making the folder a working copy rather than only a mint source; [ADR-0329](0329-frontmatter-round-trips-and-the-body-only-renders-out.md) at the return path's mechanism, keeping its rule that values round-trip and a body does not
 - **Relates:** [ADR-0234](0234-the-ark-owns-living-pages-and-markdown-is-an-explicit-checkout.md) (which invented this shape for one table and never generalized it), [ADR-0281](0281-a-generation-is-a-whole-database-and-a-device-chooses-which-one-it-holds.md) (the backup), [ADR-0330](0330-an-agent-uses-the-surfaces-a-person-uses.md) (who edits and who pushes)
-- **Unbuilt:** all of it. `renderArtifact` and `readArtifact` exist; the manifest, the three verbs, and the deletions below do not.
+- **Partly built:** `pull`, the manifest, and both host routes, in `packages/data/src/artifact/checkout.ts` and `apps/epicenter/src/checkout.ts`. `diff` and `push` do not exist, and the `AGENTS.md` a pull writes does not either.
 
 ## Context
 
@@ -16,7 +16,7 @@ every hard question came from.
 Two prior records had already taken the frame apart without finishing it.
 ADR-0289 withdrew the premise that an always-current folder is the product,
 said "Epicenter has no always-current agent-facing surface," and left deleting
-`packages/data/src/artifact/mirror.ts` as an available decision it did not take.
+the mirror module as an available decision it did not take.
 ADR-0234 replaced continuous rendering with "an explicit checkout of a page row
 and its prose document," with one local base record per materialized page, for
 the Ark alone.
@@ -40,6 +40,7 @@ nothing happens in between.**
 ```txt
 ~/Epicenter/<data-id>/
   .epicenter/manifest.json     what pull handed over, and from where
+  kv.json                      the kv root's stored values
   <table>/<row-id>.md          one row, frontmatter and body
 ```
 
@@ -50,17 +51,31 @@ push    show the plan, apply on confirm, then re-render
 ```
 
 The three verbs are actions in the application's window. The application
-renders, diffs, and decides; the host does one thing per verb through a route
-under `MIRROR_PATH` (`apps/epicenter/src/routes.ts`), writing the files `pull`
-hands it or returning the folder's files for `push`. There is no CLI.
+renders, diffs, and decides; the host does one thing per verb through one route
+(`CHECKOUT_ROUTE` in `apps/epicenter/src/routes.ts`, at the `CHECKOUT_PATH` both
+ends read from `packages/data/src/artifact/checkout.ts`): `PUT` replaces the
+folder with the checkout `pull` hands it, and `GET` returns the folder's files
+for `push` and for the dirty check `pull` makes first. There is no CLI.
+
+**A checkout is complete, so the set of paths sent IS the manifest on the
+wire.** The mirror's pass was incremental, so it needed a line saying "that was
+all of it" and a rule that nothing is removed until it arrives; neither
+survives, and the incomplete case they guarded cannot be expressed.
 
 **The manifest is the base.** There is no per-file base store and no watcher,
 because `pull` already wrote down what it handed over.
 
 ```txt
 { baseURL, principalId, dataId, generation, pulledAt,
-  rows: { "<table>/<row-id>": { values: { ... }, bodyHash } } }
+  rows: { "<table>/<row-id>": { values: { ... }, bodyHash } },
+  kvHash }
 ```
+
+A row's `id` is not among its `values`: it is the path, and a second copy of an
+identifier on disk is a second thing that can be wrong. `kvHash` is a hash and
+not values, because the kv root is one object with no per-field base a push
+could resolve against and no address a plan could name; it is pulled so the
+folder is complete to read, and an edit to it is reported rather than applied.
 
 **Absence is unambiguous at push, because the manifest says what was pulled and
 a person chose the moment.** A missing file is a deletion in the plan. Where a
@@ -99,6 +114,14 @@ left behind, and the unit is always a field.
 **`pull` refuses a dirty folder**, one whose files no longer match the manifest.
 It shows the unpushed edits, and discarding them is the way past.
 
+**A folder with no usable manifest is dirty, not clean.** Never pulled, manifest
+deleted, manifest mangled by a conflict copy, and manifest written by another
+account are one fact: nothing here wrote down what these files are. The
+comparison runs against an empty base, so every row-shaped file already there is
+shown to the person before anything replaces it. An arm that skipped the check
+when there was no base is how the one refusal in this record gets bypassed by
+editing a hidden file.
+
 **`push` ends by re-rendering**, so a folder is never dirty after a successful
 one.
 
@@ -112,13 +135,19 @@ the review.
 
 ## Consequences
 
-- **Deleted, once this ships:** `packages/data/src/artifact/mirror.ts` and its
-  test, `apps/epicenter/src/mirror.ts` and its test, `MIRROR_ROUTE` in
-  `apps/epicenter/src/routes.ts` and its handler in
-  `apps/epicenter/src/server.ts`,
-  `parseMirrorPass` in `packages/data/src/artifact/protocol.ts`, and the
-  `attachMirror` wiring in `apps/honeycrisp/src/lib/databases.ts`. About 740
-  shipping lines and 500 lines of test.
+- **Deleted**, and the paths are named here for the last time because none of
+  them resolves any more: `packages/data/src/artifact/`'s `mirror.ts`, its test
+  and `protocol.ts`; `apps/epicenter/src/`'s `mirror.ts` and its test;
+  `MIRROR_ROUTE` and its handler; and the `attachMirror` wiring in
+  `apps/honeycrisp/src/lib/databases.ts`. What replaced them is smaller than
+  what went: the debounce, the batch ceiling, the in-flight pass, the
+  incomplete-pass rule, and the render-error-to-path mapping all had no
+  question left to answer once a person chose the moment.
+- **`pull` fails closed, and `renderArtifact` still does not.** Both are
+  correct, and ADR-0325 already says why: a mirror that stops on one bad row
+  leaves a folder that lies about the rest and re-renders on the next commit,
+  while a row missing from a checkout is a deletion at the next push. `pull`
+  collects the failures and refuses the whole checkout.
 - **Never built:** ADR-0329's folder watcher, its echo suppression, its per-file
   base store, and the absence policy that watcher would have needed. Finishing
   the continuous design needed all four; the manifest replaces them.

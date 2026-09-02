@@ -43,7 +43,7 @@ import {
 } from '@epicenter/blobs';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
-import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
+import { CHECKOUT_PATH } from '@epicenter/data/artifact/checkout';
 import { LOCAL_MAIL_APP_ID } from '@epicenter/local-mail/storage';
 import { Ok } from 'wellcrafted/result';
 import {
@@ -1832,47 +1832,50 @@ describe('sidecar end-to-end smoke', () => {
 	}, 60_000);
 });
 
-describe('mirror routes (ADR-0271)', () => {
+describe('checkout routes (ADR-0337)', () => {
 	/**
-	 * The seam neither side's tests reach. `packages/data`'s mirror test injects
-	 * a sink and asserts what would have crossed the wire; `mirror.test.ts` here
-	 * calls the host's functions directly. Between them sits the routing, and an
-	 * earlier per-file version declared a bare `*` tail that Hono routes but
-	 * does not capture, so every write arrived with an empty path and 400'd.
-	 * Both suites stayed green and the folder was never written once.
+	 * The seam neither side's tests reach. `packages/data`'s checkout test
+	 * injects a `fetch` and asserts what would have crossed the wire;
+	 * `checkout.test.ts` here calls the host's functions directly. Between them
+	 * sits the routing, and an earlier per-file version declared a bare `*` tail
+	 * that Hono routes but does not capture, so every write arrived with an
+	 * empty path and 400'd. Both suites stayed green and the folder was never
+	 * written once.
 	 *
-	 * A pass carries its files in the body now, so there is no path in the URL
-	 * to capture wrong. This test exists anyway, because "the folder is written"
-	 * is the one fact only a request can establish.
+	 * A checkout carries its files in the body now, so there is no path in the
+	 * URL to capture wrong. These exist anyway, because "the folder is written"
+	 * and "the folder is read back" are the two facts only a request can
+	 * establish.
 	 */
-	const pass = (lines: object[]) =>
-		lines.map((line) => `${JSON.stringify(line)}\n`).join('');
+	const checkout = (files: object[]) =>
+		files.map((file) => `${JSON.stringify(file)}\n`).join('');
 
-	test('a pass writes and sweeps the application folder', async () => {
-		const folderRoot = mkdtempSync(join(tmpdir(), 'mirror-route-test-'));
+	test('a checkout replaces the folder, and reads back as what was written', async () => {
+		const folderRoot = mkdtempSync(join(tmpdir(), 'checkout-route-test-'));
 		const previousRoot = process.env.EPICENTER_FOLDER_DIR;
 		process.env.EPICENTER_FOLDER_DIR = folderRoot;
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
 		const server = await serveHost(host);
 		const origin = server.url.origin;
-		const url = `${origin}${MIRROR_PATH}/so.epicenter.honeycrisp`;
+		const url = `${origin}${CHECKOUT_PATH}/so.epicenter.honeycrisp`;
 		const folder = join(folderRoot, 'so.epicenter.honeycrisp');
 		try {
-			// Session-gated like every other domain API on this origin: this route
-			// writes and deletes real files under a person's home directory.
-			const unauthenticated = await fetch(url, { method: 'PUT', body: '' });
-			expect(unauthenticated.status).toBe(401);
+			// Session-gated like every other domain API on this origin: these
+			// routes write, delete, and read real files under a person's home
+			// directory.
+			expect((await fetch(url, { method: 'PUT', body: '' })).status).toBe(401);
+			expect((await fetch(url)).status).toBe(401);
 
 			const wrote = await fetch(url, {
 				method: 'PUT',
-				body: pass([
+				body: checkout([
 					{
 						path: 'notes/abc.md',
 						contents: '---\npinned: true\n---\n\n# A note\n',
 					},
 					{ path: 'notes/def.md', contents: '---\npinned: false\n---\n' },
 					{ path: 'kv.json', contents: '{}' },
-					{ manifest: ['notes/abc.md', 'notes/def.md', 'kv.json'] },
+					{ path: '.epicenter/manifest.json', contents: '{"rows":{}}' },
 				]),
 				headers: authenticatedHeaders(server),
 			});
@@ -1881,15 +1884,41 @@ describe('mirror routes (ADR-0271)', () => {
 				'# A note',
 			);
 
-			// A second pass that no longer names one row takes its file with it.
+			// A second checkout that no longer names one row takes its file with
+			// it. A checkout is complete by definition, so absence is the answer
+			// rather than a manifest line saying so.
 			const swept = await fetch(url, {
 				method: 'PUT',
-				body: pass([{ manifest: ['notes/abc.md', 'kv.json'] }]),
+				body: checkout([
+					{ path: 'notes/abc.md', contents: '---\npinned: true\n---\n' },
+					{ path: 'kv.json', contents: '{}' },
+					{ path: '.epicenter/manifest.json', contents: '{"rows":{}}' },
+				]),
 				headers: authenticatedHeaders(server),
 			});
 			expect(swept.status).toBe(204);
 			expect(await Bun.file(join(folder, 'notes/def.md')).exists()).toBe(false);
 			expect(await Bun.file(join(folder, 'notes/abc.md')).exists()).toBe(true);
+
+			// And the read hands back exactly what a checkout is responsible for,
+			// which is what `pull` compares against its manifest before it
+			// overwrites anything.
+			writeFileSync(join(folder, 'README.md'), 'mine');
+			const read = await fetch(url, { headers: authenticatedHeaders(server) });
+			expect(read.status).toBe(200);
+			const paths = (await read.text())
+				.split('\n')
+				.filter((line) => line.trim() !== '')
+				.map((line) => (JSON.parse(line) as { path: string }).path)
+				.sort();
+			expect(paths).toEqual([
+				'.epicenter/manifest.json',
+				'kv.json',
+				'notes/abc.md',
+			]);
+			// The person's own file is still there, and was never the host's to
+			// hand over or to sweep.
+			expect(await Bun.file(join(folder, 'README.md')).text()).toBe('mine');
 		} finally {
 			await server.stop(true);
 			if (previousRoot === undefined) delete process.env.EPICENTER_FOLDER_DIR;
@@ -1899,7 +1928,7 @@ describe('mirror routes (ADR-0271)', () => {
 	});
 
 	test('a data id the render never produces is refused', async () => {
-		const folderRoot = mkdtempSync(join(tmpdir(), 'mirror-route-test-'));
+		const folderRoot = mkdtempSync(join(tmpdir(), 'checkout-route-test-'));
 		const previousRoot = process.env.EPICENTER_FOLDER_DIR;
 		process.env.EPICENTER_FOLDER_DIR = folderRoot;
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
@@ -1907,28 +1936,27 @@ describe('mirror routes (ADR-0271)', () => {
 		const origin = server.url.origin;
 		try {
 			const refused = [
-				`${MIRROR_PATH}/so.epicenter.honeycrisp/notes/abc.md`,
-				`${MIRROR_PATH}/..%2F..%2Fetc`,
-				`${MIRROR_PATH}/not_an_app_id`,
+				`${CHECKOUT_PATH}/so.epicenter.honeycrisp/notes/abc.md`,
+				`${CHECKOUT_PATH}/..%2F..%2Fetc`,
+				`${CHECKOUT_PATH}/not_an_app_id`,
 			];
 			for (const path of refused) {
 				const response = await fetch(`${origin}${path}`, {
 					method: 'PUT',
-					body: pass([{ path: 'notes/abc.md', contents: 'x' }]),
+					body: checkout([{ path: 'notes/abc.md', contents: 'x' }]),
 					headers: authenticatedHeaders(server),
 				});
 				expect([400, 404]).toContain(response.status);
 			}
-			// A file inside the pass that would climb out is refused by the host
-			// without costing the pass its other files.
+			// A file inside the checkout that would climb out is refused by the
+			// host without costing the checkout its other files.
 			const mixed = await fetch(
-				`${origin}${MIRROR_PATH}/so.epicenter.honeycrisp`,
+				`${origin}${CHECKOUT_PATH}/so.epicenter.honeycrisp`,
 				{
 					method: 'PUT',
-					body: pass([
+					body: checkout([
 						{ path: '../escape.md', contents: 'no' },
 						{ path: 'notes/ok.md', contents: 'yes' },
-						{ manifest: ['notes/ok.md'] },
 					]),
 					headers: authenticatedHeaders(server),
 				},

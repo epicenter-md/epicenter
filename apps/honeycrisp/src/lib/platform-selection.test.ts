@@ -61,6 +61,20 @@ describe('platform seams', () => {
 	});
 });
 
+describe('the folder is a build fact', () => {
+	test('whether there is an Epicenter folder is decided at build time', async () => {
+		// Not a runtime probe, and not a failure a person reads. A page has no
+		// filesystem, so the browser build has no button rather than one that
+		// always refuses (ADR-0337).
+		expect(await leafSource('#platform/folder', 'default')).toContain(
+			'HAS_FOLDER = false',
+		);
+		expect(await leafSource('#platform/folder', 'epicenter-host')).toContain(
+			'HAS_FOLDER = true',
+		);
+	});
+});
+
 describe('storage ownership', () => {
 	test('storage is not a platform seam at all', async () => {
 		// The refusal, asserted so that re-adding the seam is a decision someone

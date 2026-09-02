@@ -11,7 +11,7 @@
 
 import { APP_STORAGE_PATH } from '@epicenter/app/protocol';
 import { LOCAL_BLOB_PATH } from '@epicenter/blobs/webview';
-import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
+import { CHECKOUT_PATH } from '@epicenter/data/artifact/checkout';
 import {
 	CALLBACK_PATH as MAIL_CALLBACK_PATH,
 	PENDING_CALLBACK_PATH as MAIL_PENDING_CALLBACK_PATH,
@@ -61,24 +61,26 @@ export const LOCAL_BLOB_ROUTE = {
 	pattern: `${LOCAL_BLOB_PATH}/:blobId`,
 } as const;
 /**
- * One pass of the `~/Epicenter` mirror (ADR-0271).
+ * One database's working copy in `~/Epicenter` (ADR-0337).
  *
- * A data id names a folder, and nothing below that appears in the URL: a pass
- * carries its files and its manifest in an NDJSON body, so there is no
- * per-file path to route, capture, or validate. That is what the earlier
+ * `PUT` replaces the folder with the checkout in the body; `GET` hands back
+ * what the folder holds. Both carry their files in an NDJSON body, so there is
+ * no per-file path to route, capture, or validate. That is what the earlier
  * per-file design cost, and it cost it silently: Hono routes a bare `*` but
  * captures nothing under it, so every write arrived with an empty path.
  *
+ * The `folder` segment this route used to carry named `local` or `account`,
+ * and went with the device store: there is one store per data id (ADR-0336),
+ * so there is one folder.
+ *
  * The host takes the data id from the caller and does not verify that the
- * caller owns it, which is the trust model rather than a gap in it: ADR-0118
- * decided that every SPA on this origin is fully trusted and that "workspace
- * ids and database names separate their data logically, not as a sandbox or
- * security boundary." Do not add a per-app credential to close this. The thing
- * that would change it is an origin per app, so that the socket answers who is
- * asking and the id leaves the URL entirely, and that is what a genuinely
- * third-party app would buy.
+ * caller owns it, which is the trust model rather than a gap in it: a deployed
+ * app is a trusted app (ADR-0334), and ADR-0118 decided that every SPA on this
+ * origin is fully trusted. Do not add a per-app credential to close this. The
+ * thing that would change it is an origin per app, so that the socket answers
+ * who is asking and the id leaves the URL entirely.
  */
-export const MIRROR_ROUTE = route(`${MIRROR_PATH}/:dataId`);
+export const CHECKOUT_ROUTE = route(`${CHECKOUT_PATH}/:dataId`);
 export const APP_STORAGE_ROUTE = route(APP_STORAGE_PATH);
 /**
  * Where Google returns a person after Local Mail's consent screen.

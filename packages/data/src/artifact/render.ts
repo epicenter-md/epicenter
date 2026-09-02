@@ -1,9 +1,9 @@
 /**
- * A row becomes one file (ADR-0268, ADR-0271, ADR-0296).
+ * A row becomes one file (ADR-0268, ADR-0337, ADR-0296).
  *
- * This is the unit, and everything else is iteration: the mirror renders the
- * rows a commit touched, and a whole render is the same call in a loop. The
- * artifact used to be assembled the other way around, whole-store first,
+ * This is the unit, and everything else is iteration: a whole render is the
+ * same call in a loop. The artifact used to be assembled the other way around,
+ * whole-store first,
  * because ADR-0267's layout put a row's fields and its document in two
  * separate trees correlated by coordinates. ADR-0268 collapsed that layout
  * into one file per row; this is the code catching up to it. A row's fields
@@ -23,11 +23,11 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
 import {
+	compileData,
 	type DataDefinition,
 	type JsonObject,
 	type JsonValue,
 	type ParsedDataDefinition,
-	compileData,
 } from '../definition/index.js';
 import type { Row, StoredData } from '../store/store.js';
 import { rowFile } from './frontmatter.js';
@@ -37,7 +37,7 @@ export const RenderError = defineErrors({
 	/**
 	 * The definition handed here could not be compiled, so there are no codecs
 	 * to serialize through. A programmer error surfaced as a value, because the
-	 * caller is a person pressing a button or a mirror running at boot.
+	 * caller is a person pressing a button.
 	 */
 	MalformedDefinition: ({ reason }: { reason: string }) => ({
 		message: `The data definition could not be compiled: ${reason}`,
@@ -117,9 +117,11 @@ export type RenderableData = {
 /**
  * One row's file: the path it lives at, and what is in it.
  *
- * `contents` is `undefined` when the row is gone, which is the same answer a
- * subscriber needs for a deletion: the ids a commit touched include the ones
- * it removed, so the caller asks about each and writes or unlinks.
+ * `contents` is `undefined` when the row is gone. Only a caller that names a
+ * row it did not enumerate can see it: `renderArtifact` reads its ids from one
+ * faithful snapshot, so every row it asks about is there. It answered the
+ * mirror's deletion signal, which asked about ids a commit had removed, and
+ * that caller is deleted (ADR-0337).
  */
 export type RenderedRow = {
 	readonly path: string;
@@ -131,8 +133,8 @@ export type RenderedRow = {
  *
  * Synchronous work behind an async signature, because nothing here loads
  * anything any more: a row's content node is in the one document the store
- * already holds (ADR-0295). The signature stays a promise so the mirror and
- * the whole-artifact generator did not have to change shape around it.
+ * already holds (ADR-0295). The signature stays a promise so the generator
+ * below did not have to change shape around it.
  *
  * Everything value comes from the faithful read, never from `get` or `list`.
  * A table handle reads through the declaration and narrows to the fields it
@@ -196,10 +198,9 @@ export async function renderRow(
  * The loop over `renderRow`, plus `kv.json`, which is the one file that is not
  * a row: one object, no body, and nothing frontmatter would buy (ADR-0268).
  *
- * The mirror runs this at boot, because a store changes while an
- * application is closed: another device syncs, and the folder is stale until
- * something renders it whole. After that the mirror renders only the rows a
- * commit touched.
+ * The whole store, because a `pull` is what makes a folder true as of one
+ * instant (ADR-0337) and a partial one would leave a manifest describing a
+ * folder that does not exist.
  *
  * Yielded rather than collected, because the one consumer writes each file as
  * it arrives and never wants the set. A caller that does want the set builds
@@ -209,12 +210,12 @@ export async function renderRow(
  * Row ids come from the faithful read, so a table this declaration no longer
  * names is rendered too (ADR-0240).
  *
- * **It does not fail closed, and the read direction does.** One row whose
- * codec throws yields one `Err` and the pass continues, because a mirror that
- * writes nothing over one bad note is worse than a mirror missing one file,
- * and the next commit re-renders it anyway. `readArtifact` keeps the opposite
- * contract for the opposite reason: it feeds a restore that replaces a
- * store, so a file it silently skipped is data deleted everywhere.
+ * **It yields failures rather than stopping, and both callers fail closed.**
+ * One row whose codec throws yields one `Err` and the loop continues, so the
+ * caller sees every failure rather than the first. `pull` collects them and
+ * refuses the whole checkout, and `readArtifact` refuses a read for the same
+ * reason: a row silently absent from a folder is a deletion at the next push,
+ * which is data deleted everywhere (ADR-0325).
  */
 export async function* renderArtifact(
 	data: RenderableData,

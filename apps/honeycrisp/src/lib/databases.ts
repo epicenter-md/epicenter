@@ -13,7 +13,7 @@ type PrincipalId = Extract<
 >['principalId'];
 
 import type { ReplicaData } from '@epicenter/data';
-import { attachMirror } from '@epicenter/data/artifact/mirror';
+import { type CheckoutError, pull } from '@epicenter/data/artifact/checkout';
 import {
 	type DatabaseAccount,
 	eraseGenerations,
@@ -23,8 +23,15 @@ import {
 import { persistOnHide } from '@epicenter/data/flush-on-hide';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
 import { honeycrispDefinition } from '@epicenter/honeycrisp';
-import { Err, isOk, Ok, tryAsync, trySync } from 'wellcrafted/result';
-import { mirrorLog, reportBackgroundError } from './report.js';
+import {
+	Err,
+	isOk,
+	Ok,
+	type Result,
+	tryAsync,
+	trySync,
+} from 'wellcrafted/result';
+import { reportBackgroundError } from './report.js';
 import { attachHoneycrispSync } from './sync.js';
 
 /** The application this opens its store as, self-claimed (ADR-0324, ADR-0334). */
@@ -78,6 +85,18 @@ function opening<TDatabase>(
 export type AccountDatabase = {
 	readonly data: ReplicaData<typeof honeycrispDefinition>;
 	syncStatus(): SyncConnectionStatus | undefined;
+	/**
+	 * Fill `~/Epicenter/so.epicenter.honeycrisp/` with these notes and write
+	 * the manifest (ADR-0337).
+	 *
+	 * Bound to this store and this generation, because those are what the
+	 * manifest records and neither is a component's to know. It refuses a
+	 * folder holding unpushed edits, and `discardEdits` is the person saying
+	 * they saw them and want them gone.
+	 */
+	pull(options?: {
+		discardEdits?: boolean;
+	}): Promise<Result<{ files: number }, CheckoutError>>;
 };
 
 type Opened<TDatabase> = TDatabase & AsyncDisposable;
@@ -140,15 +159,6 @@ async function openAccountReplica({
 	}
 	const connection = connectionResult.data;
 
-	// The folder follows the replica (ADR-0271). Attached after sync, so a
-	// replica that catches up renders what arrived rather than the state it
-	// opened with.
-	const mirror = attachMirror({
-		data,
-		definition: honeycrispDefinition,
-		log: mirrorLog,
-	});
-
 	// Durable work is what a reconnect offers the authority, so a flush that
 	// never happened is work the account never hears about either.
 	const stopHideFlush = persistOnHide(() => data.persistence.flush());
@@ -159,10 +169,19 @@ async function openAccountReplica({
 			const status = connection.status();
 			return status.denied ? undefined : status;
 		},
+		pull: ({ discardEdits = false } = {}) =>
+			pull({
+				data,
+				definition: honeycrispDefinition,
+				dataId: honeycrispDefinition.id,
+				generation,
+				baseURL: data.baseURL,
+				principalId: data.principalId,
+				discardEdits,
+			}),
 		async [Symbol.asyncDispose]() {
 			stopHideFlush();
 			connection[Symbol.dispose]();
-			await mirror[Symbol.asyncDispose]();
 			await data[Symbol.asyncDispose]();
 		},
 	};

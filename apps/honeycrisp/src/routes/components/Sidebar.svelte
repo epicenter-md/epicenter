@@ -8,14 +8,19 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { auth } from '#platform/auth';
+	import { HAS_FOLDER } from '#platform/folder';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
+	import PullToFolder from './PullToFolder.svelte';
+	import type { AccountDatabase } from '$lib/databases.js';
 
 	let {
 		syncStatus,
+		pull,
 	}: {
 		syncStatus: () => SyncConnectionStatus | undefined;
+		pull: AccountDatabase['pull'];
 	} = $props();
 
 	const honeycrisp = getHoneycrisp();
@@ -122,6 +127,9 @@
 	</Sidebar.Content>
 
 	<Sidebar.Footer>
+		{#if HAS_FOLDER}
+			<PullToFolder {pull} />
+		{/if}
 		{#if sync}
 			<div
 				class="text-muted-foreground px-2 pb-1 text-[11px] tabular-nums"

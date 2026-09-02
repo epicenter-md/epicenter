@@ -19,7 +19,7 @@ import { getProfileVia } from '@epicenter/auth';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
 import { epicenterFolderRoot, isAppId } from '@epicenter/constants/app-data';
-import { MIRROR_PATH } from '@epicenter/data/artifact/protocol';
+import { CHECKOUT_PATH } from '@epicenter/data/artifact/checkout';
 import type { PendingCallback } from '@epicenter/local-mail/authorization-return';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
@@ -27,6 +27,12 @@ import { getCookie, setCookie } from 'hono/cookie';
 import type { AppSecretOwner } from './app-secrets.ts';
 import type { BunAppStorage } from './app-storage.ts';
 import { type Application, listApplications } from './applications.ts';
+import {
+	CheckoutFolderBusyError,
+	checkoutFolderPath,
+	readCheckout,
+	writeCheckout,
+} from './checkout.ts';
 import type { DesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
 import {
@@ -34,11 +40,6 @@ import {
 	type HomeSessionSnapshot,
 	parseHomeCommand,
 } from './host.ts';
-import {
-	applyMirrorPass,
-	MirrorFolderBusyError,
-	mirrorFolderPath,
-} from './mirror.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_PROFILE_ROUTE,
@@ -47,11 +48,11 @@ import {
 	APPLICATIONS_ROUTE,
 	BOOTSTRAP_ROUTE,
 	BUILT_IN_ROUTES,
+	CHECKOUT_ROUTE,
 	LOCAL_BLOB_REMOTE_ROUTES,
 	LOCAL_BLOB_ROUTE,
 	MAIL_CALLBACK_ROUTE,
 	MAIL_PENDING_CALLBACK_ROUTE,
-	MIRROR_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
 } from './routes.ts';
@@ -357,7 +358,7 @@ export function createHomeServer({
 	// a rendering WebView that already holds the session it was bootstrapped
 	// with. Without this they are the one loopback API any local process can
 	// reach (ADR-0271).
-	app.use(`${MIRROR_PATH}/*`, requireBrowserSession);
+	app.use(`${CHECKOUT_PATH}/*`, requireBrowserSession);
 	app.use(SESSION_STREAM_ROUTE.pattern, async (c, next) => {
 		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
 		await next();
@@ -378,36 +379,55 @@ export function createHomeServer({
 	);
 
 	/**
-	 * One pass of the `~/Epicenter` mirror (ADR-0271).
+	 * One database's working copy in `~/Epicenter` (ADR-0337).
 	 *
-	 * The application says what its workspace holds; the host makes the folder
-	 * match. No store is opened here, no CRDT update is decoded, and nothing
-	 * derived from a file ever reaches an application. What the host owns is the
-	 * root, the refusal, and the folder's own reconciliation.
+	 * `PUT` is `pull`'s half: the application says what its store holds and the
+	 * host replaces the folder with it. `GET` is `push`'s, and what `pull` reads
+	 * first to know the folder is clean: the host hands back the files it holds.
+	 *
+	 * No store is opened here, no CRDT update is decoded, and no frontmatter is
+	 * parsed. The host owns the root, the refusal, and the atomic swap; the
+	 * application owns what any of it means.
 	 *
 	 * The root is resolved once, at construction, so a misconfigured
 	 * `EPICENTER_FOLDER_DIR` fails the boot loudly instead of throwing inside
 	 * every request.
 	 */
-	app.put(MIRROR_ROUTE.pattern, async (c) => {
-		const folder = mirrorFolderPath({
+	const checkoutFolder = (c: {
+		req: { param(name: string): string | undefined };
+	}) =>
+		checkoutFolderPath({
 			dataId: c.req.param('dataId') ?? '',
 			root: folderRoot,
 		});
-		if (folder === undefined) return c.text('Invalid mirror path', 400);
+
+	app.put(CHECKOUT_ROUTE.pattern, async (c) => {
+		const folder = checkoutFolder(c);
+		if (folder === undefined) return c.text('Invalid checkout path', 400);
 		try {
-			await applyMirrorPass(folder, await c.req.text());
+			await writeCheckout(folder, await c.req.text());
 		} catch (cause) {
-			if (cause instanceof MirrorFolderBusyError) {
-				return c.text('Mirror folder is busy', 409);
+			if (cause instanceof CheckoutFolderBusyError) {
+				return c.text('The folder is busy', 409);
 			}
-			// The folder is a convenience over a filesystem that may be full,
-			// read-only, or on a drive someone unplugged. The store is unaffected,
-			// so this is the mirror's failure to report and never the
-			// application's to crash on.
-			return c.text('Mirror pass failed', 500);
+			// The folder sits on a filesystem that may be full, read-only, or on a
+			// drive someone unplugged. The store is unaffected, so this is the
+			// folder's failure to report and never the application's to crash on.
+			return c.text('The checkout could not be written', 500);
 		}
 		return c.body(null, 204);
+	});
+
+	app.get(CHECKOUT_ROUTE.pattern, async (c) => {
+		const folder = checkoutFolder(c);
+		if (folder === undefined) return c.text('Invalid checkout path', 400);
+		try {
+			return c.body(await readCheckout(folder), 200, {
+				'content-type': 'application/x-ndjson',
+			});
+		} catch {
+			return c.text('The folder could not be read', 500);
+		}
 	});
 
 	app.put(LOCAL_BLOB_ROUTE.pattern, async (c) => {

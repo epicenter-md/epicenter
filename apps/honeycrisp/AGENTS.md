@@ -44,6 +44,22 @@ A permanent credential refusal costs sync, not the notes: the store opened
 from local state before a socket was attempted, and the sidebar's status line
 goes quiet.
 
+## The folder is a working copy, and a person fills it
+
+`~/Epicenter/so.epicenter.honeycrisp/` holds these notes as files, and nothing
+puts them there by itself (ADR-0337). `PullToFolder.svelte` is the button; the
+verb is `pull` on the object `openAccountDatabase` returns, bound to this store
+and this generation because those are what the manifest records.
+
+A pull refuses a folder holding edits nobody sent back, and shows them. That is
+the one refusal, and discarding is a second deliberate act. It also refuses
+where there is no folder at all, which is every ordinary browser tab: a page
+has no filesystem, and the copy says so rather than offering a retry.
+
+`push` does not exist yet, so an edit in the folder has no way home, and the
+dialog says that rather than naming a verb this app does not have. When push
+lands, that sentence is the one to rewrite.
+
 ## Three builds, one store shape
 
 | Build | Command |
