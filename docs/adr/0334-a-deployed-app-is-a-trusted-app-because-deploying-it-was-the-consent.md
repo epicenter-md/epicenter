@@ -63,7 +63,7 @@ setting.
   experiment they needed: none are required, because they were purchasing a
   boundary this record refuses. ADR-0305's catalog plane: superseded. A
   server-side bearer scoped to a manifest: not built, and see below.
-- **`admitData` and `TRUSTED_DEFINITIONS` become dead** (`apps/epicenter/src/trusted-definitions.ts`).
+- **`admitData` and `TRUSTED_DEFINITIONS` become dead**, and have since been deleted along with the `data-open` verb and its client round trip.
   The table is empty by design, its one caller answers 404 to every desktop
   `data-open`, and the only store consumer, Honeycrisp, bypasses the protocol
   entirely. Its stated job was preventing a store "under an address no host verb

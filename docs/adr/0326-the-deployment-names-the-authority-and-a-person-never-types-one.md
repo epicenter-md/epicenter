@@ -15,7 +15,7 @@
 refuses in-place rebinding. That leaves a question it does not answer: where does
 the authority's URL come from in the first place?
 
-Today it is a runtime setting. `packages/auth/src/instance-setting.ts` keeps a
+Today it is a runtime setting. The auth package's instance-setting module (since deleted by this record) keeps a
 `{ baseURL, token }` override in `localStorage`, and
 `apps/self-host/README.md` documents pasting one as *the* self-host flow. A
 setting is the wrong shape for a fact that, after ADR-0325, can never change.
@@ -55,8 +55,8 @@ stamped, never addressed. That is the boundary of the method, not a gap in it.
 
 ## Consequences
 
-- Deleted: `packages/auth/src/instance-setting.ts` and its test,
-  `apps/honeycrisp/src/lib/instance.ts` and its `epicenter-host` leaf, the
+- Deleted, and now actually deleted: the auth package's instance-setting module
+  and its test, Honeycrisp's `instance.ts` and its `epicenter-host` leaf, the
   `#platform/instance` seam, and `packages/app-shell`'s instance-settings modal.
   With them go `decodeInstance`'s corrupt-record fallback, the
   "half-configured record reads as hosted" rule, the runtime enforcement of

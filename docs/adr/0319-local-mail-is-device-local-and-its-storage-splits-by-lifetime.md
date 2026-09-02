@@ -108,7 +108,7 @@ application derives the name.
   performs that copy today, and this record does not decide that anything should.
 - An account is connected per device. The credential could never synchronize, so
   no convenience is lost that was ever available.
-- `TRUSTED_DEFINITIONS` in `apps/epicenter/src/trusted-definitions.ts` becomes an
+- `TRUSTED_DEFINITIONS` (since deleted with the admission protocol, ADR-0334) becomes an
   empty array when Local Mail's registry leaves, and ADR-0313's admission path
   keeps compiling with no member. That is expected, not rot: Honeycrisp earns a
   row the day it opens through the scoped handle, and Local Mail earns one the
