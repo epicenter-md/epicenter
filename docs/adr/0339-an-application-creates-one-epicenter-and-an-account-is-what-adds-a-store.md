@@ -71,7 +71,10 @@ type Epicenter<TDefinition extends DataDefinition = never> = {
 			readonly data: Promise<
 				Result<ReplicaData<TDefinition>, StoreError | DataDefinitionParseError>
 			>;
-			eraseReplica(): Promise<void>;
+			importReplica(
+				from: Uint8Array,
+			): Promise<Result<{ generation: number }, StoreError>>;
+			eraseReplica(): Promise<Result<void, StoreError>>;
 		});
 ```
 
@@ -121,6 +124,34 @@ window leaves keep it because a tab has no keychain and no Bun-owned files.
 package does not build one. A desktop leaf needs its own bootstrap and a browser
 leaf needs a redirect launcher, and a package that built both would have to know
 every auth model an application might use.
+
+**`data` opens the newest generation this device holds, else the authority's
+newest, else mints, and nothing stores a selection.** The choice stays derived,
+so deleting the generation from the URL takes nothing with it. There is no verb
+that selects an older generation and there is no picker: every account has one
+generation until `importReplica` ships, the ledger records numbers and nothing
+else (ADR-0287 deleted the rest), and the one act an old generation supports is
+export, which a browser cannot do yet (ADR-0325). When that changes the surface
+is a read-only `generations.list()` and an exact `generations.open(n)` for a
+rescue, each one existing function made public. Neither is decided here.
+
+**`importReplica` posts the state, writes it locally, and the application
+reloads.** `data` is memoized, so the store a page holds after an import is
+still the one it opened. ADR-0293's "redirect to the generation's URL" becomes a
+document reload, after which `data` resolves the new number by itself. It is
+never retried: a lost response after the authority admitted the state is
+answered by listing and comparing, not by posting again, because a blind retry
+mints a second generation.
+
+**A device holding an older generation is told a newer one exists.** After
+`data` resolves from a held copy, the handle lists the authority's generations
+in the background and exposes whether a higher number exists, with one action
+that fetches it and reloads. This is ADR-0281's notice, specified there and
+never built, and it becomes load-bearing here: cache-first resolution means a
+second device that holds generation 3 opens 3 on every boot without ever asking
+the authority, and deleting `/account/[generation]` removes the only other way a
+person could reach a newer number. The check runs after the open and never
+delays it, so ADR-0292's refusal of a listing before every open stands.
 
 **Two renames follow from putting `account` on the handle.** `eraseLocalData` is
 `eraseReplica`, because it erases this device's copy and touches nothing at the
@@ -205,6 +236,13 @@ without it.
   `data` rejects for a signed-out person produces an unhandled rejection on any
   route that never reads it, and it claims the Web Lock during module
   evaluation, which a second tab and a hot reload both meet.
+- **Downloading and holding every generation the authority lists, deleting the
+  older local copies.** Refused. A generation is a whole database rather than a
+  delta, a held copy is not a synced one because sync attaches to an open store,
+  and this origin's persistence request is often refused, so extra copies raise
+  the odds of an eviction that takes the generation a person actually uses.
+  Deleting the older copy is the drain-and-switch ADR-0281 removed, aimed at the
+  one copy holding a stranded device's work.
 - **Rejecting rather than resolving a `Result`.** Refused. A rejection is
   `unknown`, so the failed state could not carry a typed error without an
   assertion, and `data` would be the only verb on a handle whose `sqlite.open`
