@@ -54,16 +54,10 @@ export function createDesktopBinding(
 	const request = createOwnerRequest(options);
 	const { appId } = options;
 	return {
-		openData: async (definition) => {
-			const admitted = await request({
-				kind: 'data-open',
-				appId,
-				dataId: definition.id,
-			});
-			if (admitted.error !== null) return admitted;
-			if (admitted.data.kind !== 'data-open') return AppError.InvalidResponse();
-			return openClientOwnedData(definition);
-		},
+		// No admission round trip. A deployed app is a trusted app (ADR-0334),
+		// and the store is client-owned in every runtime (ADR-0226), so there
+		// was never a second party whose answer could mean anything.
+		openData: async (definition) => openClientOwnedData(definition),
 		openSqlite: async (name) => Ok(createOwnedSqlite(request, appId, name)),
 		deleteSqlite: (name) =>
 			unwrap(
@@ -97,9 +91,7 @@ function createOwnerRequest({
 				},
 			);
 			if (!response.ok) {
-				return response.status === 404 && message.kind === 'data-open'
-					? AppError.UnknownData({ dataId: message.dataId })
-					: AppError.ProtocolFailed({ status: response.status });
+				return AppError.ProtocolFailed({ status: response.status });
 			}
 			const body: unknown = await response.json();
 			if (!isAppStorageResponse(body)) return AppError.InvalidResponse();

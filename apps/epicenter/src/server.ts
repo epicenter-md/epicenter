@@ -56,7 +56,6 @@ import {
 	SESSION_STREAM_ROUTE,
 } from './routes.ts';
 import type { EpicenterStaticAssets } from './static-assets.ts';
-import { admitData } from './trusted-definitions.ts';
 
 export type HomeServerEvent = {
 	type: 'snapshot';
@@ -324,14 +323,6 @@ export function createHomeServer({
 	app.post(APP_STORAGE_PATH, async (c) => {
 		const request = parseAppStorageRequest(await readJsonObject(c.req.raw));
 		if (request === undefined) return c.text('Bad Request', 400);
-		// The definition identity is answered from the release's own imported
-		// definitions, so it needs neither owner (ADR-0313). A data id this
-		// release does not ship is a 404 rather than a 400: the message was
-		// well formed and the answer is that there is no such data here.
-		if (request.kind === 'data-open') {
-			if (admitData(request) === undefined) return c.text('Not Found', 404);
-			return c.json({ kind: 'data-open' } satisfies AppStorageResponse);
-		}
 		try {
 			if (request.kind === 'secret-put') {
 				if (appSecrets === undefined) return c.text('Unavailable', 503);
@@ -714,11 +705,6 @@ function parseAppStorageRequest(
 		return undefined;
 	}
 	const kind = input.kind;
-	if (kind === 'data-open' && typeof input.dataId === 'string') {
-		return isAppId(input.dataId)
-			? { kind, appId: input.appId, dataId: input.dataId }
-			: undefined;
-	}
 	if (
 		(kind === 'sqlite-run' || kind === 'sqlite-all') &&
 		typeof input.name === 'string'

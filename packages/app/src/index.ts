@@ -36,11 +36,6 @@ export const AppError = defineErrors({
 		message: `The SQLite database name '${databaseName}' is not valid.`,
 		databaseName,
 	}),
-	/** This release does not ship the data id the application asked to open. */
-	UnknownData: ({ dataId }: { dataId: string }) => ({
-		message: `No first-party data definition in this release declares '${dataId}'.`,
-		dataId,
-	}),
 	StorageFailed: ({ cause }: { cause: unknown }) => ({
 		message: 'The application storage owner failed.',
 		cause,

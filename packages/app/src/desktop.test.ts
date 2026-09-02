@@ -16,7 +16,9 @@ function ownerFor(
 
 const DEFINITION = { id: 'so.epicenter.test', title: 'Test' };
 
-test('opening data sends the definition identity, not the definition', async () => {
+test('opening data never reaches the owner', async () => {
+	// No admission round trip exists (ADR-0334): the store is client-owned, so
+	// the only party that could answer has nothing to answer about.
 	const owner = ownerFor((request) => Response.json({ kind: request.kind }));
 	const binding = createDesktopBinding({
 		appId: 'so.epicenter.test',
@@ -24,28 +26,9 @@ test('opening data sends the definition identity, not the definition', async () 
 		fetch: owner.fetch,
 	});
 
-	// The store itself is client-owned, so opening it fails without IndexedDB
-	// here. What this pins is the message that reaches the owner.
 	await binding.openData(DEFINITION as never).catch(() => undefined);
 
-	expect(owner.calls).toEqual([
-		{ kind: 'data-open', appId: 'so.epicenter.test', dataId: 'so.epicenter.test' },
-	]);
-	expect(JSON.stringify(owner.calls[0])).not.toContain('tables');
-});
-
-test('an unadmitted data id reports which id the release does not ship', async () => {
-	const owner = ownerFor(() => new Response('Not Found', { status: 404 }));
-	const binding = createDesktopBinding({
-		appId: 'so.epicenter.test',
-		baseURL: 'http://127.0.0.1:1',
-		fetch: owner.fetch,
-	});
-
-	const result = await binding.openData({
-		id: 'so.epicenter.absent',
-	} as never);
-	expect(result.error?.name).toBe('UnknownData');
+	expect(owner.calls).toEqual([]);
 });
 
 test('statements and secrets reach the owner scoped by application', async () => {

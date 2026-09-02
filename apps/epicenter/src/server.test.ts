@@ -1962,33 +1962,6 @@ describe('the application storage owner', () => {
 		});
 	}
 
-	test('refuses every data id, because this release imports none', async () => {
-		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
-		const server = await serveHost(host);
-		try {
-			// `TRUSTED_DEFINITIONS` is empty on purpose (ADR-0319): Local Mail held
-			// the only row until its account registry moved into its own SQLite,
-			// and the next application earns one when it opens through the scoped
-			// handle. The route still answers, and what it answers is that there is
-			// no such data here.
-			const unknown = await post(server, {
-				kind: 'data-open',
-				appId: LOCAL_MAIL_APP_ID,
-				dataId: LOCAL_MAIL_APP_ID,
-			});
-			expect(unknown.status).toBe(404);
-
-			const absent = await post(server, {
-				kind: 'data-open',
-				appId: LOCAL_MAIL_APP_ID,
-				dataId: 'so.epicenter.absent',
-			});
-			expect(absent.status).toBe(404);
-		} finally {
-			await server.stop(true);
-		}
-	});
-
 	test('holds one labeled secret per application account', async () => {
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
 		const server = await serveHost(host, PAGE, null, {
