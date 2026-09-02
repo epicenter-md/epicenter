@@ -20,6 +20,10 @@ export {
 	createOAuthAppAuth,
 } from './create-oauth-app-auth.js';
 export {
+	type CreateHostedBrowserRedirectAuthOptions,
+	createHostedBrowserRedirectAuth,
+} from './hosted-browser-redirect-auth.js';
+export {
 	createInstanceCredentialAuthority,
 	type InstanceCredentialAuthority,
 } from './instance-credential-authority.js';
