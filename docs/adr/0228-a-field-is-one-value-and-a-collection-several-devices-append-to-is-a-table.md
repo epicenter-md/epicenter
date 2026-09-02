@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-09
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0228 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Relates:** [ADR-0215](0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md)
   (a row is a Yjs type and a field is an attribute on it),

@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-07
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0216 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Relates:** [ADR-0215](0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md)
   (the document model this rule governs),

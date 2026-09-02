@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-07
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0219 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0212](0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md)
   at deletion only. Withdrawn: clear-and-flag, the `!presence` attribute and its

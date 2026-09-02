@@ -3,7 +3,6 @@
 - **Status:** Superseded
 - **Date:** 2026-08-21
 - **Superseded by:** [ADR-0261](0261-a-local-account-replica-is-addressed-by-its-application-server-url-and-verified-principal.md)
-- **Provisional number.** Reconcile this number at merge time according to [the ADR numbering rule](README.md).
 - **Amends:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md) at the address of a retained account replica. The retained-replica and sign-out rules remain; the address gains the server endpoint.
 - **Relates:** [ADR-0092](0092-identity-is-the-partition.md), [ADR-0225](0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md), [ADR-0243](0243-a-workspaces-id-is-its-applications-reverse-domain-identifier.md)
 - **Unbuilt:** Desktop profile records and profile-qualified app storage are not implemented yet.

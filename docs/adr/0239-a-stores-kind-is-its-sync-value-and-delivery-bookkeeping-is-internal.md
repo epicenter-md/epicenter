@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-12
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0239 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md)
   at the store surface: the replica verbs (`applyRemote`, the client log,

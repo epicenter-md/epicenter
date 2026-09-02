@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-07
-- **Provisional number.** Replaces an earlier 0214 that specified a wall-clock
   skew clamp and a version re-stamp. That draft was `Proposed`, and its subject
   no longer exists: ADR-0212 removed the wall clock from the merge entirely, so
   there is nothing to clamp and no version to lower. Rewritten in place.

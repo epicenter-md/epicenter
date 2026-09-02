@@ -4,7 +4,6 @@
 - **Superseded by:** [ADR-0277](0277-the-authority-reads-the-bytes-and-sync-becomes-the-yjs-protocol.md) at the opaque-append model, the client-owned merge, and the absence of state vectors from the transport. The chunking survives.
 - **Restored by:** [ADR-0298](0298-the-authority-is-byte-blind-and-a-cursor-is-a-log-position.md). ADR-0277's supersession was never built, so this model is what deploys and governs again.
 - **Date:** 2026-08-07
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0217 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Relates:** [ADR-0215](0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md)
   (an application is one document, and the record that deliberately left the

@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-12
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0238 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0229](0229-a-lens-names-the-store-it-opens-and-opening-is-one-call.md)
   at the binding error arm: a declaration that will not parse is still a returned value,

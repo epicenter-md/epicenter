@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-21
-- **Provisional number.** The merge owner reconciles this number against other
   open ADRs before merge.
 - **Supersedes:** [ADR-0250](0250-a-database-exposes-documents-as-first-class-members-and-applications-compose-their-lifecycles.md)
   at the public document namespace and lifecycle owner. The independent

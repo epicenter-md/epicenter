@@ -3,7 +3,6 @@
 - **Status:** Superseded
 - **Date:** 2026-08-19
 - **Superseded by:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md), which makes a database one Yjs document and puts a row's rich content in the row.
-- **Provisional number.** The merge owner reconciles this number against other
   open ADRs before merge.
 - **Supersedes:** [ADR-0215](0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md)
   at the index/document split. Withdrawn: the row's rich document as a nested

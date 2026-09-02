@@ -2,7 +2,6 @@
 
 - **Status:** Reversed (2026-08-26). The plugin was removed; see the Reversal section.
 - **Date:** 2026-08-19
-- **Provisional number.** The merge owner reconciles this number against other open ADRs before merge.
 
 ## Context
 

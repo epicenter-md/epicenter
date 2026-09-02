@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-03
-- **Provisional number.** ADR-0191, ADR-0192, ADR-0193, ADR-0195, and ADR-0200 are claimed by open branches and are not in this tree, and ADR-0201 carries the same caveat. Reconcile this integer at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0074](0074-the-secret-vault-is-an-owner-scoped-synced-store-encrypted-under-a-server-derived-keyring.md) at one clause, what the vault may hold: accounts and third-party grants leave its scope, and it keeps the brought values that name no durable local state. Its key source, its refusal of a passphrase and a `locked` state, and its `available | missing` read contract are unchanged and restated as still governing.
 - **Completes:** [ADR-0201](0201-epicenter-owns-one-app-data-root-and-an-app-partitions-its-one-directory-by-a-stable-authority-identifier.md) at the one question it left open, who owns the provider grant that names a partition. It amends nothing there.
 - **Corrected 2026-08-03, before merge.** A draft of this record carried a second amendment to ADR-0201, narrowing "an app receives one directory" to a closed set of host-composed engines and giving an admitted app none. That is withdrawn: every trusted app has one place, ADR-0201 says so at full width, and the section below is rewritten to decide only what this record is actually about. Every refusal here survives the correction unchanged, because none of them was resting on the narrowing.

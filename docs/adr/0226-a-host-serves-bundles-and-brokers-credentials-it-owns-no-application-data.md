@@ -5,7 +5,6 @@
 - **Amended by:** [ADR-0271](0271-a-workspace-mirrors-continuously-to-the-epicenter-folder-one-way.md) at what a host may hold, on this record's own reasoning: the refusal is of a second convergent plane, and a one-way mirror cannot diverge, so the host may write rendered files exactly as it already holds blob bytes.
 - **Date:** 2026-08-08
 - **Amended by:** [ADR-0323](0323-background-work-runs-in-the-host-and-a-window-is-for-looking-at.md) at what a host does. It serves bundles, brokers credentials, and now runs a declared slice of first-party application code, because a hidden window cannot stay awake and the host already owns the files and the credentials that work needs. The refusal this record was written for is untouched: nothing there opens a store or serves an authority.
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0226 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0209](0209-epicenter-is-the-raw-view-beside-its-applications-not-a-shell-above-them.md)
   and [ADR-0208](0208-every-app-folder-is-markdown-beside-one-queryable-database.md),

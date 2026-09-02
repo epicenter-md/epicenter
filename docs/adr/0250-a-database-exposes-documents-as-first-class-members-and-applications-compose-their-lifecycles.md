@@ -2,7 +2,6 @@
 
 - **Status:** Superseded
 - **Date:** 2026-08-19
-- **Provisional number.** The merge owner reconciles this number against other
   open ADRs before merge.
 - **Amends:** [ADR-0248](0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md)
   at the public namespace and lifecycle owner. Withdrawn: the table/database

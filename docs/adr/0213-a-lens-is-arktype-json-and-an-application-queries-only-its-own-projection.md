@@ -6,7 +6,6 @@
   at the noun only: the artifact is a workspace declaration
   (`defineWorkspace`, `parseWorkspace`, `workspace.json`). Everything decided
   here about the declaration itself stands verbatim.
-- **Provisional number.** Replaces an earlier 0213 that specified a multiset
   digest for a cell store that no longer exists. That draft was `Proposed` and is
   rewritten in place.
 - **Relates:** [ADR-0212](0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md)

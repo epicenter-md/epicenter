@@ -5,7 +5,6 @@
 - **Amended by:** [ADR-0243](0243-a-workspaces-id-is-its-applications-reverse-domain-identifier.md)
   at the public name: the declaration exposes its reverse-domain application
   identifier as `id`.
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0240 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Supersedes:** [ADR-0160](0160-lenses-interpret-durable-namespaces-without-creating-lifecycle-scopes.md):
   its address grammar and its "no independent Lens ID" stand, but its central

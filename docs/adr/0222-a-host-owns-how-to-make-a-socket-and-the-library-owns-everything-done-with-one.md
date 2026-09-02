@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-08
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0223 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Relates:** [ADR-0220](0220-the-authority-keeps-a-snapshot-and-a-tail-and-a-deletion-becomes-real.md)
   (the transport this drives),

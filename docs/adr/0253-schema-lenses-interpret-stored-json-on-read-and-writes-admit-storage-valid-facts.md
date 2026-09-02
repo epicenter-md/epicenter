@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-19
-- **Provisional number.** The merge owner reconciles this number against other
   open ADRs before merge.
 - **Amends:** [ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md)
   at write admission. Withdrawn: declaration-level value and known-field

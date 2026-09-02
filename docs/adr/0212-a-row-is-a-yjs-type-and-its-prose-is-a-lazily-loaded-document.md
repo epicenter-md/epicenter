@@ -5,7 +5,6 @@
 - **Amended by:** [ADR-0248](0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md)
   at the index/document split. The row's scalar type remains nested in the
   application document, while its rich document is independently loaded.
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0214 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`). This record
   replaces an earlier 0212 that specified a hand-built cell store; that draft was
   `Proposed` and is rewritten in place, per the same-number rewrite pattern the

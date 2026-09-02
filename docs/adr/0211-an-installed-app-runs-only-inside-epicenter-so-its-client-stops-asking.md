@@ -3,7 +3,6 @@
 - **Status:** Accepted
 - **Date:** 2026-08-05
 - **Superseded by:** [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md): the installed-app plane is refused for now, so there is no installed app left to run inside Epicenter.
-- **Provisional number.** `main` ends at ADR-0205; ADR-0206 through ADR-0210
   land with this branch, so 0211 is the next free integer today. Reconcile at
   merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0186](0186-an-app-reaches-epicenter-through-one-bundled-mit-client-it-installs-itself.md)

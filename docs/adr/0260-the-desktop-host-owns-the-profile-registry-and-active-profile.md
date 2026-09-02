@@ -3,7 +3,6 @@
 - **Status:** Superseded
 - **Date:** 2026-08-21
 - **Superseded by:** [ADR-0262](0262-the-desktop-host-owns-one-active-connection-and-no-connection-registry.md)
-- **Provisional number.** Reconcile this number at merge time according to [the ADR numbering rule](README.md).
 - **Amends:** [ADR-0155](0155-epicenter-desktop-auth-is-one-credential-free-window-bun-authority.md) at desktop profile selection and retained profile state. The one active runtime, credential-free windows, and host-owned auth authority remain.
 - **Amends:** [ADR-0109](0109-hosted-tauri-auth-keeps-app-owned-keyring-edges-until-three-real-callers-earn-sharing.md) at the decision to defer multi-account storage. Profile-correct storage is now required; remembered credentials remain optional product work.
 - **Relates:** [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md), [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md), [ADR-0232](0232-a-page-lifetime-is-one-auth-generation-and-a-permanently-denied-sync-stops-for-good.md), [ADR-0259](0259-a-desktop-profile-is-addressed-by-a-server-url-and-principal-pair.md)

@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-14
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0243 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0204](0204-an-app-is-one-reverse-domain-identifier-that-names-every-place-it-exists.md)
   and [ADR-0240](0240-an-application-declares-one-workspace-and-an-opened-runtime-holds-exactly-one-definition.md)

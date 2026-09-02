@@ -2,7 +2,6 @@
 
 - **Status:** Proposed
 - **Date:** 2026-08-14
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0242 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0225](0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md)
   at authority lifecycle. Its name remains

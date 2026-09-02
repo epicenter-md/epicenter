@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-09
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0229 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Amended by:** [ADR-0233](0233-a-browser-application-keeps-a-private-document-and-one-workspace-replica-per-account.md):
   in a browser the lens still names the application, and the caller also names

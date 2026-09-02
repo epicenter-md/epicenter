@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-19
-- **Provisional number.** The merge owner reconciles this number against other
   open ADRs before merge.
 - **Relates:** [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md),
   [ADR-0213](0213-a-lens-is-arktype-json-and-an-application-queries-only-its-own-projection.md),

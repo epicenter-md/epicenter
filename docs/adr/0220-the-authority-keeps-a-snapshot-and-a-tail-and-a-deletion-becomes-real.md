@@ -3,7 +3,6 @@
 - **Status:** Superseded
 - **Superseded by:** [ADR-0277](0277-the-authority-reads-the-bytes-and-sync-becomes-the-yjs-protocol.md). A snapshot and a tail are what a server keeps when it cannot hold a document. A reading authority holds the document, and a deletion is real because the delete set travels with every diff.
 - **Date:** 2026-08-08
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0220 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0217](0217-the-authority-appends-opaque-bytes-and-the-client-owns-every-merge.md)
   at its central refusal. Withdrawn: that the log is never compacted, that no

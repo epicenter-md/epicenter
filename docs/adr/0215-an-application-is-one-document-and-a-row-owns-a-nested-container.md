@@ -5,7 +5,6 @@
 - **Superseded by:** [ADR-0248](0248-a-row-owns-an-independent-yjs-document-at-a-derived-address.md)
   at the index/document split. The nested row container is replaced by an
   independently loaded Yjs document addressed by the row's coordinates.
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0216 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Relates:** [ADR-0212](0212-a-row-is-a-yjs-type-and-its-prose-is-a-lazily-loaded-document.md)
 - **Relates:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) restores this record's shape after ADR-0248 superseded it. This record stays superseded; ADR-0295 carries the decision.

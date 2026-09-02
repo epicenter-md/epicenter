@@ -3,7 +3,6 @@
 - **Status:** Accepted
 - **Amended by:** [ADR-0272](0272-restore-replaces-a-workspace-from-an-artifact-under-a-new-document-identity.md) at the operation this record reserved: the authority gains one destructive whole-document replacement, owned explicitly by restore. Root-document compaction remains refused.
 - **Date:** 2026-08-14
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0241 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0238](0238-the-live-document-is-the-truth-while-open-and-persistence-is-a-visible-debt.md)
   at the projection half: the built-in SQL read index and the `query` verb are

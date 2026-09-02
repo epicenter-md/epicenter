@@ -3,7 +3,6 @@
 - **Status:** Accepted (first half stands; the `legacy` subpath it named was
   deleted by [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md))
 - **Date:** 2026-08-08
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0224 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Relates:** [ADR-0215](0215-an-application-is-one-document-and-a-row-owns-a-nested-container.md),
   [ADR-0223](0223-a-page-holds-the-store-and-only-three-small-relations-have-to-survive.md).

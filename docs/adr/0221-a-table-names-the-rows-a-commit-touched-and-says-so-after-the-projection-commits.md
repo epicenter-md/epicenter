@@ -2,7 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-08
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0223 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Relates:** [ADR-0187](0187-a-bound-handle-reports-staleness-tables-can-name-rows-values-cannot.md)
   (the invalidation shape and its laws, which this satisfies unchanged),

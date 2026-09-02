@@ -3,7 +3,6 @@
 - **Status:** Accepted
 - **Amended by:** [ADR-0298](0298-the-authority-is-byte-blind-and-a-cursor-is-a-log-position.md) at sync delivery. The authority is byte-blind and positional; a replica's owed suffix is still read from its durable update log.
 - **Date:** 2026-08-12
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0238 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0237](0237-nonconformance-is-a-reads-only-error-and-a-disposed-store-throws.md)
   at the storage arm: the `storage-failed` poison is withdrawn, and an unusable
