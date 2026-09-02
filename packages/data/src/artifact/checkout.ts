@@ -56,8 +56,9 @@ import {
 	type JsonValue,
 	type ParsedDataDefinition,
 	type ParsedTable,
+	RESERVED_ATTRIBUTE_PREFIX,
 } from '../definition/index.js';
-import { parseRowFile } from './frontmatter.js';
+import { type ParsedRowFile, parseRowFile } from './frontmatter.js';
 import { parseRowPath, ROW_FILE_EXTENSION, rowPath } from './layout.js';
 import {
 	type RenderableData,
@@ -458,21 +459,25 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'  rather than chosen, so the send makes the row, gives it an id, and',
 		'  writes the file out under that id. Re-read the folder afterwards: the',
 		'  name you gave it is gone. Give it every field its table declares, with',
-		'  a value that fits, or the file cannot become a row and is deleted',
-		'  instead. Copy the frontmatter of a file beside it. A field that points',
-		'  at another row can only name one that already exists, because the id of',
-		'  a row you are creating in the same send does not exist yet.',
+		'  a value that fits: the row is made either way, and one missing half',
+		'  its fields is a row the application cannot read until somebody fixes',
+		'  it. Copy the frontmatter of a file beside it. A field that points at',
+		'  another row can only name one that already exists, because the id of a',
+		'  row you are creating in the same send does not exist yet.',
 		'- **Do not delete, move, or rename a file.** A file that is gone is a',
 		'  deletion, and a deletion has nowhere to go yet: it is the one thing',
 		'  that stops the whole send. Putting the file back clears it, and so',
 		'  does deleting the row in the application.',
-		'- **Do not remove a frontmatter line.** A removed line means "I did not',
-		'  mean to touch it" as much as it means "unset this", so the send',
-		'  rewrites the file instead of guessing. Write `null` to unset a value,',
-		'  and only where the table below says the field is `or null`.',
-		'- **Do not invent a field name**, and do not write a value that does not',
-		'  fit its field. Both would be read by nothing, so the send rewrites the',
-		'  file and the line goes nowhere.',
+		'- **A frontmatter line you remove reads as `null`**, because that is what',
+		'  this format writes for a value that is not there. On a field the table',
+		'  below marks `or null` that is the designed no-value; on any other it',
+		'  is a value the application cannot read until somebody fixes it. There',
+		'  is no way to say "leave this alone" other than leaving the line alone.',
+		'- **A name the table does not declare goes in and is read by nothing.**',
+		'  So does a value that does not fit its field, and the row then does not',
+		'  read at all. Nothing here refuses either: the application shows the row',
+		'  as unreadable and the repair is this file. `id` and the text below the',
+		'  block are not frontmatter lines, and writing one does nothing at all.',
 		'- **Do not edit `kv.json`.** It is written for you to read, and a send',
 		'  rewrites it.',
 		'',
@@ -837,34 +842,6 @@ export type DiscardReason =
 	/** The frontmatter frame is gone, so nothing here can be read. */
 	| 'unreadable'
 	/**
-	 * A value the file no longer carries.
-	 *
-	 * Deleting a line could mean "unset this" or "I did not mean to touch it",
-	 * and a base cannot tell them apart. Setting the value to `null` is the way
-	 * to say the first one.
-	 */
-	| 'value-removed'
-	/**
-	 * A name this table does not declare, or one the store reserves.
-	 *
-	 * `id` and `content` are the row's own, not values (ADR-0309), and writing
-	 * either throws rather than returning. An undeclared name would ride
-	 * through a write untouched (ADR-0240), which is right for a value an older
-	 * release wrote and wrong for one a person just invented in a text editor:
-	 * nothing would ever read it back.
-	 */
-	| 'name-unknown'
-	/**
-	 * The value does not fit the field.
-	 *
-	 * `frontmatter.ts` promises a hand edit cannot change a value's type by
-	 * accident, and that promise held only while nothing wrote the parse back.
-	 * `pinned: yes` reads as the string `"yes"`; applied, it makes the row
-	 * nonconforming, so the store still holds it and the application stops
-	 * showing it. Checked here, where it is still a file.
-	 */
-	| 'value-invalid'
-	/**
 	 * The definition no longer declares this table.
 	 *
 	 * Its rows still render (ADR-0240), so they are in the folder and in the
@@ -877,16 +854,7 @@ export type DiscardReason =
 	 * Checked with `decode`, which validates the same text `rewrite` would
 	 * apply, so a person never reads a plan whose own push then refuses it.
 	 */
-	| 'body-unreadable'
-	/**
-	 * A new file whose frontmatter is not a whole row.
-	 *
-	 * A definition declares no defaults on purpose (ADR-0255), and `create`
-	 * does not validate, so a file missing a declared value would mint a row
-	 * the application reads as nonconforming and stops showing. Named per field
-	 * so the fix is mechanical: copy the missing lines from a file beside it.
-	 */
-	| 'row-incomplete';
+	| 'body-unreadable';
 
 /**
  * Something no answer resolves, so the push cannot run at all.
@@ -1064,7 +1032,7 @@ async function planPush(
 			items.push({ kind: 'block', path, reason: 'file-missing' });
 			continue;
 		}
-		const file = parseRowFile(contents);
+		const file = readRowFile(contents);
 		if (file === undefined) {
 			discard('unreadable');
 			flush();
@@ -1107,25 +1075,20 @@ async function planPush(
 			...Object.keys(handed.values),
 			...Object.keys(file.fields),
 		])) {
-			const wrote = file.fields[name];
-			if (wrote === undefined) {
-				discard('value-removed', name);
-				continue;
-			}
+			// **A removed line is `null`, and nothing here validates** (ADR-0338).
+			// The file format already decided the first: `frontmatter.ts` writes
+			// `null` for an absent value and for `null` alike, so a line deleted
+			// by hand reads as the value it would have read as if it were typed.
+			// The second is that a name this table does not declare and a value
+			// that does not fit its field are what `update` itself admits
+			// (ADR-0125, ADR-0240); refusing them here made the folder a stricter
+			// door than every other way into the store.
+			const wrote = file.fields[name] ?? null;
 			const wasHandedOver = handed.values[name];
 			const inStore = stored.fields[name];
 			if (same(wrote, wasHandedOver)) continue;
 			if (same(wrote, inStore)) continue;
 
-			const field = table.fields.get(name);
-			if (field === undefined) {
-				discard('name-unknown', name);
-				continue;
-			}
-			if (!field.check(wrote)) {
-				discard('value-invalid', name);
-				continue;
-			}
 			if (same(inStore, wasHandedOver)) {
 				items.push({
 					kind: 'value',
@@ -1194,14 +1157,14 @@ function readsBack(table: ParsedTable, text: string): boolean {
 }
 
 /**
- * A file nobody pulled, as the row it would become or as the reasons it cannot.
+ * A file nobody pulled, as the row it would become or as the reason it cannot.
  *
- * Every declared field has to be there and has to fit, because a definition
- * declares no defaults (ADR-0255) and `create` does not validate: a file
- * missing one would mint a row the application reads as nonconforming and
- * stops showing, which is a person's file disappearing into a store that still
- * holds it. Checked here, where it is still a file and the fix is a line of
- * text.
+ * Three things stop a file from becoming a row, and every one of them is the
+ * file being unreadable rather than the row being wrong. A definition declares
+ * no defaults (ADR-0255), so a file missing half its fields mints a row this
+ * release reads as nonconforming, which is a state the store already has a
+ * word, a surface, and a record for (ADR-0125, ADR-0338). It is written, and
+ * the note list shows it.
  */
 function admission(
 	definition: ParsedDataDefinition,
@@ -1209,38 +1172,44 @@ function admission(
 	path: string,
 	contents: string,
 ): PlannedAdmission | PlannedDiscard {
-	const notes: DiscardNote[] = [];
 	const table = definition.tables.get(tableName);
 	if (table === undefined) {
 		return { kind: 'discard', path, notes: [{ reason: 'table-undeclared' }] };
 	}
-	const file = parseRowFile(contents);
+	const file = readRowFile(contents);
 	if (file === undefined) {
 		return { kind: 'discard', path, notes: [{ reason: 'unreadable' }] };
-	}
-	// Undeclared names first, and `id` and `content` are among them: both are
-	// the row's own rather than values (ADR-0309), and `create` THROWS on
-	// either rather than returning, so this is what keeps a hand-written file
-	// from crashing a push.
-	for (const name of Object.keys(file.fields)) {
-		if (!table.fields.has(name)) notes.push({ reason: 'name-unknown', name });
-	}
-	for (const [name, field] of table.fields) {
-		const wrote = file.fields[name];
-		if (wrote === undefined) {
-			notes.push({ reason: 'row-incomplete', name });
-			continue;
-		}
-		if (!field.check(wrote)) notes.push({ reason: 'value-invalid', name });
 	}
 	// Defensive on the codec, which `compileData` refuses a table without: an
 	// empty body needs none, because `create` mints an empty node.
 	if (file.body !== '' && !readsBack(table, file.body)) {
-		notes.push({ reason: 'body-unreadable' });
+		return { kind: 'discard', path, notes: [{ reason: 'body-unreadable' }] };
 	}
-	return notes.length > 0
-		? { kind: 'discard', path, notes }
-		: { kind: 'admission', path, table: tableName };
+	return { kind: 'admission', path, table: tableName };
+}
+
+/**
+ * One file from the folder, with the keys that are not values taken out.
+ *
+ * The counterpart of `readRow`, which filters the same three off a live row
+ * because what a value read owes is every value and these are not values:
+ * `id` and `content` are the row's own (ADR-0309), and the `!` prefix is
+ * reserved at the parser. `create` and `update` THROW on all three rather than
+ * returning, so with nothing validated on the way in (ADR-0338) this is what
+ * keeps a line somebody invented in a text editor from being the one thing a
+ * push cannot survive. The line goes nowhere and the re-render sweeps it,
+ * which is what a name nothing reads has always done.
+ */
+function readRowFile(contents: string): ParsedRowFile | undefined {
+	const file = parseRowFile(contents);
+	if (file === undefined) return undefined;
+	const fields: JsonObject = {};
+	for (const [name, value] of Object.entries(file.fields)) {
+		if (name === 'id' || name === CONTENT_FIELD) continue;
+		if (name.startsWith(RESERVED_ATTRIBUTE_PREFIX)) continue;
+		fields[name] = value;
+	}
+	return { fields, body: file.body };
 }
 
 /**
@@ -1394,7 +1363,7 @@ export async function push({
 	}[] = [];
 	for (const item of plan) {
 		if (item.kind !== 'admission' || !chosen(item)) continue;
-		const file = parseRowFile(held.data.files.get(item.path) ?? '');
+		const file = readRowFile(held.data.files.get(item.path) ?? '');
 		if (file === undefined) {
 			broke(`'${item.path}' could not be read into a row`);
 			continue;

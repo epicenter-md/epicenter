@@ -357,10 +357,10 @@ describe('pull refuses a folder holding unpushed edits', () => {
 		});
 		// A file nobody pulled is not a block: it is a row waiting to be made,
 		// which is what stops one stray file wedging both directions.
-		expect(only(refused.plan, 'discard')).toEqual({
-			kind: 'discard',
+		expect(only(refused.plan, 'admission')).toEqual({
+			kind: 'admission',
 			path: 'notes/handwritten.md',
-			notes: [{ reason: 'row-incomplete', name: 'pinned' }],
+			table: 'notes',
 		});
 		await data[Symbol.asyncDispose]();
 	});
@@ -601,10 +601,12 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a new file missing a value names the lines to add', async () => {
-		// A definition declares no defaults (ADR-0255) and `create` does not
-		// validate, so a file missing one would mint a row the application reads
-		// as nonconforming and stops showing.
+	test('a new file missing a value is still a row, and an undeclared name rides along', async () => {
+		// Nothing is validated on the way in (ADR-0338). A definition declares no
+		// defaults (ADR-0255), so this mints a row this release reads as
+		// nonconforming, which is a state the store already has a word, a
+		// surface, and a record for (ADR-0125): the note list shows it, and the
+		// repair is the file.
 		const { host, data } = await pulledThenEdited((folder) => {
 			folder.set(
 				'notes/handwritten.md',
@@ -612,14 +614,16 @@ describe('diff plans what push would do (ADR-0337)', () => {
 			);
 		});
 		const plan = expectOk(await planOf(host, data));
-		expect(only(plan, 'discard').notes).toEqual([
-			{ reason: 'name-unknown', name: 'colour' },
-			{ reason: 'row-incomplete', name: 'pinned' },
+		expect(plan).toEqual([
+			{ kind: 'admission', path: 'notes/handwritten.md', table: 'notes' },
 		]);
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a deleted frontmatter line rewrites the file rather than reading an unset', async () => {
+	test('a deleted frontmatter line is null, and applies as an ordinary value edit', async () => {
+		// `frontmatter.ts` writes `null` for an absent value and for `null`
+		// alike, so the file format already decided this: there is no unset to
+		// tell apart from a value (ADR-0338).
 		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
 			folder.set(
 				`notes/${id}.md`,
@@ -629,9 +633,13 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		const plan = expectOk(await planOf(host, data));
 		expect(plan).toEqual([
 			{
-				kind: 'discard',
+				kind: 'value',
 				path: `notes/${noteId}.md`,
-				notes: [{ reason: 'value-removed', name: 'pinned' }],
+				table: 'notes',
+				rowId: noteId,
+				name: 'pinned',
+				store: false,
+				file: null,
 			},
 		]);
 		await data[Symbol.asyncDispose]();
@@ -763,11 +771,11 @@ describe('push sends the values back and re-renders', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a value that does not fit its field is refused, not applied', async () => {
-		// `frontmatter.ts` promises a hand edit cannot change a value's type by
-		// accident, and that held only while nothing wrote the parse back. A
-		// string in a boolean field would make the row nonconforming, so the
-		// store would hold the note and the application would stop showing it.
+	test('a value that does not fit its field is written, and the row stops reading', async () => {
+		// The folder is not a stricter door than `update`, which validates
+		// nothing (ADR-0125, ADR-0240, ADR-0338). `pinned: yes` reads as the
+		// string "yes", goes in as one, and the row is then one this release
+		// cannot read: the store holds it and the note list says so.
 		const { host, data, noteId } = await edited([
 			'pinned: false',
 			'pinned: yes',
@@ -775,40 +783,49 @@ describe('push sends the values back and re-renders', () => {
 		const plan = expectOk(await planOf(host, data));
 		expect(plan).toEqual([
 			{
-				kind: 'discard',
+				kind: 'value',
 				path: `notes/${noteId}.md`,
-				notes: [{ reason: 'value-invalid', name: 'pinned' }],
+				table: 'notes',
+				rowId: noteId,
+				name: 'pinned',
+				store: false,
+				file: 'yes',
 			},
 		]);
-		// Unanswered it refuses; answered it rewrites the file and writes
-		// nothing, which is the person saying the line goes nowhere.
-		expect(expectErr(await sendBack(host, data, plan)).name).toBe(
-			'PushIncomplete',
-		);
-		expectOk(
-			await sendBack(host, data, plan, { [`notes/${noteId}.md`]: 'store' }),
-		);
-		expect(data.tables.notes.get(noteId)?.pinned).toBe(false);
-		expect(host.folder.get(`notes/${noteId}.md`)).toContain('pinned: false');
+		expectOk(await sendBack(host, data, plan, takeFile(plan)));
+		expect(data.tables.notes.get(noteId)).toBeUndefined();
+		expect(data.tables.notes.nonconforming[0]?.raw.pinned).toBe('yes');
+		// And the folder was rewritten from the row, so the line survives the
+		// round trip rather than being tidied away.
+		expect(host.folder.get(`notes/${noteId}.md`)).toContain('pinned: "yes"');
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a name the table does not declare is refused, reserved or invented', async () => {
-		// `id` and `content` are the row's own and writing either THROWS rather
-		// than returning; an invented name would ride through a write untouched
-		// and nothing would ever read it back.
-		for (const line of ['id: "forged"', 'content: "text"', 'titel: "typo"']) {
-			const { host, data, noteId } = await edited([
-				'pinned: false',
-				`pinned: false\n${line}`,
-			]);
-			const plan = expectOk(await planOf(host, data));
-			expect(only(plan, 'discard')).toMatchObject({
+	test('a name nothing declares goes in, and a name the store reserves goes nowhere', async () => {
+		// An undeclared name rides through a write untouched (ADR-0240), so it
+		// is an ordinary value. `id` and `content` are not values at all
+		// (ADR-0309) and writing either THROWS, so they are filtered off the
+		// file the way `readRow` filters them off a row.
+		const { host, data, noteId } = await edited([
+			'pinned: false',
+			'pinned: false\nid: "forged"\ncontent: "text"\ntitel: "typo"',
+		]);
+		const plan = expectOk(await planOf(host, data));
+		expect(plan).toEqual([
+			{
+				kind: 'value',
 				path: `notes/${noteId}.md`,
-				notes: [{ reason: 'name-unknown' }],
-			});
-			await data[Symbol.asyncDispose]();
-		}
+				table: 'notes',
+				rowId: noteId,
+				name: 'titel',
+				store: undefined,
+				file: 'typo',
+			},
+		]);
+		expectOk(await sendBack(host, data, plan, takeFile(plan)));
+		expect(data.tables.notes.get(noteId)?.id).toBe(noteId);
+		expect(host.folder.get(`notes/${noteId}.md`)).toContain('titel: "typo"');
+		await data[Symbol.asyncDispose]();
 	});
 
 	test('an answered body edit rewrites the note in the node it already has', async () => {
@@ -1083,12 +1100,8 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 			'row-gone': 'rewrites this',
 			'kv-changed': 'Do not edit `kv.json`',
 			unreadable: 'Keep the `---` block',
-			'value-removed': 'Do not remove a frontmatter line',
-			'name-unknown': 'Do not invent a field name',
-			'value-invalid': 'does not\n  fit its field',
 			'table-undeclared': 'The tables',
 			'body-unreadable': 'text under the `---` block comes back',
-			'row-incomplete': 'every field its table declares',
 		};
 		for (const phrase of Object.values(said)) {
 			expect(agents).toContain(phrase);

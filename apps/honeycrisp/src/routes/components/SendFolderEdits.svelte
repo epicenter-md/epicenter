@@ -140,18 +140,10 @@
 				return 'This file is written for you to read and is never sent back.';
 			case 'unreadable':
 				return 'The --- block at the top is missing, so nothing in this file can be read.';
-			case 'value-removed':
-				return `The "${note.name}" line was removed. Set it to null instead of deleting it.`;
-			case 'name-unknown':
-				return `Nothing reads a "${note.name}" line, so setting one would go nowhere.`;
-			case 'value-invalid':
-				return `The "${note.name}" line is not the kind of value that field holds.`;
 			case 'table-undeclared':
 				return 'This kind of file is not something this version of Honeycrisp knows how to write back.';
 			case 'body-unreadable':
 				return 'The text under the --- block cannot be read as a note.';
-			case 'row-incomplete':
-				return `A new note needs a "${note.name}" line, and this file has none.`;
 		}
 	}
 
