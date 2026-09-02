@@ -46,14 +46,17 @@ import {
 } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { isAppId } from '@epicenter/constants/app-data';
+// One import, and it is the entry point that holds no CRDT: this module writes
+// and reads files and interprets none of them, so nothing here may reach the
+// half of the checkout that opens a store.
 import {
 	AGENTS_PATH,
 	type CheckoutFile,
 	checkoutLine,
 	MANIFEST_PATH,
 	parseCheckout,
-} from '@epicenter/data/artifact/checkout';
-import { parseRowPath } from '@epicenter/data/artifact/format';
+	parseRowPath,
+} from '@epicenter/data/artifact/format';
 
 export class CheckoutFolderBusyError extends Error {
 	override readonly name = 'CheckoutFolderBusy';

@@ -285,7 +285,36 @@
 		view = currentView;
 		updateActiveFormats(currentView.state);
 
+		/**
+		 * Drop the undo history when something outside this editor rewrites the
+		 * body underneath it.
+		 *
+		 * A `Y.UndoManager` tracks the origins it was told about, which here are
+		 * this editor's own transactions. Anything else that edits the fragment
+		 * (a body sent back from the folder, ADR-0338; a peer's change arriving
+		 * over the socket) leaves the stack referencing items that are now
+		 * deleted, and the next Cmd-Z either drains the whole stack silently or
+		 * re-inserts a block the person deleted minutes ago at the end of the
+		 * new text. Neither undoes what just happened, and both look like a bug
+		 * in undo.
+		 *
+		 * Clearing says the honest thing: history is what you typed here, and it
+		 * ends where somebody else's edit begins. Making the rewrite itself one
+		 * undoable step is the better outcome and needs the store to expose the
+		 * origin it writes under, which is a decision about the store's surface
+		 * rather than about this component.
+		 */
+		const document = yxmlfragment.doc;
+		const forgetOnForeignEdit = (transaction: Y.Transaction) => {
+			if (!transaction.changedParentTypes.has(yxmlfragment)) return;
+			if (transaction.origin === undoManager) return;
+			if (undoManager.trackedOrigins.has(transaction.origin)) return;
+			undoManager.clear();
+		};
+		document?.on('afterTransaction', forgetOnForeignEdit);
+
 		return () => {
+			document?.off('afterTransaction', forgetOnForeignEdit);
 			currentView.destroy();
 			undoManager.destroy();
 			view = undefined;

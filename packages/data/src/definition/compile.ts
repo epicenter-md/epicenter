@@ -187,9 +187,7 @@ function compileDefinition(
 			});
 		}
 		const table = declaration as TableDeclaration;
-		if (
-			!(CONTENT_FIELD in table) || !isContentCodec(table.content)
-		) {
+		if (!(CONTENT_FIELD in table) || !isContentCodec(table.content)) {
 			return DataDefinitionParseError.Malformed({
 				reason: `table '${tableName}' must declare a content codec`,
 			});
@@ -346,10 +344,22 @@ function fieldNameProblem(
 	return undefined;
 }
 
+/**
+ * All three verbs, because a partial codec is a runtime failure rather than a
+ * degraded one.
+ *
+ * `rewrite` is checked here for the same reason `decode` is: a push calls it
+ * on a body a person answered for, inside the transaction that carries the
+ * whole plan, and a missing one would throw out of a commit that had already
+ * written half of it. The authoring type demands all three; this is the door a
+ * definition that did not go through it comes in by.
+ */
 function isContentCodec(value: unknown): value is ContentCodec {
 	const codec = value as Partial<ContentCodec> | undefined;
 	return (
-		typeof codec?.encode === 'function' && typeof codec.decode === 'function'
+		typeof codec?.encode === 'function' &&
+		typeof codec.decode === 'function' &&
+		typeof codec.rewrite === 'function'
 	);
 }
 

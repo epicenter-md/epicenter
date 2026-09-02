@@ -13,6 +13,7 @@
 	import FolderUpIcon from '@lucide/svelte/icons/folder-up';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import type { AccountDatabase } from '$lib/databases.js';
+	import { reportBackgroundError } from '$lib/report.js';
 
 	let {
 		diff,
@@ -179,6 +180,9 @@
 			}
 			answers = {};
 			plan = data;
+		} catch (cause) {
+			reportBackgroundError(cause);
+			outcome = { tone: 'refused', message: unavailable('') };
 		} finally {
 			running = false;
 		}
@@ -195,6 +199,19 @@
 				error === null
 					? { tone: 'held', message: landed(data) }
 					: { tone: 'refused', message: unavailable(error.name) };
+		} catch (cause) {
+			// The library reports every refusal it plans for as a `Result`, so a
+			// throw here is a bug rather than an outcome. It still cannot leave
+			// the dialog open over a plan that may no longer be true, and it must
+			// not leave a person believing nothing happened: some of the send may
+			// have landed.
+			reportBackgroundError(cause);
+			plan = undefined;
+			outcome = {
+				tone: 'refused',
+				message:
+					'Something went wrong partway through sending. Read the folder again to see what landed.',
+			};
 		} finally {
 			running = false;
 		}
@@ -236,7 +253,7 @@
 			case 'PushIncomplete':
 				return 'The folder or your notes changed while you were looking. Read it again.';
 			case 'FolderStale':
-				return 'Your edits reached your notes, and the folder could not be rewritten. Save notes as files to catch it up.';
+				return 'Your edits reached your notes, and the folder could not be rewritten. Save notes as files to catch it up, and do not send again first: any file that became a note is still there under its old name and would be sent twice.';
 			default:
 				return 'Your folder could not be read.';
 		}

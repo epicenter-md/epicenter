@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	compileData,
 	defineData,
 	defineTable,
 	field,
-	compileData,
 	plainText,
 } from '@epicenter/data/definition';
 import * as Y from '@y/y';

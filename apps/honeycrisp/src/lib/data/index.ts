@@ -74,15 +74,18 @@ const noteMarkdown: ContentCodec = {
 		return Ok(node);
 	},
 	// The note the person is looking at may be this one, so the node is edited
-	// rather than replaced (ADR-0329, amended by ADR-0337): the fragment the
-	// editor, its undo manager, and every open preview are bound to is the same
-	// fragment afterwards. Cleared and refilled in one call each, inside the
-	// one transaction the push runs in, so a bound view sees one delta and not
-	// a moment where the note is empty.
+	// rather than replaced (ADR-0338): the fragment the editor, its undo
+	// manager, and every open preview are bound to is the same fragment
+	// afterwards. Cleared and refilled in one call each, inside the one
+	// transaction the push runs in, so a bound view sees one delta and not a
+	// moment where the note is empty.
 	//
 	// Whole rather than diffed. `@y/prosemirror` has `docDiffToDelta` and does
-	// not export it, and a minimal delta buys a finer undo step rather than a
-	// different outcome: the person asked for the file's prose to win.
+	// not export it. The cost is not fidelity, it is concurrency: a peer typing
+	// into a paragraph this removes loses those keystrokes
+	// (`packages/data/evidence/rewriting-a-body.test.ts`). A person is told the
+	// note's text moved in both places before they answer, and answering `file`
+	// is them saying the file wins.
 	rewrite: (node, text) => {
 		if (node.length > 0) node.delete(0, node.length);
 		pmToFragment(parseNoteBody(text), node);

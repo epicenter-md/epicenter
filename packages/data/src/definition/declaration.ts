@@ -16,10 +16,7 @@ import type * as Y from '@y/y';
 import { type Static, type TSchema, Type } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import {
-	type Field,
-	field as genericField,
-} from '../field/index.js';
+import { type Field, field as genericField } from '../field/index.js';
 
 export const RESERVED_ATTRIBUTE_PREFIX = '!';
 export const KV_ROOT = 'kv';
@@ -93,14 +90,24 @@ export type ContentError = InferErrors<typeof ContentError>;
  * attribute is the lazy-mint case ADR-0296 rules out: two devices doing it
  * concurrently resolve by attribute LWW and one loses its whole subtree, and
  * every editor, undo manager, and preview bound to the old node is detached
- * with it. Editing the node the row already holds keeps the binding, keeps a
- * peer's concurrent edits mergeable, and is one ordinary commit.
+ * with it. Editing the node the row already holds keeps every binding and is
+ * one ordinary commit.
  *
- * What `rewrite` does NOT promise is a minimal edit. A codec that clears its
- * content and refills it is correct and is what all three in this repository
- * do; a person asked for the file's version to win, and that is what they get.
- * A real text diff would make the change smaller and the undo step finer, and
- * it can replace a codec's body later with no change here.
+ * **It is not lossless, and the difference is worth knowing exactly**
+ * (`evidence/rewriting-a-body.test.ts`). A codec that clears its content and
+ * refills it, which is what all three in this repository do, keeps the node
+ * and discards what was in it: a peer's keystrokes INSIDE a block this
+ * removed are gone with the block, because deleting a nested type reclaims
+ * what is under it. What survives is a block the peer added beside the old
+ * ones, and two concurrent rewrites concatenate rather than one winning. So
+ * this is better than a replacement rather than safe: a replacement would
+ * have lost one device's whole node and every binding to it.
+ *
+ * What `rewrite` does NOT promise is a minimal edit. A person asked for the
+ * file's version to win, and that is what they get. A real text diff would
+ * make the change smaller, the undo step finer, and a peer's concurrent
+ * keystrokes survivable where the two edits do not overlap; it can replace a
+ * codec's body later with no change here.
  */
 export type ContentCodec = {
 	readonly encode: (node: Y.Type) => string;

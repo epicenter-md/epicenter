@@ -28,9 +28,9 @@ import {
 	type CheckoutManifest,
 	checkoutLine,
 	contentHash,
+	type DiscardReason,
 	diff,
 	MANIFEST_PATH,
-	type DiscardReason,
 	type PlanAnswers,
 	type PlanItem,
 	type PushableData,
@@ -552,14 +552,24 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		const data = await openMemory(refusing);
 		const note = data.tables.notes.create({ title: 'x', pinned: false });
 		expectOk(
-			await pull({ data, definition: refusing, store: STORE, fetch: host.fetch }),
+			await pull({
+				data,
+				definition: refusing,
+				store: STORE,
+				fetch: host.fetch,
+			}),
 		);
 		host.folder.set(
 			`notes/${note.id}.md`,
 			`${host.folder.get(`notes/${note.id}.md`) as string}\nprose\n`,
 		);
 		const plan = expectOk(
-			await diff({ data, definition: refusing, store: STORE, fetch: host.fetch }),
+			await diff({
+				data,
+				definition: refusing,
+				store: STORE,
+				fetch: host.fetch,
+			}),
 		);
 		expect(only(plan, 'discard').notes).toEqual([
 			{ reason: 'body-unreadable' },
@@ -888,6 +898,98 @@ describe('push sends the values back and re-renders', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
+	test('a codec that throws is a file the send rewrites, not a rejected plan', async () => {
+		// A codec is application code run over a file somebody hand-edited, and
+		// a plan that let a throw escape would make `diff` REJECT on the one
+		// surface a person has to be able to look at.
+		const exploding = defineData({
+			id: 'so.epicenter.honeycrisp',
+			kv: { theme: field.string() },
+			tables: {
+				notes: defineTable({
+					title: field.string(),
+					pinned: field.boolean(),
+					content: {
+						encode: (node) => node.toString(),
+						decode: () => {
+							throw new Error('the codec exploded');
+						},
+						rewrite: () => Ok(undefined),
+					},
+				}),
+			},
+		});
+		const host = fakeHost();
+		const data = await openMemory(exploding);
+		const note = data.tables.notes.create({ title: 'x', pinned: false });
+		expectOk(
+			await pull({
+				data,
+				definition: exploding,
+				store: STORE,
+				fetch: host.fetch,
+			}),
+		);
+		host.folder.set(
+			`notes/${note.id}.md`,
+			`${host.folder.get(`notes/${note.id}.md`) as string}\nprose\n`,
+		);
+		const plan = expectOk(
+			await diff({
+				data,
+				definition: exploding,
+				store: STORE,
+				fetch: host.fetch,
+			}),
+		);
+		expect(only(plan, 'discard').notes).toEqual([
+			{ reason: 'body-unreadable' },
+		]);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a plan is the same plan however the host orders the folder', async () => {
+		// `push` compares the plan a person confirmed against one it computes
+		// again, so a different ORDER would read as a different plan and refuse
+		// forever. Two of the three sources are already deterministic; the third
+		// is a directory listing.
+		const { host, data } = await edited(['"Groceries"', '"Shopping"']);
+		host.folder.set(
+			'notes/a-scratch.md',
+			'---\ntitle: "a"\npinned: false\n---\n',
+		);
+		host.folder.set(
+			'notes/z-scratch.md',
+			'---\ntitle: "z"\npinned: false\n---\n',
+		);
+		const plan = expectOk(await planOf(host, data));
+
+		// Hand the same files back in the opposite order.
+		const reversed = new Map([...host.folder].reverse());
+		host.folder.clear();
+		for (const [path, contents] of reversed) host.folder.set(path, contents);
+		expect(expectOk(await planOf(host, data))).toEqual(plan);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a folder pulled from another generation is no base at all', async () => {
+		// A generation is a whole database (ADR-0281), so a folder written from
+		// the one before this describes rows that are not these rows, and
+		// reading it as a base would call every one of them a deletion.
+		const { host, data } = await edited(['"Groceries"', '"Shopping"']);
+		const plan = expectOk(
+			await diff({
+				data,
+				definition,
+				store: { ...STORE, generation: STORE.generation + 1 },
+				fetch: host.fetch,
+			}),
+		);
+		expect(plan.every((item) => item.kind === 'block')).toBe(true);
+		expect(plan[0]).toMatchObject({ reason: 'no-base' });
+		await data[Symbol.asyncDispose]();
+	});
+
 	test('a deletion stops the send however everything else is answered', async () => {
 		// The one thing left with no answer, and it waits on a table naming a
 		// trash field rather than on a better dialog.
@@ -895,9 +997,7 @@ describe('push sends the values back and re-renders', () => {
 		host.folder.delete(`notes/${noteId}.md`);
 		const plan = expectOk(await planOf(host, data));
 
-		const refused = expectErr(
-			await sendBack(host, data, plan, takeFile(plan)),
-		);
+		const refused = expectErr(await sendBack(host, data, plan, takeFile(plan)));
 		expect(refused.name).toBe('PushIncomplete');
 		if (refused.name !== 'PushIncomplete') throw new Error('unreachable');
 		expect(refused.unanswered).toEqual([]);

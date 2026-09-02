@@ -5,6 +5,7 @@
 - **Date:** 2026-08-30
 - **Supersedes:** [ADR-0296](0296-rich-content-is-a-declared-field-and-a-table-owns-its-file-codec.md) at the codec's signature and at how rich content is declared. Its content rules are retained: one `<table>/<rowId>.md` per row, scalars as frontmatter, codec output as the body, `kv.json` beside them.
 - **Amends:** [ADR-0295](0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) by fixing the count at one.
+- **Amended by:** [ADR-0338](0338-every-change-a-folder-holds-has-an-answer.md) at the codec's signature, which gains a third verb. `encode` and `decode` are unchanged and so is every refusal here; what is added is `rewrite`, which makes the node a row already holds say what a text says, in place. It exists because a body now comes home when a person asks for it, and neither of the two verbs here can do that: `decode` mints a node for a row that does not exist yet, and a detached node reads as empty until it is integrated, so there is nothing to copy across.
 - **Relates:** [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md), [ADR-0240](0240-an-application-declares-one-workspace-and-an-opened-runtime-holds-exactly-one-definition.md), [ADR-0267](0267-a-workspace-exports-and-imports-as-a-legible-folder-structured-artifact.md)
 
 ## Context
