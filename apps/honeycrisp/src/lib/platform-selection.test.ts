@@ -77,18 +77,26 @@ describe('the folder is a build fact', () => {
 });
 
 describe('the runtime is the import path', () => {
-	test('each build composes its handle over its own runtime leaf', async () => {
+	test('each build binds its files and its secrets to its own owner', async () => {
 		// The name never carries the runtime (ADR-0339), so what a build gets is
 		// decided by which subpath its leaf imports. Getting this wrong is the
 		// silent failure this file exists for: the host-served build would reach
 		// for OPFS and tab memory instead of the Bun-owned files and the
 		// keychain, and still build and still start.
-		expect(await leafSource('#platform/epicenter', 'default')).toContain(
+		expect(await leafSource('#platform/binding', 'default')).toContain(
 			"from '@epicenter/app/browser'",
 		);
-		expect(await leafSource('#platform/epicenter', 'epicenter-host')).toContain(
+		expect(await leafSource('#platform/binding', 'epicenter-host')).toContain(
 			"from '@epicenter/app/desktop'",
 		);
+	});
+
+	test('the handle itself is not a platform seam', async () => {
+		// Nothing about an epicenter varies by runtime, so composing one is not a
+		// leaf: the store is client-owned in every build, and the only axis is
+		// the binding above. Re-adding `#platform/epicenter` would put a keychain
+		// import back in front of an application that wanted notes.
+		expect(Object.keys(imports)).not.toContain('#platform/epicenter');
 	});
 });
 

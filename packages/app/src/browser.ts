@@ -1,31 +1,35 @@
 /// <reference lib="dom" />
 
 /**
- * The standalone browser leaf: origin-owned SQLite over OPFS, and secrets that
- * live exactly as long as the tab (ADR-0310).
+ * The browser binding: origin-owned SQLite over OPFS, and secrets that live
+ * exactly as long as the tab (ADR-0310).
  *
  * This is the reduced build. It has no keychain and no host, so it holds no
  * credential across a reload, deliberately and permanently: not `localStorage`,
  * not IndexedDB, and not encrypted in the page, because a key the page can
  * derive is a key anything in the origin can derive.
  *
- * The runtime is this import path, and the name never carries it (ADR-0339).
- * An application selects the leaf through the `#platform/*` condition its
- * build already uses for auth; a build that forgot to fails to resolve rather
- * than silently running the wrong owner.
+ * **This leaf builds a binding, not a handle.** It used to export its own
+ * `createEpicenter`, which made the platform a property of the whole handle
+ * and forced every application to select a constructor through `#platform/*`
+ * even when it owned no file and no secret. Nothing about an epicenter varies
+ * by runtime; a Bun-owned file and a keychain do. So the leaf is what varies,
+ * an application composes it, and one `createEpicenter` in `@epicenter/app`
+ * serves every build.
+ *
+ * The runtime is still the import path, never a runtime test: a WebView cannot
+ * be told from a tab by anything observable at runtime, so the build answers
+ * it. An application that needs the owner its platform actually has reaches
+ * this through its own `#platform/binding`; one that owns neither names this
+ * leaf directly, in one file, for both builds.
  */
 
-import type { DataDefinition } from '@epicenter/data/definition';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { createBrowserSqliteOwner } from './browser-sqlite.js';
 import {
 	AppError,
 	type AppSqliteDatabase,
-	type CreateEpicenterOptions,
-	createEpicenter as createEpicenterWith,
-	type Epicenter,
 	type EpicenterBinding,
-	type EpicenterDataOptions,
 	type SecretStore,
 } from './index.js';
 
@@ -34,50 +38,35 @@ type BrowserSqliteOwner = {
 	delete(appId: string, name: string): Promise<void>;
 };
 
-export type CreateBrowserEpicenterOptions = {
-	/** Defaults to `definition.id`. See {@link CreateEpicenterOptions.appId}. */
-	appId?: string;
+export type CreateBrowserBindingOptions = {
 	/** The SQLite owner, which only this package's own test replaces. */
 	sqlite?: BrowserSqliteOwner;
 };
 
-export function createEpicenter(
-	options: CreateBrowserEpicenterOptions & { appId: string },
-): Epicenter;
-export function createEpicenter<const TDefinition extends DataDefinition>(
-	options: CreateBrowserEpicenterOptions & EpicenterDataOptions<TDefinition>,
-): Epicenter<TDefinition>;
-/** One handle over what a browser tab can own, scoped to `appId`. */
-export function createEpicenter<const TDefinition extends DataDefinition>(
-	options: CreateBrowserEpicenterOptions &
-		Partial<EpicenterDataOptions<TDefinition>>,
-): Epicenter<TDefinition> {
-	// The cast is the overload pair collapsing into one implementation, which
-	// TypeScript cannot follow through a conditional return type. The two public
-	// signatures above are what a caller sees, and they are exact.
-	return createEpicenterWith({
-		...options,
-		binding: (appId: string) => createBrowserBinding(appId, options.sqlite),
-	} as never) as Epicenter<TDefinition>;
-}
-
-function createBrowserBinding(
-	appId: string,
-	owner: BrowserSqliteOwner = createBrowserSqliteOwner(),
-): EpicenterBinding {
-	return {
+/**
+ * One binding over what a browser tab can own, for whichever application asks.
+ *
+ * It answers with a function of `appId` rather than a built binding, because
+ * that is the shape `createEpicenter` takes: the handle resolves the id and
+ * hands it over, so the files and the keychain cannot be scoped to a different
+ * application than the store (ADR-0339).
+ */
+export function createBrowserBinding({
+	sqlite = createBrowserSqliteOwner(),
+}: CreateBrowserBindingOptions = {}): (appId: string) => EpicenterBinding {
+	return (appId) => ({
 		open: (name) =>
 			tryAsync({
-				try: () => owner.open(appId, name),
+				try: () => sqlite.open(appId, name),
 				catch: (cause) => AppError.StorageFailed({ cause }),
 			}),
 		delete: (name) =>
 			tryAsync({
-				try: () => owner.delete(appId, name),
+				try: () => sqlite.delete(appId, name),
 				catch: (cause) => AppError.StorageFailed({ cause }),
 			}),
 		secrets: createTabMemorySecrets(),
-	};
+	});
 }
 
 /** In memory, for the life of the tab, permanently rather than provisionally. */

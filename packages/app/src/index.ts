@@ -7,22 +7,27 @@
  * SQLite, a native path, a keychain, or a host IPC mechanism, because none of
  * those names appear on this surface.
  *
- * **The runtime is the import path.** `@epicenter/app/browser` and
- * `@epicenter/app/desktop` each export `createEpicenter`, and an application
- * reaches its own leaf through the `#platform/*` condition its build already
- * uses for auth. There is no `typeof window` test here and there must not be
- * one: the desktop build runs in a WebView, so a runtime sniff cannot tell it
- * apart from a browser tab, and the two differ in exactly the ways that matter
- * (a keychain, a Bun-owned file). A build that forgot to declare the condition
- * fails to resolve rather than silently running the wrong owner.
+ * **There is one constructor, and the platform is a binding it takes.**
+ * `@epicenter/app/browser` and `@epicenter/app/desktop` each export a binding,
+ * and an application composes one through the `#platform/*` condition its
+ * build already uses for auth. There is no `typeof window` test here and there
+ * must not be one: the desktop build runs in a WebView, so a runtime sniff
+ * cannot tell it apart from a browser tab, and the two differ in exactly the
+ * ways that matter (a keychain, a Bun-owned file). A build that forgot to
+ * declare the condition fails to resolve rather than silently running the
+ * wrong owner.
  *
- * This module is what both leaves are made of: the types, the errors, the two
- * name mints, and the one constructor that still takes a binding. An
- * application does not call that constructor. The binding stays public for the
- * Bun host's leaf (`apps/epicenter/src/app-binding.ts`), which composes a
- * storage root and a secrets owner its own test swaps: that is what a real
- * extension point looks like. Nothing in `main.ts` composes it yet, so the
- * host's background half (ADR-0323) is a leaf and a test rather than a running
+ * The leaves used to export a `createEpicenter` each, which made the runtime a
+ * property of the whole handle: an application that owned no file and no
+ * secret still selected a constructor through a seam, and its store, which is
+ * client-owned in every runtime, inherited a platform axis it does not have
+ * (ADR-0226, ADR-0227). Nothing about an epicenter varies by runtime. A
+ * Bun-owned file and a keychain do, so those are what the leaves are.
+ *
+ * The binding is also what the Bun host's own leaf composes
+ * (`apps/epicenter/src/app-binding.ts`), with a storage root and a secrets
+ * owner its test swaps. Nothing in `main.ts` composes it yet, so the host's
+ * background half (ADR-0323) is a leaf and a test rather than a running
  * process.
  *
  * Runtime differences are typed failures, never branches (ADR-0181). A browser
@@ -222,7 +227,7 @@ export type CreateEpicenterOptions = {
 	 *
 	 * An application with no definition has nothing to default from and states
 	 * it. Local Mail is that application.
-	 */
+	 *Can you please explain me why is app ID optional here in this file, but for some reason then it's required l/
 	appId?: string;
 	/**
 	 * The runtime leaf, built for the id this handle resolved.
