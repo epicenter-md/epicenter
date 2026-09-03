@@ -150,8 +150,7 @@ the review.
 - **Deleted**, and the paths are named here for the last time because none of
   them resolves any more: `packages/data/src/artifact/`'s `mirror.ts`, its test
   and `protocol.ts`; `apps/epicenter/src/`'s `mirror.ts` and its test;
-  `MIRROR_ROUTE` and its handler; and the `attachMirror` wiring in
-  `apps/honeycrisp/src/lib/databases.ts`. What replaced them is smaller than
+  `MIRROR_ROUTE` and its handler; and Honeycrisp's `attachMirror` wiring. What replaced them is smaller than
   what went: the debounce, the batch ceiling, the in-flight pass, the
   incomplete-pass rule, and the render-error-to-path mapping all had no
   question left to answer once a person chose the moment.

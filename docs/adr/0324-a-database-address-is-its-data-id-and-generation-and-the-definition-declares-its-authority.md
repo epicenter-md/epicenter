@@ -82,8 +82,9 @@ supplies it. `createEpicenter({ appId, binding })` already scopes an
 application's SQLite files and its secrets by that id
 (`packages/app/src/index.ts`), so `openData` fills the segment from the handle
 and an application never writes its own id twice. An application that calls
-`openDatabase` from `@epicenter/data/browser` directly, which
-`apps/honeycrisp/src/lib/databases.ts` does, passes its own id as `appId`.
+`openDatabase` from `@epicenter/data/browser` directly passes its own id as
+`appId`; one that holds the handle states it once, at construction
+(`packages/app/src/index.ts`).
 
 Nothing verifies it, at either call site.
 [ADR-0334](0334-a-deployed-app-is-a-trusted-app-because-deploying-it-was-the-consent.md)

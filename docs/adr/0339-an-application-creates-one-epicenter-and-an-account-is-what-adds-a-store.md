@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-02
-- **Unbuilt:** none of this exists. `packages/app` exports `createEpicenter({ appId, binding })` with `openData(definition, account)` as a method, plus `createBrowserBinding` and `createDesktopBinding`. `apps/honeycrisp` does not import the package at all.
+- **Unbuilt:** nothing. Built with two corrections this record now carries: the two names an application mints are branded, and the root is not types only.
 - **Amends:** [ADR-0316](0316-an-application-creates-one-scoped-epicenter-handle.md) at "the composition is `openData`, `openSqlite`, and `secrets`" and at the handle's argument list. The scoped handle, its one name, and its refusal of `createAppRuntime` stand.
 - **Relates:** [ADR-0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) (account and store are one yes/no), [ADR-0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md), [ADR-0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md), [ADR-0325](0325-a-database-is-bound-to-one-authority-and-re-homing-is-export-and-import.md), [ADR-0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md)
 
@@ -56,13 +56,13 @@ createEpicenter({ appId, definition, account }): Epicenter<typeof definition>
 type Epicenter<TDefinition extends DataDefinition = never> = {
 	readonly appId: string;
 	readonly sqlite: {
-		open(name: string): Promise<Result<AppSqliteDatabase, AppError>>;
-		delete(name: string): Promise<Result<void, AppError>>;
+		open(name: DatabaseName): Promise<Result<AppSqliteDatabase, AppError>>;
+		delete(name: DatabaseName): Promise<Result<void, AppError>>;
 	};
 	readonly secrets: {
-		put(label: string, value: string): Promise<Result<void, SecretError>>;
-		get(label: string): Promise<Result<string | null, SecretError>>;
-		delete(label: string): Promise<Result<void, SecretError>>;
+		put(label: SecretLabel, value: string): Promise<Result<void, SecretError>>;
+		get(label: SecretLabel): Promise<Result<string | null, SecretError>>;
+		delete(label: SecretLabel): Promise<Result<void, SecretError>>;
 	};
 } & ([TDefinition] extends [never]
 	? {}
@@ -152,6 +152,19 @@ makes it load-bearing: deleting `/account/[generation]` removes the only other
 way a person could reach a newer number. Neither is built here, and shipping an
 import without the notice would strand a device silently.
 
+**A name is checked where it is minted, and the type carries that.**
+`DatabaseName` and `SecretLabel` are branded, and the six per-call guards inside
+the handle are gone. They answered one question about a string that, in every
+caller, is either a constant in the build or a value the application already had
+to validate to say anything useful about: Local Mail's `finishConnect` already
+refused a subject it could not file, because "we cannot file your mail under
+that" is a sentence only the application can write. `databaseName` and
+`secretLabel` mint one and throw, on the same terms `createEpicenter` throws on
+an application id; `isDatabaseName` and `isSecretLabel` narrow a value that
+arrived at runtime. The desktop owner still validates on arrival, because a
+brand is a compile-time fact and a request crossing the sidecar carries no
+types.
+
 **Two renames follow from putting `account` on the handle.** `eraseLocalData` is
 `eraseReplica`, because it erases this device's copy and touches nothing at the
 authority (ADR-0325), and `replica` is the word a developer reads unsoftened.
@@ -184,11 +197,12 @@ be read from a `$derived` during `opening` without becoming a render error.
 
 **This record assumes the opened store knows its own address.** The folder verbs
 (ADR-0337) and the sync status a person is shown both need the generation, and
-`ReplicaData` carries `baseURL` and `principalId` but no generation today. With
-the generation resolved inside `data`, an application cannot rebuild it. Putting
-the address and the connection status on the store is a `packages/data` decision
-and belongs in its own record; this one does not govern it and does not work
-without it.
+`ReplicaData` carried `baseURL` and `principalId` and no generation. With the
+generation resolved inside `data`, an application cannot rebuild it. Putting the
+address and the connection status on the store is a `packages/data` decision and
+belongs in its own record; this one does not govern it and does not work without
+it. That record is
+[ADR-0340](0340-an-opened-store-knows-its-own-address-and-its-own-connection.md).
 
 ## Consequences
 
@@ -205,8 +219,13 @@ without it.
 - The generation stops being a route parameter. `data` resolves it, so
   `/account/[generation]` and the `/account` page that only redirects into it
   both go. Nobody chose that number and no link carries it.
-- `@epicenter/app` root becomes types only for an application. Every constructor
-  lives under a runtime subpath.
+- An application constructs nothing from the `@epicenter/app` root: every
+  `createEpicenter` an application calls lives under a runtime subpath. The root
+  is not types only, which this record claimed and the build corrected twice
+  over. It holds the errors, the two name mints and their guards, and the
+  binding-taking `createEpicenter` the Bun host's leaf composes
+  (`apps/epicenter/src/app-binding.ts`, which nothing in `main.ts` wires yet:
+  ADR-0323's background half is a leaf and a test).
 - ADR-0337's folder verbs stay functions over an opened store rather than
   methods on the handle, because they belong to the store's address.
 

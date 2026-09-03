@@ -247,9 +247,10 @@ shapes, see `docs/adr/`.
 ## App composition
 
 - **Application factory**: the one function that opens the application's data,
-  and returns a ready handle, as `apps/honeycrisp/src/lib/databases.ts` does.
-  There is no readiness promise beside it: opening is the only asynchronous
-  thing, so wanting a separate `whenReady` means a half-open handle.
+  and returns a ready handle, as `packages/app/src/client-owned-data.ts` does
+  behind `epicenter.data`. There is no readiness promise beside it: opening is
+  the only asynchronous thing, so wanting a separate `whenReady` means a
+  half-open handle.
 - **Ready-application shape**: one open promise created in a mounted component
   and rendered through a stable `{#await}` boundary, with the handle passed down
   through typed context. Library modules stay inert, which
