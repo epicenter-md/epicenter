@@ -17,6 +17,7 @@
 
 import type {
 	CheckoutError,
+	FolderState,
 	PushOutcome,
 	PushPlan,
 } from '@epicenter/data/artifact/checkout';
@@ -26,16 +27,22 @@ import { type HoneycrispData, honeycrispDefinition } from './data/index.js';
 
 export type FolderVerbs = {
 	/**
-	 * Fill the folder with these notes and write the manifest (ADR-0337).
+	 * Write every file in the folder from these notes (ADR-0341).
 	 *
-	 * It refuses a folder holding unpushed edits, and `discardEdits` is the
-	 * person saying they saw them and want them gone.
+	 * `state` is what `diff` said and a person approved: a pull writes over
+	 * everything in it, so confirming the list IS the discard, and one that
+	 * stopped being true is refused rather than applied.
 	 */
-	pull(options?: {
-		discardEdits?: boolean;
+	pull(options: {
+		state: FolderState;
 	}): Promise<Result<{ files: number }, CheckoutError>>;
-	/** What a push would do, changing nothing (ADR-0337). */
-	diff(): Promise<Result<PushPlan, CheckoutError>>;
+	/**
+	 * What the folder holds that these notes do not, changing nothing.
+	 *
+	 * The one question both directions ask: a push applies this list, a pull
+	 * writes over it.
+	 */
+	diff(): Promise<Result<FolderState, CheckoutError>>;
 	/**
 	 * Apply the folder's edits, then re-render.
 	 *
@@ -50,8 +57,7 @@ export type FolderVerbs = {
 
 export function folderVerbs(data: HoneycrispData): FolderVerbs {
 	return {
-		pull: ({ discardEdits = false } = {}) =>
-			pull({ data, definition: honeycrispDefinition, discardEdits }),
+		pull: ({ state }) => pull({ data, definition: honeycrispDefinition, state }),
 		diff: () => diff({ data, definition: honeycrispDefinition }),
 		push: ({ plan }) => push({ data, definition: honeycrispDefinition, plan }),
 	};
