@@ -1866,8 +1866,29 @@ describe('checkout routes (ADR-0337)', () => {
 			expect((await fetch(url, { method: 'PUT', body: '' })).status).toBe(401);
 			expect((await fetch(url)).status).toBe(401);
 
+			/** The folder as it stands, which every write has to name. */
+			const reading = async () => {
+				const response = await fetch(url, {
+					headers: authenticatedHeaders(server),
+				});
+				const etag = response.headers.get('etag');
+				if (etag === null) throw new Error('the read stated no folder');
+				return { etag, body: await response.text() };
+			};
+
+			// A write with no reading behind it is one nobody approved, and the
+			// wire refuses it rather than trusting the library to have asked.
+			const unprepared = await fetch(url, {
+				method: 'PUT',
+				body: checkout([{ path: 'kv.json', contents: '{}' }]),
+				headers: authenticatedHeaders(server),
+			});
+			expect(unprepared.status).toBe(428);
+
+			const empty = await reading();
 			const wrote = await fetch(url, {
 				method: 'PUT',
+				headers: { ...authenticatedHeaders(server), 'if-match': empty.etag },
 				body: checkout([
 					{
 						path: 'notes/abc.md',
@@ -1877,24 +1898,36 @@ describe('checkout routes (ADR-0337)', () => {
 					{ path: 'kv.json', contents: '{}' },
 					{ path: '.epicenter/manifest.json', contents: '{"rows":{}}' },
 				]),
-				headers: authenticatedHeaders(server),
 			});
 			expect(wrote.status).toBe(204);
 			expect(await Bun.file(join(folder, 'notes/abc.md')).text()).toContain(
 				'# A note',
 			);
 
+			// The write it was prepared against is gone now, so sending it again
+			// is refused and the folder is untouched.
+			const replayed = await fetch(url, {
+				method: 'PUT',
+				headers: { ...authenticatedHeaders(server), 'if-match': empty.etag },
+				body: checkout([{ path: 'kv.json', contents: '{}' }]),
+			});
+			expect(replayed.status).toBe(412);
+			expect(await Bun.file(join(folder, 'notes/abc.md')).exists()).toBe(true);
+
 			// A second checkout that no longer names one row takes its file with
 			// it. A checkout is complete by definition, so absence is the answer
 			// rather than a manifest line saying so.
 			const swept = await fetch(url, {
 				method: 'PUT',
+				headers: {
+					...authenticatedHeaders(server),
+					'if-match': (await reading()).etag,
+				},
 				body: checkout([
 					{ path: 'notes/abc.md', contents: '---\npinned: true\n---\n' },
 					{ path: 'kv.json', contents: '{}' },
 					{ path: '.epicenter/manifest.json', contents: '{"rows":{}}' },
 				]),
-				headers: authenticatedHeaders(server),
 			});
 			expect(swept.status).toBe(204);
 			expect(await Bun.file(join(folder, 'notes/def.md')).exists()).toBe(false);
@@ -1919,6 +1952,9 @@ describe('checkout routes (ADR-0337)', () => {
 			// The person's own file is still there, and was never the host's to
 			// hand over or to sweep.
 			expect(await Bun.file(join(folder, 'README.md')).text()).toBe('mine');
+			// And the read states which folder it handed back, which is the only
+			// thing a write is allowed to name.
+			expect(read.headers.get('etag')).toMatch(/^"[0-9a-f]{64}"$/);
 		} finally {
 			await server.stop(true);
 			if (previousRoot === undefined) delete process.env.EPICENTER_FOLDER_DIR;
@@ -1944,23 +1980,29 @@ describe('checkout routes (ADR-0337)', () => {
 				const response = await fetch(`${origin}${path}`, {
 					method: 'PUT',
 					body: checkout([{ path: 'notes/abc.md', contents: 'x' }]),
-					headers: authenticatedHeaders(server),
+					// A path the host cannot name is refused before it looks at
+					// anything else, so this never reaches the folder's identity.
+					headers: { ...authenticatedHeaders(server), 'if-match': '"x"' },
 				});
 				expect([400, 404]).toContain(response.status);
 			}
 			// A file inside the checkout that would climb out is refused by the
 			// host without costing the checkout its other files.
-			const mixed = await fetch(
-				`${origin}${CHECKOUT_PATH}/so.epicenter.honeycrisp`,
-				{
-					method: 'PUT',
-					body: checkout([
-						{ path: '../escape.md', contents: 'no' },
-						{ path: 'notes/ok.md', contents: 'yes' },
-					]),
-					headers: authenticatedHeaders(server),
+			const checkoutUrl = `${origin}${CHECKOUT_PATH}/so.epicenter.honeycrisp`;
+			const fresh = await fetch(checkoutUrl, {
+				headers: authenticatedHeaders(server),
+			});
+			const mixed = await fetch(checkoutUrl, {
+				method: 'PUT',
+				body: checkout([
+					{ path: '../escape.md', contents: 'no' },
+					{ path: 'notes/ok.md', contents: 'yes' },
+				]),
+				headers: {
+					...authenticatedHeaders(server),
+					'if-match': fresh.headers.get('etag') as string,
 				},
-			);
+			});
 			expect(mixed.status).toBe(204);
 			expect(await Bun.file(join(folderRoot, 'escape.md')).exists()).toBe(
 				false,

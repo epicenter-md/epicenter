@@ -81,8 +81,8 @@ export {
 /**
  * Which store a folder is a working copy of, and which history of it.
  *
- * Exported because the three verbs take it: a caller could satisfy this shape
- * and had no way to name it.
+ * Exported because `createWorkingCopy` takes it: a caller could satisfy this
+ * shape and had no way to name it.
  *
  * The four facts the manifest records and every later comparison is against.
  * They used to arrive as their own argument, assembled by the caller out of a
@@ -169,9 +169,8 @@ export const CheckoutError = defineErrors({
 	/**
 	 * The host answered and said no.
 	 *
-	 * A full disk, a read-only volume, a drive somebody unplugged, or another
-	 * window writing the folder right now. The store is unaffected by every one
-	 * of them, and a retry is worth offering.
+	 * A full disk, a read-only volume, or a drive somebody unplugged. The store
+	 * is unaffected by every one of them, and a retry is worth offering.
 	 */
 	HostRefused: ({ status }: { status: number }) => ({
 		message: `The Epicenter folder refused the request with ${status}`,
@@ -208,12 +207,27 @@ export const CheckoutError = defineErrors({
 		message: 'nothing here wrote this folder, so there is nothing to send back',
 	}),
 	/**
+	 * The host handed back a folder without saying which folder it is.
+	 *
+	 * Every write carries the reading it was prepared against, so a reading with
+	 * no `ETag` is one nothing can be written from. It is a host too old for
+	 * this application or something answering in its place, and neither is a
+	 * folder problem a person can repair by looking at their files.
+	 */
+	HostUnstated: () => ({
+		message: 'the Epicenter folder did not say which version it handed back',
+	}),
+	/**
 	 * The other verb is between its preview and its write.
 	 *
 	 * `confirm` awaits a person, so that stretch is seconds long rather than
-	 * instant, and both verbs write the same folder. Refusing is better than
-	 * queueing: a second dialog that opens when the first one closes is a
-	 * question about a folder nobody has looked at since.
+	 * instant, and both verbs write the same folder. It is per store rather
+	 * than per working copy, so two components each building their own still
+	 * meet the same guard.
+	 *
+	 * Refusing is better than queueing: a second dialog that opens when the
+	 * first one closes is a question about a folder nobody has looked at
+	 * since.
 	 */
 	Busy: () => ({
 		message: 'the folder is already being read or written here',
@@ -222,11 +236,11 @@ export const CheckoutError = defineErrors({
 	 * The host refused the write because the folder is not the one it was
 	 * prepared against.
 	 *
-	 * The same fact as `FolderChanged` from the other side of the wire: this
-	 * module compares what it read against what a person approved, and the host
-	 * compares what it holds against what this module read, in the same slot it
-	 * writes in. Only the host's comparison closes the window between the two,
-	 * which is why both exist and why neither is redundant.
+	 * The same fact `sameReading` checks, from the other side of the wire. This
+	 * module compares two readings around the approval, and the host compares
+	 * what it holds against the reading the write names, in the same slot it
+	 * writes in. Only the host's comparison closes the window between the last
+	 * reading and the write, which is why both exist.
 	 */
 	FolderMoved: () => ({
 		message: 'the folder changed before the write landed',
@@ -392,13 +406,16 @@ async function readWorkingCopy(
 		manifest.baseURL === store.baseURL &&
 		manifest.principalId === store.principalId &&
 		manifest.generation === store.generation;
+	const etag = response.headers.get('etag');
+	// A host that will not say which folder this is cannot be written to: the
+	// write would carry a tag the host refuses, the refusal would read as the
+	// folder having moved, and the verb would ask again forever. Failing here
+	// says what is actually wrong, once.
+	if (etag === null) return CheckoutError.HostUnstated();
 	return Ok({
 		base: describesThisStore ? manifest : undefined,
 		files,
-		// Absent only from a host that predates the header, which cannot happen:
-		// the app and the host ship together. An empty string would still be
-		// refused by the write, which is the safe direction.
-		etag: response.headers.get('etag') ?? '',
+		etag,
 	});
 }
 
@@ -1118,19 +1135,6 @@ function planKey(item: PlanItem): string {
 }
 
 /**
- * What `push` would do, changing nothing (ADR-0337).
- *
- * The three-way is per field and lives only here: `base` from the manifest,
- * `file` from disk, `store` from the database now.
- *
- * | base, file, store | what happens |
- * | --- | --- |
- * | `file == base` | the person did not touch it; the store's value stands |
- * | `store == base` | apply the file's value |
- * | `store == file` | already converged; nothing to do |
- * | all three differ | the file's value, and the overview says the store moved |
- */
-/**
  * What a pull writes, and what it declined to write.
  *
  * `declined` is not a failure: a person reading the list and saying no is the
@@ -1206,20 +1210,20 @@ export function createWorkingCopy(
 		now = () => new Date(),
 	}: { fetch?: typeof globalThis.fetch; now?: () => Date } = {},
 ): WorkingCopy {
-	// One verb at a time, per working copy. `confirm` awaits a person, so the
-	// stretch between a preview and its write is seconds long, and two verbs
-	// running across one folder would each be applying a list read before the
-	// other one wrote.
-	let busy = false;
+	const dataId = data.dataId;
 
 	/**
 	 * Read, ask, read again, and apply only if nothing moved.
 	 *
 	 * The loop is here rather than at the call site because it is the guard: a
 	 * surface that rebuilt it could forget the second reading, and the failure
-	 * would be silent and destructive. It is human-gated, so it needs no bound:
-	 * every turn costs a click, and an agent that keeps writing produces an
-	 * honest "it moved again" rather than a spin.
+	 * would be silent and destructive.
+	 *
+	 * A turn either costs an approval or follows a folder that really moved, so
+	 * it needs no count: an agent that keeps writing produces an honest "it
+	 * moved again" rather than a spin, and a host that refuses the reading it
+	 * just handed back is an error rather than another turn. That second one is
+	 * what bounds a `confirm` that answers without asking anybody.
 	 */
 	async function run<TPreview, TResult>({
 		preview,
@@ -1268,6 +1272,14 @@ export function createWorkingCopy(
 			if (applied.error?.name === 'FolderMoved') {
 				const next = await readFolder(data, data.definition, httpFetch);
 				if (next.error !== null) return Err(next.error);
+				// The folder the host refused is the folder it just handed back,
+				// so the two sides disagree about what a reading names and no
+				// number of turns will fix it. This is what bounds the loop when
+				// nobody is clicking: every other turn either costs an approval or
+				// follows a folder that really moved.
+				if (next.data.held.etag === again.data.held.etag) {
+					return Err(applied.error);
+				}
 				found = next;
 				stale = true;
 				continue;
@@ -1278,8 +1290,8 @@ export function createWorkingCopy(
 
 	return {
 		async pull({ confirm }) {
-			if (busy) return CheckoutError.Busy();
-			busy = true;
+			if (inUse.has(dataId)) return CheckoutError.Busy();
+			inUse.add(dataId);
 			try {
 				return await run<PullPreview, PullResult>({
 					// Always a question. A pull writes over the folder whatever the
@@ -1299,12 +1311,12 @@ export function createWorkingCopy(
 					},
 				});
 			} finally {
-				busy = false;
+				inUse.delete(dataId);
 			}
 		},
 		async push({ confirm }) {
-			if (busy) return CheckoutError.Busy();
-			busy = true;
+			if (inUse.has(dataId)) return CheckoutError.Busy();
+			inUse.add(dataId);
 			try {
 				return await run<PushPreview, PushResult>({
 					preview: ({ read }) => {
@@ -1337,11 +1349,21 @@ export function createWorkingCopy(
 					},
 				});
 			} finally {
-				busy = false;
+				inUse.delete(dataId);
 			}
 		},
 	};
 }
+
+/**
+ * Which folders have a verb between a preview and its write.
+ *
+ * Keyed by data id rather than kept on the object, because there is one folder
+ * per store however many working copies an application builds over it. A
+ * surface with a pull button and a push button in two components would
+ * otherwise hold two flags and guard nothing.
+ */
+const inUse = new Set<string>();
 
 /**
  * Whether two readings are the same folder and the same answer about it.
@@ -1364,7 +1386,17 @@ function sameReading(
 }
 
 /**
- * The one comparison, shared by `pull`, `diff`, and `push`.
+ * The one comparison, and what a person is shown before either verb runs.
+ *
+ * The three-way is per field and lives only here: `base` from the manifest,
+ * `file` from disk, `store` from the database now.
+ *
+ * | base, file, store | what happens |
+ * | --- | --- |
+ * | `file == base` | the person did not touch it; the store's value stands |
+ * | `store == base` | apply the file's value |
+ * | `store == file` | already converged; nothing to do |
+ * | all three differ | the file's value, and the overview says the store moved |
  *
  * All three sides go through the same round trip. `base` and `file` came out of
  * `frontmatter.ts`, and `store` is rendered and parsed back here rather than
@@ -1641,8 +1673,8 @@ async function untouched(
  *
  * A codec is application code run over a file a person hand-edited, and
  * `readArtifact` already treats a throw from one as data rather than as a
- * crash. A plan that let one escape would make `diff` REJECT on a folder,
- * which is the one place a person has to be able to look.
+ * crash. A plan that let one escape would make the preview REJECT on a folder,
+ * which is the one thing a person has to be able to look at.
  *
  * It is also the promise `rewrite` is applied under: a push validates a body
  * by decoding it here and rewrites with the same text after the approval,
@@ -1763,9 +1795,10 @@ async function renderedRow(
 /**
  * Read the folder and say what it holds that the notes do not.
  *
- * The one reading, so `diff` prints exactly what `pull` and `push` compare
- * against. It was written three times, and three copies of a guard is three
- * chances for a surface to approve one thing while a verb applies another.
+ * The one reading, so what a person is shown is exactly what the verb compares
+ * against afterwards. It was written three times, and three copies of a guard
+ * is three chances for a surface to approve one thing while a verb applies
+ * another.
  */
 async function readFolder(
 	data: RenderableData & CheckoutAddress,

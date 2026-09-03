@@ -97,9 +97,10 @@ const inFlight = new Map<string, Promise<unknown>>();
 
 function serialize<T>(folder: string, task: () => Promise<T>): Promise<T> {
 	const previous = inFlight.get(folder) ?? Promise.resolve();
-	// `then(task, task)` rather than `finally`: one request failing must not
-	// poison the next one in the queue.
-	const running = previous.then(task, task);
+	const running = previous.then(task);
+	// What the next request chains onto never rejects, so one request failing
+	// does not poison the queue behind it. The caller still gets `running`,
+	// which rejects with what the task threw.
 	const settled = running.then(
 		() => undefined,
 		() => undefined,
@@ -225,7 +226,13 @@ async function listCheckoutFiles(absoluteFolder: string): Promise<string[]> {
 			relative(absoluteFolder, join(entry.parentPath, entry.name)).split(sep),
 		)
 		.map((segments) => segments.join('/'))
-		.filter(isCheckoutPath);
+		.filter(isCheckoutPath)
+		// Sorted, so the digest below is a function of what the folder holds and
+		// not of the order a filesystem happened to walk it. The application
+		// sorts its plan for the same reason: a folder read twice has to be the
+		// same folder, or a write prepared against one reading is refused
+		// against an identical one.
+		.sort();
 }
 
 /**

@@ -102,6 +102,9 @@ function addressed<TData>(
 	) as TData & typeof STORE;
 }
 
+/** What the host's ETag is: a digest of the bytes a read produced, quoted. */
+const etagOf = async (body: string) => `"${await contentHash(body)}"`;
+
 /**
  * A host that holds one folder in memory.
  *
@@ -111,19 +114,22 @@ function addressed<TData>(
  * reaches into `folder` directly is a file landing underneath somebody, and
  * the tag moving is what the working copy notices.
  */
-/** What the host's ETag is: a digest of the bytes a read produced, quoted. */
-const etagOf = async (body: string) => `"${await contentHash(body)}"`;
-
 function fakeHost(initial: Iterable<CheckoutFile> = []) {
 	const folder = new Map<string, string>();
 	for (const file of initial) folder.set(file.path, file.contents);
 	let reachable = true;
 	let refusal: number | undefined;
 	let writeRefusal: number | undefined;
+	let moveOnWrite: (() => void) | undefined;
+	let unstated = false;
 	return {
 		folder,
 		unplug: () => {
 			reachable = false;
+		},
+		/** Answer a read without saying which folder it is. */
+		sayNothing: () => {
+			unstated = true;
 		},
 		refuse: (status: number) => {
 			refusal = status;
@@ -131,6 +137,17 @@ function fakeHost(initial: Iterable<CheckoutFile> = []) {
 		/** Refuse only the write, so a read still answers. */
 		refuseWrites: (status: number) => {
 			writeRefusal = status;
+		},
+		/**
+		 * Move the folder inside the next write, before the tag is compared.
+		 *
+		 * The one window neither reading can see: the library read the folder,
+		 * the person approved, the library read it again, and a file lands while
+		 * the checkout is on the wire. Only the host can answer it, which is what
+		 * `If-Match` is for.
+		 */
+		moveDuringNextWrite: (move: () => void) => {
+			moveOnWrite = move;
 		},
 		fetch: (async (_input: string | URL, init?: RequestInit) => {
 			if (!reachable) throw new Error('no host here');
@@ -144,6 +161,11 @@ function fakeHost(initial: Iterable<CheckoutFile> = []) {
 			if (init?.method === 'PUT') {
 				if (writeRefusal !== undefined) {
 					return new Response(null, { status: writeRefusal });
+				}
+				if (moveOnWrite !== undefined) {
+					const move = moveOnWrite;
+					moveOnWrite = undefined;
+					move();
 				}
 				const ifMatch = (init.headers as Record<string, string> | undefined)?.[
 					'if-match'
@@ -159,6 +181,11 @@ function fakeHost(initial: Iterable<CheckoutFile> = []) {
 					folder.set(file.path, file.contents);
 				}
 				return new Response(null, { status: 204 });
+			}
+			if (unstated) {
+				return new Response(body(), {
+					headers: { 'content-type': 'application/x-ndjson' },
+				});
 			}
 			return new Response(body(), {
 				headers: {
@@ -197,7 +224,7 @@ function workingCopy(
 /**
  * A `confirm` that says no, which is how a test reads a preview.
  *
- * There is no `diff` any more: recording the list and declining it IS one, and
+ * There is no `diff` any more: recording the list and declining it is one, and
  * it cannot drift from what the verbs compare because it is what they compare.
  */
 function declining<TPreview>() {
@@ -363,8 +390,8 @@ describe('pull fills the folder and writes the base', () => {
 
 		const state = await previewPull(host, data);
 		expect(state.base).toBe(false);
-		// Not a diff against Alice's base: a manifest naming another account is
-		// no base at all, so every file in the folder is shown whole.
+		// Not a comparison against Alice's base: a manifest naming another
+		// account is no base at all, so every file in the folder is shown whole.
 		if (state.base) throw new Error('unreachable');
 		expect(state.unwritten.length).toBeGreaterThan(0);
 		await data[Symbol.asyncDispose]();
@@ -557,7 +584,7 @@ describe('a pull shows what it writes over, and a person says yes', () => {
 	});
 });
 
-describe('diff plans what push would do (ADR-0337)', () => {
+describe('the preview says what a push would do (ADR-0337)', () => {
 	/** Pull once, then edit the folder the way a person or an agent would. */
 	async function pulledThenEdited(
 		edit: (folder: Map<string, string>, noteId: string) => void,
@@ -912,14 +939,18 @@ describe('push sends the values back and re-renders', () => {
 				moved = true;
 				edit();
 			}
-			return true;
+			// Yes to the list that stopped being true, no to the one that
+			// replaced it. So the run applies nothing, and a push that applied
+			// the first list before noticing it had moved is the only way any
+			// of these tests can see a change in the store.
+			return !stale;
 		};
 		return { asked, result: await workingCopy(host, data).push({ confirm }) };
 	}
 
-	test('a file that moves under the overview is asked again, not applied', async () => {
+	test('a file that moves under the overview is never the one applied', async () => {
 		// Half a push is a folder that matches nothing, so the list that stopped
-		// being true is never the one applied. The person reads the next one.
+		// being true is never applied. The person reads the next one.
 		const { host, data, noteId } = await edited(['"Groceries"', '"Shopping"']);
 
 		const { asked, result } = await pushWhileEditing(host, data, () => {
@@ -928,13 +959,13 @@ describe('push sends the values back and re-renders', () => {
 				`${host.folder.get(`notes/${noteId}.md`) as string}and eggs\n`,
 			);
 		});
-		expectOk(result);
+		expect(expectOk(result)).toEqual({ status: 'declined' });
 		expect(asked).toEqual([false, true]);
-		expect(data.tables.notes.get(noteId)?.title).toBe('Shopping');
+		expect(data.tables.notes.get(noteId)?.title).toBe('Groceries');
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a body edited again under the overview is asked again', async () => {
+	test('a body edited again under the overview is never the one applied', async () => {
 		// The item carries no text and no hash of it, so this plan is
 		// byte-identical to the one before. What tells them apart is the folder's
 		// own identity, which the host states and the working copy compares.
@@ -949,17 +980,17 @@ describe('push sends the values back and re-renders', () => {
 				),
 			);
 		});
-		expectOk(result);
+		expect(expectOk(result)).toEqual({ status: 'declined' });
 		expect(asked).toEqual([false, true]);
-		// The text nobody read never reached the note; the text they approved on
-		// the second turn did.
+		// Neither text reached the note: not the one they read, and not the one
+		// that replaced it and they declined.
 		expect(
 			(data.rowFile('notes', noteId)?.content as Y.Type).toString(),
-		).toContain('buy something else entirely');
+		).toContain('buy milk');
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a new file edited again under the overview is asked again', async () => {
+	test('a new file edited again under the overview is never the one applied', async () => {
 		// Same rule for the other item whose contents are not in the plan:
 		// `push` re-reads the file to build the row.
 		const { host, data } = await edited(['buy milk', 'buy milk']);
@@ -974,9 +1005,9 @@ describe('push sends the values back and re-renders', () => {
 				'---\ntitle: "Q3 plan"\npinned: true\n---\n\nship something else\n',
 			);
 		});
-		expectOk(result);
+		expect(expectOk(result)).toEqual({ status: 'declined' });
 		expect(asked).toEqual([false, true]);
-		expect(data.tables.notes.ids()).toHaveLength(2);
+		expect(data.tables.notes.ids()).toHaveLength(1);
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -1199,7 +1230,7 @@ describe('push sends the values back and re-renders', () => {
 
 	test('a codec that throws is a file the send rewrites, not a rejected plan', async () => {
 		// A codec is application code run over a file somebody hand-edited, and
-		// a plan that let a throw escape would make `diff` REJECT on the one
+		// a plan that let a throw escape would make the preview REJECT on the one
 		// surface a person has to be able to look at.
 		const exploding = defineData({
 			id: 'so.epicenter.honeycrisp',
@@ -1569,6 +1600,151 @@ describe('the whole cycle, as a person walks it (ADR-0341)', () => {
 		);
 		// And the folder is clean.
 		expect(await planOf(host, data)).toEqual([]);
+		await data[Symbol.asyncDispose]();
+	});
+});
+
+describe('the working copy owns the loop, and what bounds it', () => {
+	test('a folder that moves on the wire refuses the write, and the pull asks again', async () => {
+		// The window neither reading can see: both readings agreed, and a file
+		// landed while the checkout was travelling. The host compares in the slot
+		// it writes in, so nothing is written and the loop takes another turn.
+		const host = fakeHost();
+		const { data } = await notebook();
+		expectOk(await pullInto(host, data));
+		host.folder.set('notes/landed.md', '---\ntitle: "landed"\n---\n');
+
+		const asked: boolean[] = [];
+		host.moveDuringNextWrite(() => {
+			host.folder.set('notes/again.md', '---\ntitle: "again"\n---\n');
+		});
+		const pulled = expectOk(
+			await workingCopy(host, data).pull({
+				confirm: async (_preview, { stale }) => {
+					asked.push(stale);
+					return true;
+				},
+			}),
+		);
+
+		expect(pulled).toMatchObject({ status: 'applied' });
+		expect(asked).toEqual([false, true]);
+		// Both stray files are gone, because the turn that landed swept them.
+		expect(host.folder.has('notes/landed.md')).toBe(false);
+		expect(host.folder.has('notes/again.md')).toBe(false);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a push that already reached the store reports a stale folder, and does not push twice', async () => {
+		// The one ordering that matters. A push commits to the store and then
+		// writes the folder, so a refusal of that write is not another turn of
+		// the loop: the values landed, and asking again would apply them twice.
+		const host = fakeHost();
+		const { data, noteId } = await notebook();
+		expectOk(await pullInto(host, data));
+		host.folder.set(
+			`notes/${noteId}.md`,
+			(host.folder.get(`notes/${noteId}.md`) as string).replace(
+				'"Groceries"',
+				'"Shopping"',
+			),
+		);
+
+		let asked = 0;
+		host.moveDuringNextWrite(() => {
+			host.folder.set('notes/landed.md', '---\ntitle: "landed"\n---\n');
+		});
+		const refused = expectErr(
+			await workingCopy(host, data).push({
+				confirm: async () => {
+					asked += 1;
+					return true;
+				},
+			}),
+		);
+
+		expect(refused.name).toBe('FolderStale');
+		if (refused.name !== 'FolderStale') throw new Error('unreachable');
+		expect(refused.cause.name).toBe('FolderMoved');
+		expect(refused.values).toBe(1);
+		// Asked once, applied once. The value is in the store and the folder
+		// still shows the old one, which is exactly what `FolderStale` says.
+		expect(asked).toBe(1);
+		expect(data.tables.notes.get(noteId)?.title).toBe('Shopping');
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a host that will not say which folder it handed back is refused once', async () => {
+		// Without a folder to name, every write is refused and every refusal
+		// reads as the folder having moved, so a verb with a `confirm` that does
+		// not ask anybody would turn forever. It stops here instead, on the
+		// reading.
+		const host = fakeHost();
+		const { data } = await notebook();
+		host.sayNothing();
+
+		let asked = 0;
+		const refused = expectErr(
+			await workingCopy(host, data).pull({
+				confirm: async () => {
+					asked += 1;
+					return true;
+				},
+			}),
+		);
+		expect(refused.name).toBe('HostUnstated');
+		expect(asked).toBe(0);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('the other verb is refused while one is between its list and its write', async () => {
+		// `confirm` awaits a person, so that stretch is seconds long and both
+		// verbs write the same folder. A second dialog opening onto a folder
+		// nobody has looked at since is the thing this refuses.
+		const host = fakeHost();
+		const { data } = await notebook();
+		expectOk(await pullInto(host, data));
+
+		let release = () => {};
+		const holding = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const reading = workingCopy(host, data).pull({
+			confirm: async () => {
+				await holding;
+				return false;
+			},
+		});
+		// Deliberately a second working copy: the guard is per store, so two
+		// components each building their own still meet it.
+		const refused = expectErr(
+			await workingCopy(host, data).push({ confirm: async () => true }),
+		);
+		expect(refused.name).toBe('Busy');
+
+		release();
+		expect(expectOk(await reading)).toEqual({ status: 'declined' });
+		// And the folder is usable again the moment the first verb is done.
+		expectOk(await workingCopy(host, data).pull({ confirm: async () => true }));
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a confirm that throws escapes, and does not leave the folder busy', async () => {
+		// A `confirm` runs before anything is written, so a throw from one is a
+		// bug in the surface rather than an outcome. It escapes as a rejection,
+		// and the folder it was asking about is not left locked behind it.
+		const host = fakeHost();
+		const { data } = await notebook();
+		expectOk(await pullInto(host, data));
+
+		await expect(
+			workingCopy(host, data).pull({
+				confirm: async () => {
+					throw new Error('the dialog broke');
+				},
+			}),
+		).rejects.toThrow('the dialog broke');
+		expectOk(await pullInto(host, data));
 		await data[Symbol.asyncDispose]();
 	});
 });
