@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-01
+- **Amended by:** [ADR-0342](0342-sign-in-is-the-door-to-keeping-not-to-using.md) at "No Epicenter workspace app gates behind sign-in", and at the two mechanisms under it that ADR-0336 removed: the signed-out bare IndexedDB document and the Add / Delete / Keep migration. An application without an account works and keeps nothing; signing in is what makes a store durable. The rest of this record stands, including the one every live citation is about: a page lifetime is one auth generation.
 
 ## Context
 
