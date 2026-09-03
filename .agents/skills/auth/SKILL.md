@@ -470,15 +470,14 @@ the document. There is no in-place swap of a store or a sync connection.
 
 ```ts
 // apps/<app>/src/routes/+layout.svelte
-$effect(() => reloadOnAuthChange(auth, { callbackDestination: '/account' }));
+$effect(() => reloadOnAuthChange(auth, { callbackDestination: '/' }));
 ```
 
 ```ts
-// the route, reading once
-const db =
-	auth.state.status === 'signed-out'
-		? null
-		: openAccountDatabase({ auth, generation: page.params.generation });
+// the route, reading once. `fromEpicenter` makes that one read for you:
+// signed-out is answered before the handle's lazy `data` is ever touched,
+// so a person who cannot open anything pays no Web Lock and no round trip.
+const store = fromEpicenter(epicenter);
 ```
 
 The gate reloads on exactly two conditions (`reload-on-auth-change.ts`): the
