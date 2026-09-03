@@ -4,10 +4,10 @@
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import FolderDownIcon from '@lucide/svelte/icons/folder-down';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
-	import type { AccountDatabase } from '$lib/databases.js';
+	import type { FolderVerbs } from '$lib/folder.js';
 	import { renderPlan } from '$lib/folder-overview.js';
 
-	let { pull }: { pull: AccountDatabase['pull'] } = $props();
+	let { pull }: { pull: FolderVerbs['pull'] } = $props();
 
 	const honeycrisp = getHoneycrisp();
 

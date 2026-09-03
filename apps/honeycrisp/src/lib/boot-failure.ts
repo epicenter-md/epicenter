@@ -18,6 +18,12 @@
  * offered signing in again, which fixes neither. Naming the repair here is what
  * keeps the sentence and the button one decision.
  *
+ * Two repairs, not three. `'go-to-notes'` sent a person to `/account`, and
+ * there is one URL now (ADR-0339); the `Unaddressable` arm went with it,
+ * because its remaining producer is an account naming no principal, which is a
+ * signed-out person, and the Svelte wrapper answers that before anything
+ * opens.
+ *
  * There is one store, so there is one set of sentences. The second argument
  * this took, naming which of two notebooks failed, went with the device store:
  * an authority mints every generation (ADR-0336), so a person has one place
@@ -30,8 +36,6 @@
  * gone; give it a producer before giving it a sentence.
  */
 export type BootRepair =
-	/** Go to the notes this account does have. The link named none. */
-	| 'go-to-notes'
 	/** Try again. Something outside this device has to change first. */
 	| 'retry'
 	/** Sign out, then in as the account this device's copy belongs to, or erase
@@ -52,21 +56,6 @@ export function bootFailure(error: unknown): BootFailure {
 						'Another Honeycrisp window already has these notes open. Close it, then try again.',
 					repair: 'retry',
 				};
-			case 'Unaddressable':
-				// The store could not be NAMED, and the usual cause is the
-				// generation in the URL: a route hands over
-				// `Number(params.generation)`, so a truncated paste or a
-				// hand-edited link arrives as `NaN` and the store refuses it.
-				// Trying again reopens the same URL, which is the one repair that
-				// cannot work, so the repair is to leave the URL.
-				//
-				// Its other cause, an account with no server or principal, lands
-				// here too and is served by the same repair, because going to the
-				// notes re-resolves both from the session.
-				return {
-					message: 'That link does not name any of your notes.',
-					repair: 'go-to-notes',
-				};
 			case 'BoundElsewhere':
 				// Somebody else signed into this device and their notes are still
 				// here. Nothing was deleted to get to this screen and nothing will
@@ -77,12 +66,15 @@ export function bootFailure(error: unknown): BootFailure {
 					repair: 'erase',
 				};
 			case 'GenerationNotFound':
-				// A link to a set of notes that is not here. Worth its own arm
-				// because the repair is a person's, not a retry's: go back to the
-				// notes that do exist.
+				// The account listed this set of notes and then did not have it,
+				// which is a race rather than a link: nobody types the number any
+				// more, because nothing puts one in a URL (ADR-0339). A reload asks
+				// the account again and opens whatever it says now, so this retries
+				// like a reachability failure and says so in the same words.
 				return {
-					message: 'These notes are not in your account.',
-					repair: 'go-to-notes',
+					message:
+						'Your notes could not be opened. Check your connection and try again.',
+					repair: 'retry',
 				};
 			case 'GenerationUnavailable':
 				// Reachability, not absence, and the difference is the whole

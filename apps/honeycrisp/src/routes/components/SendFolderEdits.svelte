@@ -4,7 +4,7 @@
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import FolderUpIcon from '@lucide/svelte/icons/folder-up';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
-	import type { AccountDatabase } from '$lib/databases.js';
+	import type { FolderVerbs } from '$lib/folder.js';
 	import {
 		irreversible,
 		renderPlan,
@@ -14,7 +14,7 @@
 	let {
 		diff,
 		push,
-	}: { diff: AccountDatabase['diff']; push: AccountDatabase['push'] } = $props();
+	}: { diff: FolderVerbs['diff']; push: FolderVerbs['push'] } = $props();
 
 	const honeycrisp = getHoneycrisp();
 

@@ -1,29 +1,31 @@
 <script lang="ts">
-	import type { SyncConnectionStatus } from '@epicenter/data/sync';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
-	import type { AccountDatabase } from '$lib/databases.js';
+	import type { HoneycrispData } from '$lib/data/index.js';
+	import { folderVerbs } from '$lib/folder.js';
 	import { navigation } from '$lib/navigation.svelte.js';
 	import CommandPalette from './CommandPalette.svelte';
 	import NoteBodyPane from './NoteBodyPane.svelte';
 	import NoteList from './NoteList.svelte';
 	import HoneycrispSidebar from './Sidebar.svelte';
 
-	// Required, not optional. The optional half was for the device store, which
-	// had no sync at all; every store has an authority now (ADR-0336), and this
-	// still answers `undefined` while a connection is denied.
-	let {
-		syncStatus,
-		pull,
-		diff,
-		push,
-	}: {
-		syncStatus: () => SyncConnectionStatus | undefined;
-		pull: AccountDatabase['pull'];
-		diff: AccountDatabase['diff'];
-		push: AccountDatabase['push'];
-	} = $props();
+	// The opened store, and everything a sidebar shows about it is read off it.
+	// The route used to hand four props down, assembled by the opener it owned;
+	// the store states its own address and its own connection now (ADR-0340).
+	let { data }: { data: HoneycrispData } = $props();
+
+	// A denied connection renders the same as no connection at all: the store
+	// opened from local state before a socket was attempted, and the status
+	// line goes quiet rather than saying something is wrong.
+	const syncStatus = () => {
+		const status = data.sync.status();
+		return status?.denied === false ? status : undefined;
+	};
+	// Read once, like the provider next to it: the route mounts this exactly
+	// once per opened store, so `data` never changes while this component lives.
+	/* svelte-ignore state_referenced_locally */
+	const { pull, diff, push } = folderVerbs(data);
 
 	const honeycrisp = getHoneycrisp();
 </script>

@@ -5,13 +5,22 @@ note's body is the node on its note row inside that same document
 (ADR-0295, ADR-0309). The one application running on the store today, so it is also the
 reference for how an app is built.
 
-Design authority: [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0295](../../docs/adr/0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) (a database is one Yjs document and a row holds its rich content), [ADR-0292](../../docs/adr/0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) (a database opens an exact generation cache-first), [ADR-0336](../../docs/adr/0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) (an authority mints every generation, so every store has an account), [ADR-0324](../../docs/adr/0324-a-database-address-is-its-data-id-and-generation-and-the-definition-declares-its-authority.md) (the address is the application, the data id, and the generation), [ADR-0256](../../docs/adr/0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md) (automatic folding is current; manual workspace compaction is deferred).
+Design authority: [ADR-0339](../../docs/adr/0339-an-application-creates-one-epicenter-and-an-account-is-what-adds-a-store.md) (an application creates one epicenter, and an account is what adds a store), [ADR-0226](../../docs/adr/0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (a host serves bundles and brokers credentials and owns no application data), [ADR-0225](../../docs/adr/0225-a-store-authority-is-one-durable-object-per-principal-and-application-and-being-signed-in-is-the-sharing-model.md) (one authority per principal and application; being signed in is the sharing model), [ADR-0295](../../docs/adr/0295-a-database-is-one-yjs-document-and-a-row-holds-its-rich-content.md) (a database is one Yjs document and a row holds its rich content), [ADR-0292](../../docs/adr/0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md) (a database opens an exact generation cache-first), [ADR-0336](../../docs/adr/0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) (an authority mints every generation, so every store has an account), [ADR-0324](../../docs/adr/0324-a-database-address-is-its-data-id-and-generation-and-the-definition-declares-its-authority.md) (the address is the application, the data id, and the generation), [ADR-0256](../../docs/adr/0256-automatic-folding-is-the-current-maintenance-path-and-manual-workspace-compaction-is-deferred.md) (automatic folding is current; manual workspace compaction is deferred).
 
-## A generation is the address, and a route resolves it once
+## One handle, one URL, and the generation is nobody's to choose
 
-`src/lib/databases.ts` is the only place that opens a store, and every open
-takes an EXACT generation (ADR-0292). `/account` resolves one and redirects;
-`/account/[generation]` opens it.
+`#platform/epicenter` is where this application's notes come from
+(ADR-0339). Its two leaves differ in one line, the runtime subpath:
+
+```ts
+createEpicenter({ appId: HONEYCRISP_APP_ID, definition: honeycrispDefinition, account: auth })
+```
+
+`definition` and `account` arrive together, which IS the store: an authority
+mints every generation (ADR-0336), so there is no accountless notebook.
+Nothing opens at construction. `epicenter.data` is a lazy getter, so a
+signed-out person meeting the gate pays no Web Lock, no IndexedDB, and no
+round trip, and reading it twice joins one open.
 
 ```text
 epicenter/v4/so.epicenter.honeycrisp/so.epicenter.honeycrisp/<n>
@@ -20,25 +29,33 @@ epicenter/v4/so.epicenter.honeycrisp/so.epicenter.honeycrisp/<n>
 The first segment after the version is the OPENING application and the second
 is the data id (ADR-0324). They are the same string here because Honeycrisp
 names its notes after itself, which is a coincidence and not an identity.
-`APP_ID` in `src/lib/databases.ts` is that first segment, self-claimed, because
-a deployed app is a trusted app (ADR-0334).
+`HONEYCRISP_APP_ID` in `src/lib/data/index.ts` is that first segment,
+self-claimed, because a deployed app is a trusted app (ADR-0334).
 
-`resolveAccountGeneration` takes the newest copy this device holds and otherwise
-asks the account which exist. It creates one only when the account's list comes
+**The generation is not in the URL and there is no picker.** `data` takes the
+newest copy this device holds, else the account's newest, else mints, and
+nothing stores the choice. It creates one only when the account's list comes
 back EMPTY, which is a first run: a device that could not SEE what the account
-has must not invent a history for it.
+has must not invent a history for it. `/account` and `/account/[generation]`
+are gone; the notes are at `/`.
 
 Opening is cache-first and never waits on a socket. A device holding a copy is
 usable offline; one that holds none fetches the generation whole before
 returning, so a fresh account never renders empty while its state is arriving.
 
-`createHoneycrisp` turns the one route-owned data capability into the reactive
-application object the UI consumes. It adapts that document into
-Svelte-reactive named tables with `fromData` (from `@epicenter/svelte`), layers
-Honeycrisp's domain operations, search, and URL navigation on top, and exposes
-no database identity or fallback. Components reach it through
-`getHoneycrisp()`; raw stores never cross that boundary. Account sync status is
-passed separately by the account route for the sidebar's status line.
+`fromEpicenter` (from `@epicenter/svelte`) is what the route renders from:
+`signed-out | opening | ready | failed`, with the store on `ready` and the
+error on `failed`. Signed-out is answered before anything opens, and it is a
+state rather than a failure, so the gate never sniffs an error to choose
+between "sign in" and "something broke".
+
+`createHoneycrisp` turns that one opened store into the reactive application
+object the UI consumes. It adapts the document into Svelte-reactive named
+tables with `fromData`, layers Honeycrisp's domain operations, search, and URL
+navigation on top, and exposes no database identity or fallback. Components
+reach it through `getHoneycrisp()`; raw stores never cross that boundary. The
+sidebar's status line reads `data.sync.status()` off the store itself
+(ADR-0340).
 
 A permanent credential refusal costs sync, not the notes: the store opened
 from local state before a socket was attempted, and the sidebar's status line
@@ -48,8 +65,9 @@ goes quiet.
 
 `~/Epicenter/so.epicenter.honeycrisp/` holds these notes as files, and nothing
 puts them there by itself (ADR-0337). `PullToFolder.svelte` is the button; the
-verb is `pull` on the object `openAccountDatabase` returns, bound to this store
-and this generation because those are what the manifest records.
+verb is `pull` from `src/lib/folder.ts`, which is the library's verb with this
+application's definition supplied. It needs nothing else, because the store
+states its own address and that is what the manifest records (ADR-0340).
 
 A pull refuses a folder holding edits nobody sent back, and shows them. Sending
 them back or discarding them are both second deliberate acts. It also refuses
@@ -132,12 +150,14 @@ only the default one is checked by an editor.
 - Do not soften a boot failure into one message. A generation that is missing
   and one that is unreachable say which, because a retry fixes the second and
   never the first (`boot-failure.ts`).
-- Do not open a generation the route did not resolve. A number in a URL is an
-  address, not an instruction to allocate: `openDatabase` refuses a miss with
-  `GenerationNotFound` rather than inventing an empty database at whatever
-  somebody typed.
-- Do not add a `#platform/*` seam for storage. Every build opens its own store;
-  a seam there is the thing ADR-0226 refused.
+- Do not put the generation back in the URL, and do not add a picker. Nobody
+  chose that number and no link carries it. When importing a replica ships, an
+  import ends in a document reload and a device holding an older number is told
+  a newer one exists (ADR-0281); neither is a route parameter.
+- Do not add a `#platform/*` seam for data. `#platform/epicenter` selects the
+  RUNTIME the handle is built over, which is a keychain and a Bun-owned file;
+  every build opens its own store either way, and a seam over the data is the
+  thing ADR-0226 refused.
 - Do not write a note's `title` or `updatedAt` from anywhere but
 	  `notes.openContent`'s subscription. The store writes no derived fields and no
 	  timestamps (ADR-0297), so those are Honeycrisp's, hung on the content node's

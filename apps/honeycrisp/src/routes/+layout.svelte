@@ -12,9 +12,7 @@
 	// Auth changes start a fresh document generation. The route that initiated
 	// the change does not swap its database in place, so every route boots with
 	// one principal and one data capability.
-	$effect(() =>
-		reloadOnAuthChange(auth, { callbackDestination: '/account' }),
-	);
+	$effect(() => reloadOnAuthChange(auth, { callbackDestination: '/' }));
 </script>
 
 <svelte:head><title>Honeycrisp</title></svelte:head>

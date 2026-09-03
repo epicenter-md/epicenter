@@ -12,6 +12,10 @@
 			"epicenter-host": "./src/lib/platform/auth.epicenter-host.ts",
 			"default": "./src/lib/platform/auth.browser.ts"
 		},
+		"#platform/epicenter": {
+			"epicenter-host": "./src/lib/platform/epicenter.epicenter-host.ts",
+			"default": "./src/lib/platform/epicenter.browser.ts"
+		},
 		"#platform/folder": {
 			"epicenter-host": "./src/lib/platform/folder.epicenter-host.ts",
 			"default": "./src/lib/platform/folder.browser.ts"
@@ -49,6 +53,7 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@epicenter/app": "workspace:*",
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
@@ -61,9 +66,9 @@
 		"better-auth": "catalog:",
 		"bits-ui": "catalog:",
 		"date-fns": "catalog:",
+		"markdown-it": "^14.0.0",
 		"prosemirror-commands": "^1.6.0",
 		"prosemirror-inputrules": "^1.4.0",
-		"markdown-it": "^14.0.0",
 		"prosemirror-keymap": "^1.2.0",
 		"prosemirror-markdown": "^1.13.0",
 		"prosemirror-model": "^1.25.0",

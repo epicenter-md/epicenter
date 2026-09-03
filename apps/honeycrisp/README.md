@@ -12,24 +12,25 @@ Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL
 
 ### Layout
 
-Single-SPA SvelteKit app with one destination, `/account`. Three panes:
-sidebar (folders) → note list → editor. SSR is disabled; the app runs entirely
-in the browser as a static site.
+Single-SPA SvelteKit app with one destination, `/`. Three panes: sidebar
+(folders) → note list → editor. SSR is disabled; the app runs entirely in the
+browser as a static site.
 
 ### Data layer
 
 Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/data/index.ts`) and opens it as a store the app owns:
 
 ```txt
-resolveAccountGeneration(auth, principalId)               which number, once
-openAccountDatabase({ auth, generation })                 the store
-eraseNotesOnThisDevice()                                  the one deleting verb
+createEpicenter({ appId, definition, account })           the handle, at build time
+epicenter.data                                            the store, opened on first read
+epicenter.eraseReplica()                                  the one deleting verb
 data.tables.notes.rows                                    synchronous from here on
 ```
 
-The definition names the application and the route names which exact generation
-of it (ADR-0229, ADR-0292). `/account` resolves a number and redirects;
-`/account/[generation]` opens it. The store lives at
+The definition names the application, and `data` resolves which exact
+generation of it to open: the newest copy this device holds, else the account's
+newest, else a fresh one (ADR-0292, ADR-0339). Nobody chooses that number and
+no URL carries it. The store lives at
 `epicenter/v4/so.epicenter.honeycrisp/so.epicenter.honeycrisp/<n>`: the opening
 application, the data id, then the number (ADR-0324).
 The document shape is the shared `app`/`kv`/`tables:<name>` grammar in
@@ -39,9 +40,10 @@ Every build opens its own store, with no platform seam, and reaches one
 authority per signed-in account (ADR-0225/0226). The desktop host serves
 Honeycrisp's bundle and brokers its credential; it owns none of its data.
 
-**Reads are synchronous after opening.** The route opens its store by replaying
-a durable log into one `Y.Doc`, then `data.tables.notes.rows` returns rows, not
-a promise.
+**Reads are synchronous after opening.** The handle opens the store by
+replaying a durable log into one `Y.Doc`, then `data.tables.notes.rows` returns
+rows, not a promise. `fromEpicenter` is what the route renders while that
+settles: `signed-out | opening | ready | failed`, with the store on `ready`.
 
 **Nothing polls and nothing refreshes.** `data.tables.notes.subscribe(...)`
 reports which rows a commit touched, for a local write and for bytes that

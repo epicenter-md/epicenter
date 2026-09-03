@@ -2,10 +2,11 @@
  * Which build gets which credential.
  *
  * Honeycrisp has three: the hosted web SPA, the standalone desktop bundle, and
- * the build the desktop Epicenter host serves. What separates them is auth and
- * the deployment they talk to, and NOT their storage: every build owns its own
- * store and reaches the same authority per account (ADR-0226), so there is no
- * `#platform/application` seam any more and nothing here asserts one.
+ * the build the desktop Epicenter host serves. What separates them is auth,
+ * whether there is a folder, and which runtime the capability handle is built
+ * over. NOT their data: every build owns its own store and reaches the same
+ * authority per account (ADR-0226), so there is no `#platform/application`
+ * seam any more and nothing here asserts one.
  *
  * The failure this guards is silent. Drop the `epicenter-host` leaf from a seam
  * and resolution falls back to `default`, so the host-served build would go
@@ -75,8 +76,24 @@ describe('the folder is a build fact', () => {
 	});
 });
 
+describe('the runtime is the import path', () => {
+	test('each build composes its handle over its own runtime leaf', async () => {
+		// The name never carries the runtime (ADR-0339), so what a build gets is
+		// decided by which subpath its leaf imports. Getting this wrong is the
+		// silent failure this file exists for: the host-served build would reach
+		// for OPFS and tab memory instead of the Bun-owned files and the
+		// keychain, and still build and still start.
+		expect(await leafSource('#platform/epicenter', 'default')).toContain(
+			"from '@epicenter/app/browser'",
+		);
+		expect(await leafSource('#platform/epicenter', 'epicenter-host')).toContain(
+			"from '@epicenter/app/desktop'",
+		);
+	});
+});
+
 describe('storage ownership', () => {
-	test('storage is not a platform seam at all', async () => {
+	test('data is not a platform seam at all', async () => {
 		// The refusal, asserted so that re-adding the seam is a decision someone
 		// makes rather than a file someone drops in. A host that owned its
 		// windows' data would need a second authority, a second transport

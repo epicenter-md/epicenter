@@ -13,7 +13,7 @@
 				errorMessage = error.message;
 				return;
 			}
-			await goto(resolve('/account'), { replaceState: true });
+			await goto(resolve('/'), { replaceState: true });
 		})();
 	});
 </script>

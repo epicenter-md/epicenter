@@ -14,7 +14,7 @@
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 	import PullToFolder from './PullToFolder.svelte';
 	import SendFolderEdits from './SendFolderEdits.svelte';
-	import type { AccountDatabase } from '$lib/databases.js';
+	import type { FolderVerbs } from '$lib/folder.js';
 
 	let {
 		syncStatus,
@@ -23,9 +23,9 @@
 		push,
 	}: {
 		syncStatus: () => SyncConnectionStatus | undefined;
-		pull: AccountDatabase['pull'];
-		diff: AccountDatabase['diff'];
-		push: AccountDatabase['push'];
+		pull: FolderVerbs['pull'];
+		diff: FolderVerbs['diff'];
+		push: FolderVerbs['push'];
 	} = $props();
 
 	const honeycrisp = getHoneycrisp();

@@ -10,13 +10,13 @@ import { bootFailure } from './boot-failure.js';
  * everything.
  */
 describe('bootFailure', () => {
-	test('a link that names nothing sends them to the notes that exist', () => {
-		// A route hands the store `Number(params.generation)`, so a hand-edited
-		// or truncated link arrives as NaN. Trying again reopens the same URL, so
-		// offering a retry is the one answer that cannot work.
-		for (const name of ['Unaddressable', 'GenerationNotFound']) {
-			expect(bootFailure({ name }).repair).toBe('go-to-notes');
-		}
+	test('a set of notes the account listed and then did not have retries', () => {
+		// Nothing puts a generation in a URL any more (ADR-0339), so this is no
+		// longer a hand-edited link: it is the account answering one way and then
+		// another, which a reload re-asks. `Unaddressable` lost its arm with the
+		// route, because its remaining producer is a signed-out account and the
+		// wrapper answers that before anything opens.
+		expect(bootFailure({ name: 'GenerationNotFound' }).repair).toBe('retry');
 	});
 
 	test('a copy belonging to another account offers the erase and nothing else', () => {

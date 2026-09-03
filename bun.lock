@@ -127,6 +127,7 @@
       "name": "@epicenter/honeycrisp",
       "version": "0.0.2",
       "dependencies": {
+        "@epicenter/app": "workspace:*",
         "@epicenter/app-shell": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
@@ -590,6 +591,7 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "fake-indexeddb": "^6.2.5",
         "typescript": "catalog:",
       },
     },

@@ -11,7 +11,7 @@ import { field } from '@epicenter/data/definition';
  * (ADR-0268).
  */
 
-import type { DataView, PersistenceCapability } from '@epicenter/data';
+import type { ReplicaData } from '@epicenter/data';
 import {
 	type ContentCodec,
 	defineData,
@@ -93,6 +93,16 @@ const noteMarkdown: ContentCodec = {
 	},
 };
 
+/**
+ * The application this opens its store as, self-claimed (ADR-0324, ADR-0334).
+ *
+ * The first segment of a store's address is the OPENING application and the
+ * second is the data id. They are the same string here because Honeycrisp
+ * names its notes after itself, which is a coincidence rather than an
+ * identity.
+ */
+export const HONEYCRISP_APP_ID = 'so.epicenter.honeycrisp';
+
 export const honeycrispDefinition = defineData({
 	id: 'so.epicenter.honeycrisp',
 	title: 'Honeycrisp',
@@ -139,21 +149,23 @@ export const honeycrispDefinition = defineData({
 });
 
 /**
- * The typed view of one opened Honeycrisp data handle, plus its durability.
+ * One opened Honeycrisp store, whole.
  *
- * The view and exactly one document capability, rather than the whole opened
- * document. `persistence` is here because the application RENDERS it: whether
- * this device is still keeping a copy is a fact a person is shown, so it
- * belongs to the state layer beside the rows.
+ * It used to be the typed view intersected with `persistence`, because a route
+ * owned the open and handed the application the two things it renders. There
+ * is no route-owned open any more (ADR-0339): the handle opens the store for
+ * this page's lifetime, and what an application is given is what
+ * `epicenter.data` resolves. The narrowing was also already leaking, because
+ * `persistence` was not the only document fact a person is shown: the sync
+ * status line is another, and it lives on the store's own `sync` capability
+ * (ADR-0340).
  *
- * Everything else on the document stays with the route that opened it. Sync
- * attachment, `onCommitted`, and disposal are lifecycle, and widening this to
- * the full handle would hand every component a `Symbol.asyncDispose` it must
- * not call.
+ * `Symbol.asyncDispose` comes with it and nothing calls it. Disposal was the
+ * reason for the narrowing, and the page owns the lifetime now: a change of
+ * auth generation replaces the document (ADR-0088), which is the only end this
+ * store has.
  */
-export type HoneycrispData = DataView<typeof honeycrispDefinition> & {
-	readonly persistence: PersistenceCapability;
-};
+export type HoneycrispData = ReplicaData<typeof honeycrispDefinition>;
 
 export type Folder = RowOf<typeof honeycrispDefinition.tables.folders>;
 export type Note = RowOf<typeof honeycrispDefinition.tables.notes>;
@@ -179,7 +191,14 @@ export type Note = RowOf<typeof honeycrispDefinition.tables.notes>;
  * otherwise unreadable row is a legal write (ADR-0125).
  */
 export function deleteHoneycrispFolder(
-	data: HoneycrispData,
+	/**
+	 * The two verbs this needs, rather than the whole store.
+	 *
+	 * Narrowed here rather than at the type, because the caller is the reactive
+	 * adapter's view: `fromData` returns the declared shape and not the
+	 * document, and a folder delete is rows and one commit either way.
+	 */
+	data: Pick<HoneycrispData, 'tables' | 'transact'>,
 	folderId: FolderId,
 ): void {
 	const notes = data.tables.notes;

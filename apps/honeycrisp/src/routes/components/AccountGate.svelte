@@ -3,10 +3,9 @@
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { resolve } from '$app/paths';
 	import { auth } from '#platform/auth';
+	import { epicenter } from '#platform/epicenter';
 	import { bootFailure } from '$lib/boot-failure.js';
-	import { eraseNotesOnThisDevice } from '$lib/databases.js';
 
 	let { error = undefined }: { error?: unknown } = $props();
 
@@ -31,18 +30,17 @@
 	async function erase() {
 		erasing = true;
 		eraseFailure = undefined;
-		try {
-			await eraseNotesOnThisDevice();
-			// Replaced rather than reloaded: this page's URL names the generation
-			// that just stopped existing, and reloading it would meet a miss and a
-			// second failure screen. `/account` resolves what this account has, and
-			// a document navigation is what the layout's reload gate wants anyway.
-			location.replace(resolve('/account'));
-		} catch (cause) {
-			eraseFailure = bootFailure(cause).message;
-		} finally {
-			erasing = false;
+		const { error } = await epicenter.eraseReplica();
+		erasing = false;
+		if (error !== null) {
+			eraseFailure = bootFailure(error).message;
+			return;
 		}
+		// Reloaded rather than navigated: `epicenter.data` memoized the failure
+		// that brought them here, so a second read of it inside this page is the
+		// same refusal about a copy that no longer exists. A fresh document
+		// resolves what the account has and opens it.
+		location.reload();
 	}
 </script>
 
@@ -58,11 +56,7 @@
 			{/if}
 		</div>
 
-		{#if failure?.repair === 'go-to-notes'}
-			<Button size="lg" onclick={() => location.replace(resolve('/account'))}>
-				Go to your notes
-			</Button>
-		{:else if failure?.repair === 'retry'}
+		{#if failure?.repair === 'retry'}
 			<Button size="lg" onclick={() => location.reload()}>Try again</Button>
 		{:else if failure?.repair === 'erase'}
 			<div class="flex flex-col items-center gap-2">
