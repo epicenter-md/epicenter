@@ -29,7 +29,7 @@ import type {
 	DataDefinitionParseError,
 } from '@epicenter/data/definition';
 import { persistOnHide } from '@epicenter/data/flush-on-hide';
-import { attachStoreSync } from '@epicenter/data/sync';
+import { attachStoreSync, type SyncConnection } from '@epicenter/data/sync';
 import { defineErrors } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';
@@ -116,12 +116,18 @@ const EpicenterDataBackgroundError = defineErrors({
  * would be a verb whose only correct caller is the page teardown that already
  * happens.
  */
+export type OpenedReplica<TDefinition extends DataDefinition> = {
+	readonly data: ReplicaData<TDefinition>;
+	/** End all three: the socket, the page-hide listener, and the store. */
+	close(): Promise<void>;
+};
+
 export async function openReplica<TDefinition extends DataDefinition>({
 	appId,
 	definition,
 	account,
 }: EpicenterDataOptions<TDefinition> & { appId: string }): Promise<
-	Result<ReplicaData<TDefinition>, StoreError | DataDefinitionParseError>
+	Result<OpenedReplica<TDefinition>, StoreError | DataDefinitionParseError>
 > {
 	const address = addressOf(account);
 	const resolved = await resolveGeneration(definition, {
@@ -151,9 +157,10 @@ export async function openReplica<TDefinition extends DataDefinition>({
 	//
 	// Nothing is known to reach this: every input `attachStoreSync` reads was
 	// canonicalized by the open above.
+	let connection: SyncConnection | undefined;
 	try {
-		attachStoreSync({
-			store: opened.data,
+		connection = attachStoreSync({
+			store: opened.data.data,
 			transport: account,
 			onTransportError: (cause) =>
 				log.warn(EpicenterDataBackgroundError.SyncTransportFailed({ cause })),
@@ -170,9 +177,21 @@ export async function openReplica<TDefinition extends DataDefinition>({
 	// forgot this would lose the last few seconds of typing with no error
 	// anywhere. `FlushEditsOnHide` does the other half, blurring the focused
 	// element so a commit-on-blur input writes into the store first.
-	persistOnHide(() => opened.data.persistence.flush());
+	const stopHideFlush = persistOnHide(() =>
+		opened.data.data.persistence.flush(),
+	);
 
-	return Ok(opened.data);
+	// All three in one hand. The store's own disposal would free one of them and
+	// leave a connection dialling against a document whose every verb throws,
+	// which is why it is not on the store any more (ADR-0340).
+	return Ok({
+		data: opened.data.data,
+		close: async () => {
+			connection?.[Symbol.dispose]();
+			stopHideFlush();
+			await opened.data.close();
+		},
+	});
 }
 
 /**

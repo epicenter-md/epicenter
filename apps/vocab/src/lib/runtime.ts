@@ -152,7 +152,9 @@ async function openAccountRuntime({
 		account: vocabAccount(auth, principalId),
 	});
 	if (opened.error !== null) throw opened.error;
-	const data = opened.data;
+	// The store and the thing that ends it, separately (ADR-0340): what has to
+	// be released here is more than the document.
+	const { data, close } = opened.data;
 
 	let sync: SyncConnection | undefined;
 	try {
@@ -174,14 +176,14 @@ async function openAccountRuntime({
 			},
 			dispose: async () => {
 				connection[Symbol.dispose]();
-				await data[Symbol.asyncDispose]();
+				await close();
 			},
 		};
 	} catch (cause) {
 		// The gate can throw (an aborted boot, a denied unbound replica) after
 		// sync exists, so the failure path lets go of everything the try acquired.
 		sync?.[Symbol.dispose]();
-		await data[Symbol.asyncDispose]().catch(() => undefined);
+		await close().catch(() => undefined);
 		throw cause;
 	}
 }

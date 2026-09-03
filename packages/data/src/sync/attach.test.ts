@@ -29,10 +29,11 @@ const database = defineData({
 	},
 });
 
-type AddressedTestStore = ReplicaDocument & {
-	baseURL: string;
-	principalId: ReturnType<typeof asPrincipalId>;
-};
+type AddressedTestStore = ReplicaDocument &
+	AsyncDisposable & {
+		baseURL: string;
+		principalId: ReturnType<typeof asPrincipalId>;
+	};
 
 function openStore(): AddressedTestStore {
 	const live = new Database(':memory:');

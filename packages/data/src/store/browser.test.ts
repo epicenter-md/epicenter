@@ -33,9 +33,13 @@ import { installTestLocks } from './test-locks.js';
 installTestLocks();
 
 import { describe, expect, test } from 'bun:test';
-import { defineData, defineTable } from '@epicenter/data/definition';
+import {
+	type DataDefinition,
+	defineData,
+	defineTable,
+} from '@epicenter/data/definition';
 import { asPrincipalId } from '@epicenter/principal';
-import type { Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 import { expectErr, expectOk as expectOkResult } from 'wellcrafted/testing';
 
 import {
@@ -118,6 +122,27 @@ function accountFor(
 	};
 }
 
+/**
+ * `openDatabase`, with the pair composed into one disposable.
+ *
+ * The opener hands back the store and the thing that ends it, separately
+ * (ADR-0340), because opening a replica acquires more than a document and the
+ * closer is the one hand that holds all of it. A test acquires only the
+ * document, so it wants one object it can release.
+ */
+async function openStore<const TDatabase extends DataDefinition>(
+	...args: Parameters<typeof openDatabase<TDatabase>>
+) {
+	const opened = await openDatabase<TDatabase>(...args);
+	if (opened.error !== null) return opened;
+	const { data, close } = opened.data;
+	return Ok(
+		Object.assign(Object.create(data) as typeof data, {
+			[Symbol.asyncDispose]: close,
+		}),
+	);
+}
+
 async function openAccountData(
 	definition: ReturnType<typeof databaseFor>,
 	principalId: typeof ALICE | typeof BOB,
@@ -126,7 +151,7 @@ async function openAccountData(
 ) {
 	const account = accountFor(principalId, baseURL);
 	await createGeneration(definition, { appId, account });
-	return openDatabase(definition, { appId, generation: GEN, account });
+	return openStore(definition, { appId, generation: GEN, account });
 }
 
 function titles(app: {
@@ -228,7 +253,7 @@ describe('one address per application, data id, and generation (ADR-0324)', () =
 		const account = accountFor(ALICE);
 		await createGeneration(database, { appId: APP, account });
 		const first = expectOk(
-			await openDatabase(database, { appId: APP, generation: 1, account }),
+			await openStore(database, { appId: APP, generation: 1, account }),
 		);
 		first.tables.notes.create({ title: 'in generation one' });
 		await first[Symbol.asyncDispose]();
@@ -242,7 +267,7 @@ describe('one address per application, data id, and generation (ADR-0324)', () =
 
 		// And generation one still holds what was written into it.
 		const reopened = expectOk(
-			await openDatabase(database, { appId: APP, generation: 1, account }),
+			await openStore(database, { appId: APP, generation: 1, account }),
 		);
 		expect(titles(reopened)).toEqual(['in generation one']);
 		await reopened[Symbol.asyncDispose]();
@@ -253,7 +278,7 @@ describe('one address per application, data id, and generation (ADR-0324)', () =
 		const account = accountFor(ALICE, CLOUD);
 		for (const generation of [0, -1, 1.5, Number.NaN]) {
 			const refused = expectErr(
-				await openDatabase(database, { appId: APP, generation, account }),
+				await openStore(database, { appId: APP, generation, account }),
 			);
 			expect(refused.name).toBe('Unaddressable');
 		}
@@ -267,7 +292,7 @@ describe('one address per application, data id, and generation (ADR-0324)', () =
 		const before = await databaseNames();
 		for (const appId of ['so.epicenter/other', '', '.hidden']) {
 			const refused = expectErr(
-				await openDatabase(database, {
+				await openStore(database, {
 					appId,
 					generation: GEN,
 					account: accountFor(ALICE),
@@ -293,7 +318,7 @@ describe('one address per application, data id, and generation (ADR-0324)', () =
 
 		const account = accountFor(BOB, CLOUD, { bytes: state, position: 4 });
 		const arrived = expectOk(
-			await openDatabase(database, { appId: APP, generation: GEN, account }),
+			await openStore(database, { appId: APP, generation: GEN, account }),
 		);
 		expect(titles(arrived)).toEqual(['made elsewhere']);
 		// The position rode in on the append, so the socket carries only what
@@ -312,7 +337,7 @@ describe('one address per application, data id, and generation (ADR-0324)', () =
 		};
 
 		const refused = expectErr(
-			await openDatabase(database, { appId: APP, generation: GEN, account }),
+			await openStore(database, { appId: APP, generation: GEN, account }),
 		);
 		// Unavailable, never not-found: a retry can fix one and never the
 		// other, and a boot surface that conflates them tells a person their
@@ -326,7 +351,7 @@ describe('one address per application, data id, and generation (ADR-0324)', () =
 		const before = await databaseNames();
 
 		const refused = expectErr(
-			await openDatabase(database, {
+			await openStore(database, {
 				appId: APP,
 				generation: GEN,
 				account: accountFor(asPrincipalId('   ') as typeof ALICE),
@@ -336,7 +361,7 @@ describe('one address per application, data id, and generation (ADR-0324)', () =
 		expect(await databaseNames()).toEqual(before);
 
 		const malformed = expectErr(
-			await openDatabase(database, {
+			await openStore(database, {
 				appId: APP,
 				generation: GEN,
 				account: accountFor(ALICE, 'not a URL'),
@@ -461,7 +486,7 @@ describe('a generation belongs to the account it was created for (ADR-0325)', ()
 		await alice[Symbol.asyncDispose]();
 
 		const refused = expectErr(
-			await openDatabase(database, {
+			await openStore(database, {
 				appId: APP,
 				generation: GEN,
 				account: accountFor(BOB),
@@ -486,7 +511,7 @@ describe('a generation belongs to the account it was created for (ADR-0325)', ()
 		await cloud[Symbol.asyncDispose]();
 
 		const refused = expectErr(
-			await openDatabase(database, {
+			await openStore(database, {
 				appId: APP,
 				generation: GEN,
 				account: accountFor(ALICE, 'https://home.example.com'),
@@ -527,7 +552,7 @@ describe('a generation belongs to the account it was created for (ADR-0325)', ()
 			};
 			await createGeneration(database, { appId: APP, account });
 			const opened = expectOk(
-				await openDatabase(database, { appId: APP, generation, account }),
+				await openStore(database, { appId: APP, generation, account }),
 			);
 			await opened[Symbol.asyncDispose]();
 		}
@@ -761,7 +786,7 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 		// A declaration may arrive as data, so a refusal here is a boot outcome
 		// rather than a programmer error. The store this half-opened must
 		// release its address, or the application can never start.
-		const refused = await openDatabase(
+		const refused = await openStore(
 			{ dataId: database.id, tables: { notes: {} } } as never,
 			{ appId: APP, generation: GEN, account: accountFor(ALICE, CLOUD) },
 		);
@@ -776,7 +801,7 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 		await seedCorruptChain(storeAddress(database.id));
 
 		const account = accountFor(ALICE, CLOUD);
-		const refused = await openDatabase(database, {
+		const refused = await openStore(database, {
 			appId: APP,
 			generation: GEN,
 			account,
@@ -786,7 +811,7 @@ describe('a boot that cannot proceed refuses, and holds no claim after it', () =
 
 		// The claim went with the refusal: a retry reports the same honest
 		// failure rather than `AlreadyOpen` for the life of the page.
-		const again = await openDatabase(database, {
+		const again = await openStore(database, {
 			appId: APP,
 			generation: GEN,
 			account,

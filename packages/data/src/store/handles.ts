@@ -330,7 +330,8 @@ export type StoredData = {
  * across without anyone forwarding it by hand.
  */
 export type Data<TDatabase extends DataDefinition> = DataView<TDatabase> &
-	DataDocument;
+	DataDocument &
+	AsyncDisposable;
 
 /**
  * Account data that knows the server it belongs to.
@@ -339,6 +340,19 @@ export type Data<TDatabase extends DataDefinition> = DataView<TDatabase> &
  * `attachStoreSync` needs in order to address a socket. Both used to declare
  * this shape themselves, in two files, and only structural typing kept the two
  * copies interchangeable.
+ */
+/**
+ * A store an application holds, which it cannot close.
+ *
+ * The one thing this does NOT have that `Data` does is `Symbol.asyncDispose`,
+ * and the asymmetry is the point. Opening a replica acquires three things: the
+ * document and its Web Lock, a sync connection, and a page-hide listener. The
+ * document's own disposal frees one of them, so a caller who called it left a
+ * connection running against a store whose every verb throws. What ends a
+ * replica is the closer its opener returns, which holds all three (ADR-0340).
+ *
+ * `Data` keeps the symbol because the memory and SQLite constructors acquire
+ * one thing and a test disposes exactly that.
  */
 export type ReplicaData<TDatabase extends DataDefinition> =
 	DataView<TDatabase> & ReplicaDocument;
@@ -557,7 +571,6 @@ export type DataDocument = {
 	 * package.
 	 */
 	readonly sync: SyncCapability;
-	[Symbol.asyncDispose](): Promise<void>;
 };
 
 /**

@@ -10,7 +10,11 @@ import { field, plainText } from '@epicenter/data/definition';
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { compileData, defineData, defineTable } from '@epicenter/data/definition';
+import {
+	compileData,
+	defineData,
+	defineTable,
+} from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Logger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
@@ -80,7 +84,7 @@ function openFailable() {
 	const gate = { failing: false };
 	/** Every batch the engine accepted, for tests that pin op ordering. */
 	const batches: DurableOp[][] = [];
-	const { store, view } = createAccountStoreOverPort({
+	const { store, close, view } = createAccountStoreOverPort({
 		definition: parsed(),
 		durable: {
 			commit(ops) {
@@ -94,6 +98,7 @@ function openFailable() {
 	});
 	return {
 		store,
+		close,
 		db: view as unknown as DataView<typeof database>,
 		sqlite,
 		gate,
@@ -187,7 +192,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 
 		// Disposal attempts one final flush and then lets go; it never hangs on
 		// a blocked engine.
-		await replica.store[Symbol.asyncDispose]();
+		await replica.close();
 
 		const restarted = reopen(replica.sqlite);
 		expect(titles(restarted.db)).toEqual(['durable before']);
@@ -445,7 +450,7 @@ describe('sync reads only durable facts', () => {
 		replica.gate.failing = true;
 		expectOk(syncEngineOf(replica.store).applyRemote(update, { advanceTo: 1 }));
 		expect(titles(replica.db)).toEqual(['from the authority']);
-		await replica.store[Symbol.asyncDispose]();
+		await replica.close();
 
 		// The restart honestly recovers only the durable prefix: no row, and a
 		// cursor that never advanced, so the authority re-serves from zero.

@@ -351,10 +351,15 @@ function overSqlite<TDatabase extends DataDefinition>({
 export function createAccountStore<const TDatabase extends DataDefinition>(
 	options: CreateStoreOptions<TDatabase>,
 ): Data<TDatabase> {
-	const { store, view } = createStoreEngine(overSqlite(options));
+	const { store, close, view } = createStoreEngine(overSqlite(options));
+	// The symbol is composed back on here and nowhere else. These constructors
+	// acquire one thing, so disposing the object frees everything it took, and a
+	// test's `await using` is exactly right. A replica acquires three (ADR-0340),
+	// which is why its opener hands the closer back separately.
 	return Object.freeze({
 		...(view as DataView<TDatabase>),
 		...store,
+		[Symbol.asyncDispose]: close,
 	});
 }
 
@@ -371,6 +376,8 @@ export function createAccountStore<const TDatabase extends DataDefinition>(
  */
 export function createAccountStoreOverPort(options: StoreEngineOptions): {
 	store: DataDocument;
+	/** Flush what is queued, destroy the document, and release what it held. */
+	close: () => Promise<void>;
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 } {
@@ -385,6 +392,7 @@ function createStoreEngine({
 	log = createLogger('data/store'),
 }: StoreEngineOptions): {
 	store: DataDocument;
+	close: () => Promise<void>;
 	view: UntypedDataView;
 	definition: ParsedDataDefinition;
 } {
@@ -922,16 +930,23 @@ function createStoreEngine({
 			new Uint8Array(Y.encodeStateAsUpdateV2(database, stateVector)),
 		// Acceptance, retirement, and state enumeration are the engine's to drive.
 		persistence: controller.persistence,
-		async [Symbol.asyncDispose]() {
-			if (disposed) return;
-			disposed = true;
-			// One final attempt over whatever is still queued, then let go.
-			// Disposal never spins on a blocked engine: closing while blocked is
-			// the accepted loss ADR-0238 makes visible, not a reason to hang.
-			await controller.persistence.flush();
-			database.destroy();
-			await dispose();
-		},
+	};
+
+	/**
+	 * End this store, once.
+	 *
+	 * Beside the store rather than on it, because the party that opened one is
+	 * the party that can end one (ADR-0340). One final attempt over whatever is
+	 * still queued, then let go: closing never spins on a blocked engine, since
+	 * closing while blocked is the accepted loss ADR-0238 makes visible rather
+	 * than a reason to hang.
+	 */
+	const close = async (): Promise<void> => {
+		if (disposed) return;
+		disposed = true;
+		await controller.persistence.flush();
+		database.destroy();
+		await dispose();
 	};
 	// The delivery machinery is registered against the capability rather than
 	// the store, so a wrapper that spreads the store (a `discard()` opener)
@@ -941,7 +956,7 @@ function createStoreEngine({
 		status: () => attachedStatus.get(sync)?.(),
 	});
 	syncEngines.set(sync, Object.freeze(syncEngine));
-	return { store: Object.freeze({ ...base, sync }), view, definition };
+	return { store: Object.freeze({ ...base, sync }), close, view, definition };
 
 	function createClientLog(): ClientLog {
 		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`

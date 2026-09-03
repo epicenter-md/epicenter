@@ -75,6 +75,15 @@ import {
 } from './store.js';
 
 /**
+ * What every opener here fails with, as a type.
+ *
+ * The CONSTRUCTORS stay internal: a store is what throws these, and nothing
+ * outside builds one. The type is exported because a caller that holds an
+ * opener's `Result` has to be able to name it, and `@epicenter/app`'s handle
+ * does exactly that rather than wrapping it in an error of its own (ADR-0339).
+ */
+export type { StoreError } from './errors.js';
+/**
  * One generation of one account's database, held on this device.
  *
  * It carries no `discard`. A superseded replica used to discard and rejoin at
@@ -86,15 +95,6 @@ import {
 // Re-exported so a browser caller's one import site names the document beside
 // the opener that produces it.
 export type { DatabaseAccount } from './handles.js';
-/**
- * What every opener here fails with, as a type.
- *
- * The CONSTRUCTORS stay internal: a store is what throws these, and nothing
- * outside builds one. The type is exported because a caller that holds an
- * opener's `Result` has to be able to name it, and `@epicenter/app`'s handle
- * does exactly that rather than wrapping it in an error of its own (ADR-0339).
- */
-export type { StoreError } from './errors.js';
 export type { DataDocument, ReplicaDocument } from './store.js';
 
 /**
@@ -618,6 +618,19 @@ function isGeneration(value: number): boolean {
 	return Number.isSafeInteger(value) && value >= 1;
 }
 
+/**
+ * One opened replica, and the one thing that ends it.
+ *
+ * A pair rather than a store carrying its own disposal (ADR-0340). Opening
+ * acquires a document, an exclusive Web Lock, and whatever the caller attaches
+ * next; the closer is the one hand that holds all of it, and the store an
+ * application is given cannot end itself.
+ */
+export type OpenedDatabase<TDatabase extends DataDefinition> = {
+	readonly data: ReplicaData<TDatabase>;
+	close(): Promise<void>;
+};
+
 export type OpenDatabaseOptions = {
 	/**
 	 * The id of the application doing the opening, which is not the data id
@@ -713,7 +726,7 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	definition: TDatabase,
 	{ appId, generation, account }: OpenDatabaseOptions,
 ): Promise<
-	Result<ReplicaData<TDatabase>, StoreError | DataDefinitionParseError>
+	Result<OpenedDatabase<TDatabase>, StoreError | DataDefinitionParseError>
 > {
 	if (!isGeneration(generation)) {
 		return StoreError.Unaddressable({
@@ -809,6 +822,7 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	// claim and the open connection.
 	let parts: {
 		store: DataDocument;
+		close: () => Promise<void>;
 		view: UntypedDataView;
 		definition: ParsedDataDefinition;
 	};
@@ -831,8 +845,14 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	// The whole address, stamped by the one party that knows it (ADR-0340).
 	// Four of these five facts arrived as arguments and were thrown away after
 	// they resolved a document name; keeping them is not new state.
-	return Ok(
-		Object.freeze({
+	//
+	// `close` comes back BESIDE the store rather than on it. What a caller has
+	// to end here is more than the document: whoever attaches sync and a
+	// page-hide listener holds those too, and a disposal on the store would
+	// free one of the three and leave a connection running against a document
+	// whose every verb throws.
+	return Ok({
+		data: Object.freeze({
 			...(parts.view as DataView<TDatabase>),
 			...parts.store,
 			appId,
@@ -841,7 +861,8 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 			baseURL: opening.data.baseURL,
 			principalId: opening.data.principalId,
 		}),
-	);
+		close: parts.close,
+	});
 }
 
 /**

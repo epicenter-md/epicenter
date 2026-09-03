@@ -40,7 +40,7 @@ import type {
 } from '@epicenter/data/definition';
 import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import type { Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 import { eraseReplicaOf, openReplica } from './client-owned-data.js';
 import {
 	type DatabaseName,
@@ -300,6 +300,19 @@ export type Epicenter<TDefinition extends DataDefinition = never> = {
 			 * address rather than about one number.
 			 */
 			eraseReplica(): Promise<Result<void, StoreError>>;
+			/**
+			 * End this handle's store: its socket, its page-hide listener, and the
+			 * document holding the Web Lock.
+			 *
+			 * An application does not call this. The page is the lifetime
+			 * (ADR-0088), and the two callers that need a lifetime shorter than a
+			 * document are a hot reload, which replaces the module that built the
+			 * handle, and a test. It is here rather than on the store because the
+			 * store is one of the three things opening acquires (ADR-0340), and
+			 * calling it forgets the memo, so a later read opens again rather than
+			 * resolving a closed store forever.
+			 */
+			close(): Promise<void>;
 		});
 
 export function createEpicenter(
@@ -347,6 +360,8 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 				Result<ReplicaData<TDefinition>, StoreError | DataDefinitionParseError>
 		  >
 		| undefined;
+	/** Set when the open settles, so `close` can end what it acquired. */
+	let closeOpened: (() => Promise<void>) | undefined;
 	return Object.freeze({
 		...capabilities,
 		account,
@@ -354,9 +369,21 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 			// Memoized here rather than in the opener, because the memo is what
 			// makes a second reader join the first open instead of claiming a Web
 			// Lock somebody already holds.
-			opening ??= openReplica({ appId, definition, account });
+			opening ??= openReplica({ appId, definition, account }).then((opened) => {
+				if (opened.error !== null) return opened;
+				closeOpened = opened.data.close;
+				return Ok(opened.data.data);
+			});
 			return opening;
 		},
 		eraseReplica: () => eraseReplicaOf({ appId, definition }),
+		close: async () => {
+			const pending = opening;
+			opening = undefined;
+			if (pending === undefined) return;
+			await pending;
+			await closeOpened?.();
+			closeOpened = undefined;
+		},
 	}) as Epicenter<TDefinition>;
 }

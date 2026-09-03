@@ -51,7 +51,8 @@ export async function openSkillsRuntime({
 		account,
 	});
 	if (opened.error !== null) throw opened.error;
-	const data = opened.data;
+	// The store and the thing that ends it, separately (ADR-0340).
+	const { data, close } = opened.data;
 
 	try {
 		signal?.throwIfAborted();
@@ -64,11 +65,11 @@ export async function openSkillsRuntime({
 				if (disposed) return;
 				disposed = true;
 				state[Symbol.dispose]();
-				await data[Symbol.asyncDispose]();
+				await close();
 			},
 		});
 	} catch (cause) {
-		await data[Symbol.asyncDispose]().catch(() => undefined);
+		await close().catch(() => undefined);
 		throw cause;
 	}
 }

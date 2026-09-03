@@ -109,7 +109,8 @@ Object.assign(globalThis, {
 				cause: cause instanceof Error ? cause.message : String(cause),
 			};
 		}
-		db = opened.data;
+		// The probe never closes: the page reload IS the close it is testing.
+		db = opened.data.data;
 		show({ opened: name, dataId: workspace.id });
 		return { ok: true };
 	},

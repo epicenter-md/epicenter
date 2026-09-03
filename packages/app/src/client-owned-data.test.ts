@@ -139,10 +139,18 @@ function handleFor(account: AuthClient) {
 	return createEpicenter({ appId: APP_ID, definition, account });
 }
 
+/**
+ * One handle, opened, and the one thing that ends it.
+ *
+ * A test needs the release the page would otherwise perform: the store an
+ * application holds cannot close itself (ADR-0340), and the handle holds all
+ * three things opening acquired.
+ */
 async function openedBy(account: AuthClient) {
-	const opened = await handleFor(account).data;
+	const epicenter = handleFor(account);
+	const opened = await epicenter.data;
 	if (opened.error !== null) throw opened.error;
-	return opened.data;
+	return { data: opened.data, close: () => epicenter.close() };
 }
 
 test('the store opens as a replica of the account that was passed in', async () => {
@@ -150,7 +158,7 @@ test('the store opens as a replica of the account that was passed in', async () 
 	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
 	await importEmptyGeneration(account);
 
-	const data = await openedBy(account);
+	const { data, close } = await openedBy(account);
 	data.tables.notes.create({ title: 'a note' });
 	expect(titles(data)).toEqual(['a note']);
 	// The address is on the store, and the generation is the one the account
@@ -159,7 +167,7 @@ test('the store opens as a replica of the account that was passed in', async () 
 	expect(data.dataId).toBe(definition.id);
 	expect(data.generation).toBe(1);
 
-	await data[Symbol.asyncDispose]();
+	await close();
 });
 
 test('one handle memoizes its open, and a second handle is refused', async () => {
@@ -181,7 +189,29 @@ test('one handle memoizes its open, and a second handle is refused', async () =>
 
 	const opened = await epicenter.data;
 	if (opened.error !== null) throw opened.error;
-	await opened.data[Symbol.asyncDispose]();
+	await epicenter.close();
+});
+
+test('closing the handle releases the claim, and a later read opens again', async () => {
+	await resetStorage();
+	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
+	await importEmptyGeneration(account);
+
+	const epicenter = handleFor(account);
+	const first = await epicenter.data;
+	if (first.error !== null) throw first.error;
+	first.data.tables.notes.create({ title: 'before' });
+
+	// `close` ends all three things opening acquired: the socket, the page-hide
+	// listener, and the document holding the Web Lock. It also forgets the memo,
+	// which is what makes it safe: a later read opens again rather than
+	// resolving a closed store forever.
+	await epicenter.close();
+
+	const second = await epicenter.data;
+	if (second.error !== null) throw second.error;
+	expect(titles(second.data)).toEqual(['before']);
+	await epicenter.close();
 });
 
 test('a held copy opens from local storage before sync is available', async () => {
@@ -192,12 +222,12 @@ test('a held copy opens from local storage before sync is available', async () =
 			principalId: 'alice',
 		});
 		await importEmptyGeneration(account);
-		const data = await openedBy(account);
+		const { data, close } = await openedBy(account);
 		data.tables.notes.create({ title: 'offline note' });
-		await data[Symbol.asyncDispose]();
+		await close();
 	}
 
-	const data = await openedBy(
+	const { data, close } = await openedBy(
 		createFakeAuth({
 			status: 'signed-in',
 			principalId: 'alice',
@@ -205,7 +235,7 @@ test('a held copy opens from local storage before sync is available', async () =
 		}),
 	);
 	expect(titles(data)).toEqual(['offline note']);
-	await data[Symbol.asyncDispose]();
+	await close();
 });
 
 test('a refused credential costs sync, not the notes', async () => {
@@ -225,11 +255,11 @@ test('a refused credential costs sync, not the notes', async () => {
 	// The reversal ADR-0292 bought. A fresh replica used to be unavailable
 	// until the authority stamped it; the store opens from local state before a
 	// socket is attempted, so a denial is a quiet status line.
-	const data = await openedBy(refusing);
+	const { data, close } = await openedBy(refusing);
 	expect(titles(data)).toEqual([]);
 	await Bun.sleep(1);
 	expect(data.sync.status()?.denied).toBe(true);
-	await data[Symbol.asyncDispose]();
+	await close();
 });
 
 test('a signed-out account is refused without creating anything', async () => {
@@ -247,9 +277,9 @@ test("another account's notes are refused, and erasing is what clears them", asy
 	{
 		const alice = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
 		await importEmptyGeneration(alice);
-		const data = await openedBy(alice);
+		const { data, close } = await openedBy(alice);
 		data.tables.notes.create({ title: "alice's note" });
-		await data[Symbol.asyncDispose]();
+		await close();
 	}
 
 	// Bob signs into the same machine. The address stopped carrying who owns a
@@ -265,8 +295,8 @@ test("another account's notes are refused, and erasing is what clears them", asy
 	// And nothing was deleted to say so (ADR-0281). Alice comes back to hers.
 	const alice = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
 	const back = await openedBy(alice);
-	expect(titles(back)).toEqual(["alice's note"]);
-	await back[Symbol.asyncDispose]();
+	expect(titles(back.data)).toEqual(["alice's note"]);
+	await back.close();
 
 	// The person invokes the erase, and only then is the copy gone.
 	const erased = await handleFor(alice).eraseReplica();

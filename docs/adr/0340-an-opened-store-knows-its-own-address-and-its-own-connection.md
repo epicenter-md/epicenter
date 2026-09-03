@@ -79,12 +79,24 @@ is no `connect`, no `disconnect`, and no `retry`: the driver owns its backoff,
 and a permanent denial is a fact about this auth generation rather than a
 button.
 
-**Nothing disposes the connection, and that is the page unloading.** The opener
-drops the `SyncConnection` it gets back, so no application can reach one; the
-store and its socket both end when the document does, which is one auth
-generation (ADR-0088). The registration is taken back on disposal for the
-callers that still hold a driver, which are the two applications ADR-0227 left
-broken and which have not moved onto the handle yet.
+**What ends a replica is the closer its opener returns, and a store cannot end
+itself.** Opening acquires three things: the document and its exclusive Web
+Lock, a sync connection, and a page-hide listener. `Symbol.asyncDispose` on the
+store freed the first of the three, so a caller who called it left a connection
+dialling against a document whose every verb throws. `openDatabase` returns
+`{ data, close }`, `openReplica` composes the other two into that closer, and
+the handle holds it: `epicenter.close()` ends all three and forgets the memo, so
+a later read opens again rather than resolving a closed store forever.
+
+The symbol leaves `DataDocument` and stays on `Data`, which is what the memory
+and SQLite constructors return: those acquire one thing, so disposing the object
+frees everything it took and a test's `await using` is exactly right. A store an
+application holds has no close on it at all, which is the sentence "nothing
+closes it but the page" made checkable rather than repeated.
+
+An application still does not call `close`. The page is the lifetime (ADR-0088),
+and the two callers that need a lifetime shorter than a document are a hot
+reload, which replaces the module that built the handle, and a test.
 
 ## Consequences
 
@@ -95,6 +107,10 @@ broken and which have not moved onto the handle yet.
   is. A test that opens a store gets an object it can hand to `pull` directly.
 - The generation becomes readable by anything holding a store, which is what
   ADR-0339's Svelte wrapper, the folder verbs, and a bug report all needed.
+- Vocab, Whispering, and Skills each hand-wrote that closer, three times in
+  three files, as `connection[Symbol.dispose](); await data[Symbol.asyncDispose]()`.
+  They call `close()` now, and the failure path they each wrote twice is one
+  call.
 - What a STORE exposes is a status, not a driver. `attachStoreSync` still
   returns a `SyncConnection` and `@epicenter/data/sync` still exports the type,
   because Vocab and Whispering call it directly and hold what it returns. When
