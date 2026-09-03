@@ -23,3 +23,12 @@ export const epicenter = createEpicenter({
 	definition: honeycrispDefinition,
 	account: auth,
 });
+
+// A hot swap of this module builds a second handle, and the first one still
+// holds the Web Lock its store claimed, so the replacement would open into
+// `AlreadyOpen` until the page was reloaded by hand. Closing is terminal and
+// releases all three things opening took; the new module opens fresh. The auth
+// leaf next door disposes for the same reason.
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => void epicenter.close());
+}

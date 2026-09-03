@@ -84,9 +84,17 @@ itself.** Opening acquires three things: the document and its exclusive Web
 Lock, a sync connection, and a page-hide listener. `Symbol.asyncDispose` on the
 store freed the first of the three, so a caller who called it left a connection
 dialling against a document whose every verb throws. `openDatabase` returns
-`{ data, close }`, `openReplica` composes the other two into that closer, and
-the handle holds it: `epicenter.close()` ends all three and forgets the memo, so
-a later read opens again rather than resolving a closed store forever.
+`{ store, close }`, `openReplica` composes the other two into that closer, and
+the handle holds it as `epicenter.close()`.
+
+**That close is terminal.** It does not forget the open, so a handle never opens
+a second store: a read after a close resolves the same store, closed, and a
+closed store throws on every verb. Forgetting the memo instead was tried and is
+wrong, because it makes the handle a state machine with a race in it: a close
+racing an open in flight can end the store the handle went on to memoize, and it
+contradicts `data`'s own contract that a failure is memoized. Reopening is a new
+handle, which is what a fresh page is, and the one caller that wants a lifetime
+shorter than a page is a hot reload replacing the module that built it.
 
 The symbol leaves `DataDocument` and stays on `Data`, which is what the memory
 and SQLite constructors return: those acquire one thing, so disposing the object
@@ -107,10 +115,11 @@ reload, which replaces the module that built the handle, and a test.
   is. A test that opens a store gets an object it can hand to `pull` directly.
 - The generation becomes readable by anything holding a store, which is what
   ADR-0339's Svelte wrapper, the folder verbs, and a bug report all needed.
-- Vocab, Whispering, and Skills each hand-wrote that closer, three times in
-  three files, as `connection[Symbol.dispose](); await data[Symbol.asyncDispose]()`.
-  They call `close()` now, and the failure path they each wrote twice is one
-  call.
+- Vocab, Whispering, and Skills each wrote the store half of that closer twice,
+  once for the success path and once for the catch. The catch is one call now.
+  Their success path still disposes their own connection beside it, because
+  `openDatabase`'s closer ends the store and they attached the socket
+  themselves; that collapses when they move onto the handle.
 - What a STORE exposes is a status, not a driver. `attachStoreSync` still
   returns a `SyncConnection` and `@epicenter/data/sync` still exports the type,
   because Vocab and Whispering call it directly and hold what it returns. When

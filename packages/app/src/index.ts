@@ -42,6 +42,7 @@ import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import { eraseReplicaOf, openReplica } from './client-owned-data.js';
+import type { OpenedDatabase } from '@epicenter/data/browser';
 import {
 	type DatabaseName,
 	isDatabaseName,
@@ -301,16 +302,19 @@ export type Epicenter<TDefinition extends DataDefinition = never> = {
 			 */
 			eraseReplica(): Promise<Result<void, StoreError>>;
 			/**
-			 * End this handle's store: its socket, its page-hide listener, and the
-			 * document holding the Web Lock.
+			 * End this handle: its socket, its page-hide listener, and the document
+			 * holding the Web Lock.
+			 *
+			 * **Terminal, and idempotent.** It does not forget the open, so this
+			 * handle never opens a second store: a read after a close resolves the
+			 * same store, closed, and a store that is closed throws on every verb.
+			 * Reopening is a new handle, which is what a fresh page is.
 			 *
 			 * An application does not call this. The page is the lifetime
-			 * (ADR-0088), and the two callers that need a lifetime shorter than a
+			 * (ADR-0088), and the two callers that want a lifetime shorter than a
 			 * document are a hot reload, which replaces the module that built the
-			 * handle, and a test. It is here rather than on the store because the
-			 * store is one of the three things opening acquires (ADR-0340), and
-			 * calling it forgets the memo, so a later read opens again rather than
-			 * resolving a closed store forever.
+			 * handle and must release its claim before the replacement opens, and a
+			 * test.
 			 */
 			close(): Promise<void>;
 		});
@@ -355,13 +359,29 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 		return Object.freeze(capabilities) as Epicenter<TDefinition>;
 	}
 
-	let opening:
+	/**
+	 * The open, and the store read off it. Two memos set together and never
+	 * cleared.
+	 *
+	 * The pair is memoized rather than the store, so `close` ends the open it
+	 * awaited rather than whatever a side slot last pointed at. `exposed` exists
+	 * because `data` must be the SAME promise on every read, and the store is one
+	 * `.then` away from the pair.
+	 */
+	let opened:
+		| Promise<
+				Result<
+					OpenedDatabase<TDefinition>,
+					StoreError | DataDefinitionParseError
+				>
+		  >
+		| undefined;
+	let exposed:
 		| Promise<
 				Result<ReplicaData<TDefinition>, StoreError | DataDefinitionParseError>
 		  >
 		| undefined;
-	/** Set when the open settles, so `close` can end what it acquired. */
-	let closeOpened: (() => Promise<void>) | undefined;
+	let closing: Promise<void> | undefined;
 	return Object.freeze({
 		...capabilities,
 		account,
@@ -369,21 +389,18 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 			// Memoized here rather than in the opener, because the memo is what
 			// makes a second reader join the first open instead of claiming a Web
 			// Lock somebody already holds.
-			opening ??= openReplica({ appId, definition, account }).then((opened) => {
-				if (opened.error !== null) return opened;
-				closeOpened = opened.data.close;
-				return Ok(opened.data.data);
-			});
-			return opening;
+			opened ??= openReplica({ appId, definition, account });
+			exposed ??= opened.then((open) =>
+				open.error !== null ? open : Ok(open.data.store),
+			);
+			return exposed;
 		},
 		eraseReplica: () => eraseReplicaOf({ appId, definition }),
-		close: async () => {
-			const pending = opening;
-			opening = undefined;
-			if (pending === undefined) return;
-			await pending;
-			await closeOpened?.();
-			closeOpened = undefined;
-		},
+		close: () =>
+			(closing ??= (async () => {
+				if (opened === undefined) return;
+				const open = await opened;
+				if (open.error === null) await open.data.close();
+			})()),
 	}) as Epicenter<TDefinition>;
 }

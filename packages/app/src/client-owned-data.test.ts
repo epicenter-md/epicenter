@@ -192,7 +192,7 @@ test('one handle memoizes its open, and a second handle is refused', async () =>
 	await epicenter.close();
 });
 
-test('closing the handle releases the claim, and a later read opens again', async () => {
+test('closing is terminal, and the claim it held is free for the next handle', async () => {
 	await resetStorage();
 	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
 	await importEmptyGeneration(account);
@@ -203,15 +203,19 @@ test('closing the handle releases the claim, and a later read opens again', asyn
 	first.data.tables.notes.create({ title: 'before' });
 
 	// `close` ends all three things opening acquired: the socket, the page-hide
-	// listener, and the document holding the Web Lock. It also forgets the memo,
-	// which is what makes it safe: a later read opens again rather than
-	// resolving a closed store forever.
-	await epicenter.close();
+	// listener, and the document holding the Web Lock. Twice is once.
+	await Promise.all([epicenter.close(), epicenter.close()]);
 
-	const second = await epicenter.data;
-	if (second.error !== null) throw second.error;
-	expect(titles(second.data)).toEqual(['before']);
-	await epicenter.close();
+	// The handle does not forget its open, so it never opens a second store: it
+	// resolves the same one, closed, and a closed store throws on every verb.
+	// Reopening is a NEW handle, which is what a fresh page is.
+	const after = await epicenter.data;
+	if (after.error !== null) throw after.error;
+	expect(() => after.data.tables.notes.rows).toThrow();
+
+	const reopened = await openedBy(account);
+	expect(titles(reopened.data)).toEqual(['before']);
+	await reopened.close();
 });
 
 test('a held copy opens from local storage before sync is available', async () => {

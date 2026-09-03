@@ -149,7 +149,16 @@ export function attachStoreSync({
 	// is the one driving it (ADR-0340). A consumer polls that rather than
 	// holding this object, which is why disposal takes the registration back.
 	const forget = registerSyncConnection(store.sync, () => connection.status());
-	connection.start();
+	// Contained, because between the registration and the first dial there is
+	// nothing for a caller to hold: a throw out of `start` would leave the store
+	// answering `status()` for a driver nobody can stop.
+	try {
+		connection.start();
+	} catch (cause) {
+		forget();
+		connection[Symbol.dispose]();
+		throw cause;
+	}
 	return {
 		...connection,
 		[Symbol.dispose]() {

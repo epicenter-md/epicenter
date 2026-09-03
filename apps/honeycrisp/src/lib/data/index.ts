@@ -150,10 +150,10 @@ export const honeycrispDefinition = defineData({
  * status line is another, and it lives on the store's own `sync` capability
  * (ADR-0340).
  *
- * `Symbol.asyncDispose` comes with it and nothing calls it. Disposal was the
- * reason for the narrowing, and the page owns the lifetime now: a change of
- * auth generation replaces the document (ADR-0088), which is the only end this
- * store has.
+ * It carries no close, and that is the type rather than a promise: what ends a
+ * replica is the closer its opener returned, which the handle holds (ADR-0340).
+ * The page owns the lifetime, and a change of auth generation replaces the
+ * document (ADR-0088), which is the only end this store has.
  */
 export type HoneycrispData = ReplicaData<typeof honeycrispDefinition>;
 

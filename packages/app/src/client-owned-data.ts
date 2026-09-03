@@ -17,9 +17,10 @@
  */
 
 import type { AuthClient } from '@epicenter/auth';
-import type { DatabaseAccount, ReplicaData } from '@epicenter/data';
+import type { DatabaseAccount } from '@epicenter/data';
 import {
 	eraseGenerations,
+	type OpenedDatabase,
 	openDatabase,
 	resolveGeneration,
 	type StoreError,
@@ -110,24 +111,19 @@ const EpicenterDataBackgroundError = defineErrors({
  * forked one account's notes into two histories on the second machine that
  * opened them.
  *
- * **Nothing here disposes.** The connection and the store both live for this
- * page's lifetime, which is one auth generation (ADR-0088): a change of auth
- * reloads the document, and the next boot dials fresh. A `close` on the handle
- * would be a verb whose only correct caller is the page teardown that already
- * happens.
+ * **What this acquires, it hands back a closer for.** Opening takes three
+ * things: the document and its Web Lock, a socket, and a page-hide listener.
+ * They all live for this page's lifetime, which is one auth generation
+ * (ADR-0088), so nothing in an application calls the closer; what needs it is
+ * a hot reload replacing this module, and a test. The store cannot close
+ * itself, because a store is one of the three (ADR-0340).
  */
-export type OpenedReplica<TDefinition extends DataDefinition> = {
-	readonly data: ReplicaData<TDefinition>;
-	/** End all three: the socket, the page-hide listener, and the store. */
-	close(): Promise<void>;
-};
-
 export async function openReplica<TDefinition extends DataDefinition>({
 	appId,
 	definition,
 	account,
 }: EpicenterDataOptions<TDefinition> & { appId: string }): Promise<
-	Result<OpenedReplica<TDefinition>, StoreError | DataDefinitionParseError>
+	Result<OpenedDatabase<TDefinition>, StoreError | DataDefinitionParseError>
 > {
 	const address = addressOf(account);
 	const resolved = await resolveGeneration(definition, {
@@ -160,7 +156,7 @@ export async function openReplica<TDefinition extends DataDefinition>({
 	let connection: SyncConnection | undefined;
 	try {
 		connection = attachStoreSync({
-			store: opened.data.data,
+			store: opened.data.store,
 			transport: account,
 			onTransportError: (cause) =>
 				log.warn(EpicenterDataBackgroundError.SyncTransportFailed({ cause })),
@@ -178,14 +174,14 @@ export async function openReplica<TDefinition extends DataDefinition>({
 	// anywhere. `FlushEditsOnHide` does the other half, blurring the focused
 	// element so a commit-on-blur input writes into the store first.
 	const stopHideFlush = persistOnHide(() =>
-		opened.data.data.persistence.flush(),
+		opened.data.store.persistence.flush(),
 	);
 
 	// All three in one hand. The store's own disposal would free one of them and
 	// leave a connection dialling against a document whose every verb throws,
 	// which is why it is not on the store any more (ADR-0340).
 	return Ok({
-		data: opened.data.data,
+		store: opened.data.store,
 		close: async () => {
 			connection?.[Symbol.dispose]();
 			stopHideFlush();
