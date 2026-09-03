@@ -538,8 +538,11 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'- **A file the push cannot read is left alone**, and nothing else in the',
 		'  push is affected. Where only the text under the `---` block cannot be',
 		'  read, the frontmatter values in that same file still go in and the',
-		'  file is still left as you wrote it. So is a file whose row was deleted',
-		'  in the application, and there the next pull removes the file.',
+		'  file is still left as you wrote it.',
+		'- **A file you edited whose note was deleted comes back as a note.**',
+		'  Under a NEW id, because a row id is minted and never chosen, so the',
+		'  file is renamed like any file you create. A file you did NOT edit',
+		'  says nothing and the next pull removes it.',
 		'- **`kv.json` is read only.** A push never sends it and never rewrites',
 		'  it; an edit there is reported at every push, and the next pull',
 		'  replaces it.',
@@ -971,6 +974,16 @@ export type PlannedAdmission = {
 	 * the overview would otherwise become a row nobody read.
 	 */
 	readonly fileHash: string;
+	/**
+	 * The row this file used to be, where it had one and the store lost it.
+	 *
+	 * A file somebody edited whose note was deleted in the application. The
+	 * folder wins, so it comes back, and it comes back as a NEW note under a
+	 * new id, because a row id is minted and never chosen (ADR-0216). A
+	 * surface owes a person that sentence rather than printing the path as
+	 * though they had written the file from nothing.
+	 */
+	readonly replaces?: string;
 };
 
 /**
@@ -1023,8 +1036,6 @@ export type PlannedKeep = {
 };
 
 export type KeepReason =
-	/** The row was removed from the store after the folder was written. */
-	| 'row-gone'
 	/** `kv.json` is pulled to read and never pushed (ADR-0337). */
 	| 'kv-changed'
 	/** The frontmatter frame is gone, so nothing here can be read. */
@@ -1214,9 +1225,29 @@ async function planPush(
 			keep('table-undeclared');
 			continue;
 		}
+		// **A file somebody edited whose note is gone comes back as a note**
+		// (ADR-0341). The folder wins, and there is nothing here to win against:
+		// the store has no row, so this is a file nobody pulled, which is an
+		// admission and mints an id like any other. It fires only because the
+		// file was touched, since the gate above already dropped every file
+		// identical to its base, which is what keeps this from being the
+		// resurrecting folder ADR-0337 refused.
+		//
+		// `rowFile` rather than the render: a render also answers `undefined`
+		// for a row that is present and cannot be written, and that row is
+		// still there to be updated.
+		if (data.rowFile(address.table, address.rowId) === undefined) {
+			const back = await admission(definition, address.table, path, contents);
+			items.push(
+				back.kind === 'admission' ? { ...back, replaces: address.rowId } : back,
+			);
+			continue;
+		}
 		const stored = await renderedRow(data, definition, address);
 		if (stored === undefined) {
-			keep('row-gone');
+			// Present and unrenderable, which `pull` fails closed on and a push
+			// has no values to compare against. The file stays as it is.
+			keep('unreadable');
 			continue;
 		}
 
@@ -1636,7 +1667,7 @@ export async function push({
 					const node = data.rowFile(item.table, item.rowId)?.[CONTENT_FIELD];
 					const codec = parsed.data.tables.get(item.table)?.content;
 					// Both are defensive: a row with no live node renders as
-					// `MalformedRow`, so `planPush` already called it `row-gone`,
+					// `MalformedRow`, so `planPush` already kept it,
 					// and a body item is only made where a codec read the text.
 					if (!(node instanceof Y.Type) || codec === undefined) {
 						broke(`'${item.path}' has no live node to rewrite`);

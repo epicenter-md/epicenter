@@ -40,10 +40,11 @@
  * purpose, because a reactive wrapper must not pretend a reconnect is local
  * state.
  *
- * One instance per opened data object, owned by whoever opened it, usually a
- * root component that provides it through context. Never a module-global
- * singleton: the data it wraps is one auth generation's document, and the next
- * generation opens its own.
+ * One instance per opened store, made by `fromEpicenter` on the way to its
+ * `ready` state, so an application never calls this itself and never calls it
+ * twice. A module-global instance is correct here and used to be refused by
+ * this comment: a page lifetime is one auth generation (ADR-0088), so a module
+ * lifetime is one too, and the next generation is the next document.
  *
  * @example
  * ```svelte
@@ -58,6 +59,7 @@
  */
 
 import { createSubscriber, SvelteMap } from 'svelte/reactivity';
+import type { Brand } from 'wellcrafted/brand';
 
 /**
  * The slice of `@epicenter/data`'s `TableHandle` this adapter touches: the
@@ -125,7 +127,7 @@ type AdaptablePersistence = {
  * getter that a consumer has to poll, so this adapter cannot hold it honestly
  * and does not pretend to.
  */
-type AdaptableData = {
+export type AdaptableData = {
 	tables: Record<string, AdaptableTable>;
 	kv: AdaptableKv;
 	transact<TResult>(run: () => TResult): TResult;
@@ -133,61 +135,59 @@ type AdaptableData = {
 };
 
 /**
- * One table, same verbs and types, reads reactive.
+ * One opened store, awake.
  *
- * Nothing is added any more. `rows` and `nonconforming` are the store's own
- * reads, so this wraps rather than extends.
+ * The SAME type, plus a brand. It used to be four members picked out of the
+ * store (`tables`, `kv`, `transact`, `persistence`), and the narrowing was the
+ * reason a route had to hand the store around twice: everything else a person
+ * is shown lives on the other members, and the address the folder verbs need
+ * lives there too. Preserving the type is what lets one object be handed once.
+ *
+ * The brand is what the four members used to carry implicitly: whether reads
+ * track. Without it `fromData(fromData(x))` compiles, and so does a `$derived`
+ * over a RAW store's `rows`, which computes once at mount and never again.
+ * `ReactiveAuthClient` next door is branded for exactly this reason.
  */
-export type ReactiveTable<TTable extends AdaptableTable> = TTable;
+export type ReactiveData<TData extends AdaptableData> = TData &
+	Brand<'ReactiveData'>;
 
 /**
- * The declared shape of one opened data handle, made Svelte-reactive.
+ * Adapt one opened store's reads into Svelte reactivity, and hand back the
+ * store.
  *
- * The table names pass through unchanged at both levels: `keyof` at compile
- * time, `Object.entries` at runtime.
+ * Every member passes through by descriptor and three are overridden. The
+ * pass-through is not tidiness: `sync` is looked up in a `WeakMap` keyed by the
+ * capability OBJECT, so re-wrapping it would make `sync.status()` answer
+ * `undefined` forever, and the address the folder verbs read would go with it.
+ *
+ * One `defineProperties` on a fresh object rather than a copy then an
+ * overwrite, because descriptors copied from a frozen store arrive
+ * `configurable: false` and could not be overridden afterwards.
  */
-export type ReactiveData<TData extends AdaptableData> = {
-	readonly tables: {
-		readonly [TName in keyof TData['tables']]: ReactiveTable<
-			TData['tables'][TName]
-		>;
-	};
-	/** Same `KvHandle`, with `get()` reactive. */
-	readonly kv: TData['kv'];
-	/**
-	 * Passed straight through. Grouping writes has nothing to do with
-	 * reactivity: the commit it produces invalidates through the same table
-	 * subscriptions a single write does, once instead of once per write.
-	 */
-	transact: TData['transact'];
-	/**
-	 * The same capability, with `get()` reactive. `flush()` and `subscribe()`
-	 * pass through.
-	 *
-	 * Read it and render the answer; do not mirror it. The store is already the
-	 * one place this fact lives, and a second copy in application state is the
-	 * shape that has to be kept in step with the first.
-	 */
-	readonly persistence: TData['persistence'];
-};
-
-/** Adapt one opened data handle's `tables` and `kv` into Svelte reactivity. */
 export function fromData<TData extends AdaptableData>(
 	data: TData,
 ): ReactiveData<TData> {
-	return Object.freeze({
-		tables: Object.freeze(
-			Object.fromEntries(
-				Object.entries(data.tables).map(([name, table]) => [
-					name,
-					reactiveTable(table),
-				]),
-			),
-		),
-		kv: reactiveKv(data.kv),
-		transact: data.transact,
-		persistence: reactivePersistence(data.persistence),
-	}) as ReactiveData<TData>;
+	return Object.freeze(
+		Object.defineProperties({} as TData, {
+			...Object.getOwnPropertyDescriptors(data),
+			tables: {
+				enumerable: true,
+				value: Object.freeze(
+					Object.fromEntries(
+						Object.entries(data.tables).map(([name, table]) => [
+							name,
+							reactiveTable(table),
+						]),
+					),
+				),
+			},
+			kv: { enumerable: true, value: reactiveKv(data.kv) },
+			persistence: {
+				enumerable: true,
+				value: reactivePersistence(data.persistence),
+			},
+		}),
+	) as ReactiveData<TData>;
 }
 
 /**
@@ -261,9 +261,7 @@ function reactivePersistence<TPersistence extends AdaptablePersistence>(
  * id. A row leaving the readable projection is the rare case: a delete, or an
  * edit that broke it.
  */
-function reactiveTable<TTable extends AdaptableTable>(
-	table: TTable,
-): ReactiveTable<TTable> {
+function reactiveTable<TTable extends AdaptableTable>(table: TTable): TTable {
 	const rows = new SvelteMap<string, unknown>();
 	const unreadable = new SvelteMap<string, { readonly id: string }>();
 	for (const rowId of table.ids()) {
@@ -319,7 +317,7 @@ function reactiveTable<TTable extends AdaptableTable>(
 				},
 			},
 		),
-	) as ReactiveTable<TTable>;
+	) as TTable;
 }
 
 function reactiveKv<TKv extends AdaptableKv>(kv: TKv): TKv {

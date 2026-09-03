@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Loading } from '@epicenter/ui/loading';
 	import { honeycrisp } from '#platform/epicenter';
-	import HoneycrispProvider from '$lib/HoneycrispProvider.svelte';
 	import AccountGate from './components/AccountGate.svelte';
 	import StoreShell from './components/StoreShell.svelte';
 
@@ -23,9 +22,7 @@
 {:else if honeycrisp.state.status === 'opening'}
 	<Loading class="h-dvh" label="Opening your notes…" />
 {:else if honeycrisp.state.status === 'ready'}
-	<HoneycrispProvider data={honeycrisp.state.data}>
-		<StoreShell data={honeycrisp.state.data} />
-	</HoneycrispProvider>
+	<StoreShell data={honeycrisp.state.data} />
 {:else}
 	<AccountGate
 		error={honeycrisp.state.error}

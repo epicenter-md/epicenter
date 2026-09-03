@@ -65,6 +65,11 @@
  */
 
 import { isOk, type Result } from 'wellcrafted/result';
+import {
+	type AdaptableData,
+	fromData,
+	type ReactiveData,
+} from './from-data.svelte.js';
 
 /**
  * What this needs from an application handle, and nothing more.
@@ -74,7 +79,7 @@ import { isOk, type Result } from 'wellcrafted/result';
  * `data` is what starts the open, so it is declared as a property and read
  * once, late.
  */
-type AdaptableEpicenter<TData, TError, TEraseError> = {
+type AdaptableEpicenter<TData extends AdaptableData, TError, TEraseError> = {
 	readonly account: { readonly state: { readonly status: string } };
 	readonly data: Promise<Result<TData, TError>>;
 	eraseReplica(): Promise<Result<void, TEraseError>>;
@@ -93,22 +98,22 @@ type AdaptableEpicenter<TData, TError, TEraseError> = {
  * released its claim before it returned, which makes `failed` the one state
  * where the verb can succeed.
  */
-export type EpicenterState<TData, TError, TEraseError> =
+export type EpicenterState<TData extends AdaptableData, TError, TEraseError> =
 	| { readonly status: 'signed-out' }
 	| { readonly status: 'opening' }
-	| { readonly status: 'ready'; readonly data: TData }
+	| { readonly status: 'ready'; readonly data: ReactiveData<TData> }
 	| {
 			readonly status: 'failed';
 			readonly error: TError;
 			eraseReplica(): Promise<Result<void, TEraseError>>;
 	  };
 
-export type EpicenterStore<TData, TError, TEraseError> = {
+export type EpicenterStore<TData extends AdaptableData, TError, TEraseError> = {
 	readonly state: EpicenterState<TData, TError, TEraseError>;
 };
 
 /** Adapt one application handle's store into Svelte reactivity. */
-export function fromEpicenter<TData, TError, TEraseError>(
+export function fromEpicenter<TData extends AdaptableData, TError, TEraseError>(
 	epicenter: AdaptableEpicenter<TData, TError, TEraseError>,
 ): EpicenterStore<TData, TError, TEraseError> {
 	// Latched, not tracked. One read, at construction, for the reason above.
@@ -129,13 +134,27 @@ export function fromEpicenter<TData, TError, TEraseError>(
 				// in a microtask, off the render path.
 				epicenter.data.then(
 					(opened) => {
-						settled = isOk(opened)
-							? { status: 'ready', data: opened.data }
-							: {
-									status: 'failed',
-									error: opened.error,
-									eraseReplica: () => epicenter.eraseReplica(),
-								};
+						if (!isOk(opened)) {
+							settled = {
+								status: 'failed',
+								error: opened.error,
+								eraseReplica: () => epicenter.eraseReplica(),
+							};
+							return;
+						}
+						// Awake before it is handed over, so an application receives one
+						// object once. `fromData` walks every table, which is why it
+						// happens here in a microtask and not in a getter a `$derived`
+						// might reach (`state_unsafe_mutation`).
+						//
+						// It reads the store, so a store closed between the open and
+						// this line throws. The only way there is a close before
+						// anything read `state`, which is a hot reload replacing this
+						// module: the page is going, and `opening` is what it should
+						// show on the way out.
+						try {
+							settled = { status: 'ready', data: fromData(opened.data) };
+						} catch {}
 					},
 					// No rejection arm, because the handle resolves a `Result`: a
 					// promise that rejects here is an opener that threw, and one that

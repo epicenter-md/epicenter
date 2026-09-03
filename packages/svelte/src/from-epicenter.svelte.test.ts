@@ -33,7 +33,29 @@ const { fromEpicenter } = (await import(compiled.href)) as {
 	fromEpicenter: typeof FromEpicenter;
 };
 
-type Store = { rows: string[] };
+/** The slice `fromData` needs, so the fake is a store rather than a stand-in. */
+type Store = {
+	tables: Record<string, never>;
+	kv: {
+		get(key: never): unknown;
+		nonconforming: unknown[];
+		subscribe(l: () => void): () => void;
+	};
+	transact<TResult>(run: () => TResult): TResult;
+	persistence: { get(): unknown; subscribe(l: () => void): () => void };
+	address: string;
+};
+
+const nothing = () => () => undefined;
+function store(address: string): Store {
+	return {
+		tables: {},
+		kv: { get: () => undefined, nonconforming: [], subscribe: nothing },
+		transact: (run) => run(),
+		persistence: { get: () => 'saved', subscribe: nothing },
+		address,
+	};
+}
 type Opened = ReturnType<typeof Ok<Store>> | ReturnType<typeof Err<string>>;
 
 /**
@@ -90,14 +112,19 @@ test('a signed-out person never touches the store at all', () => {
 	expect(held.reads()).toBe(0);
 });
 
-test('the store rides on ready', async () => {
-	const rows: Store = { rows: ['a note'] };
-	const held = handle('signed-in', Promise.resolve(Ok(rows)));
-	const store = fromEpicenter(held.epicenter);
-	expect(store.state.status).toBe('opening');
+test('the store rides on ready, awake, with everything else intact', async () => {
+	const opened = store('epicenter/v4/app/data/1');
+	const held = handle('signed-in', Promise.resolve(Ok(opened)));
+	const wrapper = fromEpicenter(held.epicenter);
+	expect(wrapper.state.status).toBe('opening');
 
 	await Bun.sleep(1);
-	expect(store.state).toEqual({ status: 'ready', data: rows });
+	if (wrapper.state.status !== 'ready') throw new Error('expected ready');
+	// Adapted, not narrowed: every member the store had is still there, which is
+	// what lets one object be handed over once instead of a store and a view of
+	// it. The address is the member the folder verbs read.
+	expect(wrapper.state.data.address).toBe('epicenter/v4/app/data/1');
+	expect(wrapper.state.data.transact(() => 'ran')).toBe('ran');
 });
 
 test('a failure carries the error and the erase, and nothing else does', async () => {

@@ -645,7 +645,7 @@ describe('diff plans what push would do (ADR-0337)', () => {
 	test('a note deleted in the application does not make the folder dirty', async () => {
 		// Nobody touched the folder. Before the file was compared to its base,
 		// the store was consulted first, the row was gone, and a file the person
-		// had never opened came back as `row-gone`, so the next pull refused
+		// had never opened came back as a change, so the next pull refused
 		// with work they were about to lose that they had never done.
 		const host = fakeHost();
 		const { data, noteId } = await notebook();
@@ -659,20 +659,40 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('a file the person edited whose row is gone is rewritten from the store', async () => {
+	test('a file the person edited whose note is gone comes back as a note', async () => {
 		// The other side of the same gate: they DID touch it, and there is no
-		// row to carry it to. The re-render puts the store's answer back, which
-		// for a deleted row is no file at all.
+		// row to carry it to. The folder wins (ADR-0341), so the file is one
+		// nobody pulled, and it is admitted under a new id.
 		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
 			setField(folder, `notes/${id}.md`, '"Groceries"', '"Shopping"');
 		});
 		data.tables.notes.delete(noteId);
 
-		expect(only(await planOf(host, data), 'kept')).toEqual({
-			kind: 'kept',
+		expect(only(await planOf(host, data), 'admission')).toMatchObject({
 			path: `notes/${noteId}.md`,
-			reason: 'row-gone',
+			table: 'notes',
+			replaces: noteId,
 		});
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('the note it comes back as is a new one, and the old id is gone', async () => {
+		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
+			setField(folder, `notes/${id}.md`, '"Groceries"', '"Shopping"');
+		});
+		data.tables.notes.delete(noteId);
+		const plan = await planOf(host, data);
+
+		const done = expectOk(
+			await push({ data, definition, plan, fetch: host.fetch }),
+		);
+		const minted = done.admitted[0]?.rowId as string;
+		expect(minted).not.toBe(noteId);
+		expect(data.tables.notes.get(minted)?.title).toBe('Shopping');
+		expect(data.tables.notes.get(noteId)).toBeUndefined();
+		// The file is at the new id, and the name it had is swept.
+		expect(host.folder.has(`notes/${noteId}.md`)).toBe(false);
+		expect(host.folder.get(`notes/${minted}.md`)).toContain('"Shopping"');
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -1368,7 +1388,6 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 			kept: 'is left alone',
 		};
 		const perReason: Record<KeepReason, string> = {
-			'row-gone': 'a file whose row was deleted',
 			'kv-changed': '`kv.json` is read only',
 			unreadable: 'Keep the `---` block',
 			'table-undeclared': 'The tables',

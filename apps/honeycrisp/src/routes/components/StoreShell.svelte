@@ -1,7 +1,8 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
-	import { getHoneycrisp } from '$lib/app.svelte.js';
+	import type { ReactiveData } from '@epicenter/svelte';
+	import { createHoneycrisp, setHoneycrisp } from '$lib/app.svelte.js';
 	import type { HoneycrispData } from '$lib/data/index.js';
 	import { folderVerbs } from '$lib/folder.js';
 	import { navigation } from '$lib/navigation.svelte.js';
@@ -10,10 +11,20 @@
 	import NoteList from './NoteList.svelte';
 	import HoneycrispSidebar from './Sidebar.svelte';
 
-	// The opened store, and everything a sidebar shows about it is read off it.
-	// The route used to hand four props down, assembled by the opener it owned;
-	// the store states its own address and its own connection now (ADR-0340).
-	let { data }: { data: HoneycrispData } = $props();
+	// The opened store, awake, and everything a sidebar shows about it is read
+	// off it. The route used to hand four props down, assembled by the opener it
+	// owned; the store states its own address and its own connection now
+	// (ADR-0340), and `fromEpicenter` adapted its reads before handing it over.
+	let { data }: { data: ReactiveData<HoneycrispData> } = $props();
+
+	// The application object is provided here rather than by a component whose
+	// whole body was this line. `setContext` must run during initialisation, and
+	// this component only mounts under `ready`, which is what carries "the store
+	// is open" to every descendant without a type saying so.
+	// Read once, not `$derived`: the route mounts this exactly once per opened
+	// store, so `data` never changes while this component lives.
+	/* svelte-ignore state_referenced_locally */
+	const honeycrisp = setHoneycrisp(createHoneycrisp({ data }));
 
 	// A denied connection renders the same as no connection at all: the store
 	// opened from local state before a socket was attempted, and the status
@@ -22,12 +33,8 @@
 		const status = data.sync.status();
 		return status?.denied === false ? status : undefined;
 	};
-	// Read once, like the provider next to it: the route mounts this exactly
-	// once per opened store, so `data` never changes while this component lives.
 	/* svelte-ignore state_referenced_locally */
 	const { pull, diff, push } = folderVerbs(data);
-
-	const honeycrisp = getHoneycrisp();
 </script>
 
 <svelte:window

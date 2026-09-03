@@ -8,7 +8,6 @@ import {
 	type NoteId,
 } from '@epicenter/honeycrisp';
 import {
-	fromData,
 	fromSubscription,
 	type ReactiveData,
 	type Tracked,
@@ -51,14 +50,21 @@ import { navigation } from './navigation.svelte.js';
  * adapter holds each table's projection and its subscription for as long as
  * the document is open, and both die with it.
  */
-export function createHoneycrisp({ data }: { data: HoneycrispData }) {
-	const reactiveData = fromData(data);
+export function createHoneycrisp({
+	data,
+}: {
+	data: ReactiveData<HoneycrispData>;
+}) {
+	// Already awake. `fromEpicenter` adapts the store on the way to `ready`, so
+	// this used to call `fromData` a second time and get a second projection of
+	// every table, each with its own permanent subscription.
+	//
 	// Folders takes the whole database because deleting one re-parents the notes
 	// that were in it, which is a write to the other table. Notes takes its own
 	// table: a node is watched through the table that hands out the type, so
 	// nothing in it reaches across any more.
-	const folders = createFolders(reactiveData);
-	const notes = createNotes(reactiveData.tables.notes);
+	const folders = createFolders(data);
+	const notes = createNotes(data.tables.notes);
 
 	/**
 	 * The notes the user is currently looking at, in the order they appear.
